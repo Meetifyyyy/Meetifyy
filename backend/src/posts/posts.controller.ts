@@ -24,6 +24,7 @@ import {
   ValidateNested,
   ArrayMaxSize,
 } from 'class-validator';
+import type { AuthenticatedRequest } from '../common/types/authenticated-request';
 import { Type } from 'class-transformer';
 import { MentionDto } from '../common/dto/mention.dto';
 
@@ -158,7 +159,7 @@ export class PostsController {
 
   @Get(':id')
   async getPostById(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Res({ passthrough: true }) res: any,
     @CurrentUser() user: { id: string },
     @Param('id') id: string,

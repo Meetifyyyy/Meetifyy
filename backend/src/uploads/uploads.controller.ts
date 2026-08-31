@@ -26,6 +26,7 @@ import {
   COVERED_IMAGE_SIZE_ERROR_MESSAGE,
   isCoveredImageFolder,
 } from './uploads.constants';
+import type { AuthenticatedRequest } from '../common/types/authenticated-request';
 
 /**
  * Resolved-redirect cache for GET /api/media/*.
@@ -166,7 +167,7 @@ export class UploadsController {
   async upload(
     @UploadedFile() file: Express.Multer.File,
     @Body('folder') folder: string = 'general',
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
   ) {
     if (!file) throw new BadRequestException('No file provided');
     const userId = req.user.id;
@@ -188,7 +189,7 @@ export class UploadsController {
     @Body('width') width: number | undefined,
     @Body('height') height: number | undefined,
     @Body('duration') duration: number | undefined,
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
   ) {
     if (!filename || !contentType) {
       throw new BadRequestException('filename and contentType are required');
@@ -352,7 +353,7 @@ export class UploadsController {
   @UseGuards(JwtGuard)
   async getSignedUrls(
     @Body() body: { keys: string[]; expiresIn?: number },
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
   ) {
     const { keys, expiresIn } = body || {};
     if (!keys || !Array.isArray(keys)) {
@@ -384,7 +385,10 @@ export class UploadsController {
    */
   @UseGuards(JwtGuard)
   @Post('confirm')
-  async confirmUpload(@Body('key') key: string, @Req() req: any) {
+  async confirmUpload(
+    @Body('key') key: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
     if (!key) {
       throw new BadRequestException('key is required');
     }
@@ -405,7 +409,10 @@ export class UploadsController {
    */
   @UseGuards(JwtGuard)
   @Post('discard')
-  async discardUpload(@Body('key') key: string, @Req() req: any) {
+  async discardUpload(
+    @Body('key') key: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
     if (!key) throw new BadRequestException('key is required');
     return this.storageService.discardOwnedUnattached(key, req.user.id);
   }

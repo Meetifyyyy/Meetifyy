@@ -21,6 +21,7 @@ import {
   UpdateTicketPriorityDto,
   UpdateTicketStatusDto,
 } from './dto/admin-support.dto';
+import type { AdminRequest } from '../../common/types/authenticated-request';
 
 /**
  * Ticket management for the Admin Dashboard's Support section.
@@ -93,13 +94,17 @@ export class AdminSupportController {
   addNote(
     @Param('id') id: string,
     @Body() dto: AddInternalNoteDto,
-    @Req() req: any,
+    @Req() req: AdminRequest,
   ) {
     return this.supportService.addInternalNote(id, dto, req.admin.id);
   }
 
   @Post(':id/reply')
-  reply(@Param('id') id: string, @Body() dto: SendReplyDto, @Req() req: any) {
+  reply(
+    @Param('id') id: string,
+    @Body() dto: SendReplyDto,
+    @Req() req: AdminRequest,
+  ) {
     return this.supportService.replyToTicket(id, dto, req.admin.id);
   }
 

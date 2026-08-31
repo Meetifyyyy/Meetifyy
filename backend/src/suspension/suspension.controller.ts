@@ -1,3 +1,4 @@
+import type { AuthenticatedRequest } from '../common/types/authenticated-request';
 import { Body, Controller, Get, Post, Req, UseGuards } from '@nestjs/common';
 import { IsString, Length } from 'class-validator';
 
@@ -35,13 +36,16 @@ export class SuspensionController {
    */
   @AllowSuspended()
   @Get('status')
-  async getStatus(@Req() req: any) {
+  async getStatus(@Req() req: AuthenticatedRequest) {
     return this.suspension.getStatus(req.user.id);
   }
 
   @AllowSuspended()
   @Post('appeal')
-  async submitAppeal(@Req() req: any, @Body() dto: SubmitSuspensionAppealDto) {
+  async submitAppeal(
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: SubmitSuspensionAppealDto,
+  ) {
     return this.suspension.submitAppeal(req.user.id, dto.message, {
       ip:
         (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ||

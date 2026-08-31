@@ -5,6 +5,15 @@ import {
 } from './blocked-contacts.controller';
 import { UsersService } from './users.service';
 import { JwtGuard } from '../common/guards/jwt.guard';
+import type { AuthenticatedRequest } from '../common/types/authenticated-request';
+
+/**
+ * A request carrying only what these controllers actually read off it — the
+ * JWT subject. Building the full AuthenticatedUser here would assert nothing
+ * extra and hide which field the controller depends on.
+ */
+const asRequest = (id: string) =>
+  ({ user: { id } }) as unknown as AuthenticatedRequest;
 
 /**
  * The blocked list and the unblock route are the two endpoints that could leak
@@ -42,7 +51,7 @@ describe('Blocked contacts endpoints', () => {
 
   describe('GET /api/settings/blocked-contacts', () => {
     it('reads the list for the JWT subject, never a caller-supplied id', async () => {
-      await blockedContacts.getBlockedContacts({ user: { id: 'alice' } });
+      await blockedContacts.getBlockedContacts(asRequest('alice'));
 
       expect(usersService.getBlockedContacts).toHaveBeenCalledWith(
         'alice',
@@ -52,16 +61,12 @@ describe('Blocked contacts endpoints', () => {
     });
 
     it('defaults to 20 per page', async () => {
-      await blockedContacts.getBlockedContacts({ user: { id: 'alice' } });
+      await blockedContacts.getBlockedContacts(asRequest('alice'));
       expect(usersService.getBlockedContacts.mock.calls[0][1]).toBe(20);
     });
 
     it('passes through pagination parameters', async () => {
-      await blockedContacts.getBlockedContacts(
-        { user: { id: 'alice' } },
-        '15',
-        '40',
-      );
+      await blockedContacts.getBlockedContacts(asRequest('alice'), '15', '40');
       expect(usersService.getBlockedContacts).toHaveBeenCalledWith(
         'alice',
         15,
@@ -71,7 +76,7 @@ describe('Blocked contacts endpoints', () => {
 
     it('falls back to defaults on unparseable pagination input', async () => {
       await blockedContacts.getBlockedContacts(
-        { user: { id: 'alice' } },
+        asRequest('alice'),
         'abc',
         'xyz',
       );
@@ -93,7 +98,7 @@ describe('Blocked contacts endpoints', () => {
 
   describe('DELETE /api/blocks/:blockedUserId', () => {
     it('unblocks only on behalf of the JWT subject', async () => {
-      await blocks.unblock('bob', { user: { id: 'alice' } });
+      await blocks.unblock('bob', asRequest('alice'));
 
       // The blocker is the authenticated user; the route has no parameter that
       // could name a different one, so a pair the caller is not part of is
@@ -102,7 +107,7 @@ describe('Blocked contacts endpoints', () => {
     });
 
     it('performs no restore side effects — unblock is deliberately inert', async () => {
-      await blocks.unblock('bob', { user: { id: 'alice' } });
+      await blocks.unblock('bob', asRequest('alice'));
 
       // Everything the endpoint does happens inside unblockUser, which is
       // asserted in blocking.spec.ts to remove only the block row. Nothing else

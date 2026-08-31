@@ -3,6 +3,7 @@ import { AdminVerificationController } from './admin-verification.controller';
 import { AdminVerificationService } from './admin-verification.service';
 import { AdminJwtGuard } from '../../common/guards/admin-jwt.guard';
 import { VerificationStatus } from '@prisma/client';
+import type { AdminRequest } from '../../common/types/authenticated-request';
 
 describe('AdminVerificationController', () => {
   let controller: AdminVerificationController;
@@ -70,7 +71,7 @@ describe('AdminVerificationController', () => {
 
   describe('updateStatus', () => {
     /** What AdminJwtGuard attaches after verifying the admin session. */
-    const req = { admin: { id: 'super-admin-7' } };
+    const req = { admin: { id: 'super-admin-7' } } as unknown as AdminRequest;
 
     it('should call updateStatus on service with correct params', async () => {
       const updateResponse = {
@@ -105,7 +106,7 @@ describe('AdminVerificationController', () => {
         {
           admin: { id: 'super-admin-7' },
           body: { reviewerId: 'super-admin-1' },
-        },
+        } as unknown as AdminRequest,
         'req-1',
         VerificationStatus.REJECTED,
         'Blurry',

@@ -13,6 +13,7 @@ import {
   NotFoundException,
   ForbiddenException,
 } from '@nestjs/common';
+import type { AuthenticatedRequest } from '../common/types/authenticated-request';
 import { MessagesService } from './messages.service';
 import { JwtGuard } from '../common/guards/jwt.guard';
 import { VerifiedOnly } from '../common/decorators/verified-only.decorator';
@@ -34,7 +35,7 @@ export class MessagesController {
   @Delete('msg/:messageId/for-me')
   @UseGuards(JwtGuard)
   async deleteMessageForMe(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Param('messageId') messageId: string,
   ) {
     const userId = req.user?.id;
@@ -43,7 +44,10 @@ export class MessagesController {
 
   @Delete('msg/:messageId')
   @UseGuards(JwtGuard)
-  async unsendMessage(@Req() req: any, @Param('messageId') messageId: string) {
+  async unsendMessage(
+    @Req() req: AuthenticatedRequest,
+    @Param('messageId') messageId: string,
+  ) {
     const userId = req.user?.id;
     const result = await this.messagesService.unsendMessage(messageId, userId);
     if (result.success && result.conversationId) {
@@ -84,7 +88,7 @@ export class MessagesController {
   @UseGuards(JwtGuard)
   @VerifiedOnly()
   async forwardMessage(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Param('messageId') messageId: string,
     @Body('targetConversationIds') targetConversationIds: string[],
   ) {
@@ -183,7 +187,7 @@ export class MessagesController {
   @Get()
   @UseGuards(JwtGuard)
   async getConversations(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
   ) {
@@ -202,7 +206,7 @@ export class MessagesController {
   @Get(':conversationId')
   @UseGuards(JwtGuard)
   async getHistory(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Param('conversationId') conversationId: string,
     @Query('before') beforeCursor?: string,
     @Query('limit') limit?: string,
@@ -221,7 +225,7 @@ export class MessagesController {
   @UseGuards(JwtGuard)
   @VerifiedOnly()
   async sendMessage(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Param('id') conversationId: string,
     @Body() body: SendMessageDto,
   ) {
@@ -302,7 +306,7 @@ export class MessagesController {
   @Post()
   @UseGuards(JwtGuard)
   async startConversation(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Query('userIds') userIdsQuery?: string,
     @Body('userIds') userIdsBody?: string[],
     @Body('name') nameBody?: string,
@@ -351,7 +355,7 @@ export class MessagesController {
   @Post('instant-match')
   @UseGuards(JwtGuard)
   async createInstantMatch(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Body() body: { targetUserId: string; activity: string },
   ) {
     const userId = req.user?.id;
@@ -365,7 +369,7 @@ export class MessagesController {
   @Post(':id/react')
   @UseGuards(JwtGuard)
   async reactToMessage(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Param('id') messageId: string,
     @Body('reaction') reaction: string,
   ) {
@@ -375,7 +379,10 @@ export class MessagesController {
 
   @Post(':id/read')
   @UseGuards(JwtGuard)
-  async markAsRead(@Req() req: any, @Param('id') conversationId: string) {
+  async markAsRead(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') conversationId: string,
+  ) {
     const userId = req.user?.id;
     return this.messagesService.markAsRead(conversationId, userId);
   }
@@ -383,7 +390,7 @@ export class MessagesController {
   @Patch(':id/mute')
   @UseGuards(JwtGuard)
   async muteConversation(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Param('id') conversationId: string,
     @Body('muted') muted: boolean,
   ) {
@@ -394,7 +401,7 @@ export class MessagesController {
   @Patch(':id/pin')
   @UseGuards(JwtGuard)
   async pinConversation(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Param('id') conversationId: string,
     @Body('pinned') pinned: boolean,
   ) {
@@ -404,7 +411,10 @@ export class MessagesController {
 
   @Post(':id/clear')
   @UseGuards(JwtGuard)
-  async clearChat(@Req() req: any, @Param('id') conversationId: string) {
+  async clearChat(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') conversationId: string,
+  ) {
     const userId = req.user?.id;
     return this.messagesService.clearChatForUser(conversationId, userId);
   }
@@ -412,7 +422,7 @@ export class MessagesController {
   @Delete(':id/conversations')
   @UseGuards(JwtGuard)
   async deleteConversation(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Param('id') conversationId: string,
   ) {
     const userId = req.user?.id;
@@ -476,7 +486,7 @@ export class MessagesController {
   @Patch(':id/group')
   @UseGuards(JwtGuard)
   async updateGroupInfo(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Param('id') conversationId: string,
     @Body()
     body: {
@@ -554,7 +564,7 @@ export class MessagesController {
   @Post(':id/members')
   @UseGuards(JwtGuard)
   async addMember(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Param('id') conversationId: string,
     @Body('userId') targetUserId: string,
   ) {
@@ -586,7 +596,7 @@ export class MessagesController {
   @Delete(':id/members/:targetUserId')
   @UseGuards(JwtGuard)
   async removeMember(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Param('id') conversationId: string,
     @Param('targetUserId') targetUserId: string,
   ) {
@@ -646,7 +656,10 @@ export class MessagesController {
 
   @Post(':id/leave')
   @UseGuards(JwtGuard)
-  async leaveGroup(@Req() req: any, @Param('id') conversationId: string) {
+  async leaveGroup(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') conversationId: string,
+  ) {
     const userId = req.user?.id;
     // Mutate FIRST so a failed leave never leaves an orphan "X left" message.
     const result = await this.messagesService.leaveGroup(
@@ -696,7 +709,7 @@ export class MessagesController {
   @Patch(':id/settings')
   @UseGuards(JwtGuard)
   async updateSettings(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Param('id') conversationId: string,
     @Body() body: any,
   ) {
@@ -711,7 +724,7 @@ export class MessagesController {
   @Patch(':id/permissions')
   @UseGuards(JwtGuard)
   async updatePermissions(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Param('id') conversationId: string,
     @Body('permission') permission: string,
   ) {
@@ -726,7 +739,7 @@ export class MessagesController {
   @Post(':id/owner')
   @UseGuards(JwtGuard)
   async changeOwner(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Param('id') conversationId: string,
     @Body('targetUserId') targetUserId: string,
   ) {
@@ -763,7 +776,7 @@ export class MessagesController {
   @Post(':id/admins')
   @UseGuards(JwtGuard)
   async promoteAdmin(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Param('id') conversationId: string,
     @Body('targetUserId') targetUserId: string,
   ) {
@@ -789,7 +802,7 @@ export class MessagesController {
   @Delete(':id/admins/:targetUserId')
   @UseGuards(JwtGuard)
   async demoteAdmin(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Param('id') conversationId: string,
     @Param('targetUserId') targetUserId: string,
   ) {
@@ -814,7 +827,10 @@ export class MessagesController {
 
   @Post(':id/end')
   @UseGuards(JwtGuard)
-  async endGroup(@Req() req: any, @Param('id') conversationId: string) {
+  async endGroup(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') conversationId: string,
+  ) {
     const userId = req.user?.id;
     const actorHandle = await this.messagesService.getUserHandle(userId);
     await this.broadcastSystemMessage(
@@ -828,7 +844,7 @@ export class MessagesController {
   @Post(':id/requests/:targetUserId/accept')
   @UseGuards(JwtGuard)
   async acceptJoinRequest(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Param('id') conversationId: string,
     @Param('targetUserId') targetUserId: string,
   ) {
@@ -854,7 +870,7 @@ export class MessagesController {
   @Post(':id/requests/:targetUserId/decline')
   @UseGuards(JwtGuard)
   async declineJoinRequest(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Param('id') conversationId: string,
     @Param('targetUserId') targetUserId: string,
   ) {
@@ -868,7 +884,10 @@ export class MessagesController {
 
   @Post(':id/join')
   @UseGuards(JwtGuard)
-  async joinGroup(@Req() req: any, @Param('id') conversationId: string) {
+  async joinGroup(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') conversationId: string,
+  ) {
     const userId = req.user?.id;
     const result = await this.messagesService.joinGroupByInvite(
       conversationId,
@@ -887,14 +906,20 @@ export class MessagesController {
 
   @Post(':id/request')
   @UseGuards(JwtGuard)
-  async requestJoinGroup(@Req() req: any, @Param('id') conversationId: string) {
+  async requestJoinGroup(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') conversationId: string,
+  ) {
     // Identical semantics to :id/join — the invite card has always posted here.
     return this.joinGroup(req, conversationId);
   }
 
   @Get(':id/invite')
   @UseGuards(JwtGuard)
-  async getInvitePreview(@Req() req: any, @Param('id') conversationId: string) {
+  async getInvitePreview(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') conversationId: string,
+  ) {
     return this.messagesService.getGroupInvitePreview(
       conversationId,
       req.user?.id,

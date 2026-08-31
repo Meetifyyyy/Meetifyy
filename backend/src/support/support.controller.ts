@@ -24,6 +24,7 @@ import {
   SUPPORT_ATTACHMENT_LIMITS,
   SUPPORT_CATEGORY_LABELS,
 } from './support.constants';
+import type { AuthenticatedRequest } from '../common/types/authenticated-request';
 
 /**
  * The public help centre and support-request API.
@@ -115,7 +116,10 @@ export class SupportController {
 
   @UseGuards(SupportRateLimitGuard, OptionalJwtGuard)
   @Post('requests')
-  async createRequest(@Body() dto: CreateSupportRequestDto, @Req() req: any) {
+  async createRequest(
+    @Body() dto: CreateSupportRequestDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
     return this.support.createRequest(dto, {
       ip:
         (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ||

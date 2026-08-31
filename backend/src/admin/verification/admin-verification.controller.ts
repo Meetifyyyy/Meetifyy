@@ -8,6 +8,7 @@ import {
   Query,
   Req,
 } from '@nestjs/common';
+import type { AdminRequest } from '../../common/types/authenticated-request';
 import { AdminVerificationService } from './admin-verification.service';
 import { AdminJwtGuard } from '../../common/guards/admin-jwt.guard';
 import { VerificationStatus } from '@prisma/client';
@@ -60,7 +61,7 @@ export class AdminVerificationController {
 
   @Patch('requests/:id/status')
   async updateStatus(
-    @Req() req: any,
+    @Req() req: AdminRequest,
     @Param('id') id: string,
     @Body('status') status: VerificationStatus,
     @Body('adminNotes') adminNotes?: string,
