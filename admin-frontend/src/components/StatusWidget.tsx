@@ -1,7 +1,7 @@
 import React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '../api/apiClient';
-import { Activity, RefreshCw } from 'lucide-react';
+import { Activity, RefreshCw } from './icons';
 
 interface ComponentHealth {
   status: 'UP' | 'DOWN';

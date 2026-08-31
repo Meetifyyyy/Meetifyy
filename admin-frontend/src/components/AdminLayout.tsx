@@ -10,8 +10,6 @@ import {
   Users,
   ShieldAlert,
   HelpCircle,
-  Flag,
-  Settings,
   FileText,
   ShieldCheck,
   LogOut,
@@ -20,7 +18,7 @@ import {
   Menu,
   X,
   CheckCircle,
-} from 'lucide-react';
+} from './icons';
 
 export const AdminLayout: React.FC = () => {
   const { admin, logout } = useAuth();
@@ -55,10 +53,8 @@ export const AdminLayout: React.FC = () => {
     { label: 'Campus Reps', path: '/campus-reps', icon: Megaphone },
     { label: 'Moderation', path: '/reports', icon: ShieldAlert },
     { label: 'Support', path: '/support', icon: HelpCircle },
-    { label: 'Monitoring', path: '/monitoring', icon: Activity },
-    { label: 'Feature Flags', path: '/flags', icon: Flag },
+    { label: 'Analytics', path: '/analytics', icon: Activity },
     { label: 'Verification', path: '/verification', icon: CheckCircle },
-    { label: 'Settings', path: '/settings', icon: Settings },
     { label: 'Audit Logs', path: '/audit', icon: FileText },
     { label: 'Sessions', path: '/sessions', icon: ShieldCheck },
   ];

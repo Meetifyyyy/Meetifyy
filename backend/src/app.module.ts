@@ -42,6 +42,8 @@ import { EmailModule } from './email/email.module';
 import { InstantMatchModule } from './instant-match/instant-match.module';
 import { UploadsModule } from './uploads/uploads.module';
 import { ModerationModule } from './moderation/moderation.module';
+import { ObservabilityModule } from './observability/observability.module';
+import { SuspensionModule } from './suspension/suspension.module';
 import { AdminModule } from './admin/admin.module';
 import { VerificationModule } from './verification/verification.module';
 import { RedisModule } from './redis/redis.module';
@@ -50,7 +52,6 @@ import { DomainValidatorModule } from './common/services/domain-validator.module
 import { VerificationAccessModule } from './common/verification/verification-access.module';
 import { AcademicsModule } from './academics/academics.module';
 import { SupportModule } from './support/support.module';
-import { MonitoringModule } from './monitoring/monitoring.module';
 
 @Module({
   imports: [
@@ -269,9 +270,11 @@ import { MonitoringModule } from './monitoring/monitoring.module';
     // Public help centre + support-request intake. The admin-facing half lives
     // inside AdminModule, behind AdminJwtGuard.
     SupportModule,
-    // Application-level observability. Registers a global interceptor, so it
-    // must be imported for any route to be instrumented.
-    MonitoringModule,
+    // Slow-request capture. Applies a global middleware, so it must be
+    // imported for any route to be measured.
+    ObservabilityModule,
+    // The only surface a suspended account may use.
+    SuspensionModule,
     EventsModule,
   ],
   controllers: [AppController],

@@ -162,7 +162,6 @@ model User {
   cover                      String?
   coverMediaId               String?
   deletedAt                  DateTime?
-  emailVerified              Boolean                     @default(false)
   birthday                   String?
   interests                  String[]
   lastSeenAt                 DateTime?
@@ -1105,107 +1104,10 @@ model HelpArticle {
   @@index([status, isFeatured])
 }
 
-/// Application-level request telemetry.
-///
-/// Deliberately narrow: a normalized route, an outcome and a duration. No
-/// headers, no bodies, no query strings - see monitoring/utils/redactor.ts for
-/// what is refused and why. Azure Container Apps owns infrastructure logs; these
-/// tables own the per-endpoint picture Container Apps logs cannot see.
-model RequestLog {
-  id           String   @id @default(uuid())
-  /// Correlates a request with its error row and with the pino access log.
-  requestId    String?
-  method       String   @db.VarChar(10)
-  /// Route pattern, never a concrete path: `/api/messages/:id`, so requests to
-  /// the same endpoint aggregate instead of fragmenting per id.
-  route        String   @db.VarChar(300)
-  statusCode   Int
-  durationMs   Int
-  responseSize Int?
-  /// Present only when the request was authenticated. The only user-identifying
-  /// value these tables are permitted to hold.
-  userId       String?
-  createdAt    DateTime @default(now())
 
-  // The dashboard reads "recent rows, newest first", optionally narrowed to one
-  // route. Both indexes serve a filter and its sort from a single scan.
-  @@index([createdAt])
-  @@index([route, createdAt])
-  @@index([statusCode, createdAt])
-}
 
-model ErrorLog {
-  id         String   @id @default(uuid())
-  requestId  String?
-  route      String   @db.VarChar(300)
-  statusCode Int?
-  /// Sanitized message. Never the raw error when that could carry a value.
-  message    String   @db.VarChar(2000)
-  /// Stored only when LOG_STACK_TRACES is on, and only ever shown to admins.
-  stack      String?
-  createdAt  DateTime @default(now())
 
-  @@index([createdAt])
-  @@index([route, createdAt])
-}
 
-model SystemMetric {
-  id                String   @id @default(uuid())
-  memoryRssMb       Float
-  memoryHeapUsedMb  Float
-  cpuPercent        Float
-  eventLoopLagMs    Float
-  dbPoolActive      Int
-  dbPoolIdle        Int
-  dbPoolWaiting     Int
-  socketConnections Int
-  createdAt         DateTime @default(now())
-
-  @@index([createdAt])
-}
-
-/// Pre-aggregated 5-minute performance buckets.
-///
-/// One row per 5-minute UTC boundary. Replaces raw RequestLog GROUP BY queries
-/// for the 7-day performance chart: 7d × 24h × 12 = 2,016 rows maximum vs
-/// potentially millions of individual request rows.
-///
-/// Upserted by MetricsAggregatorService on each flush cycle. The @@unique on
-/// bucketAt makes concurrent upserts from multiple instances idempotent.
-model PerformanceBucket {
-  id            String   @id @default(uuid())
-  /// UTC start of the 5-minute window, truncated to the boundary.
-  bucketAt      DateTime
-  totalRequests Int
-  errorCount    Int
-  avgLatencyMs  Float
-  maxLatencyMs  Int
-  p95LatencyMs  Float
-  createdAt     DateTime @default(now())
-
-  @@unique([bucketAt])
-  @@index([bucketAt])
-}
-
-/// Materialized slow-request log for the rolling 7-day view.
-///
-/// Populated by MetricsAggregatorService whenever a RequestLog row's
-/// durationMs exceeds the configured threshold. Pruned on the same schedule
-/// as raw logs. Avoids scanning the full RequestLog table to find the
-/// slowest endpoints.
-model SlowRequest {
-  id         String   @id @default(uuid())
-  route      String   @db.VarChar(300)
-  method     String   @db.VarChar(10)
-  statusCode Int
-  durationMs Int
-  requestId  String?
-  occurredAt DateTime
-
-  @@index([occurredAt])
-  @@index([durationMs])
-  @@index([route, durationMs])
-}
 
 model CollegeRequest {
   id            String   @id @default(uuid())
@@ -1240,22 +1142,7 @@ model Announcement {
   @@index([scheduledAt])
 }
 
-model FeatureFlag {
-  id                String   @id @default(uuid())
-  key               String   @unique
-  enabled           Boolean  @default(true)
-  description       String?
-  rolloutPercentage Int      @default(100)
-  updatedAt         DateTime @updatedAt
-}
 
-model SystemSetting {
-  key         String   @id
-  value       String
-  type        String
-  description String?
-  updatedAt   DateTime @updatedAt
-}
 
 model ConversationJoinRequest {
   id             String       @id @default(uuid())
@@ -1529,6 +1416,10 @@ enum SupportCategory {
   SAFETY_REPORTING
   TECHNICAL
   OTHER
+  // Filed from the suspension screen by a suspended account asking for review.
+  // Kept as its own category so the admin queue can show appeals as a distinct
+  // section rather than mixing them into ordinary support volume.
+  SUSPENSION_APPEAL
   // Retained so tickets filed before the help centre existed stay readable.
   BUG
   ACCOUNT
@@ -1638,4 +1529,38 @@ enum CommunityRequestStatus {
   PENDING
   ACCEPTED
   DECLINED
+}
+
+/// Requests that took longer than the configured threshold (default 500 ms).
+///
+/// Written from the real Express request lifecycle by SlowRequestMiddleware —
+/// there is no sampling, no client-reported timing and no synthetic data: a row
+/// exists only because a request actually took that long on this server.
+///
+/// Pruned to a rolling 7-day window by SlowRequestRetentionService. The table is
+/// deliberately narrow; it answers "what was slow, where, and for whom" and
+/// nothing else.
+model SlowRequest {
+  id         String   @id @default(uuid())
+  /// Parameterised route (`/admin/users/:id`) so rows group across ids.
+  route      String   @db.VarChar(300)
+  /// The concrete path as requested, for reproducing a specific call.
+  path       String   @db.VarChar(500)
+  method     String   @db.VarChar(10)
+  statusCode Int
+  durationMs Int
+  /// Correlates with application logs when x-request-id is present.
+  requestId  String?  @db.VarChar(100)
+  /// Whichever principal the request authenticated as, when it authenticated.
+  userId     String?  @db.VarChar(64)
+  adminId    String?  @db.VarChar(64)
+  ip         String?  @db.VarChar(64)
+  userAgent  String?  @db.VarChar(300)
+  /// Response size in bytes, which is often the reason a route is slow.
+  bytesOut   Int?
+  occurredAt DateTime @default(now())
+
+  @@index([occurredAt])
+  @@index([durationMs])
+  @@index([route, occurredAt])
 }

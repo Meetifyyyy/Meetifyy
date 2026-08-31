@@ -1,24 +1,41 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, MutationCache } from '@tanstack/react-query';
 import './App.css';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { SessionExpiredError } from './api/apiClient';
 import { AdminLayout } from './components/AdminLayout';
+import { Toaster, pushToast } from './components/Toaster';
 import { LoginPage } from './pages/LoginPage';
 import { DashboardPage } from './pages/DashboardPage';
+import { AnalyticsPage } from './pages/AnalyticsPage';
 import { CollegesPage } from './pages/CollegesPage';
 import { UsersPage } from './pages/UsersPage';
 import { CampusRepsPage } from './pages/CampusRepsPage';
 import { ReportsPage } from './pages/ReportsPage';
 import { SupportPage } from './pages/SupportPage';
-import { MonitoringPage } from './pages/MonitoringPage';
-import { FlagsPage } from './pages/FlagsPage';
 import { VerificationPage } from './pages/VerificationPage';
-import { SettingsPage } from './pages/SettingsPage';
 import { AuditPage } from './pages/AuditPage';
 import { SessionsPage } from './pages/SessionsPage';
 
 const queryClient = new QueryClient({
+  /**
+   * A privileged action that fails must say so. Most pages call `mutate()`
+   * without an `onError`, which left a refused suspend/delete/revoke completely
+   * silent — indistinguishable from success. This reports every such failure.
+   *
+   * Mutations that already surface the error themselves (the Colleges form, the
+   * Support views, Campus Reps) declare their own `onError` and are skipped, so
+   * nothing is reported twice. `SessionExpiredError` is skipped too: the route
+   * guards already redirect to /login and a toast would only add noise.
+   */
+  mutationCache: new MutationCache({
+    onError: (error, _vars, _ctx, mutation) => {
+      if (mutation.options.onError) return;
+      if (error instanceof SessionExpiredError) return;
+      pushToast(error instanceof Error ? error.message : 'Action failed');
+    },
+  }),
   defaultOptions: {
     queries: {
       retry: 1,
@@ -74,6 +91,7 @@ export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
+        <Toaster />
         <BrowserRouter>
           <Routes>
             <Route
@@ -98,11 +116,8 @@ export default function App() {
               <Route path="/campus-reps" element={<CampusRepsPage />} />
               <Route path="/reports" element={<ReportsPage />} />
               <Route path="/support" element={<SupportPage />} />
-              <Route path="/monitoring" element={<MonitoringPage />} />
-              <Route path="/analytics" element={<DashboardPage />} />
-              <Route path="/flags" element={<FlagsPage />} />
+              <Route path="/analytics" element={<AnalyticsPage />} />
               <Route path="/verification" element={<VerificationPage />} />
-              <Route path="/settings" element={<SettingsPage />} />
               <Route path="/audit" element={<AuditPage />} />
               <Route path="/sessions" element={<SessionsPage />} />
               <Route path="*" element={<Navigate to="/dashboard" replace />} />

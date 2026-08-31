@@ -27,7 +27,10 @@ import { redisConfigValues } from './redis.config';
 import { featuresConfigValues, loggingConfigValues } from './features.config';
 import { siteConfigValues } from './site.config';
 import { supportConfigValues } from './support.config';
-import { monitoringConfigValues } from './monitoring.config';
+import {
+  analyticsConfigValues,
+  observabilityConfigValues,
+} from './observability.config';
 
 export const config = {
   env: APP_ENV,
@@ -46,7 +49,8 @@ export const config = {
   logging: loggingConfigValues,
   site: siteConfigValues,
   support: supportConfigValues,
-  monitoring: monitoringConfigValues,
+  observability: observabilityConfigValues,
+  analytics: analyticsConfigValues,
 } as const;
 
 // Every slice has now been evaluated, so this reports the complete set of
