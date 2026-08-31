@@ -233,6 +233,13 @@ export default function SettingsVerificationPanel() {
           </div>
         )}
 
+        {verificationLoading && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginTop: '1rem', color: 'var(--color-text-light)', fontSize: '0.875rem' }}>
+            <Loader2 size={16} className="spinner" />
+            <span>Checking your verification status…</span>
+          </div>
+        )}
+
         {!verificationLoading && !isUnderReview &&
           (status === 'UNVERIFIED' || status === 'REJECTED' || status === 'RESUBMISSION_REQUIRED') && (
           <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', marginTop: '1rem' }}>

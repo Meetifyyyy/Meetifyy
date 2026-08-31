@@ -157,6 +157,12 @@ export const VerificationPage: React.FC = () => {
                       <span>{req.user.email}</span>
                       <span>•</span>
                       <span>Requested: {new Date(req.createdAt).toLocaleString()}</span>
+                      {req.attemptNumber != null && (
+                        <>
+                          <span>•</span>
+                          <span>Attempt {req.attemptNumber}</span>
+                        </>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -220,6 +226,35 @@ export const VerificationPage: React.FC = () => {
                   </div>
                 </div>
               </div>
+
+              {req.previousAttempts?.length > 0 && (
+                <div style={{ marginTop: '1.25rem', paddingTop: '1rem', borderTop: '1px solid var(--color-border)' }}>
+                  <p style={{ margin: '0 0 0.6rem', fontSize: '0.8rem', fontWeight: 600, color: 'var(--color-text-light)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+                    Previous attempts
+                  </p>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                    {req.previousAttempts.map((prev: any) => (
+                      <div key={prev.id} style={{ display: 'flex', gap: '0.75rem', alignItems: 'baseline', fontSize: '0.825rem' }}>
+                        <span style={{ color: 'var(--color-text-light)', minWidth: '5.5rem' }}>
+                          Attempt {prev.attemptNumber}
+                        </span>
+                        <span style={{
+                          color: prev.status === 'VERIFIED' ? '#22c55e' : prev.status === 'PENDING' ? '#eab308' : '#ef4444',
+                          fontWeight: 500, minWidth: '5rem',
+                        }}>
+                          {prev.status}
+                        </span>
+                        <span style={{ color: 'var(--color-text-main)', flex: 1 }}>
+                          {prev.rejectionReason || <span style={{ color: 'var(--color-text-light)' }}>No reason recorded</span>}
+                        </span>
+                        <span style={{ color: 'var(--color-text-light)', whiteSpace: 'nowrap' }}>
+                          {prev.reviewedAt ? new Date(prev.reviewedAt).toLocaleDateString() : ''}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {req.status === 'PENDING' && (
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '0.5rem', paddingTop: '1.5rem', borderTop: '1px solid var(--color-border)' }}>

@@ -110,7 +110,36 @@ export class AdminVerificationService {
       }),
     ]);
 
-    return { total, requests: await this.withDocumentUrls(requests) };
+    // What this user tried before, so a reviewer looking at attempt 3 can see
+    // why 1 and 2 were turned down instead of re-deriving it. Attempts are
+    // retained now, so this context exists; one extra query covers the page.
+    const userIds = [...new Set(requests.map((r) => r.userId))];
+    const priorAttempts = userIds.length
+      ? await this.prisma.verificationRequest.findMany({
+          where: { userId: { in: userIds } },
+          select: {
+            id: true,
+            userId: true,
+            attemptNumber: true,
+            status: true,
+            rejectionReason: true,
+            reviewedAt: true,
+            createdAt: true,
+          },
+          orderBy: { attemptNumber: 'desc' },
+        })
+      : [];
+
+    const withHistory = requests.map((request) => ({
+      ...request,
+      previousAttempts: priorAttempts.filter(
+        (a) =>
+          a.userId === request.userId &&
+          a.attemptNumber < request.attemptNumber,
+      ),
+    }));
+
+    return { total, requests: await this.withDocumentUrls(withHistory) };
   }
 
   /**
