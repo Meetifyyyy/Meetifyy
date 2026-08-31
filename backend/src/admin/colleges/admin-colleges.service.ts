@@ -88,7 +88,7 @@ export class AdminCollegesService {
       ];
     }
 
-    const [total, colleges] = await Promise.all([
+    const [total, colleges, statusCounts, domainCount, studentCount] = await Promise.all([
       this.prisma.college.count({ where }),
       this.prisma.college.findMany({
         where,
@@ -104,12 +104,33 @@ export class AdminCollegesService {
           },
         },
       }),
+      // Directory-wide figures for the header cards. Summing the current page
+      // made "Domains" and "Enrolled Students" describe 20 colleges while being
+      // presented as directory totals.
+      this.prisma.college.groupBy({
+        by: ['status'],
+        where,
+        _count: { _all: true },
+      }),
+      this.prisma.collegeDomain.count({ where: { college: where } }),
+      this.prisma.user.count({ where: { college: where } }),
     ]);
+
+    const byStatus = statusCounts.reduce<Record<string, number>>(
+      (acc, row) => ({ ...acc, [String(row.status)]: row._count._all }),
+      {},
+    );
 
     return {
       data: colleges,
       meta: {
         total,
+        counts: {
+          byStatus,
+          approved: byStatus.APPROVED || 0,
+          domains: domainCount,
+          students: studentCount,
+        },
         page,
         limit,
         totalPages: Math.ceil(total / limit),
@@ -536,10 +557,35 @@ export class AdminCollegesService {
     };
   }
 
+  /**
+   * `CollegeRequest.status` is a plain String column, so nothing below this
+   * method constrains what lands in it. Without the checks here an unknown
+   * status was written verbatim — leaving a request that matches none of the
+   * admin queue's filters and so cannot be found or actioned again — and an
+   * unknown id surfaced as a Prisma P2025 escaping as a 500 rather than a 404.
+   */
+  static readonly COLLEGE_REQUEST_STATUSES = ['PENDING', 'ADDED', 'REJECTED'];
+
   async updateCollegeRequestStatus(id: string, status: string) {
+    const next = String(status || '').toUpperCase();
+    if (!AdminCollegesService.COLLEGE_REQUEST_STATUSES.includes(next)) {
+      throw new BadRequestException(
+        `Invalid status '${status}'. Expected one of: ` +
+          AdminCollegesService.COLLEGE_REQUEST_STATUSES.join(', '),
+      );
+    }
+
+    const existing = await this.prisma.collegeRequest.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+    if (!existing) {
+      throw new NotFoundException(`College request ${id} not found`);
+    }
+
     return this.prisma.collegeRequest.update({
       where: { id },
-      data: { status },
+      data: { status: next },
     });
   }
 }

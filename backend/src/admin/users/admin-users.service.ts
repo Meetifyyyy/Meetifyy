@@ -5,6 +5,7 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { JwtGuard } from '../../common/guards/jwt.guard';
 import { SupabaseService } from '../../supabase/supabase.service';
 
 @Injectable()
@@ -18,7 +19,6 @@ export class AdminUsersService {
     search?: string;
     accountStatus?: string;
     collegeId?: string;
-    emailVerified?: boolean;
     page?: number;
     limit?: number;
   }) {
@@ -36,10 +36,6 @@ export class AdminUsersService {
       where.collegeId = query.collegeId;
     }
 
-    if (query.emailVerified !== undefined) {
-      where.emailVerified = query.emailVerified;
-    }
-
     if (query.search) {
       where.OR = [
         { username: { contains: query.search, mode: 'insensitive' } },
@@ -49,7 +45,7 @@ export class AdminUsersService {
       ];
     }
 
-    const [total, users] = await Promise.all([
+    const [total, users, statusCounts, verifiedCount] = await Promise.all([
       this.prisma.user.count({ where }),
       this.prisma.user.findMany({
         where,
@@ -64,23 +60,34 @@ export class AdminUsersService {
           avatar: true,
           accountStatus: true,
           role: true,
-          emailVerified: true,
+          verificationStatus: true,
           createdAt: true,
           college: {
             select: { id: true, name: true },
           },
-          _count: {
-            select: {
-              posts: true,
-              comments: true,
-              followers: true,
-              following: true,
-              reportsMade: true,
-            },
-          },
+          // No `_count` here on purpose: post/comment/follower/report counts are
+          // five correlated aggregates per row that the admin list never renders.
+          // Per-user counts belong to `getUserById`, which is where they are read.
         },
       }),
+      // The list header reports Active / Verified / Suspended for the whole
+      // filtered set. Deriving those in the client from the current page made
+      // them silently wrong from page two onwards (and understated them on
+      // page one whenever the set was larger than the page).
+      this.prisma.user.groupBy({
+        by: ['accountStatus'],
+        where,
+        _count: { _all: true },
+      }),
+      this.prisma.user.count({
+        where: { ...where, verificationStatus: 'VERIFIED' },
+      }),
     ]);
+
+    const byStatus = statusCounts.reduce<Record<string, number>>(
+      (acc, row) => ({ ...acc, [row.accountStatus]: row._count._all }),
+      {},
+    );
 
     return {
       data: users,
@@ -89,6 +96,12 @@ export class AdminUsersService {
         page,
         limit,
         totalPages: Math.ceil(total / limit),
+        counts: {
+          byStatus,
+          active: byStatus.ACTIVE || 0,
+          suspendedOrBanned: (byStatus.SUSPENDED || 0) + (byStatus.BANNED || 0),
+          verified: verifiedCount,
+        },
       },
     };
   }
@@ -129,6 +142,11 @@ export class AdminUsersService {
       data: { accountStatus: 'SUSPENDED' },
     });
 
+    // The guard caches account status for a few seconds; drop it so the
+    // suspension takes hold on the user's very next request rather than
+    // whenever that window happens to lapse.
+    JwtGuard.clearAccountStatus(id);
+
     return { success: true, user: updated, reason };
   }
 
@@ -140,6 +158,10 @@ export class AdminUsersService {
       where: { id },
       data: { accountStatus: 'ACTIVE' },
     });
+
+    // Lifting a suspension must restore access immediately, not after the
+    // status cache expires.
+    JwtGuard.clearAccountStatus(id);
 
     return { success: true, user: updated };
   }
@@ -153,6 +175,8 @@ export class AdminUsersService {
       data: { deletedAt: new Date(), accountStatus: 'DELETED' },
     });
 
+    JwtGuard.clearAccountStatus(id);
+
     return { success: true };
   }
 
@@ -165,17 +189,7 @@ export class AdminUsersService {
       data: { deletedAt: null, accountStatus: 'ACTIVE' },
     });
 
-    return { success: true };
-  }
-
-  async verifyEmailManually(id: string) {
-    const user = await this.prisma.user.findUnique({ where: { id } });
-    if (!user) throw new NotFoundException('User not found');
-
-    await this.prisma.user.update({
-      where: { id },
-      data: { emailVerified: true },
-    });
+    JwtGuard.clearAccountStatus(id);
 
     return { success: true };
   }
@@ -190,25 +204,6 @@ export class AdminUsersService {
     });
 
     return { success: true };
-  }
-
-  async updateCapabilities(
-    id: string,
-    capabilities: {
-      canPost?: boolean;
-      canMessage?: boolean;
-      canActivity?: boolean;
-    },
-  ) {
-    const user = await this.prisma.user.findUnique({ where: { id } });
-    if (!user) throw new NotFoundException('User not found');
-
-    const updated = await this.prisma.user.update({
-      where: { id },
-      data: capabilities,
-    });
-
-    return { success: true, user: updated };
   }
 
   /**

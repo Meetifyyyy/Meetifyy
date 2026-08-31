@@ -1,26 +1,31 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '../api/apiClient';
-import { FileText, ShieldAlert, Key } from 'lucide-react';
+import { FileText, ShieldAlert, Key } from '../components/icons';
+import { Pagination } from '../components/Pagination';
 
 export const AuditPage: React.FC = () => {
   const [tab, setTab] = useState<'AUDIT' | 'SECURITY' | 'LOGIN'>('AUDIT');
+  // All three endpoints paginate at 20. Without a page control the audit trail
+  // was only ever readable 20 rows deep — the oldest entries were unreachable.
+  const [page, setPage] = useState(1);
+  useEffect(() => { setPage(1); }, [tab]);
 
   const { data: auditLogs, isLoading: auditLoading } = useQuery({
-    queryKey: ['adminAuditLogs', tab],
-    queryFn: () => apiRequest('/admin/audit/logs'),
+    queryKey: ['adminAuditLogs', tab, page],
+    queryFn: () => apiRequest(`/admin/audit/logs?page=${page}`),
     enabled: tab === 'AUDIT',
   });
 
   const { data: securityEvents, isLoading: securityLoading } = useQuery({
-    queryKey: ['adminSecurityEvents', tab],
-    queryFn: () => apiRequest('/admin/audit/security-events'),
+    queryKey: ['adminSecurityEvents', tab, page],
+    queryFn: () => apiRequest(`/admin/audit/security-events?page=${page}`),
     enabled: tab === 'SECURITY',
   });
 
   const { data: loginAudits, isLoading: loginLoading } = useQuery({
-    queryKey: ['adminLoginAudits', tab],
-    queryFn: () => apiRequest('/admin/audit/login-audits'),
+    queryKey: ['adminLoginAudits', tab, page],
+    queryFn: () => apiRequest(`/admin/audit/login-audits?page=${page}`),
     enabled: tab === 'LOGIN',
   });
 
@@ -95,6 +100,14 @@ export const AuditPage: React.FC = () => {
               </table>
             </div>
           )}
+
+          <Pagination
+            page={page}
+            totalPages={auditLogs?.meta?.totalPages}
+            total={auditLogs?.meta?.total}
+            onChange={setPage}
+            label="entries"
+          />
         </div>
       )}
 
@@ -130,6 +143,14 @@ export const AuditPage: React.FC = () => {
               </table>
             </div>
           )}
+
+          <Pagination
+            page={page}
+            totalPages={securityEvents?.meta?.totalPages}
+            total={securityEvents?.meta?.total}
+            onChange={setPage}
+            label="events"
+          />
         </div>
       )}
 
@@ -171,6 +192,14 @@ export const AuditPage: React.FC = () => {
               </table>
             </div>
           )}
+
+          <Pagination
+            page={page}
+            totalPages={loginAudits?.meta?.totalPages}
+            total={loginAudits?.meta?.total}
+            onChange={setPage}
+            label="sign-ins"
+          />
         </div>
       )}
     </div>

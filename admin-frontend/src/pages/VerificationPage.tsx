@@ -1,7 +1,33 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { apiRequest } from '../api/apiClient';
-import { CheckCircle, XCircle, ExternalLink } from 'lucide-react';
+import { apiRequest, getMediaUrl } from '../api/apiClient';
+import { CheckCircle, XCircle, ExternalLink } from '../components/icons';
+
+/** Same avatar treatment as the Users and Campus Reps tables. */
+const ReviewerAvatar: React.FC<{ user: any }> = ({ user }) => {
+  const [imgError, setImgError] = useState(false);
+  const avatarUrl = getMediaUrl(user?.avatar);
+  const initial = (user?.displayName || user?.username || 'U').charAt(0).toUpperCase();
+  const colors = ['#2563EB', '#7C3AED', '#10B981', '#F59E0B', '#EC4899'];
+  const bgColor = colors[(initial.charCodeAt(0) || 0) % colors.length];
+  const size = { width: '48px', height: '48px', borderRadius: '50%', flexShrink: 0 } as const;
+
+  if (avatarUrl && !imgError) {
+    return (
+      <img
+        src={avatarUrl}
+        alt={user?.displayName || user?.username || 'Avatar'}
+        onError={() => setImgError(true)}
+        style={{ ...size, objectFit: 'cover', border: '1px solid var(--color-border)' }}
+      />
+    );
+  }
+  return (
+    <div style={{ ...size, background: bgColor, color: '#FFFFFF', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700 }}>
+      {initial}
+    </div>
+  );
+};
 
 export const VerificationPage: React.FC = () => {
   const queryClient = useQueryClient();
@@ -32,7 +58,10 @@ export const VerificationPage: React.FC = () => {
     mutation.mutate({ id, status });
   };
 
-  const requests = data?.data?.requests || [];
+  // `GET /admin/verification/requests` responds `{ total, requests }` — there is
+  // no envelope around it. Reading `data.data.requests` silently yielded an empty
+  // list on every load, so the queue always rendered "All Caught Up".
+  const requests = data?.requests || [];
 
   return (
     <div style={{ padding: '2rem', maxWidth: '1200px', margin: '0 auto', color: 'var(--color-text-main)' }}>
@@ -90,11 +119,10 @@ export const VerificationPage: React.FC = () => {
             }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                  <img 
-                    src={req.user.avatarUrl || `https://ui-avatars.com/api/?name=${req.user.displayName}&background=random`} 
-                    alt="Avatar" 
-                    style={{ width: '48px', height: '48px', borderRadius: '50%', objectFit: 'cover' }}
-                  />
+                  {/* The API selects `avatar` (a storage path), not `avatarUrl`,
+                      so the old read was always undefined and every reviewer saw a
+                      third-party generated initial instead of the real photo. */}
+                  <ReviewerAvatar user={req.user} />
                   <div>
                     <h3 style={{ margin: 0, fontSize: '1.1rem', color: 'var(--color-text-white)' }}>
                       {req.user.displayName} <span style={{ color: 'var(--color-text-light)', fontSize: '0.9rem' }}>@{req.user.username}</span>

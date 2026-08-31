@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { AlertTriangle, Inbox, Loader2, MailWarning, Paperclip, RefreshCw, Search, SlidersHorizontal, X } from 'lucide-react';
+import { AlertTriangle, Inbox, Loader2, MailWarning, Paperclip, RefreshCw, Search, SlidersHorizontal, X } from '../../components/icons';
 
 import { supportApi, type TicketFilters } from './supportApi';
 import {
@@ -32,8 +32,23 @@ const PAGE_SIZE = 20;
 export const TicketQueue: React.FC<{
   selectedId: string | null;
   onSelect: (id: string) => void;
-}> = ({ selectedId, onSelect }) => {
-  const [filters, setFilters] = useState<TicketFilters>({ sort: 'newest', page: 1, limit: PAGE_SIZE });
+  /**
+   * Pins the queue to one category, for a section that only ever shows that
+   * kind of request (suspension appeals). The category selector is hidden
+   * rather than disabled, because a control that cannot change is noise.
+   */
+  lockedCategory?: string;
+}> = ({ selectedId, onSelect, lockedCategory }) => {
+  // `search` is seeded to '' rather than left undefined: the debounce effect
+  // below runs once on mount, and `undefined === ''` was false, so it replaced
+  // the filters object and fired a second identical request on every mount.
+  const [filters, setFilters] = useState<TicketFilters>({
+    sort: 'newest',
+    page: 1,
+    limit: PAGE_SIZE,
+    search: '',
+    ...(lockedCategory ? { category: lockedCategory } : {}),
+  });
   const [searchInput, setSearchInput] = useState('');
   const [showFilters, setShowFilters] = useState(false);
 
@@ -70,10 +85,15 @@ export const TicketQueue: React.FC<{
     const chips: Array<{ key: keyof TicketFilters; label: string }> = [];
     if (filters.status) chips.push({ key: 'status', label: statusLabel(filters.status) });
     if (filters.priority) chips.push({ key: 'priority', label: `${priorityLabel(filters.priority)} priority` });
-    if (filters.category) chips.push({ key: 'category', label: categoryLabel(filters.category) });
+    // A locked category is the section's identity, not a filter the admin
+    // applied, so it gets no removable chip - lifting it would silently turn
+    // the appeals section back into the full queue.
+    if (filters.category && !lockedCategory) {
+      chips.push({ key: 'category', label: categoryLabel(filters.category) });
+    }
     if (filters.assignedAdminId === 'unassigned') chips.push({ key: 'assignedAdminId', label: 'Unassigned' });
     return chips;
-  }, [filters]);
+  }, [filters, lockedCategory]);
 
   const openCount =
     (stats?.byStatus?.OPEN ?? 0) + (stats?.byStatus?.IN_PROGRESS ?? 0) + (stats?.byStatus?.WAITING_FOR_USER ?? 0);
@@ -156,15 +176,17 @@ export const TicketQueue: React.FC<{
               ...PRIORITY_ORDER.map((v) => ({ value: v, label: priorityLabel(v) })),
             ]}
           />
-          <FilterSelect
-            label="Category"
-            value={filters.category ?? ''}
-            onChange={(v) => setFilter('category', v)}
-            options={[
-              { value: '', label: 'Any category' },
-              ...FILTERABLE_CATEGORIES.map((v) => ({ value: v, label: categoryLabel(v) })),
-            ]}
-          />
+          {!lockedCategory && (
+            <FilterSelect
+              label="Category"
+              value={filters.category ?? ''}
+              onChange={(v) => setFilter('category', v)}
+              options={[
+                { value: '', label: 'Any category' },
+                ...FILTERABLE_CATEGORIES.map((v) => ({ value: v, label: categoryLabel(v) })),
+              ]}
+            />
+          )}
           <FilterSelect
             label="Assignment"
             value={filters.assignedAdminId ?? ''}

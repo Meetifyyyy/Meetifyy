@@ -36,7 +36,7 @@ export class AdminDashboardService {
         where: { createdAt: { gte: startOfToday }, deletedAt: null },
       }),
       this.prisma.user.count({
-        where: { emailVerified: true, deletedAt: null },
+        where: { verificationStatus: 'VERIFIED', deletedAt: null },
       }),
       this.prisma.college.count({ where: { deletedAt: null } }),
       this.prisma.post.count({ where: { deletedAt: null } }),

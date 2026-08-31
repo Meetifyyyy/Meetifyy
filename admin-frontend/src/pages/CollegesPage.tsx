@@ -1,15 +1,22 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from '../api/apiClient';
-import { Plus, Search, X, Check, Clock } from 'lucide-react';
+import { Plus, Search, X, Check, Clock } from '../components/icons';
+import { useDebounced } from '../hooks/useDebounced';
+import { Pagination } from '../components/Pagination';
 
 export const CollegesPage: React.FC = () => {
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<'colleges' | 'requests'>('colleges');
   const [search, setSearch] = useState('');
+  // Keyed into the query below, so this is what keeps typing from issuing one
+  // request per character.
+  const debouncedSearch = useDebounced(search.trim(), 300);
   const [statusFilter, setStatusFilter] = useState('');
-  const [page] = useState(1);
+  const [page, setPage] = useState(1);
+
+  useEffect(() => { setPage(1); }, [debouncedSearch, statusFilter]);
 
   // Modal state
   const [showAddModal, setShowAddModal] = useState(false);
@@ -21,12 +28,15 @@ export const CollegesPage: React.FC = () => {
   const [state, setState] = useState('');
   const [country] = useState('India');
   const [formError, setFormError] = useState<string | null>(null);
+  // Set when the Add-College modal was opened to fulfil a student campus
+  // request. The request is only marked ADDED once the college actually exists.
+  const [fulfillingRequestId, setFulfillingRequestId] = useState<string | null>(null);
 
   const { data, isLoading } = useQuery({
-    queryKey: ['adminColleges', search, statusFilter, page],
+    queryKey: ['adminColleges', debouncedSearch, statusFilter, page],
     queryFn: () =>
       apiRequest(
-        `/admin/colleges?search=${encodeURIComponent(search)}&status=${statusFilter}&page=${page}`,
+        `/admin/colleges?search=${encodeURIComponent(debouncedSearch)}&status=${statusFilter}&page=${page}`,
       ),
   });
 
@@ -37,29 +47,28 @@ export const CollegesPage: React.FC = () => {
 
   const collegesList = data?.data || [];
   const requestsList = requestsData?.data || [];
-  const pendingRequestsCount = useMemo(
-    () => requestsList.filter((r: any) => r.status === 'PENDING').length,
-    [requestsList],
-  );
+  // From the server's own count for status=PENDING. Filtering `requestsList`
+  // only ever saw the first page of requests, so the tab badge stopped being
+  // accurate as soon as there were more than a page of them.
+  const { data: pendingRequestsData } = useQuery({
+    queryKey: ['adminCollegeRequests', 'PENDING'],
+    queryFn: () => apiRequest('/admin/colleges/requests/list?status=PENDING'),
+  });
+  const pendingRequestsCount = pendingRequestsData?.meta?.total ?? 0;
 
+  /**
+   * Directory-wide figures from `meta.counts`. Summing the rendered page made
+   * these describe 20 colleges while the cards labelled them as totals.
+   */
   const metrics = useMemo(() => {
-    let totalDomains = 0;
-    let totalStudents = 0;
-    let approvedCount = 0;
-
-    collegesList.forEach((c: any) => {
-      totalDomains += c.domains?.length || 0;
-      totalStudents += c._count?.users || 0;
-      if (c.status === 'APPROVED') approvedCount++;
-    });
-
+    const counts = data?.meta?.counts;
     return {
-      total: data?.meta?.total || collegesList.length,
-      domains: totalDomains,
-      students: totalStudents,
-      approved: approvedCount,
+      total: data?.meta?.total ?? collegesList.length,
+      domains: counts?.domains ?? 0,
+      students: counts?.students ?? 0,
+      approved: counts?.approved ?? 0,
     };
-  }, [collegesList, data?.meta?.total]);
+  }, [collegesList.length, data?.meta]);
 
   const createMutation = useMutation({
     mutationFn: (newCollege: any) =>
@@ -132,6 +141,7 @@ export const CollegesPage: React.FC = () => {
 
   const handleOpenAdd = () => {
     setEditingCollege(null);
+    setFulfillingRequestId(null);
     setName('');
     setShortName('');
     setDomainsInput('');
@@ -143,6 +153,7 @@ export const CollegesPage: React.FC = () => {
 
   const handleOpenEdit = (college: any) => {
     setEditingCollege(college);
+    setFulfillingRequestId(null);
     setName(college.name || '');
     setShortName(college.shortName || '');
     setDomainsInput(college.domains?.map((d: any) => d.domain).join(', ') || '');
@@ -152,6 +163,14 @@ export const CollegesPage: React.FC = () => {
     setShowAddModal(true);
   };
 
+  /**
+   * Approving a student request prefills the Add-College form from it.
+   *
+   * The request used to be marked ADDED here, before the admin had filled the
+   * form in — so cancelling the modal, or a failed create, left the student's
+   * request closed with no college behind it and no way to find it again. It is
+   * now marked only after the college has actually been created.
+   */
   const handleApproveRequest = (req: any) => {
     const domain = req.collegeEmail?.split('@')[1] || '';
     setEditingCollege(null);
@@ -161,13 +180,14 @@ export const CollegesPage: React.FC = () => {
     setCity('');
     setState('');
     setFormError(null);
+    setFulfillingRequestId(req.id);
     setShowAddModal(true);
-    requestStatusMutation.mutate({ id: req.id, status: 'ADDED' });
   };
 
   const handleCloseModal = () => {
     setShowAddModal(false);
     setEditingCollege(null);
+    setFulfillingRequestId(null);
     setName('');
     setShortName('');
     setDomainsInput('');
@@ -206,6 +226,12 @@ export const CollegesPage: React.FC = () => {
         await updateMutation.mutateAsync({ id: editingCollege.id, payload });
       } else {
         await createMutation.mutateAsync(payload);
+        // The college now exists, so the student request it came from can be
+        // closed out. A failure above short-circuits to catch and leaves the
+        // request PENDING for another attempt.
+        if (fulfillingRequestId) {
+          await requestStatusMutation.mutateAsync({ id: fulfillingRequestId, status: 'ADDED' });
+        }
       }
     } catch (err: any) {
       setFormError(err.message || 'Failed to save institution');
@@ -489,6 +515,15 @@ export const CollegesPage: React.FC = () => {
                 </table>
               </div>
             )}
+
+            <Pagination
+              page={page}
+              totalPages={data?.meta?.totalPages}
+              total={data?.meta?.total}
+              onChange={setPage}
+              label="colleges"
+              busy={isLoading}
+            />
           </div>
         </>
       ) : (
