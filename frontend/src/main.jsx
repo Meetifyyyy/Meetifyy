@@ -10,6 +10,7 @@ import { MediaViewerProvider } from './shared/context/MediaViewerContext';
 import { UsersMapProvider } from './shared/hooks/useUsersMap';
 import MediaViewer from './shared/components/MediaViewer/MediaViewer';
 import { config } from '@config';
+import { isNonProductionHost } from './config/deploymentEnv';
 import './styles/variables.css';
 import './styles/global.css';
 
@@ -56,13 +57,27 @@ if (typeof window !== 'undefined') {
 }
 
 // Service Worker registration
+//
+// Two independent gates decide whether a real worker may run: the build-time
+// flag (an explicit VITE_APP_ENV=production) and the hostname. Either one
+// refusing is enough. A caching worker on a Cloudflare Access-protected host
+// serves its cached shell without a network request for Access to authorize, so
+// this failing open is an access-control hole rather than a caching nuisance.
 if ('serviceWorker' in navigator) {
-  if (!config.features.enableServiceWorker) {
-    // Wherever the worker is disabled (every non-production build), tear down
-    // any existing installation AND drop its caches. Unregistering alone leaves
-    // the cached app shell on disk, and on the dev deployment that shell is
-    // what let installed PWAs keep loading the site without ever making a
-    // network request for Cloudflare Access to check.
+  const workerAllowed =
+    config.features.enableServiceWorker &&
+    !isNonProductionHost(window.location.hostname);
+
+  if (!workerAllowed) {
+    // Tear down any existing installation AND drop its caches. Unregistering
+    // alone leaves the cached app shell on disk, and on the dev deployment that
+    // shell is what let installed PWAs keep loading the site without ever making
+    // a network request for Cloudflare Access to check.
+    //
+    // This runs immediately, unlike the tombstone worker the non-production
+    // build ships, which only unregisters once every client has closed — and an
+    // installed PWA that is never fully closed would otherwise stay stale
+    // indefinitely.
     navigator.serviceWorker.getRegistrations().then(async (regs) => {
       await Promise.all(regs.map((r) => r.unregister()));
       if ('caches' in window) {
@@ -71,21 +86,83 @@ if ('serviceWorker' in navigator) {
       }
     }).catch(() => {});
   } else {
-    // Use the browser's normal service-worker lifecycle. A newly installed
-    // worker remains waiting while any tab/PWA window still uses the previous
-    // worker, then activates after those clients naturally close. This keeps an
-    // active session on one coherent precache and prevents old lazy chunks from
-    // being deleted underneath it.
-    //
-    // New sessions do not depend on worker activation for freshness: every
-    // navigation goes to the network first and HTML is `no-store`, so even the
-    // previous worker discovers the latest hashed entry assets.
     window.addEventListener('load', () => {
       navigator.serviceWorker
         .register('/sw.js', { scope: '/', updateViaCache: 'none' })
+        .then(manageWorkerUpdates)
         .catch((err) => console.warn('[SW] Registration failed:', err));
     });
   }
+}
+
+/**
+ * Adopt a new deployment without interrupting anyone.
+ *
+ * `sw.js` deliberately does not call `skipWaiting()`: activating a new worker
+ * under a running page lets Workbox delete the precache that page is still
+ * loading lazy chunks from. So a new worker waits — but with an installed PWA
+ * that is never fully closed, "waits" can mean days, and the user sits on an old
+ * build with no way forward short of a hard refresh. That is the problem this
+ * solves.
+ *
+ * The waiting worker is therefore promoted only while the page is HIDDEN, and
+ * only after it has stayed hidden long enough that the user has plainly moved
+ * on. The reload that follows happens on a page nobody is looking at, so the
+ * next time they open the app it is simply the new version — no flicker, no
+ * forced refresh, and no reload landing mid-interaction.
+ *
+ * The tradeoff, stated honestly: reloading a hidden tab discards unsaved
+ * in-page state such as a half-typed message. The grace period is what keeps
+ * that from happening to someone who merely switched tabs for a moment.
+ */
+const HIDDEN_GRACE_MS = 60_000;
+const UPDATE_POLL_MS = 30 * 60 * 1000;
+
+function manageWorkerUpdates(registration) {
+  if (!registration) return;
+
+  let waitingWorker = registration.waiting || null;
+  let hiddenSince = null;
+  let promoted = false;
+
+  const promote = () => {
+    if (promoted || !waitingWorker) return;
+    if (document.visibilityState !== 'hidden') return;
+    if (hiddenSince === null || Date.now() - hiddenSince < HIDDEN_GRACE_MS) return;
+    promoted = true;
+    waitingWorker.postMessage({ type: 'SKIP_WAITING' });
+  };
+
+  registration.addEventListener('updatefound', () => {
+    const installing = registration.installing;
+    if (!installing) return;
+    installing.addEventListener('statechange', () => {
+      // `controller` is null on the very first install; there is no previous
+      // worker to replace then, so there is nothing to promote.
+      if (installing.state === 'installed' && navigator.serviceWorker.controller) {
+        waitingWorker = installing;
+        promote();
+      }
+    });
+  });
+
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    // Only ever reached via the promotion above, which requires a hidden page.
+    if (document.visibilityState === 'hidden') window.location.reload();
+  });
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') {
+      hiddenSince = Date.now();
+      setTimeout(promote, HIDDEN_GRACE_MS);
+    } else {
+      hiddenSince = null;
+      // Returning to the app is the natural moment to look for a new build.
+      registration.update().catch(() => {});
+    }
+  });
+
+  setInterval(() => registration.update().catch(() => {}), UPDATE_POLL_MS);
 }
 
 createRoot(document.getElementById('root')).render(

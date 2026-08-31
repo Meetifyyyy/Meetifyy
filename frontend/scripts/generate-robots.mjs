@@ -21,13 +21,14 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { isProductionAppEnv } from '../src/config/deploymentEnv.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const outputPath = resolve(here, '..', 'public', 'robots.txt');
 
 const appEnv = (process.env.VITE_APP_ENV || '').trim().toLowerCase();
 const siteUrl = (process.env.VITE_SITE_URL || '').trim().replace(/\/+$/, '');
-const isProductionBuild = appEnv === 'production';
+const isProductionBuild = isProductionAppEnv(process.env.VITE_APP_ENV);
 
 // Routes that must never be indexed even on the public production site: they
 // are either private surfaces or authenticated-only, and a crawler following

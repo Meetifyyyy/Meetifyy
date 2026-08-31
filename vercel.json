@@ -4,14 +4,15 @@
   "framework": "vite",
   "redirects": [
     {
-      "source": "/(.*)",
+      "source": "/:path*",
       "has": [
         {
-          "type": "host",
+          "type": "header",
+          "key": "host",
           "value": "meetify-web.vercel.app"
         }
       ],
-      "destination": "https://dev.meetifyy.app/$1",
+      "destination": "https://dev.meetifyy.app/:path*",
       "permanent": false
     }
   ],
@@ -24,7 +25,6 @@
       "source": "/api/media/:path*",
       "destination": "https://api.meetifyy.app/api/media/:path*"
     },
-
     {
       "source": "/sw.js",
       "destination": "/sw.js"
@@ -113,7 +113,6 @@
         }
       ]
     },
-
     {
       "source": "/sw.js",
       "headers": [

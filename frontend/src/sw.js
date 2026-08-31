@@ -14,6 +14,21 @@ import { clientsClaim } from 'workbox-core';
 clientsClaim();
 cleanupOutdatedCaches();
 
+/**
+ * Take over on request, and only on request.
+ *
+ * The page promotes a waiting worker (see `manageWorkerUpdates` in main.jsx)
+ * exclusively while it is hidden and about to reload itself, so activating here
+ * cannot pull the precache out from under a page that is still loading lazy
+ * chunks from it. That is the same reason `skipWaiting()` is not called
+ * unconditionally above.
+ */
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
+});
+
 // Inject the Vite-generated precache manifest at build time
 precacheAndRoute(self.__WB_MANIFEST);
 

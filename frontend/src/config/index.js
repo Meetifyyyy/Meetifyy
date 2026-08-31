@@ -9,10 +9,21 @@
  * or the deployment's environment variables (Vercel/preview/production).
  */
 import { IS_DEV_BUILD, IS_PROD_BUILD, MODE, assertEnvValid, bool, csv, int, str, url } from './env';
+import { isProductionAppEnv } from './deploymentEnv';
 
 // APP_ENV distinguishes staging from production, which both build with
-// MODE=production. It falls back to the Vite mode everywhere else.
+// MODE=production. It falls back to the Vite mode everywhere else, so that a
+// developer running `vite` still reports "development".
 const appEnv = str('VITE_APP_ENV', { fallback: MODE });
+
+// Whether this is the PRODUCTION deployment, decided ONLY by an explicit
+// VITE_APP_ENV. Deliberately not `appEnv === 'production'`: appEnv falls back to
+// MODE, which is "production" for every built bundle, so that test called the
+// development deployment production whenever the variable was unset.
+//
+// This is the same rule vite.config.js and scripts/generate-robots.mjs already
+// used; it now lives in one place so the three cannot drift apart again.
+const isProductionDeployment = isProductionAppEnv(str('VITE_APP_ENV'));
 
 const siteUrl = url('VITE_SITE_URL');
 const apiUrl = url('VITE_API_URL', { requiredInProd: true });
@@ -30,7 +41,7 @@ const authPaths = {
 
 export const config = {
   env: appEnv,
-  isProduction: appEnv === 'production',
+  isProduction: isProductionDeployment,
   isDevBuild: IS_DEV_BUILD,
   isProdBuild: IS_PROD_BUILD,
 
@@ -124,12 +135,19 @@ export const config = {
      * wasted cache: an installed dev PWA can render its cached app shell without
      * a request for Cloudflare Access to authorize.
      *
-     * Non-production builds now ship a self-unregistering tombstone worker
-     * instead (see `scripts/generate-tombstone-sw.mjs`), so existing
+     * Non-production builds ship a self-unregistering tombstone worker instead
+     * (see `tombstoneServiceWorkerPlugin` in vite.config.js), so existing
      * installations tear themselves down rather than lingering forever.
+     *
+     * The fallback must be the EXPLICIT production test. It used to compare
+     * `appEnv`, which falls back to MODE and is therefore "production" for any
+     * built bundle — so the development deployment registered a worker while
+     * its build had correctly emitted the tombstone, and main.jsx never ran the
+     * immediate unregister-and-purge that the tombstone only performs once
+     * every client has closed.
      */
     enableServiceWorker: bool('VITE_ENABLE_SERVICE_WORKER', {
-      fallback: appEnv === 'production',
+      fallback: isProductionDeployment,
     }),
   },
 };

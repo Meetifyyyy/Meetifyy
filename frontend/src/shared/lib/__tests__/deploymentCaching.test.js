@@ -57,11 +57,39 @@ describe('service-worker update lifecycle', () => {
     expect(workerSource).not.toContain('networkTimeoutSeconds');
   });
 
-  it('does not force waiting workers to activate or reload controlled clients', () => {
-    expect(workerSource).not.toMatch(/\bself\.skipWaiting\s*\(/);
-    expect(registrationSource).not.toContain('SKIP_WAITING');
-    expect(registrationSource).not.toContain('controllerchange');
-    expect(registrationSource).not.toMatch(/location\.(reload|replace)\s*\(/);
+  /**
+   * The guarantee is that a user is never interrupted — not that a waiting
+   * worker can never be promoted. Those were the same thing while promotion was
+   * unconditional, so this used to assert the absence of skipWaiting outright.
+   *
+   * They came apart with installed PWAs: a window that is never fully closed
+   * leaves the new worker waiting indefinitely, stranding the user on an old
+   * build with no route forward except the hard refresh this whole design
+   * exists to abolish. Promotion is now allowed, but only for a page that is
+   * hidden and about to reload itself — so what is asserted here is the real
+   * invariant: nothing activates or reloads under a visible page.
+   */
+  it('promotes a waiting worker only while the page is hidden', () => {
+    // In the worker, skipWaiting must be reachable ONLY through the message
+    // handler — never called at module scope on activation. One occurrence,
+    // and it sits directly inside the SKIP_WAITING guard.
+    expect(workerSource.match(/self\.skipWaiting\s*\(/g)).toHaveLength(1);
+    expect(workerSource).toMatch(/SKIP_WAITING'\s*\)\s*\{\s*self\.skipWaiting\(\);/);
+
+    // In the page, both the promotion and the reload are gated on `hidden`.
+    expect(registrationSource).toMatch(
+      /if \(document\.visibilityState !== 'hidden'\) return;[\s\S]{0,400}?postMessage\(\{ type: 'SKIP_WAITING' \}\)/,
+    );
+    expect(registrationSource).toMatch(
+      /if \(document\.visibilityState === 'hidden'\) window\.location\.reload\(\)/,
+    );
+    // No unguarded reload anywhere.
+    expect(registrationSource).not.toMatch(/^\s*window\.location\.(reload|replace)\s*\(/m);
+  });
+
+  it('waits out a grace period so a brief tab switch never discards page state', () => {
+    expect(registrationSource).toMatch(/HIDDEN_GRACE_MS\s*=\s*60_000/);
+    expect(registrationSource).toMatch(/Date\.now\(\) - hiddenSince < HIDDEN_GRACE_MS/);
   });
 
   it('does not precache index.html but does precache hashed build assets', () => {

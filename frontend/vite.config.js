@@ -4,6 +4,7 @@ import { VitePWA } from 'vite-plugin-pwa';
 import path from 'path';
 import { visualizer } from 'rollup-plugin-visualizer';
 import { postcssHoverMedia } from './scripts/postcss-hover-media.js';
+import { isProductionAppEnv } from './src/config/deploymentEnv.js';
 
 /**
  * Emits a self-destroying `sw.js` for every non-production build.
@@ -56,7 +57,7 @@ export default defineConfig(({ mode }) => {
   //
   // A legacy caching worker on the development deployment is an access-control
   // hole because its cached shell can bypass Cloudflare Access entirely.
-  const isProductionApp = (env.VITE_APP_ENV || '').trim().toLowerCase() === 'production';
+  const isProductionApp = isProductionAppEnv(env.VITE_APP_ENV);
 
   return {
   plugins: [
