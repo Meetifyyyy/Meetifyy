@@ -112,8 +112,6 @@ export const config = {
     enableDevRoutes: IS_DEV_BUILD,
     enableDebugTools: IS_DEV_BUILD && bool('VITE_ENABLE_DEBUG_TOOLS', { fallback: true }),
     enableExperimental: bool('VITE_ENABLE_EXPERIMENTAL', { fallback: false }),
-    /** Update-check polling is pointless against a dev server. */
-    enableVersionCheck: bool('VITE_ENABLE_VERSION_CHECK', { fallback: !IS_DEV_BUILD }),
     /**
      * The PWA service worker ships in PRODUCTION BUILDS ONLY.
      *
@@ -122,12 +120,9 @@ export const config = {
      * bundle, so the previous `!IS_DEV_BUILD` fallback enabled the worker on
      * the development deployment too.
      *
-     * A service worker there is an access-control hole, not just wasted cache.
-     * The navigation route serves `/index.html` straight from the precache, so
-     * an installed dev PWA renders the whole app shell with no network request
-     * at all — and a request that is never made is a request Cloudflare Access
-     * never sees. Users who installed the dev PWA kept getting in after Access
-     * was switched on.
+     * A legacy caching service worker there is an access-control hole, not just
+     * wasted cache: an installed dev PWA can render its cached app shell without
+     * a request for Cloudflare Access to authorize.
      *
      * Non-production builds now ship a self-unregistering tombstone worker
      * instead (see `scripts/generate-tombstone-sw.mjs`), so existing

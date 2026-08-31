@@ -71,53 +71,19 @@ if ('serviceWorker' in navigator) {
       }
     }).catch(() => {});
   } else {
-    // Deliberately NO `controllerchange` -> location.reload() here.
+    // Use the browser's normal service-worker lifecycle. A newly installed
+    // worker remains waiting while any tab/PWA window still uses the previous
+    // worker, then activates after those clients naturally close. This keeps an
+    // active session on one coherent precache and prevents old lazy chunks from
+    // being deleted underneath it.
     //
-    // That listener is what made a deployment yank the page out from under
-    // whoever was using it: the new worker took over and the tab reloaded
-    // mid-session, losing scroll position, form input and open dialogs. A new
-    // worker is now allowed to take over silently, because taking over no
-    // longer changes what the running page is showing.
-    //
-    // Freshness is handled where it belongs instead: index.html is served
-    // `no-store` and the worker fetches navigations network-first, so the next
-    // load or reload picks up the newest build on its own.
-
-    // Register with updateViaCache: 'none' so the SW script itself is never
-    // answered from the HTTP cache.
+    // New sessions do not depend on worker activation for freshness: every
+    // navigation goes to the network first and HTML is `no-store`, so even the
+    // previous worker discovers the latest hashed entry assets.
     window.addEventListener('load', () => {
       navigator.serviceWorker
         .register('/sw.js', { scope: '/', updateViaCache: 'none' })
-        .then((reg) => {
-          /**
-           * Promote a waiting worker AT BOOT ONLY.
-           *
-           * This is the safe moment: the page has just loaded, so there is no
-           * user state to lose, and activation is invisible. Without it a
-           * waiting worker would sit there until every tab of the origin
-           * closed — which on an installed mobile PWA can be never, stranding
-           * the client on an old worker indefinitely.
-           */
-          if (reg.waiting) reg.waiting.postMessage({ type: 'SKIP_WAITING' });
-
-          // A worker that finishes installing LATER in this session is left
-          // waiting on purpose. It will be promoted at the next boot rather
-          // than mid-session.
-          reg.addEventListener('updatefound', () => {
-            const installing = reg.installing;
-            if (!installing) return;
-            installing.addEventListener('statechange', () => {
-              if (installing.state === 'installed' && navigator.serviceWorker.controller) {
-                window.dispatchEvent(new CustomEvent('sw:updated'));
-              }
-            });
-          });
-
-          // Check for updates immediately, then hourly.
-          reg.update();
-          setInterval(() => reg.update(), 60 * 60 * 1000);
-        })
-        .catch(() => {});
+        .catch((err) => console.warn('[SW] Registration failed:', err));
     });
   }
 }

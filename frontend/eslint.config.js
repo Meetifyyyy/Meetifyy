@@ -43,10 +43,6 @@ export default [
       globals: {
         ...globals.browser,
         ...globals.es2021,
-        // Compile-time constants substituted by Vite's `define` (vite.config.js).
-        // They exist in the bundle but never as source declarations, so no-undef
-        // needs telling about them.
-        __APP_BUILD_TIME__: 'readonly',
       },
       parserOptions: {
         ecmaFeatures: { jsx: true },

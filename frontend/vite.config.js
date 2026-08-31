@@ -2,25 +2,8 @@ import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 import path from 'path';
-import fs from 'fs';
 import { visualizer } from 'rollup-plugin-visualizer';
 import { postcssHoverMedia } from './scripts/postcss-hover-media.js';
-
-const BUILD_TIME = Date.now();
-
-function versionBuildPlugin() {
-  return {
-    name: 'version-build-plugin',
-    buildStart() {
-      const versionData = JSON.stringify({ version: BUILD_TIME, buildTime: new Date(BUILD_TIME).toISOString() });
-      const publicDir = path.resolve(__dirname, 'public');
-      if (!fs.existsSync(publicDir)) {
-        fs.mkdirSync(publicDir, { recursive: true });
-      }
-      fs.writeFileSync(path.join(publicDir, 'version.json'), versionData);
-    }
-  };
-}
 
 /**
  * Emits a self-destroying `sw.js` for every non-production build.
@@ -36,34 +19,20 @@ function versionBuildPlugin() {
  * redirected, so Cloudflare Access must be given a Bypass rule for `/sw.js`
  * on the dev hostname — otherwise the Access 302 blocks delivery of this
  * tombstone and stale installs can never be reached. `/sw.js` carries no user
- * data, so exempting it is safe. See docs/ENVIRONMENT_ISOLATION.md §2.
+ * data, so exempting only that exact path is safe.
  */
 function tombstoneServiceWorkerPlugin() {
-  const source = `// Non-production build: this worker exists only to remove itself.
-self.addEventListener('install', () => self.skipWaiting());
-
+  const source = `// Non-production build: remove the old installation only after
+// its open clients have naturally closed. Deliberately no skipWaiting or client
+// navigation: development deployments must not interrupt active sessions either.
 self.addEventListener('activate', (event) => {
   event.waitUntil((async () => {
-    // Drop every cache this origin holds, including the old precache.
     const names = await caches.keys();
-    await Promise.all(names.map((n) => caches.delete(n)));
-
+    await Promise.all(names.map((name) => caches.delete(name)));
     await self.registration.unregister();
-
-    // Reload open tabs so they leave the cached shell and hit the network,
-    // where Cloudflare Access can actually see the request.
-    const clients = await self.clients.matchAll({ type: 'window' });
-    for (const client of clients) client.navigate(client.url);
   })());
 });
-
-// Until the activate step finishes, force everything to the network so no
-// response can still be served out of the old cache.
-self.addEventListener('fetch', (event) => {
-  event.respondWith(fetch(event.request));
-});
 `;
-
   return {
     name: 'tombstone-service-worker',
     apply: 'build',
@@ -85,24 +54,17 @@ export default defineConfig(({ mode }) => {
   // opt-in: anything that is not exactly "production" gets the tombstone worker
   // instead, so a missing or misspelled VITE_APP_ENV fails to the safe side.
   //
-  // A caching worker on the development deployment is an access-control hole:
-  // its navigation route serves /index.html from the precache with no network
-  // request, and a request that is never made is one Cloudflare Access never
-  // sees. See scripts/generate-tombstone-sw.mjs.
+  // A legacy caching worker on the development deployment is an access-control
+  // hole because its cached shell can bypass Cloudflare Access entirely.
   const isProductionApp = (env.VITE_APP_ENV || '').trim().toLowerCase() === 'production';
 
   return {
-  define: {
-    __APP_BUILD_TIME__: BUILD_TIME
-  },
   plugins: [
-    versionBuildPlugin(),
     react(),
     ...(isProductionApp ? [VitePWA({
       strategies: 'injectManifest',
       srcDir: 'src',
       filename: 'sw.js',
-      registerType: 'autoUpdate',
       injectRegister: false,
       includeAssets: ['favicon.png', 'logo-192.png', 'logo-512.png', 'logo-192-maskable.png', 'logo-512-maskable.png'],
       manifest: {
@@ -154,12 +116,12 @@ export default defineConfig(({ mode }) => {
       },
       injectManifest: {
         maximumFileSizeToCacheInBytes: 10485760, // 10 MiB limit
-        globPatterns: ['**/*.{js,css,html,png,webp,svg,woff2}'],
+        globPatterns: ['**/*.{js,css,png,webp,svg,woff2}'],
         // The iOS startup images are read by Safari at launch, one per device,
         // straight from the network or the HTTP cache — never through the
         // worker. Precaching all fifteen would add ~1.2 MB to every install to
         // hold fourteen images that device will never request.
-        globIgnores: ['**/version.json', '**/stats.html', 'splash/**'],
+        globIgnores: ['**/stats.html', 'splash/**'],
       },
     })] : [tombstoneServiceWorkerPlugin()]),
     visualizer({ open: false, filename: 'stats.html', gzipSize: true, brotliSize: true })

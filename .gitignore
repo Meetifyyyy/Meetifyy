@@ -226,15 +226,6 @@ test_svc.ts
 # Mailpit binary (dev-only, not committed)
 local/bin/mailpit
 
-# ------------------------------------------------------------------------------
-# 13. Generated Build Metadata
-# ------------------------------------------------------------------------------
-# `versionBuildPlugin` in frontend/vite.config.js rewrites version.json on every
-# `buildStart`, so it changes on each build and conflicts on every merge while
-# carrying no information a build cannot regenerate. It is currently TRACKED —
-# this rule only stops it coming back after `git rm --cached`.
-frontend/public/version.json
-**/public/version.json
 
 # vite-plugin-pwa's development output. Named dev-dist, so the dist/ rules above
 # do not cover it.
