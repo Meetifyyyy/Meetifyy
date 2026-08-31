@@ -15,6 +15,7 @@ import { DomainValidatorService } from '../common/services/domain-validator.serv
 import { RedisService } from '../redis/redis.service';
 import { LruCache } from '../common/utils/lru-cache.util';
 import { validateBirthday } from '../common/utils/birthday-validation.util';
+import type { AuthenticatedUser } from '../common/types/authenticated-request';
 
 /**
  * Bounded LRU cache for auth sync results.
@@ -33,6 +34,72 @@ export function clearAuthSyncCache(userId?: string) {
   } else {
     syncCache.clear();
   }
+}
+
+/**
+ * One row of the profile bootstrap query below.
+ *
+ * `$queryRaw` is untyped by construction, so this restates the SELECT's column
+ * list. It is the shape the whole sync path reads from — the aliases
+ * (`college_id`, `settings_id`) and the JSON_AGG arrays included — and keeping
+ * it next to the query is what makes a column rename show up as a type error
+ * rather than as `undefined` at runtime.
+ */
+interface ProfileRow {
+  id: string;
+  username: string | null;
+  displayName: string | null;
+  email: string | null;
+  bio: string | null;
+  course: string | null;
+  branch: string | null;
+  passingYear: number | null;
+  location: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  avatar: string | null;
+  avatarMediaId: string | null;
+  collegeEmail: string | null;
+  collegeId: string | null;
+  cover: string | null;
+  coverMediaId: string | null;
+  verificationStatus: string | null;
+  birthday: Date | null;
+  interests: string[] | null;
+  profileCompleted: boolean | null;
+  accountStatus: string | null;
+  deletedAt: Date | null;
+  role: string | null;
+  canPost: boolean | null;
+  canMessage: boolean | null;
+  canActivity: boolean | null;
+  isCampusRep: boolean | null;
+  college_id: string | null;
+  college_name: string | null;
+  settings_id: string | null;
+  emailNotifs: boolean | null;
+  pushNotifs: boolean | null;
+  privateProfile: boolean | null;
+  showOnlineStatus: boolean | null;
+  showLastSeen: boolean | null;
+  whoCanSeeOnline: string | null;
+  whoCanSeeLastSeen: string | null;
+  readReceipts: boolean | null;
+  followingList: string[] | null;
+  followersList: string[] | null;
+  postBookmarkIds: string[] | null;
+  activityBookmarkIds: string[] | null;
+  unreadNotifCount: number | null;
+}
+
+/**
+ * `user_metadata` is arbitrary JSON supplied by the identity provider, so a
+ * value read from it is only usable once it has actually been checked to be a
+ * non-empty string. Several of these flowed straight into the database — and
+ * `birthday` into validateBirthday — without that check.
+ */
+function metaString(value: unknown): string | null {
+  return typeof value === 'string' && value.trim().length > 0 ? value : null;
 }
 
 @Injectable()
@@ -55,7 +122,7 @@ export class AuthService {
     @Optional() private readonly redisService?: RedisService,
   ) {}
 
-  async syncProfile(user: any) {
+  async syncProfile(user: AuthenticatedUser) {
     if (!this.supabaseService.isConfigured) {
       throw new UnauthorizedException('Supabase is not configured');
     }
@@ -78,8 +145,8 @@ export class AuthService {
     return promise;
   }
 
-  private async _doSyncProfile(user: any) {
-    const rows: any[] = await this.prisma.$queryRaw`
+  private async _doSyncProfile(user: AuthenticatedUser) {
+    const rows = await this.prisma.$queryRaw<ProfileRow[]>`
       SELECT 
         u."id",
         u."username",
@@ -103,6 +170,7 @@ export class AuthService {
         u."interests",
         u."profileCompleted",
         u."accountStatus",
+        u."deletedAt",
         u."role",
         u."canPost",
         u."canMessage",
@@ -175,7 +243,7 @@ export class AuthService {
       // Perform domain lookup for college auto-linking, but DO NOT block existing accounts
       // if their domain was later deactivated/removed from admin portal.
       const domainCheck = await this.domainValidatorService.validateDomain(
-        row.email,
+        row.email ?? '',
       );
       if (!domainCheck.isValid) {
         this.logger.log(
@@ -250,7 +318,7 @@ export class AuthService {
 
           if (isRandomUsername) {
             const candidate =
-              meta.username ||
+              metaString(meta.username) ||
               (row.email && !row.email.endsWith('@meetifyy.user')
                 ? row.email.split('@')[0]
                 : null) ||
@@ -278,9 +346,9 @@ export class AuthService {
 
           if (isRandomDisplayName || healDisplayName === row.username) {
             const rawTargetName =
-              meta.displayName ||
-              (meta.firstName
-                ? `${meta.firstName} ${meta.lastName || ''}`.trim()
+              metaString(meta.displayName) ||
+              (metaString(meta.firstName)
+                ? `${metaString(meta.firstName)} ${metaString(meta.lastName) ?? ''}`.trim()
                 : null) ||
               (healUsername && !healUsername.startsWith('user_')
                 ? healUsername
@@ -306,8 +374,10 @@ export class AuthService {
             await this.prisma.user.update({
               where: { id: row.id },
               data: {
-                username: healUsername,
-                displayName: healDisplayName,
+                ...(healUsername !== null ? { username: healUsername } : {}),
+                ...(healDisplayName !== null
+                  ? { displayName: healDisplayName }
+                  : {}),
               },
             });
             row.username = healUsername;
@@ -428,7 +498,7 @@ export class AuthService {
     }
 
     const rawUsername =
-      sbUser.user_metadata?.username ||
+      metaString(sbUser.user_metadata?.username) ||
       sbUser.email?.split('@')[0] ||
       `user_${user.id.slice(0, 8)}`;
     let username = rawUsername
@@ -440,10 +510,11 @@ export class AuthService {
     }
     username = username.slice(0, 30);
 
+    const metaFirstName = metaString(sbUser.user_metadata?.firstName);
     const displayName =
-      sbUser.user_metadata?.displayName ||
-      (sbUser.user_metadata?.firstName
-        ? `${sbUser.user_metadata.firstName} ${sbUser.user_metadata.lastName || ''}`.trim()
+      metaString(sbUser.user_metadata?.displayName) ??
+      (metaFirstName
+        ? `${metaFirstName} ${metaString(sbUser.user_metadata?.lastName) ?? ''}`.trim()
         : username);
 
     const email = sbUser.email || '';
@@ -493,7 +564,7 @@ export class AuthService {
       finalUsername = `${username}_${Math.floor(100 + Math.random() * 900)}`;
     }
 
-    const userBirthday = sbUser.user_metadata?.birthday;
+    const userBirthday = metaString(sbUser.user_metadata?.birthday);
     if (!userBirthday) {
       this.logger.warn(
         `Account creation rejected for ${email}: Date of birth is required.`,
@@ -519,7 +590,7 @@ export class AuthService {
           // onto the row. Cover starts as null — the frontend renders the
           // theme-aware empty cover state via CSS (--empty-cover-bg).
           avatar:
-            sbUser.user_metadata?.avatar ||
+            metaString(sbUser.user_metadata?.avatar) ??
             this.defaultAssets.refFor('profile-avatar'),
           cover: null,
           collegeId: collegeId,
