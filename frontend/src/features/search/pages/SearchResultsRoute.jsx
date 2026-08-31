@@ -27,7 +27,10 @@ const QUICK_CHIPS = [
   { id: 'posts', label: 'Posts', Icon: FileText },
 ];
 
-import { getDefaultActivityCover as getDefaultCover } from '@shared/utils/activityCover';
+import {
+  DEFAULT_ACTIVITY_COVERS,
+  getDefaultActivityCover as getDefaultCover,
+} from '@shared/utils/activityCover';
 
 
 function formatDateTime(activity) {
@@ -174,7 +177,7 @@ const ActivityRow = React.memo(function ActivityRow({ data, storeActivity, users
             className={styles.activityCoverImg}
             loading="lazy"
             decoding="async"
-            onError={(e) => { e.target.onerror = null; e.target.src = DEFAULT_COVERS[0]; }}
+            onError={(e) => { e.target.onerror = null; e.target.src = DEFAULT_ACTIVITY_COVERS[0]; }}
           />
         )}
       </div>

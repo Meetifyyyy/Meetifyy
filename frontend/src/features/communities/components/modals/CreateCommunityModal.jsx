@@ -113,10 +113,6 @@ export default function CreateCommunityModal({ onClose, onCreated, isCampusCommu
     }
   }, [currentUser?.verificationStatus, onClose]);
 
-  if (currentUser?.verificationStatus !== 'VERIFIED') {
-    return null;
-  }
-
   const [name, setName] = useState('');
   const [desc, setDesc] = useState('');
   const [selectedCat, setSelectedCat] = useState(null);
@@ -249,6 +245,16 @@ export default function CreateCommunityModal({ onClose, onCreated, isCampusCommu
       return { w: 150, h: 150 / aspect };
     }
   }, [imageSize]);
+
+  // Unverified users get nothing — but this bail-out has to sit BELOW every
+  // hook. It used to run before the useState calls, so the moment
+  // verificationStatus flipped, the render went from ~11 hooks to 0 and React
+  // threw "Rendered fewer hooks than expected", taking the tree down. The
+  // accompanying effect above still closes the modal and prompts for
+  // verification; this only decides what gets painted.
+  if (currentUser?.verificationStatus !== 'VERIFIED') {
+    return null;
+  }
 
   // Export File Blob from canvas
   const getCroppedAvatarFile = () => {

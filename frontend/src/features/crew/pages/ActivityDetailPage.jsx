@@ -64,7 +64,10 @@ function LockIcon() {
   );
 }
 
-import { getDefaultActivityCover as getDefaultCover } from '@shared/utils/activityCover';
+import {
+  DEFAULT_ACTIVITY_COVERS,
+  getDefaultActivityCover as getDefaultCover,
+} from '@shared/utils/activityCover';
 
 
 function formatDateTime(activity) {
@@ -376,6 +379,15 @@ export default function ActivityDetailPage() {
   };
 
 
+  // Hoisted above the early returns below: as a hook it must run on every
+  // render, and it previously sat after them.
+  useEffect(() => {
+    if (currentUser && currentUser.verificationStatus !== 'VERIFIED') {
+      openVerificationModal('Verify your account to view activity details.');
+      navigate('/crew', { replace: true });
+    }
+  }, [currentUser, navigate]);
+
   if (isAccessDenied) {
     const denied = ACCESS_DENIED_COPY[accessDeniedCode] || ACCESS_DENIED_COPY.DEFAULT;
     return (
@@ -476,12 +488,6 @@ export default function ActivityDetailPage() {
   const coverColor = activity?.coverColor || null;
   const coverImgUrl = activity?.coverImage ? getMediaUrl(activity.coverImage) : getDefaultCover(title || cleanId);
 
-  useEffect(() => {
-    if (currentUser && currentUser.verificationStatus !== 'VERIFIED') {
-      openVerificationModal('Verify your account to view activity details.');
-      navigate('/crew', { replace: true });
-    }
-  }, [currentUser, navigate]);
 
   if (currentUser?.verificationStatus !== 'VERIFIED') {
     return null;
@@ -500,7 +506,7 @@ export default function ActivityDetailPage() {
               className={styles.ambientImg} 
               onError={(e) => {
                 e.target.onerror = null;
-                e.target.src = DEFAULT_COVERS[0];
+                e.target.src = DEFAULT_ACTIVITY_COVERS[0];
               }}
             />
           )}
@@ -572,7 +578,7 @@ export default function ActivityDetailPage() {
                     className={styles.coverImg} 
                     onError={(e) => {
                       e.target.onerror = null;
-                      e.target.src = DEFAULT_COVERS[0];
+                      e.target.src = DEFAULT_ACTIVITY_COVERS[0];
                     }}
                   />
                 )}

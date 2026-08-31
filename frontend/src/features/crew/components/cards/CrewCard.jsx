@@ -15,7 +15,10 @@ import { Bookmark } from '@shared/components/icons';
 
 import { useAuth } from '@shared/context/AuthContext';
 import { openVerificationModal } from '@shared/stores/verificationModalStore';
-import { getDefaultActivityCover as getDefaultCover } from '@shared/utils/activityCover';
+import {
+  DEFAULT_ACTIVITY_COVERS,
+  getDefaultActivityCover as getDefaultCover,
+} from '@shared/utils/activityCover';
 
 
 function formatDateTime(activity) {
@@ -215,7 +218,7 @@ function CrewCard({ activity, onClick, onMouseEnter }) {
             className={styles.coverImg} 
             onError={(e) => {
               e.target.onerror = null;
-              e.target.src = DEFAULT_COVERS[0];
+              e.target.src = DEFAULT_ACTIVITY_COVERS[0];
             }}
           />
         )}

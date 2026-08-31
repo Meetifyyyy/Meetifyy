@@ -14,7 +14,10 @@ import { usersApi, activitiesApi, getMediaUrl } from '@shared/api/apiClient';
 import { useAuth } from '@shared/context/AuthContext';
 import { useUsersMap } from '@shared/hooks/useUsersMap';
 import { useCrewActivities } from '@shared/hooks/useCrew';
-import { getDefaultActivityCover } from '@shared/utils/activityCover';
+import {
+  DEFAULT_ACTIVITY_COVERS,
+  getDefaultActivityCover,
+} from '@shared/utils/activityCover';
 
 export default function RightPanel({ children, className = '' }) {
   return <aside className={`${styles.rightPanel} ${className}`.trim()}>{children}</aside>;
