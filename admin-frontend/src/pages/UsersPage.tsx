@@ -1,7 +1,9 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiRequest, getMediaUrl } from '../api/apiClient';
-import { Search, X } from 'lucide-react';
+import { Search, X } from '../components/icons';
+import { useDebounced } from '../hooks/useDebounced';
+import { Pagination } from '../components/Pagination';
 
 const UserAvatar: React.FC<{ user: any }> = ({ user }) => {
   const [imgError, setImgError] = useState(false);
@@ -52,40 +54,73 @@ const UserAvatar: React.FC<{ user: any }> = ({ user }) => {
   );
 };
 
+/**
+ * Identity-verification state, shown for every user.
+ *
+ * This replaces a flag that tracked email confirmation separately. Supabase
+ * already refuses to create an account without a confirmed email, so that flag
+ * was true of everyone by construction and only ever read `false` because
+ * nothing populated it. The status below is the one that actually gates
+ * messaging and communities, so it is the one worth showing here.
+ */
+const VerificationLabel: React.FC<{ status?: string }> = ({ status }) => {
+  const styles: Record<string, { label: string; color: string; weight: number }> = {
+    VERIFIED: { label: '\u2713 Verified', color: 'var(--color-success)', weight: 600 },
+    PENDING: { label: 'Pending review', color: 'var(--color-warning)', weight: 600 },
+    REJECTED: { label: 'Rejected', color: 'var(--color-danger)', weight: 600 },
+    RESUBMISSION_REQUIRED: { label: 'Resubmission needed', color: 'var(--color-warning)', weight: 600 },
+  };
+  const shown = styles[status ?? ''] ?? {
+    label: 'Unverified',
+    color: 'var(--color-text-dim)',
+    weight: 400,
+  };
+
+  return (
+    <span style={{ fontSize: '0.7rem', fontWeight: shown.weight, color: shown.color }}>
+      {shown.label}
+    </span>
+  );
+};
+
 export const UsersPage: React.FC = () => {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
+  // The query is keyed on this, so debouncing is what stops one request per
+  // keystroke from being sent to the users endpoint.
+  const debouncedSearch = useDebounced(search.trim(), 300);
   const [statusFilter, setStatusFilter] = useState('');
-  const [page] = useState(1);
+  const [page, setPage] = useState(1);
+
+  // Any change to what is being filtered invalidates the current page number.
+  useEffect(() => { setPage(1); }, [debouncedSearch, statusFilter]);
 
   const { data, isLoading } = useQuery({
-    queryKey: ['adminUsers', search, statusFilter, page],
+    queryKey: ['adminUsers', debouncedSearch, statusFilter, page],
     queryFn: () =>
       apiRequest(
-        `/admin/users?search=${encodeURIComponent(search)}&accountStatus=${statusFilter}&page=${page}`,
+        `/admin/users?search=${encodeURIComponent(debouncedSearch)}&accountStatus=${statusFilter}&page=${page}`,
       ),
   });
 
   const usersList = data?.data || [];
 
+  /**
+   * Counts for the whole filtered set, served in `meta.counts`.
+   *
+   * These used to be tallied from `usersList`, which is one page — so the cards
+   * described the 20 rows on screen while being labelled as totals. The
+   * fallbacks keep the row rendering during the first load.
+   */
   const metrics = useMemo(() => {
-    let active = 0;
-    let verified = 0;
-    let suspendedBanned = 0;
-
-    usersList.forEach((u: any) => {
-      if (u.accountStatus === 'ACTIVE') active++;
-      if (u.accountStatus === 'SUSPENDED' || u.accountStatus === 'BANNED') suspendedBanned++;
-      if (u.emailVerified) verified++;
-    });
-
+    const counts = data?.meta?.counts;
     return {
-      total: data?.meta?.total || usersList.length,
-      active,
-      verified,
-      suspendedBanned,
+      total: data?.meta?.total ?? usersList.length,
+      active: counts?.active ?? 0,
+      verified: counts?.verified ?? 0,
+      suspendedBanned: counts?.suspendedOrBanned ?? 0,
     };
-  }, [usersList, data?.meta?.total]);
+  }, [usersList.length, data?.meta]);
 
   const suspendMutation = useMutation({
     mutationFn: (id: string) => apiRequest(`/admin/users/${id}/suspend`, { method: 'POST' }),
@@ -107,11 +142,6 @@ export const UsersPage: React.FC = () => {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['adminUsers'] }),
   });
 
-  const verifyEmailMutation = useMutation({
-    mutationFn: (id: string) => apiRequest(`/admin/users/${id}/verify-email`, { method: 'POST' }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['adminUsers'] }),
-  });
-
   const resetCollegeMutation = useMutation({
     mutationFn: (id: string) => apiRequest(`/admin/users/${id}/reset-college`, { method: 'POST' }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['adminUsers'] }),
@@ -122,7 +152,7 @@ export const UsersPage: React.FC = () => {
       <div className="page-header">
         <div>
           <h2 className="page-title">Users & Accounts</h2>
-          <p className="page-subtitle">User profiles, email verifications, and account statuses.</p>
+          <p className="page-subtitle">User profiles, identity verification, and account statuses.</p>
         </div>
       </div>
 
@@ -139,7 +169,7 @@ export const UsersPage: React.FC = () => {
         </div>
 
         <div className="glass-panel" style={{ padding: '0.85rem 1rem' }}>
-          <div style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--color-text-light)', textTransform: 'uppercase' }}>Verified Emails</div>
+          <div style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--color-text-light)', textTransform: 'uppercase' }}>Verified Students</div>
           <div style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--color-text-main)', marginTop: '0.15rem' }}>{metrics.verified}</div>
         </div>
 
@@ -227,11 +257,7 @@ export const UsersPage: React.FC = () => {
 
                     <td>
                       <div style={{ fontSize: '0.82rem', color: 'var(--color-text-main)', fontWeight: 500 }}>{u.email}</div>
-                      {u.emailVerified ? (
-                        <span style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--color-success)' }}>✓ Verified</span>
-                      ) : (
-                        <span style={{ fontSize: '0.7rem', color: 'var(--color-text-dim)' }}>Unverified</span>
-                      )}
+                      <VerificationLabel status={u.verificationStatus} />
                     </td>
 
                     <td style={{ fontSize: '0.82rem', color: 'var(--color-text-muted)' }}>
@@ -269,16 +295,6 @@ export const UsersPage: React.FC = () => {
                             style={{ padding: '0.3rem 0.6rem', fontSize: '0.75rem', color: 'var(--color-success)' }}
                           >
                             Unsuspend
-                          </button>
-                        )}
-
-                        {!u.emailVerified && (
-                          <button
-                            onClick={() => verifyEmailMutation.mutate(u.id)}
-                            className="btn-secondary"
-                            style={{ padding: '0.3rem 0.6rem', fontSize: '0.75rem', color: 'var(--color-primary)' }}
-                          >
-                            Verify
                           </button>
                         )}
 
@@ -329,6 +345,15 @@ export const UsersPage: React.FC = () => {
             </table>
           </div>
         )}
+
+        <Pagination
+          page={page}
+          totalPages={data?.meta?.totalPages}
+          total={data?.meta?.total}
+          onChange={setPage}
+          label="users"
+          busy={isLoading}
+        />
       </div>
     </div>
   );

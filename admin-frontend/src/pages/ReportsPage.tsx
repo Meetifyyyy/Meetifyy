@@ -1,21 +1,26 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from '../api/apiClient';
-import { Eye, X } from 'lucide-react';
+import { Eye, X } from '../components/icons';
+import { Pagination } from '../components/Pagination';
 
 export const ReportsPage: React.FC = () => {
   const queryClient = useQueryClient();
   const [statusFilter, setStatusFilter] = useState('PENDING');
   const [priorityFilter, setPriorityFilter] = useState('');
+  // The endpoint paginates at 20; without this the queue could only ever show
+  // the first 20 reports, with no way to reach the rest.
+  const [page, setPage] = useState(1);
+  useEffect(() => { setPage(1); }, [statusFilter, priorityFilter]);
   const [selectedReport, setSelectedReport] = useState<any | null>(null);
   const [internalNotes, setInternalNotes] = useState('');
   const [resolution, setResolution] = useState('');
 
   const { data, isLoading } = useQuery({
-    queryKey: ['adminReports', statusFilter, priorityFilter],
+    queryKey: ['adminReports', statusFilter, priorityFilter, page],
     queryFn: () =>
       apiRequest(
-        `/admin/reports?status=${statusFilter}&priority=${priorityFilter}`,
+        `/admin/reports?status=${statusFilter}&priority=${priorityFilter}&page=${page}`,
       ),
   });
 
@@ -136,6 +141,15 @@ export const ReportsPage: React.FC = () => {
             </table>
           </div>
         )}
+
+        <Pagination
+          page={page}
+          totalPages={data?.meta?.totalPages}
+          total={data?.meta?.total}
+          onChange={setPage}
+          label="reports"
+          busy={isLoading}
+        />
       </div>
 
       {/* RESOLUTION MODAL */}
