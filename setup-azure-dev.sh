@@ -86,6 +86,10 @@ R2_ACCESS_KEY_ID=$(get_env R2_ACCESS_KEY_ID)
 R2_SECRET_ACCESS_KEY=$(get_env R2_SECRET_ACCESS_KEY)
 R2_ACCOUNT_ID=$(get_env R2_ACCOUNT_ID)
 R2_BUCKET_NAME=$(get_env R2_BUCKET_NAME)
+# Private bucket for verification documents. Optional: unset falls back to
+# R2_BUCKET_NAME, which is the pre-existing behaviour. Only set it once the
+# bucket actually exists — pointing at a missing bucket breaks uploads.
+R2_VERIFICATION_BUCKET_NAME=$(get_env R2_VERIFICATION_BUCKET_NAME)
 R2_PUBLIC_URL=$(get_env R2_PUBLIC_URL)
 SENTRY_DSN=$(get_env SENTRY_DSN)
 
@@ -118,6 +122,7 @@ az containerapp create \
     STORAGE_PROVIDER=r2 \
     R2_ACCOUNT_ID="$R2_ACCOUNT_ID" \
     R2_BUCKET_NAME="$R2_BUCKET_NAME" \
+    R2_VERIFICATION_BUCKET_NAME="$R2_VERIFICATION_BUCKET_NAME" \
     R2_PUBLIC_URL="$R2_PUBLIC_URL" \
     REDIS_QUEUE_PREFIX="bull:development" \
     SENTRY_TRACES_SAMPLE_RATE="0.2" \
