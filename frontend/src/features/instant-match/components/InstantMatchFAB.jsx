@@ -95,8 +95,9 @@ export default function InstantMatchFAB() {
   } = useInstantMatch();
   const location = useLocation();
 
-  if (!isVerified) return null;
-
+  // Bail-out deliberately deferred: useCountdownProgress runs below, and
+  // returning here changed the hook count between renders. The countdown is
+  // fed null while unverified, so it stays inert either way.
   const state = STATE_CONFIG[buttonState] ? buttonState : 'idle';
   const config = STATE_CONFIG[state];
 
@@ -109,7 +110,11 @@ export default function InstantMatchFAB() {
   // show: the 24 hours the chat stays open. It closes on itself as that
   // window runs down.
   const showRing = state === 'matched' && Boolean(matchCountdown);
-  const remaining = useCountdownProgress(showRing ? matchCountdown : null);
+  const remaining = useCountdownProgress(
+    isVerified && showRing ? matchCountdown : null,
+  );
+
+  if (!isVerified) return null;
   // Matched drops the label entirely — the glyph plus the ring say it, and
   // the word competed with both.
   const showTag = state !== 'matched';

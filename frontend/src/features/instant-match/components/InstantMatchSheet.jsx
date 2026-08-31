@@ -38,7 +38,11 @@ export default function InstantMatchSheet() {
   const sheetRef = useRef(null);
   const titleId = useId();
 
-  if (!isVerified || !sheetOpen) return null;
+  // Not an early return: seven hooks follow, and bailing out here changed the
+  // hook count between renders. The bail-out now lives below them (see the
+  // `sheetActive` guard further down); every open-state hook keys on this flag
+  // so an unverified user still locks nothing and traps nothing.
+  const sheetActive = isVerified && sheetOpen;
 
   const activity = getActivity(formData.activity);
   const activityNeedsDetails = Boolean(ACTIVITY_DETAILS_CONFIG[formData.activity]);
@@ -51,8 +55,8 @@ export default function InstantMatchSheet() {
   const showingMatched = panel === 'matched';
   const showingEnded = panel === 'ended';
 
-  useScrollLock(sheetOpen);
-  useFocusTrap(sheetRef, sheetOpen, closeSheet);
+  useScrollLock(sheetActive);
+  useFocusTrap(sheetRef, sheetActive, closeSheet);
 
   /**
    * Back walks out of the form one step at a time, then closes the sheet.
@@ -75,7 +79,7 @@ export default function InstantMatchSheet() {
    * properly and its scroll lock is released by its own cleanup.
    */
   const handleSheetBack = useCallback(() => {
-    if (!sheetOpen) return false;
+    if (!sheetActive) return false;
     const showingResult =
       status === 'searching' || step === STEP_SEARCHING ||
       Boolean(chat) || Boolean(recentMatch);
@@ -84,9 +88,9 @@ export default function InstantMatchSheet() {
     if (step === STEP_LOCATION && !ACTIVITY_DETAILS_CONFIG[formData.activity]) setStep(STEP_TIME);
     else setStep(Math.max(STEP_ACTIVITY, step - 1));
     return true;
-  }, [sheetOpen, status, step, chat, recentMatch, formData.activity, setStep]);
+  }, [sheetActive, status, step, chat, recentMatch, formData.activity, setStep]);
 
-  useOverlayBack(sheetOpen, closeSheet, { onBack: handleSheetBack });
+  useOverlayBack(sheetActive, closeSheet, { onBack: handleSheetBack });
 
   // The steps differ a lot in height; animate between them so the sheet
   // grows and shrinks instead of snapping.
@@ -99,7 +103,7 @@ export default function InstantMatchSheet() {
     if (error && errorRef.current) errorRef.current.focus({ preventScroll: true });
   }, [error]);
 
-  if (!sheetOpen) return null;
+  if (!sheetActive) return null;
 
   // The whole sheet is tinted by the chosen activity, so the flow visibly
   // becomes "your" search as you fill it in. Both themes' values are passed
