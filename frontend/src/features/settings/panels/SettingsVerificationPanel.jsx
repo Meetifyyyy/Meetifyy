@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useAuth } from '@shared/context/AuthContext';
 import { showToast } from '@shared/utils/toast';
-import { Upload, Loader2, CheckCircle2, AlertCircle } from '@shared/components/icons';
+import { Upload, Clock, CheckCircle2, AlertCircle } from '@shared/components/icons';
 import { apiClient } from '@shared/api/apiClient';
 import styles from '../pages/SettingsRoute.module.css';
 import { VERIFICATION_ALLOWED_TYPES } from '@shared/constants/mediaLimits';
@@ -217,7 +217,7 @@ export default function SettingsVerificationPanel() {
 
         {isUnderReview && (
           <div style={{ background: 'rgba(234, 179, 8, 0.1)', border: '1px solid rgba(234, 179, 8, 0.2)', padding: '1rem', borderRadius: '12px', display: 'flex', gap: '0.75rem', alignItems: 'flex-start', marginTop: '1rem' }}>
-            <Loader2 size={20} color="#eab308" style={{ flexShrink: 0, marginTop: '2px' }} className="spinner" />
+            <Clock size={20} color="#eab308" style={{ flexShrink: 0, marginTop: '2px' }} />
             <div>
               <p style={{ color: 'var(--color-text)', fontWeight: 500 }}>Verification in review</p>
               <p style={{ color: 'var(--color-text-light)', fontSize: '0.875rem', marginTop: '0.25rem' }}>
@@ -234,8 +234,7 @@ export default function SettingsVerificationPanel() {
         )}
 
         {verificationLoading && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginTop: '1rem', color: 'var(--color-text-light)', fontSize: '0.875rem' }}>
-            <Loader2 size={16} className="spinner" />
+          <div style={{ marginTop: '1rem', color: 'var(--color-text-light)', fontSize: '0.875rem' }}>
             <span>Checking your verification status…</span>
           </div>
         )}
@@ -324,7 +323,11 @@ export default function SettingsVerificationPanel() {
             }}>
               {isSubmitting ? (
                 <>
-                  <Loader2 size={18} className="spinner" />
+                  <span
+                    className="spinner"
+                    style={{ width: 18, height: 18, borderWidth: 2 }}
+                    aria-hidden="true"
+                  />
                   <span>{stage || 'Submitting…'}</span>
                 </>
               ) : (
