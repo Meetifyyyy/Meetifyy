@@ -51,7 +51,11 @@ describe('VerificationController — routing', () => {
       .post('/api/verification/request')
       .send({ selfieMediaId: 'm1', idCardMediaId: 'm2' })
       .expect(201);
-    expect(service.submitVerification).toHaveBeenCalledWith('user-1', 'm1', 'm2');
+    expect(service.submitVerification).toHaveBeenCalledWith(
+      'user-1',
+      'm1',
+      'm2',
+    );
   });
 
   it('serves status under the same api/ prefix', async () => {

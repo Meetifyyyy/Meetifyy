@@ -10,14 +10,12 @@ import { CloudflareR2Provider } from './providers/cloudflare-r2.provider';
  * routing and the cache directive; provisioning the bucket is an operator step.
  */
 describe('verification bucket routing', () => {
-  const bucketFor = (provider: any, key: string) =>
-    (provider as any).bucketFor(key);
+  const bucketFor = (provider: any, key: string) => provider.bucketFor(key);
 
   const build = (verificationBucket: string) => {
     const provider = Object.create(CloudflareR2Provider.prototype);
-    (provider as any).bucketName = 'meetifyy-media';
-    (provider as any).verificationBucketName =
-      verificationBucket || 'meetifyy-media';
+    provider.bucketName = 'meetifyy-media';
+    provider.verificationBucketName = verificationBucket || 'meetifyy-media';
     return provider;
   };
 
@@ -41,14 +39,14 @@ describe('verification bucket routing', () => {
 
   it('refuses a copy that would cross the bucket boundary', async () => {
     const p = build('meetifyy-verification');
-    (p as any).isConfigured = true;
-    (p as any).s3 = { send: jest.fn() };
-    (p as any).logger = { error: jest.fn() };
+    p.isConfigured = true;
+    p.s3 = { send: jest.fn() };
+    p.logger = { error: jest.fn() };
 
     await expect(
       p.copy('verification/doc.webp', 'posts/leaked.webp'),
     ).resolves.toBe(false);
     // Nothing was sent — the refusal happens before the request is built.
-    expect((p as any).s3.send).not.toHaveBeenCalled();
+    expect(p.s3.send).not.toHaveBeenCalled();
   });
 });

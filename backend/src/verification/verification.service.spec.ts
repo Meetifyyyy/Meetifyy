@@ -79,7 +79,9 @@ describe('VerificationService', () => {
       mockPrisma.media.findUnique.mockImplementation(async ({ where }: any) =>
         where.id === selfieId ? null : goodDoc(where.id),
       );
-      await expect(service.submitVerification(userId, selfieId, idCardId)).rejects.toThrow('Invalid selfie');
+      await expect(
+        service.submitVerification(userId, selfieId, idCardId),
+      ).rejects.toThrow('Invalid selfie');
     });
 
     it('should throw BadRequestException if selfie belongs to someone else', async () => {
@@ -88,23 +90,29 @@ describe('VerificationService', () => {
           ? { ...goodDoc(where.id), ownerId: 'other-user' }
           : goodDoc(where.id),
       );
-      await expect(service.submitVerification(userId, selfieId, idCardId)).rejects.toThrow('Invalid selfie');
+      await expect(
+        service.submitVerification(userId, selfieId, idCardId),
+      ).rejects.toThrow('Invalid selfie');
     });
 
     it('should throw BadRequestException if id card is invalid', async () => {
       mockPrisma.media.findUnique.mockImplementation(async ({ where }: any) =>
         where.id === idCardId ? null : goodDoc(where.id),
       );
-      await expect(service.submitVerification(userId, selfieId, idCardId)).rejects.toThrow('Invalid id card');
+      await expect(
+        service.submitVerification(userId, selfieId, idCardId),
+      ).rejects.toThrow('Invalid id card');
     });
 
     it('refuses a document that is not an image', async () => {
       // Ownership alone used to be the whole test, so any media the user owned
       // — a video, a voice note — could be submitted as an identity document.
-      mockPrisma.media.findUnique.mockImplementation(async ({ where }: any) => ({
-        ...goodDoc(where.id),
-        mimeType: 'video/mp4',
-      }));
+      mockPrisma.media.findUnique.mockImplementation(
+        async ({ where }: any) => ({
+          ...goodDoc(where.id),
+          mimeType: 'video/mp4',
+        }),
+      );
       await expect(
         service.submitVerification(userId, selfieId, idCardId),
       ).rejects.toThrow('must be an image');
@@ -113,10 +121,12 @@ describe('VerificationService', () => {
     it('refuses a document stored outside the private verification prefix', async () => {
       // A chat image is publicly resolvable through /api/media; accepting one
       // as an ID card would publish the document.
-      mockPrisma.media.findUnique.mockImplementation(async ({ where }: any) => ({
-        ...goodDoc(where.id),
-        objectKey: `chat/${where.id}.jpg`,
-      }));
+      mockPrisma.media.findUnique.mockImplementation(
+        async ({ where }: any) => ({
+          ...goodDoc(where.id),
+          objectKey: `chat/${where.id}.jpg`,
+        }),
+      );
       await expect(
         service.submitVerification(userId, selfieId, idCardId),
       ).rejects.toThrow('uploaded through the verification flow');
@@ -127,22 +137,32 @@ describe('VerificationService', () => {
       // The conditional claim matches no row, because the status is not one of
       // the submittable ones.
       mockPrisma.user.updateMany.mockResolvedValue({ count: 0 });
-      mockPrisma.user.findUnique.mockResolvedValue({ verificationStatus: VerificationStatus.PENDING });
-      await expect(service.submitVerification(userId, selfieId, idCardId)).rejects.toThrow(ConflictException);
+      mockPrisma.user.findUnique.mockResolvedValue({
+        verificationStatus: VerificationStatus.PENDING,
+      });
+      await expect(
+        service.submitVerification(userId, selfieId, idCardId),
+      ).rejects.toThrow(ConflictException);
     });
 
     it('should throw ConflictException if user is already verified', async () => {
       happyPath();
       mockPrisma.user.updateMany.mockResolvedValue({ count: 0 });
-      mockPrisma.user.findUnique.mockResolvedValue({ verificationStatus: VerificationStatus.VERIFIED });
-      await expect(service.submitVerification(userId, selfieId, idCardId)).rejects.toThrow(ConflictException);
+      mockPrisma.user.findUnique.mockResolvedValue({
+        verificationStatus: VerificationStatus.VERIFIED,
+      });
+      await expect(
+        service.submitVerification(userId, selfieId, idCardId),
+      ).rejects.toThrow(ConflictException);
     });
 
     it('should throw BadRequestException if user not found', async () => {
       happyPath();
       mockPrisma.user.updateMany.mockResolvedValue({ count: 0 });
       mockPrisma.user.findUnique.mockResolvedValue(null);
-      await expect(service.submitVerification(userId, selfieId, idCardId)).rejects.toThrow(BadRequestException);
+      await expect(
+        service.submitVerification(userId, selfieId, idCardId),
+      ).rejects.toThrow(BadRequestException);
     });
 
     it('only one of two concurrent submissions is allowed through', async () => {
@@ -153,7 +173,9 @@ describe('VerificationService', () => {
       mockPrisma.user.updateMany.mockImplementation(async () => ({
         count: claims++ === 0 ? 1 : 0,
       }));
-      mockPrisma.user.findUnique.mockResolvedValue({ verificationStatus: VerificationStatus.PENDING });
+      mockPrisma.user.findUnique.mockResolvedValue({
+        verificationStatus: VerificationStatus.PENDING,
+      });
 
       const results = await Promise.allSettled([
         service.submitVerification(userId, selfieId, idCardId),
@@ -185,7 +207,11 @@ describe('VerificationService', () => {
     it('should successfully submit verification', async () => {
       happyPath();
 
-      const result = await service.submitVerification(userId, selfieId, idCardId);
+      const result = await service.submitVerification(
+        userId,
+        selfieId,
+        idCardId,
+      );
 
       expect(mockPrisma.media.updateMany).toHaveBeenCalledWith({
         where: { id: { in: [selfieId, idCardId] } },
@@ -214,15 +240,25 @@ describe('VerificationService', () => {
       mockPrisma.verificationRequest.findUnique.mockResolvedValue(null);
 
       const result = await service.getStatus('user-1');
-      expect(result).toEqual({ status: VerificationStatus.UNVERIFIED, request: null });
+      expect(result).toEqual({
+        status: VerificationStatus.UNVERIFIED,
+        request: null,
+      });
     });
 
     it('should return user status and request', async () => {
-      mockPrisma.user.findUnique.mockResolvedValue({ verificationStatus: VerificationStatus.PENDING });
-      mockPrisma.verificationRequest.findUnique.mockResolvedValue({ status: VerificationStatus.PENDING });
+      mockPrisma.user.findUnique.mockResolvedValue({
+        verificationStatus: VerificationStatus.PENDING,
+      });
+      mockPrisma.verificationRequest.findUnique.mockResolvedValue({
+        status: VerificationStatus.PENDING,
+      });
 
       const result = await service.getStatus('user-1');
-      expect(result).toEqual({ status: VerificationStatus.PENDING, request: { status: VerificationStatus.PENDING } });
+      expect(result).toEqual({
+        status: VerificationStatus.PENDING,
+        request: { status: VerificationStatus.PENDING },
+      });
     });
   });
 });

@@ -29,7 +29,9 @@ describe('buildReplyToSnapshot', () => {
     });
 
     it('derives senderName from displayName', () => {
-      expect(buildReplyToSnapshot(msg, 'viewer-1')!.senderName).toBe('Alice Smith');
+      expect(buildReplyToSnapshot(msg, 'viewer-1')!.senderName).toBe(
+        'Alice Smith',
+      );
     });
 
     it('falls back to username when displayName is absent', () => {
@@ -165,7 +167,12 @@ describe('buildReplyToSnapshot', () => {
         senderId: 'alice',
         state: null,
         payload: {
-          community: { id: 'c-1', name: 'Dev Hub', avatarKey: 'comm.png', color: '#ff0' },
+          community: {
+            id: 'c-1',
+            name: 'Dev Hub',
+            avatarKey: 'comm.png',
+            color: '#ff0',
+          },
         },
         sender: { displayName: 'Alice', username: 'alice' },
       };

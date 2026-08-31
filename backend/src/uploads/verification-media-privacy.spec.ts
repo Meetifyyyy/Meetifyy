@@ -121,7 +121,9 @@ describe('verification upload content validation', () => {
         },
         getPublicUrl: (k: string) => `https://cdn.example/${k}`,
       } as any,
-      { media: { create: async ({ data }: any) => ({ id: 'm1', ...data }) } } as any,
+      {
+        media: { create: async ({ data }: any) => ({ id: 'm1', ...data }) },
+      } as any,
       { get: () => undefined } as any,
     );
   });

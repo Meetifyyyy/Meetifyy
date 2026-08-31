@@ -14,4 +14,3 @@ import { UploadsModule } from '../uploads/uploads.module';
   controllers: [PostsController],
 })
 export class PostsModule {}
-

@@ -1,7 +1,4 @@
-import {
-  BadRequestException,
-  ForbiddenException,
-} from '@nestjs/common';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { LinkPreviewService } from './link-preview.service';
 
 describe('LinkPreviewService', () => {
@@ -37,9 +34,9 @@ describe('LinkPreviewService', () => {
     await expect(service.getPreview('http://127.0.0.1/admin')).rejects.toThrow(
       ForbiddenException,
     );
-    await expect(service.getPreview('http://169.254.169.254/latest/meta-data')).rejects.toThrow(
-      ForbiddenException,
-    );
+    await expect(
+      service.getPreview('http://169.254.169.254/latest/meta-data'),
+    ).rejects.toThrow(ForbiddenException);
   });
 
   it('rejects private IPv4 ranges (10.x, 192.168.x, 172.16.x)', async () => {

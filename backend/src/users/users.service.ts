@@ -1780,10 +1780,10 @@ export class UsersService {
 
     // Capture media keys before the transaction
     const avatarKey = user.avatar
-      ? this.mediaCleanupService?.extractStorageKey(user.avatar) ?? null
+      ? (this.mediaCleanupService?.extractStorageKey(user.avatar) ?? null)
       : null;
     const coverKey = user.cover
-      ? this.mediaCleanupService?.extractStorageKey(user.cover) ?? null
+      ? (this.mediaCleanupService?.extractStorageKey(user.cover) ?? null)
       : null;
 
     const allMediaKeysToClean: string[] = [];
@@ -1840,7 +1840,9 @@ export class UsersService {
           },
         });
 
-        await tx.postLike.deleteMany({ where: { postId: { in: userPostIds } } });
+        await tx.postLike.deleteMany({
+          where: { postId: { in: userPostIds } },
+        });
         await tx.postBookmark.deleteMany({
           where: { postId: { in: userPostIds } },
         });
@@ -1868,7 +1870,9 @@ export class UsersService {
           where: { postId: { in: userPostIds } },
           select: { objectKey: true },
         });
-        userPostMedia.forEach((m: any) => allMediaKeysToClean.push(m.objectKey));
+        userPostMedia.forEach((m: any) =>
+          allMediaKeysToClean.push(m.objectKey),
+        );
       }
 
       // 3. Gracefully handle user-owned communities (transfer or delete)
@@ -1960,7 +1964,9 @@ export class UsersService {
               where: { postId: { in: commPostIds } },
               select: { objectKey: true },
             });
-            commMedia.forEach((m: any) => allMediaKeysToClean.push(m.objectKey));
+            commMedia.forEach((m: any) =>
+              allMediaKeysToClean.push(m.objectKey),
+            );
           }
 
           if (comm.avatarKey) allMediaKeysToClean.push(comm.avatarKey);
@@ -2033,9 +2039,7 @@ export class UsersService {
     // 9. Invalidate Redis user-profile cache keys if present
     const redis = this.redisService.getClient();
     if (redis) {
-      redis
-        .del(`user:${userId}`, `profile:${userId}`)
-        .catch(() => {});
+      redis.del(`user:${userId}`, `profile:${userId}`).catch(() => {});
     }
 
     this.domainEventService.emit('user.deleted', { userId });
@@ -2076,4 +2080,3 @@ export class UsersService {
       });
   }
 }
-

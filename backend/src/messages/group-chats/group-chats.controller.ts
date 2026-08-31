@@ -340,12 +340,12 @@ export class GroupChatsController {
           );
         }
       }
-      const pubId = (updated as any).publicId || updated.id;
+      const pubId = updated.publicId || updated.id;
       const avatarVal =
-        (updated as any).avatarKey !== undefined
-          ? (updated as any).avatarKey
-          : (updated as any).avatar !== undefined
-            ? (updated as any).avatar
+        updated.avatarKey !== undefined
+          ? updated.avatarKey
+          : updated.avatar !== undefined
+            ? updated.avatar
             : convBefore?.avatarKey || null;
 
       const payload: any = {
@@ -376,7 +376,7 @@ export class GroupChatsController {
 
     return {
       ...updated,
-      avatar: (updated as any).avatarKey || (updated as any).avatar || null,
+      avatar: updated.avatarKey || updated.avatar || null,
     };
   }
 

@@ -36,27 +36,47 @@ describe('ContentDeletionAuthorizer', () => {
 
     it('returns OWNER when userId matches ownerId (even without membership row)', async () => {
       // Membership query should not be needed
-      const role = await authorizer.resolveRole('owner-1', communityId, 'owner-1');
+      const role = await authorizer.resolveRole(
+        'owner-1',
+        communityId,
+        'owner-1',
+      );
       expect(role).toBe('OWNER');
       expect(mockPrisma.communityMember.findUnique).not.toHaveBeenCalled();
     });
 
     it('returns the membership role when found', async () => {
-      mockPrisma.communityMember.findUnique.mockResolvedValue({ role: 'MODERATOR' });
-      const role = await authorizer.resolveRole('mod-1', communityId, 'owner-1');
+      mockPrisma.communityMember.findUnique.mockResolvedValue({
+        role: 'MODERATOR',
+      });
+      const role = await authorizer.resolveRole(
+        'mod-1',
+        communityId,
+        'owner-1',
+      );
       expect(role).toBe('MODERATOR');
     });
 
     it('returns MEMBER when no membership row exists', async () => {
       mockPrisma.communityMember.findUnique.mockResolvedValue(null);
-      const role = await authorizer.resolveRole('stranger', communityId, 'owner-1');
+      const role = await authorizer.resolveRole(
+        'stranger',
+        communityId,
+        'owner-1',
+      );
       expect(role).toBe('MEMBER');
     });
 
     it('returns OWNER even when a MEMBER membership row exists (community.ownerId wins)', async () => {
       // The owner may have a stale MEMBER row; ownerId takes precedence.
-      mockPrisma.communityMember.findUnique.mockResolvedValue({ role: 'MEMBER' });
-      const role = await authorizer.resolveRole('owner-1', communityId, 'owner-1');
+      mockPrisma.communityMember.findUnique.mockResolvedValue({
+        role: 'MEMBER',
+      });
+      const role = await authorizer.resolveRole(
+        'owner-1',
+        communityId,
+        'owner-1',
+      );
       expect(role).toBe('OWNER');
     });
   });
@@ -130,7 +150,7 @@ describe('ContentDeletionAuthorizer', () => {
       // Actor is MODERATOR
       mockPrisma.communityMember.findUnique
         .mockResolvedValueOnce({ role: 'MODERATOR' }) // actor role
-        .mockResolvedValueOnce({ role: 'MEMBER' });  // author role
+        .mockResolvedValueOnce({ role: 'MEMBER' }); // author role
       const result = await authorizer.resolveAuthority({
         actorId: 'mod-1',
         authorId: 'member-1',
@@ -162,8 +182,9 @@ describe('ContentDeletionAuthorizer', () => {
         ownerId: 'owner-1',
         deletedAt: null,
       });
-      mockPrisma.communityMember.findUnique
-        .mockResolvedValueOnce({ role: 'MODERATOR' }); // actor's role query
+      mockPrisma.communityMember.findUnique.mockResolvedValueOnce({
+        role: 'MODERATOR',
+      }); // actor's role query
       // author is owner — resolveRole checks ownerId first, no DB call needed
       const result = await authorizer.resolveAuthority({
         actorId: 'mod-1',
@@ -179,7 +200,9 @@ describe('ContentDeletionAuthorizer', () => {
         ownerId: 'owner-1',
         deletedAt: null,
       });
-      mockPrisma.communityMember.findUnique.mockResolvedValue({ role: 'MEMBER' });
+      mockPrisma.communityMember.findUnique.mockResolvedValue({
+        role: 'MEMBER',
+      });
       const result = await authorizer.resolveAuthority({
         actorId: 'member-1',
         authorId: 'member-2',
@@ -237,7 +260,9 @@ describe('ContentDeletionAuthorizer', () => {
       // Actor's membership
       mockPrisma.communityMember.findMany
         .mockResolvedValueOnce([{ communityId: 'comm-1', role: 'MODERATOR' }]) // actor's memberships
-        .mockResolvedValueOnce([{ communityId: 'comm-1', userId: 'member-1', role: 'MEMBER' }]); // author roles
+        .mockResolvedValueOnce([
+          { communityId: 'comm-1', userId: 'member-1', role: 'MEMBER' },
+        ]); // author roles
       const result = await authorizer.canDeleteEach('mod-1', [
         { authorId: 'member-1', communityId: 'comm-1' },
       ]);

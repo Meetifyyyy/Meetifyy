@@ -251,10 +251,9 @@ export class AuthController {
 
     const browserName = uaResult.browser?.name || 'Unknown Browser';
     const browserVersion = uaResult.browser?.major || '';
-    const browser =
-      browserVersion
-        ? `${browserName} ${browserVersion}`
-        : browserName;
+    const browser = browserVersion
+      ? `${browserName} ${browserVersion}`
+      : browserName;
 
     const deviceType = uaResult.device?.type;
     const deviceModel = uaResult.device?.model;

@@ -80,9 +80,13 @@ export class AdminVerificationService {
     );
   }
 
-  async listRequests(status?: VerificationStatus, limit: number = 20, offset: number = 0) {
+  async listRequests(
+    status?: VerificationStatus,
+    limit: number = 20,
+    offset: number = 0,
+  ) {
     const where = status ? { status } : {};
-    
+
     const [total, requests] = await Promise.all([
       this.prisma.verificationRequest.count({ where }),
       this.prisma.verificationRequest.findMany({
@@ -226,6 +230,12 @@ export class AdminVerificationService {
       updatedUser.verificationStatus,
     );
 
-    return { request: updatedRequest, user: { id: updatedUser.id, verificationStatus: updatedUser.verificationStatus } };
+    return {
+      request: updatedRequest,
+      user: {
+        id: updatedUser.id,
+        verificationStatus: updatedUser.verificationStatus,
+      },
+    };
   }
 }

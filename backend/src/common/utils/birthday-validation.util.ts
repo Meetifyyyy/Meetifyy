@@ -1,12 +1,22 @@
 import { BadRequestException } from '@nestjs/common';
 
 const MONTH_NAMES = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
 ];
 
 function isLeapYear(year: number): boolean {
-  return (year % 4 === 0 && year % 100 !== 0) || (year % 400 === 0);
+  return (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
 }
 
 /**

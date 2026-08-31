@@ -42,7 +42,10 @@ describe('account verification — end to end', () => {
 
   let app: INestApplication;
   let db: {
-    users: Record<string, { id: string; verificationStatus: VerificationStatus }>;
+    users: Record<
+      string,
+      { id: string; verificationStatus: VerificationStatus }
+    >;
     media: Record<string, any>;
     requests: Record<string, any>;
     auditLogs: any[];
@@ -57,7 +60,12 @@ describe('account verification — end to end', () => {
    * readers to hold each verification-request read until that many have
    * arrived, so both genuinely observe PENDING before either writes.
    */
-  let readBarrier: { expected: number; arrived: number; release: () => void; gate: Promise<void> } | null;
+  let readBarrier: {
+    expected: number;
+    arrived: number;
+    release: () => void;
+    gate: Promise<void>;
+  } | null;
 
   /** Minimal Prisma stand-in covering exactly the queries this flow issues. */
   const buildPrisma = () => ({
@@ -110,25 +118,32 @@ describe('account verification — end to end', () => {
         const snapshot = row ? { ...(row as object) } : null;
         if (readBarrier) {
           readBarrier.arrived += 1;
-          if (readBarrier.arrived >= readBarrier.expected) readBarrier.release();
+          if (readBarrier.arrived >= readBarrier.expected)
+            readBarrier.release();
           await readBarrier.gate;
         }
         return snapshot;
       },
-      findUniqueOrThrow: async ({ where }: any) => ({ ...db.requests[where.id] }),
+      findUniqueOrThrow: async ({ where }: any) => ({
+        ...db.requests[where.id],
+      }),
       findMany: async () =>
         Object.values(db.requests).map((r: any) => ({
           ...r,
           // The admin queue `include`s both documents.
-          selfieMedia: r.selfieMediaId ? db.media[r.selfieMediaId] ?? null : null,
-          idCardMedia: r.idCardMediaId ? db.media[r.idCardMediaId] ?? null : null,
+          selfieMedia: r.selfieMediaId
+            ? (db.media[r.selfieMediaId] ?? null)
+            : null,
+          idCardMedia: r.idCardMediaId
+            ? (db.media[r.idCardMediaId] ?? null)
+            : null,
           user: db.users[r.userId] ?? null,
         })),
       count: async () => Object.keys(db.requests).length,
       upsert: async ({ where, create, update }: any) => {
         const existing = Object.values(db.requests).find(
           (r: any) => r.userId === where.userId,
-        ) as any;
+        );
         if (existing) {
           Object.assign(existing, update, { updatedAt: new Date() });
           return existing;
@@ -163,7 +178,9 @@ describe('account verification — end to end', () => {
 
   beforeEach(async () => {
     db = {
-      users: { [USER]: { id: USER, verificationStatus: VerificationStatus.UNVERIFIED } },
+      users: {
+        [USER]: { id: USER, verificationStatus: VerificationStatus.UNVERIFIED },
+      },
       media: {
         [SELFIE]: {
           id: SELFIE,
@@ -288,7 +305,9 @@ describe('account verification — end to end', () => {
 
   it('carries a rejection through to a resubmission that supersedes the documents', async () => {
     await submit().expect(201);
-    await decide(VerificationStatus.REJECTED, 'ID photo unreadable').expect(200);
+    await decide(VerificationStatus.REJECTED, 'ID photo unreadable').expect(
+      200,
+    );
 
     expect(db.users[USER].verificationStatus).toBe(VerificationStatus.REJECTED);
     // The reason reaches the user, and the audit row does not repeat it.
@@ -367,12 +386,16 @@ describe('account verification — end to end', () => {
     await submit().expect(400);
     // Nothing was written, and the account did not move to PENDING.
     expect(Object.keys(db.requests)).toHaveLength(0);
-    expect(db.users[USER].verificationStatus).toBe(VerificationStatus.UNVERIFIED);
+    expect(db.users[USER].verificationStatus).toBe(
+      VerificationStatus.UNVERIFIED,
+    );
   });
 
   it('refuses a document stored outside the private prefix', async () => {
     db.media[ID_CARD].objectKey = 'chat/photo.webp';
     await submit().expect(400);
-    expect(db.users[USER].verificationStatus).toBe(VerificationStatus.UNVERIFIED);
+    expect(db.users[USER].verificationStatus).toBe(
+      VerificationStatus.UNVERIFIED,
+    );
   });
 });

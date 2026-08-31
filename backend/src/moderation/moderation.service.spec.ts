@@ -103,16 +103,18 @@ describe('ModerationService', () => {
 
     it('throws BadRequestException when reporter tries to self-report', async () => {
       await expect(
-        service.submitReport(
-          'user-1',
-          { ...validDto, targetType: ReportTargetType.USER, targetId: 'user-1' },
-        ),
+        service.submitReport('user-1', {
+          ...validDto,
+          targetType: ReportTargetType.USER,
+          targetId: 'user-1',
+        }),
       ).rejects.toThrow(BadRequestException);
       await expect(
-        service.submitReport(
-          'user-1',
-          { ...validDto, targetType: ReportTargetType.USER, targetId: 'user-1' },
-        ),
+        service.submitReport('user-1', {
+          ...validDto,
+          targetType: ReportTargetType.USER,
+          targetId: 'user-1',
+        }),
       ).rejects.toThrow('You cannot report your own profile.');
     });
 
@@ -129,9 +131,13 @@ describe('ModerationService', () => {
         success: false,
         limitType: '10-minute (5 max)',
       });
-      const err = await service.submitReport(reporterId, validDto).catch((e) => e);
+      const err = await service
+        .submitReport(reporterId, validDto)
+        .catch((e) => e);
       expect(err).toBeInstanceOf(HttpException);
-      expect((err as HttpException).getStatus()).toBe(HttpStatus.TOO_MANY_REQUESTS);
+      expect((err as HttpException).getStatus()).toBe(
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
     });
 
     it('throws ConflictException for a duplicate active report on the same target', async () => {
@@ -167,7 +173,12 @@ describe('ModerationService', () => {
 
     it('enriches the metadata with ip and userAgent', async () => {
       setupHappyPath();
-      await service.submitReport(reporterId, validDto, '1.2.3.4', 'TestAgent/1');
+      await service.submitReport(
+        reporterId,
+        validDto,
+        '1.2.3.4',
+        'TestAgent/1',
+      );
       const createCall = mockPrisma.report.create.mock.calls[0][0];
       expect(createCall.data.metadata).toMatchObject({
         ip: '1.2.3.4',
@@ -188,7 +199,9 @@ describe('ModerationService', () => {
     it('still succeeds even when the notification queue fails', async () => {
       setupHappyPath();
       mockNotificationQueue.add.mockRejectedValue(new Error('queue down'));
-      await expect(service.submitReport(reporterId, validDto)).resolves.toMatchObject({
+      await expect(
+        service.submitReport(reporterId, validDto),
+      ).resolves.toMatchObject({
         success: true,
       });
     });
@@ -209,7 +222,11 @@ describe('ModerationService', () => {
         id: 'r-1',
         status: ReportStatus.PENDING,
       };
-      const updated = { ...existing, status: ReportStatus.RESOLVED, resolvedAt: new Date() };
+      const updated = {
+        ...existing,
+        status: ReportStatus.RESOLVED,
+        resolvedAt: new Date(),
+      };
       mockPrisma.report.findUnique.mockResolvedValue(existing);
       mockPrisma.report.update.mockResolvedValue(updated);
 
@@ -220,8 +237,14 @@ describe('ModerationService', () => {
     });
 
     it('sets resolvedAt and resolvedBy when status is RESOLVED', async () => {
-      mockPrisma.report.findUnique.mockResolvedValue({ id: 'r-1', status: ReportStatus.PENDING });
-      mockPrisma.report.update.mockResolvedValue({ id: 'r-1', status: ReportStatus.RESOLVED });
+      mockPrisma.report.findUnique.mockResolvedValue({
+        id: 'r-1',
+        status: ReportStatus.PENDING,
+      });
+      mockPrisma.report.update.mockResolvedValue({
+        id: 'r-1',
+        status: ReportStatus.RESOLVED,
+      });
 
       await service.updateReport(
         'r-1',
@@ -235,8 +258,14 @@ describe('ModerationService', () => {
     });
 
     it('sets resolvedAt when status is REJECTED', async () => {
-      mockPrisma.report.findUnique.mockResolvedValue({ id: 'r-1', status: ReportStatus.PENDING });
-      mockPrisma.report.update.mockResolvedValue({ id: 'r-1', status: ReportStatus.REJECTED });
+      mockPrisma.report.findUnique.mockResolvedValue({
+        id: 'r-1',
+        status: ReportStatus.PENDING,
+      });
+      mockPrisma.report.update.mockResolvedValue({
+        id: 'r-1',
+        status: ReportStatus.REJECTED,
+      });
 
       await service.updateReport('r-1', { status: ReportStatus.REJECTED });
 
@@ -245,8 +274,14 @@ describe('ModerationService', () => {
     });
 
     it('does NOT set resolvedAt for intermediate statuses', async () => {
-      mockPrisma.report.findUnique.mockResolvedValue({ id: 'r-1', status: ReportStatus.PENDING });
-      mockPrisma.report.update.mockResolvedValue({ id: 'r-1', status: ReportStatus.UNDER_REVIEW });
+      mockPrisma.report.findUnique.mockResolvedValue({
+        id: 'r-1',
+        status: ReportStatus.PENDING,
+      });
+      mockPrisma.report.update.mockResolvedValue({
+        id: 'r-1',
+        status: ReportStatus.UNDER_REVIEW,
+      });
 
       await service.updateReport('r-1', { status: ReportStatus.UNDER_REVIEW });
 
@@ -277,10 +312,13 @@ describe('ModerationService', () => {
     it('stamps resolvedAt when bulk-resolving', async () => {
       mockPrisma.report.updateMany.mockResolvedValue({ count: 2 });
 
-      await service.bulkAction({
-        reportIds: ['r-1', 'r-2'],
-        status: ReportStatus.RESOLVED,
-      }, 'admin-99');
+      await service.bulkAction(
+        {
+          reportIds: ['r-1', 'r-2'],
+          status: ReportStatus.RESOLVED,
+        },
+        'admin-99',
+      );
 
       const updateCall = mockPrisma.report.updateMany.mock.calls[0][0];
       expect(updateCall.data.resolvedAt).toBeInstanceOf(Date);

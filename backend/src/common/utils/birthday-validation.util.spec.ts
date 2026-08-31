@@ -21,12 +21,16 @@ describe('validateBirthday', () => {
       'throws when input is %p',
       (input: any) => {
         expect(() => validateBirthday(input)).toThrow(BadRequestException);
-        expect(() => validateBirthday(input)).toThrow('Date of birth is required.');
+        expect(() => validateBirthday(input)).toThrow(
+          'Date of birth is required.',
+        );
       },
     );
 
     it('throws for a non-string (number)', () => {
-      expect(() => validateBirthday(19900101 as any)).toThrow(BadRequestException);
+      expect(() => validateBirthday(19900101 as any)).toThrow(
+        BadRequestException,
+      );
     });
 
     it('throws for wrong format (MM/DD/YYYY)', () => {
@@ -46,11 +50,15 @@ describe('validateBirthday', () => {
 
   describe('month validation', () => {
     it('throws for month 0', () => {
-      expect(() => validateBirthday('1990-00-15')).toThrow('Please select a valid month.');
+      expect(() => validateBirthday('1990-00-15')).toThrow(
+        'Please select a valid month.',
+      );
     });
 
     it('throws for month 13', () => {
-      expect(() => validateBirthday('1990-13-15')).toThrow('Please select a valid month.');
+      expect(() => validateBirthday('1990-13-15')).toThrow(
+        'Please select a valid month.',
+      );
     });
 
     it('accepts month 1 (January)', () => {
@@ -74,19 +82,27 @@ describe('validateBirthday', () => {
     });
 
     it('throws for April 31 (30-day month)', () => {
-      expect(() => validateBirthday('1990-04-31')).toThrow('April has only 30 days.');
+      expect(() => validateBirthday('1990-04-31')).toThrow(
+        'April has only 30 days.',
+      );
     });
 
     it('throws for June 31', () => {
-      expect(() => validateBirthday('1990-06-31')).toThrow('June has only 30 days.');
+      expect(() => validateBirthday('1990-06-31')).toThrow(
+        'June has only 30 days.',
+      );
     });
 
     it('throws for September 31', () => {
-      expect(() => validateBirthday('1990-09-31')).toThrow('September has only 30 days.');
+      expect(() => validateBirthday('1990-09-31')).toThrow(
+        'September has only 30 days.',
+      );
     });
 
     it('throws for November 31', () => {
-      expect(() => validateBirthday('1990-11-31')).toThrow('November has only 30 days.');
+      expect(() => validateBirthday('1990-11-31')).toThrow(
+        'November has only 30 days.',
+      );
     });
   });
 
@@ -94,7 +110,9 @@ describe('validateBirthday', () => {
 
   describe('February edge cases', () => {
     it('throws for Feb 29 on a non-leap year (1990)', () => {
-      expect(() => validateBirthday('1990-02-29')).toThrow('February has only 28 days in 1990.');
+      expect(() => validateBirthday('1990-02-29')).toThrow(
+        'February has only 28 days in 1990.',
+      );
     });
 
     it('throws for Feb 30 even on a leap year', () => {
@@ -137,7 +155,9 @@ describe('validateBirthday', () => {
       const tomorrow = new Date();
       tomorrow.setDate(tomorrow.getDate() + 1);
       const str = tomorrow.toISOString().slice(0, 10);
-      expect(() => validateBirthday(str)).toThrow('You must be at least 18 years old.');
+      expect(() => validateBirthday(str)).toThrow(
+        'You must be at least 18 years old.',
+      );
     });
   });
 

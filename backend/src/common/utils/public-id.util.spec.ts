@@ -29,7 +29,9 @@ describe('generatePublicId', () => {
 
   describe('uniqueness', () => {
     it('generates different values on successive calls', () => {
-      const ids = new Set(Array.from({ length: 100 }, () => generatePublicId()));
+      const ids = new Set(
+        Array.from({ length: 100 }, () => generatePublicId()),
+      );
       // With 62^12 possible values the probability of any collision in 100
       // draws is astronomically small — treat a collision as a test failure.
       expect(ids.size).toBe(100);
@@ -39,7 +41,9 @@ describe('generatePublicId', () => {
   describe('character alphabet', () => {
     it('uses only the 62-character URL-safe alphabet (A-Z, a-z, 0-9)', () => {
       // Generate a large sample and assert no forbidden characters appear.
-      const sample = Array.from({ length: 500 }, () => generatePublicId(20)).join('');
+      const sample = Array.from({ length: 500 }, () =>
+        generatePublicId(20),
+      ).join('');
       // Must NOT contain +, /, =, -, _ or any other non-alphanumeric character
       expect(sample).toMatch(/^[A-Za-z0-9]+$/);
     });

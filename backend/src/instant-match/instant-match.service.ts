@@ -221,7 +221,9 @@ export class InstantMatchService implements OnModuleInit {
     // 'VERIFIED'` comparison: one definition of eligibility, one feature flag,
     // and the cached lookup the rest of the app already pays for.
     if (!(await this.verificationAccess.isUserEligible(dto.userId))) {
-      throw new ForbiddenException('Account verification is required for Instant Match');
+      throw new ForbiddenException(
+        'Account verification is required for Instant Match',
+      );
     }
 
     // A user holding a live match must resolve it before re-queueing,

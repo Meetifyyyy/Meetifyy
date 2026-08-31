@@ -96,7 +96,9 @@ describe('checkPresenceVisibility', () => {
 
   it('returns false when viewer has hidden their own online status', async () => {
     blocks.isBlocked.mockResolvedValue(false);
-    prisma.userSettings.findUnique.mockResolvedValue({ showOnlineStatus: false });
+    prisma.userSettings.findUnique.mockResolvedValue({
+      showOnlineStatus: false,
+    });
 
     const result = await checkPresenceVisibility(
       'target',
@@ -111,7 +113,9 @@ describe('checkPresenceVisibility', () => {
 
   it('returns false for rule "nobody"', async () => {
     blocks.isBlocked.mockResolvedValue(false);
-    prisma.userSettings.findUnique.mockResolvedValue({ showOnlineStatus: true });
+    prisma.userSettings.findUnique.mockResolvedValue({
+      showOnlineStatus: true,
+    });
 
     const result = await checkPresenceVisibility(
       'target',
@@ -126,7 +130,9 @@ describe('checkPresenceVisibility', () => {
 
   it('returns true for rule "everyone" (no block, no hidden status)', async () => {
     blocks.isBlocked.mockResolvedValue(false);
-    prisma.userSettings.findUnique.mockResolvedValue({ showOnlineStatus: true });
+    prisma.userSettings.findUnique.mockResolvedValue({
+      showOnlineStatus: true,
+    });
 
     const result = await checkPresenceVisibility(
       'target',
@@ -142,11 +148,16 @@ describe('checkPresenceVisibility', () => {
   describe('rule: "following" (target must follow viewer)', () => {
     beforeEach(() => {
       blocks.isBlocked.mockResolvedValue(false);
-      prisma.userSettings.findUnique.mockResolvedValue({ showOnlineStatus: true });
+      prisma.userSettings.findUnique.mockResolvedValue({
+        showOnlineStatus: true,
+      });
     });
 
     it('returns true when the target follows the viewer', async () => {
-      prisma.follow.findUnique.mockResolvedValue({ followerId: 'target', followingId: 'viewer' });
+      prisma.follow.findUnique.mockResolvedValue({
+        followerId: 'target',
+        followingId: 'viewer',
+      });
       const result = await checkPresenceVisibility(
         'target',
         'viewer',
@@ -175,7 +186,9 @@ describe('checkPresenceVisibility', () => {
   describe('rule: "mutual" (both must follow each other)', () => {
     beforeEach(() => {
       blocks.isBlocked.mockResolvedValue(false);
-      prisma.userSettings.findUnique.mockResolvedValue({ showOnlineStatus: true });
+      prisma.userSettings.findUnique.mockResolvedValue({
+        showOnlineStatus: true,
+      });
     });
 
     it('returns true when both follow each other', async () => {
@@ -237,7 +250,9 @@ describe('resolvePresenceVisibilityForViewer', () => {
     jest.clearAllMocks();
     // Default: viewer shows status, no blocks
     blocks.getExcludedUserIds.mockResolvedValue([]);
-    prisma.userSettings.findUnique.mockResolvedValue({ showOnlineStatus: true });
+    prisma.userSettings.findUnique.mockResolvedValue({
+      showOnlineStatus: true,
+    });
     prisma.follow.findMany.mockResolvedValue([]);
   });
 
@@ -277,7 +292,9 @@ describe('resolvePresenceVisibilityForViewer', () => {
   });
 
   it('returns empty set when viewer has hidden their own online status', async () => {
-    prisma.userSettings.findUnique.mockResolvedValue({ showOnlineStatus: false });
+    prisma.userSettings.findUnique.mockResolvedValue({
+      showOnlineStatus: false,
+    });
     const result = await resolvePresenceVisibilityForViewer(
       'viewer',
       [{ userId: 'u1', rule: 'everyone', isEnabled: true }],

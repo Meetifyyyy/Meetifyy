@@ -400,9 +400,9 @@ describe('Activity access enforcement (service level)', () => {
     it('rejects join when capacity is exceeded concurrently (0 rows returned by atomic query)', async () => {
       activityRow = baseActivity('PUBLIC');
       prisma.$queryRaw.mockResolvedValueOnce([]);
-      await expect(
-        service.joinActivity('act-1', 'user-other'),
-      ).rejects.toThrow(ForbiddenException);
+      await expect(service.joinActivity('act-1', 'user-other')).rejects.toThrow(
+        ForbiddenException,
+      );
     });
   });
 

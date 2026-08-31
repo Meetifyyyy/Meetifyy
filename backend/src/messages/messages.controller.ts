@@ -524,12 +524,11 @@ export class MessagesController {
     }
 
     if (result) {
-      const pubId = (result as any).publicId || result.id;
+      const pubId = result.publicId || result.id;
       const pIds = await this.messagesService.getConversationParticipantIds(
         result.id,
       );
-      const avatarVal =
-        (result as any).avatarKey || (result as any).avatar || null;
+      const avatarVal = result.avatarKey || result.avatar || null;
       this.domainEventService.emit(
         'conversation:updated',
         {
@@ -548,7 +547,7 @@ export class MessagesController {
 
     return {
       ...result,
-      avatar: (result as any).avatarKey || (result as any).avatar || null,
+      avatar: result.avatarKey || result.avatar || null,
     };
   }
 

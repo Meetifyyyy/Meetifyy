@@ -61,7 +61,10 @@ export class JwtGuard implements CanActivate {
    * short deliberately: a suspension should take effect in seconds, not at the
    * next login. `clearAccountStatus` drops it immediately when an admin acts.
    */
-  private static readonly accountStatusCache = new Map<string, CachedAccountStatus>();
+  private static readonly accountStatusCache = new Map<
+    string,
+    CachedAccountStatus
+  >();
   private static readonly STATUS_TTL_MS = 15 * 1000;
 
   /** Invalidate a cached status so a suspend/unsuspend applies at once. */

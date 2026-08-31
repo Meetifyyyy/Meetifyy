@@ -304,9 +304,8 @@ export class PresenceService {
       this.logger.log(`Removed presence for deleted user=${userId}`);
     } catch (err) {
       this.logger.warn(
-        `Failed to remove presence for user=${userId}: ${(err as any)?.message || err}`,
+        `Failed to remove presence for user=${userId}: ${err?.message || err}`,
       );
     }
   }
 }
-

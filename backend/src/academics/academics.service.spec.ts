@@ -205,9 +205,15 @@ describe('AcademicsService', () => {
   describe('isComplete', () => {
     it('is true only for a fully valid triple', () => {
       expect(service.isComplete('btech', 'cse', currentYearNow + 2)).toBe(true);
-      expect(service.isComplete('btech', 'cse', currentYearNow - 1)).toBe(false);
-      expect(service.isComplete('btech', 'cse', currentYearNow + 15)).toBe(false);
-      expect(service.isComplete('btech', 'business-analytics', currentYearNow + 1)).toBe(false);
+      expect(service.isComplete('btech', 'cse', currentYearNow - 1)).toBe(
+        false,
+      );
+      expect(service.isComplete('btech', 'cse', currentYearNow + 15)).toBe(
+        false,
+      );
+      expect(
+        service.isComplete('btech', 'business-analytics', currentYearNow + 1),
+      ).toBe(false);
       expect(service.isComplete(null, null, null)).toBe(false);
       expect(service.isComplete(undefined, undefined, undefined)).toBe(false);
     });

@@ -150,7 +150,7 @@ export class SuspensionService {
       priority: 'HIGH',
       ipHash: this.hashIp(context.ip),
       browserInfo: context.userAgent
-        ? ({ userAgent: context.userAgent } as Prisma.InputJsonValue)
+        ? { userAgent: context.userAgent }
         : Prisma.DbNull,
       pageContext: '/suspended',
     });

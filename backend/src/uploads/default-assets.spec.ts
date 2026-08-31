@@ -77,9 +77,7 @@ describe('default asset backfill', () => {
     expect(communities.map((c) => Object.keys(c.data)[0]).sort()).toEqual([
       'avatarKey',
     ]);
-    expect(users.map((c) => Object.keys(c.data)[0]).sort()).toEqual([
-      'avatar',
-    ]);
+    expect(users.map((c) => Object.keys(c.data)[0]).sort()).toEqual(['avatar']);
   });
 
   it('writes an /api/media/ reference, the same shape an upload gets', async () => {
@@ -222,10 +220,18 @@ describe('repointing records onto the current defaults', () => {
     const userAvatar = callFor('user', 'avatar').where;
 
     expect(
-      matches(commAvatar, 'avatarKey', '/api/media/defaults/profile-avatar-v1.webp'),
+      matches(
+        commAvatar,
+        'avatarKey',
+        '/api/media/defaults/profile-avatar-v1.webp',
+      ),
     ).toBe(false);
     expect(
-      matches(userAvatar, 'avatar', '/api/media/defaults/community-avatar-v1.webp'),
+      matches(
+        userAvatar,
+        'avatar',
+        '/api/media/defaults/community-avatar-v1.webp',
+      ),
     ).toBe(false);
   });
 

@@ -68,17 +68,19 @@ describe('UsersService — account deletion lifecycle & data cleanup', () => {
       recentSearch: { deleteMany: jest.fn(async () => ({ count: 4 })) },
       deletedMessage: { deleteMany: jest.fn(async () => ({ count: 0 })) },
       messageReaction: { deleteMany: jest.fn(async () => ({ count: 2 })) },
-      conversationJoinRequest: { deleteMany: jest.fn(async () => ({ count: 0 })) },
-      notificationPreferences: { deleteMany: jest.fn(async () => ({ count: 1 })) },
+      conversationJoinRequest: {
+        deleteMany: jest.fn(async () => ({ count: 0 })),
+      },
+      notificationPreferences: {
+        deleteMany: jest.fn(async () => ({ count: 1 })),
+      },
       userSettings: { deleteMany: jest.fn(async () => ({ count: 1 })) },
       notification: { deleteMany: jest.fn(async () => ({ count: 15 })) },
       comment: {
         updateMany: jest.fn(async ({ data }: any) => data),
       },
       media: {
-        findMany: jest.fn(async () => [
-          { objectKey: 'posts/post_img1.jpg' },
-        ]),
+        findMany: jest.fn(async () => [{ objectKey: 'posts/post_img1.jpg' }]),
         deleteMany: jest.fn(async () => ({ count: 1 })),
       },
       $transaction: jest.fn(async (fn: any) =>
@@ -211,7 +213,10 @@ describe('UsersService — account deletion lifecycle & data cleanup', () => {
 
     // 7. Durable R2 media queueing is called
     expect(mediaCleanupService.queueMediaDeletion).toHaveBeenCalledWith(
-      expect.arrayContaining(['avatars/user1.jpg', 'profile-covers/cover1.jpg']),
+      expect.arrayContaining([
+        'avatars/user1.jpg',
+        'profile-covers/cover1.jpg',
+      ]),
     );
 
     // 8. Domain event emitted
