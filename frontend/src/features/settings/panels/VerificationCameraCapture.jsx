@@ -9,6 +9,12 @@ import {
   CheckCircle2,
 } from '@shared/components/icons';
 import styles from './VerificationCameraCapture.module.css';
+import {
+  getCameraErrorMessage,
+  isCameraBlockedByPermissionsPolicy,
+  readCameraPermissionState,
+  requestCameraStream,
+} from './cameraAccess';
 
 /**
  * VerificationCameraCapture
@@ -37,6 +43,8 @@ export default function VerificationCameraCapture({
 
   const videoRef = useRef(null);
   const streamRef = useRef(null);
+  const requestIdRef = useRef(0);
+  const mountedRef = useRef(true);
 
   // Sync confirmed preview URL when value changes
   useEffect(() => {
@@ -86,139 +94,102 @@ export default function VerificationCameraCapture({
     }
   }, [activeStream, cameraState]);
 
-  // Cleanup on component unmount
+  // Invalidate pending requests and release the stream on real or StrictMode
+  // unmount. A request may resolve after the UI has closed, so its result is
+  // also checked against requestIdRef before it can update state.
   useEffect(() => {
+    mountedRef.current = true;
     return () => {
-      stopCamera();
-      if (capturedImage?.previewUrl) {
-        URL.revokeObjectURL(capturedImage.previewUrl);
+      mountedRef.current = false;
+      requestIdRef.current += 1;
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => track.stop());
+        streamRef.current = null;
       }
     };
-  }, [stopCamera, capturedImage]);
+  }, []);
 
-  // Check for multiple video input devices
-  const checkMultipleCameras = useCallback(async () => {
-    if (navigator.mediaDevices?.enumerateDevices) {
-      try {
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        const videoInputs = devices.filter((d) => d.kind === 'videoinput');
-        setHasMultipleCameras(videoInputs.length > 1);
-      } catch {
-        // Fallback: keep default
+  // Revoke each unconfirmed capture when it is replaced or the component closes.
+  useEffect(() => {
+    const previewUrl = capturedImage?.previewUrl;
+    return () => {
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+    };
+  }, [capturedImage]);
+
+  const checkMultipleCameras = useCallback(async (requestId) => {
+    if (!navigator.mediaDevices?.enumerateDevices) return;
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      if (mountedRef.current && requestIdRef.current === requestId) {
+        setHasMultipleCameras(
+          devices.filter((device) => device.kind === 'videoinput').length > 1,
+        );
       }
+    } catch {
+      // Device enumeration is optional and must not affect camera capture.
     }
   }, []);
 
-  // Start device camera and trigger permissions
+  // Start device camera and trigger the native permission prompt. There is no
+  // Permissions API preflight: getUserMedia is deliberately invoked from this
+  // user-click call stack before any awaited work.
   const startCamera = useCallback(
     async (mode = facingMode) => {
+      const requestId = requestIdRef.current + 1;
+      requestIdRef.current = requestId;
       stopCamera();
+      setHasMultipleCameras(false);
       setErrorMessage(null);
       setCameraState('starting');
 
-      // A page served over plain http from anything other than localhost is not
-      // a secure context, and browsers do not expose `navigator.mediaDevices`
-      // there at all. That is an origin problem, not a browser-support problem,
-      // and saying "your browser doesn't support this" sends people to change
-      // the one thing that isn't wrong. It is worth naming because this app is
-      // routinely opened over a LAN IP for device testing.
-      if (!window.isSecureContext) {
+      if (window.isSecureContext === false) {
         setErrorMessage(
-          'The camera is only available over a secure (https) connection. ' +
-            'Open this page via https, or use localhost when testing.'
+          'The camera is only available over a secure (HTTPS) connection. Open this page via HTTPS, or use localhost when testing.',
         );
         setCameraState('error');
         return;
       }
 
-      if (!navigator.mediaDevices?.getUserMedia) {
-        setErrorMessage('Camera access is not supported by your browser.');
+      const mediaDevices = navigator.mediaDevices;
+      if (!mediaDevices?.getUserMedia) {
+        setErrorMessage('Camera access is not supported by this browser or context.');
         setCameraState('error');
         return;
       }
 
-      // Whether a prompt is even reachable. When this already reads `denied`
-      // before we ask, the browser will reject without showing anything, so a
-      // "try again" message would be a lie. Not all browsers implement the
-      // camera descriptor, hence the guarded read.
-      let priorPermission = null;
       try {
-        priorPermission = (
-          await navigator.permissions?.query({ name: 'camera' })
-        )?.state;
-      } catch {
-        // Descriptor unsupported (Firefox, older Safari) - fall through and let
-        // getUserMedia itself be the source of truth.
-      }
+        const stream = await requestCameraStream(mediaDevices, mode);
 
-      try {
-        let stream = null;
-        try {
-          stream = await navigator.mediaDevices.getUserMedia({
-            video: {
-              facingMode: { ideal: mode },
-              width: { ideal: 1280 },
-              height: { ideal: 720 },
-            },
-            audio: false,
-          });
-        } catch (constraintError) {
-          // Retry without constraints ONLY when the constraints were the
-          // problem. This used to catch everything, so a refused permission was
-          // immediately retried -- which asks the browser a second time, can
-          // show a second prompt, and replaces the original error with the
-          // retry's, losing the reason the first attempt failed.
-          if (constraintError?.name !== 'OverconstrainedError' &&
-              constraintError?.name !== 'ConstraintNotSatisfiedError') {
-            throw constraintError;
-          }
-          stream = await navigator.mediaDevices.getUserMedia({
-            video: true,
-            audio: false,
-          });
+        if (!mountedRef.current || requestIdRef.current !== requestId) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
         }
 
         streamRef.current = stream;
         setActiveStream(stream);
-
-        await checkMultipleCameras();
         setCameraState('active');
+        void checkMultipleCameras(requestId);
       } catch (err) {
+        if (!mountedRef.current || requestIdRef.current !== requestId) return;
+
         console.error('Camera initialization error:', err);
-        let msg = 'Unable to access camera. Please check camera permissions.';
-        if (
-          err.name === 'NotAllowedError' ||
-          err.name === 'PermissionDeniedError'
-        ) {
-          // Two different situations arrive as the same error, and they need
-          // different instructions. If permission already read `denied` before
-          // we asked, no prompt was ever shown -- the block is remembered from
-          // a previous refusal or imposed by the page's permissions policy, and
-          // retrying alone will never succeed. If it read `prompt`, the user
-          // saw the request and dismissed it, so retrying genuinely works.
-          msg =
-            priorPermission === 'denied'
-              ? 'Camera access is blocked for this site, so no permission prompt appears. ' +
-                'Open your browser\u2019s site settings (the icon at the left of the address bar), ' +
-                'set Camera to Allow, then retry.'
-              : 'Camera permission was not granted. Choose \u201cAllow\u201d when your browser asks, then retry.';
-        } else if (
-          err.name === 'NotFoundError' ||
-          err.name === 'DevicesNotFoundError'
-        ) {
-          msg = 'No camera device found on this system.';
-        } else if (
-          err.name === 'NotReadableError' ||
-          err.name === 'TrackStartError'
-        ) {
-          msg = 'Camera is currently in use by another application.';
-        }
-        setErrorMessage(msg);
+        const blockedByPolicy = isCameraBlockedByPermissionsPolicy(document);
+        const permissionState =
+          err?.name === 'NotAllowedError' || err?.name === 'PermissionDeniedError'
+            ? await readCameraPermissionState(navigator.permissions)
+            : 'unknown';
+
+        if (!mountedRef.current || requestIdRef.current !== requestId) return;
+
+        setErrorMessage(
+          getCameraErrorMessage(err, { permissionState, blockedByPolicy }),
+        );
         setCameraState('error');
         stopCamera();
       }
     },
-    [facingMode, stopCamera, checkMultipleCameras]
+    [facingMode, stopCamera, checkMultipleCameras],
   );
 
   // Switch between front and rear cameras
@@ -301,6 +272,7 @@ export default function VerificationCameraCapture({
 
   // Cancel and return to idle
   const handleCancel = useCallback(() => {
+    requestIdRef.current += 1;
     stopCamera();
     if (capturedImage?.previewUrl) {
       URL.revokeObjectURL(capturedImage.previewUrl);
