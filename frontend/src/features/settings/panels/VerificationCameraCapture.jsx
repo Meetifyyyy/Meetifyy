@@ -116,10 +116,39 @@ export default function VerificationCameraCapture({
       setErrorMessage(null);
       setCameraState('starting');
 
+      // A page served over plain http from anything other than localhost is not
+      // a secure context, and browsers do not expose `navigator.mediaDevices`
+      // there at all. That is an origin problem, not a browser-support problem,
+      // and saying "your browser doesn't support this" sends people to change
+      // the one thing that isn't wrong. It is worth naming because this app is
+      // routinely opened over a LAN IP for device testing.
+      if (!window.isSecureContext) {
+        setErrorMessage(
+          'The camera is only available over a secure (https) connection. ' +
+            'Open this page via https, or use localhost when testing.'
+        );
+        setCameraState('error');
+        return;
+      }
+
       if (!navigator.mediaDevices?.getUserMedia) {
         setErrorMessage('Camera access is not supported by your browser.');
         setCameraState('error');
         return;
+      }
+
+      // Whether a prompt is even reachable. When this already reads `denied`
+      // before we ask, the browser will reject without showing anything, so a
+      // "try again" message would be a lie. Not all browsers implement the
+      // camera descriptor, hence the guarded read.
+      let priorPermission = null;
+      try {
+        priorPermission = (
+          await navigator.permissions?.query({ name: 'camera' })
+        )?.state;
+      } catch {
+        // Descriptor unsupported (Firefox, older Safari) - fall through and let
+        // getUserMedia itself be the source of truth.
       }
 
       try {
@@ -133,8 +162,16 @@ export default function VerificationCameraCapture({
             },
             audio: false,
           });
-        } catch {
-          // Fallback if specific resolution or ideal facingMode constraint fails
+        } catch (constraintError) {
+          // Retry without constraints ONLY when the constraints were the
+          // problem. This used to catch everything, so a refused permission was
+          // immediately retried -- which asks the browser a second time, can
+          // show a second prompt, and replaces the original error with the
+          // retry's, losing the reason the first attempt failed.
+          if (constraintError?.name !== 'OverconstrainedError' &&
+              constraintError?.name !== 'ConstraintNotSatisfiedError') {
+            throw constraintError;
+          }
           stream = await navigator.mediaDevices.getUserMedia({
             video: true,
             audio: false,
@@ -153,8 +190,18 @@ export default function VerificationCameraCapture({
           err.name === 'NotAllowedError' ||
           err.name === 'PermissionDeniedError'
         ) {
+          // Two different situations arrive as the same error, and they need
+          // different instructions. If permission already read `denied` before
+          // we asked, no prompt was ever shown -- the block is remembered from
+          // a previous refusal or imposed by the page's permissions policy, and
+          // retrying alone will never succeed. If it read `prompt`, the user
+          // saw the request and dismissed it, so retrying genuinely works.
           msg =
-            'Camera permission was denied. Please allow camera access in your browser settings and try again.';
+            priorPermission === 'denied'
+              ? 'Camera access is blocked for this site, so no permission prompt appears. ' +
+                'Open your browser\u2019s site settings (the icon at the left of the address bar), ' +
+                'set Camera to Allow, then retry.'
+              : 'Camera permission was not granted. Choose \u201cAllow\u201d when your browser asks, then retry.';
         } else if (
           err.name === 'NotFoundError' ||
           err.name === 'DevicesNotFoundError'

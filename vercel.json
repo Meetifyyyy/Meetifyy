@@ -88,7 +88,7 @@
         { "key": "X-Content-Type-Options", "value": "nosniff" },
         { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
         { "key": "Strict-Transport-Security", "value": "max-age=63072000; includeSubDomains; preload" },
-        { "key": "Permissions-Policy", "value": "camera=(), microphone=(self), geolocation=(self), payment=()" },
+        { "key": "Permissions-Policy", "value": "camera=(self), microphone=(self), geolocation=(self), payment=()" },
         {
           "key": "Content-Security-Policy",
           "value": "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:; script-src-elem 'self' 'unsafe-inline' 'unsafe-eval' blob:; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: http: https: https://*.supabase.co https://*.r2.dev https://cdn.meetifyy.app; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.r2.dev https://cdn.meetifyy.app http: https: ws: wss:; media-src 'self' data: blob: http: https: https://*.supabase.co https://*.r2.dev https://cdn.meetifyy.app; frame-ancestors 'none'; base-uri 'self'; form-action 'self';"
