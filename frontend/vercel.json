@@ -17,6 +17,14 @@
   ],
   "rewrites": [
     {
+      "source": "/_api/:path*",
+      "destination": "https://api.meetifyy.app/:path*"
+    },
+    {
+      "source": "/api/media/:path*",
+      "destination": "https://api.meetifyy.app/api/media/:path*"
+    },
+    {
       "source": "/sw.js",
       "destination": "/sw.js"
     },
