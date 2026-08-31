@@ -5,7 +5,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { VerificationStatus } from '@prisma/client';
+import { Prisma, VerificationStatus } from '@prisma/client';
 import { VerificationAccessService } from '../common/verification/verification-access.service';
 
 /** The states from which a user may start (or restart) verification. */
@@ -96,51 +96,80 @@ export class VerificationService {
       this.assertUsableDocument(idCardMediaId, userId, 'id card'),
     ]);
 
-    // Claim the transition instead of checking and then writing. The previous
-    // read-then-write left a window in which a double-clicked submit button, or
-    // two open tabs, both passed the status check and both wrote — producing
-    // duplicate work for reviewers and a status update that raced with itself.
-    // A conditional update lets exactly one submission through.
-    const claimed = await this.prisma.user.updateMany({
-      where: { id: userId, verificationStatus: { in: SUBMITTABLE_FROM } },
-      data: { verificationStatus: VerificationStatus.PENDING },
-    });
+    // Both writes go in one transaction. The account status and the attempt row
+    // have to move together: claiming the status first and inserting afterwards
+    // left a failed insert parked at PENDING with no request behind it —
+    // unable to resubmit, and invisible to reviewers.
+    let request: { id: string; attemptNumber: number };
+    try {
+      request = await this.prisma.$transaction(async (tx) => {
+        // Claim the transition instead of checking and then writing. The
+        // previous read-then-write left a window in which a double-clicked
+        // submit button, or two open tabs, both passed the status check and
+        // both wrote. A conditional update lets exactly one through.
+        const claimed = await tx.user.updateMany({
+          where: { id: userId, verificationStatus: { in: SUBMITTABLE_FROM } },
+          data: { verificationStatus: VerificationStatus.PENDING },
+        });
 
-    if (claimed.count === 0) {
-      const user = await this.prisma.user.findUnique({
-        where: { id: userId },
-        select: { verificationStatus: true },
+        if (claimed.count === 0) {
+          const user = await tx.user.findUnique({
+            where: { id: userId },
+            select: { verificationStatus: true },
+          });
+          if (!user) throw new BadRequestException('User not found');
+          throw new ConflictException(
+            `Cannot submit verification while status is ${user.verificationStatus}`,
+          );
+        }
+
+        // Belt-and-braces: uploads into `verification/` are already created
+        // private, so this only repairs rows predating that. It is not the
+        // thing protecting the documents — the storage layer refuses the
+        // whole prefix.
+        await tx.media.updateMany({
+          where: { id: { in: [selfieMediaId, idCardMediaId] } },
+          data: { visibility: 'private' },
+        });
+
+        // Attempts are numbered per user and never reused, so the history
+        // reads as "Attempt 1, 2, 3" no matter how the rows were decided.
+        const previous = await tx.verificationRequest.findFirst({
+          where: { userId },
+          orderBy: { attemptNumber: 'desc' },
+          select: { attemptNumber: true },
+        });
+
+        // A new row per submission. This was an upsert keyed on the old unique
+        // userId, which overwrote the previous attempt and wiped the reason it
+        // had been rejected — the user lost the explanation they were meant to
+        // act on, and the history could not exist.
+        return tx.verificationRequest.create({
+          data: {
+            userId,
+            attemptNumber: (previous?.attemptNumber ?? 0) + 1,
+            selfieMediaId,
+            idCardMediaId,
+            status: VerificationStatus.PENDING,
+          },
+          select: { id: true, attemptNumber: true },
+        });
       });
-      if (!user) throw new BadRequestException('User not found');
-      throw new ConflictException(
-        `Cannot submit verification while status is ${user.verificationStatus}`,
-      );
+    } catch (error) {
+      // The partial unique index on (userId) WHERE status = 'PENDING' is the
+      // actual guarantee against duplicate open requests: two concurrent calls
+      // that both somehow cleared the status claim still cannot both insert.
+      // The transaction rolls the status change back along with it.
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        throw new ConflictException(
+          'A verification request is already awaiting review',
+        );
+      }
+      throw error;
     }
-
-    // Belt-and-braces: uploads into `verification/` are already created
-    // private, so this only repairs rows predating that. It is not the thing
-    // protecting the documents — the storage layer refuses the whole prefix.
-    await this.prisma.media.updateMany({
-      where: { id: { in: [selfieMediaId, idCardMediaId] } },
-      data: { visibility: 'private' },
-    });
-
-    const request = await this.prisma.verificationRequest.upsert({
-      where: { userId },
-      create: {
-        userId,
-        selfieMediaId,
-        idCardMediaId,
-        status: VerificationStatus.PENDING,
-      },
-      update: {
-        selfieMediaId,
-        idCardMediaId,
-        status: VerificationStatus.PENDING,
-        rejectionReason: null,
-        reviewerId: null,
-      },
-    });
 
     // Submitting drops an account to PENDING, which is not an eligible state.
     // Announce it so open sessions and DM partners stop offering actions the
@@ -151,31 +180,56 @@ export class VerificationService {
     );
 
     this.logger.log(
-      `verification:submitted user=${userId} request=${request.id}`,
+      `verification:submitted user=${userId} request=${request.id} ` +
+        `attempt=${request.attemptNumber}`,
     );
 
     return request;
   }
 
+  /**
+   * Everything the settings screen needs to decide what to render, read from
+   * the persisted attempts rather than inferred from the user's status flag.
+   *
+   * The panel used to key entirely off `currentUser.verificationStatus`, which
+   * is a cached copy: after a refresh or a PWA reload it could still say
+   * UNVERIFIED while a request sat pending in the database, and the submission
+   * form would be offered again. `latest` is the authoritative answer.
+   *
+   * Scoped to the caller's own id throughout — a user can only ever read their
+   * own attempts and their own rejection reasons. No storage keys or document
+   * URLs are returned; the reviewer's signed links are not the user's to hold.
+   */
   async getStatus(userId: string) {
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: { verificationStatus: true },
-    });
+    const [user, attempts] = await Promise.all([
+      this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { verificationStatus: true },
+      }),
+      this.prisma.verificationRequest.findMany({
+        where: { userId },
+        orderBy: { attemptNumber: 'desc' },
+        select: {
+          id: true,
+          attemptNumber: true,
+          status: true,
+          rejectionReason: true,
+          createdAt: true,
+          reviewedAt: true,
+        },
+      }),
+    ]);
 
-    const request = await this.prisma.verificationRequest.findUnique({
-      where: { userId },
-      select: {
-        status: true,
-        rejectionReason: true,
-        createdAt: true,
-        updatedAt: true,
-      },
-    });
+    const latest = attempts[0] ?? null;
 
     return {
       status: user?.verificationStatus || VerificationStatus.UNVERIFIED,
-      request: request || null,
+      /** Whether a decision is outstanding. The form must stay hidden for this. */
+      hasPendingRequest: latest?.status === VerificationStatus.PENDING,
+      /** The current attempt, and the one whose rejection reason to surface. */
+      request: latest,
+      /** Newest first. Every attempt ever made, retained across resubmissions. */
+      history: attempts,
     };
   }
 }

@@ -145,7 +145,13 @@ describe('AdminVerificationService', () => {
       expect(mockPrisma.verificationRequest.updateMany).toHaveBeenCalledWith({
         // Conditional on the status we read — this is the concurrency claim.
         where: { id: 'req-1', status: VerificationStatus.PENDING },
-        data: { status: VerificationStatus.VERIFIED, rejectionReason: null },
+        data: {
+          status: VerificationStatus.VERIFIED,
+          rejectionReason: null,
+          // Stamped on the decision itself, so the user can be shown when it
+          // was reviewed without reading `updatedAt`, which any write moves.
+          reviewedAt: expect.any(Date) as Date,
+        },
       });
       expect(mockPrisma.user.update).toHaveBeenCalledWith({
         where: { id: 'user-1' },
@@ -168,6 +174,7 @@ describe('AdminVerificationService', () => {
           data: {
             status: VerificationStatus.REJECTED,
             rejectionReason: 'ID photo was unreadable',
+            reviewedAt: expect.any(Date) as Date,
           },
         }),
       );

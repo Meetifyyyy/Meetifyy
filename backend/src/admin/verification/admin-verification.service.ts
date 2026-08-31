@@ -192,6 +192,9 @@ export class AdminVerificationService {
         // existed and was never written, because the endpoint authenticated
         // against the wrong identity table entirely.
         ...(reviewerId ? { reviewerId } : {}),
+        // When it was decided. `updatedAt` moves on any write, so it cannot be
+        // shown to the user as "reviewed on" — this records the decision itself.
+        reviewedAt: new Date(),
       },
     });
 

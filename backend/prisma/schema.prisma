@@ -219,7 +219,7 @@ model User {
   college                    College?                    @relation(fields: [collegeId], references: [id])
   coverMedia                 Media?                      @relation("UserCover", fields: [coverMediaId], references: [id])
   settings                   UserSettings?
-  verificationRequest        VerificationRequest?
+  verificationRequests       VerificationRequest[]
 
   @@index([collegeId])
   @@index([collegeId, createdAt(sort: Desc)])
@@ -1505,24 +1505,41 @@ enum VerificationStatus {
   RESUBMISSION_REQUIRED
 }
 
+/// One verification attempt. Attempts accumulate: a resubmission adds a row
+/// rather than replacing the previous one, so a user (and a reviewer) can see
+/// what was submitted before and why it was turned down.
+///
+/// `userId` was previously `@unique`, which made history impossible — the
+/// service had to upsert, and every resubmission overwrote the prior attempt
+/// along with its rejection reason. The "one open request at a time" rule that
+/// constraint was really enforcing is now a partial unique index on
+/// (userId) WHERE status = 'PENDING', added in the migration because Prisma
+/// cannot express a partial index in the schema. That is what makes duplicate
+/// submissions impossible at the database level rather than only in service code.
 model VerificationRequest {
   id              String             @id @default(uuid())
-  userId          String             @unique
+  userId          String
+  /// 1-based, per user. Displayed to the user as "Attempt 3".
+  attemptNumber   Int
   status          VerificationStatus @default(PENDING)
   selfieMediaId   String
   idCardMediaId   String
   rejectionReason String?            @db.VarChar(500)
   reviewerId      String?
+  /// When a reviewer decided. Null while the attempt is still pending.
+  reviewedAt      DateTime?
   createdAt       DateTime           @default(now())
   updatedAt       DateTime           @updatedAt
-  
+
   user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   reviewer    SuperAdmin? @relation("VerificationReviewer", fields: [reviewerId], references: [id])
   selfieMedia Media       @relation("VerificationSelfie", fields: [selfieMediaId], references: [id])
   idCardMedia Media       @relation("VerificationIdCard", fields: [idCardMediaId], references: [id])
 
+  @@unique([userId, attemptNumber])
   @@index([status])
   @@index([status, createdAt])
+  @@index([userId, createdAt])
 }
 
 enum CommunityRequestStatus {
