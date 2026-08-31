@@ -1,10 +1,9 @@
-import { lazy, Suspense, useMemo, useEffect } from 'react';
+import { lazy, Suspense, useMemo } from 'react';
 import { IS_DEV_BUILD } from '@config';
 import { createBrowserRouter, RouterProvider, Navigate, Outlet, ScrollRestoration, useLocation } from 'react-router-dom';
 import { QueryErrorResetBoundary } from '@tanstack/react-query';
 import { SmartBackTracker } from './shared/hooks/useSmartBack';
 import { useAuth } from './shared/context/AuthContext';
-import { useVersionCheck } from './shared/hooks/useVersionCheck';
 import DashboardLayoutWrapper from './layout/DashboardLayoutWrapper';
 import ErrorBoundary, { RouteErrorBoundary } from './shared/components/ErrorBoundary';
 import SocketManager from './shared/components/SocketManager';
@@ -61,88 +60,45 @@ import SearchSkeleton from './features/search/components/skeletons/SearchSkeleto
 import SettingsSkeleton from './features/settings/components/skeletons/SettingsSkeleton';
 import SavedPageSkeleton from './features/feed/components/skeletons/SavedPageSkeleton';
 
-function lazyWithRetry(componentImport) {
-  return lazy(async () => {
-    let pageHasAlreadyBeenReloaded = false;
-    try {
-      pageHasAlreadyBeenReloaded = JSON.parse(
-        window.sessionStorage.getItem('page_reloaded_on_chunk_error') || 'false'
-      );
-    } catch (_) {}
-
-    try {
-      const component = await componentImport();
-      try { window.sessionStorage.setItem('page_reloaded_on_chunk_error', 'false'); } catch (_) {}
-      return component;
-    } catch (error) {
-      const msg = error?.message || '';
-      const isChunkError =
-        error?.name === 'ChunkLoadError' ||
-        msg.includes('Failed to fetch dynamically imported module') ||
-        msg.includes('Importing a module script failed') ||
-        msg.includes('Failed to load module script') ||
-        msg.includes('MIME type') ||
-        msg.includes('Strict MIME type checking') ||
-        msg.includes('dynamically imported module') ||
-        msg.includes('Loading chunk');
-
-      if (isChunkError && !pageHasAlreadyBeenReloaded) {
-        try { window.sessionStorage.setItem('page_reloaded_on_chunk_error', 'true'); } catch (_) {}
-        try {
-          if ('serviceWorker' in navigator) {
-            const registrations = await navigator.serviceWorker.getRegistrations();
-            await Promise.all(registrations.map(r => r.unregister()));
-          }
-          if ('caches' in window) {
-            const keys = await caches.keys();
-            await Promise.all(keys.map(k => caches.delete(k)));
-          }
-        } catch {
-          // ignore
-        }
-        const url = new URL(window.location.href);
-        url.searchParams.set('_v', Date.now().toString());
-        window.location.replace(url.toString());
-        return new Promise(() => {}); // Hold until reload finishes
-      }
-
-      try { window.sessionStorage.setItem('page_reloaded_on_chunk_error', 'false'); } catch (_) {}
-      throw error;
-    }
-  });
+function lazyRoute(componentImport) {
+  // Route chunks are precached by the worker that owns this document. A new
+  // worker is not activated until old clients close, so an active session keeps
+  // access to the exact chunk set it started with. Unexpected import failures
+  // reach the error boundary instead of wiping caches and reloading the app.
+  return lazy(componentImport);
 }
 
-const LandingPage = lazyWithRetry(() => import('./features/auth/pages/LandingPage'));
-const AuthShell = lazyWithRetry(() => import('./features/auth/shared/ui/AuthShell'));
-const FeedRoute = lazyWithRetry(() => import('./features/feed/pages/FeedRoute'));
-const CommunitiesRoute = lazyWithRetry(() => import('./features/communities/pages/CommunitiesRoute'));
-const CommunityDetailRoute = lazyWithRetry(() => import('./features/communities/pages/CommunityDetailRoute'));
-const PostDetailRoute = lazyWithRetry(() => import('./features/feed/pages/PostDetailRoute'));
-const MessagesRoute = lazyWithRetry(() => import('./features/messages/pages/MessagesRoute'));
-const ProfilePage = lazyWithRetry(() => import('./features/profile/pages/ProfilePage'));
-const SearchResultsRoute = lazyWithRetry(() => import('./features/search/pages/SearchResultsRoute'));
-const LoginPage = lazyWithRetry(() => import('./features/auth/pages/LoginPage'));
-const SignupPage = lazyWithRetry(() => import('./features/auth/pages/SignupPage'));
-const ForgotPasswordPage = lazyWithRetry(() => import('./features/auth/pages/ForgotPasswordPage'));
-const ResetPasswordPage = lazyWithRetry(() => import('./features/auth/pages/ResetPasswordPage'));
-const OnboardingRoute = lazyWithRetry(() => import('./features/onboarding/pages/OnboardingRoute'));
-const SettingsRoute = lazyWithRetry(() => import('./features/settings/pages/SettingsRoute'));
-const FindYourCrewPage = lazyWithRetry(() => import('./features/crew/pages/FindYourCrewPage'));
-const ActivityDetailPage = lazyWithRetry(() => import('./features/crew/pages/ActivityDetailPage'));
-const CreateActivityPage = lazyWithRetry(() => import('./features/crew/pages/CreateActivityPage'));
-const NotificationsRoute = lazyWithRetry(() => import('./features/notifications/pages/NotificationsRoute'));
-const CampusPage = lazyWithRetry(() => import('./features/campus/pages/CampusPage'));
-const DirectoryPage = lazyWithRetry(() => import('./features/campus/pages/DirectoryPage'));
-const CampusCommunitiesPage = lazyWithRetry(() => import('./features/campus/pages/CampusCommunitiesPage'));
-const CampusEventsPage = lazyWithRetry(() => import('./features/campus-events/pages/CampusEventsPage'));
-const CampusEventDetailPage = lazyWithRetry(() => import('./features/campus-events/pages/CampusEventDetailPage'));
-const SavedPage = lazyWithRetry(() => import('./features/feed/pages/SavedPage'));
-const AboutPage = lazyWithRetry(() => import('./features/info/pages/AboutPage'));
-const CommunityGuidelinesPage = lazyWithRetry(() => import('./features/info/pages/CommunityGuidelinesPage'));
-const CookiePolicyPage = lazyWithRetry(() => import('./features/info/pages/CookiePolicyPage'));
-const PrivacyPolicyPage = lazyWithRetry(() => import('./features/info/pages/PrivacyPolicyPage'));
-const TermsPage = lazyWithRetry(() => import('./features/info/pages/TermsPage'));
-const HelpSupportPage = lazyWithRetry(() => import('./features/info/help/HelpSupportPage'));
+const LandingPage = lazyRoute(() => import('./features/auth/pages/LandingPage'));
+const AuthShell = lazyRoute(() => import('./features/auth/shared/ui/AuthShell'));
+const FeedRoute = lazyRoute(() => import('./features/feed/pages/FeedRoute'));
+const CommunitiesRoute = lazyRoute(() => import('./features/communities/pages/CommunitiesRoute'));
+const CommunityDetailRoute = lazyRoute(() => import('./features/communities/pages/CommunityDetailRoute'));
+const PostDetailRoute = lazyRoute(() => import('./features/feed/pages/PostDetailRoute'));
+const MessagesRoute = lazyRoute(() => import('./features/messages/pages/MessagesRoute'));
+const ProfilePage = lazyRoute(() => import('./features/profile/pages/ProfilePage'));
+const SearchResultsRoute = lazyRoute(() => import('./features/search/pages/SearchResultsRoute'));
+const LoginPage = lazyRoute(() => import('./features/auth/pages/LoginPage'));
+const SignupPage = lazyRoute(() => import('./features/auth/pages/SignupPage'));
+const ForgotPasswordPage = lazyRoute(() => import('./features/auth/pages/ForgotPasswordPage'));
+const ResetPasswordPage = lazyRoute(() => import('./features/auth/pages/ResetPasswordPage'));
+const OnboardingRoute = lazyRoute(() => import('./features/onboarding/pages/OnboardingRoute'));
+const SettingsRoute = lazyRoute(() => import('./features/settings/pages/SettingsRoute'));
+const FindYourCrewPage = lazyRoute(() => import('./features/crew/pages/FindYourCrewPage'));
+const ActivityDetailPage = lazyRoute(() => import('./features/crew/pages/ActivityDetailPage'));
+const CreateActivityPage = lazyRoute(() => import('./features/crew/pages/CreateActivityPage'));
+const NotificationsRoute = lazyRoute(() => import('./features/notifications/pages/NotificationsRoute'));
+const CampusPage = lazyRoute(() => import('./features/campus/pages/CampusPage'));
+const DirectoryPage = lazyRoute(() => import('./features/campus/pages/DirectoryPage'));
+const CampusCommunitiesPage = lazyRoute(() => import('./features/campus/pages/CampusCommunitiesPage'));
+const CampusEventsPage = lazyRoute(() => import('./features/campus-events/pages/CampusEventsPage'));
+const CampusEventDetailPage = lazyRoute(() => import('./features/campus-events/pages/CampusEventDetailPage'));
+const SavedPage = lazyRoute(() => import('./features/feed/pages/SavedPage'));
+const AboutPage = lazyRoute(() => import('./features/info/pages/AboutPage'));
+const CommunityGuidelinesPage = lazyRoute(() => import('./features/info/pages/CommunityGuidelinesPage'));
+const CookiePolicyPage = lazyRoute(() => import('./features/info/pages/CookiePolicyPage'));
+const PrivacyPolicyPage = lazyRoute(() => import('./features/info/pages/PrivacyPolicyPage'));
+const TermsPage = lazyRoute(() => import('./features/info/pages/TermsPage'));
+const HelpSupportPage = lazyRoute(() => import('./features/info/help/HelpSupportPage'));
 
 /**
  * Wraps a route element with a scoped error boundary and suspense fallback.
@@ -248,7 +204,6 @@ function NotFound() {
  * on one page never unmounts the surrounding shell (header, sidebar, bottom nav).
  */
 export default function App() {
-  useVersionCheck();
   // NOTE: This router is created inside the App component using useMemo so that
   // nested route elements and hooks (like ProtectedRoute, SocketManager) can
   // safely consume context from AuthProvider, which wraps App in main.jsx.

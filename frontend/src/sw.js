@@ -1,27 +1,18 @@
 import { precacheAndRoute, cleanupOutdatedCaches } from 'workbox-precaching';
 import { registerRoute, NavigationRoute } from 'workbox-routing';
-import { StaleWhileRevalidate, CacheFirst, NetworkFirst, NetworkOnly } from 'workbox-strategies';
+import { CacheFirst, NetworkFirst, NetworkOnly } from 'workbox-strategies';
 import { ExpirationPlugin } from 'workbox-expiration';
 import { CacheableResponsePlugin } from 'workbox-cacheable-response';
 import { clientsClaim } from 'workbox-core';
 
 // ─── Core Workbox Setup ─────────────────────────────────────────────────────
 
-// NOTE: there is deliberately no top-level `self.skipWaiting()`.
-//
-// Calling it made every new deployment activate immediately and take over
-// running tabs, which fired `controllerchange` and forced a full reload in the
-// middle of whatever the user was doing. A new worker now installs quietly and
-// waits; it takes over only when a client explicitly asks (see the
-// SKIP_WAITING handler below), and clients only ask at page load, when there is
-// no session state to lose.
+// Do not call skipWaiting. A deployment installs beside the active worker and
+// activates only after every client using the old build has naturally closed.
+// Workbox then cleans the old precache during activation, when no running page
+// can still request one of its lazy chunks.
 clientsClaim();
 cleanupOutdatedCaches();
-
-// The page asks for the waiting worker to take over — sent at boot only.
-self.addEventListener('message', (event) => {
-  if (event.data && event.data.type === 'SKIP_WAITING') self.skipWaiting();
-});
 
 // Inject the Vite-generated precache manifest at build time
 precacheAndRoute(self.__WB_MANIFEST);
@@ -72,26 +63,29 @@ self.addEventListener('activate', (event) => {
  * and therefore the newest hashed asset URLs. Those assets are content-addressed
  * and immutable, so they cache forever safely.
  *
- * The short timeout keeps this honest on a flaky mobile connection: if the
- * network has not answered in 4s, the cached shell is served rather than
- * leaving the user on a blank page.
+ * There is intentionally no network timeout. A timeout races a valid network
+ * response and can boot stale HTML merely because a mobile connection took a
+ * few seconds. The cached shell is used only when the request actually fails,
+ * which preserves offline startup without making online freshness probabilistic.
  */
 const navigationHandler = new NetworkFirst({
   cacheName: 'app-shell',
-  networkTimeoutSeconds: 4,
-  plugins: [new CacheableResponsePlugin({ statuses: [200] })],
+  plugins: [
+    new ExpirationPlugin({ maxEntries: 20, maxAgeSeconds: 7 * 24 * 60 * 60 }),
+    new CacheableResponsePlugin({ statuses: [200] }),
+  ],
 });
 const navigationRoute = new NavigationRoute(navigationHandler, {
-  denylist: [/^\/api\//, /^\/version\.json/, /^\/assets\//, /\.[a-zA-Z0-9]+$/],
+  denylist: [/^\/api\//, /^\/assets\//, /\.[a-zA-Z0-9]+$/],
 });
 registerRoute(navigationRoute);
 
 // ─── Static Asset Caching ───────────────────────────────────────────────────
 
-// Hashed JS chunks — StaleWhileRevalidate (reject text/html responses from SPA fallback)
+// Hashed JS chunks are content-addressed and immutable, so cache-first is safe.
 registerRoute(
   /\/assets\/.*\.js$/,
-  new StaleWhileRevalidate({
+  new CacheFirst({
     cacheName: 'js-chunks-cache',
     plugins: [
       new ExpirationPlugin({ maxEntries: 100, maxAgeSeconds: 30 * 24 * 60 * 60 }),
@@ -110,10 +104,10 @@ registerRoute(
   })
 );
 
-// CSS chunks — StaleWhileRevalidate (reject text/html responses from SPA fallback)
+// Hashed CSS chunks are content-addressed and immutable, so cache-first is safe.
 registerRoute(
   /\/assets\/.*\.css$/,
-  new StaleWhileRevalidate({
+  new CacheFirst({
     cacheName: 'css-chunks-cache',
     plugins: [
       new ExpirationPlugin({ maxEntries: 50, maxAgeSeconds: 30 * 24 * 60 * 60 }),

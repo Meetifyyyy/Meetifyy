@@ -17,10 +17,6 @@
   ],
   "rewrites": [
     {
-      "source": "/version.json",
-      "destination": "/version.json"
-    },
-    {
       "source": "/sw.js",
       "destination": "/sw.js"
     },
@@ -91,21 +87,12 @@
           "value": "no-cache, no-store, must-revalidate, max-age=0, s-maxage=0"
         },
         {
-          "key": "Pragma",
-          "value": "no-cache"
+          "key": "CDN-Cache-Control",
+          "value": "no-store"
         },
         {
-          "key": "Expires",
-          "value": "0"
-        }
-      ]
-    },
-    {
-      "source": "/version.json",
-      "headers": [
-        {
-          "key": "Cache-Control",
-          "value": "no-cache, no-store, must-revalidate, max-age=0, s-maxage=0"
+          "key": "Vercel-CDN-Cache-Control",
+          "value": "no-store"
         },
         {
           "key": "Pragma",
@@ -123,6 +110,14 @@
         {
           "key": "Cache-Control",
           "value": "no-cache, no-store, must-revalidate, max-age=0, s-maxage=0"
+        },
+        {
+          "key": "CDN-Cache-Control",
+          "value": "no-store"
+        },
+        {
+          "key": "Vercel-CDN-Cache-Control",
+          "value": "no-store"
         },
         {
           "key": "Pragma",
@@ -192,6 +187,14 @@
           "value": "no-cache, no-store, must-revalidate, max-age=0, s-maxage=0"
         },
         {
+          "key": "CDN-Cache-Control",
+          "value": "no-store"
+        },
+        {
+          "key": "Vercel-CDN-Cache-Control",
+          "value": "no-store"
+        },
+        {
           "key": "Pragma",
           "value": "no-cache"
         },
@@ -215,7 +218,15 @@
       "headers": [
         {
           "key": "Cache-Control",
-          "value": "no-store, must-revalidate"
+          "value": "no-cache, no-store, must-revalidate, max-age=0, s-maxage=0"
+        },
+        {
+          "key": "CDN-Cache-Control",
+          "value": "no-store"
+        },
+        {
+          "key": "Vercel-CDN-Cache-Control",
+          "value": "no-store"
         }
       ]
     },
