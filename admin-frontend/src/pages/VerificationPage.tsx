@@ -32,6 +32,16 @@ const ReviewerAvatar: React.FC<{ user: any }> = ({ user }) => {
 export const VerificationPage: React.FC = () => {
   const queryClient = useQueryClient();
   const [filterStatus, setFilterStatus] = useState<string>('PENDING');
+  /**
+   * The request awaiting a rejection reason.
+   *
+   * Reject used to fire the mutation straight away with no `adminNotes`, so the
+   * backend dutifully stored `rejectionReason: null` and the user was told only
+   * that they had been rejected — never why. A reason is now required before
+   * the call is made at all.
+   */
+  const [rejecting, setRejecting] = useState<any | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
 
   const { data, isLoading } = useQuery({
     queryKey: ['adminVerificationRequests', filterStatus],
@@ -56,6 +66,22 @@ export const VerificationPage: React.FC = () => {
 
   const handleAction = (id: string, status: string) => {
     mutation.mutate({ id, status });
+  };
+
+  const REASON_MAX = 500; // matches VerificationRequest.rejectionReason
+  const trimmedReason = rejectReason.trim();
+
+  const closeRejectModal = () => {
+    setRejecting(null);
+    setRejectReason('');
+  };
+
+  const confirmRejection = () => {
+    if (!rejecting || !trimmedReason) return;
+    mutation.mutate(
+      { id: rejecting.id, status: 'REJECTED', adminNotes: trimmedReason },
+      { onSuccess: closeRejectModal },
+    );
   };
 
   // `GET /admin/verification/requests` responds `{ total, requests }` — there is
@@ -198,7 +224,7 @@ export const VerificationPage: React.FC = () => {
               {req.status === 'PENDING' && (
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '0.5rem', paddingTop: '1.5rem', borderTop: '1px solid var(--color-border)' }}>
                   <button 
-                    onClick={() => handleAction(req.id, 'REJECTED')}
+                    onClick={() => { setRejectReason(''); setRejecting(req); }}
                     disabled={mutation.isPending}
                     style={{ 
                       padding: '0.6rem 1.25rem', 
@@ -237,6 +263,96 @@ export const VerificationPage: React.FC = () => {
               )}
             </div>
           ))}
+        </div>
+      )}
+
+      {rejecting && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="reject-title"
+          onClick={closeRejectModal}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 1000,
+            background: 'rgba(0,0,0,0.6)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: '1rem',
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: 'var(--color-bg-card, #16181d)',
+              border: '1px solid var(--color-border)',
+              borderRadius: '12px',
+              padding: '1.5rem',
+              width: '100%', maxWidth: '520px',
+            }}
+          >
+            <h2 id="reject-title" style={{ fontSize: '1.15rem', fontWeight: 600, color: 'var(--color-text-white)', marginBottom: '0.35rem' }}>
+              Reject verification
+            </h2>
+            <p style={{ color: 'var(--color-text-light)', fontSize: '0.875rem', marginBottom: '1.25rem' }}>
+              {rejecting.user?.displayName || rejecting.user?.username || 'This user'} will see this
+              reason on their Account Verification screen, so write what they need to correct.
+            </p>
+
+            <label htmlFor="reject-reason" style={{ display: 'block', fontSize: '0.8rem', fontWeight: 500, marginBottom: '0.4rem', color: 'var(--color-text-main)' }}>
+              Reason for rejection <span style={{ color: '#ef4444' }}>*</span>
+            </label>
+            <textarea
+              id="reject-reason"
+              autoFocus
+              value={rejectReason}
+              maxLength={REASON_MAX}
+              onChange={(e) => setRejectReason(e.target.value)}
+              placeholder="e.g. The college ID photo is too blurry to read the name and enrolment number."
+              rows={4}
+              style={{
+                width: '100%', resize: 'vertical', padding: '0.75rem',
+                borderRadius: '8px', background: 'var(--color-bg-input, #0f1115)',
+                color: 'var(--color-text-main)',
+                border: '1px solid var(--color-border)',
+                fontFamily: 'inherit', fontSize: '0.875rem',
+              }}
+            />
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.4rem', fontSize: '0.75rem', color: 'var(--color-text-light)' }}>
+              <span>{trimmedReason ? '\u00A0' : 'A reason is required.'}</span>
+              <span>{rejectReason.length}/{REASON_MAX}</span>
+            </div>
+
+            {mutation.isError && (
+              <p role="alert" style={{ color: '#ef4444', fontSize: '0.8rem', marginTop: '0.75rem' }}>
+                {(mutation.error as Error)?.message || 'Could not reject this request.'}
+              </p>
+            )}
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '1.25rem' }}>
+              <button
+                onClick={closeRejectModal}
+                disabled={mutation.isPending}
+                style={{
+                  padding: '0.6rem 1.1rem', borderRadius: '6px',
+                  background: 'transparent', color: 'var(--color-text-main)',
+                  border: '1px solid var(--color-border)', cursor: 'pointer', fontWeight: 500,
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmRejection}
+                disabled={!trimmedReason || mutation.isPending}
+                style={{
+                  padding: '0.6rem 1.1rem', borderRadius: '6px',
+                  background: trimmedReason ? '#ef4444' : 'rgba(239, 68, 68, 0.35)',
+                  color: 'white', border: 'none', fontWeight: 500,
+                  cursor: trimmedReason && !mutation.isPending ? 'pointer' : 'not-allowed',
+                }}
+              >
+                {mutation.isPending ? 'Rejecting…' : 'Confirm rejection'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
