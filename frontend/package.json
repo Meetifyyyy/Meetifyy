@@ -5,11 +5,12 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "node scripts/generate-robots.mjs && vite build",
     "preview": "vite preview",
     "pwa:assets": "node scripts/generate-pwa-assets.mjs",
     "lint": "eslint .",
-    "lint:fix": "eslint . --fix"
+    "lint:fix": "eslint . --fix",
+    "robots": "node scripts/generate-robots.mjs"
   },
   "dependencies": {
     "@emoji-mart/data": "^1.2.1",

@@ -375,3 +375,7 @@ test_*.md
 *.sqlite
 *.sqlite3
 *.db
+
+# Generated per-environment at build time by frontend/scripts/generate-robots.mjs.
+# Never commit it: the committed copy would be wrong for 3 of the 4 Vercel projects.
+frontend/public/robots.txt
