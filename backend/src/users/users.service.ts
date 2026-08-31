@@ -523,7 +523,10 @@ export class UsersService {
       passingYear: targetUser.passingYear,
       location: targetUser.location,
       interests: targetUser.interests || [],
-      verified: targetUser.emailVerified,
+      // The checkmark by a name means identity-verified. It used to read a
+      // separate `emailVerified` column that no signup path ever wrote, so it
+      // only ever appeared for accounts an admin had clicked a button on.
+      verified: targetUser.verificationStatus === 'VERIFIED',
       verificationStatus: targetUser.verificationStatus,
       profileCompleted: targetUser.profileCompleted,
       createdAt: targetUser.createdAt,

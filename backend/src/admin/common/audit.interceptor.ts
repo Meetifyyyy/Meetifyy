@@ -48,8 +48,6 @@ export class AuditInterceptor implements NestInterceptor {
         else if (url.includes('/admin/users')) targetType = 'USER';
         else if (url.includes('/admin/reports')) targetType = 'REPORT';
         else if (url.includes('/admin/support')) targetType = 'SUPPORT_TICKET';
-        else if (url.includes('/admin/flags')) targetType = 'FEATURE_FLAG';
-        else if (url.includes('/admin/settings')) targetType = 'SYSTEM_SETTING';
         else if (url.includes('/admin/content')) targetType = 'CONTENT';
         else if (url.includes('/admin/verification')) targetType = 'VERIFICATION';
 
@@ -66,10 +64,7 @@ export class AuditInterceptor implements NestInterceptor {
         if (url.includes('/suspend')) action = 'USER_SUSPEND';
         else if (url.includes('/unsuspend')) action = 'USER_UNSUSPEND';
         else if (url.includes('/restore')) action = 'USER_RESTORE';
-        else if (url.includes('/verify-email')) action = 'USER_VERIFY_EMAIL';
         else if (url.includes('/reset-college')) action = 'USER_RESET_COLLEGE';
-        else if (url.includes('/capabilities'))
-          action = 'USER_UPDATE_CAPABILITIES';
         else if (url.includes('/force-logout')) action = 'USER_FORCE_LOGOUT';
         else if (url.includes('/campus-rep')) action = 'USER_SET_CAMPUS_REP';
         // Checked before the generic `/status` rule below, which would
