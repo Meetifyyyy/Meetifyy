@@ -3,6 +3,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { SearchController } from './search.controller';
 import { SearchService } from './search.service';
 import { SupabaseService } from '../supabase/supabase.service';
+import { PrismaService } from '../prisma/prisma.service';
 
 describe('SearchController', () => {
   let controller: SearchController;
@@ -13,6 +14,10 @@ describe('SearchController', () => {
       providers: [
         { provide: SearchService, useValue: {} },
         { provide: SupabaseService, useValue: {} },
+        {
+          provide: PrismaService,
+          useValue: { user: { findUnique: async () => null } },
+        },
       ],
     }).compile();
 

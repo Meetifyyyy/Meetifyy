@@ -1,12 +1,20 @@
 import React, { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { BookOpen, Inbox } from 'lucide-react';
+import { BookOpen, Inbox, ShieldAlert } from '../components/icons';
 
 import { TicketQueue } from './support/TicketQueue';
 import { TicketDetail } from './support/TicketDetail';
 import { HelpContentManager } from './support/HelpContentManager';
 
-type Tab = 'tickets' | 'help';
+type Tab = 'tickets' | 'appeals' | 'help';
+
+/**
+ * Suspension appeals are support tickets in their own category, so they get
+ * their own section here rather than a parallel inbox — the reply, assignment
+ * and status workflow are identical, and a suspended user waiting on a decision
+ * should not be buried in ordinary support volume.
+ */
+const APPEAL_CATEGORY = 'SUSPENSION_APPEAL';
 
 /**
  * The Admin Dashboard's Support section.
@@ -61,14 +69,25 @@ export const SupportPage: React.FC = () => {
         <TabButton active={tab === 'tickets'} onClick={() => setTab('tickets')} icon={<Inbox size={14} />}>
           Tickets
         </TabButton>
+        <TabButton active={tab === 'appeals'} onClick={() => setTab('appeals')} icon={<ShieldAlert size={14} />}>
+          Suspension appeals
+        </TabButton>
         <TabButton active={tab === 'help'} onClick={() => setTab('help')} icon={<BookOpen size={14} />}>
           Help content
         </TabButton>
       </div>
 
-      {tab === 'tickets' ? (
+      {tab === 'tickets' || tab === 'appeals' ? (
         <div style={ticketLayout}>
-          <TicketQueue selectedId={selectedTicketId} onSelect={selectTicket} />
+          <TicketQueue
+            // Remounted when the section changes so the appeals queue starts
+            // from its own filter state rather than inheriting the last search
+            // the admin ran on the full queue.
+            key={tab}
+            selectedId={selectedTicketId}
+            onSelect={selectTicket}
+            lockedCategory={tab === 'appeals' ? APPEAL_CATEGORY : undefined}
+          />
 
           <div className="glass-panel" style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             {selectedTicketId ? (
@@ -78,10 +97,14 @@ export const SupportPage: React.FC = () => {
               <TicketDetail key={selectedTicketId} ticketId={selectedTicketId} />
             ) : (
               <div style={emptyDetail}>
-                <Inbox size={24} />
-                <span style={{ fontWeight: 600 }}>Select a ticket</span>
+                {tab === 'appeals' ? <ShieldAlert size={24} /> : <Inbox size={24} />}
+                <span style={{ fontWeight: 600 }}>
+                  {tab === 'appeals' ? 'Select an appeal' : 'Select a ticket'}
+                </span>
                 <span style={{ fontSize: '0.78rem' }}>
-                  Choose a request from the queue to read it, reply, or change its status.
+                  {tab === 'appeals'
+                    ? 'Choose an appeal to read it, reply, or decide the outcome.'
+                    : 'Choose a request from the queue to read it, reply, or change its status.'}
                 </span>
               </div>
             )}

@@ -1,0 +1,284 @@
+/* ── Full-screen suspension notice ──
+   Covers the viewport on every authenticated route. The app shell is not
+   rendered behind it: a suspended account has nothing to navigate to, and
+   leaving a sidebar visible would invite people to try. */
+.wrapper {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  overflow-y: auto;
+  background: var(--color-bg-main, #f4f6fb);
+  box-sizing: border-box;
+}
+
+.card {
+  width: 100%;
+  max-width: 520px;
+  margin: auto;
+  padding: 2rem;
+  box-sizing: border-box;
+  background: var(--color-bg-white, #ffffff);
+  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
+  border-radius: var(--radius-xl, 20px);
+  box-shadow: var(--shadow-md, 0 4px 16px rgba(15, 23, 42, 0.06));
+  text-align: center;
+}
+
+.iconBadge {
+  width: 56px;
+  height: 56px;
+  margin: 0 auto 1.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: var(--color-danger, #ef4444);
+  background: var(--color-danger-tint, rgba(239, 68, 68, 0.1));
+}
+
+.title {
+  margin: 0 0 0.5rem;
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: var(--color-text-main, #0f172a);
+}
+
+.body {
+  margin: 0 0 1.5rem;
+  font-size: 0.95rem;
+  line-height: 1.6;
+  color: var(--color-text-light, #64748b);
+}
+
+.email {
+  font-weight: 600;
+  color: var(--color-text-main, #0f172a);
+  word-break: break-word;
+}
+
+/* ── Appeal already on record ── */
+.appealStatus {
+  margin-bottom: 1.5rem;
+  padding: 0.9rem 1rem;
+  text-align: left;
+  border-radius: var(--radius-md, 12px);
+  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
+  background: var(--color-bg-soft, #f8fafc);
+}
+
+.appealStatusRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  font-size: 0.85rem;
+  color: var(--color-text-light, #64748b);
+}
+
+.appealRef {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-weight: 600;
+  color: var(--color-text-main, #0f172a);
+}
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.primaryBtn,
+.secondaryBtn {
+  width: 100%;
+  padding: 0.8rem 1.25rem;
+  font-size: 0.92rem;
+  font-weight: 600;
+  border-radius: var(--radius-md, 12px);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  transition: background 0.15s ease, opacity 0.15s ease;
+}
+
+.primaryBtn {
+  border: none;
+  color: #ffffff;
+  background: var(--color-primary, #2563eb);
+}
+
+.primaryBtn:hover:not(:disabled) {
+  background: var(--color-primary-hover, #1d4ed8);
+}
+
+.secondaryBtn {
+  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
+  color: var(--color-text-main, #0f172a);
+  background: transparent;
+}
+
+.secondaryBtn:hover:not(:disabled) {
+  background: var(--color-bg-soft, #f8fafc);
+}
+
+.primaryBtn:disabled,
+.secondaryBtn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.primaryBtn:focus-visible,
+.secondaryBtn:focus-visible,
+.textarea:focus-visible {
+  outline: 2px solid var(--color-primary, #2563eb);
+  outline-offset: 2px;
+}
+
+/* ── Appeal modal ── */
+.modalBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 2100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  overflow-y: auto;
+  background: rgba(15, 23, 42, 0.45);
+  box-sizing: border-box;
+}
+
+.modal {
+  width: 100%;
+  max-width: 520px;
+  margin: auto;
+  padding: 1.5rem;
+  box-sizing: border-box;
+  background: var(--color-bg-white, #ffffff);
+  border-radius: var(--radius-xl, 20px);
+  box-shadow: var(--shadow-lg, 0 12px 32px rgba(15, 23, 42, 0.18));
+}
+
+.modalHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.35rem;
+}
+
+.modalTitle {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--color-text-main, #0f172a);
+}
+
+.closeBtn {
+  flex-shrink: 0;
+  padding: 0.25rem;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: var(--color-text-light, #64748b);
+  border-radius: var(--radius-sm, 8px);
+}
+
+.closeBtn:hover {
+  color: var(--color-text-main, #0f172a);
+}
+
+.modalHint {
+  margin: 0 0 1rem;
+  font-size: 0.85rem;
+  line-height: 1.55;
+  color: var(--color-text-light, #64748b);
+  text-align: left;
+}
+
+.textarea {
+  width: 100%;
+  min-height: 140px;
+  padding: 0.75rem;
+  box-sizing: border-box;
+  font: inherit;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: var(--color-text-main, #0f172a);
+  background: var(--color-bg-white, #ffffff);
+  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.12));
+  border-radius: var(--radius-md, 12px);
+  resize: vertical;
+}
+
+.counter {
+  margin: 0.4rem 0 1rem;
+  font-size: 0.78rem;
+  text-align: right;
+  color: var(--color-text-dim, #94a3b8);
+}
+
+.counterShort {
+  color: var(--color-danger, #ef4444);
+}
+
+.error {
+  margin: 0 0 1rem;
+  padding: 0.7rem 0.85rem;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  text-align: left;
+  color: var(--color-danger-hover, #dc2626);
+  background: var(--color-danger-tint, rgba(239, 68, 68, 0.08));
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  border-radius: var(--radius-md, 12px);
+}
+
+.modalActions {
+  display: flex;
+  gap: 0.65rem;
+}
+
+.modalActions .primaryBtn,
+.modalActions .secondaryBtn {
+  width: auto;
+  flex: 1;
+}
+
+/* Phones: let the card use the full width and drop the outer chrome. */
+@media (max-width: 560px) {
+  .wrapper {
+    padding: 0;
+    align-items: stretch;
+  }
+
+  .card {
+    max-width: none;
+    min-height: 100dvh;
+    margin: 0;
+    padding: 2rem 1.25rem;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+
+  .modalBackdrop {
+    padding: 0;
+    align-items: flex-end;
+  }
+
+  .modal {
+    max-width: none;
+    margin: 0;
+    border-radius: var(--radius-xl, 20px) var(--radius-xl, 20px) 0 0;
+  }
+}

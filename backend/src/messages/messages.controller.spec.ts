@@ -6,6 +6,7 @@ import { DomainEventService } from '../events/domain-event.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationFactory } from '../notifications/notification.factory';
 import { SupabaseService } from '../supabase/supabase.service';
+import { PrismaService } from '../prisma/prisma.service';
 
 describe('MessagesController', () => {
   let controller: MessagesController;
@@ -19,6 +20,10 @@ describe('MessagesController', () => {
         { provide: NotificationsService, useValue: {} },
         { provide: NotificationFactory, useValue: {} },
         { provide: SupabaseService, useValue: {} },
+        {
+          provide: PrismaService,
+          useValue: { user: { findUnique: async () => null } },
+        },
       ],
     }).compile();
 

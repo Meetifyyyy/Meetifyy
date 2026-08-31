@@ -98,7 +98,6 @@ export class AuthService {
         u."collegeId",
         u."cover",
         u."coverMediaId",
-        u."emailVerified",
         u."verificationStatus",
         u."birthday",
         u."interests",
@@ -162,9 +161,17 @@ export class AuthService {
       if (row.accountStatus === 'DELETED' || row.deletedAt) {
         throw new UnauthorizedException('Account has been deleted');
       }
-      if (row.accountStatus === 'BANNED' || row.accountStatus === 'SUSPENDED') {
-        throw new ForbiddenException('Account has been suspended or banned');
+      // A ban is terminal and not appealable through the app.
+      if (row.accountStatus === 'BANNED') {
+        throw new ForbiddenException('Account has been banned');
       }
+      // A suspension deliberately does NOT block sign-in. The account needs a
+      // working session to be told what happened and to request a review; every
+      // route other than that flow is refused by JwtGuard, so letting the
+      // session exist does not let a suspended user use the product.
+      // `accountStatus` travels in the payload below, which is what the client
+      // keys the suspension screen off.
+
 
       // Perform domain lookup for college auto-linking, but DO NOT block existing accounts
       // if their domain was later deactivated/removed from admin portal.
@@ -336,7 +343,6 @@ export class AuthService {
         collegeId: row.college_id,
         cover: row.cover,
         coverMediaId: row.coverMediaId,
-        emailVerified: row.emailVerified,
         verificationStatus: row.verificationStatus,
         birthday: row.birthday,
         interests: row.interests || [],

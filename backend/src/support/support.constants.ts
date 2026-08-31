@@ -37,6 +37,9 @@ export const SUPPORT_CATEGORY_LABELS: Record<SupportCategory, string> = {
   SAFETY_REPORTING: 'Safety & Reporting',
   TECHNICAL: 'Technical Issue',
   OTHER: 'Other',
+  // Filed only from the suspension screen, never offered on the public form -
+  // which is why this is absent from PUBLIC_SUPPORT_CATEGORIES above.
+  SUSPENSION_APPEAL: 'Suspension Appeal',
   BUG: 'Bug Report',
   ACCOUNT: 'Account',
   VERIFICATION: 'Verification',
