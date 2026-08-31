@@ -172,7 +172,12 @@ export default function UserSidebarCard({ username: propUsername, initialUser = 
     return <UserSidebarCardSkeleton />;
   }
 
-  const isVerified = Boolean(effectiveUser.verified);
+  // The checkmark means identity-verified. `verified` is now derived from
+  // verificationStatus server-side; the status is also read directly so a
+  // socket-patched profile updates the badge without a refetch.
+  const isVerified =
+    effectiveUser.verificationStatus === 'VERIFIED' ||
+    Boolean(effectiveUser.verified);
   const isMutual = Boolean(effectiveUser.isMutual);
 
   return (

@@ -98,7 +98,6 @@ async function main() {
       graduationYear: 2025,
       location: 'Mathura',
       accountStatus: AccountStatus.ACTIVE,
-      emailVerified: true,
       profileCompleted: true,
     },
   });
