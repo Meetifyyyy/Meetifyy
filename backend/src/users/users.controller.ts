@@ -10,6 +10,7 @@ import {
   Req,
   Query,
 } from '@nestjs/common';
+import type { AuthenticatedRequest } from '../common/types/authenticated-request';
 import { UsersService } from './users.service';
 import { JwtGuard } from '../common/guards/jwt.guard';
 import { CacheControl } from '../common/decorators/cache-control.decorator';
@@ -29,7 +30,7 @@ export class UsersController {
   // round-trip but not a payload. (Same reasoning as activities.controller.ts.)
   @CacheControl('private, no-cache')
   async getAllUsers(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
   ) {
@@ -42,7 +43,7 @@ export class UsersController {
   @UseGuards(JwtGuard)
   @CacheControl('private, no-cache')
   async getConnections(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Query('q') query?: string,
     @Query('limit') limit?: string,
   ) {
@@ -56,7 +57,7 @@ export class UsersController {
   @Get('mention-search')
   @UseGuards(JwtGuard)
   async searchMentionCandidates(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Query('q') query?: string,
     @Query('communityId') communityId?: string,
     @Query('limit') limit?: string,
@@ -76,7 +77,10 @@ export class UsersController {
   @Get('online-friends')
   @UseGuards(JwtGuard)
   @CacheControl('private, no-cache')
-  async getOnlineFriends(@Req() req: any, @Query('limit') limit?: string) {
+  async getOnlineFriends(
+    @Req() req: AuthenticatedRequest,
+    @Query('limit') limit?: string,
+  ) {
     const limitNum = limit
       ? Math.min(Math.max(parseInt(limit, 10) || 6, 1), 20)
       : 6;
@@ -93,7 +97,7 @@ export class UsersController {
   @VerifiedOnly()
   @CacheControl('private, no-cache')
   async getCampusUsers(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
   ) {
@@ -109,7 +113,7 @@ export class UsersController {
   @VerifiedOnly()
   @CacheControl('private, no-cache')
   async getDirectory(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Query('search') search?: string,
     @Query('course') course?: string,
     @Query('branch') branch?: string,
@@ -135,27 +139,32 @@ export class UsersController {
   @Get('id/:id')
   @UseGuards(JwtGuard)
   @CacheControl('private, no-cache')
-  async getUserById(@Param('id') id: string, @Req() req: any) {
+  async getUserById(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
     return this.usersService.getUserById(id, req.user?.id);
   }
 
   @Patch('me')
   @UseGuards(JwtGuard)
-  async updateProfile(@Req() req: any, @Body() data: any) {
+  async updateProfile(@Req() req: AuthenticatedRequest, @Body() data: any) {
     const currentUserId = req.user?.id;
-    const userEmail = req.user?.email || req.user?.user_metadata?.email;
+    // user_metadata is arbitrary JSON from the identity provider, so its
+    // `email` is only usable once it has actually been checked to be a string.
+    const metadataEmail = req.user?.user_metadata?.email;
+    const userEmail =
+      req.user?.email ??
+      (typeof metadataEmail === 'string' ? metadataEmail : undefined);
     return this.usersService.updateProfile(currentUserId, data, userEmail);
   }
 
   @Get('me/settings')
   @UseGuards(JwtGuard)
-  async getSettings(@Req() req: any) {
+  async getSettings(@Req() req: AuthenticatedRequest) {
     return this.usersService.getSettings(req.user.id);
   }
 
   @Patch('me/settings')
   @UseGuards(JwtGuard)
-  async updateSettings(@Req() req: any, @Body() data: any) {
+  async updateSettings(@Req() req: AuthenticatedRequest, @Body() data: any) {
     return this.usersService.updateSettings(req.user.id, data);
   }
 
@@ -163,14 +172,17 @@ export class UsersController {
   // string "me" is never treated as a profile lookup.
   @Delete('me')
   @UseGuards(JwtGuard)
-  async deleteAccount(@Req() req: any) {
+  async deleteAccount(@Req() req: AuthenticatedRequest) {
     return this.usersService.deleteAccount(req.user.id);
   }
 
   @Get(':username')
   @UseGuards(JwtGuard)
   @CacheControl('private, no-cache')
-  async getProfile(@Param('username') username: string, @Req() req: any) {
+  async getProfile(
+    @Param('username') username: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
     const currentUserId = req.user?.id;
     return this.usersService.getProfileByUsername(username, currentUserId);
   }
@@ -180,7 +192,7 @@ export class UsersController {
   @CacheControl('private, no-cache')
   async getFollowers(
     @Param('username') username: string,
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
   ) {
@@ -199,7 +211,7 @@ export class UsersController {
   @CacheControl('private, no-cache')
   async getFollowing(
     @Param('username') username: string,
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
   ) {
@@ -216,7 +228,10 @@ export class UsersController {
   @Post(':username/follow')
   @UseGuards(JwtGuard)
   @VerifiedOnly()
-  async follow(@Param('username') username: string, @Req() req: any) {
+  async follow(
+    @Param('username') username: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
     const currentUserId = req.user?.id;
     return this.usersService.followUser(currentUserId, username);
   }
@@ -224,7 +239,10 @@ export class UsersController {
   @Post(':username/unfollow')
   @UseGuards(JwtGuard)
   @VerifiedOnly()
-  async unfollow(@Param('username') username: string, @Req() req: any) {
+  async unfollow(
+    @Param('username') username: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
     const currentUserId = req.user?.id;
     return this.usersService.unfollowUser(currentUserId, username);
   }
@@ -233,7 +251,7 @@ export class UsersController {
   @UseGuards(JwtGuard)
   async blockUser(
     @Param('targetUserId') targetUserId: string,
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
   ) {
     return this.usersService.blockUser(req.user.id, targetUserId);
   }
@@ -242,7 +260,7 @@ export class UsersController {
   @UseGuards(JwtGuard)
   async unblockUser(
     @Param('targetUserId') targetUserId: string,
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
   ) {
     return this.usersService.unblockUser(req.user.id, targetUserId);
   }

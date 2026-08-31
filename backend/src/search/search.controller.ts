@@ -8,6 +8,7 @@ import {
   Body,
   Delete,
 } from '@nestjs/common';
+import type { AuthenticatedRequest } from '../common/types/authenticated-request';
 import { SearchService } from './search.service';
 import { JwtGuard } from '../common/guards/jwt.guard';
 
@@ -18,7 +19,7 @@ export class SearchController {
 
   @Get()
   async search(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Query('q') query: string,
     @Query('type') type?: string,
     @Query('limit') limit?: string,
@@ -36,28 +37,37 @@ export class SearchController {
   }
 
   @Get('suggestions')
-  async getSuggestions(@Req() req: any, @Query('q') query: string) {
+  async getSuggestions(
+    @Req() req: AuthenticatedRequest,
+    @Query('q') query: string,
+  ) {
     const currentUserId = req.user?.id;
     return this.searchService.getSuggestions(query, currentUserId);
   }
 
   @Get('recent')
-  async getRecentSearches(@Req() req: any) {
+  async getRecentSearches(@Req() req: AuthenticatedRequest) {
     return this.searchService.getRecentSearches(req.user?.id);
   }
 
   @Post('recent')
-  async addRecentSearch(@Req() req: any, @Body('term') term: string) {
+  async addRecentSearch(
+    @Req() req: AuthenticatedRequest,
+    @Body('term') term: string,
+  ) {
     return this.searchService.addRecentSearch(req.user?.id, term);
   }
 
   @Delete('recent')
-  async removeRecentSearch(@Req() req: any, @Query('term') term: string) {
+  async removeRecentSearch(
+    @Req() req: AuthenticatedRequest,
+    @Query('term') term: string,
+  ) {
     return this.searchService.removeRecentSearch(req.user?.id, term);
   }
 
   @Delete('recent/clear')
-  async clearRecentSearches(@Req() req: any) {
+  async clearRecentSearches(@Req() req: AuthenticatedRequest) {
     return this.searchService.clearRecentSearches(req.user?.id);
   }
 }

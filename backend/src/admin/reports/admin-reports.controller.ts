@@ -9,6 +9,7 @@ import {
   UseGuards,
   Req,
 } from '@nestjs/common';
+import type { AdminRequest } from '../../common/types/authenticated-request';
 import { ModerationService } from '../../moderation/moderation.service';
 import { UpdateReportDto } from '../../moderation/dto/update-report.dto';
 import { BulkActionReportDto } from '../../moderation/dto/bulk-action-report.dto';
@@ -55,13 +56,13 @@ export class AdminReportsController {
   async updateReport(
     @Param('id') id: string,
     @Body() dto: UpdateReportDto,
-    @Req() req: any,
+    @Req() req: AdminRequest,
   ) {
     return this.moderationService.updateReport(id, dto, req.admin?.id);
   }
 
   @Post('bulk')
-  async bulkAction(@Body() dto: BulkActionReportDto, @Req() req: any) {
+  async bulkAction(@Body() dto: BulkActionReportDto, @Req() req: AdminRequest) {
     return this.moderationService.bulkAction(dto, req.admin?.id);
   }
 }

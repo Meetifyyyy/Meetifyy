@@ -20,6 +20,7 @@ import {
 } from './dto/admin-auth.dto';
 import { AdminJwtGuard } from '../../common/guards/admin-jwt.guard';
 import * as crypto from 'crypto';
+import type { AdminRequest } from '../../common/types/authenticated-request';
 import { config } from '../../config';
 
 @Controller('admin/auth')
@@ -71,7 +72,7 @@ export class AdminAuthController {
 
   @Post('login')
   @HttpCode(HttpStatus.OK)
-  async login(@Body() dto: AdminLoginDto, @Req() req: any) {
+  async login(@Body() dto: AdminLoginDto, @Req() req: AdminRequest) {
     const ip =
       (req.headers['x-forwarded-for'] as string) || req.ip || '0.0.0.0';
     const userAgent = req.headers['user-agent'] || 'Unknown';
@@ -82,7 +83,7 @@ export class AdminAuthController {
   @HttpCode(HttpStatus.OK)
   async verifyOtp(
     @Body() dto: VerifyOtpDto,
-    @Req() req: any,
+    @Req() req: AdminRequest,
     @Res({ passthrough: true }) res: any,
   ) {
     const ip =
@@ -102,7 +103,7 @@ export class AdminAuthController {
   @HttpCode(HttpStatus.OK)
   async verifyTotp(
     @Body() dto: VerifyTotpDto,
-    @Req() req: any,
+    @Req() req: AdminRequest,
     @Res({ passthrough: true }) res: any,
   ) {
     const ip =
@@ -116,7 +117,10 @@ export class AdminAuthController {
 
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
-  async refresh(@Req() req: any, @Res({ passthrough: true }) res: any) {
+  async refresh(
+    @Req() req: AdminRequest,
+    @Res({ passthrough: true }) res: any,
+  ) {
     const refreshToken = req.cookies?.admin_refresh || req.body?.refreshToken;
     if (!refreshToken) {
       this.clearAuthCookies(res);
@@ -143,14 +147,14 @@ export class AdminAuthController {
 
   @UseGuards(AdminJwtGuard)
   @Get('me')
-  async getProfile(@Req() req: any) {
+  async getProfile(@Req() req: AdminRequest) {
     return { success: true, admin: req.admin };
   }
 
   @UseGuards(AdminJwtGuard)
   @Post('logout')
   @HttpCode(HttpStatus.OK)
-  async logout(@Req() req: any, @Res({ passthrough: true }) res: any) {
+  async logout(@Req() req: AdminRequest, @Res({ passthrough: true }) res: any) {
     if (req.adminSession?.id) {
       await this.authService.logout(req.adminSession.id);
     }
@@ -161,7 +165,10 @@ export class AdminAuthController {
   @UseGuards(AdminJwtGuard)
   @Post('logout-all')
   @HttpCode(HttpStatus.OK)
-  async logoutAll(@Req() req: any, @Res({ passthrough: true }) res: any) {
+  async logoutAll(
+    @Req() req: AdminRequest,
+    @Res({ passthrough: true }) res: any,
+  ) {
     await this.authService.logoutAll(req.admin.id);
     this.clearAuthCookies(res);
     return { success: true, message: 'Logged out from all devices' };
@@ -169,14 +176,14 @@ export class AdminAuthController {
 
   @UseGuards(AdminJwtGuard)
   @Get('sessions')
-  async listSessions(@Req() req: any) {
+  async listSessions(@Req() req: AdminRequest) {
     return this.authService.listSessions(req.admin.id);
   }
 
   @UseGuards(AdminJwtGuard)
   @Post('sessions/:id/revoke')
   @HttpCode(HttpStatus.OK)
-  async revokeSession(@Req() req: any, @Param('id') id: string) {
+  async revokeSession(@Req() req: AdminRequest, @Param('id') id: string) {
     return this.authService.revokeSession(req.admin.id, id);
   }
 }

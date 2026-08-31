@@ -7,6 +7,7 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
+import type { AuthenticatedRequest } from '../common/types/authenticated-request';
 import { UsersService } from './users.service';
 import { JwtGuard } from '../common/guards/jwt.guard';
 
@@ -24,7 +25,7 @@ export class BlockedContactsController {
   @Get('blocked-contacts')
   @UseGuards(JwtGuard)
   async getBlockedContacts(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
   ) {
@@ -49,7 +50,7 @@ export class BlocksController {
   @UseGuards(JwtGuard)
   async unblock(
     @Param('blockedUserId') blockedUserId: string,
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
   ) {
     // Silent by design: unblocking dispatches no notification, so the other
     // user never learns they were on the list or that they came off it.

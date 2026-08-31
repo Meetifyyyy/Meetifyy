@@ -11,6 +11,7 @@ import {
   UseGuards,
   BadRequestException,
 } from '@nestjs/common';
+import type { AuthenticatedRequest } from '../../common/types/authenticated-request';
 import { DmService } from './dm.service';
 import { BlocksService } from '../../users/blocks.service';
 import { JwtGuard } from '../../common/guards/jwt.guard';
@@ -36,7 +37,7 @@ export class DmController {
   @Get()
   @UseGuards(JwtGuard)
   async getConversations(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
   ) {
@@ -49,7 +50,7 @@ export class DmController {
   @Get('lookup/:targetUserId')
   @UseGuards(JwtGuard)
   async lookupExistingDM(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Param('targetUserId') targetUserId: string,
   ) {
     const userId = req.user?.id;
@@ -71,7 +72,7 @@ export class DmController {
   @Get('eligibility/:targetUserId')
   @UseGuards(JwtGuard)
   async getMessagingEligibility(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Param('targetUserId') targetUserId: string,
   ) {
     const userId = req.user?.id;
@@ -96,7 +97,7 @@ export class DmController {
   @UseGuards(JwtGuard)
   @VerifiedOnly()
   async startDM(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Body('targetUserId') targetUserId?: string,
     @Body('userIds') userIdsBody?: string | string[],
   ) {
@@ -122,7 +123,7 @@ export class DmController {
   @UseGuards(JwtGuard)
   @VerifiedOnly()
   async createInstantMatch(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Body() body: { targetUserId: string; activity: string },
   ) {
     const userId = req.user?.id;
@@ -136,7 +137,7 @@ export class DmController {
   @Get(':id')
   @UseGuards(JwtGuard)
   async getHistory(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Param('id') conversationId: string,
     @Query('before') beforeCursor?: string,
     @Query('limit') limit?: string,
@@ -155,7 +156,7 @@ export class DmController {
   @UseGuards(JwtGuard)
   @VerifiedOnly()
   async sendMessage(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Param('id') conversationId: string,
     @Body() body: SendMessageDto,
   ) {
@@ -234,7 +235,10 @@ export class DmController {
 
   @Post(':id/read')
   @UseGuards(JwtGuard)
-  async markAsRead(@Req() req: any, @Param('id') conversationId: string) {
+  async markAsRead(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') conversationId: string,
+  ) {
     const userId = req.user?.id;
     return this.dmService.markAsRead(conversationId, userId);
   }
@@ -242,7 +246,7 @@ export class DmController {
   @Patch(':id/mute')
   @UseGuards(JwtGuard)
   async muteConversation(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Param('id') conversationId: string,
     @Body('muted') muted: boolean,
   ) {
@@ -253,7 +257,7 @@ export class DmController {
   @Patch(':id/pin')
   @UseGuards(JwtGuard)
   async pinConversation(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Param('id') conversationId: string,
     @Body('pinned') pinned: boolean,
   ) {
@@ -263,7 +267,10 @@ export class DmController {
 
   @Post(':id/clear')
   @UseGuards(JwtGuard)
-  async clearChat(@Req() req: any, @Param('id') conversationId: string) {
+  async clearChat(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') conversationId: string,
+  ) {
     const userId = req.user?.id;
     return this.dmService.clearChatForUser(conversationId, userId);
   }
@@ -271,7 +278,7 @@ export class DmController {
   @Delete(':id')
   @UseGuards(JwtGuard)
   async deleteConversation(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Param('id') conversationId: string,
   ) {
     const userId = req.user?.id;
@@ -281,7 +288,7 @@ export class DmController {
   @Delete('msg/:messageId/for-me')
   @UseGuards(JwtGuard)
   async deleteMessageForMe(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Param('messageId') messageId: string,
   ) {
     const userId = req.user?.id;
@@ -290,7 +297,10 @@ export class DmController {
 
   @Delete('msg/:messageId')
   @UseGuards(JwtGuard)
-  async unsendMessage(@Req() req: any, @Param('messageId') messageId: string) {
+  async unsendMessage(
+    @Req() req: AuthenticatedRequest,
+    @Param('messageId') messageId: string,
+  ) {
     const userId = req.user?.id;
     const result = await this.dmService.unsendMessage(messageId, userId);
     if (result.success && result.conversationId) {
@@ -331,7 +341,7 @@ export class DmController {
   @UseGuards(JwtGuard)
   @VerifiedOnly()
   async forwardMessage(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Param('messageId') messageId: string,
     @Body('targetConversationIds') targetConversationIds: string[],
   ) {
@@ -427,7 +437,7 @@ export class DmController {
   @Post(':id/react')
   @UseGuards(JwtGuard)
   async reactToMessage(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Param('id') messageId: string,
     @Body('reaction') reaction: string,
   ) {

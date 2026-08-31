@@ -11,6 +11,7 @@ import {
   Ip,
   Headers,
 } from '@nestjs/common';
+import type { AuthenticatedRequest } from '../common/types/authenticated-request';
 import { ModerationService } from './moderation.service';
 import { JwtGuard } from '../common/guards';
 import { SubmitReportDto } from './dto/submit-report.dto';
@@ -26,7 +27,7 @@ export class ModerationController {
   @UseGuards(JwtGuard)
   async submitReport(
     @Body() body: SubmitReportDto,
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Ip() ip: string,
     @Headers('user-agent') userAgent: string,
   ) {
