@@ -1,6 +1,48 @@
 import { Injectable } from '@nestjs/common';
 import { NotificationType, NotificationEntityType } from '@prisma/client';
 
+/**
+ * The notification factory only ever reads a handful of fields off the records
+ * it is handed, so these describe exactly that surface rather than restating
+ * the Prisma models. Keeping them structural means any caller passing a fuller
+ * row still satisfies them, while the fields actually used are checked.
+ */
+export interface NotificationActor {
+  id: string;
+  username?: string | null;
+  displayName?: string | null;
+  avatar?: string | null;
+}
+
+export interface NotificationPost {
+  id: string;
+  text?: string | null;
+}
+
+export interface NotificationComment {
+  id: string;
+  text?: string | null;
+  postId?: string | null;
+}
+
+export interface NotificationActivity {
+  id: string;
+  title?: string | null;
+  coverImage?: string | null;
+  coverColor?: string | null;
+}
+
+export interface NotificationConversation {
+  id: string;
+  publicId?: string | null;
+  name?: string | null;
+  type?: string | null;
+  avatarKey?: string | null;
+  avatarMedia?: { url?: string | null; objectKey?: string | null } | null;
+  isInstantMatch?: boolean | null;
+  matchId?: string | null;
+}
+
 export interface CreateNotificationDto {
   recipientId: string;
   actorId?: string;
@@ -23,8 +65,8 @@ export interface CreateNotificationDto {
 @Injectable()
 export class NotificationFactory {
   createLike(
-    actor: any,
-    post: any,
+    actor: NotificationActor | null,
+    post: NotificationPost,
     postAuthorId: string,
   ): CreateNotificationDto {
     const actorName = actor?.displayName || actor?.username || 'Someone';
@@ -66,7 +108,7 @@ export class NotificationFactory {
    * means here, and it needs no enum migration to start working.
    */
   createContentRemoved(
-    actor: any,
+    actor: NotificationActor | null,
     opts: {
       recipientId: string;
       contentType: 'post' | 'comment';
@@ -129,7 +171,7 @@ export class NotificationFactory {
    * modal reads the live list instead, and this stays a pointer to it.
    */
   createModeratorPromotion(
-    actor: any,
+    actor: NotificationActor | null,
     opts: {
       recipientId: string;
       communityId: string;
@@ -162,8 +204,8 @@ export class NotificationFactory {
   }
 
   createCommentLike(
-    actor: any,
-    comment: any,
+    actor: NotificationActor | null,
+    comment: NotificationComment,
     commentAuthorId: string,
   ): CreateNotificationDto {
     const actorName = actor?.displayName || actor?.username || 'Someone';
@@ -190,9 +232,9 @@ export class NotificationFactory {
   }
 
   createComment(
-    actor: any,
-    comment: any,
-    post: any,
+    actor: NotificationActor | null,
+    comment: NotificationComment,
+    post: NotificationPost,
     postAuthorId: string,
   ): CreateNotificationDto {
     const actorName = actor?.displayName || actor?.username || 'Someone';
@@ -218,9 +260,9 @@ export class NotificationFactory {
   }
 
   createCommentReply(
-    actor: any,
-    comment: any,
-    post: any,
+    actor: NotificationActor | null,
+    comment: NotificationComment,
+    post: NotificationPost,
     parentCommentAuthorId: string,
   ): CreateNotificationDto {
     const actorName = actor?.displayName || actor?.username || 'Someone';
@@ -247,7 +289,7 @@ export class NotificationFactory {
   }
 
   createMention(
-    actor: any,
+    actor: NotificationActor | null,
     targetUserId: string,
     entityType: NotificationEntityType,
     entityId: string,
@@ -285,8 +327,8 @@ export class NotificationFactory {
    * cover image.
    */
   createActivityJoin(
-    actor: any,
-    activity: any,
+    actor: NotificationActor | null,
+    activity: NotificationActivity,
     activityCreatorId: string,
   ): CreateNotificationDto {
     const actorUsername = actor?.username || actor?.displayName || 'Someone';
@@ -329,8 +371,8 @@ export class NotificationFactory {
    * temporary match into the normal messaging surface.
    */
   createMessage(
-    actor: any,
-    conversation: any,
+    actor: NotificationActor | null,
+    conversation: NotificationConversation,
     targetUserId: string,
     messageText?: string,
   ): CreateNotificationDto | null {
