@@ -13,7 +13,6 @@ describe('RealtimeGateway — Authentication', () => {
   let activityPolicy: any;
   let communitiesService: any;
   let blocksService: any;
-  let socketMetrics: any;
   let verificationAccess: any;
   let jwtGuard: any;
 
@@ -47,9 +46,6 @@ describe('RealtimeGateway — Authentication', () => {
     activityPolicy = {};
     communitiesService = {};
     blocksService = {};
-    socketMetrics = {
-      registerServer: jest.fn(),
-    };
     verificationAccess = createVerificationAccessMock();
     jwtGuard = {
       validateToken: jest.fn(),
@@ -66,7 +62,6 @@ describe('RealtimeGateway — Authentication', () => {
       activityPolicy,
       communitiesService,
       blocksService,
-      socketMetrics,
       verificationAccess,
       jwtGuard,
     );

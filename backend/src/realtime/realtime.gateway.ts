@@ -15,7 +15,6 @@ import { SupabaseService } from '../supabase/supabase.service';
 import { MessagesService } from '../messages/messages.service';
 import { PresenceService } from '../presence/presence.service';
 import { BlocksService } from '../users/blocks.service';
-import { SocketMetricsCollector } from '../monitoring/services/socket-metrics.collector';
 import {
   InstantMatchService,
   setRealtimeGatewayRef,
@@ -92,9 +91,6 @@ export class RealtimeGateway
     // Presence fan-out runs through this gateway, so it needs the block list to
     // avoid pushing a status change across a block.
     private readonly blocksService: BlocksService,
-    // Reads the live connection count for the monitoring dashboard. The
-    // gateway only hands over its server; it keeps no counters of its own.
-    private readonly socketMetrics: SocketMetricsCollector,
     // The same policy the HTTP guard and the messaging services use, so a
     // socket cannot become the one path with a looser rule.
     private readonly verificationAccess: VerificationAccessService,
@@ -105,9 +101,6 @@ export class RealtimeGateway
     // Register this gateway as the emit target for InstantMatchService
     setRealtimeGatewayRef(this);
 
-    // Hand the live server to monitoring so the connection gauge reads the
-    // real client count rather than a tally that drifts on missed disconnects.
-    this.socketMetrics.registerServer(this.server);
     this.presenceService.registerSocketValidator((socketId: string) => {
       const s = this.server?.sockets?.sockets?.get(socketId);
       return Boolean(s && s.connected);

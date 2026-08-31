@@ -8,9 +8,7 @@ import { AdminReportsModule } from './reports/admin-reports.module';
 import { AdminDashboardModule } from './dashboard/admin-dashboard.module';
 import { AdminSupportModule } from './support/admin-support.module';
 import { AdminHelpModule } from './help/admin-help.module';
-import { AdminMonitoringModule } from './monitoring/admin-monitoring.module';
-import { AdminFlagsModule } from './flags/admin-flags.module';
-import { AdminSettingsModule } from './settings/admin-settings.module';
+import { AdminAnalyticsModule } from './analytics/admin-analytics.module';
 import { AdminAuditModule } from './audit/admin-audit.module';
 import { AuditInterceptor } from './common/audit.interceptor';
 import { PrismaModule } from '../prisma/prisma.module';
@@ -27,11 +25,9 @@ import { PrismaModule } from '../prisma/prisma.module';
     AdminSupportModule,
     // Public help-centre content, managed from the same Support section.
     AdminHelpModule,
-    // Application-level observability, read-only.
-    AdminMonitoringModule,
-    AdminFlagsModule,
-    AdminSettingsModule,
     AdminAuditModule,
+    // Infrastructure + resource usage, measured live.
+    AdminAnalyticsModule,
   ],
   providers: [
     {
