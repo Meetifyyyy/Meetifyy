@@ -3,14 +3,25 @@ import { registerRoute, NavigationRoute } from 'workbox-routing';
 import { StaleWhileRevalidate, CacheFirst, NetworkFirst, NetworkOnly } from 'workbox-strategies';
 import { ExpirationPlugin } from 'workbox-expiration';
 import { CacheableResponsePlugin } from 'workbox-cacheable-response';
-import { createHandlerBoundToURL } from 'workbox-precaching';
 import { clientsClaim } from 'workbox-core';
 
 // ─── Core Workbox Setup ─────────────────────────────────────────────────────
 
-self.skipWaiting();
+// NOTE: there is deliberately no top-level `self.skipWaiting()`.
+//
+// Calling it made every new deployment activate immediately and take over
+// running tabs, which fired `controllerchange` and forced a full reload in the
+// middle of whatever the user was doing. A new worker now installs quietly and
+// waits; it takes over only when a client explicitly asks (see the
+// SKIP_WAITING handler below), and clients only ask at page load, when there is
+// no session state to lose.
 clientsClaim();
 cleanupOutdatedCaches();
+
+// The page asks for the waiting worker to take over — sent at boot only.
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') self.skipWaiting();
+});
 
 // Inject the Vite-generated precache manifest at build time
 precacheAndRoute(self.__WB_MANIFEST);
@@ -28,6 +39,8 @@ const CURRENT_CACHES = new Set([
   // and leaving it off the allowlist means the activate handler below deletes
   // whatever stale bodies an existing installation is still holding.
   'meetifyy-api-network',
+  // Holds the last good index.html for offline navigations (see below).
+  'app-shell',
 ]);
 
 self.addEventListener('activate', (event) => {
@@ -44,7 +57,30 @@ self.addEventListener('activate', (event) => {
 
 // ─── Navigation Fallback ────────────────────────────────────────────────────
 
-const navigationHandler = createHandlerBoundToURL('/index.html');
+/**
+ * Navigations are NETWORK-FIRST, falling back to the last good HTML offline.
+ *
+ * This is what makes "every reload gets the latest version" true without any
+ * forced refresh. It used to be `createHandlerBoundToURL('/index.html')`, which
+ * answers every navigation out of the precache — so a running installation kept
+ * serving the HTML of the build it was installed with, no matter how many times
+ * the user reloaded, until something forcibly wiped the cache. That stale shell
+ * is exactly what the old force-refresh logic existed to paper over.
+ *
+ * Going to the network first removes the need for it: index.html is served
+ * `no-store` (see vercel.json), so a reload always picks up the newest document
+ * and therefore the newest hashed asset URLs. Those assets are content-addressed
+ * and immutable, so they cache forever safely.
+ *
+ * The short timeout keeps this honest on a flaky mobile connection: if the
+ * network has not answered in 4s, the cached shell is served rather than
+ * leaving the user on a blank page.
+ */
+const navigationHandler = new NetworkFirst({
+  cacheName: 'app-shell',
+  networkTimeoutSeconds: 4,
+  plugins: [new CacheableResponsePlugin({ statuses: [200] })],
+});
 const navigationRoute = new NavigationRoute(navigationHandler, {
   denylist: [/^\/api\//, /^\/version\.json/, /^\/assets\//, /\.[a-zA-Z0-9]+$/],
 });

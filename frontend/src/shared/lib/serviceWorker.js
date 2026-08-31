@@ -12,6 +12,13 @@ export async function registerServiceWorker() {
   if (!config.features.enableServiceWorker) {
     const regs = await navigator.serviceWorker.getRegistrations();
     await Promise.all(regs.map((r) => r.unregister()));
+    // Unregistering does not evict what the worker already cached, and a stale
+    // app shell on the dev deployment is served with no network request at all
+    // — bypassing Cloudflare Access. Drop the caches too.
+    if ('caches' in globalThis) {
+      const names = await caches.keys();
+      await Promise.all(names.map((n) => caches.delete(n)));
+    }
     return;
   }
 

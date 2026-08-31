@@ -22,12 +22,74 @@ function versionBuildPlugin() {
   };
 }
 
+/**
+ * Emits a self-destroying `sw.js` for every non-production build.
+ *
+ * Simply not shipping a worker is not enough. A browser that already installed
+ * the dev PWA keeps its existing worker forever unless it can fetch a NEW
+ * /sw.js and see that it differs — a 404 leaves the old worker installed and
+ * still serving the cached app shell offline, which is exactly the Cloudflare
+ * Access bypass this fixes. So the dev build must serve a real script at the
+ * same URL whose only job is to tear the installation down.
+ *
+ * IMPORTANT: browsers refuse to update a worker whose script request is
+ * redirected, so Cloudflare Access must be given a Bypass rule for `/sw.js`
+ * on the dev hostname — otherwise the Access 302 blocks delivery of this
+ * tombstone and stale installs can never be reached. `/sw.js` carries no user
+ * data, so exempting it is safe. See docs/ENVIRONMENT_ISOLATION.md §2.
+ */
+function tombstoneServiceWorkerPlugin() {
+  const source = `// Non-production build: this worker exists only to remove itself.
+self.addEventListener('install', () => self.skipWaiting());
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil((async () => {
+    // Drop every cache this origin holds, including the old precache.
+    const names = await caches.keys();
+    await Promise.all(names.map((n) => caches.delete(n)));
+
+    await self.registration.unregister();
+
+    // Reload open tabs so they leave the cached shell and hit the network,
+    // where Cloudflare Access can actually see the request.
+    const clients = await self.clients.matchAll({ type: 'window' });
+    for (const client of clients) client.navigate(client.url);
+  })());
+});
+
+// Until the activate step finishes, force everything to the network so no
+// response can still be served out of the old cache.
+self.addEventListener('fetch', (event) => {
+  event.respondWith(fetch(event.request));
+});
+`;
+
+  return {
+    name: 'tombstone-service-worker',
+    apply: 'build',
+    generateBundle() {
+      this.emitFile({ type: 'asset', fileName: 'sw.js', source });
+      console.log('[pwa] non-production build → emitted self-unregistering sw.js');
+    },
+  };
+}
+
 export default defineConfig(({ mode }) => {
   // Dev-server settings are environment values too, so a developer running the
   // backend on a different port or host changes .env.local, not this file.
   const env = loadEnv(mode, __dirname, '');
   const devServerPort = Number.parseInt(env.VITE_DEV_SERVER_PORT || '3000', 10);
   const devApiTarget = env.VITE_DEV_API_PROXY_TARGET || `http://127.0.0.1:${env.VITE_API_LOCAL_PORT || '4000'}`;
+
+  // The real PWA service worker is built for PRODUCTION ONLY, and this is
+  // opt-in: anything that is not exactly "production" gets the tombstone worker
+  // instead, so a missing or misspelled VITE_APP_ENV fails to the safe side.
+  //
+  // A caching worker on the development deployment is an access-control hole:
+  // its navigation route serves /index.html from the precache with no network
+  // request, and a request that is never made is one Cloudflare Access never
+  // sees. See scripts/generate-tombstone-sw.mjs.
+  const isProductionApp = (env.VITE_APP_ENV || '').trim().toLowerCase() === 'production';
 
   return {
   define: {
@@ -36,7 +98,7 @@ export default defineConfig(({ mode }) => {
   plugins: [
     versionBuildPlugin(),
     react(),
-    VitePWA({
+    ...(isProductionApp ? [VitePWA({
       strategies: 'injectManifest',
       srcDir: 'src',
       filename: 'sw.js',
@@ -99,7 +161,7 @@ export default defineConfig(({ mode }) => {
         // hold fourteen images that device will never request.
         globIgnores: ['**/version.json', '**/stats.html', 'splash/**'],
       },
-    }),
+    })] : [tombstoneServiceWorkerPlugin()]),
     visualizer({ open: false, filename: 'stats.html', gzipSize: true, brotliSize: true })
   ],
   css: {
