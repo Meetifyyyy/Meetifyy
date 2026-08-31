@@ -121,6 +121,16 @@ function raw(name: string): string | undefined {
 /** Every environment — for variables that are mandatory everywhere. */
 export const ALL_ENVIRONMENTS: AppEnvironment[] = KNOWN_ENVIRONMENTS;
 
+/**
+ * The deployed, shared environments — for variables that may fall back to a
+ * convenience default on a developer's machine but must be stated explicitly
+ * once real users' data is involved.
+ */
+export const DEPLOYED_ENVIRONMENTS: AppEnvironment[] = [
+  'staging',
+  'production',
+];
+
 interface Requirement {
   /**
    * Environments in which this variable must be present. Omit to make the

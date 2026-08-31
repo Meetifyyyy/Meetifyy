@@ -61,7 +61,6 @@ export const authConfigValues = {
      * zero network calls instead of one Supabase Auth request per token.
      */
     jwtSecret: str('SUPABASE_JWT_SECRET'),
-    bucketName: str('SUPABASE_BUCKET_NAME', { default: 'meetifyy-dev' }),
   },
 
   admin: {
@@ -76,7 +75,6 @@ export const authConfigValues = {
     }),
     superAdminEmail: str('SUPER_ADMIN_EMAIL'),
     superAdminPassword: str('SUPER_ADMIN_PASSWORD'),
-    superAdminApiKey: str('SUPER_ADMIN_API_KEY'),
   },
 
   cookie: {

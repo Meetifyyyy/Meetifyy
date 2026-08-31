@@ -501,7 +501,6 @@ az containerapp secret set \
 | `ADMIN_JWT_PENDING_SECRET` | ✅ | ✅ | Generated | Admin pending token |
 | `SUPER_ADMIN_EMAIL` | No | No | You | Super admin login |
 | `SUPER_ADMIN_PASSWORD` | No | ✅ | Generated | Super admin password |
-| `SUPER_ADMIN_API_KEY` | No | ✅ | Generated | Machine API access |
 | `REDIS_URL` | No | ✅ | Redis provider | Redis connection |
 | `REDIS_HOST` | No | No | Default `127.0.0.1` | Alt to REDIS_URL |
 | `REDIS_PORT` | No | No | Default `6379` | Alt to REDIS_URL |
