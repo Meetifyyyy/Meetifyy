@@ -25,10 +25,22 @@ describe('VerificationService', () => {
       deleteMany: jest.fn(),
     },
     verificationRequest: {
-      upsert: jest.fn(),
-      findUnique: jest.fn(),
+      create: jest.fn(),
+      findFirst: jest.fn(),
+      findMany: jest.fn(async (): Promise<any[]> => []),
     },
+    $transaction: jest.fn(),
   };
+
+  // Wired after the literal rather than inside it: the callback form hands back
+  // `mockPrisma` itself, and referencing it during its own initialisation makes
+  // its type circular. Submission runs both writes in one transaction; the
+  // rollback this exists for is asserted in the e2e suite, not here.
+  mockPrisma.$transaction.mockImplementation((arg: unknown) =>
+    typeof arg === 'function'
+      ? (arg as (tx: typeof mockPrisma) => unknown)(mockPrisma)
+      : Promise.all(arg as unknown[]),
+  );
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -64,8 +76,11 @@ describe('VerificationService', () => {
         goodDoc(where.id),
       );
       mockPrisma.user.updateMany.mockResolvedValue({ count: 1 });
-      mockPrisma.verificationRequest.findUnique.mockResolvedValue(null);
-      mockPrisma.verificationRequest.upsert.mockResolvedValue({ id: 'req-1' });
+      mockPrisma.verificationRequest.findFirst.mockResolvedValue(null);
+      mockPrisma.verificationRequest.create.mockResolvedValue({
+        id: 'req-1',
+        attemptNumber: 1,
+      });
     };
 
     it('refuses the same image for both documents', async () => {
@@ -184,18 +199,17 @@ describe('VerificationService', () => {
 
       expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
       expect(results.filter((r) => r.status === 'rejected')).toHaveLength(1);
-      // One request row, not two.
-      expect(mockPrisma.verificationRequest.upsert).toHaveBeenCalledTimes(1);
+      // One attempt row created, not two.
+      expect(mockPrisma.verificationRequest.create).toHaveBeenCalledTimes(1);
     });
 
     it('keeps the documents a resubmission replaces', async () => {
       happyPath();
-      // Retention is deliberate: verification documents are never deleted, so a
-      // resubmission supersedes the previous selfie and ID without removing
-      // them from the bucket.
-      mockPrisma.verificationRequest.findUnique.mockResolvedValue({
-        selfieMediaId: 'old-selfie',
-        idCardMediaId: 'old-id',
+      // Retention is deliberate: verification documents are never deleted, so
+      // the previous attempt keeps its selfie and ID in the bucket rather than
+      // having them removed when a newer attempt is filed.
+      mockPrisma.verificationRequest.findFirst.mockResolvedValue({
+        attemptNumber: 1,
       });
 
       await service.submitVerification(userId, selfieId, idCardId);
@@ -230,19 +244,21 @@ describe('VerificationService', () => {
         },
         data: { verificationStatus: VerificationStatus.PENDING },
       });
-      expect(result).toEqual({ id: 'req-1' });
+      expect(result).toEqual({ id: 'req-1', attemptNumber: 1 });
     });
   });
 
   describe('getStatus', () => {
     it('should return default UNVERIFIED if user not found', async () => {
       mockPrisma.user.findUnique.mockResolvedValue(null);
-      mockPrisma.verificationRequest.findUnique.mockResolvedValue(null);
+      mockPrisma.verificationRequest.findMany.mockResolvedValue([]);
 
       const result = await service.getStatus('user-1');
       expect(result).toEqual({
         status: VerificationStatus.UNVERIFIED,
+        hasPendingRequest: false,
         request: null,
+        history: [],
       });
     });
 
@@ -250,14 +266,24 @@ describe('VerificationService', () => {
       mockPrisma.user.findUnique.mockResolvedValue({
         verificationStatus: VerificationStatus.PENDING,
       });
-      mockPrisma.verificationRequest.findUnique.mockResolvedValue({
-        status: VerificationStatus.PENDING,
-      });
+      const attempts = [
+        { attemptNumber: 2, status: VerificationStatus.PENDING },
+        {
+          attemptNumber: 1,
+          status: VerificationStatus.REJECTED,
+          rejectionReason: 'Blurry',
+        },
+      ];
+      mockPrisma.verificationRequest.findMany.mockResolvedValue(attempts);
 
       const result = await service.getStatus('user-1');
+      // `request` is the newest attempt; `history` retains the rejected one
+      // along with the reason, which the old upsert model destroyed.
       expect(result).toEqual({
         status: VerificationStatus.PENDING,
-        request: { status: VerificationStatus.PENDING },
+        hasPendingRequest: true,
+        request: attempts[0],
+        history: attempts,
       });
     });
   });

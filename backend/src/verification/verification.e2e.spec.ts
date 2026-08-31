@@ -1,7 +1,7 @@
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
-import { VerificationStatus } from '@prisma/client';
+import { Prisma, VerificationStatus } from '@prisma/client';
 
 import { VerificationController } from './verification.controller';
 import { VerificationService } from './verification.service';
@@ -68,6 +68,7 @@ describe('account verification — end to end', () => {
   } | null;
 
   /** Minimal Prisma stand-in covering exactly the queries this flow issues. */
+  let prismaDouble: any;
   const buildPrisma = () => ({
     user: {
       findUnique: async ({ where }: any) => db.users[where.id] ?? null,
@@ -127,32 +128,59 @@ describe('account verification — end to end', () => {
       findUniqueOrThrow: async ({ where }: any) => ({
         ...db.requests[where.id],
       }),
-      findMany: async () =>
-        Object.values(db.requests).map((r: any) => ({
-          ...r,
-          // The admin queue `include`s both documents.
-          selfieMedia: r.selfieMediaId
-            ? (db.media[r.selfieMediaId] ?? null)
-            : null,
-          idCardMedia: r.idCardMediaId
-            ? (db.media[r.idCardMediaId] ?? null)
-            : null,
-          user: db.users[r.userId] ?? null,
-        })),
-      count: async () => Object.keys(db.requests).length,
-      upsert: async ({ where, create, update }: any) => {
-        const existing = Object.values(db.requests).find(
+      findFirst: async ({ where, orderBy }: any) => {
+        const rows = Object.values(db.requests).filter(
           (r: any) => r.userId === where.userId,
         );
-        if (existing) {
-          Object.assign(existing, update, { updatedAt: new Date() });
-          return existing;
+        if (orderBy?.attemptNumber === 'desc') {
+          rows.sort((a: any, b: any) => b.attemptNumber - a.attemptNumber);
+        }
+        return rows[0] ? { ...(rows[0] as object) } : null;
+      },
+      findMany: async ({ where, orderBy }: any = {}) =>
+        Object.values(db.requests)
+          .filter((r: any) => (where?.userId ? r.userId === where.userId : true))
+          .sort((a: any, b: any) =>
+            orderBy?.attemptNumber === 'desc'
+              ? b.attemptNumber - a.attemptNumber
+              : 0,
+          )
+          .map((r: any) => ({
+            ...r,
+            // The admin queue `include`s both documents.
+            selfieMedia: r.selfieMediaId
+              ? (db.media[r.selfieMediaId] ?? null)
+              : null,
+            idCardMedia: r.idCardMediaId
+              ? (db.media[r.idCardMediaId] ?? null)
+              : null,
+            user: db.users[r.userId] ?? null,
+          })),
+      count: async () => Object.keys(db.requests).length,
+      create: async ({ data }: any) => {
+        // Stands in for the partial unique index
+        // (userId) WHERE status = 'PENDING'. Without modelling it here the
+        // double would happily accept a second open request and the duplicate
+        // test would pass for the wrong reason.
+        const openAlready = Object.values(db.requests).some(
+          (r: any) =>
+            r.userId === data.userId &&
+            r.status === VerificationStatus.PENDING,
+        );
+        if (openAlready) {
+          throw new Prisma.PrismaClientKnownRequestError(
+            'Unique constraint failed',
+            { code: 'P2002', clientVersion: 'test' },
+          );
         }
         const row = {
-          id: 'req-1',
-          ...create,
+          id: `req-${Object.keys(db.requests).length + 1}`,
+          ...data,
           createdAt: new Date(),
           updatedAt: new Date(),
+          reviewedAt: null,
+          rejectionReason: null,
+          reviewerId: null,
         };
         db.requests[row.id] = row;
         return row;
@@ -173,7 +201,12 @@ describe('account verification — end to end', () => {
         return data;
       },
     },
-    $transaction: (ops: any[]) => Promise.all(ops),
+    // Both forms: the array form the admin path uses, and the interactive
+    // callback the submission path now runs in. No rollback — the double is a
+    // plain object — so tests that depend on rollback assert on the thrown
+    // error rather than on the absence of a write.
+    $transaction: (arg: any) =>
+      typeof arg === 'function' ? arg(prismaDouble) : Promise.all(arg),
   });
 
   beforeEach(async () => {
@@ -208,7 +241,7 @@ describe('account verification — end to end', () => {
         AdminVerificationService,
         VerificationAccessService,
         Reflector,
-        { provide: PrismaService, useValue: buildPrisma() },
+        { provide: PrismaService, useValue: (prismaDouble = buildPrisma()) },
         {
           provide: StorageService,
           useValue: {
@@ -303,7 +336,7 @@ describe('account verification — end to end', () => {
     });
   });
 
-  it('carries a rejection through to a resubmission that supersedes the documents', async () => {
+  it('keeps a rejected attempt intact when the user resubmits', async () => {
     await submit().expect(201);
     await decide(VerificationStatus.REJECTED, 'ID photo unreadable').expect(
       200,
@@ -312,10 +345,10 @@ describe('account verification — end to end', () => {
     expect(db.users[USER].verificationStatus).toBe(VerificationStatus.REJECTED);
     // The reason reaches the user, and the audit row does not repeat it.
     expect(db.requests['req-1'].rejectionReason).toBe('ID photo unreadable');
+    expect(db.requests['req-1'].reviewedAt).toBeTruthy();
     expect(db.auditLogs[0].action).toBe('VERIFICATION_REJECT');
     expect(JSON.stringify(db.auditLogs[0])).not.toContain('unreadable');
 
-    // Resubmitting with fresh documents supersedes the old ones.
     db.media['media-selfie-2'] = {
       id: 'media-selfie-2',
       ownerId: USER,
@@ -328,14 +361,32 @@ describe('account verification — end to end', () => {
       .expect(201);
 
     expect(db.users[USER].verificationStatus).toBe(VerificationStatus.PENDING);
-    expect(db.requests['req-1'].selfieMediaId).toBe('media-selfie-2');
+
+    // The resubmission is a new attempt, not an overwrite. This is the whole
+    // point of the change: the previous row keeps its documents, its status and
+    // the reason it was turned down, so the user can still read why.
+    expect(Object.keys(db.requests)).toHaveLength(2);
+    expect(db.requests['req-1'].status).toBe(VerificationStatus.REJECTED);
+    expect(db.requests['req-1'].rejectionReason).toBe('ID photo unreadable');
+    expect(db.requests['req-1'].selfieMediaId).toBe(SELFIE);
+    expect(db.requests['req-1'].attemptNumber).toBe(1);
+
+    expect(db.requests['req-2'].status).toBe(VerificationStatus.PENDING);
+    expect(db.requests['req-2'].selfieMediaId).toBe('media-selfie-2');
+    expect(db.requests['req-2'].attemptNumber).toBe(2);
+    expect(db.requests['req-2'].rejectionReason).toBeNull();
+
     // Retention is deliberate: the superseded document stays in the bucket.
     expect(deletedObjects).toEqual([]);
     expect(db.media[SELFIE]).toBeDefined();
     expect(db.media[ID_CARD]).toBeDefined();
 
-    // One request row throughout — resubmission updates, never duplicates.
-    expect(Object.keys(db.requests)).toHaveLength(1);
+    // And the history endpoint reports both, newest first.
+    const status = await http().get('/api/verification/status').expect(200);
+    expect(status.body.history).toHaveLength(2);
+    expect(status.body.history[0].attemptNumber).toBe(2);
+    expect(status.body.history[1].rejectionReason).toBe('ID photo unreadable');
+    expect(status.body.hasPendingRequest).toBe(true);
   });
 
   it('refuses a second submission while one is already pending', async () => {
