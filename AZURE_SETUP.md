@@ -518,6 +518,7 @@ az containerapp secret set \
 | `R2_ACCESS_KEY_ID` | No | ✅ | Cloudflare dashboard | R2 access key |
 | `R2_SECRET_ACCESS_KEY` | No | ✅ | Cloudflare dashboard | R2 secret |
 | `R2_BUCKET_NAME` | No | No | `meetifyy-prod` | R2 bucket name |
+| `R2_VERIFICATION_BUCKET_NAME` | No | No | _(unset)_ | Private bucket for account-verification documents. Must have **no public access** — no `r2.dev` URL, no custom domain. Unset falls back to `R2_BUCKET_NAME`, whose public host serves any key without authentication. |
 | `R2_PUBLIC_URL` | No | No | `https://cdn.meetifyy.app` | R2 public URL |
 | `SENTRY_DSN` | No | ✅ | sentry.io | Sentry reporting |
 | `SENTRY_TRACES_SAMPLE_RATE` | No | No | Default `0.1` | Sentry traces |

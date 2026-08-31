@@ -89,6 +89,12 @@ if [ -z "${REDIS_URL:-}" ]; then
   REDIS_URL="redis://meetifyy-redis-prod:6379"
 fi
 
+# R2_VERIFICATION_BUCKET_NAME is the private bucket for account-verification
+# documents (selfie + college ID). It is passed through from the environment and
+# defaults to empty on purpose: unset falls back to R2_BUCKET_NAME, which is the
+# existing behaviour, whereas naming a bucket that does not exist yet would break
+# verification uploads on the next deploy. Export it once the bucket is created,
+# and make sure that bucket has NO public access - no r2.dev URL, no custom domain.
 echo "==> 5. Creating Production Container App ($APP_NAME)..."
 az containerapp create \
   --name "$APP_NAME" \
@@ -122,6 +128,7 @@ az containerapp create \
     STORAGE_PROVIDER=r2 \
     R2_ACCOUNT_ID="$R2_ACCOUNT_ID" \
     R2_BUCKET_NAME="meetifyy-prod" \
+    R2_VERIFICATION_BUCKET_NAME="${R2_VERIFICATION_BUCKET_NAME:-}" \
     REDIS_QUEUE_PREFIX="bull:production" \
     SENTRY_TRACES_SAMPLE_RATE="0.1" \
     SENTRY_PROFILES_SAMPLE_RATE="0.05" \
