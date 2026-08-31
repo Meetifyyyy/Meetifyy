@@ -1,0 +1,8 @@
+# The admin portal is private in EVERY environment, development and production
+# alike. It is static rather than generated (unlike the main site's robots.txt)
+# because there is no environment in which indexing it would be correct.
+#
+# This is a discoverability control, not an access control — real protection is
+# the AdminJwtGuard on the backend plus Vercel Deployment Protection.
+User-agent: *
+Disallow: /
