@@ -1,19 +1,31 @@
 import {
   CanActivate,
   ExecutionContext,
+  ForbiddenException,
   Injectable,
   UnauthorizedException,
   Logger,
 } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import * as jwt from 'jsonwebtoken';
 import { createPublicKey, KeyObject } from 'crypto';
 import { SupabaseService } from '../../supabase/supabase.service';
+import { PrismaService } from '../../prisma/prisma.service';
+import { ALLOW_SUSPENDED_KEY } from '../decorators/allow-suspended.decorator';
 import { config } from '../../config';
 
 interface CachedTokenUser {
   userPayload: any;
   expiresAt: number;
 }
+
+interface CachedAccountStatus {
+  status: string;
+  expiresAt: number;
+}
+
+/** Shape the client keys its suspension screen off. */
+export const SUSPENDED_ERROR_CODE = 'ACCOUNT_SUSPENDED';
 
 /**
  * Authenticates requests bearing a Supabase-issued JWT.
@@ -44,6 +56,18 @@ export class JwtGuard implements CanActivate {
   private static readonly revokedUsers = new Set<string>();
   private static readonly CACHE_TTL_MS = 5 * 60 * 1000;
   private static readonly MAX_CACHE_SIZE = 10000;
+  /**
+   * Account status is read per request, so it is cached briefly. The window is
+   * short deliberately: a suspension should take effect in seconds, not at the
+   * next login. `clearAccountStatus` drops it immediately when an admin acts.
+   */
+  private static readonly accountStatusCache = new Map<string, CachedAccountStatus>();
+  private static readonly STATUS_TTL_MS = 15 * 1000;
+
+  /** Invalidate a cached status so a suspend/unsuspend applies at once. */
+  public static clearAccountStatus(userId: string): void {
+    if (userId) JwtGuard.accountStatusCache.delete(userId);
+  }
 
   /**
    * Instantly revokes all authentication tokens for a deleted/deactivated user.
@@ -168,7 +192,11 @@ export class JwtGuard implements CanActivate {
     this.tokenCache.set(token, entry);
   }
 
-  constructor(private supabaseService: SupabaseService) {
+  constructor(
+    private supabaseService: SupabaseService,
+    private readonly prisma: PrismaService,
+    private readonly reflector: Reflector,
+  ) {
     // Warm the JWKS cache once at boot so the very first authenticated request
     // doesn't pay the JWKS fetch, and log the result so it's obvious in the
     // startup logs whether local (fast) verification is active.
@@ -234,8 +262,75 @@ export class JwtGuard implements CanActivate {
       );
     }
 
+    // Suspension is enforced here, not on the screen the client chooses to
+    // render. A suspended account keeps a working session by design so it can
+    // be told what happened and appeal, but every route that is not explicitly
+    // marked `@AllowSuspended()` is refused server-side.
+    await this.enforceAccountStatus(context, userPayload);
+
     request.user = userPayload;
     return true;
+  }
+
+  /**
+   * Refuses a suspended account on everything except the suspension flow.
+   *
+   * The thrown error carries a machine-readable `code` so the client can show
+   * the suspension screen instead of a generic error toast. BANNED and DELETED
+   * are handled earlier at sign-in and stay fully blocked — a ban is not
+   * appealable through this route.
+   */
+  private async enforceAccountStatus(
+    context: ExecutionContext,
+    userPayload: any,
+  ): Promise<void> {
+    const userId = userPayload?.id;
+    if (!userId) return;
+
+    const allowed = this.reflector.getAllAndOverride<boolean>(
+      ALLOW_SUSPENDED_KEY,
+      [context.getHandler(), context.getClass()],
+    );
+    if (allowed) return;
+
+    const status = await this.resolveAccountStatus(userId);
+    if (status === 'SUSPENDED') {
+      throw new ForbiddenException({
+        code: SUSPENDED_ERROR_CODE,
+        message:
+          'This account is suspended. You can request a review from the suspension screen.',
+      });
+    }
+  }
+
+  /** Cached account-status read, so this costs one query per user per window. */
+  private async resolveAccountStatus(userId: string): Promise<string | null> {
+    const now = Date.now();
+    const cached = JwtGuard.accountStatusCache.get(userId);
+    if (cached && cached.expiresAt > now) return cached.status;
+
+    try {
+      const row = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { accountStatus: true },
+      });
+      const status = row?.accountStatus ?? null;
+      if (status) {
+        JwtGuard.accountStatusCache.set(userId, {
+          status,
+          expiresAt: now + JwtGuard.STATUS_TTL_MS,
+        });
+      }
+      return status;
+    } catch (error) {
+      // Never fail an authenticated request because the status lookup broke;
+      // the gate is a restriction, and a database blip must not lock everyone
+      // out of the app.
+      this.logger.warn(
+        `account-status lookup failed user=${userId} error=${(error as Error).message}`,
+      );
+      return null;
+    }
   }
 
   /**

@@ -4,6 +4,7 @@ import request from 'supertest';
 import { UploadsController } from './uploads.controller';
 import { StorageService } from './uploads.service';
 import { SupabaseService } from '../supabase/supabase.service';
+import { PrismaService } from '../prisma/prisma.service';
 
 /**
  * `GET /api/media/*` end-to-end. This is the endpoint that was serving identity
@@ -30,6 +31,10 @@ describe('GET /api/media — verification documents', () => {
         // The GET routes under test carry no JwtGuard; it is only needed so
         // the controller's other (guarded) routes can be instantiated.
         { provide: SupabaseService, useValue: { isConfigured: false } },
+        {
+          provide: PrismaService,
+          useValue: { user: { findUnique: async () => null } },
+        },
       ],
     }).compile();
     app = moduleRef.createNestApplication();

@@ -183,7 +183,12 @@ function ProtectedRoute({ children }) {
   if (currentUser?.isNewUser && location.pathname !== '/onboarding') {
     return <Navigate to="/onboarding" replace />;
   }
-  return children;
+  // Wraps rather than redirects: a suspended account has nowhere to be sent,
+  // and a dedicated route would just be somewhere to navigate away from. The
+  // gate renders the notice over every authenticated page, and renders the page
+  // untouched for everyone else. The server refuses the underlying requests
+  // regardless, so this is the explanation, not the enforcement.
+  return <SuspensionGate>{children}</SuspensionGate>;
 }
 
 function PublicRoute({ children }) {
@@ -218,6 +223,7 @@ function StaticRoute({ children }) {
   return children;
 }
 
+import SuspensionGate from './shared/components/SuspensionGate';
 import NotFoundState from './shared/components/ui/NotFoundState';
 
 /**
