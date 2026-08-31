@@ -243,6 +243,11 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
       if (text && typeof text === 'string') {
         const urls = text.match(/\bhttps?:\/\/\S+/gi) || [];
         urls.forEach(url => {
+          // Extension sniffing has to ignore the query string and hash, or a
+          // signed/---versioned media URL never matches. `cleanUrl` was
+          // referenced here without ever being defined, so this callback threw
+          // a ReferenceError for any message containing a link.
+          const cleanUrl = url.split('?')[0].split('#')[0];
           const isImg = /\.(png|jpe?g|gif|webp|svg|avif)/i.test(cleanUrl) || url.startsWith('data:image/') || url.includes('/presets/') || url.includes('/storage/v1/object/');
           const isVid = /\.(mp4|mov|webm)/i.test(cleanUrl) || url.startsWith('data:video/');
           if (isImg) list.push({ type: 'image', url, createdAt: new Date(createdAt).getTime() });

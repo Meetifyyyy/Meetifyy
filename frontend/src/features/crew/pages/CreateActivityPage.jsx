@@ -1251,6 +1251,15 @@ export default function CreateActivityPage() {
     }
   };
 
+  // Hoisted above the `showInviteModal` early return below: as a hook it must
+  // run on every render, and it previously sat after that return.
+  useEffect(() => {
+    if (currentUser && currentUser.verificationStatus !== 'VERIFIED') {
+      openVerificationModal('Verify your account to create activities.');
+      navigate(returnTo || '/crew', { replace: true });
+    }
+  }, [currentUser, navigate, returnTo]);
+
   const isColorCover = formData.coverMode === 'color';
   const hasCoverImage = formData.coverMode === 'image' && !!formData.coverImage;
 
@@ -1266,12 +1275,6 @@ export default function CreateActivityPage() {
     );
   }
 
-  useEffect(() => {
-    if (currentUser && currentUser.verificationStatus !== 'VERIFIED') {
-      openVerificationModal('Verify your account to create activities.');
-      navigate(returnTo || '/crew', { replace: true });
-    }
-  }, [currentUser, navigate, returnTo]);
 
   if (currentUser?.verificationStatus !== 'VERIFIED') {
     return null;
