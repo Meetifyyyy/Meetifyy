@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import { AlertTriangle, Bold, CheckCircle, Eye, Italic, List, Loader2, Lock, Send, X } from 'lucide-react';
+import { AlertTriangle, Bold, CheckCircle, Eye, Italic, List, Loader2, Lock, Send, X } from '../../components/icons';
 
 import { supportApi } from './supportApi';
 import { STATUS_ORDER, statusLabel } from './supportConstants';

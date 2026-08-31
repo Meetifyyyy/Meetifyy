@@ -16,7 +16,7 @@ import {
   Star,
   Trash2,
   X,
-} from 'lucide-react';
+} from '../../components/icons';
 
 import { helpApi, type HelpArticlePayload, type HelpCategoryPayload } from './supportApi';
 import { HELP_STATUS_BADGE, HELP_STATUS_LABELS, formatDateTime } from './supportConstants';

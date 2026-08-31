@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiRequest, getMediaUrl } from '../api/apiClient';
-import { Search, X, Megaphone, Loader2, Check } from 'lucide-react';
+import { Search, X, Megaphone, Loader2, Check } from '../components/icons';
 
 const RepAvatar: React.FC<{ user: any }> = ({ user }) => {
   const [imgError, setImgError] = useState(false);
