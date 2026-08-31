@@ -58,26 +58,62 @@ if (typeof window !== 'undefined') {
 // Service Worker registration
 if ('serviceWorker' in navigator) {
   if (!config.features.enableServiceWorker) {
-    // Unregister all SWs wherever the worker is disabled (development default)
-    navigator.serviceWorker.getRegistrations().then((regs) => {
-      for (const r of regs) r.unregister();
-    });
-  } else {
-    // Reload when a new SW takes control (breaks out of stale cache)
-    let refreshing = false;
-    navigator.serviceWorker.addEventListener('controllerchange', () => {
-      if (!refreshing) {
-        refreshing = true;
-        window.location.reload();
+    // Wherever the worker is disabled (every non-production build), tear down
+    // any existing installation AND drop its caches. Unregistering alone leaves
+    // the cached app shell on disk, and on the dev deployment that shell is
+    // what let installed PWAs keep loading the site without ever making a
+    // network request for Cloudflare Access to check.
+    navigator.serviceWorker.getRegistrations().then(async (regs) => {
+      await Promise.all(regs.map((r) => r.unregister()));
+      if ('caches' in window) {
+        const names = await caches.keys();
+        await Promise.all(names.map((n) => caches.delete(n)));
       }
-    });
+    }).catch(() => {});
+  } else {
+    // Deliberately NO `controllerchange` -> location.reload() here.
+    //
+    // That listener is what made a deployment yank the page out from under
+    // whoever was using it: the new worker took over and the tab reloaded
+    // mid-session, losing scroll position, form input and open dialogs. A new
+    // worker is now allowed to take over silently, because taking over no
+    // longer changes what the running page is showing.
+    //
+    // Freshness is handled where it belongs instead: index.html is served
+    // `no-store` and the worker fetches navigations network-first, so the next
+    // load or reload picks up the newest build on its own.
 
-    // Register with updateViaCache: 'none' to bypass HTTP cache for SW script
+    // Register with updateViaCache: 'none' so the SW script itself is never
+    // answered from the HTTP cache.
     window.addEventListener('load', () => {
       navigator.serviceWorker
         .register('/sw.js', { scope: '/', updateViaCache: 'none' })
         .then((reg) => {
-          // Check for updates immediately, then every 60 minutes
+          /**
+           * Promote a waiting worker AT BOOT ONLY.
+           *
+           * This is the safe moment: the page has just loaded, so there is no
+           * user state to lose, and activation is invisible. Without it a
+           * waiting worker would sit there until every tab of the origin
+           * closed — which on an installed mobile PWA can be never, stranding
+           * the client on an old worker indefinitely.
+           */
+          if (reg.waiting) reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+
+          // A worker that finishes installing LATER in this session is left
+          // waiting on purpose. It will be promoted at the next boot rather
+          // than mid-session.
+          reg.addEventListener('updatefound', () => {
+            const installing = reg.installing;
+            if (!installing) return;
+            installing.addEventListener('statechange', () => {
+              if (installing.state === 'installed' && navigator.serviceWorker.controller) {
+                window.dispatchEvent(new CustomEvent('sw:updated'));
+              }
+            });
+          });
+
+          // Check for updates immediately, then hourly.
           reg.update();
           setInterval(() => reg.update(), 60 * 60 * 1000);
         })
