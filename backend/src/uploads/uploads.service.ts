@@ -29,10 +29,7 @@ export class StorageService {
     private configService: ConfigService,
   ) {
     this.providerName = config.storage.provider;
-    this.bucketName =
-      this.providerName === 'r2'
-        ? config.storage.r2.bucketName
-        : config.auth.supabase.bucketName;
+    this.bucketName = config.storage.r2.bucketName;
   }
 
   isSafeStorageKey(key: string): boolean {
@@ -288,11 +285,8 @@ export class StorageService {
     // checks ownership, or through an authorized reviewer path.
     if (media && media.visibility !== 'public') return null;
 
-    if (media?.provider === 'supabase') {
-      return this.getSupabasePublicUrl(media.bucket, media.objectKey);
-    }
-
-    // Default to active provider if no media record found or provider is r2
+    // R2 is the only storage backend; legacy Supabase-provider rows were
+    // migrated, so every key resolves against the active bucket.
     return this.getPublicUrl(key);
   }
 
@@ -300,7 +294,7 @@ export class StorageService {
    * A time-limited signed URL for one private object, for an authorized
    * reviewer. Ownership is NOT the test here — a verification reviewer is by
    * definition not the owner — so this must only ever be called from behind
-   * AdminGuard.
+   * AdminJwtGuard.
    */
   async getReviewerSignedUrl(
     key: string,
@@ -309,14 +303,6 @@ export class StorageService {
     if (!key || !this.isSafeStorageKey(key)) return null;
     const signed = await this.getSignedUrls([key], expiresIn);
     return signed[key] || null;
-  }
-
-  private getSupabasePublicUrl(bucket: string, key: string): string {
-    const supabaseUrl = config.auth.supabase.url;
-    if (!supabaseUrl || supabaseUrl.includes('placeholder')) {
-      return `/mock-public/${key}`;
-    }
-    return `${supabaseUrl.replace(/\/$/, '')}/storage/v1/object/public/${bucket}/${key}`;
   }
 
   private signedUrlCache = new Map<
@@ -391,11 +377,7 @@ export class StorageService {
 
       // Public media or unregistered non-thumbnail keys return public URL instantly (0ms network overhead)
       if (!item || item.visibility === 'public') {
-        if (item?.provider === 'supabase') {
-          result[key] = this.getSupabasePublicUrl(item.bucket, item.objectKey);
-        } else {
-          result[key] = this.getPublicUrl(key);
-        }
+        result[key] = this.getPublicUrl(key);
       } else if (item.ownerId === userId) {
         keysToSign.push(key);
       }

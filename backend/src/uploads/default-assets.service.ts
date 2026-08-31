@@ -39,13 +39,9 @@ import { PrismaService } from '../prisma/prisma.service';
  */
 const ASSET_VERSION = 'v2';
 
-export type DefaultAssetName =
-  'community-avatar' | 'profile-avatar';
+export type DefaultAssetName = 'community-avatar' | 'profile-avatar';
 
-const ASSETS: DefaultAssetName[] = [
-  'community-avatar',
-  'profile-avatar',
-];
+const ASSETS: DefaultAssetName[] = ['community-avatar', 'profile-avatar'];
 
 @Injectable()
 export class DefaultAssetsService implements OnModuleInit {
@@ -62,12 +58,9 @@ export class DefaultAssetsService implements OnModuleInit {
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
   ) {
-    this.providerName =
-      this.config.get<string>('app.storageProvider') || 'supabase';
+    this.providerName = this.config.get<string>('app.storageProvider') || 'r2';
     this.bucketName =
-      this.providerName === 'r2'
-        ? this.config.get<string>('r2.bucketName') || 'meetifyy-dev'
-        : this.config.get<string>('supabase.bucketName') || 'meetifyy-dev';
+      this.config.get<string>('r2.bucketName') || 'meetifyy-dev';
   }
 
   async onModuleInit() {

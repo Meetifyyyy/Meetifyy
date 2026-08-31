@@ -18,6 +18,7 @@ import {
   IS_TEST,
   assertEnvValid,
 } from './env';
+import { assertEnvironmentIsolation } from './isolation.guard';
 import { appConfigValues } from './app.config';
 import { authConfigValues } from './auth.config';
 import { databaseConfigValues } from './database.config';
@@ -56,6 +57,11 @@ export const config = {
 // Every slice has now been evaluated, so this reports the complete set of
 // problems in one throw.
 assertEnvValid();
+
+// Every variable is individually valid at this point. This second pass catches
+// the case where they are all valid but point at another environment's
+// database, Redis or bucket. Staging/production only.
+assertEnvironmentIsolation();
 
 export type Config = typeof config;
 

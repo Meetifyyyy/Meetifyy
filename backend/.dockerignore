@@ -38,7 +38,6 @@ Procfile
 # ── Development scripts (not required at runtime) ─────────────────────────────
 render-templates.ts
 send-all-mailpit.ts
-upload-wordmark.ts
 test-routing-logic.ts
 prisma/benchmark_join.ts
 prisma/seed.ts

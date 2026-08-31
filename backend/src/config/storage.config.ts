@@ -1,4 +1,4 @@
-import { int, oneOf, str, url } from './env';
+import { DEPLOYED_ENVIRONMENTS, int, oneOf, str, url } from './env';
 
 /**
  * Object-storage and media configuration.
@@ -7,11 +7,19 @@ import { int, oneOf, str, url } from './env';
  * values — a development bucket and a production bucket differ only here.
  */
 
-const provider = oneOf(
-  'STORAGE_PROVIDER',
-  ['r2', 'supabase', 'local'] as const,
-  { default: 'r2' },
-);
+/**
+ * Cloudflare R2 is the only storage backend.
+ *
+ * The `supabase` and `local` options were removed: `local` was declared but
+ * never implemented, and Supabase Storage held exactly one live object
+ * (`email-assets/wordmark.png`), which has been migrated to R2. Keeping
+ * STORAGE_PROVIDER as a validated single-value knob means a deployment that
+ * still sets `supabase` fails loudly at boot rather than silently resolving
+ * media against a bucket that no longer exists.
+ */
+const provider = oneOf('STORAGE_PROVIDER', ['r2'] as const, {
+  default: 'r2',
+});
 
 export const storageConfigValues = {
   provider,
@@ -23,7 +31,20 @@ export const storageConfigValues = {
     accountId: str('R2_ACCOUNT_ID', { requiredIn: [] }),
     accessKeyId: str('R2_ACCESS_KEY_ID'),
     secretAccessKey: str('R2_SECRET_ACCESS_KEY'),
-    bucketName: str('R2_BUCKET_NAME', { default: 'meetifyy-dev' }),
+    /**
+     * Bucket the environment reads and writes.
+     *
+     * The `meetifyy-dev` fallback applies ONLY outside staging/production. A
+     * deployed environment must name its own bucket explicitly: an unset
+     * R2_BUCKET_NAME in production previously fell through to the development
+     * bucket, so production uploads (avatars, covers, event images) landed in
+     * dev storage and dev could overwrite them. `requiredIn` turns that silent
+     * cross-environment write into a boot failure.
+     */
+    bucketName: str('R2_BUCKET_NAME', {
+      requiredIn: DEPLOYED_ENVIRONMENTS,
+      default: 'meetifyy-dev',
+    }),
     /**
      * Optional separate bucket for identity documents.
      *
