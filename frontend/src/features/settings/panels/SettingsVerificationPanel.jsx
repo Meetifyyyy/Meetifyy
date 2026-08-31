@@ -2,9 +2,10 @@ import { useState } from 'react';
 import { useAuth } from '@shared/context/AuthContext';
 import { showToast } from '@shared/utils/toast';
 import { Upload, Loader2, CheckCircle2, AlertCircle } from '@shared/components/icons';
+import { apiClient } from '@shared/api/apiClient';
 import styles from '../pages/SettingsRoute.module.css';
 import { VERIFICATION_ALLOWED_TYPES } from '@shared/constants/mediaLimits';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import VerificationCameraCapture from './VerificationCameraCapture';
 import {
   prepareVerificationDocument,
@@ -28,7 +29,44 @@ export default function SettingsVerificationPanel() {
   const [fieldError, setFieldError] = useState(null);
   const [stage, setStage] = useState(null);
 
-  const status = currentUser?.verificationStatus || 'UNVERIFIED';
+  /**
+   * The persisted verification state, which is the authority here.
+   *
+   * This panel used to read `currentUser.verificationStatus` alone. That is a
+   * cached copy of the user row: after a refresh, a re-login, a second tab or a
+   * PWA reload it could still say UNVERIFIED while a request sat pending in the
+   * database — so the submission form was offered again to someone who had
+   * already submitted, and a duplicate was only stopped once the server
+   * refused it.
+   */
+  const { data: verification, isLoading: verificationLoading } = useQuery({
+    queryKey: ['verificationStatus'],
+    queryFn: () => apiClient.get('/api/verification/status'),
+    staleTime: 30_000,
+  });
+
+  const history = verification?.history ?? [];
+  const latestAttempt = verification?.request ?? null;
+  // Server first; the cached user row is only a fallback for the first paint.
+  const status =
+    verification?.status || currentUser?.verificationStatus || 'UNVERIFIED';
+  // Keyed on the request, not the user flag, so a stale flag cannot put the
+  // form back in front of someone who is already waiting on a review.
+  const isUnderReview =
+    verification?.hasPendingRequest ?? status === 'PENDING';
+  const rejectionReason =
+    latestAttempt?.status === 'REJECTED' ||
+    latestAttempt?.status === 'RESUBMISSION_REQUIRED'
+      ? latestAttempt.rejectionReason
+      : null;
+
+  const formatStamp = (value) =>
+    value
+      ? new Date(value).toLocaleString(undefined, {
+          dateStyle: 'medium',
+          timeStyle: 'short',
+        })
+      : null;
 
   // Validate at pick time, not at submit time. Catching an unsupported format or
   // an unreadable file here means the user finds out while they are still
@@ -111,6 +149,9 @@ export default function SettingsVerificationPanel() {
       // against a 1-second reload timer, so the page could reload before the
       // status it was reloading to show had been fetched.
       await apiClient.post('/api/auth/sync').catch(() => {});
+      // The panel keys off this query, so it has to be refetched before the
+      // "in review" state can replace the form.
+      await queryClient.invalidateQueries({ queryKey: ['verificationStatus'] });
       await queryClient.invalidateQueries();
     } catch (err) {
       if (uploadedKeys.length > 0) {
@@ -174,24 +215,50 @@ export default function SettingsVerificationPanel() {
           </div>
         )}
 
-        {status === 'PENDING' && (
+        {isUnderReview && (
           <div style={{ background: 'rgba(234, 179, 8, 0.1)', border: '1px solid rgba(234, 179, 8, 0.2)', padding: '1rem', borderRadius: '12px', display: 'flex', gap: '0.75rem', alignItems: 'flex-start', marginTop: '1rem' }}>
             <Loader2 size={20} color="#eab308" style={{ flexShrink: 0, marginTop: '2px' }} className="spinner" />
             <div>
-              <p style={{ color: 'var(--color-text)', fontWeight: 500 }}>Review in progress</p>
-              <p style={{ color: 'var(--color-text-light)', fontSize: '0.875rem', marginTop: '0.25rem' }}>Our team is reviewing your verification request. This usually takes less than 24 hours.</p>
+              <p style={{ color: 'var(--color-text)', fontWeight: 500 }}>Verification in review</p>
+              <p style={{ color: 'var(--color-text-light)', fontSize: '0.875rem', marginTop: '0.25rem' }}>
+                Your verification request was submitted successfully
+                {latestAttempt?.createdAt ? ` on ${formatStamp(latestAttempt.createdAt)}` : ''}
+                {' '}and your documents are being reviewed.
+              </p>
+              <p style={{ color: 'var(--color-text-light)', fontSize: '0.875rem', marginTop: '0.5rem' }}>
+                You do not need to submit anything again. We will notify you as
+                soon as the review is complete — this usually takes less than 24 hours.
+              </p>
             </div>
           </div>
         )}
 
-        {(status === 'UNVERIFIED' || status === 'REJECTED' || status === 'RESUBMISSION_REQUIRED') && (
+        {!verificationLoading && !isUnderReview &&
+          (status === 'UNVERIFIED' || status === 'REJECTED' || status === 'RESUBMISSION_REQUIRED') && (
           <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', marginTop: '1rem' }}>
-            {status === 'REJECTED' && (
+            {(status === 'REJECTED' || status === 'RESUBMISSION_REQUIRED') && (
               <div style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)', padding: '1rem', borderRadius: '12px', display: 'flex', gap: '0.75rem', alignItems: 'flex-start' }}>
                 <AlertCircle size={20} color="#ef4444" style={{ flexShrink: 0, marginTop: '2px' }} />
                 <div>
-                  <p style={{ color: 'var(--color-text)', fontWeight: 500 }}>Previous request rejected</p>
-                  <p style={{ color: 'var(--color-text-light)', fontSize: '0.875rem', marginTop: '0.25rem' }}>Please make sure your photos are clear and your college ID matches your profile name.</p>
+                  <p style={{ color: 'var(--color-text)', fontWeight: 500 }}>Verification rejected</p>
+                  {/* The reviewer's actual words, read from the request. This
+                      used to be a fixed sentence about blurry photos, which
+                      told the user nothing about their own submission. */}
+                  {rejectionReason ? (
+                    <>
+                      <p style={{ color: 'var(--color-text-light)', fontSize: '0.8125rem', marginTop: '0.5rem', fontWeight: 500 }}>Reason:</p>
+                      <p style={{ color: 'var(--color-text)', fontSize: '0.875rem', marginTop: '0.125rem', whiteSpace: 'pre-wrap' }}>
+                        {rejectionReason}
+                      </p>
+                    </>
+                  ) : (
+                    <p style={{ color: 'var(--color-text-light)', fontSize: '0.875rem', marginTop: '0.25rem' }}>
+                      No reason was recorded for this decision.
+                    </p>
+                  )}
+                  <p style={{ color: 'var(--color-text-light)', fontSize: '0.875rem', marginTop: '0.5rem' }}>
+                    Correct the issue above and submit a new request below.
+                  </p>
                 </div>
               </div>
             )}
@@ -260,6 +327,69 @@ export default function SettingsVerificationPanel() {
           </form>
         )}
       </div>
+
+      {history.length > 0 && (
+        <div className={styles.group} style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem', marginTop: '1rem' }}>
+          <div>
+            <h3 style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--color-text-main, var(--color-text))', margin: 0 }}>
+              Verification history
+            </h3>
+            <p style={{ color: 'var(--color-text-light)', fontSize: '0.8125rem', marginTop: '0.25rem' }}>
+              Every request you have submitted. Newest first.
+            </p>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+            {history.map((attempt) => {
+              const tone =
+                attempt.status === 'VERIFIED'
+                  ? { fg: '#22c55e', bg: 'rgba(34, 197, 94, 0.12)', label: 'Approved' }
+                  : attempt.status === 'PENDING'
+                    ? { fg: '#eab308', bg: 'rgba(234, 179, 8, 0.12)', label: 'Under review' }
+                    : { fg: '#ef4444', bg: 'rgba(239, 68, 68, 0.12)', label: 'Rejected' };
+              return (
+                <div
+                  key={attempt.id}
+                  style={{
+                    border: '1px solid var(--color-border, rgba(255,255,255,0.08))',
+                    borderRadius: '12px',
+                    padding: '0.875rem 1rem',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem' }}>
+                    <p style={{ margin: 0, fontWeight: 600, color: 'var(--color-text)' }}>
+                      Attempt {attempt.attemptNumber}
+                    </p>
+                    <span style={{
+                      display: 'inline-flex', alignItems: 'center',
+                      padding: '2px 8px', borderRadius: '9999px',
+                      fontSize: '0.75rem', fontWeight: 500,
+                      background: tone.bg, color: tone.fg,
+                    }}>
+                      {tone.label}
+                    </span>
+                  </div>
+
+                  <p style={{ margin: '0.35rem 0 0', fontSize: '0.8125rem', color: 'var(--color-text-light)' }}>
+                    Submitted: {formatStamp(attempt.createdAt)}
+                  </p>
+                  {attempt.reviewedAt && (
+                    <p style={{ margin: '0.125rem 0 0', fontSize: '0.8125rem', color: 'var(--color-text-light)' }}>
+                      Reviewed: {formatStamp(attempt.reviewedAt)}
+                    </p>
+                  )}
+                  {attempt.rejectionReason && (
+                    <p style={{ margin: '0.4rem 0 0', fontSize: '0.8125rem', color: 'var(--color-text)', whiteSpace: 'pre-wrap' }}>
+                      <span style={{ color: 'var(--color-text-light)' }}>Reason: </span>
+                      {attempt.rejectionReason}
+                    </p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
