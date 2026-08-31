@@ -1172,8 +1172,18 @@ export default function SocketManager() {
     socket.on('conversation:updated', handleConversationUpdated);
     socket.on('message:new', handleGlobalMessageNew);
     socket.on('message:updated', handleMessageUpdated);
-    socket.on('group:member_added', (data) => handleGroupMemberChange({ ...(data || {}), eventType: 'add' }));
-    socket.on('group:member_removed', (data) => handleGroupMemberChange({ ...(data || {}), eventType: 'remove' }));
+    // Named, not inline. `socket.off` matches by function reference, so the
+    // arrow functions these used to be could never be removed — every reconnect
+    // or remount added another live listener on top of the last, and one
+    // membership change ran the handler as many times as the component had ever
+    // mounted.
+    const handleGroupMemberAdded = (data) =>
+      handleGroupMemberChange({ ...(data || {}), eventType: 'add' });
+    const handleGroupMemberRemoved = (data) =>
+      handleGroupMemberChange({ ...(data || {}), eventType: 'remove' });
+
+    socket.on('group:member_added', handleGroupMemberAdded);
+    socket.on('group:member_removed', handleGroupMemberRemoved);
     socket.on('group:role_changed', handleGroupRoleChanged);
 
     return () => {
@@ -1187,8 +1197,8 @@ export default function SocketManager() {
       socket.off('conversation:updated', handleConversationUpdated);
       socket.off('message:new', handleGlobalMessageNew);
       socket.off('message:updated', handleMessageUpdated);
-      socket.off('group:member_added', handleGroupMemberChange);
-      socket.off('group:member_removed', handleGroupMemberChange);
+      socket.off('group:member_added', handleGroupMemberAdded);
+      socket.off('group:member_removed', handleGroupMemberRemoved);
       socket.off('group:role_changed', handleGroupRoleChanged);
     };
   }, [socket, queryClient, navigate, session?.user?.id]);
