@@ -168,6 +168,18 @@ model User {
   phoneVerified              Boolean                     @default(false)
   profileCompleted           Boolean                     @default(false)
   accountStatus              AccountStatus               @default(ACTIVE)
+  // ── Account-deletion lifecycle (see AccountDeletionService) ──────────────
+  // All server-side timestamps. The client never supplies or is trusted for
+  // any of these; the 30-day window is measured purely from `deletionRequestedAt`.
+  deletionRequestedAt        DateTime?
+  scheduledPurgeAt           DateTime?
+  // Purge lease. Set by the worker when it claims a row, cleared on failure so
+  // a crashed run is retried once the lease goes stale. Non-null also means
+  // recovery is no longer possible — the anonymization is already under way.
+  purgeStartedAt             DateTime?
+  purgeCompletedAt           DateTime?
+  purgeAttempts              Int                         @default(0)
+  purgeLastError             String?
   role                       UserRole                    @default(USER)
   canPost                    Boolean                     @default(true)
   canMessage                 Boolean                     @default(true)
@@ -234,6 +246,10 @@ model User {
   @@index([collegeId, isCampusRep])
   // Empty-query invite/connections list: WHERE accountStatus='ACTIVE' ORDER BY createdAt DESC.
   @@index([accountStatus, createdAt(sort: Desc)])
+  // Permanent-deletion worker: WHERE accountStatus='PENDING_DELETION'
+  // AND scheduledPurgeAt <= now(). Keeps the sweep an index scan over the
+  // handful of due rows rather than a seq scan of the whole user table.
+  @@index([accountStatus, scheduledPurgeAt])
   // Speeds up the signup email-availability check (OR email/collegeEmail).
   @@index([collegeEmail])
 }
@@ -1243,6 +1259,13 @@ enum AccountStatus {
   ACTIVE
   SUSPENDED
   BANNED
+  // Self-requested deletion, inside the 30-day recovery window. The row still
+  // holds every original field so RECOVER can put the account back exactly as
+  // it was; `deletedAt` is already stamped, which is what hides the account
+  // from every existing user-facing query. DELETED is the terminal state the
+  // purge worker writes once the window has expired and the row has been
+  // anonymized — it is not reversible.
+  PENDING_DELETION
   DELETED
 }
 
