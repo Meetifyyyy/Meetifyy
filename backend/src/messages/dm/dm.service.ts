@@ -15,6 +15,12 @@ import { MentionsService } from '../../mentions/mentions.service';
 import { VerificationAccessService } from '../../common/verification/verification-access.service';
 
 import { resolvePresenceVisibilityForViewer } from '../../users/privacy.helper';
+import {
+  isUnavailableUser,
+  presentUserName,
+  presentUserAvatar,
+  DELETED_USER_USERNAME,
+} from '../../common/users/deleted-user';
 
 @Injectable()
 export class DmService extends MessagingCoreService {
@@ -103,6 +109,11 @@ export class DmService extends MessagingCoreService {
                     // eligibility travels with the row so the composer can
                     // render its unavailable state on first paint.
                     verificationStatus: true,
+                    // Same reason, for the deletion lifecycle: without these
+                    // the list would render a deleted partner's real name and
+                    // avatar, and offer a composer that the server refuses.
+                    accountStatus: true,
+                    deletedAt: true,
                     settings: {
                       select: {
                         showOnlineStatus: true,
@@ -139,7 +150,13 @@ export class DmService extends MessagingCoreService {
               type: true,
               payload: true,
               sender: {
-                select: { id: true, displayName: true, username: true },
+                select: {
+                  id: true,
+                  displayName: true,
+                  username: true,
+                  accountStatus: true,
+                  deletedAt: true,
+                },
               },
             },
           })
@@ -160,7 +177,9 @@ export class DmService extends MessagingCoreService {
       lastMsgMap.set(msg.conversationId, {
         createdAt: msg.createdAt,
         senderId: msg.senderId,
-        senderName: msg.sender?.displayName || msg.sender?.username || 'Member',
+        senderName: msg.sender
+          ? presentUserName(msg.sender as any)
+          : 'Member',
         type: msg.type ? msg.type.toLowerCase() : 'chat',
         text,
         mediaUrl: payload.mediaUrl || null,
@@ -299,6 +318,14 @@ export class DmService extends MessagingCoreService {
         }
 
         const pubId = (conv as any).publicId || conv.id;
+
+        // One decision, used for the row title, the avatar, the composer and
+        // the target-user block below, so those four can never disagree about
+        // whether this person still exists.
+        const targetUnavailable = otherUser
+          ? isUnavailableUser(otherUser as any)
+          : false;
+
         return {
           id: pubId,
           publicId: pubId,
@@ -306,8 +333,12 @@ export class DmService extends MessagingCoreService {
           type: 'DM' as const,
           isMember: (p as any).leftAt == null,
           ownerId: conv.ownerId || null,
-          name: conv.name || otherUser?.displayName || 'Chat',
-          avatar: conv.avatarKey || otherUser?.avatar || null,
+          // `conv.name` and `conv.avatarKey` are null on a DM (they are group
+          // fields), so the partner's own values are what actually render —
+          // which is exactly why they have to go through the presenter.
+          name: conv.name || presentUserName(otherUser as any) || 'Chat',
+          avatar:
+            conv.avatarKey || presentUserAvatar(otherUser as any) || null,
           description: conv.description || null,
           status: conv.status || 'ACTIVE',
           isInstantMatch: conv.isInstantMatch || false,
@@ -342,23 +373,42 @@ export class DmService extends MessagingCoreService {
           // Mirrors the rule the backend enforces on send: both sides must be
           // eligible for this viewer to be offered a composer.
           canSendMessages:
+            !targetUnavailable &&
             viewerEligible &&
             (!enforcingVerification ||
               !otherUser ||
               this.verificationAccess.isEligibleStatus(
                 (otherUser as any).verificationStatus,
               )),
+          // Distinct from `canSendMessages` on purpose: the client renders a
+          // different, specific notice for "this user is no longer available"
+          // than for "you are not verified yet".
+          targetUserUnavailable: targetUnavailable,
           targetUser: otherUser
             ? {
                 id: otherUser.id,
-                username: otherUser.username,
-                displayName: otherUser.displayName,
-                avatar: otherUser.avatar,
-                verificationStatus: (otherUser as any).verificationStatus,
-                isOnline: canSeeOnline
-                  ? userPresence?.isOnline || false
-                  : false,
-                lastActive: userPresence?.lastActive || null,
+                username: targetUnavailable
+                  ? DELETED_USER_USERNAME
+                  : otherUser.username,
+                displayName: presentUserName(otherUser as any),
+                avatar: presentUserAvatar(otherUser as any),
+                isDeleted: targetUnavailable,
+                // No profile page should resolve for a deleted account, so the
+                // client renders the name as text rather than a link.
+                profileAvailable: !targetUnavailable,
+                verificationStatus: targetUnavailable
+                  ? 'UNVERIFIED'
+                  : (otherUser as any).verificationStatus,
+                // A deleted account is never shown as online, whatever a stale
+                // presence key happens to say.
+                isOnline: targetUnavailable
+                  ? false
+                  : canSeeOnline
+                    ? userPresence?.isOnline || false
+                    : false,
+                lastActive: targetUnavailable
+                  ? null
+                  : userPresence?.lastActive || null,
               }
             : null,
         };

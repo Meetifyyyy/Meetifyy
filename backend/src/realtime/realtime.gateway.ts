@@ -547,6 +547,37 @@ export class RealtimeGateway
       return;
     }
 
+    // A valid token is not enough. An account inside its deletion window keeps
+    // a working token on purpose (it needs one to recover), and the REST gate
+    // that refuses it lives in JwtGuard — which sockets never pass through. So
+    // without this check a deleting user could keep a live socket: appear
+    // online, receive presence and typing events, and read new messages, while
+    // every HTTP route told them the account was gone. The status is read from
+    // the database rather than the token because the token predates the state
+    // change and will keep asserting an active account until it expires.
+    const lifecycle = await this.prisma.user
+      .findUnique({
+        where: { id: user.id },
+        select: { accountStatus: true },
+      })
+      .catch(() => null);
+
+    if (
+      lifecycle?.accountStatus === 'PENDING_DELETION' ||
+      lifecycle?.accountStatus === 'DELETED'
+    ) {
+      this.logger.warn(
+        `Client connection rejected: account ${user.id} is ${lifecycle.accountStatus}`,
+      );
+      // Told apart from an auth failure so the client shows the recovery gate
+      // rather than bouncing the user to the sign-in screen.
+      client.emit('account:unavailable', {
+        code: 'ACCOUNT_PENDING_DELETION',
+      });
+      client.disconnect();
+      return;
+    }
+
     userId = user.id;
     userName =
       user.user_metadata?.username ||

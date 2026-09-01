@@ -358,6 +358,25 @@ export class ActivityAuthorizationService {
   // ── 5. Query-layer filters ─────────────────────────────────────────────────
 
   /**
+   * Activities whose host is still a real, available account.
+   *
+   * ANDed into every one of the three `where` builders below rather than
+   * bolted onto their call sites, because there are a dozen of those and one
+   * of them would eventually be missed. A host who requests deletion is hidden
+   * from everyone for the whole 30-day window — their activities have to go
+   * with them, or the Crew feed keeps offering an activity nobody can host and
+   * a profile link that already 404s. After the window their activities are
+   * hard-deleted outright, so this only ever matters during it.
+   *
+   * `deletedAt` is the column checked because it is the one the request stamps
+   * and recovery clears, so recovering a host puts their activities straight
+   * back with no separate reconciliation step.
+   */
+  private static readonly AVAILABLE_HOST: Prisma.CrewActivityWhereInput = {
+    creator: { deletedAt: null },
+  };
+
+  /**
    * `where` fragment restricting a query to activities the viewer may ORGANICALLY
    * DISCOVER. Applied at the database layer so restricted rows are never fetched
    * (and therefore can never leak through pagination, caching or a serializer).
@@ -367,7 +386,12 @@ export class ActivityAuthorizationService {
    */
   discoveryWhere(user: UserAuthContext | null): Prisma.CrewActivityWhereInput {
     if (!user) {
-      return { visibility: ActivityVisibility.PUBLIC };
+      return {
+        AND: [
+          { visibility: ActivityVisibility.PUBLIC },
+          ActivityAuthorizationService.AVAILABLE_HOST,
+        ],
+      };
     }
 
     const clauses: Prisma.CrewActivityWhereInput[] = [
@@ -393,7 +417,9 @@ export class ActivityAuthorizationService {
       });
     }
 
-    return { OR: clauses };
+    return {
+      AND: [{ OR: clauses }, ActivityAuthorizationService.AVAILABLE_HOST],
+    };
   }
 
   /**
@@ -412,15 +438,25 @@ export class ActivityAuthorizationService {
     user: UserAuthContext | null,
   ): Prisma.CrewActivityWhereInput {
     if (!user?.collegeId) {
-      return { visibility: ActivityVisibility.PUBLIC };
+      return {
+        AND: [
+          { visibility: ActivityVisibility.PUBLIC },
+          ActivityAuthorizationService.AVAILABLE_HOST,
+        ],
+      };
     }
     return {
-      OR: [
-        { visibility: ActivityVisibility.PUBLIC },
+      AND: [
         {
-          visibility: ActivityVisibility.COLLEGE_ONLY,
-          collegeId: user.collegeId,
+          OR: [
+            { visibility: ActivityVisibility.PUBLIC },
+            {
+              visibility: ActivityVisibility.COLLEGE_ONLY,
+              collegeId: user.collegeId,
+            },
+          ],
         },
+        ActivityAuthorizationService.AVAILABLE_HOST,
       ],
     };
   }
@@ -433,20 +469,49 @@ export class ActivityAuthorizationService {
    */
   accessWhere(user: UserAuthContext | null): Prisma.CrewActivityWhereInput {
     if (!user) {
-      return { visibility: ActivityVisibility.PUBLIC };
+      return {
+        AND: [
+          { visibility: ActivityVisibility.PUBLIC },
+          ActivityAuthorizationService.AVAILABLE_HOST,
+        ],
+      };
     }
 
+    // `discoveryWhere` now returns an AND wrapper, so its visibility clauses
+    // are one level deeper than they used to be. Reaching for `.OR` directly
+    // would silently find nothing and collapse this to the personal clauses
+    // alone — dropping every publicly discoverable activity from bookmarks.
     const discovery = this.discoveryWhere(user);
-    const discoveryClauses =
-      (discovery.OR as Prisma.CrewActivityWhereInput[]) ?? [discovery];
+    const discoveryClauses = this.extractVisibilityClauses(discovery);
 
     return {
-      OR: [
-        ...discoveryClauses,
-        { creatorId: user.id },
-        { members: { some: { userId: user.id, status: 'MEMBER' } } },
-        { invitations: { some: this.validInvitationWhere(user.id) } },
+      AND: [
+        {
+          OR: [
+            ...discoveryClauses,
+            { creatorId: user.id },
+            { members: { some: { userId: user.id, status: 'MEMBER' } } },
+            { invitations: { some: this.validInvitationWhere(user.id) } },
+          ],
+        },
+        ActivityAuthorizationService.AVAILABLE_HOST,
       ],
     };
+  }
+
+  /** Unwraps the visibility clauses from whichever shape a builder returned. */
+  private extractVisibilityClauses(
+    where: Prisma.CrewActivityWhereInput,
+  ): Prisma.CrewActivityWhereInput[] {
+    const and = where.AND as Prisma.CrewActivityWhereInput[] | undefined;
+    const inner = Array.isArray(and)
+      ? and.find((clause) => Array.isArray(clause.OR))
+      : undefined;
+    if (inner?.OR) return inner.OR;
+    if (Array.isArray(where.OR)) {
+      return where.OR;
+    }
+    // A single-clause builder result (the signed-out case).
+    return Array.isArray(and) ? and : [where];
   }
 }
