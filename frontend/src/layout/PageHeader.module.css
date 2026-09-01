@@ -48,13 +48,9 @@
 }
 
 .mobileTitle {
-  font-family: var(--font-family-display);
+  composes: type-page-title from global;
   font-size: 1.4rem;
-  font-weight: 700;
-  color: var(--color-text-main);
   margin: 0;
-  letter-spacing: -0.02em;
-  line-height: 1.2;
 }
 
 .desktopTitleRow {
@@ -62,20 +58,13 @@
 }
 
 .desktopTitle {
-  font-family: var(--font-family-display);
-  font-size: 2.2rem;
-  font-weight: 800;
-  color: var(--color-text-main);
+  composes: type-page-title from global;
   margin: 0 0 0.2rem;
-  line-height: 1.1;
 }
 
 .desktopSubtitle {
-  font-family: var(--font-family-sans);
-  font-size: 0.88rem;
-  color: var(--color-text-muted);
+  composes: type-secondary from global;
   margin: 0;
-  line-height: 1.4;
 }
 
 .searchRow {

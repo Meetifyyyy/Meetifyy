@@ -65,11 +65,10 @@
 }
 
 .title {
+  composes: type-card-title from global;
   font-size: 1.1rem;
-  font-weight: 700;
   color: #ffffff;
   margin: 0;
-  letter-spacing: -0.01em;
 }
 
 .subtitle {

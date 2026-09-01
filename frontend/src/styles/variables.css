@@ -44,6 +44,31 @@
   --font-family-display: 'Inter', sans-serif;
   --font-family-sans: 'Inter', sans-serif;
 
+  /* Type scale — see styles/typography.css for the semantic classes built on
+     these, and styles/README-typography.md for usage. Sizes match the values
+     components already clustered around, so migration is low-risk. */
+  --font-size-2xs:  0.6875rem; /* 11px - stylized badges / eyebrows only */
+  --font-size-xs:   0.75rem;   /* 12px - caption / metadata */
+  --font-size-sm:   0.8125rem; /* 13px - secondary text, dense labels */
+  --font-size-base: 0.875rem;  /* 14px - body */
+  --font-size-md:   0.9375rem; /* 15px - emphasized body / input values */
+  --font-size-lg:   1.0625rem; /* 17px - card title */
+  --font-size-xl:   1.25rem;   /* 20px - section title */
+  --font-size-2xl:  1.5rem;    /* 24px - page title (mobile) */
+  --font-size-3xl:  2rem;      /* 32px - page title (desktop) */
+
+  --font-weight-regular:  400;
+  --font-weight-medium:   500;
+  --font-weight-semibold: 600;
+
+  --leading-tight:   1.2;
+  --leading-snug:    1.35;
+  --leading-normal:  1.5;
+  --leading-relaxed: 1.6;
+
+  --tracking-tight:  -0.02em; /* large headings only */
+  --tracking-normal: 0;
+
   /* === Border Radius === */
   --radius-sm: 8px;
   --radius-md: 12px;

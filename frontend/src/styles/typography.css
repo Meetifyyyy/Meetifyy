@@ -1,0 +1,118 @@
+/* =============================================================================
+   Semantic typography classes
+   -----------------------------------------------------------------------------
+   One calm, hierarchical system. CSS-module classes opt in with
+   `composes: type-<role> from global;` (same pattern as `ui-avatar`), then
+   delete the font-size / weight / line-height / letter-spacing / text-transform
+   lines the composed class now owns. Keep component-specific overrides
+   (a bespoke size, a colour that differs) as normal declarations after the
+   compose.
+
+   Built on the --font-size-* / --font-weight-* / --leading-* / --tracking-*
+   tokens in variables.css. See README-typography.md.
+
+   Rules encoded here:
+   - Labels are medium, never bold, never uppercased.
+   - Headings top out at semibold (600) — no 700+.
+   - Only page / section titles use negative tracking.
+   - Muted text is a two-step ramp: --color-text-muted then --color-text-light.
+
+   Deliberately NOT covered (keep their existing uppercase / weight):
+   count & status badges/pills, calendar date-tile abbreviations, the landing
+   page's marketing `.eyebrow` + nav CTA text, and the features/instant-match
+   Changa One display system.
+   ========================================================================== */
+
+.type-page-title {
+  font-family: var(--font-family-display);
+  font-size: var(--font-size-2xl);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--leading-tight);
+  letter-spacing: var(--tracking-tight);
+  text-transform: none;
+  color: var(--color-text-main);
+}
+
+@media (min-width: 1024px) {
+  .type-page-title {
+    font-size: var(--font-size-3xl);
+  }
+}
+
+.type-section-title {
+  font-family: var(--font-family-display);
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--leading-snug);
+  letter-spacing: var(--tracking-normal);
+  text-transform: none;
+  color: var(--color-text-main);
+}
+
+.type-card-title {
+  font-family: var(--font-family-display);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--leading-snug);
+  letter-spacing: var(--tracking-normal);
+  text-transform: none;
+  color: var(--color-text-main);
+}
+
+.type-label {
+  font-family: var(--font-family-sans);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  line-height: var(--leading-snug);
+  letter-spacing: var(--tracking-normal);
+  text-transform: none;
+  color: var(--color-text-muted);
+}
+
+.type-body {
+  font-family: var(--font-family-sans);
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-regular);
+  line-height: var(--leading-relaxed);
+  letter-spacing: var(--tracking-normal);
+  text-transform: none;
+  color: var(--color-text-main);
+}
+
+.type-secondary {
+  font-family: var(--font-family-sans);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-regular);
+  line-height: var(--leading-normal);
+  letter-spacing: var(--tracking-normal);
+  text-transform: none;
+  color: var(--color-text-muted);
+}
+
+.type-caption {
+  font-family: var(--font-family-sans);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-regular);
+  line-height: var(--leading-normal);
+  letter-spacing: var(--tracking-normal);
+  text-transform: none;
+  color: var(--color-text-light);
+}
+
+.type-button {
+  font-family: var(--font-family-sans);
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--leading-tight);
+  letter-spacing: var(--tracking-normal);
+  text-transform: none;
+}
+
+.type-nav {
+  font-family: var(--font-family-sans);
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-medium);
+  line-height: var(--leading-tight);
+  letter-spacing: var(--tracking-normal);
+  text-transform: none;
+}

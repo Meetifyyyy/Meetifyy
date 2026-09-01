@@ -698,8 +698,8 @@ export default function SettingsRoute() {
         </div>
       </div>
 
-      {/* More section */}
-      <div className={styles.sectionLabel}>More</div>
+      {/* Support section */}
+      <div className={styles.sectionLabel}>Support</div>
       <div className={styles.group}>
         <button
           className={`${styles.row} ${activePanel === 'help' && isLargeScreen ? styles.rowActive : ''}`}
@@ -719,19 +719,23 @@ export default function SettingsRoute() {
           <span className={styles.rowLabel}>Cookie Preferences</span>
           <span className={styles.rowChev}><ChevronRight size={18} strokeWidth={2.25} /></span>
         </button>
+      </div>
+
+      {/* Account section */}
+      <div className={styles.sectionLabel}>Account</div>
+      <div className={styles.group}>
+        <button className={styles.row} onClick={logout}>
+          <span className={styles.rowIcon}>
+            <LogOut size={20} strokeWidth={2} />
+          </span>
+          <span className={styles.rowLabel}>Log Out</span>
+        </button>
         <div className={styles.divider} />
         <button className={`${styles.row} ${styles.rowDanger}`} onClick={() => setShowDeleteConfirm(true)}>
           <span className={styles.rowIcon}>
             <Trash2 size={20} strokeWidth={2} />
           </span>
           <span className={styles.rowLabel}>Delete Account</span>
-        </button>
-        <div className={styles.divider} />
-        <button className={styles.row} onClick={logout}>
-          <span className={styles.rowIcon}>
-            <LogOut size={20} strokeWidth={2} />
-          </span>
-          <span className={styles.rowLabel}>Log Out</span>
         </button>
       </div>
 

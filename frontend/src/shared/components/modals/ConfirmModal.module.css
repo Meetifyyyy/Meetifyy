@@ -76,10 +76,7 @@
 }
 
 .confirmTitle {
-  font-family: var(--font-family-display, sans-serif);
-  font-weight: 700;
-  font-size: 1.25rem;
-  color: var(--color-text-main, #0f172a);
+  composes: type-section-title from global;
   margin-bottom: 0.5rem;
 }
 

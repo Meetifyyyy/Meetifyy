@@ -14,6 +14,7 @@ import { config } from '@config';
 import { isNonProductionHost } from './config/deploymentEnv';
 import './styles/variables.css';
 import './styles/global.css';
+import './styles/typography.css';
 
 const queryClient = new QueryClient({
   defaultOptions: {

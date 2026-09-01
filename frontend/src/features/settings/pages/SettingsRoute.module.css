@@ -87,12 +87,7 @@
 }
 
 .sectionLabel {
-  font-family: var(--font-family-display);
-  font-size: 0.72rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.07em;
-  color: var(--color-text-muted);
+  composes: type-label from global;
   padding: 16px var(--settings-gutter) 8px;
 }
 
@@ -119,7 +114,7 @@
   background: var(--color-bg-white);
   border: 1px solid var(--color-border-light);
   border-radius: var(--radius-lg, 16px);
-  margin: 0 var(--settings-gutter) 14px;
+  margin: 0 var(--settings-gutter) 12px;
   overflow: hidden;
   box-shadow: var(--shadow-sm);
 }
@@ -172,7 +167,6 @@
 
 .rowActive .rowLabel {
   color: var(--color-primary);
-  font-weight: 700;
 }
 
 .rowActive .rowIcon {
@@ -203,10 +197,9 @@
 }
 
 .rowLabel {
+  composes: type-nav from global;
   flex: 1;
-  font-family: var(--font-family-sans);
   font-size: 0.92rem;
-  font-weight: 600;
   color: var(--color-text-main);
 }
 
@@ -255,12 +248,9 @@
 
 /* ── Version footer ── */
 .version {
+  composes: type-caption from global;
   text-align: center;
-  font-family: var(--font-family-sans);
-  font-size: 0.78rem;
-  color: var(--color-text-light);
   padding: 8px 0;
-  font-weight: 500;
   margin: 0;
 }
 
@@ -283,12 +273,7 @@
 }
 
 .inputLabel {
-  font-family: var(--font-family-display);
-  font-size: 0.72rem;
-  font-weight: 700;
-  color: var(--color-text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  composes: type-label from global;
 }
 
 .input {
@@ -392,10 +377,7 @@
 }
 
 .toggleDesc {
-  font-family: var(--font-family-sans);
-  font-size: 0.82rem;
-  color: var(--color-text-muted);
-  line-height: 1.35;
+  composes: type-secondary from global;
 }
 
 /* ── iOS-style toggle ── */
@@ -445,6 +427,7 @@ input:checked + .slider::before {
 
 /* ── Save button ── */
 .saveBtn {
+  composes: type-button from global;
   display: block;
   width: calc(100% - (var(--settings-gutter) * 2));
   margin: 20px var(--settings-gutter) 0;
@@ -453,9 +436,6 @@ input:checked + .slider::before {
   color: white;
   border: none;
   border-radius: var(--radius-full);
-  font-family: var(--font-family-sans);
-  font-size: 0.92rem;
-  font-weight: 700;
   cursor: pointer;
   box-shadow: 0 4px 14px rgba(var(--color-primary-rgb), 0.22);
   transition: background var(--transition-fast), box-shadow var(--transition-fast), transform var(--transition-fast);
@@ -722,11 +702,10 @@ input:checked + .slider::before {
 }
 
 .errorText {
+  composes: type-caption from global;
   color: var(--color-danger);
-  font-family: var(--font-family-sans);
-  font-size: 0.75rem;
-  margin-top: 4px;
-  font-weight: 600;
+  font-weight: var(--font-weight-medium);
+  margin-top: 6px;
   display: flex;
   align-items: center;
   gap: 4px;
@@ -784,10 +763,8 @@ input:checked + .slider::before {
 }
 
 .interestsSubheadline {
-  font-family: var(--font-family-sans);
+  composes: type-secondary from global;
   font-size: 0.9rem;
-  color: var(--color-text-muted);
-  line-height: 1.4;
   margin: 0;
 }
 
@@ -805,12 +782,7 @@ input:checked + .slider::before {
 }
 
 .categoryTitle {
-  font-family: var(--font-family-display);
-  font-size: 0.8rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  color: var(--color-text-muted);
-  letter-spacing: 0.06em;
+  composes: type-label from global;
   margin: 0;
   padding-left: 4px;
 }
@@ -991,10 +963,8 @@ input:checked + .slider::before {
 }
 
 .welcomeLink {
-  font-family: var(--font-family-sans);
-  font-size: 0.82rem;
-  font-weight: 500;
-  color: var(--color-text-muted);
+  composes: type-secondary from global;
+  font-weight: var(--font-weight-medium);
   text-decoration: none;
   transition: color var(--transition-fast);
 }
@@ -1071,6 +1041,7 @@ input:checked + .slider::before {
 }
 
 .floatingSaveBtn {
+  composes: type-button from global;
   width: 100%;
   max-width: 480px;
   height: 48px;
@@ -1081,9 +1052,7 @@ input:checked + .slider::before {
   border: none;
   pointer-events: auto; /* Re-enable clicks on the button itself */
   border-radius: var(--radius-full);
-  font-family: var(--font-family-sans);
   font-size: 0.95rem;
-  font-weight: 700;
   cursor: pointer;
   box-shadow: 0 6px 20px rgba(var(--color-primary-rgb), 0.35);
   transition: transform var(--transition-fast), background var(--transition-fast), box-shadow var(--transition-fast);
@@ -1127,12 +1096,7 @@ input:checked + .slider::before {
 }
 
 .lockedLabel {
-  font-family: var(--font-family-sans);
-  font-size: 0.725rem;
-  font-weight: 500;
-  color: var(--color-text-light, #94a3b8);
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
+  composes: type-caption from global;
 }
 
 .lockedValue {
@@ -1200,17 +1164,6 @@ input:checked + .slider::before {
 }
 
 /* ── Error text with alert icon ── */
-.errorText {
-  color: var(--color-danger);
-  font-family: var(--font-family-sans);
-  font-size: 0.76rem;
-  margin-top: 6px;
-  font-weight: 600;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
 /* ── Custom modal overlay ── */
 .modalOverlay {
   position: fixed;
@@ -1257,18 +1210,13 @@ input:checked + .slider::before {
 }
 
 .modalTitle {
-  font-family: var(--font-family-sans);
-  font-size: 1.2rem;
-  font-weight: 700;
-  color: var(--color-text-main);
+  composes: type-card-title from global;
   margin: 0 0 8px 0;
 }
 
 .modalText {
-  font-family: var(--font-family-sans);
+  composes: type-secondary from global;
   font-size: 0.9rem;
-  color: var(--color-text-muted);
-  line-height: 1.5;
   margin: 0 0 24px 0;
 }
 
@@ -1280,12 +1228,11 @@ input:checked + .slider::before {
 
 .modalCancelBtn,
 .modalDeleteBtn {
+  composes: type-button from global;
   flex: 1;
   padding: 12px;
   border-radius: var(--radius-full);
-  font-family: var(--font-family-sans);
   font-size: 0.9rem;
-  font-weight: 700;
   cursor: pointer;
   border: none;
   transition: background var(--transition-fast);

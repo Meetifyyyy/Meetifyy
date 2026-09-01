@@ -51,10 +51,8 @@
 }
 
 .sidebarName {
-  font-family: var(--font-family-display);
-  font-weight: 700;
+  composes: type-card-title from global;
   font-size: 0.95rem;
-  color: var(--color-text-main);
 }
 
 .sidebarUsername {
@@ -164,11 +162,7 @@
 }
 
 .sectionTitle {
-  font-size: 0.75rem;
-  font-weight: 700;
-  color: var(--color-text-muted);
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
+  composes: type-label from global;
 }
 
 .sectionBadge {
@@ -237,12 +231,10 @@
 }
 
 .invitationTitle {
+  composes: type-card-title from global;
   color: white;
-  font-family: var(--font-family-display);
   font-size: 1rem;
-  font-weight: 700;
   margin: 0;
-  line-height: 1.2;
 }
 
 .invitationActions {
@@ -303,17 +295,12 @@
 }
 
 .communitiesHeader {
+  composes: type-label from global;
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0.75rem 0.5rem;
   cursor: pointer;
-  color: var(--color-text-muted);
-  font-family: var(--font-family-display);
-  font-weight: 700;
-  font-size: 0.85rem;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
   transition: color 0.2s;
 }
 

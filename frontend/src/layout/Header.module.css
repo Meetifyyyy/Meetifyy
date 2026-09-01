@@ -708,17 +708,12 @@
 }
 
 .communitiesHeader {
+  composes: type-label from global;
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0.5rem 0;
   cursor: pointer;
-  color: var(--color-text-muted);
-  font-family: var(--font-family-display);
-  font-weight: 700;
-  font-size: 0.85rem;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
   transition: color 0.2s;
 }
 
