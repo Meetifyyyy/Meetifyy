@@ -263,7 +263,7 @@
         },
         {
           "key": "Content-Security-Policy",
-          "value": "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:; script-src-elem 'self' 'unsafe-inline' 'unsafe-eval' blob:; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: http: https: https://*.supabase.co https://*.r2.dev https://cdn.meetifyy.app; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.r2.dev https://cdn.meetifyy.app http: https: ws: wss:; media-src 'self' data: blob: http: https: https://*.supabase.co https://*.r2.dev https://cdn.meetifyy.app; frame-ancestors 'none'; base-uri 'self'; form-action 'self';"
+          "value": "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https://static.cloudflareinsights.com; script-src-elem 'self' 'unsafe-inline' 'unsafe-eval' blob: https://static.cloudflareinsights.com; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: http: https: https://*.supabase.co https://*.r2.dev https://cdn.meetifyy.app; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.r2.dev https://cdn.meetifyy.app http: https: ws: wss:; media-src 'self' data: blob: http: https: https://*.supabase.co https://*.r2.dev https://cdn.meetifyy.app; frame-ancestors 'none'; base-uri 'self'; form-action 'self';"
         }
       ]
     }
