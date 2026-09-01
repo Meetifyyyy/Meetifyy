@@ -12,6 +12,8 @@ import { NewLoginEmail } from './templates/new-login';
 import { ResetPasswordEmail } from './templates/reset-password';
 import { VerificationOtpEmail } from './templates/verification-otp';
 import { PasswordChangedEmail } from './templates/password-changed';
+import { AccountDeletionOtpEmail } from './templates/account-deletion-otp';
+import { AccountRecoveryOtpEmail } from './templates/account-recovery-otp';
 import { AdminOtpEmail } from './templates/admin-otp';
 import { config } from '../config';
 import { PrismaService } from '../prisma/prisma.service';
@@ -242,6 +244,27 @@ export class EmailProcessor extends WorkerHost implements OnModuleInit {
             createElement(AdminOtpEmail, {
               name: job.data.name,
               otp: job.data.otp,
+            }),
+          );
+          break;
+
+        case 'send-account-deletion-otp':
+          subject = 'Confirm your Meetifyy account deletion';
+          html = await render(
+            createElement(AccountDeletionOtpEmail, {
+              name: job.data.name,
+              otp: job.data.otp,
+            }),
+          );
+          break;
+
+        case 'send-account-recovery-otp':
+          subject = 'Recover your Meetifyy account';
+          html = await render(
+            createElement(AccountRecoveryOtpEmail, {
+              name: job.data.name,
+              otp: job.data.otp,
+              scheduledDeletionDate: job.data.scheduledDeletionDate,
             }),
           );
           break;

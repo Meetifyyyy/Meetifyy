@@ -46,3 +46,26 @@ export const PURGE_MAX_ATTEMPTS = 5;
 
 /** Machine-readable code the client keys the full-screen recovery gate off. */
 export const PENDING_DELETION_ERROR_CODE = 'ACCOUNT_PENDING_DELETION';
+
+/**
+ * Interactive-transaction budget for one account's purge.
+ *
+ * Prisma's default is 5 seconds, which a purge cannot meet: it issues roughly
+ * thirty-five sequential statements — posts, activities, communities, comments,
+ * campus events, match sessions, support tickets and every relational table —
+ * and against a pooled remote database each of those carries a network
+ * round-trip. The default silently held right up until the work ran against a
+ * real database, where the transaction expired mid-flight and the purge failed
+ * with "Transaction not found"; a mocked `$transaction` cannot reproduce that,
+ * because it just calls the callback.
+ *
+ * Generous rather than tight on purpose. The transaction touches only one
+ * user's rows, the sweep runs it for at most `PURGE_BATCH_SIZE` accounts one at
+ * a time, and a purge that times out is retried anyway — so the cost of being
+ * wrong upward is a slightly longer lock on rows nobody else is reading, while
+ * the cost of being wrong downward is that permanent deletion never completes.
+ */
+export const PURGE_TRANSACTION_TIMEOUT_MS = 120_000;
+
+/** How long to wait for a connection from the pool before giving up. */
+export const PURGE_TRANSACTION_MAX_WAIT_MS = 15_000;

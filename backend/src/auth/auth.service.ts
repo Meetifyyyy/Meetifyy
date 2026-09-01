@@ -226,7 +226,17 @@ export class AuthService {
     if (rows && rows.length > 0) {
       const row = rows[0];
 
-      if (row.accountStatus === 'DELETED' || row.deletedAt) {
+      // A permanently deleted account is gone and stays gone. An account
+      // inside its 30-day window is NOT: `deletedAt` is stamped the moment
+      // deletion is requested (that is what hides it from everyone else), so
+      // the plain `row.deletedAt` test used to lock the owner out of the only
+      // screen that can undo it. Sign-in is deliberately allowed for
+      // PENDING_DELETION; `JwtGuard` then refuses every route except the
+      // recovery flow, so the session that comes back can do nothing else.
+      if (
+        row.accountStatus === 'DELETED' ||
+        (row.deletedAt && row.accountStatus !== 'PENDING_DELETION')
+      ) {
         throw new UnauthorizedException('Account has been deleted');
       }
       // A ban is terminal and not appealable through the app.

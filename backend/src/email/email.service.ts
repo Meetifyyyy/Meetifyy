@@ -83,6 +83,48 @@ export class EmailService {
     });
   }
 
+  /**
+   * Confirms a request to delete an account.
+   *
+   * `from` is the security sender, matching the admin access-code email: this
+   * is a security-critical action, and it should arrive from the same address
+   * a user learns to associate with account safety rather than from the
+   * product's general sender.
+   */
+  async sendAccountDeletionOtpEmail(email: string, name: string, otp: string) {
+    // Note the absence of the code from this line. Codes never reach a log.
+    this.logger.log(`Queuing account-deletion OTP email for ${email}`);
+    await this.emailQueue.add('send-account-deletion-otp', {
+      email,
+      name,
+      otp,
+      from: config.email.securityFrom,
+    });
+  }
+
+  /**
+   * Confirms a request to recover an account inside its deletion window.
+   *
+   * Takes the scheduled deletion date so the email can state how long is left.
+   * The date is formatted by the caller from the stored `scheduledPurgeAt`, so
+   * this never computes a deadline of its own.
+   */
+  async sendAccountRecoveryOtpEmail(
+    email: string,
+    name: string,
+    otp: string,
+    scheduledDeletionDate?: string,
+  ) {
+    this.logger.log(`Queuing account-recovery OTP email for ${email}`);
+    await this.emailQueue.add('send-account-recovery-otp', {
+      email,
+      name,
+      otp,
+      scheduledDeletionDate,
+      from: config.email.securityFrom,
+    });
+  }
+
   // ── Support desk ─────────────────────────────────────────────────────────
   //
   // These three take a row id rather than the rendered content. The worker

@@ -12,6 +12,7 @@ import { RedisModule } from '../redis/redis.module';
 import { BullModule } from '@nestjs/bullmq';
 import { NOTIFICATIONS_QUEUE } from '../notifications/notifications.processor';
 import { PresenceModule } from '../presence/presence.module';
+import { AccountDeletionModule } from '../account-deletion/account-deletion.module';
 
 @Module({
   imports: [
@@ -19,6 +20,9 @@ import { PresenceModule } from '../presence/presence.module';
     NotificationsModule,
     RedisModule,
     PresenceModule,
+    // Only for the `DELETE /api/users/me` alias, which forwards into the
+    // 30-day-window request rather than deleting on the spot.
+    AccountDeletionModule,
     BullModule.registerQueue({ name: NOTIFICATIONS_QUEUE }),
   ],
   controllers: [UsersController, BlockedContactsController, BlocksController],

@@ -232,6 +232,7 @@ model User {
   coverMedia                 Media?                      @relation("UserCover", fields: [coverMediaId], references: [id])
   settings                   UserSettings?
   verificationRequests       VerificationRequest[]
+  otps                       UserOtp[]
 
   @@index([collegeId])
   @@index([collegeId, createdAt(sort: Desc)])
@@ -930,6 +931,45 @@ model SuperAdminSession {
   @@index([revoked])
 }
 
+/// Purpose of a one-time code issued to an end user.
+///
+/// The purpose is part of the record rather than implied by context, so a code
+/// minted to confirm a deletion can never be replayed to cancel one (or the
+/// reverse). Verification is always scoped to (user, purpose).
+enum UserOtpPurpose {
+  ACCOUNT_DELETION
+  ACCOUNT_RECOVERY
+}
+
+/// One-time codes for the account-deletion lifecycle.
+///
+/// Modelled on AdminOtp, with two deliberate differences:
+///   - `codeHash` is an HMAC keyed with a server secret, not a bare digest. A
+///     six-digit code has a million possibilities, so an unkeyed hash is
+///     reversible by anyone who obtains the table.
+///   - the (userId, purpose) uniqueness is what enforces "issuing a new code
+///     invalidates the previous one" structurally, rather than relying on
+///     every call site remembering to delete the old row first.
+model UserOtp {
+  id         String         @id @default(uuid())
+  userId     String
+  purpose    UserOtpPurpose
+  codeHash   String
+  attempts   Int            @default(0)
+  expiresAt  DateTime
+  /// Set the moment a code is accepted, so a correct code cannot be replayed.
+  consumedAt DateTime?
+  createdAt  DateTime       @default(now())
+  /// Coarse audit metadata. Never the code itself, and never a full user agent.
+  requestIp  String?
+  user       User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// One live code per purpose per user — the upsert target.
+  @@unique([userId, purpose])
+  /// Expired-row sweep.
+  @@index([expiresAt])
+}
+
 model AdminOtp {
   id        String     @id @default(uuid())
   adminId   String
@@ -1255,17 +1295,25 @@ enum CollegeStatus {
   DISABLED
 }
 
+/// Declared in lifecycle order: an account moves down this list, never up,
+/// except for the one reversible step (PENDING_DELETION back to ACTIVE).
+///
+/// The order is also the Postgres enum's sort order, so `ORDER BY
+/// "accountStatus"` yields something meaningful rather than the order the
+/// values happened to be added in. Nothing sorts by it today; this is here so
+/// that the first thing which does is correct by default rather than subtly
+/// wrong in a way nobody notices.
 enum AccountStatus {
   ACTIVE
   SUSPENDED
   BANNED
-  // Self-requested deletion, inside the 30-day recovery window. The row still
-  // holds every original field so RECOVER can put the account back exactly as
-  // it was; `deletedAt` is already stamped, which is what hides the account
-  // from every existing user-facing query. DELETED is the terminal state the
-  // purge worker writes once the window has expired and the row has been
-  // anonymized — it is not reversible.
+  /// Self-requested deletion, inside the 30-day recovery window. The row still
+  /// holds every original field so recovery can put the account back exactly as
+  /// it was; `deletedAt` is already stamped, which is what hides the account
+  /// from every existing user-facing query.
   PENDING_DELETION
+  /// Terminal. Written by the purge worker once the window has expired and the
+  /// row has been anonymized. Not reversible.
   DELETED
 }
 

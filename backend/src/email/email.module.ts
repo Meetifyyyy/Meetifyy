@@ -6,6 +6,7 @@ import { EmailProcessor } from './email.processor';
 import { DevEmailController } from './dev-email.controller';
 import { SupportEmailBuilder } from './support-email.builder';
 import { PrismaModule } from '../prisma/prisma.module';
+import { ACCOUNT_MAILER } from '../otp/account-mailer';
 
 import { config } from '../config';
 
@@ -22,7 +23,15 @@ import { config } from '../config';
   // The email preview controller is registered only where the environment
   // enables development endpoints (never in production).
   controllers: config.features.enableDevEndpoints ? [DevEmailController] : [],
-  providers: [EmailService, EmailProcessor, SupportEmailBuilder],
-  exports: [EmailService],
+  providers: [
+    EmailService,
+    EmailProcessor,
+    SupportEmailBuilder,
+    // Narrow alias of the same instance. Lets the account-deletion flow depend
+    // on a two-method interface instead of importing this class, which would
+    // drag `sanitize-html` (ESM) into its module graph — see account-mailer.ts.
+    { provide: ACCOUNT_MAILER, useExisting: EmailService },
+  ],
+  exports: [EmailService, ACCOUNT_MAILER],
 })
 export class EmailModule {}
