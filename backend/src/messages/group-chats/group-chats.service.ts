@@ -8,6 +8,12 @@ import {
   Optional,
 } from '@nestjs/common';
 import { MessagingCoreService } from '../core/messaging-core.service';
+import {
+  isUnavailableUser,
+  presentUserAvatar,
+  DELETED_USER_DISPLAY_NAME,
+  DELETED_USER_USERNAME,
+} from '../../common/users/deleted-user';
 import { PrismaService } from '../../prisma/prisma.service';
 import { BlocksService } from '../../users/blocks.service';
 import { PresenceService } from '../../presence/presence.service';
@@ -365,6 +371,11 @@ export class GroupChatsService extends MessagingCoreService {
                 username: true,
                 displayName: true,
                 avatar: true,
+                // Required by the tombstone projection below; without them a
+                // deleted member's real name and photo render in the group
+                // details panel and every participant picker built from it.
+                accountStatus: true,
+                deletedAt: true,
               },
             },
           },
@@ -444,13 +455,24 @@ export class GroupChatsService extends MessagingCoreService {
       .filter((p: any) => p.role === 'MEMBER')
       .map((p: any) => p.userId);
 
-    const memberDetails = sortedParticipants.map((p: any) => ({
-      userId: p.userId,
-      role: p.role,
-      displayName: p.user?.displayName || p.user?.username || 'Member',
-      username: p.user?.username || '',
-      avatar: p.user?.avatar || null,
-    }));
+    // A member who deleted their account keeps their row — removing it would
+    // silently rewrite the group's history and its member count for everyone
+    // else — but is presented as the tombstone, and flagged so the client
+    // renders the name as plain text with no profile link.
+    const memberDetails = sortedParticipants.map((p: any) => {
+      const unavailable = isUnavailableUser(p.user);
+      return {
+        userId: p.userId,
+        role: p.role,
+        displayName: unavailable
+          ? DELETED_USER_DISPLAY_NAME
+          : p.user?.displayName || p.user?.username || 'Member',
+        username: unavailable ? DELETED_USER_USERNAME : p.user?.username || '',
+        avatar: presentUserAvatar(p.user),
+        isDeleted: unavailable,
+        profileAvailable: !unavailable,
+      };
+    });
 
     const pendingRequests = pendingJoinRequests.map((req: any) => ({
       id: req.id,

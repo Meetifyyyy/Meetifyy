@@ -27,6 +27,12 @@ import { MentionsService } from '../mentions/mentions.service';
 import { buildReplyToSnapshot, REPLY_TO_SELECT } from './reply-preview.util';
 import { MediaCleanupService } from '../uploads/media-cleanup.service';
 import { VerificationAccessService } from '../common/verification/verification-access.service';
+import {
+  isUnavailableUser,
+  presentUserName,
+  presentUserAvatar,
+  DELETED_USER_USERNAME,
+} from '../common/users/deleted-user';
 
 /** The one question MessagesService asks the Instant Match domain. Kept to a
  *  single method so the coupling between the two stays visible and small. */
@@ -100,6 +106,76 @@ export class MessagesService
     const targets: string[] = payload?.targetUserIds || [];
     if (targets.length === 0) return;
     await this.invalidateUserConversationsCache(targets).catch(() => {});
+  }
+
+  /**
+   * Same problem, same fix, for the deletion lifecycle.
+   *
+   * The conversation list is cached per viewer for 60s and carries the other
+   * person's name, avatar and `targetUserUnavailable`. Without this eviction a
+   * partner who reloaded inside that window would keep seeing the deleted
+   * account's real name and photo, and an enabled composer, for up to a minute
+   * after the deletion — and after a recovery, would keep seeing "Deleted User"
+   * for just as long.
+   *
+   * The affected viewers are exactly this user's conversation partners, so
+   * they are resolved rather than flushing every cached list on the instance.
+   */
+  @OnEvent('user.deletion_requested')
+  @OnEvent('user.deletion_cancelled')
+  @OnEvent('user.deleted')
+  async handleAccountLifecycleChanged(payload: any) {
+    const userId = payload?.data?.userId || payload?.userId;
+    if (!userId) return;
+
+    try {
+      // Paged rather than capped. A single `take: 500` looks safe until the one
+      // account with 600 conversation partners deletes itself and the last 100
+      // keep seeing a real name and an enabled composer — a privacy bug whose
+      // trigger is "unusually popular user", i.e. exactly the account where it
+      // matters most. Keyset-paginated on `userId` so the walk is bounded per
+      // query but complete overall, and the eviction is issued per page so a
+      // large fan-out never builds one enormous DEL.
+      const PAGE = 500;
+      let cursor: string | undefined;
+      let evicted = 0;
+
+      // The user's own cached list goes first, before any paging can fail.
+      await this.invalidateUserConversationsCache([userId]);
+
+      for (;;) {
+        const partnerRows: { userId: string }[] =
+          await this.prisma.conversationParticipant.findMany({
+            where: {
+              userId: cursor ? { not: userId, gt: cursor } : { not: userId },
+              conversation: { participants: { some: { userId } } },
+            },
+            select: { userId: true },
+            distinct: ['userId'],
+            orderBy: { userId: 'asc' },
+            take: PAGE,
+          });
+
+        if (partnerRows.length === 0) break;
+
+        await this.invalidateUserConversationsCache(
+          partnerRows.map((p) => p.userId),
+        );
+        evicted += partnerRows.length;
+        cursor = partnerRows[partnerRows.length - 1].userId;
+        if (partnerRows.length < PAGE) break;
+      }
+
+      this.logger.log(
+        `Evicted conversation caches for ${evicted} partner(s) of ${userId}`,
+      );
+    } catch (err) {
+      // A cache that failed to clear is a staleness bug, not a correctness one:
+      // every gate that matters re-reads Postgres.
+      this.logger.warn(
+        `Conversation-cache eviction failed for ${userId}: ${(err as Error)?.message}`,
+      );
+    }
   }
 
   async invalidateUserConversationsCache(userIds?: string[]) {
@@ -652,9 +728,8 @@ export class MessagesService
       publicId: pubId,
       internalId: realConvId,
       senderId: message.senderId,
-      senderName:
-        message.sender?.displayName || message.sender?.username || 'User',
-      senderAvatar: message.sender?.avatar || '',
+      senderName: presentUserName(message.sender as any),
+      senderAvatar: presentUserAvatar(message.sender as any) || '',
       createdAt: message.createdAt,
       timestamp: message.createdAt,
       time: new Date(message.createdAt).toLocaleTimeString([], {
@@ -711,7 +786,16 @@ export class MessagesService
       },
       include: {
         sender: {
-          select: { id: true, username: true, displayName: true, avatar: true },
+          select: {
+            id: true,
+            username: true,
+            displayName: true,
+            avatar: true,
+            // See common/users/deleted-user.ts — required for the tombstone
+            // projection; omitting them leaks a deleted sender's real identity.
+            accountStatus: true,
+            deletedAt: true,
+          },
         },
         replyTo: { select: REPLY_TO_SELECT },
       },
@@ -783,6 +867,11 @@ export class MessagesService
             lastReadAt: true,
             clearedAt: true,
             leftAt: true,
+            // Lets the history response answer "is the other person still
+            // here" for a thread the conversation list never covered — a deep
+            // link, or one scrolled past the first page. Without it the
+            // composer stayed enabled until a send came back refused.
+            user: { select: { accountStatus: true, deletedAt: true } },
           },
         }),
       ]);
@@ -878,7 +967,16 @@ export class MessagesService
       where: whereCondition,
       include: {
         sender: {
-          select: { id: true, username: true, displayName: true, avatar: true },
+          select: {
+            id: true,
+            username: true,
+            displayName: true,
+            avatar: true,
+            // See common/users/deleted-user.ts — required for the tombstone
+            // projection; omitting them leaks a deleted sender's real identity.
+            accountStatus: true,
+            deletedAt: true,
+          },
         },
         replyTo: { select: REPLY_TO_SELECT },
       },
@@ -950,8 +1048,8 @@ export class MessagesService
         id: m.id,
         conversationId: m.conversationId,
         senderId: m.senderId,
-        senderName: m.sender?.displayName || m.sender?.username || 'User',
-        senderAvatar: m.sender?.avatar || '',
+        senderName: presentUserName(m.sender as any),
+        senderAvatar: presentUserAvatar(m.sender as any) || '',
         from: currentUserId && m.senderId === currentUserId ? 'me' : 'them',
         createdAt: m.createdAt,
         timestamp: m.createdAt,
@@ -1001,9 +1099,20 @@ export class MessagesService
           .catch(() => false)
       : false;
 
+    // A direct thread whose only other participant is deleted is closed for
+    // writes. A group stays open — the rest of its members are still there.
+    const otherLiveParticipants = participants.filter(
+      (p) => p.userId !== currentUserId && p.leftAt == null,
+    );
+    const targetUserUnavailable =
+      !isGroupConversation &&
+      otherLiveParticipants.length === 1 &&
+      isUnavailableUser((otherLiveParticipants[0] as any).user);
+
     return {
       messages: messagesMapped,
-      canSendMessages,
+      canSendMessages: canSendMessages && !targetUserUnavailable,
+      targetUserUnavailable,
       participants: participants.map((p) => ({
         userId: p.userId,
         lastReadAt:
@@ -1123,6 +1232,10 @@ export class MessagesService
                   // list payload so the chat can render its unavailable state
                   // on first paint rather than after a second round-trip.
                   verificationStatus: true,
+                  // Same, for the deletion lifecycle. Omitting these renders a
+                  // deleted partner's real name and avatar in the chat list.
+                  accountStatus: true,
+                  deletedAt: true,
                   settings: {
                     select: {
                       showOnlineStatus: true,
@@ -1213,6 +1326,11 @@ export class MessagesService
       (participants as any[]).map(async (p: any) => {
         const conv = p.conversation;
         const otherUser = targetUserByConvId.get(conv.id);
+        // Single source for the row title, avatar, composer state and
+        // target-user block, so those four cannot disagree.
+        const targetUnavailable = otherUser
+          ? isUnavailableUser(otherUser)
+          : false;
         const isGroupConv = conv.type === 'GROUP' || conv.isGroup;
         const groupAvatar = conv.avatarKey || null;
 
@@ -1285,10 +1403,10 @@ export class MessagesService
           isGroup: isGroupConv,
           name: isGroupConv
             ? conv.name || 'Group'
-            : conv.name || otherUser?.displayName || 'Chat',
+            : conv.name || presentUserName(otherUser as any) || 'Chat',
           avatar: isGroupConv
             ? groupAvatar
-            : conv.avatarKey || otherUser?.avatar || null,
+            : conv.avatarKey || presentUserAvatar(otherUser as any) || null,
           description: conv.description || null,
           status: conv.status || 'ACTIVE',
           isInstantMatch: conv.isInstantMatch || false,
@@ -1322,23 +1440,35 @@ export class MessagesService
           // to disable the composer; it is not the enforcement itself.
           canSendMessages: isGroupConv
             ? viewerEligible
-            : viewerEligible &&
+            : !targetUnavailable &&
+              viewerEligible &&
               (!enforcingVerification ||
                 !otherUser ||
                 verificationAccess.isEligibleStatus(
                   otherUser.verificationStatus,
                 )),
+          targetUserUnavailable: targetUnavailable,
           targetUser: otherUser
             ? {
                 id: otherUser.id,
-                username: otherUser.username,
-                displayName: otherUser.displayName,
-                avatar: otherUser.avatar,
-                verificationStatus: otherUser.verificationStatus,
-                isOnline: canSeeOnline
-                  ? userPresence?.isOnline || false
-                  : false,
-                lastActive: userPresence?.lastActive || null,
+                username: targetUnavailable
+                  ? DELETED_USER_USERNAME
+                  : otherUser.username,
+                displayName: presentUserName(otherUser as any),
+                avatar: presentUserAvatar(otherUser as any),
+                isDeleted: targetUnavailable,
+                profileAvailable: !targetUnavailable,
+                verificationStatus: targetUnavailable
+                  ? 'UNVERIFIED'
+                  : otherUser.verificationStatus,
+                isOnline: targetUnavailable
+                  ? false
+                  : canSeeOnline
+                    ? userPresence?.isOnline || false
+                    : false,
+                lastActive: targetUnavailable
+                  ? null
+                  : userPresence?.lastActive || null,
               }
             : null,
         };

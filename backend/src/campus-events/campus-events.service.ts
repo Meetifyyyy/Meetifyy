@@ -19,6 +19,12 @@ import {
   sanitizeRegistrationUrl,
 } from './campus-event.util';
 import { MediaCleanupService } from '../uploads/media-cleanup.service';
+import type { UserIdentityLike } from '../common/users/deleted-user';
+import {
+  isUnavailableUser,
+  DELETED_USER_DISPLAY_NAME,
+  DELETED_USER_USERNAME,
+} from '../common/users/deleted-user';
 
 // Columns returned for cards/detail. Kept lean to avoid over-fetching.
 const EVENT_SELECT = {
@@ -38,9 +44,44 @@ const EVENT_SELECT = {
   createdAt: true,
   updatedAt: true,
   creator: {
-    select: { id: true, username: true, displayName: true, avatar: true },
+    select: {
+      id: true,
+      username: true,
+      displayName: true,
+      avatar: true,
+      // Required by `presentEventCreator`. A campus rep who deletes their
+      // account leaves their published events in place — students have them in
+      // their calendars — so the event outlives the identity and the identity
+      // has to be substituted rather than dropped with it.
+      accountStatus: true,
+      deletedAt: true,
+    },
   },
 } as const;
+
+/**
+ * Substitutes the tombstone for a deleted event creator.
+ *
+ * Applied on the two paths another student can read — discovery and the single
+ * event — rather than on create/update/publish/listMine, where the creator is
+ * by definition the live caller. Applied BEFORE the discovery response is
+ * cached, so a 30s cache entry cannot hold the real identity.
+ */
+function presentEventCreator<T extends { creator?: unknown }>(event: T): T {
+  const creator = event.creator as UserIdentityLike | null | undefined;
+  if (!creator || !isUnavailableUser(creator)) return event;
+  return {
+    ...event,
+    creator: {
+      id: creator.id,
+      username: DELETED_USER_USERNAME,
+      displayName: DELETED_USER_DISPLAY_NAME,
+      avatar: null,
+      isDeleted: true,
+      profileAvailable: false,
+    },
+  };
+}
 
 @Injectable()
 export class CampusEventsService {
@@ -243,7 +284,7 @@ export class CampusEventsService {
       nextCursor = `${sortVal.toISOString()}|${next.id}`;
     }
 
-    const response = { events: rows, nextCursor };
+    const response = { events: rows.map(presentEventCreator), nextCursor };
     if (this.redis) {
       this.redis.setex(cacheKey, 30, JSON.stringify(response)).catch(() => {});
     }
@@ -251,11 +292,12 @@ export class CampusEventsService {
   }
 
   async getById(id: string, userId: string) {
-    const event = await this.prisma.campusEvent.findFirst({
+    const found = await this.prisma.campusEvent.findFirst({
       where: { id, deletedAt: null },
       select: EVENT_SELECT,
     });
-    if (!event) throw new NotFoundException('Campus event not found.');
+    if (!found) throw new NotFoundException('Campus event not found.');
+    const event = presentEventCreator(found);
 
     // Drafts are only visible to their creator (a rep managing their own events).
     if (event.status === 'DRAFT' && event.createdBy !== userId) {

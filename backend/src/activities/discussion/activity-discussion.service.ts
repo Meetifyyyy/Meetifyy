@@ -6,6 +6,13 @@ import {
 import { PrismaService } from '../../prisma/prisma.service';
 import { DomainEventService } from '../../events/domain-event.service';
 import { ActivityAuthorizationService } from '../activity-authorization.service';
+import type { UserIdentityLike } from '../../common/users/deleted-user';
+import {
+  isUnavailableUser,
+  presentUserAvatar,
+  DELETED_USER_DISPLAY_NAME,
+  DELETED_USER_USERNAME,
+} from '../../common/users/deleted-user';
 
 const MAX_MESSAGE_LENGTH = 2000;
 const DEFAULT_PAGE_SIZE = 20;
@@ -33,7 +40,18 @@ export class ActivityDiscussionService {
     createdAt: true,
     userId: true,
     user: {
-      select: { id: true, username: true, displayName: true, avatar: true },
+      select: {
+        id: true,
+        username: true,
+        displayName: true,
+        avatar: true,
+        isCampusRep: true,
+        // Required by the tombstone projection in `format`. A select that
+        // omits these renders a deleted author's real name and photo in a
+        // thread every other activity member can still read.
+        accountStatus: true,
+        deletedAt: true,
+      },
     },
   } as const;
 
@@ -44,12 +62,32 @@ export class ActivityDiscussionService {
       text: m.text,
       createdAt: m.createdAt,
       userId: m.userId,
-      user: {
-        id: m.user?.id || m.userId,
-        username: m.user?.username || '',
-        displayName: m.user?.displayName || m.user?.username || 'Member',
-        avatar: m.user?.avatar || null,
-      },
+      // A message from someone who has deleted their account keeps its place
+      // in the thread — removing it would rewrite the discussion for everyone
+      // else — but carries no identity.
+      user: (() => {
+        // `m` is `any` throughout this file (pre-existing), so the author is
+        // narrowed once here rather than at each of the four reads below.
+        const author = m.user as UserIdentityLike | null | undefined;
+        const unavailable = isUnavailableUser(author);
+        return {
+          id: author?.id || m.userId,
+          username: unavailable
+            ? DELETED_USER_USERNAME
+            : author?.username || '',
+          displayName: unavailable
+            ? DELETED_USER_DISPLAY_NAME
+            : author?.displayName || author?.username || 'Member',
+          avatar: presentUserAvatar(author),
+          isDeleted: unavailable,
+          profileAvailable: !unavailable,
+          // Explicit rather than omitted: the discussion row renders a campus
+          // representative badge from this field, and a deleted account must
+          // not keep wearing one. Setting it here means a later widening of
+          // the select cannot quietly reintroduce it.
+          isCampusRep: unavailable ? false : (author?.isCampusRep ?? false),
+        };
+      })(),
     };
   }
 

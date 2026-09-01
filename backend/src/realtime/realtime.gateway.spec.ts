@@ -38,6 +38,11 @@ describe('RealtimeGateway — Authentication', () => {
       conversationParticipant: {
         findMany: jest.fn().mockResolvedValue([]),
       },
+      // The handshake reads the account's lifecycle state from the database
+      // rather than the token, because the token predates any state change.
+      user: {
+        findUnique: jest.fn().mockResolvedValue({ accountStatus: 'ACTIVE' }),
+      },
     };
     redisService = {
       getClient: jest.fn(),
@@ -95,6 +100,41 @@ describe('RealtimeGateway — Authentication', () => {
     expect(client.disconnect).toHaveBeenCalled();
     expect(client.join).not.toHaveBeenCalled();
   });
+
+  // A valid token is not enough: an account inside its 30-day deletion window
+  // keeps a working one on purpose, and sockets never pass through JwtGuard —
+  // so without this check a deleting user keeps a live socket (online status,
+  // presence, typing, new message delivery) while every HTTP route refuses them.
+  it.each(['PENDING_DELETION', 'DELETED'])(
+    'rejects connection when the account is %s despite a valid token',
+    async (accountStatus) => {
+      const client: any = {
+        id: 'socket-999',
+        handshake: { auth: { token: 'valid.signed.jwt' } },
+        disconnect: jest.fn(),
+        join: jest.fn(),
+        emit: jest.fn(),
+      };
+
+      jwtGuard.validateToken.mockResolvedValue({
+        id: 'deleting-user',
+        email: 'gone@meetifyy.com',
+        user_metadata: { username: 'gone' },
+      });
+      prisma.user.findUnique.mockResolvedValue({ accountStatus });
+
+      await gateway.handleConnection(client);
+
+      expect(client.disconnect).toHaveBeenCalled();
+      expect(client.join).not.toHaveBeenCalled();
+      expect(presenceService.setOnline).not.toHaveBeenCalled();
+      // Distinguished from an auth failure so the client shows the recovery
+      // gate rather than bouncing to sign-in.
+      expect(client.emit).toHaveBeenCalledWith('account:unavailable', {
+        code: 'ACCOUNT_PENDING_DELETION',
+      });
+    },
+  );
 
   it('accepts connection if token verification succeeds with valid signature', async () => {
     const client: any = {

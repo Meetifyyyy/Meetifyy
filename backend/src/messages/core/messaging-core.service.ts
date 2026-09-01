@@ -17,6 +17,11 @@ import { MessageResponseDto } from './dto/message-response.dto';
 import { MentionsService } from '../../mentions/mentions.service';
 import { buildReplyToSnapshot, REPLY_TO_SELECT } from '../reply-preview.util';
 import { VerificationAccessService } from '../../common/verification/verification-access.service';
+import {
+  isUnavailableUser,
+  presentUserName,
+  presentUserAvatar,
+} from '../../common/users/deleted-user';
 
 @Injectable()
 export class MessagingCoreService {
@@ -220,7 +225,13 @@ export class MessagingCoreService {
           // dropped every message sent to someone who had ever cleared the
           // thread. `leftAt` is different: that user really is gone.
           where: { leftAt: null },
-          select: { userId: true, isMuted: true },
+          select: {
+            userId: true,
+            isMuted: true,
+            // The recipients' lifecycle state travels with the participant set
+            // so the unavailability gate below costs no extra query.
+            user: { select: { accountStatus: true, deletedAt: true } },
+          },
         },
       },
     });
@@ -250,7 +261,38 @@ export class MessagingCoreService {
     const otherParticipants = conv.participants.filter(
       (p) => p.userId !== senderId,
     );
-    const otherUserIds = otherParticipants.map((p) => p.userId);
+
+    // ── Unavailable-recipient gate ────────────────────────────────────────
+    // This is the enforcement, not the disabled composer on the client. Every
+    // transport funnels through this method — REST, the socket `message:send`
+    // handler, offline replay, attachment sends, reply actions — so a client
+    // that removed the disabled state, or one calling the API directly, is
+    // refused at the same point.
+    //
+    // A 1:1 thread with a deleted partner is closed for writes. The history
+    // stays readable (that is the whole point: it is the OTHER person's
+    // conversation too), but nothing new can be added to a thread whose only
+    // other participant no longer exists to read it.
+    const unavailableOthers = otherParticipants.filter((p) =>
+      isUnavailableUser(p.user as any),
+    );
+    const isDirect = otherParticipants.length === 1;
+
+    if (isDirect && unavailableOthers.length === 1) {
+      throw new ForbiddenException({
+        code: 'RECIPIENT_UNAVAILABLE',
+        message: 'This user is no longer available.',
+      });
+    }
+
+    // In a group the conversation stays open — the other members are still
+    // there — but a deleted member is dropped from the recipient set so no
+    // notification, unread bump or delivery is generated for an account that
+    // will never read it.
+    const unavailableIds = new Set(unavailableOthers.map((p) => p.userId));
+    const otherUserIds = otherParticipants
+      .map((p) => p.userId)
+      .filter((id) => !unavailableIds.has(id));
     const participantIdSet = new Set(conv.participants.map((p) => p.userId));
 
     // Re-derive the true mention set from the actual message text, then
@@ -388,6 +430,11 @@ export class MessagingCoreService {
               username: true,
               displayName: true,
               avatar: true,
+              // Required by `presentUserName`/`presentUserAvatar` below. A
+              // select that omits these silently renders the real identity of
+              // a deleted sender, which is the exact leak this is here to stop.
+              accountStatus: true,
+              deletedAt: true,
             },
           },
           replyTo: { select: REPLY_TO_SELECT },
@@ -483,9 +530,8 @@ export class MessagingCoreService {
       publicId: pubId,
       internalId: realConvId,
       senderId: message.senderId,
-      senderName:
-        message.sender?.displayName || message.sender?.username || 'User',
-      senderAvatar: message.sender?.avatar || '',
+      senderName: presentUserName(message.sender as any),
+      senderAvatar: presentUserAvatar(message.sender as any) || '',
       createdAt: message.createdAt,
       timestamp: message.createdAt,
       time: new Date(message.createdAt).toLocaleTimeString([], {
@@ -635,7 +681,14 @@ export class MessagingCoreService {
       where: whereCondition,
       include: {
         sender: {
-          select: { id: true, username: true, displayName: true, avatar: true },
+          select: {
+            id: true,
+            username: true,
+            displayName: true,
+            avatar: true,
+            accountStatus: true,
+            deletedAt: true,
+          },
         },
         replyTo: { select: REPLY_TO_SELECT },
       },
@@ -708,8 +761,8 @@ export class MessagingCoreService {
         id: m.id,
         conversationId: m.conversationId,
         senderId: m.senderId,
-        senderName: m.sender?.displayName || m.sender?.username || 'User',
-        senderAvatar: m.sender?.avatar || '',
+        senderName: presentUserName(m.sender as any),
+        senderAvatar: presentUserAvatar(m.sender as any) || '',
         from: currentUserId && m.senderId === currentUserId ? 'me' : 'them',
         createdAt: m.createdAt,
         timestamp: m.createdAt,
@@ -1308,7 +1361,14 @@ export class MessagingCoreService {
       },
       include: {
         sender: {
-          select: { id: true, username: true, displayName: true, avatar: true },
+          select: {
+            id: true,
+            username: true,
+            displayName: true,
+            avatar: true,
+            accountStatus: true,
+            deletedAt: true,
+          },
         },
       },
     });
@@ -1332,9 +1392,13 @@ export class MessagingCoreService {
       id: message.id,
       conversationId: message.conversationId,
       senderId: message.senderId,
-      senderName:
-        message.sender?.displayName || message.sender?.username || 'System',
-      senderAvatar: message.sender?.avatar || '',
+      // Keeps the original 'System' fallback for an authorless system event;
+      // a real author still resolves through the presenter, so a deleted one
+      // renders as "Deleted User" here too.
+      senderName: message.sender
+        ? presentUserName(message.sender as any)
+        : 'System',
+      senderAvatar: presentUserAvatar(message.sender as any) || '',
       createdAt: message.createdAt,
       timestamp: message.createdAt,
       time: new Date(message.createdAt).toLocaleTimeString([], {

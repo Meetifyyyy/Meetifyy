@@ -358,9 +358,50 @@ describe('ActivityAuthorizationService', () => {
   });
 
   // ── Query-layer filters ────────────────────────────────────────────────────
+
+  /**
+   * Every builder now returns `{ AND: [ <visibility>, <available host> ] }`.
+   * These helpers read the two halves so the assertions below stay about the
+   * rule being tested rather than about the wrapper's shape.
+   */
+  const visibilityOf = (where: any): any => {
+    const and = where.AND as any[] | undefined;
+    if (!Array.isArray(and)) return where;
+    const inner = and.find((c) => !('creator' in c));
+    return inner ?? where;
+  };
+  const clausesOf = (where: any): any[] => {
+    const v = visibilityOf(where);
+    return (v.OR as any[]) ?? [v];
+  };
+  /** The host-availability half, which every builder must carry. */
+  const hostFilterOf = (where: any): any =>
+    (where.AND as any[] | undefined)?.find((c) => 'creator' in c);
+
+  // A host inside their 30-day deletion window is hidden from everyone, so
+  // their activities have to be too — enforced in the policy rather than at a
+  // dozen call sites, one of which would eventually be missed.
+  describe.each([
+    ['discoveryWhere', (u: any) => policy.discoveryWhere(u)],
+    ['sharedAudienceWhere', (u: any) => policy.sharedAudienceWhere(u)],
+    ['accessWhere', (u: any) => policy.accessWhere(u)],
+  ])('%s — host availability', (_name, build) => {
+    it.each([
+      ['a signed-in viewer', () => sameCollege],
+      ['a viewer with no college', () => noCollege],
+      ['an anonymous viewer', () => null],
+    ])('excludes activities hosted by a deleted account for %s', (_who, who) => {
+      expect(hostFilterOf(build(who()))).toEqual({
+        creator: { deletedAt: null },
+      });
+    });
+  });
+
   describe('discoveryWhere', () => {
     it('restricts an anonymous viewer to PUBLIC only', () => {
-      expect(policy.discoveryWhere(null)).toEqual({ visibility: 'PUBLIC' });
+      expect(visibilityOf(policy.discoveryWhere(null))).toEqual({
+        visibility: 'PUBLIC',
+      });
     });
 
     it('never admits PRIVATE for any viewer', () => {
@@ -369,7 +410,7 @@ describe('ActivityAuthorizationService', () => {
     });
 
     it('admits the viewer’s own college, invitations and memberships', () => {
-      const clauses = policy.discoveryWhere(sameCollege).OR as any[];
+      const clauses = clausesOf(policy.discoveryWhere(sameCollege));
       expect(clauses).toEqual(
         expect.arrayContaining([
           { visibility: 'PUBLIC' },
@@ -384,7 +425,7 @@ describe('ActivityAuthorizationService', () => {
     });
 
     it('omits the college clause for a viewer with no college', () => {
-      const clauses = policy.discoveryWhere(noCollege).OR as any[];
+      const clauses = clausesOf(policy.discoveryWhere(noCollege));
       expect(clauses.some((c) => 'collegeId' in c)).toBe(false);
     });
   });
@@ -401,7 +442,7 @@ describe('ActivityAuthorizationService', () => {
     });
 
     it('admits PUBLIC plus the viewer’s own college', () => {
-      expect(policy.sharedAudienceWhere(sameCollege)).toEqual({
+      expect(visibilityOf(policy.sharedAudienceWhere(sameCollege))).toEqual({
         OR: [
           { visibility: 'PUBLIC' },
           { visibility: 'COLLEGE_ONLY', collegeId: GLA },
@@ -416,10 +457,10 @@ describe('ActivityAuthorizationService', () => {
     });
 
     it('falls back to PUBLIC-only without a college or a viewer', () => {
-      expect(policy.sharedAudienceWhere(noCollege)).toEqual({
+      expect(visibilityOf(policy.sharedAudienceWhere(noCollege))).toEqual({
         visibility: 'PUBLIC',
       });
-      expect(policy.sharedAudienceWhere(null)).toEqual({
+      expect(visibilityOf(policy.sharedAudienceWhere(null))).toEqual({
         visibility: 'PUBLIC',
       });
     });
@@ -427,15 +468,27 @@ describe('ActivityAuthorizationService', () => {
 
   describe('accessWhere', () => {
     it('additionally admits hosted, joined and invited PRIVATE activities', () => {
-      const clauses = policy.accessWhere(sameCollege).OR as any[];
+      const clauses = clausesOf(policy.accessWhere(sameCollege));
       expect(clauses).toEqual(
         expect.arrayContaining([{ creatorId: sameCollege.id }]),
       );
       expect(JSON.stringify(clauses)).toContain('invitations');
     });
 
+    it('still carries the discovery visibility clauses', () => {
+      // `discoveryWhere` returns an AND wrapper now, so a naive `.OR` read in
+      // accessWhere would find nothing and silently collapse this to the
+      // personal clauses alone — dropping every public activity from bookmarks.
+      const clauses = clausesOf(policy.accessWhere(sameCollege));
+      expect(clauses).toEqual(
+        expect.arrayContaining([{ visibility: 'PUBLIC' }]),
+      );
+    });
+
     it('restricts an anonymous viewer to PUBLIC only', () => {
-      expect(policy.accessWhere(null)).toEqual({ visibility: 'PUBLIC' });
+      expect(visibilityOf(policy.accessWhere(null))).toEqual({
+        visibility: 'PUBLIC',
+      });
     });
   });
 
