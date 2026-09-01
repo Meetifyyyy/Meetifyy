@@ -16,10 +16,21 @@ const ALPHABET =
  * @returns Cryptographically secure public ID string
  */
 export function generatePublicId(length = 12): string {
-  const bytes = randomBytes(length);
+  // Rejection sampling, not `byte % 62`. A byte holds 256 values and 256 is not
+  // a multiple of 62, so the modulo maps the first 8 characters of the alphabet
+  // to five bytes each and the rest to four - making those characters ~25% more
+  // likely and shaving real entropy off every ID. Bytes at or above the largest
+  // exact multiple of 62 are discarded instead, which costs an occasional extra
+  // byte and yields a uniform distribution.
+  const limit = 256 - (256 % ALPHABET.length); // 248
   let result = '';
-  for (let i = 0; i < length; i++) {
-    result += ALPHABET[bytes[i] % ALPHABET.length];
+  while (result.length < length) {
+    const bytes = randomBytes(length);
+    for (let i = 0; i < bytes.length && result.length < length; i++) {
+      if (bytes[i] < limit) {
+        result += ALPHABET[bytes[i] % ALPHABET.length];
+      }
+    }
   }
   return result;
 }

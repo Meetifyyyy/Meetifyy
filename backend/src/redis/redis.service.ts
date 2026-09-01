@@ -2,6 +2,7 @@ import { Injectable, OnModuleDestroy, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
 import { config } from '../config';
+import { randomBytes } from 'crypto';
 
 @Injectable()
 export class RedisService implements OnModuleDestroy {
@@ -151,7 +152,12 @@ export class RedisService implements OnModuleDestroy {
     if (!this.client) return fn();
 
     const lockKey = `lock:${key}`;
-    const lockVal = Math.random().toString(36).substring(2);
+    // The lock value is the proof of ownership: release only deletes the key if
+    // the stored value still matches, so a holder cannot drop a lock that has
+    // since been taken by someone else. `Math.random` is predictable enough that
+    // another process could forge a matching value and release a lock it never
+    // held, so this uses the CSPRNG.
+    const lockVal = randomBytes(16).toString('hex');
 
     // Retry acquiring the lock for up to ttlMs/2, with 50ms backoff steps.
     const maxWait = Math.floor(ttlMs / 2);
