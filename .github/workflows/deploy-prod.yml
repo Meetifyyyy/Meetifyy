@@ -145,6 +145,14 @@ jobs:
           # Create a one-shot Container App Job using the freshly built PROD image.
           # The PROD Container App's secret store provides DATABASE_URL and
           # DIRECT_URL — these point ONLY to the production Supabase database.
+          # NOTE: `job create` with --registry-identity tries to create an AcrPull
+          # role assignment for the identity and logs a Graph-API warning block
+          # plus an AuthorizationFailed error when it cannot. That is expected
+          # and harmless here: the CI service principal is only Contributor on
+          # the resource group, and the assignment it is attempting already
+          # exists — setup-azure-prod.sh granted it once, permanently. Granting
+          # CI `roleAssignments/write` purely to silence this would hand the
+          # pipeline the ability to escalate its own permissions.
           az containerapp job create \
             --name "${JOB_NAME}" \
             --resource-group "${RESOURCE_GROUP}" \
@@ -212,7 +220,7 @@ jobs:
                   --name "${JOB_NAME}" \
                   --resource-group "${RESOURCE_GROUP}" \
                   --container "${JOB_NAME}" \
-                  --job-execution-name "${EXEC_NAME}" \
+                  --execution "${EXEC_NAME}" \
                   --tail 200 2>&1 || echo "(could not retrieve container logs)"
               else
                 echo "(no job execution found to read logs from)"
