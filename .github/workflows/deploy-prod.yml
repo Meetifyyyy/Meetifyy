@@ -31,7 +31,8 @@
 #   AZURE_CLIENT_ID_PROD      — PROD service principal app ID
 #   AZURE_TENANT_ID           — Azure tenant
 #   AZURE_SUBSCRIPTION_ID     — Azure subscription
-#   ACR_LOGIN_SERVER          — e.g. meetifyycr.azurecr.io
+#   ACR_LOGIN_SERVER          — meetifyyprodcr.azurecr.io (PROD registry)
+#   AZURE_ACR_IDENTITY_PROD   — resource ID of the meetifyy-prod-pull identity
 #   AZURE_RESOURCE_GROUP_PROD — e.g. meetifyy-prod-rg
 #   AZURE_CONTAINERAPP_PROD   — e.g. meetifyy-api
 # ─────────────────────────────────────────────────────────────────────────────
@@ -134,6 +135,10 @@ jobs:
           ACR: ${{ secrets.ACR_LOGIN_SERVER }}
           SHA: ${{ env.SHORT_SHA }}
           PROD_TAG: ${{ env.PROD_TAG }}
+          # The production ACR has its admin user disabled, so this job pulls
+          # with the same user-assigned identity as the Container App. It
+          # already holds AcrPull, granted once by setup-azure-prod.sh.
+          PULL_IDENTITY: ${{ secrets.AZURE_ACR_IDENTITY_PROD }}
         run: |
           JOB_NAME="meetifyy-prod-migrate-${SHA}"
 
@@ -154,7 +159,9 @@ jobs:
             --replica-completion-count 1 \
             --parallelism 1 \
             --image "${ACR}/meetifyy-api:${PROD_TAG}" \
+            --mi-user-assigned "${PULL_IDENTITY}" \
             --registry-server "${ACR}" \
+            --registry-identity "${PULL_IDENTITY}" \
             --command "npx" \
             --args "prisma" "migrate" "deploy" \
             --env-vars \
