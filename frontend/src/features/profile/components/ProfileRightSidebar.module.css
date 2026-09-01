@@ -9,7 +9,10 @@
 }
 
 .panelTitle {
-  composes: type-label from global;
+  font-family: var(--font-family-sans);
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
   margin-bottom: 0.9rem;
 }
 
