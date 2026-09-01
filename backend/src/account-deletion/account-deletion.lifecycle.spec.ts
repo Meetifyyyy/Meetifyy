@@ -1,6 +1,9 @@
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import { AccountDeletionService } from './account-deletion.service';
-import { RECOVERY_WINDOW_MS } from './account-deletion.constants';
+import {
+  RECOVERY_WINDOW_DAYS,
+  RECOVERY_WINDOW_MS,
+} from './account-deletion.constants';
 import { JwtGuard } from '../common/guards/jwt.guard';
 
 /**
@@ -11,6 +14,7 @@ import { JwtGuard } from '../common/guards/jwt.guard';
  */
 describe('AccountDeletionService — 30-day recovery window', () => {
   const USER_ID = 'user-1';
+  const DAY = 24 * 60 * 60 * 1000;
 
   let service: AccountDeletionService;
   let prisma: any;
@@ -114,7 +118,11 @@ describe('AccountDeletionService — 30-day recovery window', () => {
       expect(scheduled - requested).toBe(RECOVERY_WINDOW_MS);
       expect(requested).toBeGreaterThanOrEqual(before);
       expect(requested).toBeLessThanOrEqual(after);
-      expect(status.daysRemaining).toBe(29); // 30 days minus the elapsed ms
+      // 30, not 29. The previous `Math.floor` returned 29 the instant the
+      // request landed — contradicting the "30 days" the confirmation copy had
+      // just promised — and 30 only if no measurable time had elapsed, which is
+      // exactly the coin-flip that made this assertion flaky in CI.
+      expect(status.daysRemaining).toBe(RECOVERY_WINDOW_DAYS);
     });
 
     it('leaves every profile field intact so recovery has something to restore', async () => {
@@ -380,6 +388,28 @@ describe('AccountDeletionService — 30-day recovery window', () => {
         recoverable: false,
         scheduledPurgeAt: null,
       });
+    });
+
+    // The days count is rendered directly to the user, so both ends of the
+    // window are pinned. These drive the clock from the stored row rather than
+    // from elapsed wall time, so they cannot flake the way the original
+    // assertion did.
+    it.each([
+      ['the full window remains', 30 * DAY, 30],
+      ['one millisecond has elapsed', 30 * DAY - 1, 30],
+      ['a day and a half remains', 1.5 * DAY, 2],
+      ['exactly one day remains', 1 * DAY, 1],
+      // The case `Math.floor` got wrong: half a day left read as "0 days",
+      // which looks expired to someone who still has twelve hours to act.
+      ['half a day remains', 0.5 * DAY, 1],
+      ['a minute remains', 60_000, 1],
+      ['the deadline has passed', 0, 0],
+    ])('reports the right day count when %s', async (_label, msLeft, expected) => {
+      await service.requestDeletion(USER_ID);
+      row.scheduledPurgeAt = new Date(Date.now() + msLeft);
+
+      const status = await service.getStatus(USER_ID);
+      expect(status.daysRemaining).toBe(expected);
     });
 
     it('hides the recover button once the row is claimed', async () => {

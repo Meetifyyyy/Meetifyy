@@ -22,9 +22,10 @@ describe('AdminAccountDeletionService — the deletion queue', () => {
     email: 'sam@example.edu',
     accountStatus: 'PENDING_DELETION',
     deletionRequestedAt: new Date(Date.now() - DAY),
-    // A whole-minute cushion so `Math.floor` does not drop a day on the few
-    // milliseconds between building the fixture and reading the clock.
-    scheduledPurgeAt: new Date(Date.now() + 29 * DAY + 60_000),
+    // A minute into a freshly opened window, which is the common real case.
+    // Partial days round UP, so this reads as 30 days remaining — the same
+    // number the account owner is being shown, which is the point.
+    scheduledPurgeAt: new Date(Date.now() + 30 * DAY - 60_000),
     purgeStartedAt: null,
     purgeCompletedAt: null,
     purgeAttempts: 0,
@@ -62,7 +63,7 @@ describe('AdminAccountDeletionService — the deletion queue', () => {
       userId: 'u1',
       username: 'sam',
       status: 'pending',
-      daysRemaining: 29,
+      daysRemaining: 30,
       dueNow: false,
       canRestore: true,
       // Still inside its window, so it cannot be purged by hand.

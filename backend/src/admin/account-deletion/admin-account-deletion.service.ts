@@ -289,9 +289,12 @@ export class AdminAccountDeletionService {
       purgeLastError: row.purgeLastError,
       /** Negative once the deadline has passed, null for a completed row. */
       msRemaining: isPending ? msLeft : null,
+      // Ceil, matching the user-facing count in AccountDeletionService — an
+      // operator comparing this queue against what the account owner is being
+      // told should not see the two disagree by a day.
       daysRemaining:
         isPending && msLeft !== null
-          ? Math.max(0, Math.floor(msLeft / (24 * 60 * 60 * 1000)))
+          ? Math.max(0, Math.ceil(msLeft / (24 * 60 * 60 * 1000)))
           : null,
       dueNow: Boolean(isPending && msLeft !== null && msLeft <= 0),
       /** Whether a purge is currently claimed by a worker. */
