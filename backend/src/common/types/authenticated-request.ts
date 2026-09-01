@@ -60,4 +60,11 @@ export interface AdminSessionRef {
 export interface AdminRequest extends Request {
   admin: AdminActor;
   adminSession: AdminSessionRef;
+  /**
+   * Parsed by `cookie-parser`. Declared here rather than cast at each read:
+   * the admin session, refresh and CSRF tokens all arrive this way, and an
+   * `any` cast at every call site is how a typo in a cookie name goes
+   * unnoticed until a guard starts refusing everybody.
+   */
+  cookies: Record<string, string | undefined>;
 }

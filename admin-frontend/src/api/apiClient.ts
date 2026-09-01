@@ -82,9 +82,73 @@ function notifySessionExpired() {
   if (sessionExpiredHandler) sessionExpiredHandler();
 }
 
-function getCsrfToken(): string | null {
+/**
+ * The session's CSRF token, held in memory.
+ *
+ * Reading it from `document.cookie` is not enough, and was the cause of the
+ * "CSRF validation failed" errors across the portal: the cookie is set by the
+ * API's origin, so the admin app can only read it when the two share a site.
+ * They do on localhost (cookies ignore ports) and they do NOT in production,
+ * where this app is on Vercel and the API on its own domain. The header went
+ * out empty, and every mutation behind `AdminJwtGuard` was refused while the
+ * unguarded auth routes kept working.
+ *
+ * The API now returns the token in the body of the routes that mint it. In
+ * memory rather than `localStorage` on purpose: it should not outlive the tab,
+ * and a token sitting in storage is one XSS away from being exfiltrated for
+ * later use. A reload re-seeds it from `/admin/auth/me`.
+ */
+let csrfToken: string | null = null;
+
+export function setCsrfToken(token: string | null | undefined): void {
+  if (typeof token === 'string' && token.length > 0) csrfToken = token;
+}
+
+export function clearCsrfToken(): void {
+  csrfToken = null;
+}
+
+/** The cookie, when this deployment happens to be same-site. */
+function readCsrfCookie(): string | null {
   const match = document.cookie.match(new RegExp('(^| )admin_csrf=([^;]+)'));
   return match ? decodeURIComponent(match[2]) : null;
+}
+
+/**
+ * Memory first, cookie second.
+ *
+ * The cookie is kept as a fallback rather than removed so a same-site or
+ * proxied deployment — and local development — keeps working unchanged, and so
+ * a tab that has not yet completed its `me` call is not left without a token.
+ */
+function currentCsrfToken(): string | null {
+  return csrfToken ?? readCsrfCookie();
+}
+
+/**
+ * Re-seeds the token from the session itself.
+ *
+ * Used on boot, and once as a recovery step when a mutation is refused for
+ * CSRF — which is what a reloaded tab or a token rotated by a concurrent
+ * refresh looks like from here.
+ */
+export async function refreshCsrfToken(): Promise<boolean> {
+  try {
+    const res = await fetch(`${BASE_URL}/admin/auth/me`, {
+      credentials: 'include',
+    });
+    if (!res.ok) return false;
+    const body = await res.json();
+    setCsrfToken(body?.csrfToken);
+    return Boolean(body?.csrfToken);
+  } catch {
+    return false;
+  }
+}
+
+function isMutation(options: RequestInit): boolean {
+  const method = (options.method || 'GET').toUpperCase();
+  return ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method);
 }
 
 function buildHeaders(options: RequestInit): Record<string, string> {
@@ -92,10 +156,9 @@ function buildHeaders(options: RequestInit): Record<string, string> {
     'Content-Type': 'application/json',
     ...(options.headers as Record<string, string>),
   };
-  const method = (options.method || 'GET').toUpperCase();
-  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
-    const csrfToken = getCsrfToken();
-    if (csrfToken) headers['X-CSRF-Token'] = csrfToken;
+  if (isMutation(options)) {
+    const token = currentCsrfToken();
+    if (token) headers['X-CSRF-Token'] = token;
   }
   return headers;
 }
@@ -108,6 +171,7 @@ async function parseError(response: Response): Promise<string> {
 export async function apiRequest<T = any>(
   endpoint: string,
   options: RequestInit = {},
+  csrfRetried = false,
 ): Promise<T> {
   const url = `${BASE_URL}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
 
@@ -119,6 +183,22 @@ export async function apiRequest<T = any>(
 
   // Happy path
   if (response.ok) return response.json();
+
+  // 403 on a mutation → the token is stale or was never seeded (a reloaded tab,
+  // or a concurrent refresh that rotated it). Re-seed from the session and
+  // retry exactly once. Guarded by `csrfRetried` so a genuine authorization
+  // failure cannot turn into a loop, and never applied to GETs, which the
+  // server does not CSRF-check at all.
+  if (response.status === 403 && isMutation(options) && !csrfRetried) {
+    const message = await parseError(response);
+    if (/csrf/i.test(message)) {
+      const reseeded = await refreshCsrfToken();
+      if (reseeded) {
+        return apiRequest<T>(endpoint, options, true);
+      }
+    }
+    throw new Error(message);
+  }
 
   // 401 on an auth endpoint → surface the message, never refresh/redirect.
   if (response.status === 401 && !shouldAttemptRefresh(endpoint)) {
@@ -133,7 +213,15 @@ export async function apiRequest<T = any>(
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
       })
-        .then((r) => r.ok)
+        .then(async (r) => {
+          if (!r.ok) return false;
+          // A refresh rotates the CSRF token along with the access token, so
+          // the retry below must carry the NEW one — the old value stops
+          // matching the cookie the instant that response is written.
+          const body = await r.json().catch(() => null);
+          setCsrfToken(body?.csrfToken);
+          return true;
+        })
         .catch(() => false)
         .finally(() => { refreshPromise = null; });
     }

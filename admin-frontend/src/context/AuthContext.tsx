@@ -1,5 +1,10 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { apiRequest, onSessionExpired } from '../api/apiClient';
+import {
+  apiRequest,
+  onSessionExpired,
+  setCsrfToken,
+  clearCsrfToken,
+} from '../api/apiClient';
 
 interface AdminUser {
   id: string;
@@ -27,6 +32,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const checkAuth = useCallback(async () => {
     try {
       const res = await apiRequest('/admin/auth/me');
+      // Re-seeds the in-memory CSRF token on every boot. Without this a
+      // reloaded tab keeps a live session but no token, and every mutation
+      // fails until the next sign-in.
+      setCsrfToken(res?.csrfToken);
       setAdmin(res && res.admin ? res.admin : null);
     } catch (err) {
       // 401 / SessionExpiredError / network → simply "not authenticated".
@@ -39,7 +48,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // When apiClient can't refresh a live session, clear auth in-app so the route
   // guards redirect to /login via React Router (no window.location hard reload).
   useEffect(() => {
-    onSessionExpired(() => setAdmin(null));
+    onSessionExpired(() => {
+      clearCsrfToken();
+      setAdmin(null);
+    });
   }, []);
 
   useEffect(() => {
@@ -61,6 +73,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
 
     if (res && res.admin) {
+      setCsrfToken(res.csrfToken);
       setAdmin(res.admin);
     }
     return res;
@@ -73,6 +86,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
 
     if (res && res.admin) {
+      setCsrfToken(res.csrfToken);
       setAdmin(res.admin);
     }
     return res;
@@ -84,6 +98,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (e) {
       // ignore errors
     } finally {
+      // The token belongs to the session that just ended; keeping it would let
+      // the next sign-in start with a value the server no longer accepts.
+      clearCsrfToken();
       setAdmin(null);
       window.location.href = '/login';
     }
