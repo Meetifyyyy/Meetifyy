@@ -329,7 +329,18 @@ export class AccountDeletionService {
       pendingDeletion: true,
       deletionRequestedAt: user.deletionRequestedAt?.toISOString() ?? null,
       scheduledPurgeAt: user.scheduledPurgeAt?.toISOString() ?? null,
-      daysRemaining: Math.floor(msLeft / (24 * 60 * 60 * 1000)),
+      // Ceil, not floor, at both ends of the window.
+      //
+      // At the start: the confirmation copy promises 30 days, and `floor` reads
+      // 29 the instant the request lands (and 30 only in the vanishingly rare
+      // case that no time has elapsed at all — which is what made the test for
+      // this flaky in CI). Telling someone they have 29 days immediately after
+      // being told they have 30 is a contradiction they will notice.
+      //
+      // At the end: `floor` reads "0 days left" for the whole final day, while
+      // there is still up to 24 hours to recover. "1 day left" is both true and
+      // the thing that prompts action.
+      daysRemaining: Math.ceil(msLeft / (24 * 60 * 60 * 1000)),
       // Once the worker has claimed the row the anonymization is already in
       // flight and there is nothing left to restore, so the button goes away
       // rather than failing when pressed.

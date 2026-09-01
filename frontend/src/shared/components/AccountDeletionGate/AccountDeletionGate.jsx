@@ -396,10 +396,25 @@ function msUntil(date) {
   return Math.max(0, date.getTime() - Date.now());
 }
 
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+/**
+ * "About N days / hours / minutes left".
+ *
+ * Days round UP, matching `daysRemaining` on the server. Rounding down here
+ * meant this read "About 29 days left" the instant a deletion was requested,
+ * directly under copy that had just promised 30 — the kind of small
+ * contradiction that makes a person doubt the whole screen.
+ *
+ * Under a day it falls through to hours and then minutes rather than rounding
+ * up to "1 day", because at that point the precise figure is the useful one.
+ */
 function humanize(ms) {
+  if (ms >= MS_PER_DAY) {
+    const days = Math.ceil(ms / MS_PER_DAY);
+    return `${days} ${days === 1 ? 'day' : 'days'}`;
+  }
   const minutes = Math.floor(ms / 60_000);
-  const days = Math.floor(minutes / (60 * 24));
-  if (days >= 1) return `${days} ${days === 1 ? 'day' : 'days'}`;
   const hours = Math.floor(minutes / 60);
   if (hours >= 1) return `${hours} ${hours === 1 ? 'hour' : 'hours'}`;
   return `${minutes} ${minutes === 1 ? 'minute' : 'minutes'}`;
