@@ -233,3 +233,15 @@
 .primaryBtn:hover {
   filter: brightness(1.1);
 }
+
+/* Shown in place of the follow/message row when the account no longer exists.
+   Deliberately plain text rather than a disabled button: there is no action to
+   re-enable, so a greyed-out control would imply one might return. */
+.deletedNotice {
+  margin: 0;
+  padding: 0.75rem 0;
+  text-align: center;
+  font-size: 0.86rem;
+  line-height: 1.5;
+  color: var(--color-text-light, #64748b);
+}

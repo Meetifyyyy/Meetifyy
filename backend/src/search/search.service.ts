@@ -287,6 +287,11 @@ export class SearchService {
           ? this.prisma.post.findMany({
               where: {
                 deletedAt: null,
+                // The author must still be an available account. Users are
+                // already filtered this way everywhere in this service; posts
+                // were not, so a search could surface content from an account
+                // whose profile the same search refused to show.
+                author: { deletedAt: null },
                 ...(isDiscovery
                   ? {}
                   : {

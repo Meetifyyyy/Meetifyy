@@ -113,6 +113,21 @@ export default function UserSidebarCard({ username: propUsername, initialUser = 
 
   // Blend initialUser fallback with profile data from useProfile canonical store
   const effectiveUser = profile || initialUser || {};
+
+  /**
+   * Whether this card is describing an account that no longer exists.
+   *
+   * Set by the backend's tombstone presenter (`isDeleted` / `profileAvailable`)
+   * on every user object it serializes. Checked here rather than assumed away:
+   * the card can be seeded from a post, a mention or a notification, so it can
+   * be reached for an unavailable account even once the surrounding content
+   * stops resolving — and when the profile fetch 404s it falls back to that
+   * seed, which is how a deleted account ended up rendering as a half-filled
+   * card with a badge, follower counts and a working Message button.
+   */
+  const isDeletedUser = Boolean(
+    effectiveUser.isDeleted || effectiveUser.profileAvailable === false
+  );
   const isSelf = Boolean(currentUser && (
     (effectiveUser.id && String(effectiveUser.id) === String(currentUser.id)) ||
     (effectiveUser.authorId && String(effectiveUser.authorId) === String(currentUser.id)) ||
@@ -195,8 +210,8 @@ export default function UserSidebarCard({ username: propUsername, initialUser = 
         <div className={s.headerRow}>
           <div className={s.avatarWrapper} onClick={handleProfileClick}>
             <Avatar 
-              src={effectiveUser.avatar} 
-              name={effectiveUser.displayName || effectiveUser.username} 
+              src={isDeletedUser ? null : effectiveUser.avatar} 
+              name={isDeletedUser ? 'Deleted User' : (effectiveUser.displayName || effectiveUser.username)} 
               size="76px" 
             />
           </div>
@@ -205,9 +220,18 @@ export default function UserSidebarCard({ username: propUsername, initialUser = 
         {/* Name and Username */}
         <div className={s.identity} onClick={handleProfileClick}>
           <div className={s.nameRow}>
-            <h2 className={s.displayName}>{effectiveUser.displayName || effectiveUser.username || 'User'}</h2>
-            <CollegeRepresentativeBadge isCampusRep={Boolean(effectiveUser.isCampusRep ?? initialUser?.isCampusRep ?? profile?.isCampusRep)} collegeName={universityName} size="md" />
-            {isVerified && (
+            <h2 className={s.displayName}>
+              {isDeletedUser
+                ? 'Deleted User'
+                : effectiveUser.displayName || effectiveUser.username || 'User'}
+            </h2>
+            {/* No badges for an account that no longer exists — a campus-rep or
+                verified marker on a deleted profile is both meaningless and,
+                for the verified tick, actively misleading. */}
+            {!isDeletedUser && (
+              <CollegeRepresentativeBadge isCampusRep={Boolean(effectiveUser.isCampusRep ?? initialUser?.isCampusRep ?? profile?.isCampusRep)} collegeName={universityName} size="md" />
+            )}
+            {!isDeletedUser && isVerified && (
               <span className={s.verifiedBadge} title="Verified user">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
                   <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" />
@@ -255,7 +279,10 @@ export default function UserSidebarCard({ username: propUsername, initialUser = 
           );
         })()}
 
-        {/* Stats */}
+        {/* Stats — hidden for a deleted account. Follower counts on a profile
+            that no longer exists are noise at best, and rendering 0 / 0 reads
+            as a real but empty account rather than an absent one. */}
+        {!isDeletedUser && (
         <div className={s.statsRow}>
           <div className={s.statItem}>
             <span className={s.statNumber}>{followersCount.toLocaleString()}</span>
@@ -266,8 +293,14 @@ export default function UserSidebarCard({ username: propUsername, initialUser = 
             <span className={s.statLabel}>Following</span>
           </div>
         </div>
+        )}
 
-        {/* Action Buttons */}
+        {/* Action Buttons — nothing to follow and nobody to message. The
+            backend refuses both regardless, so leaving them on screen would
+            only offer the viewer a button that returns an error. */}
+        {isDeletedUser ? (
+          <p className={s.deletedNotice}>This account is no longer available.</p>
+        ) : (
         <div className={s.actionRow}>
           {!isSelf ? (
             <>
@@ -299,6 +332,7 @@ export default function UserSidebarCard({ username: propUsername, initialUser = 
             </>
           )}
         </div>
+        )}
       </div>
     </div>
   );
