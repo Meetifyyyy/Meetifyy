@@ -119,21 +119,6 @@ export class DmController {
     return res;
   }
 
-  @Post('instant-match')
-  @UseGuards(JwtGuard)
-  @VerifiedOnly()
-  async createInstantMatch(
-    @Req() req: AuthenticatedRequest,
-    @Body() body: { targetUserId: string; activity: string },
-  ) {
-    const userId = req.user?.id;
-    return this.dmService.createInstantMatchDM(
-      userId,
-      body.targetUserId,
-      body.activity,
-    );
-  }
-
   @Get(':id')
   @UseGuards(JwtGuard)
   async getHistory(

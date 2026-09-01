@@ -185,7 +185,10 @@ export default defineConfig(({ mode }) => {
         manualChunks: {
           'vendor-react': ['react', 'react-dom', 'react-router-dom', '@tanstack/react-query', '@tanstack/react-virtual'],
           'vendor-framer': ['framer-motion'],
-          'vendor-emoji': ['emoji-mart', '@emoji-mart/data', '@emoji-mart/react'],
+          // '@emoji-mart/data' is deliberately absent: it is no longer imported
+          // as a module at all. It is fetched as a hashed .json asset instead,
+          // so it never enters the JS graph and never lands in a chunk.
+          'vendor-emoji': ['emoji-mart', '@emoji-mart/react'],
           'vendor-icons': ['@hugeicons/react', '@hugeicons/core-free-icons', '@heroicons/react'],
           'vendor-zustand': ['zustand', 'immer']
         }

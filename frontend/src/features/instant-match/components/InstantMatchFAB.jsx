@@ -19,6 +19,15 @@ import '../styles/instant-match-fab.css';
 
 /** One row per state: label, screen-reader text, and the modifier class. */
 const STATE_CONFIG = {
+  // Shown while the boot read is still in flight. It has its own row rather
+  // than falling back to `idle` because "we do not know yet" and "you are not
+  // matched" are different facts, and rendering the second one for the first
+  // is exactly the bug this state exists to prevent.
+  initializing: {
+    tag: '',
+    label: 'Instant Match is loading',
+    announce: '',
+  },
   idle: {
     tag: 'Match',
     label: 'Open Instant Match',
@@ -92,6 +101,7 @@ function progressOf(countdown) {
 export default function InstantMatchFAB() {
   const {
     sheetOpen, buttonState, openSheet, queueStats, matchCountdown, isVerified,
+    unreadCount,
   } = useInstantMatch();
   const location = useLocation();
 
@@ -106,6 +116,9 @@ export default function InstantMatchFAB() {
     location.pathname !== '/home' || sheetOpen || buttonState === 'responding';
 
   const showHalo = state === 'searching' || state === 'reconnecting';
+  // The badge belongs to the matched state and to nothing else: the count is
+  // scoped to the live session, so an ended one cannot carry a badge here.
+  const showUnread = state === 'matched' && unreadCount > 0;
   // The ring belongs to the matched state, where there is a real deadline to
   // show: the 24 hours the chat stays open. It closes on itself as that
   // window runs down.
@@ -115,6 +128,31 @@ export default function InstantMatchFAB() {
   );
 
   if (!isVerified) return null;
+
+  // A skeleton, deliberately non-interactive: tapping a launcher whose state
+  // is still unknown would open the sheet on a guess.
+  if (state === 'initializing') {
+    return (
+      <div
+        className={`im-scope im-fab-dock ${hidden ? 'im-fab-dock-hidden' : ''}`}
+        inert={hidden ? '' : undefined}
+      >
+        <span className="im-fab-wrap">
+          <span
+            className="im-fab im-fab-initializing im-fab-bare"
+            role="status"
+            aria-label={config.label}
+            aria-busy="true"
+          >
+            <span className="im-fab-face">
+              <Bolt className="im-fab-bolt" />
+            </span>
+          </span>
+        </span>
+      </div>
+    );
+  }
+
   // Matched drops the label entirely — the glyph plus the ring say it, and
   // the word competed with both.
   const showTag = state !== 'matched';
@@ -161,6 +199,15 @@ export default function InstantMatchFAB() {
             <span className="im-fab-tag" aria-hidden="true">{config.tag}</span>
           )}
         </button>
+
+        {/* New messages waiting in the Instant Match chat. Circular, sits on
+            the launcher's rim, and carries the count itself so the badge and
+            the number can never disagree. */}
+        {showUnread && (
+          <span className="im-fab-unread" aria-hidden="true">
+            {unreadCount > 9 ? '9+' : unreadCount}
+          </span>
+        )}
       </span>
 
       {/* Everyone on Instant Match right now, this user included — the same
@@ -174,7 +221,9 @@ export default function InstantMatchFAB() {
       {/* Politely announced so a screen-reader user learns what the launcher
           is doing without it stealing focus. */}
       <span className="im-sr-only" role="status" aria-live="polite">
-        {config.announce}
+        {showUnread
+          ? `${unreadCount} new Instant Match message${unreadCount === 1 ? '' : 's'}.`
+          : config.announce}
       </span>
     </div>
   );

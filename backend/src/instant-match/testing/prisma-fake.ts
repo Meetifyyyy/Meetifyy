@@ -101,6 +101,12 @@ export class PrismaFake {
   queue: Row[] = [];
   sessions: Row[] = [];
   blocks: Row[] = [];
+  /** The messages and participant rows of a match's conversation. Present so
+   *  the teardown a session performs when it ends — the part that makes an
+   *  ended chat's transcript unrecoverable — is exercised rather than
+   *  swallowed by the service's catch. */
+  messages: Row[] = [];
+  participants: Row[] = [];
 
   /** Runs at the start of every $transaction, to simulate a competing match
    *  landing first and stealing one of the two queue entries. */
@@ -158,6 +164,13 @@ export class PrismaFake {
       conversationId: null,
       createdAt: new Date(),
       expiresAt: new Date(Date.now() + 60_000),
+      // Mirrors the column defaults, so a seeded session behaves like a real
+      // row for the chat-lifecycle questions the service asks of it.
+      chatStatus: 'ACTIVE',
+      chatExpiresAt: null,
+      endedById: null,
+      endedAt: null,
+      matchReason: null,
       snapshotA: null,
       snapshotB: null,
       ...overrides,
@@ -302,6 +315,40 @@ export class PrismaFake {
     };
   }
 
+  get message() {
+    const self = this;
+    return {
+      async deleteMany({ where }: any) {
+        const before = self.messages.length;
+        self.messages = self.messages.filter((m) => !matchesWhere(m, where));
+        return { count: before - self.messages.length };
+      },
+    };
+  }
+
+  get conversationParticipant() {
+    const self = this;
+    return {
+      async updateMany({ where, data }: any) {
+        let count = 0;
+        for (const row of self.participants) {
+          if (!matchesWhere(row, where)) continue;
+          Object.assign(row, data);
+          count += 1;
+        }
+        return { count };
+      },
+      async findUnique({ where, select }: any) {
+        const key = where.userId_conversationId || where;
+        const row = self.participants.find(
+          (p) =>
+            p.userId === key.userId && p.conversationId === key.conversationId,
+        );
+        return row ? project(row, select) : null;
+      },
+    };
+  }
+
   get user() {
     const self = this;
     return {
@@ -331,12 +378,18 @@ export class PrismaFake {
     // pair-claim path depends on when it loses a race.
     const queueBefore = this.queue.map((e) => ({ ...e }));
     const sessionsBefore = this.sessions.map((s) => ({ ...s }));
+    const conversationsBefore = this.conversations.map((c) => ({ ...c }));
+    const messagesBefore = this.messages.map((m) => ({ ...m }));
+    const participantsBefore = this.participants.map((p) => ({ ...p }));
     try {
       this.onTransaction?.();
       return await fn(this);
     } catch (err) {
       this.queue = queueBefore;
       this.sessions = sessionsBefore;
+      this.conversations = conversationsBefore;
+      this.messages = messagesBefore;
+      this.participants = participantsBefore;
       throw err;
     }
   }

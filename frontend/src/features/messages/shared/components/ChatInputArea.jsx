@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import MentionInput from '@shared/components/mentions/MentionInput';
-import LazyEmojiPicker from '@shared/components/ui/LazyEmojiPicker';
+import LazyEmojiPicker, { preloadEmojiPicker } from '@shared/components/ui/LazyEmojiPicker';
 import styles from './ChatInputAreaStyles.module.css';
 import { useVoiceRecorder } from '@features/messages/hooks/useVoiceRecorder';
 import { showToast } from '@shared/utils/toast';
@@ -377,6 +377,12 @@ export default function ChatInputArea({
                 ref={emojiBtnRef}
                 type="button"
                 className={styles.msgEmojiBtn}
+                /* Start fetching the picker's chunk on intent rather than on
+                   the click itself — hover and focus both precede the open by
+                   long enough to hide the download behind them. Idempotent, so
+                   repeated hovers cost nothing. */
+                onPointerEnter={preloadEmojiPicker}
+                onFocus={preloadEmojiPicker}
                 title="Emoji"
                 onClick={() => setShowEmojiPicker(!showEmojiPicker)}
               >

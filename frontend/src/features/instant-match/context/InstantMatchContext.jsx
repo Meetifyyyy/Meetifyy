@@ -5,8 +5,11 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@shared/context/AuthContext';
 import { getCollegeName } from '@shared/utils/user';
 import { showToast } from '@shared/utils/toast';
+import { instantMatchApi, messagesApi } from '@shared/api/apiClient';
+import { idbDeleteConversationMessages } from '@features/messages/shared/utils/idbMessages';
 
 import matchSocketClient from '../utils/matchSocketClient';
+import { evaluateUnread } from '../utils/unreadRules';
 import { useInstantMatchChatState } from '../hooks/useInstantMatchChatState';
 import {
   MATCH_ACTIVITIES,
@@ -110,10 +113,48 @@ export function InstantMatchProvider({ children }) {
   // the chat exists, is live, or has ended comes from the hook.
   const [chatOverlayOpen, setChatOverlayOpen] = useState(false);
   const [leaving, setLeaving] = useState(false);
+
+  // ── Unread ────────────────────────────────────────────────────────────────
+  // Session-scoped, and only ever about the *current* session: it is seeded
+  // from the server's count for this session, reset whenever the session
+  // changes, and cleared when the session ends. There is nowhere for a
+  // previous session's badge to survive.
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  // Message ids already counted, so a duplicate `message:new` — two listeners
+  // during a StrictMode double-mount, an event replayed after a reconnect —
+  // cannot inflate the badge. Cleared with the session.
+  const countedMessageIds = useRef(new Set());
+
+  // Read inside socket handlers that must not re-subscribe on every render.
+  const chatOverlayOpenRef = useRef(chatOverlayOpen);
+  chatOverlayOpenRef.current = chatOverlayOpen;
+
+  /**
+   * Everything on this device that was keyed by an ended session's chat.
+   *
+   * The server deletes the messages when a session ends; this is the other
+   * half. Without it a reload could rebuild the thread from IndexedDB, or the
+   * query cache could hand the next screen a list of messages belonging to a
+   * conversation that no longer exists — which is exactly how "old messages
+   * from a previous match" came back.
+   */
+  const purgeSessionCaches = useCallback((state) => {
+    const convId = state?.conversationId;
+    if (!convId) return;
+    queryClient.removeQueries({ queryKey: ['messages', convId], exact: false });
+    idbDeleteConversationMessages(convId).catch(() => {});
+    setUnreadCount(0);
+    countedMessageIds.current = new Set();
+  }, [queryClient]);
+
   const {
     chat, refresh: refreshChat, leave: leaveChatSession, onCountdownElapsed,
-    setChat, dismissEnded,
-  } = useInstantMatchChatState({ enabled: Boolean(currentUser?.id) && isVerified });
+    setChat, dismissEnded, hydrate: hydrateChat,
+  } = useInstantMatchChatState({
+    enabled: Boolean(currentUser?.id) && isVerified,
+    onSessionEnded: purgeSessionCaches,
+  });
 
   const statusRef = useRef(status);
   const isVerifiedRef = useRef(isVerified);
@@ -314,6 +355,151 @@ export function InstantMatchProvider({ children }) {
       offStatus(); offStats(); offFound(); offAccepted(); offDeclined(); offResumed();
     };
   }, [currentUser?.id, isVerified, queryClient, resync, refreshChat]);
+
+  /**
+   * The boot read.
+   *
+   * Runs before — and independently of — the socket. `resync` and the chat
+   * hook both answer the same questions, but they answer them over the socket,
+   * which cannot reply until it has connected and authenticated. That is what
+   * produced the long wrong-state window: a matched user's launcher rendered
+   * its unmatched default until the connection came up, then flipped to
+   * "Matched" half a minute later. Nothing was polling; the wait *was* the
+   * connect.
+   *
+   * So the active session is now part of application initialization. One HTTP
+   * request, issued with the app's other startup reads, settles the state
+   * before anything renders a verdict — and `restoring` keeps the launcher in
+   * its initializing state until it lands, so the wrong button is never shown
+   * at all rather than shown and corrected.
+   *
+   * The socket path is untouched and still authoritative afterwards: this only
+   * removes the client's dependency on it for the first answer.
+   */
+  useEffect(() => {
+    if (!currentUser?.id || !isVerified) {
+      setRestoring(false);
+      return undefined;
+    }
+
+    let cancelled = false;
+    setRestoring(true);
+
+    (async () => {
+      try {
+        const res = await instantMatchApi.getState();
+        if (cancelled) return;
+        const data = res?.data ?? res;
+
+        hydrateChat(data?.chat ?? null);
+
+        const state = data?.state;
+        if (state) {
+          setRecentMatch(state.recentMatch ?? null);
+          if (state.pendingMatch) {
+            setActiveMatch(state.pendingMatch);
+            setStatus('match_found');
+          } else if (state.queued) {
+            setFormData((prev) => ({
+              ...prev,
+              activity: state.queued.activity,
+              timePreference: state.queued.timePreference,
+              optionalDetail: state.queued.optionalDetail || '',
+              location: { ...prev.location, area: state.queued.area || '' },
+            }));
+            setQueueStats(state.stats || initialStats);
+            setStatus('searching');
+            setStep(STEP_SEARCHING);
+          } else if (data?.chat?.isActive || state.recentMatch?.chatId) {
+            setStatus('matched');
+          }
+        }
+      } catch (_) {
+        // A failed boot read is not a verdict about the user's state — the
+        // socket resync will still answer. Falling out of `restoring` is what
+        // matters, so the UI is never stuck on a skeleton.
+      } finally {
+        if (!cancelled) setRestoring(false);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [currentUser?.id, isVerified, hydrateChat]);
+
+  // ── Unread badge ───────────────────────────────────────────────────────────
+
+  /**
+   * A new session starts with its own unread state, seeded from the server.
+   *
+   * Keyed on the match id, so switching sessions resets the count and the
+   * dedupe set rather than carrying either across — the mechanism that stopped
+   * a previous pairing's badge showing up on a new one. The server's count is
+   * adopted only on a *change* of session; within a session the realtime
+   * increments and the local clear own the number, so a refetch cannot undo a
+   * badge the user just cleared.
+   */
+  const sessionKeyRef = useRef(null);
+  useEffect(() => {
+    const key = chat?.isActive ? chat.matchId : null;
+    if (key === sessionKeyRef.current) return;
+    sessionKeyRef.current = key;
+    countedMessageIds.current = new Set();
+    setUnreadCount(key ? (chat?.unreadCount ?? 0) : 0);
+  }, [chat?.matchId, chat?.isActive, chat?.unreadCount]);
+
+  /**
+   * Mark the current session's chat read, here and on the server.
+   *
+   * Called when the overlay opens and while it is open, so the badge clears
+   * the moment the user is actually looking at the conversation — and stays
+   * clear for the next reload, because the server's per-participant counter is
+   * the same one the boot read seeds from.
+   */
+  const markInstantChatRead = useCallback(() => {
+    setUnreadCount(0);
+    const convId = chatRef.current?.conversationId;
+    if (!convId) return;
+    messagesApi.markAsRead(convId).catch(() => {});
+  }, []);
+
+  /**
+   * Incoming messages, counted only when they belong to the live session, came
+   * from the other person, and the user is not looking at the chat.
+   *
+   * One subscription for the provider's lifetime, through the same fan-out
+   * client the rest of Instant Match uses — so React re-renders and
+   * StrictMode's double-invoke cannot leave two listeners both incrementing
+   * for one message. The id set makes a genuinely duplicated event harmless
+   * on top of that.
+   */
+  useEffect(() => {
+    if (!currentUser?.id || !isVerified) return undefined;
+
+    const off = matchSocketClient.on('message:new', (payload) => {
+      const { count, markRead, messageId } = evaluateUnread({
+        message: payload?.message || payload,
+        envelopeConversationId: payload?.conversationId,
+        session: chatRef.current,
+        currentUserId: currentUser.id,
+        isViewing: chatOverlayOpenRef.current,
+        counted: countedMessageIds.current,
+      });
+
+      // Only messages that belonged to this session are remembered; the set
+      // is the dedupe key for this session's badge, not a log of every event.
+      if (messageId && (count || markRead)) countedMessageIds.current.add(messageId);
+      if (markRead) markInstantChatRead();
+      if (count) setUnreadCount((n) => n + 1);
+    });
+
+    return off;
+  }, [currentUser?.id, isVerified, markInstantChatRead]);
+
+  // Opening the chat is what marks it read — including the case where the
+  // overlay is already open when a message lands, handled above.
+  useEffect(() => {
+    if (chatOverlayOpen && chat?.isActive) markInstantChatRead();
+  }, [chatOverlayOpen, chat?.isActive, chat?.matchId, markInstantChatRead]);
 
   // ── Sheet ───────────────────────────────────────────────────────────────────
 
@@ -610,6 +796,10 @@ export function InstantMatchProvider({ children }) {
    * is how it got stuck showing a plain Match button after a real match.
    */
   const buttonState = useMemo(() => {
+    // Nothing is known yet. Rendering the idle launcher here is what made a
+    // matched user watch a plain "Match" button until the socket caught up, so
+    // initializing is a state of its own rather than a synonym for idle.
+    if (restoring) return 'initializing';
     if (!connected) {
       // Only surface the reconnect while something is actually at stake.
       if (status === 'searching') return 'reconnecting';
@@ -627,7 +817,30 @@ export function InstantMatchProvider({ children }) {
     if (chat && !chat.isActive) return 'ended';
     if (error) return 'error';
     return 'idle';
-  }, [status, connected, recentMatch, error, chat]);
+  }, [restoring, status, connected, recentMatch, error, chat]);
+
+  /**
+   * The one lifecycle state for the whole feature.
+   *
+   * `buttonState` answers "what does the launcher draw"; this answers "where
+   * is this user in the Instant Match lifecycle", and anything that needs the
+   * second question reads it here rather than re-deriving an answer from
+   * `status`, `chat` and `recentMatch` separately and disagreeing with the
+   * launcher. Derived, never stored, so it cannot drift from its parts.
+   */
+  const matchState = useMemo(() => {
+    if (restoring) return 'initializing';
+    if (leaving) return 'ending';
+    if (status === 'searching' || status === 'match_found'
+      || status === 'waiting' || status === 'timed_out') {
+      return 'searching';
+    }
+    if (chat?.isActive) return 'matched';
+    if (status === 'matched' || recentMatch?.chatId) return 'matched';
+    if (chat && !chat.isActive) return 'ended';
+    if (error) return 'error';
+    return 'unmatched';
+  }, [restoring, leaving, status, chat, recentMatch, error]);
 
   /**
    * The pairing outlives the celebration but not the chat. When the 24h
@@ -690,6 +903,8 @@ export function InstantMatchProvider({ children }) {
     sheetOpen, step, formData, status, buttonState, matchCountdown,
     queueStats, activeMatch,
     chat: chatWithCallback, chatOverlayOpen, matchPartner, leaving,
+    matchState, unreadCount, hasUnreadMessages: unreadCount > 0,
+    markInstantChatRead,
     closeChatOverlay, leaveMatch, refreshChat,
     error, busy, connected, restoring, isBusyState, recentMatch,
     openSheet, closeSheet, nextStep, prevStep, setStep,
@@ -700,6 +915,7 @@ export function InstantMatchProvider({ children }) {
     sheetOpen, step, formData, status, buttonState, matchCountdown,
     queueStats, activeMatch,
     chatWithCallback, chatOverlayOpen, matchPartner, leaving,
+    matchState, unreadCount, markInstantChatRead,
     closeChatOverlay, leaveMatch, refreshChat,
     error, busy, connected, restoring, isBusyState, recentMatch,
     openSheet, closeSheet, nextStep, prevStep,

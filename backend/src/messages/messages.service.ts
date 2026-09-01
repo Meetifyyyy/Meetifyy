@@ -34,10 +34,14 @@ import {
   DELETED_USER_USERNAME,
 } from '../common/users/deleted-user';
 
-/** The one question MessagesService asks the Instant Match domain. Kept to a
- *  single method so the coupling between the two stays visible and small. */
+/** The questions MessagesService asks the Instant Match domain. Kept small so
+ *  the coupling between the two stays visible: may this user write into this
+ *  chat, and may they read it at all. */
 export interface InstantMatchChatGuard {
   assertCanSendInChat(userId: string, conversationId: string): Promise<void>;
+  /** True only while the session behind this conversation is live and the
+   *  caller is one of its two participants. */
+  canReadChat(userId: string, conversationId: string): Promise<boolean>;
 }
 
 @Injectable()
@@ -359,6 +363,28 @@ export class MessagesService
 
     if (!conv) {
       throw new ForbiddenException('Conversation not found');
+    }
+
+    /**
+     * A message has to be *something*.
+     *
+     * Every field on SendMessageDto is optional, which is right individually
+     * and wrong in combination: a body with no text, no media and no invite
+     * validated cleanly and was written, broadcast and rendered as a bubble
+     * containing a timestamp and nothing else. That is exactly what a client
+     * bug looks like from the outside — the messages were "not rendering" —
+     * and the server had quietly agreed to store them. Refusing here means a
+     * client that loses the text on its way to the wire fails loudly at the
+     * send instead of persisting a row nobody can read.
+     *
+     * System messages do not come through this method, and voice notes,
+     * media and invites all satisfy one of the three branches.
+     */
+    const hasText = typeof payload?.text === 'string' && payload.text.trim().length > 0;
+    const hasMedia = Boolean(payload?.mediaUrl);
+    const hasInvite = Boolean(payload?.inviteData);
+    if (!hasText && !hasMedia && !hasInvite) {
+      throw new BadRequestException('Cannot send an empty message');
     }
 
     // Instant Match chats are authorized against their match session, not
@@ -827,6 +853,44 @@ export class MessagesService
       conversationId,
       currentUserId,
     );
+
+    /**
+     * Reads are authorized against the match session too, not only writes.
+     *
+     * Ending a session deletes its messages, so this is a second lock on an
+     * empty room rather than the only one — but it is the lock that makes a
+     * stale client harmless. A tab still holding a dead conversation id, or
+     * one rehydrating from IndexedDB and re-validating against the network,
+     * gets an empty and authoritative answer instead of whatever rows
+     * happened to survive. No path can rebuild an ended chat from the
+     * database.
+     *
+     * Deliberately an empty page rather than a 403: a chat legitimately ends
+     * under a user who is looking at it, and the client's job at that moment
+     * is to render the "this ended" panel. An error would turn an expected
+     * ending into a broken screen.
+     */
+    const instantConv = await this.prisma.conversation.findUnique({
+      where: { id: realConvId },
+      select: { type: true, isInstantMatch: true },
+    });
+    if (
+      instantConv &&
+      (instantConv.type === 'INSTANT_MATCH' || instantConv.isInstantMatch)
+    ) {
+      const allowed = currentUserId
+        ? await this.instantMatchGuard?.canReadChat(currentUserId, realConvId)
+        : false;
+      if (!allowed) {
+        return {
+          messages: [],
+          canSendMessages: false,
+          targetUserUnavailable: false,
+          participants: [],
+          nextCursor: null,
+        };
+      }
+    }
 
     let clearedAt: Date | null = null;
     const whereCondition: any = {
@@ -1986,30 +2050,15 @@ export class MessagesService
     }
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
-    // Only an instant-match DM that is still within its 24h window can be
-    // reused. Reusing an already-expired one would hand a freshly matched
-    // pair a conversation that the expiry cleanup is about to delete.
-    const existing = await this.prisma.conversation.findFirst({
-      where: {
-        type: 'INSTANT_MATCH',
-        isInstantMatch: true,
-        expiresAt: { gt: new Date() },
-        AND: [
-          { participants: { some: { userId: userAId } } },
-          { participants: { some: { userId: userBId } } },
-        ],
-      },
-    });
-
-    if (existing) {
-      // No cache to invalidate: these conversations are not in any list.
-      const pubId = (existing as any).publicId || existing.id;
-      return {
-        id: pubId,
-        internalId: existing.id,
-        expiresAt: (existing.expiresAt ?? expiresAt).getTime(),
-      };
-    }
+    // Deliberately no reuse lookup.
+    //
+    // This used to hand back any INSTANT_MATCH conversation between the same
+    // two users that was still inside its 24h window. That made the pair —
+    // not the match session — the identity of the chat, so two people who
+    // matched, talked, ended the session and matched again within the same
+    // day were dropped back into the *old* thread with the *old* messages.
+    // An Instant Match conversation belongs to exactly one session and is
+    // never shared with another, so every accepted session opens its own.
 
     // No opening system message, and no denormalised lastMessage preview.
     // Both existed so the chat would show up in the Messages list the moment

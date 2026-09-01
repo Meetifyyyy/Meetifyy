@@ -245,6 +245,62 @@
   z-index: 2;
 }
 
+/* ── Unread badge ─────────────────────────────────────────────────────────
+   New messages waiting in the live Instant Match chat. Circular by
+   construction (a fixed height with a matching min-width and a pill radius, so
+   a one-digit count is a circle and "9+" widens into a stadium rather than
+   clipping), and pinned to the launcher's top-right rim — the opposite corner
+   from the queue count, which can legitimately be on screen at the same time.
+
+   `pointer-events: none` so it can never intercept the tap it is advertising:
+   the whole launcher stays one target. The count is also announced through the
+   dock's live region, so the badge itself is aria-hidden decoration. */
+.im-fab-unread {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  /* Coral against the matched launcher's lime: the one pairing in this
+     palette that reads as "attention" without competing with the countdown
+     ring. Ink rather than cream on it — cream on this coral fails AA, as the
+     searching state notes above. */
+  background: var(--im-coral);
+  color: #16130E;
+  font-family: var(--im-display);
+  font-size: 0.7rem;
+  line-height: 1;
+  /* Reads as a badge sitting *on* the button rather than behind it, at every
+     launcher colour. */
+  border: 2px solid var(--im-paper);
+  box-shadow: var(--im-shadow-sm);
+  pointer-events: none;
+  z-index: 3;
+}
+
+/* ── Initializing ─────────────────────────────────────────────────────────
+   The launcher before the state is known. A dimmed, gently pulsing version of
+   the resting shape: it holds the launcher's exact place and size, so nothing
+   moves when the real state lands. */
+.im-fab-initializing {
+  opacity: 0.55;
+  cursor: default;
+  animation: im-fab-initializing-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes im-fab-initializing-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.7; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .im-fab-initializing { animation: none; }
+}
+
 /* ── Auto-hiding chrome (mobile) ──────────────────────────────────────────
    The launcher rides down with the bottom nav it sits above, so the two move
    as one piece of furniture rather than the button hanging in mid-air over a

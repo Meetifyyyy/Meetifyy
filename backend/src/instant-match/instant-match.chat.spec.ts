@@ -336,6 +336,143 @@ describe('Instant Match chat lifecycle', () => {
     });
   });
 
+  // ── Teardown ───────────────────────────────────────────────────────────────
+
+  /**
+   * The rule these serve: an ended session's transcript is *gone*, not hidden.
+   *
+   * Hiding it on the client left the rows queryable by anything that reached
+   * the conversation directly, which is how two people who matched, talked,
+   * ended the session and matched again were dropped back into the previous
+   * conversation with the previous messages still in it.
+   */
+  describe('when a session ends', () => {
+    const seedChatWithMessages = () => {
+      const session = seedChat();
+      prisma.seedConversation('conv-1', { status: 'ACTIVE' });
+      prisma.messages.push(
+        { id: 'msg-1', conversationId: 'conv-1', senderId: 'alice' },
+        { id: 'msg-2', conversationId: 'conv-1', senderId: 'bob' },
+        // A message in someone else's conversation, to prove the delete is
+        // scoped to this session's chat and not to the pair.
+        { id: 'msg-other', conversationId: 'conv-2', senderId: 'alice' },
+      );
+      prisma.participants.push(
+        { userId: 'alice', conversationId: 'conv-1', unreadCount: 3 },
+        { userId: 'bob', conversationId: 'conv-1', unreadCount: 1 },
+      );
+      return session;
+    };
+
+    it('deletes the messages of the session that ended, and only those', async () => {
+      seedChatWithMessages();
+
+      await service.leaveChatSession('alice');
+
+      expect(prisma.messages.map((m) => m.id)).toEqual(['msg-other']);
+    });
+
+    it('closes the conversation so no window-based query still calls it live', async () => {
+      seedChatWithMessages();
+
+      await service.leaveChatSession('alice');
+
+      const conv = prisma.conversations.find((c) => c.id === 'conv-1');
+      expect(conv).toMatchObject({ status: 'ENDED' });
+      expect(conv?.expiresAt?.getTime()).toBeLessThanOrEqual(Date.now());
+    });
+
+    it('clears both participants\' unread counts, so no badge outlives the session', async () => {
+      seedChatWithMessages();
+
+      await service.leaveChatSession('alice');
+
+      expect(prisma.participants.map((p) => p.unreadCount)).toEqual([0, 0]);
+    });
+
+    it('tears the chat down the same way when the window closes', async () => {
+      seedChatWithMessages();
+      prisma.sessions[0].chatExpiresAt = new Date(Date.now() - 1);
+
+      await service.getChatStateFor('alice');
+
+      expect(prisma.messages.map((m) => m.id)).toEqual(['msg-other']);
+      expect(prisma.conversations[0].status).toBe('ENDED');
+    });
+  });
+
+  // ── Read authorization ─────────────────────────────────────────────────────
+
+  describe('canReadChat', () => {
+    it('allows a participant while the session is live', async () => {
+      seedChat();
+      expect(await service.canReadChat('alice', 'conv-1')).toBe(true);
+    });
+
+    it('refuses a non-participant who knows the conversation id', async () => {
+      seedChat();
+      expect(await service.canReadChat('carol', 'conv-1')).toBe(false);
+    });
+
+    it('refuses both sides once someone has left', async () => {
+      seedChat();
+      await service.leaveChatSession('alice');
+
+      // This is the safeguard that makes a stale client harmless: whatever a
+      // tab still holds, the history it asks for comes back empty.
+      expect(await service.canReadChat('alice', 'conv-1')).toBe(false);
+      expect(await service.canReadChat('bob', 'conv-1')).toBe(false);
+    });
+
+    it('refuses once the window has closed, and records the expiry', async () => {
+      seedChat({ chatExpiresAt: new Date(Date.now() - 1) });
+      expect(await service.canReadChat('alice', 'conv-1')).toBe(false);
+      expect(prisma.sessions[0].chatStatus).toBe('EXPIRED');
+    });
+
+    it('refuses a conversation with no session behind it', async () => {
+      expect(await service.canReadChat('alice', 'conv-ghost')).toBe(false);
+    });
+  });
+
+  // ── Unread ─────────────────────────────────────────────────────────────────
+
+  describe('unread count', () => {
+    it('reports the viewer\'s own count for the live session', async () => {
+      seedChat();
+      prisma.participants.push(
+        { userId: 'alice', conversationId: 'conv-1', unreadCount: 2 },
+        { userId: 'bob', conversationId: 'conv-1', unreadCount: 0 },
+      );
+
+      expect(await service.getChatStateFor('alice')).toMatchObject({
+        unreadCount: 2,
+      });
+      expect(await service.getChatStateFor('bob')).toMatchObject({
+        unreadCount: 0,
+      });
+    });
+
+    it('reports none for a session that has ended', async () => {
+      seedChat();
+      prisma.seedConversation('conv-1', { status: 'ACTIVE' });
+      prisma.participants.push({
+        userId: 'bob',
+        conversationId: 'conv-1',
+        unreadCount: 5,
+      });
+
+      await service.leaveChatSession('alice');
+
+      // Both halves matter: the row was zeroed by the teardown, and an ended
+      // state never carries a count regardless.
+      expect(await service.getChatStateFor('bob')).toMatchObject({
+        isActive: false,
+        unreadCount: 0,
+      });
+    });
+  });
+
   // ── Write authorization ────────────────────────────────────────────────────
 
   describe('assertCanSendInChat', () => {

@@ -352,20 +352,6 @@ export class MessagesController {
     return res;
   }
 
-  @Post('instant-match')
-  @UseGuards(JwtGuard)
-  async createInstantMatch(
-    @Req() req: AuthenticatedRequest,
-    @Body() body: { targetUserId: string; activity: string },
-  ) {
-    const userId = req.user?.id;
-    return this.messagesService.createInstantMatchConversation(
-      userId,
-      body.targetUserId,
-      body.activity,
-    );
-  }
-
   @Post(':id/react')
   @UseGuards(JwtGuard)
   async reactToMessage(
