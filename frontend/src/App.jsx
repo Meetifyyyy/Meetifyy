@@ -1,4 +1,5 @@
 import { lazy, Suspense, useMemo, useEffect } from 'react';
+import { Analytics } from '@vercel/analytics/react';
 import { IS_DEV_BUILD } from '@config';
 import { createBrowserRouter, RouterProvider, Navigate, Outlet, ScrollRestoration, useLocation } from 'react-router-dom';
 import { SmartBackTracker } from './shared/hooks/useSmartBack';
@@ -437,5 +438,10 @@ export default function App() {
   }
 }), []);
 
-  return <RouterProvider router={router} />;
+  return (
+    <>
+      <RouterProvider router={router} />
+      <Analytics />
+    </>
+  );
 }
