@@ -1,6 +1,10 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import OtpDialog from '@shared/components/OtpDialog';
 import DeletionScheduledNotice from '../components/DeletionScheduledNotice';
+import {
+  beginDeletionCountdown,
+  endDeletionCountdown,
+} from '@shared/lib/deletionHandoff';
 import { useNavigate, useLocation, useParams, Navigate, Link } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@shared/context/AuthContext';
@@ -1334,6 +1338,9 @@ export default function SettingsRoute() {
               otp,
             });
             setDeletionChallenge(null);
+            // Claims the screen for this tab before the status correction can
+            // mount the recovery gate over the confirmation below.
+            beginDeletionCountdown();
             // Persisted before the countdown starts — closing the tab now
             // leaves the deletion scheduled, which is the correct outcome.
             setDeletionScheduled(status);
@@ -1345,7 +1352,12 @@ export default function SettingsRoute() {
       {deletionScheduled && (
         <DeletionScheduledNotice
           scheduledPurgeAt={deletionScheduled.scheduledPurgeAt}
-          onLogout={logout}
+          onLogout={() => {
+            // Released before signing out, so a session restored into this tab
+            // sees the recovery gate rather than a suppressed one.
+            endDeletionCountdown();
+            logout();
+          }}
         />
       )}
       </div>

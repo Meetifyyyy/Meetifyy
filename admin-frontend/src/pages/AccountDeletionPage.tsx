@@ -35,8 +35,9 @@ interface DeletionRequest {
    * Whether the corresponding action can actually succeed right now. Rendering
    * is keyed off these rather than off the status string, so this page never
    * shows a control that the backend would refuse — a restore is impossible
-   * once the purge worker has claimed the row, and there is nothing to purge
-   * on a row that is already done.
+   * once the purge worker has claimed the row or the window has closed, and a
+   * purge is refused while the account is still inside that window, because the
+   * 30 days are a promise to its owner rather than a scheduling detail.
    */
   canRestore: boolean;
   canPurgeNow: boolean;
@@ -387,11 +388,12 @@ const ConfirmDialog: React.FC<{
         <p style={{ margin: '0 0 1.25rem', fontSize: '0.88rem', lineHeight: 1.6, color: 'var(--color-text-light)' }}>
           {isPurge ? (
             <>
-              This runs the permanent deletion for <strong>@{request.username}</strong> now
-              instead of waiting for the scheduled sweep. Their posts, activities
-              and uploaded media are removed and cannot be recovered. Their
-              messages stay in other people&apos;s conversations, shown as a
-              deleted account.
+              The 30-day recovery window for <strong>@{request.username}</strong> has
+              already closed, so this runs the permanent deletion now instead of
+              waiting for the next scheduled sweep. Their posts, activities and
+              uploaded media are removed and cannot be recovered. Their messages
+              stay in other people&apos;s conversations, shown as a deleted
+              account.
             </>
           ) : (
             <>

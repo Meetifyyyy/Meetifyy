@@ -39,13 +39,15 @@ describe('AdminAccountDeletionService — the deletion queue', () => {
       user: {
         count: jest.fn(async () => rows.length),
         findMany: jest.fn(async () => rows),
-        findUnique: jest.fn(async ({ where }: any) =>
-          rows.find((r) => r.id === where.id) ?? null,
+        findUnique: jest.fn(
+          async ({ where }: any) => rows.find((r) => r.id === where.id) ?? null,
         ),
         updateMany: jest.fn(async () => ({ count: 1 })),
       },
     };
-    deletion = { recoverAccount: jest.fn(async () => ({ pendingDeletion: false })) };
+    deletion = {
+      recoverAccount: jest.fn(async () => ({ pendingDeletion: false })),
+    };
     purge = {
       purgeUser: jest.fn(async () => ({ purged: true })),
       runSweep: jest.fn(async () => ({ claimed: 2, purged: 2, failed: 0 })),
@@ -63,7 +65,8 @@ describe('AdminAccountDeletionService — the deletion queue', () => {
       daysRemaining: 29,
       dueNow: false,
       canRestore: true,
-      canPurgeNow: true,
+      // Still inside its window, so it cannot be purged by hand.
+      canPurgeNow: false,
     });
     expect(res.recoveryWindowDays).toBe(30);
   });
@@ -91,12 +94,36 @@ describe('AdminAccountDeletionService — the deletion queue', () => {
 
   describe('no action is offered that the backend would refuse', () => {
     it('hides Restore once the purge worker has claimed the row', async () => {
-      rows = [pendingRow({ purgeStartedAt: new Date() })];
+      rows = [
+        pendingRow({
+          purgeStartedAt: new Date(),
+          scheduledPurgeAt: new Date(Date.now() - DAY),
+        }),
+      ];
       const [req] = (await service.list({})).requests;
       expect(req.canRestore).toBe(false);
       expect(req.purgeInProgress).toBe(true);
       // Purging is still possible — that is the retry path.
       expect(req.canPurgeNow).toBe(true);
+    });
+
+    it('refuses to purge an account still inside its recovery window', async () => {
+      // The 30 days are a promise to the account owner, not a scheduling
+      // detail. Enforced in the service, not only by hiding the button —
+      // the button is not what an API client sees.
+      rows = [pendingRow()];
+      await expect(service.purgeNow('u1')).rejects.toThrow(
+        /still inside its 30-day recovery window/,
+      );
+      expect(purge.purgeUser).not.toHaveBeenCalled();
+    });
+
+    it('refuses to purge an account that is not scheduled for deletion at all', async () => {
+      rows = [pendingRow({ accountStatus: 'ACTIVE', scheduledPurgeAt: null })];
+      await expect(service.purgeNow('u1')).rejects.toThrow(
+        /not scheduled for deletion/,
+      );
+      expect(purge.purgeUser).not.toHaveBeenCalled();
     });
 
     it('hides Restore once the recovery window has closed', async () => {
@@ -132,6 +159,9 @@ describe('AdminAccountDeletionService — the deletion queue', () => {
   });
 
   it('clears the attempt ceiling before an operator-requested purge', async () => {
+    // Due, so the purge is permitted; the ceiling is what an operator is
+    // deliberately overriding when they retry a parked row.
+    rows = [pendingRow({ scheduledPurgeAt: new Date(Date.now() - DAY) })];
     await service.purgeNow('u1');
     const [{ data }] = prisma.user.updateMany.mock.calls[0];
     expect(data.purgeAttempts).toBe(0);

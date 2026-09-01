@@ -1,4 +1,9 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AccountDeletionService } from '../../account-deletion/account-deletion.service';
@@ -154,9 +159,27 @@ export class AdminAccountDeletionService {
   async purgeNow(userId: string) {
     const row = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, accountStatus: true },
+      select: { id: true, accountStatus: true, scheduledPurgeAt: true },
     });
     if (!row) throw new NotFoundException('Account not found');
+
+    if (row.accountStatus !== 'PENDING_DELETION') {
+      throw new ConflictException(
+        'This account is not scheduled for deletion.',
+      );
+    }
+
+    // The 30 days are a promise to the account owner, not a scheduling detail,
+    // so an operator cannot short-circuit them. This route exists to retry a
+    // purge that a broken dependency left stuck and to finish one that is
+    // already due — not to destroy an account its owner can still recover.
+    // Enforced here rather than only by hiding the button, because the button
+    // is not what an API client sees.
+    if (!row.scheduledPurgeAt || row.scheduledPurgeAt > new Date()) {
+      throw new ConflictException(
+        'This account is still inside its 30-day recovery window and cannot be deleted yet.',
+      );
+    }
 
     // Clear the attempt ceiling so a row parked as failed is retryable; the
     // operator asking for it is the deliberate decision that ceiling protects.
@@ -286,7 +309,10 @@ export class AdminAccountDeletionService {
       canRestore: Boolean(
         isPending && !row.purgeStartedAt && msLeft !== null && msLeft > 0,
       ),
-      canPurgeNow: isPending,
+      // Mirrors the server rule exactly, so the panel never offers an action
+      // the backend would refuse: only a row that is actually due (or one the
+      // worker has given up on) can be purged by hand.
+      canPurgeNow: Boolean(isPending && msLeft !== null && msLeft <= 0),
     };
   }
 }

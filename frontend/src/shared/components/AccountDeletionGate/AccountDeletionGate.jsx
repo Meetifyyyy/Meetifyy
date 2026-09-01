@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { apiClient } from '@shared/api/apiClient';
 import { Trash2, Undo2, LogOut, Loader2, CalendarClock, X } from '@shared/components/icons';
 import OtpDialog from '@shared/components/OtpDialog';
+import { isDeletionCountdownActive } from '@shared/lib/deletionHandoff';
 import styles from './AccountDeletionGate.module.css';
 
 /**
@@ -49,8 +50,30 @@ export default function AccountDeletionGate({ children }) {
       window.removeEventListener('meetifyy:account-status', onCorrection);
   }, []);
 
+  // The tab that just scheduled the deletion is already showing a better,
+  // more specific screen — the confirmation and its sign-out countdown. Without
+  // this the gate would replace it within a second (any background request
+  // comes back 403 and corrects the cached status), so the user would confirm
+  // their deletion and watch the confirmation vanish, replaced by a screen
+  // offering to undo it. The marker is per-tab and expires on its own; it gates
+  // no access, and the server refuses every request either way.
+  const [countdownActive, setCountdownActive] = useState(() =>
+    isDeletionCountdownActive()
+  );
+
+  useEffect(() => {
+    if (!countdownActive) return undefined;
+    // Re-checked rather than trusted for the life of the mount, so the gate
+    // takes over on its own if the countdown is abandoned.
+    const id = setInterval(() => {
+      if (!isDeletionCountdownActive()) setCountdownActive(false);
+    }, 1000);
+    return () => clearInterval(id);
+  }, [countdownActive]);
+
   const looksPending =
-    currentUser?.accountStatus === 'PENDING_DELETION' || serverSaysPending;
+    !countdownActive &&
+    (currentUser?.accountStatus === 'PENDING_DELETION' || serverSaysPending);
 
   const refreshStatus = useCallback(async () => {
     try {
