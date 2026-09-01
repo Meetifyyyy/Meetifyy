@@ -370,3 +370,7 @@ test_*.md
 # Generated per-environment at build time by frontend/scripts/generate-robots.mjs.
 # Never commit it: the committed copy would be wrong for 3 of the 4 Vercel projects.
 frontend/public/robots.txt
+# Written by scripts/generate-version.mjs at build time and read by the launch
+# version gate. Committing it would pin every deployment to whatever SHA
+# happened to be checked in, so the gate would compare against a stale value.
+frontend/public/version.json

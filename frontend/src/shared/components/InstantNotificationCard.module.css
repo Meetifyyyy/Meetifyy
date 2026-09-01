@@ -37,8 +37,11 @@
   box-shadow: 0 14px 34px -6px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.08), 0 4px 10px rgba(0, 0, 0, 0.3);
 }
 
-:global([data-theme="dark"]) @media (hover: hover) and (pointer: fine) {
-  .card:hover {
+/* The at-rule has to be the outer one. Written the other way round
+   (`:global(...) @media { ... }`) this is not valid CSS, so esbuild dropped the
+   whole block at build time and the dark-mode hover state never applied. */
+@media (hover: hover) and (pointer: fine) {
+  :global([data-theme="dark"]) .card:hover {
     border-color: rgba(255, 255, 255, 0.24);
     background: rgba(15, 23, 42, 0.96);
     box-shadow: 0 18px 40px -6px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(255, 255, 255, 0.15), 0 6px 16px rgba(0, 0, 0, 0.45);

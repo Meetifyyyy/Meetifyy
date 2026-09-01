@@ -89,83 +89,38 @@ if ('serviceWorker' in navigator) {
   } else {
     window.addEventListener('load', () => {
       navigator.serviceWorker
+        // `updateViaCache: 'none'` matters: it stops the browser answering the
+        // /sw.js request from its HTTP cache, so a new worker is actually
+        // discovered. Nothing is promoted here — see the note below.
         .register('/sw.js', { scope: '/', updateViaCache: 'none' })
-        .then(manageWorkerUpdates)
         .catch((err) => console.warn('[SW] Registration failed:', err));
     });
   }
 }
 
 /**
- * Adopt a new deployment without interrupting anyone.
+ * Registration only. The worker is never promoted from here.
  *
- * `sw.js` deliberately does not call `skipWaiting()`: activating a new worker
- * under a running page lets Workbox delete the precache that page is still
- * loading lazy chunks from. So a new worker waits — but with an installed PWA
- * that is never fully closed, "waits" can mean days, and the user sits on an old
- * build with no way forward short of a hard refresh. That is the problem this
- * solves.
+ * There used to be a promotion path: a waiting worker was activated once the
+ * tab had been hidden for a minute, and the page then reloaded itself. It
+ * existed because `sw.js` deliberately does not call `skipWaiting()` — a new
+ * worker activating under a running page lets Workbox delete the precache that
+ * page is still loading lazy chunks from — which meant an installed PWA that is
+ * never fully closed could sit on an old build for days.
  *
- * The waiting worker is therefore promoted only while the page is HIDDEN, and
- * only after it has stayed hidden long enough that the user has plainly moved
- * on. The reload that follows happens on a page nobody is looking at, so the
- * next time they open the app it is simply the new version — no flicker, no
- * forced refresh, and no reload landing mid-interaction.
+ * The launch-time version gate in index.html now covers that, and covers it
+ * better: it checks the deployed version on every load, reopen and cold start,
+ * and clears the caches before the app renders rather than reloading a page the
+ * user had already been given.
  *
- * The tradeoff, stated honestly: reloading a hidden tab discards unsaved
- * in-page state such as a half-typed message. The grace period is what keeps
- * that from happening to someone who merely switched tabs for a moment.
+ * The promotion is gone because it broke the rule this feature is built on —
+ * an already-open session must be left completely alone. Reloading a hidden tab
+ * is still a reload the user did not ask for, and it discarded anything unsaved
+ * in the page. Updates now happen at exactly one checkpoint: the loading screen.
+ *
+ * `registration.update()` polling is gone for the same reason. Nothing looks
+ * for a new build mid-session, so nothing can act on finding one.
  */
-const HIDDEN_GRACE_MS = 60_000;
-const UPDATE_POLL_MS = 30 * 60 * 1000;
-
-function manageWorkerUpdates(registration) {
-  if (!registration) return;
-
-  let waitingWorker = registration.waiting || null;
-  let hiddenSince = null;
-  let promoted = false;
-
-  const promote = () => {
-    if (promoted || !waitingWorker) return;
-    if (document.visibilityState !== 'hidden') return;
-    if (hiddenSince === null || Date.now() - hiddenSince < HIDDEN_GRACE_MS) return;
-    promoted = true;
-    waitingWorker.postMessage({ type: 'SKIP_WAITING' });
-  };
-
-  registration.addEventListener('updatefound', () => {
-    const installing = registration.installing;
-    if (!installing) return;
-    installing.addEventListener('statechange', () => {
-      // `controller` is null on the very first install; there is no previous
-      // worker to replace then, so there is nothing to promote.
-      if (installing.state === 'installed' && navigator.serviceWorker.controller) {
-        waitingWorker = installing;
-        promote();
-      }
-    });
-  });
-
-  navigator.serviceWorker.addEventListener('controllerchange', () => {
-    // Only ever reached via the promotion above, which requires a hidden page.
-    if (document.visibilityState === 'hidden') window.location.reload();
-  });
-
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') {
-      hiddenSince = Date.now();
-      setTimeout(promote, HIDDEN_GRACE_MS);
-    } else {
-      hiddenSince = null;
-      // Returning to the app is the natural moment to look for a new build.
-      registration.update().catch(() => {});
-    }
-  });
-
-  setInterval(() => registration.update().catch(() => {}), UPDATE_POLL_MS);
-}
-
 createRoot(document.getElementById('root')).render(
   <QueryClientProvider client={queryClient}>
     <StrictMode>
