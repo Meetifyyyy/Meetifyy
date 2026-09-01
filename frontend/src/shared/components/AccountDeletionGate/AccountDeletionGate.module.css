@@ -332,3 +332,12 @@
     max-width: none;
   }
 }
+
+/* The deletion date, stated inline in the opening sentence. Emphasised because
+   it is the single fact the person on this screen most needs, and kept from
+   breaking mid-date on a narrow phone. */
+.inlineDate {
+  color: var(--color-text-main, #0f172a);
+  font-weight: 700;
+  white-space: nowrap;
+}

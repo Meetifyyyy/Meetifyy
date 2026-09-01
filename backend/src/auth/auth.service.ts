@@ -9,6 +9,7 @@ import {
   Optional,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { resolveSignInEligibility } from './sign-in-eligibility';
 import { SupabaseService } from '../supabase/supabase.service';
 import { DefaultAssetsService } from '../uploads/default-assets.service';
 import { DomainValidatorService } from '../common/services/domain-validator.service';
@@ -233,15 +234,13 @@ export class AuthService {
       // screen that can undo it. Sign-in is deliberately allowed for
       // PENDING_DELETION; `JwtGuard` then refuses every route except the
       // recovery flow, so the session that comes back can do nothing else.
-      if (
-        row.accountStatus === 'DELETED' ||
-        (row.deletedAt && row.accountStatus !== 'PENDING_DELETION')
-      ) {
+      const eligibility = resolveSignInEligibility(row);
+      if (!eligibility.allowed) {
+        if (eligibility.reason === 'BANNED') {
+          // A ban is terminal and not appealable through the app.
+          throw new ForbiddenException('Account has been banned');
+        }
         throw new UnauthorizedException('Account has been deleted');
-      }
-      // A ban is terminal and not appealable through the app.
-      if (row.accountStatus === 'BANNED') {
-        throw new ForbiddenException('Account has been banned');
       }
       // A suspension deliberately does NOT block sign-in. The account needs a
       // working session to be told what happened and to request a review; every
