@@ -523,58 +523,11 @@ export class DmService extends MessagingCoreService {
     });
   }
 
-  async createInstantMatchDM(
-    userAId: string,
-    userBId: string,
-    activity: string,
-  ) {
-    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
-
-    // Mirrors MessagesService.createInstantMatchConversation: an expired
-    // instant-match DM must not be handed back, since the cleanup job is
-    // about to delete it out from under the newly matched pair.
-    const existing = await this.prisma.conversation.findFirst({
-      where: {
-        type: 'DM',
-        isInstantMatch: true,
-        expiresAt: { gt: new Date() },
-        AND: [
-          { participants: { some: { userId: userAId } } },
-          { participants: { some: { userId: userBId } } },
-        ],
-      },
-    });
-
-    if (existing) {
-      const pubId = (existing as any).publicId || existing.id;
-      return { id: pubId, internalId: existing.id };
-    }
-
-    const newPubId = generatePublicId();
-    const conv = await this.prisma.conversation.create({
-      data: {
-        publicId: newPubId,
-        type: 'DM',
-        isInstantMatch: true,
-        expiresAt,
-        participants: {
-          create: [{ userId: userAId }, { userId: userBId }],
-        },
-      },
-    });
-
-    const activityLabel = activity.charAt(0).toUpperCase() + activity.slice(1);
-    await this.prisma.message.create({
-      data: {
-        conversationId: conv.id,
-        senderId: userAId,
-        type: 'SYSTEM',
-        payload: {
-          text: `⚡ Instant Match — ${activityLabel}! You've been connected. Say hi!`,
-        },
-      },
-    });
-
-    return { id: newPubId, internalId: conv.id };
-  }
+  // `createInstantMatchDM` used to live here: a route-reachable way to mint an
+  // Instant Match conversation for an arbitrary target user, reusing any
+  // existing one between the same pair. Both halves fought the session model —
+  // a chat with no MatchSession behind it can never be authorized for writes,
+  // and the reuse resurrected an ended session's thread. Instant Match
+  // conversations are now created in exactly one place, by
+  // InstantMatchService when a session is accepted.
 }

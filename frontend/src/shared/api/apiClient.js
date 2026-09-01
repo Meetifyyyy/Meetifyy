@@ -817,7 +817,6 @@ export const dmApi = {
   // conversation — used by the draft screen, which has no conversation to read.
   getMessagingEligibility: (targetUserId) => apiClient.get(`/api/dm/eligibility/${targetUserId}`),
   startDM: (targetUserId) => apiClient.post('/api/dm', { targetUserId }),
-  startInstantMatch: (targetUserId, activity) => apiClient.post('/api/dm/instant-match', { targetUserId, activity }),
   getHistory: (conversationId, deviceId, beforeCursor, limit) => {
     const params = new URLSearchParams();
     if (deviceId) params.set('deviceId', deviceId);
@@ -879,6 +878,21 @@ export const groupApi = {
 
 
 
+/**
+ * Instant Match state, over HTTP.
+ *
+ * Everything else about Instant Match is a socket exchange, and that is right
+ * for a realtime feature — but it made the very first question ("am I matched
+ * right now?") wait on the socket's connect and authentication handshake. The
+ * launcher rendered its unmatched default in the meantime, so a matched user
+ * saw the wrong button until the connection came up and then watched it flip.
+ * This is the boot read: it goes out with the app's other startup requests and
+ * answers in one round trip. The socket reconciles on top of it afterwards.
+ */
+export const instantMatchApi = {
+  getState: () => apiClient.get('/api/instant-match/state'),
+};
+
 export const messagesApi = {
   getConversations: (limit, offset) => {
     const params = new URLSearchParams();
@@ -913,7 +927,6 @@ export const messagesApi = {
   // never became a real message.
   sendMessage: (conversationId, payload) => apiClient.post(`/api/messages/${conversationId}/messages`, payload),
   startConversation: (userIds, name) => apiClient.post('/api/messages', { userIds, name }),
-  startInstantMatchChat: (targetUserId, activity) => apiClient.post('/api/messages/instant-match', { targetUserId, activity }),
   reactToMessage: (messageId, reaction) => apiClient.post(`/api/messages/${messageId}/react`, { reaction }),
   markAsRead: (conversationId) => apiClient.post(`/api/messages/${conversationId}/read`),
   muteConversation: (conversationId, muted) => apiClient.patch(`/api/messages/${conversationId}/mute`, { muted }),

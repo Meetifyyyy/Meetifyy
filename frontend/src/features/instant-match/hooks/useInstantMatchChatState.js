@@ -18,9 +18,39 @@ import matchSocketClient from '../utils/matchSocketClient';
  * anything — when this hook's own clock reaches zero it asks the server what
  * happened rather than assuming, so the answer is always the row's answer.
  */
-export function useInstantMatchChatState({ enabled = true } = {}) {
+export function useInstantMatchChatState({ enabled = true, onSessionEnded } = {}) {
   const [chat, setChat] = useState(null);
   const [loading, setLoading] = useState(true);
+
+  // Called with the conversation id of a session that has just stopped being
+  // live, so the owner can drop every cache keyed by it. Held in a ref so a
+  // caller passing an inline function does not re-subscribe the socket
+  // listener below on every render.
+  const onSessionEndedRef = useRef(onSessionEnded);
+  onSessionEndedRef.current = onSessionEnded;
+
+  // The session ids we have already reported as ended, so a duplicate socket
+  // event (or an event racing the refresh it triggered) cleans up once.
+  const purgedRef = useRef(new Set());
+
+  /**
+   * Announce an ending exactly once per session.
+   *
+   * The cleanup this drives — dropping the query cache and the IndexedDB rows
+   * for the conversation — is what stops an ended session's messages being
+   * rebuilt on the client. The server has already deleted them; this is the
+   * matching half on the device.
+   */
+  const reportEnded = useCallback((state) => {
+    if (!state?.matchId || state.isActive) return;
+    if (purgedRef.current.has(state.matchId)) return;
+    purgedRef.current.add(state.matchId);
+    try {
+      onSessionEndedRef.current?.(state);
+    } catch (_) {
+      // Cleanup is best-effort; never let it break the state transition.
+    }
+  }, []);
 
   // Guards against an in-flight refresh being overtaken by a newer one, and
   // against applying a response after unmount.
@@ -57,13 +87,14 @@ export function useInstantMatchChatState({ enabled = true } = {}) {
     if (!res.ok) return null;
 
     const next = res.data?.state ?? null;
+    reportEnded(next);
     if (isDismissed(next)) {
       setChat(null);
       return null;
     }
     setChat(next);
     return next;
-  }, [enabled, isDismissed]);
+  }, [enabled, isDismissed, reportEnded]);
 
   useEffect(() => {
     if (!enabled) {
@@ -82,6 +113,7 @@ export function useInstantMatchChatState({ enabled = true } = {}) {
      */
     const offEnded = matchSocketClient.on('instant_match:chat_ended', (state) => {
       if (!state?.matchId) return;
+      reportEnded(state);
       if (isDismissed(state)) return;
       setChat((current) => {
         // An event for a match we have already moved on from is noise.
@@ -104,7 +136,7 @@ export function useInstantMatchChatState({ enabled = true } = {}) {
       offTransport();
       document.removeEventListener('visibilitychange', onVisible);
     };
-  }, [enabled, refresh, isDismissed]);
+  }, [enabled, refresh, isDismissed, reportEnded]);
 
   /**
    * Leave the match. The server claims the transition, so calling this twice
@@ -117,10 +149,11 @@ export function useInstantMatchChatState({ enabled = true } = {}) {
     // walked away, so it is acknowledged here rather than re-rendered at them.
     if (res.data?.state && !res.data.state.isActive) {
       dismissedMatchId.current = res.data.state.matchId;
+      reportEnded(res.data.state);
     }
     if (mounted.current && res.data?.state) setChat(res.data.state);
     return { ok: true, state: res.data?.state ?? null };
-  }, []);
+  }, [reportEnded]);
 
   /**
    * Acknowledge an ended session: the user has read the ending and closed it.
@@ -137,9 +170,31 @@ export function useInstantMatchChatState({ enabled = true } = {}) {
     });
   }, []);
 
+  /**
+   * Seed the hook from the application's boot read.
+   *
+   * Same rules as a socket answer — a dismissed ending stays dismissed, an
+   * ending is reported for cleanup — so the HTTP path and the socket path can
+   * never leave the client in two different states. `loading` clears here
+   * because for a cold start this *is* the answer; the socket resync that
+   * follows only confirms it.
+   */
+  const hydrate = useCallback((state) => {
+    if (!mounted.current) return;
+    setLoading(false);
+    reportEnded(state);
+    if (!state || isDismissed(state)) {
+      setChat(null);
+      return;
+    }
+    setChat(state);
+  }, [isDismissed, reportEnded]);
+
   /** Called when the local countdown reaches zero. Asks rather than assumes —
    *  the deadline the client holds is a rendering hint, not a verdict. */
   const onCountdownElapsed = useCallback(() => { refresh(); }, [refresh]);
 
-  return { chat, loading, refresh, leave, onCountdownElapsed, setChat, dismissEnded };
+  return {
+    chat, loading, refresh, leave, onCountdownElapsed, setChat, dismissEnded, hydrate,
+  };
 }

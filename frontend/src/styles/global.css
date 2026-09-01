@@ -1037,7 +1037,26 @@ em-emoji-picker {
   box-shadow: var(--shadow-lg, 0 12px 32px rgba(15, 23, 42, 0.08), 0 2px 6px rgba(15, 23, 42, 0.04));
   background-color: var(--color-bg-white, #FFFFFF);
   overflow: hidden;
-  display: block;
+
+  /* MUST stay `flex`.
+   *
+   * This is the picker's own `:host { display: flex }`, restated because a
+   * rule in this document overrides a `:host` rule whatever the specificity —
+   * so setting `display: block` here (which this rule used to do) silently
+   * won, and broke the picker's internal layout in a way that looked like a
+   * styling detail and was not.
+   *
+   * Emoji-mart's shadow tree is one flex item (`#root`) that gets its height
+   * by *stretching* to this host. As a block box it stopped stretching, grew
+   * to its natural content height instead — roughly 7900px of emoji — and the
+   * scroll container inside it grew with it. `scrollHeight` then equalled
+   * `clientHeight`, so there was nothing to scroll: the `overflow: hidden`
+   * above simply cropped the list at 420px and the rest was unreachable. The
+   * picker looked correct and could not be scrolled past its first two rows.
+   *
+   * With `flex` restored, `#root` is bounded by the height above and the
+   * inner `.scroll` gets a real overflow to scroll through. */
+  display: flex;
 }
 
 [data-theme="dark"] em-emoji-picker {

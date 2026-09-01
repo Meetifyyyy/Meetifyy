@@ -24,6 +24,7 @@ import LeaveMatchModal from '../modals/LeaveMatchModal';
 export default function MatchedPanel() {
   const {
     recentMatch, openMatchChat, busy, chat, matchPartner, leaveMatch, leaving,
+    unreadCount,
   } = useInstantMatch();
   const [confirmLeave, setConfirmLeave] = React.useState(false);
   const { currentUser } = useAuth();
@@ -98,6 +99,14 @@ export default function MatchedPanel() {
           aria-busy={busy || undefined}
         >
           {busy ? 'Opening…' : 'Open chat'}
+          {/* The same unread badge as the launcher, on the button that
+              actually opens the chat — a user who reached this panel through
+              the sheet never sees the launcher underneath it. */}
+          {!busy && chat?.isActive && unreadCount > 0 && (
+            <span className="im-unread-dot" aria-hidden="true">
+              {unreadCount > 9 ? '9+' : unreadCount}
+            </span>
+          )}
           {!busy && <Bolt className="im-btn-bolt" />}
         </button>
         <button

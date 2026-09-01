@@ -170,6 +170,15 @@ export interface InstantMatchChatState {
   expiresAt: number | null;
   createdAt: number;
   conversationId: string | null;
+  /**
+   * Unread messages waiting for *this* viewer in *this* session.
+   *
+   * Session-scoped by construction: a session's conversation is created with
+   * it and destroyed with it, so the participant row this counts is only ever
+   * about the current pairing. A previous session's unread can no more leak
+   * into this number than its messages can.
+   */
+  unreadCount: number;
 }
 
 export interface InstantMatchEmitter {
@@ -685,6 +694,43 @@ export class InstantMatchService implements OnModuleInit {
       return;
     }
 
+    // Neither person may hold two live chats at once.
+    //
+    // The queue guards the entry to matching, but nothing guarded the exit
+    // until here: a stale PENDING session accepted late — a second tab, a
+    // reconnect replaying an accept — could open a second conversation for
+    // someone who is already mid-chat, and from then on "the active session"
+    // was whichever row a given query happened to order first. One live
+    // session per user is what makes `getActiveChatSession` a well-defined
+    // question, so it is enforced at the one transition that creates them.
+    const liveElsewhere = await this.prisma.matchSession.findFirst({
+      where: {
+        id: { not: session.id },
+        status: 'ACCEPTED',
+        chatStatus: 'ACTIVE',
+        conversationId: { not: null },
+        chatExpiresAt: { gt: new Date() },
+        OR: [
+          { userAId: session.userAId },
+          { userBId: session.userAId },
+          { userAId: session.userBId },
+          { userBId: session.userBId },
+        ],
+      },
+      select: { id: true },
+    });
+    if (liveElsewhere) {
+      this.logger.warn(
+        `match:refused-already-matched ${session.id} — a participant already ` +
+          `has live session ${liveElsewhere.id}`,
+      );
+      await this.prisma.matchSession.updateMany({
+        where: { id: session.id, status: 'PENDING' },
+        data: { status: 'EXPIRED' },
+      });
+      return;
+    }
+
     // Both sides are in. Claim the finalize transition so that two
     // simultaneous accepts create exactly one conversation.
     const claimed = await this.prisma.matchSession.updateMany({
@@ -1057,7 +1103,12 @@ export class InstantMatchService implements OnModuleInit {
     // the UI can show the pairing without offering a dead link.
     let chatId: string | null = null;
     let chatExpiresAt: number | null = null;
-    if (session.conversationId) {
+    // A session whose chat is over never offers a link into it, whatever the
+    // conversation row still says. The teardown pulls `expiresAt` back to now
+    // as well, so the query below would already decline — but relying on that
+    // would make "is this chat reachable?" a fact about a timestamp instead of
+    // a fact about the session, and the session is the boundary.
+    if (session.conversationId && session.chatStatus === 'ACTIVE') {
       const conv = await this.prisma.conversation.findFirst({
         where: {
           id: session.conversationId,
@@ -1148,7 +1199,7 @@ export class InstantMatchService implements OnModuleInit {
       current = { ...current, chatStatus: 'EXPIRED' };
     }
 
-    return this.toChatState(current, userId);
+    return this.withUnread(this.toChatState(current, userId), userId);
   }
 
   /** True once the 24h window has closed. A session with no recorded window
@@ -1242,17 +1293,56 @@ export class InstantMatchService implements OnModuleInit {
     return true;
   }
 
+  /**
+   * Tears a session's conversation down for good.
+   *
+   * Marking the row ENDED is not enough on its own. The messages stay
+   * queryable by anything that reads the conversation directly — a stale tab
+   * replaying its history request, an IndexedDB rehydrate, a future session
+   * that somehow lands on the same id — and "the chat is over" has to mean
+   * the transcript is gone, not merely hidden. So the messages are deleted
+   * and the conversation is stamped closed in one transaction: either the
+   * session's chat is fully torn down or nothing changed and the sweep will
+   * retry.
+   *
+   * `expiresAt` is pulled back to now as well, so every window-based query in
+   * the codebase agrees with `status` about this conversation being dead.
+   */
   private async closeConversation(
     conversationId: string | null,
   ): Promise<void> {
     if (!conversationId) return;
     try {
-      await this.prisma.conversation.updateMany({
-        where: { id: conversationId },
-        data: { status: 'ENDED' },
+      await this.prisma.$transaction(async (tx) => {
+        // The denormalised preview is cleared before the messages it points
+        // at, so no ordering inside the transaction leaves a dangling
+        // `lastMessageId`.
+        await tx.conversation.updateMany({
+          where: { id: conversationId },
+          data: {
+            status: 'ENDED',
+            expiresAt: new Date(),
+            lastMessageId: null,
+            lastMessageText: null,
+            lastMessageType: null,
+            lastMessageAt: null,
+            lastMessageSenderId: null,
+          },
+        });
+        await tx.conversationParticipant.updateMany({
+          where: { conversationId },
+          data: { unreadCount: 0, lastReadAt: new Date() },
+        });
+        // Reactions, receipts and deleted-message rows cascade from Message;
+        // anything that does not is scoped to a message id that no longer
+        // exists.
+        await tx.message.deleteMany({ where: { conversationId } });
       });
     } catch (err) {
-      this.logger.warn(`Could not close conversation ${conversationId}`);
+      this.logger.warn(
+        `Could not close instant-match conversation ${conversationId}`,
+        err instanceof Error ? err.stack : undefined,
+      );
     }
   }
 
@@ -1303,7 +1393,42 @@ export class InstantMatchService implements OnModuleInit {
       expiresAt: session.chatExpiresAt?.getTime() ?? null,
       createdAt: session.createdAt.getTime(),
       conversationId: session.conversationId,
+      // Overlaid by `withUnread` where a count is meaningful. An ended
+      // session has none by definition — closing it zeroes both participants'
+      // counters — so the badge cannot survive its session.
+      unreadCount: 0,
     };
+  }
+
+  /**
+   * The same projection, with the viewer's unread count filled in.
+   *
+   * Read from the conversation participant row rather than kept on the
+   * session, so it is the *same* number the rest of messaging maintains:
+   * incremented by the one send path, cleared by the one mark-seen path. A
+   * second counter here would be a second source of truth to disagree with.
+   */
+  private async withUnread(
+    state: InstantMatchChatState,
+    viewerId: string,
+  ): Promise<InstantMatchChatState> {
+    if (!state.isActive || !state.conversationId) return state;
+    try {
+      const participant =
+        await this.prisma.conversationParticipant.findUnique({
+          where: {
+            userId_conversationId: {
+              userId: viewerId,
+              conversationId: state.conversationId,
+            },
+          },
+          select: { unreadCount: true },
+        });
+      return { ...state, unreadCount: participant?.unreadCount ?? 0 };
+    } catch {
+      // A badge is not worth failing a state read over.
+      return state;
+    }
   }
 
   /**
@@ -1349,6 +1474,31 @@ export class InstantMatchService implements OnModuleInit {
       await this.expireChatSession(session.id);
       throw new ForbiddenException('This Instant Match has expired');
     }
+  }
+
+  /**
+   * Read authorization for an Instant Match conversation.
+   *
+   * The mirror of `assertCanSendInChat`, minus the reasons: callers only need
+   * a yes or no, because "the chat ended" is rendered from the session state
+   * they already hold rather than from a history error. Answers no for a
+   * conversation with no session behind it, a caller who is not one of the
+   * two participants, an ended session, and a window that has closed —
+   * reconciling that last case rather than trusting the sweep to have run.
+   */
+  async canReadChat(userId: string, conversationId: string): Promise<boolean> {
+    const session = await this.prisma.matchSession.findFirst({
+      where: { conversationId },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (!session) return false;
+    if (session.userAId !== userId && session.userBId !== userId) return false;
+    if (session.chatStatus !== 'ACTIVE') return false;
+    if (this.isPastWindow(session)) {
+      await this.expireChatSession(session.id);
+      return false;
+    }
+    return true;
   }
 
   /** Expires every chat whose window has closed. Driven by the same sweep as

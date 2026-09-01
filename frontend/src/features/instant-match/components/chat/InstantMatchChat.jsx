@@ -1,9 +1,10 @@
 import React, { useMemo, useState, useCallback, useEffect, useRef } from 'react';
 import PropTypes from 'prop-types';
 import { createPortal } from 'react-dom';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@shared/context/AuthContext';
 import { useScrollLock } from '@shared/hooks/useScrollLock';
+import { useMediaViewer } from '@shared/context/MediaViewerContext';
 import { showToast } from '@shared/utils/toast';
 import Avatar from '@shared/components/avatar/Avatar';
 import { useChatManager } from '@features/messages/shared/hooks/useChatManager';
@@ -100,6 +101,25 @@ function InstantMatchChatSurface({
 
   const { label: timeLabel } = useCountdown(chat.expiresAt, chat.onCountdownElapsed);
 
+  /**
+   * Tapping a photo or video opens the shared media viewer.
+   *
+   * ChatMessageList only opens media if it is handed `onOpenMediaModal`; there
+   * is no default. Messages passes it from ChatAreaLayout, this surface never
+   * did, so every image and video in an Instant Match chat was inert — the tap
+   * landed on a handler that was not there.
+   *
+   * The viewer's provider is mounted above the whole app, so it works from
+   * inside this portal, and its own layer sits above this overlay. The call
+   * mirrors ChatAreaLayout's exactly, so both surfaces open the same viewer
+   * with the same item shape.
+   */
+  const { openViewer } = useMediaViewer();
+  const handleOpenMedia = useCallback(
+    (url, type) => openViewer([{ url, type: type || 'image' }], 0),
+    [openViewer],
+  );
+
   // Typing rides the same conversation room as messages, so it works here
   // without any Instant-Match-specific plumbing.
   const {
@@ -146,7 +166,26 @@ function InstantMatchChatSurface({
     [chat.matchReason, chat.activity],
   );
 
-  const handleSend = useCallback((payload) => {
+  /**
+   * Send, forwarding the composer's arguments untouched.
+   *
+   * `...args` is the whole fix for messages arriving blank. ChatInputArea
+   * calls its send prop positionally —
+   * `(conversationId, text, replyingTo, mentions, mediaUrl, mediaType, …)` —
+   * and everywhere else in messaging that prop *is* `sendMessageOptimistically`,
+   * so the signature matches. This wrapper declared a single `payload`
+   * parameter, which bound to the conversation id and dropped every argument
+   * after it. `sendMessageOptimistically` then saw a string in its object slot
+   * and no text at all, so it sent `''` — and the empty message was persisted,
+   * broadcast, and rendered as a bubble with a timestamp and nothing in it, on
+   * both sides. It looked like a rendering bug; the text never left the
+   * composer.
+   *
+   * The starter buttons below call the same function with the object form,
+   * which is also supported — and is why they always worked while typing did
+   * not.
+   */
+  const handleSend = useCallback((...args) => {
     // Belt to the backend's braces: the server rejects a write into an ended
     // chat regardless, but there is no reason to spend a round trip finding
     // that out when this client already knows.
@@ -154,7 +193,7 @@ function InstantMatchChatSurface({
       showToast('This Instant Match has ended', 'error');
       return;
     }
-    sendMessageOptimistically(payload);
+    sendMessageOptimistically(...args);
     setReplyingTo(null);
   }, [chat.isActive, sendMessageOptimistically, setReplyingTo]);
 
@@ -165,19 +204,76 @@ function InstantMatchChatSurface({
   }, [chat.isActive, sendMessageOptimistically, setStartersDismissed]);
 
   const navigate = useNavigate();
+  const location = useLocation();
 
   // Preload ProfilePage chunk so clicking into a profile from Instant Match is instant with 0 flash
   useEffect(() => {
     import('@features/profile/pages/ProfilePage').catch(() => {});
   }, []);
 
-  const handleOpenProfile = useCallback(() => {
+  /**
+   * The route we are navigating to, held from the tap until the router has
+   * actually arrived there. See `handleOpenProfile`.
+   */
+  const pendingProfileRef = useRef(null);
+
+  /**
+   * Opening the other person's profile.
+   *
+   * The old version called `navigate()` and `onClose()` in the same tick, and
+   * the close won the race: the overlay came down immediately, exposing the
+   * page underneath — Home, since that is where the launcher lives — and the
+   * profile only appeared once its route had mounted. The user saw a chat, a
+   * flash of Home, then a profile, and it read as the chat being closed and
+   * re-navigated rather than as one navigation.
+   *
+   * Two changes fix it, and neither is a delay:
+   *
+   *  1. The route chunk is awaited before navigating, so the router never
+   *     lands on a suspense fallback on the way there.
+   *  2. The overlay stays up until the router reports it is *on* the profile
+   *     route (the effect below). It is a portal over the whole app, so the
+   *     transition happens behind it and there is nothing to see underneath.
+   *
+   * Closing the overlay is not leaving the match: `onClose` only lowers this
+   * surface, and the session's state — server-side and in the provider — is
+   * untouched. Coming back re-opens the same live session.
+   */
+  const handleOpenProfile = useCallback(async () => {
     const target = partner?.username || partner?.id;
-    if (target) {
-      navigate(`/profile/${target}`);
-      onClose();
+    if (!target) return;
+
+    const path = `/profile/${target}`;
+    // A second tap while the first navigation is settling must not queue
+    // another one.
+    if (pendingProfileRef.current) return;
+    pendingProfileRef.current = path;
+
+    try {
+      await import('@features/profile/pages/ProfilePage');
+    } catch (_) {
+      // The chunk will be fetched by the route itself; the navigation is
+      // still correct, it just may show the route's own loading state.
     }
-  }, [partner?.username, partner?.id, onClose, navigate]);
+    navigate(path);
+  }, [partner?.username, partner?.id, navigate]);
+
+  // The other half: lower the overlay only once the profile route is the
+  // current one. If the navigation never lands (it was superseded, or the
+  // route redirected elsewhere) the pending marker is cleared anyway, so a
+  // later tap is not blocked by it.
+  useEffect(() => {
+    const pending = pendingProfileRef.current;
+    if (!pending) return;
+    if (location.pathname === pending) {
+      pendingProfileRef.current = null;
+      onClose();
+    } else if (location.pathname !== '/home') {
+      // We ended up somewhere else entirely — stop waiting for a route that
+      // is not coming.
+      pendingProfileRef.current = null;
+    }
+  }, [location.pathname, onClose]);
 
   const endedCopy = describeEnding(chat, partnerName);
   const accentStyle = accentVars(activityMeta, 'im-accent');
@@ -259,6 +355,7 @@ function InstantMatchChatSurface({
           typingUsers={chat.isActive ? typingUsers : new Map()}
           onRetryUpload={retryUpload}
           onCancelUpload={cancelUpload}
+          onOpenMediaModal={handleOpenMedia}
         />
       </div>
 

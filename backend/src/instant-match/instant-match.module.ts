@@ -2,6 +2,7 @@ import { Module, OnModuleInit, OnModuleDestroy, Logger } from '@nestjs/common';
 import { BullModule, InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { InstantMatchService } from './instant-match.service';
+import { InstantMatchController } from './instant-match.controller';
 import { InstantMatchRateLimiter } from './instant-match.rate-limiter';
 import {
   InstantMatchProcessor,
@@ -25,6 +26,7 @@ import { BlocksService } from '../users/blocks.service';
   // would drag in notifications, presence and a queue registration this module
   // has no use for). Its cache is deliberately static, so this copy shares one
   // map — and one Redis invalidation channel — with every other copy.
+  controllers: [InstantMatchController],
   providers: [
     InstantMatchService,
     InstantMatchProcessor,

@@ -47,6 +47,42 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
   const pendingUploadsRef = useRef(new Map());
 
   /**
+   * Messages that landed while the history request for the same conversation
+   * was still in flight.
+   *
+   * The first page of history *replaces* the query data for a conversation.
+   * Any realtime message that arrived after the request went out but before it
+   * came back was written into that cache and is then overwritten by a server
+   * page that predates it — the message exists everywhere (database, socket,
+   * IndexedDB) and simply is not on screen, with a reload "fixing" it.
+   *
+   * In a normal chat you have to open a thread in the same second someone
+   * writes to it. In Instant Match that *is* the flow: both people are dropped
+   * into a brand-new conversation at the same moment and start typing, so the
+   * race is the common case rather than the rare one.
+   *
+   * Buffering the arrivals here lets the query function fold them back into
+   * the page it just fetched. Keyed by conversation id, bounded by age, and
+   * only ever consulted for the conversation that was being fetched — so it
+   * cannot resurrect anything the server has authoritatively answered about,
+   * including the deliberately empty answer an ended Instant Match returns.
+   */
+  const realtimeRaceBufferRef = useRef(new Map());
+
+  /** Remember a realtime arrival for long enough to survive an in-flight fetch. */
+  const rememberRealtimeArrival = useCallback((key, msg) => {
+    if (!key || !msg) return;
+    const bucket = realtimeRaceBufferRef.current.get(String(key)) || [];
+    bucket.push({ msg, at: Date.now() });
+    // Only recent arrivals can be racing a request; anything older is history.
+    const cutoff = Date.now() - 60_000;
+    realtimeRaceBufferRef.current.set(
+      String(key),
+      bucket.filter((e) => e.at >= cutoff).slice(-50),
+    );
+  }, []);
+
+  /**
    * Drop a local preview blob, clearing every reference to it BEFORE revoking.
    *
    * Order matters. A blob: URL dies the moment it is revoked (and with the
@@ -173,6 +209,8 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
     queryKey: ['messages', activeChatId],
     queryFn: async ({ pageParam }) => {
       if (!activeChatId) return null;
+      // Anything the socket delivers from here on is racing this request.
+      const requestedAt = Date.now();
       const res = await getApi().getHistory(activeChatId, undefined, pageParam);
       if (res && res.messages) {
         const normalizedMsgs = res.messages.map(m => ({
@@ -180,6 +218,56 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
           status: m.status || 'sent',
         }));
         res.messages = normalizedMsgs;
+
+        // Fold back everything that arrived while this page was on the wire.
+        //
+        // Only the first page: later pages are older history and are appended
+        // rather than replacing anything. Only arrivals from *after* the
+        // request went out, so a server page that is legitimately empty — an
+        // Instant Match session that has ended, a cleared chat — stays empty
+        // instead of being repopulated from a stale buffer. And only messages
+        // the page does not already contain, so the normal case (the fetch won
+        // the race and includes them) adds nothing.
+        if (pageParam === undefined) {
+          const known = new Set(
+            normalizedMsgs.flatMap((m) => [m.id, m.clientId, m.tempId].filter(Boolean).map(String)),
+          );
+          // Messages this user sent that the server has not confirmed yet are
+          // in exactly the same position: written into the cache, not in the
+          // page, and gone the moment the page lands. They are identifiable
+          // without a buffer — an unconfirmed status is what they are.
+          const optimistic = (queryClient.getQueryData(['messages', activeChatId])?.pages || [])
+            .flatMap((page) => page?.messages || [])
+            .filter((m) => m && (m.status === 'sending' || m.status === 'failed' || m.status === 'FAILED'));
+
+          const raced = [
+            ...(realtimeRaceBufferRef.current.get(String(activeChatId)) || [])
+              .filter((e) => e.at >= requestedAt)
+              .map((e) => e.msg),
+            ...optimistic,
+          ]
+            .filter((m) => {
+              const keys = [m.id, m.clientId, m.tempId].filter(Boolean).map(String);
+              return keys.length === 0 || !keys.some((k) => known.has(k));
+            });
+
+          if (raced.length > 0) {
+            const merged = [...normalizedMsgs];
+            const seen = new Set(known);
+            raced.forEach((m) => {
+              const key = String(m.id || m.clientId || m.tempId || '');
+              if (key && seen.has(key)) return;
+              if (key) seen.add(key);
+              merged.push({ ...m, status: m.status || 'sent' });
+            });
+            res.messages = merged.sort(compareMessages);
+          }
+        }
+
+        // Only the server's own page goes to disk. The folded-in messages are
+        // already persisted by the paths that produced them (the socket handler
+        // for arrivals, the send path for optimistic ones), and writing an
+        // unconfirmed send here would give it a second, page-shaped life.
         idbSaveMessages(activeChatId, normalizedMsgs).catch(console.warn);
         // After network confirms, clear the IDB placeholder — network data owns the cache now
         idbPlaceholderRef.current = null;
@@ -763,6 +851,11 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
         )
       );
 
+      // Recorded before the cache writes below, so a history request that is
+      // still in flight can fold this message back into the page it returns
+      // instead of silently overwriting it. See `realtimeRaceBufferRef`.
+      keysToUpdate.forEach((key) => rememberRealtimeArrival(key, msg));
+
       keysToUpdate.forEach((key) => {
         // Only the key the open thread actually reads may be seeded from
         // nothing. The other aliases are background mirrors — seeding those
@@ -881,7 +974,7 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
       socket.off('messages:seen', handleConversationSeen);
       socket.off('conversation:seen', handleConversationSeen);
     };
-  }, [socket, activeChatId, queryClient, currentUser, markSeenIfEligible, applySeenToCache]);
+  }, [socket, activeChatId, queryClient, currentUser, markSeenIfEligible, applySeenToCache, rememberRealtimeArrival]);
 
   return {
     messages: allMessages,

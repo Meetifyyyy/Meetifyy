@@ -269,6 +269,26 @@
 .im-sheet-actions { display: flex; align-items: center; gap: 9px; }
 .im-btn-bolt { width: 16px; height: 16px; }
 
+/* Unread messages, inline in a button's own row rather than pinned to its
+   corner: this one sits inside a full-width action, where a corner badge would
+   float away from the label it belongs to. Circular at one digit, a stadium at
+   "9+", and inert to pointer events so the whole button stays one target. */
+.im-unread-dot {
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--im-coral);
+  /* Ink, not cream: cream on this coral fails AA. */
+  color: #16130E;
+  font-family: var(--im-display);
+  font-size: 0.68rem;
+  line-height: 1;
+  pointer-events: none;
+}
+
 /* ── Loading skeleton ────────────────────────────────────────────────────── */
 
 .im-skeleton {
