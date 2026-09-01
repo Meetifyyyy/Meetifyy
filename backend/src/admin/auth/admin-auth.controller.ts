@@ -19,55 +19,26 @@ import {
   VerifyTotpDto,
 } from './dto/admin-auth.dto';
 import { AdminJwtGuard } from '../../common/guards/admin-jwt.guard';
-import * as crypto from 'crypto';
 import type { AdminRequest } from '../../common/types/authenticated-request';
-import { config } from '../../config';
+import {
+  clearAdminSessionCookies,
+  issueAdminSessionCookies,
+} from './admin-auth-cookies';
 
 @Controller('admin/auth')
 export class AdminAuthController {
   constructor(private readonly authService: AdminAuthService) {}
 
-  /**
-   * Cookie domain / secure / sameSite all come from configuration, so the same
-   * code issues host-only insecure cookies in local development and
-   * domain-scoped Secure cookies in production, without a branch.
-   */
-  private get cookieBase() {
-    const { domain, secure, sameSite, path } = config.auth.cookie;
-    return { domain, secure, sameSite, path } as const;
-  }
-
   private setAuthCookies(
     res: Response,
     accessToken: string,
     refreshToken: string,
-  ) {
-    const csrfToken = crypto.randomBytes(32).toString('hex');
-    const { accessMaxAgeMs, refreshMaxAgeMs } = config.auth.cookie;
-
-    res.cookie('admin_access', accessToken, {
-      ...this.cookieBase,
-      httpOnly: true,
-      maxAge: accessMaxAgeMs,
-    });
-
-    res.cookie('admin_refresh', refreshToken, {
-      ...this.cookieBase,
-      httpOnly: true,
-      maxAge: refreshMaxAgeMs,
-    });
-
-    res.cookie('admin_csrf', csrfToken, {
-      ...this.cookieBase,
-      httpOnly: false, // exposed to frontend JS to attach as X-CSRF-Token header
-      maxAge: accessMaxAgeMs,
-    });
+  ): string {
+    return issueAdminSessionCookies(res, accessToken, refreshToken).csrfToken;
   }
 
   private clearAuthCookies(res: Response) {
-    res.clearCookie('admin_access', { ...this.cookieBase, httpOnly: true });
-    res.clearCookie('admin_refresh', { ...this.cookieBase, httpOnly: true });
-    res.clearCookie('admin_csrf', { ...this.cookieBase });
+    clearAdminSessionCookies(res);
   }
 
   @Post('login')
@@ -92,8 +63,12 @@ export class AdminAuthController {
     const result = await this.authService.verifyOtp(dto, ip, userAgent);
 
     if ('accessToken' in result) {
-      this.setAuthCookies(res, result.accessToken, result.refreshToken);
-      return { success: true, admin: result.admin };
+      const csrfToken = this.setAuthCookies(
+        res,
+        result.accessToken,
+        result.refreshToken,
+      );
+      return { success: true, admin: result.admin, csrfToken };
     }
 
     return result;
@@ -111,8 +86,12 @@ export class AdminAuthController {
     const userAgent = req.headers['user-agent'] || 'Unknown';
     const result = await this.authService.verifyTotp(dto, ip, userAgent);
 
-    this.setAuthCookies(res, result.accessToken, result.refreshToken);
-    return { success: true, admin: result.admin };
+    const csrfToken = this.setAuthCookies(
+      res,
+      result.accessToken,
+      result.refreshToken,
+    );
+    return { success: true, admin: result.admin, csrfToken };
   }
 
   @Post('refresh')
@@ -137,18 +116,40 @@ export class AdminAuthController {
         ip,
         userAgent,
       );
-      this.setAuthCookies(res, result.accessToken, result.refreshToken);
-      return { success: true };
+      const csrfToken = this.setAuthCookies(
+        res,
+        result.accessToken,
+        result.refreshToken,
+      );
+      // Rotated with the access token, so the client must take the new value —
+      // the old one stops matching the cookie the moment this responds.
+      return { success: true, csrfToken };
     } catch (err) {
       this.clearAuthCookies(res);
       throw err;
     }
   }
 
+  /**
+   * Also echoes the session's current CSRF token.
+   *
+   * The admin app holds the token in memory, which a page reload discards. This
+   * is the route it already calls on boot to restore the session, so returning
+   * the token here is what lets a refreshed tab keep performing mutations
+   * instead of silently failing every one of them until the next sign-in.
+   *
+   * Safe to return: the route is behind `AdminJwtGuard`, so it requires the
+   * session cookie, and CORS stops a cross-site page from reading the response.
+   * An attacker who could read this could already read the session itself.
+   */
   @UseGuards(AdminJwtGuard)
   @Get('me')
-  async getProfile(@Req() req: AdminRequest) {
-    return { success: true, admin: req.admin };
+  getProfile(@Req() req: AdminRequest) {
+    return {
+      success: true,
+      admin: req.admin,
+      csrfToken: req.cookies?.admin_csrf ?? null,
+    };
   }
 
   @UseGuards(AdminJwtGuard)
