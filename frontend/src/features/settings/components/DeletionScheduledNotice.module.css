@@ -1,0 +1,127 @@
+/* ── "Scheduled for deletion" confirmation ──
+   Full-viewport rather than a dialog over the settings page: the account is no
+   longer usable, and leaving the app visible behind it would invite the user to
+   keep clicking things that are all about to be refused. */
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 2200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: max(1.5rem, env(safe-area-inset-top))
+           max(1.25rem, env(safe-area-inset-right))
+           max(1.5rem, env(safe-area-inset-bottom))
+           max(1.25rem, env(safe-area-inset-left));
+  overflow-y: auto;
+  background: var(--color-bg-main, #f4f6fb);
+  box-sizing: border-box;
+}
+
+.card {
+  width: 100%;
+  max-width: 480px;
+  margin: auto;
+  padding: 2rem;
+  box-sizing: border-box;
+  text-align: center;
+  background: var(--color-bg-white, #ffffff);
+  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
+  border-radius: var(--radius-xl, 20px);
+  box-shadow: var(--shadow-md, 0 4px 16px rgba(15, 23, 42, 0.06));
+}
+
+.iconBadge {
+  width: 56px;
+  height: 56px;
+  margin: 0 auto 1.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: var(--color-danger, #ef4444);
+  background: var(--color-danger-tint, rgba(239, 68, 68, 0.1));
+}
+
+.title {
+  margin: 0 0 0.5rem;
+  font-size: 1.3rem;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--color-text-main, #0f172a);
+}
+
+.body {
+  margin: 0 0 1.5rem;
+  font-size: 0.95rem;
+  line-height: 1.6;
+  color: var(--color-text-light, #64748b);
+}
+
+.deadline {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-bottom: 1.25rem;
+  padding: 1rem;
+  text-align: left;
+  border-radius: var(--radius-md, 12px);
+  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
+  background: var(--color-bg-soft, #f8fafc);
+}
+
+.deadlineLabel {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--color-text-light, #64748b);
+}
+
+.deadlineDate {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--color-text-main, #0f172a);
+  overflow-wrap: anywhere;
+}
+
+.countdown {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  margin: 0 0 1.25rem;
+  font-size: 0.88rem;
+  color: var(--color-text-light, #64748b);
+}
+
+.primaryBtn {
+  width: 100%;
+  min-height: 48px;
+  padding: 0.8rem 1.25rem;
+  font-size: 0.92rem;
+  font-weight: 600;
+  border: none;
+  border-radius: var(--radius-md, 12px);
+  color: #ffffff;
+  background: var(--color-primary, #2563eb);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.primaryBtn:hover {
+  background: var(--color-primary-hover, #1d4ed8);
+}
+
+.primaryBtn:focus-visible {
+  outline: 2px solid var(--color-primary, #2563eb);
+  outline-offset: 2px;
+}
+
+@media (max-width: 480px) {
+  .card {
+    padding: 1.5rem 1.15rem;
+    border-radius: var(--radius-lg, 16px);
+  }
+  .title { font-size: 1.15rem; }
+}

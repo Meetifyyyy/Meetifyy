@@ -128,6 +128,9 @@ export default function ChatInputArea({
     // Enter handling calls straight into this, so a composer that becomes
     // unavailable between keystroke and submit must still refuse.
     if (!text || disabled || conversation?.blocked || conversation?.isBlockedByMe || conversation?.isBlockedByThem) return;
+    // Belt to the overlay's braces: the overlay replaces the composer, but a
+    // queued draft or an offline replay can still reach this handler.
+    if (conversation?.targetUserUnavailable || conversation?.targetUser?.isDeleted) return;
 
     if (stopTypingNow) stopTypingNow();
 
@@ -214,6 +217,19 @@ export default function ChatInputArea({
                   Join Group
                 </button>
               )}
+            </div>
+          );
+        }
+
+        // A deleted partner is checked before the block states: it is the
+        // stronger and more permanent condition, and unlike a block it can
+        // never be lifted, so offering an Unblock affordance underneath it
+        // would be misleading. The server refuses the send either way — this
+        // notice exists so the person understands why, not to enforce it.
+        if (conversation?.targetUserUnavailable || conversation?.targetUser?.isDeleted) {
+          return (
+            <div className={styles.msgBlockedInputOverlay}>
+              <span>This user is no longer available.</span>
             </div>
           );
         }

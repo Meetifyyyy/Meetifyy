@@ -28,7 +28,13 @@ export default function DMChatArea({
 
   // Mutual: the composer is disabled whichever side placed the block.
   const isBlocked = Boolean(
-    conversation?.isBlockedByMe || conversation?.isBlockedByThem || conversation?.blocked,
+    conversation?.isBlockedByMe ||
+    conversation?.isBlockedByThem ||
+    conversation?.blocked ||
+    // A deleted partner closes the thread for writes the same way a block
+    // does; the history stays readable, which is the whole point.
+    conversation?.targetUserUnavailable ||
+    conversation?.targetUser?.isDeleted,
   );
 
   // Messaging requires BOTH people to be verified. The conversation itself
