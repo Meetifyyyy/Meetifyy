@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
+import { selectableUsers } from '@shared/lib/conversationTargets';
 import { createPortal } from 'react-dom';
 import { useQuery } from '@tanstack/react-query';
 import { usersApi, groupApi, getMediaUrl } from '@shared/api/apiClient';
@@ -148,7 +149,12 @@ export default function InviteModal({ isOpen, onClose, group }) {
     queryKey: ['all-users-for-invite', searchTerm],
     queryFn: async () => {
       const list = await usersApi.getConnections(searchTerm, 50).catch(() => []);
-      return (list || []).filter(u => u && u.id && String(u.id) !== String(currentUser?.id));
+      // `selectableUsers` drops deleted accounts. The server already excludes
+      // them; this covers the window where a cached response (20s server-side,
+      // 30s here) still carries somebody who has since deleted.
+      return selectableUsers(list).filter(
+        (u) => String(u.id) !== String(currentUser?.id)
+      );
     },
     enabled: Boolean(isOpen),
     staleTime: 30_000,

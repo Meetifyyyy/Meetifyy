@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { sendableConversations } from '@shared/lib/conversationTargets';
 import { createPortal } from 'react-dom';
 
 import ShareModalAvatar from '@shared/components/avatar/ShareModalAvatar';
@@ -150,8 +151,12 @@ export default function SharePostModal({ isOpen, onClose, post, author }) {
   // Filter conversations
   const filteredConversations = useMemo(() => {
     if (!conversations) return [];
-    
-    const sorted = [...conversations].sort((a, b) => {
+
+    // A thread whose counterpart has deleted their account stays in the inbox
+    // — the history belongs to both people — but must not be offered here.
+    // The server refuses a send to it, so listing it presents a destination
+    // that can only end in an error, under the name "Deleted User".
+    const sorted = [...sendableConversations(conversations)].sort((a, b) => {
       return (b.createdAt || 0) - (a.createdAt || 0);
     });
 
