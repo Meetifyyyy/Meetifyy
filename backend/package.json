@@ -27,6 +27,8 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "render:templates": "ts-node --project tsconfig.render.json --transpile-only render-templates.ts",
+    "render:templates:dev": "APP_ENV=development npm run render:templates",
+    "render:templates:prod": "APP_ENV=production NODE_ENV=development npm run render:templates",
     "email:test-all": "ts-node --project tsconfig.render.json --transpile-only send-all-mailpit.ts"
   },
   "prisma": {
