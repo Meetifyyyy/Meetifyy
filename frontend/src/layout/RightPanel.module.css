@@ -26,12 +26,7 @@
 
 
 .panelTitle {
-  font-family: var(--font-family-sans);
-  font-weight: 700;
-  font-size: 0.75rem;
-  color: var(--color-text-light);
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
+  composes: type-label from global;
   margin-bottom: 0.85rem;
   padding-left: 0.35rem;
 }
