@@ -189,6 +189,7 @@ $RECYCLE.BIN/
 .agents/
 .dual-graph/
 AGENTS.md
+CLAUDE.md
 GEMINI.md
 skills-lock.json
 REMEDIATION_PLAN.md
