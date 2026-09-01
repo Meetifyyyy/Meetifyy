@@ -11,6 +11,8 @@ import { UAParser } from 'ua-parser-js';
 import { AuthService } from './auth.service';
 import { EmailService } from '../email/email.service';
 import { JwtGuard } from '../common/guards/jwt.guard';
+import { AllowSuspended } from '../common/decorators/allow-suspended.decorator';
+import { AllowPendingDeletion } from '../common/decorators/allow-pending-deletion.decorator';
 import { AuthRateLimitGuard } from '../common/guards/auth-ratelimit.guard';
 import { LoginRateLimitGuard } from '../common/guards/login-ratelimit.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -32,8 +34,27 @@ export class AuthController {
     private readonly emailService: EmailService,
   ) {}
 
+  /**
+   * The client's own profile, and the route that tells it which screen to show.
+   *
+   * Reachable in BOTH restricted states, and that is load-bearing rather than a
+   * convenience. `accountStatus` travels in this payload, and it is the only
+   * thing the suspension and deletion gates key off — so refusing this route
+   * for a restricted account means the client never learns it is restricted.
+   * The observed failure: a user signed in during their 30-day deletion window,
+   * sync came back 403, `currentUser` stayed null, and the recovery screen
+   * never mounted. They were left signed in to an app with no profile and no
+   * explanation, unable to reach the Recover button at all. Suspended accounts
+   * had the same fault for the same reason.
+   *
+   * Widening the gate by exactly this one route is safe: it returns the
+   * caller's own profile and nothing else, which is precisely what the screen
+   * that refuses them needs in order to render.
+   */
   @Post('sync')
   @UseGuards(JwtGuard)
+  @AllowSuspended()
+  @AllowPendingDeletion()
   async syncProfile(@CurrentUser() user: AuthenticatedUser) {
     const syncedUser = await this.authService.syncProfile(user);
     return {

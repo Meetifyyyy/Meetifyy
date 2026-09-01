@@ -136,6 +136,17 @@ export default function AccountDeletionGate({ children }) {
     await refreshStatus();
   };
 
+  // Formatted from the server's `scheduledPurgeAt`. Never computed here: a
+  // device with a skewed clock may render a wrong countdown, but the date it
+  // states must be the one the server will actually act on.
+  const longDeletionDate = status?.scheduledPurgeAt
+    ? new Date(status.scheduledPurgeAt).toLocaleDateString(undefined, {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+      })
+    : null;
+
   if (!looksPending || !checked) {
     return (
       <>
@@ -169,9 +180,24 @@ export default function AccountDeletionGate({ children }) {
         <h1 className={styles.title}>Your account is scheduled for deletion</h1>
 
         <p className={styles.body}>
-          We&apos;ve hidden your profile, posts and activities from everyone
-          else. Nothing has been erased yet — you can bring it all back at any
-          point before the date below.
+          {longDeletionDate ? (
+            <>
+              Your account will be permanently deleted on{' '}
+              <strong className={styles.inlineDate}>{longDeletionDate}</strong>.
+            </>
+          ) : (
+            // Only reachable if the server reported a pending deletion without
+            // a schedule, which should not happen — but a sentence ending in a
+            // bare full stop would be worse than a general one.
+            <>Your account is scheduled to be permanently deleted.</>
+          )}
+        </p>
+
+        <p className={styles.body}>
+          Nothing has been erased yet — your profile, posts and activities are
+          simply hidden from everyone else. You can leave the deletion in place
+          and let it run, or recover your account now and pick up where you left
+          off.
         </p>
 
         <DeadlinePanel status={status} />
