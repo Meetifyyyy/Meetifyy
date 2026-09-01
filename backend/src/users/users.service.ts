@@ -28,6 +28,10 @@ import { validateBirthday } from '../common/utils/birthday-validation.util';
 import { AcademicsService } from '../academics/academics.service';
 import { MediaCleanupService } from '../uploads/media-cleanup.service';
 import { JwtGuard } from '../common/guards/jwt.guard';
+import {
+  isReservedUsername,
+  RESERVED_USERNAME_MESSAGE,
+} from '../common/users/reserved-usernames';
 
 @Injectable()
 export class UsersService {
@@ -911,6 +915,14 @@ export class UsersService {
         throw new BadRequestException(
           'Username must be 3-30 characters long and contain only lowercase letters, numbers, underscores, and dots.',
         );
+      }
+
+      // Enforced here as well as at signup. It was checked only at signup, so
+      // a user could register an ordinary handle and then rename themselves to
+      // `admin`, `support` or `deleted` — the list existed but this path
+      // walked straight past it.
+      if (isReservedUsername(trimmedUsername)) {
+        throw new BadRequestException(RESERVED_USERNAME_MESSAGE);
       }
 
       // Check if username is already taken by someone else

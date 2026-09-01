@@ -10,6 +10,10 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { resolveSignInEligibility } from './sign-in-eligibility';
+import {
+  isReservedUsername,
+  RESERVED_USERNAME_MESSAGE,
+} from '../common/users/reserved-usernames';
 import { SupabaseService } from '../supabase/supabase.service';
 import { DefaultAssetsService } from '../uploads/default-assets.service';
 import { DomainValidatorService } from '../common/services/domain-validator.service';
@@ -737,39 +741,10 @@ export class AuthService {
       };
     }
 
-    const reserved = new Set([
-      'admin',
-      'administrator',
-      'meetify',
-      'meetifyy',
-      'help',
-      'support',
-      'root',
-      'api',
-      'auth',
-      'settings',
-      'home',
-      'campus',
-      'crew',
-      'profile',
-      'null',
-      'undefined',
-      'login',
-      'signup',
-      'onboarding',
-      'terms',
-      'privacy',
-      'about',
-      'contact',
-      'official',
-      'system',
-      'explore',
-      'feed',
-      'search',
-    ]);
-
-    if (reserved.has(trimmed)) {
-      return { available: false, reason: 'Username not available' };
+    // Shared with the profile-rename path, which used to skip this check
+    // entirely — see common/users/reserved-usernames.ts.
+    if (isReservedUsername(trimmed)) {
+      return { available: false, reason: RESERVED_USERNAME_MESSAGE };
     }
 
     const existing = await this.prisma.user.findUnique({
