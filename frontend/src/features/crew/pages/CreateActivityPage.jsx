@@ -22,8 +22,6 @@ import {
   ChevronRight,
   X,
   Search,
-  NotificationOff,
-  NotificationOn,
   ChevronsUpDown,
   Eye,
   Link,
@@ -52,14 +50,6 @@ function buildTimeSlots() {
 }
 const TIME_SLOTS = buildTimeSlots();
 
-const REMINDER_OPTIONS = [
-  { value: 'None', label: 'None' },
-  { value: '5 min', label: '5 min before' },
-  { value: '15 min', label: '15 min before' },
-  { value: '30 min', label: '30 min before' },
-  { value: '1 hour', label: '1 hour before' },
-  { value: '1 day', label: '1 day before' },
-];
 
 /**
  * The three activity visibility modes, in the order they are offered.
@@ -853,7 +843,6 @@ export default function CreateActivityPage() {
 
   const [showImageSearch, setShowImageSearch] = useState(false);
   const [showDT, setShowDT] = useState(false);
-  const [showReminder, setShowReminder] = useState(false);
   const [showCapacity, setShowCapacity] = useState(false);
   const [showWhoCanJoin, setShowWhoCanJoin] = useState(false);
   // Starts false: with nothing pre-selected there is no value to show on the
@@ -863,7 +852,6 @@ export default function CreateActivityPage() {
   const [nowTs, setNowTs] = useState(() => Date.now());
   const [publishHint, setPublishHint] = useState('');
   const creationPromiseRef = useRef(null); // holds the in-flight create promise
-  const reminderRef = useRef(null);
   const whoCanJoinRef = useRef(null);
   // The College mode restricts an activity to the host's own college, so it is
   // only offered to users who actually have one — otherwise the activity would
@@ -892,7 +880,6 @@ export default function CreateActivityPage() {
     ...EMPTY_DATE_TIME,
     location: '',
     slotsNeeded: 999,
-    reminder: 'None',
     // 'No one' is the retired label for 'Private' — a persisted draft or an
     // older prefill can still carry it, so it is normalised on the way in.
     whoCanJoin: (prefill.whoCanJoin === 'No one' ? 'Private' : prefill.whoCanJoin)
@@ -986,18 +973,6 @@ export default function CreateActivityPage() {
     return () => clearTimeout(id);
   }, [publishHint]);
 
-  // close reminder dropdown on outside click
-  useEffect(() => {
-    if (!showReminder) return;
-    const handler = (e) => { if (reminderRef.current && !reminderRef.current.contains(e.target)) setShowReminder(false); };
-    const onKey = (e) => { if (e.key === 'Escape') setShowReminder(false); };
-    document.addEventListener('mousedown', handler);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('mousedown', handler);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [showReminder]);
 
   // close who can join dropdown on outside click
   useEffect(() => {
@@ -1447,40 +1422,6 @@ export default function CreateActivityPage() {
               />
             </div>
 
-            {/* Reminder Row */}
-            <div className={styles.reminderWrap} ref={reminderRef}>
-              <button 
-                type="button"
-                className={styles.reminderRow} 
-                onClick={() => setShowReminder(!showReminder)}
-                aria-haspopup="listbox"
-                aria-expanded={showReminder}
-              >
-                <div className={styles.rowLeft}>
-                  {formData.reminder === 'None' ? (
-                    <NotificationOff size={16} className={styles.rowIcon} />
-                  ) : (
-                    <NotificationOn size={16} className={styles.rowIcon} />
-                  )}
-                  <span className={styles.rowTitle}>Reminder</span>
-                </div>
-                <div className={styles.rowRight}>
-                  <span>{formData.reminder === 'None' ? 'None' : formData.reminder}</span>
-                  <ChevronsUpDown size={14} className={styles.selectIcon} />
-                </div>
-              </button>
-              {showReminder && (
-                <div className={styles.reminderDrop} role="listbox" aria-label="Reminder">
-                  {REMINDER_OPTIONS.map(o => (
-                    <button key={o.value} type="button" role="option"
-                      aria-selected={formData.reminder === o.value}
-                      className={`${styles.reminderOpt} ${formData.reminder === o.value ? styles.reminderOptOn : ''}`}
-                      onClick={() => { set({ reminder: o.value }); setShowReminder(false); }}
-                    >{o.label}</button>
-                  ))}
-                </div>
-              )}
-            </div>
 
             {/* Share to University */}
             <div style={{ position: 'relative', width: '100%' }} ref={whoCanJoinRef}>
