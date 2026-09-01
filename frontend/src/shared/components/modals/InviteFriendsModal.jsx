@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { selectableUsers } from '@shared/lib/conversationTargets';
 import { createPortal } from 'react-dom';
 import { useQuery } from '@tanstack/react-query';
 import { usersApi, activitiesApi } from '@shared/api/apiClient';
@@ -35,7 +36,9 @@ export default function InviteFriendsModal({
   const { data: friendsList = [], isLoading: isLoadingFriends } = useQuery({
     queryKey: ['user-connections-candidate', searchQuery],
     queryFn: async () => {
-      const users = await usersApi.getConnections(searchQuery, 50).catch(() => []);
+      const users = selectableUsers(
+        await usersApi.getConnections(searchQuery, 50).catch(() => [])
+      );
       return (users || []).filter(u => u && u.id && String(u.id) !== String(currentUser?.id));
     },
     staleTime: 30_000,

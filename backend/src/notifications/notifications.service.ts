@@ -19,6 +19,26 @@ import Redis from 'ioredis';
 
 @Injectable()
 export class NotificationsService implements OnModuleInit {
+  /**
+   * Notifications worth showing.
+   *
+   * Nothing from an account that no longer exists. Unlike a chat message or a
+   * comment — which belong to a conversation the other person still owns — a
+   * notification has no standalone value once its actor is gone: "Deleted User
+   * liked your post" is noise, and during the 30-day window it is a reminder of
+   * somebody every other surface has stopped showing.
+   *
+   * System notifications carry a null actor and are kept, which is what the
+   * first branch preserves.
+   *
+   * Shared between the list and the unread count deliberately. Those two have
+   * to agree exactly or the bell shows a number the list can never clear — a
+   * failure this file has already been bitten by once, over the MESSAGE type.
+   */
+  private static readonly AVAILABLE_ACTOR: Prisma.NotificationWhereInput = {
+    OR: [{ actorId: null }, { actor: { deletedAt: null } }],
+  };
+
   private readonly logger = new Logger('NOTIF');
   private redis: Redis | null = null;
 
@@ -466,6 +486,7 @@ export class NotificationsService implements OnModuleInit {
       where: {
         recipientId: userId,
         deletedAt: null,
+        ...NotificationsService.AVAILABLE_ACTOR,
         // MESSAGE has its own unread surface and is never listed here, so an
         // explicit `type` still cannot be used to pull one into this feed.
         ...(type && type !== NotificationType.MESSAGE
@@ -634,11 +655,14 @@ export class NotificationsService implements OnModuleInit {
         recipientId: userId,
         readAt: null,
         deletedAt: null,
-        // Must mirror getNotifications()'s type filter exactly — MESSAGE is
+        // Must mirror getNotifications()'s filters exactly — MESSAGE is
         // surfaced through its own dedicated flow (the live chat unread
         // badge), so counting it here would show a bell badge the
-        // notifications list can never clear.
+        // notifications list can never clear. The same applies to the
+        // deleted-actor filter below, which is why both are shared constants
+        // rather than two hand-copied clauses.
         type: { notIn: [NotificationType.MESSAGE] },
+        ...NotificationsService.AVAILABLE_ACTOR,
       },
     });
 

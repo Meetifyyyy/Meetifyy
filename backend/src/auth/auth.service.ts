@@ -220,7 +220,14 @@ export class AuthService {
         ) AS "activityBookmarkIds",
         (SELECT COUNT(*)::int 
          FROM "Notification" n 
-         WHERE n."recipientId" = u."id" AND n."readAt" IS NULL AND n."deletedAt" IS NULL AND n."type" != 'MESSAGE'::"NotificationType") AS "unreadNotifCount"
+         WHERE n."recipientId" = u."id" AND n."readAt" IS NULL AND n."deletedAt" IS NULL AND n."type" != 'MESSAGE'::"NotificationType"
+           -- Mirrors NotificationsService.AVAILABLE_ACTOR. This count feeds the
+           -- bell badge, and the list it is counting excludes notifications
+           -- whose actor has deleted their account — so without the same clause
+           -- the badge shows a number the list can never clear.
+           AND (n."actorId" IS NULL OR EXISTS (
+             SELECT 1 FROM "User" au WHERE au."id" = n."actorId" AND au."deletedAt" IS NULL
+           ))) AS "unreadNotifCount"
       FROM "User" u
       LEFT JOIN "College" c ON u."collegeId" = c."id"
       LEFT JOIN "UserSettings" s ON s."userId" = u."id"
