@@ -441,11 +441,22 @@ export class UploadsController {
 
     const cwd = process.cwd();
 
-    // Check multiple potential uploads locations on local disk
-    const pathsToCheck = [
-      path.join(cwd, 'uploads', key),
-      path.join(cwd, 'backend', 'uploads', key),
+    // Check multiple potential uploads locations on local disk.
+    //
+    // `isSafeStorageKey` already constrains the key to a single `folder/name`
+    // segment, so it cannot climb past the uploads directory. The containment
+    // check below is belt-and-braces: it keeps that guarantee a property of
+    // this code rather than of a regex several files away, so loosening that
+    // pattern later cannot silently turn into a path traversal here.
+    const candidateRoots = [
+      path.resolve(cwd, 'uploads'),
+      path.resolve(cwd, 'backend', 'uploads'),
     ];
+
+    const pathsToCheck = candidateRoots
+      .map((root) => ({ root, full: path.resolve(root, key) }))
+      .filter(({ root, full }) => full.startsWith(`${root}${path.sep}`))
+      .map(({ full }) => full);
 
     for (const localFilePath of pathsToCheck) {
       if (fs.existsSync(localFilePath)) {

@@ -21,6 +21,7 @@ import { RedisService } from '../redis/redis.service';
 import { LruCache } from '../common/utils/lru-cache.util';
 import { validateBirthday } from '../common/utils/birthday-validation.util';
 import type { AuthenticatedUser } from '../common/types/authenticated-request';
+import { randomInt } from 'crypto';
 
 /**
  * Bounded LRU cache for auth sync results.
@@ -581,7 +582,10 @@ export class AuthService {
     // Resolve username conflict (if another user has the same username but a different email)
     let finalUsername = username;
     if (existingUserByUsername && existingUserByUsername.id !== user.id) {
-      finalUsername = `${username}_${Math.floor(100 + Math.random() * 900)}`;
+      // randomInt, not Math.random: a predictable suffix lets an attacker who
+      // knows a colliding username guess the handle the next signup will be
+      // given, which is enough to squat it first.
+      finalUsername = `${username}_${randomInt(100, 1000)}`;
     }
 
     const userBirthday = metaString(sbUser.user_metadata?.birthday);

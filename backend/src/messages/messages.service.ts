@@ -33,6 +33,12 @@ import {
   presentUserAvatar,
   DELETED_USER_USERNAME,
 } from '../common/users/deleted-user';
+import {
+  asBoolean,
+  asNumberOrNull,
+  asString,
+  asStringOrNull,
+} from '../common/utils/coerce.util';
 
 /** The questions MessagesService asks the Instant Match domain. Kept small so
  *  the coupling between the two stays visible: may this user write into this
@@ -597,18 +603,21 @@ export class MessagesService
           type,
           replyToId: validatedReplyToId,
           payload: {
-            text: payload.text || '',
-            mediaUrl: payload.mediaUrl || null,
-            mediaType: payload.mediaType || null,
+            // Coerced, not `|| ''`: `payload` is unvalidated client JSON, so a
+            // non-string here would be written straight into the Json column
+            // and later break every consumer that assumes a string.
+            text: asString(payload.text),
+            mediaUrl: asStringOrNull(payload.mediaUrl),
+            mediaType: asStringOrNull(payload.mediaType),
             // Lightweight media metadata for instant, layout-stable recipient rendering.
-            thumbnailUrl: payload.thumbnailUrl || null,
-            width: payload.width || null,
-            height: payload.height || null,
-            duration: payload.duration || null,
+            thumbnailUrl: asStringOrNull(payload.thumbnailUrl),
+            width: asNumberOrNull(payload.width),
+            height: asNumberOrNull(payload.height),
+            duration: asNumberOrNull(payload.duration),
             mentions: sanitizedMentions,
             inviteData: initialInviteData,
-            isForwarded: payload.isForwarded || false,
-            forwardedFromMessageId: payload.forwardedFromMessageId || null,
+            isForwarded: asBoolean(payload.isForwarded),
+            forwardedFromMessageId: asStringOrNull(payload.forwardedFromMessageId),
             tempId: clientMsgId || null,
             clientId: clientMsgId || null,
           } as any,
