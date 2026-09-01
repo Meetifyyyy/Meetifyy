@@ -197,7 +197,27 @@ jobs:
             elif [ "${STATUS}" = "Failed" ]; then
               echo "CRITICAL: PRODUCTION migration FAILED."
               echo "The running production application has NOT been updated."
-              echo "Investigate the migration logs before retrying."
+              echo ""
+              echo "───────── migration container logs ─────────"
+              # Printed BEFORE the job is deleted. This previously deleted the
+              # job first, which destroyed the only copy of the error: Container
+              # Apps job console output does not reliably reach Log Analytics,
+              # so a failed migration left nothing to diagnose from.
+              EXEC_NAME=$(az containerapp job execution list \
+                --name "${JOB_NAME}" \
+                --resource-group "${RESOURCE_GROUP}" \
+                --query '[0].name' --output tsv 2>/dev/null || echo "")
+              if [ -n "${EXEC_NAME}" ]; then
+                az containerapp job logs show \
+                  --name "${JOB_NAME}" \
+                  --resource-group "${RESOURCE_GROUP}" \
+                  --container "${JOB_NAME}" \
+                  --job-execution-name "${EXEC_NAME}" \
+                  --tail 200 2>&1 || echo "(could not retrieve container logs)"
+              else
+                echo "(no job execution found to read logs from)"
+              fi
+              echo "────────────────────────────────────────────"
               az containerapp job delete --name "${JOB_NAME}" \
                 --resource-group "${RESOURCE_GROUP}" --yes || true
               exit 1
