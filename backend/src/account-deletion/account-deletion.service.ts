@@ -8,7 +8,10 @@ import {
 } from '@nestjs/common';
 import { UserOtpPurpose } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { UserOtpService } from '../otp/user-otp.service';
+import {
+  UserOtpService,
+  type OtpChallengeState,
+} from '../otp/user-otp.service';
 import { ACCOUNT_MAILER, type AccountMailer } from '../otp/account-mailer';
 import { RedisService } from '../redis/redis.service';
 import { PresenceService } from '../presence/presence.service';
@@ -142,6 +145,20 @@ export class AccountDeletionService {
       );
     }
 
+    // A live code already in flight is RESUMED rather than re-sent.
+    //
+    // Without this, refreshing the page during the code step — or opening a
+    // second tab, or double-clicking Delete — hits the resend cooldown and
+    // strands the user on an error for a minute, holding a perfectly good code
+    // in their inbox that the UI has forgotten about. Returning the existing
+    // challenge sends no new mail and reveals nothing: it is the caller's own
+    // account, and the code itself never leaves the mail.
+    const live = await this.otpService.getChallengeState(
+      userId,
+      UserOtpPurpose.ACCOUNT_DELETION,
+    );
+    if (live) return this.resumeChallenge(user.email, live);
+
     const { code, expiresAt } = await this.otpService.issue(
       userId,
       UserOtpPurpose.ACCOUNT_DELETION,
@@ -207,6 +224,14 @@ export class AccountDeletionService {
       });
     }
 
+    // Same resume behaviour as deletion: a refresh of the recovery screen must
+    // not cost the user a minute of cooldown for a code they already have.
+    const live = await this.otpService.getChallengeState(
+      userId,
+      UserOtpPurpose.ACCOUNT_RECOVERY,
+    );
+    if (live) return this.resumeChallenge(user.email, live);
+
     const { code, expiresAt } = await this.otpService.issue(
       userId,
       UserOtpPurpose.ACCOUNT_RECOVERY,
@@ -234,6 +259,26 @@ export class AccountDeletionService {
    * recognise which mailbox to check; showing the full address adds nothing
    * they do not know and puts it on screen for anyone standing nearby.
    */
+  /**
+   * Reports an already-live challenge, without sending anything.
+   *
+   * The resend deadline comes from the stored row rather than being recomputed,
+   * so a resumed screen counts down to the same instant the server will
+   * actually accept a resend at — a freshly computed one would let a refresh
+   * quietly reset the cooldown.
+   */
+  private resumeChallenge(
+    email: string,
+    live: OtpChallengeState,
+  ): OtpChallengeResponse {
+    return {
+      otpRequired: true,
+      maskedEmail: maskEmail(email),
+      expiresAt: live.expiresAt,
+      resendAvailableAt: live.resendAvailableAt,
+    };
+  }
+
   private challengeResponse(
     email: string,
     expiresAt: Date,

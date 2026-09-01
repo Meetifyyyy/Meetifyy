@@ -78,6 +78,8 @@ describe('AccountDeletionService — 30-day recovery window', () => {
       verify: jest.fn(async () => {}),
       invalidate: jest.fn(async () => {}),
       invalidateAll: jest.fn(async () => {}),
+      // No live challenge by default, so `issue` is the normal path.
+      getChallengeState: jest.fn(async () => null),
     };
     emailService = {
       sendAccountDeletionOtpEmail: jest.fn(async () => {}),
@@ -246,6 +248,41 @@ describe('AccountDeletionService — 30-day recovery window', () => {
 
       expect(long.maskedEmail).toBe('a••••@example.edu');
       expect(short.maskedEmail).toBe('j••••@example.edu');
+    });
+
+    it('resumes a live challenge instead of re-sending or erroring', async () => {
+      // A refresh during the code step, a second tab, or a double-click. The
+      // old behaviour hit the resend cooldown and stranded the user on an error
+      // for a minute while a perfectly good code sat in their inbox.
+      otpService.getChallengeState.mockResolvedValueOnce({
+        expiresAt: '2026-09-01T10:10:00.000Z',
+        resendAvailableAt: '2026-09-01T10:01:00.000Z',
+        attemptsRemaining: 5,
+      });
+
+      const res = await service.requestDeletionOtp(USER_ID);
+
+      expect(res).toMatchObject({
+        otpRequired: true,
+        expiresAt: '2026-09-01T10:10:00.000Z',
+        // Taken from the stored row, not recomputed — otherwise a refresh
+        // would quietly reset the cooldown.
+        resendAvailableAt: '2026-09-01T10:01:00.000Z',
+      });
+      expect(otpService.issue).not.toHaveBeenCalled();
+      expect(emailService.sendAccountDeletionOtpEmail).not.toHaveBeenCalled();
+    });
+
+    it('resumes a live recovery challenge the same way', async () => {
+      await service.requestDeletion(USER_ID);
+      otpService.getChallengeState.mockResolvedValueOnce({
+        expiresAt: '2026-09-01T10:10:00.000Z',
+        resendAvailableAt: '2026-09-01T10:01:00.000Z',
+        attemptsRemaining: 3,
+      });
+
+      await service.requestRecoveryOtp(USER_ID);
+      expect(emailService.sendAccountRecoveryOtpEmail).not.toHaveBeenCalled();
     });
 
     it('confirming with a valid code schedules the deletion', async () => {
