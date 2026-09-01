@@ -51,6 +51,11 @@ export class AuditInterceptor implements NestInterceptor {
         else if (url.includes('/admin/content')) targetType = 'CONTENT';
         else if (url.includes('/admin/verification'))
           targetType = 'VERIFICATION';
+        // Checked before the generic '/admin/users' branch would ever see it,
+        // and given its own type so a restore or a forced purge is
+        // distinguishable in the audit log from an ordinary user edit.
+        else if (url.includes('/admin/account-deletion'))
+          targetType = 'ACCOUNT_DELETION';
 
         if (
           !targetId &&

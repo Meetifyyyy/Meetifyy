@@ -17,6 +17,7 @@ import { SupportPage } from './pages/SupportPage';
 import { VerificationPage } from './pages/VerificationPage';
 import { AuditPage } from './pages/AuditPage';
 import { SessionsPage } from './pages/SessionsPage';
+import { AccountDeletionPage } from './pages/AccountDeletionPage';
 
 const queryClient = new QueryClient({
   /**
@@ -120,6 +121,7 @@ export default function App() {
               <Route path="/verification" element={<VerificationPage />} />
               <Route path="/audit" element={<AuditPage />} />
               <Route path="/sessions" element={<SessionsPage />} />
+              <Route path="/account-deletion" element={<AccountDeletionPage />} />
               <Route path="*" element={<Navigate to="/dashboard" replace />} />
             </Route>
           </Routes>
