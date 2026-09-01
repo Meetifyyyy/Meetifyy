@@ -215,5 +215,8 @@ jobs:
             fi
             sleep 10
           done
-          echo "WARNING: DEV health check did not return 200 within 2 minutes."
+          echo "DEV health check did not return 200 within 2 minutes."
           echo "Check Azure portal → meetifyy-api-dev logs."
+          # Fail the job: the previous version ended on an `echo`, so the step
+          # exited 0 and an unhealthy deploy still reported green.
+          exit 1
