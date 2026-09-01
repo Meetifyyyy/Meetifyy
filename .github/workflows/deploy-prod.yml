@@ -153,7 +153,13 @@ jobs:
           # exists — setup-azure-prod.sh granted it once, permanently. Granting
           # CI `roleAssignments/write` purely to silence this would hand the
           # pipeline the ability to escalate its own permissions.
+          echo "NOTE: the next command prints Graph-API warnings and one"
+          echo "      AuthorizationFailed error. Both are expected — see above."
+          # --only-show-errors drops the ten Graph lookup warnings. The single
+          # AuthorizationFailed line still appears and cannot be suppressed
+          # without also hiding real errors; it is harmless, and the job runs.
           az containerapp job create \
+            --only-show-errors \
             --name "${JOB_NAME}" \
             --resource-group "${RESOURCE_GROUP}" \
             --environment "$(az containerapp show \
