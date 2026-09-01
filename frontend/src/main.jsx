@@ -1,4 +1,5 @@
 import { StrictMode } from 'react';
+import { clearStaleChunkMarker } from '@shared/lib/staleChunkRecovery';
 import { createRoot } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider } from './shared/context/AuthContext';
@@ -202,3 +203,8 @@ createRoot(document.getElementById('root')).render(
 
 
 
+
+// The app reached this point, so whatever stale chunk triggered a recovery
+// reload is resolved. Clearing the marker means a LATER deploy can recover in
+// the same tab instead of being suppressed by the cooldown from this one.
+clearStaleChunkMarker();

@@ -1,12 +1,21 @@
 import { Component, Fragment } from 'react';
 import CriticalErrorScreen from './ui/CriticalErrorScreen';
+import { recoverFromStaleChunk } from '@shared/lib/staleChunkRecovery';
 import RouteErrorScreen from './ui/RouteErrorScreen';
 
 /**
  * RouteErrorBoundary — wraps individual routes.
  * Shows a contained error within the page area only, leaving
- * the shell (header, sidebar) intact. Import failures are shown as normal
- * route errors; the application never wipes caches or reloads automatically.
+ * the shell (header, sidebar) intact. The application never wipes caches, and
+ * never reloads on an ordinary error.
+ *
+ * ONE exception, added deliberately: a lazy-import failure caused by a stale
+ * build. When a deploy lands, the old chunk filenames stop existing, so a tab
+ * that was already open requests a 404 and the route dies. For that error the
+ * retry button is useless — it re-requests the same missing URL — and only a
+ * fresh index.html can fix it. `recoverFromStaleChunk` reloads at most once per
+ * tab per minute; if the route still fails after that, the cause was not
+ * staleness and the error screen is shown as normal, so the tab cannot loop.
  */
 export class RouteErrorBoundary extends Component {
   constructor(props) {
@@ -37,6 +46,9 @@ export class RouteErrorBoundary extends Component {
 
   componentDidCatch(error, errorInfo) {
     console.error('[RouteErrorBoundary]', error, errorInfo);
+    // Returns true only when a reload has actually been started, in which case
+    // the page is on its way out and there is nothing more to do here.
+    recoverFromStaleChunk(error);
   }
 
   handleRetry = () => {
@@ -91,6 +103,10 @@ export default class ErrorBoundary extends Component {
 
   componentDidCatch(error, errorInfo) {
     console.error('[RootErrorBoundary]', error, errorInfo);
+    // Same recovery at the root: a stale chunk can just as easily take down a
+    // component the route boundaries do not wrap, and the outcome there is a
+    // blank app rather than a contained error.
+    recoverFromStaleChunk(error);
   }
 
   render() {
