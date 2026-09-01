@@ -250,7 +250,12 @@ jobs:
             fi
             sleep 10
           done
-          echo "WARNING: PRODUCTION health check did not return 200 within 3 minutes."
+          echo "PRODUCTION health check did not return 200 within 3 minutes."
           echo "Check Azure portal → meetifyy-api logs."
           echo "If the app is broken, roll back with:"
           echo "  az containerapp update --name ${CONTAINERAPP} --resource-group ${RESOURCE_GROUP} --image ${ACR}/meetifyy-api:<PREVIOUS_PROD_TAG>"
+          # Fail the job. Previously this branch only echoed a warning, so the
+          # last command was an `echo` and the step exited 0 — a deploy that
+          # never became healthy still reported green, which is precisely the
+          # case someone needs to be told about.
+          exit 1
