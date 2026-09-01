@@ -12,6 +12,7 @@ import { showToast } from '@shared/utils/toast';
 import { apiClient } from '@shared/api/apiClient';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
+import { useScrollLock } from '@shared/hooks/useScrollLock';
 import { useSmartNavigation } from '@shared/hooks/useSmartNavigation';
 import { validateDOB } from '@shared/utils/dateValidation';
 import { INTERESTS_BY_CATEGORY } from '@features/onboarding/constants/interestsData';
@@ -317,6 +318,7 @@ export default function SettingsRoute() {
   // Delete-account confirmation is a destructive dialog over the panel; Back
   // must cancel it, never navigate past it.
   useOverlayBack(showDeleteConfirm, () => setShowDeleteConfirm(false));
+  useScrollLock(showDeleteConfirm);
 
   useEffect(() => {
     let active = true;
@@ -1266,19 +1268,8 @@ export default function SettingsRoute() {
               <AlertCircle size={32} />
             </div>
             <h3 className={styles.modalTitle}>Delete Account</h3>
-            {/* The old copy here promised immediate permanent deletion, which
-                is no longer what happens and would have made the recovery
-                screen a nasty surprise. Deletion now starts a 30-day window in
-                which everything can still be brought back. */}
             <p className={styles.modalText}>
-              Your profile, posts and activities will be hidden from everyone
-              straight away. You have 30 days to sign back in and recover the
-              account — after that, everything is permanently deleted and
-              cannot be restored.
-            </p>
-            <p className={styles.modalText}>
-              We&apos;ll email you a 6-digit code to confirm it&apos;s you
-              before anything is scheduled.
+              Are you sure you want to delete your account?
             </p>
             <div className={styles.modalButtons}>
               <button 
@@ -1325,7 +1316,7 @@ export default function SettingsRoute() {
       {deletionChallenge && (
         <OtpDialog
           title="Confirm account deletion"
-          description="This is the last step before your account is scheduled for deletion."
+          description="To continue with the deletion process, you need to verify your email."
           maskedEmail={deletionChallenge.maskedEmail}
           submitLabel="Delete my account"
           tone="danger"

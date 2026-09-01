@@ -26,6 +26,32 @@ export default function ChatInputArea({
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const fileInputRef = useRef(null);
   const inputRef = useRef(null);
+  const emojiPickerRef = useRef(null);
+  const emojiBtnRef = useRef(null);
+
+  useEffect(() => {
+    if (!showEmojiPicker) return undefined;
+    const handleOutsideClick = (e) => {
+      if (
+        emojiPickerRef.current &&
+        !emojiPickerRef.current.contains(e.target) &&
+        !emojiBtnRef.current?.contains(e.target)
+      ) {
+        setShowEmojiPicker(false);
+      }
+    };
+    const handleEscape = (e) => {
+      if (e.key === 'Escape') {
+        setShowEmojiPicker(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [showEmojiPicker]);
 
   useEffect(() => {
     if (replyingTo) {
@@ -324,7 +350,12 @@ export default function ChatInputArea({
             />
 
             {showEmojiPicker && (
-              <div style={{ position: 'absolute', bottom: '100%', left: '1.25rem', marginBottom: '0.5rem', zIndex: 100 }}>
+              <div
+                ref={emojiPickerRef}
+                data-scroll-lock-ignore="true"
+                style={{ position: 'absolute', bottom: '100%', left: '1.25rem', marginBottom: '0.5rem', zIndex: 100 }}
+                onWheel={(e) => e.stopPropagation()}
+              >
                 <LazyEmojiPicker
                   onEmojiSelect={(emoji) => {
                     if (inputRef.current?.insertTextAtCursor) {
@@ -336,14 +367,19 @@ export default function ChatInputArea({
                       });
                       inputRef.current?.focus();
                     }
-                    setShowEmojiPicker(false);
                   }}
                 />
               </div>
             )}
 
             <div className={styles.leftActions}>
-              <button type="button" className={styles.msgEmojiBtn} title="Emoji" onClick={() => setShowEmojiPicker(!showEmojiPicker)}>
+              <button
+                ref={emojiBtnRef}
+                type="button"
+                className={styles.msgEmojiBtn}
+                title="Emoji"
+                onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+              >
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <circle cx="12" cy="12" r="10" /><path d="M8 14s1.5 2 4 2 4-2 4-2" /><line x1="9" y1="9" x2="9" y2="9" /><line x1="15" y1="9" x2="15" y2="9" />
                 </svg>

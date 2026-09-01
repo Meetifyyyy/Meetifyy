@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
 import { AlertCircle, Loader2, X } from '@shared/components/icons';
+import { useScrollLock } from '@shared/hooks/useScrollLock';
 import styles from './OtpDialog.module.css';
 
 const DIGITS = 6;
@@ -31,6 +32,8 @@ export default function OtpDialog({
   onClose,
   busy,
 }) {
+  useScrollLock(true);
+
   const [code, setCode] = useState(() => Array(DIGITS).fill(''));
   const [error, setError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
@@ -38,7 +41,7 @@ export default function OtpDialog({
   const inputsRef = useRef([]);
 
   useEffect(() => {
-    inputsRef.current[0]?.focus();
+    inputsRef.current[0]?.focus({ preventScroll: true });
   }, []);
 
   // Escape closes, matching every other dialog in the app.
@@ -78,7 +81,7 @@ export default function OtpDialog({
     next[index] = raw.slice(-1);
     setCode(next);
     setError(null);
-    if (raw && index < DIGITS - 1) inputsRef.current[index + 1]?.focus();
+    if (raw && index < DIGITS - 1) inputsRef.current[index + 1]?.focus({ preventScroll: true });
   };
 
   // Pasting the whole code out of a mail client is how most people will enter
@@ -94,12 +97,12 @@ export default function OtpDialog({
     for (let i = 0; i < digits.length; i += 1) next[i] = digits[i];
     setCode(next);
     setError(null);
-    inputsRef.current[Math.min(digits.length, DIGITS - 1)]?.focus();
+    inputsRef.current[Math.min(digits.length, DIGITS - 1)]?.focus({ preventScroll: true });
   };
 
   const handleKeyDown = (e, index) => {
     if (e.key === 'Backspace' && !code[index] && index > 0) {
-      inputsRef.current[index - 1]?.focus();
+      inputsRef.current[index - 1]?.focus({ preventScroll: true });
     }
   };
 
@@ -117,7 +120,7 @@ export default function OtpDialog({
         // paraphrasing it here would let the two disagree.
         setError(err?.message || 'That code could not be verified.');
         setCode(Array(DIGITS).fill(''));
-        inputsRef.current[0]?.focus();
+        inputsRef.current[0]?.focus({ preventScroll: true });
       } finally {
         setSubmitting(false);
       }
@@ -132,7 +135,7 @@ export default function OtpDialog({
     try {
       await onResend();
       setCode(Array(DIGITS).fill(''));
-      inputsRef.current[0]?.focus();
+      inputsRef.current[0]?.focus({ preventScroll: true });
     } catch (err) {
       setError(err?.message || 'We could not send a new code.');
     } finally {

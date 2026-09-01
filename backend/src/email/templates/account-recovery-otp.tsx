@@ -69,7 +69,7 @@ export const AccountRecoveryOtpEmail = ({
         <Text style={warningTitle}>Didn&apos;t request this?</Text>
         <Text style={warningText}>
           Someone may be trying to stop your account from being deleted. Do not
-          enter this code — ignore this email and your account will be deleted
+          enter this code. If you ignore this email, your account will be deleted
           as scheduled. If you are concerned, change your password and contact
           us.
         </Text>

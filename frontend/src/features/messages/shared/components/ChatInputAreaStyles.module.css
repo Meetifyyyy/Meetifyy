@@ -1256,4 +1256,10 @@
   .msgEmojiBtn {
     display: none;
   }
+}
+
+@media (max-width: 768px) {
+  .msgEmojiBtn {
+    display: none;
+  }
 } 
