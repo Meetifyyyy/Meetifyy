@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import PropTypes from 'prop-types';
 import { useAuth } from '../../context/AuthContext';
 import { apiClient } from '@shared/api/apiClient';
-import { Trash2, Undo2, LogOut, Loader2, CalendarClock, X } from '@shared/components/icons';
+import { Trash2, Undo2, LogOut, Loader2, X } from '@shared/components/icons';
 import OtpDialog from '@shared/components/OtpDialog';
 import { isDeletionCountdownActive } from '@shared/lib/deletionHandoff';
 import styles from './AccountDeletionGate.module.css';
@@ -136,10 +136,7 @@ export default function AccountDeletionGate({ children }) {
     await refreshStatus();
   };
 
-  // Formatted from the server's `scheduledPurgeAt`. Never computed here: a
-  // device with a skewed clock may render a wrong countdown, but the date it
-  // states must be the one the server will actually act on.
-  const longDeletionDate = status?.scheduledPurgeAt
+  const formattedDeletionDate = status?.scheduledPurgeAt
     ? new Date(status.scheduledPurgeAt).toLocaleDateString(undefined, {
         day: 'numeric',
         month: 'long',
@@ -180,27 +177,19 @@ export default function AccountDeletionGate({ children }) {
         <h1 className={styles.title}>Your account is scheduled for deletion</h1>
 
         <p className={styles.body}>
-          {longDeletionDate ? (
+          {formattedDeletionDate ? (
             <>
-              Your account will be permanently deleted on{' '}
-              <strong className={styles.inlineDate}>{longDeletionDate}</strong>.
+              Your account will be permanently deleted after{' '}
+              <strong className={styles.inlineDate}>{formattedDeletionDate}</strong>.
+              You can recover your account at any time before then.
             </>
           ) : (
-            // Only reachable if the server reported a pending deletion without
-            // a schedule, which should not happen — but a sentence ending in a
-            // bare full stop would be worse than a general one.
-            <>Your account is scheduled to be permanently deleted.</>
+            <>
+              Your account is scheduled to be permanently deleted. You can
+              recover your account at any time before the scheduled date.
+            </>
           )}
         </p>
-
-        <p className={styles.body}>
-          Nothing has been erased yet — your profile, posts and activities are
-          simply hidden from everyone else. You can leave the deletion in place
-          and let it run, or recover your account now and pick up where you left
-          off.
-        </p>
-
-        <DeadlinePanel status={status} />
 
         {error && (
           <div className={styles.error} role="alert">
@@ -248,21 +237,6 @@ export default function AccountDeletionGate({ children }) {
             <span>Sign out</span>
           </button>
         </div>
-
-        <ul className={styles.details}>
-          <li>
-            Your profile, posts, activities and comments are hidden from other
-            people for now.
-          </li>
-          <li>
-            Conversations you were part of stay in the other person&apos;s
-            inbox, but you appear there as a deleted account.
-          </li>
-          <li>
-            After the date above, your posts, activities and uploaded media are
-            permanently removed and cannot be restored.
-          </li>
-        </ul>
       </div>
 
       {/* Step 2 of recovery. The deletion stays scheduled the whole time this
@@ -339,83 +313,3 @@ function RecoverySuccessToast({ onDone }) {
 RecoverySuccessToast.propTypes = {
   onDone: PropTypes.func.isRequired,
 };
-
-/**
- * The deadline, and a live countdown toward it.
- *
- * The absolute date is the headline and the countdown is secondary, in that
- * order on purpose: the date is what the server actually enforces, and the
- * countdown is derived from it on the client, so it is the half that can be
- * wrong on a device with a bad clock.
- */
-function DeadlinePanel({ status }) {
-  const purgeAt = useMemo(
-    () => (status.scheduledPurgeAt ? new Date(status.scheduledPurgeAt) : null),
-    [status.scheduledPurgeAt]
-  );
-
-  const [remaining, setRemaining] = useState(() => msUntil(purgeAt));
-
-  useEffect(() => {
-    if (!purgeAt) return undefined;
-    // Once a minute is plenty for a 30-day countdown and keeps a backgrounded
-    // tab from waking every second for a number that barely moves.
-    const id = setInterval(() => setRemaining(msUntil(purgeAt)), 60_000);
-    return () => clearInterval(id);
-  }, [purgeAt]);
-
-  if (!purgeAt) return null;
-
-  const formatted = purgeAt.toLocaleString(undefined, {
-    dateStyle: 'long',
-    timeStyle: 'short',
-  });
-
-  return (
-    <div className={styles.deadline}>
-      <div className={styles.deadlineHead}>
-        <CalendarClock size={16} aria-hidden="true" />
-        <span>Permanent deletion</span>
-      </div>
-      <p className={styles.deadlineDate}>{formatted}</p>
-      <p className={styles.deadlineCountdown}>
-        {remaining > 0 ? `About ${humanize(remaining)} left` : 'Due now'}
-      </p>
-    </div>
-  );
-}
-
-DeadlinePanel.propTypes = {
-  status: PropTypes.shape({
-    scheduledPurgeAt: PropTypes.string,
-  }).isRequired,
-};
-
-function msUntil(date) {
-  if (!date) return 0;
-  return Math.max(0, date.getTime() - Date.now());
-}
-
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
-
-/**
- * "About N days / hours / minutes left".
- *
- * Days round UP, matching `daysRemaining` on the server. Rounding down here
- * meant this read "About 29 days left" the instant a deletion was requested,
- * directly under copy that had just promised 30 — the kind of small
- * contradiction that makes a person doubt the whole screen.
- *
- * Under a day it falls through to hours and then minutes rather than rounding
- * up to "1 day", because at that point the precise figure is the useful one.
- */
-function humanize(ms) {
-  if (ms >= MS_PER_DAY) {
-    const days = Math.ceil(ms / MS_PER_DAY);
-    return `${days} ${days === 1 ? 'day' : 'days'}`;
-  }
-  const minutes = Math.floor(ms / 60_000);
-  const hours = Math.floor(minutes / 60);
-  if (hours >= 1) return `${hours} ${hours === 1 ? 'hour' : 'hours'}`;
-  return `${minutes} ${minutes === 1 ? 'minute' : 'minutes'}`;
-}

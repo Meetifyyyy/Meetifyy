@@ -1,5 +1,7 @@
-import React, { useMemo, useState, useCallback, useEffect } from 'react';
+import React, { useMemo, useState, useCallback, useEffect, useRef } from 'react';
+import PropTypes from 'prop-types';
 import { createPortal } from 'react-dom';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@shared/context/AuthContext';
 import { useScrollLock } from '@shared/hooks/useScrollLock';
 import { showToast } from '@shared/utils/toast';
@@ -10,7 +12,7 @@ import ChatInputArea from '@features/messages/shared/components/ChatInputArea';
 import { useTypingIndicator } from '@features/messages/shared/hooks/useTypingIndicator';
 import { useInstantMatch } from '../../context/InstantMatchContext';
 import { useCountdown } from '../../hooks/useCountdown';
-import { getActivity, getActivityVerb } from '../../constants/matchConstants';
+import { getActivity, getActivityVerb, accentVars } from '../../constants/matchConstants';
 import {
   getConversationStarters,
   STARTERS_MESSAGE_THRESHOLD,
@@ -162,11 +164,28 @@ function InstantMatchChatSurface({
     sendMessageOptimistically({ text, mentions: [] });
   }, [chat.isActive, sendMessageOptimistically, setStartersDismissed]);
 
+  const navigate = useNavigate();
+
+  // Preload ProfilePage chunk so clicking into a profile from Instant Match is instant with 0 flash
+  useEffect(() => {
+    import('@features/profile/pages/ProfilePage').catch(() => {});
+  }, []);
+
+  const handleOpenProfile = useCallback(() => {
+    const target = partner?.username || partner?.id;
+    if (target) {
+      navigate(`/profile/${target}`);
+      onClose();
+    }
+  }, [partner?.username, partner?.id, onClose, navigate]);
+
   const endedCopy = describeEnding(chat, partnerName);
+  const accentStyle = accentVars(activityMeta, 'im-accent');
 
   return createPortal(
     <div
       className="im-scope im-chat-root"
+      style={accentStyle}
       role="dialog"
       aria-modal="true"
       aria-label="Instant Match chat"
@@ -179,11 +198,19 @@ function InstantMatchChatSurface({
       }}
     >
      <div className="im-chat-window">
-      <header className="im-chat-head">
+      <header
+        className="im-chat-head"
+        onClick={handleOpenProfile}
+        onMouseEnter={() => import('@features/profile/pages/ProfilePage').catch(() => {})}
+        aria-label={`View ${partnerName}'s profile`}
+      >
         <button
           type="button"
           className="im-chat-back"
-          onClick={onClose}
+          onClick={(e) => {
+            e.stopPropagation();
+            onClose();
+          }}
           aria-label="Close Instant Match chat"
         >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -196,20 +223,16 @@ function InstantMatchChatSurface({
         </span>
 
         <div className="im-chat-identity">
-          <span className="im-chat-eyebrow">
-            <Bolt className="im-chat-eyebrow-bolt" /> Instant Match
-          </span>
           <span className="im-chat-name">{partnerName}</span>
         </div>
 
-        {/* The countdown re-renders once a minute above an hour — see
-            useCountdown. It reads a fixed server timestamp and never polls. */}
-        <span
-          className={`im-chat-timer ${chat.isActive ? '' : 'im-chat-timer-off'}`}
-          aria-live="off"
-        >
-          {chat.isActive ? `${timeLabel} remaining` : 'Ended'}
-        </span>
+        {/* Right side: Bolt button that reveals time on hover (desktop) and on click/tap */}
+        <div onClick={(e) => e.stopPropagation()}>
+          <InstantMatchBoltTimer
+            timeLabel={timeLabel}
+            isActive={chat.isActive}
+          />
+        </div>
       </header>
 
       {/* Why these two were put together — the thing that makes this not a DM. */}
@@ -325,3 +348,110 @@ function describeEnding(chat, partnerName) {
     body: 'Your Instant Match conversation has ended.',
   };
 }
+
+/**
+ * Header Instant Match bolt icon button.
+ * - Shows only the icon by default on all devices.
+ * - Desktop: Hover smoothly reveals the remaining time.
+ * - Mobile / Click: Tapping/clicking toggles the remaining time visible.
+ */
+function InstantMatchBoltTimer({ timeLabel, isActive }) {
+  const [open, setOpen] = useState(false);
+  const [suppressHover, setSuppressHover] = useState(false);
+  const timerRef = useRef(null);
+  const wrapRef = useRef(null);
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, []);
+
+  const showTooltip = useCallback((duration = 3000) => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    setOpen(true);
+    if (duration) {
+      timerRef.current = setTimeout(() => {
+        setOpen(false);
+        setSuppressHover(true);
+      }, duration);
+    }
+  }, []);
+
+  const hideTooltip = useCallback(() => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    setOpen(false);
+  }, []);
+
+  const handleClick = useCallback(() => {
+    if (open) {
+      hideTooltip();
+    } else {
+      showTooltip(3000);
+    }
+  }, [open, hideTooltip, showTooltip]);
+
+  const handleMouseEnter = useCallback(() => {
+    if (!suppressHover) {
+      showTooltip(3000);
+    }
+  }, [suppressHover, showTooltip]);
+
+  const handleMouseLeave = useCallback(() => {
+    setSuppressHover(false);
+    hideTooltip();
+  }, [hideTooltip]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+
+    const onOutside = (e) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) {
+        hideTooltip();
+      }
+    };
+    const onKey = (e) => {
+      if (e.key === 'Escape') hideTooltip();
+    };
+    document.addEventListener('mousedown', onOutside);
+    document.addEventListener('touchstart', onOutside);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onOutside);
+      document.removeEventListener('touchstart', onOutside);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open, hideTooltip]);
+
+  const text = isActive ? `${timeLabel} remaining` : 'Ended';
+
+  return (
+    <div
+      ref={wrapRef}
+      className={`im-chat-bolt-wrap ${open ? 'is-open' : ''}`}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+    >
+      <button
+        type="button"
+        className={`im-chat-bolt-btn ${isActive ? '' : 'im-chat-bolt-off'}`}
+        onClick={handleClick}
+        aria-label={`Instant Match: ${text}`}
+        aria-expanded={open}
+      >
+        <Bolt className="im-chat-bolt-icon" />
+      </button>
+
+      {open && (
+        <div className="im-chat-bolt-tooltip" role="tooltip">
+          <span>{text}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+InstantMatchBoltTimer.propTypes = {
+  timeLabel: PropTypes.string.isRequired,
+  isActive: PropTypes.bool.isRequired,
+};

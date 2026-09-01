@@ -14,8 +14,12 @@ const EmojiMartPicker = lazy(async () => {
 });
 
 export default function LazyEmojiPicker(props) {
+  const isDark =
+    typeof document !== 'undefined' &&
+    document.documentElement.getAttribute('data-theme') === 'dark';
+
   const mergedProps = {
-    theme: 'light',
+    theme: props.theme || (isDark ? 'dark' : 'light'),
     previewPosition: 'none',
     skinTonePosition: 'search',
     navPosition: 'top',

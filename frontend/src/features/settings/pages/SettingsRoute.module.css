@@ -1168,14 +1168,19 @@ input:checked + .slider::before {
 .modalOverlay {
   position: fixed;
   inset: 0;
-  background: rgba(15, 23, 42, 0.45);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
-  z-index: 1000;
+  background: rgba(15, 23, 42, 0.72);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  z-index: 2000;
   display: flex;
   align-items: center;
   justify-content: center;
   animation: fadeIn 0.2s ease-out;
+  overscroll-behavior: contain;
+}
+
+:global([data-theme="dark"]) .modalOverlay {
+  background: rgba(0, 0, 0, 0.82);
 }
 
 .modalCard {

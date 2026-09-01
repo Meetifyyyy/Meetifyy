@@ -216,7 +216,7 @@ export default function LocationStep({
           ) : selectedGPS ? (
             <>
               <span className="im-gps-dot" aria-hidden="true" />
-              Precise location on — tap to turn off
+              Precise location on (tap to turn off)
             </>
           ) : (
             <>
@@ -228,8 +228,8 @@ export default function LocationStep({
 
         <p className="im-gps-note">
           {isOutdoor
-            ? `Precise location makes ${activity?.label.toLowerCase() ?? 'outdoor'} matches much sharper — we only ever use it to rank who's nearby.`
-            : 'Optional. Your exact coordinates are never shown to anyone — they only help us rank who is closest.'}
+            ? `Precise location makes ${activity?.label.toLowerCase() ?? 'outdoor'} matches much sharper, and is only used to rank who's nearby.`
+            : 'Optional. Your exact coordinates are never shown to anyone, and only help us rank who is closest.'}
         </p>
 
         {error && (

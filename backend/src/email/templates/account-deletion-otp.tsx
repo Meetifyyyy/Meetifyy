@@ -60,8 +60,8 @@ export const AccountDeletionOtpEmail = ({
 
       <Text style={text}>
         Once confirmed, your account is scheduled for deletion and hidden from
-        everyone else. You have <strong>30 days</strong> to change your mind —
-        sign back in during that time and you can recover it. After 30 days the
+        everyone else. You have <strong>30 days</strong> to change your mind,
+        during which you can sign back in to recover it. After 30 days the
         deletion is permanent and cannot be undone.
       </Text>
 

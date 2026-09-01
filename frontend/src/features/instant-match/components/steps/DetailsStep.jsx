@@ -50,7 +50,7 @@ export default function DetailsStep({ activityId, value, onChange, onSubmit }) {
 
         <div className="im-detail-foot">
           <p id={hintId} className="im-detail-hint">
-            Optional — skip it and we'll still find you someone for{' '}
+            Optional. Skip it and we&apos;ll still find you someone for{' '}
             {activity?.label.toLowerCase() ?? 'this'}.
           </p>
           <span

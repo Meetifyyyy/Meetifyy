@@ -80,7 +80,7 @@ export default function MatchedPanel() {
         <p className="im-lede">
           <span aria-hidden="true">{activityMeta?.emoji ?? '⚡'}</span>{' '}
           You both wanted to {getActivityVerb(activity)}. Your chat stays open
-          for 24 hours — say hi before it closes.
+          for 24 hours. Say hi before it closes.
         </p>
       </div>
 
