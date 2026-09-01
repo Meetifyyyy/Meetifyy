@@ -226,6 +226,17 @@ registerRoute(
   })
 );
 
+/**
+ * The version manifest is NEVER served from a cache.
+ *
+ * It is the one file whose entire value is being fresh — the launch gate
+ * compares it against the version stamped into the running document to decide
+ * whether that document is stale. A worker answering it from any cache would
+ * report the build the client is already on as current, and the gate would
+ * never fire. Registered before the generic routes so nothing else can claim it.
+ */
+registerRoute(({ url }) => url.pathname === '/version.json', new NetworkOnly());
+
 // C-3 fix: Never cache auth endpoints. Force them to network only to prevent
 // sensitive JWTs/sessions from landing in local SW caches on shared devices.
 registerRoute(

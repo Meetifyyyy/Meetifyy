@@ -47,8 +47,19 @@ describe('deployment cache headers', () => {
 });
 
 describe('service-worker update lifecycle', () => {
-  const workerSource = read('src/sw.js');
-  const registrationSource = read('src/main.jsx');
+  /**
+   * Comments are stripped before matching.
+   *
+   * These assertions are about what the code DOES, and several of them are
+   * negative — "this must not appear". A comment explaining why something was
+   * removed necessarily names the thing it removed, so matching raw source
+   * makes a correct explanation fail the test that the explanation is about.
+   */
+  const stripComments = (src) =>
+    src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|\s)\/\/.*$/gm, '$1');
+
+  const workerSource = stripComments(read('src/sw.js'));
+  const registrationSource = stripComments(read('src/main.jsx'));
   const viteSource = read('vite.config.js');
 
   it('uses network-first navigation without racing the network against stale HTML', () => {
@@ -58,38 +69,47 @@ describe('service-worker update lifecycle', () => {
   });
 
   /**
-   * The guarantee is that a user is never interrupted — not that a waiting
-   * worker can never be promoted. Those were the same thing while promotion was
-   * unconditional, so this used to assert the absence of skipWaiting outright.
+   * Updates happen at ONE checkpoint: the launch screen.
    *
-   * They came apart with installed PWAs: a window that is never fully closed
-   * leaves the new worker waiting indefinitely, stranding the user on an old
-   * build with no route forward except the hard refresh this whole design
-   * exists to abolish. Promotion is now allowed, but only for a page that is
-   * hidden and about to reload itself — so what is asserted here is the real
-   * invariant: nothing activates or reloads under a visible page.
+   * This used to assert the opposite invariant — that a waiting worker could be
+   * promoted, but only while the page was hidden and about to reload itself.
+   * That existed because `sw.js` does not call `skipWaiting()` at install (a new
+   * worker activating under a running page lets Workbox delete the precache
+   * that page is still loading lazy chunks from), so an installed PWA that is
+   * never fully closed could sit on an old build for days.
+   *
+   * The launch-time version gate in index.html replaced it, and the promotion
+   * was removed rather than kept alongside: reloading a hidden tab is still a
+   * reload nobody asked for, and it discarded anything unsaved in the page. The
+   * rule now is that an open session is left completely alone, and the gate is
+   * the only thing that ever promotes a worker.
    */
-  it('promotes a waiting worker only while the page is hidden', () => {
-    // In the worker, skipWaiting must be reachable ONLY through the message
-    // handler — never called at module scope on activation. One occurrence,
-    // and it sits directly inside the SKIP_WAITING guard.
+  it('never promotes a worker or reloads from inside a running session', () => {
+    // skipWaiting must still be reachable ONLY through the message handler —
+    // never at module scope, where it would activate under a live page.
     expect(workerSource.match(/self\.skipWaiting\s*\(/g)).toHaveLength(1);
     expect(workerSource).toMatch(/SKIP_WAITING'\s*\)\s*\{\s*self\.skipWaiting\(\);/);
 
-    // In the page, both the promotion and the reload are gated on `hidden`.
-    expect(registrationSource).toMatch(
-      /if \(document\.visibilityState !== 'hidden'\) return;[\s\S]{0,400}?postMessage\(\{ type: 'SKIP_WAITING' \}\)/,
-    );
-    expect(registrationSource).toMatch(
-      /if \(document\.visibilityState === 'hidden'\) window\.location\.reload\(\)/,
-    );
-    // No unguarded reload anywhere.
-    expect(registrationSource).not.toMatch(/^\s*window\.location\.(reload|replace)\s*\(/m);
+    // The page no longer promotes anything, on any condition.
+    expect(registrationSource).not.toMatch(/SKIP_WAITING/);
+    // And no longer reloads itself, hidden or otherwise.
+    expect(registrationSource).not.toMatch(/window\.location\.(reload|replace)\s*\(/);
   });
 
-  it('waits out a grace period so a brief tab switch never discards page state', () => {
-    expect(registrationSource).toMatch(/HIDDEN_GRACE_MS\s*=\s*60_000/);
-    expect(registrationSource).toMatch(/Date\.now\(\) - hiddenSince < HIDDEN_GRACE_MS/);
+  it('does not poll for new deployments mid-session', () => {
+    // Nothing looks for a new build while the app is running, so nothing can
+    // act on finding one. The check belongs to the launch screen alone.
+    expect(registrationSource).not.toMatch(/setInterval/);
+    expect(registrationSource).not.toMatch(/registration\.update\(\)/);
+    expect(registrationSource).not.toMatch(/HIDDEN_GRACE_MS/);
+  });
+
+  it('still registers the worker, bypassing the HTTP cache for sw.js', () => {
+    // Without `updateViaCache: 'none'` the browser may answer the /sw.js
+    // request from its own cache, and a new worker is never discovered — which
+    // would leave the launch gate as the only update path with nothing to
+    // promote when it fires.
+    expect(registrationSource).toMatch(/updateViaCache: 'none'/);
   });
 
   it('does not precache index.html but does precache hashed build assets', () => {

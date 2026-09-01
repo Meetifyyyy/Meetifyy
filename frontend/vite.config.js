@@ -2,6 +2,7 @@ import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 import path from 'path';
+import fs from 'fs';
 import { visualizer } from 'rollup-plugin-visualizer';
 import { postcssHoverMedia } from './scripts/postcss-hover-media.js';
 import { isProductionAppEnv } from './src/config/deploymentEnv.js';
@@ -22,6 +23,43 @@ import { isProductionAppEnv } from './src/config/deploymentEnv.js';
  * tombstone and stale installs can never be reached. `/sw.js` carries no user
  * data, so exempting only that exact path is safe.
  */
+/**
+ * Stamps the build's version into index.html.
+ *
+ * The launch gate runs in an inline script, before any bundle has loaded, so it
+ * needs the version synchronously — it cannot import it. Replacing a
+ * placeholder in the HTML is what makes the running page able to state its own
+ * identity at the moment it starts.
+ *
+ * Reads the same `public/version.json` that `scripts/generate-version.mjs`
+ * writes immediately before the build, so the page and the file it later
+ * fetches are stamped from one source and cannot disagree about what this build
+ * is. If that file is missing (someone ran `vite build` directly), the
+ * placeholder is replaced with an empty string, which the gate treats as
+ * "unknown" and skips — failing open rather than reload-looping every client.
+ */
+function stampBuildVersionPlugin() {
+  let version = '';
+  return {
+    name: 'meetifyy-stamp-build-version',
+    apply: 'build',
+    buildStart() {
+      try {
+        const raw = fs.readFileSync(
+          path.resolve(process.cwd(), 'public/version.json'),
+          'utf8'
+        );
+        version = JSON.parse(raw).version || '';
+      } catch {
+        version = '';
+      }
+    },
+    transformIndexHtml(html) {
+      return html.replace(/__MEETIFYY_BUILD_VERSION__/g, version);
+    },
+  };
+}
+
 function tombstoneServiceWorkerPlugin() {
   const source = `// Non-production build: remove the old installation only after
 // its open clients have naturally closed. Deliberately no skipWaiting or client
@@ -62,6 +100,7 @@ export default defineConfig(({ mode }) => {
   return {
   plugins: [
     react(),
+    stampBuildVersionPlugin(),
     ...(isProductionApp ? [VitePWA({
       strategies: 'injectManifest',
       srcDir: 'src',

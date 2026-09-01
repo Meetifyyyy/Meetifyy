@@ -70,27 +70,135 @@
 
   <div id="root"></div>
   <script>
-    // Cache breaker — runs before React. Nukes stale SWs and caches on version change asynchronously.
-    (function(){
-      var SW_VERSION = '5';
-      var key = 'meetifyy_sw_v';
-      try {
-        if (localStorage.getItem(key) !== SW_VERSION) {
-          localStorage.setItem(key, SW_VERSION);
-          if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.getRegistrations().then(function(regs) {
-              regs.forEach(function(r) { r.unregister(); });
-            });
-          }
-          if ('caches' in window) {
-            caches.keys().then(function(names) {
-              names.forEach(function(n) { caches.delete(n); });
-            });
-          }
-        }
-      } catch(e) {}
-    })();
+    /**
+     * Launch-time version gate.
+     *
+     * Runs before React, while the logo shell above is on screen, and is the
+     * ONLY place the app checks whether it is current. An already-open session
+     * is never interrupted: no polling, no banner, no mid-session reload. The
+     * moment someone reloads, opens a new tab or cold-starts the installed PWA,
+     * they pass through here and land on the live build.
+     *
+     * It replaces a hand-bumped `SW_VERSION` constant that cleared caches
+     * asynchronously — so it neither knew what was actually deployed nor
+     * finished before the old assets were already loading.
+     *
+     * HOW IT DECIDES
+     * `BUILD` is stamped into this HTML at build time; `/version.json` is
+     * written by the same build and served no-store. Different values mean the
+     * document that booted this page is not the deployed one.
+     *
+     * FAILING OPEN
+     * An unknown version, a failed fetch or a slow network all proceed
+     * normally. The alternative — blocking or reloading when the check cannot
+     * complete — would break the app offline and on bad connections, which is
+     * far worse than briefly running a build that is one deploy behind.
+     *
+     * NOT LOOPING
+     * A forced reload is recorded against the version it was for, so a client
+     * that reloads and still reads the old version (a CDN mid-propagation, say)
+     * gives up rather than reloading forever.
+     */
+    (function () {
+      var BUILD = '__MEETIFYY_BUILD_VERSION__';
+      var TIMEOUT_MS = 2500;
+      var TRIED_KEY = 'meetifyy_version_reload_for';
 
+      // Held while a forced update is in flight so the shell cannot lift and
+      // reveal a half-old app. Cleared the instant we decide not to reload.
+      window.__meetifyyVersionGate = { pending: true };
+      function release() {
+        window.__meetifyyVersionGate.pending = false;
+      }
+
+      // No stamp (a direct `vite build`, or the dev server) — nothing to compare.
+      if (!BUILD || BUILD.indexOf('__MEETIFYY') === 0) return release();
+      if (!('fetch' in window)) return release();
+
+      var settled = false;
+      var timer = setTimeout(function () {
+        if (!settled) { settled = true; release(); }
+      }, TIMEOUT_MS);
+
+      function proceed() {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        release();
+      }
+
+      /**
+       * Clears every cache, promotes a waiting worker, then reloads.
+       *
+       * Order matters. Caches go first, so nothing can answer the reload from a
+       * stale entry. The waiting worker is promoted next — `skipWaiting` here is
+       * safe precisely because it happens at this checkpoint, before any lazy
+       * chunk has been requested, which is the hazard that keeps it out of the
+       * worker's install path. `clients.claim()` in sw.js then puts the new
+       * worker in control of the page that comes back.
+       */
+      function forceUpdate(latest) {
+        try { sessionStorage.setItem(TRIED_KEY, latest); } catch (e) {}
+
+        var work = [];
+
+        if ('caches' in window) {
+          work.push(
+            caches.keys().then(function (names) {
+              return Promise.all(names.map(function (n) { return caches.delete(n); }));
+            }).catch(function () {})
+          );
+        }
+
+        if ('serviceWorker' in navigator) {
+          work.push(
+            navigator.serviceWorker.getRegistration().then(function (reg) {
+              if (!reg) return;
+              var next = reg.waiting || reg.installing;
+              if (next) {
+                // The worker's message handler calls skipWaiting for us.
+                try { next.postMessage({ type: 'SKIP_WAITING' }); } catch (e) {}
+              }
+              // `update()` also covers the case where the new worker has not
+              // been discovered yet, which is the common one on a cold start.
+              return reg.update().catch(function () {});
+            }).catch(function () {})
+          );
+        }
+
+        // Bounded: a hung cache or worker call must not strand the user on the
+        // logo. The reload is what matters, and it is safe to do regardless.
+        var bounded = new Promise(function (resolve) { setTimeout(resolve, 1500); });
+
+        Promise.race([Promise.all(work), bounded]).then(function () {
+          var url = new URL(window.location.href);
+          // Defeats any intermediary still holding the old document.
+          url.searchParams.set('_v', latest.slice(0, 12));
+          window.location.replace(url.toString());
+        });
+      }
+
+      fetch('/version.json', { cache: 'no-store', credentials: 'omit' })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (data) {
+          var latest = data && data.version;
+          if (settled) return;
+          if (!latest || latest === BUILD) return proceed();
+
+          var tried = null;
+          try { tried = sessionStorage.getItem(TRIED_KEY); } catch (e) {}
+          // Already forced a reload for this exact version and still stale:
+          // reloading again would not help.
+          if (tried === latest) return proceed();
+
+          settled = true;
+          clearTimeout(timer);
+          forceUpdate(latest);
+        })
+        .catch(function () { proceed(); });
+    })();
+  </script>
+  <script>
     // Auto-recovery handler: catches module script load / MIME type / chunk errors early
     window.addEventListener('error', function(e) {
       var msg = (e && (e.message || (e.error && e.error.message))) || '';
@@ -134,8 +242,24 @@
       var shell = document.getElementById('launch-shell');
       if (!shell) return;
       var done = false;
-      function dismiss() {
+      function dismiss(force) {
         if (done) return;
+        // Held while the version gate is deciding, or while a forced update is
+        // in flight. Lifting now would show the old app for a moment and then
+        // reload out from under it — the "mix of old and new" this exists to
+        // prevent. The gate always releases (it fails open on any error and has
+        // its own timeout), so this normally waits a few milliseconds at most.
+        //
+        // `force` is the 8s backstop below, which ignores the flag: a gate that
+        // somehow never released must not leave the user staring at a logo.
+        if (
+          !force &&
+          window.__meetifyyVersionGate &&
+          window.__meetifyyVersionGate.pending
+        ) {
+          setTimeout(dismiss, 100);
+          return;
+        }
         done = true;
         observer.disconnect();
         shell.style.opacity = '0';
@@ -147,7 +271,7 @@
       });
       observer.observe(root, { childList: true });
       if (root.childElementCount > 0) dismiss();
-      setTimeout(dismiss, 8000);
+      setTimeout(function () { dismiss(true); }, 8000);
     })();
   </script>
   <script type="module" src="/src/main.jsx"></script>
