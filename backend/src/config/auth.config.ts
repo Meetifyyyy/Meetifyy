@@ -63,6 +63,22 @@ export const authConfigValues = {
     jwtSecret: str('SUPABASE_JWT_SECRET'),
   },
 
+  /**
+   * Keys the HMAC that protects stored one-time codes (account deletion and
+   * recovery). A 6-digit code has only a million possibilities, so a plain
+   * digest of it is reversible by anyone holding the table — keying the hash
+   * with a server-side secret means a database leak alone does not yield the
+   * codes.
+   *
+   * Falls back to the Supabase service-role key, which is already required in
+   * staging and production, so this introduces no new mandatory variable and no
+   * environment silently drops to an unkeyed hash. Set it explicitly to rotate
+   * OTP hashing independently of that key.
+   */
+  otp: {
+    hashSecret: str('OTP_HASH_SECRET'),
+  },
+
   admin: {
     accessSecret: str('ADMIN_JWT_ACCESS_SECRET', {
       requiredIn: ['staging', 'production'],

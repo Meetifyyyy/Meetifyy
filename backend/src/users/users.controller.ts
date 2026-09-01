@@ -12,13 +12,17 @@ import {
 } from '@nestjs/common';
 import type { AuthenticatedRequest } from '../common/types/authenticated-request';
 import { UsersService } from './users.service';
+import { AccountDeletionService } from '../account-deletion/account-deletion.service';
 import { JwtGuard } from '../common/guards/jwt.guard';
 import { CacheControl } from '../common/decorators/cache-control.decorator';
 import { VerifiedOnly } from '../common/decorators/verified-only.decorator';
 
 @Controller('api/users')
 export class UsersController {
-  constructor(private readonly usersService: UsersService) {}
+  constructor(
+    private readonly usersService: UsersService,
+    private readonly accountDeletionService: AccountDeletionService,
+  ) {}
 
   @Get()
   @UseGuards(JwtGuard)
@@ -170,10 +174,25 @@ export class UsersController {
 
   // NOTE: registered BEFORE the catch-all `:username` route so the literal
   // string "me" is never treated as a profile lookup.
+  //
+  // Kept as an alias rather than removed. It used to delete irreversibly and on
+  // the spot; a client still holding the old bundle — a cached PWA shell, a
+  // phone that has not refreshed — would otherwise keep hitting a route that
+  // either no longer exists or, worse, still did the old thing.
+  //
+  // It now starts the OTP challenge instead of deleting. An old client will not
+  // understand the response and will show an error, which is the correct
+  // outcome: the alias must not be a way to skip the code, and failing visibly
+  // beats deleting an account without confirmation.
   @Delete('me')
   @UseGuards(JwtGuard)
   async deleteAccount(@Req() req: AuthenticatedRequest) {
-    return this.usersService.deleteAccount(req.user.id);
+    return this.accountDeletionService.requestDeletionOtp(req.user.id, {
+      ip:
+        (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ||
+        req.ip ||
+        'unknown',
+    });
   }
 
   @Get(':username')

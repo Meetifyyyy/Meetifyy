@@ -12,6 +12,7 @@ import { createPublicKey, KeyObject } from 'crypto';
 import { SupabaseService } from '../../supabase/supabase.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ALLOW_SUSPENDED_KEY } from '../decorators/allow-suspended.decorator';
+import { ALLOW_PENDING_DELETION_KEY } from '../decorators/allow-pending-deletion.decorator';
 import { config } from '../../config';
 
 interface CachedTokenUser {
@@ -26,6 +27,9 @@ interface CachedAccountStatus {
 
 /** Shape the client keys its suspension screen off. */
 export const SUSPENDED_ERROR_CODE = 'ACCOUNT_SUSPENDED';
+
+/** Shape the client keys its full-screen deletion/recovery gate off. */
+export const PENDING_DELETION_ERROR_CODE = 'ACCOUNT_PENDING_DELETION';
 
 /**
  * Authenticates requests bearing a Supabase-issued JWT.
@@ -87,6 +91,20 @@ export class JwtGuard implements CanActivate {
 
   public static isUserRevoked(userId: string): boolean {
     return JwtGuard.revokedUsers.has(userId);
+  }
+
+  /**
+   * Lifts a revocation.
+   *
+   * Recovering an account has to be total: if anything revoked the user (an
+   * admin action, or a pre-30-day-window code path that deleted immediately),
+   * leaving the id in this set would silently 401 every request from an account
+   * the database now says is ACTIVE, with no way to clear it short of a redeploy.
+   */
+  public static unrevokeUser(userId: string): void {
+    if (!userId) return;
+    JwtGuard.revokedUsers.delete(userId);
+    JwtGuard.accountStatusCache.delete(userId);
   }
 
   // ── JWKS cache (asymmetric ES256/RS256 signing keys) ──────────────────────
@@ -290,19 +308,42 @@ export class JwtGuard implements CanActivate {
     const userId = userPayload?.id;
     if (!userId) return;
 
-    const allowed = this.reflector.getAllAndOverride<boolean>(
+    // The two gates are resolved independently: `@AllowSuspended()` opens the
+    // appeal flow to a suspended account and says nothing about a deleting one,
+    // so an early return on it would have let a PENDING_DELETION account file
+    // suspension appeals. Each state consults only its own decorator.
+    const suspensionAllowed = this.reflector.getAllAndOverride<boolean>(
       ALLOW_SUSPENDED_KEY,
       [context.getHandler(), context.getClass()],
     );
-    if (allowed) return;
 
     const status = await this.resolveAccountStatus(userId);
-    if (status === 'SUSPENDED') {
+    if (status === 'SUSPENDED' && !suspensionAllowed) {
       throw new ForbiddenException({
         code: SUSPENDED_ERROR_CODE,
         message:
           'This account is suspended. You can request a review from the suspension screen.',
       });
+    }
+
+    // An account inside its 30-day deletion window keeps a valid session on
+    // purpose — that is the only way its owner can come back and recover it —
+    // so the restriction has to be enforced here rather than by the screen the
+    // client chooses to render. Opening a second tab, replaying an old access
+    // token, driving the REST API by hand or reconnecting a socket all land on
+    // this check. Only `@AllowPendingDeletion()` routes get through.
+    if (status === 'PENDING_DELETION') {
+      const deletionAllowed = this.reflector.getAllAndOverride<boolean>(
+        ALLOW_PENDING_DELETION_KEY,
+        [context.getHandler(), context.getClass()],
+      );
+      if (!deletionAllowed) {
+        throw new ForbiddenException({
+          code: PENDING_DELETION_ERROR_CODE,
+          message:
+            'This account is scheduled for deletion. Recover it to continue using Meetifyy.',
+        });
+      }
     }
   }
 
