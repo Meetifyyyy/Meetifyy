@@ -8,6 +8,12 @@ import {
 } from '@nestjs/common';
 import { Prisma, MentionSource, NotificationEntityType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import type { UserIdentityLike } from '../common/users/deleted-user';
+import {
+  isUnavailableUser,
+  DELETED_USER_DISPLAY_NAME,
+  DELETED_USER_USERNAME,
+} from '../common/users/deleted-user';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationFactory } from '../notifications/notification.factory';
 import { BlocksService } from '../users/blocks.service';
@@ -68,11 +74,18 @@ export class PostsService {
   }
 
   private formatPost(
-    post: any,
+    rawPost: any,
     likedSet: Set<string>,
     bookmarkedSet: Set<string>,
     currentUserId?: string,
   ) {
+    // Every list path shapes its rows here, so this is where the tombstone is
+    // guaranteed. The queries above already exclude posts by unavailable
+    // authors; this is the second layer, so that a future query which forgets
+    // that filter leaks a post that should not be visible rather than a deleted
+    // person's name and photograph.
+    const post = PostsService.presentAuthor(rawPost);
+
     const isLiked = likedSet.has(post.id);
     const isBookmarked = bookmarkedSet.has(post.id);
     const likeCount = post.likeCount ?? 0;
@@ -250,6 +263,10 @@ export class PostsService {
             avatar: true,
             collegeId: true,
             college: { select: { id: true, name: true } },
+            // Required by `presentAuthor`. A select that omits these renders a
+            // deleted author's real name and photo.
+            accountStatus: true,
+            deletedAt: true,
           },
         },
         media: true,
@@ -753,6 +770,12 @@ export class PostsService {
       LEFT JOIN "College" col ON u."collegeId" = col.id
       LEFT JOIN "Community" c ON p."communityId" = c.id
       WHERE p."deletedAt" IS NULL
+        -- The author must still be an available account. A user inside their
+        -- 30-day deletion window is hidden from everyone, so their posts go
+        -- with them; the posts themselves are deliberately NOT soft-deleted at
+        -- request time, because recovery has to bring them back untouched.
+        -- The join to "User" already exists, so this costs nothing extra.
+        AND u."deletedAt" IS NULL
         AND (p."communityId" IS NULL OR c."deletedAt" IS NULL)
         ${
           communityId
@@ -942,6 +965,10 @@ export class PostsService {
             avatar: true,
             collegeId: true,
             college: { select: { id: true, name: true } },
+            // Required by `presentAuthor`. A select that omits these renders a
+            // deleted author's real name and photo.
+            accountStatus: true,
+            deletedAt: true,
           },
         },
         media: {
@@ -1509,6 +1536,52 @@ export class PostsService {
   // tree with no orphaned replies.
   private static readonly COMMENT_PAGE_ROOTS = 20;
 
+  /**
+   * Posts whose author is still a real, available account.
+   *
+   * ANDed into every post read below. A user who requests deletion is hidden
+   * from everyone for the whole 30-day window — their posts have to go with
+   * them, or the feed keeps serving content under a name whose profile already
+   * 404s, which is exactly what was happening. Their posts are NOT soft-deleted
+   * at request time, deliberately: recovery has to bring them back untouched,
+   * so the hiding is a query concern rather than a data one.
+   *
+   * `deletedAt` is the column checked because it is the one the request stamps
+   * and recovery clears, so recovering an account restores its posts with no
+   * separate reconciliation step.
+   */
+  private static readonly AVAILABLE_AUTHOR = {
+    author: { deletedAt: null },
+  } as const;
+
+  /**
+   * Substitutes the tombstone for a deleted author.
+   *
+   * The second of two layers, and the reason both exist: the filter above stops
+   * these posts being fetched, but there are seven author projections in this
+   * file and any future eighth query that forgets the filter would serialize a
+   * real name. This layer means the worst case of that mistake is a post that
+   * should not be visible, rather than a deleted person's identity on screen.
+   */
+  private static presentAuthor<T extends { author?: unknown }>(row: T): T {
+    const author = row?.author as UserIdentityLike | null | undefined;
+    if (!author || !isUnavailableUser(author)) return row;
+    return {
+      ...row,
+      author: {
+        id: author.id,
+        username: DELETED_USER_USERNAME,
+        displayName: DELETED_USER_DISPLAY_NAME,
+        avatar: null,
+        isCampusRep: false,
+        collegeId: null,
+        college: null,
+        isDeleted: true,
+        profileAvailable: false,
+      },
+    };
+  }
+
   private static readonly COMMENT_AUTHOR_SELECT = {
     id: true,
     username: true,
@@ -1517,6 +1590,8 @@ export class PostsService {
     avatar: true,
     collegeId: true,
     college: { select: { id: true, name: true } },
+    accountStatus: true,
+    deletedAt: true,
   } as const;
 
   /**
@@ -1573,8 +1648,32 @@ export class PostsService {
         };
       }
       const liked = likedCommentIds.has(c.id);
+      // A comment from someone inside their deletion window keeps its place in
+      // the thread — pruning it would rewrite the conversation for everyone
+      // else, the same objection that keeps chat history — but carries no
+      // identity. Once the account is purged the comment becomes a tombstone
+      // via the branch above; this covers the 30 days before that, when the
+      // row still holds the real name and avatar.
+      const author = c.author as UserIdentityLike | null | undefined;
+      const authorUnavailable = author ? isUnavailableUser(author) : false;
+
       return {
         ...c,
+        ...(authorUnavailable
+          ? {
+              author: {
+                id: author?.id,
+                username: DELETED_USER_USERNAME,
+                displayName: DELETED_USER_DISPLAY_NAME,
+                avatar: null,
+                isCampusRep: false,
+                collegeId: null,
+                college: null,
+                isDeleted: true,
+                profileAvailable: false,
+              },
+            }
+          : {}),
         isDeleted: false,
         hasLiked: liked,
         isLiked: liked,
@@ -1769,8 +1868,15 @@ export class PostsService {
         userId
           ? this.blocksService.getExcludedUserIds(userId)
           : Promise.resolve([] as string[]),
-        this.prisma.post.findUnique({
-          where: { id: postId, deletedAt: null },
+        // `findFirst`, not `findUnique`: the author-availability filter is a
+        // relation condition, which a unique lookup cannot express. A post whose
+        // author is mid-deletion must 404 exactly like their profile does.
+        this.prisma.post.findFirst({
+          where: {
+            id: postId,
+            deletedAt: null,
+            ...PostsService.AVAILABLE_AUTHOR,
+          },
           include: {
             author: {
               select: {
@@ -1781,6 +1887,8 @@ export class PostsService {
                 isCampusRep: true,
                 collegeId: true,
                 college: { select: { id: true, name: true } },
+                accountStatus: true,
+                deletedAt: true,
               },
             },
             community: { select: { id: true, name: true, deletedAt: true } },
@@ -1880,7 +1988,11 @@ export class PostsService {
     );
 
     return {
-      ...post,
+      // Second layer, as in `formatPost`: the query already refuses a post
+      // whose author is unavailable, so reaching here with one means a filter
+      // was missed — and the consequence should be a post that leaks nothing,
+      // not a deleted person's name and photograph.
+      ...PostsService.presentAuthor(post),
       canDelete: canDeleteThis,
       media: formattedMedia,
       pollOptions,
@@ -1935,7 +2047,10 @@ export class PostsService {
     // exclusion is applied to the joined post rather than to the bookmark row.
     const postFilter = await this.blocksService.injectBlockFilter(
       userId,
-      { deletedAt: null },
+      // Same reasoning as the block exclusion beside it: the bookmark row stays
+      // (historical data is never deleted), but it must stop resolving while
+      // its author is inside their deletion window.
+      { deletedAt: null, ...PostsService.AVAILABLE_AUTHOR },
       'authorId',
     );
     // Compound keyset cursor "<iso>__<postId>" — postId is unique within a
@@ -1990,6 +2105,8 @@ export class PostsService {
                 isCampusRep: true,
                 collegeId: true,
                 college: { select: { id: true, name: true } },
+                accountStatus: true,
+                deletedAt: true,
               },
             },
             media: { orderBy: [{ order: 'asc' }, { id: 'asc' }] },

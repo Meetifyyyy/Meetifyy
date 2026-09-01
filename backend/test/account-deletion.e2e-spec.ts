@@ -357,6 +357,43 @@ describeIfEnabled('Account deletion — full lifecycle against a real database',
       expect(inSearch.map((u) => u.id)).not.toContain(subjectId);
     });
 
+    it('hides the subject’s posts from the feed and the post page', async () => {
+      // Reported from the live app: after requesting deletion, the account's
+      // posts were still fully visible on the post page under their real name,
+      // because posts are deliberately NOT soft-deleted at request time —
+      // recovery has to bring them back untouched — and no post query filtered
+      // on the author's availability.
+      const visibleById = await prisma.post.findFirst({
+        where: { id: subjectPostId, deletedAt: null, author: { deletedAt: null } },
+      });
+      expect(visibleById).toBeNull();
+
+      // The observer's own post is untouched, so this is the author filter
+      // doing the work rather than posts having disappeared wholesale.
+      const observerVisible = await prisma.post.findFirst({
+        where: {
+          id: observerPostId,
+          deletedAt: null,
+          author: { deletedAt: null },
+        },
+      });
+      expect(observerVisible).not.toBeNull();
+    });
+
+    it('brings the posts straight back on recovery', async () => {
+      // The corollary, and why hiding is a query concern rather than a data
+      // one: nothing was written to the posts, so there is nothing to undo.
+      await deletion.recoverAccount(subjectId);
+
+      const restored = await prisma.post.findFirst({
+        where: { id: subjectPostId, deletedAt: null, author: { deletedAt: null } },
+      });
+      expect(restored).not.toBeNull();
+
+      // Put it back for the tests that follow.
+      await deletion.requestDeletion(subjectId);
+    });
+
     it('leaves the conversation and both sides’ messages completely intact', async () => {
       const messages = await prisma.message.findMany({
         where: { conversationId },
