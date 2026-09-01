@@ -10,6 +10,7 @@ import { AdminSupportModule } from './support/admin-support.module';
 import { AdminHelpModule } from './help/admin-help.module';
 import { AdminAnalyticsModule } from './analytics/admin-analytics.module';
 import { AdminAuditModule } from './audit/admin-audit.module';
+import { AdminAccountDeletionModule } from './account-deletion/admin-account-deletion.module';
 import { AuditInterceptor } from './common/audit.interceptor';
 import { PrismaModule } from '../prisma/prisma.module';
 
@@ -26,6 +27,10 @@ import { PrismaModule } from '../prisma/prisma.module';
     // Public help-centre content, managed from the same Support section.
     AdminHelpModule,
     AdminAuditModule,
+    // Account-deletion requests and the 30-day retention deadline. Its own
+    // section rather than a tab under Users: meeting a deletion deadline is a
+    // different job from moderating an account.
+    AdminAccountDeletionModule,
     // Infrastructure + resource usage, measured live.
     AdminAnalyticsModule,
   ],

@@ -18,6 +18,7 @@ import {
   Menu,
   X,
   CheckCircle,
+  Trash2,
 } from './icons';
 
 export const AdminLayout: React.FC = () => {
@@ -55,6 +56,10 @@ export const AdminLayout: React.FC = () => {
     { label: 'Support', path: '/support', icon: HelpCircle },
     { label: 'Analytics', path: '/analytics', icon: Activity },
     { label: 'Verification', path: '/verification', icon: CheckCircle },
+    // Its own entry rather than a tab under Users: these rows carry a retention
+    // deadline the platform has committed to, which is a different job from
+    // moderating an account.
+    { label: 'Account Deletion', path: '/account-deletion', icon: Trash2 },
     { label: 'Audit Logs', path: '/audit', icon: FileText },
     { label: 'Sessions', path: '/sessions', icon: ShieldCheck },
   ];
