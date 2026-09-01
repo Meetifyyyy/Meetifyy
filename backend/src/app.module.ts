@@ -44,6 +44,7 @@ import { UploadsModule } from './uploads/uploads.module';
 import { ModerationModule } from './moderation/moderation.module';
 import { ObservabilityModule } from './observability/observability.module';
 import { SuspensionModule } from './suspension/suspension.module';
+import { AccountDeletionModule } from './account-deletion/account-deletion.module';
 import { AdminModule } from './admin/admin.module';
 import { VerificationModule } from './verification/verification.module';
 import { RedisModule } from './redis/redis.module';
@@ -275,6 +276,7 @@ import { SupportModule } from './support/support.module';
     ObservabilityModule,
     // The only surface a suspended account may use.
     SuspensionModule,
+    AccountDeletionModule,
     EventsModule,
   ],
   controllers: [AppController],

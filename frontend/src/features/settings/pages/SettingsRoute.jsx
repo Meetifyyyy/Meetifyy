@@ -1,4 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
+import OtpDialog from '@shared/components/OtpDialog';
+import DeletionScheduledNotice from '../components/DeletionScheduledNotice';
 import { useNavigate, useLocation, useParams, Navigate, Link } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@shared/context/AuthContext';
@@ -300,6 +302,13 @@ export default function SettingsRoute() {
 
   // Delete account state
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  // The deletion flow is three states, driven entirely by the server:
+  //   confirm  → the existing warning dialog
+  //   otp      → a code has been emailed; nothing is scheduled yet
+  //   scheduled→ the deletion is persisted; this is only the sign-out countdown
+  const [deletionChallenge, setDeletionChallenge] = useState(null);
+  const [deletionScheduled, setDeletionScheduled] = useState(null);
 
   // Delete-account confirmation is a destructive dialog over the panel; Back
   // must cancel it, never navigate past it.
@@ -1249,36 +1258,95 @@ export default function SettingsRoute() {
               <AlertCircle size={32} />
             </div>
             <h3 className={styles.modalTitle}>Delete Account</h3>
+            {/* The old copy here promised immediate permanent deletion, which
+                is no longer what happens and would have made the recovery
+                screen a nasty surprise. Deletion now starts a 30-day window in
+                which everything can still be brought back. */}
             <p className={styles.modalText}>
-              All your posts, matches, and profile data will be permanently deleted.
+              Your profile, posts and activities will be hidden from everyone
+              straight away. You have 30 days to sign back in and recover the
+              account — after that, everything is permanently deleted and
+              cannot be restored.
+            </p>
+            <p className={styles.modalText}>
+              We&apos;ll email you a 6-digit code to confirm it&apos;s you
+              before anything is scheduled.
             </p>
             <div className={styles.modalButtons}>
               <button 
                 type="button" 
                 className={styles.modalCancelBtn}
                 onClick={() => setShowDeleteConfirm(false)}
+                disabled={deleting}
               >
                 Cancel
               </button>
               <button 
                 type="button" 
                 className={styles.modalDeleteBtn}
+                disabled={deleting}
                 onClick={async () => {
-                  setShowDeleteConfirm(false);
+                  if (deleting) return;
+                  setDeleting(true);
                   try {
-                    await apiClient.delete('/api/users/me');
+                    // Sends a code. Schedules NOTHING — the account is only
+                    // touched once that code comes back verified.
+                    const challenge = await apiClient.post(
+                      '/api/account/delete/request-otp'
+                    );
+                    setShowDeleteConfirm(false);
+                    setDeletionChallenge(challenge);
                   } catch (err) {
-                    showToast("Couldn't delete account", 'error');
-                    return;
+                    showToast(
+                      err?.message || "Couldn't start account deletion",
+                      'error'
+                    );
+                  } finally {
+                    setDeleting(false);
                   }
-                  logout();
                 }}
               >
-                Delete
+                {deleting ? 'Sending code…' : 'Delete account'}
               </button>
             </div>
           </div>
         </div>
+      )}
+
+      {/* Step 2 — prove it's the account owner. Nothing is scheduled yet. */}
+      {deletionChallenge && (
+        <OtpDialog
+          title="Confirm account deletion"
+          description="This is the last step before your account is scheduled for deletion."
+          maskedEmail={deletionChallenge.maskedEmail}
+          submitLabel="Delete my account"
+          tone="danger"
+          challenge={deletionChallenge}
+          onClose={() => setDeletionChallenge(null)}
+          onResend={async () => {
+            const next = await apiClient.post('/api/account/delete/request-otp');
+            setDeletionChallenge(next);
+          }}
+          onSubmit={async (otp) => {
+            // Throws on a bad code; OtpDialog surfaces the server's message and
+            // this step stays open, so a typo costs nothing but a retry.
+            const status = await apiClient.post('/api/account/delete/confirm', {
+              otp,
+            });
+            setDeletionChallenge(null);
+            // Persisted before the countdown starts — closing the tab now
+            // leaves the deletion scheduled, which is the correct outcome.
+            setDeletionScheduled(status);
+          }}
+        />
+      )}
+
+      {/* Step 3 — already persisted. This is only the sign-out countdown. */}
+      {deletionScheduled && (
+        <DeletionScheduledNotice
+          scheduledPurgeAt={deletionScheduled.scheduledPurgeAt}
+          onLogout={logout}
+        />
       )}
       </div>
     </main>

@@ -1,0 +1,334 @@
+/* ── Full-screen account-deletion / recovery notice ──
+   Covers the viewport on every authenticated route, exactly like
+   SuspensionGate. The app shell is deliberately not rendered behind it: an
+   account inside its deletion window has nothing to navigate to, and leaving a
+   sidebar visible would invite people to try — and every one of those requests
+   is refused by the server anyway. */
+.wrapper {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* The safe-area insets matter here and not in a normal dialog: this is the
+     only thing on screen on a phone, so its padding is the page's padding. */
+  padding: max(1.5rem, env(safe-area-inset-top))
+           max(1.25rem, env(safe-area-inset-right))
+           max(1.5rem, env(safe-area-inset-bottom))
+           max(1.25rem, env(safe-area-inset-left));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--color-bg-main, #f4f6fb);
+  box-sizing: border-box;
+}
+
+.card {
+  width: 100%;
+  /* Capped rather than fluid. On a 32" monitor a full-width card would stretch
+     the body copy to an unreadable line length; centring a measured column is
+     what the rest of the app does too. */
+  max-width: 560px;
+  margin: auto;
+  padding: 2rem;
+  box-sizing: border-box;
+  background: var(--color-bg-white, #ffffff);
+  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
+  border-radius: var(--radius-xl, 20px);
+  box-shadow: var(--shadow-md, 0 4px 16px rgba(15, 23, 42, 0.06));
+  text-align: center;
+  animation: gateIn 0.24s ease-out;
+}
+
+@keyframes gateIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card { animation: none; }
+}
+
+.iconBadge {
+  width: 56px;
+  height: 56px;
+  margin: 0 auto 1.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: var(--color-danger, #ef4444);
+  background: var(--color-danger-tint, rgba(239, 68, 68, 0.1));
+}
+
+.title {
+  margin: 0 0 0.5rem;
+  font-size: 1.35rem;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--color-text-main, #0f172a);
+  /* Long words must not push the card wider than the phone. */
+  overflow-wrap: anywhere;
+}
+
+.body {
+  margin: 0 0 1.5rem;
+  font-size: 0.95rem;
+  line-height: 1.6;
+  color: var(--color-text-light, #64748b);
+}
+
+/* ── The deadline the server actually enforces ── */
+.deadline {
+  margin-bottom: 1.25rem;
+  padding: 1rem;
+  text-align: left;
+  border-radius: var(--radius-md, 12px);
+  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
+  background: var(--color-bg-soft, #f8fafc);
+}
+
+.deadlineHead {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--color-text-light, #64748b);
+}
+
+.deadlineDate {
+  margin: 0.4rem 0 0.15rem;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--color-text-main, #0f172a);
+  overflow-wrap: anywhere;
+}
+
+.deadlineCountdown {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--color-text-light, #64748b);
+}
+
+.error {
+  margin-bottom: 1rem;
+  padding: 0.75rem 0.9rem;
+  text-align: left;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  border-radius: var(--radius-md, 12px);
+  color: var(--color-danger, #ef4444);
+  background: var(--color-danger-tint, rgba(239, 68, 68, 0.1));
+}
+
+.closedNotice {
+  margin: 0;
+  padding: 0.85rem 1rem;
+  font-size: 0.88rem;
+  line-height: 1.55;
+  border-radius: var(--radius-md, 12px);
+  color: var(--color-text-light, #64748b);
+  background: var(--color-bg-soft, #f8fafc);
+  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
+}
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.primaryBtn,
+.secondaryBtn {
+  width: 100%;
+  /* 48px min target: this is the one control on the screen that matters, and
+     it is frequently pressed in a hurry on a phone. */
+  min-height: 48px;
+  padding: 0.8rem 1.25rem;
+  font-size: 0.92rem;
+  font-weight: 600;
+  border-radius: var(--radius-md, 12px);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  transition: background 0.15s ease, opacity 0.15s ease;
+}
+
+.primaryBtn {
+  border: none;
+  color: #ffffff;
+  background: var(--color-primary, #2563eb);
+}
+
+.primaryBtn:hover:not(:disabled) {
+  background: var(--color-primary-hover, #1d4ed8);
+}
+
+.secondaryBtn {
+  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
+  color: var(--color-text-main, #0f172a);
+  background: transparent;
+}
+
+.secondaryBtn:hover:not(:disabled) {
+  background: var(--color-bg-soft, #f8fafc);
+}
+
+.primaryBtn:disabled,
+.secondaryBtn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.primaryBtn:focus-visible,
+.secondaryBtn:focus-visible {
+  outline: 2px solid var(--color-primary, #2563eb);
+  outline-offset: 2px;
+}
+
+/* ── What actually happens, in plain terms ── */
+.details {
+  margin: 1.5rem 0 0;
+  padding: 1.1rem 1rem 1.1rem 2.1rem;
+  text-align: left;
+  border-top: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
+  list-style: disc;
+  font-size: 0.85rem;
+  line-height: 1.6;
+  color: var(--color-text-light, #64748b);
+}
+
+.details li + li {
+  margin-top: 0.5rem;
+}
+
+/* ── Phones ── */
+@media (max-width: 480px) {
+  .wrapper {
+    /* Flush to the edges: a card floating inside a margin looks like a dialog
+       the user could dismiss, which is the wrong impression entirely. */
+    padding: max(0.75rem, env(safe-area-inset-top))
+             max(0.75rem, env(safe-area-inset-right))
+             max(0.75rem, env(safe-area-inset-bottom))
+             max(0.75rem, env(safe-area-inset-left));
+    align-items: flex-start;
+  }
+
+  .card {
+    padding: 1.5rem 1.15rem;
+    border-radius: var(--radius-lg, 16px);
+  }
+
+  .title { font-size: 1.2rem; }
+  .deadlineDate { font-size: 1rem; }
+}
+
+/* ── Short viewports (landscape phones, split-screen) ──
+   The card must scroll inside the wrapper rather than being clipped. */
+@media (max-height: 620px) {
+  .wrapper { align-items: flex-start; }
+  .card { padding: 1.35rem 1.25rem; }
+  .details { margin-top: 1.15rem; }
+}
+
+/* ── Large displays ──
+   Slightly larger type and a slightly wider column, so the screen does not
+   read as a phone layout stranded in the middle of a 4K monitor. */
+@media (min-width: 1600px) {
+  .card {
+    max-width: 640px;
+    padding: 2.5rem;
+  }
+  .title { font-size: 1.55rem; }
+  .body { font-size: 1rem; }
+}
+
+/* ── Recovery confirmation ──
+   Lives outside the gate's card because it has to survive the gate unmounting:
+   the successful path removes that whole screen the instant the server reports
+   the account active, and a message rendered inside it would be torn down
+   before anyone could read it. */
+.successToast {
+  position: fixed;
+  z-index: 2300;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  max-width: 420px;
+  padding: 0.9rem 1rem;
+  border-radius: var(--radius-md, 12px);
+  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
+  background: var(--color-bg-white, #ffffff);
+  box-shadow: var(--shadow-lg, 0 12px 32px rgba(15, 23, 42, 0.18));
+  animation: toastIn 0.22s ease-out;
+
+  /* Desktop: out of the way, bottom-right. */
+  right: max(1.25rem, env(safe-area-inset-right));
+  bottom: max(1.25rem, env(safe-area-inset-bottom));
+  left: auto;
+}
+
+@keyframes toastIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .successToast { animation: none; }
+}
+
+.successIcon {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: var(--color-success, #16a34a);
+  background: var(--color-success-tint, rgba(22, 163, 74, 0.12));
+}
+
+.successTitle {
+  margin: 0 0 0.15rem;
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--color-text-main, #0f172a);
+}
+
+.successBody {
+  margin: 0;
+  font-size: 0.84rem;
+  line-height: 1.5;
+  color: var(--color-text-light, #64748b);
+}
+
+.successClose {
+  flex-shrink: 0;
+  margin-left: auto;
+  padding: 0.2rem;
+  border: none;
+  background: none;
+  color: var(--color-text-light, #64748b);
+  cursor: pointer;
+  border-radius: var(--radius-sm, 8px);
+}
+
+.successClose:hover {
+  background: var(--color-bg-soft, #f8fafc);
+}
+
+@media (max-width: 560px) {
+  .successToast {
+    /* Full-width on a phone, above the bottom navigation. */
+    left: max(0.75rem, env(safe-area-inset-left));
+    right: max(0.75rem, env(safe-area-inset-right));
+    bottom: calc(max(0.75rem, env(safe-area-inset-bottom)) + 4.25rem);
+    max-width: none;
+  }
+}

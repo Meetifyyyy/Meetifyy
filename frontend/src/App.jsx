@@ -139,12 +139,26 @@ function ProtectedRoute({ children }) {
   if (currentUser?.isNewUser && location.pathname !== '/onboarding') {
     return <Navigate to="/onboarding" replace />;
   }
-  // Wraps rather than redirects: a suspended account has nowhere to be sent,
-  // and a dedicated route would just be somewhere to navigate away from. The
-  // gate renders the notice over every authenticated page, and renders the page
-  // untouched for everyone else. The server refuses the underlying requests
-  // regardless, so this is the explanation, not the enforcement.
-  return <SuspensionGate>{children}</SuspensionGate>;
+  // Both gates wrap rather than redirect: neither a suspended account nor one
+  // inside its deletion window has anywhere to be sent, and a dedicated route
+  // would just be somewhere to navigate away from. Each renders its notice over
+  // every authenticated page and renders the page untouched for everyone else.
+  // The server refuses the underlying requests regardless, so these are the
+  // explanation, not the enforcement.
+  //
+  // Deletion is checked outermost: an account can be both suspended and
+  // pending deletion, and in that case the recoverable state is the one the
+  // person can still act on.
+  return (
+    <AccountDeletionGate>
+      <SuspensionGate>
+        {children}
+        {/* Sits inside the gates on purpose: an account that is suspended or
+            being deleted should not be congratulated on being verified. */}
+        <VerifiedWelcome />
+      </SuspensionGate>
+    </AccountDeletionGate>
+  );
 }
 
 function PublicRoute({ children }) {
@@ -180,6 +194,8 @@ function StaticRoute({ children }) {
 }
 
 import SuspensionGate from './shared/components/SuspensionGate';
+import AccountDeletionGate from './shared/components/AccountDeletionGate';
+import VerifiedWelcome from './shared/components/VerifiedWelcome';
 import NotFoundState from './shared/components/ui/NotFoundState';
 
 /**

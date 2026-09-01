@@ -8,6 +8,7 @@
  * so every API call is a synchronous read — no async getSession() per request.
  */
 import { supabase } from '@shared/lib/supabase';
+import { applyAccountStatusCorrection } from '@shared/lib/accountStatusCorrection';
 import { config } from '@config';
 
 // ── Token cache ──────────────────────────────────────────────────────────────
@@ -494,6 +495,8 @@ async function _doFetch(cleanUrl, options, isRetry = false) {
     }
   }
 
+
+
   if (!res.ok) {
     let errorMessage = `API error ${res.status}`;
     let errorCode;
@@ -511,6 +514,21 @@ async function _doFetch(cleanUrl, options, isRetry = false) {
     const err = new Error(errorMessage);
     err.status = res.status;
     if (errorCode) err.code = errorCode;
+
+    // A lifecycle state the SERVER knows about and this tab does not.
+    //
+    // Both gates mount off the cached profile, which is refreshed on sign-in.
+    // So a second tab left open while the account was suspended elsewhere — or
+    // put into its deletion window from the settings screen in the first tab —
+    // holds a stale ACTIVE status, never mounts its gate, and instead shows the
+    // user a stream of generic "403" toasts from every background fetch. Taking
+    // the correction from the response and writing it to the cached profile
+    // makes the right full-screen explanation appear in that tab too, without
+    // waiting for a reload or a re-sync.
+    if (res.status === 403) {
+      applyAccountStatusCorrection(errorCode);
+    }
+
     throw err;
   }
 

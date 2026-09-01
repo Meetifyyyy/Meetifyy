@@ -197,6 +197,10 @@ export default function MessagesLayout() {
       // for the thread that is actually open.
       canSendMessages:
         initialPage?.canSendMessages ?? baseConv.canSendMessages,
+      // Same reasoning for the deletion state: a thread opened by deep link
+      // must know its partner is gone on first paint, not after a refused send.
+      targetUserUnavailable:
+        initialPage?.targetUserUnavailable ?? baseConv.targetUserUnavailable,
       nextCursor: latestPage?.nextCursor || null,
     };
   }, [baseConv, allMessages, rawPages, currentUser?.id]);
