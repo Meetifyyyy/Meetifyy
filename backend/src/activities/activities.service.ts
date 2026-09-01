@@ -21,6 +21,29 @@ import {
   ActivityAuthorizationService,
   UserAuthContext,
 } from './activity-authorization.service';
+import type { UserIdentityLike } from '../common/users/deleted-user';
+import {
+  isUnavailableUser,
+  DELETED_USER_DISPLAY_NAME,
+  DELETED_USER_USERNAME,
+} from '../common/users/deleted-user';
+
+/** Exactly what a tombstoned member exposes. Whitelisted, never spread. */
+export interface PresentedMember {
+  id: string;
+  username: string;
+  displayName: string;
+  avatar: null;
+  isCampusRep: false;
+  isDeleted: true;
+  profileAvailable: false;
+}
+
+/** A membership row carrying its joined user, as every card select fetches it. */
+export interface MemberRow {
+  user?: UserIdentityLike | null;
+  [key: string]: unknown;
+}
 import { NOTIFICATIONS_QUEUE } from '../notifications/notifications.processor';
 import { RedisService } from '../redis/redis.service';
 import { MediaCleanupService } from '../uploads/media-cleanup.service';
@@ -511,6 +534,11 @@ export class ActivitiesService implements OnModuleInit {
                   username: true,
                   displayName: true,
                   avatar: true,
+                  // Required by `presentMember`. A select that omits these
+                  // renders a deleted member's real name and photograph in the
+                  // card's avatar stack and the attendee list.
+                  accountStatus: true,
+                  deletedAt: true,
                 },
               },
             },
@@ -576,7 +604,10 @@ export class ActivitiesService implements OnModuleInit {
       activities: activities.map((a) => {
         const myStatus = membershipMap.get(a.id);
         return {
-          ...a,
+          // Applied BEFORE the response is cached below: a 60-second cache
+          // entry holding a deleted member's real avatar would keep serving it
+          // to every viewer for the rest of that window.
+          ...ActivitiesService.presentCardRow(a),
           isJoined: myStatus === 'MEMBER',
           myStatus: myStatus || null,
         };
@@ -634,11 +665,86 @@ export class ActivitiesService implements OnModuleInit {
         userId: true,
         status: true,
         user: {
-          select: { id: true, username: true, displayName: true, avatar: true },
+          select: {
+            id: true,
+            username: true,
+            displayName: true,
+            avatar: true,
+            accountStatus: true,
+            deletedAt: true,
+          },
         },
       },
     },
   } as const;
+
+  /**
+   * Substitutes the tombstone for a member whose account is unavailable.
+   *
+   * Activities hosted BY a deleted user are already filtered out by
+   * `ActivityAuthorizationService`. This is the other half: an activity hosted
+   * by somebody live, which a since-deleted user had joined. Their row stays —
+   * removing it would silently change the attendee count and the host's record
+   * of who came — but their avatar was still rendering in the card's stack and
+   * their real name in the attendee list.
+   *
+   * Returns a fresh object rather than mutating, and whitelists the fields it
+   * emits, so widening a select later cannot quietly reintroduce a leak.
+   */
+  private static presentMember<T extends UserIdentityLike>(
+    user: T | null | undefined,
+  ): T | PresentedMember | null | undefined {
+    if (!user) return user;
+    if (!isUnavailableUser(user)) return user;
+    return {
+      id: user.id,
+      username: DELETED_USER_USERNAME,
+      displayName: DELETED_USER_DISPLAY_NAME,
+      // Null, so every client's Avatar falls back to the default asset.
+      avatar: null,
+      isCampusRep: false,
+      isDeleted: true,
+      profileAvailable: false,
+    };
+  }
+
+  /**
+   * Applies the member tombstone to a card row's embedded attendee sample.
+   *
+   * `CARD_SELECT` embeds the first five members so the card can render its
+   * avatar stack without a second round trip, and those rows are spread
+   * straight into the response — so a member who has since deleted their
+   * account had their real photograph on every card for an activity they had
+   * joined. Applied at each place a card row is returned rather than inside
+   * the select, because a Prisma select cannot transform what it fetches.
+   */
+  private static presentCardRow<T extends { members?: MemberRow[] }>(
+    row: T,
+  ): T {
+    if (!row?.members?.length) return row;
+    return {
+      ...row,
+      members: row.members.map((m) => ({
+        ...m,
+        user: ActivitiesService.presentMember(m.user),
+      })),
+    };
+  }
+
+  /** Convenience for the many `members.map(m => m.user)` shaping sites. */
+  private static presentMembers(
+    members: MemberRow[] | null | undefined,
+  ): (UserIdentityLike | PresentedMember)[] {
+    return (members ?? [])
+      .map((m) =>
+        // Call sites pass either membership rows or bare user objects, so both
+        // shapes are accepted rather than forcing each one to unwrap first.
+        ActivitiesService.presentMember(
+          (m?.user ?? m) as UserIdentityLike | null | undefined,
+        ),
+      )
+      .filter((u): u is UserIdentityLike | PresentedMember => Boolean(u));
+  }
 
   /**
    * Composed payload for the Crew "For You" page: college + 1-on-1 previews in a
@@ -961,7 +1067,7 @@ export class ActivitiesService implements OnModuleInit {
       .map((a: any) => {
         const myStatus = membershipMap.get(a.id);
         return {
-          ...a,
+          ...ActivitiesService.presentCardRow(a),
           isJoined: myStatus === 'MEMBER',
           myStatus: myStatus || null,
         };
@@ -1112,7 +1218,7 @@ export class ActivitiesService implements OnModuleInit {
     const decorate = (a: any) => {
       const myStatus = membershipMap.get(a.id);
       return {
-        ...a,
+        ...ActivitiesService.presentCardRow(a),
         isJoined: myStatus === 'MEMBER',
         myStatus: myStatus || null,
       };
@@ -1308,6 +1414,13 @@ export class ActivitiesService implements OnModuleInit {
     const { invitations, _count, ...activityFields } = activity as any;
     return {
       ...activityFields,
+      // Same substitution as `getAttendees`, applied to the first page the
+      // detail response embeds — otherwise a deleted attendee renders under
+      // their real identity until the client pages past them.
+      members: (activityFields.members ?? []).map((m: any) => ({
+        ...m,
+        user: ActivitiesService.presentMember(m.user),
+      })),
       // The server's clock, so a client can measure its own offset and time the
       // "already started" transition against the authoritative start instant
       // rather than against a device clock that may be minutes out.
@@ -1432,6 +1545,9 @@ export class ActivitiesService implements OnModuleInit {
             isCampusRep: true,
             collegeId: true,
             college: { select: { id: true, name: true } },
+            // Required by `presentMember` below.
+            accountStatus: true,
+            deletedAt: true,
           },
         },
       },
@@ -1442,7 +1558,14 @@ export class ActivitiesService implements OnModuleInit {
     const last = page[page.length - 1];
 
     return {
-      attendees: page,
+      // An attendee who has since deleted their account keeps their row — the
+      // host's record of who came should not silently change — but is shown as
+      // "Deleted User" with the default avatar rather than under their real
+      // name and photograph.
+      attendees: page.map((row: any) => ({
+        ...row,
+        user: ActivitiesService.presentMember(row.user),
+      })),
       nextCursor:
         hasMore && last
           ? `${last.joinedAt.toISOString()}|${last.userId}`
@@ -1583,6 +1706,11 @@ export class ActivitiesService implements OnModuleInit {
                   username: true,
                   displayName: true,
                   avatar: true,
+                  // Required by `presentMember`. A select that omits these
+                  // renders a deleted member's real name and photograph in the
+                  // card's avatar stack and the attendee list.
+                  accountStatus: true,
+                  deletedAt: true,
                 },
               },
             },
@@ -2139,6 +2267,8 @@ export class ActivitiesService implements OnModuleInit {
                 username: true,
                 displayName: true,
                 avatar: true,
+                accountStatus: true,
+                deletedAt: true,
               },
             },
           },
@@ -2206,6 +2336,8 @@ export class ActivitiesService implements OnModuleInit {
                     username: true,
                     displayName: true,
                     avatar: true,
+                    accountStatus: true,
+                    deletedAt: true,
                   },
                 },
               },
@@ -2234,6 +2366,10 @@ export class ActivitiesService implements OnModuleInit {
       const members = act.members || [];
       const hostMember = members.find((m) => m.user?.id === act.creatorId);
       const hostUser = hostMember?.user;
+      // A bookmarked activity whose host has since deleted their account is
+      // still reachable from the saved list, so the host identity on the card
+      // has to be substituted rather than assumed live.
+      const shownHost = ActivitiesService.presentMember(hostUser);
 
       const userStatus = membershipMap.get(act.id);
       const isJoined = userStatus === 'MEMBER';
@@ -2256,13 +2392,15 @@ export class ActivitiesService implements OnModuleInit {
         shareToCampus: act.shareToCampus,
         collegeId: act.collegeId,
         hostCollege: act.hostCollege,
-        hostName: hostUser?.displayName || hostUser?.username || 'Host',
-        hostAvatar: hostUser?.avatar,
-        hostUsername: hostUser?.username,
+        hostName: shownHost?.displayName || shownHost?.username || 'Host',
+        hostAvatar: shownHost?.avatar ?? null,
+        hostUsername: shownHost?.username,
         slotsNeeded: act.maxMembers || 0,
         slotsFilled: act._count?.members || members.length,
         participants: members.map((m) => m.user?.id).filter(Boolean),
-        _membersData: members.map((m) => m.user).filter(Boolean),
+        // The card's avatar stack. Rendered a deleted member's real photograph
+        // until this went through the presenter.
+        _membersData: ActivitiesService.presentMembers(members),
         isJoined,
         isPending,
         isBookmarked: true,
@@ -2546,6 +2684,8 @@ export class ActivitiesService implements OnModuleInit {
                     username: true,
                     displayName: true,
                     avatar: true,
+                    accountStatus: true,
+                    deletedAt: true,
                   },
                 },
               },
@@ -2574,9 +2714,9 @@ export class ActivitiesService implements OnModuleInit {
       hostUsername: inv.inviter.username,
       hostAvatar: inv.inviter.avatar,
       participantsCount: inv.activity._count.members,
-      sampleParticipants: inv.activity.members
-        .map((m) => m.user)
-        .filter(Boolean),
+      sampleParticipants: ActivitiesService.presentMembers(
+        inv.activity.members,
+      ),
     }));
   }
 
