@@ -197,19 +197,15 @@ meetifyy-security-remediation-report.md
 # ------------------------------------------------------------------------------
 # 12. Documentation & Temporary Audit Scripts
 # ------------------------------------------------------------------------------
-# Scratch docs and audit output stay out of the repo, but two are durable
-# engineering references and are tracked explicitly. A negation cannot re-include
-# a file whose parent directory is excluded, hence `docs/*` rather than `docs/`.
+# Scratch docs and audit output stay out of the repo; the four durable
+# references below are tracked explicitly. A negation cannot re-include a file
+# whose parent directory is excluded, hence `docs/*` rather than `docs/`.
 docs/*
-!docs/network-reachability.md
-!docs/verification-checklist.md
-!docs/production-azure-setup-guide.md
-# The production checklist records why DEV broke (OIDC subject, Cloudflare
-# Error 1000) — it is only useful if it ships with the repo. environment-
-# configuration.md is linked from both of the above, so excluding it left
-# those links dangling for anyone cloning.
-!docs/production-setup-checklist.md
-!docs/environment-configuration.md
+!docs/techstack.md
+!docs/project-structure.md
+!docs/azure-setup.md
+!docs/operations.md
+
 diff_*.txt
 all_files.txt
 git_files.txt

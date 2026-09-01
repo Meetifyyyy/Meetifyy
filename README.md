@@ -1,125 +1,202 @@
 # Meetifyy
 
-Meetifyy is a campus network platform designed for university students to connect, organize activities, discover communities, and interact in real-time. Built as a monorepo, it brings together the core student web application, an admin management portal, and a backend service.
+A campus network for university students — activities, communities, feed,
+messaging and presence, in real time.
+
+The repo is a monorepo of three deployable applications and the infrastructure
+that runs them.
+
+| | What it is | Stack | Deployed to |
+|---|---|---|---|
+| `backend/` | API, queues, realtime | NestJS 11, Node ≥ 22 | Azure Container Apps |
+| `frontend/` | Student web app (PWA) | React 18, Vite 6 | Vercel |
+| `admin-frontend/` | Admin portal | React 19, Vite 8, TypeScript | Vercel |
 
 ---
 
-## 📁 Repository Structure
+## Documentation
+
+Four documents, kept current:
+
+| Doc | Read it when |
+|---|---|
+| [docs/techstack.md](docs/techstack.md) | You want the full dependency picture |
+| [docs/project-structure.md](docs/project-structure.md) | You need to know how local, dev and prod differ |
+| [docs/azure-setup.md](docs/azure-setup.md) | You're provisioning, deploying, or moving Azure accounts |
+| [docs/operations.md](docs/operations.md) | **Before changing anything in production** |
+
+`operations.md` is the one that saves time. Every entry in it is a real failure
+that already happened, and they all share a shape: nothing errors at the time,
+and you find out later — in a user's inbox, or five deploys into an outage.
+
+---
+
+## Repository layout
 
 ```
 meetifyy/
-├── backend/                  # NestJS API Server & Service Engine
-│   ├── prisma/               # Database schema, migrations, & seed data
-│   ├── src/config/           # Central configuration layer (env loading + validation)
-│   ├── src/                  # Core API modules (auth, posts, messaging, presence, etc.)
-│   └── supabase-templates/   # Static Auth email templates
+├── backend/                  NestJS API
+│   ├── prisma/               schema + 44 migrations
+│   ├── src/config/           the only place that reads process.env
+│   ├── src/                  ~30 domain modules (auth, posts, activities, …)
+│   └── supabase-templates/   Auth emails, rendered per environment
 │
-├── frontend/                 # Main Student Web Application (React + Vite)
-│   ├── public/               # Static assets, fonts, icons, & offline files
+├── frontend/                 student web app
 │   └── src/
-│       ├── config/           # Central configuration layer (public, build-time values)
-│       ├── features/         # Modular feature apps (feed, messaging, campus, crew, etc.)
-│       ├── layout/           # Shared page layouts, headers, & sidebars
-│       └── shared/           # Reusable UI components, hooks, & state stores
+│       ├── config/           build-time public config
+│       ├── features/         feed, messaging, campus, crew, instant-match …
+│       ├── layout/           shells, headers, sidebars
+│       └── shared/           components, hooks, stores
 │
-└── admin-frontend/           # Super Admin Portal (React + Vite + TypeScript)
-    └── src/                  # Admin dashboard pages, audit tools, & moderation views
+├── admin-frontend/           admin portal
+├── docs/                     the four documents above
+├── setup-azure-dev.sh        provisions the DEV Azure stack
+├── setup-azure-prod.sh       provisions the PROD Azure stack
+└── .github/workflows/        ci.yml · deploy-dev.yml · deploy-prod.yml
 ```
 
 ---
 
-## ⚙️ Configuration & getting started
-
-Every environment-specific value — domains, database, email, storage, auth
-redirects, cookies, CORS — is supplied by environment variables and read through
-a central configuration layer. No source file needs editing to move between
-local, staging and production.
+## Getting started
 
 ```bash
+npm install
 cp backend/.env.example        backend/.env.local
 cp frontend/.env.example       frontend/.env.local
 cp admin-frontend/.env.example admin-frontend/.env.local
-# fill in your development credentials, then:
-npm install
-npm run dev
+# fill in development credentials, then:
+npm run dev:services
 ```
 
-The config layers live at `backend/src/config/`, `frontend/src/config/` and
-`admin-frontend/src/config/`. Application code imports `config` from there rather
-than reading `process.env` / `import.meta.env` directly.
+`dev:services` runs Mailpit, the backend, the frontend and the admin portal
+together. Mail goes to Mailpit at <http://localhost:8025> instead of to real
+inboxes. Individual targets exist too: `dev:backend`, `dev:frontend`,
+`dev:admin`.
 
-Each app's `.env.example` is the annotated, authoritative list of its variables,
-including which are required, which are public, and which are read at build time
-rather than at runtime.
+### Configuration
+
+Every environment-specific value — domains, database, email, storage, auth
+redirects, cookies, CORS — comes from environment variables read through a
+central config layer. **No source file needs editing to move between
+environments.**
+
+- `backend/src/config/env.ts` is the only place in the backend that touches
+  `process.env`. Everything else imports the typed `config` object.
+- Validation runs once at import, so a misconfigured environment fails at boot
+  with one message listing every problem — not at the first request that happens
+  to need the value.
+- Each app's `.env.example` and `.env.production.example` are the authoritative,
+  annotated variable lists, marking what is required, what is secret, and what is
+  inlined at build time.
+
+Only `*.example` files are committed. Real `.env` files are git-ignored by a
+deny-all rule, and `git check-ignore` is the way to confirm before you commit.
+
+Frontend variables are inlined by Vite at **build** time, so they must exist in
+Vercel before the build runs, and changing one requires a redeploy. Nothing in a
+`VITE_` variable is secret — it ships in the bundle.
 
 ---
 
-## 🛠 Tech Stack
+## Branches and environments
 
-- **Backend**: NestJS, TypeScript, Prisma ORM, Supabase (PostgreSQL & Auth), Cloudflare R2 (Storage), Redis (BullMQ queues, Rate Limiting, Presence), Resend API, Mailpit
-- **User Application**: React, Vite, Vanilla CSS Modules, Hugeicons, Supabase Client
-- **Super Admin Portal**: React, Vite, TypeScript, TailwindCSS / Hugeicons
+| Branch | Deploys to | Database | GitHub environment |
+|---|---|---|---|
+| `feature/*` | — (CI only) | — | — |
+| `development` | Azure DEV (`meetifyy-api-dev`) | Supabase DEV | `development` |
+| `main` | Azure PROD (`meetifyy-api`) | Supabase PROD | `Production` |
+
+Dev and prod live in **separate Azure subscriptions on separate Microsoft
+accounts** — not for tidiness, but because a subscription may hold only one
+Container Apps environment. See [docs/azure-setup.md](docs/azure-setup.md).
+
+### Contribution flow
+
+```
+1. branch from development        git switch -c feature/your-change development
+2. commit                         schema + migrations together, always
+3. push, open a PR into development
+4. CI must pass, then merge       → DEV deploys, DEV migrations run
+5. test on dev.meetifyy.app
+6. open a PR: development → main
+7. review, then merge             → PROD deploys, PROD migrations run
+```
+
+Both deploys are automatic on merge. Nothing is deployed by hand.
 
 ---
 
-## 🗄 Database changes — always use migrations
+## Database changes — always use migrations
 
-**Never run `prisma db push`.** When you change `backend/prisma/schema.prisma`, create a
-migration instead:
+**Never run `prisma db push`.** When you change `backend/prisma/schema.prisma`,
+create a migration:
 
 ```bash
 cd backend && npx prisma migrate dev --name describe_your_change
 ```
 
-Then **commit the folder it generates** under `backend/prisma/migrations/`. That file is
-the deployable unit — Azure Container Apps runs `prisma migrate deploy` as a pre-deploy step and
-applies exactly those files, in order. A schema change without a committed migration
-simply never reaches production, and the app boots expecting a column that isn't there.
+Then **commit the generated folder** under `backend/prisma/migrations/`. That
+folder is the deployable unit — the workflows run `prisma migrate deploy` as a
+pre-deploy step and apply exactly those files, in order. A schema change without
+a committed migration never reaches production, and the app boots expecting a
+column that isn't there.
 
-Why `db push` is banned rather than merely discouraged:
+Why `db push` is banned rather than discouraged:
 
-- It force-matches the database to `schema.prisma` and **drops whatever doesn't match** —
-  including columns holding real user data — with no migration to review and no rollback.
-- It records nothing, so `_prisma_migrations` stops describing the real database. This
-  repo has already been bitten by that: migration files sat unapplied on disk while the
-  database quietly had their changes, and reconciling the two required comparing databases
-  column by column.
-- It ran on every container start, not just deploys, so drift got "corrected" unattended.
-
-Useful commands:
+- It force-matches the database to `schema.prisma` and **drops whatever doesn't
+  match** — including columns holding real user data — with no migration to
+  review and no rollback.
+- It records nothing, so `_prisma_migrations` stops describing the real
+  database. This repo has already been bitten: migration files sat unapplied on
+  disk while the database quietly had their changes, and reconciling the two
+  meant comparing databases column by column.
 
 | Command | Use |
-| --- | --- |
+|---|---|
 | `npx prisma migrate dev --name <x>` | Local only. Creates + applies a migration. |
-| `npx prisma migrate deploy` | Production. Applies pending migrations; never drops. |
-| `npx prisma migrate status` | Check whether the DB matches the migration history. |
+| `npx prisma migrate deploy` | Deployed environments. Applies pending migrations; never drops. |
+| `npx prisma migrate status` | Check whether the DB matches migration history. |
 | `npx prisma migrate resolve --applied <x>` | Mark a hand-applied migration as done. |
 
-`migrate dev` is the only sharp one: against a database whose history has drifted it will
-offer to **reset (wipe) it**. Run it only against your own dev database, never production.
+`migrate dev` is the sharp one: against a drifted database it offers to
+**reset (wipe) it**. Run it only against your own dev database.
+
+Migrations run **before** the new image is deployed, so the schema is always
+ahead of or equal to the running code. Because a rollback reverts code but not
+migrations, **every migration must be backward-compatible with the previous
+release**.
+
 ---
 
-## 🌿 Branch → Environment mapping
-
-| Branch | Deploys to | Database |
-|--------|-----------|----------|
-| `feature/*` | — (CI only) | — |
-| `development` | Azure DEV (`meetifyy-api-dev`) | Supabase DEV |
-| `main` | Azure PROD (`meetifyy-api`) | Supabase PROD |
-
-Schema changes flow:
+## Deploy pipeline
 
 ```
-1. Modify schema.prisma locally
-2. npx prisma migrate dev --name your_change   ← creates migration file
-3. Commit schema.prisma + migrations/ together
-4. Push to development → DEV deploy + DEV migration runs automatically
-5. Test in DEV
-6. PR: development → main → PROD deploy + PROD migration runs automatically
+push → ci.yml passes → build image → push to ACR
+     → prisma migrate deploy (one-shot Container App Job)
+     → update Container App → health check
 ```
 
-`prisma migrate deploy` (used in both deployment workflows) applies only the
-migration files already committed to Git. It never generates migrations and
-never touches schema outside the committed SQL files.
+If a migration fails the workflow exits non-zero and the old app keeps running
+against the unchanged database.
 
-See `AZURE_SETUP.md §23` for the complete architecture and workflow guide.
+The production database URL is read from the Container App's own secret store at
+deploy time and **never becomes a GitHub secret**. Any change to the pipeline
+must preserve that property.
+
+---
+
+## Safety rails worth knowing
+
+The codebase actively prevents several cross-environment mistakes:
+
+- **`isolation.guard.ts`** refuses to boot a production process whose database,
+  Redis, R2 bucket or URLs are named like dev resources — catching a
+  copy-pasted `DATABASE_URL` at startup rather than at the first request. It
+  inspects hostnames only, never credentials.
+- **`STORAGE_PROVIDER`** is a validated single-value knob, so a deployment still
+  set to `supabase` fails loudly instead of silently resolving media against a
+  bucket that no longer exists.
+- **Verification uploads** are routed by key prefix to a private bucket, so a new
+  call site cannot accidentally publish identity documents.
+- **Supabase Auth templates** are rendered per environment, and the production
+  render fails hard if any dev URL survives into the output.
