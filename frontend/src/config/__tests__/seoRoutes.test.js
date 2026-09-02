@@ -163,8 +163,34 @@ describe('one canonical host', () => {
           (r.has || []).some((c) => c.key === 'host' && c.value === from),
         );
         expect(rule, `${name} does not redirect ${from}`).toBeDefined();
-        expect(rule.destination).toBe(`${to}/:path*`);
+        // The ORIGIN is the invariant. The path token is not pinned, because
+        // the rule legitimately carries a narrowed matcher (see the static-asset
+        // test below) and the exact parameter name changes with it.
+        expect(rule.destination.startsWith(to), rule.destination).toBe(true);
         expect(rule.permanent).toBe(true);
+      }
+    }
+  });
+
+  it('does not redirect static assets on the www host', () => {
+    /**
+     * Guards a fix, not a preference.
+     *
+     * The rule originally matched `/:path*`, every request on the www host
+     * without exception, and that produced ERR_TOO_MANY_REDIRECTS on
+     * logo-192.png and favicon.png in production. Assets have to be excluded
+     * from it, so this asserts the exclusions are still there rather than
+     * leaving the next edit free to widen the matcher back.
+     */
+    for (const name of ['vercel.json', 'frontend/vercel.json']) {
+      const cfg = readJson(name);
+      const rule = cfg.redirects.find((r) =>
+        (r.has || []).some((c) => c.key === 'host' && c.value === `www.${CANONICAL_HOST}`),
+      );
+      expect(rule, `${name} has no www redirect`).toBeDefined();
+      expect(rule.source, 'the www redirect matches every path again').toContain('(?!');
+      for (const ext of ['png', 'ico', 'svg', 'json', 'js', 'css', 'webmanifest', 'woff2']) {
+        expect(rule.source, `${ext} is no longer excluded`).toContain(ext);
       }
     }
   });
