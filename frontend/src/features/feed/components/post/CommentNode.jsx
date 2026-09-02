@@ -782,7 +782,7 @@ export default function CommentNode({
                       alt={authorCollege.name}
                       className={styles.commentCollegeIcon}
                       title={authorCollege.name}
-                      onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }}
+                      onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.svg'; }}
                     />
                   )}
                 </button>

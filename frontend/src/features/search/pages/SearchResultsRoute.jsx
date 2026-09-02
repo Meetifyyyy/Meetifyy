@@ -202,7 +202,7 @@ const ActivityRow = React.memo(function ActivityRow({ data, storeActivity, users
                       className={styles.goingAvatarImg}
                       loading="lazy"
                       decoding="async"
-                      onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }}
+                      onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.svg'; }}
                     />
                   ) : (
                     <DefaultAvatar />

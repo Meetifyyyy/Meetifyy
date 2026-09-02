@@ -57,7 +57,7 @@ function DropdownContent({ suggestions, loading, selectedIndex, onSelect, positi
             onPointerDown={(e) => e.preventDefault()}
           >
             <div className={styles.avatar}>
-              <img src={processedAvatar} alt={user.displayName} className={styles.avatarImg}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
+              <img src={processedAvatar} alt={user.displayName} className={styles.avatarImg}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.svg'; }} />
             </div>
 
             <div className={styles.info}>

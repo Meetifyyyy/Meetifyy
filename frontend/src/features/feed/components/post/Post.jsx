@@ -240,7 +240,7 @@ function Post({ postData, onClick, onDeleted, isDetailed = false, hideCommunityT
               style={{ background: (!isImageUrl(postCommunity.avatar)) ? (postCommunity.color || 'var(--color-primary)') : 'var(--color-bg-white)' }}
             >
               {isImageUrl(postCommunity.avatar) ? (
-                <img src={getProcessedAvatarUrl(postCommunity.avatar)} alt="" loading="lazy" onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
+                <img src={getProcessedAvatarUrl(postCommunity.avatar)} alt="" loading="lazy" onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.svg'; }} />
               ) : (
                 <span>{postCommunity.avatar || postCommunity.name?.charAt(0).toUpperCase()}</span>
               )}
@@ -259,7 +259,7 @@ function Post({ postData, onClick, onDeleted, isDetailed = false, hideCommunityT
                 loading="lazy"
                 className={styles.postCollegeIcon}
                 title={authorCollege.name}
-                onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }}
+                onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.svg'; }}
               />
             )}
           </Link>

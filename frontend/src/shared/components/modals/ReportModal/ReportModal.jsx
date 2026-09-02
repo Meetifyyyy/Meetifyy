@@ -8,7 +8,7 @@ import { useReportMutation } from '@shared/api/reports/useReportMutation';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 import { useScrollLock } from '@shared/hooks/useScrollLock';
 import styles from './ReportModal.module.css';
-import { getMediaUrl } from '@shared/api/apiClient';
+import { getProcessedAvatarUrl } from '@shared/components/avatar/Avatar';
 
 const reportFormSchema = z
   .object({
@@ -177,7 +177,7 @@ export default function ReportModal({
           {(targetName || targetPreview || targetAvatar) && (
             <div className={styles.previewCard}>
               {targetAvatar && (
-                <img src={getMediaUrl(targetAvatar)} alt="" className={styles.previewAvatar}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
+                <img src={getProcessedAvatarUrl(targetAvatar)} alt="" className={styles.previewAvatar}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.svg'; }} />
               )}
               <div className={styles.previewTextGroup}>
                 {targetName && <div className={styles.previewName}>{targetName}</div>}

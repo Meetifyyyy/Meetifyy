@@ -413,7 +413,7 @@ function HeroSection({ comm, onlineNow, joined, joining, onToggleJoin, onCreateP
                             src={getMediaUrl(m.avatar)}
                             alt={m.name || ''}
                             style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', borderRadius: '50%' }}
-                            onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
+                            onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.svg'; }} />
                         ) : (
                           <DefaultAvatar style={{ width: '100%', height: '100%', borderRadius: '50%', fontSize: '0.65rem' }} />
                         )}
