@@ -204,7 +204,7 @@ export const VerificationPage: React.FC = () => {
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
+              <div className="grid-split">
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                   <span style={{ fontSize: '0.85rem', color: 'var(--color-text-light)', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.05em' }}>College ID Card</span>
                   <div style={{ 

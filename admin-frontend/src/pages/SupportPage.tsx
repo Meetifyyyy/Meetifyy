@@ -78,7 +78,7 @@ export const SupportPage: React.FC = () => {
       </div>
 
       {tab === 'tickets' || tab === 'appeals' ? (
-        <div style={ticketLayout}>
+        <div className="ticket-layout">
           <TicketQueue
             // Remounted when the section changes so the appeals queue starts
             // from its own filter state rather than inheriting the last search
@@ -163,16 +163,6 @@ const tabButton: React.CSSProperties = {
   marginBottom: '-1px',
 };
 
-const ticketLayout: React.CSSProperties = {
-  display: 'grid',
-  gridTemplateColumns: 'minmax(300px, 380px) 1fr',
-  gap: '1rem',
-  // Tracks the compacted chrome above it: main padding, page header and tab
-  // bar. Kept as one number in one place so a spacing change has a single
-  // place to follow.
-  height: 'calc(100vh - 160px)',
-  minHeight: '30rem',
-};
 
 const emptyDetail: React.CSSProperties = {
   display: 'flex',

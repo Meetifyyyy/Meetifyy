@@ -341,3 +341,155 @@ h1, h2, h3, h4, h5, h6 {
   color: var(--color-text-dim);
   pointer-events: none;
 }
+
+/* ─────────────────────────────────────────────────────────────
+   SMALL SCREENS
+   ─────────────────────────────────────────────────────────────
+   The layout shell was already responsive: the sidebar becomes a drawer under
+   1024px and <main> drops its left margin and tightens its padding. What was
+   left unhandled was the content inside it, where fixed grid tracks and
+   desktop-sized controls do not survive a 375px viewport.
+
+   Everything here is additive and gated behind a media query, so the desktop
+   rendering is byte-for-byte what it was.
+   ───────────────────────────────────────────────────────────── */
+
+/*
+ * A two-column split that becomes one column on a phone.
+ *
+ * Replaces inline `gridTemplateColumns: '1fr 1fr'`, which an inline style
+ * cannot make responsive. At 375px those two tracks measured 161px each, which
+ * is not enough for the verification photo panels they hold.
+ */
+.grid-split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+}
+
+/*
+ * The support screen: a ticket queue beside the selected ticket.
+ *
+ * The desktop track is `minmax(300px, 380px) 1fr`, and that 300px minimum is a
+ * hard floor. Measured at 375px the queue took 300px and the detail pane was
+ * left with 44px, while the row overflowed its container. It also forced
+ * `min-height: 30rem` against `calc(100vh - 160px)`, so a short phone got a
+ * 480px row it could not shrink.
+ *
+ * On a phone the two stack, the queue takes its natural height, and the height
+ * clamp is dropped entirely - a viewport-locked pane inside a scrolling page is
+ * a desktop idea.
+ */
+.ticket-layout {
+  display: grid;
+  grid-template-columns: minmax(300px, 380px) 1fr;
+  gap: 1rem;
+  /* Tracks the compacted chrome above it: main padding, page header and tab
+     bar. One number in one place so a spacing change has a single place to
+     follow. */
+  height: calc(100vh - 160px);
+  min-height: 30rem;
+}
+
+@media (max-width: 767px) {
+  .grid-split {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+
+  .ticket-layout {
+    grid-template-columns: 1fr;
+    height: auto;
+    min-height: 0;
+  }
+
+  /* Panels give back some of their padding; at this width the frame costs more
+     than it earns. */
+  .glass-panel {
+    padding: 0.85rem;
+  }
+
+  /*
+   * Tables stay horizontally scrollable rather than wrapping or shrinking.
+   * That is already correct - the users table measures 677px inside a 344px
+   * wrapper and scrolls - so this only tightens the cells so more of it is
+   * visible per swipe.
+   */
+  .admin-table th,
+  .admin-table td {
+    padding: 0.55rem 0.6rem;
+    font-size: 0.78rem;
+  }
+
+  /* A dialog on a phone should use the width it has. */
+  .modal-content {
+    max-width: none;
+    max-height: 85vh;
+  }
+
+  .modal-backdrop {
+    padding: 0.75rem;
+    /* Bottom-anchored: on a tall phone a centred dialog sits under the thumb's
+       reach, and the on-screen keyboard covers it entirely when a field is
+       focused. */
+    align-items: flex-end;
+  }
+
+  /*
+   * Filter bars: one control per row, rather than three cramped ones.
+   *
+   * `!important` here is not a shortcut. The controls carry inline styles from
+   * the pages that render them (`flex: 1, minWidth: 220px` on the search field,
+   * `width: auto, minWidth: 150px` on the selects), and an inline style cannot
+   * be overridden by a class from a stylesheet by any other means. The
+   * alternative is editing every filter bar in the portal to hoist its layout
+   * into CSS, which is a larger change for the same result.
+   */
+  .toolbar {
+    gap: 0.5rem;
+  }
+
+  .toolbar > * {
+    flex: 1 1 100% !important;
+    min-width: 0 !important;
+    width: 100% !important;
+  }
+}
+
+/*
+ * Touch ergonomics, on any small touch device regardless of orientation.
+ *
+ * Measured at 375px, buttons rendered 33-35px tall. iOS asks for 44px and
+ * Android for 48dp, and these are the controls that suspend accounts and
+ * delete colleges - the ones where a mis-tap costs the most.
+ */
+@media (pointer: coarse) and (max-width: 900px) {
+  button,
+  .btn-primary,
+  .btn-secondary,
+  .btn-danger {
+    min-height: 40px;
+  }
+
+  /*
+   * 16px on form controls, because below it iOS Safari zooms the page in when
+   * a field is focused and does not zoom back out. The admin portal renders
+   * these at 13.6px.
+   *
+   * Scoped to `.input-control` rather than every input: this is the portal's
+   * own control class, so nothing that styles itself deliberately is caught.
+   */
+  .input-control,
+  input.input-control,
+  select.input-control,
+  textarea.input-control {
+    font-size: 16px;
+    min-height: 42px;
+  }
+
+  /* Table action buttons stay compact; a 40px minimum in a dense row would
+     double every row's height. The row itself is the scroll target. */
+  .admin-table button {
+    min-height: 32px;
+  }
+}
