@@ -43,6 +43,50 @@ export type DefaultAssetName = 'community-avatar' | 'profile-avatar';
 
 const ASSETS: DefaultAssetName[] = ['community-avatar', 'profile-avatar'];
 
+/**
+ * Resolves a default asset on disk.
+ *
+ * `__dirname` is `dist/uploads` in a built image but `src/uploads` under
+ * ts-node, and the assets are not compiled — so walk up to the package root
+ * and look there. Both candidates are tried rather than assuming a build
+ * step copies them.
+ */
+export function defaultAssetFilePath(name: DefaultAssetName): string {
+  const candidates = [
+    path.join(__dirname, '..', '..', 'assets', 'defaults', `${name}.webp`),
+    path.join(__dirname, '..', '..', '..', 'assets', 'defaults', `${name}.webp`),
+    path.join(process.cwd(), 'assets', 'defaults', `${name}.webp`),
+  ];
+  return candidates.find((p) => fs.existsSync(p)) ?? candidates[0];
+}
+
+/**
+ * The bundled file backing a `defaults/` storage key, or null when the key is
+ * not a current-version default asset.
+ *
+ * These four images ship inside the container, so answering for them from disk
+ * is both correct and unconditional. Going out to the bucket for them instead
+ * made the platform's own artwork depend on the longest chain in the system —
+ * a `Media` row, its `visibility`, an R2 `HeadObject`, and a correctly
+ * configured `R2_PUBLIC_URL` — and any one of those failing downgraded every
+ * account that never chose a picture to the miss fallback. That is exactly what
+ * production was doing: `defaults/profile-avatar-v2.webp` failed to resolve and
+ * served the placeholder SVG, while `defaults/community-avatar-v2.webp`, an
+ * identical object uploaded in the same run, resolved normally.
+ *
+ * Only the current version is served from disk. An older version's key belongs
+ * to artwork this build no longer has, so it still goes to the bucket, where
+ * the object it was uploaded as is retained.
+ */
+export function bundledDefaultAssetPath(key: string): string | null {
+  for (const name of ASSETS) {
+    if (key !== `defaults/${name}-${ASSET_VERSION}.webp`) continue;
+    const filePath = defaultAssetFilePath(name);
+    return fs.existsSync(filePath) ? filePath : null;
+  }
+  return null;
+}
+
 @Injectable()
 export class DefaultAssetsService implements OnModuleInit {
   private readonly logger = new Logger(DefaultAssetsService.name);
@@ -282,28 +326,8 @@ export class DefaultAssetsService implements OnModuleInit {
     }
   }
 
-  /**
-   * Resolves the asset on disk.
-   *
-   * `__dirname` is `dist/uploads` in a built image but `src/uploads` under
-   * ts-node, and the assets are not compiled — so walk up to the package root
-   * and look there. Both candidates are tried rather than assuming a build
-   * step copies them.
-   */
+  /** Resolves the asset on disk. See {@link defaultAssetFilePath}. */
   private assetPath(name: DefaultAssetName): string {
-    const candidates = [
-      path.join(__dirname, '..', '..', 'assets', 'defaults', `${name}.webp`),
-      path.join(
-        __dirname,
-        '..',
-        '..',
-        '..',
-        'assets',
-        'defaults',
-        `${name}.webp`,
-      ),
-      path.join(process.cwd(), 'assets', 'defaults', `${name}.webp`),
-    ];
-    return candidates.find((p) => fs.existsSync(p)) ?? candidates[0];
+    return defaultAssetFilePath(name);
   }
 }

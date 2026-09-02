@@ -286,7 +286,7 @@ export default function CommunityAdminModal({ community, onClose, onDeleteCommun
                     </div>
                   )}
                   {isImageUrl(avatar) ? (
-                    <img src={getMediaUrl(avatar)} alt="Avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
+                    <img src={getMediaUrl(avatar)} alt="Avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.svg'; }} />
                   ) : (
                     <span style={{ fontSize: '1.8rem', fontWeight: 'bold', color: '#FFFFFF' }}>
                       {avatar || (community.name ? community.name.charAt(0).toUpperCase() : 'C')}

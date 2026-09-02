@@ -2,20 +2,24 @@ import { forwardRef, useState, useEffect, useMemo } from 'react';
 import { UsersIcon } from '@heroicons/react/24/solid';
 import { getMediaUrl, normalizeDicebearUrl } from '@shared/api/apiClient';
 import { useCanSeeOthersPresence } from '@shared/hooks/usePresenceVisibility';
+import { DEFAULT_AVATAR_SRC, isPlatformDefaultAvatar } from '@shared/constants/defaultAvatar';
 import styles from './Avatar.module.css';
+import DefaultAvatarGlyph from './DefaultAvatarGlyph';
 
 export function getProcessedAvatarUrl(src) {
-  if (!src) return '/default_avatar.svg';
+  if (!src) return DEFAULT_AVATAR_SRC;
   let s = src;
   if (typeof s === 'object') {
     s = s.avatar || s.avatarUrl || s.url || s.objectKey || s.profileImage || (s.avatarMedia ? s.avatarMedia.objectKey : '') || '';
   }
   if (typeof s !== 'string' || !s.trim() || s.trim().length <= 2) {
-    return '/default_avatar.svg';
+    return DEFAULT_AVATAR_SRC;
   }
   const clean = s.trim();
-  if (clean.includes('default_avatar') || clean.includes('api.dicebear.com/7.x/initials')) {
-    return '/default_avatar.svg';
+  // Covers the server-side default reference too, so an account that never
+  // chose a picture draws the default here instead of fetching it.
+  if (isPlatformDefaultAvatar(clean)) {
+    return DEFAULT_AVATAR_SRC;
   }
   if (clean.includes('api.dicebear.com/')) {
     return normalizeDicebearUrl(clean);
@@ -57,7 +61,7 @@ const Avatar = forwardRef(({
     initialProcessedSrc &&
     typeof initialProcessedSrc === 'string' &&
     initialProcessedSrc.trim() &&
-    !initialProcessedSrc.includes('default_avatar') &&
+    !isPlatformDefaultAvatar(initialProcessedSrc) &&
     !failedAvatarCache.has(initialProcessedSrc)
   );
 
@@ -123,11 +127,7 @@ const Avatar = forwardRef(({
               <UsersIcon className={styles.avatarIcon} style={{ color: '#ffffff' }} />
             </div>
           ) : (
-            <svg viewBox="0 0 24 24" fill="none" style={{ width: '100%', height: '100%', display: 'block' }}>
-              <circle cx="12" cy="12" r="12" fill="#1d68f7"/>
-              <circle cx="12" cy="8.5" r="2.5" fill="#ffffff"/>
-              <path fill="#ffffff" d="M7 16.3c0-2.5 2.2-4.5 5-4.5s5 2 5 4.5c0 1.2-2.2 1.8-5 1.8s-5-0.6-5-1.8z"/>
-            </svg>
+            <DefaultAvatarGlyph />
           )}
           {children}
         </div>

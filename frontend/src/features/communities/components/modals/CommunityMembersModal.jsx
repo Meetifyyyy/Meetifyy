@@ -16,6 +16,7 @@ import { useCommunityActions } from '@shared/hooks/useCommunityActions';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 import { useScrollLock } from '@shared/hooks/useScrollLock';
 import PromoteModeratorModal from '../moderation/PromoteModeratorModal';
+import { getProcessedAvatarUrl } from '@shared/components/avatar/Avatar';
 
 
 /**
@@ -411,7 +412,7 @@ export default function CommunityMembersModal({
                 <div key={i} className={styles.userItem}>
                   <div className={styles.userAvatar}>
                     {isImageUrl(member.avatar || matchedUser?.avatar) ? (
-                      <img src={getMediaUrl(member.avatar || matchedUser?.avatar)} alt="avatar" className={styles.avatarImg} onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
+                      <img src={getProcessedAvatarUrl(member.avatar || matchedUser?.avatar)} alt="avatar" className={styles.avatarImg} onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.svg'; }} />
                     ) : (
                       <DefaultAvatar style={{ width: '100%', height: '100%' }} />
                     )}

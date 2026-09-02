@@ -562,7 +562,7 @@ export default function CreateCommunityModal({ onClose, onCreated, isCampusCommu
                           height: `${baseDimensions.h}px`,
                           transform: `translate(-50%, -50%) translate(${cropState.x}px, ${cropState.y}px) scale(${cropState.zoom})`
                         }}
-                       onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
+                       onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.svg'; }} />
                     </div>
                     <div className={styles.zoomSliderRow}>
                       <span className={styles.zoomIcon}>🔍</span>

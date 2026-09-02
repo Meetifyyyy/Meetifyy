@@ -460,6 +460,7 @@ const EMPTY_DATE_TIME = {
   endTimeHour: '', endTimeMinute: '', endTimeAmPm: '',
 };
 import { DEFAULT_ACTIVITY_COVERS as RANDOM_COVERS } from '@shared/constants/presetMedia';
+import { getProcessedAvatarUrl } from '@shared/components/avatar/Avatar';
 
 /**
  * Solid-colour covers used when the user explicitly removes the cover image.
@@ -765,10 +766,10 @@ function ActivityCreatedModal({ activityTitle, coverImage, activityDate, creatio
               >
                 <div style={{ position: 'relative', flexShrink: 0 }}>
                   <img
-                    src={getMediaUrl(u.avatar) || '/default_avatar.webp'}
+                    src={getProcessedAvatarUrl(u.avatar) || '/default_avatar.svg'}
                     alt=""
                     style={{ width: 38, height: 38, borderRadius: '50%', objectFit: 'cover', background: 'var(--color-bg-soft)' }}
-                    onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }}
+                    onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.svg'; }}
                   />
                   {sel && (
                     <span style={{

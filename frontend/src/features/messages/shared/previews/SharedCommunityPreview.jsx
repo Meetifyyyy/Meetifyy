@@ -51,7 +51,7 @@ export function SharedCommunityPreview({ community, isMe = false }) {
             src={avatarSrc}
             alt={community.name || ''}
             className={styles.avatar}
-            onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }}
+            onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.svg'; }}
           />
         ) : (
           <div

@@ -27,6 +27,8 @@ import {
   isCoveredImageFolder,
 } from './uploads.constants';
 import type { AuthenticatedRequest } from '../common/types/authenticated-request';
+import { bundledDefaultAssetPath } from './default-assets.service';
+import { DEFAULT_AVATAR_SVG } from './default-avatar';
 
 /**
  * Resolved-redirect cache for GET /api/media/*.
@@ -458,6 +460,17 @@ export class UploadsController {
       .filter(({ root, full }) => full.startsWith(`${root}${path.sep}`))
       .map(({ full }) => full);
 
+    // The platform's own default artwork ships in the image, so it is answered
+    // from disk rather than resolved through the bucket. See
+    // `bundledDefaultAssetPath` for why that indirection was the bug.
+    const bundledDefault = bundledDefaultAssetPath(key);
+    if (bundledDefault) {
+      // Versioned key, immutable bytes — same caching as any content-addressed
+      // object.
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      return res.sendFile(bundledDefault);
+    }
+
     for (const localFilePath of pathsToCheck) {
       if (fs.existsSync(localFilePath)) {
         // Content-addressed: filename contains a random hex so the same key always
@@ -508,15 +521,7 @@ export class UploadsController {
     ) {
       res.setHeader('Content-Type', 'image/svg+xml');
       res.setHeader('Cache-Control', 'public, max-age=86400');
-      return res.send(
-        `
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none">
-          <circle cx="12" cy="12" r="12" fill="#1d68f7"/>
-          <circle cx="12" cy="8.5" r="2.5" fill="#ffffff"/>
-          <path fill="#ffffff" d="M7 16.3c0-2.5 2.2-4.5 5-4.5s5 2 5 4.5c0 1.2-2.2 1.8-5 1.8s-5-0.6-5-1.8z"/>
-        </svg>
-      `.trim(),
-      );
+      return res.send(DEFAULT_AVATAR_SVG);
     }
 
     return this.sendMediaMiss(res, 404);

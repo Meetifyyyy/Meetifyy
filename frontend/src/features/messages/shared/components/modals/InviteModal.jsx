@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, useRef } from 'react';
 import { selectableUsers } from '@shared/lib/conversationTargets';
 import { createPortal } from 'react-dom';
 import { useQuery } from '@tanstack/react-query';
-import { usersApi, groupApi, getMediaUrl } from '@shared/api/apiClient';
+import { usersApi, groupApi } from '@shared/api/apiClient';
 import { useAuth } from '@shared/context/AuthContext';
 import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
 import { isImageUrl } from '@shared/utils/avatar';
@@ -14,6 +14,7 @@ import { showToast } from '@shared/utils/toast';
 import { generateConversationUrl } from '@shared/utils/conversationUrl';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 import { useScrollLock } from '@shared/hooks/useScrollLock';
+import { getProcessedAvatarUrl } from '@shared/components/avatar/Avatar';
 
 export default function InviteModal({ isOpen, onClose, group }) {
   // Back dismisses this dialog rather than navigating the page behind it.
@@ -215,7 +216,7 @@ export default function InviteModal({ isOpen, onClose, group }) {
                 <div key={user.id} className={styles.listItem}>
                   <div className={styles.contactInfo}>
                     {isImageUrl(user.avatar) ? (
-                      <img src={getMediaUrl(user.avatar)} alt={user.displayName || user.name} className={styles.avatar} onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} />
+                      <img src={getProcessedAvatarUrl(user.avatar)} alt={user.displayName || user.name} className={styles.avatar} onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.svg'; }} />
                     ) : (
                       <DefaultAvatar size={40} name={user.displayName || user.name} className={styles.avatar} />
                     )}

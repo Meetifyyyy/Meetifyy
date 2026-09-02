@@ -6,7 +6,7 @@ import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 import { useScrollLock } from '@shared/hooks/useScrollLock';
 import styles from './NewMessageModal.module.css';
 import { useUsersMap } from '@shared/hooks/useUsersMap';
-import { getMediaUrl } from '@shared/api/apiClient';
+import { getProcessedAvatarUrl } from '@shared/components/avatar/Avatar';
 
 export default function NewMessageModal({ onClose, onStartChat, onCreateGroup }) {
   // Rendered only while open, so `true` is the open state.
@@ -177,10 +177,10 @@ export default function NewMessageModal({ onClose, onStartChat, onCreateGroup })
                       <div className={styles.userAvatar}>
                         {isImageUrl(user.avatar) ? (
                           <img
-                            src={getMediaUrl(user.avatar)}
+                            src={getProcessedAvatarUrl(user.avatar)}
                             alt={user.displayName || user.name || user.username}
                             className={styles.avatarImg}
-                            onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} 
+                            onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.svg'; }} 
                           />
                         ) : (
                           <DefaultAvatar />

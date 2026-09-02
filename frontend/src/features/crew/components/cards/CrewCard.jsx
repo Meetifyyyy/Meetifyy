@@ -305,7 +305,7 @@ function CrewCard({ activity, onClick, onMouseEnter }) {
                             src={getProcessedAvatarUrl(u.avatar)}
                             alt={u.displayName || 'Participant'}
                             className={styles.goingAvatarImg}
-                            onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }}
+                            onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.svg'; }}
                           />
                         ) : (
                           <DefaultAvatar />

@@ -59,7 +59,7 @@ export function SharedProfilePreview({
             src={avatarSrc} 
             alt={displayName} 
             className={styles.avatar} 
-            onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.webp'; }} 
+            onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.svg'; }} 
           />
         ) : (
           <DefaultAvatar 
