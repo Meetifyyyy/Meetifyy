@@ -14,6 +14,7 @@ import {
 } from './analytics/analyticsApi';
 import { Pagination } from '../components/Pagination';
 import { useDebounced } from '../hooks/useDebounced';
+import { ErrorLogsPanel } from './analytics/ErrorLogsPanel';
 
 /**
  * Infrastructure and resource usage.
@@ -217,7 +218,7 @@ export const AnalyticsPage: React.FC = () => {
         <div>
           <h2 className="page-title">Analytics &amp; Infrastructure</h2>
           <p className="page-subtitle">
-            Live service health, resource usage, and recorded slow requests.
+            Live service health, resource usage, slow requests and application errors.
           </p>
         </div>
         <button
@@ -679,6 +680,10 @@ export const AnalyticsPage: React.FC = () => {
           busy={slowLoading}
         />
       </div>
+
+      {/* Errors sit below slow requests: both are recorded server-side and read
+          together during an incident, and neither belongs on the dashboard. */}
+      <ErrorLogsPanel />
     </div>
   );
 };

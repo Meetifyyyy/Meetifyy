@@ -3,9 +3,10 @@ import { apiRequest } from '../../api/apiClient';
 /**
  * The analytics API, in one place.
  *
- * Both endpoints report measurements taken on the server: `infrastructure`
- * probes each service live on every call, and `slow-requests` reads rows the
- * request middleware wrote. Nothing here is derived in the browser.
+ * Every endpoint reports measurements taken on the server: `infrastructure`
+ * probes each service live on every call, `slow-requests` reads rows the
+ * request middleware wrote, and `error-logs` reads rows the exception filter
+ * wrote. Nothing here is derived in the browser.
  */
 
 export type ServiceState = 'UP' | 'DOWN' | 'NOT_CONFIGURED';
@@ -60,6 +61,44 @@ function toQuery(params: Record<string, unknown>): string {
 /** Which surface recorded traffic belongs to. */
 export type SlowRequestSurface = 'all' | 'admin' | 'app';
 
+
+export type ErrorSeverity = 'UNEXPECTED' | 'EXPECTED';
+
+export interface ErrorLogRow {
+  id: string;
+  route: string;
+  path: string;
+  method: string;
+  statusCode: number;
+  severity: ErrorSeverity;
+  message: string;
+  name: string | null;
+  stack: string | null;
+  requestId: string | null;
+  userId: string | null;
+  adminId: string | null;
+  ip: string | null;
+  userAgent: string | null;
+  occurredAt: string;
+}
+
+export interface ErrorLogsResponse {
+  rows: ErrorLogRow[];
+  pagination: { page: number; limit: number; total: number; pages: number };
+  summary: {
+    retentionDays: number;
+    since: string;
+    /** Null until the first error is recorded. */
+    oldestRecorded: string | null;
+    total: number;
+    unexpected: number;
+    expected: number;
+    captureEnabled: boolean;
+    clientErrorsCaptured: boolean;
+  };
+  topRoutes: Array<{ route: string; count: number; lastSeen: string }>;
+}
+
 export const analyticsApi = {
   getInfrastructure: (): Promise<InfrastructureResponse> =>
     apiRequest('/admin/analytics/infrastructure'),
@@ -69,6 +108,13 @@ export const analyticsApi = {
     method?: string;
     surface?: SlowRequestSurface;
   }) => apiRequest(`/admin/analytics/slow-requests${toQuery(params)}`),
+  getErrorLogs: (params: {
+    page?: number;
+    route?: string;
+    severity?: string;
+    search?: string;
+  }): Promise<ErrorLogsResponse> =>
+    apiRequest(`/admin/analytics/error-logs${toQuery(params)}`),
 };
 
 /** 1.4 GB, 170 MB, 12.0 KB — three significant figures, binary units. */

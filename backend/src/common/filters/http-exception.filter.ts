@@ -8,6 +8,12 @@ import {
 } from '@nestjs/common';
 import { Response, Request } from 'express';
 import { httpLine, LOG_CAUSE } from '../logging/log-format';
+import type { ErrorLogRecorder } from '../../observability/error-log.recorder';
+import {
+  clientIp,
+  headerValue,
+  resolveRoute,
+} from '../../observability/slow-request.middleware';
 
 const SENSITIVE_FIELDS = new Set([
   'password',
@@ -78,6 +84,16 @@ function appStack(exception: unknown, limit = 3): string {
 @Catch()
 export class HttpExceptionFilter implements ExceptionFilter {
   private readonly logger = new Logger('HTTP');
+
+  /**
+   * Optional on purpose.
+   *
+   * This filter is constructed by hand in main.ts rather than through DI, and
+   * it is also instantiated directly in tests. Leaving the recorder optional
+   * means neither has to know about error-log capture, and a filter built
+   * without one behaves exactly as it did before persistence existed.
+   */
+  constructor(private readonly errorLogs?: ErrorLogRecorder) {}
 
   catch(exception: unknown, host: ArgumentsHost) {
     const ctx = host.switchToHttp();
@@ -153,6 +169,41 @@ export class HttpExceptionFilter implements ExceptionFilter {
           : message,
       ...(errorCode ? { code: errorCode } : {}),
     };
+
+    /**
+     * Persist the error for the admin Error Logs view.
+     *
+     * Here because this is the only place that has the exception object, the
+     * request, and the resolved status together. The recorder buffers and
+     * writes on its own timer, so nothing below is awaited and a failure to
+     * record can never change the response the client gets - which is why the
+     * whole thing sits in a try/catch that swallows.
+     *
+     * `cause` is already the unwrapped root cause, and `appStack` has already
+     * dropped node_modules frames. The request BODY is deliberately not
+     * recorded: it is the most likely place for a password or token to be, and
+     * a diagnostics table read by admins is the wrong home for one. The logged
+     * line still carries a redacted snippet for the operator tailing logs.
+     */
+    try {
+      this.errorLogs?.record({
+        route: resolveRoute(request),
+        path: (request.originalUrl || request.url || '/').split('?')[0],
+        method: request.method,
+        statusCode: status,
+        severity: status >= 500 ? 'UNEXPECTED' : 'EXPECTED',
+        message: cause,
+        name: exception instanceof Error ? exception.name : null,
+        stack: appStack(exception, 8) || null,
+        requestId: (request as any).id ? String((request as any).id) : null,
+        userId: (request as any).user?.id ?? null,
+        adminId: (request as any).admin?.id ?? null,
+        ip: clientIp(request),
+        userAgent: headerValue(request, 'user-agent'),
+      });
+    } catch {
+      // Recording must never turn a handled error into an unhandled one.
+    }
 
     if (response.headersSent) {
       return;

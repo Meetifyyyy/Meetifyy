@@ -68,7 +68,7 @@ export class SlowRequestMiddleware implements NestMiddleware {
  * middleware) the concrete path is the honest answer, with ids masked so the
  * grouping stays useful.
  */
-function resolveRoute(req: Request): string {
+export function resolveRoute(req: Request): string {
   const routePath = (req as any).route?.path;
   const baseUrl = req.baseUrl || '';
   if (routePath) return `${baseUrl}${routePath}`.slice(0, 300) || '/';
@@ -83,7 +83,7 @@ function resolveRoute(req: Request): string {
     .slice(0, 300);
 }
 
-function headerValue(req: Request, name: string): string | null {
+export function headerValue(req: Request, name: string): string | null {
   const value = req.headers[name];
   if (!value) return null;
   return (Array.isArray(value) ? value[0] : value).slice(0, 300);
@@ -93,7 +93,7 @@ function headerValue(req: Request, name: string): string | null {
  * The first hop in `x-forwarded-for` is the client; the rest are proxies.
  * Falls back to the socket address when the app is not behind a proxy.
  */
-function clientIp(req: Request): string | null {
+export function clientIp(req: Request): string | null {
   const forwarded = headerValue(req, 'x-forwarded-for');
   const value = forwarded ? forwarded.split(',')[0].trim() : req.ip;
   return value ? value.slice(0, 64) : null;

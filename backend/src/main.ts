@@ -4,6 +4,7 @@ import { AppModule } from './app.module';
 import { ValidationPipe, Logger as NestLogger } from '@nestjs/common';
 import helmet from 'helmet';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
+import { ErrorLogRecorder } from './observability/error-log.recorder';
 import cookieParser from 'cookie-parser';
 import compression from 'compression';
 import { Logger } from 'nestjs-pino';
@@ -142,7 +143,10 @@ async function bootstrap() {
   );
 
   // Global Exception Filter
-  app.useGlobalFilters(new HttpExceptionFilter());
+  // The recorder is resolved from the container and handed over, because this
+  // filter is constructed by hand rather than registered as APP_FILTER.
+  // ObservabilityModule is @Global, so this needs no import wiring.
+  app.useGlobalFilters(new HttpExceptionFilter(app.get(ErrorLogRecorder)));
 
   const { port, host } = config.app;
   await app.listen(port, host);

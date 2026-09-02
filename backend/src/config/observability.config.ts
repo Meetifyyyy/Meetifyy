@@ -75,6 +75,61 @@ export const observabilityConfigValues = {
       DEFAULT_IGNORED_PREFIXES,
     ),
   },
+
+  /**
+   * Application error capture, for the admin Error Logs view.
+   *
+   * Same discipline as slow requests, for the same reason: a diagnostic that
+   * can slow a request down or fill a database is worse than no diagnostic.
+   */
+  errorLogs: {
+    /**
+     * On by default. The point is to already have the record when someone asks
+     * what broke on Tuesday, and a switch that has to be flipped after the
+     * incident is not that.
+     */
+    enabled: bool('ERROR_LOG_CAPTURE_ENABLED', { default: 'true' }),
+
+    /**
+     * Rows older than this are deleted by the retention sweep.
+     *
+     * Seven days is the window the admin view offers. Keeping more would mean
+     * storing errors nothing reads, and these rows carry request paths and user
+     * ids - the less of that is kept, the better.
+     */
+    retentionDays: int('ERROR_LOG_RETENTION_DAYS', {
+      default: '7',
+      min: 1,
+      max: 90,
+    }),
+
+    /**
+     * Ceiling on rows written per minute.
+     *
+     * An outage produces errors at exactly the rate the app receives traffic.
+     * Without a cap, the first minute of a database failure would try to write
+     * one row per request TO THAT DATABASE, turning a fault into a second one.
+     * Excess is counted and logged, never stored.
+     */
+    maxPerMinute: int('ERROR_LOG_MAX_PER_MINUTE', {
+      default: '120',
+      min: 1,
+    }),
+
+    /**
+     * Whether deliberate 4xx responses are recorded.
+     *
+     * Off by default: a validation failure or a 401 is the API working, and
+     * recording them buries the 500s that are not. 404 and 401 alone would
+     * dwarf everything worth reading.
+     */
+    captureClientErrors: bool('ERROR_LOG_CAPTURE_CLIENT_ERRORS', {
+      default: 'false',
+    }),
+
+    /** Prefixes that are never recorded. */
+    ignoredPrefixes: csv('ERROR_LOG_IGNORED_PREFIXES', DEFAULT_IGNORED_PREFIXES),
+  },
 };
 
 /**
