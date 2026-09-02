@@ -240,10 +240,10 @@ export const ReplyComposer: React.FC<{
               </select>
             </label>
 
-            <div style={{ flex: 1 }} />
+            <div style={{ flex: 1, minWidth: '0.5rem' }} />
 
             {confirming ? (
-              <>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                 <span style={{ fontSize: '0.73rem', color: 'var(--color-text-light)' }}>
                   Email this reply{statusChanged ? ` and set to ${statusLabel(status)}` : ''}?
                 </span>
@@ -260,7 +260,7 @@ export const ReplyComposer: React.FC<{
                   {replyMutation.isPending ? <Loader2 size={13} className="spin" /> : <Send size={13} />}
                   <span>{replyMutation.isPending ? 'Sending' : 'Confirm and send'}</span>
                 </button>
-              </>
+              </div>
             ) : (
               <button
                 type="button"
@@ -389,7 +389,7 @@ const linkButton: React.CSSProperties = {
   cursor: 'pointer',
 };
 
-const actions: React.CSSProperties = { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.4rem' };
+const actions: React.CSSProperties = { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.5rem', width: '100%' };
 
 const statusControl: React.CSSProperties = {
   display: 'inline-flex',
@@ -435,4 +435,9 @@ const iconOnly: React.CSSProperties = {
   padding: 0,
 };
 
-const smallBtn: React.CSSProperties = { padding: '0.35rem 0.7rem', fontSize: '0.76rem' };
+const smallBtn: React.CSSProperties = {
+  padding: '0.35rem 0.75rem',
+  fontSize: '0.76rem',
+  minHeight: '34px',
+  justifyContent: 'center',
+};

@@ -568,7 +568,7 @@ const CategoryModal: React.FC<{
           />
         </Field>
 
-        <div style={modalActions}>
+        <div style={modalActions} className="modal-actions">
           <button className="btn-secondary" onClick={onClose} disabled={saving}>
             Cancel
           </button>
@@ -713,7 +713,7 @@ const ArticleModal: React.FC<{
           </div>
         )}
 
-        <div style={modalActions}>
+        <div style={modalActions} className="modal-actions">
           <button className="btn-secondary" onClick={runPreview} disabled={!form.body.trim() || previewing}>
             {previewing ? <Loader2 size={13} className="spin" /> : <Eye size={13} />}
             <span>Preview</span>
@@ -836,6 +836,7 @@ const modalTitle: React.CSSProperties = { margin: '0 0 1rem', fontSize: '1rem', 
 const modalActions: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',
+  flexWrap: 'wrap',
   gap: '0.5rem',
   marginTop: '1rem',
   paddingTop: '0.85rem',

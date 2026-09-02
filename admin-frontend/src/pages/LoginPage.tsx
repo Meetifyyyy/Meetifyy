@@ -81,7 +81,7 @@ export const LoginPage: React.FC = () => {
         alignItems: 'center',
         justifyContent: 'center',
         background: 'var(--color-bg-main)',
-        padding: '1.5rem',
+        padding: '1rem',
       }}
     >
       <div
@@ -89,7 +89,7 @@ export const LoginPage: React.FC = () => {
         style={{
           width: '100%',
           maxWidth: '400px',
-          padding: '2.25rem 2rem',
+          padding: '2rem 1.5rem',
           boxShadow: 'var(--shadow-lg)',
         }}
       >

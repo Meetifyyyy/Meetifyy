@@ -49,10 +49,10 @@ export const ErrorLogsPanel: React.FC = () => {
   const summary = data?.summary;
 
   return (
-    <div style={{ marginTop: '2rem' }}>
-      <div style={{ marginBottom: '1rem' }}>
-        <h3 style={{ margin: '0 0 0.25rem', fontSize: '1rem', fontWeight: 700 }}>Error Logs</h3>
-        <p style={{ margin: 0, fontSize: '0.82rem', color: 'var(--color-text-dim)' }}>
+    <div style={{ marginTop: '1.25rem' }}>
+      <div style={{ marginBottom: '0.75rem' }}>
+        <h3 style={{ margin: '0 0 0.15rem', fontSize: '0.92rem', fontWeight: 700 }}>Error Logs</h3>
+        <p style={{ margin: 0, fontSize: '0.74rem', color: 'var(--color-text-dim)' }}>
           {summary
             ? `Application errors from the last ${summary.retentionDays} days. Older rows are deleted automatically.`
             : 'Application errors recorded by the server.'}
@@ -63,18 +63,18 @@ export const ErrorLogsPanel: React.FC = () => {
         <div
           className="glass-panel"
           style={{
-            padding: '0.75rem 1rem', marginBottom: '1rem',
+            padding: '0.5rem 0.75rem', marginBottom: '0.75rem',
             background: 'var(--color-warning-tint)', color: 'var(--color-warning)',
-            fontSize: '0.82rem', display: 'flex', gap: '0.5rem', alignItems: 'center',
+            fontSize: '0.74rem', display: 'flex', gap: '0.4rem', alignItems: 'center',
           }}
         >
-          <AlertTriangle size={15} />
+          <AlertTriangle size={13} />
           Error capture is switched off, so this list is not being added to.
         </div>
       )}
 
       {summary && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '1rem' }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.45rem', marginBottom: '0.75rem' }}>
           <Tile label="Total" value={summary.total} />
           <Tile label="Unexpected (5xx)" value={summary.unexpected} tone="var(--color-danger)" />
           {summary.clientErrorsCaptured && <Tile label="Client (4xx)" value={summary.expected} />}
@@ -88,20 +88,20 @@ export const ErrorLogsPanel: React.FC = () => {
         </div>
       )}
 
-      <div className="glass-panel" style={{ padding: '0.85rem 1rem', marginBottom: '1rem', display: 'flex', gap: '0.6rem', flexWrap: 'wrap' }}>
+      <div className="glass-panel admin-filter-bar" style={{ padding: '0.5rem 0.75rem', marginBottom: '0.75rem', display: 'flex', gap: '0.45rem', flexWrap: 'wrap' }}>
         <input
           type="text"
           placeholder="Filter by message or path..."
           value={search}
           onChange={(e) => { setSearch(e.target.value); setPage(1); }}
           className="input-control"
-          style={{ flex: '1 1 220px' }}
+          style={{ flex: '1 1 200px' }}
         />
         <select
           value={severity}
           onChange={(e) => { setSeverity(e.target.value); setPage(1); }}
           className="input-control"
-          style={{ flex: '0 1 170px' }}
+          style={{ flex: '0 1 150px' }}
         >
           <option value="">All severities</option>
           <option value="UNEXPECTED">Unexpected (5xx)</option>
@@ -241,9 +241,9 @@ export const ErrorLogsPanel: React.FC = () => {
 };
 
 const Tile: React.FC<{ label: string; value: number | string; tone?: string }> = ({ label, value, tone }) => (
-  <div className="glass-panel" style={{ padding: '0.7rem 1rem', minWidth: 132, flex: '1 1 132px' }}>
-    <div style={{ fontSize: '0.7rem', color: 'var(--color-text-dim)', marginBottom: 2 }}>{label}</div>
-    <div style={{ fontSize: '1.15rem', fontWeight: 700, color: tone, fontVariantNumeric: 'tabular-nums' }}>{value}</div>
+  <div className="glass-panel" style={{ padding: '0.45rem 0.65rem', minWidth: 100, flex: '1 1 100px' }}>
+    <div style={{ fontSize: '0.62rem', color: 'var(--color-text-dim)', marginBottom: 2 }}>{label}</div>
+    <div style={{ fontSize: '0.95rem', fontWeight: 700, color: tone, fontVariantNumeric: 'tabular-nums' }}>{value}</div>
   </div>
 );
 

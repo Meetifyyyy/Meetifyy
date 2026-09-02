@@ -136,7 +136,7 @@ export const CampusRepsPage: React.FC = () => {
       </div>
 
       {/* METRICS */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '0.85rem', marginBottom: '1.25rem' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 140px), 1fr))', gap: '0.85rem', marginBottom: '1.25rem' }}>
         <div className="glass-panel" style={{ padding: '0.85rem 1rem' }}>
           <div style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--color-text-light)', textTransform: 'uppercase' }}>Active Representatives</div>
           <div style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--color-text-main)', marginTop: '0.15rem' }}>{reps.length}</div>
@@ -156,7 +156,7 @@ export const CampusRepsPage: React.FC = () => {
       {/* ASSIGN — search users */}
       <div className="glass-panel" style={{ padding: '1rem', marginBottom: '1.25rem' }}>
         <h3 style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--color-text-main)', margin: '0 0 0.75rem' }}>Assign a Representative</h3>
-        <div style={{ position: 'relative', maxWidth: '420px' }}>
+        <div style={{ position: 'relative', maxWidth: '100%' }}>
           <Search size={15} color="var(--color-text-dim)" style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)' }} />
           <input
             type="text"

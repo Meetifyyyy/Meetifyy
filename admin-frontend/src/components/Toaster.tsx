@@ -64,13 +64,14 @@ export const Toaster: React.FC = () => {
       aria-live="polite"
       style={{
         position: 'fixed',
-        bottom: '1.25rem',
-        right: '1.25rem',
+        bottom: '1rem',
+        right: '1rem',
         zIndex: 200,
         display: 'flex',
         flexDirection: 'column',
         gap: '0.6rem',
-        maxWidth: 'min(420px, calc(100vw - 2.5rem))',
+        maxWidth: 'min(420px, calc(100vw - 2rem))',
+        pointerEvents: 'none',
       }}
     >
       {items.map((t) => {
@@ -79,6 +80,7 @@ export const Toaster: React.FC = () => {
           <div
             key={t.id}
             style={{
+              pointerEvents: 'auto',
               background: 'var(--color-bg-white)',
               border: `1px solid ${isError ? 'rgba(239, 68, 68, 0.35)' : 'rgba(16, 185, 129, 0.35)'}`,
               borderLeft: `3px solid ${isError ? 'var(--color-danger)' : 'var(--color-success)'}`,

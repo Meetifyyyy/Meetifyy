@@ -190,7 +190,7 @@ const ConfirmDialog: React.FC<{
     >
       <div
         className="modal-content"
-        style={{ maxWidth: 460 }}
+        style={{ maxWidth: 'min(460px, 100%)', width: '100%' }}
         onClick={(e) => e.stopPropagation()}
         role="alertdialog"
         aria-modal="true"
@@ -276,6 +276,7 @@ const ConfirmDialog: React.FC<{
 
         {/* Wraps on narrow screens so neither button is ever clipped. */}
         <div
+          className="modal-actions"
           style={{
             display: 'flex', justifyContent: 'flex-end', flexWrap: 'wrap',
             gap: '0.6rem', padding: '1.1rem 1.25rem 1.25rem',
@@ -287,6 +288,7 @@ const ConfirmDialog: React.FC<{
             className="btn-secondary"
             onClick={onCancel}
             disabled={pending}
+            style={{ minWidth: 100, justifyContent: 'center' }}
           >
             {request.cancelLabel || 'Cancel'}
           </button>

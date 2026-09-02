@@ -261,7 +261,7 @@ export const AnalyticsPage: React.FC = () => {
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 280px), 1fr))',
             gap: '1rem',
             marginBottom: '1.5rem',
           }}
@@ -515,7 +515,7 @@ export const AnalyticsPage: React.FC = () => {
       {/* Filter */}
       <div
         className="glass-panel"
-        style={{ padding: '0.85rem 1rem', marginBottom: '1.25rem' }}
+        style={{ padding: '0.5rem 0.75rem', marginBottom: '0.85rem' }}
       >
         <input
           type="text"
@@ -523,18 +523,19 @@ export const AnalyticsPage: React.FC = () => {
           value={routeFilter}
           onChange={(e) => setRouteFilter(e.target.value)}
           className="input-control"
+          style={{ fontSize: '0.78rem' }}
         />
       </div>
 
       {/* Log */}
-      <div className="glass-panel" style={{ overflow: 'hidden' }}>
+      <div className="glass-panel" style={{ overflow: 'hidden', padding: 0 }}>
         {slowLoading ? (
           <div
             style={{
-              padding: '3rem',
+              padding: '2.5rem',
               textAlign: 'center',
               color: 'var(--color-text-dim)',
-              fontSize: '0.85rem',
+              fontSize: '0.8rem',
             }}
           >
             Loading slow requests...
@@ -559,7 +560,7 @@ export const AnalyticsPage: React.FC = () => {
                     <td
                       style={{
                         fontFamily: 'monospace',
-                        fontSize: '0.8rem',
+                        fontSize: '0.74rem',
                         color: 'var(--color-text-main)',
                       }}
                       title={row.path}
@@ -570,7 +571,7 @@ export const AnalyticsPage: React.FC = () => {
                       <span
                         style={{
                           fontFamily: 'monospace',
-                          fontSize: '0.75rem',
+                          fontSize: '0.7rem',
                           fontWeight: 700,
                           color: METHOD_COLOR[row.method] ?? 'var(--color-text-muted)',
                         }}
@@ -596,6 +597,7 @@ export const AnalyticsPage: React.FC = () => {
                         textAlign: 'right',
                         fontVariantNumeric: 'tabular-nums',
                         fontWeight: 700,
+                        fontSize: '0.74rem',
                         color:
                           row.durationMs >= 2000
                             ? 'var(--color-danger)'
@@ -607,7 +609,7 @@ export const AnalyticsPage: React.FC = () => {
                     <td
                       style={{
                         textAlign: 'right',
-                        fontSize: '0.8rem',
+                        fontSize: '0.72rem',
                         color: 'var(--color-text-light)',
                         fontVariantNumeric: 'tabular-nums',
                       }}
@@ -616,7 +618,7 @@ export const AnalyticsPage: React.FC = () => {
                     </td>
                     <td
                       style={{
-                        fontSize: '0.76rem',
+                        fontSize: '0.7rem',
                         color: 'var(--color-text-muted)',
                         fontFamily: 'monospace',
                       }}
@@ -630,7 +632,7 @@ export const AnalyticsPage: React.FC = () => {
                     <td
                       style={{
                         textAlign: 'right',
-                        fontSize: '0.76rem',
+                        fontSize: '0.68rem',
                         color: 'var(--color-text-dim)',
                         whiteSpace: 'nowrap',
                       }}

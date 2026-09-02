@@ -61,7 +61,17 @@
   -webkit-tap-highlight-color: transparent;
 }
 
+html {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+  -webkit-text-size-adjust: 100%;
+}
+
 body {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
   background-color: var(--color-bg-main);
   color: var(--color-text-main);
   font-family: var(--font-body);
@@ -69,6 +79,15 @@ body {
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
 }
 
 h1, h2, h3, h4, h5, h6 {
@@ -244,8 +263,27 @@ h1, h2, h3, h4, h5, h6 {
 /* Table styling */
 .table-responsive {
   width: 100%;
+  max-width: 100%;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+}
+
+/* Accessible and smooth mobile tabs */
+.admin-tab-bar,
+[role="tablist"] {
+  display: flex;
+  gap: 0.4rem;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.admin-tab-bar::-webkit-scrollbar,
+[role="tablist"]::-webkit-scrollbar {
+  display: none;
 }
 
 .admin-table {
@@ -391,10 +429,36 @@ h1, h2, h3, h4, h5, h6 {
   min-height: 30rem;
 }
 
+/* Responsive visibility utilities */
+.show-mobile,
+.show-mobile-inline {
+  display: none !important;
+}
+
 @media (max-width: 767px) {
+  .hide-mobile {
+    display: none !important;
+  }
+
+  .show-mobile {
+    display: block !important;
+  }
+
+  .show-mobile-inline {
+    display: inline-block !important;
+  }
+
+  html {
+    font-size: 14px;
+  }
+
+  body {
+    font-size: 0.82rem;
+  }
+
   .grid-split {
     grid-template-columns: 1fr;
-    gap: 1rem;
+    gap: 0.75rem;
   }
 
   .ticket-layout {
@@ -406,90 +470,112 @@ h1, h2, h3, h4, h5, h6 {
   /* Panels give back some of their padding; at this width the frame costs more
      than it earns. */
   .glass-panel {
-    padding: 0.85rem;
+    padding: 0.65rem 0.75rem;
   }
 
   /*
    * Tables stay horizontally scrollable rather than wrapping or shrinking.
-   * That is already correct - the users table measures 677px inside a 344px
-   * wrapper and scrolls - so this only tightens the cells so more of it is
-   * visible per swipe.
+   * Compact cell padding and font-size so more content is visible per view.
    */
-  .admin-table th,
-  .admin-table td {
-    padding: 0.55rem 0.6rem;
-    font-size: 0.78rem;
+  .admin-table th {
+    padding: 0.32rem 0.38rem;
+    font-size: 0.64rem;
+    letter-spacing: 0.03em;
   }
 
-  /* A dialog on a phone should use the width it has. */
+  .admin-table td {
+    padding: 0.32rem 0.38rem;
+    font-size: 0.72rem;
+    line-height: 1.3;
+  }
+
+  .admin-table .badge {
+    font-size: 0.58rem;
+    padding: 1px 4px;
+    letter-spacing: 0.01em;
+  }
+
+  /* A dialog on a phone should use the width it has and scroll gracefully */
   .modal-content {
-    max-width: none;
-    max-height: 85vh;
+    max-width: 100% !important;
+    width: 100% !important;
+    max-height: 90dvh !important;
+    overscroll-behavior: contain;
+    padding: 1.25rem 1rem !important;
+    border-radius: var(--radius-md) var(--radius-md) 0 0;
   }
 
   .modal-backdrop {
-    padding: 0.75rem;
-    /* Bottom-anchored: on a tall phone a centred dialog sits under the thumb's
-       reach, and the on-screen keyboard covers it entirely when a field is
-       focused. */
+    padding: 0;
     align-items: flex-end;
   }
 
   /*
    * Filter bars: one control per row, rather than three cramped ones.
-   *
-   * `!important` here is not a shortcut. The controls carry inline styles from
-   * the pages that render them (`flex: 1, minWidth: 220px` on the search field,
-   * `width: auto, minWidth: 150px` on the selects), and an inline style cannot
-   * be overridden by a class from a stylesheet by any other means. The
-   * alternative is editing every filter bar in the portal to hoist its layout
-   * into CSS, which is a larger change for the same result.
    */
-  .toolbar {
-    gap: 0.5rem;
+  .toolbar,
+  .admin-filter-bar {
+    gap: 0.45rem;
   }
 
-  .toolbar > * {
+  .toolbar > *,
+  .admin-filter-bar > * {
     flex: 1 1 100% !important;
     min-width: 0 !important;
     width: 100% !important;
   }
+
+  /* Modal footer action buttons on mobile */
+  .modal-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+  }
+
+  .modal-actions > button {
+    flex: 1 1 auto;
+    min-height: 36px;
+    justify-content: center;
+  }
 }
 
 /*
- * Touch ergonomics, on any small touch device regardless of orientation.
- *
- * Measured at 375px, buttons rendered 33-35px tall. iOS asks for 44px and
- * Android for 48dp, and these are the controls that suspend accounts and
- * delete colleges - the ones where a mis-tap costs the most.
+ * Compact touch ergonomics & mobile inputs.
  */
-@media (pointer: coarse) and (max-width: 900px) {
-  button,
+@media (max-width: 768px), (pointer: coarse) and (max-width: 900px) {
   .btn-primary,
   .btn-secondary,
   .btn-danger {
-    min-height: 40px;
+    min-height: 32px;
   }
 
-  /*
-   * 16px on form controls, because below it iOS Safari zooms the page in when
-   * a field is focused and does not zoom back out. The admin portal renders
-   * these at 13.6px.
-   *
-   * Scoped to `.input-control` rather than every input: this is the portal's
-   * own control class, so nothing that styles itself deliberately is caught.
-   */
   .input-control,
   input.input-control,
-  select.input-control,
-  textarea.input-control {
-    font-size: 16px;
-    min-height: 42px;
+  input[type="text"],
+  input[type="email"],
+  input[type="password"] {
+    font-size: 0.8rem;
+    min-height: 34px;
+    padding: 0.35rem 0.6rem;
   }
 
-  /* Table action buttons stay compact; a 40px minimum in a dense row would
-     double every row's height. The row itself is the scroll target. */
-  .admin-table button {
+  select,
+  select.input-control {
+    font-size: 0.74rem;
     min-height: 32px;
+    padding: 0.25rem 0.5rem;
+  }
+
+  textarea,
+  textarea.input-control {
+    font-size: 0.8rem;
+    padding: 0.4rem 0.6rem;
+  }
+
+  /* Table action buttons stay compact */
+  .admin-table button {
+    min-height: 26px;
+    padding: 0.2rem 0.45rem;
+    font-size: 0.7rem;
   }
 }

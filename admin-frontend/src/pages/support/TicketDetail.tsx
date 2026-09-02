@@ -4,6 +4,7 @@ import {
   AlertTriangle,
   CheckCircle,
   ChevronDown,
+  ChevronLeft,
   Loader2,
   Lock,
   Mail,
@@ -42,7 +43,11 @@ import { useConfirm } from '../../components/ConfirmProvider';
  * note and a reply is the difference between a private remark and an email
  * that has already left.
  */
-export const TicketDetail: React.FC<{ ticketId: string; onChanged?: () => void }> = ({ ticketId, onChanged }) => {
+export const TicketDetail: React.FC<{
+  ticketId: string;
+  onChanged?: () => void;
+  onBack?: () => void;
+}> = ({ ticketId, onChanged, onBack }) => {
   const confirm = useConfirm();
   const queryClient = useQueryClient();
   const [banner, setBanner] = useState<{ tone: 'error' | 'ok'; text: string } | null>(null);
@@ -157,6 +162,24 @@ export const TicketDetail: React.FC<{ ticketId: string; onChanged?: () => void }
           )}
         </div>
 
+        {onBack && (
+          <button
+            type="button"
+            onClick={onBack}
+            className="btn-secondary"
+            style={{
+              padding: '0.22rem 0.5rem',
+              fontSize: '0.72rem',
+              marginBottom: '0.45rem',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.25rem',
+            }}
+          >
+            <ChevronLeft size={13} />
+            <span>Back to tickets</span>
+          </button>
+        )}
         <h3 style={subjectStyle}>{ticket.subject}</h3>
 
         <div style={requesterLine}>
@@ -308,7 +331,7 @@ export const TicketDetail: React.FC<{ ticketId: string; onChanged?: () => void }
                   : isAdmin
                     ? '1px solid rgba(37, 99, 235, 0.2)'
                     : '1px solid var(--color-border)',
-                padding: '0.65rem 0.85rem',
+                padding: '0.45rem 0.65rem',
                 borderRadius: 'var(--radius-sm)',
               }}
             >
@@ -452,63 +475,64 @@ const centered: React.CSSProperties = {
 };
 
 const header: React.CSSProperties = {
-  padding: '0.8rem 1rem 0.7rem',
+  padding: '0.65rem 0.85rem 0.55rem',
   borderBottom: '1px solid var(--color-border)',
   flexShrink: 0,
 };
 
 const ticketRef: React.CSSProperties = {
   fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-  fontSize: '0.74rem',
+  fontSize: '0.7rem',
   fontWeight: 700,
-  letterSpacing: '0.05em',
+  letterSpacing: '0.04em',
   color: 'var(--color-text-light)',
 };
 
 const subjectStyle: React.CSSProperties = {
-  fontSize: '1rem',
+  fontSize: '0.9rem',
   fontWeight: 700,
-  margin: 0,
+  margin: '0.15rem 0 0.05rem 0',
   wordBreak: 'break-word',
   color: 'var(--color-text-main)',
 };
 
 const requesterLine: React.CSSProperties = {
-  fontSize: '0.74rem',
+  fontSize: '0.7rem',
   color: 'var(--color-text-light)',
-  marginTop: '0.2rem',
+  marginTop: '0.15rem',
 };
 
 const triageRow: React.CSSProperties = {
   display: 'flex',
   flexWrap: 'wrap',
   alignItems: 'center',
-  gap: '0.35rem',
-  padding: '0.5rem 1rem',
+  gap: '0.3rem',
+  padding: '0.35rem 0.75rem',
   borderBottom: '1px solid var(--color-border)',
   background: 'var(--color-bg-alt)',
   flexShrink: 0,
 };
 
 const compactSelect: React.CSSProperties = {
-  padding: '0.25rem 0.45rem',
+  padding: '0.22rem 0.45rem',
   fontFamily: 'inherit',
-  fontSize: '0.74rem',
+  fontSize: '0.7rem',
   color: 'var(--color-text-main)',
   background: 'var(--color-bg-white)',
   border: '1px solid var(--color-border)',
   borderRadius: 'var(--radius-sm)',
   cursor: 'pointer',
-  maxWidth: '11rem',
+  flex: '1 1 100px',
+  maxWidth: '100%',
 };
 
 const detailsToggle: React.CSSProperties = {
   display: 'inline-flex',
   alignItems: 'center',
-  gap: '0.25rem',
-  padding: '0.25rem 0.5rem',
+  gap: '0.2rem',
+  padding: '0.2rem 0.4rem',
   fontFamily: 'inherit',
-  fontSize: '0.72rem',
+  fontSize: '0.68rem',
   color: 'var(--color-text-light)',
   background: 'none',
   border: '1px solid transparent',
@@ -518,28 +542,28 @@ const detailsToggle: React.CSSProperties = {
 
 const detailsPanel: React.CSSProperties = {
   display: 'grid',
-  gridTemplateColumns: 'repeat(auto-fit, minmax(8.5rem, 1fr))',
-  gap: '0.6rem 1rem',
-  padding: '0.75rem 1rem',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(8rem, 1fr))',
+  gap: '0.5rem 0.75rem',
+  padding: '0.6rem 0.85rem',
   borderBottom: '1px solid var(--color-border)',
   background: 'var(--color-bg-soft)',
   flexShrink: 0,
 };
 
 const metaLabel: React.CSSProperties = {
-  fontSize: '0.62rem',
+  fontSize: '0.6rem',
   fontWeight: 700,
   textTransform: 'uppercase',
-  letterSpacing: '0.05em',
+  letterSpacing: '0.04em',
   color: 'var(--color-text-light)',
 };
 
 const attachmentChip: React.CSSProperties = {
   display: 'inline-flex',
   alignItems: 'center',
-  gap: '0.28rem',
-  padding: '0.25rem 0.5rem',
-  fontSize: '0.68rem',
+  gap: '0.25rem',
+  padding: '0.2rem 0.45rem',
+  fontSize: '0.65rem',
   fontWeight: 600,
   textDecoration: 'none',
   color: 'var(--color-text-main)',
@@ -553,25 +577,25 @@ const thread: React.CSSProperties = {
   // height the fixed chrome above and below does not.
   flex: 1,
   minHeight: 0,
-  padding: '1rem',
+  padding: '0.65rem 0.75rem',
   overflowY: 'auto',
   display: 'flex',
   flexDirection: 'column',
-  gap: '0.7rem',
+  gap: '0.5rem',
 };
 
 const messageMeta: React.CSSProperties = {
   display: 'flex',
   justifyContent: 'space-between',
-  gap: '1rem',
-  fontSize: '0.66rem',
+  gap: '0.75rem',
+  fontSize: '0.62rem',
   color: 'var(--color-text-light)',
-  marginBottom: '0.3rem',
+  marginBottom: '0.25rem',
 };
 
 const messageBody: React.CSSProperties = {
-  fontSize: '0.83rem',
-  lineHeight: 1.6,
+  fontSize: '0.76rem',
+  lineHeight: 1.45,
   color: 'var(--color-text-main)',
   wordBreak: 'break-word',
 };
