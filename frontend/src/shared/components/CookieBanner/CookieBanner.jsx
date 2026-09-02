@@ -99,7 +99,7 @@ export function CookiePreferencesModal() {
           <p className={styles.bodyLead}>
             Meetifyy uses browser storage to keep your account secure, remember preferences,
             and provide features such as offline caching and faster loading. Meetifyy does
-            not currently use advertising or analytics tracking.
+            not use advertising tracking, and our analytics are cookieless.
           </p>
 
           <div className={styles.categoryList} role="list">
@@ -172,7 +172,8 @@ export default function CookieBanner() {
 
         <p className={styles.bannerDesc}>
           Meetifyy uses essential and functional browser storage to keep your account secure
-          and remember your preferences. We do not use advertising or analytics tracking.{' '}
+          and remember your preferences. We do not use advertising tracking, and our analytics
+          are cookieless.{' '}
           <button
             type="button"
             className={styles.inlineLink}

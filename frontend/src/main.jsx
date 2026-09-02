@@ -12,6 +12,8 @@ import { UsersMapProvider } from './shared/hooks/useUsersMap';
 import MediaViewer from './shared/components/MediaViewer/MediaViewer';
 import { config } from '@config';
 import { isNonProductionHost } from './config/deploymentEnv';
+import { Analytics } from '@vercel/analytics/react';
+import { SpeedInsights } from '@vercel/speed-insights/react';
 import './styles/variables.css';
 import './styles/global.css';
 import './styles/typography.css';
@@ -56,6 +58,37 @@ if (typeof window !== 'undefined') {
       e.preventDefault();
     }
   }, true);
+}
+
+/**
+ * Vercel Web Analytics and Speed Insights.
+ *
+ * The `/react` entry points, not the `/next` ones the dashboard's snippet
+ * shows — this is a Vite SPA, and the Next build of these packages expects a
+ * router that does not exist here.
+ *
+ * Gated to production hosts on purpose. Both packages report to the project
+ * they are deployed under, so leaving them on for the dev deployment would mix
+ * the team's own click-throughs on dev.meetifyy.app into the numbers the
+ * product is judged by, and inflate Speed Insights with a host that is behind
+ * an auth gate. `isNonProductionHost` is the same check the service worker
+ * uses, so "which deployment is this" has one answer in this file.
+ *
+ * Both are cookieless: no identifier is stored on the device and no profile
+ * follows a visitor between sites. That is what makes them compatible with a
+ * banner that only acknowledges storage rather than gathering per-category
+ * consent — but see the Privacy Policy, which had to stop claiming the site
+ * runs no analytics at all.
+ */
+function VercelInsights() {
+  if (typeof window === 'undefined') return null;
+  if (isNonProductionHost(window.location.hostname)) return null;
+  return (
+    <>
+      <Analytics />
+      <SpeedInsights />
+    </>
+  );
 }
 
 // Service Worker registration
@@ -148,6 +181,7 @@ createRoot(document.getElementById('root')).render(
                 />
                 <App />
                 <MediaViewer />
+                <VercelInsights />
               </UsersMapProvider>
             </MediaViewerProvider>
           </AuthProvider>

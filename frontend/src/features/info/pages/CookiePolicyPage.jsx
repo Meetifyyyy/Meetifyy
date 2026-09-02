@@ -36,8 +36,9 @@ export default function CookiePolicyPage() {
       <section className={styles.cleanSection}>
         <h2 className={styles.cleanSectionTitle}>1. What Storage Technologies We Use</h2>
         <p className={styles.hierarchyParagraph} style={{ marginTop: '0.5rem' }}>
-          We do not use HTTP cookies set by a web server for tracking, advertising, or analytics
-          purposes. The following browser storage mechanisms are used:
+          We do not use HTTP cookies set by a web server for tracking or advertising purposes,
+          and the cookieless analytics described in section 4 set no cookie either. The following
+          browser storage mechanisms are used:
         </p>
         <ul className={styles.cleanBulletList}>
           <li className={styles.cleanBulletItem}>
@@ -158,24 +159,45 @@ export default function CookiePolicyPage() {
               <a href="https://www.cloudflare.com/privacypolicy/" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-primary)', textDecoration: 'none' }}>Cloudflare Privacy Policy</a>.
             </div>
           </li>
+          <li className={styles.cleanBulletItem}>
+            <span className={styles.cleanBulletDot} />
+            <div className={styles.cleanBulletText}>
+              <strong>Vercel:</strong> Hosts the Platform and provides the cookieless Web
+              Analytics and Speed Insights described in section 4. These count page views and
+              measure page-load speed without setting a cookie or storing any identifier on your
+              device. Their processing is governed by the{' '}
+              <a href="https://vercel.com/legal/privacy-policy" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-primary)', textDecoration: 'none' }}>Vercel Privacy Policy</a>.
+            </div>
+          </li>
         </ul>
       </section>
 
       <section className={styles.cleanSection}>
-        <h2 className={styles.cleanSectionTitle}>4. No Analytics or Advertising Tracking</h2>
+        <h2 className={styles.cleanSectionTitle}>4. Analytics and Advertising</h2>
         <p className={styles.hierarchyParagraph} style={{ marginTop: '0.5rem' }}>
-          Meetifyy does <strong>not</strong> use Google Analytics, Facebook Pixel, or any other
-          third-party analytics or advertising tracking service. We do not build advertising
-          profiles, sell your data, or use cross-site tracking technologies.
+          We use <strong>Vercel Web Analytics</strong> and <strong>Vercel Speed Insights</strong>,
+          provided by our hosting provider, to count page views and measure how quickly pages
+          load. Both are <strong>cookieless</strong>: they set no cookie, store no identifier on
+          your device, and cannot recognise you when you return or follow you to another website.
+        </p>
+        <p className={styles.hierarchyParagraph} style={{ marginTop: '0.75rem' }}>
+          What they record is limited to the page visited, the referring page, your approximate
+          location at country level, your device and browser type, and page-performance timings.
+        </p>
+        <p className={styles.hierarchyParagraph} style={{ marginTop: '0.75rem' }}>
+          Meetifyy does <strong>not</strong> use Google Analytics, Facebook Pixel, or any
+          advertising tracking service. We do not build advertising profiles, sell your data, or
+          use cross-site tracking technologies.
         </p>
       </section>
 
       <section className={styles.cleanSection}>
         <h2 className={styles.cleanSectionTitle}>5. Managing Your Storage</h2>
         <p className={styles.hierarchyParagraph} style={{ marginTop: '0.5rem' }}>
-          All storage used by Meetifyy supports core features, preferences, and performance. We
-          do not use optional tracking technologies, so there is no tracking to opt out of. You
-          can view a summary of the storage categories we use:
+          All storage used by Meetifyy supports core features, preferences, and performance. The
+          analytics described in section 4 store nothing on your device, so there is no tracking
+          identifier to clear or opt out of. You can view a summary of the storage categories we
+          use:
         </p>
         <button
           onClick={openPreferences}
