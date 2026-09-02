@@ -19,7 +19,15 @@
     note there for why that floor deliberately does not override components.
   -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0, interactive-widget=resizes-content" />
-  <link rel="icon" type="image/png" sizes="32x32" href="/favicon.png?v=2" />
+  <!--
+    `sizes` has to tell the truth. This file is 192x192 and was declared 32x32,
+    which is not a size Google accepts: it requires a favicon to be a square
+    multiple of 48px and discards anything smaller. Declaring a sub-48 icon
+    first is enough for it to fall through to /favicon.ico, and that used to
+    404 — which is why search results showed the generic globe rather than the
+    logo, even though the artwork itself was fine and crawlable all along.
+  -->
+  <link rel="icon" type="image/png" sizes="192x192" href="/favicon.png?v=2" />
   <!--
     Google's search result favicon is fetched at 48px minimum and downscaled
     from whatever the largest declared icon is, so declaring the 192 here is
