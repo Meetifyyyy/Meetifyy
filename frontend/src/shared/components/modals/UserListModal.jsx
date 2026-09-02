@@ -155,8 +155,45 @@ export default function UserListModal({ type, profileUsername, onClose }) {
                   key={user.id || user.username}
                   className={styles.userItem}
                   onClick={() => {
-                    navigate(`/profile/${user.username}`);
-                    onClose();
+                    /*
+                     * Navigate ONLY. Calling the parent's `onClose` here is what
+                     * stopped these rows opening a profile.
+                     *
+                     * This list is a history entry, not component state: the
+                     * profile page opens it by pushing `?tab=followers`
+                     * (useUrlState with `push: true`), so its `onClose` is a
+                     * `goBack`. Running it immediately after `navigate` stepped
+                     * history back over the entry that navigation had just
+                     * pushed, so the tap landed on the profile and returned from
+                     * it in the same tick, and nothing appeared to happen.
+                     *
+                     * Reordering the two would not fix it either. `goBack`
+                     * navigates by delta, which the browser applies
+                     * asynchronously, so a push issued straight afterwards races
+                     * the pop. One navigation and no back-step is the only
+                     * version with a single outcome.
+                     *
+                     * Closing is not lost: the list's visibility is derived from
+                     * the `tab` search param, so leaving for a URL without it
+                     * unmounts this modal.
+                     *
+                     * REPLACE, not push, and that is the part that actually
+                     * makes the tap land. SmartBackTracker reconciles every
+                     * arrival against its history mirror, and a PUSH onto a page
+                     * already in the stack is collapsed: the mirror walks
+                     * history back onto the existing entry. Tapping someone
+                     * whose profile you had already opened this session
+                     * therefore rendered their page and immediately stepped back
+                     * over it, which is the flicker. Verified against the real
+                     * mirror in browserHistoryMirror's tests: the same sequence
+                     * plans a -3 step as a push and no step at all as a replace.
+                     *
+                     * Replacing is also the honest description of what this is.
+                     * The entry being left is the open list, and the list is a
+                     * sub-view of the profile, not a destination worth its own
+                     * Back press once you have chosen someone from it.
+                     */
+                    navigate(`/profile/${user.username}`, { replace: true });
                   }}
                 >
                   <div className={styles.userAvatar}>

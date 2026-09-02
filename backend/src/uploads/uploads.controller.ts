@@ -510,9 +510,10 @@ export class UploadsController {
       res.setHeader('Cache-Control', 'public, max-age=86400');
       return res.send(
         `
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
-          <circle cx="50" cy="50" r="50" fill="#e2e8f0"/>
-          <path d="M50 42 a 16 16 0 1 0 0 -32 a 16 16 0 1 0 0 32 Z M50 50 c -22 0 -36 14 -36 28 v 12 h 72 v -12 c 0 -14 -14 -28 -36 -28 Z" fill="#94a3b8"/>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none">
+          <circle cx="12" cy="12" r="12" fill="#1d68f7"/>
+          <circle cx="12" cy="8.5" r="2.5" fill="#ffffff"/>
+          <path fill="#ffffff" d="M7 16.3c0-2.5 2.2-4.5 5-4.5s5 2 5 4.5c0 1.2-2.2 1.8-5 1.8s-5-0.6-5-1.8z"/>
         </svg>
       `.trim(),
       );
