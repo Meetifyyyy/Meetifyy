@@ -155,8 +155,30 @@ export default function UserListModal({ type, profileUsername, onClose }) {
                   key={user.id || user.username}
                   className={styles.userItem}
                   onClick={() => {
+                    /*
+                     * Navigate ONLY. Calling the parent's `onClose` here is what
+                     * stopped these rows opening a profile.
+                     *
+                     * This list is a history entry, not component state: the
+                     * profile page opens it by pushing `?tab=followers`
+                     * (useUrlState with `push: true`), so its `onClose` is a
+                     * `goBack`. Running it immediately after `navigate` stepped
+                     * history back over the entry that navigation had just
+                     * pushed, so the tap landed on the profile and returned from
+                     * it in the same tick, and nothing appeared to happen.
+                     *
+                     * Reordering the two would not fix it either. `goBack`
+                     * navigates by delta, which the browser applies
+                     * asynchronously, so a push issued straight afterwards races
+                     * the pop. One navigation and no back-step is the only
+                     * version with a single outcome.
+                     *
+                     * Closing is not lost: the list's visibility is derived from
+                     * the `tab` search param, so leaving for a URL without it
+                     * unmounts this modal. Back then returns to the list, which
+                     * is what pushing the entry was for.
+                     */
                     navigate(`/profile/${user.username}`);
-                    onClose();
                   }}
                 >
                   <div className={styles.userAvatar}>
