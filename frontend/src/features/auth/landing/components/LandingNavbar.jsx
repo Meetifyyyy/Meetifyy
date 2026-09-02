@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Menu, X } from '@shared/components/icons';
 import wordmark from '@assets/images/meetifyy_wordmark.svg';
@@ -7,7 +7,6 @@ import { useAuth } from '@shared/context/AuthContext';
 import styles from './LandingNavbar.module.css';
 
 export default function LandingNavbar() {
-  const navigate = useNavigate();
   // This navbar is also used on info/footer pages (About, Terms, Privacy,
   // Contact, etc. — see StaticDocLayout), which stay reachable while logged
   // in, unlike the landing page itself. Reading live auth state here (not a
@@ -29,29 +28,36 @@ export default function LandingNavbar() {
       <header className={`${styles.header} ${scrolled ? styles.scrolled : styles.top}`}>
         <div className={styles.inner}>
           {/* Logo */}
-          <button
-            onClick={() => { navigate('/'); setMenuOpen(false); }}
+          {/*
+            An anchor, not a button. This is the site-wide link back to the
+            homepage and it appears on every public page, so as a button it was
+            a dead end for a crawler walking the site from any page but the
+            root. <Link> keeps the client-side navigation identical.
+          */}
+          <Link
+            to="/"
+            onClick={() => setMenuOpen(false)}
             className={styles.brand}
-            aria-label="Go to homepage"
+            aria-label="Meetifyy home"
           >
             <img src={wordmark} alt="Meetifyy" className={styles.wordmarkImg} />
-          </button>
+          </Link>
 
           {/* Desktop CTAs */}
           <div className={styles.desktopActions}>
             {!authLoading && (
               isLoggedIn ? (
-                <button className={styles.ctaBtn} onClick={() => navigate('/home')}>
+                <Link className={styles.ctaBtn} to="/home">
                   Continue
-                </button>
+                </Link>
               ) : (
                 <>
-                  <button className={styles.signInBtn} onClick={() => navigate('/login')}>
+                  <Link className={styles.signInBtn} to="/login">
                     Sign In
-                  </button>
-                  <button className={styles.ctaBtn} onClick={() => navigate('/signup')}>
+                  </Link>
+                  <Link className={styles.ctaBtn} to="/signup">
                     Create Account
-                  </button>
+                  </Link>
                 </>
               )
             )}
@@ -90,26 +96,29 @@ export default function LandingNavbar() {
               </div>
               {!authLoading && (
                 isLoggedIn ? (
-                  <button
-                    onClick={() => { navigate('/home'); setMenuOpen(false); }}
+                  <Link
+                    to="/home"
+                    onClick={() => setMenuOpen(false)}
                     className={styles.mobileCta}
                   >
                     Continue
-                  </button>
+                  </Link>
                 ) : (
                   <>
-                    <button
-                      onClick={() => { navigate('/login'); setMenuOpen(false); }}
+                    <Link
+                      to="/login"
+                      onClick={() => setMenuOpen(false)}
                       className={styles.mobileSignIn}
                     >
                       Sign In
-                    </button>
-                    <button
-                      onClick={() => { navigate('/signup'); setMenuOpen(false); }}
+                    </Link>
+                    <Link
+                      to="/signup"
+                      onClick={() => setMenuOpen(false)}
                       className={styles.mobileCta}
                     >
                       Create Account
-                    </button>
+                    </Link>
                   </>
                 )
               )}

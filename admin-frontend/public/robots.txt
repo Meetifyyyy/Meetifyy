@@ -1,8 +1,31 @@
-# The admin portal is private in EVERY environment, development and production
-# alike. It is static rather than generated (unlike the main site's robots.txt)
-# because there is no environment in which indexing it would be correct.
+# The admin portal is private in EVERY environment. This one file is served by
+# both admin deployments (admin.meetifyy.app and dev-admin.meetifyy.app), and it
+# is static rather than generated, unlike the main site's robots.txt, because
+# there is no environment in which indexing this would be correct.
 #
-# This is a discoverability control, not an access control — real protection is
-# the AdminJwtGuard on the backend plus Vercel Deployment Protection.
+# CRAWLING IS DELIBERATELY ALLOWED. That looks wrong and is not.
+#
+# Every response here carries
+#   X-Robots-Tag: noindex, nofollow, noarchive, nosnippet, noimageindex
+# (vercel.json) and index.html repeats it as a meta tag. A crawler must be able
+# to FETCH a page to read that directive. "Disallow: /" blocks the fetch, so the
+# noindex is never seen, and Google stays free to list the bare URL of anything
+# it discovered elsewhere, reporting it as "Indexed, though blocked by
+# robots.txt". That is the precise outcome this file exists to prevent, and
+# "Disallow: /" causes it rather than preventing it.
+#
+# Discovery is a given here: every TLS certificate is published to Certificate
+# Transparency logs, so both admin hostnames are public knowledge from the
+# moment they are issued (docs/operations.md, "Security posture"). Hiding the
+# URL was never available. Making the removal directive readable is.
+#
+# Allowing the fetch costs nothing: without a valid admin session this origin
+# serves an empty React shell and a sign-in screen. There is no content here for
+# a crawler to take, only a directive for it to obey.
+#
+# None of this is security. That is AdminJwtGuard on the backend and Cloudflare
+# Access in front of the origin. This file only governs search results.
 User-agent: *
-Disallow: /
+Allow: /
+
+# No Sitemap line, in any environment.

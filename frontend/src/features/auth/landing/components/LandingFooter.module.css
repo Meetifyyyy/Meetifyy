@@ -47,6 +47,8 @@
 }
 
 .logoBtn {
+  display: inline-block;
+  text-decoration: none;
   background: none;
   border: none;
   padding: 0;
@@ -146,10 +148,20 @@
   gap: 0.85rem;
 }
 
+/*
+ * Applied to an <a>, not a <button>. The footer links are real anchors so that
+ * a crawler can follow them: About, Help, Privacy, Terms, Guidelines and the
+ * Cookie Policy are the site's entire internal link graph, and as buttons they
+ * were invisible to one. `display: inline-block` and the decoration reset are
+ * what keep an anchor looking identical to the button it replaced.
+ */
 .linkBtn {
+  display: inline-block;
+  text-decoration: none;
   background: none;
   border: none;
   padding: 0;
+  font-family: inherit;
   color: #ffffff;
   font-size: 0.9375rem;
   font-weight: 400;

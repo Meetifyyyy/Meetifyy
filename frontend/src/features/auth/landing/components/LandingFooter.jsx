@@ -1,17 +1,26 @@
-import { useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { useCookieConsent } from '@shared/context/CookieConsentContext';
 import logoImg from '@assets/images/meetify_logo.webp';
 import wordmarkImg from '@assets/images/meetifyy_wordmark.svg';
 import styles from './LandingFooter.module.css';
 
 export default function LandingFooter() {
-  const navigate = useNavigate();
   const { openPreferences } = useCookieConsent();
 
-  const handleNav = (path) => {
-    navigate(path);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
+  /**
+   * These were `<button onClick={navigate(...)}>`, which is why none of the
+   * site's internal links were crawlable: a button has no href, so a crawler
+   * reading the footer found no route out of the homepage to About, Help or any
+   * of the legal pages. Those six links are the entire internal link graph of
+   * the public site, and without them every page but the homepage was
+   * discoverable only from the sitemap.
+   *
+   * `<Link>` renders a real anchor and still navigates client-side, so nothing
+   * about the in-app behaviour changes. The scroll-to-top that `handleNav` used
+   * to do explicitly is kept here rather than dropped, because ScrollRestoration
+   * preserves position by default and these are long documents.
+   */
+  const toTop = () => window.scrollTo({ top: 0, behavior: 'smooth' });
 
   return (
     <footer id="about" className={styles.footer} role="contentinfo">
@@ -20,13 +29,14 @@ export default function LandingFooter() {
         <div className={styles.mainGrid}>
           {/* Left Column: Brand Icon, Social Links */}
           <div className={styles.leftCol}>
-            <button
-              onClick={() => handleNav('/')}
+            <Link
+              to="/"
+              onClick={toTop}
               className={styles.logoBtn}
-              aria-label="Meetifyy Home"
+              aria-label="Meetifyy home"
             >
               <img src={logoImg} alt="Meetifyy" className={styles.logoImg} />
-            </button>
+            </Link>
 
             {/* Social Icons */}
             <div className={styles.socialSection}>
@@ -75,43 +85,47 @@ export default function LandingFooter() {
           {/* Right Navigation Columns */}
           <div className={styles.rightNavGrid}>
             <div className={styles.navCol}>
-              <h4 className={styles.colTitle}>Company</h4>
+              {/* h2, not h4: these are the only headings in the contentinfo
+                  landmark, and jumping straight to h4 skipped two levels for no
+                  visual gain. .colTitle sets size, weight and margin, so the
+                  rendered result is identical. */}
+              <h2 className={styles.colTitle}>Company</h2>
               <ul className={styles.linkList}>
                 <li>
-                  <button onClick={() => handleNav('/about')} className={styles.linkBtn}>
+                  <Link to="/about" onClick={toTop} className={styles.linkBtn}>
                     About Us
-                  </button>
+                  </Link>
                 </li>
                 <li>
-                  <button onClick={() => handleNav('/help-and-support')} className={styles.linkBtn}>
+                  <Link to="/help-and-support" onClick={toTop} className={styles.linkBtn}>
                     Help &amp; Support
-                  </button>
+                  </Link>
                 </li>
               </ul>
             </div>
 
             <div className={styles.navCol}>
-              <h4 className={styles.colTitle}>Legal</h4>
+              <h2 className={styles.colTitle}>Legal</h2>
               <ul className={styles.linkList}>
                 <li>
-                  <button onClick={() => handleNav('/privacy-policy')} className={styles.linkBtn}>
+                  <Link to="/privacy-policy" onClick={toTop} className={styles.linkBtn}>
                     Privacy Policy
-                  </button>
+                  </Link>
                 </li>
                 <li>
-                  <button onClick={() => handleNav('/terms-and-conditions')} className={styles.linkBtn}>
+                  <Link to="/terms-and-conditions" onClick={toTop} className={styles.linkBtn}>
                     Terms of Service
-                  </button>
+                  </Link>
                 </li>
                 <li>
-                  <button onClick={() => handleNav('/community-guidelines')} className={styles.linkBtn}>
+                  <Link to="/community-guidelines" onClick={toTop} className={styles.linkBtn}>
                     Community Guidelines
-                  </button>
+                  </Link>
                 </li>
                 <li>
-                  <button onClick={() => handleNav('/cookie-policy')} className={styles.linkBtn}>
+                  <Link to="/cookie-policy" onClick={toTop} className={styles.linkBtn}>
                     Cookie Policy
-                  </button>
+                  </Link>
                 </li>
                 <li>
                   <button

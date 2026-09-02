@@ -62,9 +62,16 @@ export default function AnimatedWordRotator({ centered = false }) {
         style={{ fontSize: `${fontSize}px` }}
       >
         Meet your
+        <span className={styles.headlineAssistive}> {WORDS[0]}</span>
       </h1>
 
+      {/*
+        Decorative as far as assistive technology is concerned: the word it
+        cycles through is already in the H1 above, and announcing a per-letter
+        animation that restarts every 2.8 seconds is noise, not information.
+      */}
       <div
+        aria-hidden="true"
         className={`${styles.wordContainer} ${centered ? styles.wordCentered : ''}`}
         style={{ height: `${fontSize * 1.3}px` }}
       >

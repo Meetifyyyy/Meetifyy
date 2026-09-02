@@ -1,11 +1,13 @@
 import { lazy, Suspense, useMemo } from 'react';
 import { IS_DEV_BUILD } from '@config';
+import { isKnownAppRoute } from '@config/seo';
 import { createBrowserRouter, RouterProvider, Navigate, Outlet, ScrollRestoration, useLocation } from 'react-router-dom';
 import { QueryErrorResetBoundary } from '@tanstack/react-query';
 import { SmartBackTracker } from './shared/hooks/useSmartBack';
 import { useAuth } from './shared/context/AuthContext';
 import DashboardLayoutWrapper from './layout/DashboardLayoutWrapper';
 import ErrorBoundary, { RouteErrorBoundary } from './shared/components/ErrorBoundary';
+import PageMetadata from './shared/seo/PageMetadata';
 import SocketManager from './shared/components/SocketManager';
 import OverlayHistoryBridge from './shared/components/OverlayHistoryBridge';
 import LegacyPathRedirect from './shared/components/LegacyPathRedirect';
@@ -130,6 +132,17 @@ function ProtectedRoute({ children }) {
   const location = useLocation();
   if (loading) return null;
   if (!isLoggedIn) {
+    // A url that matches no route is not a page to sign in for, it is a page
+    // that does not exist. Sending it to '/' made every dead link answer 200
+    // with the landing page (a soft 404), and stored a redirect intent that
+    // would drop the user back on the same dead url right after signing in.
+    //
+    // `isKnownAppRoute` is the same predicate the edge uses to choose between
+    // the SPA shell and a real 404 response, so the status code and the page
+    // the visitor sees always agree.
+    if (!isKnownAppRoute(location.pathname)) {
+      return <PublicNotFound />;
+    }
     // Remember the deep link so signing in returns the user to the page they
     // actually asked for. History state can't carry it: the user walks through
     // the landing page and login before it is needed.
@@ -197,6 +210,7 @@ import SuspensionGate from './shared/components/SuspensionGate';
 import AccountDeletionGate from './shared/components/AccountDeletionGate';
 import VerifiedWelcome from './shared/components/VerifiedWelcome';
 import NotFoundState from './shared/components/ui/NotFoundState';
+import PublicNotFound from './shared/components/PublicNotFound';
 
 /**
  * NotFound — shown for authenticated users who hit an unmatched route.
@@ -204,7 +218,11 @@ import NotFoundState from './shared/components/ui/NotFoundState';
  */
 function NotFound() {
   const { isLoggedIn } = useAuth();
-  if (!isLoggedIn) return <Navigate to="/" replace />;
+  // Signed-out visitors no longer reach this: ProtectedRoute renders
+  // PublicNotFound for them, with the landing chrome rather than the dashboard
+  // shell, which a session is required to build. Kept as a guard so the branch
+  // stays correct if this catch-all is ever moved out of the auth boundary.
+  if (!isLoggedIn) return <PublicNotFound />;
   return (
     <main style={{ gridColumn: '2 / -1', width: '100%', maxWidth: 'none', margin: 0, padding: 0 }}>
       <NotFoundState type="page" coverPage={true} />
@@ -230,6 +248,7 @@ export default function App() {
       element: (
         <ErrorBoundary>
           <SmartBackTracker />
+          <PageMetadata />
           <OverlayHistoryBridge />
           <ScrollRestoration />
           <SocketManager />
@@ -331,10 +350,18 @@ export default function App() {
           element: <Navigate to="/help-and-support" replace />,
         },
         // -- DEV PREVIEW - delete this route before shipping ------------------
-        {
-          path: '/dev/critical-error',
-          element: <CriticalErrorScreen onRetry={() => window.location.reload()} />,
-        },
+        // Gated on IS_DEV_BUILD like its three neighbours. It was not, so
+        // /dev/critical-error was a live route on the production site: a
+        // crawlable URL that renders a full-screen error page under the real
+        // domain. robots.txt disallows /dev, but a disallowed URL can still be
+        // listed from an external link, and the fix for a page that should not
+        // exist in production is to not ship it.
+        ...(IS_DEV_BUILD ? [
+          {
+            path: '/dev/critical-error',
+            element: <CriticalErrorScreen onRetry={() => window.location.reload()} />,
+          },
+        ] : []),
         ...(IS_DEV_BUILD && NotificationPlayground ? [
           {
             path: '/dev/notifications',

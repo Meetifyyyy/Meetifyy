@@ -41,6 +41,7 @@
   border: none;
   padding: 0;
   text-align: left;
+  text-decoration: none;
 }
 
 .logoImg {
@@ -86,6 +87,12 @@
 }
 
 .signInBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  white-space: nowrap;
+  font-family: inherit;
   font-size: 0.75rem;
   text-transform: uppercase;
   letter-spacing: 0.1em;
@@ -115,6 +122,12 @@
 }
 
 .ctaBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  white-space: nowrap;
+  font-family: inherit;
   font-size: 0.75rem;
   text-transform: uppercase;
   letter-spacing: 0.1em;
@@ -296,6 +309,11 @@
 }
 
 .mobileSignIn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  font-family: inherit;
   width: 100%;
   text-align: center;
   font-size: 0.875rem;
@@ -323,6 +341,11 @@
 }
 
 .mobileCta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  font-family: inherit;
   width: 100%;
   text-align: center;
   background: var(--color-brand-primary);

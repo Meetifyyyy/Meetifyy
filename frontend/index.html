@@ -2,8 +2,30 @@
 <html lang="en" data-theme="light">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, interactive-widget=resizes-content" />
-  <link rel="icon" type="image/png" href="/favicon.png?v=2" />
+  <!--
+    No `maximum-scale` and no `user-scalable=no`.
+
+    Both were here to stop iOS zooming in when a text field smaller than 16px is
+    focused. The cost was that Android Chrome honours `user-scalable=no`
+    literally and refused to pinch-zoom at all, which is a WCAG 2.1 AA failure
+    (1.4.4 Resize Text) and a Lighthouse accessibility error. It takes zoom away
+    from exactly the people who most need it, to avoid an annoyance that
+    reverses itself the moment the field is blurred.
+
+    There is no setting that gives both, so the accessibility outcome wins.
+    global.css adds a 16px floor for form controls on touch devices, which
+    removes the focus-zoom for every field a component has not sized itself;
+    fields styled below 16px by their own component still zoom on focus. See the
+    note there for why that floor deliberately does not override components.
+  -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, interactive-widget=resizes-content" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon.png?v=2" />
+  <!--
+    Google's search result favicon is fetched at 48px minimum and downscaled
+    from whatever the largest declared icon is, so declaring the 192 here is
+    what makes the favicon beside a result look sharp rather than resampled.
+  -->
+  <link rel="icon" type="image/png" sizes="192x192" href="/logo-192.png?v=3" />
   <!--
     The maskable (opaque, full-bleed) icon, not the rounded one. iOS does not
     honour transparency in an apple-touch-icon — it composites the image onto
@@ -39,19 +61,72 @@
   <link rel="apple-touch-startup-image" media="(device-width: 834px) and (device-height: 1112px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" href="/splash/apple-splash-834x1112@2x.png" />
   <link rel="apple-touch-startup-image" media="(device-width: 820px) and (device-height: 1180px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" href="/splash/apple-splash-820x1180@2x.png" />
   <link rel="apple-touch-startup-image" media="(device-width: 768px) and (device-height: 1024px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" href="/splash/apple-splash-768x1024@2x.png" />
+  <!-- DEV-CSP:START -->
+  <!--
+    The DEV SERVER's policy, and only the dev server's.
+
+    Vite serves this file directly with no opportunity to set response headers,
+    so the dev server needs its policy in the document. That policy necessarily
+    allows http://localhost:4000 and http://127.0.0.1:4000 for the local API,
+    which has no business being advertised by the public site.
+
+    In a deployed build the real policy is the `Content-Security-Policy` HEADER
+    in vercel.json, which is strictly tighter: no localhost, no cdn.jsdelivr.net.
+    Leaving this tag in production did not weaken anything, because a browser
+    enforces every policy it is given and the effective permission is the
+    intersection of the two. It did publish localhost origins in every page of
+    the public site, and it invited someone to "fix" a CSP problem by editing
+    the loose copy.
+
+    `stripDevCspPlugin` in vite.config.js removes this block from production
+    builds, leaving the header as the single policy.
+  -->
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https://cdn.jsdelivr.net; script-src-elem 'self' 'unsafe-inline' 'unsafe-eval' blob: https://cdn.jsdelivr.net; worker-src 'self' blob: https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: http: https: http://localhost:4000 http://127.0.0.1:4000; media-src 'self' data: blob: http: https: http://localhost:4000 http://127.0.0.1:4000; connect-src 'self' http: https: ws: wss:;" />
-  <meta name="description" content="Meetifyy — your vibe, your tribe, your spotlight. Connect with like-minded people, join communities, and build your network." />
+  <!-- DEV-CSP:END -->
   <link rel="preload" href="/fonts/inter-100_900-normal-13.woff2" as="font" type="font/woff2" crossorigin />
   <link rel="preload" href="/fonts/changaone-400-normal-15.woff2" as="font" type="font/woff2" crossorigin />
   <link rel="preload" href="/fonts/changa-400-normal-18.woff2" as="font" type="font/woff2" crossorigin />
-  <link rel="preload" href="/fonts/materialsymbolsoutlined-100_700-normal-31.woff2" as="font" type="font/woff2" crossorigin />
   <link rel="stylesheet" href="/src/styles/fonts.css" />
+  <!-- DEV-HOST-GUARD:START -->
+  <!--
+    Client-side backstop for the same hop vercel.json performs at the edge:
+    the development project's generated *.vercel.app URL sends visitors to the
+    real dev hostname.
+
+    Stripped entirely from production builds by `stripDevHostGuardPlugin` in
+    vite.config.js. On meetifyy.app the condition can never be true, so it is
+    dead code there, and dead code that hardcodes the development hostname into
+    every production document. Google does not parse URLs out of script strings,
+    so it was not a crawlable link, but the rule is that no production artefact
+    names a non-production host, and an exception nobody can justify is one
+    somebody will later copy.
+  -->
   <script>
     if (window.location.hostname === 'meetify-web.vercel.app') {
       window.location.replace('https://dev.meetifyy.app' + window.location.pathname + window.location.search);
     }
   </script>
-  <title>Meetifyy</title>
+  <!-- DEV-HOST-GUARD:END -->
+
+  <!--
+    Everything between SEO:START and SEO:END is REPLACED PER ROUTE at build time
+    by scripts/prerender-seo.mjs, which writes one real HTML file per public
+    page. Do not add anything here that is not route-specific metadata, and do
+    not remove the markers: the prerender step fails the build without them.
+
+    The values below are the homepage's, and they are what the Vite dev server
+    serves for every route. That is intentional and harmless, because no crawler
+    ever reaches a dev server. In a built deployment this file is overwritten
+    with the homepage block, and every other route gets its own document.
+
+    Copy rules live in src/config/seo.js. In short: no em dashes, one pipe at
+    most, and a description written for this page and no other.
+  -->
+  <!-- SEO:START -->
+  <title>Meetifyy | Discover People, Communities and Events</title>
+  <meta name="description" content="Meetifyy brings students together around what they actually care about. Join communities, find events on campus, and meet people worth knowing." />
+  <meta name="robots" content="noindex, nofollow" />
+  <!-- SEO:END -->
 </head>
 <body>
   <!--

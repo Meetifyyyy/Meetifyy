@@ -60,6 +60,53 @@ function stampBuildVersionPlugin() {
   };
 }
 
+/**
+ * Removes the development-hostname bootstrap from production builds.
+ *
+ * index.html carries a small script that forwards the dev project's generated
+ * `*.vercel.app` URL to dev.meetifyy.app. On the production host that condition
+ * can never be true, so in a production build it is dead code whose only effect
+ * is to write "dev.meetifyy.app" into every document the public site serves.
+ *
+ * The requirement it violates is absolute: no production artefact may name a
+ * non-production host. A script string is not a crawlable link and Google will
+ * not follow it, so this is hygiene rather than an active leak, but it is the
+ * kind of exception that gets copied into somewhere it does matter.
+ */
+/**
+ * Removes the dev server's CSP meta tag from production builds.
+ *
+ * See the block it targets in index.html. In short: the deployed policy is the
+ * header in vercel.json and it is strictly tighter than the meta tag, so
+ * dropping the tag narrows the effective policy rather than widening it, and
+ * stops the public site publishing localhost origins in every document.
+ */
+function stripDevCspPlugin() {
+  return {
+    name: 'meetifyy-strip-dev-csp',
+    apply: 'build',
+    transformIndexHtml(html) {
+      return html.replace(
+        /[ \t]*<!-- DEV-CSP:START -->[\s\S]*?<!-- DEV-CSP:END -->\n?/g,
+        '',
+      );
+    },
+  };
+}
+
+function stripDevHostGuardPlugin() {
+  return {
+    name: 'meetifyy-strip-dev-host-guard',
+    apply: 'build',
+    transformIndexHtml(html) {
+      return html.replace(
+        /[ \t]*<!-- DEV-HOST-GUARD:START -->[\s\S]*?<!-- DEV-HOST-GUARD:END -->\n?/g,
+        '',
+      );
+    },
+  };
+}
+
 function tombstoneServiceWorkerPlugin() {
   const source = `// Non-production build: remove the old installation only after
 // its open clients have naturally closed. Deliberately no skipWaiting or client
@@ -101,6 +148,8 @@ export default defineConfig(({ mode }) => {
   plugins: [
     react(),
     stampBuildVersionPlugin(),
+    // Production only: see the plugin's own note.
+    ...(isProductionApp ? [stripDevHostGuardPlugin(), stripDevCspPlugin()] : []),
     ...(isProductionApp ? [VitePWA({
       strategies: 'injectManifest',
       srcDir: 'src',
@@ -110,7 +159,7 @@ export default defineConfig(({ mode }) => {
       manifest: {
         name: "Meetifyy",
         short_name: "Meetifyy",
-        description: "Meetifyy — your vibe, your tribe, your spotlight. Connect with like-minded people, join communities, and build your network.",
+        description: "Meetifyy brings students together around what they actually care about. Join communities, find events on campus, and meet people worth knowing.",
         start_url: "/",
         scope: "/",
         display: "standalone",

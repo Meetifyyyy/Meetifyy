@@ -65,25 +65,16 @@ export default function HelpSupportPage() {
   const loadIdRef = useRef(0);
 
   // ── Page metadata ────────────────────────────────────────────────────────
-  // Set directly rather than through a helmet library, which this project does
-  // not use. Restored on unmount so navigating away does not leave the support
-  // title on another route.
-  useEffect(() => {
-    const previousTitle = document.title;
-    const description = document.querySelector('meta[name="description"]');
-    const previousDescription = description?.getAttribute('content') ?? null;
-
-    document.title = 'Help & Support | Meetifyy';
-    description?.setAttribute(
-      'content',
-      'Find answers to common questions about Meetifyy, or contact our support team. No account needed.',
-    );
-
-    return () => {
-      document.title = previousTitle;
-      if (previousDescription !== null) description?.setAttribute('content', previousDescription);
-    };
-  }, []);
+  // Owned centrally by shared/seo/usePageMetadata, driven by the route table in
+  // config/seo.js. This page used to set document.title and the description
+  // itself, which became a race the moment metadata was centralised: two
+  // effects wrote the same two nodes on every navigation and the winner was
+  // whichever ran last. Worse, this one snapshotted the PREVIOUS title on mount
+  // and restored it on unmount, so leaving the page could put the help title's
+  // predecessor back over whatever the next route had just set.
+  //
+  // The prerendered /help-and-support.html document carries the same title and
+  // description, so a crawler that never runs this component still gets them.
 
   // ── Initial load ─────────────────────────────────────────────────────────
 

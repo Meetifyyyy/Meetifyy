@@ -9,11 +9,43 @@
         {
           "type": "header",
           "key": "host",
+          "value": "www.meetifyy.app"
+        }
+      ],
+      "destination": "https://meetifyy.app/:path*",
+      "permanent": true
+    },
+    {
+      "source": "/:path*",
+      "has": [
+        {
+          "type": "header",
+          "key": "host",
           "value": "meetify-web.vercel.app"
         }
       ],
       "destination": "https://dev.meetifyy.app/:path*",
       "permanent": false
+    },
+    {
+      "source": "/terms",
+      "destination": "/terms-and-conditions",
+      "permanent": true
+    },
+    {
+      "source": "/help",
+      "destination": "/help-and-support",
+      "permanent": true
+    },
+    {
+      "source": "/support",
+      "destination": "/help-and-support",
+      "permanent": true
+    },
+    {
+      "source": "/contact",
+      "destination": "/help-and-support",
+      "permanent": true
     }
   ],
   "rewrites": [
@@ -38,8 +70,156 @@
       "destination": "/manifest.webmanifest"
     },
     {
-      "source": "/((?!assets/|fonts/|icons/|favicon\\.png|.*\\.[a-zA-Z0-9]+$).*)",
-      "destination": "/index.html"
+      "source": "/about",
+      "destination": "/about.html"
+    },
+    {
+      "source": "/help-and-support",
+      "destination": "/help-and-support.html"
+    },
+    {
+      "source": "/community-guidelines",
+      "destination": "/community-guidelines.html"
+    },
+    {
+      "source": "/privacy-policy",
+      "destination": "/privacy-policy.html"
+    },
+    {
+      "source": "/terms-and-conditions",
+      "destination": "/terms-and-conditions.html"
+    },
+    {
+      "source": "/cookie-policy",
+      "destination": "/cookie-policy.html"
+    },
+    {
+      "source": "/login",
+      "destination": "/login.html"
+    },
+    {
+      "source": "/signup",
+      "destination": "/signup.html"
+    },
+    {
+      "source": "/forgot-password",
+      "destination": "/forgot-password.html"
+    },
+    {
+      "source": "/reset-password",
+      "destination": "/reset-password.html"
+    },
+    {
+      "source": "/home",
+      "destination": "/app.html"
+    },
+    {
+      "source": "/search",
+      "destination": "/app.html"
+    },
+    {
+      "source": "/notifications",
+      "destination": "/app.html"
+    },
+    {
+      "source": "/saved",
+      "destination": "/app.html"
+    },
+    {
+      "source": "/onboarding",
+      "destination": "/app.html"
+    },
+    {
+      "source": "/settings",
+      "destination": "/app.html"
+    },
+    {
+      "source": "/settings/:panel",
+      "destination": "/app.html"
+    },
+    {
+      "source": "/communities",
+      "destination": "/app.html"
+    },
+    {
+      "source": "/communities/:id",
+      "destination": "/app.html"
+    },
+    {
+      "source": "/post/:id",
+      "destination": "/app.html"
+    },
+    {
+      "source": "/profile",
+      "destination": "/app.html"
+    },
+    {
+      "source": "/profile/:username",
+      "destination": "/app.html"
+    },
+    {
+      "source": "/campus",
+      "destination": "/app.html"
+    },
+    {
+      "source": "/campus/directory",
+      "destination": "/app.html"
+    },
+    {
+      "source": "/campus/communities",
+      "destination": "/app.html"
+    },
+    {
+      "source": "/campus/events",
+      "destination": "/app.html"
+    },
+    {
+      "source": "/campus/events/:id",
+      "destination": "/app.html"
+    },
+    {
+      "source": "/crew",
+      "destination": "/app.html"
+    },
+    {
+      "source": "/crew/create",
+      "destination": "/app.html"
+    },
+    {
+      "source": "/crew/:id",
+      "destination": "/app.html"
+    },
+    {
+      "source": "/messages",
+      "destination": "/app.html"
+    },
+    {
+      "source": "/messages/:path*",
+      "destination": "/app.html"
+    },
+    {
+      "source": "/inbox",
+      "destination": "/app.html"
+    },
+    {
+      "source": "/inbox/:path*",
+      "destination": "/app.html"
+    },
+    {
+      "source": "/auth/:path*",
+      "destination": "/app.html"
+    },
+    {
+      "source": "/verify-email",
+      "destination": "/app.html"
+    },
+    {
+      "source": "/dev/:path*",
+      "destination": "/app.html"
+    },
+    {
+      "source": "/logo-animation",
+      "destination": "/app.html"
     }
   ],
   "headers": [
@@ -49,6 +229,51 @@
         {
           "type": "host",
           "value": "dev\\.meetifyy\\.app"
+        }
+      ],
+      "headers": [
+        {
+          "key": "X-Robots-Tag",
+          "value": "noindex, nofollow, noarchive, nosnippet, noimageindex"
+        }
+      ]
+    },
+    {
+      "source": "/(.*)",
+      "has": [
+        {
+          "type": "host",
+          "value": "dev-admin\\.meetifyy\\.app"
+        }
+      ],
+      "headers": [
+        {
+          "key": "X-Robots-Tag",
+          "value": "noindex, nofollow, noarchive, nosnippet, noimageindex"
+        }
+      ]
+    },
+    {
+      "source": "/(.*)",
+      "has": [
+        {
+          "type": "host",
+          "value": "admin\\.meetifyy\\.app"
+        }
+      ],
+      "headers": [
+        {
+          "key": "X-Robots-Tag",
+          "value": "noindex, nofollow, noarchive, nosnippet, noimageindex"
+        }
+      ]
+    },
+    {
+      "source": "/(.*)",
+      "has": [
+        {
+          "type": "host",
+          "value": "staging\\.meetifyy\\.app"
         }
       ],
       "headers": [
@@ -74,17 +299,28 @@
       ]
     },
     {
-      "source": "/(.*)",
-      "has": [
-        {
-          "type": "host",
-          "value": "staging\\.meetifyy\\.app"
-        }
-      ],
+      "source": "/(dev|admin)/(.*)",
       "headers": [
         {
           "key": "X-Robots-Tag",
           "value": "noindex, nofollow, noarchive, nosnippet, noimageindex"
+        }
+      ]
+    },
+    {
+      "source": "/app.html",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-cache, no-store, must-revalidate, max-age=0, s-maxage=0"
+        },
+        {
+          "key": "CDN-Cache-Control",
+          "value": "no-store"
+        },
+        {
+          "key": "Vercel-CDN-Cache-Control",
+          "value": "no-store"
         }
       ]
     },
@@ -284,6 +520,42 @@
           "value": "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:; script-src-elem 'self' 'unsafe-inline' 'unsafe-eval' blob:; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: http: https: https://*.supabase.co https://*.r2.dev https://cdn.meetifyy.app; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.r2.dev https://cdn.meetifyy.app http: https: ws: wss:; media-src 'self' data: blob: http: https: https://*.supabase.co https://*.r2.dev https://cdn.meetifyy.app; frame-ancestors 'none'; base-uri 'self'; form-action 'self';"
         }
       ]
+    },
+    {
+      "source": "/sitemap.xml",
+      "headers": [
+        {
+          "key": "Content-Type",
+          "value": "application/xml; charset=utf-8"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=0, s-maxage=3600, must-revalidate"
+        }
+      ]
+    },
+    {
+      "source": "/robots.txt",
+      "headers": [
+        {
+          "key": "Content-Type",
+          "value": "text/plain; charset=utf-8"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=0, s-maxage=3600, must-revalidate"
+        }
+      ]
+    },
+    {
+      "source": "/og/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=86400, s-maxage=604800"
+        }
+      ]
     }
-  ]
+  ],
+  "trailingSlash": false
 }

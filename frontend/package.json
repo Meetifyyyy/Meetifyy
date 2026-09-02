@@ -5,13 +5,15 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "node scripts/generate-robots.mjs && node scripts/generate-version.mjs && vite build",
+    "build": "node scripts/generate-robots.mjs && node scripts/generate-sitemap.mjs && node scripts/generate-version.mjs && vite build && node scripts/prerender-seo.mjs",
     "preview": "vite preview",
     "pwa:assets": "node scripts/generate-pwa-assets.mjs",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "robots": "node scripts/generate-robots.mjs",
-    "version:stamp": "node scripts/generate-version.mjs"
+    "version:stamp": "node scripts/generate-version.mjs",
+    "sitemap": "node scripts/generate-sitemap.mjs",
+    "og:asset": "node scripts/generate-og-image.mjs"
   },
   "dependencies": {
     "@emoji-mart/data": "^1.2.1",

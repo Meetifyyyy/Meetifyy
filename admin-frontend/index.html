@@ -4,7 +4,30 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Meetifyy — Super Admin Portal</title>
+    <!--
+      Defence in depth, and the only layer of it that lives in the document.
+
+      The portal is already covered by an X-Robots-Tag header on every response
+      (vercel.json) and by `Disallow: /` in robots.txt. Neither is sufficient on
+      its own: a header is lost the moment the file is served from anywhere
+      other than this Vercel project, and robots.txt only stops a URL being
+      fetched, which means a crawler that learns the URL from an external link
+      can still list it without ever reading the file. A meta tag travels with
+      the document.
+
+      None of the three is security. That is AdminJwtGuard on the backend plus
+      Vercel Deployment Protection; these three only keep the portal out of
+      search results.
+    -->
+    <meta name="robots" content="noindex, nofollow, noarchive, nosnippet, noimageindex" />
+    <!--
+      Deliberately says nothing about what this is. The old title was
+      "Super Admin Portal", which named an internal surface in the one string
+      that leaks furthest: a browser tab, a bookmark, a screenshot, a shared
+      window and any search result that slipped through. There is no reason for
+      an operator to be told, and no reason for anyone else to find out.
+    -->
+    <title>Meetifyy Console</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet">

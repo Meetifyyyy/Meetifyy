@@ -69,3 +69,35 @@
 [data-theme="dark"] .period {
   color: #fb7185;
 }
+
+/*
+ * Completes the H1 for anything that reads markup rather than pixels.
+ *
+ * The visible headline is "Meet your" plus a word that rotates every 2.8s, and
+ * that word lives in a sibling element split into one <span> per letter so it
+ * can be animated. So the H1 itself read "Meet your": an unfinished sentence,
+ * and the single most important heading on the site. A screen reader heard the
+ * same fragment followed by a stream of individual letters re-announcing
+ * themselves five times a minute.
+ *
+ * This puts the first of the rotating words back into the heading for readers
+ * that cannot see the animation, and the rotator itself is marked aria-hidden.
+ * The text is genuinely on screen, which is what keeps this an accessibility
+ * fix rather than hidden-text cloaking: "People." is the word the headline
+ * shows on load and every fifth rotation after it.
+ *
+ * Clip-rect rather than `display: none` or `visibility: hidden`, both of which
+ * remove the text from the accessibility tree as well as from view, which would
+ * defeat the entire purpose.
+ */
+.headlineAssistive {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

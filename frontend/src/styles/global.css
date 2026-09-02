@@ -716,6 +716,63 @@ textarea {
   font-family: inherit;
 }
 
+/*
+ * A 16px floor for form controls on touch devices, at zero specificity.
+ *
+ * WHAT THIS IS FOR
+ * iOS Safari zooms the page in when a text field with a computed font-size
+ * below 16px receives focus. That zoom is why the viewport meta used to carry
+ * `maximum-scale=1, user-scalable=no`, and why Android Chrome then refused to
+ * pinch-zoom at all, which is a WCAG 2.1 AA failure (1.4.4 Resize Text).
+ *
+ * Removing those attributes is the accessibility fix and it is unconditional.
+ * This rule is the partial mitigation for the focus-zoom they used to hide.
+ *
+ * WHY `:where()`, WHICH MAKES IT LOSE EVERY ARGUMENT
+ * `:where()` contributes no specificity, so this sets 16px only on fields that
+ * no component has styled, and every component-level `font-size` still wins.
+ *
+ * That is deliberate. Making it win instead was tried and is wrong: eight
+ * components deliberately style fields ABOVE 16px, from `.fieldInput` at 16.8px
+ * up to `.capInput` at 30.4px, and a floor with enough specificity to raise the
+ * small ones would equally have shrunk all of those. CSS has no "minimum
+ * font-size", and a rule that both raises and lowers is not a floor.
+ *
+ * WHAT THIS MEANS IN PRACTICE
+ * Unstyled fields no longer trigger the zoom. Fields a component sizes below
+ * 16px still do, and iOS zooms back out on blur. That is the ordinary behaviour
+ * of most of the web, and it is a far smaller cost than taking pinch-zoom away
+ * from people who need it.
+ *
+ * To remove the zoom from a specific field, raise that component's own
+ * font-size to 16px on touch widths. Doing it at the component is what keeps
+ * the deliberately larger fields intact.
+ */
+@media (pointer: coarse) and (max-width: 768px) {
+  :where(
+    textarea,
+    select,
+    input:not([type='button']):not([type='submit']):not([type='reset']):not([type='checkbox']):not([type='radio']):not([type='range']):not([type='color']):not([type='file'])
+  ) {
+    font-size: 16px;
+  }
+}
+
+/*
+ * Smooth scrolling, on the landing page and nowhere else.
+ *
+ * `landing-scroll-active` is put on <html> by LandingPage and removed on
+ * unmount, so this cannot leak into the application shell. That matters:
+ * Messages runs its own bounded scroller and the feed restores scroll position
+ * on navigation, and animating either would fight the behaviour they implement.
+ *
+ * The reduced-motion block further down already resets `scroll-behavior` to
+ * `auto`, so this respects that preference without repeating the query.
+ */
+html.landing-scroll-active {
+  scroll-behavior: smooth;
+}
+
 /* ─────────────────────────────────────────────────────────────
    GLOBAL RESPONSIVE INTERACTION & TOUCH ERGONOMICS ARCHITECTURE
    ───────────────────────────────────────────────────────────── */

@@ -367,6 +367,11 @@ test_*.md
 # Generated per-environment at build time by frontend/scripts/generate-robots.mjs.
 # Never commit it: the committed copy would be wrong for 3 of the 4 Vercel projects.
 frontend/public/robots.txt
+
+# Generated per-environment at build time by frontend/scripts/generate-sitemap.mjs.
+# Production builds write it; every other build deletes it, so a sitemap of
+# production URLs can never be left behind in a development deployment.
+frontend/public/sitemap.xml
 # Written by scripts/generate-version.mjs at build time and read by the launch
 # version gate. Committing it would pin every deployment to whatever SHA
 # happened to be checked in, so the gate would compare against a stale value.
