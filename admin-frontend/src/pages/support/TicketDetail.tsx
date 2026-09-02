@@ -26,6 +26,7 @@ import {
   statusLabel,
 } from './supportConstants';
 import { ReplyComposer } from './ReplyComposer';
+import { useConfirm } from '../../components/ConfirmProvider';
 
 /**
  * One ticket: the conversation, with triage controls around it.
@@ -42,6 +43,7 @@ import { ReplyComposer } from './ReplyComposer';
  * that has already left.
  */
 export const TicketDetail: React.FC<{ ticketId: string; onChanged?: () => void }> = ({ ticketId, onChanged }) => {
+  const confirm = useConfirm();
   const queryClient = useQueryClient();
   const [banner, setBanner] = useState<{ tone: 'error' | 'ok'; text: string } | null>(null);
   const [showDetails, setShowDetails] = useState(false);
@@ -230,7 +232,14 @@ export const TicketDetail: React.FC<{ ticketId: string; onChanged?: () => void }
             className="btn-secondary"
             style={tinyBtn}
             disabled={resendConfirmation.isPending}
-            onClick={() => resendConfirmation.mutate()}
+            onClick={() => confirm({
+              title: 'Resend the confirmation email?',
+              description: 'Another copy is sent to the person who opened this ticket.',
+              consequences: ['They receive a second email; it cannot be unsent.'],
+              severity: 'moderate',
+              confirmLabel: 'Resend',
+              onConfirm: () => resendConfirmation.mutateAsync(),
+            })}
           >
             {resendConfirmation.isPending ? <Loader2 size={12} className="spin" /> : <RefreshCw size={12} />}
             <span>Resend</span>
@@ -334,7 +343,14 @@ export const TicketDetail: React.FC<{ ticketId: string; onChanged?: () => void }
               {isAdmin && !isNote && (
                 <DeliveryStatus
                   message={message}
-                  onResend={() => resendMutation.mutate(message.id)}
+                  onResend={() => confirm({
+                    title: 'Resend this reply?',
+                    description: 'The reply is emailed to the ticket owner again.',
+                    consequences: ['They receive a duplicate; it cannot be unsent.'],
+                    severity: 'moderate',
+                    confirmLabel: 'Resend reply',
+                    onConfirm: () => resendMutation.mutateAsync(message.id),
+                  })}
                   pending={resendMutation.isPending}
                 />
               )}

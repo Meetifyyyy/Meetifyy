@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiRequest, getMediaUrl } from '../api/apiClient';
 import { CheckCircle, XCircle, ExternalLink } from '../components/icons';
+import { useConfirm } from '../components/ConfirmProvider';
 
 /** Same avatar treatment as the Users and Campus Reps tables. */
 const ReviewerAvatar: React.FC<{ user: any }> = ({ user }) => {
@@ -30,6 +31,7 @@ const ReviewerAvatar: React.FC<{ user: any }> = ({ user }) => {
 };
 
 export const VerificationPage: React.FC = () => {
+  const confirm = useConfirm();
   const queryClient = useQueryClient();
   const [filterStatus, setFilterStatus] = useState<string>('PENDING');
   /**
@@ -64,8 +66,30 @@ export const VerificationPage: React.FC = () => {
     },
   });
 
-  const handleAction = (id: string, status: string) => {
-    mutation.mutate({ id, status });
+  /**
+   * Approving is confirmed; rejecting is not routed through the shared dialog.
+   *
+   * Rejection already has its own modal because it COLLECTS something - the
+   * reason is required and is shown to the student - and a generic confirmation
+   * cannot capture required input. Replacing it would have meant either losing
+   * the reason or bolting a text field onto a dialog whose whole value is that
+   * it looks the same everywhere.
+   *
+   * Approval had nothing at all, and it is not a small act: VERIFIED is the
+   * status that admits an account to messaging, campus surfaces and every
+   * share/invite selector.
+   */
+  const handleAction = (id: string, status: string, username?: string) => {
+    confirm({
+      title: username ? `Approve verification for @${username}?` : 'Approve this verification?',
+      description: 'The account is marked verified.',
+      consequences: [
+        'They gain access to messaging, campus surfaces and share or invite lists.',
+      ],
+      severity: 'moderate',
+      confirmLabel: 'Approve',
+      onConfirm: () => mutation.mutateAsync({ id, status }),
+    });
   };
 
   const REASON_MAX = 500; // matches VerificationRequest.rejectionReason
@@ -277,7 +301,7 @@ export const VerificationPage: React.FC = () => {
                     <XCircle size={18} /> Reject
                   </button>
                   <button 
-                    onClick={() => handleAction(req.id, 'VERIFIED')}
+                    onClick={() => handleAction(req.id, 'VERIFIED', req.user?.username)}
                     disabled={mutation.isPending}
                     style={{ 
                       padding: '0.6rem 1.25rem', 

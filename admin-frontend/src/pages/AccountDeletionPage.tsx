@@ -13,6 +13,7 @@ import {
   UserCheck,
   Search,
 } from '../components/icons';
+import { useConfirm } from '../components/ConfirmProvider';
 
 type Filter = 'pending' | 'failed' | 'completed' | 'all';
 
@@ -66,15 +67,12 @@ const STATUS_STYLE: Record<string, { bg: string; fg: string; label: string }> = 
  * shows no bio, avatar or profile content for someone who asked to be forgotten.
  */
 export const AccountDeletionPage: React.FC = () => {
+  const confirm = useConfirm();
   const queryClient = useQueryClient();
   const [filter, setFilter] = useState<Filter>('pending');
   const [page, setPage] = useState(1);
   const [searchInput, setSearchInput] = useState('');
   const search = useDebounced(searchInput, 300);
-  const [confirming, setConfirming] = useState<
-    { action: 'restore' | 'purge'; request: DeletionRequest } | null
-  >(null);
-
   const { data, isLoading, isFetching } = useQuery({
     queryKey: ['adminAccountDeletion', filter, page, search],
     queryFn: () => {
@@ -92,7 +90,6 @@ export const AccountDeletionPage: React.FC = () => {
       apiRequest(`/admin/account-deletion/${userId}/restore`, { method: 'POST' }),
     onSuccess: () => {
       pushToast('Account restored', 'success');
-      setConfirming(null);
       invalidate();
     },
     // The backend's message is shown verbatim — it is the one that knows
@@ -106,7 +103,6 @@ export const AccountDeletionPage: React.FC = () => {
       apiRequest(`/admin/account-deletion/${userId}/purge`, { method: 'POST' }),
     onSuccess: () => {
       pushToast('Permanent deletion completed', 'success');
-      setConfirming(null);
       invalidate();
     },
     onError: (err: any) =>
@@ -143,7 +139,17 @@ export const AccountDeletionPage: React.FC = () => {
           </p>
         </div>
         <button
-          onClick={() => runSweep.mutate()}
+          onClick={() => confirm({
+            title: 'Run the purge sweep now?',
+            description: 'Every account whose 30-day recovery window has closed is permanently deleted immediately, rather than on the next scheduled run.',
+            consequences: [
+              'This affects all due accounts at once, not one person.',
+              'Posts, activities and uploaded media are removed and cannot be recovered.',
+            ],
+            severity: 'critical',
+            confirmLabel: 'Run sweep',
+            onConfirm: () => runSweep.mutateAsync(),
+          })}
           disabled={runSweep.isPending}
           style={{
             display: 'inline-flex', alignItems: 'center', gap: '0.5rem',
@@ -222,8 +228,25 @@ export const AccountDeletionPage: React.FC = () => {
               key={req.userId}
               request={req}
               busy={busy}
-              onRestore={() => setConfirming({ action: 'restore', request: req })}
-              onPurge={() => setConfirming({ action: 'purge', request: req })}
+              onRestore={() => confirm({
+                title: 'Restore this account?',
+                description: `This cancels the pending deletion for @${req.username} and makes the account active and visible again.`,
+                consequences: ['Do this only at the account owner\u2019s request.'],
+                severity: 'moderate',
+                confirmLabel: 'Restore account',
+                onConfirm: () => restore.mutateAsync(req.userId),
+              })}
+              onPurge={() => confirm({
+                title: 'Delete this account permanently?',
+                description: `The 30-day recovery window for @${req.username} has already closed, so this runs the permanent deletion now instead of waiting for the next scheduled sweep.`,
+                consequences: [
+                  'Their posts, activities and uploaded media are removed and cannot be recovered.',
+                  'Their messages stay in other people\u2019s conversations, shown as a deleted account.',
+                ],
+                severity: 'critical',
+                confirmLabel: 'Delete permanently',
+                onConfirm: () => purgeNow.mutateAsync(req.userId),
+              })}
             />
           ))}
         </div>
@@ -238,19 +261,6 @@ export const AccountDeletionPage: React.FC = () => {
         busy={isFetching}
       />
 
-      {confirming && (
-        <ConfirmDialog
-          action={confirming.action}
-          request={confirming.request}
-          busy={busy}
-          onCancel={() => setConfirming(null)}
-          onConfirm={() =>
-            confirming.action === 'restore'
-              ? restore.mutate(confirming.request.userId)
-              : purgeNow.mutate(confirming.request.userId)
-          }
-        />
-      )}
     </div>
   );
 };
@@ -365,56 +375,6 @@ const Field: React.FC<{ label: string; value: string }> = ({ label, value }) => 
     <span style={{ color: 'var(--color-text-white)' }}>{value}</span>
   </span>
 );
-
-const ConfirmDialog: React.FC<{
-  action: 'restore' | 'purge';
-  request: DeletionRequest;
-  busy: boolean;
-  onCancel: () => void;
-  onConfirm: () => void;
-}> = ({ action, request, busy, onCancel, onConfirm }) => {
-  const isPurge = action === 'purge';
-  return (
-    <div
-      onClick={() => !busy && onCancel()}
-      style={{ position: 'fixed', inset: 0, background: 'rgba(2, 6, 23, 0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1.5rem', zIndex: 1000 }}
-      role="dialog"
-      aria-modal="true"
-    >
-      <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: '460px', background: 'var(--color-bg-panel)', border: '1px solid var(--color-border)', borderRadius: '14px', padding: '1.5rem' }}>
-        <h2 style={{ margin: '0 0 0.5rem', fontSize: '1.1rem', color: 'var(--color-text-white)' }}>
-          {isPurge ? 'Delete this account permanently?' : 'Restore this account?'}
-        </h2>
-        <p style={{ margin: '0 0 1.25rem', fontSize: '0.88rem', lineHeight: 1.6, color: 'var(--color-text-light)' }}>
-          {isPurge ? (
-            <>
-              The 30-day recovery window for <strong>@{request.username}</strong> has
-              already closed, so this runs the permanent deletion now instead of
-              waiting for the next scheduled sweep. Their posts, activities and
-              uploaded media are removed and cannot be recovered. Their messages
-              stay in other people&apos;s conversations, shown as a deleted
-              account.
-            </>
-          ) : (
-            <>
-              This cancels the pending deletion for <strong>@{request.username}</strong> and
-              makes the account active and visible again. Do this only at the
-              account owner&apos;s request.
-            </>
-          )}
-        </p>
-        <div style={{ display: 'flex', gap: '0.6rem', justifyContent: 'flex-end' }}>
-          <button onClick={onCancel} disabled={busy} style={{ padding: '0.6rem 1rem', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'transparent', color: 'var(--color-text-light)', fontSize: '0.875rem', cursor: busy ? 'not-allowed' : 'pointer' }}>
-            Cancel
-          </button>
-          <button onClick={onConfirm} disabled={busy} style={{ padding: '0.6rem 1.1rem', borderRadius: '8px', border: 'none', background: isPurge ? '#ef4444' : '#22c55e', color: '#fff', fontWeight: 600, fontSize: '0.875rem', cursor: busy ? 'not-allowed' : 'pointer', opacity: busy ? 0.7 : 1 }}>
-            {busy ? 'Working…' : isPurge ? 'Delete permanently' : 'Restore account'}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
 
 const actionStyle = (color: string, busy: boolean): React.CSSProperties => ({
   display: 'inline-flex',

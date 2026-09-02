@@ -4,6 +4,7 @@ import { apiRequest, getMediaUrl } from '../api/apiClient';
 import { Search, X } from '../components/icons';
 import { useDebounced } from '../hooks/useDebounced';
 import { Pagination } from '../components/Pagination';
+import { useConfirm } from '../components/ConfirmProvider';
 
 const UserAvatar: React.FC<{ user: any }> = ({ user }) => {
   const [imgError, setImgError] = useState(false);
@@ -84,6 +85,7 @@ const VerificationLabel: React.FC<{ status?: string }> = ({ status }) => {
 };
 
 export const UsersPage: React.FC = () => {
+  const confirm = useConfirm();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   // The query is keyed on this, so debouncing is what stops one request per
@@ -282,7 +284,17 @@ export const UsersPage: React.FC = () => {
                       <div style={{ display: 'flex', gap: '0.35rem', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
                         {u.accountStatus === 'ACTIVE' ? (
                           <button
-                            onClick={() => suspendMutation.mutate(u.id)}
+                            onClick={() => confirm({
+                              title: `Suspend @${u.username}?`,
+                              description: 'They will be signed out and blocked from using Meetifyy until an admin lifts the suspension.',
+                              consequences: [
+                                'Their posts and messages stay visible to others.',
+                                'They can be unsuspended at any time.',
+                              ],
+                              severity: 'high',
+                              confirmLabel: 'Suspend',
+                              onConfirm: () => suspendMutation.mutateAsync(u.id),
+                            })}
                             className="btn-secondary"
                             style={{ padding: '0.3rem 0.6rem', fontSize: '0.75rem', color: 'var(--color-danger-hover)' }}
                           >
@@ -290,7 +302,13 @@ export const UsersPage: React.FC = () => {
                           </button>
                         ) : (
                           <button
-                            onClick={() => unsuspendMutation.mutate(u.id)}
+                            onClick={() => confirm({
+                              title: `Lift the suspension on @${u.username}?`,
+                              description: 'They regain full access to Meetifyy immediately.',
+                              severity: 'moderate',
+                              confirmLabel: 'Unsuspend',
+                              onConfirm: () => unsuspendMutation.mutateAsync(u.id),
+                            })}
                             className="btn-secondary"
                             style={{ padding: '0.3rem 0.6rem', fontSize: '0.75rem', color: 'var(--color-success)' }}
                           >
@@ -300,7 +318,17 @@ export const UsersPage: React.FC = () => {
 
                         {u.collegeId && (
                           <button
-                            onClick={() => resetCollegeMutation.mutate(u.id)}
+                            onClick={() => confirm({
+                              title: `Reset the college for @${u.username}?`,
+                              description: 'Their current college is cleared and they are asked to pick one again.',
+                              consequences: [
+                                'They lose access to campus-only spaces until they re-select.',
+                                'Verification tied to the old college does not carry over.',
+                              ],
+                              severity: 'high',
+                              confirmLabel: 'Reset college',
+                              onConfirm: () => resetCollegeMutation.mutateAsync(u.id),
+                            })}
                             className="btn-secondary"
                             style={{ padding: '0.3rem 0.6rem', fontSize: '0.75rem' }}
                           >
@@ -310,7 +338,13 @@ export const UsersPage: React.FC = () => {
 
                         {u.accountStatus === 'BANNED' ? (
                           <button
-                            onClick={() => restoreMutation.mutate(u.id)}
+                            onClick={() => confirm({
+                              title: `Restore @${u.username}?`,
+                              description: 'The account is reinstated and becomes usable again.',
+                              severity: 'moderate',
+                              confirmLabel: 'Restore',
+                              onConfirm: () => restoreMutation.mutateAsync(u.id),
+                            })}
                             className="btn-secondary"
                             style={{ padding: '0.3rem 0.6rem', fontSize: '0.75rem' }}
                           >
@@ -318,11 +352,17 @@ export const UsersPage: React.FC = () => {
                           </button>
                         ) : (
                           <button
-                            onClick={() => {
-                              if (confirm(`Delete user @${u.username}?`)) {
-                                deleteMutation.mutate(u.id);
-                              }
-                            }}
+                            onClick={() => confirm({
+                              title: `Delete @${u.username}?`,
+                              description: 'This removes the account from Meetifyy.',
+                              consequences: [
+                                'Their posts, messages and community memberships go with it.',
+                                'This cannot be undone from the admin portal.',
+                              ],
+                              severity: 'critical',
+                              confirmLabel: 'Delete user',
+                              onConfirm: () => deleteMutation.mutateAsync(u.id),
+                            })}
                             className="btn-danger"
                             style={{ padding: '0.3rem 0.6rem', fontSize: '0.75rem' }}
                           >

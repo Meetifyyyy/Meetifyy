@@ -20,6 +20,7 @@ import {
 
 import { helpApi, type HelpArticlePayload, type HelpCategoryPayload } from './supportApi';
 import { HELP_STATUS_BADGE, HELP_STATUS_LABELS, formatDateTime } from './supportConstants';
+import { useConfirm } from '../../components/ConfirmProvider';
 
 type Editing =
   | { kind: 'category'; value: any | null }
@@ -36,15 +37,13 @@ type Editing =
  * reversible state rather than a delete.
  */
 export const HelpContentManager: React.FC = () => {
+  const confirm = useConfirm();
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState<Editing>(null);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
   const [banner, setBanner] = useState<{ tone: 'error' | 'ok' | 'warn'; text: string } | null>(null);
-  const [confirmDelete, setConfirmDelete] = useState<{ kind: 'category' | 'article'; id: string; label: string } | null>(
-    null,
-  );
 
   const categoriesQuery = useQuery({
     queryKey: ['adminHelpCategories'],
@@ -63,6 +62,32 @@ export const HelpContentManager: React.FC = () => {
   };
 
   /** One wrapper so every mutation reports success and failure the same way. */
+  /**
+   * Deleting help content, through the portal-wide dialog.
+   *
+   * This screen used to carry its own copy of a confirmation modal - the third
+   * in the admin portal, each with different wording, spacing and (here) no
+   * pending state at all, so the Delete button stayed live while the request
+   * was running. `run` still reports into this screen's banner, and the shared
+   * dialog reports the same failure inline, so a failed delete is visible
+   * whichever the operator is looking at.
+   */
+  const confirmDeletion = (kind: 'category' | 'article', id: string, label: string) =>
+    confirm({
+      title: `Delete this ${kind}?`,
+      description: `\u201C${label}\u201D will be removed permanently.`,
+      consequences: [
+        'If you only want it off the public page, unpublish or archive it instead - that is reversible.',
+      ],
+      severity: 'critical',
+      confirmLabel: 'Delete permanently',
+      onConfirm: () =>
+        run(
+          () => (kind === 'category' ? helpApi.deleteCategory(id) : helpApi.deleteArticle(id)),
+          'Deleted.',
+        ),
+    });
+
   const run = async (fn: () => Promise<any>, okText: string) => {
     setBanner(null);
     try {
@@ -245,7 +270,7 @@ export const HelpContentManager: React.FC = () => {
                           className="btn-danger"
                           style={smallButton}
                           onClick={() =>
-                            setConfirmDelete({ kind: 'category', id: category.id, label: category.title })
+                            confirmDeletion('category', category.id, category.title)
                           }
                           aria-label={`Delete ${category.title}`}
                         >
@@ -438,7 +463,7 @@ export const HelpContentManager: React.FC = () => {
                         <button
                           className="btn-danger"
                           style={smallButton}
-                          onClick={() => setConfirmDelete({ kind: 'article', id: article.id, label: article.question })}
+                          onClick={() => confirmDeletion('article', article.id, article.question)}
                           aria-label={`Delete ${article.question}`}
                         >
                           <Trash2 size={12} />
@@ -482,40 +507,6 @@ export const HelpContentManager: React.FC = () => {
             setEditing(null);
           }}
         />
-      )}
-
-      {confirmDelete && (
-        <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Confirm deletion">
-          <div className="modal-content" style={{ padding: '1.5rem' }}>
-            <h3 style={{ margin: '0 0 0.5rem', fontSize: '1rem', fontWeight: 700 }}>
-              Delete this {confirmDelete.kind}?
-            </h3>
-            <p style={{ margin: '0 0 1.25rem', fontSize: '0.85rem', color: 'var(--color-text-light)' }}>
-              “{confirmDelete.label}” will be removed permanently. If you only want it off the public page, unpublish or
-              archive it instead - that is reversible.
-            </p>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
-              <button className="btn-secondary" onClick={() => setConfirmDelete(null)}>
-                Cancel
-              </button>
-              <button
-                className="btn-danger"
-                onClick={async () => {
-                  await run(
-                    () =>
-                      confirmDelete.kind === 'category'
-                        ? helpApi.deleteCategory(confirmDelete.id)
-                        : helpApi.deleteArticle(confirmDelete.id),
-                    'Deleted.',
-                  );
-                  setConfirmDelete(null);
-                }}
-              >
-                Delete permanently
-              </button>
-            </div>
-          </div>
-        </div>
       )}
     </div>
   );

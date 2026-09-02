@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiRequest, getMediaUrl } from '../api/apiClient';
 import { Search, X, Megaphone, Loader2, Check } from '../components/icons';
+import { useConfirm } from '../components/ConfirmProvider';
 
 const RepAvatar: React.FC<{ user: any }> = ({ user }) => {
   const [imgError, setImgError] = useState(false);
@@ -40,6 +41,7 @@ function useDebounced<T>(value: T, delay = 300): T {
 }
 
 export const CampusRepsPage: React.FC = () => {
+  const confirm = useConfirm();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebounced(search.trim(), 300);
@@ -95,8 +97,31 @@ export const CampusRepsPage: React.FC = () => {
     onSettled: () => setMutatingId(null),
   });
 
-  const assign = (id: string) => setRepMutation.mutate({ id, isCampusRep: true });
-  const revoke = (id: string) => setRepMutation.mutate({ id, isCampusRep: false });
+  // `mutateAsync`, so the shared confirm dialog can await the request and keep
+  // itself open (with the error) if it fails.
+  const assignAsync = (id: string) => setRepMutation.mutateAsync({ id, isCampusRep: true });
+  const revokeAsync = (id: string) => setRepMutation.mutateAsync({ id, isCampusRep: false });
+
+  const confirmRevoke = (id: string, username: string) =>
+    confirm({
+      title: `Revoke Campus Representative from @${username}?`,
+      description: 'They lose the representative role and its badge across the app.',
+      consequences: ['The role can be granted again at any time.'],
+      severity: 'moderate',
+      confirmLabel: 'Revoke role',
+      onConfirm: () => revokeAsync(id),
+    });
+
+  const confirmAssign = (id: string, username: string) =>
+    confirm({
+      title: `Make @${username} the Campus Representative?`,
+      description: 'They gain the representative role and badge for their campus.',
+      // Each campus has exactly one, so this is not purely additive.
+      consequences: ['Any existing representative for that campus is replaced.'],
+      severity: 'moderate',
+      confirmLabel: 'Assign role',
+      onConfirm: () => assignAsync(id),
+    });
 
   return (
     <div>
@@ -195,7 +220,7 @@ export const CampusRepsPage: React.FC = () => {
                           {u.isCampusRep ? (
                             <button
                               disabled={isRowBusy}
-                              onClick={() => revoke(u.id)}
+                              onClick={() => confirmRevoke(u.id, u.username)}
                               className="btn-secondary"
                               style={{ padding: '0.3rem 0.6rem', fontSize: '0.75rem', color: 'var(--color-danger-hover)' }}
                             >
@@ -209,7 +234,7 @@ export const CampusRepsPage: React.FC = () => {
                                   : collegeTaken ? `${u.college?.name} already has a representative (@${collegeRep.username}). Revoke them first.`
                                   : undefined
                               }
-                              onClick={() => assign(u.id)}
+                              onClick={() => confirmAssign(u.id, u.username)}
                               className="btn-primary"
                               style={{ padding: '0.3rem 0.6rem', fontSize: '0.75rem', opacity: collegeTaken ? 0.5 : 1 }}
                             >
@@ -267,7 +292,7 @@ export const CampusRepsPage: React.FC = () => {
                             <button
                               disabled={isRowBusy}
                               onClick={() => {
-                                if (confirm(`Revoke Campus Representative from @${u.username}?`)) revoke(u.id);
+                                confirmRevoke(u.id, u.username);
                               }}
                               className="btn-secondary"
                               style={{ padding: '0.3rem 0.6rem', fontSize: '0.75rem', color: 'var(--color-danger-hover)' }}

@@ -5,8 +5,10 @@ import { apiRequest } from '../api/apiClient';
 import { Plus, Search, X, Check, Clock } from '../components/icons';
 import { useDebounced } from '../hooks/useDebounced';
 import { Pagination } from '../components/Pagination';
+import { useConfirm } from '../components/ConfirmProvider';
 
 export const CollegesPage: React.FC = () => {
+  const confirm = useConfirm();
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<'colleges' | 'requests'>('colleges');
   const [search, setSearch] = useState('');
@@ -392,10 +394,20 @@ export const CollegesPage: React.FC = () => {
                                     type="button"
                                     title={isDisabled ? 'Click to Enable domain' : 'Click to Disable domain'}
                                     onClick={() =>
-                                      domainStatusMutation.mutate({
-                                        collegeId: college.id,
-                                        domainId: d.id,
-                                        status: isDisabled ? 'ACTIVE' : 'DISABLED',
+                                      confirm({
+                                        title: isDisabled
+                                          ? `Enable ${d.domain}?`
+                                          : `Disable ${d.domain}?`,
+                                        description: isDisabled
+                                          ? 'Addresses on this domain can verify a student account again.'
+                                          : 'Addresses on this domain can no longer verify a student account.',
+                                        severity: isDisabled ? 'moderate' : 'high',
+                                        confirmLabel: isDisabled ? 'Enable domain' : 'Disable domain',
+                                        onConfirm: () => domainStatusMutation.mutateAsync({
+                                          collegeId: college.id,
+                                          domainId: d.id,
+                                          status: isDisabled ? 'ACTIVE' : 'DISABLED',
+                                        }),
                                       })
                                     }
                                     style={{
@@ -451,7 +463,13 @@ export const CollegesPage: React.FC = () => {
                             <div style={{ display: 'flex', gap: '0.35rem', justifyContent: 'flex-end' }}>
                               {isDeleted ? (
                                 <button
-                                  onClick={() => restoreMutation.mutate(college.id)}
+                                  onClick={() => confirm({
+                                    title: `Restore ${college.name}?`,
+                                    description: 'The college becomes available again.',
+                                    severity: 'moderate',
+                                    confirmLabel: 'Restore',
+                                    onConfirm: () => restoreMutation.mutateAsync(college.id),
+                                  })}
                                   className="btn-secondary"
                                   style={{ padding: '0.3rem 0.6rem', fontSize: '0.75rem' }}
                                 >
@@ -469,7 +487,13 @@ export const CollegesPage: React.FC = () => {
 
                                   {college.status !== 'APPROVED' && (
                                     <button
-                                      onClick={() => statusMutation.mutate({ id: college.id, status: 'APPROVED' })}
+                                      onClick={() => confirm({
+                                        title: `Approve ${college.name}?`,
+                                        description: 'Students can join this college and use its campus spaces.',
+                                        severity: 'moderate',
+                                        confirmLabel: 'Approve',
+                                        onConfirm: () => statusMutation.mutateAsync({ id: college.id, status: 'APPROVED' }),
+                                      })}
                                       className="btn-secondary"
                                       style={{ padding: '0.3rem 0.65rem', fontSize: '0.75rem', color: 'var(--color-success)' }}
                                     >
@@ -478,7 +502,17 @@ export const CollegesPage: React.FC = () => {
                                   )}
                                   {college.status === 'APPROVED' && (
                                     <button
-                                      onClick={() => statusMutation.mutate({ id: college.id, status: 'DISABLED' })}
+                                      onClick={() => confirm({
+                                        title: `Disable ${college.name}?`,
+                                        description: 'The college is hidden and stops accepting new students.',
+                                        consequences: [
+                                          'Existing students keep their accounts but lose campus spaces.',
+                                          'It can be re-enabled at any time.',
+                                        ],
+                                        severity: 'high',
+                                        confirmLabel: 'Disable',
+                                        onConfirm: () => statusMutation.mutateAsync({ id: college.id, status: 'DISABLED' }),
+                                      })}
                                       className="btn-secondary"
                                       style={{ padding: '0.3rem 0.65rem', fontSize: '0.75rem', color: 'var(--color-warning)' }}
                                     >
@@ -487,9 +521,17 @@ export const CollegesPage: React.FC = () => {
                                   )}
                                   <button
                                     onClick={() => {
-                                      if (confirm(`Delete ${college.name}?`)) {
-                                        deleteMutation.mutate(college.id);
-                                      }
+                                      confirm({
+                                        title: `Delete ${college.name}?`,
+                                        description: 'The college is removed from Meetifyy.',
+                                        consequences: [
+                                          'Students on this college lose their campus spaces.',
+                                          'Its email domains stop verifying new accounts.',
+                                        ],
+                                        severity: 'critical',
+                                        confirmLabel: 'Delete college',
+                                        onConfirm: () => deleteMutation.mutateAsync(college.id),
+                                      });
                                     }}
                                     className="btn-danger"
                                     style={{ padding: '0.3rem 0.65rem', fontSize: '0.75rem' }}
@@ -585,7 +627,13 @@ export const CollegesPage: React.FC = () => {
                           {req.status === 'PENDING' && (
                             <button
                               type="button"
-                              onClick={() => requestStatusMutation.mutate({ id: req.id, status: 'REJECTED' })}
+                              onClick={() => confirm({
+                                title: 'Reject this college request?',
+                                description: 'The request is declined and the college is not added.',
+                                severity: 'moderate',
+                                confirmLabel: 'Reject request',
+                                onConfirm: () => requestStatusMutation.mutateAsync({ id: req.id, status: 'REJECTED' }),
+                              })}
                               className="btn-secondary"
                               style={{ padding: '0.3rem 0.65rem', fontSize: '0.75rem', color: 'var(--color-danger)' }}
                             >

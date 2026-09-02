@@ -3,8 +3,10 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from '../api/apiClient';
 import { Monitor, LogOut, Trash2 } from '../components/icons';
 import { useAuth } from '../context/AuthContext';
+import { useConfirm } from '../components/ConfirmProvider';
 
 export const SessionsPage: React.FC = () => {
+  const confirm = useConfirm();
   const queryClient = useQueryClient();
   const { logout } = useAuth();
 
@@ -32,11 +34,17 @@ export const SessionsPage: React.FC = () => {
           <p className="page-subtitle">Super admin sessions and connected devices.</p>
         </div>
         <button
-          onClick={() => {
-            if (confirm('Revoke all active sessions and log out?')) {
-              logoutAllMutation.mutate();
-            }
-          }}
+          onClick={() => confirm({
+            title: 'Revoke every active session?',
+            description: 'All super admin sessions are ended immediately, on every device.',
+            consequences: [
+              'You will be signed out of this session too.',
+              'Anyone currently working in the portal loses their session without warning.',
+            ],
+            severity: 'high',
+            confirmLabel: 'Revoke all',
+            onConfirm: () => logoutAllMutation.mutateAsync(),
+          })}
           className="btn-danger"
         >
           <LogOut size={15} />
@@ -93,7 +101,13 @@ export const SessionsPage: React.FC = () => {
                 </div>
 
                 <button
-                  onClick={() => revokeMutation.mutate(session.id)}
+                  onClick={() => confirm({
+                    title: 'Revoke this session?',
+                    description: 'That device is signed out of the admin portal immediately.',
+                    severity: 'moderate',
+                    confirmLabel: 'Revoke session',
+                    onConfirm: () => revokeMutation.mutateAsync(session.id),
+                  })}
                   className="btn-danger"
                   style={{ padding: '0.35rem 0.75rem', fontSize: '0.78rem' }}
                 >
