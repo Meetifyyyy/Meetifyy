@@ -105,13 +105,18 @@ export default function DMChatHeader({
                   Find in chat
                 </button>
               )}
-              <button 
-                className={styles.msgDropdownItem} 
-                onClick={() => { onToggleMute?.(conversation.id, isMuted); setShowMoreMenu(false); }}
-              >
-                {isMuted ? <NotificationOn size={14} /> : <NotificationOff size={14} />}
-                {isMuted ? 'Unmute alerts' : 'Mute alerts'}
-              </button>
+              {/* Rendered only when it can act, like every other item here.
+                  It used to render unconditionally with an optional-call
+                  handler, so on a draft it drew a row that did nothing. */}
+              {onToggleMute && (
+                <button 
+                  className={styles.msgDropdownItem} 
+                  onClick={() => { onToggleMute(conversation.id, isMuted); setShowMoreMenu(false); }}
+                >
+                  {isMuted ? <NotificationOn size={14} /> : <NotificationOff size={14} />}
+                  {isMuted ? 'Unmute alerts' : 'Mute alerts'}
+                </button>
+              )}
               {onClearChat && (
                 <button 
                   className={styles.msgDropdownItem} 

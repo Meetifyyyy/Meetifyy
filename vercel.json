@@ -46,6 +46,61 @@
       "source": "/contact",
       "destination": "/help-and-support",
       "permanent": true
+    },
+    {
+      "source": "/about/:rest+",
+      "destination": "/about",
+      "permanent": false
+    },
+    {
+      "source": "/help-and-support/:rest+",
+      "destination": "/help-and-support",
+      "permanent": false
+    },
+    {
+      "source": "/community-guidelines/:rest+",
+      "destination": "/community-guidelines",
+      "permanent": false
+    },
+    {
+      "source": "/privacy-policy/:rest+",
+      "destination": "/privacy-policy",
+      "permanent": false
+    },
+    {
+      "source": "/terms-and-conditions/:rest+",
+      "destination": "/terms-and-conditions",
+      "permanent": false
+    },
+    {
+      "source": "/cookie-policy/:rest+",
+      "destination": "/cookie-policy",
+      "permanent": false
+    },
+    {
+      "source": "/login/:rest+",
+      "destination": "/login",
+      "permanent": false
+    },
+    {
+      "source": "/signup/:rest+",
+      "destination": "/signup",
+      "permanent": false
+    },
+    {
+      "source": "/forgot-password/:rest+",
+      "destination": "/forgot-password",
+      "permanent": false
+    },
+    {
+      "source": "/reset-password/:rest+",
+      "destination": "/reset-password",
+      "permanent": false
+    },
+    {
+      "source": "/((?!api/|_api/|assets/|fonts/|icons/|splash/|og/|(?:about|auth|campus|communities|community-guidelines|contact|cookie-policy|crew|dev|forgot-password|help|help-and-support|home|inbox|login|logo-animation|messages|notifications|onboarding|post|privacy-policy|profile|reset-password|saved|search|settings|signup|support|terms|terms-and-conditions|verify-email)(?:/|$)|.*\\.[a-zA-Z0-9]+$).+)",
+      "destination": "/",
+      "permanent": false
     }
   ],
   "rewrites": [

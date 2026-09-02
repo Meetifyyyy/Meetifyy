@@ -1,12 +1,14 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@shared/context/AuthContext';
+import { usersApi } from '@shared/api/apiClient';
 import { useConversations } from '@shared/hooks/useMessages';
-import { useMessageActions } from '@shared/hooks/useMessageActions';
+import { useMessageActions, dmBlockStateKey } from '@shared/hooks/useMessageActions';
 import { useGroupActions } from '@shared/hooks/useGroupActions';
 import { useChatManager } from '../../shared/hooks/useChatManager';
 import { matchesConversationId } from '../../shared/utils/cacheUtils';
+import { buildDraftConversation, draftUserIdFromConversationId } from '../../shared/utils/draftConversation';
 import { generateConversationUrl, correctConversationUrl, parseConversationRoute } from '@shared/utils/conversationUrl';
 import { showToast } from '@shared/utils/toast';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
@@ -66,6 +68,57 @@ export default function MessagesLayout() {
   const activeChatId = isDraftRoute
     ? (draftUserId ? `draft_${draftUserId}` : 'new')
     : (routeChatId || null);
+
+  /**
+   * The recipient of a draft thread, resolved from the URL rather than trusted
+   * to be in router state.
+   *
+   * A draft has no conversation row and no messages, so the ONLY description of
+   * who it is with used to be `location.state.targetUser`, handed over by the
+   * component that navigated here. Router state does not survive a reload, is
+   * absent on a pasted or bookmarked link, and is dropped by some
+   * back/forward restorations — and when it was missing the draft fell back to
+   * a placeholder named "New Message". That name then propagated: the header
+   * showed it, and ChatDetailsPanel, which builds a synthetic user out of
+   * `conversation.name` when it has no `targetUser`, showed "New Message" as
+   * the person's profile. Everything looked correct only after the first
+   * message, because sending creates the real conversation and the recipient
+   * then arrives from the conversation list instead.
+   *
+   * The user id is already in the URL (`?user=<id>`), which survives all of
+   * those, so it is the thing worth reading. Router state still seeds
+   * `initialData`, so the common path (clicking Message on a profile) renders
+   * the recipient on the first frame with no request and no flash.
+   */
+  /**
+   * Whether this viewer has blocked the draft's recipient.
+   *
+   * Held in the query cache rather than component state so the write performed
+   * by `toggleBlockUser` reaches this component: they are in different trees,
+   * and a draft has no conversation row through which the state could travel.
+   * `queryFn` returns the default because nothing fetches this; the value only
+   * ever arrives from `setQueryData`.
+   */
+  const { data: draftBlockState } = useQuery({
+    queryKey: dmBlockStateKey(draftUserId),
+    queryFn: () => ({ isBlockedByMe: false }),
+    enabled: Boolean(isDraftRoute && draftUserId),
+    staleTime: Infinity,
+    gcTime: Infinity,
+  });
+
+  const draftTargetFromState = location.state?.targetUser || null;
+  const { data: draftTargetUser } = useQuery({
+    queryKey: ['user', 'byId', draftUserId],
+    queryFn: () => usersApi.getById(draftUserId),
+    enabled: Boolean(isDraftRoute && draftUserId),
+    initialData:
+      draftTargetFromState && String(draftTargetFromState.id) === String(draftUserId)
+        ? draftTargetFromState
+        : undefined,
+    staleTime: 5 * 60 * 1000,
+    retry: 1,
+  });
   // Deleting the conversation that is currently open has to close it too: the
   // route still names a conversation that no longer exists for this user, and
   // leaving it mounted would refetch a 404 (or worse, keep rendering the
@@ -152,23 +205,19 @@ export default function MessagesLayout() {
     if (found) return found;
 
     if (String(activeChatId).startsWith('draft_') || isDraftRoute || draftUserId) {
-      const targetId = draftUserId || (String(activeChatId).startsWith('draft_') ? activeChatId.replace('draft_', '') : null);
-      const targetUser = location.state?.targetUser || null;
-      return {
-        id: activeChatId,
-        publicId: activeChatId,
-        type: 'DM',
-        isDraft: true,
+      const targetId = draftUserId || draftUserIdFromConversationId(activeChatId);
+      return buildDraftConversation({
+        conversationId: activeChatId,
         targetUserId: targetId,
-        targetUser,
-        name: targetUser?.displayName || targetUser?.username || 'New Message',
-        avatar: targetUser?.avatar || null,
-        participants: targetUser ? [{ userId: currentUser?.id, user: currentUser }, { userId: targetUser.id, user: targetUser }] : [],
-      };
+        // Resolved from the URL, not trusted to be in router state.
+        targetUser: draftTargetUser || draftTargetFromState || null,
+        currentUser,
+        isBlockedByMe: Boolean(draftBlockState?.isBlockedByMe),
+      });
     }
 
     return { id: activeChatId };
-  }, [conversations, activeChatId, isDraftRoute, draftUserId, location.state?.targetUser, currentUser]);
+  }, [conversations, activeChatId, isDraftRoute, draftUserId, draftTargetUser, draftTargetFromState, draftBlockState, currentUser]);
 
   const activeConv = useMemo(() => {
     if (!baseConv) return null;

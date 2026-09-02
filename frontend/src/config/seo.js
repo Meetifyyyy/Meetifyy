@@ -405,6 +405,94 @@ export const PERMANENT_REDIRECTS = [
   { from: '/contact', to: '/help-and-support' },
 ];
 
+/**
+ * Public pages that absorb an invalid path beneath them.
+ *
+ * `/about/edede` is somebody who mangled a link to a page that does exist, so
+ * sending them to `/about` answers the question they were asking. This is the
+ * one redirect-to-a-different-page case that is unambiguously right: the target
+ * is the parent of the URL requested, not a guess.
+ */
+export const PUBLIC_PARENT_PATHS = PUBLIC_ROUTES
+  .filter((route) => route.path !== '/')
+  .map((route) => route.path);
+
+/**
+ * Every first path segment the site knows about.
+ *
+ * Used to build the negative lookahead for the landing-page fallback below: a
+ * URL whose first segment is in here belongs to some part of the app and must
+ * be left alone, whatever happens further along it. Derived from the route
+ * tables rather than typed out, because a hand-written copy is exactly the kind
+ * of list that falls behind and starts redirecting a real page to the homepage.
+ */
+export const KNOWN_TOP_SEGMENTS = Array.from(
+  new Set(
+    [
+      ...PUBLIC_ROUTES.map((r) => r.path),
+      ...APP_ROUTE_PATTERNS,
+      ...PERMANENT_REDIRECTS.map((r) => r.from),
+    ]
+      .map((path) => path.split('/').filter(Boolean)[0])
+      .filter(Boolean)
+      .filter((segment) => !segment.startsWith(':')),
+  ),
+).sort();
+
+/**
+ * Paths that are served as files and must never be redirected.
+ *
+ * Redirects run BEFORE the filesystem is consulted, so a fallback rule that did
+ * not exclude these would send every asset request to the landing page and take
+ * the site down rather than merely mis-route it.
+ */
+export const STATIC_PREFIXES = ['api/', '_api/', 'assets/', 'fonts/', 'icons/', 'splash/', 'og/'];
+
+/**
+ * The edge rules that implement the public fallback.
+ *
+ * Two rules, in this order:
+ *
+ *   1. An invalid path UNDER a public page goes to that page.
+ *   2. Anything else the site does not recognise goes to the landing page.
+ *
+ * Rule 2 is a negative lookahead rather than a catch-all, and the distinction
+ * is what keeps it off the application. A URL beginning with a known segment is
+ * excluded, so `/home/extra` is not redirected: it reaches no route, answers
+ * 404, and the authenticated app keeps the behaviour it already had. Only paths
+ * the site has never heard of reach the landing page.
+ *
+ * Anything with a file extension is excluded too, so a missing asset still 404s
+ * as a missing asset instead of returning HTML with a 200 to a script tag.
+ */
+export function buildPublicFallbackRedirects() {
+  const parentRules = PUBLIC_PARENT_PATHS.map((path) => ({
+    source: `${path}/:rest+`,
+    destination: path,
+    permanent: false,
+  }));
+
+  const known = KNOWN_TOP_SEGMENTS.map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+  const excluded = STATIC_PREFIXES.join('|');
+
+  return [
+    ...parentRules,
+    {
+      // `.+`, never `.*`. With `.*` the empty remainder after the leading slash
+      // matches, so "/" itself qualifies as an unknown path and the landing
+      // page redirects to itself forever. Requiring at least one character is
+      // what makes the rule mean "a path", not "any request".
+      source: `/((?!${excluded}|(?:${known})(?:/|$)|.*\\.[a-zA-Z0-9]+$).+)`,
+      // Temporary, not permanent. A 308 is cached by the browser indefinitely,
+      // so a path that is invalid today and a real page next month would keep
+      // redirecting for anyone who ever hit the old version. Nothing here is a
+      // permanent statement about a URL's identity.
+      permanent: false,
+      destination: '/',
+    },
+  ];
+}
+
 /** Route entries that belong in the sitemap. */
 export const INDEXABLE_ROUTES = PUBLIC_ROUTES.filter((route) => route.indexable);
 

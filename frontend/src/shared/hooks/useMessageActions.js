@@ -9,6 +9,13 @@ import { idbDeleteConversationMessages } from '../../features/messages/shared/ut
 import { scheduleConversationWrite } from '../utils/conversationWriteQueue';
 
 /**
+ * Cache key holding "have I blocked this person?" for a draft DM.
+ *
+ * Keyed by user id, because a draft has no conversation id worth keying on.
+ */
+export const dmBlockStateKey = (userId) => ['dmBlockState', userId];
+
+/**
  * The direct-message / conversation actions `useData` used to define inline.
  *
  * Extracted verbatim -- same optimistic cache writes, same API calls, same
@@ -323,6 +330,24 @@ export function useMessageActions() {
       showToast("Couldn't clear chat", 'error');
     }
   };
+  /**
+   * Block state for a DM that has no conversation row yet.
+   *
+   * Every other surface reads `isBlockedByMe` off the conversation, which comes
+   * from the ['conversations'] cache. A draft is not in that cache and never
+   * will be until the first message creates it, so the optimistic write below
+   * matched nothing and blocking from an empty chat left the composer enabled
+   * and the menu still offering "Block Contact" — the request succeeded and the
+   * UI simply never heard about it.
+   *
+   * Refetching the user instead is not an option: `GET /api/users/id/:id`
+   * deliberately 404s once a block exists (a blocked profile must be
+   * indistinguishable from a missing one), so the very act of blocking would
+   * erase the recipient the draft is built from.
+   *
+   * So the state lives here, keyed by the person rather than by a conversation
+   * that does not exist. MessagesLayout reads it when it builds the draft.
+   */
   const toggleBlockUser = async (targetUserId, currentlyBlocked) => {
     // Callers used to invoke this with no arguments at all, which sent
     // POST /api/users/block/undefined. That request failed, the failure was
@@ -338,6 +363,9 @@ export function useMessageActions() {
     const wasBlocked = Boolean(currentlyBlocked);
 
     const applyBlockState = (blockedByMe) => {
+      // Drafts, keyed by user. See the note above toggleBlockUser.
+      queryClient.setQueryData(dmBlockStateKey(targetUserId), { isBlockedByMe: blockedByMe });
+
       queryClient.setQueryData(['conversations'], (old) => {
         if (!Array.isArray(old)) return old;
         return old.map(c => {
@@ -369,6 +397,11 @@ export function useMessageActions() {
     try {
       if (wasBlocked) {
         await usersApi.unblockUser(targetUserId);
+        // Unblocking is confirmed rather than optimistic, so the draft's state
+        // is cleared here rather than up front. A real conversation gets the
+        // same correction from the refetch in `finally`; a draft has nothing to
+        // refetch, which is why this is explicit.
+        applyBlockState(false);
       } else {
         await usersApi.blockUser(targetUserId);
       }

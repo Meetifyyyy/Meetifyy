@@ -821,13 +821,6 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
               </div>
             )}
 
-            {(targetUser.university || targetUser.college) && (
-              <div className={styles.section}>
-                <h3 className={styles.sectionTitle}>College</h3>
-                <p className={styles.sectionValue}>{typeof (targetUser.university || targetUser.college) === 'object' ? (targetUser.college?.name || targetUser.university?.name) : (targetUser.university || targetUser.college)}</p>
-              </div>
-            )}
-
             {targetAcademicSummary && (
               <div className={styles.section}>
                 <h3 className={styles.sectionTitle}>Academics</h3>
