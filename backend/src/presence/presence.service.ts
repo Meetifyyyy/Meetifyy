@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { RedisService } from '../redis/redis.service';
 import Redis from 'ioredis';
+import { PrismaService } from '../prisma/prisma.service';
 
 export interface UserPresence {
   lastSeen: string;
@@ -14,7 +15,10 @@ export class PresenceService {
   private readonly logger = new Logger('PRESENCE');
   private socketValidator: ((socketId: string) => boolean) | null = null;
 
-  constructor(private readonly redisService: RedisService) {
+  constructor(
+    private readonly redisService: RedisService,
+    private readonly prisma: PrismaService,
+  ) {
     this.redis = this.redisService.getClient();
     if (this.redis) {
       this.logger.log('Redis connected for Presence Service');
@@ -79,7 +83,63 @@ export class PresenceService {
 
   private disconnectTimers = new Map<string, NodeJS.Timeout>();
 
+  /**
+   * How long a `lastSeenAt` write is suppressed for after one succeeds.
+   *
+   * Presence itself lives only in Redis with a 90 second TTL, which answers
+   * "who is online right now" and nothing else. Every question with a longer
+   * horizon - active today, weekly actives, dormant accounts, the deletion
+   * sweep - needs a durable timestamp, and there was none: `lastSeenAt` was
+   * declared on the model and set to null by the purge worker, and NOTHING
+   * ever wrote it. The admin dashboard's "Active Today" counted rows where it
+   * was >= midnight, so it was structurally pinned to zero.
+   *
+   * Writing it on every connect would be a database write per socket, and
+   * mobile clients reconnect constantly on network changes. Fifteen minutes is
+   * far finer than any consumer needs (the coarsest bucket anyone asks for is
+   * a day) and bounds the cost at four writes per active user per hour.
+   */
+  private static readonly LAST_SEEN_THROTTLE_SECONDS = 15 * 60;
+
+  /**
+   * Records that this user was here, at most once per throttle window.
+   *
+   * The throttle is a Redis key with `NX`, so the check and the claim are one
+   * atomic operation: several sockets reconnecting together produce one write,
+   * not one each. Best-effort throughout - a failure here must never stop
+   * someone coming online, so it is logged at debug and swallowed.
+   */
+  private async touchLastSeen(userId: string): Promise<void> {
+    if (!userId) return;
+    try {
+      if (this.redis) {
+        const claimed = await this.redis.set(
+          `lastseen:throttle:${userId}`,
+          '1',
+          'EX',
+          PresenceService.LAST_SEEN_THROTTLE_SECONDS,
+          'NX',
+        );
+        // Someone already claimed this window.
+        if (claimed !== 'OK') return;
+      }
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: { lastSeenAt: new Date() },
+      });
+    } catch (error) {
+      this.logger.debug(
+        `lastSeenAt not recorded for ${userId}: ${(error as Error).message}`,
+      );
+    }
+  }
+
   async setOnline(userId: string, socketId: string): Promise<void> {
+    // Durable "was here" stamp, throttled. Deliberately not awaited: presence
+    // is a realtime path and must not wait on a database write that is only
+    // needed by reporting.
+    void this.touchLastSeen(userId);
+
     // Cancel any pending disconnect grace timer for this user
     if (this.disconnectTimers.has(userId)) {
       clearTimeout(this.disconnectTimers.get(userId));

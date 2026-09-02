@@ -23,14 +23,34 @@ import {
 } from 'recharts';
 
 export const DashboardPage: React.FC = () => {
+  /**
+   * Live, like the health panel beside them.
+   *
+   * These two were fetched once per mount and then never again, so a dashboard
+   * left open on a wall display or a second monitor showed the numbers as they
+   * were whenever the tab was opened - with nothing on screen saying so. The
+   * System Health widget above already refreshed every 30s, which made the
+   * staleness harder to notice rather than easier: the panel that moved implied
+   * the ones beside it were current too.
+   *
+   * 30s matches that widget. `refetchOnWindowFocus` covers the common case of
+   * coming back to a tab that has been in the background, where the interval
+   * has been throttled by the browser.
+   */
   const { data: stats, isLoading: statsLoading } = useQuery({
     queryKey: ['dashboardStats'],
     queryFn: () => apiRequest('/admin/dashboard/stats'),
+    refetchInterval: 30_000,
+    refetchOnWindowFocus: true,
   });
 
   const { data: charts, isLoading: chartsLoading } = useQuery({
     queryKey: ['dashboardCharts'],
     queryFn: () => apiRequest('/admin/dashboard/charts'),
+    // The chart only changes when someone registers; a slower cadence is
+    // plenty and keeps a 30-day aggregation off the 30s path.
+    refetchInterval: 120_000,
+    refetchOnWindowFocus: true,
   });
 
   const statCards = [
