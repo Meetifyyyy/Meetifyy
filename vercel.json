@@ -4,7 +4,7 @@
   "framework": "vite",
   "redirects": [
     {
-      "source": "/:path*",
+      "source": "/:path((?!assets/|icons/|splash/|og/|.*\\.(?:png|ico|svg|jpg|jpeg|webp|gif|json|js|css|webmanifest|woff2|woff|ttf|eot|txt|xml|mp4|webm|ogg|mp3)(?:\\?.*)?$).*)",
       "has": [
         {
           "type": "header",
@@ -12,7 +12,7 @@
           "value": "www.meetifyy.app"
         }
       ],
-      "destination": "https://meetifyy.app/:path*",
+      "destination": "https://meetifyy.app/:path",
       "permanent": true
     },
     {
@@ -383,6 +383,10 @@
       "source": "/version.json",
       "headers": [
         {
+          "key": "Access-Control-Allow-Origin",
+          "value": "*"
+        },
+        {
           "key": "Cache-Control",
           "value": "no-cache, no-store, must-revalidate, max-age=0, s-maxage=0"
         },
@@ -572,7 +576,7 @@
         },
         {
           "key": "Content-Security-Policy",
-          "value": "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:; script-src-elem 'self' 'unsafe-inline' 'unsafe-eval' blob:; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: http: https: https://*.supabase.co https://*.r2.dev https://cdn.meetifyy.app; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.r2.dev https://cdn.meetifyy.app http: https: ws: wss:; media-src 'self' data: blob: http: https: https://*.supabase.co https://*.r2.dev https://cdn.meetifyy.app; frame-ancestors 'none'; base-uri 'self'; form-action 'self';"
+          "value": "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https://meetifyy.app; script-src-elem 'self' 'unsafe-inline' 'unsafe-eval' blob: https://meetifyy.app; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://meetifyy.app; style-src-elem 'self' 'unsafe-inline' https://fonts.googleapis.com https://meetifyy.app; font-src 'self' https://fonts.gstatic.com; manifest-src 'self' https://meetifyy.app; img-src 'self' data: blob: http: https: https://*.supabase.co https://*.r2.dev https://cdn.meetifyy.app; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.r2.dev https://cdn.meetifyy.app http: https: ws: wss:; media-src 'self' data: blob: http: https: https://*.supabase.co https://*.r2.dev https://cdn.meetifyy.app; frame-ancestors 'none'; base-uri 'self'; form-action 'self';"
         }
       ]
     },
