@@ -520,7 +520,25 @@ export class UploadsController {
       key.includes('avatar')
     ) {
       res.setHeader('Content-Type', 'image/svg+xml');
-      res.setHeader('Cache-Control', 'public, max-age=86400');
+      /**
+       * Short, and deliberately so. This is a stand-in for an image we could
+       * not resolve, not the image itself — the difference matters because the
+       * picture it stands in for can appear at any moment: a thumbnail is
+       * uploaded asynchronously, and a resolution failure is often transient.
+       *
+       * At the day-long TTL this used to carry, one such failure did not
+       * degrade an avatar for a moment, it degraded it for a day: a single
+       * miss on the platform default was cached at the Cloudflare edge and
+       * kept being served long after the origin had recovered, which is how a
+       * fixed deployment still looked broken. `sendMediaMiss` already refuses
+       * to let a miss be cached as though it were the image; this is the same
+       * reasoning applied to the branch that answers with a body.
+       *
+       * A minute still collapses the bursts this protects against — a feed
+       * rendering one absent avatar in twenty places — while keeping recovery
+       * effectively immediate.
+       */
+      res.setHeader('Cache-Control', 'public, max-age=60, must-revalidate');
       return res.send(DEFAULT_AVATAR_SVG);
     }
 

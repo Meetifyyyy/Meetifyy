@@ -86,6 +86,28 @@ describe('GET /api/media — default profile avatar', () => {
     expect(svg).toContain('#1d68f7');
   });
 
+  it('does not let the fallback be cached as though it were the image', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/api/media/avatars/does-not-exist.webp')
+      .expect(200);
+
+    // The picture this stands in for can appear at any moment, so the stand-in
+    // must expire quickly. A day-long TTL is what kept a recovered origin
+    // looking broken at the CDN edge long after it had been fixed.
+    const cacheControl = res.headers['cache-control'];
+    const maxAge = Number(/max-age=(\d+)/.exec(cacheControl)?.[1]);
+    expect(maxAge).toBeLessThanOrEqual(60);
+    expect(cacheControl).toContain('must-revalidate');
+  });
+
+  it('still caches the real default aggressively — it is immutable', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/api/media/defaults/profile-avatar-v2.webp')
+      .expect(200);
+    // Versioned key, so the bytes behind it never change.
+    expect(res.headers['cache-control']).toContain('immutable');
+  });
+
   it('treats only the current version as bundled, leaving older keys to storage', () => {
     expect(bundledDefaultAssetPath('defaults/profile-avatar-v2.webp')).not.toBeNull();
     expect(bundledDefaultAssetPath('defaults/community-avatar-v2.webp')).not.toBeNull();

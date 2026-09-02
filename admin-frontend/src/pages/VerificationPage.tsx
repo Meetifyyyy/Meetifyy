@@ -1,34 +1,11 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { apiRequest, getMediaUrl } from '../api/apiClient';
+import { apiRequest } from '../api/apiClient';
 import { CheckCircle, XCircle, ExternalLink } from '../components/icons';
 import { useConfirm } from '../components/ConfirmProvider';
+import UserAvatar from '../components/UserAvatar';
 
 /** Same avatar treatment as the Users and Campus Reps tables. */
-const ReviewerAvatar: React.FC<{ user: any }> = ({ user }) => {
-  const [imgError, setImgError] = useState(false);
-  const avatarUrl = getMediaUrl(user?.avatar);
-  const initial = (user?.displayName || user?.username || 'U').charAt(0).toUpperCase();
-  const colors = ['#2563EB', '#7C3AED', '#10B981', '#F59E0B', '#EC4899'];
-  const bgColor = colors[(initial.charCodeAt(0) || 0) % colors.length];
-  const size = { width: '42px', height: '42px', borderRadius: '50%', flexShrink: 0 } as const;
-
-  if (avatarUrl && !imgError) {
-    return (
-      <img
-        src={avatarUrl}
-        alt={user?.displayName || user?.username || 'Avatar'}
-        onError={() => setImgError(true)}
-        style={{ ...size, objectFit: 'cover', border: '1px solid var(--color-border)' }}
-      />
-    );
-  }
-  return (
-    <div style={{ ...size, background: bgColor, color: '#FFFFFF', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '0.95rem' }}>
-      {initial}
-    </div>
-  );
-};
 
 export const VerificationPage: React.FC = () => {
   const confirm = useConfirm();
@@ -166,7 +143,7 @@ export const VerificationPage: React.FC = () => {
             >
               {/* User Identity Header */}
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem', width: '100%' }}>
-                <ReviewerAvatar user={req.user} />
+                <UserAvatar user={req.user} size={42} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '0.5rem', marginBottom: '0.2rem' }}>
                     <h3 style={{ margin: 0, fontSize: '0.98rem', fontWeight: 700, color: 'var(--color-text-main)', wordBreak: 'break-word', lineHeight: 1.3 }}>

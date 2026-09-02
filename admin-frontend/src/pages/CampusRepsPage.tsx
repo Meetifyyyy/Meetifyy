@@ -1,34 +1,10 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { apiRequest, getMediaUrl } from '../api/apiClient';
+import { apiRequest } from '../api/apiClient';
 import { Search, X, Megaphone, Loader2, Check } from '../components/icons';
 import { useConfirm } from '../components/ConfirmProvider';
+import UserAvatar from '../components/UserAvatar';
 
-const RepAvatar: React.FC<{ user: any }> = ({ user }) => {
-  const [imgError, setImgError] = useState(false);
-
-  const avatarUrl = getMediaUrl(user.avatar);
-  const initial = (user.displayName || user.username || 'U').charAt(0).toUpperCase();
-  const colors = ['#2563EB', '#7C3AED', '#10B981', '#F59E0B', '#EC4899'];
-  const bgColor = colors[(initial.charCodeAt(0) || 0) % colors.length];
-
-  if (avatarUrl && !imgError) {
-    return (
-      <img
-        src={avatarUrl}
-        alt={user.displayName || user.username}
-        onError={() => setImgError(true)}
-        style={{ width: '32px', height: '32px', borderRadius: '50%', objectFit: 'cover', border: '1px solid var(--color-border)', flexShrink: 0 }}
-      />
-    );
-  }
-
-  return (
-    <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: bgColor, color: '#FFFFFF', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '0.8rem', flexShrink: 0 }}>
-      {initial}
-    </div>
-  );
-};
 
 /** Debounce a fast-changing value so we don't fire a request on every keystroke. */
 function useDebounced<T>(value: T, delay = 300): T {
@@ -201,7 +177,7 @@ export const CampusRepsPage: React.FC = () => {
                       <tr key={u.id}>
                         <td>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-                            <RepAvatar user={u} />
+                            <UserAvatar user={u} size={32} />
                             <div>
                               <div style={{ fontWeight: 600, color: 'var(--color-text-main)' }}>{u.displayName || u.username}</div>
                               <div style={{ fontSize: '0.72rem', color: 'var(--color-text-light)' }}>@{u.username}</div>
@@ -280,7 +256,7 @@ export const CampusRepsPage: React.FC = () => {
                         <tr key={u.id}>
                           <td>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-                              <RepAvatar user={u} />
+                              <UserAvatar user={u} size={32} />
                               <div>
                                 <div style={{ fontWeight: 600, color: 'var(--color-text-main)' }}>{u.displayName || u.username}</div>
                                 <div style={{ fontSize: '0.72rem', color: 'var(--color-text-light)' }}>@{u.username}</div>

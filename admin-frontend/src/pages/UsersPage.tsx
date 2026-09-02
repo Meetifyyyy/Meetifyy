@@ -1,59 +1,12 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { apiRequest, getMediaUrl } from '../api/apiClient';
+import { apiRequest } from '../api/apiClient';
 import { Search, X } from '../components/icons';
 import { useDebounced } from '../hooks/useDebounced';
 import { Pagination } from '../components/Pagination';
 import { useConfirm } from '../components/ConfirmProvider';
+import UserAvatar from '../components/UserAvatar';
 
-const UserAvatar: React.FC<{ user: any }> = ({ user }) => {
-  const [imgError, setImgError] = useState(false);
-
-  const avatarUrl = getMediaUrl(user.avatar);
-  const initial = (user.displayName || user.username || 'U').charAt(0).toUpperCase();
-
-  const colors = ['#2563EB', '#7C3AED', '#10B981', '#F59E0B', '#EC4899'];
-  const charCode = initial.charCodeAt(0) || 0;
-  const bgColor = colors[charCode % colors.length];
-
-  if (avatarUrl && !imgError) {
-    return (
-      <img
-        src={avatarUrl}
-        alt={user.displayName || user.username}
-        onError={() => setImgError(true)}
-        style={{
-          width: '26px',
-          height: '26px',
-          borderRadius: '50%',
-          objectFit: 'cover',
-          border: '1px solid var(--color-border)',
-          flexShrink: 0,
-        }}
-      />
-    );
-  }
-
-  return (
-    <div
-      style={{
-        width: '26px',
-        height: '26px',
-        borderRadius: '50%',
-        background: bgColor,
-        color: '#FFFFFF',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        fontWeight: 700,
-        fontSize: '0.72rem',
-        flexShrink: 0,
-      }}
-    >
-      {initial}
-    </div>
-  );
-};
 
 /**
  * Identity-verification state, shown for every user.
@@ -249,7 +202,7 @@ export const UsersPage: React.FC = () => {
                   <tr key={u.id}>
                     <td>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                        <UserAvatar user={u} />
+                        <UserAvatar user={u} size={26} />
                         <div>
                           <div style={{ fontWeight: 600, color: 'var(--color-text-main)', fontSize: '0.76rem', lineHeight: 1.25 }}>{u.displayName || u.username}</div>
                           <div style={{ fontSize: '0.66rem', color: 'var(--color-text-light)' }}>@{u.username}</div>
