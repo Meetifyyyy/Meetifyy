@@ -58,8 +58,6 @@ export default function CommunityAdminModal({ community, onClose, onDeleteCommun
   const [desc, setDesc] = useState(community?.description || community?.desc || '');
   const [avatar, setAvatar] = useState(community?.avatar || community?.avatarKey || '');
   const [coverImage, setCoverImage] = useState(community?.coverImage || community?.coverKey || community?.cover || '');
-  const [interests, setInterests] = useState(community?.interests ? (Array.isArray(community.interests) ? community.interests.join(', ') : community.interests) : '');
-  const [rules, setRules] = useState(community?.rules ? (Array.isArray(community.rules) ? community.rules.join('\n') : community.rules) : '');
   
   const [isSaving, setIsSaving] = useState(false);
 
@@ -69,8 +67,7 @@ export default function CommunityAdminModal({ community, onClose, onDeleteCommun
       setDesc(community.description || community.desc || '');
       setAvatar(community.avatar || community.avatarKey || '');
       setCoverImage(community.coverImage || community.coverKey || community.cover || '');
-      setInterests(community.interests ? (Array.isArray(community.interests) ? community.interests.join(', ') : community.interests) : '');
-      setRules(community.rules ? (Array.isArray(community.rules) ? community.rules.join('\n') : community.rules) : '');
+
     }
   }, [community]);
 
@@ -83,25 +80,12 @@ export default function CommunityAdminModal({ community, onClose, onDeleteCommun
     }
     setIsSaving(true);
 
-    const parsedInterests = typeof interests === 'string'
-      ? interests.split(',').map(i => i.trim()).filter(Boolean)
-      : (Array.isArray(interests) ? interests : []);
-
-    const parsedRules = typeof rules === 'string'
-      ? rules.split('\n').map(g => g.trim()).filter(Boolean)
-      : (Array.isArray(rules) ? rules : []);
-
     try {
       await updateCommunity(community.id, {
         name: finalName,
         description: desc,
-        desc: desc,
-        avatar,
         avatarKey: avatar,
-        coverImage,
         coverKey: coverImage,
-        interests: parsedInterests,
-        rules: parsedRules
       });
       showToast('Community updated', 'success');
       onClose();
@@ -275,27 +259,7 @@ export default function CommunityAdminModal({ community, onClose, onDeleteCommun
                 {desc.length} / 250
               </div>
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-              <label style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--color-text-main)' }}>Interests (Comma separated)</label>
-              <input 
-                type="text" 
-                value={interests} 
-                onChange={e => setInterests(e.target.value)} 
-                placeholder="e.g. UI/UX, Figma, Typography" 
-                maxLength={500}
-                style={inputStyle} 
-              />
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-              <label style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--color-text-main)' }}>Rules (One per line)</label>
-              <textarea 
-                value={rules} 
-                onChange={e => setRules(e.target.value)} 
-                placeholder="e.g. Be respectful&#10;No spamming" 
-                maxLength={1000}
-                style={{ ...inputStyle, minHeight: '80px', resize: 'vertical' }} 
-              />
-            </div>
+
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '1rem' }}>
               <button type="button" onClick={onClose} style={{ padding: '0.75rem 1.5rem', borderRadius: 'var(--radius-md)', border: 'none', background: 'var(--color-bg-soft)', color: 'var(--color-text-main)', fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
               <button type="submit" disabled={isSaving} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.75rem 1.5rem', borderRadius: 'var(--radius-md)', border: 'none', background: 'var(--color-primary)', color: 'white', fontWeight: 600, cursor: isSaving ? 'not-allowed' : 'pointer', opacity: isSaving ? 0.7 : 1 }}>

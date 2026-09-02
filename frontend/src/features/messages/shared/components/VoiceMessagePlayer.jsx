@@ -105,7 +105,21 @@ export default function VoiceMessagePlayer({ src, audioUrl, duration: initialDur
     let isMounted = true;
     const extractRealPeaks = async () => {
       try {
+        // Skip fetch-based peak extraction for cross-origin URLs (e.g. /api/media/voice/…
+        // which the backend redirects to pub-*.r2.dev — that host has no CORS headers so
+        // fetch() is blocked). Blob: URLs from the local recorder are same-origin and safe.
+        const isCrossOriginProxy =
+          !audioSrc.startsWith('blob:') &&
+          !audioSrc.startsWith(window.location.origin) &&
+          !/^https?:\/\//.test(audioSrc);
+        // Also skip absolute URLs pointing to a different origin than the current page.
+        const isCrossOriginAbsolute =
+          /^https?:\/\//.test(audioSrc) &&
+          !audioSrc.startsWith(window.location.origin);
+        if (isCrossOriginProxy || isCrossOriginAbsolute) return;
+
         const response = await fetch(audioSrc);
+
         if (!response.ok) return;
         const arrayBuffer = await response.arrayBuffer();
         const AudioCtx = window.AudioContext || window.webkitAudioContext;

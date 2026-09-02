@@ -11,9 +11,8 @@ export default function StudentTestimonials() {
   const testimonials = [
     {
       stars: '5/5',
-      quote: "I found my hackathon team through Meetifyy three days before the deadline. We made it to the finals. There's no way that happens on LinkedIn or some WhatsApp group.",
-      author: "Sanjay Mehra",
-      role: "July 7, 2026",
+      quote: "Meetifyy is actually useful as a fresher. I didn’t know many people or even what was happening around campus, and this helped me discover events and connect with people with similar interests. Definitely made the first few weeks easier.",
+      author: "Soham",
       letter: "S",
       bgClass: styles.card,
       avatarBg: styles.avatarOrange,
@@ -26,26 +25,27 @@ export default function StudentTestimonials() {
     },
     {
       stars: '5/5',
-      quote: "I was new to the hostel and didn't know anyone. Joined the Photography Club on Meetifyy on my first week. Now I have a whole friend group I didn't expect to find.",
-      author: "Priya Rawat",
-      role: "July 3, 2026",
-      letter: "P",
+      quote: "I started using Meetifyy just to see what was happening on campus, but ended up finding communities and people I genuinely vibed with. It’s nice having everything in one place instead of finding out about things through random WhatsApp groups.",
+      author: "Shivam",
+      letter: "S",
       bgClass: styles.card,
-      avatarBg: styles.avatarGreen,
+      avatarBg: styles.avatarBlue,
       sparkles: null
     },
     {
-      stars: '5/5',
-      quote: "Someone in the AI community posted an NLP project collab that wasn't on standard college channels. Joined, built it together. That single project changed my resume.",
-      author: "Arjun Sharma",
-      role: "July 7, 2026",
-      letter: "A",
-      bgClass: styles.card,
-      avatarBg: styles.avatarBlue,
+      isCta: true,
+      ctaText: "Share Yours",
+      ctaLink: "mailto:hello@meetifyy.app?subject=My%20Meetifyy%20Experience",
+      quote: "Have a story about meeting new friends, finding communities, or discovering events on campus? We'd love to hear how Meetifyy has shaped your college life.",
+      author: "Tell us about your experience",
+      role: "Share your story with fellow students",
+      letter: "✨",
+      bgClass: styles.inviteCard,
+      avatarBg: styles.avatarGradient,
       sparkles: (
         <>
-          <SparkleIcon className={`${styles.sparkle} ${styles.sparkleTopLeftAlt}`} />
-          <SparkleIcon className={`${styles.sparkle} ${styles.sparkleBottomRightAlt}`} />
+          <SparkleIcon className={`${styles.sparkle} ${styles.sparkleTopLeft}`} />
+          <SparkleIcon className={`${styles.sparkle} ${styles.sparkleBottomRight}`} />
         </>
       )
     }
@@ -107,19 +107,35 @@ export default function StudentTestimonials() {
               {/* Content block */}
               <div className={styles.contentBlock}>
                 <div className={styles.contentHeader}>
-                  <div>
+                  <div className={styles.authorGroup}>
                     <h4 className={styles.author}>
                       {testi.author}
                     </h4>
-                    <p className={styles.role}>
-                      {testi.role}
-                    </p>
+                    {testi.role && (
+                      <p className={styles.role}>
+                        {testi.role}
+                      </p>
+                    )}
                   </div>
 
-                  {/* Rating Badge */}
-                  <div className={styles.ratingBadge}>
-                    <span className={styles.star}>★</span> {testi.stars}
-                  </div>
+                  {/* Rating / CTA Badge */}
+                  {testi.isCta ? (
+                    <a
+                      href={testi.ctaLink}
+                      className={styles.ctaBadge}
+                      aria-label="Share your Meetifyy experience"
+                    >
+                      <span className={styles.star}>★</span> {testi.ctaText}
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginLeft: '1px' }}>
+                        <line x1="7" y1="17" x2="17" y2="7" />
+                        <polyline points="7 7 17 7 17 17" />
+                      </svg>
+                    </a>
+                  ) : (
+                    <div className={styles.ratingBadge}>
+                      <span className={styles.star}>★</span> {testi.stars}
+                    </div>
+                  )}
                 </div>
 
                 <p className={styles.quote}>
