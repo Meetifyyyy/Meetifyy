@@ -1,6 +1,7 @@
 import {
   IsString,
   IsOptional,
+  MaxLength,
   IsArray,
   IsBoolean,
   IsObject,
@@ -12,9 +13,18 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { MentionDto } from '../../../common/dto/mention.dto';
+import { MAX_MESSAGE_TEXT_LENGTH } from '../message-limits';
 
 export class SendMessageDto {
+  /**
+   * Rejected here so an over-long HTTP send fails as a validation error with a
+   * field name, rather than reaching the service. It is NOT the enforcement:
+   * the socket gateway does not run this pipe, so the authoritative check is
+   * `assertMessageTextWithinLimit` inside both sendMessage implementations.
+   * Same constant, same raw-length rule, so the two cannot disagree.
+   */
   @IsString()
+  @MaxLength(MAX_MESSAGE_TEXT_LENGTH)
   @IsOptional()
   text?: string;
 

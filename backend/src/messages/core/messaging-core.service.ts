@@ -28,6 +28,7 @@ import {
   asString,
   asStringOrNull,
 } from '../../common/utils/coerce.util';
+import { assertMessageTextWithinLimit } from './message-limits';
 
 @Injectable()
 export class MessagingCoreService {
@@ -210,6 +211,10 @@ export class MessagingCoreService {
       conversationName: string;
     }
   > {
+    // The DM and group-chat services inherit this method, so the limit has to
+    // be here as well as in MessagesService. See message-limits.ts.
+    assertMessageTextWithinLimit(payload?.text);
+
     const realConvId = await this.resolveConversationId(
       conversationId,
       senderId,

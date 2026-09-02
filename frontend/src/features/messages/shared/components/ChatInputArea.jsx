@@ -7,6 +7,7 @@ import { showToast } from '@shared/utils/toast';
 import { ALLOWED_MEDIA_ACCEPT } from '@shared/constants/mediaLimits';
 import ReplyPreviewContent from './ReplyPreviewContent';
 import LiveWaveform from './LiveWaveform';
+import { MAX_MESSAGE_TEXT_LENGTH, MESSAGE_LENGTH_WARN_AT } from '@shared/constants/messageLimits';
 
 export default function ChatInputArea({
   conversation,
@@ -413,7 +414,20 @@ export default function ChatInputArea({
                   placeholder="Type a message..."
                   value={inputValue}
                   onChange={(val) => {
-                    setInputValue(val);
+                    /*
+                     * Clamped rather than rejected. The server refuses anything
+                     * over MAX_MESSAGE_TEXT_LENGTH, and finding that out only at
+                     * send time means losing a long message you have already
+                     * written. Truncating as it arrives keeps the composer and
+                     * the server agreeing on what is sendable, and pasting an
+                     * over-long block keeps the part that fits instead of
+                     * silently dropping the whole paste.
+                     */
+                    setInputValue(
+                      typeof val === 'string' && val.length > MAX_MESSAGE_TEXT_LENGTH
+                        ? val.slice(0, MAX_MESSAGE_TEXT_LENGTH)
+                        : val,
+                    );
                     if (onTyping) onTyping();
                   }}
                   onSubmit={handleSend}
@@ -422,6 +436,18 @@ export default function ChatInputArea({
                 />
               </div>
             </div>
+
+            {/* Only once it is nearly relevant: an always-on counter is noise
+                in a chat composer. */}
+            {inputValue.length >= MESSAGE_LENGTH_WARN_AT && (
+              <div
+                className={styles.charCount}
+                aria-live="polite"
+                data-at-limit={inputValue.length >= MAX_MESSAGE_TEXT_LENGTH || undefined}
+              >
+                {inputValue.length} / {MAX_MESSAGE_TEXT_LENGTH}
+              </div>
+            )}
 
             <div className={styles.rightActionContainer}>
               {hasText ? (

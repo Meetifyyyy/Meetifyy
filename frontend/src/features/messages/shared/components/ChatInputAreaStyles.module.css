@@ -1263,3 +1263,25 @@
     display: none;
   }
 } 
+
+/*
+ * Message length counter.
+ *
+ * Hidden until the message is within 500 characters of the limit, so it is
+ * information rather than decoration. Positioned in the composer's own flow so
+ * it cannot overlap the input or the send button when it appears.
+ */
+.charCount {
+  align-self: flex-end;
+  padding: 2px 0.75rem 4px;
+  font-size: 0.7rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-muted, #71717a);
+  user-select: none;
+  pointer-events: none;
+}
+
+.charCount[data-at-limit] {
+  color: #ef4444;
+  font-weight: 600;
+}
