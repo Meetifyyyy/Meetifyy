@@ -3,7 +3,9 @@ import { createPortal } from 'react-dom';
 
 import ShareModalAvatar from '@shared/components/avatar/ShareModalAvatar';
 import styles from '@features/crew/components/modals/ShareActivityModal.module.css';
-import { useConversations } from '@shared/hooks/useMessages';
+// The picker's list, not the inbox's: server-filtered to threads that can
+// actually be sent into. See useRecipientConversations.
+import { useRecipientConversations } from '@shared/hooks/useRecipientConversations';
 import { useMessageActions } from '@shared/hooks/useMessageActions';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 
@@ -27,7 +29,7 @@ export default function ShareCommunityModal({ isOpen, onClose, community }) {
   const [copied, setCopied] = useState(false);
   const [sentTo, setSentTo] = useState(new Set());
   
-  const { conversations } = useConversations();
+  const { conversations } = useRecipientConversations(isOpen);
   const { sendDirectMessage } = useMessageActions();
 
   const handleCopyLink = () => {

@@ -6,12 +6,13 @@ import {
   Optional,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { Prisma } from '@prisma/client';
+import { Prisma, VerificationStatus } from '@prisma/client';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationFactory } from '../notifications/notification.factory';
 import { DomainEventService } from '../events/domain-event.service';
 import { RedisService } from '../redis/redis.service';
 import { BlocksService } from './blocks.service';
+import { VerificationAccessService } from '../common/verification/verification-access.service';
 import { PresenceService } from '../presence/presence.service';
 import {
   checkPresenceVisibility,
@@ -45,6 +46,7 @@ export class UsersService {
     private readonly blocksService: BlocksService,
     private readonly presenceService: PresenceService,
     private readonly academicsService: AcademicsService,
+    private readonly verificationAccess: VerificationAccessService,
     @InjectQueue(NOTIFICATIONS_QUEUE) private readonly notifQueue: Queue,
     @Optional() private readonly mediaCleanupService?: MediaCleanupService,
   ) {}
@@ -751,6 +753,7 @@ export class UsersService {
     currentUserId?: string,
     limit = 20,
     offset = 0,
+    eligibleOnly = false,
   ) {
     const cleanUsername = username.trim().toLowerCase();
 
@@ -771,6 +774,23 @@ export class UsersService {
         ? Prisma.sql`AND f."followerId" NOT IN (${Prisma.join(excludedUserIds)})`
         : Prisma.empty;
 
+    // Verified-only, when this list is being used to CHOOSE a recipient rather
+    // than to read a profile's social graph.
+    //
+    // The same endpoint serves both: the profile's follower/following viewer,
+    // where hiding accounts would misreport who actually follows whom and
+    // contradict the counts shown beside it, and the Activity Invite picker,
+    // where an ineligible account must never be offered. `eligibleOnly` is what
+    // separates the two, and it is the caller's intent, not a user preference.
+    //
+    // In SQL, before LIMIT/OFFSET, for the reason the block filter above is:
+    // filtering afterwards returns short pages and lets the offset cursor skip
+    // over rows that were never shown.
+    const eligibilityFilter =
+      eligibleOnly && this.verificationAccess.isEnforcementEnabled()
+        ? Prisma.sql`AND u."verificationStatus"::text = ${VerificationStatus.VERIFIED}`
+        : Prisma.empty;
+
     const rows: any[] = await this.prisma.$queryRaw`
       SELECT 
         u."id",
@@ -789,6 +809,7 @@ export class UsersService {
       JOIN "User" u ON f."followerId" = u."id"
       WHERE f."followingId" = ${targetUser.id}
       ${followerBlockFilter}
+      ${eligibilityFilter}
       ORDER BY f."createdAt" DESC
       LIMIT ${limit} OFFSET ${offset};
     `;
@@ -819,6 +840,7 @@ export class UsersService {
     currentUserId?: string,
     limit = 20,
     offset = 0,
+    eligibleOnly = false,
   ) {
     const cleanUsername = username.trim().toLowerCase();
 
@@ -835,6 +857,23 @@ export class UsersService {
     const followingBlockFilter =
       excludedUserIds.length > 0
         ? Prisma.sql`AND f."followingId" NOT IN (${Prisma.join(excludedUserIds)})`
+        : Prisma.empty;
+
+    // Verified-only, when this list is being used to CHOOSE a recipient rather
+    // than to read a profile's social graph.
+    //
+    // The same endpoint serves both: the profile's follower/following viewer,
+    // where hiding accounts would misreport who actually follows whom and
+    // contradict the counts shown beside it, and the Activity Invite picker,
+    // where an ineligible account must never be offered. `eligibleOnly` is what
+    // separates the two, and it is the caller's intent, not a user preference.
+    //
+    // In SQL, before LIMIT/OFFSET, for the reason the block filter above is:
+    // filtering afterwards returns short pages and lets the offset cursor skip
+    // over rows that were never shown.
+    const eligibilityFilter =
+      eligibleOnly && this.verificationAccess.isEnforcementEnabled()
+        ? Prisma.sql`AND u."verificationStatus"::text = ${VerificationStatus.VERIFIED}`
         : Prisma.empty;
 
     const rows: any[] = await this.prisma.$queryRaw`
@@ -855,6 +894,7 @@ export class UsersService {
       JOIN "User" u ON f."followingId" = u."id"
       WHERE f."followerId" = ${targetUser.id}
       ${followingBlockFilter}
+      ${eligibilityFilter}
       ORDER BY f."createdAt" DESC
       LIMIT ${limit} OFFSET ${offset};
     `;
@@ -1449,7 +1489,12 @@ export class UsersService {
     // repeat modal opens (and each keystroke that repeats an earlier query)
     // into an O(1) cache hit instead of a fresh DB round-trip + pool acquire.
     const redis = this.redisService?.getClient?.();
-    const cacheKey = `connections:${userId}:${cleanQuery}:${limit}`;
+    // `v2` because the value shape changed meaning, not structure: entries
+    // written by the previous build hold unverified users and would keep
+    // serving them for the whole TTL after a deploy. A new prefix retires them
+    // instantly instead of leaving a 20-second window where the rule does not
+    // apply.
+    const cacheKey = `connections:v2:${userId}:${cleanQuery}:${limit}`;
     if (redis) {
       try {
         const cached = await redis.get(cacheKey);
@@ -1462,6 +1507,20 @@ export class UsersService {
       {
         id: { not: userId },
         accountStatus: 'ACTIVE',
+        // Verified accounts only, decided in the query rather than after it.
+        //
+        // This list is the recipient picker for every Invite flow, and the send
+        // it feeds is already refused for an ineligible recipient by
+        // `assertUsersEligible`. Offering one was therefore presenting a choice
+        // that could only end in an error, and it disclosed the existence and
+        // handle of an account the viewer is not allowed to reach.
+        //
+        // It has to be here rather than in a `.filter()` afterwards for two
+        // reasons: `take: limit` is applied by the database, so post-filtering
+        // silently shrinks pages and eventually returns an empty one while more
+        // eligible users exist further down; and the unfiltered rows would
+        // already have been written to the Redis entry below.
+        ...this.verificationAccess.eligibleUserWhere(),
         ...(cleanQuery
           ? {
               OR: [

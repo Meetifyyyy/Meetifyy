@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { useQuery } from '@tanstack/react-query';
 import { messagesApi } from '@shared/api/apiClient';
+import { useRecipientConversations } from '@shared/hooks/useRecipientConversations';
 import ShareModalAvatar from '@shared/components/avatar/ShareModalAvatar';
 import styles from '@features/crew/components/modals/ShareActivityModal.module.css';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
@@ -14,15 +14,11 @@ export default function ShareProfileModal({ isOpen, onClose, profileUser }) {
   const [copied, setCopied] = useState(false);
   const [sentTo, setSentTo] = useState(new Set());
   
-  // Reuse the main conversation-list cache (same key + args + staleTime) so this
-  // opens instantly from the warm cache and never truncates the shared list.
-  const { data: conversations = [] } = useQuery({
-    queryKey: ['conversations'],
-    queryFn: () => messagesApi.getConversations(50, 0),
-    enabled: isOpen,
-    staleTime: 60 * 1000,
-    gcTime: 5 * 60 * 1000,
-  });
+  // Was an inline query on the inbox's own ['conversations'] key, which made
+  // this modal show every thread the user has, including ones whose
+  // counterpart cannot be sent to. Recipient lists are a different question
+  // from the inbox and now have their own server-filtered query.
+  const { conversations } = useRecipientConversations(isOpen);
   const handleCopyLink = () => {
     const link = `${window.location.origin}/profile/${profileUser.username}`;
     navigator.clipboard.writeText(link).then(() => {

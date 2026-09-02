@@ -11,6 +11,7 @@ import { DomainEventService } from '../events/domain-event.service';
 import { RedisService } from '../redis/redis.service';
 import { PresenceService } from '../presence/presence.service';
 import { AcademicsService } from '../academics/academics.service';
+import { VerificationAccessService } from '../common/verification/verification-access.service';
 import { NOTIFICATIONS_QUEUE } from '../notifications/notifications.processor';
 
 describe('UsersService — blocking', () => {
@@ -63,6 +64,16 @@ describe('UsersService — blocking', () => {
           useValue: { getPresenceMany: jest.fn().mockResolvedValue(new Map()) },
         },
         AcademicsService,
+        {
+          // Neither suite touches an eligibility-filtered query; the stub keeps
+          // the rule out of their `where` clauses so their fixtures still
+          // describe the behaviour they are actually testing.
+          provide: VerificationAccessService,
+          useValue: {
+            eligibleUserWhere: () => ({}),
+            isEnforcementEnabled: () => true,
+          },
+        },
         {
           provide: getQueueToken(NOTIFICATIONS_QUEUE),
           useValue: { add: jest.fn() },

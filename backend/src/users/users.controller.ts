@@ -209,11 +209,15 @@ export class UsersController {
   @Get(':username/followers')
   @UseGuards(JwtGuard)
   @CacheControl('private, no-cache')
+  // `eligibleOnly=true` is passed by recipient pickers (Activity Invite), never
+  // by the profile's follower/following viewer. See getFollowers in the service
+  // for why one endpoint answers both questions.
   async getFollowers(
     @Param('username') username: string,
     @Req() req: AuthenticatedRequest,
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
+    @Query('eligibleOnly') eligibleOnly?: string,
   ) {
     const limitNum = limit ? parseInt(limit, 10) : 50;
     const offsetNum = offset ? parseInt(offset, 10) : 0;
@@ -222,17 +226,22 @@ export class UsersController {
       req.user?.id,
       limitNum,
       offsetNum,
+      eligibleOnly === 'true',
     );
   }
 
   @Get(':username/following')
   @UseGuards(JwtGuard)
   @CacheControl('private, no-cache')
+  // `eligibleOnly=true` is passed by recipient pickers (Activity Invite), never
+  // by the profile's follower/following viewer. See getFollowers in the service
+  // for why one endpoint answers both questions.
   async getFollowing(
     @Param('username') username: string,
     @Req() req: AuthenticatedRequest,
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
+    @Query('eligibleOnly') eligibleOnly?: string,
   ) {
     const limitNum = limit ? parseInt(limit, 10) : 50;
     const offsetNum = offset ? parseInt(offset, 10) : 0;
@@ -241,6 +250,7 @@ export class UsersController {
       req.user?.id,
       limitNum,
       offsetNum,
+      eligibleOnly === 'true',
     );
   }
 

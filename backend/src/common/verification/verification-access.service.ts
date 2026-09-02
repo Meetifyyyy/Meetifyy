@@ -104,6 +104,49 @@ export class VerificationAccessService {
     return status === VerificationStatus.VERIFIED;
   }
 
+  /**
+   * The eligibility rule expressed as a Prisma filter, for use INSIDE queries.
+   *
+   * Every other method here answers the question about ids that have already
+   * been fetched, which is the right shape for guarding an action but the wrong
+   * shape for building a list. A share or invite selector must never load an
+   * ineligible account in the first place: filtering after the fact means the
+   * row crossed the network, sat in a Redis cache and reached the client, and
+   * whether it was displayed then depended on frontend code being correct.
+   * Pagination makes that worse, because a page of twenty rows filtered down to
+   * eleven silently changes what "next page" means.
+   *
+   * Spread into the `where` of any query that produces selectable users:
+   *
+   *     where: { ...base, ...verificationAccess.eligibleUserWhere() }
+   *
+   * Returns an empty object when enforcement is disabled, so the kill switch
+   * behaves identically here and in every runtime check. That symmetry is the
+   * reason this lives beside `isEligibleStatus` rather than being written out
+   * at each call site: two definitions of "eligible" would eventually disagree,
+   * and the one embedded in a query is the one nobody would think to check.
+   */
+  eligibleUserWhere(): { verificationStatus?: VerificationStatus } {
+    if (!this.isEnforcementEnabled()) return {};
+    return { verificationStatus: VerificationStatus.VERIFIED };
+  }
+
+  /**
+   * The same rule for a raw SQL predicate, as a fragment safe to interpolate.
+   *
+   * Contains no user input and no parameters, so it cannot carry an injection;
+   * it exists because a couple of ranking queries are written in raw SQL and
+   * would otherwise need the condition spelled out by hand. `TRUE` when
+   * enforcement is off keeps it composable with an unconditional AND.
+   *
+   * The column is quoted because Prisma maps `verificationStatus` to a
+   * camelCase column, which Postgres folds to lowercase unless quoted.
+   */
+  eligibleUserSqlPredicate(alias = 'u'): string {
+    if (!this.isEnforcementEnabled()) return 'TRUE';
+    return `"${alias}"."verificationStatus" = '${VerificationStatus.VERIFIED}'`;
+  }
+
   /** Eligibility for one account. */
   async isUserEligible(userId: string): Promise<boolean> {
     if (!this.isEnforcementEnabled()) return true;

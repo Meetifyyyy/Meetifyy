@@ -783,12 +783,17 @@ export const usersApi = {
   },
   getOnlineFriends: (limit = 6) => apiClient.get(`/api/users/online-friends?limit=${limit}`),
   getByUsername: (username) => apiClient.get(`/api/users/${username}`),
-  getFollowers: (username, limit = 50, offset = 0) => {
+  // `eligibleOnly` is for recipient pickers only. The profile's follower and
+  // following viewer must never pass it: hiding accounts there would misreport
+  // who follows whom and contradict the counts shown next to the list.
+  getFollowers: (username, limit = 50, offset = 0, eligibleOnly = false) => {
     const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+    if (eligibleOnly) params.set('eligibleOnly', 'true');
     return apiClient.get(`/api/users/${username}/followers?${params.toString()}`);
   },
-  getFollowing: (username, limit = 50, offset = 0) => {
+  getFollowing: (username, limit = 50, offset = 0, eligibleOnly = false) => {
     const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+    if (eligibleOnly) params.set('eligibleOnly', 'true');
     return apiClient.get(`/api/users/${username}/following?${params.toString()}`);
   },
   getFollowingUsernames: async (username) => {
@@ -894,13 +899,19 @@ export const instantMatchApi = {
 };
 
 export const messagesApi = {
-  getConversations: (limit, offset) => {
+  /**
+   * @param {boolean} [eligibleOnly] Ask the server for threads that can actually
+   *   be sent into. Share and Forward pickers pass true; the inbox must not,
+   *   because it has to keep showing every conversation the user owns.
+   */
+  getConversations: (limit, offset, eligibleOnly = false) => {
     const params = new URLSearchParams();
     const resolvedLimit = typeof limit === 'number' ? limit : (typeof limit === 'object' && typeof limit?.limit === 'number' ? limit.limit : 20);
     const resolvedOffset = typeof offset === 'number' ? offset : (typeof limit === 'object' && typeof limit?.offset === 'number' ? limit.offset : 0);
     
     if (resolvedLimit) params.set('limit', String(resolvedLimit));
     if (resolvedOffset) params.set('offset', String(resolvedOffset));
+    if (eligibleOnly) params.set('eligibleOnly', 'true');
     const query = params.toString();
     return apiClient.get(`/api/messages${query ? `?${query}` : ''}`);
   },

@@ -186,10 +186,13 @@ export class MessagesController {
 
   @Get()
   @UseGuards(JwtGuard)
+  // `eligibleOnly=true` is sent by Share/Forward pickers and never by the
+  // inbox. See getUserConversations for why one endpoint answers both.
   async getConversations(
     @Req() req: AuthenticatedRequest,
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
+    @Query('eligibleOnly') eligibleOnly?: string,
   ) {
     const userId = req.user?.id;
     const parsedLimit = limit ? parseInt(limit, 10) : 20;
@@ -200,6 +203,7 @@ export class MessagesController {
       userId,
       limitNum,
       offsetNum,
+      eligibleOnly === 'true',
     );
   }
 

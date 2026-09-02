@@ -1198,12 +1198,21 @@ export class MessagesService
   }
 
   private presenceCache = new Map<string, { data: any; expiresAt: number }>();
+  /**
+   * @param eligibleOnly Restrict to threads that can actually be SENT into by a
+   *   recipient picker. Share modals pass true; the inbox never does.
+   */
   async getUserConversations(
     userId: string,
     limit: number = 20,
     offset: number = 0,
+    eligibleOnly = false,
   ) {
-    const cacheKey = `user:conversations:${userId}:${limit}:${offset}`;
+    // Distinct key. The two shapes are different lists for the same user and
+    // sharing one entry would let whichever call happened first decide what the
+    // other saw, which in the wrong order means the inbox silently loses
+    // threads.
+    const cacheKey = `user:conversations:${eligibleOnly ? 'pick:' : ''}${userId}:${limit}:${offset}`;
     if (this.redis) {
       try {
         const cached = await this.redis.get(cacheKey);
@@ -1219,7 +1228,45 @@ export class MessagesService
           // Instant Match chats are a separate product surface reached only
           // through Instant Match. They must never appear in Messages, carry
           // a preview there, or contribute to its unread badge.
-          conversation: { type: { in: ['DM', 'GROUP'] } },
+          conversation: {
+            type: { in: ['DM', 'GROUP'] },
+            /**
+             * Recipient pickers only.
+             *
+             * The inbox must keep every thread: history belongs to both people,
+             * and a conversation disappearing because the other person's
+             * verification lapsed would destroy a record the user still owns.
+             * A picker is the opposite question, "who can I send this to", and
+             * the send is already refused for an ineligible recipient by
+             * `assertUsersEligible` — so offering the thread presents a choice
+             * that can only fail. This is the same split
+             * `sendableConversations` already makes for deleted accounts.
+             *
+             * Groups are kept regardless of any individual member's status, for
+             * the same reason they are kept when a member deletes their
+             * account: the thread still has people in it to receive the
+             * message, and choosing a group is not choosing a person.
+             *
+             * Expressed as a nested filter so it is applied by the database
+             * before skip/take. Dropping ineligible threads afterwards would
+             * return short pages and let the offset cursor skip rows.
+             */
+            ...(eligibleOnly
+              ? {
+                  OR: [
+                    { type: 'GROUP' as const },
+                    {
+                      participants: {
+                        some: {
+                          userId: { not: userId },
+                          user: this.verificationAccess.eligibleUserWhere(),
+                        },
+                      },
+                    },
+                  ],
+                }
+              : {}),
+          },
         },
         // Pinned rows first (most recently pinned at the top), then by recent
         // activity. Ordering pinned-first in SQL rather than only in the client

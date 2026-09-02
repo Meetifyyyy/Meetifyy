@@ -4,6 +4,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 import { useScrollLock } from '@shared/hooks/useScrollLock';
+import { selectableUsers } from '@shared/lib/conversationTargets';
 import styles from './CreateActivityPage.module.css';
 
 import ImageSearchModal from '@shared/components/modals/ImageSearchModal';
@@ -506,9 +507,16 @@ function ActivityCreatedModal({ activityTitle, coverImage, activityDate, creatio
 
   useScrollLock(true);
 
+  // This is the Activity Invite recipient picker, so it asks the server for the
+  // eligible subset (`eligibleOnly`) rather than the raw following list. The
+  // profile's own following viewer deliberately does not pass that flag: hiding
+  // accounts there would misreport who the user actually follows.
+  //
+  // The key carries the flag too, so this list can never be served from, or
+  // written into, the cache entry belonging to the unfiltered viewer.
   const { data: friendsList = [], isLoading, isError, refetch, isFetching } = useQuery({
-    queryKey: ['user-following-friends', currentUser?.username],
-    queryFn: () => usersApi.getFollowing(currentUser?.username, 100, 0),
+    queryKey: ['user-following-friends', currentUser?.username, 'eligible'],
+    queryFn: () => usersApi.getFollowing(currentUser?.username, 100, 0, true),
     enabled: !!currentUser?.username,
     staleTime: 30_000,
   });
@@ -519,9 +527,13 @@ function ActivityCreatedModal({ activityTitle, coverImage, activityDate, creatio
 
   const filtered = useMemo(() => {
     if (!Array.isArray(friendsList)) return [];
+    // Second line only: the server already excluded ineligible accounts from
+    // this response. This covers the window where a cached list (30s here)
+    // outlives a change in the other person's status.
+    const eligible = selectableUsers(friendsList);
     const q = searchQuery.trim().toLowerCase();
-    if (!q) return friendsList;
-    return friendsList.filter(u =>
+    if (!q) return eligible;
+    return eligible.filter(u =>
       (u.displayName || '').toLowerCase().includes(q) ||
       (u.username || '').toLowerCase().includes(q)
     );

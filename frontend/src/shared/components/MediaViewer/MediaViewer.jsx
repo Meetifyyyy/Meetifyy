@@ -9,7 +9,7 @@ import VideoViewer from './VideoViewer';
 import styles from './MediaViewer.module.css';
 import ReportModal from '@shared/components/modals/ReportModal/ReportModal';
 import ForwardMessageModal from '@features/messages/shared/components/modals/ForwardMessageModal';
-import { useConversations } from '@shared/hooks/useMessages';
+import { useRecipientConversations } from '@shared/hooks/useRecipientConversations';
 import { useMessageActions } from '@shared/hooks/useMessageActions';
 import {
   X,
@@ -813,7 +813,10 @@ export default function MediaViewer() {
  * when the forward modal is actually opened.
  */
 function LazyForwardModal({ isOpen, currentItem, onClose }) {
-  const { conversations } = useConversations();
+  // The picker's list, not the inbox's. Forward is a recipient choice, so it
+  // must exclude threads that cannot be sent into; useConversations would have
+  // offered every thread the user has.
+  const { conversations } = useRecipientConversations(isOpen);
   const { sendDirectMessage } = useMessageActions();
 
   if (!isOpen) return null;

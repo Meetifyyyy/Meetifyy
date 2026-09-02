@@ -11,6 +11,7 @@ import { NOTIFICATIONS_QUEUE } from '../notifications/notifications.processor';
 import { BlocksService } from './blocks.service';
 import { PresenceService } from '../presence/presence.service';
 import { AcademicsService } from '../academics/academics.service';
+import { VerificationAccessService } from '../common/verification/verification-access.service';
 
 describe('Follow / Unfollow High Concurrency Stress Test', () => {
   let service: UsersService;
@@ -90,6 +91,16 @@ describe('Follow / Unfollow High Concurrency Stress Test', () => {
         // Real instance: it is pure validation logic with no I/O, so exercising
         // the actual catalogue here is more faithful than a stub.
         AcademicsService,
+        {
+          // Neither suite touches an eligibility-filtered query; the stub keeps
+          // the rule out of their `where` clauses so their fixtures still
+          // describe the behaviour they are actually testing.
+          provide: VerificationAccessService,
+          useValue: {
+            eligibleUserWhere: () => ({}),
+            isEnforcementEnabled: () => true,
+          },
+        },
         {
           provide: getQueueToken(NOTIFICATIONS_QUEUE),
           useValue: { add: jest.fn().mockResolvedValue(undefined) },

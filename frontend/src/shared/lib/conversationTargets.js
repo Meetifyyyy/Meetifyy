@@ -35,20 +35,45 @@ export function sendableConversations(conversations) {
   return (conversations || []).filter((c) => !isConversationUnavailable(c));
 }
 
-/** True when a user row should never appear in a picker. */
+/**
+ * True when a user row should never appear in a picker.
+ *
+ * Two independent reasons, and both are server-enforced already:
+ *   - the account is gone, or its profile is not available to this viewer;
+ *   - the account is not verified, so the send would be refused anyway.
+ *
+ * `verificationStatus` is only checked when the field is actually present.
+ * Several selector payloads are deliberately narrow (`/api/users/connections`
+ * returns six columns) and treating a missing field as "unverified" would empty
+ * those lists completely. That is the correct bias for a SECOND line of
+ * defence: the query is the thing that guarantees the rule, and this must not
+ * be able to break a list on its own if a payload shape changes.
+ */
 export function isUserUnavailable(user) {
   if (!user) return true;
-  return Boolean(user.isDeleted || user.profileAvailable === false);
+  if (user.isDeleted || user.profileAvailable === false) return true;
+  if (
+    Object.prototype.hasOwnProperty.call(user, 'verificationStatus') &&
+    user.verificationStatus !== 'VERIFIED'
+  ) {
+    return true;
+  }
+  return false;
 }
 
 /**
  * Users that can be picked.
  *
- * The server already excludes unavailable accounts from `/api/users/connections`,
- * so this is a second line rather than the enforcement — it exists because these
- * lists are cached (20s server-side, 30s in React Query) and a response fetched
- * a moment before a deletion would otherwise keep offering that person until
- * both caches turn over.
+ * The server already excludes unavailable and unverified accounts from
+ * `/api/users/connections`, so this is a second line rather than the
+ * enforcement — it exists because these lists are cached (20s server-side, 30s
+ * in React Query) and a response fetched a moment before a deletion or a
+ * verification change would otherwise keep offering that person until both
+ * caches turn over.
+ *
+ * It is NOT where the rule lives. If this filter is ever the only thing
+ * removing an ineligible account from a list, the row still crossed the network
+ * and the fix belongs in the query, not here.
  */
 export function selectableUsers(users) {
   return (users || []).filter((u) => u && u.id && !isUserUnavailable(u));
