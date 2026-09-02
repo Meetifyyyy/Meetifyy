@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js';
+import { AuthClient } from '@supabase/auth-js';
 import { config } from '@config';
 
 const { url: supabaseUrl, anonKey: supabaseAnonKey } = config.supabase;
@@ -45,6 +45,49 @@ if (typeof window !== 'undefined') {
   }
 }
 
+/**
+ * The auth client, built directly rather than through `createClient()`.
+ *
+ * Nothing in this app touches `supabase.from()`, `supabase.storage`,
+ * `supabase.functions` or `supabase.channel()` — data, files and realtime all
+ * go through our own backend. But `createClient()` constructs postgrest-js,
+ * storage-js, functions-js and realtime-js (with its phoenix socket) eagerly in
+ * the SupabaseClient constructor, so all four landed in the entry chunk and
+ * were parsed on every cold start: ~300 kB of JavaScript for four clients that
+ * are never called.
+ *
+ * `@supabase/auth-js` is what `createClient` puts behind `.auth` anyway — the
+ * `SupabaseAuthClient` it instantiates is a subclass with an empty body — so
+ * this is the same object with the same behaviour, minus the unused siblings.
+ *
+ * The options below reproduce supabase-js's defaults exactly. The storage key
+ * matters most: it is how a session already in localStorage is found, so it has
+ * to keep deriving from the project ref the same way, or every signed-in user
+ * would be silently logged out by this change.
+ */
+function createAuthClient() {
+  const baseUrl = new URL(supabaseUrl);
+  const projectRef = baseUrl.hostname.split('.')[0];
+
+  return new AuthClient({
+    url: new URL('auth/v1', baseUrl).href,
+    headers: {
+      Authorization: `Bearer ${supabaseAnonKey}`,
+      apikey: supabaseAnonKey,
+    },
+    storageKey: `sb-${projectRef}-auth-token`,
+    autoRefreshToken: true,
+    persistSession: true,
+    detectSessionInUrl: true,
+    flowType: 'implicit',
+  });
+}
+
+/**
+ * Shaped like the supabase-js client for the one property the app uses, so
+ * every call site (`supabase.auth.getSession()`, `.onAuthStateChange`, …) is
+ * unchanged.
+ */
 export const supabase = isSupabaseConfigured
-  ? createClient(supabaseUrl, supabaseAnonKey)
+  ? { auth: createAuthClient() }
   : null;

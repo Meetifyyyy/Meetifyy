@@ -1,6 +1,6 @@
 import { Suspense, lazy, useCallback, useRef, useEffect } from 'react';
 import { MessageSquarePlus, Search, X } from '@shared/components/icons';
-import { useMediaViewer } from '@shared/context/MediaViewerContext';
+import { useMediaViewerActions } from '@shared/context/MediaViewerContext';
 import { useMessageActions } from '@shared/hooks/useMessageActions';
 import { useRecipientConversations } from '@shared/hooks/useRecipientConversations';
 import { showToast } from '@shared/utils/toast';
@@ -71,7 +71,7 @@ export default function ChatAreaLayout({
   // Whether to show avatar next to typing bubble (groups only)
   showTypingAvatar = false,
 }) {
-  const { openViewer } = useMediaViewer();
+  const { openViewer } = useMediaViewerActions();
   const { sendDirectMessage } = useMessageActions();
 
   /**

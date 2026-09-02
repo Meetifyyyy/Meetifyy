@@ -2,11 +2,11 @@ import { useCallback } from 'react';
 import sharedStyles from './ChatDetailsPanel.module.css';
 import styles from './ChatGalleryPage.module.css';
 import { Image as ImageIcon, ArrowLeft } from '@shared/components/icons';
-import { useMediaViewer } from '@shared/context/MediaViewerContext';
+import { useMediaViewerActions } from '@shared/context/MediaViewerContext';
 import MediaThumb from '@shared/components/media/MediaThumb';
 
 export default function ChatGalleryPage({ mediaList, onBack }) {
-  const { openViewer } = useMediaViewer();
+  const { openViewer } = useMediaViewerActions();
 
   const openAt = useCallback((index) => {
     const items = (mediaList || []).map((m) => ({

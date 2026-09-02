@@ -13,24 +13,80 @@ import { useAuth } from '@shared/context/AuthContext';
 import { useGlobalSocketStore } from '@stores/useGlobalSocketStore';
 import { useAddComment } from '../../hooks/useAddComment';
 
-function buildCommentTree(comments) {
+/**
+ * Flat comment list -> nested tree, reusing every node object that did not
+ * actually change.
+ *
+ * This used to spread every comment into a brand-new object on every rebuild
+ * (`{ ...c, replies: [] }`). The optimistic cache updates are careful to return
+ * the *same* object for comments they did not touch — liking one comment
+ * rewrites exactly one row — but this function threw that away and handed the
+ * tree 60 new objects, so `React.memo` on a node could never hit and a single
+ * like re-rendered the entire thread (measured: 61/61 bodies, 41ms).
+ *
+ * Now a node is rebuilt only when its own source row changed or its children
+ * changed. Liking a root comment therefore touches one node; liking a nested
+ * reply touches that reply and its ancestors, which genuinely do render a
+ * different subtree. Everything else keeps its identity and its memo.
+ *
+ * `prevById` carries the previous rebuild's nodes in; `nextById` collects this
+ * one's for the next call.
+ */
+const SRC = Symbol('sourceComment');
+
+function buildCommentTree(comments, prevById, nextById) {
   if (!comments || !Array.isArray(comments)) return [];
-  const map = {};
-  const roots = [];
 
-  comments.forEach(c => {
-    map[c.id] = { ...c, replies: [] };
-  });
+  const byId = new Map();
+  for (const c of comments) byId.set(c.id, c);
 
-  comments.forEach(c => {
-    if (c.parentId && map[c.parentId]) {
-      map[c.parentId].replies.push(map[c.id]);
+  // Child ids in list order, so sibling ordering matches the old behaviour.
+  const childIds = new Map();
+  const rootIds = [];
+  for (const c of comments) {
+    if (c.parentId && byId.has(c.parentId)) {
+      const siblings = childIds.get(c.parentId);
+      if (siblings) siblings.push(c.id);
+      else childIds.set(c.parentId, [c.id]);
     } else {
-      roots.push(map[c.id]);
+      rootIds.push(c.id);
     }
-  });
+  }
 
-  return roots;
+  const sameChildren = (a, b) => a.length === b.length && a.every((n, i) => n === b[i]);
+
+  // Iterative post-order, so a thread deep enough to blow the stack cannot.
+  const build = (rootId) => {
+    const stack = [{ id: rootId, phase: 0 }];
+    const done = new Map();
+    while (stack.length) {
+      const frame = stack[stack.length - 1];
+      const kidIds = childIds.get(frame.id) || [];
+      if (frame.phase === 0) {
+        frame.phase = 1;
+        for (let i = kidIds.length - 1; i >= 0; i--) {
+          if (!done.has(kidIds[i])) stack.push({ id: kidIds[i], phase: 0 });
+        }
+        continue;
+      }
+      stack.pop();
+      const source = byId.get(frame.id);
+      const replies = kidIds.map((id) => done.get(id));
+      const prev = prevById.get(frame.id);
+      let node;
+      if (prev && prev[SRC] === source && sameChildren(prev.replies, replies)) {
+        node = prev;
+      } else {
+        node = { ...source, replies };
+        Object.defineProperty(node, SRC, { value: source, enumerable: false });
+      }
+      done.set(frame.id, node);
+      nextById.set(frame.id, node);
+    }
+    return done.get(rootId);
+  };
+
+  return rootIds.map(build);
 }
 
 // Placeholder for the post card itself while its real content is still in
@@ -166,17 +222,37 @@ export default function PostView({ post, onBack }) {
   // is not what anyone wants; the composer is one tap away. The tap-the-post
   // shortcut below does use the ref, and now actually works.
 
+  // Carries the previous rebuild's nodes so unchanged subtrees keep their
+  // object identity across rebuilds — see buildCommentTree.
+  const treeNodesRef = useRef(new Map());
+
   const replies = useMemo(() => {
-    if (livePost?.comments) return buildCommentTree(livePost.comments);
+    if (livePost?.comments) {
+      const next = new Map();
+      const roots = buildCommentTree(livePost.comments, treeNodesRef.current, next);
+      treeNodesRef.current = next;
+      return roots;
+    }
     return livePost?.replies || [];
   }, [livePost?.comments, livePost?.replies]);
 
   // Adding a reply to a specific comment. Returns the promise so CommentNode can
   // await it and keep its own composer open if the post fails.
+  //
+  // Depends on the post's *id*, not the post object. `livePost` gets a new
+  // identity on every cache write — including the optimistic like of a single
+  // comment — and this callback is handed to every node in the tree, so
+  // depending on the object rebuilt it each time and defeated the memo on all
+  // of them: liking one comment re-rendered all 61 bodies. The id is the only
+  // part this actually reads.
+  const postIdForReply = livePost?.id;
+  const currentUserRef = useRef(currentUser);
+  currentUserRef.current = currentUser;
+
   const handleCommentReplySubmit = useCallback((parentId, text, mentions) => {
-    if (!livePost) return Promise.resolve();
-    return addComment({ postId: livePost.id, text, parentId, mentions, currentUser });
-  }, [addComment, livePost, currentUser]);
+    if (!postIdForReply) return Promise.resolve();
+    return addComment({ postId: postIdForReply, text, parentId, mentions, currentUser: currentUserRef.current });
+  }, [addComment, postIdForReply]);
 
   // A confirmed error (post deleted / doesn't exist) is the caller's problem —
   // PostDetailRoute owns the dedicated "Post not found" page and swaps this

@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { usersApi, apiClient, postsApi, getBackendUrl } from '@shared/api/apiClient';
 import { useSavedPostsStore } from '../stores/savedPostsStore';
 import { useSavedActivitiesStore } from '../stores/savedActivitiesStore';
@@ -798,59 +798,82 @@ export function AuthProvider({ children }) {
   const displayName = currentUser?.displayName || '';
   const collegeName = getCollegeName(currentUser);
 
+  /**
+   * Memoised because `useAuth()` is read almost everywhere — every post card,
+   * every comment node, the header, the sidebar.
+   *
+   * This used to be an object literal, so it was a new value on every render of
+   * this provider, and a context value changing re-renders every consumer
+   * whether or not the part it reads has moved. React.memo cannot stop that: a
+   * context read is not a prop. The provider sits above the whole app, so any
+   * state it holds — a session refresh, a settings save — cascaded into the
+   * entire tree.
+   *
+   * Every callback below is already `useCallback`-stable, so in practice this
+   * value now changes only when the session or the user actually changes.
+   */
+  const value = useMemo(() => ({
+    isLoggedIn,
+    session,
+    loading,
+    currentUser,
+    username,
+    displayName,
+    initial,
+    collegeName,
+    login,
+    initiateSignup,
+    resendSignupOtp,
+    verifySignupOtp,
+    completeOnboarding,
+    updateProfile,
+    updateSettings,
+    updateCurrentUser,
+    changePassword,
+    logout,
+    isSupabaseConfigured,
+  }), [
+    isLoggedIn, session, loading, currentUser, username, displayName, initial,
+    collegeName, login, initiateSignup, resendSignupOtp, verifySignupOtp,
+    completeOnboarding, updateProfile, updateSettings, updateCurrentUser,
+    changePassword, logout,
+  ]);
+
   return (
-    <AuthContext.Provider
-      value={{
-        isLoggedIn,
-        session,
-        loading,
-        currentUser,
-        username,
-        displayName,
-        initial,
-        collegeName,
-        login,
-        initiateSignup,
-        resendSignupOtp,
-        verifySignupOtp,
-        completeOnboarding,
-        updateProfile,
-        updateSettings,
-        updateCurrentUser,
-        changePassword,
-        logout,
-        isSupabaseConfigured
-      }}
-    >
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   );
 }
 
+/**
+ * The answer when there is no provider above — a frozen module constant, not a
+ * fresh literal per call. Returning a new object each time made every consumer
+ * outside a provider (tests, isolated previews, the public shell) see a
+ * "changed" value on every render.
+ */
+const NO_AUTH = Object.freeze({
+  isLoggedIn: false,
+  session: null,
+  loading: false,
+  currentUser: null,
+  username: '',
+  displayName: '',
+  initial: '?',
+  collegeName: '',
+  login: async () => {},
+  initiateSignup: async () => {},
+  resendSignupOtp: async () => {},
+  verifySignupOtp: async () => {},
+  completeOnboarding: async () => {},
+  updateProfile: async () => {},
+  updateSettings: async () => {},
+  updateCurrentUser: () => {},
+  changePassword: async () => {},
+  logout: async () => {},
+  isSupabaseConfigured: true,
+});
+
 export function useAuth() {
-  const ctx = useContext(AuthContext);
-  if (!ctx) {
-    return {
-      isLoggedIn: false,
-      session: null,
-      loading: false,
-      currentUser: null,
-      username: '',
-      displayName: '',
-      initial: '?',
-      collegeName: '',
-      login: async () => {},
-      initiateSignup: async () => {},
-      resendSignupOtp: async () => {},
-      verifySignupOtp: async () => {},
-      completeOnboarding: async () => {},
-      updateProfile: async () => {},
-      updateSettings: async () => {},
-      updateCurrentUser: () => {},
-      changePassword: async () => {},
-      logout: async () => {},
-      isSupabaseConfigured: true,
-    };
-  }
-  return ctx;
+  return useContext(AuthContext) ?? NO_AUTH;
 }

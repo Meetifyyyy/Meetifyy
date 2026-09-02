@@ -8,4 +8,4 @@
 export {
   DEFAULT_ACTIVITY_COVERS,
   getDefaultActivityCover,
-} from '../constants/presetMedia';
+} from '../constants/activityCovers';

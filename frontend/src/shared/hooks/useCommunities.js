@@ -7,7 +7,7 @@
  * on next visit before the network response arrives.
  */
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect } from 'react';
 import { communitiesApi } from '@shared/api/apiClient';
 import { idbGet, idbSet, idbDelete } from '@shared/lib/idb';
 import { useAuth } from '@shared/context/AuthContext';
@@ -18,6 +18,73 @@ export const COMMUNITY_KEYS = {
   campus: ['communities', 'campus'],
   byId:   (id) => ['community', id],
 };
+
+/**
+ * The de-duplicated list and the id lookup, derived once per API response.
+ *
+ * These were two `useMemo`s inside the hook, so every caller kept its own copy
+ * and rebuilt both whenever the community list changed. The hook is called by
+ * every post card on screen and every node in a comment thread, so a single
+ * refresh of the community list rebuilt the same map dozens of times over and
+ * handed each consumer a *different* object — which then failed the identity
+ * check of anything memoising downstream of it.
+ *
+ * A WeakMap keyed on the response array gives everyone the same two values and
+ * lets them be collected with it.
+ *
+ * The list is de-duplicated by id deliberately. It used to be a hybrid array
+ * that ALSO had each community assigned onto it under its own id
+ * (`arr[c.id] = c`), so `Object.values()` returned every community twice — once
+ * for its numeric index and once for its id key — which is what made the
+ * Discover Communities card render each entry twice. The two access patterns
+ * are separate values now, so neither can corrupt the other.
+ */
+const derivedCache = new WeakMap();
+const EMPTY_DERIVED = Object.freeze({ communities: Object.freeze([]), communitiesById: Object.freeze({}) });
+
+function deriveCommunities(data) {
+  if (!Array.isArray(data)) return EMPTY_DERIVED;
+  const cached = derivedCache.get(data);
+  if (cached) return cached;
+
+  const byId = new Map();
+  for (const c of data) {
+    if (c && typeof c === 'object' && c.id) byId.set(c.id, c);
+  }
+  const communities = Array.from(byId.values());
+  const communitiesById = {};
+  for (const c of communities) communitiesById[c.id] = c;
+
+  const derived = { communities, communitiesById };
+  derivedCache.set(data, derived);
+  return derived;
+}
+
+/**
+ * One IndexedDB read per cache entry, however many components ask for it.
+ *
+ * Cleared once it resolves so a later mount (after the entry was invalidated
+ * and dropped) can hydrate again rather than replaying a stale promise.
+ */
+const idbHydrations = new Map();
+
+function hydrateFromIdb(queryClient, idbKey, queryKey) {
+  let pending = idbHydrations.get(idbKey);
+  if (!pending) {
+    pending = idbGet('communities', idbKey)
+      .then((cached) => {
+        // Only seed a cache that is still empty: a network response that landed
+        // while this read was in flight is newer than what IndexedDB holds.
+        if (cached?.value && queryClient.getQueryData(queryKey) === undefined) {
+          queryClient.setQueryData(queryKey, cached.value);
+        }
+      })
+      .catch(() => {})
+      .finally(() => idbHydrations.delete(idbKey));
+    idbHydrations.set(idbKey, pending);
+  }
+  return pending;
+}
 
 // ── Hooks ────────────────────────────────────────────────────────────────────
 
@@ -43,16 +110,17 @@ export function useCommunities() {
     placeholderData: (prev) => prev,
   });
 
-  // Hydrate from IndexedDB before first network response
+  // Hydrate from IndexedDB before first network response.
+  //
+  // Deduped across hook instances. This hook is called by every <Post> on
+  // screen and every <CommentNode> in a thread — 60+ callers on a busy post —
+  // and each one used to fire its own `idbGet` on mount, so a cold open queued
+  // dozens of identical IndexedDB reads for one cache entry. The shared promise
+  // means one read, whoever asks first, with the rest awaiting the same result.
   const queryClient = useQueryClient();
   useEffect(() => {
-    if (!query.data) {
-      idbGet('communities', 'all').then((cached) => {
-        if (cached?.value) {
-          queryClient.setQueryData(qk, cached.value);
-        }
-      });
-    }
+    if (query.data) return;
+    hydrateFromIdb(queryClient, 'all', qk);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -68,21 +136,10 @@ export function useCommunities() {
   // other. The id de-duplication is belt-and-braces: it guarantees the list is
   // unique even if a future endpoint or an optimistic update ever emits a
   // repeated row.
-  const communities = useMemo(() => {
-    const rows = Array.isArray(query.data) ? query.data : [];
-    const byId = new Map();
-    for (const c of rows) {
-      if (c && typeof c === 'object' && c.id) byId.set(c.id, c);
-    }
-    return Array.from(byId.values());
-  }, [query.data]);
-
-  /** Lookup map for `communitiesById[id]` reads. */
-  const communitiesById = useMemo(() => {
-    const map = {};
-    for (const c of communities) map[c.id] = c;
-    return map;
-  }, [communities]);
+  // Derived once per distinct API response and shared by every caller — see
+  // deriveCommunities. Both values keep their identity as long as the
+  // underlying data does, so a consumer that memoises on them stays memoised.
+  const { communities, communitiesById } = deriveCommunities(query.data);
 
   return {
     communities,
@@ -118,11 +175,8 @@ export function useCampusCommunities(search = '') {
 
   const queryClient = useQueryClient();
   useEffect(() => {
-    if (!normSearch && !query.data) {
-      idbGet('communities', 'campus').then((cached) => {
-        if (cached?.value) queryClient.setQueryData(COMMUNITY_KEYS.campus, cached.value);
-      });
-    }
+    if (normSearch || query.data) return;
+    hydrateFromIdb(queryClient, 'campus', COMMUNITY_KEYS.campus);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

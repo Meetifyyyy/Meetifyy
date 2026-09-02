@@ -1,4 +1,4 @@
-import { useState, useEffect, memo, useCallback } from 'react';
+import { useState, useEffect, memo, useMemo, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { isImageUrl } from '@shared/utils/avatar';
 import { sanitizeUrl } from '@shared/utils/urlSanitize';
@@ -12,14 +12,12 @@ import { useCommunities } from '@shared/hooks/useCommunities';
 import { timeAgo } from '@shared/utils/time';
 import styles from './Post.module.css';
 import PostActions from './PostActions';
-import SharePostModal from '../modals/SharePostModal';
-import { useMediaViewer } from '@shared/context/MediaViewerContext';
+import { useMediaViewerActions } from '@shared/context/MediaViewerContext';
 import ConfirmModal from '@shared/components/modals/ConfirmModal';
 import ReportModal from '@shared/components/modals/ReportModal/ReportModal';
 import MediaGrid from './MediaGrid';
 import { useDeletePost } from '../../hooks/useDeletePost';
 import { useVotePoll } from '../../hooks/useVotePoll';
-import { toggleRegistry } from '@shared/utils/mutationRegistry';
 import { getMediaUrl } from '@shared/api/apiClient';
 
 function PollCard({ poll, postId }) {
@@ -128,9 +126,8 @@ function PollCard({ poll, postId }) {
 function Post({ postData, onClick, onDeleted, isDetailed = false, hideCommunityTag = false }) {
   const { currentUser } = useAuth();
   const { communitiesById } = useCommunities();
-  const { openViewer } = useMediaViewer();
+  const { openViewer } = useMediaViewerActions();
   const [showMenu, setShowMenu] = useState(false);
-  const [showShareModal, setShowShareModal] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
 
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -158,11 +155,63 @@ function Post({ postData, onClick, onDeleted, isDetailed = false, hideCommunityT
     return () => window.removeEventListener('close-all-post-menus', handleCloseOthers);
   }, [id]);
 
+  const { authorId, time, text, mentions, poll } = postData || {};
+
+  /**
+   * Normalise and clip once per render, not twice.
+   *
+   * The text block and the media block below both needed the answer to "is this
+   * body long enough to collapse?", and each computed it from scratch — so
+   * `normalizeBodyText` + `truncateBodyText` ran twice over every post body on
+   * every render, and the media block threw its copy away after reading one
+   * boolean off it.
+   */
+  const body = useMemo(() => {
+    if (!text) return null;
+    const normalized = normalizeBodyText(text);
+    return { normalized, clip: truncateBodyText(normalized, POST_LIMITS) };
+  }, [text]);
+
+  const author = useMemo(
+    () => postData?.author || { id: authorId, displayName: 'User', username: 'user', avatar: null },
+    [postData?.author, authorId],
+  );
+
+  const handleCardClick = useCallback(() => {
+    if (isDetailed) return;
+    if (onClick) onClick(postData);
+  }, [isDetailed, onClick, postData]);
+
+  /**
+   * Stable, so the memo on <PostActions> can actually hold.
+   *
+   * This was an inline arrow, which meant PostActions received a brand-new
+   * `onCommentClick` on every render of this card and re-rendered its four
+   * buttons and their SVGs every time — `memo(PostActions)` never once bailed.
+   */
+  const handleCommentClick = useCallback(() => {
+    if (onClick) onClick(postData);
+  }, [onClick, postData]);
+
+  /**
+   * Also stable, for the same reason: MediaGrid is memoised and an inline
+   * handler defeated it.
+   */
+  const handleMediaClick = useCallback((items, index) => {
+    openViewer(items, index, {
+      authorName: author.displayName,
+      authorAvatar: author.avatar,
+      authorUsername: author.username,
+      timestamp: postData.createdAt ? new Date(postData.createdAt).toLocaleString() : time,
+      source: 'Post',
+      isOwner: currentUser?.id === authorId,
+      post: postData,
+      author,
+    });
+  }, [openViewer, author, postData, time, currentUser?.id, authorId]);
+
+  // Every hook is above this line; the guard cannot change hook order.
   if (!postData) return null;
-
-  const { authorId, time, text, mentions, poll } = postData;
-
-  const author = postData.author || { id: authorId, displayName: 'User', username: 'user', avatar: null };
 
   const isOwnPost = Boolean(currentUser && authorId === currentUser.id);
 
@@ -206,10 +255,6 @@ function Post({ postData, onClick, onDeleted, isDetailed = false, hideCommunityT
 
   const exactTimeStr = postData.createdAt ? formatExactDate(postData.createdAt) : time;
 
-  const handleCardClick = () => {
-    if (isDetailed) return;
-    if (onClick) onClick(postData);
-  };
 
   // The post now carries its own community from the API, which is the only
   // source that is always right. `communitiesById` is a fallback for cached
@@ -338,9 +383,8 @@ function Post({ postData, onClick, onDeleted, isDetailed = false, hideCommunityT
         </div>
       </div>
 
-      {text && (() => {
-        const normalizedText = normalizeBodyText(text);
-        const clip = truncateBodyText(normalizedText, POST_LIMITS);
+      {body && (() => {
+        const { normalized: normalizedText, clip } = body;
         // The detail page is the place the whole post is meant to be read, so
         // nothing is clipped there however long it runs.
         const needsTruncation = clip.needsTruncation && !isDetailed;
@@ -373,27 +417,14 @@ function Post({ postData, onClick, onDeleted, isDetailed = false, hideCommunityT
         // Media stays hidden while the body is clipped, so a collapsed post is
         // one compact block rather than three lines of text above a full-size
         // image. Same rule as the text above it, from the same helper.
-        const needsTruncation =
-          truncateBodyText(normalizeBodyText(text), POST_LIMITS).needsTruncation && !isDetailed;
+        const needsTruncation = Boolean(body?.clip.needsTruncation) && !isDetailed;
         const showMedia = !needsTruncation || isExpanded;
         return (
           <div className={`${styles.collapsibleMedia} ${showMedia ? styles.expanded : ''}`}>
             {postData.media && (
               <MediaGrid
                 media={postData.media}
-                onMediaClick={(items, index) => {
-                  const meta = {
-                    authorName: author.displayName,
-                    authorAvatar: author.avatar,
-                    authorUsername: author.username,
-                    timestamp: postData.createdAt ? new Date(postData.createdAt).toLocaleString() : time,
-                    source: 'Post',
-                    isOwner: currentUser?.id === authorId,
-                    post: postData,
-                    author,
-                  };
-                  openViewer(items, index, meta);
-                }}
+                onMediaClick={handleMediaClick}
               />
             )}
             {postData.linkPreview && (
@@ -440,9 +471,7 @@ function Post({ postData, onClick, onDeleted, isDetailed = false, hideCommunityT
       <PostActions
         post={postData}
         authorOverride={author}
-        onCommentClick={() => {
-          if (onClick) onClick(postData);
-        }}
+        onCommentClick={handleCommentClick}
       />
 
       {showDeleteConfirm && (
@@ -508,10 +537,73 @@ function arePostPropsEqual(prevProps, nextProps) {
   if (prev.isLiked !== next.isLiked || prev.hasLiked !== next.hasLiked || prev.isLikedByMe !== next.isLikedByMe) return false;
   if (prev.isBookmarked !== next.isBookmarked || prev.hasBookmarked !== next.hasBookmarked) return false;
   if (prev.updatedAt !== next.updatedAt) return false;
-  if (prev.poll !== next.poll && JSON.stringify(prev.poll) !== JSON.stringify(next.poll)) return false;
-  if (prev.media !== next.media && JSON.stringify(prev.media) !== JSON.stringify(next.media)) return false;
-  if (prev.author !== next.author && JSON.stringify(prev.author) !== JSON.stringify(next.author)) return false;
+  // `JSON.stringify` used to decide these three.
+  //
+  // It is correct but it is the most expensive thing this comparator could do,
+  // and it runs on the render path: a refetch replaces every post object, so a
+  // window-focus revalidation serialised the media list, the poll and the
+  // author of every card on screen — and did it again on the next commit. The
+  // field-level comparisons below answer the same question by reading the
+  // handful of properties this card actually renders.
+  if (!sameMedia(prev.media, next.media)) return false;
+  if (!samePoll(prev.poll, next.poll)) return false;
+  if (!sameAuthor(prev.author, next.author)) return false;
   return true;
+}
+
+/** The media properties MediaGrid lays out and loads. */
+function sameMedia(a, b) {
+  if (a === b) return true;
+  const listA = Array.isArray(a) ? a : [];
+  const listB = Array.isArray(b) ? b : [];
+  if (listA.length !== listB.length) return false;
+  for (let i = 0; i < listA.length; i++) {
+    const x = listA[i] || {};
+    const y = listB[i] || {};
+    if (x === y) continue;
+    if (x.url !== y.url || x.thumb !== y.thumb || x.type !== y.type
+      || x.width !== y.width || x.height !== y.height
+      || x.aspectRatio !== y.aspectRatio) return false;
+  }
+  return true;
+}
+
+/** The poll properties PollCard renders — options, their counts and the vote. */
+function samePoll(a, b) {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  if (a.multiSelect !== b.multiSelect) return false;
+  if (a.totalVotes !== b.totalVotes) return false;
+  if (a.votedOptionIndex !== b.votedOptionIndex) return false;
+  if (a.userVotedOptionId !== b.userVotedOptionId) return false;
+  // `myVotes`/`selectedUsers` decide whether results are shown at all, so a
+  // change to either has to re-render even when the totals happen to match.
+  if (a.myVotes !== b.myVotes) return false;
+  if (a.selectedUsers !== b.selectedUsers) return false;
+  const optsA = Array.isArray(a.options) ? a.options : [];
+  const optsB = Array.isArray(b.options) ? b.options : [];
+  if (optsA.length !== optsB.length) return false;
+  for (let i = 0; i < optsA.length; i++) {
+    const x = optsA[i];
+    const y = optsB[i];
+    if (x === y) continue;
+    if (typeof x !== 'object' || typeof y !== 'object' || !x || !y) return false;
+    if (x.id !== y.id || x.text !== y.text || x.label !== y.label
+      || x.votes !== y.votes || x.voteCount !== y.voteCount) return false;
+  }
+  return true;
+}
+
+/** The author fields this card puts on screen. */
+function sameAuthor(a, b) {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return a.id === b.id
+    && a.displayName === b.displayName
+    && a.username === b.username
+    && a.avatar === b.avatar
+    && a.collegeId === b.collegeId
+    && a.isCampusRep === b.isCampusRep;
 }
 
 export default memo(Post, arePostPropsEqual);

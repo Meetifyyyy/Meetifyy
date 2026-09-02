@@ -459,7 +459,7 @@ const EMPTY_DATE_TIME = {
   endDateYear: null, endDateMonth: null, endDateDay: null,
   endTimeHour: '', endTimeMinute: '', endTimeAmPm: '',
 };
-import { DEFAULT_ACTIVITY_COVERS as RANDOM_COVERS } from '@shared/constants/presetMedia';
+import { DEFAULT_ACTIVITY_COVERS as RANDOM_COVERS } from '@shared/constants/activityCovers';
 import { getProcessedAvatarUrl } from '@shared/components/avatar/Avatar';
 
 /**

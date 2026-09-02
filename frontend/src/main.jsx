@@ -9,7 +9,7 @@ import { ThemeProvider } from './shared/context/ThemeContext';
 import App from './App.jsx';
 import { MediaViewerProvider } from './shared/context/MediaViewerContext';
 import { UsersMapProvider } from './shared/hooks/useUsersMap';
-import MediaViewer from './shared/components/MediaViewer/MediaViewer';
+import MediaViewerHost from './shared/components/MediaViewer/MediaViewerHost';
 import { config } from '@config';
 import { isNonProductionHost } from './config/deploymentEnv';
 import { Analytics } from '@vercel/analytics/react';
@@ -180,7 +180,7 @@ createRoot(document.getElementById('root')).render(
                   }}
                 />
                 <App />
-                <MediaViewer />
+                <MediaViewerHost />
                 <VercelInsights />
               </UsersMapProvider>
             </MediaViewerProvider>

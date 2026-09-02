@@ -29,7 +29,7 @@ import CommunityMembersModal from '../modals/CommunityMembersModal';
 import CommunityAdminModal from '../modals/CommunityAdminModal';
 import ConfirmModal from '@shared/components/modals/ConfirmModal';
 import styles from './CommunityView.module.css';
-import { useMediaViewer } from '@shared/context/MediaViewerContext';
+import { useMediaViewerActions } from '@shared/context/MediaViewerContext';
 import { useJoinCommunity } from '../../hooks/useJoinCommunity';
 import { useCommunityById } from '@shared/hooks/useCommunities';
 import { toggleRegistry } from '@shared/utils/mutationRegistry';
@@ -64,7 +64,7 @@ function HeroSection({ comm, onlineNow, joined, joining, onToggleJoin, onCreateP
   const navigate = useNavigate();
   const users = useUsersMap();
   const { currentUser } = useAuth();
-  const { openViewer } = useMediaViewer();
+  const { openViewer } = useMediaViewerActions();
   const coverInputRef = useRef(null);
   const avatarInputRef = useRef(null);
   const [showDropdown, setShowDropdown] = useState(false);

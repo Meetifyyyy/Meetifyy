@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { Outlet, useNavigate, useMatches } from 'react-router-dom';
 import { useAuth } from '@shared/context/AuthContext';
 import Background from '@shared/components/ui/Background';
@@ -8,11 +8,18 @@ import DashboardLayout from './DashboardLayout';
 import BottomNav from './BottomNav';
 import { InstantMatchProvider } from '@features/instant-match/context/InstantMatchContext';
 import InstantMatchFAB from '@features/instant-match/components/InstantMatchFAB';
-import InstantMatchSheet from '@features/instant-match/components/InstantMatchSheet';
-import MatchPopup from '@features/instant-match/components/match/MatchPopup';
 import InstantMatchChat from '@features/instant-match/components/chat/InstantMatchChat';
 import { useAutoHideChrome } from '@shared/hooks/useAutoHideChrome';
 import { VerificationModal } from '@shared/components/VerificationGate';
+
+/**
+ * Both are overlays: the search sheet the FAB opens, and the popup that appears
+ * when a match lands. Neither is on screen at first paint, and between them
+ * they are ~600 lines, so they are fetched when they are first rendered rather
+ * than shipped in the entry chunk with the app shell.
+ */
+const InstantMatchSheet = lazy(() => import('@features/instant-match/components/InstantMatchSheet'));
+const MatchPopup = lazy(() => import('@features/instant-match/components/match/MatchPopup'));
 
 export default function DashboardLayoutWrapper() {
   const { currentUser } = useAuth();
@@ -127,8 +134,10 @@ export default function DashboardLayoutWrapper() {
       {isVerified && (
         <>
           <InstantMatchFAB />
-          <InstantMatchSheet />
-          <MatchPopup />
+          <Suspense fallback={null}>
+            <InstantMatchSheet />
+            <MatchPopup />
+          </Suspense>
           {/* The dedicated 24h conversation. Mounted at the shell so it can cover
               the app from anywhere, and so it survives navigation underneath it —
               it is not a route, because this chat has no place in the router's

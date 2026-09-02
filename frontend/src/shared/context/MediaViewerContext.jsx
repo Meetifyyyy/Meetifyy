@@ -1,12 +1,47 @@
-import { createContext, useContext, useState, useCallback, useRef } from 'react';
+import { createContext, useContext, useState, useCallback, useMemo, useRef } from 'react';
 import { getMediaUrl } from '@shared/api/apiClient';
 
-const MediaViewerContext = createContext(null);
+/**
+ * Two contexts, deliberately.
+ *
+ * The viewer's *state* changes every time it opens, closes or pages to the next
+ * image. Its *actions* never change. They used to live in one context value —
+ * a fresh object literal on every provider render — so every consumer woke up
+ * on every state change, including each of the ~16 <Post> cards on screen,
+ * which only ever wanted `openViewer`. Opening one image re-rendered the whole
+ * visible feed (measured: 16/16 posts, 22ms) and React.memo could not stop it,
+ * because a context read is not a prop.
+ *
+ * Splitting them means a component subscribes to exactly what it uses:
+ * `useMediaViewerActions()` never re-renders, `useMediaViewerState()` re-renders
+ * only the viewer itself.
+ */
+const MediaViewerStateContext = createContext(null);
+const MediaViewerActionsContext = createContext(null);
 
-export function useMediaViewer() {
-  const ctx = useContext(MediaViewerContext);
-  if (!ctx) throw new Error('useMediaViewer must be used inside MediaViewerProvider');
+/** Actions only — a stable value, so reading this never causes a re-render. */
+export function useMediaViewerActions() {
+  const ctx = useContext(MediaViewerActionsContext);
+  if (!ctx) throw new Error('useMediaViewerActions must be used inside MediaViewerProvider');
   return ctx;
+}
+
+/** State only — for the viewer itself. */
+export function useMediaViewerState() {
+  const ctx = useContext(MediaViewerStateContext);
+  if (!ctx) throw new Error('useMediaViewerState must be used inside MediaViewerProvider');
+  return ctx;
+}
+
+/**
+ * Both halves at once. Only the viewer component needs this; anything that just
+ * opens the viewer should use `useMediaViewerActions()` so it is not woken by
+ * state it does not read.
+ */
+export function useMediaViewer() {
+  const state = useMediaViewerState();
+  const actions = useMediaViewerActions();
+  return useMemo(() => ({ state, ...actions }), [state, actions]);
 }
 
 /**
@@ -63,9 +98,18 @@ export function MediaViewerProvider({ children }) {
     });
   }, []);
 
+  // All three callbacks are `useCallback`-stable and the ref is an identity, so
+  // this object is created once for the life of the provider.
+  const actions = useMemo(
+    () => ({ openViewer, closeViewer, navigate, savedScrollRef }),
+    [openViewer, closeViewer, navigate],
+  );
+
   return (
-    <MediaViewerContext.Provider value={{ state, openViewer, closeViewer, navigate, savedScrollRef }}>
-      {children}
-    </MediaViewerContext.Provider>
+    <MediaViewerActionsContext.Provider value={actions}>
+      <MediaViewerStateContext.Provider value={state}>
+        {children}
+      </MediaViewerStateContext.Provider>
+    </MediaViewerActionsContext.Provider>
   );
 }

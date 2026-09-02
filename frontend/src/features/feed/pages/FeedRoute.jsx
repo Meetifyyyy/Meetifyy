@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Feed from '../components/Feed';
 import RightPanel, { NotificationsActivity, OnlineFriends, UpcomingEvents } from '@layout/RightPanel';

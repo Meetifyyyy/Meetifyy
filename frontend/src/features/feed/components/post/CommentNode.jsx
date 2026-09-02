@@ -10,7 +10,7 @@
  * - All other data flow, props, and state management unchanged
  */
 
-import { useState, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useContext, createContext } from 'react';
+import { useState, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useContext, createContext, useSyncExternalStore, memo } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { showToast } from '@shared/utils/toast';
@@ -35,16 +35,139 @@ import { createPortal } from 'react-dom';
 
 
 // ─── Shared tree context ─────────────────────────────────────────────────────
-const TreeDensityContext = createContext({
+//
+// Split in two, deliberately.
+//
+// There used to be ONE context carrying the tier, the expanded map, the active
+// reply id and the active menu id together. Every node read it, so opening one
+// reply box — or one ⋮ menu, or collapsing one thread — published a new context
+// value to all of them and re-rendered the whole thread. Measured on a 60-node
+// thread: 61/61 comment bodies re-rendered, 44ms, for a state change that
+// concerns exactly one node.
+//
+// `TreeActionsContext` holds the callbacks and the tier. The callbacks are all
+// `useCallback`-stable and the tier only moves when the visible node count
+// crosses a density threshold, so reading it is nearly free.
+//
+// The three per-node flags are NOT in a context at all. They live in a small
+// external store that each node subscribes to for its own id only, via
+// `useSyncExternalStore`. Setting `activeReplyId` from A to B notifies A and B
+// and nobody else — React re-renders precisely the two nodes whose answer
+// actually changed.
+const TreeActionsContext = createContext({
   tier: 'small',
-  expandedMap: {},
   toggleExpanded: () => {},
   expand: () => {},
-  activeReplyId: null,
-  activeMenuId: null,
   setActiveMenuId: () => {},
   setActiveReplyId: () => {},
 });
+
+const TreeSelectionContext = createContext(null);
+
+/**
+ * Per-node UI selection for one comment tree.
+ *
+ * Deliberately not React state: a node must be able to ask "am I the open
+ * reply box?" without every other node being told the answer changed.
+ * Subscribers are keyed by comment id and notified only when their own slice
+ * moves.
+ */
+function createSelectionStore() {
+  let expandedMap = {};
+  let activeReplyId = null;
+  let activeMenuId = null;
+  const listeners = new Map(); // commentId -> Set<fn>
+  const rootListeners = new Set(); // notified when the expanded map changes
+  // Snapshots must be referentially stable between notifications or
+  // useSyncExternalStore loops. One cached object per comment id, replaced only
+  // when that node's own flags actually change.
+  const snapshots = new Map();
+
+  const computeSnapshot = (id) => ({
+    isExpanded: expandedMap[id] !== false,
+    isReplying: activeReplyId === id,
+    isMenuOpen: activeMenuId === id,
+  });
+
+  const notify = (ids) => {
+    for (const id of ids) {
+      const subs = listeners.get(id);
+      if (!subs || subs.size === 0) { snapshots.delete(id); continue; }
+      const next = computeSnapshot(id);
+      const prev = snapshots.get(id);
+      if (prev
+        && prev.isExpanded === next.isExpanded
+        && prev.isReplying === next.isReplying
+        && prev.isMenuOpen === next.isMenuOpen) continue;
+      snapshots.set(id, next);
+      for (const fn of subs) fn();
+    }
+  };
+
+  // The root recomputes its density tier from the expanded map, so it is told
+  // when that map moves — but only then, not on reply/menu changes.
+  const notifyRoot = () => { for (const fn of rootListeners) fn(); };
+
+  return {
+    subscribe(id, fn) {
+      let subs = listeners.get(id);
+      if (!subs) { subs = new Set(); listeners.set(id, subs); }
+      subs.add(fn);
+      return () => {
+        subs.delete(fn);
+        if (subs.size === 0) { listeners.delete(id); snapshots.delete(id); }
+      };
+    },
+    getSnapshot(id) {
+      let snap = snapshots.get(id);
+      if (!snap) { snap = computeSnapshot(id); snapshots.set(id, snap); }
+      return snap;
+    },
+    subscribeExpanded(fn) { rootListeners.add(fn); return () => rootListeners.delete(fn); },
+    getExpandedMap() { return expandedMap; },
+
+    toggleExpanded(id, currentVal) {
+      expandedMap = { ...expandedMap, [id]: !currentVal };
+      notify([id]);
+      notifyRoot();
+    },
+    expand(id) {
+      if (expandedMap[id] === true) return;
+      expandedMap = { ...expandedMap, [id]: true };
+      notify([id]);
+      notifyRoot();
+    },
+    expandAll(ids) {
+      const missing = ids.filter((id) => expandedMap[id] !== true);
+      if (missing.length === 0) return;
+      const next = { ...expandedMap };
+      for (const id of missing) next[id] = true;
+      expandedMap = next;
+      notify(missing);
+      notifyRoot();
+    },
+    setActiveReplyId(id) {
+      if (activeReplyId === id) return;
+      const touched = [activeReplyId, id].filter(Boolean);
+      activeReplyId = id;
+      notify(touched);
+    },
+    setActiveMenuId(id) {
+      if (activeMenuId === id) return;
+      const touched = [activeMenuId, id].filter(Boolean);
+      activeMenuId = id;
+      notify(touched);
+    },
+  };
+}
+
+/** Subscribe to one comment's own selection flags, and nothing else. */
+function useNodeSelection(commentId) {
+  const store = useContext(TreeSelectionContext);
+  const subscribe = useCallback((fn) => store.subscribe(commentId, fn), [store, commentId]);
+  const getSnapshot = useCallback(() => store.getSnapshot(commentId), [store, commentId]);
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+}
 
 function countVisibleNodes(comment, expandedMap) {
   let count = 1;
@@ -67,80 +190,70 @@ function findAncestorsOf(comments, targetId, path = []) {
 
 // ─── Root wrapper ─────────────────────────────────────────────────────────────
 export function CommentTreeRoot({ postId, comments, onReplySubmit }) {
-  const [expandedMap, setExpandedMap] = useState({});
-  /**
-   * Which comment's reply box is open — at most one, for the whole tree.
-   *
-   * Each node used to own an `isReplying` boolean, so every Reply button opened
-   * another composer and left the previous ones behind. A deep thread could end
-   * up with several open at once, each with its own draft and its own Comment
-   * button, and no indication which one a keystroke was going to.
-   */
-  const [activeReplyId, setActiveReplyId] = useState(null);
-  // At most one ⋮ menu open across the whole tree, for the same reason there is
-  // at most one reply box: the menus are per-node local state, so opening one
-  // never closed another and two (or ten) could sit open at once — see the
-  // screenshot that prompted this. Owning it here makes "another one opened"
-  // and "this one closed" the same event.
-  const [activeMenuId, setActiveMenuId] = useState(null);
+  // One store per mounted tree. Its contents are UI selection, not data, so it
+  // is deliberately not part of the render cycle — see createSelectionStore.
+  const storeRef = useRef(null);
+  if (storeRef.current === null) storeRef.current = createSelectionStore();
+  const store = storeRef.current;
+
+  // The density tier is the one thing the root itself derives from the expanded
+  // map, so it subscribes to that map alone — reply boxes and ⋮ menus opening
+  // no longer re-render the root (and therefore no longer re-render the tree).
+  const expandedMap = useSyncExternalStore(store.subscribeExpanded, store.getExpandedMap, store.getExpandedMap);
 
   useEffect(() => {
-    if (window.location.hash.startsWith('#comment-')) {
-      const targetId = window.location.hash.replace('#comment-', '');
-      const ancestors = findAncestorsOf(comments, targetId);
-      if (ancestors && ancestors.length > 0) {
-        setExpandedMap(prev => {
-          const next = { ...prev };
-          ancestors.forEach(id => { next[id] = true; });
-          return next;
-        });
-        setTimeout(() => {
-          const el = document.getElementById(`comment-${targetId}`);
-          if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        }, 300); // Wait for expand animation
-      } else {
-        setTimeout(() => {
-          const el = document.getElementById(`comment-${targetId}`);
-          if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        }, 100);
-      }
+    if (!window.location.hash.startsWith('#comment-')) return;
+    const targetId = window.location.hash.replace('#comment-', '');
+    const ancestors = findAncestorsOf(comments, targetId);
+    const scrollToTarget = () => {
+      const el = document.getElementById(`comment-${targetId}`);
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    };
+    if (ancestors && ancestors.length > 0) {
+      store.expandAll(ancestors);
+      const t = setTimeout(scrollToTarget, 300); // wait for the expand animation
+      return () => clearTimeout(t);
     }
-  }, [comments]);
+    const t = setTimeout(scrollToTarget, 100);
+    return () => clearTimeout(t);
+  }, [comments, store]);
 
-  const toggleExpanded = useCallback((id, currentVal) => {
-    setExpandedMap(prev => ({ ...prev, [id]: !currentVal }));
-  }, []);
-
-  // Nested threads are collapsed by default, so a reply posted to one landed
-  // somewhere the author could not see and read as "nothing happened". Whoever
-  // just replied gets that thread opened for them.
-  const expand = useCallback((id) => {
-    setExpandedMap(prev => (prev[id] === true ? prev : { ...prev, [id]: true }));
-  }, []);
-
-  const totalVisible = comments.reduce((acc, c) => acc + countVisibleNodes(c, expandedMap), 0);
+  const totalVisible = useMemo(
+    () => comments.reduce((acc, c) => acc + countVisibleNodes(c, expandedMap), 0),
+    [comments, expandedMap],
+  );
   const tier = totalVisible <= 5 ? 'small' : totalVisible <= 15 ? 'medium' : 'large';
 
-  const treeContext = useMemo(
-    () => ({ tier, expandedMap, toggleExpanded, expand, activeReplyId, setActiveReplyId, activeMenuId, setActiveMenuId }),
-    [tier, expandedMap, toggleExpanded, expand, activeReplyId, activeMenuId],
+  // Only `tier` ever moves here; the four callbacks are the store's own methods,
+  // which are fixed for the life of the store.
+  const treeActions = useMemo(
+    () => ({
+      tier,
+      toggleExpanded: store.toggleExpanded,
+      expand: store.expand,
+      setActiveReplyId: store.setActiveReplyId,
+      setActiveMenuId: store.setActiveMenuId,
+    }),
+    [tier, store],
   );
 
   return (
-    <TreeDensityContext.Provider value={treeContext}>
-      <div className={`${styles.treeRoot} ${styles[`density_${tier}`]}`}>
-        {comments.map((comment, idx) => (
-          <CommentNode
-            key={comment.id}
-            postId={postId}
-            comment={comment}
-            onReplySubmit={onReplySubmit}
-            level={0}
-            isLastSibling={idx === comments.length - 1}
-          />
-        ))}
-      </div>
-    </TreeDensityContext.Provider>
+    <TreeSelectionContext.Provider value={store}>
+      <TreeActionsContext.Provider value={treeActions}>
+        <div className={`${styles.treeRoot} ${styles[`density_${tier}`]}`}>
+          {comments.map((comment, idx) => (
+            <CommentNode
+              key={comment.id}
+              postId={postId}
+              comment={comment}
+              onReplySubmit={onReplySubmit}
+              level={0}
+              isLastSibling={idx === comments.length - 1}
+            />
+          ))}
+        </div>
+      </TreeActionsContext.Provider>
+    </TreeSelectionContext.Provider>
   );
 }
 
@@ -284,7 +397,7 @@ function ConnectorSVG({ nodeContainerRef, avatarRef, repliesContainerRef, isHigh
 }
 
 // ─── CommentNode ──────────────────────────────────────────────────────────────
-export default function CommentNode({
+function CommentNodeImpl({
   postId,
   comment,
   onReplySubmit,
@@ -315,9 +428,12 @@ export default function CommentNode({
   const { communitiesById } = useCommunities();
   const { mutate: deleteCommentMutate } = useDeleteComment();
   const { mutate: toggleLike, isLoading: isLiking } = useLikeComment();
-  const { tier, expandedMap, toggleExpanded, expand, activeReplyId, setActiveReplyId, activeMenuId, setActiveMenuId } = useContext(TreeDensityContext);
+  const { tier, toggleExpanded, expand, setActiveReplyId, setActiveMenuId } = useContext(TreeActionsContext);
+  // This node's own three flags, and only this node's — a sibling opening its
+  // reply box or its menu does not notify this subscription.
+  const { isExpanded: isExpandedFlag, isReplying, isMenuOpen } = useNodeSelection(comment.id);
 
-  const showMenu = activeMenuId === comment.id;
+  const showMenu = isMenuOpen;
   const setShowMenu = useCallback(
     (next) => setActiveMenuId(next ? comment.id : null),
     [setActiveMenuId, comment.id],
@@ -429,10 +545,6 @@ export default function CommentNode({
     };
   }, [showMenu, setShowMenu]);
 
-  // At most one reply box is open across the whole tree, so this is derived
-  // rather than owned. Opening another node's box closes this one by definition.
-  const isReplying = activeReplyId === comment.id;
-
   // Drop the draft whenever the box closes, however it closed — Cancel, a
   // successful submit, or another node taking over. Without this a half-typed
   // reply reappeared the next time the box was reopened.
@@ -485,8 +597,8 @@ export default function CommentNode({
   // a reply was invisible until someone thought to go looking.
   //
   // Collapsing is now a deliberate act, so only an explicit `false` hides
-  // anything.
-  const isExpanded = expandedMap[comment.id] !== false;
+  // anything. (The store applies that rule; this is its answer for this node.)
+  const isExpanded = isExpandedFlag;
 
   // Only a thread's root carries a collapse control. Collapsing the root
   // collapses its whole subtree in one move (the replies grid contains every
@@ -979,28 +1091,64 @@ export default function CommentNode({
         </div>
       )}
 
-      <ConfirmModal
-        visible={confirmRemove}
-        title="Delete this comment?"
-        desc={`This deletes ${author.displayName || author.username || 'this member'}'s comment. They'll be notified that a moderator deleted it. Replies stay in the thread.`}
-        confirmText="Delete"
-        cancelText="Cancel"
-        isDestructive
-        onCancel={() => setConfirmRemove(false)}
-        onConfirm={() => { setConfirmRemove(false); runDelete(); }}
-      />
+      {/*
+        * Both dialogs are mounted only while they are open.
+        *
+        * They used to be rendered unconditionally by every node and return null
+        * from inside. That is not free: ReportModal builds a react-hook-form
+        * instance with a zod resolver, a report mutation and two overlay hooks
+        * BEFORE its `if (!isOpen) return null`, so a 60-comment thread carried
+        * 60 live form instances for dialogs nobody had opened (measured). The
+        * dialogs render and behave identically; they simply do not exist until
+        * something asks for them.
+        */}
+      {confirmRemove && (
+        <ConfirmModal
+          visible={confirmRemove}
+          title="Delete this comment?"
+          desc={`This deletes ${author.displayName || author.username || 'this member'}'s comment. They'll be notified that a moderator deleted it. Replies stay in the thread.`}
+          confirmText="Delete"
+          cancelText="Cancel"
+          isDestructive
+          onCancel={() => setConfirmRemove(false)}
+          onConfirm={() => { setConfirmRemove(false); runDelete(); }}
+        />
+      )}
 
-      <ReportModal
-        isOpen={showReportModal}
-        onClose={() => setShowReportModal(false)}
-        targetType="COMMENT"
-        targetId={comment.id}
-        targetPreview={comment.text?.slice(0, 80)}
-        targetName={author?.displayName || author?.username}
-        targetAvatar={author?.avatar}
-        reportedFrom="comment"
-        onSubmitted={() => setHasReported(true)}
-      />
+      {showReportModal && (
+        <ReportModal
+          isOpen={showReportModal}
+          onClose={() => setShowReportModal(false)}
+          targetType="COMMENT"
+          targetId={comment.id}
+          targetPreview={comment.text?.slice(0, 80)}
+          targetName={author?.displayName || author?.username}
+          targetAvatar={author?.avatar}
+          reportedFrom="comment"
+          onSubmitted={() => setHasReported(true)}
+        />
+      )}
     </div>
   );
 }
+
+/**
+ * The tree is recursive, so a node that re-renders re-renders its whole subtree.
+ *
+ * Note this is the binding `CommentTreeRoot` and the recursive `.map()`s below
+ * both render. Exporting `memo(CommentNodeImpl)` while the JSX inside this file
+ * still named the raw function would wrap only the tree's outermost use and
+ * leave every nested reply unmemoised — which is to say, it would do nothing.
+ * With the comment objects now keeping their identity across cache updates (see
+ * buildCommentTree) this memo is what actually stops a change to one comment
+ * from walking the entire thread: an unchanged node has an unchanged `comment`
+ * and the same `replies` array inside it, and bails.
+ *
+ * Default shallow comparison is exactly right here — every prop is either a
+ * primitive or an identity-stable object — so no custom comparator, and none of
+ * the deep-equality cost one would bring.
+ */
+const CommentNode = memo(CommentNodeImpl);
+CommentNode.displayName = 'CommentNode';
+
+export default CommentNode;
