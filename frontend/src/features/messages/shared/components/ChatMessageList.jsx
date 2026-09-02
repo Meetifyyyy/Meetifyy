@@ -6,6 +6,7 @@ import MessageBubble from './MessageBubble';
 import { usePostLookup } from '@shared/hooks/usePostLookup';
 import styles from './ChatMessageList.module.css';
 import { getMsgTimestamp, compareMessages } from '../utils/cacheUtils';
+import { createMessageHighlighter } from '../utils/messageHighlight';
 
 
 // ─── Date Group Helpers ──────────────────────────────────────────────────────
@@ -362,9 +363,53 @@ export default function ChatMessageList({
     prevScrollHeightRef.current = container.scrollHeight;
   }, [sortedMessages, isLoading, conversation?.id, conversation?.publicId, currentUser?.id]);
 
-  // ── RESIZE OBSERVER: compensate when images/media cause layout changes ───
-  // When the user is NOT at the bottom, height changes from media loading
-  // should shift the scrollTop so the viewport stays fixed.
+  // ── LATE CONTENT: keep the thread pinned while it settles ────────────────
+  //
+  // The initial scroll below runs in a layout effect, before paint, so the
+  // thread is at the bottom the first time it is drawn. It then drifted anyway,
+  // and the reason is that `scrollHeight` at that moment is not final: message
+  // images and videos carry no intrinsic dimensions until they load, and web
+  // fonts reflow the text. Each one that arrives grows the content BELOW the
+  // viewport, which is what produced the "opens near the top, then jumps"
+  // behaviour.
+  //
+  // The ResizeObserver further down cannot catch this. It observes the
+  // scroller, and the scroller is `flex: 1` inside a fixed-height column — its
+  // own box never changes when its CONTENT grows, so the callback simply does
+  // not run for the case it was written for.
+  //
+  // A capture-phase `load` listener does catch it: `load` does not bubble, but
+  // it does capture, so one listener on the container sees every image and
+  // video inside it finish. Re-pinning only while `isAtBottomRef` is true means
+  // this never fights a user who has scrolled up to read history.
+  useLayoutEffect(() => {
+    const container = bodyRef.current;
+    if (!container) return undefined;
+
+    const pinIfAtBottom = () => {
+      if (!hasScrolledInitialRef.current) return;
+      if (!isAtBottomRef.current) return;
+      container.scrollTop = container.scrollHeight + 10000;
+      prevScrollHeightRef.current = container.scrollHeight;
+    };
+
+    container.addEventListener('load', pinIfAtBottom, true);
+
+    // Fonts reflow every bubble at once and land after the first paint.
+    let cancelled = false;
+    if (typeof document !== 'undefined' && document.fonts?.ready) {
+      document.fonts.ready.then(() => { if (!cancelled) pinIfAtBottom(); }).catch(() => {});
+    }
+
+    return () => {
+      cancelled = true;
+      container.removeEventListener('load', pinIfAtBottom, true);
+    };
+  }, [conversation?.id, conversation?.publicId]);
+
+  // ── RESIZE OBSERVER: compensate when the VIEWPORT changes size ───────────
+  // Keyboard open/close, window resize, pane resize. Content growth is handled
+  // by the load listener above, for the reason given there.
   useLayoutEffect(() => {
     if (!bodyRef.current) return;
     const container = bodyRef.current;
@@ -419,12 +464,25 @@ export default function ChatMessageList({
         || container.querySelector(`[data-client-id="${safe}"]`);
   }, []);
 
+  /**
+   * One highlight at a time, for the life of this list.
+   *
+   * Held in a ref rather than created per call so that taking a new highlight
+   * releases the previous one, and so the pending timer can be cancelled. The
+   * old code created an untracked timer per flash: clicking two different reply
+   * previews left both messages glowing, and clicking the same one twice let
+   * the first timer clear the second highlight early.
+   */
+  const highlighterRef = useRef(null);
+  if (highlighterRef.current === null) {
+    highlighterRef.current = createMessageHighlighter({
+      className: styles.msgJumpHighlight,
+      durationMs: 1800,
+    });
+  }
+
   const flashMessage = useCallback((el) => {
-    el.classList.remove(styles.msgJumpHighlight);
-    // Reflow so the animation restarts when the same message is targeted twice.
-    void el.offsetWidth;
-    el.classList.add(styles.msgJumpHighlight);
-    window.setTimeout(() => el.classList.remove(styles.msgJumpHighlight), 1800);
+    highlighterRef.current.highlight(el);
   }, []);
 
   const scrollToEl = useCallback((el) => {
@@ -487,8 +545,15 @@ export default function ChatMessageList({
     requestOlder();
   }, [findMessageEl, scrollToEl]);
 
-  // Cancel any in-flight jump when the conversation changes.
-  useEffect(() => { jumpTokenRef.current += 1; }, [conversation?.id]);
+  // Cancel any in-flight jump when the conversation changes, and drop the
+  // highlight: the element it points at is about to be unmounted, and a timer
+  // that outlives it would call classList on a detached node.
+  useEffect(() => {
+    jumpTokenRef.current += 1;
+    highlighterRef.current?.clear();
+  }, [conversation?.id]);
+
+  useEffect(() => () => highlighterRef.current?.clear(), []);
 
   const handleScroll = useCallback(() => {
     const container = bodyRef.current;

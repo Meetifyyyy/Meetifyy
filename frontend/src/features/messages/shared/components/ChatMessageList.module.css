@@ -1,4 +1,15 @@
 .msgChatBody {
+  /*
+   * The one gap between messages, for every message type.
+   *
+   * Text, voice, media, shared cards, group invites and replies all render
+   * through the same `.msgBubbleContainer`, so declaring the value here and
+   * reading it there is what makes the rhythm uniform. Anything that needs
+   * different spacing should change this token, not add a margin of its own -
+   * a per-type margin is how the thread drifted out of step in the first place.
+   */
+  --msg-gap: 0.3rem;
+
   flex: 1;
   min-height: 0;
   overflow-y: auto;
@@ -28,7 +39,8 @@
   display: flex;
   flex-direction: column;
   position: relative;
-  margin-bottom: 0.3rem;
+  /* The single spacing unit. See --msg-gap on .msgChatBody. */
+  margin-bottom: var(--msg-gap, 0.3rem);
   flex-shrink: 0;
 }
 
@@ -1297,25 +1309,42 @@
  */
 .msgJumpHighlight {
   position: relative;
-  animation: msgJumpPulse 1.8s ease-out;
-  border-radius: 16px;
+}
 
-  /*
-   * Breathing room so the tint frames the message instead of hugging it. Every
-   * value is cancelled by an equal negative margin, because this class is added
-   * and removed while the thread is on screen — any net box change would jolt
-   * the scroll position at both ends of the 1.8s.
-   *
-   * `.msgBubbleContainer` sets `margin-bottom: 0.3rem`, so that value is
-   * carried through the calc rather than silently replaced. The 12px inline
-   * inset stays within `.msgChatBody`'s 1rem padding, so widening the band
-   * cannot introduce a horizontal scrollbar.
-   */
-  padding: 10px 12px;
-  margin-top: -10px;
-  margin-bottom: calc(0.3rem - 10px);
-  margin-left: -12px;
-  margin-right: -12px;
+/*
+ * The tint is painted by a pseudo-element, not by the message box itself.
+ *
+ * It used to be `padding: 10px 12px` cancelled by equal negative margins. The
+ * margins kept the LAYOUT stable, which was the point, but they also pulled the
+ * painted area 10px up and 10px down out of the element's own box — straight
+ * over the messages above and below. On a short message the band was taller
+ * than the bubble, so the neighbours visibly sat inside the highlight. That is
+ * what the group-invite screenshot shows.
+ *
+ * An absolutely positioned overlay at `inset: 0` cannot do that. It is outside
+ * the layout flow, so it changes no spacing and cannot jolt the scroll position
+ * at either end of the animation, and it is clipped to the target's own box, so
+ * it can never touch an adjacent message. The radius matches the container's,
+ * so it follows the message's real shape.
+ */
+.msgJumpHighlight::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 16px;
+  /* Behind the message content, above the thread background. */
+  z-index: 0;
+  pointer-events: none;
+  animation: msgJumpPulse 1.8s ease-out;
+}
+
+/*
+ * The row's own children are lifted above the overlay. Without this the tint
+ * would wash over the bubble rather than sitting behind it.
+ */
+.msgJumpHighlight > * {
+  position: relative;
+  z-index: 1;
 }
 
 @keyframes msgJumpPulse {
@@ -1334,7 +1363,7 @@
  * indigo (400) at a higher alpha keeps the hue while actually separating from
  * the surface.
  */
-:global([data-theme="dark"]) .msgJumpHighlight {
+:global([data-theme="dark"]) .msgJumpHighlight::after {
   animation-name: msgJumpPulseDark;
 }
 
@@ -1346,12 +1375,12 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .msgJumpHighlight {
+  .msgJumpHighlight::after {
     animation: none;
     background-color: rgba(99, 102, 241, 0.18);
   }
 
-  :global([data-theme="dark"]) .msgJumpHighlight {
+  :global([data-theme="dark"]) .msgJumpHighlight::after {
     animation: none;
     background-color: rgba(129, 140, 248, 0.30);
   }

@@ -1131,8 +1131,24 @@ const MessageBubble = memo(function MessageBubble({
           
           {innerContent}
 
-          {isMe && (
-            <div className={`${styles.msgStatusLabel} ${isFailedMsg ? styles.msgStatusLabelFailed : ''}`} style={{ visibility: (isFailedMsg || isLatestMessage) ? 'visible' : 'hidden' }}>
+          {/*
+            Rendered only when it has something to say.
+
+            It used to render for EVERY message of your own, with
+            `visibility: hidden` when there was no status to show. Hidden or
+            not, it still occupied a row plus its 3px top margin - so every
+            message you sent was one row taller than every message you
+            received, and the vertical rhythm of the thread visibly differed
+            between the two sides of the conversation.
+
+            Reserving that space only ever mattered for the message the status
+            can actually appear on, which is the latest one, and that message
+            sits at the bottom where the list is already pinned. So it is no
+            longer reserved on the rest, and both sides now use the same single
+            gap.
+          */}
+          {isMe && (isFailedMsg || isLatestMessage) && (
+            <div className={`${styles.msgStatusLabel} ${isFailedMsg ? styles.msgStatusLabelFailed : ''}`}>
               {/* Failed status is always shown — never hidden even if not the latest message */}
               {isFailedMsg && (
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
