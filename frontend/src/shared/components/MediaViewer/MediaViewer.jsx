@@ -816,7 +816,7 @@ function LazyForwardModal({ isOpen, currentItem, onClose }) {
   // The picker's list, not the inbox's. Forward is a recipient choice, so it
   // must exclude threads that cannot be sent into; useConversations would have
   // offered every thread the user has.
-  const { conversations } = useRecipientConversations(isOpen);
+  const { conversations, isLoading } = useRecipientConversations(isOpen);
   const { sendDirectMessage } = useMessageActions();
 
   if (!isOpen) return null;
@@ -826,20 +826,36 @@ function LazyForwardModal({ isOpen, currentItem, onClose }) {
       isOpen={isOpen}
       msg={{ mediaUrl: currentItem?.url, mediaType: currentItem?.type || 'image' }}
       conversations={conversations || []}
+      isLoading={isLoading}
       onClose={onClose}
       onConfirmForward={async (targetIds) => {
-        try {
-          for (const id of targetIds) {
+        // Same contract as the in-chat forward: attempt every target, report
+        // honestly, and throw so the modal keeps the selection for a retry.
+        // This used to be `catch (_) {}` with an unconditional close, so a
+        // forward that sent nothing looked exactly like one that worked.
+        const failed = [];
+        for (const id of targetIds) {
+          try {
             await sendDirectMessage(id, {
               text: '',
               mediaUrl: currentItem?.url,
               mediaType: currentItem?.type || 'image',
             });
+          } catch {
+            failed.push(id);
           }
-        } catch (_) {}
-        finally {
-          onClose();
         }
+
+        if (failed.length === 0) return;
+
+        const sent = targetIds.length - failed.length;
+        showToast(
+          sent > 0
+            ? `Forwarded to ${sent} of ${targetIds.length} chats`
+            : 'Could not forward the media',
+          'error',
+        );
+        throw new Error(`forward failed for ${failed.length} recipient(s)`);
       }}
     />
   );

@@ -3,11 +3,13 @@ import Avatar from '@shared/components/avatar/Avatar';
 import { Search, Check, X } from '@shared/components/icons';
 import styles from './ForwardMessageModal.module.css';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
+import { filterForwardTargets, forwardEmptyMessage } from '../../utils/forwardTargets';
 
 export default function ForwardMessageModal({
   isOpen = true,
   onClose,
   conversations = [],
+  isLoading = false,
   onConfirmForward
 }) {
   // Back dismisses this dialog rather than navigating the page behind it.
@@ -25,11 +27,10 @@ export default function ForwardMessageModal({
     }
   }, [isOpen]);
 
-  const filteredConversations = useMemo(() => {
-    if (!searchQuery.trim()) return conversations;
-    const q = searchQuery.toLowerCase();
-    return conversations.filter(c => (c.name || '').toLowerCase().includes(q));
-  }, [conversations, searchQuery]);
+  const filteredConversations = useMemo(
+    () => filterForwardTargets(conversations, searchQuery),
+    [conversations, searchQuery],
+  );
 
   if (!isOpen) return null;
 
@@ -46,6 +47,10 @@ export default function ForwardMessageModal({
       await onConfirmForward(selectedIds);
       setSelectedIds([]);
       onClose();
+    } catch {
+      // Deliberately stays open with the selection intact. The caller has
+      // already reported what went wrong; closing here would drop the choice
+      // the person made and leave them to rebuild it from memory.
     } finally {
       setIsSubmitting(false);
     }
@@ -94,7 +99,15 @@ export default function ForwardMessageModal({
               );
             })
           ) : (
-            <div className={styles.emptyText}>No conversations found</div>
+            /*
+             * Three different states used to render as "No conversations
+             * found", and for a long time the list was ALWAYS empty because
+             * nothing passed the conversations prop in. Saying "loading" while
+             * loading is what makes a genuinely empty list believable.
+             */
+            <div className={styles.emptyText}>
+              {forwardEmptyMessage({ isLoading, searchQuery })}
+            </div>
           )}
         </div>
 

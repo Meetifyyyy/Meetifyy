@@ -2,6 +2,7 @@ import { Suspense, lazy, useCallback, useRef, useEffect } from 'react';
 import { MessageSquarePlus, Search, X } from '@shared/components/icons';
 import { useMediaViewer } from '@shared/context/MediaViewerContext';
 import { useMessageActions } from '@shared/hooks/useMessageActions';
+import { useRecipientConversations } from '@shared/hooks/useRecipientConversations';
 import { showToast } from '@shared/utils/toast';
 import Avatar from '@shared/components/avatar/Avatar';
 import ChatMessageList from './ChatMessageList';
@@ -19,7 +20,6 @@ export default function ChatAreaLayout({
   conversation,
   currentUser,
   users,
-  conversations,
   showChatOnMobile,
   isLoading,
   notFound,
@@ -73,6 +73,26 @@ export default function ChatAreaLayout({
 }) {
   const { openViewer } = useMediaViewer();
   const { sendDirectMessage } = useMessageActions();
+
+  /**
+   * Recipients for the Forward modal, fetched here rather than accepted as a
+   * prop.
+   *
+   * `conversations` was a prop that NOTHING passed: neither DMChatArea nor
+   * GroupChatArea supplied it, and it was forwarded to ChatMessageList, which
+   * does not accept it. So the in-chat Forward modal was always handed
+   * `undefined`, fell back to its `= []` default, and rendered "No
+   * conversations found" every time. The prop is gone; the list is fetched
+   * where it is used.
+   *
+   * Gated on the modal being open, so opening a chat does not pay for a request
+   * that most sessions never need. It is the same eligibility-filtered query the
+   * Share modals use, so Forward cannot offer a recipient the send would refuse.
+   */
+  const {
+    conversations: forwardTargets,
+    isLoading: isLoadingForwardTargets,
+  } = useRecipientConversations(Boolean(forwardingMsg));
   const searchInputRef = useRef(null);
 
   const handleCloseSearch = useCallback(() => {
@@ -226,7 +246,6 @@ export default function ChatAreaLayout({
           onContextMenu={openContextMenu}
           onReplyTo={setReplyingTo}
           onOpenMediaModal={(url, type) => openViewer([{ url, type: type || 'image' }], 0)}
-          conversations={conversations}
           onMarkSeen={onMarkSeen}
           onRetryUpload={onRetryUpload}
           onCancelUpload={onCancelUpload}
@@ -276,21 +295,44 @@ export default function ChatAreaLayout({
           <ForwardMessageModal
             isOpen={Boolean(forwardingMsg)}
             msg={forwardingMsg}
-            conversations={conversations}
+            conversations={forwardTargets}
+            isLoading={isLoadingForwardTargets}
             onClose={() => setForwardingMsg(null)}
             onConfirmForward={async (targetIds) => {
-              try {
-                const text = forwardingMsg.text || forwardingMsg.payload?.text || '';
-                const mediaUrl = forwardingMsg.mediaUrl || forwardingMsg.payload?.mediaUrl || null;
-                const mediaType = forwardingMsg.mediaType || forwardingMsg.payload?.mediaType || null;
-                for (const id of targetIds) {
+              const text = forwardingMsg.text || forwardingMsg.payload?.text || '';
+              const mediaUrl = forwardingMsg.mediaUrl || forwardingMsg.payload?.mediaUrl || null;
+              const mediaType = forwardingMsg.mediaType || forwardingMsg.payload?.mediaType || null;
+
+              // Every target is attempted even after one fails, so a single bad
+              // recipient does not silently cancel the rest of the selection.
+              const failed = [];
+              for (const id of targetIds) {
+                try {
                   await sendDirectMessage(id, { text, mediaUrl, mediaType });
+                } catch {
+                  failed.push(id);
                 }
-              } catch (e) {
-                // ignore
-              } finally {
-                setForwardingMsg(null);
               }
+
+              if (failed.length === 0) return;
+
+              /*
+               * This used to be `catch (e) { // ignore }` with an unconditional
+               * close in `finally`, so a forward that sent nothing at all looked
+               * exactly like one that worked: the modal closed and no message
+               * appeared anywhere. Partial failures were invisible too.
+               *
+               * Throwing keeps the modal open with the selection intact, which
+               * is what lets the person retry the ones that did not go.
+               */
+              const sent = targetIds.length - failed.length;
+              showToast(
+                sent > 0
+                  ? `Forwarded to ${sent} of ${targetIds.length} chats`
+                  : 'Could not forward the message',
+                'error',
+              );
+              throw new Error(`forward failed for ${failed.length} recipient(s)`);
             }}
           />
         </Suspense>
