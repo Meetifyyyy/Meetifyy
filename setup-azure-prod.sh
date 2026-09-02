@@ -235,7 +235,9 @@ if [ "$SYNC_ONLY" = "true" ]; then
     --set-env-vars \
       "R2_ACCOUNT_ID=${R2_ACCOUNT_ID}" \
       "R2_BUCKET_NAME=${R2_BUCKET_NAME}" \
-      "R2_VERIFICATION_BUCKET_NAME=${R2_VERIFICATION_BUCKET_NAME:-}" >/dev/null
+      "R2_VERIFICATION_BUCKET_NAME=${R2_VERIFICATION_BUCKET_NAME:-}" \
+      "SUPER_ADMIN_EMAIL=secretref:super-admin-email" \
+      "SUPER_ADMIN_PASSWORD=secretref:super-admin-password" >/dev/null
 
   # Updating a secret does NOT restart the app, and a running replica keeps the
   # value it started with. Without this restart the new credentials sit in the
