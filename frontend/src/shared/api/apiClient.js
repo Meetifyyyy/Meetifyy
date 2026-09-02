@@ -186,16 +186,49 @@ export const getMediaUrl = (pathOrUrl) => {
     finalUrl = normalizeDicebearUrl(finalUrl);
   }
 
-  // Stored media URLs may carry a localhost API origin from whichever machine
-  // wrote them. Rewrite that prefix to the API origin this client actually uses.
+  /**
+   * Stored media URLs may carry the API origin of whichever machine wrote them,
+   * which for anything created during local development is a private address.
+   * Serving one to a public page is not just a dead image: the browser treats it
+   * as the site reaching into the viewer's own network.
+   *
+   * This used to match one hardcoded shape, `localhost` or `127.0.0.1` on
+   * exactly `localPort`. Anything else a developer's machine produces — a LAN
+   * IP like 192.168.1.5, a Tailscale 100.x address, a `.local` name, or the same
+   * host on a different port — did not match, passed through untouched, and was
+   * handed to an <img> on the deployed site. Chrome 138+ answers that with the
+   * "wants to access other devices on your local network" prompt, which is what
+   * surfaced this; older browsers just made the request silently.
+   *
+   * So the test is now "is this origin private at all", using the same predicate
+   * that decides where the API lives, and there are only two honest outcomes:
+   * rewrite it to an origin this client can actually reach, or drop it. Handing
+   * back a private URL is never one of them.
+   */
   if (typeof window !== 'undefined' && window.location?.hostname) {
     const { hostname, protocol } = window.location;
-    const localOriginPattern = new RegExp(`^https?://(?:localhost|127\\.0\\.0\\.1):${config.api.localPort}`, 'i');
-    const replacement =
-      !isLocalHost(hostname) && !config.api.baseUrl
-        ? `${protocol}//${hostname}:${config.api.localPort}`
-        : getBackendUrl();
-    finalUrl = finalUrl.replace(localOriginPattern, replacement);
+    let parsed = null;
+    if (/^https?:\/\//i.test(finalUrl)) {
+      try { parsed = new URL(finalUrl); } catch { parsed = null; }
+    }
+
+    if (parsed && isLocalNetworkHost(parsed.hostname)) {
+      const pathAndQuery = `${parsed.pathname}${parsed.search}`;
+
+      if (isLocalNetworkHost(hostname)) {
+        // The page is itself on the local network (a developer's machine, or a
+        // phone on the same Wi-Fi). The backend is on this host, whichever
+        // address the URL was written with.
+        finalUrl = `${protocol}//${hostname}:${config.api.localPort}${pathAndQuery}`;
+      } else {
+        // A public page. The private origin is unreachable from here for
+        // everyone except the machine that wrote it, so the only options are
+        // the configured API or nothing.
+        const backend = getBackendUrl();
+        if (!backend) return '';
+        finalUrl = `${backend}${pathAndQuery}`;
+      }
+    }
   }
 
   if (finalUrl.startsWith('http://') || finalUrl.startsWith('https://') || finalUrl.startsWith('data:') || finalUrl.startsWith('blob:')) {

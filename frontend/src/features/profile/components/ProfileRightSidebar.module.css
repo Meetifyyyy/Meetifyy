@@ -166,15 +166,15 @@
 }
 
 .joinBtn {
-  background: transparent;
-  color: var(--color-primary);
-  border: 1.5px solid rgba(var(--color-primary-rgb), 0.35);
+  background: var(--color-primary);
+  color: #fff;
+  border: 1.5px solid var(--color-primary);
   border-radius: 100px;
-  padding: 0.28rem 0.78rem;
-  min-width: 66px;
+  padding: 0.42rem 1.05rem;
+  min-width: 82px;
   text-align: center;
   font-family: var(--font-family-sans);
-  font-size: 0.75rem;
+  font-size: 0.82rem;
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
@@ -184,8 +184,8 @@
 }
 
 .joinBtn:hover {
-  background: rgba(var(--color-primary-rgb), 0.08);
-  border-color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 85%, #000 15%);
+  border-color: color-mix(in srgb, var(--color-primary) 85%, #000 15%);
 }
 
 .joinBtn:active {
@@ -248,8 +248,9 @@
   }
 
   .joinBtn {
-    padding: 0.25rem 0.65rem;
-    font-size: 0.7rem;
+    padding: 0.35rem 0.85rem;
+    font-size: 0.76rem;
+    min-width: 72px;
   }
 }
 

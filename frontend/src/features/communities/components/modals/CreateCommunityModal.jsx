@@ -135,6 +135,10 @@ export default function CreateCommunityModal({ onClose, onCreated, isCampusCommu
 
   const fileInputRef = useRef(null);
   const nameInputRef = useRef(null);
+  // The cropper's touchstart must be non-passive so preventDefault() can block
+  // the page scroll while the user drags to crop. React 17+ registers
+  // onTouchStart as passive, which silently swallows any preventDefault call.
+  const cropperRef = useRef(null);
 
   // Auto-focus name input when step 2 is active
   useEffect(() => {
@@ -142,6 +146,25 @@ export default function CreateCommunityModal({ onClose, onCreated, isCampusCommu
       nameInputRef.current.focus();
     }
   }, [step]);
+
+  // Drag logic for custom cropper — defined before the useEffect below that
+  // registers it as a non-passive touchstart listener.
+  const handleDragStart = useCallback((e) => {
+    e.preventDefault();
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    setDragStart({ x: clientX - cropState.x, y: clientY - cropState.y });
+  }, [cropState.x, cropState.y]);
+
+  // Attach touchstart as non-passive so the drag handler can call preventDefault
+  // (which blocks page scroll while the user crop-drags). Must be done
+  // imperatively — React's onTouchStart is passive and ignores preventDefault.
+  useEffect(() => {
+    const el = cropperRef.current;
+    if (!el) return;
+    el.addEventListener('touchstart', handleDragStart, { passive: false });
+    return () => el.removeEventListener('touchstart', handleDragStart);
+  }, [handleDragStart]);
 
   // Validations
   const isCategoryValid = useMemo(() => {
@@ -192,13 +215,6 @@ export default function CreateCommunityModal({ onClose, onCreated, isCampusCommu
     };
   };
 
-  // Drag logic for custom cropper
-  const handleDragStart = (e) => {
-    e.preventDefault();
-    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-    setDragStart({ x: clientX - cropState.x, y: clientY - cropState.y });
-  };
 
   const handleDragMove = (e) => {
     if (!dragStart) return;
@@ -528,12 +544,12 @@ export default function CreateCommunityModal({ onClose, onCreated, isCampusCommu
                 ) : (
                   <div className={styles.avatarSection}>
                     <div
+                      ref={cropperRef}
                       className={styles.cropperWrapper}
                       onMouseDown={handleDragStart}
                       onMouseMove={handleDragMove}
                       onMouseUp={handleDragEnd}
                       onMouseLeave={handleDragEnd}
-                      onTouchStart={handleDragStart}
                       onTouchMove={handleDragMove}
                       onTouchEnd={handleDragEnd}
                     >

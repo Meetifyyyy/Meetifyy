@@ -150,7 +150,8 @@
   .card {
     flex-direction: row;
     align-items: flex-start;
-    padding: 2rem;
+    padding: 1.75rem 2rem;
+    gap: 1.25rem;
   }
 }
 
@@ -196,17 +197,16 @@
 }
 
 .avatar {
-  width: 3.5rem;
-  height: 3.5rem;
+  width: 3rem;
+  height: 3rem;
   border-radius: 50%;
   color: #fff;
-  font-weight: 900;
-  font-size: 1.25rem;
+  font-weight: 800;
+  font-size: 1.15rem;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
   user-select: none;
 }
 
@@ -216,36 +216,32 @@
 
 .contentBlock {
   flex: 1;
-  text-align: center;
+  text-align: left;
   min-width: 0;
-}
-
-@media (min-width: 768px) {
-  .contentBlock {
-    text-align: left;
-  }
+  width: 100%;
 }
 
 .contentHeader {
   display: flex;
-  flex-direction: column;
-  gap: 0.625rem;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-height: 2.25rem;
 }
 
-@media (min-width: 768px) {
-  .contentHeader {
-    flex-direction: row;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.625rem;
-  }
+.authorGroup {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
 }
 
 .author {
-  font-size: 1.125rem;
+  font-size: 1.15rem;
   font-weight: 700;
   color: #111827;
   margin: 0;
+  line-height: 1.25;
 }
 
 [data-theme="dark"] .author {
@@ -255,7 +251,7 @@
 .role {
   font-size: 0.75rem;
   color: #78716c;
-  margin: 0.125rem 0 0;
+  margin: 0.2rem 0 0;
   font-weight: 500;
 }
 
@@ -266,16 +262,14 @@
 .ratingBadge {
   background: #1c1917;
   color: #fff;
-  font-family: monospace;
-  font-size: 0.75rem;
+  font-family: var(--font-family-mono, monospace);
+  font-size: 0.82rem;
   font-weight: 700;
-  padding: 0.375rem 1rem;
+  padding: 0.35rem 0.85rem;
   border-radius: 9999px;
   display: inline-flex;
   align-items: center;
-  gap: 0.375rem;
-  align-self: center;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  gap: 0.4rem;
   flex-shrink: 0;
   border: 1px solid #292524;
 }
@@ -285,30 +279,116 @@
   border-color: #1c1917;
 }
 
-@media (min-width: 768px) {
-  .ratingBadge {
-    align-self: flex-start;
-  }
-}
-
 .star {
   color: #f59e0b;
-  font-size: 10px;
+  font-size: 14px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
 }
 
 .quote {
-  margin-top: 1rem;
-  font-size: 0.875rem;
-  line-height: 1.75;
+  margin-top: 0.75rem;
+  font-size: 0.92rem;
+  line-height: 1.65;
   color: #4b5563;
 }
 
 @media (min-width: 768px) {
   .quote {
-    font-size: 0.97rem;
+    font-size: 0.95rem;
   }
 }
 
 [data-theme="dark"] .quote {
   color: #d1d5db;
+}
+
+/* ── 3rd Card: Interactive Invite Style ── */
+.inviteCard {
+  width: 100%;
+  position: relative;
+  background: linear-gradient(135deg, rgba(68, 52, 214, 0.03) 0%, rgba(236, 72, 153, 0.02) 50%, rgba(121, 101, 251, 0.05) 100%);
+  border: 1.5px dashed rgba(68, 52, 214, 0.3);
+  border-radius: 1.5rem;
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  align-items: center;
+  transition: transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1), box-shadow 0.3s ease, border-color 0.3s ease;
+  box-shadow: 0 10px 30px rgba(68, 52, 214, 0.03);
+}
+
+[data-theme="dark"] .inviteCard {
+  background: linear-gradient(135deg, rgba(68, 52, 214, 0.08) 0%, rgba(121, 101, 251, 0.04) 100%);
+  border-color: rgba(121, 101, 251, 0.35);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+}
+
+.inviteCard:hover {
+  border-color: #4434d6;
+  border-style: solid;
+  box-shadow: 0 20px 40px rgba(68, 52, 214, 0.08);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .inviteCard:hover {
+    transform: translateY(-12px) scale(1.01);
+  }
+}
+
+[data-theme="dark"] .inviteCard:hover {
+  border-color: #7965fb;
+  box-shadow: 0 20px 40px rgba(121, 101, 251, 0.2);
+}
+
+@media (min-width: 768px) {
+  .inviteCard {
+    flex-direction: row;
+    align-items: flex-start;
+    padding: 1.75rem 2rem;
+    gap: 1.25rem;
+  }
+}
+
+.avatarGradient {
+  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #ec4899 100%);
+  color: #fff;
+}
+
+.ctaBadge {
+  background: #4434d6;
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0.45rem 1.1rem;
+  border-radius: 9999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  flex-shrink: 0;
+  text-decoration: none;
+  border: none;
+  cursor: pointer;
+  transition: background-color 0.2s ease, transform 0.15s ease;
+  user-select: none;
+}
+
+.ctaBadge:hover {
+  background: #3728b7;
+  transform: translateY(-1px);
+  color: #fff;
+}
+
+.ctaBadge:active {
+  transform: scale(0.97);
+}
+
+[data-theme="dark"] .ctaBadge {
+  background: #7965fb;
+}
+
+[data-theme="dark"] .ctaBadge:hover {
+  background: #6852fa;
 }

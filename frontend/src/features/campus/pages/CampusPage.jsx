@@ -287,10 +287,8 @@ export default function CampusPage() {
         {isGroupModalOpen && (
           <CreateCommunityModal
             onClose={() => setIsGroupModalOpen(false)}
-            onSuccess={handleCreateGroup}
-            context="campus"
-            initialCollegeId={userCollegeId}
-            collegeName={collegeName}
+            onCreated={handleCreateGroup}
+            isCampusCommunity={true}
           />
         )}
       </VerificationGate>
