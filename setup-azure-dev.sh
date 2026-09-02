@@ -92,6 +92,8 @@ R2_BUCKET_NAME=$(get_env R2_BUCKET_NAME)
 R2_VERIFICATION_BUCKET_NAME=$(get_env R2_VERIFICATION_BUCKET_NAME)
 R2_PUBLIC_URL=$(get_env R2_PUBLIC_URL)
 SENTRY_DSN=$(get_env SENTRY_DSN)
+SUPER_ADMIN_EMAIL=$(get_env SUPER_ADMIN_EMAIL)
+SUPER_ADMIN_PASSWORD=$(get_env SUPER_ADMIN_PASSWORD)
 
 echo "==> 6. Creating Initial DEV Container App ($APP_NAME)..."
 az containerapp create \
@@ -140,7 +142,9 @@ az containerapp create \
     "resend-api-key=${RESEND_API_KEY}" \
     "r2-access-key-id=${R2_ACCESS_KEY_ID}" \
     "r2-secret-access-key=${R2_SECRET_ACCESS_KEY}" \
-    "sentry-dsn=${SENTRY_DSN}"
+    "sentry-dsn=${SENTRY_DSN}" \
+    "super-admin-email=${SUPER_ADMIN_EMAIL}" \
+    "super-admin-password=${SUPER_ADMIN_PASSWORD}"
 
 echo "==> 7. Wiring secret references to container environment variables..."
 az containerapp update \
@@ -159,7 +163,9 @@ az containerapp update \
     "RESEND_API_KEY=secretref:resend-api-key" \
     "R2_ACCESS_KEY_ID=secretref:r2-access-key-id" \
     "R2_SECRET_ACCESS_KEY=secretref:r2-secret-access-key" \
-    "SENTRY_DSN=secretref:sentry-dsn"
+    "SENTRY_DSN=secretref:sentry-dsn" \
+    "SUPER_ADMIN_EMAIL=secretref:super-admin-email" \
+    "SUPER_ADMIN_PASSWORD=secretref:super-admin-password"
 
 echo "==> 8. Creating GitHub Actions Service Principal & OIDC..."
 SP_JSON=$(az ad sp create-for-rbac \

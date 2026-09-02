@@ -129,6 +129,8 @@ if [ -n "$ENV_FILE" ]; then
   ADMIN_JWT_REFRESH_SECRET="$(get_env ADMIN_JWT_REFRESH_SECRET)"
   ADMIN_JWT_PENDING_SECRET="$(get_env ADMIN_JWT_PENDING_SECRET)"
   REDIS_URL="$(get_env REDIS_URL)"
+  SUPER_ADMIN_EMAIL="$(get_env SUPER_ADMIN_EMAIL)"
+  SUPER_ADMIN_PASSWORD="$(get_env SUPER_ADMIN_PASSWORD)"
 
   # Azure identifiers are not part of the app's runtime config, so the env file
   # normally has no reason to carry them. Ask only for what is missing.
@@ -174,6 +176,8 @@ else
   read -rsp "Enter Production R2 Secret Access Key: " R2_SECRET_ACCESS_KEY; echo
   read -rp "Enter Production R2 Account ID: " R2_ACCOUNT_ID
   read -rp "Enter Production Sentry DSN (optional, press Enter to skip): " SENTRY_DSN
+  read -rp "Enter Production Super Admin Email: " SUPER_ADMIN_EMAIL
+  read -rsp "Enter Production Super Admin Password: " SUPER_ADMIN_PASSWORD; echo
 fi
 
 R2_BUCKET_NAME="${R2_BUCKET_NAME:-meetifyy-prod}"
@@ -214,6 +218,8 @@ if [ "$SYNC_ONLY" = "true" ]; then
     "r2-access-key-id=${R2_ACCESS_KEY_ID}"
     "r2-secret-access-key=${R2_SECRET_ACCESS_KEY}"
     "sentry-dsn=${SENTRY_DSN:-placeholder}"
+    "super-admin-email=${SUPER_ADMIN_EMAIL:-placeholder}"
+    "super-admin-password=${SUPER_ADMIN_PASSWORD:-placeholder}"
   )
   [ -n "${REDIS_URL:-}" ] && SYNC_SECRETS+=("redis-url=${REDIS_URL}")
 
@@ -500,7 +506,9 @@ az containerapp create \
     "resend-api-key=${RESEND_API_KEY}" \
     "r2-access-key-id=${R2_ACCESS_KEY_ID}" \
     "r2-secret-access-key=${R2_SECRET_ACCESS_KEY}" \
-    "sentry-dsn=${SENTRY_DSN:-placeholder}"
+    "sentry-dsn=${SENTRY_DSN:-placeholder}" \
+    "super-admin-email=${SUPER_ADMIN_EMAIL:-placeholder}" \
+    "super-admin-password=${SUPER_ADMIN_PASSWORD:-placeholder}"
 
 echo "==> 5b. Creating the shared pull identity and granting it AcrPull..."
 # A USER-assigned identity, not a system-assigned one, because two different
@@ -559,7 +567,9 @@ az containerapp update \
     "RESEND_API_KEY=secretref:resend-api-key" \
     "R2_ACCESS_KEY_ID=secretref:r2-access-key-id" \
     "R2_SECRET_ACCESS_KEY=secretref:r2-secret-access-key" \
-    "SENTRY_DSN=secretref:sentry-dsn"
+    "SENTRY_DSN=secretref:sentry-dsn" \
+    "SUPER_ADMIN_EMAIL=secretref:super-admin-email" \
+    "SUPER_ADMIN_PASSWORD=secretref:super-admin-password"
 
 echo "==> 7. Creating GitHub Actions Service Principal for Production..."
 SP_JSON=$(az ad sp create-for-rbac \
