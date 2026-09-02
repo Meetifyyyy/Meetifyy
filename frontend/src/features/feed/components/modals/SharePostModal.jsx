@@ -10,6 +10,7 @@ import { useRecipientConversations } from '@shared/hooks/useRecipientConversatio
 import { useMessageActions } from '@shared/hooks/useMessageActions';
 import { getMediaUrl } from '@shared/api/apiClient';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
+import { useScrollLock } from '@shared/hooks/useScrollLock';
 
 /**
  * Coerce a poll option (or question) of unknown shape into display text.
@@ -38,6 +39,9 @@ function getOptText(o) {
 export default function SharePostModal({ isOpen, onClose, post, author }) {
   // Back dismisses this dialog rather than navigating the page behind it.
   useOverlayBack(Boolean(isOpen), onClose);
+  // Background stays put while this dialog is open. Counted, so a
+  // dialog opened on top of another cannot unlock the page when it closes.
+  useScrollLock(Boolean(isOpen));
 
   const [searchTerm, setSearchTerm] = useState('');
   const [copied, setCopied] = useState(false);

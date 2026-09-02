@@ -2,10 +2,14 @@ import { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import styles from './ActivityJoinedModal.module.css';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
+import { useScrollLock } from '@shared/hooks/useScrollLock';
 
 export default function ActivityJoinedModal({ activity, isOpen, onClose }) {
   // Back dismisses this dialog rather than navigating the page behind it.
   useOverlayBack(Boolean(isOpen), onClose);
+  // Background stays put while this dialog is open. Counted, so a
+  // dialog opened on top of another cannot unlock the page when it closes.
+  useScrollLock(Boolean(isOpen));
 
   const overlayRef = useRef(null);
 

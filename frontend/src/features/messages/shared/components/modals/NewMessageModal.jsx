@@ -3,6 +3,7 @@ import { useAuth } from '@shared/context/AuthContext';
 import { isImageUrl } from '@shared/utils/avatar';
 import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
+import { useScrollLock } from '@shared/hooks/useScrollLock';
 import styles from './NewMessageModal.module.css';
 import { useUsersMap } from '@shared/hooks/useUsersMap';
 import { getMediaUrl } from '@shared/api/apiClient';
@@ -10,6 +11,9 @@ import { getMediaUrl } from '@shared/api/apiClient';
 export default function NewMessageModal({ onClose, onStartChat, onCreateGroup }) {
   // Rendered only while open, so `true` is the open state.
   useOverlayBack(true, onClose);
+  // Background stays put while this dialog is open. Counted, so a
+  // dialog opened on top of another cannot unlock the page when it closes.
+  useScrollLock(true);
 
   const { currentUser } = useAuth();
   const users = useUsersMap();
@@ -65,7 +69,7 @@ export default function NewMessageModal({ onClose, onStartChat, onCreateGroup })
   };
 
   return (
-    <div className={styles.overlay} onClick={onClose}>
+    <div className={styles.overlay} data-scroll-lock-ignore onClick={onClose}>
       <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
         <div className={styles.handleBar} />
         <div className={styles.header}>

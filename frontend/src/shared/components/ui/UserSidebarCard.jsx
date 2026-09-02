@@ -187,12 +187,6 @@ export default function UserSidebarCard({ username: propUsername, initialUser = 
     return <UserSidebarCardSkeleton />;
   }
 
-  // The checkmark means identity-verified. `verified` is now derived from
-  // verificationStatus server-side; the status is also read directly so a
-  // socket-patched profile updates the badge without a refetch.
-  const isVerified =
-    effectiveUser.verificationStatus === 'VERIFIED' ||
-    Boolean(effectiveUser.verified);
   const isMutual = Boolean(effectiveUser.isMutual);
 
   return (
@@ -225,18 +219,10 @@ export default function UserSidebarCard({ username: propUsername, initialUser = 
                 ? 'Deleted User'
                 : effectiveUser.displayName || effectiveUser.username || 'User'}
             </h2>
-            {/* No badges for an account that no longer exists — a campus-rep or
-                verified marker on a deleted profile is both meaningless and,
-                for the verified tick, actively misleading. */}
+            {/* No badge for an account that no longer exists: a campus-rep
+                marker on a deleted profile is meaningless. */}
             {!isDeletedUser && (
               <CollegeRepresentativeBadge isCampusRep={Boolean(effectiveUser.isCampusRep ?? initialUser?.isCampusRep ?? profile?.isCampusRep)} collegeName={universityName} size="md" />
-            )}
-            {!isDeletedUser && isVerified && (
-              <span className={s.verifiedBadge} title="Verified user">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" />
-                </svg>
-              </span>
             )}
           </div>
           <div className={s.usernameRow}>

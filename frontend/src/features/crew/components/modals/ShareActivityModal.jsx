@@ -5,10 +5,14 @@ import { useRecipientConversations } from '@shared/hooks/useRecipientConversatio
 import ShareModalAvatar from '@shared/components/avatar/ShareModalAvatar';
 import styles from './ShareActivityModal.module.css';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
+import { useScrollLock } from '@shared/hooks/useScrollLock';
 
 export default function ShareActivityModal({ isOpen, onClose, activity }) {
   // Back dismisses this dialog rather than navigating the page behind it.
   useOverlayBack(Boolean(isOpen), onClose);
+  // Background stays put while this dialog is open. Counted, so a
+  // dialog opened on top of another cannot unlock the page when it closes.
+  useScrollLock(Boolean(isOpen));
 
   const [searchTerm, setSearchTerm] = useState('');
   const [copied, setCopied] = useState(false);

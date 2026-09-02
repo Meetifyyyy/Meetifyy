@@ -8,6 +8,7 @@ import styles from '@features/crew/components/modals/ShareActivityModal.module.c
 import { useRecipientConversations } from '@shared/hooks/useRecipientConversations';
 import { useMessageActions } from '@shared/hooks/useMessageActions';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
+import { useScrollLock } from '@shared/hooks/useScrollLock';
 
 /**
  * Member count for a community, whichever shape it arrived in: the list endpoint
@@ -24,6 +25,9 @@ function toMemberCount(community) {
 export default function ShareCommunityModal({ isOpen, onClose, community }) {
   // Back dismisses this dialog rather than navigating the page behind it.
   useOverlayBack(Boolean(isOpen), onClose);
+  // Background stays put while this dialog is open. Counted, so a
+  // dialog opened on top of another cannot unlock the page when it closes.
+  useScrollLock(Boolean(isOpen));
 
   const [searchTerm, setSearchTerm] = useState('');
   const [copied, setCopied] = useState(false);

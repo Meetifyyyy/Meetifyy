@@ -3,6 +3,7 @@ import Avatar from '@shared/components/avatar/Avatar';
 import { Search, Check, X } from '@shared/components/icons';
 import styles from './ForwardMessageModal.module.css';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
+import { useScrollLock } from '@shared/hooks/useScrollLock';
 import { filterForwardTargets, forwardEmptyMessage } from '../../utils/forwardTargets';
 
 export default function ForwardMessageModal({
@@ -14,6 +15,9 @@ export default function ForwardMessageModal({
 }) {
   // Back dismisses this dialog rather than navigating the page behind it.
   useOverlayBack(Boolean(isOpen), onClose);
+  // Background stays put while this dialog is open. Counted, so a
+  // dialog opened on top of another cannot unlock the page when it closes.
+  useScrollLock(Boolean(isOpen));
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedIds, setSelectedIds] = useState([]);
@@ -57,7 +61,7 @@ export default function ForwardMessageModal({
   };
 
   return (
-    <div className={styles.modalOverlay} onClick={onClose}>
+    <div className={styles.modalOverlay} data-scroll-lock-ignore onClick={onClose}>
       <div className={styles.modalContent} onClick={(e) => e.stopPropagation()}>
         <div className={styles.dragHandleBar} />
         <div className={styles.modalHeader}>

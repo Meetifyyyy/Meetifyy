@@ -14,10 +14,14 @@ import MediaCropper from '@shared/components/media/MediaCropper';
 import ConfirmModal from '@shared/components/modals/ConfirmModal';
 import styles from './CommunityAdminModal.module.css';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
+import { useScrollLock } from '@shared/hooks/useScrollLock';
 
 export default function CommunityAdminModal({ community, onClose, onDeleteCommunity }) {
   // Back dismisses this dialog rather than navigating the page behind it.
   useOverlayBack(true, onClose);
+  // Background stays put while this dialog is open. Counted, so a
+  // dialog opened on top of another cannot unlock the page when it closes.
+  useScrollLock(true);
 
   const { updateCommunity, kickMember } = useCommunityActions();
   const [activeTab, setActiveTab] = useState('details');

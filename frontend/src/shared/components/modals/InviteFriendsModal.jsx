@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { usersApi, activitiesApi } from '@shared/api/apiClient';
 import { useAuth } from '@shared/context/AuthContext';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
+import { useScrollLock } from '@shared/hooks/useScrollLock';
 import ShareModalAvatar from '../avatar/ShareModalAvatar';
 import styles from './InviteFriendsModal.module.css';
 import { Search, X, Check } from '@shared/components/icons';
@@ -23,6 +24,9 @@ export default function InviteFriendsModal({
 
   // Back dismisses this dialog rather than navigating the page behind it.
   useOverlayBack(true, onClose);
+  // Background stays put while this dialog is open. Counted, so a
+  // dialog opened on top of another cannot unlock the page when it closes.
+  useScrollLock(true);
 
   useEffect(() => {
     const handleKeyDown = (e) => {

@@ -4,6 +4,7 @@ import { useFocusTrap } from '../../hooks/useFocusTrap';
 import '../../styles/instant-match.css';
 import '../../styles/instant-match-chat.css';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
+import { useScrollLock } from '@shared/hooks/useScrollLock';
 
 /**
  * Confirmation before walking away from a match.
@@ -17,6 +18,9 @@ import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 export default function LeaveMatchModal({ partnerName, busy, onCancel, onConfirm }) {
   // Back dismisses this dialog rather than navigating the page behind it.
   useOverlayBack(true, onCancel);
+  // Background stays put while this dialog is open. Counted, so a
+  // dialog opened on top of another cannot unlock the page when it closes.
+  useScrollLock(true);
 
   const ref = useRef(null);
   useFocusTrap(ref, true, busy ? undefined : onCancel);

@@ -14,6 +14,7 @@ import ReportModal from '@shared/components/modals/ReportModal/ReportModal';
 import { sortGroupMembers } from '@shared/utils/memberSort';
 import { useCommunityActions } from '@shared/hooks/useCommunityActions';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
+import { useScrollLock } from '@shared/hooks/useScrollLock';
 import PromoteModeratorModal from '../moderation/PromoteModeratorModal';
 
 
@@ -332,6 +333,9 @@ export default function CommunityMembersModal({
 
   // Back dismisses this dialog rather than navigating the page behind it.
   useOverlayBack(true, onClose);
+  // Background stays put while this dialog is open. Counted, so a
+  // dialog opened on top of another cannot unlock the page when it closes.
+  useScrollLock(true);
 
   useEffect(() => {
     if (initialMembers) setMembers(initialMembers);

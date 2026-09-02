@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { AlertTriangle, Info } from '@shared/components/icons';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
+import { useScrollLock } from '@shared/hooks/useScrollLock';
 import styles from './ConfirmModal.module.css';
 
 export default function ConfirmModal({
@@ -24,6 +25,9 @@ export default function ConfirmModal({
   const actualCancelText = cancelLabel || cancelText;
 
   useOverlayBack(visible, onCancel);
+  // Background stays put while this dialog is open. Counted, so a
+  // dialog opened on top of another cannot unlock the page when it closes.
+  useScrollLock(visible);
 
   useEffect(() => {
     if (visible && overlayRef.current) {

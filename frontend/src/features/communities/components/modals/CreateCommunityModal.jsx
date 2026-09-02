@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
+import { useScrollLock } from '@shared/hooks/useScrollLock';
 import { showToast } from '@shared/utils/toast';
 import { useAuth } from '@shared/context/AuthContext';
 import { openVerificationModal } from '@shared/stores/verificationModalStore';
@@ -105,6 +106,9 @@ export default function CreateCommunityModal({ onClose, onCreated, isCampusCommu
   }, [step]);
 
   useOverlayBack(true, onClose, { onBack: handleWizardBack });
+  // Background stays put while this dialog is open. Counted, so a
+  // dialog opened on top of another cannot unlock the page when it closes.
+  useScrollLock(true);
 
   useEffect(() => {
     if (currentUser?.verificationStatus !== 'VERIFIED') {

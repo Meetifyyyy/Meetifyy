@@ -72,13 +72,6 @@
   font-size: 1.15rem;
 }
 
-.verifiedBadge {
-  color: #3b82f6;
-  display: inline-flex;
-  align-items: center;
-  flex-shrink: 0;
-}
-
 .usernameRow {
   display: flex;
   align-items: center;

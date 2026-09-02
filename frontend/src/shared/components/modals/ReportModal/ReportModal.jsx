@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { REPORT_REASONS } from '@shared/api/reports/report-constants';
 import { useReportMutation } from '@shared/api/reports/useReportMutation';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
+import { useScrollLock } from '@shared/hooks/useScrollLock';
 import styles from './ReportModal.module.css';
 import { getMediaUrl } from '@shared/api/apiClient';
 
@@ -68,6 +69,9 @@ export default function ReportModal({
 
   // Back dismisses the report, not the page it was opened from.
   useOverlayBack(Boolean(isOpen), onClose);
+  // Background stays put while this dialog is open. Counted, so a
+  // dialog opened on top of another cannot unlock the page when it closes.
+  useScrollLock(Boolean(isOpen));
 
   const selectedReason = watch('reason');
 

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
+import { useScrollLock } from '@shared/hooks/useScrollLock';
 import { X, RefreshCw, Check, Upload } from '@shared/components/icons';
 import {
   SUPPORTED_DICEBEAR_STYLES,
@@ -26,6 +27,10 @@ export default function AvatarPickerModal({
   const [tabAvatars, setTabAvatars] = useState({});
 
   // When modal opens (transition from closed to open), initialize cleanly
+  // Background stays put while the picker is open. Counted, so a dialog opened
+  // on top of another cannot unlock the page when it closes.
+  useScrollLock(Boolean(isOpen));
+
   useEffect(() => {
     if (isOpen && !prevOpenRef.current) {
       setTempSelected('');
