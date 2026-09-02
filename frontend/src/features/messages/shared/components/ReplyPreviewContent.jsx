@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Image as ImageIcon, Video, Mic, FileText, Link2, User, Users,
   FileImage, Calendar, Ban, AlertCircle, MessageSquare, Sticker,
@@ -7,6 +7,7 @@ import { getMediaUrl } from '@shared/api/apiClient';
 import Avatar from '@shared/components/avatar/Avatar';
 import { useUsersMap } from '@shared/hooks/useUsersMap';
 import { useCommunities } from '@shared/hooks/useCommunities';
+import { useConversations } from '@shared/hooks/useMessages';
 import { resolveReplyPreview } from '../utils/replyPreview';
 
 /**
@@ -128,6 +129,20 @@ export default function ReplyPreviewContent({
 function ReplyEntityAvatar({ kind, entityId, fallbackAvatar, fallbackColor, name, isGroup, className }) {
   const usersMap = useUsersMap();
   const { communitiesById } = useCommunities();
+  const { conversations } = useConversations();
+
+  /**
+   * A broken picture must not fall through to a person glyph.
+   *
+   * `Avatar` answers a failed load with `/default_avatar.svg`, which is a
+   * person. That is right for a person and wrong for a group: a quoted group
+   * invite whose avatar could not be fetched rendered as an anonymous human,
+   * which is what the reported screenshot shows. Catching the failure here lets
+   * a group fall back to the same lettered circle it uses when it has no
+   * picture at all.
+   */
+  const [imageFailed, setImageFailed] = useState(false);
+  useEffect(() => { setImageFailed(false); }, [entityId, fallbackAvatar]);
 
   let live = null;
   let liveColor = null;
@@ -135,6 +150,24 @@ function ReplyEntityAvatar({ kind, entityId, fallbackAvatar, fallbackColor, name
     if (kind === 'profile') {
       const u = usersMap?.[entityId];
       live = u?.avatar || u?.avatarUrl || null;
+    } else if (kind === 'group_invite') {
+      /**
+       * A GROUP CHAT IS NOT A COMMUNITY.
+       *
+       * This branch used to read `communitiesById[entityId]` for every
+       * non-profile entity, and a group invite's `entityId` is a conversation
+       * id, so the lookup never matched. The quote therefore always fell back
+       * to the snapshot taken when the invite was sent — stale the moment the
+       * group changed its picture, and blank whenever the sender's own copy had
+       * no avatar to snapshot.
+       *
+       * The conversation list is where a group's current avatar actually lives,
+       * and the invite card beside this quote already renders from it.
+       */
+      const group = (conversations || []).find(
+        (c) => String(c.id) === String(entityId) || String(c.publicId) === String(entityId),
+      );
+      live = group?.avatarKey || group?.avatar || group?.icon || null;
     } else {
       const c = communitiesById?.[entityId];
       live = c?.avatarKey || c?.avatar || null;
@@ -142,7 +175,7 @@ function ReplyEntityAvatar({ kind, entityId, fallbackAvatar, fallbackColor, name
     }
   }
 
-  const src = live || fallbackAvatar || null;
+  const src = imageFailed ? null : (live || fallbackAvatar || null);
 
   // With a real picture, render it through Avatar so it goes through the same
   // media resolution, error handling and caching as every other avatar.
@@ -155,6 +188,7 @@ function ReplyEntityAvatar({ kind, entityId, fallbackAvatar, fallbackColor, name
         isGroup={isGroup}
         disableHover
         className={className}
+        onError={() => setImageFailed(true)}
         // Circular, overriding the squared-off group shape Avatar applies when
         // isGroup is set. In a quote every entity avatar is round — that is what
         // the picture-less fallback below draws, and what the shared-community

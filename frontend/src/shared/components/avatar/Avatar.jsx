@@ -37,6 +37,17 @@ const Avatar = forwardRef(({
   onClick,
   disableHover = false,
   isLoading = false,
+  /**
+   * Notified when the picture fails to load.
+   *
+   * This component's own fallback is `/default_avatar.svg`, a person, and that
+   * is right for a person and wrong for anything else: a group whose avatar
+   * 404s rendered as an anonymous human. Rather than teach this component every
+   * entity type's fallback, callers that have one of their own can be told the
+   * load failed and draw it themselves. Purely additive; the built-in fallback
+   * still applies to everyone who does not pass this.
+   */
+  onError,
   children
 }, ref) => {
   const canSeePresence = useCanSeeOthersPresence();
@@ -136,6 +147,7 @@ const Avatar = forwardRef(({
     if (imgSrc) failedAvatarCache.add(imgSrc);
     setHasError(true);
     setImgLoading(false);
+    onError?.();
   };
 
   return (
