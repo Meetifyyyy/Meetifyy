@@ -47,6 +47,18 @@ export const AdminLayout: React.FC = () => {
     setIsMobileOpen(false);
   }, [location.pathname]);
 
+  // Lock body scrolling when mobile navigation drawer is open
+  useEffect(() => {
+    if (isMobile && isMobileOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [isMobile, isMobileOpen]);
+
   const navItems = [
     { label: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
     { label: 'Colleges', path: '/colleges', icon: Building2, badge: pendingCount },
@@ -70,13 +82,15 @@ export const AdminLayout: React.FC = () => {
       {isMobile && (
         <header
           style={{
-            height: '60px',
+            height: '52px',
+            minHeight: '52px',
+            maxHeight: '52px',
             background: 'var(--color-bg-white)',
             borderBottom: '1px solid var(--color-border)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            padding: '0 1rem',
+            padding: '0 0.85rem',
             position: 'sticky',
             top: 0,
             zIndex: 35,
@@ -171,72 +185,78 @@ export const AdminLayout: React.FC = () => {
           onMouseEnter={() => !isMobile && setIsHovered(true)}
           onMouseLeave={() => !isMobile && setIsHovered(false)}
           style={{
-            width: isMobile ? '260px' : isHovered ? '240px' : '68px',
+            width: isMobile ? 'min(290px, 84vw)' : isHovered ? '240px' : '68px',
             background: 'var(--color-bg-white)',
             borderRight: '1px solid var(--color-border)',
             display: 'flex',
             flexDirection: 'column',
             position: 'fixed',
-            top: isMobile ? '60px' : 0,
+            top: 0,
             bottom: 0,
+            height: '100%',
             left: 0,
-            zIndex: 45,
-            boxShadow: isHovered || isMobileOpen ? '0 10px 30px rgba(15, 23, 42, 0.08)' : 'none',
+            zIndex: 50,
+            boxShadow: isMobileOpen
+              ? '0 20px 25px -5px rgba(0, 0, 0, 0.2), 0 10px 10px -5px rgba(0, 0, 0, 0.1)'
+              : isHovered
+              ? '0 10px 30px rgba(15, 23, 42, 0.08)'
+              : 'none',
             transition: 'width 0.25s cubic-bezier(0.4, 0, 0.2, 1), transform 0.25s ease, box-shadow 0.25s ease',
             transform: isMobile ? (isMobileOpen ? 'translateX(0)' : 'translateX(-100%)') : 'none',
             overflowX: 'hidden',
           }}
         >
-          {/* BRAND HEADER (Desktop) */}
-          {!isMobile && (
-            <div
-              style={{
-                height: '65px',
-                minHeight: '65px',
-                maxHeight: '65px',
-                padding: '0 0.9rem',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.8rem',
-                borderBottom: '1px solid var(--color-border)',
-                boxSizing: 'border-box',
-                flexShrink: 0,
-                overflow: 'hidden',
-              }}
-            >
+          {/* BRAND HEADER (Desktop & Mobile) */}
+          <div
+            style={{
+              height: isMobile ? '56px' : '65px',
+              minHeight: isMobile ? '56px' : '65px',
+              maxHeight: isMobile ? '56px' : '65px',
+              padding: isMobile ? '0 0.85rem' : '0 0.9rem',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: isMobile ? 'space-between' : 'flex-start',
+              gap: '0.8rem',
+              borderBottom: '1px solid var(--color-border)',
+              boxSizing: 'border-box',
+              flexShrink: 0,
+              overflow: 'hidden',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', minWidth: 0 }}>
               <div
                 style={{
-                  width: '34px',
-                  height: '34px',
-                  borderRadius: '10px',
+                  width: '32px',
+                  height: '32px',
+                  borderRadius: '9px',
                   background: 'linear-gradient(135deg, var(--color-primary), var(--color-secondary))',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   flexShrink: 0,
-                  boxShadow: '0 2px 8px rgba(37, 99, 235, 0.2)',
+                  boxShadow: '0 2px 8px rgba(37, 99, 235, 0.25)',
                 }}
               >
-                <Sparkles size={18} color="#fff" />
+                <Sparkles size={16} color="#fff" />
               </div>
 
               <div
                 style={{
-                  opacity: isHovered ? 1 : 0,
+                  opacity: (isMobile || isHovered) ? 1 : 0,
                   transition: 'opacity 0.2s ease',
                   whiteSpace: 'nowrap',
                   overflow: 'hidden',
                   minWidth: 0,
                 }}
               >
-                <h1 style={{ fontSize: '1.05rem', fontWeight: 800, margin: 0, color: 'var(--color-text-main)' }}>Meetifyy</h1>
+                <h1 style={{ fontSize: '1rem', fontWeight: 800, margin: 0, color: 'var(--color-text-main)' }}>Meetifyy</h1>
                 <span
                   style={{
                     fontSize: '0.62rem',
                     fontWeight: 700,
                     color: 'var(--color-primary)',
                     background: 'var(--color-primary-tint)',
-                    padding: '1px 6px',
+                    padding: '1px 5px',
                     borderRadius: '4px',
                     display: 'inline-block',
                   }}
@@ -245,10 +265,32 @@ export const AdminLayout: React.FC = () => {
                 </span>
               </div>
             </div>
-          )}
+
+            {isMobile && (
+              <button
+                onClick={() => setIsMobileOpen(false)}
+                style={{
+                  background: 'var(--color-bg-soft)',
+                  border: '1px solid var(--color-border)',
+                  borderRadius: '8px',
+                  width: '32px',
+                  height: '32px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  color: 'var(--color-text-main)',
+                  flexShrink: 0,
+                }}
+                aria-label="Close menu"
+              >
+                <X size={18} />
+              </button>
+            )}
+          </div>
 
           {/* NAV LINKS */}
-          <nav style={{ padding: '0.75rem 0.5rem', flex: 1, overflowY: 'auto' }}>
+          <nav style={{ padding: isMobile ? '0.6rem 0.5rem' : '0.75rem 0.5rem', flex: 1, overflowY: 'auto' }}>
             {navItems.map((item) => {
               const Icon = item.icon;
               const isActive = location.pathname === item.path;
@@ -258,20 +300,21 @@ export const AdminLayout: React.FC = () => {
                 <NavLink
                   key={item.path}
                   to={item.path}
+                  onClick={() => isMobile && setIsMobileOpen(false)}
                   title={!showText ? item.label : undefined}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
                     gap: '0.75rem',
                     padding: '0 0.75rem',
-                    height: '42px',
+                    height: isMobile ? '38px' : '42px',
                     borderRadius: 'var(--radius-sm)',
                     color: isActive ? 'var(--color-primary)' : 'var(--color-text-muted)',
                     background: isActive ? 'var(--color-primary-tint)' : 'transparent',
                     fontWeight: isActive ? 600 : 500,
-                    fontSize: '0.85rem',
+                    fontSize: isMobile ? '0.82rem' : '0.85rem',
                     textDecoration: 'none',
-                    marginBottom: '0.2rem',
+                    marginBottom: '0.15rem',
                     transition: 'background 0.15s ease, color 0.15s ease',
                     whiteSpace: 'nowrap',
                     boxSizing: 'border-box',
@@ -279,7 +322,7 @@ export const AdminLayout: React.FC = () => {
                   }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '20px', flexShrink: 0 }}>
-                    <Icon size={18} color={isActive ? 'var(--color-primary)' : 'var(--color-text-light)'} />
+                    <Icon size={17} color={isActive ? 'var(--color-primary)' : 'var(--color-text-light)'} />
                   </div>
                   <span
                     style={{
@@ -315,51 +358,71 @@ export const AdminLayout: React.FC = () => {
           </nav>
 
           {/* USER FOOTER */}
-          {!isMobile && (
+          <div
+            style={{
+              height: isMobile ? '54px' : '60px',
+              minHeight: isMobile ? '54px' : '60px',
+              maxHeight: isMobile ? '54px' : '60px',
+              padding: '0 0.75rem',
+              borderTop: '1px solid var(--color-border)',
+              background: 'var(--color-bg-alt)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: (isMobile || isHovered) ? 'space-between' : 'center',
+              boxSizing: 'border-box',
+              flexShrink: 0,
+              overflow: 'hidden',
+            }}
+          >
             <div
               style={{
-                height: '60px',
-                minHeight: '60px',
-                maxHeight: '60px',
-                padding: '0 0.75rem',
-                borderTop: '1px solid var(--color-border)',
-                background: 'var(--color-bg-alt)',
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: isHovered ? 'space-between' : 'center',
-                boxSizing: 'border-box',
-                flexShrink: 0,
+                gap: '0.65rem',
                 overflow: 'hidden',
+                flex: 1,
+                minWidth: 0,
               }}
             >
               <div
                 style={{
+                  width: '30px',
+                  height: '30px',
+                  borderRadius: '50%',
+                  background: 'var(--color-primary-tint)',
+                  border: '1px solid rgba(37, 99, 235, 0.2)',
+                  color: 'var(--color-primary)',
+                  fontWeight: 700,
+                  fontSize: '0.8rem',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '0.75rem',
-                  overflow: 'hidden',
-                  flex: 1,
+                  justifyContent: 'center',
+                  flexShrink: 0,
                 }}
               >
+                {(admin?.name || 'A').charAt(0).toUpperCase()}
+              </div>
+
+              {(isMobile || isHovered) && (
                 <div
                   style={{
-                    opacity: isHovered ? 1 : 0,
-                    transition: 'opacity 0.2s ease',
                     overflow: 'hidden',
                     whiteSpace: 'nowrap',
                     flex: 1,
                     minWidth: 0,
                   }}
                 >
-                  <p style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--color-text-main)', margin: 0, textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                  <p style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--color-text-main)', margin: 0, textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
                     {admin?.name || 'Super Admin'}
                   </p>
-                  <p style={{ fontSize: '0.7rem', color: 'var(--color-text-light)', margin: 0, textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                  <p style={{ fontSize: '0.68rem', color: 'var(--color-text-light)', margin: 0, textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
                     {admin?.email || ''}
                   </p>
                 </div>
-              </div>
+              )}
+            </div>
 
+            {(isMobile || isHovered) && (
               <button
                 onClick={logout}
                 title="Log Out"
@@ -367,8 +430,8 @@ export const AdminLayout: React.FC = () => {
                   background: 'var(--color-danger-tint)',
                   border: '1px solid rgba(239, 68, 68, 0.2)',
                   color: 'var(--color-danger-hover)',
-                  width: '32px',
-                  height: '32px',
+                  width: '30px',
+                  height: '30px',
                   borderRadius: 'var(--radius-sm)',
                   cursor: 'pointer',
                   display: 'flex',
@@ -377,10 +440,10 @@ export const AdminLayout: React.FC = () => {
                   flexShrink: 0,
                 }}
               >
-                <LogOut size={16} />
+                <LogOut size={15} />
               </button>
-            </div>
-          )}
+            )}
+          </div>
         </aside>
 
         {/* MAIN CONTENT VIEWPORT */}
@@ -388,8 +451,10 @@ export const AdminLayout: React.FC = () => {
           style={{
             marginLeft: isMobile ? 0 : '68px',
             flex: 1,
-            padding: isMobile ? '0.9rem 0.9rem' : '1.25rem 1.75rem',
+            padding: isMobile ? '0.65rem 0.75rem' : '1.25rem 1.75rem',
             minWidth: 0,
+            maxWidth: '100%',
+            overflowX: 'hidden',
             transition: 'margin-left 0.2s ease',
           }}
         >

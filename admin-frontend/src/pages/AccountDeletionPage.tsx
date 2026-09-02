@@ -13,6 +13,7 @@ import {
   UserCheck,
   Search,
 } from '../components/icons';
+import { useConfirm } from '../components/ConfirmProvider';
 
 type Filter = 'pending' | 'failed' | 'completed' | 'all';
 
@@ -66,15 +67,12 @@ const STATUS_STYLE: Record<string, { bg: string; fg: string; label: string }> = 
  * shows no bio, avatar or profile content for someone who asked to be forgotten.
  */
 export const AccountDeletionPage: React.FC = () => {
+  const confirm = useConfirm();
   const queryClient = useQueryClient();
   const [filter, setFilter] = useState<Filter>('pending');
   const [page, setPage] = useState(1);
   const [searchInput, setSearchInput] = useState('');
   const search = useDebounced(searchInput, 300);
-  const [confirming, setConfirming] = useState<
-    { action: 'restore' | 'purge'; request: DeletionRequest } | null
-  >(null);
-
   const { data, isLoading, isFetching } = useQuery({
     queryKey: ['adminAccountDeletion', filter, page, search],
     queryFn: () => {
@@ -92,7 +90,6 @@ export const AccountDeletionPage: React.FC = () => {
       apiRequest(`/admin/account-deletion/${userId}/restore`, { method: 'POST' }),
     onSuccess: () => {
       pushToast('Account restored', 'success');
-      setConfirming(null);
       invalidate();
     },
     // The backend's message is shown verbatim — it is the one that knows
@@ -106,7 +103,6 @@ export const AccountDeletionPage: React.FC = () => {
       apiRequest(`/admin/account-deletion/${userId}/purge`, { method: 'POST' }),
     onSuccess: () => {
       pushToast('Permanent deletion completed', 'success');
-      setConfirming(null);
       invalidate();
     },
     onError: (err: any) =>
@@ -131,87 +127,80 @@ export const AccountDeletionPage: React.FC = () => {
   const busy = restore.isPending || purgeNow.isPending;
 
   return (
-    <div style={{ padding: '2rem', maxWidth: '1200px', margin: '0 auto', color: 'var(--color-text-main)' }}>
-      <header style={{ marginBottom: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem', flexWrap: 'wrap' }}>
+    <div>
+      <div className="page-header">
         <div>
-          <h1 style={{ fontSize: '1.75rem', fontWeight: 600, color: 'var(--color-text-white)', marginBottom: '0.25rem' }}>
-            Account Deletion
-          </h1>
-          <p style={{ color: 'var(--color-text-light)', fontSize: '0.9rem' }}>
-            Deletion requests and the {data?.recoveryWindowDays ?? 30}-day recovery window.
-            Accounts are permanently deleted automatically once the window closes.
+          <h2 className="page-title">Account Deletion</h2>
+          <p className="page-subtitle">
+            Deletion requests and the {data?.recoveryWindowDays ?? 30}-day recovery window. Accounts are permanently deleted automatically once the window closes.
           </p>
         </div>
         <button
-          onClick={() => runSweep.mutate()}
+          onClick={() => confirm({
+            title: 'Run the purge sweep now?',
+            description: 'Every account whose 30-day recovery window has closed is permanently deleted immediately, rather than on the next scheduled run.',
+            consequences: [
+              'This affects all due accounts at once, not one person.',
+              'Posts, activities and uploaded media are removed and cannot be recovered.',
+            ],
+            severity: 'critical',
+            confirmLabel: 'Run sweep',
+            onConfirm: () => runSweep.mutateAsync(),
+          })}
           disabled={runSweep.isPending}
+          className="btn-secondary"
           style={{
-            display: 'inline-flex', alignItems: 'center', gap: '0.5rem',
-            padding: '0.55rem 1rem', borderRadius: '8px',
-            border: '1px solid var(--color-border)',
-            background: 'var(--color-bg-panel)',
-            color: 'var(--color-text-white)',
-            fontSize: '0.875rem',
             cursor: runSweep.isPending ? 'not-allowed' : 'pointer',
             opacity: runSweep.isPending ? 0.6 : 1,
           }}
           title="Runs the scheduled purge sweep immediately instead of waiting for the next one"
         >
-          <RefreshCw size={16} />
-          {runSweep.isPending ? 'Running sweep…' : 'Run purge sweep now'}
+          <RefreshCw size={15} />
+          <span>{runSweep.isPending ? 'Running sweep…' : 'Run purge sweep now'}</span>
         </button>
-      </header>
+      </div>
 
       {counts && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '0.75rem', marginBottom: '1.5rem' }}>
-          <StatTile icon={<Clock size={16} />} label="In recovery window" value={counts.pending} />
-          <StatTile icon={<Trash2 size={16} />} label="Due for deletion" value={counts.dueNow} tone="#f97316" />
-          <StatTile icon={<AlertTriangle size={16} />} label="Needs attention" value={counts.failed} tone="#ef4444" />
-          <StatTile icon={<CheckCircle size={16} />} label="Deleted" value={counts.completed} tone="#94a3b8" />
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 140px), 1fr))', gap: '0.75rem', marginBottom: '1.25rem' }}>
+          <StatTile icon={<Clock size={15} />} label="In recovery window" value={counts.pending} />
+          <StatTile icon={<Trash2 size={15} />} label="Due for deletion" value={counts.dueNow} tone="#f97316" />
+          <StatTile icon={<AlertTriangle size={15} />} label="Needs attention" value={counts.failed} tone="#ef4444" />
+          <StatTile icon={<CheckCircle size={15} />} label="Deleted" value={counts.completed} tone="#94a3b8" />
         </div>
       )}
 
       <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1.25rem', flexWrap: 'wrap', alignItems: 'center' }}>
-        <div style={{ display: 'flex', gap: '0.5rem' }}>
+        <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
           {FILTERS.map((f) => (
             <button
               key={f.key}
               onClick={() => { setFilter(f.key); setPage(1); }}
-              style={{
-                padding: '0.5rem 1rem', borderRadius: '6px', border: '1px solid',
-                borderColor: filter === f.key ? 'var(--color-brand)' : 'var(--color-border)',
-                background: filter === f.key ? 'var(--color-brand-alpha)' : 'var(--color-bg-panel)',
-                color: filter === f.key ? 'var(--color-brand)' : 'var(--color-text-light)',
-                fontSize: '0.875rem', cursor: 'pointer',
-              }}
+              className={filter === f.key ? 'btn-primary' : 'btn-secondary'}
+              style={{ padding: '0.35rem 0.75rem', fontSize: '0.78rem' }}
             >
               {f.label}
             </button>
           ))}
         </div>
-        <div style={{ position: 'relative', flex: '1 1 220px', maxWidth: '320px' }}>
-          <Search size={15} style={{ position: 'absolute', left: '0.7rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-light)' }} />
+        <div style={{ position: 'relative', flex: '1 1 220px', maxWidth: '100%' }}>
+          <Search size={15} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-dim)' }} />
           <input
             value={searchInput}
             onChange={(e) => { setSearchInput(e.target.value); setPage(1); }}
             placeholder="Search username, email or user ID"
-            style={{
-              width: '100%', padding: '0.55rem 0.75rem 0.55rem 2.1rem',
-              borderRadius: '8px', border: '1px solid var(--color-border)',
-              background: 'var(--color-bg-panel)', color: 'var(--color-text-white)',
-              fontSize: '0.875rem', boxSizing: 'border-box',
-            }}
+            className="input-control"
+            style={{ width: '100%', paddingLeft: '2.2rem' }}
           />
         </div>
       </div>
 
       {isLoading ? (
-        <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--color-text-light)' }}>Loading requests…</div>
+        <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--color-text-dim)', fontSize: '0.85rem' }}>Loading requests…</div>
       ) : requests.length === 0 ? (
-        <div style={{ padding: '3rem', textAlign: 'center', background: 'var(--color-bg-panel)', borderRadius: '12px', border: '1px solid var(--color-border)' }}>
-          <CheckCircle size={48} style={{ color: 'var(--color-success)', margin: '0 auto 1rem', opacity: 0.5 }} />
-          <h3 style={{ fontSize: '1.1rem', color: 'var(--color-text-white)', marginBottom: '0.5rem' }}>Nothing here</h3>
-          <p style={{ color: 'var(--color-text-light)', fontSize: '0.9rem' }}>
+        <div className="glass-panel" style={{ padding: '3rem 1.5rem', textAlign: 'center' }}>
+          <CheckCircle size={44} style={{ color: 'var(--color-success)', margin: '0 auto 0.75rem', opacity: 0.6 }} />
+          <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: 'var(--color-text-main)', marginBottom: '0.35rem' }}>Nothing here</h3>
+          <p style={{ color: 'var(--color-text-light)', fontSize: '0.85rem' }}>
             No account-deletion requests match this filter.
           </p>
         </div>
@@ -222,8 +211,25 @@ export const AccountDeletionPage: React.FC = () => {
               key={req.userId}
               request={req}
               busy={busy}
-              onRestore={() => setConfirming({ action: 'restore', request: req })}
-              onPurge={() => setConfirming({ action: 'purge', request: req })}
+              onRestore={() => confirm({
+                title: 'Restore this account?',
+                description: `This cancels the pending deletion for @${req.username} and makes the account active and visible again.`,
+                consequences: ['Do this only at the account owner\u2019s request.'],
+                severity: 'moderate',
+                confirmLabel: 'Restore account',
+                onConfirm: () => restore.mutateAsync(req.userId),
+              })}
+              onPurge={() => confirm({
+                title: 'Delete this account permanently?',
+                description: `This permanently purges all data for @${req.username} right now, without waiting for the scheduled sweep.`,
+                consequences: [
+                  'The user cannot recover this account after this step.',
+                  'Their posts, activities and profile are removed immediately.',
+                ],
+                severity: 'critical',
+                confirmLabel: 'Delete immediately',
+                onConfirm: () => purgeNow.mutateAsync(req.userId),
+              })}
             />
           ))}
         </div>
@@ -237,20 +243,6 @@ export const AccountDeletionPage: React.FC = () => {
         label="requests"
         busy={isFetching}
       />
-
-      {confirming && (
-        <ConfirmDialog
-          action={confirming.action}
-          request={confirming.request}
-          busy={busy}
-          onCancel={() => setConfirming(null)}
-          onConfirm={() =>
-            confirming.action === 'restore'
-              ? restore.mutate(confirming.request.userId)
-              : purgeNow.mutate(confirming.request.userId)
-          }
-        />
-      )}
     </div>
   );
 };
@@ -258,12 +250,12 @@ export const AccountDeletionPage: React.FC = () => {
 const StatTile: React.FC<{ icon: React.ReactNode; label: string; value: number; tone?: string }> = ({
   icon, label, value, tone,
 }) => (
-  <div style={{ background: 'var(--color-bg-panel)', border: '1px solid var(--color-border)', borderRadius: '10px', padding: '0.9rem 1rem' }}>
-    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: tone || 'var(--color-text-light)', fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+  <div className="glass-panel" style={{ padding: '0.85rem 1rem' }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: tone || 'var(--color-text-light)', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 600 }}>
       {icon}
       <span>{label}</span>
     </div>
-    <div style={{ marginTop: '0.35rem', fontSize: '1.5rem', fontWeight: 700, color: 'var(--color-text-white)' }}>
+    <div style={{ marginTop: '0.35rem', fontSize: '1.4rem', fontWeight: 700, color: 'var(--color-text-main)' }}>
       {value}
     </div>
   </div>
@@ -278,15 +270,17 @@ const RequestRow: React.FC<{
   const style = STATUS_STYLE[request.status] ?? STATUS_STYLE.pending;
 
   return (
-    <div style={{
-      background: 'var(--color-bg-panel)', border: '1px solid var(--color-border)',
-      borderRadius: '12px', padding: '1.1rem 1.25rem',
-      display: 'flex', gap: '1rem', justifyContent: 'space-between',
-      alignItems: 'flex-start', flexWrap: 'wrap',
-    }}>
-      <div style={{ minWidth: 0, flex: '1 1 340px' }}>
+    <div
+      className="glass-panel"
+      style={{
+        padding: '1.1rem 1.25rem',
+        display: 'flex', gap: '1rem', justifyContent: 'space-between',
+        alignItems: 'flex-start', flexWrap: 'wrap',
+      }}
+    >
+      <div style={{ minWidth: 0, flex: '1 1 min(100%, 260px)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
-          <span style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--color-text-white)' }}>
+          <span style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--color-text-main)' }}>
             @{request.username}
           </span>
           <span style={{ padding: '0.2rem 0.6rem', borderRadius: '9999px', fontSize: '0.72rem', fontWeight: 600, background: style.bg, color: style.fg }}>
@@ -307,7 +301,7 @@ const RequestRow: React.FC<{
           </span>
         </div>
 
-        <div style={{ marginTop: '0.6rem', display: 'flex', gap: '1.5rem', flexWrap: 'wrap', fontSize: '0.8rem', color: 'var(--color-text-light)' }}>
+        <div style={{ marginTop: '0.6rem', display: 'flex', gap: '1.25rem', flexWrap: 'wrap', fontSize: '0.8rem', color: 'var(--color-text-light)' }}>
           <Field label="Requested" value={formatDate(request.deletionRequestedAt)} />
           {request.status === 'completed' ? (
             <Field label="Deleted" value={formatDate(request.purgeCompletedAt)} />
@@ -331,7 +325,7 @@ const RequestRow: React.FC<{
         {request.purgeLastError && (
           <div style={{
             marginTop: '0.7rem', padding: '0.55rem 0.7rem', borderRadius: '8px',
-            background: 'rgba(239, 68, 68, 0.12)', color: '#fca5a5',
+            background: 'var(--color-danger-tint)', color: 'var(--color-danger)',
             fontSize: '0.78rem', wordBreak: 'break-word',
           }}>
             Last failure ({request.purgeAttempts} attempt{request.purgeAttempts === 1 ? '' : 's'}): {request.purgeLastError}
@@ -341,7 +335,7 @@ const RequestRow: React.FC<{
 
       {/* Actions render only when the backend says they can succeed, so this
           panel never carries a control that does nothing when pressed. */}
-      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
         {request.canRestore && (
           <button onClick={onRestore} disabled={busy} style={actionStyle('#22c55e', busy)}>
             <UserCheck size={15} />
@@ -362,59 +356,9 @@ const RequestRow: React.FC<{
 const Field: React.FC<{ label: string; value: string }> = ({ label, value }) => (
   <span style={{ display: 'grid', gap: '0.1rem' }}>
     <span style={{ fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.04em', opacity: 0.7 }}>{label}</span>
-    <span style={{ color: 'var(--color-text-white)' }}>{value}</span>
+    <span style={{ color: 'var(--color-text-main)' }}>{value}</span>
   </span>
 );
-
-const ConfirmDialog: React.FC<{
-  action: 'restore' | 'purge';
-  request: DeletionRequest;
-  busy: boolean;
-  onCancel: () => void;
-  onConfirm: () => void;
-}> = ({ action, request, busy, onCancel, onConfirm }) => {
-  const isPurge = action === 'purge';
-  return (
-    <div
-      onClick={() => !busy && onCancel()}
-      style={{ position: 'fixed', inset: 0, background: 'rgba(2, 6, 23, 0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1.5rem', zIndex: 1000 }}
-      role="dialog"
-      aria-modal="true"
-    >
-      <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: '460px', background: 'var(--color-bg-panel)', border: '1px solid var(--color-border)', borderRadius: '14px', padding: '1.5rem' }}>
-        <h2 style={{ margin: '0 0 0.5rem', fontSize: '1.1rem', color: 'var(--color-text-white)' }}>
-          {isPurge ? 'Delete this account permanently?' : 'Restore this account?'}
-        </h2>
-        <p style={{ margin: '0 0 1.25rem', fontSize: '0.88rem', lineHeight: 1.6, color: 'var(--color-text-light)' }}>
-          {isPurge ? (
-            <>
-              The 30-day recovery window for <strong>@{request.username}</strong> has
-              already closed, so this runs the permanent deletion now instead of
-              waiting for the next scheduled sweep. Their posts, activities and
-              uploaded media are removed and cannot be recovered. Their messages
-              stay in other people&apos;s conversations, shown as a deleted
-              account.
-            </>
-          ) : (
-            <>
-              This cancels the pending deletion for <strong>@{request.username}</strong> and
-              makes the account active and visible again. Do this only at the
-              account owner&apos;s request.
-            </>
-          )}
-        </p>
-        <div style={{ display: 'flex', gap: '0.6rem', justifyContent: 'flex-end' }}>
-          <button onClick={onCancel} disabled={busy} style={{ padding: '0.6rem 1rem', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'transparent', color: 'var(--color-text-light)', fontSize: '0.875rem', cursor: busy ? 'not-allowed' : 'pointer' }}>
-            Cancel
-          </button>
-          <button onClick={onConfirm} disabled={busy} style={{ padding: '0.6rem 1.1rem', borderRadius: '8px', border: 'none', background: isPurge ? '#ef4444' : '#22c55e', color: '#fff', fontWeight: 600, fontSize: '0.875rem', cursor: busy ? 'not-allowed' : 'pointer', opacity: busy ? 0.7 : 1 }}>
-            {busy ? 'Working…' : isPurge ? 'Delete permanently' : 'Restore account'}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
 
 const actionStyle = (color: string, busy: boolean): React.CSSProperties => ({
   display: 'inline-flex',

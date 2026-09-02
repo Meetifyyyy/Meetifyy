@@ -32,21 +32,31 @@ const APPEAL_CATEGORY = 'SUSPENSION_APPEAL';
 export const SupportPage: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const [tab, setTab] = useState<Tab>('tickets');
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
 
   const selectedTicketId = searchParams.get('ticket');
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // A deep link carrying ?ticket= is a link to a ticket, so it must open the
   // tickets tab even if the admin was last on the help tab.
   useEffect(() => {
-    if (selectedTicketId) setTab('tickets');
-  }, [selectedTicketId]);
+    if (selectedTicketId && tab === 'help') {
+      setTab('tickets');
+    }
+  }, [selectedTicketId, tab]);
 
   const selectTicket = (id: string | null) => {
     setSearchParams(
-      (params) => {
-        if (id) params.set('ticket', id);
-        else params.delete('ticket');
-        return params;
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (id) next.set('ticket', id);
+        else next.delete('ticket');
+        return next;
       },
       // Browsing the queue should not fill the back stack with one entry per
       // ticket the admin glanced at.
@@ -78,37 +88,45 @@ export const SupportPage: React.FC = () => {
       </div>
 
       {tab === 'tickets' || tab === 'appeals' ? (
-        <div style={ticketLayout}>
-          <TicketQueue
-            // Remounted when the section changes so the appeals queue starts
-            // from its own filter state rather than inheriting the last search
-            // the admin ran on the full queue.
-            key={tab}
-            selectedId={selectedTicketId}
-            onSelect={selectTicket}
-            lockedCategory={tab === 'appeals' ? APPEAL_CATEGORY : undefined}
-          />
+        <div className="ticket-layout">
+          {(!isMobile || !selectedTicketId) && (
+            <TicketQueue
+              // Remounted when the section changes so the appeals queue starts
+              // from its own filter state rather than inheriting the last search
+              // the admin ran on the full queue.
+              key={tab}
+              selectedId={selectedTicketId}
+              onSelect={selectTicket}
+              lockedCategory={tab === 'appeals' ? APPEAL_CATEGORY : undefined}
+            />
+          )}
 
-          <div className="glass-panel" style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-            {selectedTicketId ? (
-              // Keyed on the id so switching tickets remounts the detail pane.
-              // Without it the reply composer would carry a half-written reply
-              // from one ticket into another.
-              <TicketDetail key={selectedTicketId} ticketId={selectedTicketId} />
-            ) : (
-              <div style={emptyDetail}>
-                {tab === 'appeals' ? <ShieldAlert size={24} /> : <Inbox size={24} />}
-                <span style={{ fontWeight: 600 }}>
-                  {tab === 'appeals' ? 'Select an appeal' : 'Select a ticket'}
-                </span>
-                <span style={{ fontSize: '0.78rem' }}>
-                  {tab === 'appeals'
-                    ? 'Choose an appeal to read it, reply, or decide the outcome.'
-                    : 'Choose a request from the queue to read it, reply, or change its status.'}
-                </span>
-              </div>
-            )}
-          </div>
+          {(!isMobile || selectedTicketId) && (
+            <div className="glass-panel" style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+              {selectedTicketId ? (
+                // Keyed on the id so switching tickets remounts the detail pane.
+                // Without it the reply composer would carry a half-written reply
+                // from one ticket into another.
+                <TicketDetail
+                  key={selectedTicketId}
+                  ticketId={selectedTicketId}
+                  onBack={isMobile ? () => selectTicket(null) : undefined}
+                />
+              ) : (
+                <div style={emptyDetail}>
+                  {tab === 'appeals' ? <ShieldAlert size={24} /> : <Inbox size={24} />}
+                  <span style={{ fontWeight: 600 }}>
+                    {tab === 'appeals' ? 'Select an appeal' : 'Select a ticket'}
+                  </span>
+                  <span style={{ fontSize: '0.78rem' }}>
+                    {tab === 'appeals'
+                      ? 'Choose an appeal to read it, reply, or decide the outcome.'
+                      : 'Choose a request from the queue to read it, reply, or change its status.'}
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       ) : (
         <HelpContentManager />
@@ -147,14 +165,17 @@ const tabBar: React.CSSProperties = {
   gap: '0.25rem',
   marginBottom: '0.85rem',
   borderBottom: '1px solid var(--color-border)',
+  overflowX: 'auto',
+  whiteSpace: 'nowrap',
+  scrollbarWidth: 'none',
 };
 
 const tabButton: React.CSSProperties = {
   display: 'inline-flex',
   alignItems: 'center',
-  gap: '0.4rem',
-  padding: '0.45rem 0.8rem',
-  fontSize: '0.82rem',
+  gap: '0.35rem',
+  padding: '0.32rem 0.6rem',
+  fontSize: '0.74rem',
   fontFamily: 'inherit',
   background: 'none',
   border: 'none',
@@ -163,16 +184,6 @@ const tabButton: React.CSSProperties = {
   marginBottom: '-1px',
 };
 
-const ticketLayout: React.CSSProperties = {
-  display: 'grid',
-  gridTemplateColumns: 'minmax(300px, 380px) 1fr',
-  gap: '1rem',
-  // Tracks the compacted chrome above it: main padding, page header and tab
-  // bar. Kept as one number in one place so a spacing change has a single
-  // place to follow.
-  height: 'calc(100vh - 160px)',
-  minHeight: '30rem',
-};
 
 const emptyDetail: React.CSSProperties = {
   display: 'flex',

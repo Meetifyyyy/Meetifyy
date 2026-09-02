@@ -53,12 +53,91 @@
   flex-wrap: wrap;
 }
 
+/* ID Verification Media Comparison */
+.verification-media-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+.verification-media-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.verification-media-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 0.15rem;
+}
+
+.verification-media-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--color-text-light);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.verification-media-ext-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.7rem;
+  color: var(--color-primary);
+  text-decoration: none;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--color-primary-tint);
+  border: 1px solid rgba(37, 99, 235, 0.15);
+  transition: opacity 0.15s;
+}
+
+.verification-media-ext-link:hover {
+  opacity: 0.85;
+}
+
+.verification-media-frame {
+  background: #0B0F19;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  height: 240px;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.25);
+}
+
+.verification-media-frame img {
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  border-radius: 4px;
+}
+
+.verification-media-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #64748B;
+  font-size: 0.78rem;
+}
+
 @media (max-width: 640px) {
   .page-header {
     flex-direction: column;
     align-items: flex-start;
-    gap: 0.6rem;
-    margin-bottom: 0.9rem;
+    gap: 0.15rem;
+    margin-bottom: 0.6rem;
   }
 
   .page-header > button,
@@ -70,10 +149,141 @@
   }
 
   .page-title {
-    font-size: 1.05rem;
+    font-size: 1.02rem;
+    font-weight: 700;
+    line-height: 1.25;
   }
 
   .page-subtitle {
-    font-size: 0.76rem;
+    font-size: 0.7rem;
+    line-height: 1.35;
+  }
+
+  /* Compact button density on mobile */
+  .btn-primary,
+  .btn-secondary,
+  .btn-danger {
+    padding: 0.28rem 0.6rem;
+    font-size: 0.72rem;
+    min-height: 30px;
+    gap: 0.25rem;
+  }
+
+  /* Compact tabs on mobile */
+  .admin-tab-bar button,
+  [role="tablist"] button {
+    padding: 0.26rem 0.5rem !important;
+    font-size: 0.72rem !important;
+    gap: 0.3rem !important;
+  }
+
+  /* Dashboard compact scaling */
+  .dashboard-metrics-grid {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 120px), 1fr)) !important;
+    gap: 0.4rem !important;
+    margin-bottom: 0.65rem !important;
+  }
+
+  .dashboard-stat-card {
+    padding: 0.45rem 0.6rem !important;
+  }
+
+  .dashboard-stat-label {
+    font-size: 0.62rem !important;
+    margin-bottom: 0.05rem !important;
+  }
+
+  .dashboard-stat-value {
+    font-size: 0.95rem !important;
+    font-weight: 800 !important;
+  }
+
+  .dashboard-stat-icon-wrap {
+    width: 24px !important;
+    height: 24px !important;
+    border-radius: 6px !important;
+  }
+
+  .dashboard-stat-icon-wrap svg {
+    width: 12px !important;
+    height: 12px !important;
+  }
+
+  .dashboard-chart-card {
+    padding: 0.65rem !important;
+  }
+
+  .dashboard-chart-title {
+    font-size: 0.78rem !important;
+    margin-bottom: 0.35rem !important;
+  }
+
+  .dashboard-chart-container {
+    height: 170px !important;
+  }
+
+  /* Status widget compact scaling */
+  .status-widget-card {
+    padding: 0.6rem 0.7rem !important;
+    margin-bottom: 0.65rem !important;
+  }
+
+  .status-widget-header {
+    margin-bottom: 0.45rem !important;
+  }
+
+  .status-widget-title {
+    font-size: 0.76rem !important;
+  }
+
+  .status-widget-title svg {
+    width: 13px !important;
+    height: 13px !important;
+  }
+
+  .status-service-grid {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 110px), 1fr)) !important;
+    gap: 0.35rem !important;
+  }
+
+  .status-service-item {
+    padding: 0.35rem 0.5rem !important;
+  }
+
+  .status-service-name {
+    font-size: 0.68rem !important;
+  }
+
+  .status-service-sub {
+    font-size: 0.6rem !important;
+  }
+
+  .status-service-badge {
+    font-size: 0.58rem !important;
+    padding: 1px 4px !important;
+  }
+
+  /* Verification card compact styling */
+  .verification-card {
+    padding: 0.75rem !important;
+    gap: 0.75rem !important;
+  }
+
+  .verification-media-grid {
+    grid-template-columns: 1fr 1fr !important;
+    gap: 0.45rem !important;
+  }
+
+  .verification-media-frame {
+    height: 165px !important;
+    border-radius: 6px !important;
+  }
+
+  .verification-media-label {
+    font-size: 0.64rem !important;
+  }
+
+  .verification-media-ext-link span {
+    display: none;
   }
 }

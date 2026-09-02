@@ -4,6 +4,7 @@ import { apiRequest, getMediaUrl } from '../api/apiClient';
 import { Search, X } from '../components/icons';
 import { useDebounced } from '../hooks/useDebounced';
 import { Pagination } from '../components/Pagination';
+import { useConfirm } from '../components/ConfirmProvider';
 
 const UserAvatar: React.FC<{ user: any }> = ({ user }) => {
   const [imgError, setImgError] = useState(false);
@@ -22,8 +23,8 @@ const UserAvatar: React.FC<{ user: any }> = ({ user }) => {
         alt={user.displayName || user.username}
         onError={() => setImgError(true)}
         style={{
-          width: '32px',
-          height: '32px',
+          width: '26px',
+          height: '26px',
           borderRadius: '50%',
           objectFit: 'cover',
           border: '1px solid var(--color-border)',
@@ -36,8 +37,8 @@ const UserAvatar: React.FC<{ user: any }> = ({ user }) => {
   return (
     <div
       style={{
-        width: '32px',
-        height: '32px',
+        width: '26px',
+        height: '26px',
         borderRadius: '50%',
         background: bgColor,
         color: '#FFFFFF',
@@ -45,7 +46,7 @@ const UserAvatar: React.FC<{ user: any }> = ({ user }) => {
         alignItems: 'center',
         justifyContent: 'center',
         fontWeight: 700,
-        fontSize: '0.8rem',
+        fontSize: '0.72rem',
         flexShrink: 0,
       }}
     >
@@ -84,6 +85,7 @@ const VerificationLabel: React.FC<{ status?: string }> = ({ status }) => {
 };
 
 export const UsersPage: React.FC = () => {
+  const confirm = useConfirm();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   // The query is keyed on this, so debouncing is what stops one request per
@@ -157,7 +159,7 @@ export const UsersPage: React.FC = () => {
       </div>
 
       {/* METRICS ROW */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '0.85rem', marginBottom: '1.25rem' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 140px), 1fr))', gap: '0.85rem', marginBottom: '1.25rem' }}>
         <div className="glass-panel" style={{ padding: '0.85rem 1rem' }}>
           <div style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--color-text-light)', textTransform: 'uppercase' }}>Total Users</div>
           <div style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--color-text-main)', marginTop: '0.15rem' }}>{metrics.total}</div>
@@ -180,28 +182,28 @@ export const UsersPage: React.FC = () => {
       </div>
 
       {/* SEARCH AND FILTERS */}
-      <div className="glass-panel" style={{ padding: '0.85rem 1rem', marginBottom: '1.25rem', display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center' }}>
-        <div style={{ position: 'relative', flex: 1, minWidth: '220px' }}>
-          <Search size={15} color="var(--color-text-dim)" style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)' }} />
+      <div className="glass-panel admin-filter-bar" style={{ padding: '0.55rem 0.75rem', marginBottom: '0.85rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+        <div style={{ position: 'relative', flex: 1, minWidth: '200px' }}>
+          <Search size={14} color="var(--color-text-dim)" style={{ position: 'absolute', left: '0.65rem', top: '50%', transform: 'translateY(-50%)' }} />
           <input
             type="text"
             placeholder="Search name, @username, or email..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="input-control"
-            style={{ paddingLeft: '2.2rem' }}
+            style={{ paddingLeft: '2rem', fontSize: '0.78rem' }}
           />
           {search && (
             <button
               onClick={() => setSearch('')}
-              style={{ position: 'absolute', right: '0.65rem', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--color-text-dim)', cursor: 'pointer' }}
+              style={{ position: 'absolute', right: '0.6rem', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--color-text-dim)', cursor: 'pointer' }}
             >
-              <X size={14} />
+              <X size={13} />
             </button>
           )}
         </div>
 
-        <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap' }}>
           {[
             { id: '', label: 'All' },
             { id: 'ACTIVE', label: 'Active' },
@@ -214,7 +216,7 @@ export const UsersPage: React.FC = () => {
                 key={item.id}
                 onClick={() => setStatusFilter(item.id)}
                 className={isActive ? 'btn-primary' : 'btn-secondary'}
-                style={{ padding: '0.35rem 0.75rem', fontSize: '0.78rem' }}
+                style={{ padding: '0.25rem 0.55rem', fontSize: '0.72rem' }}
               >
                 {item.label}
               </button>
@@ -224,9 +226,9 @@ export const UsersPage: React.FC = () => {
       </div>
 
       {/* TABLE */}
-      <div className="glass-panel" style={{ overflow: 'hidden' }}>
+      <div className="glass-panel" style={{ overflow: 'hidden', padding: 0 }}>
         {isLoading ? (
-          <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--color-text-dim)', fontSize: '0.85rem' }}>
+          <div style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--color-text-dim)', fontSize: '0.8rem' }}>
             Loading users...
           </div>
         ) : (
@@ -246,21 +248,21 @@ export const UsersPage: React.FC = () => {
                 {usersList.map((u: any) => (
                   <tr key={u.id}>
                     <td>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                         <UserAvatar user={u} />
                         <div>
-                          <div style={{ fontWeight: 600, color: 'var(--color-text-main)' }}>{u.displayName || u.username}</div>
-                          <div style={{ fontSize: '0.72rem', color: 'var(--color-text-light)' }}>@{u.username}</div>
+                          <div style={{ fontWeight: 600, color: 'var(--color-text-main)', fontSize: '0.76rem', lineHeight: 1.25 }}>{u.displayName || u.username}</div>
+                          <div style={{ fontSize: '0.66rem', color: 'var(--color-text-light)' }}>@{u.username}</div>
                         </div>
                       </div>
                     </td>
 
                     <td>
-                      <div style={{ fontSize: '0.82rem', color: 'var(--color-text-main)', fontWeight: 500 }}>{u.email}</div>
+                      <div style={{ fontSize: '0.74rem', color: 'var(--color-text-main)', fontWeight: 500, lineHeight: 1.25 }}>{u.email}</div>
                       <VerificationLabel status={u.verificationStatus} />
                     </td>
 
-                    <td style={{ fontSize: '0.82rem', color: 'var(--color-text-muted)' }}>
+                    <td style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>
                       {u.college?.name || '—'}
                     </td>
 
@@ -274,7 +276,7 @@ export const UsersPage: React.FC = () => {
                       )}
                     </td>
 
-                    <td style={{ fontSize: '0.8rem', color: 'var(--color-text-light)' }}>
+                    <td style={{ fontSize: '0.7rem', color: 'var(--color-text-light)' }}>
                       {new Date(u.createdAt).toLocaleDateString()}
                     </td>
 
@@ -282,7 +284,17 @@ export const UsersPage: React.FC = () => {
                       <div style={{ display: 'flex', gap: '0.35rem', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
                         {u.accountStatus === 'ACTIVE' ? (
                           <button
-                            onClick={() => suspendMutation.mutate(u.id)}
+                            onClick={() => confirm({
+                              title: `Suspend @${u.username}?`,
+                              description: 'They will be signed out and blocked from using Meetifyy until an admin lifts the suspension.',
+                              consequences: [
+                                'Their posts and messages stay visible to others.',
+                                'They can be unsuspended at any time.',
+                              ],
+                              severity: 'high',
+                              confirmLabel: 'Suspend',
+                              onConfirm: () => suspendMutation.mutateAsync(u.id),
+                            })}
                             className="btn-secondary"
                             style={{ padding: '0.3rem 0.6rem', fontSize: '0.75rem', color: 'var(--color-danger-hover)' }}
                           >
@@ -290,7 +302,13 @@ export const UsersPage: React.FC = () => {
                           </button>
                         ) : (
                           <button
-                            onClick={() => unsuspendMutation.mutate(u.id)}
+                            onClick={() => confirm({
+                              title: `Lift the suspension on @${u.username}?`,
+                              description: 'They regain full access to Meetifyy immediately.',
+                              severity: 'moderate',
+                              confirmLabel: 'Unsuspend',
+                              onConfirm: () => unsuspendMutation.mutateAsync(u.id),
+                            })}
                             className="btn-secondary"
                             style={{ padding: '0.3rem 0.6rem', fontSize: '0.75rem', color: 'var(--color-success)' }}
                           >
@@ -300,7 +318,17 @@ export const UsersPage: React.FC = () => {
 
                         {u.collegeId && (
                           <button
-                            onClick={() => resetCollegeMutation.mutate(u.id)}
+                            onClick={() => confirm({
+                              title: `Reset the college for @${u.username}?`,
+                              description: 'Their current college is cleared and they are asked to pick one again.',
+                              consequences: [
+                                'They lose access to campus-only spaces until they re-select.',
+                                'Verification tied to the old college does not carry over.',
+                              ],
+                              severity: 'high',
+                              confirmLabel: 'Reset college',
+                              onConfirm: () => resetCollegeMutation.mutateAsync(u.id),
+                            })}
                             className="btn-secondary"
                             style={{ padding: '0.3rem 0.6rem', fontSize: '0.75rem' }}
                           >
@@ -310,7 +338,13 @@ export const UsersPage: React.FC = () => {
 
                         {u.accountStatus === 'BANNED' ? (
                           <button
-                            onClick={() => restoreMutation.mutate(u.id)}
+                            onClick={() => confirm({
+                              title: `Restore @${u.username}?`,
+                              description: 'The account is reinstated and becomes usable again.',
+                              severity: 'moderate',
+                              confirmLabel: 'Restore',
+                              onConfirm: () => restoreMutation.mutateAsync(u.id),
+                            })}
                             className="btn-secondary"
                             style={{ padding: '0.3rem 0.6rem', fontSize: '0.75rem' }}
                           >
@@ -318,11 +352,17 @@ export const UsersPage: React.FC = () => {
                           </button>
                         ) : (
                           <button
-                            onClick={() => {
-                              if (confirm(`Delete user @${u.username}?`)) {
-                                deleteMutation.mutate(u.id);
-                              }
-                            }}
+                            onClick={() => confirm({
+                              title: `Delete @${u.username}?`,
+                              description: 'This removes the account from Meetifyy.',
+                              consequences: [
+                                'Their posts, messages and community memberships go with it.',
+                                'This cannot be undone from the admin portal.',
+                              ],
+                              severity: 'critical',
+                              confirmLabel: 'Delete user',
+                              onConfirm: () => deleteMutation.mutateAsync(u.id),
+                            })}
                             className="btn-danger"
                             style={{ padding: '0.3rem 0.6rem', fontSize: '0.75rem' }}
                           >

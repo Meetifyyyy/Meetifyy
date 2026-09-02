@@ -3,8 +3,10 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from '../api/apiClient';
 import { Monitor, LogOut, Trash2 } from '../components/icons';
 import { useAuth } from '../context/AuthContext';
+import { useConfirm } from '../components/ConfirmProvider';
 
 export const SessionsPage: React.FC = () => {
+  const confirm = useConfirm();
   const queryClient = useQueryClient();
   const { logout } = useAuth();
 
@@ -32,11 +34,17 @@ export const SessionsPage: React.FC = () => {
           <p className="page-subtitle">Super admin sessions and connected devices.</p>
         </div>
         <button
-          onClick={() => {
-            if (confirm('Revoke all active sessions and log out?')) {
-              logoutAllMutation.mutate();
-            }
-          }}
+          onClick={() => confirm({
+            title: 'Revoke every active session?',
+            description: 'All super admin sessions are ended immediately, on every device.',
+            consequences: [
+              'You will be signed out of this session too.',
+              'Anyone currently working in the portal loses their session without warning.',
+            ],
+            severity: 'high',
+            confirmLabel: 'Revoke all',
+            onConfirm: () => logoutAllMutation.mutateAsync(),
+          })}
           className="btn-danger"
         >
           <LogOut size={15} />
@@ -44,13 +52,13 @@ export const SessionsPage: React.FC = () => {
         </button>
       </div>
 
-      <div className="glass-panel" style={{ padding: '1.25rem' }}>
+      <div className="glass-panel" style={{ padding: '0.75rem' }}>
         {isLoading ? (
-          <div style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--color-text-dim)', fontSize: '0.85rem' }}>
+          <div style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--color-text-dim)', fontSize: '0.8rem' }}>
             Loading sessions...
           </div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
             {sessions?.map((session: any) => (
               <div
                 key={session.id}
@@ -58,20 +66,20 @@ export const SessionsPage: React.FC = () => {
                   background: 'var(--color-bg-alt)',
                   border: '1px solid var(--color-border)',
                   borderRadius: 'var(--radius-sm)',
-                  padding: '1rem 1.15rem',
+                  padding: '0.65rem 0.85rem',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'space-between',
                   flexWrap: 'wrap',
-                  gap: '0.75rem',
+                  gap: '0.6rem',
                 }}
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', flex: '1 1 200px', minWidth: 0 }}>
                   <div
                     style={{
-                      width: '38px',
-                      height: '38px',
-                      borderRadius: '8px',
+                      width: '28px',
+                      height: '28px',
+                      borderRadius: '6px',
                       background: 'var(--color-primary-tint)',
                       border: '1px solid rgba(37, 99, 235, 0.2)',
                       display: 'flex',
@@ -80,24 +88,30 @@ export const SessionsPage: React.FC = () => {
                       flexShrink: 0,
                     }}
                   >
-                    <Monitor size={18} color="var(--color-primary)" />
+                    <Monitor size={14} color="var(--color-primary)" />
                   </div>
-                  <div>
-                    <div style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--color-text-main)' }}>
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{ fontWeight: 600, fontSize: '0.8rem', color: 'var(--color-text-main)', wordBreak: 'break-word', lineHeight: 1.3 }}>
                       {session.browser || 'Browser'} on {session.os || 'OS'} ({session.deviceName || 'Device'})
                     </div>
-                    <div style={{ fontSize: '0.78rem', color: 'var(--color-text-light)', marginTop: '0.15rem' }}>
+                    <div style={{ fontSize: '0.68rem', color: 'var(--color-text-light)', marginTop: '0.1rem', wordBreak: 'break-word' }}>
                       IP: {session.ip} • Last Active: {new Date(session.lastActiveAt).toLocaleString()}
                     </div>
                   </div>
                 </div>
 
                 <button
-                  onClick={() => revokeMutation.mutate(session.id)}
+                  onClick={() => confirm({
+                    title: 'Revoke this session?',
+                    description: 'That device is signed out of the admin portal immediately.',
+                    severity: 'moderate',
+                    confirmLabel: 'Revoke session',
+                    onConfirm: () => revokeMutation.mutateAsync(session.id),
+                  })}
                   className="btn-danger"
-                  style={{ padding: '0.35rem 0.75rem', fontSize: '0.78rem' }}
+                  style={{ padding: '0.22rem 0.55rem', fontSize: '0.7rem', minHeight: '28px' }}
                 >
-                  <Trash2 size={13} />
+                  <Trash2 size={12} />
                   <span>Revoke</span>
                 </button>
               </div>

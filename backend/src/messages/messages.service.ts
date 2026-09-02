@@ -20,6 +20,7 @@ import { generatePublicId } from '../common/utils/public-id.util';
 import { LruCache } from '../common/utils/lru-cache.util';
 import { MessagingCoreService } from './core/messaging-core.service';
 import { SendMessageDto } from './core/dto/send-message.dto';
+import { assertMessageTextWithinLimit } from './core/message-limits';
 import { RedisService } from '../redis/redis.service';
 import { BlocksService } from '../users/blocks.service';
 import { resolvePresenceVisibilityForViewer } from '../users/privacy.helper';
@@ -386,6 +387,11 @@ export class MessagesService
      * System messages do not come through this method, and voice notes,
      * media and invites all satisfy one of the three branches.
      */
+    // Bounded before anything else touches it. See message-limits.ts: the
+    // socket gateway reaches this method without passing through the HTTP
+    // ValidationPipe, so the DTO's @MaxLength does not cover the busiest path.
+    assertMessageTextWithinLimit(payload?.text);
+
     const hasText = typeof payload?.text === 'string' && payload.text.trim().length > 0;
     const hasMedia = Boolean(payload?.mediaUrl);
     const hasInvite = Boolean(payload?.inviteData);

@@ -6,6 +6,7 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { SessionExpiredError } from './api/apiClient';
 import { AdminLayout } from './components/AdminLayout';
 import { Toaster, pushToast } from './components/Toaster';
+import { ConfirmProvider } from './components/ConfirmProvider';
 import { LoginPage } from './pages/LoginPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { AnalyticsPage } from './pages/AnalyticsPage';
@@ -93,6 +94,9 @@ export default function App() {
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <Toaster />
+        {/* Mounted once, above the router, so any page can raise the shared
+            confirmation dialog without owning modal state of its own. */}
+        <ConfirmProvider>
         <BrowserRouter>
           <Routes>
             <Route
@@ -126,6 +130,7 @@ export default function App() {
             </Route>
           </Routes>
         </BrowserRouter>
+        </ConfirmProvider>
       </AuthProvider>
     </QueryClientProvider>
   );

@@ -1,12 +1,16 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { config } from '../../config';
+import { RedisService } from '../../redis/redis.service';
 
 @Injectable()
 export class AdminDashboardService {
   private readonly logger = new Logger(AdminDashboardService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly redisService: RedisService,
+  ) {}
 
   async getStats() {
     const now = new Date();
@@ -69,7 +73,11 @@ export class AdminDashboardService {
     // 1. Live Database Connectivity & Latency Check
     const dbStart = Date.now();
     try {
-      await this.prisma.user.count({ take: 1 });
+      // `SELECT 1`, not `user.count()`. A liveness probe should measure the
+      // round trip, and counting a table measures the table: as the user count
+      // grows this reports rising "database latency" that is really just a
+      // sequential scan the health check asked for.
+      await this.prisma.$queryRaw`SELECT 1`;
       checks.database = {
         status: 'UP',
         latencyMs: Date.now() - dbStart,
@@ -79,21 +87,39 @@ export class AdminDashboardService {
       checks.database = { status: 'DOWN', detail: err.message };
     }
 
-    // 2. Redis / Memory Cache Check
-    const redisUrl = config.redis.url;
-    if (redisUrl) {
+    // 2. Redis: a real round trip.
+    //
+    // This block used to open the try, immediately assign UP, and close it. No
+    // Redis call was ever made, so the catch was unreachable and the "latency"
+    // was the cost of two Date.now() calls - which is why the dashboard read a
+    // permanent 0ms. A Redis that was configured but unreachable reported UP,
+    // which is the one situation a health check exists to catch.
+    //
+    // The analytics page already learned this lesson (see probeRedis in
+    // admin-analytics.service.ts); this panel had kept the old version.
+    const client = this.redisService.getClient();
+    if (!client) {
+      checks.redis = {
+        status: config.redis.url ? 'DOWN' : 'UP',
+        detail: config.redis.url
+          ? 'REDIS_URL is set but no client is connected'
+          : 'In-Memory Cache',
+      };
+    } else {
       const rStart = Date.now();
       try {
+        await client.ping();
         checks.redis = {
           status: 'UP',
           latencyMs: Date.now() - rStart,
           detail: 'Redis Cache',
         };
       } catch (err: any) {
-        checks.redis = { status: 'DOWN', detail: 'Connection Failed' };
+        checks.redis = {
+          status: 'DOWN',
+          detail: err?.message || 'Connection failed',
+        };
       }
-    } else {
-      checks.redis = { status: 'UP', detail: 'In-Memory Cache' };
     }
 
     // 3. Dynamic Storage Provider Inspection
@@ -132,34 +158,69 @@ export class AdminDashboardService {
     return checks;
   }
 
+  /** Local calendar day for a timestamp, as YYYY-MM-DD. */
+  private static localDayKey(date: Date): string {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+
+  /**
+   * Registrations per day for the last 30 days, ending TODAY.
+   *
+   * Two bugs made this read as a flat zero line on a platform that had users.
+   *
+   * The window excluded today. It built 30 buckets starting from
+   * `now - 30 days` and stepping forward 29 times, so the last bucket was
+   * YESTERDAY, and any account created today fell outside the map and was
+   * dropped by the `!== undefined` guard rather than counted. On a young
+   * platform where most sign-ups are recent that is most of the data, and it is
+   * exactly what the dashboard showed: 37 users, 37 new registrations, and a
+   * chart flat on zero.
+   *
+   * The buckets were also keyed by UTC date while `getStats` counts "today"
+   * from LOCAL midnight, so the two disagreed about which day a registration
+   * belonged to for the whole UTC offset. In IST that is every sign-up between
+   * 05:30 and midnight, moved to the wrong bar.
+   *
+   * Both now derive from the same local-midnight boundary that getStats uses.
+   */
   async getCharts() {
-    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const DAYS = 30;
+    const now = new Date();
+    const startOfToday = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate(),
+    );
+    // Inclusive of today, so the window is [today-29 .. today].
+    const windowStart = new Date(startOfToday);
+    windowStart.setDate(windowStart.getDate() - (DAYS - 1));
+
     const users = await this.prisma.user.findMany({
-      where: {
-        createdAt: { gte: thirtyDaysAgo },
-      },
+      where: { createdAt: { gte: windowStart }, deletedAt: null },
       select: { createdAt: true },
     });
 
-    const countsByDay: Record<string, number> = {};
-    for (let i = 0; i < 30; i++) {
-      const d = new Date(thirtyDaysAgo.getTime() + i * 24 * 60 * 60 * 1000);
-      const dateStr = d.toISOString().split('T')[0];
-      countsByDay[dateStr] = 0;
+    const countsByDay = new Map<string, number>();
+    for (let i = 0; i < DAYS; i++) {
+      const d = new Date(windowStart);
+      d.setDate(d.getDate() + i);
+      countsByDay.set(AdminDashboardService.localDayKey(d), 0);
     }
 
-    users.forEach((u) => {
-      const dateStr = u.createdAt.toISOString().split('T')[0];
-      if (countsByDay[dateStr] !== undefined) {
-        countsByDay[dateStr]++;
-      }
-    });
+    for (const u of users) {
+      const key = AdminDashboardService.localDayKey(u.createdAt);
+      const current = countsByDay.get(key);
+      if (current !== undefined) countsByDay.set(key, current + 1);
+    }
 
-    const chartData = Object.entries(countsByDay).map(([date, count]) => ({
-      date,
-      registrations: count,
-    }));
-
-    return { registrations: chartData };
+    return {
+      registrations: Array.from(countsByDay, ([date, registrations]) => ({
+        date,
+        registrations,
+      })),
+    };
   }
 }

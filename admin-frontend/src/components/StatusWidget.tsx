@@ -17,9 +17,9 @@ export const StatusWidget: React.FC = () => {
   });
 
   return (
-    <div className="glass-panel" style={{ padding: '1rem 1.25rem', marginBottom: '1.5rem' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.85rem' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+    <div className="glass-panel status-widget-card" style={{ padding: '1rem 1.25rem', marginBottom: '1.5rem' }}>
+      <div className="status-widget-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.85rem' }}>
+        <div className="status-widget-title" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
           <Activity size={16} color="var(--color-primary)" />
           <h3 style={{ fontSize: '0.9rem', fontWeight: 700 }}>System Health</h3>
         </div>
@@ -37,13 +37,14 @@ export const StatusWidget: React.FC = () => {
       {isLoading ? (
         <div style={{ color: 'var(--color-text-dim)', fontSize: '0.8rem' }}>Checking services...</div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '0.65rem' }}>
+        <div className="status-service-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 140px), 1fr))', gap: '0.65rem' }}>
           {status &&
             Object.entries(status).map(([service, info]) => {
               const isUp = info.status === 'UP';
               return (
                 <div
                   key={service}
+                  className="status-service-item"
                   style={{
                     background: 'var(--color-bg-alt)',
                     border: '1px solid var(--color-border)',
@@ -55,14 +56,14 @@ export const StatusWidget: React.FC = () => {
                   }}
                 >
                   <div>
-                    <div style={{ fontSize: '0.78rem', fontWeight: 600, textTransform: 'capitalize', color: 'var(--color-text-main)' }}>
+                    <div className="status-service-name" style={{ fontSize: '0.78rem', fontWeight: 600, textTransform: 'capitalize', color: 'var(--color-text-main)' }}>
                       {service}
                     </div>
-                    <div style={{ fontSize: '0.7rem', color: 'var(--color-text-light)' }}>
+                    <div className="status-service-sub" style={{ fontSize: '0.7rem', color: 'var(--color-text-light)' }}>
                       {info.latencyMs !== undefined ? `${info.latencyMs}ms` : (isUp ? 'Operational' : 'Offline')}
                     </div>
                   </div>
-                  <span className={isUp ? 'badge badge-success' : 'badge badge-danger'} style={{ fontSize: '0.65rem' }}>
+                  <span className={`${isUp ? 'badge badge-success' : 'badge badge-danger'} status-service-badge`} style={{ fontSize: '0.65rem' }}>
                     {isUp ? 'UP' : 'DOWN'}
                   </span>
                 </div>

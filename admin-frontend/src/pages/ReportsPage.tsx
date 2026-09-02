@@ -3,8 +3,10 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from '../api/apiClient';
 import { Eye, X } from '../components/icons';
 import { Pagination } from '../components/Pagination';
+import { useConfirm } from '../components/ConfirmProvider';
 
 export const ReportsPage: React.FC = () => {
+  const confirm = useConfirm();
   const queryClient = useQueryClient();
   const [statusFilter, setStatusFilter] = useState('PENDING');
   const [priorityFilter, setPriorityFilter] = useState('');
@@ -57,7 +59,7 @@ export const ReportsPage: React.FC = () => {
       </div>
 
       {/* FILTERS */}
-      <div className="glass-panel" style={{ padding: '0.85rem 1rem', marginBottom: '1.25rem', display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+      <div className="glass-panel admin-filter-bar" style={{ padding: '0.85rem 1rem', marginBottom: '1.25rem', display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
@@ -178,7 +180,7 @@ export const ReportsPage: React.FC = () => {
             {/* Target Content */}
             <div style={{ background: 'var(--color-primary-tint)', border: '1px solid rgba(37, 99, 235, 0.2)', padding: '0.75rem', borderRadius: 'var(--radius-sm)', fontSize: '0.82rem', marginBottom: '1rem' }}>
               <strong>Reported Content Data:</strong>
-              <pre style={{ marginTop: '0.35rem', whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: '0.75rem', color: 'var(--color-text-muted)', fontFamily: 'monospace' }}>
+              <pre style={{ marginTop: '0.35rem', whiteSpace: 'pre-wrap', wordBreak: 'break-all', maxHeight: '180px', overflowY: 'auto', fontSize: '0.75rem', color: 'var(--color-text-muted)', fontFamily: 'monospace' }}>
                 {JSON.stringify(selectedReport.targetContent, null, 2)}
               </pre>
             </div>
@@ -193,12 +195,25 @@ export const ReportsPage: React.FC = () => {
               <input type="text" value={resolution} onChange={(e) => setResolution(e.target.value)} placeholder="Action taken (e.g. Content removed)" className="input-control" />
             </div>
 
-            <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+            <div className="modal-actions" style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
               <button onClick={() => setSelectedReport(null)} className="btn-secondary">Cancel</button>
-              <button onClick={() => updateMutation.mutate({ id: selectedReport.id, status: 'REJECTED', resolution, internalNotes })} className="btn-danger">
+              <button onClick={() => confirm({
+                title: 'Dismiss this report?',
+                description: 'The report is closed with no action taken against the reported content or account.',
+                consequences: ['The reporter is not told why it was dismissed.'],
+                severity: 'moderate',
+                confirmLabel: 'Dismiss report',
+                onConfirm: () => updateMutation.mutateAsync({ id: selectedReport.id, status: 'REJECTED', resolution, internalNotes }),
+              })} className="btn-danger">
                 Reject Report
               </button>
-              <button onClick={() => updateMutation.mutate({ id: selectedReport.id, status: 'RESOLVED', resolution, internalNotes })} className="btn-primary">
+              <button onClick={() => confirm({
+                title: 'Resolve this report?',
+                description: 'The report is closed and recorded as actioned.',
+                severity: 'moderate',
+                confirmLabel: 'Resolve report',
+                onConfirm: () => updateMutation.mutateAsync({ id: selectedReport.id, status: 'RESOLVED', resolution, internalNotes }),
+              })} className="btn-primary">
                 Resolve & Enforce
               </button>
             </div>

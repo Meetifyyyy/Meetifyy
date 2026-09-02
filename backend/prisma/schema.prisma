@@ -101,20 +101,20 @@ model NotificationPreferences {
 }
 
 model Media {
-  id                  String         @id @default(uuid())
-  provider            String         @default("supabase")
-  bucket              String         @default("meetifyy-dev")
-  objectKey           String         @unique
+  id                  String                @id @default(uuid())
+  provider            String                @default("supabase")
+  bucket              String                @default("meetifyy-dev")
+  objectKey           String                @unique
   storageKey          String?
   type                String?
-  mimeType            String         @default("application/octet-stream")
-  fileSize            Int            @default(0)
+  mimeType            String                @default("application/octet-stream")
+  fileSize            Int                   @default(0)
   checksum            String?
   width               Int?
   height              Int?
   duration            Int?
-  visibility          String         @default("public")
-  order               Int            @default(0)
+  visibility          String                @default("public")
+  order               Int                   @default(0)
   /// Nullable for platform-owned assets — the default avatars and covers
   /// belong to no user. They cannot hang off a real account: the owner
   /// relation cascades on delete, so one user closing their account would
@@ -123,20 +123,20 @@ model Media {
   /// the desired behaviour for these.
   ownerId             String?
   postId              String?
-  createdAt           DateTime       @default(now())
-  updatedAt           DateTime       @updatedAt
-  bannerColleges      College[]      @relation("CollegeBanner")
-  logoColleges        College[]      @relation("CollegeLogo")
-  avatarCommunities   Community[]    @relation("CommunityAvatar")
-  coverCommunities    Community[]    @relation("CommunityCover")
-  avatarConversations Conversation[] @relation("ConversationAvatar")
-  coverActivities     CrewActivity[] @relation("ActivityCover")
-  campusEventPosters  CampusEvent[]  @relation("CampusEventPoster")
-  owner               User?          @relation(fields: [ownerId], references: [id], onDelete: Cascade)
-  post                Post?          @relation(fields: [postId], references: [id], onDelete: Cascade)
-  messageAttachments  Message[]      @relation("MessageAttachment")
-  avatarUsers         User[]         @relation("UserAvatar")
-  coverUsers          User[]         @relation("UserCover")
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+  bannerColleges      College[]             @relation("CollegeBanner")
+  logoColleges        College[]             @relation("CollegeLogo")
+  avatarCommunities   Community[]           @relation("CommunityAvatar")
+  coverCommunities    Community[]           @relation("CommunityCover")
+  avatarConversations Conversation[]        @relation("ConversationAvatar")
+  coverActivities     CrewActivity[]        @relation("ActivityCover")
+  campusEventPosters  CampusEvent[]         @relation("CampusEventPoster")
+  owner               User?                 @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  post                Post?                 @relation(fields: [postId], references: [id], onDelete: Cascade)
+  messageAttachments  Message[]             @relation("MessageAttachment")
+  avatarUsers         User[]                @relation("UserAvatar")
+  coverUsers          User[]                @relation("UserCover")
   verificationSelfies VerificationRequest[] @relation("VerificationSelfie")
   verificationIdCards VerificationRequest[] @relation("VerificationIdCard")
 
@@ -892,21 +892,21 @@ model MatchSession {
 }
 
 model SuperAdmin {
-  id                     String              @id @default(uuid())
-  email                  String              @unique
+  id                     String                @id @default(uuid())
+  email                  String                @unique
   passwordHash           String
   name                   String
-  isActive               Boolean             @default(true)
+  isActive               Boolean               @default(true)
   totpSecret             String?
-  totpEnabled            Boolean             @default(false)
-  createdAt              DateTime            @default(now())
-  updatedAt              DateTime            @updatedAt
+  totpEnabled            Boolean               @default(false)
+  createdAt              DateTime              @default(now())
+  updatedAt              DateTime              @updatedAt
   otps                   AdminOtp[]
   recoveryCodes          AdminRecoveryCode[]
   auditLogs              AuditLog[]
   loginAudits            LoginAudit[]
   sessions               SuperAdminSession[]
-  assignedSupportTickets SupportTicket[]     @relation("AssignedSupportTickets")
+  assignedSupportTickets SupportTicket[]       @relation("AssignedSupportTickets")
   reviewedVerifications  VerificationRequest[] @relation("VerificationReviewer")
 }
 
@@ -1160,11 +1160,6 @@ model HelpArticle {
   @@index([status, isFeatured])
 }
 
-
-
-
-
-
 model CollegeRequest {
   id            String   @id @default(uuid())
   name          String
@@ -1197,8 +1192,6 @@ model Announcement {
   @@index([status])
   @@index([scheduledAt])
 }
-
-
 
 model ConversationJoinRequest {
   id             String       @id @default(uuid())
@@ -1628,6 +1621,46 @@ enum CommunityRequestStatus {
 /// Pruned to a rolling 7-day window by SlowRequestRetentionService. The table is
 /// deliberately narrow; it answers "what was slow, where, and for whom" and
 /// nothing else.
+/// One recorded application error, for the admin Error Logs view.
+///
+/// Deliberately shaped like SlowRequest: append-only, written off the request
+/// path, and swept on a rolling window. Diagnostics must never become the
+/// reason a request is slow or a database fills up.
+///
+/// No stack frames from node_modules and no request body are stored. The body
+/// is the most likely place for a password or a token to be sitting, and a
+/// diagnostics table is exactly the wrong place to keep one - it is read by
+/// admins rather than by the person the data belongs to.
+model ErrorLog {
+  id         String   @id @default(uuid())
+  /// Parameterised route (`/admin/users/:id`) so repeats of the same fault group.
+  route      String   @db.VarChar(300)
+  /// The concrete path as requested, for reproducing a specific call.
+  path       String   @db.VarChar(500)
+  method     String   @db.VarChar(10)
+  statusCode Int
+  /// UNEXPECTED for 5xx, EXPECTED for a deliberate 4xx that is worth seeing.
+  severity   String   @db.VarChar(20)
+  /// The root cause, already unwrapped from Prisma's multi-line rendering.
+  message    String   @db.VarChar(1000)
+  /// Error class name, e.g. PrismaClientKnownRequestError.
+  name       String?  @db.VarChar(120)
+  /// Application frames only, capped. Never node_modules, never full.
+  stack      String?  @db.VarChar(4000)
+  /// Correlates with application logs when x-request-id is present.
+  requestId  String?  @db.VarChar(100)
+  userId     String?  @db.VarChar(64)
+  adminId    String?  @db.VarChar(64)
+  ip         String?  @db.VarChar(64)
+  userAgent  String?  @db.VarChar(300)
+  occurredAt DateTime @default(now())
+
+  @@index([occurredAt])
+  @@index([statusCode, occurredAt])
+  @@index([route, occurredAt])
+  @@index([severity, occurredAt])
+}
+
 model SlowRequest {
   id         String   @id @default(uuid())
   /// Parameterised route (`/admin/users/:id`) so rows group across ids.

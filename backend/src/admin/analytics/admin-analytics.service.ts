@@ -498,6 +498,100 @@ export class AdminAnalyticsService {
    * Every row here was measured by the server middleware around a real
    * request; there is no client-reported timing in this table.
    */
+  /**
+   * Application errors from the retention window, newest first.
+   *
+   * Reads the same table the exception filter writes to, so this is the record
+   * of what actually failed rather than a re-derivation. The window is the
+   * retention window: there is nothing older to show, because the sweep has
+   * deleted it.
+   */
+  async getErrorLogs(params: {
+    page?: number;
+    limit?: number;
+    route?: string;
+    severity?: string;
+    statusCode?: number;
+    search?: string;
+  }) {
+    const page = Math.max(1, params.page || 1);
+    const limit = Math.min(100, Math.max(1, params.limit || 25));
+
+    const { retentionDays } = config.observability.errorLogs;
+    const since = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
+
+    // Every clause is anchored to `since`. Without it a filter could reach rows
+    // the sweep has not collected yet and the view would claim a longer history
+    // than it actually keeps.
+    const where: any = { occurredAt: { gte: since } };
+    if (params.route) where.route = { contains: params.route, mode: 'insensitive' };
+    if (params.severity === 'UNEXPECTED' || params.severity === 'EXPECTED') {
+      where.severity = params.severity;
+    }
+    if (params.statusCode) where.statusCode = params.statusCode;
+    if (params.search) {
+      where.OR = [
+        { message: { contains: params.search, mode: 'insensitive' } },
+        { path: { contains: params.search, mode: 'insensitive' } },
+      ];
+    }
+
+    const [total, rows, byRoute, unexpected, expected, firstSeen] =
+      await Promise.all([
+        this.prisma.errorLog.count({ where }),
+        this.prisma.errorLog.findMany({
+          where,
+          orderBy: { occurredAt: 'desc' },
+          skip: (page - 1) * limit,
+          take: limit,
+        }),
+        // The grouping answers the question the list cannot: is this one fault
+        // happening repeatedly, or many different ones?
+        this.prisma.errorLog.groupBy({
+          by: ['route'],
+          where,
+          _count: { _all: true },
+          _max: { occurredAt: true },
+          orderBy: { _count: { route: 'desc' } },
+          take: 10,
+        }),
+        this.prisma.errorLog.count({
+          where: { occurredAt: { gte: since }, severity: 'UNEXPECTED' },
+        }),
+        this.prisma.errorLog.count({
+          where: { occurredAt: { gte: since }, severity: 'EXPECTED' },
+        }),
+        this.prisma.errorLog.findFirst({
+          where: { occurredAt: { gte: since } },
+          orderBy: { occurredAt: 'asc' },
+          select: { occurredAt: true },
+        }),
+      ]);
+
+    return {
+      rows,
+      pagination: { page, limit, total, pages: Math.ceil(total / limit) || 1 },
+      summary: {
+        retentionDays,
+        since: since.toISOString(),
+        // What the table actually holds, which on a young deployment is far
+        // less than the window. Saying "7 days" over two days of data invites
+        // the wrong conclusion from a low count.
+        oldestRecorded: firstSeen?.occurredAt?.toISOString() ?? null,
+        total,
+        unexpected,
+        expected,
+        captureEnabled: config.observability.errorLogs.enabled,
+        clientErrorsCaptured: config.observability.errorLogs.captureClientErrors,
+      },
+      topRoutes: byRoute.map((r: any) => ({
+        route: r.route,
+        count: r._count._all,
+        lastSeen: r._max.occurredAt,
+      })),
+    };
+  }
+
   async getSlowRequests(params: {
     page?: number;
     limit?: number;

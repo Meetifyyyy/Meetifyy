@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiRequest, getMediaUrl } from '../api/apiClient';
 import { Search, X, Megaphone, Loader2, Check } from '../components/icons';
+import { useConfirm } from '../components/ConfirmProvider';
 
 const RepAvatar: React.FC<{ user: any }> = ({ user }) => {
   const [imgError, setImgError] = useState(false);
@@ -40,6 +41,7 @@ function useDebounced<T>(value: T, delay = 300): T {
 }
 
 export const CampusRepsPage: React.FC = () => {
+  const confirm = useConfirm();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebounced(search.trim(), 300);
@@ -95,8 +97,31 @@ export const CampusRepsPage: React.FC = () => {
     onSettled: () => setMutatingId(null),
   });
 
-  const assign = (id: string) => setRepMutation.mutate({ id, isCampusRep: true });
-  const revoke = (id: string) => setRepMutation.mutate({ id, isCampusRep: false });
+  // `mutateAsync`, so the shared confirm dialog can await the request and keep
+  // itself open (with the error) if it fails.
+  const assignAsync = (id: string) => setRepMutation.mutateAsync({ id, isCampusRep: true });
+  const revokeAsync = (id: string) => setRepMutation.mutateAsync({ id, isCampusRep: false });
+
+  const confirmRevoke = (id: string, username: string) =>
+    confirm({
+      title: `Revoke Campus Representative from @${username}?`,
+      description: 'They lose the representative role and its badge across the app.',
+      consequences: ['The role can be granted again at any time.'],
+      severity: 'moderate',
+      confirmLabel: 'Revoke role',
+      onConfirm: () => revokeAsync(id),
+    });
+
+  const confirmAssign = (id: string, username: string) =>
+    confirm({
+      title: `Make @${username} the Campus Representative?`,
+      description: 'They gain the representative role and badge for their campus.',
+      // Each campus has exactly one, so this is not purely additive.
+      consequences: ['Any existing representative for that campus is replaced.'],
+      severity: 'moderate',
+      confirmLabel: 'Assign role',
+      onConfirm: () => assignAsync(id),
+    });
 
   return (
     <div>
@@ -111,7 +136,7 @@ export const CampusRepsPage: React.FC = () => {
       </div>
 
       {/* METRICS */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '0.85rem', marginBottom: '1.25rem' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 140px), 1fr))', gap: '0.85rem', marginBottom: '1.25rem' }}>
         <div className="glass-panel" style={{ padding: '0.85rem 1rem' }}>
           <div style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--color-text-light)', textTransform: 'uppercase' }}>Active Representatives</div>
           <div style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--color-text-main)', marginTop: '0.15rem' }}>{reps.length}</div>
@@ -131,7 +156,7 @@ export const CampusRepsPage: React.FC = () => {
       {/* ASSIGN — search users */}
       <div className="glass-panel" style={{ padding: '1rem', marginBottom: '1.25rem' }}>
         <h3 style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--color-text-main)', margin: '0 0 0.75rem' }}>Assign a Representative</h3>
-        <div style={{ position: 'relative', maxWidth: '420px' }}>
+        <div style={{ position: 'relative', maxWidth: '100%' }}>
           <Search size={15} color="var(--color-text-dim)" style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)' }} />
           <input
             type="text"
@@ -195,7 +220,7 @@ export const CampusRepsPage: React.FC = () => {
                           {u.isCampusRep ? (
                             <button
                               disabled={isRowBusy}
-                              onClick={() => revoke(u.id)}
+                              onClick={() => confirmRevoke(u.id, u.username)}
                               className="btn-secondary"
                               style={{ padding: '0.3rem 0.6rem', fontSize: '0.75rem', color: 'var(--color-danger-hover)' }}
                             >
@@ -209,7 +234,7 @@ export const CampusRepsPage: React.FC = () => {
                                   : collegeTaken ? `${u.college?.name} already has a representative (@${collegeRep.username}). Revoke them first.`
                                   : undefined
                               }
-                              onClick={() => assign(u.id)}
+                              onClick={() => confirmAssign(u.id, u.username)}
                               className="btn-primary"
                               style={{ padding: '0.3rem 0.6rem', fontSize: '0.75rem', opacity: collegeTaken ? 0.5 : 1 }}
                             >
@@ -267,7 +292,7 @@ export const CampusRepsPage: React.FC = () => {
                             <button
                               disabled={isRowBusy}
                               onClick={() => {
-                                if (confirm(`Revoke Campus Representative from @${u.username}?`)) revoke(u.id);
+                                confirmRevoke(u.id, u.username);
                               }}
                               className="btn-secondary"
                               style={{ padding: '0.3rem 0.6rem', fontSize: '0.75rem', color: 'var(--color-danger-hover)' }}

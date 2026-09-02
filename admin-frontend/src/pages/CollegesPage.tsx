@@ -2,11 +2,13 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from '../api/apiClient';
-import { Plus, Search, X, Check, Clock } from '../components/icons';
+import { Plus, Search, X, Check, Clock, Trash2 } from '../components/icons';
 import { useDebounced } from '../hooks/useDebounced';
 import { Pagination } from '../components/Pagination';
+import { useConfirm } from '../components/ConfirmProvider';
 
 export const CollegesPage: React.FC = () => {
+  const confirm = useConfirm();
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<'colleges' | 'requests'>('colleges');
   const [search, setSearch] = useState('');
@@ -249,54 +251,57 @@ export const CollegesPage: React.FC = () => {
           <h2 className="page-title">Colleges & Domains</h2>
           <p className="page-subtitle">Verified campus directory and email whitelist.</p>
         </div>
-        <button onClick={handleOpenAdd} className="btn-primary">
-          <Plus size={15} />
+        <button onClick={handleOpenAdd} className="btn-primary" style={{ padding: '0.3rem 0.65rem', fontSize: '0.74rem' }}>
+          <Plus size={14} />
           <span>Add College</span>
         </button>
       </div>
 
       {/* METRICS ROW */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '0.85rem', marginBottom: '1.25rem' }}>
-        <div className="glass-panel" style={{ padding: '0.85rem 1rem' }}>
-          <div style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--color-text-light)', textTransform: 'uppercase' }}>Total Colleges</div>
-          <div style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--color-text-main)', marginTop: '0.15rem' }}>{metrics.total}</div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 120px), 1fr))', gap: '0.4rem', marginBottom: '0.75rem' }}>
+        <div className="glass-panel" style={{ padding: '0.45rem 0.65rem' }}>
+          <div style={{ fontSize: '0.62rem', fontWeight: 600, color: 'var(--color-text-light)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>Total Colleges</div>
+          <div style={{ fontSize: '0.95rem', fontWeight: 800, color: 'var(--color-text-main)', marginTop: '0.05rem' }}>{metrics.total}</div>
         </div>
 
-        <div className="glass-panel" style={{ padding: '0.85rem 1rem' }}>
-          <div style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--color-text-light)', textTransform: 'uppercase' }}>Domains</div>
-          <div style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--color-text-main)', marginTop: '0.15rem' }}>{metrics.domains}</div>
+        <div className="glass-panel" style={{ padding: '0.45rem 0.65rem' }}>
+          <div style={{ fontSize: '0.62rem', fontWeight: 600, color: 'var(--color-text-light)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>Domains</div>
+          <div style={{ fontSize: '0.95rem', fontWeight: 800, color: 'var(--color-text-main)', marginTop: '0.05rem' }}>{metrics.domains}</div>
         </div>
 
-        <div className="glass-panel" style={{ padding: '0.85rem 1rem' }}>
-          <div style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--color-text-light)', textTransform: 'uppercase' }}>Enrolled Students</div>
-          <div style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--color-text-main)', marginTop: '0.15rem' }}>{metrics.students}</div>
+        <div className="glass-panel" style={{ padding: '0.45rem 0.65rem' }}>
+          <div style={{ fontSize: '0.62rem', fontWeight: 600, color: 'var(--color-text-light)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>Enrolled Students</div>
+          <div style={{ fontSize: '0.95rem', fontWeight: 800, color: 'var(--color-text-main)', marginTop: '0.05rem' }}>{metrics.students}</div>
         </div>
 
-        <div className="glass-panel" style={{ padding: '0.85rem 1rem' }}>
-          <div style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--color-text-light)', textTransform: 'uppercase' }}>Student Requests</div>
-          <div style={{ fontSize: '1.25rem', fontWeight: 800, color: pendingRequestsCount > 0 ? 'var(--color-warning)' : 'var(--color-text-main)', marginTop: '0.15rem' }}>
+        <div className="glass-panel" style={{ padding: '0.45rem 0.65rem' }}>
+          <div style={{ fontSize: '0.62rem', fontWeight: 600, color: 'var(--color-text-light)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>Student Requests</div>
+          <div style={{ fontSize: '0.95rem', fontWeight: 800, color: pendingRequestsCount > 0 ? 'var(--color-warning)' : 'var(--color-text-main)', marginTop: '0.05rem' }}>
             {pendingRequestsCount} Pending
           </div>
         </div>
       </div>
 
       {/* TABS */}
-      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.25rem', borderBottom: '1px solid var(--color-border)', paddingBottom: '0.5rem' }}>
+      <div
+        className="admin-tab-bar"
+        style={{ marginBottom: '0.85rem', borderBottom: '1px solid var(--color-border)', paddingBottom: '0.4rem', display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}
+      >
         <button
           onClick={() => setActiveTab('colleges')}
           className={activeTab === 'colleges' ? 'btn-primary' : 'btn-secondary'}
-          style={{ fontSize: '0.82rem', padding: '0.4rem 1rem' }}
+          style={{ fontSize: '0.74rem', padding: '0.3rem 0.65rem', flexShrink: 0 }}
         >
           Approved Colleges Directory
         </button>
         <button
           onClick={() => setActiveTab('requests')}
           className={activeTab === 'requests' ? 'btn-primary' : 'btn-secondary'}
-          style={{ fontSize: '0.82rem', padding: '0.4rem 1rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+          style={{ fontSize: '0.74rem', padding: '0.3rem 0.65rem', display: 'flex', alignItems: 'center', gap: '0.35rem', flexShrink: 0 }}
         >
           Student Campus Requests
           {pendingRequestsCount > 0 && (
-            <span style={{ background: 'var(--color-warning)', color: '#fff', fontSize: '0.68rem', fontWeight: 700, padding: '1px 6px', borderRadius: '10px' }}>
+            <span style={{ background: 'var(--color-warning)', color: '#fff', fontSize: '0.64rem', fontWeight: 700, padding: '1px 5px', borderRadius: '10px' }}>
               {pendingRequestsCount}
             </span>
           )}
@@ -306,28 +311,28 @@ export const CollegesPage: React.FC = () => {
       {activeTab === 'colleges' ? (
         <>
           {/* SEARCH AND FILTERS */}
-          <div className="glass-panel" style={{ padding: '0.85rem 1rem', marginBottom: '1.25rem', display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center' }}>
-            <div style={{ position: 'relative', flex: 1, minWidth: '220px' }}>
-              <Search size={15} color="var(--color-text-dim)" style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)' }} />
+          <div className="glass-panel admin-filter-bar" style={{ padding: '0.55rem 0.75rem', marginBottom: '0.85rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+            <div style={{ position: 'relative', flex: 1, minWidth: '200px' }}>
+              <Search size={14} color="var(--color-text-dim)" style={{ position: 'absolute', left: '0.65rem', top: '50%', transform: 'translateY(-50%)' }} />
               <input
                 type="text"
                 placeholder="Search college, code, city, domain..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="input-control"
-                style={{ paddingLeft: '2.2rem' }}
+                style={{ paddingLeft: '2rem', fontSize: '0.78rem' }}
               />
               {search && (
                 <button
                   onClick={() => setSearch('')}
-                  style={{ position: 'absolute', right: '0.65rem', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--color-text-dim)', cursor: 'pointer' }}
+                  style={{ position: 'absolute', right: '0.6rem', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--color-text-dim)', cursor: 'pointer' }}
                 >
-                  <X size={14} />
+                  <X size={13} />
                 </button>
               )}
             </div>
 
-            <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap' }}>
               {[
                 { id: '', label: 'All' },
                 { id: 'APPROVED', label: 'Approved' },
@@ -340,7 +345,7 @@ export const CollegesPage: React.FC = () => {
                     key={item.id}
                     onClick={() => setStatusFilter(item.id)}
                     className={isActive ? 'btn-primary' : 'btn-secondary'}
-                    style={{ padding: '0.35rem 0.75rem', fontSize: '0.78rem' }}
+                    style={{ padding: '0.25rem 0.55rem', fontSize: '0.72rem' }}
                   >
                     {item.label}
                   </button>
@@ -350,9 +355,9 @@ export const CollegesPage: React.FC = () => {
           </div>
 
           {/* COLLEGES TABLE */}
-          <div className="glass-panel" style={{ overflow: 'hidden' }}>
+          <div className="glass-panel" style={{ overflow: 'hidden', padding: 0 }}>
             {isLoading ? (
-              <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--color-text-dim)', fontSize: '0.85rem' }}>
+              <div style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--color-text-dim)', fontSize: '0.8rem' }}>
                 Loading colleges...
               </div>
             ) : (
@@ -360,30 +365,31 @@ export const CollegesPage: React.FC = () => {
                 <table className="admin-table">
                   <thead>
                     <tr>
-                      <th>College Name</th>
-                      <th>Domains</th>
-                      <th>Location</th>
-                      <th style={{ textAlign: 'center' }}>Students</th>
-                      <th style={{ textAlign: 'center' }}>Status</th>
-                      <th style={{ textAlign: 'right' }}>Actions</th>
+                      <th style={{ whiteSpace: 'nowrap' }}>College Name</th>
+                      <th style={{ whiteSpace: 'nowrap' }}>Domains</th>
+                      <th className="hide-mobile" style={{ whiteSpace: 'nowrap' }}>Location</th>
+                      <th className="hide-mobile" style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>Students</th>
+                      <th style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>Status</th>
+                      <th style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {collegesList.map((college: any) => {
                       const isDeleted = !!college.deletedAt;
+                      const locStr = [college.city, college.state].filter(Boolean).join(', ');
                       return (
                         <tr key={college.id} style={{ opacity: isDeleted ? 0.6 : 1 }}>
-                          <td>
-                            <div style={{ fontWeight: 600, color: 'var(--color-text-main)' }}>{college.name}</div>
-                            {college.shortName && (
-                              <div style={{ fontSize: '0.72rem', color: 'var(--color-text-light)' }}>
-                                Code: {college.shortName}
-                              </div>
-                            )}
+                          <td style={{ whiteSpace: 'nowrap' }}>
+                            <div style={{ fontWeight: 600, color: 'var(--color-text-main)', fontSize: '0.74rem', lineHeight: 1.25 }}>{college.name}</div>
+                            <div style={{ fontSize: '0.64rem', color: 'var(--color-text-light)', display: 'flex', gap: '0.3rem', alignItems: 'center', marginTop: '0.08rem' }}>
+                              {college.shortName && <span>Code: {college.shortName}</span>}
+                              {locStr && <span className="show-mobile-inline">• {locStr}</span>}
+                              <span className="show-mobile-inline">• {college._count?.users || 0} students</span>
+                            </div>
                           </td>
 
                           <td>
-                            <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
+                            <div style={{ display: 'flex', gap: '0.2rem', flexWrap: 'wrap', alignItems: 'center' }}>
                               {college.domains?.map((d: any) => {
                                 const isDisabled = d.status === 'DISABLED';
                                 return (
@@ -392,14 +398,24 @@ export const CollegesPage: React.FC = () => {
                                     type="button"
                                     title={isDisabled ? 'Click to Enable domain' : 'Click to Disable domain'}
                                     onClick={() =>
-                                      domainStatusMutation.mutate({
-                                        collegeId: college.id,
-                                        domainId: d.id,
-                                        status: isDisabled ? 'ACTIVE' : 'DISABLED',
+                                      confirm({
+                                        title: isDisabled
+                                          ? `Enable ${d.domain}?`
+                                          : `Disable ${d.domain}?`,
+                                        description: isDisabled
+                                          ? 'Addresses on this domain can verify a student account again.'
+                                          : 'Addresses on this domain can no longer verify a student account.',
+                                        severity: isDisabled ? 'moderate' : 'high',
+                                        confirmLabel: isDisabled ? 'Enable domain' : 'Disable domain',
+                                        onConfirm: () => domainStatusMutation.mutateAsync({
+                                          collegeId: college.id,
+                                          domainId: d.id,
+                                          status: isDisabled ? 'ACTIVE' : 'DISABLED',
+                                        }),
                                       })
                                     }
                                     style={{
-                                      fontSize: '0.72rem',
+                                      fontSize: '0.64rem',
                                       fontFamily: 'monospace',
                                       background: isDisabled
                                         ? 'rgba(239, 68, 68, 0.1)'
@@ -411,49 +427,61 @@ export const CollegesPage: React.FC = () => {
                                         : d.isPrimary
                                         ? 'var(--color-primary)'
                                         : 'var(--color-text-muted)',
-                                      padding: '2px 6px',
-                                      borderRadius: '4px',
+                                      padding: '1px 4px',
+                                      borderRadius: '3px',
                                       border: isDisabled
                                         ? '1px dashed rgba(239, 68, 68, 0.4)'
                                         : '1px solid var(--color-border)',
                                       cursor: 'pointer',
                                       textDecoration: isDisabled ? 'line-through' : 'none',
+                                      whiteSpace: 'nowrap',
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '2px',
+                                      lineHeight: 1.25,
                                     }}
                                   >
-                                    {d.domain} {isDisabled ? '(Disabled)' : d.isPrimary ? '★' : ''}
+                                    <span>{d.domain}</span>
+                                    {isDisabled ? <span style={{ fontSize: '0.58rem' }}>(off)</span> : d.isPrimary ? <span style={{ fontSize: '0.58rem' }}>★</span> : null}
                                   </button>
                                 );
                               })}
                             </div>
                           </td>
 
-                          <td style={{ color: 'var(--color-text-light)', fontSize: '0.82rem' }}>
-                            {[college.city, college.state].filter(Boolean).join(', ') || '—'}
+                          <td className="hide-mobile" style={{ color: 'var(--color-text-light)', fontSize: '0.72rem', whiteSpace: 'nowrap' }}>
+                            {locStr || '—'}
                           </td>
 
-                          <td style={{ textAlign: 'center', fontWeight: 600 }}>
+                          <td className="hide-mobile" style={{ textAlign: 'center', fontWeight: 600, fontSize: '0.72rem', whiteSpace: 'nowrap' }}>
                             {college._count?.users || 0}
                           </td>
 
-                          <td style={{ textAlign: 'center' }}>
+                          <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
                             {isDeleted ? (
-                              <span className="badge badge-danger">Deleted</span>
+                              <span className="badge badge-danger" style={{ fontSize: '0.58rem', padding: '1px 5px' }}>Deleted</span>
                             ) : college.status === 'APPROVED' ? (
-                              <span className="badge badge-success">Approved</span>
+                              <span className="badge badge-success" style={{ fontSize: '0.58rem', padding: '1px 5px' }}>Approved</span>
                             ) : college.status === 'PENDING' ? (
-                              <span className="badge badge-warning">Pending</span>
+                              <span className="badge badge-warning" style={{ fontSize: '0.58rem', padding: '1px 5px' }}>Pending</span>
                             ) : (
-                              <span className="badge badge-neutral">Disabled</span>
+                              <span className="badge badge-neutral" style={{ fontSize: '0.58rem', padding: '1px 5px' }}>Disabled</span>
                             )}
                           </td>
 
-                          <td style={{ textAlign: 'right' }}>
-                            <div style={{ display: 'flex', gap: '0.35rem', justifyContent: 'flex-end' }}>
+                          <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                            <div style={{ display: 'inline-flex', gap: '0.22rem', justifyContent: 'flex-end', alignItems: 'center', flexWrap: 'nowrap' }}>
                               {isDeleted ? (
                                 <button
-                                  onClick={() => restoreMutation.mutate(college.id)}
+                                  onClick={() => confirm({
+                                    title: `Restore ${college.name}?`,
+                                    description: 'The college becomes available again.',
+                                    severity: 'moderate',
+                                    confirmLabel: 'Restore',
+                                    onConfirm: () => restoreMutation.mutateAsync(college.id),
+                                  })}
                                   className="btn-secondary"
-                                  style={{ padding: '0.3rem 0.6rem', fontSize: '0.75rem' }}
+                                  style={{ padding: '0.18rem 0.42rem', fontSize: '0.68rem', minHeight: '24px' }}
                                 >
                                   Restore
                                 </button>
@@ -462,39 +490,68 @@ export const CollegesPage: React.FC = () => {
                                   <button
                                     onClick={() => handleOpenEdit(college)}
                                     className="btn-secondary"
-                                    style={{ padding: '0.3rem 0.65rem', fontSize: '0.75rem' }}
+                                    style={{ padding: '0.18rem 0.42rem', fontSize: '0.68rem', minHeight: '24px' }}
+                                    title="Edit college"
                                   >
                                     Edit
                                   </button>
 
                                   {college.status !== 'APPROVED' && (
                                     <button
-                                      onClick={() => statusMutation.mutate({ id: college.id, status: 'APPROVED' })}
+                                      onClick={() => confirm({
+                                        title: `Approve ${college.name}?`,
+                                        description: 'Students can join this college and use its campus spaces.',
+                                        severity: 'moderate',
+                                        confirmLabel: 'Approve',
+                                        onConfirm: () => statusMutation.mutateAsync({ id: college.id, status: 'APPROVED' }),
+                                      })}
                                       className="btn-secondary"
-                                      style={{ padding: '0.3rem 0.65rem', fontSize: '0.75rem', color: 'var(--color-success)' }}
+                                      style={{ padding: '0.18rem 0.42rem', fontSize: '0.68rem', color: 'var(--color-success)', minHeight: '24px' }}
+                                      title="Approve college"
                                     >
                                       Approve
                                     </button>
                                   )}
                                   {college.status === 'APPROVED' && (
                                     <button
-                                      onClick={() => statusMutation.mutate({ id: college.id, status: 'DISABLED' })}
+                                      onClick={() => confirm({
+                                        title: `Disable ${college.name}?`,
+                                        description: 'The college is hidden and stops accepting new students.',
+                                        consequences: [
+                                          'Existing students keep their accounts but lose campus spaces.',
+                                          'It can be re-enabled at any time.',
+                                        ],
+                                        severity: 'high',
+                                        confirmLabel: 'Disable',
+                                        onConfirm: () => statusMutation.mutateAsync({ id: college.id, status: 'DISABLED' }),
+                                      })}
                                       className="btn-secondary"
-                                      style={{ padding: '0.3rem 0.65rem', fontSize: '0.75rem', color: 'var(--color-warning)' }}
+                                      style={{ padding: '0.18rem 0.42rem', fontSize: '0.68rem', color: 'var(--color-warning)', minHeight: '24px' }}
+                                      title="Disable college"
                                     >
                                       Disable
                                     </button>
                                   )}
                                   <button
                                     onClick={() => {
-                                      if (confirm(`Delete ${college.name}?`)) {
-                                        deleteMutation.mutate(college.id);
-                                      }
+                                      confirm({
+                                        title: `Delete ${college.name}?`,
+                                        description: 'The college is removed from Meetifyy.',
+                                        consequences: [
+                                          'Students on this college lose their campus spaces.',
+                                          'Its email domains stop verifying new accounts.',
+                                        ],
+                                        severity: 'critical',
+                                        confirmLabel: 'Delete college',
+                                        onConfirm: () => deleteMutation.mutateAsync(college.id),
+                                      });
                                     }}
                                     className="btn-danger"
-                                    style={{ padding: '0.3rem 0.65rem', fontSize: '0.75rem' }}
+                                    style={{ padding: '0.18rem 0.35rem', fontSize: '0.68rem', minHeight: '24px', display: 'inline-flex', alignItems: 'center', gap: '2px' }}
+                                    title={`Delete ${college.name}`}
                                   >
-                                    Delete
+                                    <Trash2 size={12} />
+                                    <span className="hide-mobile">Delete</span>
                                   </button>
                                 </>
                               )}
@@ -528,9 +585,9 @@ export const CollegesPage: React.FC = () => {
         </>
       ) : (
         /* REQUESTS TABLE */
-        <div className="glass-panel" style={{ overflow: 'hidden' }}>
+        <div className="glass-panel" style={{ overflow: 'hidden', padding: 0 }}>
           {isLoadingRequests ? (
-            <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--color-text-dim)', fontSize: '0.85rem' }}>
+            <div style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--color-text-dim)', fontSize: '0.8rem' }}>
               Loading student requests...
             </div>
           ) : (
@@ -541,8 +598,8 @@ export const CollegesPage: React.FC = () => {
                     <th>Student Name</th>
                     <th>Requested College</th>
                     <th>College Email</th>
-                    <th>Personal Email</th>
-                    <th>Date</th>
+                    <th className="hide-mobile">Personal Email</th>
+                    <th className="hide-mobile">Date</th>
                     <th style={{ textAlign: 'center' }}>Status</th>
                     <th style={{ textAlign: 'right' }}>Actions</th>
                   </tr>
@@ -550,34 +607,50 @@ export const CollegesPage: React.FC = () => {
                 <tbody>
                   {requestsList.map((req: any) => (
                     <tr key={req.id}>
-                      <td style={{ fontWeight: 600, color: 'var(--color-text-main)' }}>{req.name}</td>
-                      <td style={{ fontWeight: 600, color: 'var(--color-primary)' }}>{req.collegeName}</td>
-                      <td style={{ fontFamily: 'monospace', fontSize: '0.82rem' }}>{req.collegeEmail}</td>
-                      <td style={{ fontSize: '0.82rem', color: 'var(--color-text-light)' }}>{req.personalEmail || '—'}</td>
-                      <td style={{ fontSize: '0.78rem', color: 'var(--color-text-dim)' }}>
+                      <td>
+                        <div style={{ fontWeight: 600, color: 'var(--color-text-main)', fontSize: '0.76rem' }}>{req.name}</div>
+                        <div className="show-mobile" style={{ fontSize: '0.66rem', color: 'var(--color-text-dim)', marginTop: '0.08rem' }}>
+                          {new Date(req.createdAt).toLocaleDateString()}
+                        </div>
+                      </td>
+                      <td>
+                        <div style={{ fontWeight: 600, color: 'var(--color-primary)', fontSize: '0.76rem' }}>{req.collegeName}</div>
+                      </td>
+                      <td>
+                        <div style={{ fontFamily: 'monospace', fontSize: '0.72rem' }}>{req.collegeEmail}</div>
+                        {req.personalEmail && (
+                          <div className="show-mobile" style={{ fontSize: '0.66rem', color: 'var(--color-text-light)' }}>
+                            {req.personalEmail}
+                          </div>
+                        )}
+                      </td>
+                      <td className="hide-mobile" style={{ fontSize: '0.72rem', color: 'var(--color-text-light)' }}>
+                        {req.personalEmail || '—'}
+                      </td>
+                      <td className="hide-mobile" style={{ fontSize: '0.7rem', color: 'var(--color-text-dim)' }}>
                         {new Date(req.createdAt).toLocaleDateString()}
                       </td>
                       <td style={{ textAlign: 'center' }}>
                         {req.status === 'ADDED' ? (
                           <span className="badge badge-success" style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
-                            <Check size={12} /> Whitelisted
+                            <Check size={11} /> Whitelisted
                           </span>
                         ) : req.status === 'REJECTED' ? (
                           <span className="badge badge-danger">Rejected</span>
                         ) : (
                           <span className="badge badge-warning" style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
-                            <Clock size={12} /> Pending
+                            <Clock size={11} /> Pending
                           </span>
                         )}
                       </td>
                       <td style={{ textAlign: 'right' }}>
-                        <div style={{ display: 'flex', gap: '0.35rem', justifyContent: 'flex-end' }}>
+                        <div style={{ display: 'flex', gap: '0.25rem', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
                           {req.status !== 'ADDED' && (
                             <button
                               type="button"
                               onClick={() => handleApproveRequest(req)}
                               className="btn-primary"
-                              style={{ padding: '0.3rem 0.65rem', fontSize: '0.75rem' }}
+                              style={{ padding: '0.22rem 0.5rem', fontSize: '0.7rem', minHeight: '26px' }}
                             >
                               Approve & Whitelist
                             </button>
@@ -585,9 +658,15 @@ export const CollegesPage: React.FC = () => {
                           {req.status === 'PENDING' && (
                             <button
                               type="button"
-                              onClick={() => requestStatusMutation.mutate({ id: req.id, status: 'REJECTED' })}
+                              onClick={() => confirm({
+                                title: 'Reject this college request?',
+                                description: 'The request is declined and the college is not added.',
+                                severity: 'moderate',
+                                confirmLabel: 'Reject request',
+                                onConfirm: () => requestStatusMutation.mutateAsync({ id: req.id, status: 'REJECTED' }),
+                              })}
                               className="btn-secondary"
-                              style={{ padding: '0.3rem 0.65rem', fontSize: '0.75rem', color: 'var(--color-danger)' }}
+                              style={{ padding: '0.22rem 0.5rem', fontSize: '0.7rem', color: 'var(--color-danger)', minHeight: '26px' }}
                             >
                               Reject
                             </button>
@@ -673,7 +752,7 @@ export const CollegesPage: React.FC = () => {
                   />
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '1.25rem' }}>
+                <div className="grid-split" style={{ gap: '0.75rem', marginBottom: '1.25rem' }}>
                   <div>
                     <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'var(--color-text-muted)', marginBottom: '0.3rem' }}>City</label>
                     <input
@@ -696,7 +775,7 @@ export const CollegesPage: React.FC = () => {
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+                <div className="modal-actions" style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
                   <button type="button" onClick={handleCloseModal} className="btn-secondary">
                     Cancel
                   </button>
