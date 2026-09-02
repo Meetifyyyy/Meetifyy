@@ -122,6 +122,7 @@ if [ -n "$ENV_FILE" ]; then
   R2_ACCESS_KEY_ID="$(get_env R2_ACCESS_KEY_ID)"
   R2_SECRET_ACCESS_KEY="$(get_env R2_SECRET_ACCESS_KEY)"
   R2_ACCOUNT_ID="$(get_env R2_ACCOUNT_ID)"
+  R2_PUBLIC_URL="$(get_env R2_PUBLIC_URL)"
   R2_BUCKET_NAME="$(get_env R2_BUCKET_NAME)"
   R2_VERIFICATION_BUCKET_NAME="$(get_env R2_VERIFICATION_BUCKET_NAME)"
   SENTRY_DSN="$(get_env SENTRY_DSN)"
@@ -142,7 +143,7 @@ if [ -n "$ENV_FILE" ]; then
   MISSING=""
   for v in DATABASE_URL DIRECT_URL SUPABASE_URL SUPABASE_ANON_KEY \
            SUPABASE_SERVICE_ROLE_KEY RESEND_API_KEY R2_ACCESS_KEY_ID \
-           R2_SECRET_ACCESS_KEY R2_ACCOUNT_ID; do
+           R2_SECRET_ACCESS_KEY R2_ACCOUNT_ID R2_PUBLIC_URL; do
     eval "val=\${$v:-}"
     [ -n "$val" ] || MISSING="$MISSING $v"
   done
@@ -175,6 +176,7 @@ else
   read -rsp "Enter Production R2 Access Key ID: " R2_ACCESS_KEY_ID; echo
   read -rsp "Enter Production R2 Secret Access Key: " R2_SECRET_ACCESS_KEY; echo
   read -rp "Enter Production R2 Account ID: " R2_ACCOUNT_ID
+  read -rp "Enter Production R2 Public URL (e.g. https://cdn.meetifyy.app): " R2_PUBLIC_URL
   read -rp "Enter Production Sentry DSN (optional, press Enter to skip): " SENTRY_DSN
   read -rp "Enter Production Super Admin Email: " SUPER_ADMIN_EMAIL
   read -rsp "Enter Production Super Admin Password: " SUPER_ADMIN_PASSWORD; echo
@@ -234,6 +236,7 @@ if [ "$SYNC_ONLY" = "true" ]; then
     --resource-group "$RESOURCE_GROUP" \
     --set-env-vars \
       "R2_ACCOUNT_ID=${R2_ACCOUNT_ID}" \
+      "R2_PUBLIC_URL=${R2_PUBLIC_URL}" \
       "R2_BUCKET_NAME=${R2_BUCKET_NAME}" \
       "R2_VERIFICATION_BUCKET_NAME=${R2_VERIFICATION_BUCKET_NAME:-}" \
       "SUPER_ADMIN_EMAIL=secretref:super-admin-email" \
@@ -490,6 +493,7 @@ az containerapp create \
     EMAIL_FROM="noreply@meetifyy.app" \
     STORAGE_PROVIDER=r2 \
     R2_ACCOUNT_ID="$R2_ACCOUNT_ID" \
+    R2_PUBLIC_URL="$R2_PUBLIC_URL" \
     R2_BUCKET_NAME="meetifyy-prod" \
     R2_VERIFICATION_BUCKET_NAME="${R2_VERIFICATION_BUCKET_NAME:-}" \
     REDIS_QUEUE_PREFIX="bull:production" \
