@@ -175,10 +175,25 @@ export default function UserListModal({ type, profileUsername, onClose }) {
                      *
                      * Closing is not lost: the list's visibility is derived from
                      * the `tab` search param, so leaving for a URL without it
-                     * unmounts this modal. Back then returns to the list, which
-                     * is what pushing the entry was for.
+                     * unmounts this modal.
+                     *
+                     * REPLACE, not push, and that is the part that actually
+                     * makes the tap land. SmartBackTracker reconciles every
+                     * arrival against its history mirror, and a PUSH onto a page
+                     * already in the stack is collapsed: the mirror walks
+                     * history back onto the existing entry. Tapping someone
+                     * whose profile you had already opened this session
+                     * therefore rendered their page and immediately stepped back
+                     * over it, which is the flicker. Verified against the real
+                     * mirror in browserHistoryMirror's tests: the same sequence
+                     * plans a -3 step as a push and no step at all as a replace.
+                     *
+                     * Replacing is also the honest description of what this is.
+                     * The entry being left is the open list, and the list is a
+                     * sub-view of the profile, not a destination worth its own
+                     * Back press once you have chosen someone from it.
                      */
-                    navigate(`/profile/${user.username}`);
+                    navigate(`/profile/${user.username}`, { replace: true });
                   }}
                 >
                   <div className={styles.userAvatar}>
