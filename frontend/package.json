@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "node scripts/generate-robots.mjs && node scripts/generate-sitemap.mjs && node scripts/generate-version.mjs && vite build && node scripts/prerender-seo.mjs",
     "preview": "vite preview",
+    "test": "vitest run",
     "pwa:assets": "node scripts/generate-pwa-assets.mjs",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",

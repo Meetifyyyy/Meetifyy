@@ -22,6 +22,34 @@
 
 name: CI
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Every deployable app is checked here, and one aggregate job reports the result.
+#
+# Two things were wrong before, and they compounded:
+#
+#   1. Only `backend/**` was checked. `frontend` and `admin-frontend` — the
+#      frontend alone carrying 700+ tests — had no automated gate at all, so a
+#      frontend change reached production having been run nowhere but a
+#      developer's machine.
+#
+#   2. `main` requires a status check named `validate`, but the job published
+#      its check as "Lint · Typecheck · Build · Test". No check by the required
+#      name was ever produced, so the requirement sat at "Expected" forever and
+#      every merge to main had to bypass branch protection. Protection that must
+#      be bypassed to ship is worse than none: it trains people to click past it.
+#
+# Hence the `validate` job at the bottom. It runs nothing itself; it exists so
+# there is exactly one required check whose name is stable, that is always
+# produced, and that is green only when all three app jobs are. Adding a fourth
+# app later means adding it to `needs` — the branch protection rule never has to
+# change again.
+#
+# `paths` filters are deliberately absent. A required check that is skipped is
+# not reported as passed, it is reported as pending, so a path-filtered required
+# check deadlocks every PR that does not touch those paths. The jobs are a few
+# minutes; correctness here is worth more than the saving.
+# ─────────────────────────────────────────────────────────────────────────────
+
 on:
   pull_request:
     branches:
@@ -31,18 +59,14 @@ on:
     branches:
       - development
       - main
-    paths:
-      - 'backend/**'
-      - '.github/workflows/ci.yml'
-
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  validate:
-    name: Lint · Typecheck · Build · Test
+  backend:
+    name: backend
     runs-on: ubuntu-latest
 
     # Placeholder connection strings. No step here talks to a real database,
@@ -58,11 +82,9 @@ jobs:
         working-directory: backend
 
     steps:
-      # ── 1. Checkout ────────────────────────────────────────────────────────
       - name: Checkout
         uses: actions/checkout@v4
 
-      # ── 2. Node.js setup ───────────────────────────────────────────────────
       - name: Setup Node.js 22
         uses: actions/setup-node@v4
         with:
@@ -70,24 +92,19 @@ jobs:
           cache: 'npm'
           cache-dependency-path: backend/package-lock.json
 
-      # ── 3. Install dependencies ────────────────────────────────────────────
       - name: Install dependencies
         run: npm ci
 
-      # ── 4. Generate Prisma client ──────────────────────────────────────────
       # Validates schema.prisma syntax without connecting to any database.
       - name: Prisma generate (schema validation)
         run: npx prisma generate
 
-      # ── 5. Validate schema syntax offline ─────────────────────────────────
       - name: Prisma schema validation
         run: npx prisma validate
 
-      # ── 6. TypeScript typecheck ────────────────────────────────────────────
       - name: TypeScript typecheck
         run: npx tsc --project tsconfig.build.json --noEmit
 
-      # ── 7. ESLint ──────────────────────────────────────────────────────────
       # Non-blocking: formatting and parse errors are clean, but ~4.6k
       # pre-existing `no-unsafe-*` findings remain. Flip to blocking once
       # that backlog is worked down.
@@ -95,16 +112,14 @@ jobs:
         run: npm run lint
         continue-on-error: true
 
-      # ── 8. Build ───────────────────────────────────────────────────────────
       # prebuild script runs `prisma generate` again — harmless, ensures the
       # dist output matches the latest generated client.
       - name: Production build
         run: npm run build
 
-      # ── 9. Unit tests ──────────────────────────────────────────────────────
-      # Placeholders only — the suite is fully mocked and opens no network
-      # connections. They exist because `src/config` validates the whole env
-      # at import time, so a missing var throws before any test body runs.
+      # The suite is fully mocked and opens no network connections. The env
+      # below exists because `src/config` validates the whole environment at
+      # import time, so a missing var throws before any test body runs.
       - name: Unit tests
         run: npm test -- --passWithNoTests
         env:
@@ -115,3 +130,99 @@ jobs:
           SUPABASE_URL: "https://ci-placeholder.supabase.co"
           SUPABASE_ANON_KEY: "ci_placeholder_anon_key"
           SUPPORT_IP_HASH_SALT: "ci_placeholder_salt"
+
+  frontend:
+    name: frontend
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Non-blocking for the same reason as the backend: the current tree is
+      # error-free but carries unused-variable warnings.
+      - name: ESLint
+        run: npm run lint
+        continue-on-error: true
+
+      - name: Unit tests
+        run: npm test
+
+      # Exercises the whole pipeline, not just Vite: robots, sitemap, the
+      # version stamp and the SEO prerender all run here, and each has broken
+      # a deploy before.
+      - name: Production build
+        run: npm run build
+
+  admin-frontend:
+    name: admin-frontend
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: admin-frontend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: admin-frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      # oxlint, not ESLint — this app has no flat ESLint config.
+      - name: Lint
+        run: npm run lint
+        continue-on-error: true
+
+      # `npm run build` is `tsc -b && vite build`, so the typecheck is the
+      # first half of this step rather than a separate one.
+      - name: Typecheck and build
+        run: npm run build
+
+  # ── The single required status check ────────────────────────────────────────
+  # Named to match the context `main` requires. Do not rename without updating
+  # the branch protection rule, or merges will block on a check that no longer
+  # exists.
+  validate:
+    name: validate
+    runs-on: ubuntu-latest
+    needs: [backend, frontend, admin-frontend]
+    # Runs even when a dependency fails, so the required check reports a real
+    # failure instead of being skipped — a skipped required check reads as
+    # pending forever.
+    if: always()
+
+    steps:
+      - name: Verify every app passed
+        run: |
+          echo "backend:        ${{ needs.backend.result }}"
+          echo "frontend:       ${{ needs.frontend.result }}"
+          echo "admin-frontend: ${{ needs['admin-frontend'].result }}"
+          if [ "${{ needs.backend.result }}" != "success" ] \
+            || [ "${{ needs.frontend.result }}" != "success" ] \
+            || [ "${{ needs['admin-frontend'].result }}" != "success" ]; then
+            echo "::error::One or more app checks did not succeed."
+            exit 1
+          fi
+          echo "All app checks passed."
