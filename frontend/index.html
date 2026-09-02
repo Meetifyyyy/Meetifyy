@@ -20,20 +20,36 @@
   -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0, interactive-widget=resizes-content" />
   <!--
-    `sizes` has to tell the truth. This file is 192x192 and was declared 32x32,
-    which is not a size Google accepts: it requires a favicon to be a square
-    multiple of 48px and discards anything smaller. Declaring a sub-48 icon
-    first is enough for it to fall through to /favicon.ico, and that used to
-    404 — which is why search results showed the generic globe rather than the
-    logo, even though the artwork itself was fine and crawlable all along.
+    The one favicon, and deliberately the only `rel="icon"`.
+
+    `sizes` has to tell the truth: this file is 192x192 and was declared
+    32x32, a size Google rejects outright (it wants a square multiple of 48px).
+    That plus a missing /favicon.ico left it nothing to use, which is why
+    results showed the generic globe.
+
+    `logo-192.png` used to be declared here too. It is the full-bleed tile
+    carrying the wordmark — illegible at 16-48px and clipped by any rounded
+    crop — and listing it gave Google a second candidate that would have
+    looked worse than no logo. It stays in the web manifest, where a
+    home-screen tile is exactly what is wanted, and out of the favicon
+    choice entirely.
+
+    Two cuts of the mark, because the two surfaces crop differently:
+
+      favicon.png  full bleed — browser tabs and bookmarks draw a favicon in a
+                   square, so the mark should use the whole box there.
+      favicon.ico  inset to 80% of the inscribed circle — search results and
+                   profile chips draw it in a circle, which at full bleed was
+                   shaving the shoulders off the M.
+
+    Google reads this declaration first and only falls back to /favicon.ico
+    when it finds nothing usable here, so it will most likely pick the
+    full-bleed cut and crop it. That is a deliberate trade: the tab icon is
+    seen constantly and the search icon rarely. If the clipped result in search
+    matters more, point this href at the .ico and the circular cut wins
+    everywhere.
   -->
   <link rel="icon" type="image/png" sizes="192x192" href="/favicon.png?v=2" />
-  <!--
-    Google's search result favicon is fetched at 48px minimum and downscaled
-    from whatever the largest declared icon is, so declaring the 192 here is
-    what makes the favicon beside a result look sharp rather than resampled.
-  -->
-  <link rel="icon" type="image/png" sizes="192x192" href="/logo-192.png?v=3" />
   <!--
     The maskable (opaque, full-bleed) icon, not the rounded one. iOS does not
     honour transparency in an apple-touch-icon — it composites the image onto

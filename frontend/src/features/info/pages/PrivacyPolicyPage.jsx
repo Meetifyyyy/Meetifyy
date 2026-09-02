@@ -88,7 +88,8 @@ export default function PrivacyPolicyPage() {
           We use browser-side storage technologies (localStorage, sessionStorage, IndexedDB, and
           Service Worker caches) to keep you signed in, remember your preferences, and make the
           Platform faster. We do not use traditional tracking cookies, web beacons, or any
-          analytics or advertising tracking technologies. For full details, see our{' '}
+          advertising tracking technologies. We do use cookieless analytics to count page views
+          and measure page speed, which store nothing on your device. For full details, see our{' '}
           <a href="/cookie-policy" style={{ color: 'var(--color-primary)', textDecoration: 'none', fontWeight: 500 }}>
             Cookie Policy
           </a>.
@@ -185,9 +186,11 @@ export default function PrivacyPolicyPage() {
             <span className={styles.cleanBulletDot} />
             <div className={styles.cleanBulletText}>
               <strong>Infrastructure Providers:</strong> We use Supabase for authentication and
-              database services, Cloudflare R2 for file storage, and Resend for transactional
-              email delivery. These providers process data only on our behalf and under our
-              instructions. No analytics or advertising providers receive your data.
+              database services, Cloudflare R2 for file storage, Resend for transactional
+              email delivery, and Vercel for hosting and cookieless analytics. These providers
+              process data only on our behalf and under our instructions. No advertising
+              providers receive your data, and Vercel receives only anonymous page-view and
+              page-performance measurements.
             </div>
           </li>
           <li className={styles.cleanBulletItem}>
