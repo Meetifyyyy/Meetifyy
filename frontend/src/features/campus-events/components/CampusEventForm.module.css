@@ -169,12 +169,12 @@
   padding: 0.4rem 0.7rem;
 }
 
-/* Poster upload — 3:4 portrait, same ratio as the event card grid */
+/* Poster upload — 2.5:2 (4:5) portrait, same ratio as the event card grid */
 .posterUpload {
   position: relative;
   width: 100%;
-  max-width: 260px;      /* at 3:4 this gives ~347px height — visible but not overwhelming */
-  aspect-ratio: 3 / 4;
+  max-width: 260px;
+  aspect-ratio: 2 / 2.5;
   margin: 0 auto;        /* center in the field */
   border: 1.5px dashed var(--color-border, rgba(0, 0, 0, 0.2));
   border-radius: 12px;

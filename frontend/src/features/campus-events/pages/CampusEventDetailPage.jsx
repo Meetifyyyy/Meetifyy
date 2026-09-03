@@ -41,7 +41,7 @@ export default function CampusEventDetailPage() {
           <div className={styles.scrollBody}>
             <div className={styles.detailLayout}>
               <div className={styles.posterHero}>
-                <Skeleton type="rect" width="100%" height="320px" style={{ borderRadius: '16px' }} />
+                <Skeleton type="rect" width="100%" height="100%" style={{ borderRadius: '16px', aspectRatio: '2 / 2.5' }} />
               </div>
               <div className={styles.content}>
                 <Skeleton type="rect" width="80px" height="24px" style={{ borderRadius: '999px' }} />

@@ -119,7 +119,7 @@
   width: 280px;
   min-width: 240px;
   max-width: 280px;
-  aspect-ratio: 3 / 4;
+  aspect-ratio: 2 / 2.5;
   margin: 0;
   border-radius: var(--radius-xl, 16px);
   overflow: hidden;

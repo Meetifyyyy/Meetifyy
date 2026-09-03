@@ -121,6 +121,18 @@ export function formatCardDate(startTime, endTime) {
   return `${formatShortDate(s)} to ${formatShortDate(e)}`;
 }
 
+/**
+ * Formats an event date into "XX SEP" format (e.g. "10 SEP" or "05 SEP") for the card bottom badge.
+ */
+export function formatCardDateBadge(dateish) {
+  if (!dateish) return '';
+  const d = new Date(dateish);
+  if (isNaN(d.getTime())) return '';
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = d.toLocaleDateString('en-US', { month: 'short' }).toUpperCase();
+  return `${day} ${month}`;
+}
+
 export function formatTime(dateish) {
   if (!dateish) return '';
   const d = new Date(dateish);

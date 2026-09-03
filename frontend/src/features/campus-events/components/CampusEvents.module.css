@@ -47,39 +47,79 @@
   100% { box-shadow: 0 0 0 0 rgba(22, 163, 74, 0); }
 }
 
-/* Uniform, responsive grid — width-driven columns, compact on mobile so users
-   can browse multiple posters at once rather than one huge card per row. */
+/* Uniform, responsive grid — compact, modern card sizing */
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 1rem;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 245px));
+  justify-content: start;
+  gap: 1.1rem;
   width: 100%;
+}
+
+@media (max-width: 768px) {
+  .grid {
+    grid-template-columns: repeat(auto-fill, minmax(190px, 235px));
+    justify-content: start;
+    gap: 0.9rem;
+  }
 }
 
 @media (max-width: 640px) {
   .grid {
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-    gap: 0.7rem;
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    padding-bottom: 4px;
+    gap: 0.85rem;
+    width: 100%;
+  }
+
+  .grid::-webkit-scrollbar {
+    display: none;
+  }
+
+  .grid > * {
+    flex: 0 0 215px;
+    width: 215px;
+    max-width: 215px;
+    scroll-snap-align: start;
   }
 }
 
-/* ── Event Card ── */
-/* ── Event Card ── */
+/* ── Event Card (Modern High-Contrast Style with Full Light & Dark Theme Support) ── */
 .card {
   position: relative;
   display: flex;
   flex-direction: column;
-  background: var(--color-bg-elevated, #16161a);
-  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
-  border-radius: var(--radius-xl, 16px);
+  width: 100%;
+  max-width: 245px;
+  background: var(--color-bg-white, #ffffff);
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: 20px;
+  padding: 7px 7px 9px;
   overflow: hidden;
   cursor: pointer;
   transition: transform 0.22s cubic-bezier(0.2, 0, 0.2, 1);
+  box-shadow: none;
+  box-sizing: border-box;
+}
+
+[data-theme="dark"] .card {
+  background: var(--color-bg-elevated, #1c1c20);
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: none;
 }
 
 @media (hover: hover) and (min-width: 768px) {
   .card:hover {
     transform: translateY(-4px);
+  }
+  .card:hover .poster {
+    transform: scale(1.04);
   }
 }
 
@@ -95,22 +135,33 @@
   }
 }
 
-/* Aspect ratio 3/4 frame */
+/* Framed poster container with rounded corners nested inside the card */
+.posterContainer {
+  position: relative;
+  width: 100%;
+}
+
 .posterWrap {
   position: relative;
   width: 100%;
-  aspect-ratio: 3 / 4;
-  background: var(--color-bg-soft, #1e1e24);
+  aspect-ratio: 2 / 2.5;
+  background: var(--color-bg-soft, #f1f5f9);
+  border-radius: 15px;
   overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
+[data-theme="dark"] .posterWrap {
+  background: #1e1e24;
+}
+
 .poster {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  object-position: center top;
   display: block;
   transition: transform 0.35s cubic-bezier(0.2, 0, 0.2, 1);
 }
@@ -121,7 +172,12 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #70090e 0%, #991b1b 100%);
+  background: var(--color-bg-soft, #f1f5f9);
+  color: var(--color-text-muted, #64748b);
+}
+
+[data-theme="dark"] .posterFallback {
+  background: linear-gradient(135deg, #1f222e 0%, #151720 100%);
   color: rgba(255, 255, 255, 0.7);
 }
 
@@ -129,102 +185,169 @@
   opacity: 0.65;
 }
 
-/* Rep management controls overlaid on top-right of poster */
-.posterControls {
-  position: absolute;
-  top: 0.65rem;
-  right: 0.65rem;
-  display: flex;
-  gap: 0.35rem;
-  z-index: 3;
-}
-
+/* Overlaid Top Pill Badge (Centered on top of poster by default) */
 .statusBadge {
   position: absolute;
-  top: 0.65rem;
-  left: 0.65rem;
-  font-size: 0.68rem;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.74rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  padding: 0.25rem 0.6rem;
-  border-radius: 999px;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  padding: 0.32rem 0.95rem;
+  border-radius: 9999px;
   color: #fff;
   z-index: 3;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+  white-space: nowrap;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  transition: left 0.15s ease, transform 0.15s ease;
 }
 
-.statusLive { background: rgba(22, 163, 74, 0.9); }
-.statusUpcoming { background: rgba(37, 99, 235, 0.9); }
-.statusPast { background: rgba(107, 114, 128, 0.9); }
-.statusDraft { background: rgba(202, 138, 4, 0.92); }
+/* When rep controls (edit/delete) are active, shift badge to top-left so they never collide */
+.statusBadgeWithControls {
+  left: 12px;
+  transform: none;
+}
 
-/* Text overlay on poster bottom */
-.posterOverlay {
+
+
+.statusDraft {
+  background: #d97706;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+/* Overlaid Bottom Pill Badge (< XX SEP > shape with slanted sides and rounded tips) */
+.datePill {
   position: absolute;
   bottom: 0;
-  left: 0;
-  right: 0;
-  padding: 1.75rem 0.85rem 0.75rem;
-  background: linear-gradient(
-    to top,
-    rgba(0, 0, 0, 0.6) 0%,
-    rgba(0, 0, 0, 0.2) 60%,
-    transparent 100%
-  );
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-  z-index: 2;
+  left: 50%;
+  transform: translate(-50%, 50%);
+  z-index: 5;
+  background: transparent;
+  border: none;
+  min-width: 130px;
+  height: 32px;
+  padding: 0 1.4rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: none;
+  pointer-events: none;
+  box-sizing: border-box;
+}
+
+.datePillBg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  fill: var(--color-bg-white, #ffffff);
+  z-index: 1;
   pointer-events: none;
 }
 
+[data-theme="dark"] .datePillBg {
+  fill: var(--color-bg-elevated, #1c1c20);
+}
+
+.datePillText {
+  position: relative;
+  z-index: 2;
+  color: var(--color-text-main, #0f172a);
+  font-family: 'Changa One', cursive;
+  font-size: 0.94rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  line-height: 1;
+}
+
+[data-theme="dark"] .datePillText {
+  color: var(--color-text-main, #ffffff);
+}
+
+/* Rep management controls overlaid on top-right of poster */
+.posterControls {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: flex;
+  gap: 0.4rem;
+  z-index: 4;
+}
+
+/* Card Content Area below the poster */
+.cardBody {
+  display: flex;
+  flex-direction: column;
+  padding: 16px 5px 2px;
+  gap: 3px;
+}
+
 .cardTitle {
-  font-size: 0.85rem;
+  font-size: 1.15rem;
   font-weight: 700;
-  color: #ffffff;
+  color: var(--color-text-main, #0f172a);
   margin: 0;
-  line-height: 1.25;
+  line-height: 1.35;
+  letter-spacing: -0.015em;
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 1;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
 
-.metaRow {
+/* Host / Organizer row */
+.hostRow {
   display: flex;
   align-items: center;
-  gap: 0.35rem;
-  font-size: 0.8rem;
-  font-weight: 500;
-  color: rgba(255, 255, 255, 0.88);
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+  min-width: 0;
 }
 
-.metaRow svg {
-  flex-shrink: 0;
-  opacity: 0.9;
-  color: rgba(255, 255, 255, 0.9);
-}
-
-.hostedBy {
+.hostName {
   font-size: 0.78rem;
   font-weight: 600;
-  color: #60a5fa;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+  color: var(--color-text-muted, #475569);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.desc {
-  font-size: 0.82rem;
-  color: var(--color-text-muted, #666);
-  line-height: 1.4;
-  margin: 0.15rem 0 0;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+[data-theme="dark"] .hostName {
+  color: var(--color-text-muted, #9ca3af);
+}
+
+@media (max-width: 640px) {
+  .card {
+    width: 215px;
+    max-width: 215px;
+    margin: 0;
+    flex-shrink: 0;
+    border-radius: 16px;
+    padding: 5px 5px 7px;
+  }
+  .posterWrap {
+    border-radius: 12px;
+  }
+  .cardBody {
+    padding: 14px 4px 2px;
+    gap: 2px;
+  }
+  .cardTitle {
+    font-size: 1.05rem;
+  }
+
+  .datePill {
+    min-width: 110px;
+    height: 28px;
+    padding: 0 1rem;
+  }
+  .datePillText {
+    font-size: 0.82rem;
+  }
 }
 
 .cardActions {

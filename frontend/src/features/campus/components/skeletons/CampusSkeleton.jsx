@@ -48,7 +48,17 @@ export default function CampusSkeleton() {
           </div>
         </section>
 
-        {/* Side by side */}
+        {/* Campus Activities section */}
+        <section className={styles.section}>
+          <div className={styles.sectionHeaderRow}>
+            <Skeleton type="rect" width="24px" height="24px" style={{ borderRadius: '6px' }} />
+            <Skeleton type="text" width="160px" height="16px" style={{ marginBottom: 0 }} />
+          </div>
+          <Skeleton type="rect" width="100%" height="80px" style={{ borderRadius: '14px' }} />
+          <Skeleton type="rect" width="100%" height="80px" style={{ borderRadius: '14px', marginTop: '8px' }} />
+        </section>
+
+        {/* Side by side: You may know & Discover groups */}
         <div className={styles.sideBySideDesktop}>
           {/* You may know */}
           <section className={styles.section}>

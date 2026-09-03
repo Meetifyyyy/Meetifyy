@@ -59,19 +59,21 @@ export default function CampusEventSection({
           <p className={styles.emptyText}>{emptyText}</p>
         </div>
       ) : (
-        <div className={styles.grid}>
-          {events.map((ev) => (
-            <CampusEventCard
-              key={ev.id}
-              event={ev}
-              scope={scope}
-              canManage={canManage}
-              onEdit={onEdit}
-              onDelete={onDelete}
-            />
-          ))}
-          <div ref={sentinelRef} style={{ gridColumn: '1 / -1', height: 1 }} />
-        </div>
+        <>
+          <div className={styles.grid}>
+            {events.map((ev) => (
+              <CampusEventCard
+                key={ev.id}
+                event={ev}
+                scope={scope}
+                canManage={canManage}
+                onEdit={onEdit}
+                onDelete={onDelete}
+              />
+            ))}
+          </div>
+          {hasNextPage && <div ref={sentinelRef} style={{ width: '100%', height: 1, pointerEvents: 'none' }} />}
+        </>
       )}
     </section>
   );
