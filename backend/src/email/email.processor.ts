@@ -17,6 +17,7 @@ import { AccountRecoveryOtpEmail } from './templates/account-recovery-otp';
 import { AdminOtpEmail } from './templates/admin-otp';
 import { config } from '../config';
 import { PrismaService } from '../prisma/prisma.service';
+import { EmailUsageService } from './email-usage.service';
 import {
   BuiltEmail,
   DeliveryTarget,
@@ -39,6 +40,7 @@ export class EmailProcessor extends WorkerHost implements OnModuleInit {
   constructor(
     private readonly supportEmails: SupportEmailBuilder,
     private readonly prisma: PrismaService,
+    private readonly emailUsage: EmailUsageService,
   ) {
     super();
     // Driver, credentials, sender and SMTP target are all environment values —
@@ -365,6 +367,7 @@ export class EmailProcessor extends WorkerHost implements OnModuleInit {
             { from, to, subject, html, plainText, effectiveReplyTo },
             { ...context, provider: 'smtp(fallback)' },
             deliveryTarget,
+            'smtp',
           );
         } catch (fallbackError) {
           this.logger.error(
@@ -426,6 +429,8 @@ export class EmailProcessor extends WorkerHost implements OnModuleInit {
     },
     context: Record<string, unknown>,
     deliveryTarget: DeliveryTarget,
+    /** Which provider to bill this send to. A failover send is the relay's. */
+    usageProvider = 'smtp',
   ): Promise<any> {
     const info = await this.smtpTransporter.sendMail({
       from: mail.from,
@@ -444,6 +449,9 @@ export class EmailProcessor extends WorkerHost implements OnModuleInit {
     await this.recordDelivery(deliveryTarget, {
       messageId: info.messageId,
     });
+    // Counted after the transport accepted it, so the figure reflects handovers
+    // rather than attempts.
+    await this.emailUsage.recordSent(usageProvider);
     return info;
   }
 
@@ -507,6 +515,7 @@ export class EmailProcessor extends WorkerHost implements OnModuleInit {
       `email.sent ${JSON.stringify({ ...context, messageId: data.id, status: 'accepted' })}`,
     );
     await this.recordDelivery(deliveryTarget, { messageId: data.id });
+    await this.emailUsage.recordSent('resend');
     return data;
   }
 

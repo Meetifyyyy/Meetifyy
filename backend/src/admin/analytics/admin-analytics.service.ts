@@ -8,6 +8,7 @@ import {
 import { config } from '../../config';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RedisService } from '../../redis/redis.service';
+import { EmailUsageService } from '../../email/email-usage.service';
 import { SlowRequestRetentionService } from '../../observability/slow-request-retention.service';
 
 /**
@@ -72,6 +73,7 @@ export class AdminAnalyticsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly redisService: RedisService,
+    private readonly emailUsage: EmailUsageService,
     private readonly retention: SlowRequestRetentionService,
   ) {}
 
@@ -81,7 +83,7 @@ export class AdminAnalyticsService {
     services: ServiceReport[];
     unconfigured: Array<{ name: string; requires: string[] }>;
   }> {
-    const [database, redis, storage, email] = await Promise.all([
+    const [database, redis, storage, emailReports] = await Promise.all([
       this.probeDatabase(),
       this.probeRedis(),
       this.probeR2(),
@@ -90,7 +92,7 @@ export class AdminAnalyticsService {
 
     return {
       generatedAt: new Date().toISOString(),
-      services: [database, redis, storage, email],
+      services: [database, redis, storage, ...emailReports],
       // Named explicitly so the page can say what is missing rather than
       // rendering an empty card the reader has to interpret.
       unconfigured: this.unconfiguredProviders(),
@@ -374,15 +376,48 @@ export class AdminAnalyticsService {
    * which a key-presence check cannot. A 401 here is a genuine outage — mail is
    * not being delivered — and reads as such.
    */
-  private async probeEmail(): Promise<ServiceReport> {
-    switch (config.email.driver) {
-      case 'resend':
-        return this.probeResend();
-      case 'mailpit':
-        return this.probeLocalInbox();
-      default:
-        return this.probeSmtp('Email (SMTP)');
+  private async probeEmail(): Promise<ServiceReport[]> {
+    /*
+     * Every transport this deployment can actually send through gets a panel,
+     * not just the primary.
+     *
+     * With a failover configured there are two providers carrying real mail,
+     * and the one that matters on a bad day is the one that only runs when the
+     * other has already failed. A panel that appears only for the primary would
+     * leave the relay's credentials, quota and health invisible until they were
+     * urgently needed.
+     */
+    const primary =
+      config.email.driver === 'resend'
+        ? await this.probeResend()
+        : config.email.driver === 'mailpit'
+          ? await this.probeLocalInbox()
+          : await this.probeRelay('smtp');
+
+    const hasRelayFallback =
+      config.email.fallbackDriver === 'smtp' &&
+      config.email.driver !== 'smtp' &&
+      config.email.driver !== 'mailpit';
+
+    if (!hasRelayFallback) return [primary];
+    return [primary, await this.probeRelay('smtp', { isFallback: true })];
+  }
+
+  /**
+   * Today's handovers for one provider, as a metric row.
+   *
+   * Counted by us rather than read from the provider — see EmailUsageService
+   * for why. A null count means Redis could not answer, which is reported as
+   * such instead of as a confident zero.
+   */
+  private async sentTodayMetric(
+    provider: string,
+  ): Promise<NonNullable<ServiceReport['metrics']>> {
+    const sent = await this.emailUsage.getSentToday(provider);
+    if (sent === null) {
+      return [{ label: 'Sent today', value: 'unavailable', unit: 'text' }];
     }
+    return [{ label: 'Sent today', value: sent, unit: 'count' }];
   }
 
   private async probeResend(): Promise<ServiceReport> {
@@ -430,6 +465,7 @@ export class AdminAnalyticsService {
         // a 403, so this is the figure worth surfacing.
         detail: config.email.fromEmail || undefined,
         metrics: [
+          ...(await this.sentTodayMetric('resend')),
           { label: 'Verified domains', value: verified.length, unit: 'count' },
           { label: 'Domains configured', value: domains.length, unit: 'count' },
           { label: 'API latency', value: latencyMs, unit: 'ms' },
@@ -464,6 +500,126 @@ export class AdminAnalyticsService {
       };
     }
     return report;
+  }
+
+  /**
+   * The SMTP relay, whether it is the primary transport or the failover.
+   *
+   * Two independent things are checked, and they can disagree:
+   *
+   *   - the relay itself, by opening the SMTP connection. This is what decides
+   *     whether mail can actually be sent, so it decides the panel's state.
+   *   - the provider's REST API, for quota and the provider's own view of the
+   *     day. This needs a separate API key that a deployment may not have set,
+   *     and its absence is NOT an outage — the relay sends perfectly well
+   *     without anyone having configured reporting.
+   */
+  private async probeRelay(
+    usageProvider: string,
+    { isFallback = false }: { isFallback?: boolean } = {},
+  ): Promise<ServiceReport> {
+    const host = config.email.smtp.host || '';
+    // Named from the host so the panel says who it is rather than "SMTP".
+    const vendor = /brevo|sendinblue/i.test(host) ? 'Brevo' : 'SMTP relay';
+    const name = isFallback
+      ? `Email (${vendor} — failover)`
+      : `Email (${vendor})`;
+
+    const report = await this.probeSmtp(name);
+    const metrics = [
+      ...(report.metrics ?? []),
+      ...(await this.sentTodayMetric(usageProvider)),
+    ];
+
+    const vendorMetrics = /brevo|sendinblue/i.test(host)
+      ? await this.brevoUsage()
+      : [];
+
+    return {
+      ...report,
+      detail:
+        report.detail ??
+        (isFallback
+          ? `Used when ${config.email.driver} fails`
+          : undefined),
+      metrics: [...metrics, ...vendorMetrics],
+    };
+  }
+
+  /**
+   * Brevo's own figures: the day's requests and what is left of the plan.
+   *
+   * Best-effort by design. No key, an unreachable API or a response shape this
+   * does not recognise all return no rows rather than an error — the relay's
+   * health is decided by the SMTP probe above, and a reporting gap must not
+   * make a working mail path look broken.
+   */
+  private async brevoUsage(): Promise<NonNullable<ServiceReport['metrics']>> {
+    const apiKey = config.analytics.providers.brevo.apiKey;
+    if (!apiKey) return [];
+
+    const today = new Date().toISOString().slice(0, 10);
+    const headers = { 'api-key': apiKey, accept: 'application/json' };
+    const out: NonNullable<ServiceReport['metrics']> = [];
+
+    try {
+      const res = await fetchWithTimeout(
+        `${config.analytics.brevoApiUrl}/smtp/statistics/aggregatedReport?startDate=${today}&endDate=${today}`,
+        { headers },
+        config.analytics.probeTimeoutMs,
+      );
+      if (res.ok) {
+        const body = (await res.json().catch(() => ({}))) as {
+          requests?: number;
+          delivered?: number;
+        };
+        if (typeof body.requests === 'number') {
+          out.push({
+            label: 'Brevo requests today',
+            value: body.requests,
+            unit: 'count',
+          });
+        }
+        if (typeof body.delivered === 'number') {
+          out.push({
+            label: 'Brevo delivered today',
+            value: body.delivered,
+            unit: 'count',
+          });
+        }
+      }
+    } catch {
+      // Reporting is a nicety; the SMTP probe already answered the real question.
+    }
+
+    try {
+      const res = await fetchWithTimeout(
+        `${config.analytics.brevoApiUrl}/account`,
+        { headers },
+        config.analytics.probeTimeoutMs,
+      );
+      if (res.ok) {
+        const body = (await res.json().catch(() => ({}))) as {
+          plan?: Array<{ type?: string; credits?: number }>;
+        };
+        // Brevo reports several plan rows; the transactional email one is the
+        // only one that governs whether a send succeeds.
+        const emailPlan = (body.plan ?? []).find(
+          (p) => typeof p?.credits === 'number' && /email|sms|free/i.test(p.type ?? ''),
+        );
+        if (emailPlan && typeof emailPlan.credits === 'number') {
+          out.push({
+            label: 'Brevo credits left',
+            value: emailPlan.credits,
+            unit: 'count',
+          });
+        }
+      }
+    } catch {
+      // As above.
+    }
+
+    return out;
   }
 
   private async probeSmtp(name: string): Promise<ServiceReport> {

@@ -176,6 +176,17 @@ export const analyticsConfigValues = {
   resendApiUrl: url('RESEND_API_URL', { default: 'https://api.resend.com' }),
 
   /**
+   * Brevo's API root. The probe calls `/account` beneath it, which is an
+   * authenticated read that proves reachability and that the key is valid, and
+   * `/smtp/statistics/aggregatedReport` for the provider's own view of the day.
+   *
+   * The API key is separate from SMTP_PASS on purpose: Brevo issues SMTP keys
+   * and API keys separately, an SMTP key cannot call the REST API, and the
+   * relay must keep working whether or not anyone has set up reporting.
+   */
+  brevoApiUrl: url('BREVO_API_URL', { default: 'https://api.brevo.com/v3' }),
+
+  /**
    * Credentials for the usage providers.
    *
    * Absent values are not an error — the page lists the provider as "not
@@ -184,6 +195,10 @@ export const analyticsConfigValues = {
    * each panel on.
    */
   providers: {
+    /** Read-only key for the Brevo usage panel. Optional; absent = not reporting. */
+    brevo: {
+      apiKey: str('BREVO_API_KEY'),
+    },
     cloudflare: {
       apiToken: str('CLOUDFLARE_API_TOKEN'),
       accountId: str('CLOUDFLARE_ACCOUNT_ID') || str('R2_ACCOUNT_ID'),
