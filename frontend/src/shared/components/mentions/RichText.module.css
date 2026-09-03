@@ -20,15 +20,25 @@
   display: inline;
 }
 
+/*
+ * No underline at rest, an underline on hover — the same treatment
+ * `.mentionLink` above already uses. The two inline link types in a post now
+ * read the same way; the colour is what marks them as links, and the underline
+ * is reserved for the hover state where it confirms the target.
+ *
+ * This was the other way round: underlined by default and bare on hover, which
+ * both inverted the usual convention and made a post carrying a couple of URLs
+ * look heavily ruled.
+ */
 .urlLink {
   color: var(--link-color, var(--color-primary, #3b82f6));
-  text-decoration: underline;
+  text-decoration: none;
   cursor: pointer;
   word-break: break-all;
 }
 
 .urlLink:hover {
-  text-decoration: none;
+  text-decoration: underline;
 }
 
 
