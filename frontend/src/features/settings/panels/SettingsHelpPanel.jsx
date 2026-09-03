@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import SafeHtml from '@shared/components/richtext/SafeHtml';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { supportApi } from '@shared/api/apiClient';
@@ -137,7 +138,7 @@ export default function SettingsHelpPanel() {
                   {isItemOpen && (
                     <div className={panelStyles.faqAnswer}>
                       {item.body ? (
-                        <div dangerouslySetInnerHTML={{ __html: item.body }} />
+                        <SafeHtml html={item.body} />
                       ) : (
                         <p>{item.summary || item.excerpt || ''}</p>
                       )}

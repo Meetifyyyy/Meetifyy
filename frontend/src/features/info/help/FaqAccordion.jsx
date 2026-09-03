@@ -1,6 +1,7 @@
 import { useId, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronDown } from '@shared/components/icons';
+import SafeHtml from '@shared/components/richtext/SafeHtml';
 import styles from './HelpSupport.module.css';
 
 /**
@@ -65,7 +66,7 @@ function FaqItem({ article, isOpen, onToggle, headingLevel = 'h3' }) {
             <div>
               <div className={styles.faqBody}>
                 {article.body ? (
-                  <div dangerouslySetInnerHTML={{ __html: article.body }} />
+                  <SafeHtml html={article.body} />
                 ) : (
                   <p>{article.excerpt}</p>
                 )}
