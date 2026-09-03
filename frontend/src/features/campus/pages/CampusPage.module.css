@@ -279,17 +279,14 @@
   transition: border-color 0.2s ease;
 }
 
-/* Always show at most 2 communities side-by-side */
-.communityCardItem:nth-child(n+3) {
-  display: none !important;
-}
-
-/* Very narrow mobile: Show 1 community */
-@media (max-width: 360px) {
-  .communityCardItem:nth-child(n+2) {
-    display: none !important;
-  }
-}
+/* How many cards this row shows is measured from the container in
+   CampusPage.jsx (useFittingCount), not capped here. A hard "at most 2" and a
+   360px "then 1" used to live at this spot; because the cards are flex:1 1 0
+   they never overflowed, they just squeezed, so between roughly 890px and
+   1024px — sidebar shown, window still small — two of them shared ~250px and
+   both the name and the member count ellipsed to nothing. The measurement
+   keeps every rendered card at least MIN_COMMUNITY_CARD_WIDTH_PX wide, which
+   reproduces the 360px rule on phones and drops to one card where it has to. */
 
 @media (hover: hover) and (pointer: fine) {
   .communityCardItem:hover {
@@ -432,11 +429,6 @@
     min-width: 0;
   }
 
-  /* Default on large devices when space is limited: render 4 complete persons, no cut-off */
-  .knowCard:nth-child(n+5) {
-    display: none !important;
-  }
-
   .viewDirBtn {
     margin-top: 0;
     margin-bottom: 0;
@@ -459,21 +451,10 @@
   }
 }
 
-/* Render 5th person only when there IS enough space without cutting */
-@container (min-width: 485px) {
-  .knowCard:nth-child(5) {
-    display: flex !important;
-  }
-  .knowCard:nth-child(n+6) {
-    display: none !important;
-  }
-}
-
-@media (min-width: 1280px) {
-  .knowCard:nth-child(5) {
-    display: flex !important;
-  }
-  .knowCard:nth-child(n+6) {
-    display: none !important;
-  }
-}
+/* How many people this row shows is measured from the container in
+   CampusPage.jsx (useFittingCount), not decided here. Three rules used to live
+   at this spot — an nth-child cap for >=768px and two more trying to reveal a
+   fifth card at a 485px container query and a 1280px viewport. None of them
+   could ever fire: the component rendered exactly four children, so there was
+   never a fifth to reveal, and the row simply left the rest of its width empty.
+   A cap here now would clip cards the measurement had already made room for. */

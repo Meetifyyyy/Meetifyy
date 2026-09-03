@@ -73,6 +73,15 @@ export default function CampusEventForm({ event = null, onClose, onSaved }) {
   const selectedFileRef = useRef(null);
   const posterKeyRef = useRef(event?.posterUrl || '');
   const posterUploadRef = useRef(null);
+  /**
+   * One key for the lifetime of this dialog, resent on every submit attempt.
+   * The server keys creation on it, so a double-click or a retry after a
+   * timeout resolves to the event the first attempt already created instead of
+   * a second one. Regenerated only when the dialog is reopened.
+   */
+  const idempotencyKeyRef = useRef(
+    globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+  );
 
   const set = (patch) => setForm((prev) => ({ ...prev, ...patch }));
 
@@ -311,8 +320,15 @@ export default function CampusEventForm({ event = null, onClose, onSaved }) {
           saved = await publishMut.mutateAsync(event.id);
         }
       } else {
-        saved = await createMut.mutateAsync(payload);
-        if (saved?.id) {
+        // One call, not create-then-publish. The old pair was not atomic: if
+        // the publish failed the rep saw an error while the draft it had just
+        // created stayed behind, invisible in every discovery scope.
+        saved = await createMut.mutateAsync({
+          ...payload,
+          idempotencyKey: idempotencyKeyRef.current,
+          publish: true,
+        });
+        if (saved?.status === 'DRAFT') {
           saved = await publishMut.mutateAsync(saved.id);
         }
       }

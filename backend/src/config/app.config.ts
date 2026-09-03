@@ -74,6 +74,28 @@ export const appConfigValues = {
       ? false
       : bool('CORS_ALLOW_LOCAL_NETWORK', { default: 'true' }),
     credentials: true,
+    /**
+     * `Access-Control-Max-Age`: how long a browser may reuse one preflight
+     * result before asking again.
+     *
+     * Every request this API serves carries an `Authorization` header, which
+     * makes it non-simple, which means a separate `OPTIONS` round trip before
+     * the real one. Without this header that preflight is not cacheable at all
+     * and the doubled latency is paid on every single call — on a phone over
+     * mobile data that is the difference between one RTT and two on each of the
+     * eight or so requests a screen makes.
+     *
+     * 24 hours is the ceiling browsers will honour (Firefox); Chrome and Safari
+     * clamp to their own shorter maximums, so this is a request, not a promise.
+     * The value is deliberately not "as long as possible" for its own sake —
+     * the cache holds the allowed methods and headers, so shortening it is the
+     * lever if that policy ever needs to change quickly in an environment.
+     */
+    maxAge: int('CORS_MAX_AGE_SECONDS', {
+      default: '86400',
+      min: 0,
+      max: 86400,
+    }),
   },
 
   security: {

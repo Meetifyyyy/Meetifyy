@@ -16,6 +16,7 @@ import { AccountDeletionService } from '../account-deletion/account-deletion.ser
 import { JwtGuard } from '../common/guards/jwt.guard';
 import { CacheControl } from '../common/decorators/cache-control.decorator';
 import { VerifiedOnly } from '../common/decorators/verified-only.decorator';
+import { clampPageParam } from '../common/pagination.util';
 
 @Controller('api/users')
 export class UsersController {
@@ -105,8 +106,10 @@ export class UsersController {
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
   ) {
-    const limitNum = limit ? parseInt(limit, 10) : 100;
-    const offsetNum = offset ? parseInt(offset, 10) : 0;
+    // Default stays 100 — the value this endpoint has always used when the
+    // caller omits it. Only the cap is new.
+    const limitNum = clampPageParam(limit, { def: 100, max: 100, min: 1 });
+    const offsetNum = clampPageParam(offset, { def: 0, max: 5000 });
     return this.usersService.getCampusUsers(req.user.id, limitNum, offsetNum);
   }
 

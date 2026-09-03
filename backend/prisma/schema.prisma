@@ -610,10 +610,18 @@ model CampusEvent {
   createdAt       DateTime          @default(now())
   updatedAt       DateTime          @updatedAt
   deletedAt       DateTime?
+  /// Client-generated, one per Create-Event dialog. Makes POST /api/campus-events
+  /// idempotent: a retry after a timeout, or a double-submit, resolves to the
+  /// event the first attempt already created instead of a second one. Nullable
+  /// so rows predating this column — and any caller that omits it — are
+  /// unaffected; Postgres treats NULLs as distinct, so the unique index below
+  /// never collides on them.
+  idempotencyKey  String?
   campus          College           @relation(fields: [campusId], references: [id])
   poster          Media?            @relation("CampusEventPoster", fields: [posterMediaId], references: [id])
   creator         User              @relation("CampusEventCreator", fields: [createdBy], references: [id], onDelete: Cascade)
 
+  @@unique([createdBy, idempotencyKey])
   // Upcoming/ongoing discovery: WHERE campusId=? AND status=? ORDER BY startTime.
   @@index([campusId, status, startTime])
   // Ongoing/past discovery + auto-expire sweep: filter/sort by endTime.

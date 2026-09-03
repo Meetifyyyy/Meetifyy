@@ -1,4 +1,4 @@
-import { getMediaUrl } from '@shared/api/apiClient';
+import { getMediaUrl, deriveThumbnailKey } from '@shared/api/apiClient';
 
 export function isImageUrl(str) {
   if (!str || typeof str !== 'string') return false;
@@ -47,4 +47,23 @@ export function resolveCommunityAvatar(community) {
   if (trimmed.length <= 2) return null;
   if (!isImageUrl(trimmed)) return null;
   return getMediaUrl(trimmed);
+}
+
+/**
+ * The same avatar as `resolveCommunityAvatar`, but the `<key>_thumb.webp`
+ * variant where one can be derived.
+ *
+ * For a card painting the icon at 56px against a 256px stored original.
+ * `/api/media/<key>_thumb.webp` redirects to the original when the upload
+ * predates thumbnail generation, so the result is never larger than asking for
+ * the original directly — and never a broken image.
+ *
+ * Not for the community header or any surface that renders the icon large;
+ * use `resolveCommunityAvatar` there.
+ */
+export function resolveCommunityAvatarThumb(community) {
+  const full = resolveCommunityAvatar(community);
+  if (!full) return null;
+  const key = deriveThumbnailKey(full);
+  return key ? getMediaUrl(key) : full;
 }

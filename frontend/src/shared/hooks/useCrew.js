@@ -56,11 +56,14 @@ function findActivityInListCaches(queryClient, ...ids) {
 
 // ── Hooks ────────────────────────────────────────────────────────────────────
 
+/** Server page size for the full activity feeds. Preview sections ask for less. */
+const DEFAULT_ACTIVITY_PAGE_SIZE = 20;
+
 /**
  * Paginated crew activities with cursor-based infinite scrolling.
  * Hydrates from IndexedDB for instant first render.
  */
-export function useActivities(scope = 'public', { enabled = true } = {}) {
+export function useActivities(scope = 'public', { enabled = true, limit = DEFAULT_ACTIVITY_PAGE_SIZE } = {}) {
   const queryClient = useQueryClient();
   const { isLoggedIn } = useAuth();
 
@@ -69,15 +72,25 @@ export function useActivities(scope = 'public', { enabled = true } = {}) {
   // cache entry so the All, College and 1-on-1 lists never clobber one another.
   // A section's preview and the full list behind its "See all" share a key, so
   // no duplicate fetching happens.
-  const queryKey = scope === 'public' ? CREW_KEYS.all : [...CREW_KEYS.all, scope];
+  //
+  // A non-default page size is part of the key. A caller that only paints a
+  // handful of cards (the Campus page's four-activity preview) would otherwise
+  // seed the shared cache with a short page, and the full list opened next
+  // would render those few and believe it had them all.
+  const baseKey = scope === 'public' ? CREW_KEYS.all : [...CREW_KEYS.all, scope];
+  const queryKey = limit === DEFAULT_ACTIVITY_PAGE_SIZE ? baseKey : [...baseKey, { limit }];
   const isPublic = scope === 'public';
 
   const query = useInfiniteQuery({
     queryKey,
     queryFn: async ({ pageParam }) => {
-      const data = await activitiesApi.getAll(20, pageParam, scope);
-      // Persist first page of the public feed for next-session instant load
-      if (!pageParam && isPublic) idbSet('activities', 'all_page1', data);
+      const data = await activitiesApi.getAll(limit, pageParam, scope);
+      // Persist first page of the public feed for next-session instant load.
+      // Only the canonical page size is mirrored — a short preview page would
+      // otherwise be restored as though it were the whole first page.
+      if (!pageParam && isPublic && limit === DEFAULT_ACTIVITY_PAGE_SIZE) {
+        idbSet('activities', 'all_page1', data);
+      }
       return data;
     },
     enabled: isLoggedIn && enabled,
@@ -97,7 +110,7 @@ export function useActivities(scope = 'public', { enabled = true } = {}) {
   // IDB just fills the gap so the page isn't blank while the network responds.
   // Only the public feed is persisted/hydrated.
   useEffect(() => {
-    if (!isPublic) return;
+    if (!isPublic || limit !== DEFAULT_ACTIVITY_PAGE_SIZE) return;
     idbGet('activities', 'all_page1').then((cached) => {
       // Never overwrite live server data with stale IDB data
       if (cached?.value && !queryClient.getQueryData(CREW_KEYS.all)) {
@@ -109,7 +122,7 @@ export function useActivities(scope = 'public', { enabled = true } = {}) {
       }
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isPublic]);
+  }, [isPublic, limit]);
 
   const activities = useMemo(
     () => query.data?.pages?.flatMap((p) => (Array.isArray(p?.activities) ? p.activities : (Array.isArray(p) ? p : []))) ?? [],

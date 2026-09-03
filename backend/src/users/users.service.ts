@@ -168,29 +168,29 @@ export class UsersService {
         branch: true,
         passingYear: true,
         college: { select: { name: true } },
-        settings: {
-          select: {
-            showOnlineStatus: true,
-            whoCanSeeOnline: true,
-          },
-        },
       },
       orderBy: { createdAt: 'desc' },
     });
 
-    const userIds = users.map((u) => u.id);
-    const presenceMap = await this.presenceService.getPresenceMany(userIds);
-
-    return users.map((u) => {
-      const pres = presenceMap.get(u.id);
-      const isOnline = pres?.status === 'online';
-      return {
-        ...u,
-        isOnline,
-        online: isOnline,
-        lastActive: pres?.lastSeen || null,
-      };
-    });
+    /**
+     * No presence on this response, and no `settings` either.
+     *
+     * Both were wrong. `settings` selected each listed student's
+     * `whoCanSeeOnline` and `showOnlineStatus` and then spread them into the
+     * response with `...u`, handing every viewer another person's privacy
+     * configuration. Worse, having selected those rules the code then ignored
+     * them: `isOnline` was computed straight from raw presence, so a student
+     * who had set "who can see when I'm online: nobody" was still reported as
+     * online to the whole campus. The rules were being read and disregarded.
+     *
+     * Nothing renders presence from this endpoint — the campus suggestions
+     * pass no `isOnline` to their avatars — so the honest fix is to stop
+     * computing it rather than to resolve visibility for a value no surface
+     * shows. `getDirectory` was corrected the same way. A caller that needs a
+     * presence dot here must resolve it through
+     * `resolvePresenceVisibilityForViewer`, as the messaging surfaces do.
+     */
+    return users;
   }
 
   /**
@@ -269,6 +269,18 @@ export class UsersService {
       'id',
     );
 
+    // Exactly the columns a directory card paints: the avatar, the name it is
+    // labelled with, the username the card links to, and the three academic
+    // fields its subtitle is built from. `createdAt` is selected for the keyset
+    // cursor and stripped from the response below.
+    //
+    // What is deliberately absent used to be selected and shipped: `bio` (a
+    // free-text column the card never renders, and the largest thing on the
+    // row), `collegeId` (identical on every row by construction — the query is
+    // already scoped to one college), `isCampusRep` (no badge on this card),
+    // and `settings`, which is the other person's *privacy configuration*:
+    // `whoCanSeeOnline` and `showOnlineStatus` were being handed to every
+    // viewer who opened the directory.
     const rows = await this.prisma.user.findMany({
       where: directoryWhere,
       take: limit + 1, // fetch one extra to detect the next page
@@ -276,15 +288,11 @@ export class UsersService {
         id: true,
         username: true,
         displayName: true,
-        isCampusRep: true,
         avatar: true,
-        bio: true,
-        collegeId: true,
         course: true,
         branch: true,
         passingYear: true,
         createdAt: true,
-        settings: { select: { showOnlineStatus: true, whoCanSeeOnline: true } },
       },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     });
@@ -297,33 +305,15 @@ export class UsersService {
         ? `${new Date(last.createdAt).toISOString()}|${last.id}`
         : undefined;
 
-    const presenceMap = await this.presenceService.getPresenceMany(
-      pageRows.map((u) => u.id),
-    );
-    // The directory selected each row's presence settings and then reported raw
-    // presence anyway. Resolve them properly, which also applies the block list.
-    const visibleIds = await resolvePresenceVisibilityForViewer(
-      userId,
-      pageRows.map((u) => ({
-        userId: u.id,
-        rule: u.settings?.whoCanSeeOnline || 'everyone',
-        isEnabled: u.settings?.showOnlineStatus !== false,
-      })),
-      this.prisma,
-      this.blocksService,
-    );
-
-    const users = pageRows.map(({ createdAt, ...u }) => {
-      const pres = presenceMap.get(u.id);
-      const canSee = visibleIds.has(u.id);
-      const isOnline = canSee && pres?.status === 'online';
-      return {
-        ...u,
-        isOnline,
-        online: isOnline,
-        lastActive: canSee ? pres?.lastSeen || null : null,
-      };
-    });
+    // No presence on this response, because no directory card draws a presence
+    // dot — it renders an avatar, a name and an academic line, and nothing else.
+    // Resolving it anyway cost a Redis batch plus, per page,
+    // `blocksService.getExcludedUserIds` a second time (the block filter above
+    // has already run it), the viewer's own settings row, and up to two follow
+    // lookups for the 'following' / 'mutual' rules — five or six round trips to
+    // compute three fields that were serialized and then dropped on the floor.
+    // If a dot is ever wanted here, resolve it then; it is not free.
+    const users = pageRows.map(({ createdAt: _createdAt, ...u }) => u);
 
     return { users, nextCursor };
   }

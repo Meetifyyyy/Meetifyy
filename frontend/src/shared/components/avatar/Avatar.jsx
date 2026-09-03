@@ -1,6 +1,6 @@
 import { forwardRef, useState, useEffect, useMemo } from 'react';
 import { UsersIcon } from '@heroicons/react/24/solid';
-import { getMediaUrl, normalizeDicebearUrl } from '@shared/api/apiClient';
+import { getMediaUrl, normalizeDicebearUrl, deriveThumbnailKey } from '@shared/api/apiClient';
 import { useCanSeeOthersPresence } from '@shared/hooks/usePresenceVisibility';
 import { DEFAULT_AVATAR_SRC, isPlatformDefaultAvatar } from '@shared/constants/defaultAvatar';
 import styles from './Avatar.module.css';
@@ -42,6 +42,21 @@ const Avatar = forwardRef(({
   disableHover = false,
   isLoading = false,
   /**
+   * Opt in to the `<key>_thumb.webp` variant of an uploaded avatar.
+   *
+   * Off by default, so no existing caller changes. Turn it on for small
+   * avatars in a list: the stored original is up to 512px, and a directory row
+   * paints it at 56. The thumbnail is generated at 160px, which still covers a
+   * 3x phone. `/api/media/<key>_thumb.webp` redirects to the original when no
+   * thumbnail was produced (older uploads), so this can only ever be the same
+   * bytes or fewer — and the `onError` chain below re-tries the original
+   * anyway if the variant somehow does not resolve.
+   *
+   * Not for large avatars: above ~160px rendered, the thumbnail is the smaller
+   * image and would visibly soften.
+   */
+  thumbnail = false,
+  /**
    * Notified when the picture fails to load.
    *
    * This component's own fallback is `/default_avatar.svg`, a person, and that
@@ -55,22 +70,34 @@ const Avatar = forwardRef(({
   children
 }, ref) => {
   const canSeePresence = useCanSeeOthersPresence();
-  const initialProcessedSrc = useMemo(() => getProcessedAvatarUrl(src), [src]);
+  const fullSrc = useMemo(() => getProcessedAvatarUrl(src), [src]);
+  // Null for anything not stored as one of our media keys — a dicebear URL or
+  // the bundled default has no variant to ask for.
+  const thumbSrc = useMemo(() => {
+    if (!thumbnail) return null;
+    const key = deriveThumbnailKey(fullSrc);
+    return key ? getMediaUrl(key) : null;
+  }, [thumbnail, fullSrc]);
+  const initialProcessedSrc = thumbSrc || fullSrc;
 
+  // Keyed on the original, never the thumbnail: a variant that fails to load
+  // says nothing about whether the account has a picture, and caching the
+  // failure under the thumbnail's URL would send the next render to the
+  // default glyph instead of to the original.
   const hasCustomAvatar = Boolean(
-    initialProcessedSrc &&
-    typeof initialProcessedSrc === 'string' &&
-    initialProcessedSrc.trim() &&
-    !isPlatformDefaultAvatar(initialProcessedSrc) &&
-    !failedAvatarCache.has(initialProcessedSrc)
+    fullSrc &&
+    typeof fullSrc === 'string' &&
+    fullSrc.trim() &&
+    !isPlatformDefaultAvatar(fullSrc) &&
+    !failedAvatarCache.has(fullSrc)
   );
 
-  const [hasError, setHasError] = useState(() => failedAvatarCache.has(initialProcessedSrc));
+  const [hasError, setHasError] = useState(() => failedAvatarCache.has(fullSrc));
   const [imgSrc, setImgSrc] = useState(initialProcessedSrc);
   const [imgLoading, setImgLoading] = useState(!loadedAvatarCache.has(initialProcessedSrc));
 
   useEffect(() => {
-    if (failedAvatarCache.has(initialProcessedSrc)) {
+    if (failedAvatarCache.has(fullSrc)) {
       setHasError(true);
       setImgLoading(false);
       return;
@@ -83,7 +110,7 @@ const Avatar = forwardRef(({
     } else {
       setImgLoading(true);
     }
-  }, [initialProcessedSrc]);
+  }, [initialProcessedSrc, fullSrc]);
 
   const sizeValue = typeof size === 'number' ? `${size}px` : size;
   const avatarStyle = {
@@ -144,6 +171,12 @@ const Avatar = forwardRef(({
   };
 
   const handleError = () => {
+    // A thumbnail that does not resolve is not a missing avatar — retry the
+    // original once before giving up on the picture entirely.
+    if (thumbSrc && imgSrc === thumbSrc && fullSrc && fullSrc !== thumbSrc) {
+      setImgSrc(fullSrc);
+      return;
+    }
     if (imgSrc) failedAvatarCache.add(imgSrc);
     setHasError(true);
     setImgLoading(false);

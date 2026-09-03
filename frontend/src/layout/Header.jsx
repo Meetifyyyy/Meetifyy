@@ -1,12 +1,11 @@
-import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '@shared/hooks/useScrollLock';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 import { useProfile } from '@shared/hooks/useProfile';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@shared/context/AuthContext';
-import { useCommunities, useCampusCommunities } from '@shared/hooks/useCommunities';
-import { toggleRegistry } from '@shared/utils/mutationRegistry';
+import { useJoinedCommunities } from '@shared/hooks/useCommunities';
 import { Bookmark, Moon, Sun } from '@shared/components/icons';
 
 import useUIStore from '@stores/uiStore';
@@ -64,9 +63,6 @@ const DrawerCommunityItem = ({ comm, navigate, onClose }) => {
 export default function Header({ variant = 'dashboard', wide = false }) {
   const { loading, logout, currentUser } = useAuth();
   const queryClient = useQueryClient();
-  const { communities: communitiesDataMap } = useCommunities();
-  const communities = communitiesDataMap || {};
-  
   const searchQuery = useUIStore(state => state.searchQuery);
   const setSearchQuery = useUIStore(state => state.setSearchQuery);
   const { theme, toggleTheme } = useTheme();
@@ -124,10 +120,6 @@ export default function Header({ variant = 'dashboard', wide = false }) {
     navigate('/', { replace: true });
   };
 
-  // same value as communitiesDataMap above -- one useCommunities() call is enough
-  const allCommunitiesData = communitiesDataMap;
-  const { campusCommunities } = useCampusCommunities();
-
   const username = currentUser?.username || '';
 
   /*
@@ -164,34 +156,8 @@ export default function Header({ variant = 'dashboard', wide = false }) {
     ?? currentUser?.followingList?.length
     ?? 0;
 
-  const joinedCommunityObjects = useMemo(() => {
-    const publicList = Array.isArray(allCommunitiesData) ? allCommunitiesData : Object.values(allCommunitiesData || communities || {});
-    const campusList = Array.isArray(campusCommunities) ? campusCommunities : [];
-    
-    const combined = [...publicList, ...campusList].filter(c => c && typeof c === 'object' && c.name && c.id);
-    const uniqueMap = new Map();
-    combined.forEach(c => uniqueMap.set(c.id, c));
-    const commList = Array.from(uniqueMap.values());
-
-    const userCommunities = currentUser?.communities || [];
-
-    return commList.filter((c) => {
-      const rawJoined = Boolean(
-        (c.ownerId && currentUser?.id && c.ownerId === currentUser.id) ||
-        c.userRole === 'OWNER' ||
-        c.userRole === 'MODERATOR' ||
-        c.userRole === 'MEMBER' ||
-        (c.isJoined !== undefined && Boolean(c.isJoined)) ||
-        (c.isMember !== undefined && Boolean(c.isMember)) ||
-        (Array.isArray(c.members) && currentUser?.id && c.members.some(m => (m.userId || m.id || m.user?.id) === currentUser.id)) ||
-        userCommunities.includes(c.name) ||
-        userCommunities.includes(c.id)
-      );
-
-      const entityKey = `joinCommunity:${c.id}`;
-      return toggleRegistry.getLatestIntent(entityKey, rawJoined);
-    });
-  }, [allCommunitiesData, campusCommunities, communities, currentUser]);
+  // Shared with <Sidebar>; see useJoinedCommunities.
+  const joinedCommunityObjects = useJoinedCommunities();
 
   return (
     <header className={`${styles.header} ${activeTab === 'messages' ? styles.headerMessages : ''} ${!isHomePage ? styles.hideOnMobile : ''}`}>

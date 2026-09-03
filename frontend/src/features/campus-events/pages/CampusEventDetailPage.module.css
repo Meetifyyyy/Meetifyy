@@ -180,6 +180,30 @@
   object-fit: contain;
 }
 
+/*
+ * Space for the poster before it has decoded.
+ *
+ * `height: auto` on an <img> with no intrinsic size and no width/height
+ * attributes measures zero, so between the skeleton unmounting and the image
+ * decoding the poster box collapsed entirely — the content column jumped up
+ * half a viewport and then back down when the bytes arrived. Two shifts, and a
+ * measured CLS of 0.98 on this page.
+ *
+ * 3/4 is not a guess: it is the exact ratio the loading skeleton already
+ * reserves, so the handover from skeleton to real markup is now seamless. The
+ * class is removed the moment the image loads, at which point the image's own
+ * aspect ratio takes over and the design is unchanged — a poster is never
+ * letterboxed in the state the user actually sees.
+ */
+.posterLoading {
+  aspect-ratio: 3 / 4;
+  min-height: 280px;
+}
+
+.posterLoading img {
+  height: 100%;
+}
+
 .posterHeroFallback {
   width: 100%;
   aspect-ratio: 3 / 4;

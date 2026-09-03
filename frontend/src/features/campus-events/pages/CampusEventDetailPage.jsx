@@ -1,3 +1,4 @@
+import { useState, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { ExternalLink } from '@shared/components/icons';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
@@ -29,7 +30,14 @@ export default function CampusEventDetailPage() {
   const goBack = useSmartBack();
   const { data: event, isLoading, isError } = useCampusEvent(id);
 
-  const back = () => goBack('/campus');
+  // 'loading' reserves the poster's box, 'failed' releases it and lets the
+  // fallback take over. Keyed by nothing but this mount — the poster URL cannot
+  // change under a detail page.
+  const [posterState, setPosterState] = useState('loading');
+  const onPosterLoad = useCallback(() => setPosterState('loaded'), []);
+  const onPosterError = useCallback(() => setPosterState('failed'), []);
+
+  const back = useCallback(() => goBack('/campus'), [goBack]);
 
   if (isLoading) {
     return (
@@ -113,9 +121,20 @@ export default function CampusEventDetailPage() {
 
         <div className={styles.scrollBody}>
           <div className={styles.detailLayout}>
-            <div className={styles.posterHero}>
-              {posterSrc ? (
-                <img src={posterSrc} alt={event.title} loading="eager" decoding="async" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+            <div className={`${styles.posterHero} ${posterState === 'loading' ? styles.posterLoading : ''}`}>
+              {posterSrc && posterState !== 'failed' ? (
+                <img
+                  src={posterSrc}
+                  alt={event.title}
+                  loading="eager"
+                  /* The poster is this page's largest element and its LCP
+                     candidate; without this it queues behind the page's other
+                     subresources at default priority. */
+                  fetchpriority="high"
+                  decoding="async"
+                  onLoad={onPosterLoad}
+                  onError={onPosterError}
+                />
               ) : (
                 <div className={styles.posterHeroFallback}>{event.title}</div>
               )}

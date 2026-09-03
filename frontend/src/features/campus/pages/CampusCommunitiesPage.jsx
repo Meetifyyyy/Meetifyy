@@ -1,48 +1,54 @@
-import { useState, useMemo } from 'react';
+import { useState, useCallback, lazy, Suspense } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
-import { useAuth } from '@shared/context/AuthContext';
-import { communitiesApi } from '@shared/api/apiClient';
 
-import { showToast } from '@shared/utils/toast';
 import sharedStyles from '../components/skeletons/CampusShared.module.css';
 import pageStyles from './CampusCommunitiesPage.module.css';
 const styles = { ...sharedStyles, ...pageStyles };
 import { Plus, Search, ArrowLeft } from '@shared/components/icons';
-import CreateCommunityModal from '@features/communities/components/modals/CreateCommunityModal';
 import CommunityCard from '@features/communities/components/card/CommunityCard';
 import CommunityGrid from '@features/communities/components/card/CommunityGrid';
 import { useCampusCommunities } from '@shared/hooks/useCommunities';
 import { useDebounce } from '@shared/hooks/useDebounce';
 import VerificationGate from '@shared/components/VerificationGate/VerificationGate';
 
+/**
+ * Reachable only from the "+" button or the empty state's CTA. Imported
+ * statically it pulled the image-upload pipeline (browser-image-compression)
+ * and a 700-line form onto this route's critical path — roughly 80 kB parsed
+ * before the first community card could paint.
+ */
+const CreateCommunityModal = lazy(() => import('@features/communities/components/modals/CreateCommunityModal'));
+
 export default function CampusCommunitiesPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const goBack = useSmartBack();
-  const { currentUser } = useAuth();
 
   const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState('All');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
 
-  // Name/description search runs on the server (across all campus communities);
-  // category is a cheap client refinement on the returned set.
+  // Name/description search runs on the server, across all campus communities.
+  //
+  // A `selectedCategory` filter used to sit on top of this. It could never do
+  // anything: nothing ever called its setter, so it was permanently 'All', and
+  // the field it filtered on — `c.categories` — is not a column on Community
+  // and came back undefined for every row. Removed along with the memo that
+  // recomputed it.
   const debouncedSearch = useDebounce(searchQuery, 300);
-  const { campusCommunities } = useCampusCommunities(debouncedSearch);
+  const { campusCommunities: collegeCommunities } = useCampusCommunities(debouncedSearch);
 
-  const collegeCommunities = useMemo(() => {
-    let list = campusCommunities;
-    if (selectedCategory !== 'All') {
-      list = list.filter(c => c.categories?.includes(selectedCategory.toLowerCase()));
-    }
-    return list;
-  }, [campusCommunities, selectedCategory]);
-
-  const handleCreateCommunity = async (id) => {
+  // Stable across renders. As an inline arrow per card this was a fresh prop on
+  // every render of this page, which defeated CommunityCard's own React.memo
+  // entirely — the grid re-rendered every card on each keystroke in the search
+  // box and on every background refetch.
+  const openCommunity = useCallback((id) => {
     navigate(`/communities/${id}`, { state: { from: location.pathname } });
-  };
+  }, [navigate, location.pathname]);
+
+  const openCreateModal = useCallback(() => setIsCreateModalOpen(true), []);
+  const closeCreateModal = useCallback(() => setIsCreateModalOpen(false), []);
 
   return (
     <main className={`centre centre-wide ${styles.hubContainer}`}>
@@ -81,7 +87,7 @@ export default function CampusCommunitiesPage() {
                   <button className={styles.headerSquareBtn} onClick={() => setShowSearch(true)} title="Search Communities">
                     <Search size={20} />
                   </button>
-                  <button className={styles.headerSquareBtn} onClick={() => setIsCreateModalOpen(true)} title="Create Community">
+                  <button className={styles.headerSquareBtn} onClick={openCreateModal} title="Create Community">
                     <Plus size={20} />
                   </button>
                 </div>
@@ -97,7 +103,7 @@ export default function CampusCommunitiesPage() {
                 <CommunityCard
                   key={community.id}
                   comm={community}
-                  onClick={() => navigate(`/communities/${community.id}`, { state: { from: location.pathname } })}
+                  onSelect={openCommunity}
                 />
               ))}
             </CommunityGrid>
@@ -147,7 +153,7 @@ export default function CampusCommunitiesPage() {
               </p>
               <button
                 type="button"
-                onClick={() => setIsCreateModalOpen(true)}
+                onClick={openCreateModal}
                 style={{
                   background: 'var(--color-primary, #2563eb)',
                   color: 'white',
@@ -175,11 +181,13 @@ export default function CampusCommunitiesPage() {
         </div>
 
         {isCreateModalOpen && (
-          <CreateCommunityModal 
-            onClose={() => setIsCreateModalOpen(false)} 
-            onCreated={handleCreateCommunity}
-            isCampusCommunity={true}
-          />
+          <Suspense fallback={null}>
+            <CreateCommunityModal
+              onClose={closeCreateModal}
+              onCreated={openCommunity}
+              isCampusCommunity={true}
+            />
+          </Suspense>
         )}
       </VerificationGate>
     </main>

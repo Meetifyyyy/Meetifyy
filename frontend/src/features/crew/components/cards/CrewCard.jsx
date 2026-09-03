@@ -1,15 +1,12 @@
-import { useState, useRef, useEffect, useMemo, useCallback, memo } from 'react';
+import { useState, useRef, useEffect, useMemo, useCallback, memo, lazy, Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { isImageUrl } from '@shared/utils/avatar';
 import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
 import { getProcessedAvatarUrl } from '@shared/components/avatar/Avatar';
 
-import ShareActivityModal from '../modals/ShareActivityModal';
-import ActivityJoinedModal from '../modals/ActivityJoinedModal';
 import CalendarIcon from '@shared/components/ui/CalendarIcon';
 import styles from './CrewCard.module.css';
 import { useSavedActivitiesStore } from '@shared/stores/savedActivitiesStore';
-import ReportModal from '@shared/components/modals/ReportModal/ReportModal';
 import { getMediaUrl } from '@shared/api/apiClient';
 import { Bookmark } from '@shared/components/icons';
 
@@ -19,6 +16,17 @@ import {
   DEFAULT_ACTIVITY_COVERS,
   getDefaultActivityCover as getDefaultCover,
 } from '@shared/utils/activityCover';
+
+/**
+ * Both open only from this card's overflow menu, and both were previously
+ * imported eagerly *and* mounted (closed) once per card. ReportModal alone
+ * carries react-hook-form, zod and the zod resolver — ~100 kB parsed on every
+ * screen that lists activities, including the Campus page, before a single
+ * card could paint. Rendering them only while open also drops two component
+ * instances and their hooks from every card in a list.
+ */
+const ShareActivityModal = lazy(() => import('../modals/ShareActivityModal'));
+const ReportModal = lazy(() => import('@shared/components/modals/ReportModal/ReportModal'));
 
 
 function formatDateTime(activity) {
@@ -128,7 +136,6 @@ function CrewCard({ activity, onClick, onMouseEnter }) {
   const navigate = useNavigate();
   const [showMenu, setShowMenu] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
-  const [showJoinedModal, setShowJoinedModal] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
   const [hasReported, setHasReported] = useState(false);
   const menuRef = useRef(null);
@@ -326,21 +333,29 @@ function CrewCard({ activity, onClick, onMouseEnter }) {
           </div>
         </div>
       </div>
-      <ShareActivityModal
-        isOpen={showShareModal}
-        onClose={() => setShowShareModal(false)}
-        activity={activity}
-      />
-      <ReportModal
-        isOpen={showReportModal}
-        onClose={() => setShowReportModal(false)}
-        targetType="ACTIVITY"
-        targetId={activity.id}
-        targetName={title}
-        targetPreview={`${activity.hostName || ''} · ${activity.locationName || activity.location || ''}`}
-        reportedFrom="crew"
-        onSubmitted={() => setHasReported(true)}
-      />
+      {showShareModal && (
+        <Suspense fallback={null}>
+          <ShareActivityModal
+            isOpen={showShareModal}
+            onClose={() => setShowShareModal(false)}
+            activity={activity}
+          />
+        </Suspense>
+      )}
+      {showReportModal && (
+        <Suspense fallback={null}>
+          <ReportModal
+            isOpen={showReportModal}
+            onClose={() => setShowReportModal(false)}
+            targetType="ACTIVITY"
+            targetId={activity.id}
+            targetName={title}
+            targetPreview={`${activity.hostName || ''} · ${activity.locationName || activity.location || ''}`}
+            reportedFrom="crew"
+            onSubmitted={() => setHasReported(true)}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }

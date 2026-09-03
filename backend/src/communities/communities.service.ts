@@ -346,6 +346,25 @@ export class CommunitiesService implements OnModuleInit {
           collegeId,
           ...searchWhere,
         },
+        // Only what the campus surfaces render: the card (avatar, name,
+        // description, member count, join button) and the sidebar's joined
+        // list (id, name, ownerId, plus the membership fields computed below).
+        //
+        // The unprojected `findMany` this replaces returned every column,
+        // including three that are constant for every row the query can
+        // return — `deletedAt` is null, `isCampusCommunity` is true and
+        // `collegeId` is the caller's, all by construction — plus `slug`,
+        // `isPrivate`, `updatedAt`, `createdAt` and the two cover/media ids,
+        // none of which any consumer of this endpoint reads.
+        select: {
+          id: true,
+          name: true,
+          description: true,
+          avatarKey: true,
+          color: true,
+          memberCount: true,
+          ownerId: true,
+        },
         orderBy: { memberCount: 'desc' },
         take: limit,
         skip: offset,
@@ -1658,19 +1677,26 @@ export class CommunitiesService implements OnModuleInit {
       community.collegeId ?? undefined,
     );
 
+    /**
+     * One targeted delete, where there used to be two full keyspace scans.
+     *
+     * This block ran `KEYS 'posts:*'` and `KEYS 'feed:*'`. `KEYS` is
+     * O(total keyspace) and Redis is single-threaded, so each call stalls every
+     * other client for its duration — and this deployment shares Redis with the
+     * session store and the job queues, so the blast radius was the whole app,
+     * not this cache.
+     *
+     * Both patterns were also dead: no code path in this repository writes or
+     * reads a `posts:*` or `feed:*` key, so the scans walked the entire
+     * keyspace to build a list that was always empty. `community-posts:<id>` is
+     * the only key the block ever actually named, so that is all that is
+     * deleted now. It is unconditional and O(1); `DEL` on a missing key is a
+     * no-op, which is cheaper than any scan that could discover its absence.
+     */
     const redis = this.redisService.getClient();
     if (redis) {
       try {
-        const postKeys = await redis.keys('posts:*');
-        const feedKeys = await redis.keys('feed:*');
-        const allKeys = [
-          ...postKeys,
-          ...feedKeys,
-          `community-posts:${communityId}`,
-        ];
-        if (allKeys.length > 0) {
-          await redis.del(...allKeys);
-        }
+        await redis.del(`community-posts:${communityId}`);
       } catch (err) {
         this.logger.warn(
           `Failed clearing Redis post keys for community ${communityId}: ${err?.message}`,

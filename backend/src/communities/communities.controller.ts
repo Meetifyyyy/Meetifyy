@@ -21,6 +21,7 @@ import {
   UpdateMemberRoleDto,
 } from './dto/community.dto';
 import { moderatorPermissions } from './moderator-permissions';
+import { clampPageParam } from '../common/pagination.util';
 
 @Controller('api/communities')
 @UseGuards(JwtGuard)
@@ -36,8 +37,8 @@ export class CommunitiesController {
     @Query('offset') offset?: string,
   ) {
     const t0 = performance.now();
-    const limitNum = limit ? parseInt(limit, 10) : 30;
-    const offsetNum = offset ? parseInt(offset, 10) : 0;
+    const limitNum = clampPageParam(limit, { def: 30, max: 50, min: 1 });
+    const offsetNum = clampPageParam(offset, { def: 0, max: 5000 });
     const result = await this.communitiesService.getAllCommunities(
       user?.id,
       limitNum,
@@ -57,8 +58,8 @@ export class CommunitiesController {
     @Query('search') search?: string,
   ) {
     const t0 = performance.now();
-    const limitNum = limit ? parseInt(limit, 10) : 30;
-    const offsetNum = offset ? parseInt(offset, 10) : 0;
+    const limitNum = clampPageParam(limit, { def: 30, max: 50, min: 1 });
+    const offsetNum = clampPageParam(offset, { def: 0, max: 5000 });
     const result = await this.communitiesService.getCampusCommunities(
       user?.id,
       limitNum,
