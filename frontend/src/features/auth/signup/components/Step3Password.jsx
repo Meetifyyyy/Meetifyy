@@ -5,6 +5,7 @@ import { useSignup, DEV_BYPASS_SIGNUP } from '../../context/SignupContext';
 import { useAuth } from '@shared/context/AuthContext';
 import AnimatedStep from './AnimatedStep';
 import { AuthHeading, AuthField, PasswordField, AuthButton, styles as s } from '../../shared/ui';
+import { validatePassword } from '../../shared/passwordRules';
 
 export default function Step3Password() {
   const { signupData, updateData, nextStep } = useSignup();
@@ -15,12 +16,9 @@ export default function Step3Password() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState(null);
 
-  const passwordError = useMemo(() => {
-    if (!password) return 'Password is required.';
-    if (password.length < 8) return 'Password must be at least 8 characters.';
-    if (password.length > 128) return 'Password must be at most 128 characters.';
-    return null;
-  }, [password]);
+  // Shared with the reset screen, so the two cannot word the same rule
+  // differently or drift apart on the limits.
+  const passwordError = useMemo(() => validatePassword(password), [password]);
 
   const confirmError = useMemo(() => {
     if (!confirmPassword) return 'Please confirm your password.';
@@ -68,7 +66,6 @@ export default function Step3Password() {
           id="signup-password"
           label="Choose Password"
           autoComplete="new-password"
-          maxLength={128}
           value={password}
           error={attempted ? passwordError : null}
           onChange={(e) => setPassword(e.target.value)}
@@ -78,7 +75,6 @@ export default function Step3Password() {
           id="signup-confirm-password"
           label="Confirm Password"
           autoComplete="new-password"
-          maxLength={128}
           value={confirmPassword}
           error={attempted ? confirmError : null}
           onChange={(e) => setConfirmPassword(e.target.value)}

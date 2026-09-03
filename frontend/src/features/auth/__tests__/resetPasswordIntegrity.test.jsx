@@ -123,3 +123,39 @@ describe('Reset password stores exactly what was entered', () => {
     expect(updates).toHaveLength(1);
   });
 });
+
+describe('an over-long password is refused, never silently shortened', () => {
+  // Scoped per describe: `updates` is module-level, so without this the counts
+  // carry over from the block above.
+  beforeEach(() => { updates.length = 0; authCallback = null; window.sessionStorage.clear(); });
+  afterEach(() => cleanup());
+
+  it('keeps all 150 characters in the field instead of cutting to the limit', async () => {
+    const { container } = await renderAtForm();
+    const long = 'x'.repeat(150);
+    fill(container, long, long);
+    const input = container.querySelectorAll('input[type="password"], input[type="text"]')[0];
+    // The old `maxLength` attribute truncated a paste at 128 with no warning,
+    // which meant the stored password was not the one the user pasted.
+    expect(input.getAttribute('maxlength')).toBeNull();
+    expect(input.value).toHaveLength(150);
+  });
+
+  it('refuses to submit it, and says why', async () => {
+    const { container, q } = await renderAtForm();
+    const long = 'x'.repeat(150);
+    fill(container, long, long);
+    await submitForm(container);
+    expect(updates).toHaveLength(0);
+    expect(q.getByText("Password can't exceed 100 characters.")).toBeTruthy();
+  });
+
+  it('accepts a password exactly on the limit', async () => {
+    const { container } = await renderAtForm();
+    const atLimit = 'y'.repeat(100);
+    fill(container, atLimit, atLimit);
+    await submitForm(container);
+    expect(updates).toHaveLength(1);
+    expect(updates[0].password).toHaveLength(100);
+  });
+});

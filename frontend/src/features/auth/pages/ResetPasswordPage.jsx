@@ -4,6 +4,7 @@ import { supabase } from '@shared/context/AuthContext';
 import Toast from '@shared/components/ui/Toast';
 import { CheckCircle2, XCircle } from '@shared/components/icons';
 import { getBackendUrl } from '@shared/api/apiClient';
+import { validatePassword } from '../shared/passwordRules';
 import {
   AuthShell,
   AuthHeading,
@@ -14,7 +15,6 @@ import {
 } from '../shared/ui';
 
 const API_URL = getBackendUrl();
-const MAX_PASSWORD_LENGTH = 128;
 
 // ─── sessionStorage flag helpers ──────────────────────────────────────────────
 // The flag 'sb-pwreset-pending' is written in supabase.js at module-eval time
@@ -244,16 +244,10 @@ export default function ResetPasswordPage() {
      * Whitespace is a legitimate password character. The only correct move is
      * to leave it alone at every point in the round trip.
      */
-    if (!password) {
-      showToast('Enter a new password');
-      return;
-    }
-    if (password.length < 8) {
-      showToast('Password too short (min 8)');
-      return;
-    }
-    if (password.length > MAX_PASSWORD_LENGTH) {
-      showToast(`Password too long (max ${MAX_PASSWORD_LENGTH})`);
+    // Same rules, same wording as signup - see passwordRules.
+    const problem = validatePassword(password);
+    if (problem) {
+      showToast(problem);
       return;
     }
     if (password !== confirmPassword) {
@@ -367,7 +361,6 @@ export default function ResetPasswordPage() {
                   id="reset-new-password"
                   label="New Password"
                   autoComplete="new-password"
-                  maxLength={MAX_PASSWORD_LENGTH}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   disabled={isUpdating}
@@ -377,7 +370,6 @@ export default function ResetPasswordPage() {
                   id="reset-confirm-password"
                   label="Confirm New Password"
                   autoComplete="new-password"
-                  maxLength={MAX_PASSWORD_LENGTH}
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   disabled={isUpdating}
