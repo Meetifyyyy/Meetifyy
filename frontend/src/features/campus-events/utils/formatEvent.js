@@ -60,6 +60,79 @@ export function formatDetailDate(startTime, endTime) {
 }
 
 /**
+ * Date display for the redesigned detail page:
+ *   single-day               -> "Thursday, September 10, 2026"
+ *   multi-day (same year)    -> "September 10 – September 12, 2026"
+ *   multi-day (cross-year)   -> "December 30, 2026 – January 2, 2027"
+ */
+export function formatDetailDateDisplay(startTime, endTime) {
+  if (!startTime) return '';
+  const s = new Date(startTime);
+  if (isNaN(s.getTime())) return '';
+
+  if (!endTime || isSingleDayEvent(startTime, endTime)) {
+    return s.toLocaleDateString('en-US', {
+      weekday: 'long',
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric',
+    });
+  }
+
+  const e = new Date(endTime);
+  if (isNaN(e.getTime())) {
+    return s.toLocaleDateString('en-US', {
+      weekday: 'long',
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric',
+    });
+  }
+
+  const sameYear = s.getFullYear() === e.getFullYear();
+  if (sameYear) {
+    const startStr = s.toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
+    const endStr = e.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+    return `${startStr} – ${endStr}`;
+  }
+
+  const startStr = s.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+  const endStr = e.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+  return `${startStr} – ${endStr}`;
+}
+
+/**
+ * Time display for the redesigned detail page:
+ *   all-day   -> "All day"
+ *   range     -> "1:15 PM – 3:15 PM"
+ *   single    -> "1:15 PM"
+ */
+export function formatDetailTimeDisplay(startTime, endTime) {
+  if (!startTime) return '';
+  const s = new Date(startTime);
+  if (isNaN(s.getTime())) return '';
+
+  const formatT = (d) => d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+
+  if (endTime) {
+    const e = new Date(endTime);
+    if (!isNaN(e.getTime())) {
+      // Check for all-day: 00:00 to 23:59 or 23:59:59
+      if (s.getHours() === 0 && s.getMinutes() === 0 && e.getHours() === 23 && e.getMinutes() >= 59) {
+        return 'All day';
+      }
+
+      const sTime = formatT(s);
+      const eTime = formatT(e);
+      if (sTime === eTime) return sTime;
+      return `${sTime} – ${eTime}`;
+    }
+  }
+
+  return formatT(s);
+}
+
+/**
  * Time display for the detail page:
  *   single-day -> "5:00 PM to 8:00 PM"
  *   multi-day  -> "Aug 12 at 5:00 PM to Aug 20 at 5:00 PM"

@@ -5,18 +5,23 @@ import { getMediaUrl } from '@shared/api/apiClient';
 import { useCampusEvent } from '@shared/hooks/useCampusEvents';
 import Skeleton from '@shared/components/skeletons/Skeleton';
 import NotFoundState from '@shared/components/ui/NotFoundState';
-import { formatCombinedDateTime, isSingleDayEvent, isSafeRegistrationUrl } from '../utils/formatEvent';
+import {
+  formatDetailDateDisplay,
+  formatDetailTimeDisplay,
+  isSafeRegistrationUrl,
+} from '../utils/formatEvent';
+import { Calendar3DIcon, Clock3DIcon, Venue3DIcon, Organizer3DIcon } from '../components/Event3DIcons';
 import styles from './CampusEventDetailPage.module.css';
 
 function deriveState(event) {
-  if (!event) return { key: 'upcoming', label: 'Upcoming', cls: styles.pillUpcoming };
-  if (event.status === 'DRAFT') return { key: 'draft', label: 'Draft', cls: styles.pillDraft };
+  if (!event) return { key: 'upcoming', label: 'Upcoming' };
+  if (event.status === 'DRAFT') return { key: 'draft', label: 'Draft' };
   const now = Date.now();
   const start = new Date(event.startTime).getTime();
   const end = new Date(event.endTime).getTime();
-  if (event.status === 'EXPIRED' || end < now) return { key: 'past', label: 'Ended', cls: styles.pillPast };
-  if (start <= now && now <= end) return { key: 'live', label: 'Live now', cls: styles.pillLive };
-  return { key: 'upcoming', label: 'Upcoming', cls: styles.pillUpcoming };
+  if (event.status === 'EXPIRED' || end < now) return { key: 'past', label: 'Ended' };
+  if (start <= now && now <= end) return { key: 'live', label: 'Live now' };
+  return { key: 'upcoming', label: 'Upcoming' };
 }
 
 export default function CampusEventDetailPage() {
@@ -41,13 +46,21 @@ export default function CampusEventDetailPage() {
           <div className={styles.scrollBody}>
             <div className={styles.detailLayout}>
               <div className={styles.posterHero}>
-                <Skeleton type="rect" width="100%" height="100%" style={{ borderRadius: '16px', aspectRatio: '2 / 2.5' }} />
+                <Skeleton type="rect" width="100%" height="100%" style={{ aspectRatio: '3 / 4', minHeight: '300px', borderRadius: 'inherit' }} />
               </div>
               <div className={styles.content}>
-                <Skeleton type="rect" width="80px" height="24px" style={{ borderRadius: '999px' }} />
-                <Skeleton type="text" width="70%" height="28px" style={{ borderRadius: '6px', margin: '0.5rem 0 0.25rem' }} />
-                <Skeleton type="text" width="40%" height="16px" style={{ borderRadius: '6px', marginBottom: '1rem' }} />
-                <Skeleton type="rect" width="100%" height="150px" style={{ borderRadius: '14px' }} />
+                <Skeleton type="text" width="65%" height="36px" style={{ borderRadius: '6px' }} />
+                <div className={styles.infoSection}>
+                  <Skeleton type="rect" width="100%" height="64px" style={{ borderRadius: '14px' }} />
+                  <Skeleton type="rect" width="100%" height="64px" style={{ borderRadius: '14px' }} />
+                  <Skeleton type="rect" width="100%" height="64px" style={{ borderRadius: '14px' }} />
+                  <Skeleton type="rect" width="100%" height="64px" style={{ borderRadius: '14px' }} />
+                </div>
+                <div className={styles.descriptionSection}>
+                  <Skeleton type="text" width="28%" height="22px" style={{ borderRadius: '6px' }} />
+                  <Skeleton type="text" width="100%" height="16px" style={{ borderRadius: '4px' }} />
+                  <Skeleton type="text" width="85%" height="16px" style={{ borderRadius: '4px' }} />
+                </div>
               </div>
             </div>
           </div>
@@ -102,50 +115,68 @@ export default function CampusEventDetailPage() {
           <div className={styles.detailLayout}>
             <div className={styles.posterHero}>
               {posterSrc ? (
-                <img src={posterSrc} alt={event.title} onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+                <img src={posterSrc} alt={event.title} loading="eager" decoding="async" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
               ) : (
                 <div className={styles.posterHeroFallback}>{event.title}</div>
               )}
             </div>
 
             <div className={styles.content}>
-              <span className={`${styles.statusPill} ${state.cls}`}>{state.label}</span>
               <h1 className={styles.title}>{event.title}</h1>
-              <div className={styles.hostedBy}>Hosted by {event.hostedBy}</div>
 
-              <div className={styles.metaGrid}>
-                <div className={styles.metaItem}>
-                  <img src="/icons/tear-off_calendar_color.svg" width={22} height={22} alt="Date & Time" />
-                  <div>
-                    <div className={styles.metaLabel}>{isSingleDayEvent(event.startTime, event.endTime) ? 'Date & Time' : 'Dates & Time'}</div>
-                    <div className={styles.metaValue}>
-                      {formatCombinedDateTime(event.startTime, event.endTime)}
-                    </div>
+              <div className={styles.infoSection}>
+                {/* Date */}
+                <div className={styles.infoCard}>
+                  <div className={styles.infoIconWrapper}>
+                    <Calendar3DIcon size={28} />
+                  </div>
+                  <div className={styles.infoBody}>
+                    <span className={styles.infoSubtitle}>Date</span>
+                    <span className={styles.infoValueLarge}>{formatDetailDateDisplay(event.startTime, event.endTime)}</span>
                   </div>
                 </div>
+
+                {/* Time */}
+                <div className={styles.infoCard}>
+                  <div className={styles.infoIconWrapper}>
+                    <Clock3DIcon size={28} />
+                  </div>
+                  <div className={styles.infoBody}>
+                    <span className={styles.infoSubtitle}>Time</span>
+                    <span className={styles.infoValueLarge}>{formatDetailTimeDisplay(event.startTime, event.endTime)}</span>
+                  </div>
+                </div>
+
+                {/* Venue */}
                 {event.venue && (
-                  <div className={styles.metaItem}>
-                    <img src="/icons/classical_building_color.svg" width={22} height={22} alt="Venue" />
-                    <div>
-                      <div className={styles.metaLabel}>Venue</div>
-                      <div className={styles.metaValue}>{event.venue}</div>
+                  <div className={styles.infoCard}>
+                    <div className={styles.infoIconWrapper}>
+                      <Venue3DIcon size={28} />
+                    </div>
+                    <div className={styles.infoBody}>
+                      <span className={styles.infoSubtitle}>Venue</span>
+                      <span className={styles.infoValueLarge}>{event.venue}</span>
                     </div>
                   </div>
                 )}
-                <div className={styles.metaItem}>
-                  <img src="/icons/busts_in_silhouette_color.svg" width={22} height={22} alt="Organizer" />
-                  <div>
-                    <div className={styles.metaLabel}>Organizer</div>
-                    <div className={styles.metaValue}>{event.hostedBy}</div>
+
+                {/* Organizer */}
+                <div className={styles.infoCard}>
+                  <div className={styles.infoIconWrapper}>
+                    <Organizer3DIcon size={28} />
+                  </div>
+                  <div className={styles.infoBody}>
+                    <span className={styles.infoSubtitle}>Organizer</span>
+                    <span className={styles.infoValueLarge}>{event.hostedBy}</span>
                   </div>
                 </div>
               </div>
 
               {event.description && (
-                <>
+                <div className={styles.descriptionSection}>
                   <h3 className={styles.sectionLabel}>About this event</h3>
                   <p className={styles.description}>{event.description}</p>
-                </>
+                </div>
               )}
             </div>
           </div>

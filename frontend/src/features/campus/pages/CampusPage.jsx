@@ -177,8 +177,12 @@ export default function CampusPage() {
               <h2 className={styles.sectionTitleText}>campus events</h2>
             </div>
             {Boolean(upcoming.events && upcoming.events.length > 0) && (
-              <button className={eventStyles.createBtn} style={{ background: 'transparent', color: 'var(--color-primary, #8f0c13)', border: '1px solid var(--color-border, rgba(0,0,0,0.12))' }} onClick={() => navigate('/campus/events')}>
-                See all <ChevronRight size={15} />
+              <button
+                className={styles.sectionArrowBtn}
+                onClick={() => navigate('/campus/events')}
+                aria-label="See all campus events"
+              >
+                <ChevronRight size={16} />
               </button>
             )}
           </div>
@@ -207,11 +211,11 @@ export default function CampusPage() {
             </div>
             {campusActivityItems.length > 0 && (
               <button
-                className={eventStyles.createBtn}
-                style={{ background: 'transparent', color: 'var(--color-primary, #8f0c13)', border: '1px solid var(--color-border, rgba(0,0,0,0.12))' }}
+                className={styles.sectionArrowBtn}
                 onClick={() => navigate('/crew?tab=college')}
+                aria-label="See all campus activities"
               >
-                See all <ChevronRight size={15} />
+                <ChevronRight size={16} />
               </button>
             )}
           </div>
