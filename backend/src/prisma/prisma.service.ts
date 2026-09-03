@@ -86,6 +86,23 @@ export class PrismaService
   private readonly pool: Pool;
 
   /**
+   * High-water marks for pool usage, since boot.
+   *
+   * The instantaneous figures below are close to useless on their own: the
+   * analytics probe reads them after its own queries have finished and released
+   * their connection, which is the one moment nothing can be in flight. On a
+   * quiet dashboard that reports "0 in use" no matter how saturated the pool
+   * gets under load — the numbers never move, and a pool exhaustion problem is
+   * invisible in exactly the panel meant to reveal it.
+   *
+   * These are sampled on every checkout instead, so they capture the busy
+   * moments rather than the idle one the probe happens to land on. Driven by
+   * the pool's own `acquire` event, so there is no polling and no timer.
+   */
+  private peakActive = 0;
+  private peakWaiting = 0;
+
+  /**
    * Number of connections to pre-open, read from `connection_limit` on the
    * DATABASE_URL so the warmup always matches the pool actually in use.
    *
@@ -115,6 +132,18 @@ export class PrismaService
       ],
     } as any);
     this.pool = pool;
+
+    // Sampled at checkout: the instant a connection is handed out is when the
+    // pool is at its busiest, which is precisely what the after-the-fact read
+    // in the analytics probe cannot see.
+    this.pool.on('acquire', () => {
+      const total = this.pool.totalCount ?? 0;
+      const idle = this.pool.idleCount ?? 0;
+      const active = Math.max(0, total - idle);
+      if (active > this.peakActive) this.peakActive = active;
+      const waiting = this.pool.waitingCount ?? 0;
+      if (waiting > this.peakWaiting) this.peakWaiting = waiting;
+    });
 
     // A pool-level error (Supavisor reaping an idle socket, a transient network
     // blip) is emitted on the Pool, not on a query. Without a listener Node
@@ -188,6 +217,10 @@ export class PrismaService
     idle: number;
     waiting: number;
     total: number;
+    /** The ceiling connections are opened up to — the real capacity figure. */
+    max: number;
+    peakActive: number;
+    peakWaiting: number;
   } {
     const total = this.pool.totalCount ?? 0;
     const idle = this.pool.idleCount ?? 0;
@@ -196,6 +229,19 @@ export class PrismaService
       idle,
       active: Math.max(0, total - idle),
       waiting: this.pool.waitingCount ?? 0,
+      /*
+       * `max`, not `totalCount`.
+       *
+       * The analytics card showed "active / total", which reads as a capacity
+       * gauge but is not one: `totalCount` is how many connections happen to be
+       * open right now, and since `active` is derived as `total - idle` the
+       * ratio is built from the same two numbers and can never exceed 1. The
+       * denominator also moved on its own as the pool grew. `max` is the figure
+       * saturation should actually be measured against.
+       */
+      max: (this.pool as unknown as { options?: { max?: number } }).options?.max ?? total,
+      peakActive: this.peakActive,
+      peakWaiting: this.peakWaiting,
     };
   }
 

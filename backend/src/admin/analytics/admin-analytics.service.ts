@@ -181,16 +181,34 @@ export class AdminAnalyticsService {
             unit: 'count',
             limit: Number.parseInt(conns?.ceiling ?? '', 10) || null,
           },
+          /*
+           * Instantaneous, and read straight after this probe's own queries
+           * released their connection — so on a quiet deployment it is
+           * legitimately 0 almost every time. It is kept because a non-zero
+           * reading is genuinely informative, but the peak beneath it is the
+           * row that shows whether the pool is ever under pressure.
+           *
+           * Measured against `max`, the pool's ceiling, rather than the number
+           * of connections currently open.
+           */
           {
-            label: 'Pool active',
+            label: 'Pool in use',
             value: pool.active,
             unit: 'count',
-            limit: pool.total,
+            limit: pool.max,
+          },
+          {
+            label: 'Pool peak in use',
+            value: pool.peakActive,
+            unit: 'count',
+            limit: pool.max,
           },
           { label: 'Pool idle', value: pool.idle, unit: 'count' },
           // Sustained non-zero waiting means queries are queueing for a
-          // connection rather than running slowly — a different problem.
+          // connection rather than running slowly — a different problem. The
+          // peak is what catches a burst that has already passed.
           { label: 'Pool waiting', value: pool.waiting, unit: 'count' },
+          { label: 'Pool peak waiting', value: pool.peakWaiting, unit: 'count' },
           { label: 'Query latency', value: latencyMs, unit: 'ms' },
         ],
       };
