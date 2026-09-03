@@ -129,6 +129,13 @@ if [ -n "$ENV_FILE" ]; then
   # cannot call the REST API. Optional - absent means the panel reports "not
   # reporting" and mail delivery is unaffected.
   BREVO_API_KEY="$(get_env BREVO_API_KEY)"
+  # Read-only service principal for the Azure panel, plus the app it reports on.
+  # These name PRODUCTION resources only: dev is a different subscription in a
+  # different tenant, so a dev value could not resolve here even by accident.
+  AZURE_CLIENT_ID="$(get_env AZURE_CLIENT_ID)"
+  AZURE_CLIENT_SECRET="$(get_env AZURE_CLIENT_SECRET)"
+  AZURE_RESOURCE_GROUP="$(get_env AZURE_RESOURCE_GROUP)"
+  AZURE_CONTAINER_APP="$(get_env AZURE_CONTAINER_APP)"
   R2_ACCESS_KEY_ID="$(get_env R2_ACCESS_KEY_ID)"
   R2_SECRET_ACCESS_KEY="$(get_env R2_SECRET_ACCESS_KEY)"
   R2_ACCOUNT_ID="$(get_env R2_ACCOUNT_ID)"
@@ -244,6 +251,9 @@ if [ "$SYNC_ONLY" = "true" ]; then
   )
   [ -n "${SMTP_PASS:-}" ] && SYNC_SECRETS+=("smtp-pass=${SMTP_PASS}")
   [ -n "${BREVO_API_KEY:-}" ] && SYNC_SECRETS+=("brevo-api-key=${BREVO_API_KEY}")
+  # The client secret is the only Azure value that is a credential; the ids and
+  # resource names below are not, and are set as plain env vars.
+  [ -n "${AZURE_CLIENT_SECRET:-}" ] && SYNC_SECRETS+=("azure-client-secret=${AZURE_CLIENT_SECRET}")
   [ -n "${REDIS_URL:-}" ] && SYNC_SECRETS+=("redis-url=${REDIS_URL}")
 
   az containerapp secret set \
@@ -264,8 +274,17 @@ if [ "$SYNC_ONLY" = "true" ]; then
       "SMTP_HOST=${SMTP_HOST:-}" \
       "SMTP_PORT=${SMTP_PORT:-587}" \
       "SMTP_USER=${SMTP_USER:-}" \
+      "AZURE_SUBSCRIPTION_ID=${SUBSCRIPTION_ID:-}" \
+      "AZURE_TENANT_ID=${TENANT_ID:-}" \
+      "AZURE_CLIENT_ID=${AZURE_CLIENT_ID:-}" \
+      "AZURE_RESOURCE_GROUP=${AZURE_RESOURCE_GROUP:-}" \
+      "AZURE_CONTAINER_APP=${AZURE_CONTAINER_APP:-}" \
       "SUPER_ADMIN_EMAIL=secretref:super-admin-email" \
       "SUPER_ADMIN_PASSWORD=secretref:super-admin-password" >/dev/null
+  [ -n "${AZURE_CLIENT_SECRET:-}" ] && az containerapp update \
+    --name "$APP_NAME" \
+    --resource-group "$RESOURCE_GROUP" \
+    --set-env-vars "AZURE_CLIENT_SECRET=secretref:azure-client-secret" >/dev/null
   [ -n "${SMTP_PASS:-}" ] && az containerapp update \
     --name "$APP_NAME" \
     --resource-group "$RESOURCE_GROUP" \

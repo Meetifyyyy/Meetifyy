@@ -83,20 +83,349 @@ export class AdminAnalyticsService {
     services: ServiceReport[];
     unconfigured: Array<{ name: string; requires: string[] }>;
   }> {
-    const [database, redis, storage, emailReports] = await Promise.all([
+    const [database, redis, storage, emailReports, azure] = await Promise.all([
       this.probeDatabase(),
       this.probeRedis(),
       this.probeR2(),
       this.probeEmail(),
+      this.probeAzure(),
     ]);
 
     return {
       generatedAt: new Date().toISOString(),
-      services: [database, redis, storage, ...emailReports],
+      services: [database, redis, storage, ...emailReports, azure],
       // Named explicitly so the page can say what is missing rather than
       // rendering an empty card the reader has to interpret.
       unconfigured: this.unconfiguredProviders(),
     };
+  }
+
+  /**
+   * Azure: what the API is actually running on, and what it is costing.
+   *
+   * Two independent reads behind one token. The Container App read is the one
+   * that decides the panel's state, because it is the thing serving this very
+   * request; spend is additive and deliberately best-effort, since reading it
+   * needs a role (Cost Management Reader) that a deployment may reasonably not
+   * have granted. Missing spend therefore degrades to "one fewer row" rather
+   * than turning a healthy app red - the panel must not report the API as down
+   * because of a billing permission.
+   */
+  private async probeAzure(): Promise<ServiceReport> {
+    const name = 'Azure Container App';
+    const { azure } = config.analytics.providers;
+
+    // Named individually so the page says which value to go and set, rather
+    // than "Azure is not configured" and leaving the reader to guess.
+    const missing = [
+      ['AZURE_TENANT_ID', azure.tenantId],
+      ['AZURE_CLIENT_ID', azure.clientId],
+      ['AZURE_CLIENT_SECRET', azure.clientSecret],
+      ['AZURE_SUBSCRIPTION_ID', azure.subscriptionId],
+    ]
+      .filter(([, v]) => !v)
+      .map(([k]) => k);
+
+    if (missing.length > 0) {
+      return {
+        name,
+        state: 'NOT_CONFIGURED',
+        detail: `Set ${missing.join(', ')} to report on Azure.`,
+      };
+    }
+
+    const started = Date.now();
+    try {
+      const token = await this.azureToken();
+      const metrics: NonNullable<ServiceReport['metrics']> = [];
+      const notes: string[] = [];
+
+      const [app, spend] = await Promise.all([
+        this.azureContainerApp(token),
+        this.azureSpend(token),
+      ]);
+
+      if (app.metrics) metrics.push(...app.metrics);
+      if (app.note) notes.push(app.note);
+      if (spend.metrics) metrics.push(...spend.metrics);
+      if (spend.note) notes.push(spend.note);
+
+      return {
+        name,
+        // A token that was issued proves the credentials work and the
+        // subscription is reachable, which is what this panel asserts.
+        state: 'UP',
+        latencyMs: Date.now() - started,
+        detail: notes.length > 0 ? notes.join(' ') : undefined,
+        metrics: metrics.length > 0 ? metrics : undefined,
+      };
+    } catch (error) {
+      return {
+        name,
+        state: 'DOWN',
+        latencyMs: Date.now() - started,
+        detail: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  /**
+   * Client-credentials token for Resource Manager, cached until shortly before
+   * it expires.
+   *
+   * Cached because this panel is a page load, not a one-off script: minting a
+   * fresh token on every refresh would add a round trip to AAD to every view
+   * and would be a good way to get rate limited for no benefit. The 60-second
+   * margin keeps a token that is about to expire from being handed to a call
+   * that then fails with 401.
+   */
+  private azureTokenCache: { token: string; expiresAt: number } | null = null;
+
+  private async azureToken(): Promise<string> {
+    const cached = this.azureTokenCache;
+    if (cached && cached.expiresAt > Date.now()) return cached.token;
+
+    const { azure } = config.analytics.providers;
+    const body = new URLSearchParams({
+      grant_type: 'client_credentials',
+      client_id: azure.clientId,
+      client_secret: azure.clientSecret,
+      scope: `${config.analytics.azureManagementUrl}/.default`,
+    });
+
+    const res = await fetchWithTimeout(
+      `${config.analytics.azureLoginUrl}/${azure.tenantId}/oauth2/v2.0/token`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: body.toString(),
+      },
+      config.analytics.probeTimeoutMs,
+    );
+
+    const json = (await res.json().catch(() => ({}))) as {
+      access_token?: string;
+      expires_in?: number;
+      error_description?: string;
+      error?: string;
+    };
+
+    if (!res.ok || !json.access_token) {
+      // AAD's error_description is long and carries a correlation id; the first
+      // line is the part a reader can act on.
+      const reason =
+        json.error_description?.split('\n')[0] ||
+        json.error ||
+        `HTTP ${res.status}`;
+      throw new Error(`Azure sign-in failed: ${reason}`);
+    }
+
+    this.azureTokenCache = {
+      token: json.access_token,
+      expiresAt:
+        Date.now() + Math.max(0, (json.expires_in ?? 3600) - 60) * 1000,
+    };
+    return json.access_token;
+  }
+
+  /** Live state of the Container App serving this request. */
+  private async azureContainerApp(
+    token: string,
+  ): Promise<{ metrics?: ServiceReport['metrics']; note?: string }> {
+    const { azure } = config.analytics.providers;
+    if (!azure.resourceGroup || !azure.containerApp) {
+      return {
+        note: 'Set AZURE_RESOURCE_GROUP and AZURE_CONTAINER_APP for revision and replica figures.',
+      };
+    }
+
+    const base =
+      `${config.analytics.azureManagementUrl}/subscriptions/${azure.subscriptionId}` +
+      `/resourceGroups/${azure.resourceGroup}` +
+      `/providers/Microsoft.App/containerApps/${azure.containerApp}`;
+    const headers = {
+      authorization: `Bearer ${token}`,
+      accept: 'application/json',
+    };
+    const apiVersion = 'api-version=2024-03-01';
+
+    const res = await fetchWithTimeout(
+      `${base}?${apiVersion}`,
+      { headers },
+      config.analytics.probeTimeoutMs,
+    );
+    if (!res.ok) {
+      return { note: `Container App read failed (HTTP ${res.status}).` };
+    }
+
+    const body = (await res.json().catch(() => ({}))) as {
+      properties?: {
+        runningStatus?: string;
+        latestReadyRevisionName?: string;
+        template?: {
+          scale?: { minReplicas?: number; maxReplicas?: number };
+          containers?: Array<{ resources?: { cpu?: number; memory?: string } }>;
+        };
+      };
+    };
+
+    const p = body.properties ?? {};
+    const metrics: NonNullable<ServiceReport['metrics']> = [];
+
+    if (p.runningStatus) {
+      metrics.push({
+        label: 'App status',
+        value: p.runningStatus,
+        unit: 'text',
+      });
+    }
+    if (p.latestReadyRevisionName) {
+      metrics.push({
+        label: 'Active revision',
+        value: p.latestReadyRevisionName,
+        unit: 'text',
+      });
+    }
+
+    const container = p.template?.containers?.[0];
+    if (typeof container?.resources?.cpu === 'number') {
+      metrics.push({
+        label: 'CPU per replica',
+        value: `${container.resources.cpu} vCPU`,
+        unit: 'text',
+      });
+    }
+    if (container?.resources?.memory) {
+      metrics.push({
+        label: 'Memory per replica',
+        value: container.resources.memory,
+        unit: 'text',
+      });
+    }
+
+    const scale = p.template?.scale;
+    if (typeof scale?.minReplicas === 'number') {
+      metrics.push({
+        label: 'Replicas',
+        value: scale.minReplicas,
+        unit: 'count',
+        // The ceiling the platform will actually scale to, so the row draws a
+        // bar against real headroom rather than an invented denominator.
+        limit: typeof scale.maxReplicas === 'number' ? scale.maxReplicas : null,
+      });
+    }
+
+    return { metrics };
+  }
+
+  /**
+   * Month-to-date actual spend for the subscription.
+   *
+   * `granularity: None` asks Cost Management to collapse the month to a single
+   * row, so this stays one small response no matter how far into the billing
+   * period it runs.
+   */
+  private azureSpendCache: {
+    metrics: NonNullable<ServiceReport['metrics']>;
+    at: number;
+  } | null = null;
+
+  private async azureSpend(
+    token: string,
+  ): Promise<{ metrics?: ServiceReport['metrics']; note?: string }> {
+    const { azure } = config.analytics.providers;
+    const ttl = config.analytics.azureSpendTtlMs;
+
+    const fresh =
+      this.azureSpendCache && Date.now() - this.azureSpendCache.at < ttl;
+    if (fresh) return { metrics: this.azureSpendCache!.metrics };
+
+    /**
+     * Serve the last good figure when the live read fails, labelled with its
+     * age.
+     *
+     * Cost Management is rate limited hard enough that a 429 is a routine
+     * outcome, not an incident - it was returned on the very first call made
+     * while building this. Dropping the row on every 429 would make spend
+     * flicker in and out of the page; a figure from twenty minutes ago is
+     * still worth more than no figure, provided it is not passed off as
+     * current.
+     */
+    const fallback = (note: string) => {
+      const stale = this.azureSpendCache;
+      if (!stale) return { note };
+      const mins = Math.round((Date.now() - stale.at) / 60_000);
+      return {
+        metrics: stale.metrics,
+        note: `${note} Showing spend from ${mins}m ago.`,
+      };
+    };
+
+    const res = await fetchWithTimeout(
+      `${config.analytics.azureManagementUrl}/subscriptions/${azure.subscriptionId}` +
+        `/providers/Microsoft.CostManagement/query?api-version=2023-03-01`,
+      {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${token}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          type: 'ActualCost',
+          timeframe: 'MonthToDate',
+          dataset: {
+            granularity: 'None',
+            aggregation: { totalCost: { name: 'Cost', function: 'Sum' } },
+          },
+        }),
+      },
+      config.analytics.probeTimeoutMs,
+    );
+
+    if (res.status === 401 || res.status === 403) {
+      return fallback(
+        'Spend needs the Cost Management Reader role on the subscription.',
+      );
+    }
+    if (res.status === 429) {
+      return fallback('Azure rate-limited the spend query.');
+    }
+    if (!res.ok) {
+      return fallback(`Spend read failed (HTTP ${res.status}).`);
+    }
+
+    const body = (await res.json().catch(() => ({}))) as {
+      properties?: {
+        columns?: Array<{ name?: string }>;
+        rows?: Array<Array<string | number>>;
+      };
+    };
+
+    const columns = body.properties?.columns ?? [];
+    const row = body.properties?.rows?.[0];
+    if (!row) return {};
+
+    // Column order is not contractual, so both values are located by name.
+    const costIndex = columns.findIndex((c) => /cost/i.test(c.name ?? ''));
+    const currencyIndex = columns.findIndex((c) =>
+      /currency/i.test(c.name ?? ''),
+    );
+
+    const cost = costIndex >= 0 ? Number(row[costIndex]) : NaN;
+    if (!Number.isFinite(cost)) return {};
+    const currency = currencyIndex >= 0 ? String(row[currencyIndex] ?? '') : '';
+
+    const metrics: NonNullable<ServiceReport['metrics']> = [
+      {
+        label: 'Spend this month',
+        // Formatted here rather than client-side: the currency comes from the
+        // billing account and the page has no other way to know it.
+        value: `${cost.toFixed(2)}${currency ? ` ${currency}` : ''}`,
+        unit: 'text',
+      },
+    ];
+    this.azureSpendCache = { metrics, at: Date.now() };
+    return { metrics };
   }
 
   /**
@@ -106,7 +435,7 @@ export class AdminAnalyticsService {
    * numbers: an unmeasured quantity has no value, not a default one.
    */
   private unconfiguredProviders() {
-    const { cloudflare, vercel, azure } = config.analytics.providers;
+    const { cloudflare, vercel } = config.analytics.providers;
     const missing: Array<{ name: string; requires: string[] }> = [];
 
     if (!cloudflare.apiToken) {
@@ -121,17 +450,9 @@ export class AdminAnalyticsService {
         requires: ['VERCEL_TOKEN', 'VERCEL_TEAM_ID'],
       });
     }
-    if (!azure.subscriptionId || !azure.clientSecret) {
-      missing.push({
-        name: 'Azure credit balance and spend',
-        requires: [
-          'AZURE_TENANT_ID',
-          'AZURE_CLIENT_ID',
-          'AZURE_CLIENT_SECRET',
-          'AZURE_SUBSCRIPTION_ID',
-        ],
-      });
-    }
+    // Azure is deliberately absent here: it now has a real probe and reports
+    // itself as NOT_CONFIGURED with the exact variables it wants. Listing it
+    // here as well would show the same gap twice, in two different places.
     return missing;
   }
 
@@ -208,7 +529,11 @@ export class AdminAnalyticsService {
           // connection rather than running slowly — a different problem. The
           // peak is what catches a burst that has already passed.
           { label: 'Pool waiting', value: pool.waiting, unit: 'count' },
-          { label: 'Pool peak waiting', value: pool.peakWaiting, unit: 'count' },
+          {
+            label: 'Pool peak waiting',
+            value: pool.peakWaiting,
+            unit: 'count',
+          },
           { label: 'Query latency', value: latencyMs, unit: 'ms' },
         ],
       };
@@ -557,9 +882,7 @@ export class AdminAnalyticsService {
       ...report,
       detail:
         report.detail ??
-        (isFallback
-          ? `Used when ${config.email.driver} fails`
-          : undefined),
+        (isFallback ? `Used when ${config.email.driver} fails` : undefined),
       metrics: [...metrics, ...vendorMetrics],
     };
   }
@@ -623,7 +946,9 @@ export class AdminAnalyticsService {
         // Brevo reports several plan rows; the transactional email one is the
         // only one that governs whether a send succeeds.
         const emailPlan = (body.plan ?? []).find(
-          (p) => typeof p?.credits === 'number' && /email|sms|free/i.test(p.type ?? ''),
+          (p) =>
+            typeof p?.credits === 'number' &&
+            /email|sms|free/i.test(p.type ?? ''),
         );
         if (emailPlan && typeof emailPlan.credits === 'number') {
           out.push({
@@ -698,7 +1023,8 @@ export class AdminAnalyticsService {
     // the sweep has not collected yet and the view would claim a longer history
     // than it actually keeps.
     const where: any = { occurredAt: { gte: since } };
-    if (params.route) where.route = { contains: params.route, mode: 'insensitive' };
+    if (params.route)
+      where.route = { contains: params.route, mode: 'insensitive' };
     if (params.severity === 'UNEXPECTED' || params.severity === 'EXPECTED') {
       where.severity = params.severity;
     }
@@ -756,7 +1082,8 @@ export class AdminAnalyticsService {
         unexpected,
         expected,
         captureEnabled: config.observability.errorLogs.enabled,
-        clientErrorsCaptured: config.observability.errorLogs.captureClientErrors,
+        clientErrorsCaptured:
+          config.observability.errorLogs.captureClientErrors,
       },
       topRoutes: byRoute.map((r: any) => ({
         route: r.route,

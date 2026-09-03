@@ -128,7 +128,10 @@ export const observabilityConfigValues = {
     }),
 
     /** Prefixes that are never recorded. */
-    ignoredPrefixes: csv('ERROR_LOG_IGNORED_PREFIXES', DEFAULT_IGNORED_PREFIXES),
+    ignoredPrefixes: csv(
+      'ERROR_LOG_IGNORED_PREFIXES',
+      DEFAULT_IGNORED_PREFIXES,
+    ),
   },
 };
 
@@ -187,6 +190,34 @@ export const analyticsConfigValues = {
   brevoApiUrl: url('BREVO_API_URL', { default: 'https://api.brevo.com/v3' }),
 
   /**
+   * Azure Resource Manager, and the AAD endpoint used to get a token for it.
+   *
+   * Both are configurable because the sovereign clouds (US Government, China)
+   * use entirely different hostnames, and hardcoding the commercial ones would
+   * make this panel unusable there without a code change.
+   */
+  azureManagementUrl: url('AZURE_MANAGEMENT_URL', {
+    default: 'https://management.azure.com',
+  }),
+  azureLoginUrl: url('AZURE_LOGIN_URL', {
+    default: 'https://login.microsoftonline.com',
+  }),
+
+  /**
+   * How long a month-to-date spend figure is reused before it is re-read.
+   *
+   * Cost Management is rate limited far more tightly than the other probes -
+   * a plain query returned HTTP 429 on the first attempt while this was being
+   * built - and month-to-date spend does not move meaningfully between two
+   * page loads. Fifteen minutes keeps the row populated without turning every
+   * dashboard refresh into a billing API call.
+   */
+  azureSpendTtlMs: int('AZURE_SPEND_TTL_MS', {
+    default: '900000',
+    min: 0,
+  }),
+
+  /**
    * Credentials for the usage providers.
    *
    * Absent values are not an error — the page lists the provider as "not
@@ -207,11 +238,22 @@ export const analyticsConfigValues = {
       token: str('VERCEL_TOKEN'),
       teamId: str('VERCEL_TEAM_ID'),
     },
+    /**
+     * Read-only service principal for the Azure panel.
+     *
+     * The four identity values are what authenticate; `resourceGroup` and
+     * `containerApp` name which app to report on. Without the latter two the
+     * panel still reports subscription spend - naming the app is what adds the
+     * revision and replica figures, and a deployment that runs the API
+     * somewhere else should not be forced to invent them.
+     */
     azure: {
       tenantId: str('AZURE_TENANT_ID'),
       clientId: str('AZURE_CLIENT_ID'),
       clientSecret: str('AZURE_CLIENT_SECRET'),
       subscriptionId: str('AZURE_SUBSCRIPTION_ID'),
+      resourceGroup: str('AZURE_RESOURCE_GROUP'),
+      containerApp: str('AZURE_CONTAINER_APP'),
     },
   },
 };
