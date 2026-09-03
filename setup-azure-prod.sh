@@ -124,6 +124,11 @@ if [ -n "$ENV_FILE" ]; then
   SMTP_USER="$(get_env SMTP_USER)"
   SMTP_PASS="$(get_env SMTP_PASS)"
   EMAIL_FALLBACK_DRIVER="$(get_env EMAIL_FALLBACK_DRIVER)"
+  # Read-only key for the Brevo panel on the admin analytics page. Distinct from
+  # SMTP_PASS: Brevo issues SMTP keys and API keys separately and an SMTP key
+  # cannot call the REST API. Optional - absent means the panel reports "not
+  # reporting" and mail delivery is unaffected.
+  BREVO_API_KEY="$(get_env BREVO_API_KEY)"
   R2_ACCESS_KEY_ID="$(get_env R2_ACCESS_KEY_ID)"
   R2_SECRET_ACCESS_KEY="$(get_env R2_SECRET_ACCESS_KEY)"
   R2_ACCOUNT_ID="$(get_env R2_ACCOUNT_ID)"
@@ -238,6 +243,7 @@ if [ "$SYNC_ONLY" = "true" ]; then
     "super-admin-password=${SUPER_ADMIN_PASSWORD:-placeholder}"
   )
   [ -n "${SMTP_PASS:-}" ] && SYNC_SECRETS+=("smtp-pass=${SMTP_PASS}")
+  [ -n "${BREVO_API_KEY:-}" ] && SYNC_SECRETS+=("brevo-api-key=${BREVO_API_KEY}")
   [ -n "${REDIS_URL:-}" ] && SYNC_SECRETS+=("redis-url=${REDIS_URL}")
 
   az containerapp secret set \
@@ -264,6 +270,13 @@ if [ "$SYNC_ONLY" = "true" ]; then
     --name "$APP_NAME" \
     --resource-group "$RESOURCE_GROUP" \
     --set-env-vars "SMTP_PASS=secretref:smtp-pass" >/dev/null
+  # Guarded for the same reason as SMTP_PASS: a secretref naming a secret that
+  # was never created stops the container from starting at all, so an absent
+  # optional key must leave the variable unset rather than dangling.
+  [ -n "${BREVO_API_KEY:-}" ] && az containerapp update \
+    --name "$APP_NAME" \
+    --resource-group "$RESOURCE_GROUP" \
+    --set-env-vars "BREVO_API_KEY=secretref:brevo-api-key" >/dev/null
 
   # Updating a secret does NOT restart the app, and a running replica keeps the
   # value it started with. Without this restart the new credentials sit in the
@@ -542,7 +555,8 @@ az containerapp create \
     "sentry-dsn=${SENTRY_DSN:-placeholder}" \
     "super-admin-email=${SUPER_ADMIN_EMAIL:-placeholder}" \
     "super-admin-password=${SUPER_ADMIN_PASSWORD:-placeholder}" \
-    ${SMTP_PASS:+"smtp-pass=${SMTP_PASS}"}
+    ${SMTP_PASS:+"smtp-pass=${SMTP_PASS}"} \
+    ${BREVO_API_KEY:+"brevo-api-key=${BREVO_API_KEY}"}
 
 echo "==> 5b. Creating the shared pull identity and granting it AcrPull..."
 # A USER-assigned identity, not a system-assigned one, because two different
@@ -608,6 +622,10 @@ az containerapp update \
   --name "$APP_NAME" \
   --resource-group "$RESOURCE_GROUP" \
   --set-env-vars "SMTP_PASS=secretref:smtp-pass" > /dev/null
+[ -n "${BREVO_API_KEY:-}" ] && az containerapp update \
+  --name "$APP_NAME" \
+  --resource-group "$RESOURCE_GROUP" \
+  --set-env-vars "BREVO_API_KEY=secretref:brevo-api-key" > /dev/null
 
 echo "==> 7. Creating GitHub Actions Service Principal for Production..."
 SP_JSON=$(az ad sp create-for-rbac \
