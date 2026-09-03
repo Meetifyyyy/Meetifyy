@@ -33,6 +33,7 @@ export class EmailProcessor extends WorkerHost implements OnModuleInit {
   private resend: Resend;
   private smtpTransporter: nodemailer.Transporter;
   private driver: string;
+  private fallbackDriver: string;
   private from: string;
 
   constructor(
@@ -42,8 +43,9 @@ export class EmailProcessor extends WorkerHost implements OnModuleInit {
     super();
     // Driver, credentials, sender and SMTP target are all environment values —
     // the sending logic below is identical in every environment.
-    const { driver, smtp, resend, from } = config.email;
+    const { driver, fallbackDriver, smtp, resend, from } = config.email;
     this.driver = driver;
+    this.fallbackDriver = fallbackDriver;
     this.resend = new Resend(resend.apiKey);
 
     this.smtpTransporter = nodemailer.createTransport({
@@ -58,9 +60,18 @@ export class EmailProcessor extends WorkerHost implements OnModuleInit {
             },
           }
         : {}),
-      tls: {
-        rejectUnauthorized: false,
-      },
+      /*
+       * Certificate verification is only relaxed for the local mail catcher.
+       *
+       * Mailpit serves a self-signed certificate, so development needs this.
+       * A real relay does not, and turning it off there would mean the SMTP
+       * credentials and every outgoing message could be handed to anyone able
+       * to intercept the connection — which matters now that SMTP is a
+       * production transport rather than a local-only one.
+       */
+      ...(driver === 'mailpit'
+        ? { tls: { rejectUnauthorized: false } }
+        : {}),
     });
 
     this.from = from;
@@ -72,6 +83,7 @@ export class EmailProcessor extends WorkerHost implements OnModuleInit {
         appEnv: config.app.env,
         queuePrefix: config.redis.queuePrefix,
         provider: this.driver,
+        fallbackDriver: this.fallbackDriver || null,
         from: this.from,
         replyTo: config.email.replyTo ?? null,
         // A non-empty value here means every recipient is being rewritten.
@@ -314,83 +326,188 @@ export class EmailProcessor extends WorkerHost implements OnModuleInit {
 
     try {
       if (this.driver === 'mailpit' || this.driver === 'smtp') {
-        const info = await this.smtpTransporter.sendMail({
-          from,
-          to,
-          subject,
-          html,
-          // A text/plain alternative alongside the HTML part: it is what
-          // text-only clients render and what several spam filters expect a
-          // legitimate multipart message to carry.
-          ...(plainText ? { text: plainText } : {}),
-          ...(effectiveReplyTo ? { replyTo: effectiveReplyTo } : {}),
-        });
-        this.logger.log(
-          `email.sent ${JSON.stringify({ ...context, messageId: info.messageId, status: 'accepted' })}`,
+        return await this.sendViaSmtp(
+          { from, to, subject, html, plainText, effectiveReplyTo },
+          context,
+          deliveryTarget,
         );
-        await this.recordDelivery(deliveryTarget, {
-          messageId: info.messageId,
-        });
-        return info;
       }
+      return await this.sendViaResend(
+        { from, to, subject, html, plainText, effectiveReplyTo },
+        context,
+        deliveryTarget,
+        job,
+      );
+    } catch (primaryError) {
+      /*
+       * Failing over is only meaningful from the API transport to the relay.
+       * When SMTP is already the primary, the fallback would reuse the very
+       * transporter that just failed — the same host, the same credentials —
+       * so it can only fail again, having doubled the time the job spends
+       * before it is marked undelivered.
+       */
+      const canFailOver =
+        this.fallbackDriver === 'smtp' &&
+        this.driver !== 'smtp' &&
+        this.driver !== 'mailpit';
 
-      const { data, error } = await this.resend.emails.send({
-        from,
-        to,
-        subject: subject,
-        html: html,
-        ...(plainText ? { text: plainText } : {}),
-        ...(effectiveReplyTo ? { replyTo: effectiveReplyTo } : {}),
-      });
-
-      // Resend reports a rejected send in the response body rather than by
-      // rejecting the promise, so this branch is the one that used to let an
-      // undelivered email look like a successful one.
-      if (error) {
-        this.logger.error(
-          `email.send_failed ${JSON.stringify({
+      if (canFailOver) {
+        this.logger.warn(
+          `email.failover ${JSON.stringify({
             ...context,
-            status: 'rejected',
-            errorName: error.name,
-            error: error.message,
+            primaryDriver: this.driver,
+            fallbackDriver: this.fallbackDriver,
+            primaryError: (primaryError as Error).message,
           })}`,
         );
-        // Rethrown as a real Error: the Resend error is a plain object, which
-        // BullMQ records without a message or a stack.
-        throw new Error(
-          `Resend rejected ${job.name} to ${to}: ${error.name} — ${error.message}`,
-        );
+        try {
+          return await this.sendViaSmtp(
+            { from, to, subject, html, plainText, effectiveReplyTo },
+            { ...context, provider: 'smtp(fallback)' },
+            deliveryTarget,
+          );
+        } catch (fallbackError) {
+          this.logger.error(
+            `email.failover_failed ${JSON.stringify({
+              ...context,
+              fallbackDriver: this.fallbackDriver,
+              fallbackError: (fallbackError as Error).message,
+            })}`,
+          );
+          /*
+           * Deliberately NOT rethrowing here.
+           *
+           * This block used to `throw primaryError`, with a comment saying it
+           * would "fall through to the outer catch which records delivery
+           * failure". There is no outer catch — this is the outermost one — so
+           * the throw left the function immediately and skipped both the
+           * `email.send_error` log and, more importantly, the
+           * `recordDelivery(..., { error })` below.
+           *
+           * The effect was that enabling a fallback quietly disabled failure
+           * recording: when both transports failed, the ticket stayed
+           * "pending" forever instead of showing as undelivered, which is
+           * exactly what that recordDelivery call exists to prevent.
+           *
+           * Letting execution continue past this `if` reaches the shared
+           * handling, which is what the original comment intended.
+           */
+        }
       }
 
-      if (!data?.id) {
-        this.logger.error(
-          `email.send_failed ${JSON.stringify({ ...context, status: 'no-message-id' })}`,
-        );
-        throw new Error(
-          `Resend returned no message id for ${job.name} to ${to}`,
-        );
-      }
-
-      this.logger.log(
-        `email.sent ${JSON.stringify({ ...context, messageId: data.id, status: 'accepted' })}`,
-      );
-      await this.recordDelivery(deliveryTarget, { messageId: data.id });
-      return data;
-    } catch (error) {
       this.logger.error(
-        `email.send_error ${JSON.stringify({ ...context, status: 'error', error: (error as Error).message })}`,
+        `email.send_error ${JSON.stringify({ ...context, status: 'error', error: (primaryError as Error).message })}`,
       );
       // Marked failed on every attempt, not only the last one: an admin
       // watching a ticket should see "not delivered" while the retries are
       // still running, not an ambiguous "pending" that may never resolve. A
       // later successful retry overwrites this with SENT.
       await this.recordDelivery(deliveryTarget, {
-        error: (error as Error).message,
+        error: (primaryError as Error).message,
       });
       // Rethrown so the job is retried and, once retries are exhausted,
       // surfaces through the `failed` worker event above.
-      throw error;
+      throw primaryError;
     }
+  }
+
+  /**
+   * Sends via the already-constructed SMTP/Mailpit transporter.
+   * Used both as a primary transport (driver=smtp|mailpit) and as a fallback.
+   */
+  private async sendViaSmtp(
+    mail: {
+      from: string;
+      to: string;
+      subject: string;
+      html: string;
+      plainText?: string;
+      effectiveReplyTo?: string;
+    },
+    context: Record<string, unknown>,
+    deliveryTarget: DeliveryTarget,
+  ): Promise<any> {
+    const info = await this.smtpTransporter.sendMail({
+      from: mail.from,
+      to: mail.to,
+      subject: mail.subject,
+      html: mail.html,
+      // A text/plain alternative alongside the HTML part: it is what
+      // text-only clients render and what several spam filters expect a
+      // legitimate multipart message to carry.
+      ...(mail.plainText ? { text: mail.plainText } : {}),
+      ...(mail.effectiveReplyTo ? { replyTo: mail.effectiveReplyTo } : {}),
+    });
+    this.logger.log(
+      `email.sent ${JSON.stringify({ ...context, messageId: info.messageId, status: 'accepted' })}`,
+    );
+    await this.recordDelivery(deliveryTarget, {
+      messageId: info.messageId,
+    });
+    return info;
+  }
+
+  /**
+   * Sends via the Resend API.
+   * Resend reports rejections in the response body rather than via a thrown
+   * error, so this method normalises them into a throw so the caller can treat
+   * both transports uniformly.
+   */
+  private async sendViaResend(
+    mail: {
+      from: string;
+      to: string;
+      subject: string;
+      html: string;
+      plainText?: string;
+      effectiveReplyTo?: string;
+    },
+    context: Record<string, unknown>,
+    deliveryTarget: DeliveryTarget,
+    job: Job<any, any, string>,
+  ): Promise<any> {
+    const { data, error } = await this.resend.emails.send({
+      from: mail.from,
+      to: mail.to,
+      subject: mail.subject,
+      html: mail.html,
+      ...(mail.plainText ? { text: mail.plainText } : {}),
+      ...(mail.effectiveReplyTo ? { replyTo: mail.effectiveReplyTo } : {}),
+    });
+
+    // Resend reports a rejected send in the response body rather than by
+    // rejecting the promise, so this branch is the one that used to let an
+    // undelivered email look like a successful one.
+    if (error) {
+      this.logger.error(
+        `email.send_failed ${JSON.stringify({
+          ...context,
+          status: 'rejected',
+          errorName: error.name,
+          error: error.message,
+        })}`,
+      );
+      // Rethrown as a real Error: the Resend error is a plain object, which
+      // BullMQ records without a message or a stack.
+      throw new Error(
+        `Resend rejected ${job.name} to ${mail.to}: ${error.name} — ${error.message}`,
+      );
+    }
+
+    if (!data?.id) {
+      this.logger.error(
+        `email.send_failed ${JSON.stringify({ ...context, status: 'no-message-id' })}`,
+      );
+      throw new Error(
+        `Resend returned no message id for ${job.name} to ${mail.to}`,
+      );
+    }
+
+    this.logger.log(
+      `email.sent ${JSON.stringify({ ...context, messageId: data.id, status: 'accepted' })}`,
+    );
+    await this.recordDelivery(deliveryTarget, { messageId: data.id });
+    return data;
   }
 
   /**

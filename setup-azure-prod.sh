@@ -119,6 +119,11 @@ if [ -n "$ENV_FILE" ]; then
   SUPABASE_ANON_KEY="$(get_env SUPABASE_ANON_KEY)"
   SUPABASE_SERVICE_ROLE_KEY="$(get_env SUPABASE_SERVICE_ROLE_KEY)"
   RESEND_API_KEY="$(get_env RESEND_API_KEY)"
+  SMTP_HOST="$(get_env SMTP_HOST)"
+  SMTP_PORT="$(get_env SMTP_PORT)"
+  SMTP_USER="$(get_env SMTP_USER)"
+  SMTP_PASS="$(get_env SMTP_PASS)"
+  EMAIL_FALLBACK_DRIVER="$(get_env EMAIL_FALLBACK_DRIVER)"
   R2_ACCESS_KEY_ID="$(get_env R2_ACCESS_KEY_ID)"
   R2_SECRET_ACCESS_KEY="$(get_env R2_SECRET_ACCESS_KEY)"
   R2_ACCOUNT_ID="$(get_env R2_ACCOUNT_ID)"
@@ -173,6 +178,15 @@ else
   read -rp "Enter Production Supabase Anon Key: " SUPABASE_ANON_KEY
   read -rsp "Enter Production Supabase Service Role Key: " SUPABASE_SERVICE_ROLE_KEY; echo
   read -rsp "Enter Production Resend API Key: " RESEND_API_KEY; echo
+  echo "Brevo SMTP fallback (optional — press Enter to skip each):"
+  read -rp  "  SMTP_HOST (e.g. smtp-relay.brevo.com, blank to skip): " SMTP_HOST
+  if [ -n "$SMTP_HOST" ]; then
+    read -rp  "  SMTP_PORT (587): " SMTP_PORT
+    SMTP_PORT="${SMTP_PORT:-587}"
+    read -rp  "  SMTP_USER (Brevo login email): " SMTP_USER
+    read -rsp "  SMTP_PASS (Brevo SMTP key): " SMTP_PASS; echo
+    EMAIL_FALLBACK_DRIVER=smtp
+  fi
   read -rsp "Enter Production R2 Access Key ID: " R2_ACCESS_KEY_ID; echo
   read -rsp "Enter Production R2 Secret Access Key: " R2_SECRET_ACCESS_KEY; echo
   read -rp "Enter Production R2 Account ID: " R2_ACCOUNT_ID
@@ -223,6 +237,7 @@ if [ "$SYNC_ONLY" = "true" ]; then
     "super-admin-email=${SUPER_ADMIN_EMAIL:-placeholder}"
     "super-admin-password=${SUPER_ADMIN_PASSWORD:-placeholder}"
   )
+  [ -n "${SMTP_PASS:-}" ] && SYNC_SECRETS+=("smtp-pass=${SMTP_PASS}")
   [ -n "${REDIS_URL:-}" ] && SYNC_SECRETS+=("redis-url=${REDIS_URL}")
 
   az containerapp secret set \
@@ -239,8 +254,16 @@ if [ "$SYNC_ONLY" = "true" ]; then
       "R2_PUBLIC_URL=${R2_PUBLIC_URL}" \
       "R2_BUCKET_NAME=${R2_BUCKET_NAME}" \
       "R2_VERIFICATION_BUCKET_NAME=${R2_VERIFICATION_BUCKET_NAME:-}" \
+      "EMAIL_FALLBACK_DRIVER=${EMAIL_FALLBACK_DRIVER:-}" \
+      "SMTP_HOST=${SMTP_HOST:-}" \
+      "SMTP_PORT=${SMTP_PORT:-587}" \
+      "SMTP_USER=${SMTP_USER:-}" \
       "SUPER_ADMIN_EMAIL=secretref:super-admin-email" \
       "SUPER_ADMIN_PASSWORD=secretref:super-admin-password" >/dev/null
+  [ -n "${SMTP_PASS:-}" ] && az containerapp update \
+    --name "$APP_NAME" \
+    --resource-group "$RESOURCE_GROUP" \
+    --set-env-vars "SMTP_PASS=secretref:smtp-pass" >/dev/null
 
   # Updating a secret does NOT restart the app, and a running replica keeps the
   # value it started with. Without this restart the new credentials sit in the
@@ -491,6 +514,10 @@ az containerapp create \
     COOKIE_SAME_SITE="strict" \
     EMAIL_DRIVER=resend \
     EMAIL_FROM="noreply@meetifyy.app" \
+    EMAIL_FALLBACK_DRIVER="${EMAIL_FALLBACK_DRIVER:-}" \
+    SMTP_HOST="${SMTP_HOST:-}" \
+    SMTP_PORT="${SMTP_PORT:-587}" \
+    SMTP_USER="${SMTP_USER:-}" \
     STORAGE_PROVIDER=r2 \
     R2_ACCOUNT_ID="$R2_ACCOUNT_ID" \
     R2_PUBLIC_URL="$R2_PUBLIC_URL" \
@@ -514,7 +541,8 @@ az containerapp create \
     "r2-secret-access-key=${R2_SECRET_ACCESS_KEY}" \
     "sentry-dsn=${SENTRY_DSN:-placeholder}" \
     "super-admin-email=${SUPER_ADMIN_EMAIL:-placeholder}" \
-    "super-admin-password=${SUPER_ADMIN_PASSWORD:-placeholder}"
+    "super-admin-password=${SUPER_ADMIN_PASSWORD:-placeholder}" \
+    ${SMTP_PASS:+"smtp-pass=${SMTP_PASS}"}
 
 echo "==> 5b. Creating the shared pull identity and granting it AcrPull..."
 # A USER-assigned identity, not a system-assigned one, because two different
@@ -576,6 +604,10 @@ az containerapp update \
     "SENTRY_DSN=secretref:sentry-dsn" \
     "SUPER_ADMIN_EMAIL=secretref:super-admin-email" \
     "SUPER_ADMIN_PASSWORD=secretref:super-admin-password"
+[ -n "${SMTP_PASS:-}" ] && az containerapp update \
+  --name "$APP_NAME" \
+  --resource-group "$RESOURCE_GROUP" \
+  --set-env-vars "SMTP_PASS=secretref:smtp-pass" > /dev/null
 
 echo "==> 7. Creating GitHub Actions Service Principal for Production..."
 SP_JSON=$(az ad sp create-for-rbac \

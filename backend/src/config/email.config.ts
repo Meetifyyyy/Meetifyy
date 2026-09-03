@@ -24,6 +24,16 @@ const driver = oneOf('EMAIL_DRIVER', ['mailpit', 'smtp', 'resend'] as const, {
   default: isDeployed ? 'resend' : 'mailpit',
 });
 
+// Optional SMTP fallback: when set, a failed primary send is retried once via
+// SMTP before the job is marked failed. Empty string = no fallback (default).
+// Only 'smtp' is supported as a fallback — mailpit is not a real relay and
+// resend→resend failover is not meaningful.
+const fallbackDriver = oneOf(
+  'EMAIL_FALLBACK_DRIVER',
+  ['', 'smtp'] as const,
+  { default: '' },
+);
+
 const fromEmail =
   email('EMAIL_FROM', { requiredIn: ['staging', 'production'] }) ||
   str('RESEND_FROM_EMAIL') ||
@@ -40,6 +50,27 @@ invariant(
 invariant(
   driver !== 'resend' || !!str('RESEND_API_KEY'),
   'Missing required environment variable: RESEND_API_KEY (required when EMAIL_DRIVER=resend)',
+);
+/*
+ * A relay fallback is only useful if it can actually authenticate.
+ *
+ * Checked at boot rather than on first use, because the fallback runs at the
+ * worst possible moment — the primary has already failed — and a transporter
+ * built without credentials is rejected by every real relay (Brevo included).
+ * Discovering that then means the email is lost twice over, with the second
+ * failure buried in a retry log.
+ */
+invariant(
+  fallbackDriver !== 'smtp' || !!str('SMTP_HOST'),
+  'Missing required environment variable: SMTP_HOST (required when EMAIL_FALLBACK_DRIVER=smtp)',
+);
+invariant(
+  fallbackDriver !== 'smtp' || !!str('SMTP_USER'),
+  'Missing required environment variable: SMTP_USER (required when EMAIL_FALLBACK_DRIVER=smtp)',
+);
+invariant(
+  fallbackDriver !== 'smtp' || !!str('SMTP_PASS'),
+  'Missing required environment variable: SMTP_PASS (required when EMAIL_FALLBACK_DRIVER=smtp)',
 );
 
 /** The bare `user@host` part of the From header, with any `Name <...>` wrapper stripped. */
@@ -58,6 +89,7 @@ invariant(
 
 export const emailConfigValues = {
   driver,
+  fallbackDriver,
 
   /** Default From header, assembled as `Name <address>`. */
   from:
