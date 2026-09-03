@@ -47,7 +47,25 @@ export function useMatchTimer(expiresAt, fallbackSecs, onExpire) {
     };
 
     tick();
-    const id = window.setInterval(tick, 250);
+
+    /*
+     * One tick a second, not four.
+     *
+     * The 250 ms interval existed so the ring depleted smoothly, which meant
+     * re-rendering the whole match popup four times a second for the entire
+     * accept window. The ring is now depleted by a CSS animation that the
+     * browser interpolates at display rate (see CountdownRing), so React only
+     * has to keep up with the digits — and those change once a second.
+     */
+    const id = window.setInterval(tick, 1000);
+
+    /*
+     * Expiry is scheduled exactly rather than discovered by polling, so
+     * lengthening the interval cannot delay it by up to a second. The tick
+     * above is still the safety net for a tab that was asleep at the deadline.
+     */
+    const untilDeadline = Math.max(0, deadline - Date.now());
+    const expiryId = window.setTimeout(tick, untilDeadline + 20);
 
     // A backgrounded tab throttles timers; re-read on the way back so the ring
     // is correct the instant the user looks at it again.
@@ -56,6 +74,7 @@ export function useMatchTimer(expiresAt, fallbackSecs, onExpire) {
 
     return () => {
       window.clearInterval(id);
+      window.clearTimeout(expiryId);
       document.removeEventListener('visibilitychange', onVisible);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -24,6 +24,28 @@ import {
  *  Application code should always go through `useInstantMatch`. */
 export const InstantMatchContext = createContext(null);
 
+/**
+ * Live queue counts, deliberately kept out of the main context value.
+ *
+ * The server pushes `queue:stats` whenever ANYONE on the platform joins,
+ * cancels, matches or expires — so on a busy evening this changes several times
+ * a second, for reasons that have nothing to do with this user. It used to sit
+ * in the one big context object, which meant every consumer woke with it,
+ * including the launcher parked over the Home feed: strangers queueing for
+ * coffee re-rendered a button on someone else's timeline.
+ *
+ * Only two places actually read these numbers — the searching screen's metrics
+ * and the launcher's count badge — and both now subscribe here instead.
+ */
+const InstantMatchQueueContext = createContext(null);
+
+const EMPTY_STATS = Object.freeze({ count: 0, sameActivity: 0, avgWaitSecs: 0 });
+
+/** Live queue counts on their own, so reading them wakes nothing else. */
+export function useInstantMatchQueueStats() {
+  return useContext(InstantMatchQueueContext) ?? EMPTY_STATS;
+}
+
 /** See the listener in InstantMatchProvider. Dispatch it to open the chat. */
 export const INSTANT_MATCH_OPEN_CHAT_EVENT = 'instant-match:open-chat';
 
@@ -901,7 +923,7 @@ export function InstantMatchProvider({ children }) {
 
   const value = useMemo(() => ({
     sheetOpen, step, formData, status, buttonState, matchCountdown,
-    queueStats, activeMatch,
+    activeMatch,
     chat: chatWithCallback, chatOverlayOpen, matchPartner, leaving,
     matchState, unreadCount, hasUnreadMessages: unreadCount > 0,
     markInstantChatRead,
@@ -913,7 +935,7 @@ export function InstantMatchProvider({ children }) {
     openMatchChat, dismissRecentMatch, isVerified,
   }), [
     sheetOpen, step, formData, status, buttonState, matchCountdown,
-    queueStats, activeMatch,
+    activeMatch,
     chatWithCallback, chatOverlayOpen, matchPartner, leaving,
     matchState, unreadCount, markInstantChatRead,
     closeChatOverlay, leaveMatch, refreshChat,
@@ -926,7 +948,9 @@ export function InstantMatchProvider({ children }) {
 
   return (
     <InstantMatchContext.Provider value={value}>
-      {children}
+      <InstantMatchQueueContext.Provider value={queueStats}>
+        {children}
+      </InstantMatchQueueContext.Provider>
     </InstantMatchContext.Provider>
   );
 }

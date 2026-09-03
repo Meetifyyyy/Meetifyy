@@ -1,5 +1,4 @@
-import React from 'react';
-import { useInstantMatch } from '../../context/InstantMatchContext';
+import { useInstantMatch, useInstantMatchQueueStats } from '../../context/InstantMatchContext';
 import { getActivityLabel } from '../../constants/matchConstants';
 
 function formatWait(secs) {
@@ -21,8 +20,9 @@ function formatWait(secs) {
  * The server pushes a fresh count whenever anyone joins, cancels, matches or
  * expires, so these are real numbers rather than decorative ones.
  */
-export default function QueueMetrics({ elapsed = 0 }) {
-  const { queueStats, formData } = useInstantMatch();
+export default function QueueMetrics({ children }) {
+  const queueStats = useInstantMatchQueueStats();
+  const { formData } = useInstantMatch();
 
   const count = Number(queueStats?.count) || 0;
   const sameActivity = Number(queueStats?.sameActivity) || 0;
@@ -61,12 +61,11 @@ export default function QueueMetrics({ elapsed = 0 }) {
         <p className="im-metrics-note">Typical wait: about {wait}.</p>
       )}
 
-      {elapsed >= 10 && (
-        <p className="im-metrics-elapsed">
-          <span className="im-sr-only">Time spent searching: </span>
-          {Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, '0')}
-        </p>
-      )}
+      {/* The elapsed readout is passed in rather than computed here: it ticks
+          every second, and owning it would drag these live counts — and the
+          radar beside them — into a re-render once a second for the whole
+          search. As a child it re-renders alone. */}
+      {children}
     </div>
   );
 }

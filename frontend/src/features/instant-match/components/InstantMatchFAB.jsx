@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import { memo, useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { useInstantMatch } from '../context/InstantMatchContext';
+import { useInstantMatch, useInstantMatchQueueStats } from '../context/InstantMatchContext';
 import { Bolt } from './decor/Decor';
 import '../styles/instant-match.css';
 import '../styles/instant-match-fab.css';
@@ -98,9 +98,27 @@ function progressOf(countdown) {
   return Math.max(0, Math.min(1, (expiresAt - Date.now()) / total));
 }
 
+/**
+ * The live queue figure.
+ *
+ * Split out on purpose: `queue:stats` is pushed whenever anyone anywhere joins
+ * or leaves the queue, and subscribing to it from the launcher body meant a
+ * stranger queueing re-rendered the launcher — and its countdown ring, badge
+ * and halo — on top of someone's feed. Here the push updates one number.
+ */
+const QueueCountBadge = memo(function QueueCountBadge() {
+  const queueStats = useInstantMatchQueueStats();
+  if (!(queueStats.count > 1)) return null;
+  return (
+    <span className="im-fab-count" aria-hidden="true">
+      {queueStats.count}
+    </span>
+  );
+});
+
 export default function InstantMatchFAB() {
   const {
-    sheetOpen, buttonState, openSheet, queueStats, matchCountdown, isVerified,
+    sheetOpen, buttonState, openSheet, matchCountdown, isVerified,
     unreadCount,
   } = useInstantMatch();
   const location = useLocation();
@@ -211,12 +229,10 @@ export default function InstantMatchFAB() {
       </span>
 
       {/* Everyone on Instant Match right now, this user included — the same
-          global figure the searching screen leads with. */}
-      {state === 'searching' && queueStats.count > 1 && (
-        <span className="im-fab-count" aria-hidden="true">
-          {queueStats.count}
-        </span>
-      )}
+          global figure the searching screen leads with. Its own component, so
+          the platform-wide `queue:stats` firehose re-renders this one badge
+          rather than the whole launcher sitting over the Home feed. */}
+      {state === 'searching' && <QueueCountBadge />}
 
       {/* Politely announced so a screen-reader user learns what the launcher
           is doing without it stealing focus. */}

@@ -38,6 +38,22 @@ export default function InstantMatchSheet() {
   const sheetRef = useRef(null);
   const titleId = useId();
 
+  /**
+   * Which way the flow is travelling, so the incoming step enters from the side
+   * it came from — forward slides in from the right, Back from the left. A
+   * transition that always moves the same way reads as a refresh rather than as
+   * navigation, and on Back it actively contradicts the gesture.
+   *
+   * A ref rather than state: it is read during the render that reacts to the
+   * step change and must never schedule one of its own.
+   */
+  const prevStepRef = useRef(step);
+  const directionRef = useRef('forward');
+  if (prevStepRef.current !== step) {
+    directionRef.current = step > prevStepRef.current ? 'forward' : 'back';
+    prevStepRef.current = step;
+  }
+
   // Not an early return: seven hooks follow, and bailing out here changed the
   // hook count between renders. The bail-out now lives below them (see the
   // `sheetActive` guard further down); every open-state hook keys on this flag
@@ -177,6 +193,10 @@ export default function InstantMatchSheet() {
 
   const copy = (showingMatched || showingEnded) ? null : STEP_COPY[step];
 
+  // Panels are destinations too, so they get the same arrival animation as a
+  // step rather than appearing instantly in the middle of an animated resize.
+  const panelKey = showingMatched ? 'matched' : showingEnded ? 'ended' : `step-${step}`;
+
   return createPortal(
     <div
       className="im-scope im-sheet-overlay"
@@ -257,13 +277,27 @@ export default function InstantMatchSheet() {
             {/* The inner wrapper is what gets measured — the outer box is the
                 one whose height animates. */}
             <div className="im-sheet-body-inner" ref={bodyContentRef}>
-              {showingMatched
-                ? <MatchedPanel />
-                : showingEnded
-                  ? <EndedPanel />
-                  : restoring && step !== STEP_SEARCHING
-                    ? <SheetSkeleton />
-                    : renderStep()}
+              {/*
+                * `key` is what makes the transition run: a new key remounts this
+                * wrapper, so its CSS enter animation plays once per step. Only
+                * the arriving step animates — holding the outgoing one on screen
+                * to cross-fade would need both mounted at once, which doubles
+                * the DOM mid-transition and fights the height animation for the
+                * same frames.
+                */}
+              <div
+                key={panelKey}
+                className="im-step-swap"
+                data-dir={directionRef.current}
+              >
+                {showingMatched
+                  ? <MatchedPanel />
+                  : showingEnded
+                    ? <EndedPanel />
+                    : restoring && step !== STEP_SEARCHING
+                      ? <SheetSkeleton />
+                      : renderStep()}
+              </div>
             </div>
           </div>
 

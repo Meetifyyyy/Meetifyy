@@ -176,12 +176,41 @@
   opacity: 0.13;
 }
 
+/*
+ * The arc depletes on its own clock.
+ *
+ * `stroke-dashoffset` used to be written from React on every timer tick, with a
+ * transition smoothing the gaps — which is why the timer had to tick four times
+ * a second. The browser now interpolates the whole window in one animation, at
+ * display rate, and React is left to update only the digit in the middle.
+ *
+ * `forwards` matters: the arc must stay empty once the window closes rather
+ * than snapping back to full for the moment before the popup goes away.
+ * Duration and delay come from the component — see CountdownRing.
+ */
 .im-ring-progress {
   fill: none;
   stroke: var(--im-accent);
   stroke-width: 4;
   stroke-linecap: round;
-  transition: stroke-dashoffset 0.25s linear, stroke 0.3s linear;
+  stroke-dashoffset: 0;
+  animation-name: im-ring-deplete;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+  transition: stroke 0.3s linear;
+}
+
+@keyframes im-ring-deplete {
+  from { stroke-dashoffset: 0; }
+  to   { stroke-dashoffset: 163.363px; } /* 2 x pi x r, r = 26 */
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* The countdown is information, not decoration, so it still runs — the ring
+     is the only readout a glance takes in. It is one smooth interpolation of a
+     single stroke, which is not the kind of motion the setting is guarding
+     against. */
+  .im-ring.is-urgent { animation: none; }
 }
 
 .im-ring-value {

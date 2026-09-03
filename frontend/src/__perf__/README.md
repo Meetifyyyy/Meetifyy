@@ -26,7 +26,19 @@ sits **inside** the memo boundary and renders exactly once per real render:
 `CommentTreeRoot` and `CommentNode` live in one module, so mocking that module
 cannot intercept the tree's own recursion — hence `RichText`.
 
-## Baseline these replaced (2026-09-03)
+## Instant Match baseline (2026-09-03)
+
+| Scenario | Before | After |
+|---|---|---|
+| radar on screen, 6 s -> SearchingScreen re-renders | 6 (1/sec, unbounded) | 0 |
+| radar on screen, 6 s -> QueueMetrics re-renders | 6 | 0 |
+| radar on screen, 6 s -> render work | 12.04 ms | 2.0 ms |
+| `queue:stats` push while idle on Home -> FAB commits | 1 | 0 |
+| `queue:stats` push while searching -> render work | 4.16 ms | 0.92 ms |
+| `queue:join` emits per search start | 1 | 1 (no duplicates) |
+| match countdown React ticks | 4 / sec | 1 / sec (ring is CSS) |
+
+## Feed baseline (2026-09-03)
 
 | Scenario | Before | After |
 |---|---|---|

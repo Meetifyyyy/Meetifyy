@@ -164,8 +164,47 @@
   -webkit-overflow-scrolling: touch;
   padding: 2px 2px 4px;
   margin: 0 -2px;
-  transition: height 0.34s var(--im-ease-out);
-  will-change: height;
+  /* 240ms reads as responsive; the old 340ms was long enough that a decisive
+     tap felt like it was waiting for the sheet to catch up. */
+  transition: height 0.24s var(--im-ease-out);
+}
+
+/*
+ * ── Step transitions ─────────────────────────────────────────────────────
+ *
+ * The arriving step slides a short distance and fades in, in the direction the
+ * flow is travelling: forward from the right, Back from the left. Transform and
+ * opacity only, so this composites and does not fight the height transition
+ * running on the parent at the same time.
+ *
+ * 12px, not 40 — at this distance the movement reads as the content arriving
+ * rather than as a screen being pushed across, which is what keeps a four-step
+ * form feeling quick rather than theatrical.
+ */
+.im-step-swap {
+  animation: im-step-in-fwd 0.26s var(--im-ease-out) both;
+}
+
+.im-step-swap[data-dir='back'] {
+  animation-name: im-step-in-back;
+}
+
+@keyframes im-step-in-fwd {
+  from { opacity: 0; transform: translate3d(12px, 0, 0); }
+  to   { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+
+@keyframes im-step-in-back {
+  from { opacity: 0; transform: translate3d(-12px, 0, 0); }
+  to   { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* No travel, but keep a short fade: an instant swap between two full-height
+     screens is disorienting in its own way, and a cross-fade is not motion in
+     the sense the setting is asking us to avoid. */
+  .im-step-swap { animation: im-step-fade 0.14s linear both; }
+  @keyframes im-step-fade { from { opacity: 0; } to { opacity: 1; } }
 }
 
 /* The location step opens a dropdown upward, which must escape the box. */
