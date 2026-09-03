@@ -227,22 +227,36 @@ export default function ResetPasswordPage() {
     // (e.g. if React has not yet propagated the `updating` state to the button).
     if (isSubmittingRef.current || uiState !== 'valid') return;
 
-    const trimmedPassword = password.trim();
-    const trimmedConfirm = confirmPassword.trim();
-
-    if (!trimmedPassword) {
+    /*
+     * The password is used exactly as entered. It is NOT trimmed.
+     *
+     * This used to store `password.trim()` while the login form sends what the
+     * user typed untouched, so the two disagreed the moment a password had
+     * leading or trailing whitespace — which a password manager, a paste, or a
+     * mobile keyboard that appends a space after autocorrect will all produce.
+     * The reset reported success and the new password then failed at login,
+     * which is the worst possible failure for this screen: the account is
+     * locked with a password the user just watched being accepted.
+     *
+     * Trimming also made the confirmation field lie. "secret " and "secret"
+     * compared equal, so the user confirmed a password they had not typed.
+     *
+     * Whitespace is a legitimate password character. The only correct move is
+     * to leave it alone at every point in the round trip.
+     */
+    if (!password) {
       showToast('Enter a new password');
       return;
     }
-    if (trimmedPassword.length < 8) {
+    if (password.length < 8) {
       showToast('Password too short (min 8)');
       return;
     }
-    if (trimmedPassword.length > MAX_PASSWORD_LENGTH) {
+    if (password.length > MAX_PASSWORD_LENGTH) {
       showToast(`Password too long (max ${MAX_PASSWORD_LENGTH})`);
       return;
     }
-    if (trimmedPassword !== trimmedConfirm) {
+    if (password !== confirmPassword) {
       showToast("Passwords don't match");
       return;
     }
@@ -252,7 +266,7 @@ export default function ResetPasswordPage() {
 
     try {
       const { data: updateData, error } = await supabase.auth.updateUser({
-        password: trimmedPassword,
+        password,
       });
 
       if (error) throw error;

@@ -892,6 +892,37 @@ export class AuthService {
     }
   }
 
+  /**
+   * Whether an account exists for this address, as a plain boolean.
+   *
+   * Deliberately narrower than `findUserByEmail` below: the forgot-password
+   * screen only needs to know whether to say "No account found", and returning
+   * the row would hand an unauthenticated caller a display name and username
+   * for any address they guessed.
+   *
+   * This does make account existence observable, which is a change from the
+   * previous always-say-"check your email" behaviour. That was a deliberate
+   * anti-enumeration measure and giving it up is a product decision, not an
+   * oversight — the rate-limit guard on the route is what keeps it from being
+   * a usable bulk oracle.
+   */
+  async accountExistsForEmail(email: string): Promise<{ exists: boolean }> {
+    const trimmed = (email || '').trim().toLowerCase();
+    if (!trimmed) return { exists: false };
+
+    const user = await this.prisma.user.findFirst({
+      where: {
+        OR: [
+          { email: { equals: trimmed, mode: 'insensitive' } },
+          { collegeEmail: { equals: trimmed, mode: 'insensitive' } },
+        ],
+      },
+      select: { id: true },
+    });
+
+    return { exists: Boolean(user) };
+  }
+
   /** Returns user if account exists, or throws NotFoundException if account does not exist. */
   async findUserByEmail(email: string) {
     const trimmed = (email || '').trim().toLowerCase();

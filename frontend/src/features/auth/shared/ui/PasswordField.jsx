@@ -1,5 +1,7 @@
 import { forwardRef, useCallback } from 'react';
 import PasswordToggle, { usePasswordVisibility } from '@shared/components/forms/PasswordToggle';
+import { useAutofilledValue } from '@shared/components/forms/useAutofilledValue';
+import '@shared/components/forms/autofill.css';
 import AuthField from './AuthField';
 
 /**
@@ -11,6 +13,15 @@ import AuthField from './AuthField';
  */
 const PasswordField = forwardRef(function PasswordField({ id, label = 'Password', ...props }, ref) {
   const { inputType, inputRef, toggleProps } = usePasswordVisibility();
+
+  /**
+   * A password the browser or a password manager filled in reaches React state
+   * too. Without this the field shows a password while `value` is still '',
+   * so validation reports "Password is required" under a filled box and the
+   * confirmation compares against nothing — the flow is broken for exactly the
+   * people using a password manager as intended.
+   */
+  useAutofilledValue(inputRef, props.value, props.onChange);
 
   /**
    * Both refs, not either/or.

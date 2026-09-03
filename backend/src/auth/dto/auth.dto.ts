@@ -22,6 +22,16 @@ export class CheckEmailDto {
   collegeId?: string;
 }
 
+/**
+ * "Is there an account for this email?", asked by the forgot-password screen so
+ * it can say "No account found" instead of claiming an email was sent.
+ */
+export class AccountExistsDto {
+  @IsEmail({}, { message: 'Please provide a valid email address' })
+  @IsNotEmpty({ message: 'Email address is required' })
+  email: string;
+}
+
 export class LoginDto {
   // Username or email — resolved to an email server-side, never echoed back.
   @IsString()

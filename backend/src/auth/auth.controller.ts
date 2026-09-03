@@ -20,6 +20,7 @@ import type { AuthenticatedUser } from '../common/types/authenticated-request';
 import {
   CheckUsernameDto,
   CheckEmailDto,
+  AccountExistsDto,
   LoginDto,
   TriggerWelcomeEmailDto,
   TriggerLoginEmailDto,
@@ -150,6 +151,24 @@ export class AuthController {
   @UseGuards(AuthRateLimitGuard)
   async checkEmail(@Body() body: CheckEmailDto) {
     return this.authService.checkEmailAvailability(body.email, body.collegeId);
+  }
+
+  /**
+   * Backs the forgot-password screen's "No account found" message.
+   *
+   * Separate from `check-email`, which answers the signup question ("may I
+   * register this?") and folds college-domain gating into its reply. A password
+   * reset does not care which college an address belongs to, only whether there
+   * is an account behind it, and conflating the two would have the reset screen
+   * telling people to use their official college email.
+   *
+   * Rate-limited like the other unauthenticated lookups, which is what stops it
+   * being usable to enumerate addresses in bulk.
+   */
+  @Post('account-exists')
+  @UseGuards(AuthRateLimitGuard)
+  async accountExists(@Body() body: AccountExistsDto) {
+    return this.authService.accountExistsForEmail(body.email);
   }
 
   @Post('events/welcome')

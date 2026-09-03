@@ -366,6 +366,9 @@ const PUBLIC_PATHS = [
   // These are called during signup before the user has a session
   '/api/auth/check-username',
   '/api/auth/check-email',
+  // Forgot password asks this before sending a reset link, and the person
+  // asking is by definition signed out.
+  '/api/auth/account-exists',
   // The help centre and the support-request form. These have to work for a
   // signed-out visitor — someone locked out of their account is exactly the
   // person who needs them — so without this entry `request` rejects every call

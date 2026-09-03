@@ -1,0 +1,16 @@
+/*
+ * The hook that makes browser autofill visible to React.
+ *
+ * `:-webkit-autofill` is a real pseudo-class in Chrome and Safari, applied at
+ * the moment the browser fills a field. Attaching an animation to it is the
+ * standard way to get an event out of that moment: the browser fires
+ * `animationstart`, which useAutofilledValue listens for.
+ *
+ * The keyframes are deliberately empty. Nothing should move; the animation
+ * exists only so that starting it is observable.
+ */
+@keyframes onAutoFillStart { from { /* noop */ } to { /* noop */ } }
+@keyframes onAutoFillCancel { from { /* noop */ } to { /* noop */ } }
+
+input:-webkit-autofill { animation-name: onAutoFillStart; animation-duration: 1ms; }
+input:not(:-webkit-autofill) { animation-name: onAutoFillCancel; animation-duration: 1ms; }
