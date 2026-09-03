@@ -30,6 +30,7 @@ export default function PostDetailRoute() {
   // and simply falls through to the normal loading path, handled inside
   // PostView (structural shell first, skeleton for the dynamic content).
   const routePost = location.state?.post;
+  const focusComment = location.state?.focusComment;
   const hasSeed = !!(routePost && routePost.author);
 
   /**
@@ -90,7 +91,7 @@ export default function PostDetailRoute() {
   return (
     <>
       <main className="centre centre--post centre--sheet">
-        <PostView post={displayPost} onBack={handleBack} />
+        <PostView post={displayPost} onBack={handleBack} autoFocusComment={focusComment} />
       </main>
       <RightPanel>
         {hasFullData ? (

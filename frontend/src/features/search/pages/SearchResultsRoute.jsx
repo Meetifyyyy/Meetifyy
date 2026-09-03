@@ -409,9 +409,17 @@ export default function SearchResultsRoute() {
     }
   }, [addRecentSearch, navigate]);
 
-  const handlePostClick = useCallback((data) => {
-    openEntity('post', data);
-  }, [openEntity]);
+  const handlePostClick = useCallback((data, options) => {
+    if (options?.focusComment) {
+      navigate(`/post/${data.id}`, { state: { post: data, focusComment: true, from: location.pathname } });
+    } else {
+      openEntity('post', data);
+    }
+  }, [openEntity, navigate, location.pathname]);
+
+  const handleCommentClick = useCallback((data) => {
+    handlePostClick(data, { focusComment: true });
+  }, [handlePostClick]);
 
   // Interleave search & discovery feed evenly across entity categories
   const activeFeed = useMemo(() => {
@@ -608,7 +616,7 @@ export default function SearchResultsRoute() {
                 if (kind === 'post') {
                   return (
                     <div key={id} style={{ marginBottom: '8px' }}>
-                      <Post postData={data} onClick={handlePostClick} />
+                      <Post postData={data} onClick={handlePostClick} onCommentClick={handleCommentClick} />
                     </div>
                   );
                 }

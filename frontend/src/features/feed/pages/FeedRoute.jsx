@@ -7,17 +7,29 @@ export default function FeedRoute() {
   const navigate = useNavigate();
   const scrollContainerRef = useRef(null);
 
-  const handlePostClick = useCallback((post, sourceContext, communityId) => {
+  const handlePostClick = useCallback((post, sourceContext, communityId, options) => {
     const postId = post?.id;
     if (postId) {
-      navigate(`/post/${postId}`, { state: { post, sourceContext, communityId, from: '/home' } });
+      navigate(`/post/${postId}`, {
+        state: {
+          post,
+          sourceContext,
+          communityId,
+          from: '/home',
+          focusComment: options?.focusComment || false,
+        }
+      });
     }
   }, [navigate]);
+
+  const handleCommentClick = useCallback((post, sourceContext, communityId) => {
+    handlePostClick(post, sourceContext, communityId, { focusComment: true });
+  }, [handlePostClick]);
 
   return (
     <>
       <main ref={scrollContainerRef} className="centre animate-in">
-        <Feed onPostClick={handlePostClick} />
+        <Feed onPostClick={handlePostClick} onCommentClick={handleCommentClick} />
       </main>
       <RightPanel className="animate-in">
         <OnlineFriends />

@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { useLocation } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { postsApi } from '@shared/api/apiClient';
 import { showToast } from '@shared/utils/toast';
@@ -133,7 +134,16 @@ function CommentsSkeleton() {
   );
 }
 
-export default function PostView({ post, onBack }) {
+export default function PostView({ post, onBack, autoFocusComment = false }) {
+  const location = useLocation();
+  const shouldFocusComment = Boolean(
+    autoFocusComment ||
+    location?.state?.focusComment ||
+    location?.hash === '#reply' ||
+    location?.hash === '#comments' ||
+    location?.hash === '#comment'
+  );
+
   const [replyContent, setReplyContent] = useState({ text: '', mentions: [] });
   const [isPostingComment, setIsPostingComment] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -143,6 +153,14 @@ export default function PostView({ post, onBack }) {
   const queryClient = useQueryClient();
   const loadMoreRef = useRef(null);
   const composerRef = useRef(null);
+  const hasAutoFocusedRef = useRef(false);
+
+  const focusComposer = useCallback(() => {
+    if (composerRef.current) {
+      composerRef.current.focus();
+      composerRef.current.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' });
+    }
+  }, []);
 
   // Seed data from a feed-card click (passed via router state, so it already
   // has author/text/media/poll) lets the query start in a "success" state
@@ -215,12 +233,16 @@ export default function PostView({ post, onBack }) {
     return () => observer.disconnect();
   }, [commentsNextCursor, loadingMore, loadMoreComments]);
 
-  // There used to be an effect here that focused `#reply-composer` on open. No
-  // element has ever carried that id — MentionInput renders a plain
-  // contenteditable — so it had always been a no-op. Restoring it via the ref
-  // would mean popping the mobile keyboard every time a post is opened, which
-  // is not what anyone wants; the composer is one tap away. The tap-the-post
-  // shortcut below does use the ref, and now actually works.
+  // Focus comment composer if opened with comment intent
+  useEffect(() => {
+    if (shouldFocusComment && hasContent && !hasAutoFocusedRef.current) {
+      hasAutoFocusedRef.current = true;
+      const timer = setTimeout(() => {
+        focusComposer();
+      }, 60);
+      return () => clearTimeout(timer);
+    }
+  }, [shouldFocusComment, hasContent, focusComposer]);
 
   // Carries the previous rebuild's nodes so unchanged subtrees keep their
   // object identity across rebuilds — see buildCommentTree.
@@ -297,7 +319,8 @@ export default function PostView({ post, onBack }) {
           <Post
             postData={livePost}
             isDetailed={true}
-            onClick={() => composerRef.current?.focus()}
+            onClick={focusComposer}
+            onCommentClick={focusComposer}
             onDeleted={onBack}
           />
         ) : (
@@ -313,6 +336,7 @@ export default function PostView({ post, onBack }) {
             <div style={{ flex: 1, minWidth: 0 }}>
               <MentionInput
                 inputRef={composerRef}
+                autoFocus={shouldFocusComment}
                 placeholder="Post your reply..."
                 value={replyContent}
                 onChange={setReplyContent}

@@ -2,7 +2,7 @@ import { memo, useCallback } from 'react';
 import { useWindowVirtualizer } from '@tanstack/react-virtual';
 import Post from './post/Post';
 
-function VirtualFeedList({ posts, onPostClick }) {
+function VirtualFeedList({ posts, onPostClick, onCommentClick }) {
   // Stable across re-renders (as long as `onPostClick` itself is stable) so
   // <Post> — wrapped in React.memo — can actually bail out on unrelated
   // re-renders instead of every visible row re-rendering because it received
@@ -11,6 +11,14 @@ function VirtualFeedList({ posts, onPostClick }) {
   const handlePostClick = useCallback((post) => {
     if (onPostClick) onPostClick(post, 'feed');
   }, [onPostClick]);
+
+  const handleCommentClick = useCallback((post) => {
+    if (onCommentClick) {
+      onCommentClick(post, 'feed');
+    } else if (onPostClick) {
+      onPostClick(post, 'feed', null, { focusComment: true });
+    }
+  }, [onCommentClick, onPostClick]);
 
   const getItemKey = useCallback((index) => {
     return posts[index]?.id ?? index;
@@ -68,7 +76,7 @@ function VirtualFeedList({ posts, onPostClick }) {
               paddingBottom: '4px',
             }}
           >
-            <Post postData={p} onClick={handlePostClick} />
+            <Post postData={p} onClick={handlePostClick} onCommentClick={handleCommentClick} />
           </div>
         );
       })}

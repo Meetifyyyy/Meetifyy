@@ -311,8 +311,19 @@ export default function ProfilePage() {
     openDirectMessage(profileUser);
   };
 
-  const handlePostClick = (post) => {
-    navigate(`/post/${post.id}`, { state: { post, sourceContext: 'profile', from: location.pathname } });
+  const handlePostClick = (post, options) => {
+    navigate(`/post/${post.id}`, {
+      state: {
+        post,
+        sourceContext: 'profile',
+        from: location.pathname,
+        focusComment: options?.focusComment || false,
+      }
+    });
+  };
+
+  const handleCommentClick = (post) => {
+    handlePostClick(post, { focusComment: true });
   };
 
   return (
@@ -515,7 +526,7 @@ export default function ProfilePage() {
               </div>
             ) : (
               posts.map((p) => (
-                <Post key={p.id} postData={p} onClick={handlePostClick} />
+                <Post key={p.id} postData={p} onClick={handlePostClick} onCommentClick={handleCommentClick} />
               ))
             )}
           </div>

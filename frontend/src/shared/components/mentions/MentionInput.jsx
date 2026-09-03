@@ -329,10 +329,31 @@ export default function MentionInput({
     handleInput();
   }, [handleInput]);
 
-  // Connect external inputRef if provided and attach insertTextAtCursor
+  // Focus helper: focuses editor and moves caret to end with selection range
+  const focusEditor = useCallback((options) => {
+    const el = editorRef.current;
+    if (!el) return;
+    HTMLElement.prototype.focus.call(el, options);
+    try {
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      range.collapse(false);
+      const sel = window.getSelection();
+      if (sel) {
+        sel.removeAllRanges();
+        sel.addRange(range);
+      }
+      savedRangeRef.current = range.cloneRange();
+    } catch (_) {
+      // safe fallback if selection range fails
+    }
+  }, []);
+
+  // Connect external inputRef if provided and attach insertTextAtCursor and focus
   useEffect(() => {
     if (editorRef.current) {
       editorRef.current.insertTextAtCursor = insertTextAtCursor;
+      editorRef.current.focus = focusEditor;
     }
     if (inputRef) {
       if (typeof inputRef === 'function') {
@@ -341,7 +362,7 @@ export default function MentionInput({
         inputRef.current = editorRef.current;
       }
     }
-  }, [inputRef, insertTextAtCursor]);
+  }, [inputRef, insertTextAtCursor, focusEditor]);
 
   /**
    * Mirrors an externally-supplied value into the DOM — form resets, initial

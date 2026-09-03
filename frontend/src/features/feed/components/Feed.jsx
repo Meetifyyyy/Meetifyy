@@ -12,7 +12,7 @@ import { useAuth } from '@shared/context/AuthContext';
 import { addCreatedPostToCaches } from '../utils/postCache';
 import VerificationGate from '@shared/components/VerificationGate/VerificationGate';
 
-function Feed({ onPostClick }) {
+function Feed({ onPostClick, onCommentClick }) {
   const { currentUser } = useAuth();
   const searchQuery = useUIStore(state => state.searchQuery);
   const queryClient = useQueryClient();
@@ -150,7 +150,7 @@ function Feed({ onPostClick }) {
         )}
 
         {!isLoading && !isError && allPosts.length > 0 && (
-          <VirtualFeedList posts={allPosts} onPostClick={onPostClick} />
+          <VirtualFeedList posts={allPosts} onPostClick={onPostClick} onCommentClick={onCommentClick} />
         )}
 
         {!isLoading && !isError && hasNextPage && (

@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, memo } from 'react';
+import { useState, useRef, useEffect, memo, forwardRef, useImperativeHandle } from 'react';
 import LazyEmojiPicker from '@shared/components/ui/LazyEmojiPicker';
 import { useAuth } from '@shared/context/AuthContext';
 import Avatar from '@shared/components/avatar/Avatar';
@@ -24,7 +24,7 @@ const overlayStyle = {
   zIndex: 15,
 };
 
-function PostComposer({ onSubmit }) {
+const PostComposer = forwardRef(function PostComposer({ onSubmit }, ref) {
   const { loading, currentUser } = useAuth();
   const [value, setValue] = useState({ text: '', mentions: [] });
   const [media, setMedia] = useState([]);
@@ -42,6 +42,16 @@ function PostComposer({ onSubmit }) {
   const emojiPanelRef = useRef(null);
   const emojiBtnRef = useRef(null);
   const pollBtnRef = useRef(null);
+
+  useImperativeHandle(ref, () => ({
+    focus: () => {
+      setIsExpanded(true);
+      if (inputRef.current) {
+        inputRef.current.focus();
+        composerRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
+      }
+    }
+  }), []);
 
   // Maps of previewUrl -> AbortController/Promise
   const uploadAbortRefs = useRef(new Map());
@@ -328,7 +338,10 @@ function PostComposer({ onSubmit }) {
 
       <div
         className={`${styles.postComposer}${showPoll ? ` ${styles.hasPoll}` : ''}${expandedState ? ` ${styles.expanded}` : ''}`}
-        onClick={() => { if (!expandedState) setIsExpanded(true); }}
+        onClick={() => {
+          if (!expandedState) setIsExpanded(true);
+          inputRef.current?.focus();
+        }}
       >
         <div className={styles.composerTopRow}>
           <Avatar src={currentUser?.avatar} name={currentUser?.displayName} size="40px" disableHover isLoading={loading} />
@@ -538,7 +551,7 @@ function PostComposer({ onSubmit }) {
     </div>
   </div>
   );
-}
+});
 
 export default memo(PostComposer);
 
