@@ -232,7 +232,7 @@ export default function InstantMatchSheet() {
               type="button"
               className="im-sheet-close"
               onClick={closeSheet}
-              aria-label={searching ? 'Minimise — keep searching' : 'Close Instant Match'}
+              aria-label={searching ? 'Minimise and keep searching' : 'Close Instant Match'}
             >
               {searching ? (
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -268,10 +268,7 @@ export default function InstantMatchSheet() {
           {showingEnded && <h2 id={titleId} className="im-sr-only">Your Instant Match has ended</h2>}
 
           <div
-            className={
-              `im-sheet-body ${step === STEP_LOCATION ? 'im-sheet-body-open' : ''} `
-              + `${showingMatched || showingEnded ? 'im-sheet-body-panel' : ''}`
-            }
+            className="im-sheet-body"
             ref={bodyRef}
           >
             {/* The inner wrapper is what gets measured — the outer box is the

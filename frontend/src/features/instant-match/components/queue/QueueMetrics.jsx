@@ -49,9 +49,9 @@ export default function QueueMetrics({ children }) {
 
       <p className="im-metrics-note">
         {others === 0
-          ? "You're at the front — we'll pair you the second someone joins."
+          ? "We'll pair you the moment someone joins."
           : othersHere === 0
-            ? `Nobody else is up for ${activityLabel} yet — you're first for it.`
+            ? `You're first for ${activityLabel}.`
             : othersHere === 1
               ? `1 of them is up for ${activityLabel}.`
               : `${othersHere} of them are up for ${activityLabel}.`}

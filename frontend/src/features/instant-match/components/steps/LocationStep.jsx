@@ -229,7 +229,7 @@ export default function LocationStep({
         <p className="im-gps-note">
           {isOutdoor
             ? `Precise location makes ${activity?.label.toLowerCase() ?? 'outdoor'} matches much sharper, and is only used to rank who's nearby.`
-            : 'Optional. Your exact coordinates are never shown to anyone, and only help us rank who is closest.'}
+            : 'Optional. Your exact spot is never shown to anyone. It only helps us rank who is closest.'}
         </p>
 
         {error && (

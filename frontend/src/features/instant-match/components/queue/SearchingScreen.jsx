@@ -70,7 +70,7 @@ const StatusLine = memo(function StatusLine({ connected }) {
     <p className="im-lede" role="status" aria-live="polite">
       {connected
         ? STATUS_LINES[line]
-        : 'Reconnecting — your place in the queue is held.'}
+        : 'Reconnecting. Your place is held.'}
     </p>
   );
 });
@@ -91,8 +91,8 @@ const LongWaitNotice = memo(function LongWaitNotice() {
 
   return (
     <p className="im-searching-patience" role="status">
-      Quiet right now. We&apos;ll keep looking — you can close this and we&apos;ll
-      buzz you the moment someone turns up.
+      Quiet right now. Close this and we&apos;ll buzz you the moment
+      someone turns up.
     </p>
   );
 });

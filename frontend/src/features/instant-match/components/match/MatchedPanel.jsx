@@ -121,8 +121,8 @@ export default function MatchedPanel() {
         {!chatReady && !busy && (
           <p className="im-matched-gone">
             {chat && !chat.isActive
-              ? 'This chat has ended — open it to see what happened.'
-              : 'Getting your chat ready — tap above if it does not open.'}
+              ? 'This chat has ended. Open it to see what happened.'
+              : 'Getting your chat ready. Tap above if it does not open.'}
           </p>
         )}
       </div>

@@ -340,7 +340,7 @@ export function InstantMatchProvider({ children }) {
         // the whole feature depends on.
         refreshChat().then((fresh) => {
           if (fresh) setChatOverlayOpen(true);
-          else showToast("You're matched — open the chat from Instant Match", 'success');
+          else showToast("You're matched. Open the chat from Instant Match.", 'success');
         });
       }, 1600);
     });
@@ -722,7 +722,7 @@ export function InstantMatchProvider({ children }) {
       } else {
         setStatus('idle');
         setRecentMatch(null);
-        showToast('That chat has closed — start a new search', 'error');
+        showToast('That chat has closed. Start a new search.', 'error');
       }
     } finally {
       openingChatRef.current = false;

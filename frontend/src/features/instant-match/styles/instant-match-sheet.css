@@ -25,7 +25,15 @@
   position: relative;
   width: 100%;
   max-width: 560px;
+  /*
+   * `dvh`, not `vh`. On mobile `vh` is the LARGE viewport — it ignores the
+   * browser's own toolbars — so `88vh` could resolve taller than the space
+   * actually on screen and push the sheet's actions below the fold. `dvh`
+   * tracks the visible area as the toolbars come and go. The `vh` line stays
+   * first as the fallback for browsers without `dvh`.
+   */
   max-height: min(88vh, 780px);
+  max-height: min(88dvh, 780px);
   display: flex;
   flex-direction: column;
   background: var(--im-paper);
@@ -151,15 +159,30 @@
 /* ── Body ────────────────────────────────────────────────────────────────── */
 
 /**
- * Height is set inline by useAnimatedHeight and transitions between steps.
- * `max-height` still caps it, so a step taller than the sheet scrolls rather
- * than pushing the footer off-screen.
+ * The one scrolling region in the sheet.
+ *
+ * Height is set inline by useAnimatedHeight and transitions between steps, so
+ * the sheet grows and shrinks with its content on a screen that has room.
+ *
+ * `flex-shrink: 1` is what makes it safe when there is not. This used to be
+ * `flex: 0 0 auto` with a `max-height: min(54vh, 430px)` cap, and the header,
+ * title, error and footer all sat outside it. On a short screen their combined
+ * height exceeded the sheet's own cap, and since `.im-sheet` is
+ * `overflow: hidden`, the surplus was CLIPPED rather than scrolled — the
+ * primary action at the bottom simply could not be reached. Letting this box
+ * shrink means the fixed rows are always laid out first and this one takes
+ * whatever is left, scrolling inside itself.
+ *
+ * `min-height: 0` is required for that: without it a flex item refuses to
+ * shrink below its content and the clipping comes straight back.
  */
 .im-sheet-body {
-  flex: 0 0 auto;
+  flex: 0 1 auto;
   min-height: 0;
-  max-height: min(54vh, 430px);
   overflow-y: auto;
+  /* Nothing in the flow is meant to scroll sideways; a long unbroken string in
+     a detail field should wrap, not widen the sheet. */
+  overflow-x: hidden;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
   padding: 2px 2px 4px;
@@ -207,34 +230,65 @@
   @keyframes im-step-fade { from { opacity: 0; } to { opacity: 1; } }
 }
 
-/* The location step opens a dropdown upward, which must escape the box. */
-.im-sheet-body-open { overflow: visible; }
+/*
+ * The location step's dropdown used to need `overflow: visible` to escape this
+ * box. It no longer gets it: an escaping child could only reach the edge of
+ * `.im-sheet`, which clips, so on a short screen the options fell outside the
+ * sheet with no way to scroll to them. The list is its own scroller (210px cap)
+ * and now sits inside the one region that scrolls, which is reachable at every
+ * height.
+ */
 
 /* Measured wrapper — never given a height of its own. */
 .im-sheet-body-inner { display: flow-root; }
 
-/* Searching takes the space it needs; no cap, no scroll. */
-/**
- * The matched and ended panels are self-contained: a fixed amount of content
- * that is meant to be read in one go, not a scrollable list.
+/*
+ * The searching, matched and ended panels are read in one go rather than
+ * scrolled through, so on a screen with room they take their natural height and
+ * no scrollbar appears — the shared `flex: 0 1 auto` above already gives them
+ * that, because the inline height matches their content.
  *
- * The body's height cap exists for the step grids, where twelve activity
- * tiles genuinely do need to scroll. Applying it to these panels made the
- * matched screen scroll inside its own box — the "Find someone new" button
- * sat below the fold on a 900px-tall display and had to be scrolled to. The
- * sheet's own max-height still bounds the whole thing, so removing the inner
- * cap cannot make the panel overflow the viewport.
+ * They used to opt out with `overflow: visible`, on the reasoning that the
+ * sheet's own max-height bounded them anyway. It bounds them by CLIPPING: these
+ * are the tallest screens in the flow, and on a short phone the searching
+ * screen's Cancel button and the matched panel's "Find someone new" were cut
+ * off with no way to scroll to either. They now shrink and scroll like every
+ * other step when, and only when, the screen is too short for them.
  */
-.im-sheet-body-panel {
-  max-height: none;
-  overflow: visible;
-}
-
-.im-sheet-searching .im-sheet-body {
-  max-height: none;
-  overflow: visible;
-}
 .im-sheet-searching .im-sheet-body-inner { display: flex; }
+
+/*
+ * ── Panel actions stay on screen ─────────────────────────────────────────
+ *
+ * The stepped form keeps its actions in `.im-sheet-foot`, outside the scrolling
+ * body, so Next and Find my match are always visible. The searching, matched
+ * and ended panels have no footer: they carry their own buttons inside the
+ * body, which scrolls.
+ *
+ * On a tall screen that is fine and these rules do nothing. On a short one
+ * (measured: 141px of overflow on a 360x568 phone) Cancel search and Find
+ * someone new sat below the fold and had to be found by scrolling. Sticking
+ * them to the bottom of the scroller keeps them where the footer would be,
+ * without a second scroll container and without moving them in the markup.
+ *
+ * The fade above the bar is what stops content appearing to end abruptly
+ * underneath it; the bar itself is the sheet's own paper, so it reads as part
+ * of the sheet rather than as a floating toolbar.
+ */
+.im-searching-actions,
+.im-matched-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  padding-top: 10px;
+  padding-bottom: 2px;
+  background: linear-gradient(
+    to bottom,
+    transparent 0,
+    var(--im-paper) 12px,
+    var(--im-paper) 100%
+  );
+}
 
 /* ── Error ───────────────────────────────────────────────────────────────── */
 
@@ -360,14 +414,13 @@
        than the space it sits in — the previous 86vh plus 24px of padding
        overflowed a short laptop window and pushed the actions off-screen. */
     max-height: min(800px, calc(100vh - 48px));
+    max-height: min(800px, calc(100dvh - 48px));
   }
   .im-sheet-content { padding: 24px 28px; gap: 16px; }
-  /* The body keeps its own scroll and its animated height (useAnimatedHeight
-     sets that inline, so it must not be handed to flex-grow here). Capping it
-     against the viewport rather than a fixed 430px is what keeps the header
-     and the footer actions on screen together on a short laptop window. */
-  .im-sheet-body { max-height: min(52vh, 460px); }
-  .im-sheet-body-panel { max-height: none; }
+  /* No viewport cap on the body here either: the flex model above keeps the
+     header and the footer actions on screen together at any window height,
+     including a short laptop one, without a second set of numbers to keep in
+     step with the sheet's own. */
 }
 
 @media (min-width: 1200px) {

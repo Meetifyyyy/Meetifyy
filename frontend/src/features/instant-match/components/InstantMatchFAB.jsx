@@ -35,27 +35,27 @@ const STATE_CONFIG = {
   },
   searching: {
     tag: 'Searching',
-    label: 'Still searching for a match — open Instant Match',
+    label: 'Open Instant Match, still searching',
     announce: 'Instant Match is searching for a partner.',
   },
   reconnecting: {
     tag: 'Reconnect',
-    label: 'Reconnecting — your search is still running',
+    label: 'Open Instant Match, reconnecting',
     announce: 'Reconnecting. Your Instant Match search is still running.',
   },
   matched: {
     tag: 'Matched',
-    label: 'You have a match — open your chat',
+    label: 'Open your Instant Match chat',
     announce: 'You have a match. Your chat is open for 24 hours.',
   },
   ended: {
     tag: 'Ended',
-    label: 'Your Instant Match has ended — see what happened',
+    label: 'Open your ended Instant Match',
     announce: 'Your Instant Match has ended.',
   },
   error: {
     tag: 'Retry',
-    label: 'Instant Match hit a problem — tap to try again',
+    label: 'Instant Match had a problem. Tap to try again',
     announce: '',
   },
 };
