@@ -413,54 +413,64 @@ function Post({ postData, onClick, onDeleted, isDetailed = false, hideCommunityT
         );
       })()}
 
-      {(() => {
-        // Media stays hidden while the body is clipped, so a collapsed post is
-        // one compact block rather than three lines of text above a full-size
-        // image. Same rule as the text above it, from the same helper.
-        const needsTruncation = Boolean(body?.clip.needsTruncation) && !isDetailed;
-        const showMedia = !needsTruncation || isExpanded;
-        return (
-          <div className={`${styles.collapsibleMedia} ${showMedia ? styles.expanded : ''}`}>
-            {postData.media && (
-              <MediaGrid
-                media={postData.media}
-                onMediaClick={handleMediaClick}
-              />
-            )}
-            {postData.linkPreview && (
-              <a
-                href={sanitizeUrl(postData.linkPreview.url)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={styles.linkPreview}
-                onClick={(e) => e.stopPropagation()}
-              >
-                {postData.linkPreview.image && (
-                  <img
-                    src={getMediaUrl(postData.linkPreview.image)}
-                    alt=""
-                    loading="lazy"
-                    className={styles.linkPreviewImg}
-                    onError={(e) => {
-                      e.currentTarget.style.display = 'none';
-                    }}
-                  />
+      {/*
+        * Attachments render on their own terms, never on the text's.
+        *
+        * This block used to be gated on the same `needsTruncation` flag as the
+        * body copy: a post whose caption ran past the clip limit had its media,
+        * its link preview AND its poll collapsed to `max-height: 0;
+        * visibility: hidden` until the reader pressed "See more". The intent was
+        * a compact card, but the effect was that a photo posted with a long
+        * caption looked like a post with no photo, and a poll looked like it had
+        * no options. "See more" is a control over text; it was silently deciding
+        * whether the actual content of the post appeared at all.
+        *
+        * Nothing here reads the text state now, so there is no path by which a
+        * caption's length can hide an attachment. Expanding or collapsing the
+        * copy above reflows this block downwards, which is ordinary document
+        * flow, and cannot make it disappear or re-mount.
+        */}
+      {(postData.media || postData.linkPreview || poll) && (
+        <div className={styles.postAttachments}>
+          {postData.media && (
+            <MediaGrid
+              media={postData.media}
+              onMediaClick={handleMediaClick}
+            />
+          )}
+          {postData.linkPreview && (
+            <a
+              href={sanitizeUrl(postData.linkPreview.url)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={styles.linkPreview}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {postData.linkPreview.image && (
+                <img
+                  src={getMediaUrl(postData.linkPreview.image)}
+                  alt=""
+                  loading="lazy"
+                  className={styles.linkPreviewImg}
+                  onError={(e) => {
+                    e.currentTarget.style.display = 'none';
+                  }}
+                />
+              )}
+              <div className={styles.linkPreviewBody}>
+                {postData.linkPreview.site && (
+                  <span className={styles.linkPreviewSite}>{postData.linkPreview.site}</span>
                 )}
-                <div className={styles.linkPreviewBody}>
-                  {postData.linkPreview.site && (
-                    <span className={styles.linkPreviewSite}>{postData.linkPreview.site}</span>
-                  )}
-                  <span className={styles.linkPreviewTitle}>{postData.linkPreview.title}</span>
-                  {postData.linkPreview.description && (
-                    <span className={styles.linkPreviewDesc}>{postData.linkPreview.description}</span>
-                  )}
-                </div>
-              </a>
-            )}
-            {poll && <div onClick={(e) => e.stopPropagation()}><PollCard poll={poll} postId={id} /></div>}
-          </div>
-        );
-      })()}
+                <span className={styles.linkPreviewTitle}>{postData.linkPreview.title}</span>
+                {postData.linkPreview.description && (
+                  <span className={styles.linkPreviewDesc}>{postData.linkPreview.description}</span>
+                )}
+              </div>
+            </a>
+          )}
+          {poll && <div onClick={(e) => e.stopPropagation()}><PollCard poll={poll} postId={id} /></div>}
+        </div>
+      )}
 
       {isDetailed && exactTimeStr && (
         <div className={styles.postExactTime}>

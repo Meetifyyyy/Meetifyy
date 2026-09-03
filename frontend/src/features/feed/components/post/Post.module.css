@@ -708,18 +708,22 @@
   text-decoration: underline;
 }
 
-.collapsibleMedia {
-  max-height: 0;
-  opacity: 0;
-  overflow: hidden;
-  visibility: hidden;
-  transition: max-height 0.4s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease, visibility 0.3s ease, margin-top 0.4s ease;
-  margin-top: 0;
-}
-
-.collapsibleMedia.expanded {
-  max-height: 2000px;
-  opacity: 1;
-  visibility: visible;
+/*
+ * Everything attached to a post: media, link preview, poll.
+ *
+ * This replaces `.collapsibleMedia`, which animated between
+ * `max-height: 0; opacity: 0; visibility: hidden` and a visible state driven by
+ * whether the post's TEXT was truncated. Three things were wrong with that
+ * beyond the obvious: `visibility: hidden` also stopped lazily-loaded images
+ * ever being fetched, so the media had not even started downloading by the time
+ * someone pressed "See more"; the `max-height: 2000px` ceiling clipped a tall
+ * media grid outright; and the same rule hid polls, which are not media at all.
+ *
+ * There is no hidden state to animate out of any more, so there is no
+ * transition here and nothing for a rapid expand/collapse to flicker between.
+ * The margin matches what the old expanded state used, so spacing below the
+ * body copy is unchanged.
+ */
+.postAttachments {
   margin-top: 0.75rem;
 }
