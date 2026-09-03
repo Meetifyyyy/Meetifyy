@@ -92,17 +92,15 @@ export default function CampusCommunitiesPage() {
 
         <div className={styles.campusBody} style={{ flex: 1, display: 'flex', flexDirection: 'column', width: '100%', boxSizing: 'border-box' }}>
           {collegeCommunities.length > 0 ? (
-            <div style={{ padding: '0 1rem' }}>
-              <CommunityGrid>
-                {collegeCommunities.map(community => (
-                  <CommunityCard
-                    key={community.id}
-                    comm={community}
-                    onClick={() => navigate(`/communities/${community.id}`, { state: { from: location.pathname } })}
-                  />
-                ))}
-              </CommunityGrid>
-            </div>
+            <CommunityGrid>
+              {collegeCommunities.map(community => (
+                <CommunityCard
+                  key={community.id}
+                  comm={community}
+                  onClick={() => navigate(`/communities/${community.id}`, { state: { from: location.pathname } })}
+                />
+              ))}
+            </CommunityGrid>
           ) : (
             <div style={{
               display: 'flex',

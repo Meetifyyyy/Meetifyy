@@ -21,6 +21,43 @@ import CrewCard from '@features/crew/components/cards/CrewCard';
 import CrewCardSkeleton from '@features/crew/components/cards/CrewCardSkeleton';
 import { mapActivity } from '@shared/utils/mapActivity';
 import VerificationGate from '@shared/components/VerificationGate/VerificationGate';
+import { resolveCommunityAvatar } from '@shared/utils/avatar';
+
+function CampusCommunityItem({ comm, onClick }) {
+  const [imgError, setImgError] = useState(false);
+  const avatarUrl = resolveCommunityAvatar(comm);
+  const initial = comm?.name ? comm.name.charAt(0).toUpperCase() : '';
+  const count = comm?.memberCount ?? comm?.membersCount ?? (Array.isArray(comm?.members) ? comm.members.length : (typeof comm?.members === 'number' ? comm.members : 1));
+
+  return (
+    <div className={styles.communityCardItem} onClick={onClick}>
+      <div
+        className={styles.communityAvatarWrapper}
+        style={{ background: (!avatarUrl || imgError) ? (comm.color || 'var(--color-primary, #8f0c13)') : 'var(--color-bg-white)' }}
+      >
+        {avatarUrl && !imgError ? (
+          <img
+            src={avatarUrl}
+            alt={comm.name}
+            className={styles.communityAvatarImg}
+            loading="lazy"
+            onError={() => setImgError(true)}
+          />
+        ) : (
+          <span className={styles.communityAvatarLetter}>{initial}</span>
+        )}
+      </div>
+      <div className={styles.communityInfo}>
+        <h4 className={styles.communityCardName} title={comm.name}>
+          {comm.name}
+        </h4>
+        <span className={styles.communityCardSubtitle}>
+          {count} {count === 1 ? 'member' : 'members'}
+        </span>
+      </div>
+    </div>
+  );
+}
 
 export default function CampusPage() {
   const navigate = useNavigate();
@@ -245,7 +282,7 @@ export default function CampusPage() {
         {/* Wrapper for Side by Side Sections on Desktop */}
         <div className={styles.sideBySideDesktop}>
           {/* you may know */}
-          <section className={styles.section}>
+          <section className={`${styles.section} ${styles.sideSection}`}>
             <div className={styles.sectionHeaderRow}>
               <span className={styles.sectionEmoji}>🤩</span>
               <h2 className={styles.sectionTitleText}>you may know</h2>
@@ -272,11 +309,35 @@ export default function CampusPage() {
           </section>
 
           {/* discover communities */}
-          <section className={styles.section}>
-            <div className={styles.sectionHeaderRow}>
-              <span className={styles.sectionEmoji}>🫧</span>
-              <h2 className={styles.sectionTitleText}>discover communities</h2>
+          <section className={`${styles.section} ${styles.sideSection}`}>
+            <div className={styles.sectionHeaderRow} style={{ justifyContent: 'space-between' }}>
+              <div className={styles.sectionHeaderRow}>
+                <span className={styles.sectionEmoji}>🫧</span>
+                <h2 className={styles.sectionTitleText}>discover communities</h2>
+              </div>
+              {campusCommunities && campusCommunities.length > 0 && (
+                <button
+                  className={styles.sectionArrowBtn}
+                  onClick={() => navigate('/campus/communities')}
+                  aria-label="See all campus communities"
+                >
+                  <ChevronRight size={16} />
+                </button>
+              )}
             </div>
+            {campusCommunities && campusCommunities.length > 0 && (
+              <div className={styles.communitiesSectionWrapper}>
+                <div className={styles.communitiesScrollContainer}>
+                  {campusCommunities.slice(0, 2).map(comm => (
+                    <CampusCommunityItem
+                      key={comm.id}
+                      comm={comm}
+                      onClick={() => navigate(`/communities/${comm.id}`, { state: { from: '/campus' } })}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
             <div className={styles.discoverGroupsCard} onClick={() => setIsGroupModalOpen(true)}>
               <div className={styles.dashedAddSquare}>
                 <Users size={20} />
