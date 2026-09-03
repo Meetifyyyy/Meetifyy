@@ -23,16 +23,38 @@
 export const PASSWORD_MIN_LENGTH = 8;
 
 /**
- * An upper bound so a pathological input cannot be sent to the hasher.
+ * 72, because that is bcrypt's limit and Supabase hashes with bcrypt.
  *
- * This is a real validation limit, not an input cap: the fields deliberately do
- * NOT set `maxLength`. An HTML `maxLength` silently truncates on paste, so a
+ * bcrypt ignores everything past the 72nd BYTE of its input. A longer password
+ * is not rejected by the algorithm, it is silently truncated — so two different
+ * passwords sharing their first 72 bytes would both open the same account, and
+ * the extra characters a user carefully added would count for nothing. Recent
+ * GoTrue versions reject over-length passwords outright rather than truncate,
+ * which turns the same situation into an opaque server error late in signup.
+ *
+ * Refusing above the limit ourselves means the user is told plainly, in the
+ * field, before anything is submitted.
+ *
+ * This is a validation limit, not an input cap: the fields deliberately do NOT
+ * set `maxLength`. An HTML `maxLength` silently truncates on paste, so a
  * generated password longer than the limit was quietly cut and stored short,
  * and the user was never told — the same class of bug as trimming, and just as
- * hard to diagnose from the login screen afterwards. Letting the value through
- * and failing it with a message means the user finds out.
+ * hard to diagnose from the login screen afterwards.
  */
-export const PASSWORD_MAX_LENGTH = 100;
+export const PASSWORD_MAX_LENGTH = 72;
+
+/**
+ * Length as bcrypt counts it: bytes of UTF-8, not JavaScript characters.
+ *
+ * `"é"` is one character and two bytes; an emoji is two characters and four.
+ * Measuring with `.length` would let a password of 72 accented characters
+ * through at 144 bytes, half of which bcrypt would then ignore.
+ */
+export function passwordByteLength(password) {
+  const value = typeof password === 'string' ? password : '';
+  if (typeof TextEncoder === 'undefined') return value.length;
+  return new TextEncoder().encode(value).length;
+}
 
 /**
  * Why a password is unacceptable, or null when it is fine.
@@ -45,7 +67,7 @@ export function validatePassword(password) {
   if (value.length < PASSWORD_MIN_LENGTH) {
     return `Password must be at least ${PASSWORD_MIN_LENGTH} characters.`;
   }
-  if (value.length > PASSWORD_MAX_LENGTH) {
+  if (passwordByteLength(value) > PASSWORD_MAX_LENGTH) {
     return `Password can't exceed ${PASSWORD_MAX_LENGTH} characters.`;
   }
   return null;

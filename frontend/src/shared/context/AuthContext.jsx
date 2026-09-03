@@ -10,7 +10,52 @@ import { useQueryClient } from '@tanstack/react-query';
 import { propagateUserMedia } from '@shared/utils/propagateUserMedia';
 
 import { supabase, isSupabaseConfigured } from '@shared/lib/supabase';
+import { describeNetworkError, logNetworkFailure } from '@shared/utils/networkErrors';
+import { config } from '@config';
 export { supabase, isSupabaseConfigured };
+
+/**
+ * How long to wait for signup before calling it failed.
+ *
+ * Supabase sends the confirmation email inside the signup request itself
+ * (`mailer_autoconfirm: false`), so this call is only as fast as the mail
+ * provider behind it. The browser's own timeout is minutes, which on a stalled
+ * provider leaves the user staring at a spinner with no idea whether their
+ * account was created. Twenty-five seconds is far longer than a healthy signup
+ * (measured: well under a second to reach the server) and short enough to fail
+ * honestly.
+ */
+const SIGNUP_TIMEOUT_MS = 25_000;
+
+/** The host signup actually talks to, named in errors so a failure is traceable. */
+const supabaseHost = (() => {
+  try {
+    return new URL(config.supabase.url).host;
+  } catch {
+    return '';
+  }
+})();
+
+/**
+ * Rejects with a TimeoutError if the promise has not settled in time.
+ *
+ * Deliberately not a retry: retrying a signup that may already have created an
+ * account is how people end up with duplicates and two confirmation emails. The
+ * point is to stop waiting and say so.
+ */
+function withTimeout(promise, ms) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      const err = new Error(`Timed out after ${Math.round(ms / 1000)}s`);
+      err.name = 'TimeoutError';
+      reject(err);
+    }, ms);
+    promise.then(
+      (value) => { clearTimeout(timer); resolve(value); },
+      (err) => { clearTimeout(timer); reject(err); },
+    );
+  });
+}
 
 const AuthContext = createContext(null);
 
@@ -387,23 +432,61 @@ export function AuthProvider({ children }) {
         : userData.username
     );
 
-    const { data, error } = await supabase.auth.signUp({
-      email: userData.email.trim().toLowerCase(),
-      password: userData.password,
-      options: {
-        data: {
-          displayName: computedDisplayName,
-          username: userData.username,
-          birthday: userData.birthday,
-          firstName: userData.firstName,
-          lastName: userData.lastName,
-          // Academic info is NOT mirrored into Supabase user_metadata: Prisma is
-          // the source of truth for it, and metadata is client-writable, so a
-          // copy here could disagree with the validated record.
-        }
-      }
-    });
-    
+    /*
+     * This one call is the whole of the "Next" button on the password step.
+     *
+     * It goes straight to Supabase Auth — not to our API, and not to Resend.
+     * That matters when this fails: a failure here is between the browser and
+     * `<project>.supabase.co`, so the backend's logs, CORS and deploy state are
+     * the wrong places to look.
+     *
+     * The project has `mailer_autoconfirm: false`, which means Supabase sends
+     * the confirmation email as part of THIS request rather than after it. The
+     * call therefore waits on the mail provider, and a provider that is slow or
+     * failing shows up here as a slow or failed signup, not as a mail problem.
+     * That is why it is given a deadline below instead of waiting on the
+     * browser's own, which is minutes long.
+     */
+    let data;
+    let error;
+    try {
+      ({ data, error } = await withTimeout(
+        supabase.auth.signUp({
+          email: userData.email.trim().toLowerCase(),
+          password: userData.password,
+          options: {
+            data: {
+              displayName: computedDisplayName,
+              username: userData.username,
+              birthday: userData.birthday,
+              firstName: userData.firstName,
+              lastName: userData.lastName,
+              // Academic info is NOT mirrored into Supabase user_metadata: Prisma is
+              // the source of truth for it, and metadata is client-writable, so a
+              // copy here could disagree with the validated record.
+            }
+          }
+        }),
+        SIGNUP_TIMEOUT_MS,
+      ));
+    } catch (networkErr) {
+      /*
+       * Thrown rather than returned means the request never produced a
+       * response: blocked, offline, or timed out. Supabase reports those as a
+       * bare "Failed to fetch", which tells the user nothing and sends whoever
+       * reads the bug report looking at the server.
+       */
+      logNetworkFailure('signup', networkErr, {
+        host: supabaseHost,
+        step: 'supabase.auth.signUp',
+      });
+      const explained = describeNetworkError(networkErr, {
+        host: supabaseHost,
+        action: 'create your account',
+      });
+      throw new Error(explained || networkErr?.message || 'Signup failed. Please try again.');
+    }
+
     if (error) {
       const msg = typeof error.message === 'string' && error.message.trim() !== '' && error.message !== '{}'
         ? error.message

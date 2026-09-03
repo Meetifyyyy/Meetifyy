@@ -2,6 +2,9 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render, cleanup, act, within, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
+// Referenced rather than hardcoded, so lowering the cap cannot leave these
+// fixtures asserting a limit the app no longer has.
+import { PASSWORD_MAX_LENGTH } from '@features/auth/shared/passwordRules';
 
 globalThis.IntersectionObserver = class { observe() {} unobserve() {} disconnect() {} takeRecords() { return []; } };
 globalThis.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} };
@@ -91,11 +94,13 @@ describe('Reset password stores exactly what was entered', () => {
 
   it('stores a long generated password in full', async () => {
     const { container } = await renderAtForm();
-    const secret = 'Xk9#mQ2$vL8@pR4!'.repeat(6);
+    // 64 characters: a realistic generated password, comfortably inside the
+    // 72-byte cap bcrypt imposes.
+    const secret = 'Xk9#mQ2$vL8@pR4!'.repeat(4);
     fill(container, secret, secret);
     await submitForm(container);
     expect(updates[0].password).toBe(secret);
-    expect(updates[0].password).toHaveLength(96);
+    expect(updates[0].password).toHaveLength(64);
   });
 
   it('treats a whitespace-only difference as a mismatch, and refuses', async () => {
@@ -147,15 +152,15 @@ describe('an over-long password is refused, never silently shortened', () => {
     fill(container, long, long);
     await submitForm(container);
     expect(updates).toHaveLength(0);
-    expect(q.getByText("Password can't exceed 100 characters.")).toBeTruthy();
+    expect(q.getByText(`Password can't exceed ${PASSWORD_MAX_LENGTH} characters.`)).toBeTruthy();
   });
 
   it('accepts a password exactly on the limit', async () => {
     const { container } = await renderAtForm();
-    const atLimit = 'y'.repeat(100);
+    const atLimit = 'y'.repeat(PASSWORD_MAX_LENGTH);
     fill(container, atLimit, atLimit);
     await submitForm(container);
     expect(updates).toHaveLength(1);
-    expect(updates[0].password).toHaveLength(100);
+    expect(updates[0].password).toHaveLength(PASSWORD_MAX_LENGTH);
   });
 });
