@@ -401,42 +401,22 @@
   pointer-events: none;
 }
 
+/*
+ * Positioning only. The control is the shared PasswordToggle, which owns its
+ * size, its centring and its hover/focus/disabled states.
+ *
+ * The duplicate that used to live here centred itself with
+ * `transform: translateY(-50%)` and tried to protect that with
+ * `.toggle:active { transform: translateY(-50%) scale(0.97) }`. The global
+ * press rule in global.css is `:where(button, …):active:not(:disabled)
+ * :not([aria-disabled="true"])` — specificity (0,3,0) against this (0,2,0) —
+ * so on every press the centring transform was replaced by `scale(0.96)` and
+ * the icon dropped by half its height. That is the eye "jumping down" on
+ * click. The shared component centres through layout instead, which no
+ * transform can override.
+ */
 .toggle {
-  position: absolute;
-  right: 0.65rem;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 32px;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  border: none;
-  background: transparent;
-  color: var(--color-text-light);
-  cursor: pointer;
-  border-radius: var(--radius-full);
-  transition: color 0.18s ease, background 0.18s ease;
-}
-
-.toggle:hover {
-  color: var(--color-brand-primary);
-  background: rgba(92, 71, 250, 0.1);
-}
-
-.toggle:focus-visible {
-  outline: 2px solid var(--color-brand-primary);
-  outline-offset: 2px;
-}
-
-/* The app-wide `button:active { transform: scale(0.97) }` rule would
-   otherwise completely replace this button's own centering transform
-   (transforms don't combine across rules) — snapping it from vertically
-   centered down to `top: 50%` with no offset the instant it's pressed.
-   Redeclaring both together keeps the press feedback without the jump. */
-.toggle:active {
-  transform: translateY(-50%) scale(0.97);
+  --pw-toggle-inset: 0.65rem;
 }
 
 .statusIcon {

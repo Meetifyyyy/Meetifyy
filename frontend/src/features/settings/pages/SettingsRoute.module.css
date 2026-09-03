@@ -1135,32 +1135,21 @@ input:checked + .slider::before {
   box-sizing: border-box;
 }
 
+/*
+ * Positioning only. The button itself is the shared PasswordToggle, which owns
+ * its size, its centring and its states.
+ *
+ * There used to be a full duplicate of that button here, including a
+ * `.eyeBtn:active { transform: translateY(-50%) }` written to stop the global
+ * press-scale knocking it off-centre. That guard never worked: the global rule
+ * is `:where(button, …):active:not(:disabled):not([aria-disabled="true"])`,
+ * which reaches specificity (0,3,0) and beats `.eyeBtn:active` at (0,2,0). The
+ * shared component no longer centres with `transform` at all, so there is
+ * nothing left to defend.
+ */
 .eyeBtn {
-  position: absolute;
-  right: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  color: var(--color-text-muted);
-  padding: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: color var(--transition-fast);
+  --pw-toggle-inset: 0;
   z-index: 5;
-}
-
-.eyeBtn:hover {
-  color: var(--color-primary);
-}
-
-/* Keeps the vertical-centering transform intact on press instead of the
-   global button:active scale (which would otherwise replace it outright and
-   make this small icon jump off-center for an instant). */
-.eyeBtn:active {
-  transform: translateY(-50%);
 }
 
 /* ── Error text with alert icon ── */

@@ -20,12 +20,13 @@ import AcademicSelection from '@shared/academics/AcademicSelection';
 import { useAcademicCatalog } from '@shared/academics/useAcademicCatalog';
 import { validateAcademicSelection } from '@shared/academics/academicCatalog';
 import {
-  Pencil, Lock, Eye, EyeOff, AlertCircle, Trash2,
+  Pencil, Lock, AlertCircle, Trash2,
   User, GraduationCap, Shield, Bell, HelpCircle, LogOut,
   ChevronRight, ChevronDown, Check, Ban,
   LockKeyhole, Cookie,
 } from '@shared/components/icons';
 import wordmark from '@assets/images/meetifyy_wordmark.svg';
+import PasswordToggle, { usePasswordVisibility } from '@shared/components/forms/PasswordToggle';
 import styles from './SettingsRoute.module.css';
 import useDevToolsStore from '@shared/stores/devToolsStore';
 import BlockedContacts from '../panels/BlockedContacts';
@@ -275,9 +276,11 @@ export default function SettingsRoute() {
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
-  const [showNewPassword, setShowNewPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  // The same show/hide behaviour every other password field in the app uses —
+  // one implementation, including the caret preservation across the type swap.
+  const currentPw = usePasswordVisibility();
+  const newPw = usePasswordVisibility();
+  const confirmPw = usePasswordVisibility();
   const [passwordErrors, setPasswordErrors] = useState({});
   const [isSavingPassword, setIsSavingPassword] = useState(false);
 
@@ -289,9 +292,9 @@ export default function SettingsRoute() {
       setNewPassword('');
       setConfirmPassword('');
       setPasswordErrors({});
-      setShowCurrentPassword(false);
-      setShowNewPassword(false);
-      setShowConfirmPassword(false);
+      currentPw.hide();
+      newPw.hide();
+      confirmPw.hide();
     }
   }, [activePanel]);
 
@@ -545,21 +548,6 @@ export default function SettingsRoute() {
       }
       return [...prev, id];
     });
-  };
-
-  const toggleVisibility = (inputId, showSetter) => {
-    const input = document.getElementById(inputId);
-    if (input) {
-      const start = input.selectionStart;
-      const end = input.selectionEnd;
-      showSetter(prev => !prev);
-      setTimeout(() => {
-        input.setSelectionRange(start, end);
-        input.focus();
-      }, 0);
-    } else {
-      showSetter(prev => !prev);
-    }
   };
 
   const panelTitle = {
@@ -941,7 +929,8 @@ export default function SettingsRoute() {
               id="currentPasswordInput"
               name="currentPassword"
               className={styles.input}
-              type={showCurrentPassword ? 'text' : 'password'}
+              ref={currentPw.inputRef}
+              type={currentPw.inputType}
               value={currentPassword}
               autoComplete="new-password"
               onChange={e => {
@@ -949,15 +938,11 @@ export default function SettingsRoute() {
                 if (passwordErrors.current) setPasswordErrors(prev => ({ ...prev, current: null }));
               }}
             />
-            <button
-              type="button"
-              onMouseDown={e => e.preventDefault()}
-              onClick={() => toggleVisibility('currentPasswordInput', setShowCurrentPassword)}
+            <PasswordToggle
+              {...currentPw.toggleProps}
               className={styles.eyeBtn}
-              aria-label={showCurrentPassword ? 'Hide current password' : 'Show current password'}
-            >
-              {showCurrentPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-            </button>
+              label={currentPw.visible ? 'Hide current password' : 'Show current password'}
+            />
           </div>
           {passwordErrors.current && (
             <div className={styles.errorText}>
@@ -974,7 +959,8 @@ export default function SettingsRoute() {
               id="newPasswordInput"
               name="newPassword"
               className={styles.input}
-              type={showNewPassword ? 'text' : 'password'}
+              ref={newPw.inputRef}
+              type={newPw.inputType}
               value={newPassword}
               autoComplete="new-password"
               onChange={e => {
@@ -982,15 +968,11 @@ export default function SettingsRoute() {
                 if (passwordErrors.new) setPasswordErrors(prev => ({ ...prev, new: null }));
               }}
             />
-            <button
-              type="button"
-              onMouseDown={e => e.preventDefault()}
-              onClick={() => toggleVisibility('newPasswordInput', setShowNewPassword)}
+            <PasswordToggle
+              {...newPw.toggleProps}
               className={styles.eyeBtn}
-              aria-label={showNewPassword ? 'Hide new password' : 'Show new password'}
-            >
-              {showNewPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-            </button>
+              label={newPw.visible ? 'Hide new password' : 'Show new password'}
+            />
           </div>
           {passwordErrors.new && (
             <div className={styles.errorText}>
@@ -1007,7 +989,8 @@ export default function SettingsRoute() {
               id="confirmPasswordInput"
               name="confirmPassword"
               className={styles.input}
-              type={showConfirmPassword ? 'text' : 'password'}
+              ref={confirmPw.inputRef}
+              type={confirmPw.inputType}
               value={confirmPassword}
               autoComplete="new-password"
               onChange={e => {
@@ -1015,15 +998,11 @@ export default function SettingsRoute() {
                 if (passwordErrors.confirm) setPasswordErrors(prev => ({ ...prev, confirm: null }));
               }}
             />
-            <button
-              type="button"
-              onMouseDown={e => e.preventDefault()}
-              onClick={() => toggleVisibility('confirmPasswordInput', setShowConfirmPassword)}
+            <PasswordToggle
+              {...confirmPw.toggleProps}
               className={styles.eyeBtn}
-              aria-label={showConfirmPassword ? 'Hide confirm password' : 'Show confirm password'}
-            >
-              {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-            </button>
+              label={confirmPw.visible ? 'Hide confirm password' : 'Show confirm password'}
+            />
           </div>
           {passwordErrors.confirm && (
             <div className={styles.errorText}>
