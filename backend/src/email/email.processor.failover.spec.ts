@@ -8,6 +8,8 @@
  * sat pending forever.
  */
 
+import { classifyResendFailure, ResendRejection } from './resend-failure';
+
 type Outcome = { ok: boolean };
 
 /**
@@ -20,6 +22,8 @@ async function runSend(opts: {
   driver: 'resend' | 'smtp' | 'mailpit';
   fallbackDriver: '' | 'smtp';
   primaryFails: boolean;
+  /** What the primary failed with. Decides whether failover is even attempted. */
+  primaryError?: unknown;
   fallbackFails: boolean;
   log: string[];
   recorded: { error?: string; messageId?: string }[];
@@ -34,7 +38,7 @@ async function runSend(opts: {
     return { ok: true };
   };
   const sendViaResend = async () => {
-    if (primaryFails) throw new Error('resend failed');
+    if (primaryFails) throw (opts.primaryError ?? new ResendRejection('quota', 'daily_quota_exceeded', 429));
     recorded.push({ messageId: 'resend-1' });
     return { ok: true };
   };
@@ -43,8 +47,11 @@ async function runSend(opts: {
     if (driver === 'mailpit' || driver === 'smtp') return await sendViaSmtp('primary');
     return await sendViaResend();
   } catch (primaryError) {
-    const canFailOver =
+    const relayAvailable =
       fallbackDriver === 'smtp' && driver !== 'smtp' && driver !== 'mailpit';
+    // Only when Resend told us it did not send. See resend-failure.ts.
+    const canFailOver =
+      relayAvailable && classifyResendFailure(primaryError) === 'not-sent';
 
     if (canFailOver) {
       log.push('email.failover');
@@ -86,17 +93,17 @@ describe('email failover', () => {
     const s = setup();
     await expect(
       runSend({ driver: 'resend', fallbackDriver: 'smtp', primaryFails: true, fallbackFails: true, ...s }),
-    ).rejects.toThrow('resend failed');
+    ).rejects.toThrow(/quota/);
 
     expect(s.log).toEqual(['email.failover', 'email.failover_failed', 'email.send_error']);
-    expect(s.recorded).toEqual([{ error: 'resend failed' }]);
+    expect(s.recorded[0].error).toMatch(/quota/);
   });
 
   it('reports the PRIMARY error, not the fallback one, so the cause is not masked', async () => {
     const s = setup();
     const err = await runSend({ driver: 'resend', fallbackDriver: 'smtp', primaryFails: true, fallbackFails: true, ...s })
       .catch((e) => e);
-    expect(err.message).toBe('resend failed');
+    expect(err.message).toMatch(/quota/);
   });
 
   it('does not retry SMTP through the same transporter that just failed', async () => {
@@ -113,8 +120,68 @@ describe('email failover', () => {
     const s = setup();
     await expect(
       runSend({ driver: 'resend', fallbackDriver: '', primaryFails: true, fallbackFails: false, ...s }),
-    ).rejects.toThrow('resend failed');
+    ).rejects.toThrow(/quota/);
     expect(s.log).toEqual(['email.send_error']);
-    expect(s.recorded).toEqual([{ error: 'resend failed' }]);
+    expect(s.recorded[0].error).toMatch(/quota/);
+  });
+});
+
+describe('failover is skipped when it would risk a duplicate', () => {
+  const setup = () => ({ log: [] as string[], recorded: [] as any[] });
+
+  it('does NOT reach for Brevo after a Resend timeout', async () => {
+    // Resend may have accepted and sent it; only the reply was lost. Sending
+    // again through the relay is how one signup produces two emails.
+    const s = setup();
+    await expect(
+      runSend({
+        driver: 'resend', fallbackDriver: 'smtp',
+        primaryFails: true, fallbackFails: false,
+        primaryError: Object.assign(new Error('request timed out'), { name: 'TimeoutError' }),
+        ...s,
+      }),
+    ).rejects.toThrow(/timed out/);
+
+    expect(s.log).toEqual(['email.send_error']);           // no failover attempted
+    expect(s.recorded.some((r) => r.messageId)).toBe(false); // nothing sent twice
+  });
+
+  it('does NOT reach for Brevo for a message Brevo would also reject', async () => {
+    const s = setup();
+    await expect(
+      runSend({
+        driver: 'resend', fallbackDriver: 'smtp',
+        primaryFails: true, fallbackFails: false,
+        primaryError: new ResendRejection('bad address', 'validation_error', 422),
+        ...s,
+      }),
+    ).rejects.toThrow(/bad address/);
+    expect(s.log).toEqual(['email.send_error']);
+  });
+
+  it('DOES reach for Brevo when Resend is out of quota', async () => {
+    // The case the fallback exists for.
+    const s = setup();
+    const out = await runSend({
+      driver: 'resend', fallbackDriver: 'smtp',
+      primaryFails: true, fallbackFails: false,
+      primaryError: new ResendRejection('over quota', 'daily_quota_exceeded', 429),
+      ...s,
+    });
+    expect(out).toEqual({ ok: true });
+    expect(s.log).toEqual(['email.failover']);
+    expect(s.recorded).toEqual([{ messageId: 'smtp-fallback' }]);
+  });
+
+  it('DOES reach for Brevo when Resend itself is unreachable', async () => {
+    const s = setup();
+    const out = await runSend({
+      driver: 'resend', fallbackDriver: 'smtp',
+      primaryFails: true, fallbackFails: false,
+      primaryError: Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' }),
+      ...s,
+    });
+    expect(out).toEqual({ ok: true });
+    expect(s.log).toEqual(['email.failover']);
   });
 });

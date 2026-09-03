@@ -18,6 +18,7 @@ import { AdminOtpEmail } from './templates/admin-otp';
 import { config } from '../config';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmailUsageService } from './email-usage.service';
+import { classifyResendFailure, ResendRejection } from './resend-failure';
 import {
   BuiltEmail,
   DeliveryTarget,
@@ -348,10 +349,40 @@ export class EmailProcessor extends WorkerHost implements OnModuleInit {
        * so it can only fail again, having doubled the time the job spends
        * before it is marked undelivered.
        */
-      const canFailOver =
+      const relayAvailable =
         this.fallbackDriver === 'smtp' &&
         this.driver !== 'smtp' &&
         this.driver !== 'mailpit';
+
+      /*
+       * Only retry through the relay when Resend has told us it did NOT send.
+       *
+       * `ambiguous` covers a timeout or a reset socket, where the request may
+       * have been received and processed with only the reply lost. Retrying
+       * that through Brevo is how one signup produces two verification emails,
+       * so the job is failed instead and left to BullMQ's retry — a delayed
+       * email being better than a duplicate one.
+       *
+       * `permanent` is a complaint about the message rather than the provider.
+       * Brevo would reject it identically, so the relay's quota is not spent
+       * proving it.
+       */
+      const failure = classifyResendFailure(primaryError);
+      const canFailOver = relayAvailable && failure === 'not-sent';
+
+      if (relayAvailable && !canFailOver) {
+        this.logger.warn(
+          `email.failover_skipped ${JSON.stringify({
+            ...context,
+            reason: failure,
+            detail:
+              failure === 'ambiguous'
+                ? 'Resend may have accepted this message; retrying elsewhere could duplicate it'
+                : 'the message itself was rejected and the relay would reject it too',
+            primaryError: (primaryError as Error).message,
+          })}`,
+        );
+      }
 
       if (canFailOver) {
         this.logger.warn(
@@ -444,7 +475,16 @@ export class EmailProcessor extends WorkerHost implements OnModuleInit {
       ...(mail.effectiveReplyTo ? { replyTo: mail.effectiveReplyTo } : {}),
     });
     this.logger.log(
-      `email.sent ${JSON.stringify({ ...context, messageId: info.messageId, status: 'accepted' })}`,
+      `email.sent ${JSON.stringify({
+        ...context,
+        // Named explicitly rather than inherited from `context.provider`, so a
+        // failover send is attributable to the relay that actually carried it
+        // and not to the primary that was asked first.
+        sentVia: usageProvider,
+        viaFallback: context.provider === 'smtp(fallback)',
+        messageId: info.messageId,
+        status: 'accepted',
+      })}`,
     );
     await this.recordDelivery(deliveryTarget, {
       messageId: info.messageId,
@@ -495,10 +535,14 @@ export class EmailProcessor extends WorkerHost implements OnModuleInit {
           error: error.message,
         })}`,
       );
-      // Rethrown as a real Error: the Resend error is a plain object, which
-      // BullMQ records without a message or a stack.
-      throw new Error(
+      // Rethrown as a structured error: the Resend error is a plain object,
+      // which BullMQ records without a message or a stack, and the failover
+      // decision below needs the error name and status to tell "over quota"
+      // from "bad address".
+      throw new ResendRejection(
         `Resend rejected ${job.name} to ${mail.to}: ${error.name} — ${error.message}`,
+        String((error as { name?: string }).name ?? ''),
+        (error as { statusCode?: number }).statusCode,
       );
     }
 
@@ -506,13 +550,22 @@ export class EmailProcessor extends WorkerHost implements OnModuleInit {
       this.logger.error(
         `email.send_failed ${JSON.stringify({ ...context, status: 'no-message-id' })}`,
       );
-      throw new Error(
+      // No id and no error is Resend answering without having queued anything.
+      throw new ResendRejection(
         `Resend returned no message id for ${job.name} to ${mail.to}`,
+        'no_message_id',
+        200,
       );
     }
 
     this.logger.log(
-      `email.sent ${JSON.stringify({ ...context, messageId: data.id, status: 'accepted' })}`,
+      `email.sent ${JSON.stringify({
+        ...context,
+        sentVia: 'resend',
+        viaFallback: false,
+        messageId: data.id,
+        status: 'accepted',
+      })}`,
     );
     await this.recordDelivery(deliveryTarget, { messageId: data.id });
     await this.emailUsage.recordSent('resend');
