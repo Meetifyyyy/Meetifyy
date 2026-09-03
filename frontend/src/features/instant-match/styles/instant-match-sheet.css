@@ -131,11 +131,35 @@
   font-size: 0.82rem;
   font-weight: 600;
 }
+/*
+ * A status light, so it pulses in place rather than travelling.
+ *
+ * This used `im-drift`, which is the poster decoration float: 8px of vertical
+ * movement plus a 3-degree rotation. On a 30px blob that reads as a gentle
+ * drift; on a 9px dot it is almost the dot's entire height, so it bobbed in and
+ * out of line with the "Reconnecting…" text it is supposed to sit beside.
+ *
+ * Scaling about its own centre and fading keeps it exactly on the text's centre
+ * line at every frame, and reads as "still trying" the way a connection
+ * indicator should. Transform and opacity only, so it still composites.
+ */
 .im-sheet-offline-dot {
   width: 9px; height: 9px;
   border-radius: 999px;
   background: var(--im-sun);
-  animation: im-drift 1.4s ease-in-out infinite;
+  /* It is a fixed-size marker in a flex row; never let the text squash it. */
+  flex-shrink: 0;
+  animation: im-status-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes im-status-pulse {
+  0%, 100% { opacity: 0.45; transform: scale(0.82); }
+  50%      { opacity: 1;    transform: scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Still clearly "on", just not animated. */
+  .im-sheet-offline-dot { animation: none; opacity: 1; }
 }
 
 /* ── Title block ─────────────────────────────────────────────────────────── */
@@ -205,6 +229,25 @@
  * form feeling quick rather than theatrical.
  */
 .im-step-swap {
+  /*
+   * Fill the body, always.
+   *
+   * The searching, matched and ended panels make `.im-sheet-body-inner` a flex
+   * row, and a flex item defaults to `flex: 0 1 auto` — it shrink-wraps to its
+   * content and sits at the start of the line. This wrapper was added for the
+   * step transition and had no width of its own, so in those states it
+   * collapsed to its content width and pulled the entire panel to the left of
+   * the sheet: the radar, the headline, the metrics card and the buttons all
+   * centred on the wrapper rather than on the sheet.
+   *
+   * Before this wrapper existed the panel was the flex item itself and carried
+   * `width: 100%`, which is why the problem arrived with the transition.
+   *
+   * `min-width: 0` keeps the shrink behaviour sane so a long unbroken word
+   * inside a step cannot push the wrapper wider than the sheet.
+   */
+  width: 100%;
+  min-width: 0;
   animation: im-step-in-fwd 0.26s var(--im-ease-out) both;
 }
 
@@ -258,36 +301,21 @@
 .im-sheet-searching .im-sheet-body-inner { display: flex; }
 
 /*
- * ── Panel actions stay on screen ─────────────────────────────────────────
+ * The searching panel's footer.
  *
- * The stepped form keeps its actions in `.im-sheet-foot`, outside the scrolling
- * body, so Next and Find my match are always visible. The searching, matched
- * and ended panels have no footer: they carry their own buttons inside the
- * body, which scrolls.
- *
- * On a tall screen that is fine and these rules do nothing. On a short one
- * (measured: 141px of overflow on a 360x568 phone) Cancel search and Find
- * someone new sat below the fold and had to be found by scrolling. Sticking
- * them to the bottom of the scroller keeps them where the footer would be,
- * without a second scroll container and without moving them in the markup.
- *
- * The fade above the bar is what stops content appearing to end abruptly
- * underneath it; the bar itself is the sheet's own paper, so it reads as part
- * of the sheet rather than as a floating toolbar.
+ * Same row as the stepped form's actions, minus the progress dots, so its one
+ * child takes the full width and the two buttons share it.
  */
-.im-searching-actions,
-.im-matched-actions {
-  position: sticky;
-  bottom: 0;
-  z-index: 2;
-  padding-top: 10px;
-  padding-bottom: 2px;
-  background: linear-gradient(
-    to bottom,
-    transparent 0,
-    var(--im-paper) 12px,
-    var(--im-paper) 100%
-  );
+.im-sheet-actions-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  width: 100%;
+}
+
+@media (min-width: 520px) {
+  .im-sheet-actions-panel { flex-direction: row; }
+  .im-sheet-actions-panel .im-btn { flex: 1; }
 }
 
 /* ── Error ───────────────────────────────────────────────────────────────── */

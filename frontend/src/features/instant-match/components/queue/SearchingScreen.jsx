@@ -104,7 +104,7 @@ const LongWaitNotice = memo(function LongWaitNotice() {
  * make it obvious the search survives minimising the sheet.
  */
 export default function SearchingScreen() {
-  const { cancelSearch, closeSheet, formData, busy, connected, status } = useInstantMatch();
+  const { formData, connected } = useInstantMatch();
 
   const activityLabel = getActivityLabel(formData.activity, 'a hangout');
   const when = getTimePreference(formData.timePreference);
@@ -133,24 +133,15 @@ export default function SearchingScreen() {
       </QueueMetrics>
 
       <LongWaitNotice />
-
-      <div className="im-searching-actions">
-        <button
-          type="button"
-          className="im-btn im-btn-ghost im-btn-sm"
-          onClick={closeSheet}
-        >
-          Keep searching in background
-        </button>
-        <button
-          type="button"
-          className="im-btn im-btn-sm im-searching-cancel"
-          onClick={cancelSearch}
-          disabled={busy || status !== 'searching'}
-        >
-          {busy ? 'Stopping…' : 'Cancel search'}
-        </button>
-      </div>
+      {/*
+        * The two actions are rendered by the sheet, in its footer, alongside the
+        * ones the stepped form uses. They used to live here, inside the
+        * scrolling body, which meant they scrolled out of reach on a short
+        * screen; sticking them to the bottom of the scroller fixed the reach
+        * but painted an opaque plate over the poster backdrop that read as a
+        * stray card. Out here they are simply always on screen, with no plate
+        * and nothing to paint over.
+        */}
     </div>
   );
 }

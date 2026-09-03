@@ -241,12 +241,46 @@
   text-transform: uppercase;
   cursor: pointer;
   box-shadow: var(--im-shadow);
-  transition: transform 0.14s var(--im-ease), box-shadow 0.14s var(--im-ease),
-              background-color 0.14s linear;
+  /*
+   * `color` is in here because the cancel button changes its text colour on
+   * hover; without it the label snapped while the background eased.
+   *
+   * `box-shadow` is NOT, deliberately — see the lift below.
+   */
+  transition: transform 0.16s var(--im-ease),
+              background-color 0.16s linear,
+              color 0.16s linear;
 }
 
-.im-btn:hover:not(:disabled) { transform: translateY(-1.5px); box-shadow: var(--im-shadow-lg); }
-.im-btn:active:not(:disabled) { transform: translateY(1px); box-shadow: var(--im-shadow-sm); }
+/*
+ * The hover lift, done on the compositor.
+ *
+ * Hover used to interpolate `box-shadow` from `--im-shadow` to `--im-shadow-lg`.
+ * A box-shadow is painted, not composited, and both of those are two-layer
+ * shadows, so every frame of the transition repainted the button and its
+ * surround — the heaviest possible way to express a 1.5px lift.
+ *
+ * The larger shadow now lives on a pseudo-element that is always present and
+ * fades in. Opacity and transform are the two properties the compositor can
+ * animate on its own, so the whole interaction runs off the main thread and
+ * looks identical.
+ */
+.im-btn::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: var(--im-shadow-lg);
+  opacity: 0;
+  transition: opacity 0.16s var(--im-ease);
+  pointer-events: none;
+}
+
+.im-btn:hover:not(:disabled) { transform: translateY(-1.5px); }
+.im-btn:hover:not(:disabled)::after { opacity: 1; }
+
+.im-btn:active:not(:disabled) { transform: translateY(1px); }
+.im-btn:active:not(:disabled)::after { opacity: 0; }
 
 .im-btn:disabled { opacity: 0.45; cursor: not-allowed; box-shadow: none; }
 
@@ -369,4 +403,5 @@
   }
   .im-scope .im-btn:hover:not(:disabled),
   .im-scope .im-btn:active:not(:disabled) { transform: none; }
+  .im-scope .im-btn::after { transition: none; }
 }

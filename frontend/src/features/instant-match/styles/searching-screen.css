@@ -259,7 +259,15 @@
   text-align: left;
 }
 
-.im-metrics-row { display: flex; align-items: baseline; gap: 10px; }
+/*
+ * The label is centred against the figure, not sat on its baseline.
+ *
+ * `align-items: baseline` put the 13.6px caption's baseline on the 36.8px
+ * number's, which dropped its centre 8.2px below the number's — so the count
+ * read as floating above its own label. Centring aligns the two optically,
+ * which is what the pair is: one figure and the phrase describing it.
+ */
+.im-metrics-row { display: flex; align-items: center; gap: 10px; }
 
 .im-metrics-figure {
   font-family: var(--im-display);
@@ -298,14 +306,6 @@
 
 /* ── Actions ─────────────────────────────────────────────────────────────── */
 
-.im-searching-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 9px;
-  width: 100%;
-  margin-top: 2px;
-}
-
 .im-searching-cancel {
   background: var(--im-paper);
   color: var(--im-coral-ink);
@@ -326,8 +326,6 @@
   .im-radar { width: 184px; height: 184px; }
   .im-radar-core { width: 60px; height: 60px; }
   .im-radar-bolt { width: 27px; height: 27px; }
-  .im-searching-actions { flex-direction: row; justify-content: center; }
-  .im-searching-actions .im-btn { flex: 1; max-width: 240px; }
 }
 
 /* Small phones, and any short viewport (a landscape phone, a soft keyboard). */

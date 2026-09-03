@@ -32,7 +32,7 @@ export default function InstantMatchSheet() {
   const {
     sheetOpen, step, formData, status, error, busy, connected, restoring,
     recentMatch, chat, closeSheet, setStep, updateFormData, startSearch, dismissError,
-    isVerified,
+    isVerified, cancelSearch,
   } = useInstantMatch();
 
   const sheetRef = useRef(null);
@@ -316,6 +316,35 @@ export default function InstantMatchSheet() {
                 ×
               </button>
             </div>
+          )}
+
+          {/*
+            * The searching panel's actions live here rather than inside the
+            * body, for the same reason the stepped form's do: the body is the
+            * one scrolling region, so anything in it can scroll out of reach on
+            * a short screen. The footer is laid out before the body is given
+            * what is left, which is what guarantees these stay on screen.
+            */}
+          {searching && (
+            <footer className="im-sheet-foot im-sheet-foot-panel">
+              <div className="im-sheet-actions im-sheet-actions-panel">
+                <button
+                  type="button"
+                  className="im-btn im-btn-ghost im-btn-sm"
+                  onClick={closeSheet}
+                >
+                  Keep searching in background
+                </button>
+                <button
+                  type="button"
+                  className="im-btn im-btn-sm im-searching-cancel"
+                  onClick={cancelSearch}
+                  disabled={busy || status !== 'searching'}
+                >
+                  {busy ? 'Stopping…' : 'Cancel search'}
+                </button>
+              </div>
+            </footer>
           )}
 
           {!searching && !showingMatched && !showingEnded && (
