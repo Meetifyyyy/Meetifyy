@@ -48,7 +48,33 @@ function VirtualFeedList({ posts, onPostClick, onCommentClick }) {
     },
     overscan: 5,
     getItemKey,
+    // In a social feed, user-initiated expansion ("See more" / "See less") must expand/collapse
+    // in place without moving the viewport. Allow TanStack Virtual's normal adjustment ONLY
+    // for the first measurement of items strictly above the viewport (e.g. during scroll restoration
+    // on load/reload) so that above-viewport items don't shift the viewport.
+    shouldAdjustScrollPositionOnItemSizeChange: (item, delta, instance) => {
+      if (!instance.itemSizeCache.has(item.key)) {
+        return item.start < instance.getScrollOffset() + instance.scrollAdjustments;
+      }
+      return false;
+    },
+    scrollToFn: (offset, options, instance) => {
+      if (options?.adjustments && options?.adjustments === 0) return;
+      instance.scrollElement?.scrollTo({
+        top: offset + (options?.adjustments ?? 0),
+        left: 0,
+        behavior: options?.behavior,
+      });
+    },
   });
+
+  // Ensure shouldAdjustScrollPositionOnItemSizeChange is also set on the instance directly
+  virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item, delta, instance) => {
+    if (!instance.itemSizeCache.has(item.key)) {
+      return item.start < instance.getScrollOffset() + instance.scrollAdjustments;
+    }
+    return false;
+  };
 
   return (
     <div
@@ -56,6 +82,7 @@ function VirtualFeedList({ posts, onPostClick, onCommentClick }) {
         height: `${virtualizer.getTotalSize()}px`,
         position: 'relative',
         width: '100%',
+        overflowAnchor: 'none',
       }}
     >
       {virtualizer.getVirtualItems().map((virtualItem) => {

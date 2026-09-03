@@ -415,7 +415,8 @@ function normalizeMedia(mediaInput) {
       rawSrc.startsWith('data:') ||
       rawSrc.startsWith('blob:');
 
-    const initialUrl = isAbsolute ? rawSrc : getMediaUrl(rawSrc);
+    const cachedSyncUrl = !isAbsolute ? mediaCache.getSyncUrl(rawSrc) : null;
+    const initialUrl = isAbsolute ? rawSrc : (cachedSyncUrl || getMediaUrl(rawSrc));
 
     return {
       raw: item,
@@ -431,14 +432,38 @@ function normalizeMedia(mediaInput) {
   }).filter(Boolean);
 }
 
+// Module-level caches ensure images that were already loaded and sized in the feed
+// render immediately without flashing/flickering when opening a post, navigating back,
+// or on subsequent mounts.
+const loadedUrlCache = new Set();
+const naturalAspectCache = new Map();
+
 export function MediaGrid({ media, onMediaClick, onRemove }) {
   const [mediaList, setMediaList] = useState(() => normalizeMedia(media));
-  const [loadedStates, setLoadedStates] = useState({});
+  const [loadedStates, setLoadedStates] = useState(() => {
+    const initial = {};
+    normalizeMedia(media).forEach((item, index) => {
+      const src = item?.url || item?.fullUrl;
+      if (src && loadedUrlCache.has(src)) {
+        initial[index] = true;
+      }
+    });
+    return initial;
+  });
   // Indices whose media could not be loaded after the retries below. Kept in
   // state so a later-resolved URL clears it instead of being stuck behind an
   // imperative DOM change.
   const [failedStates, setFailedStates] = useState({});
-  const [naturalAspects, setNaturalAspects] = useState({});
+  const [naturalAspects, setNaturalAspects] = useState(() => {
+    const initial = {};
+    normalizeMedia(media).forEach((item, index) => {
+      const src = item?.url || item?.fullUrl || item?.rawSrc;
+      if (src && naturalAspectCache.has(src)) {
+        initial[index] = naturalAspectCache.get(src);
+      }
+    });
+    return initial;
+  });
   const [inlinePlaying, setInlinePlaying] = useState({});
 
   useEffect(() => {
@@ -468,7 +493,17 @@ export function MediaGrid({ media, onMediaClick, onRemove }) {
       }
     })).then(resolvedList => {
       if (!isMounted) return;
-      setMediaList(resolvedList);
+      // Bail out if the resolved items have identical URLs to avoid triggering re-renders & image reloads
+      setMediaList((prevList) => {
+        if (prevList.length === resolvedList.length) {
+          const isSame = prevList.every((oldItem, i) => {
+            const newItem = resolvedList[i];
+            return oldItem.url === newItem.url && oldItem.fullUrl === newItem.fullUrl;
+          });
+          if (isSame) return prevList;
+        }
+        return resolvedList;
+      });
       // These URLs are newly resolved, so any earlier failure was against a
       // different (unresolved) src and should not suppress them.
       setFailedStates({});
@@ -482,13 +517,19 @@ export function MediaGrid({ media, onMediaClick, onRemove }) {
   if (!mediaList.length) return null;
 
   const handleImageLoad = (index, e) => {
-    setLoadedStates((prev) => ({ ...prev, [index]: true }));
+    setLoadedStates((prev) => (prev[index] ? prev : { ...prev, [index]: true }));
+    const src = mediaList[index]?.url || mediaList[index]?.fullUrl;
+    if (src) loadedUrlCache.add(src);
+
     const naturalWidth = e?.target?.naturalWidth;
     const naturalHeight = e?.target?.naturalHeight;
     if (naturalWidth && naturalHeight && !mediaList[index]?.aspectRatio && !mediaList[index]?.width) {
-      setNaturalAspects((prev) => ({
+      const aspect = naturalWidth / naturalHeight;
+      if (src) naturalAspectCache.set(src, aspect);
+      if (mediaList[index]?.rawSrc) naturalAspectCache.set(mediaList[index].rawSrc, aspect);
+      setNaturalAspects((prev) => (prev[index] === aspect ? prev : {
         ...prev,
-        [index]: naturalWidth / naturalHeight,
+        [index]: aspect,
       }));
     }
   };
@@ -540,13 +581,19 @@ export function MediaGrid({ media, onMediaClick, onRemove }) {
   };
 
   const handleVideoLoaded = (index, e) => {
-    setLoadedStates((prev) => ({ ...prev, [index]: true }));
+    setLoadedStates((prev) => (prev[index] ? prev : { ...prev, [index]: true }));
+    const src = mediaList[index]?.url || mediaList[index]?.fullUrl;
+    if (src) loadedUrlCache.add(src);
+
     const vw = e?.target?.videoWidth;
     const vh = e?.target?.videoHeight;
     if (vw && vh && !mediaList[index]?.aspectRatio && !mediaList[index]?.width) {
-      setNaturalAspects((prev) => ({
+      const aspect = vw / vh;
+      if (src) naturalAspectCache.set(src, aspect);
+      if (mediaList[index]?.rawSrc) naturalAspectCache.set(mediaList[index].rawSrc, aspect);
+      setNaturalAspects((prev) => (prev[index] === aspect ? prev : {
         ...prev,
-        [index]: vw / vh,
+        [index]: aspect,
       }));
     }
   };
