@@ -397,17 +397,30 @@ function Post({ postData, onClick, onDeleted, isDetailed = false, hideCommunityT
           <div className={`${styles.postBody} ${isDetailed ? styles.selectableText : ''}`}>
             <RichText content={displayedText} mentions={displayedMentions} urlLimit={isDetailed ? 50 : 35} />
             {needsTruncation && (
-              <div>
+              <>
+                {/*
+                  * A real space, not a margin.
+                  *
+                  * It is what makes the control read as the next word of the
+                  * sentence rather than a block underneath, and it is also the
+                  * only thing that gives the line a break opportunity here — an
+                  * inline box with no whitespace before it cannot wrap, so on a
+                  * narrow screen the control would push past the edge instead
+                  * of dropping to the next line.
+                  */}
+                {' '}
                 <button
+                  type="button"
                   onClick={(e) => {
                     e.stopPropagation();
                     setIsExpanded(!isExpanded);
                   }}
                   className={styles.seeMoreBtn}
+                  aria-expanded={isExpanded}
                 >
                   {isExpanded ? 'See less' : 'See more'}
                 </button>
-              </div>
+              </>
             )}
           </div>
         );

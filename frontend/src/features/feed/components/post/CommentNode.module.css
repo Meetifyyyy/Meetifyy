@@ -430,17 +430,21 @@
  * Matches the post's .seeMoreBtn, scaled with the comment tree's own
  * --font-scale so it stays proportionate as the thread density changes.
  */
+/* Inline, unbolded and matching the comment body — see the note on the post's
+   .seeMoreBtn for why the space and the inline display both matter. */
 .seeMoreBtn {
   background: none;
   border: none;
+  padding: 0;
+  margin: 0;
   color: var(--color-primary);
-  font-family: var(--font-family-sans);
-  font-weight: 600;
-  font-size: calc(0.85rem * var(--font-scale, 1));
-  padding: 0.2rem 0;
+  font: inherit;
+  font-weight: 400;
+  line-height: inherit;
+  vertical-align: baseline;
+  white-space: nowrap;
   cursor: pointer;
-  display: inline-block;
-  margin-top: 0.2rem;
+  display: inline;
   transition: color var(--transition-normal);
 }
 

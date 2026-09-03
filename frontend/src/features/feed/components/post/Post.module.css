@@ -690,16 +690,35 @@
   text-decoration: none;
 }
 
+/*
+ * The expand control is the next word of the post, not a block beneath it.
+ *
+ * It used to be `display: inline-block` with `margin-top`, inside its own
+ * <div>, which put it on a line of its own however much room was left. It is
+ * inline now and follows the body text directly, so a clipped sentence reads
+ * "...meetifyy.app... See more" and only wraps when the line genuinely runs
+ * out of width.
+ *
+ * `font: inherit` for size and weight: the bold is gone, and matching the body
+ * exactly is what stops it looking like a separate element that happens to sit
+ * on the same line. Colour still marks it as the interactive part.
+ *
+ * `white-space: nowrap` keeps the two words together, so it never breaks as
+ * "See" / "more" across a line end.
+ */
 .seeMoreBtn {
   background: none;
   border: none;
+  padding: 0;
+  margin: 0;
   color: var(--color-primary);
-  font-weight: 600;
-  font-size: 0.88rem;
-  padding: 0.25rem 0;
+  font: inherit;
+  font-weight: 400;
+  line-height: inherit;
+  vertical-align: baseline;
+  white-space: nowrap;
   cursor: pointer;
-  display: inline-block;
-  margin-top: 0.35rem;
+  display: inline;
   transition: color var(--transition-normal);
 }
 

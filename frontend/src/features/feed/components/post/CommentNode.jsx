@@ -989,6 +989,9 @@ function CommentNodeImpl({
             <div>
               <div className={styles.replyText}>
                 <RichText content={displayedText} mentions={displayedMentions} urlLimit={30} />
+                {/* See the note in Post.jsx: the space is what lets this read as
+                    part of the sentence and what lets the line wrap here. */}
+                {textClip.needsTruncation && ' '}
                 {textClip.needsTruncation && (
                   <button
                     type="button"

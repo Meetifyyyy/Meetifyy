@@ -1,7 +1,12 @@
 import { useNavigate } from 'react-router-dom';
 
-import { cleanUrlDisplay } from '@shared/utils/linkPreview';
-import { sanitizeUrl } from '@shared/utils/urlSanitize';
+import {
+  createUrlMatcher,
+  formatUrlForDisplay,
+  resolveHref,
+  splitTrailingPunctuation,
+  truncateUrlLabel,
+} from '@shared/utils/postLinks';
 import styles from './RichText.module.css';
 import { useUsersMap } from '@shared/hooks/useUsersMap';
 
@@ -57,50 +62,72 @@ export default function RichText({ content = '', mentions = [], className = '', 
     }
   };
 
-  // Helper to parse URLs in text and return clickable links
+  /**
+   * Linkify the URLs in a run of text.
+   *
+   * Walks matches with `exec` rather than `split(/…/g)` + `.test()`. That old
+   * pairing was broken in a way that was easy to miss: `.test()` on a `/g`
+   * regex advances its own `lastIndex`, so calling it repeatedly against the
+   * pieces of a split returned true and false alternately. A post with two
+   * links rendered the first as a link and the second as plain text, and which
+   * ones survived depended on how many pieces the split happened to produce.
+   *
+   * The destination is always the user's URL. Only the visible label is
+   * shortened or tidied, and an address that is not http(s) is never given an
+   * anchor at all.
+   */
   const renderTextWithLinks = (text, keyPrefix) => {
     if (!text) return null;
-    const urlRegex = /(https?:\/\/[^\s]+|www\.[^\s]+)/g;
-    const parts = text.split(urlRegex);
-    if (parts.length === 1) {
-      return markMatches(text, highlight, keyPrefix, styles.searchHit);
-    }
-    return parts.map((part, idx) => {
-      if (urlRegex.test(part)) {
-        const puncMatch = part.match(/([.,!?;:]+)$/);
-        let cleanPart = part;
-        let trailingPunc = '';
-        if (puncMatch) {
-          cleanPart = part.slice(0, puncMatch.index);
-          trailingPunc = puncMatch[0];
-        }
-        const rawHref = cleanPart.startsWith('www.') ? `https://${cleanPart}` : cleanPart;
-        const href = sanitizeUrl(rawHref);
-        
-        // Clean display text using our algorithm
-        const displayVal = cleanUrlDisplay(cleanPart);
-        // Truncate based on urlLimit
-        const truncatedDisplay = displayVal.length > urlLimit 
-          ? displayVal.slice(0, urlLimit - 3) + '...' 
-          : displayVal;
 
-        return (
-          <span key={`${keyPrefix}-link-container-${idx}`}>
-            <a
-              href={href}
-              target="_blank"
-              rel="noopener noreferrer"
-              className={styles.urlLink}
-              onClick={(e) => e.stopPropagation()}
-            >
-              {truncatedDisplay}
-            </a>
-            {trailingPunc}
-          </span>
-        );
+    const matcher = createUrlMatcher();
+    const out = [];
+    let cursor = 0;
+    let match;
+
+    while ((match = matcher.exec(text)) !== null) {
+      const [raw] = match;
+      const { url, trailing } = splitTrailingPunctuation(raw);
+      const href = resolveHref(url);
+
+      if (match.index > cursor) {
+        out.push(markMatches(text.slice(cursor, match.index), highlight, `${keyPrefix}-${cursor}`, styles.searchHit));
       }
-      return markMatches(part, highlight, `${keyPrefix}-${idx}`, styles.searchHit);
-    });
+
+      if (href) {
+        const label = truncateUrlLabel(formatUrlForDisplay(url), urlLimit);
+        out.push(
+          <a
+            key={`${keyPrefix}-link-${match.index}`}
+            href={href}
+            target="_blank"
+            // `noopener` denies the opened tab a handle on this one via
+            // `window.opener`; `noreferrer` keeps the referrer off the request.
+            rel="noopener noreferrer nofollow ugc"
+            className={styles.urlLink}
+            // The whole address, for anyone who wants to see where it goes
+            // before following it — the label may be shortened.
+            title={url}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {label}
+          </a>
+        );
+      } else {
+        // Not a web address we will link: `javascript:`, `data:`, or simply
+        // unparseable. It renders as the text the author typed, which is
+        // inert — React escapes it — rather than as an anchor to "#".
+        out.push(url);
+      }
+
+      if (trailing) out.push(trailing);
+      cursor = match.index + raw.length;
+    }
+
+    if (cursor === 0) return markMatches(text, highlight, keyPrefix, styles.searchHit);
+    if (cursor < text.length) {
+      out.push(markMatches(text.slice(cursor), highlight, `${keyPrefix}-${cursor}-tail`, styles.searchHit));
+    }
+    return out;
   };
 
 
@@ -163,13 +190,13 @@ export default function RichText({ content = '', mentions = [], className = '', 
       );
     }
 
-    return <div className={`${styles.wrapper} ${className}`}>{elements}</div>;
+    return <span className={`${styles.wrapper} ${className}`}>{elements}</span>;
   }
 
   // 2. Fallback regex matching for legacy text without structured mentions array
   const parts = content.split(/(@[a-zA-Z0-9_.-]+)/g);
   return (
-    <div className={`${styles.wrapper} ${className}`}>
+    <span className={`${styles.wrapper} ${className}`}>
       {parts.map((part, idx) => {
         if (part.startsWith('@') && part.length > 1) {
           const username = part.slice(1);
@@ -192,6 +219,6 @@ export default function RichText({ content = '', mentions = [], className = '', 
           </span>
         );
       })}
-    </div>
+    </span>
   );
 }
