@@ -51,21 +51,6 @@ export class RedisService implements OnModuleDestroy {
         this.client = new Redis(redisUrl, options);
         this.subClient = new Redis(redisUrl, options);
 
-        // One shared subscriber connection serves every service that listens
-        // for cross-instance messages, and each of them registers its own
-        // 'message' handler that filters by channel. Some of those services
-        // (BlocksService, for one) are instantiated per-module by Nest, so the
-        // handler count tracks the provider graph rather than anything the
-        // code does at runtime — it was already at Node's default of 10, and
-        // the auth-sync-cache subscriber pushed it over into a
-        // MaxListenersExceededWarning.
-        //
-        // The default is a leak heuristic, not a limit, and these handlers are
-        // registered once at boot and never removed. Raising the ceiling to a
-        // number the provider graph cannot plausibly reach keeps the warning
-        // meaningful: if it ever fires again, something really is leaking.
-        this.subClient.setMaxListeners(64);
-
         this.client.on('connect', () =>
           this.logger.log('Shared Redis connection established'),
         );
