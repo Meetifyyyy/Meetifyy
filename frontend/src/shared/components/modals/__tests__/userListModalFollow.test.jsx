@@ -29,6 +29,30 @@ const followMock = vi.fn();
 const unfollowMock = vi.fn();
 const getByUsernameMock = vi.fn();
 
+/**
+ * jsdom has no IntersectionObserver and the modal uses one for infinite
+ * scroll. This stub records the callback so a test can fire it, which is the
+ * only way to exercise pagination here.
+ */
+let intersectionCallbacks = [];
+function installIntersectionObserver() {
+  intersectionCallbacks = [];
+  globalThis.IntersectionObserver = class {
+    constructor(cb) {
+      intersectionCallbacks.push(cb);
+    }
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  };
+}
+/** Scroll the sentinel into view. */
+const triggerLoadMore = async () =>
+  act(async () => {
+    for (const cb of intersectionCallbacks) cb([{ isIntersecting: true }]);
+    await new Promise((r) => setTimeout(r, 0));
+  });
+
 vi.mock('@shared/api/apiClient', () => ({
   apiClient: { get: async () => ({}), post: async () => ({}) },
   usersApi: {
@@ -106,12 +130,7 @@ describe('UserListModal — unfollowing from the list', () => {
     vi.clearAllMocks();
     ['ann', 'bob', 'cal'].forEach((u) => toggleRegistry.clear(`follow:${u}`));
 
-    // jsdom has no IntersectionObserver; the modal uses one for infinite scroll.
-    globalThis.IntersectionObserver = class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    };
+    installIntersectionObserver();
 
     followMock.mockResolvedValue({ success: true, isFollowing: true });
     unfollowMock.mockResolvedValue({ success: true, isFollowing: false });
@@ -280,5 +299,150 @@ describe('UserListModal — unfollowing from the list', () => {
     await screen.findByText('@me');
 
     expect(buttonFor('me')).toBeNull();
+  });
+});
+
+/**
+ * Reopening the modal after an unfollow.
+ *
+ * The row is deliberately NOT removed from the open list when you unfollow —
+ * the mutation only marks the list stale. That left a cache entry which
+ * survived the modal, so reopening painted the OLD list immediately (React
+ * Query renders cached data while it revalidates) and swapped in the corrected
+ * list when the response landed. The unfollowed account was therefore visible
+ * for a few frames every time the modal was reopened.
+ *
+ * These tests pin the property that removes the flicker at its source: on
+ * reopen there is nothing cached to render, so the modal shows its skeleton
+ * and the first rows it ever paints are the server's.
+ */
+describe('UserListModal — reopening after an unfollow', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    ['ann', 'bob', 'cal'].forEach((u) => toggleRegistry.clear(`follow:${u}`));
+    installIntersectionObserver();
+    unfollowMock.mockResolvedValue({ success: true, isFollowing: false });
+    getByUsernameMock.mockResolvedValue({ username: 'x', isFollowing: false });
+    getFollowingMock.mockResolvedValue(ROWS);
+  });
+
+  afterEach(cleanup);
+
+  /** Lets the zero-length garbage-collection timer run after an unmount. */
+  const flushGc = () => act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+
+  const skeletonVisible = () =>
+    document.querySelectorAll('[class*="skeletonItem"]').length > 0;
+
+  it('shows the skeleton, not the previous list, while the reopen fetch is in flight', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+    const first = renderModal({ type: 'following', queryClient });
+    await screen.findByText('@ann');
+
+    await act(async () => {
+      fireEvent.click(buttonFor('ann'));
+    });
+    await settleMutation();
+    expect(screen.getByText('@ann')).toBeTruthy();
+
+    first.unmount();
+    await flushGc();
+
+    // Hold the reopen fetch open so the in-flight frame can be inspected.
+    let release;
+    getFollowingMock.mockImplementation(
+      () => new Promise((resolve) => { release = resolve; }),
+    );
+
+    renderModal({ type: 'following', queryClient });
+
+    // THE regression: the old list, unfollowed account and all, used to be
+    // painted here and corrected a moment later.
+    expect(screen.queryByText('@ann')).toBeNull();
+    expect(screen.queryByText('@bob')).toBeNull();
+    expect(skeletonVisible()).toBe(true);
+
+    await act(async () => {
+      release(ROWS.filter((u) => u.username !== 'ann'));
+      await new Promise((r) => setTimeout(r, 0));
+    });
+
+    await waitFor(() => expect(screen.queryByText('@bob')).toBeTruthy());
+    // The first rows ever painted for this opening are the server's.
+    expect(screen.queryByText('@ann')).toBeNull();
+    expect(renderedHandles()).toEqual(['@bob', '@cal']);
+  });
+
+  it('issues exactly one request per open, not one per render', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+    const first = renderModal({ type: 'following', queryClient });
+    await screen.findByText('@ann');
+    expect(getFollowingMock).toHaveBeenCalledTimes(1);
+
+    first.unmount();
+    await flushGc();
+
+    const second = renderModal({ type: 'following', queryClient });
+    await screen.findByText('@ann');
+    expect(getFollowingMock).toHaveBeenCalledTimes(2);
+
+    second.unmount();
+  });
+
+  it('does not leave the list behind in the cache when it closes', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+    const first = renderModal({ type: 'following', queryClient });
+    await screen.findByText('@ann');
+    expect(queryClient.getQueryData(['following', 'me'])).toBeDefined();
+
+    first.unmount();
+    await flushGc();
+
+    // Nothing survives that a later opening could render.
+    expect(queryClient.getQueryData(['following', 'me'])).toBeUndefined();
+  });
+
+  it('keeps rows on screen while a NEXT page loads, rather than flashing a skeleton', async () => {
+    // A full page, so the query believes there is more to fetch.
+    const pageOne = Array.from({ length: 20 }, (_, i) => ({
+      id: `p${i}`,
+      username: `user${i}`,
+      displayName: `User ${i}`,
+      isFollowing: true,
+    }));
+    getFollowingMock.mockResolvedValue(pageOne);
+
+    renderModal({ type: 'following' });
+    await screen.findByText('@user0');
+
+    // Hold page two open so the in-flight frame can be inspected.
+    let releaseNext;
+    getFollowingMock.mockImplementation(
+      () => new Promise((resolve) => { releaseNext = resolve; }),
+    );
+
+    await triggerLoadMore();
+    expect(getFollowingMock).toHaveBeenCalledTimes(2);
+    expect(getFollowingMock).toHaveBeenLastCalledWith('me', 20, 20);
+
+    // The loading gate must exclude next-page fetches: replacing the list with
+    // a skeleton mid-scroll would break infinite loading outright.
+    expect(skeletonVisible()).toBe(false);
+    expect(screen.getByText('@user0')).toBeTruthy();
+
+    await act(async () => {
+      releaseNext([
+        { id: 'p20', username: 'user20', displayName: 'User 20', isFollowing: true },
+      ]);
+      await new Promise((r) => setTimeout(r, 0));
+    });
+
+    // Page two is appended below page one; nothing was replaced.
+    await waitFor(() => expect(screen.queryByText('@user20')).toBeTruthy());
+    expect(screen.getByText('@user0')).toBeTruthy();
+    expect(renderedHandles()).toHaveLength(21);
   });
 });
