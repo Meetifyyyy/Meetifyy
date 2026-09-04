@@ -7,7 +7,6 @@ import FollowButton from '@shared/components/ui/FollowButton';
 import Skeleton from '@shared/components/skeletons/Skeleton';
 import { getCollegeName } from '@shared/utils/user';
 import { INTERESTS_BY_CATEGORY } from '@features/onboarding/constants/interestsData';
-import { toggleRegistry } from '@shared/utils/mutationRegistry';
 import { useOpenDirectMessage } from '@shared/hooks/useOpenDirectMessage';
 import CoverImage from './CoverImage';
 import s from './UserSidebarCard.module.css';
@@ -135,11 +134,18 @@ export default function UserSidebarCard({ username: propUsername, initialUser = 
     (effectiveUser.username && effectiveUser.username.toLowerCase() === currentUser.username?.toLowerCase())
   ));
 
-  const cleanTargetUsername = targetUsername.toLowerCase();
-  const entityKey = `follow:${cleanTargetUsername}`;
-
-  const rawIsFollowing = effectiveUser.isFollowing ?? (currentUser?.followingList?.some(u => u?.toLowerCase() === cleanTargetUsername) || false);
-  const isFollowing = cleanTargetUsername ? toggleRegistry.getLatestIntent(entityKey, rawIsFollowing) : rawIsFollowing;
+  // Only the profile payload's own `isFollowing` — which is read from the
+  // Follow table — is passed on. It used to fall back to a scan of
+  // `currentUser.followingList`, an array `/api/auth/sync` replaces wholesale
+  // on every auth event; when that array was stale or absent the fallback
+  // produced a confident `false` for an account the viewer does follow, and
+  // handed it to the button as if it were fact. `undefined` is the honest
+  // answer when this component does not know, and FollowButton resolves it.
+  //
+  // The pending-intent overlay is gone from here too: FollowButton applies it
+  // itself, so doing it here as well meant the same intent was read twice from
+  // a registry whose entries expire, which could disagree between the two.
+  const isFollowing = effectiveUser.isFollowing;
 
   // Derive counts from canonical profile stats
   const followersCount = effectiveUser.stats?.followers

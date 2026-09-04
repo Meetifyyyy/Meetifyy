@@ -3,6 +3,10 @@ import { useQueryClient } from '@tanstack/react-query';
 import { usersApi } from '../api/apiClient';
 import { useAuth } from '../context/AuthContext';
 import { toggleRegistry } from '../utils/mutationRegistry';
+import {
+  writeOptimisticFollowState,
+  writeServerFollowState,
+} from '../utils/followState';
 import { showToast } from '../utils/toast';
 import { PROFILE_KEYS } from './useProfile';
 
@@ -32,6 +36,12 @@ export function useFollowMutation(targetUsername) {
 
   const applyOptimisticUpdate = useCallback((isFollowing) => {
     if (!cleanTarget) return;
+
+    // The shared follow-state entry FIRST. Every button for this account reads
+    // it, so this is what makes Follow → Following happen on the same frame,
+    // wherever that account is rendered — sidebar, search results, profile
+    // header — without any of them refetching.
+    writeOptimisticFollowState(queryClient, cleanTarget, isFollowing);
 
     // Synchronize AuthContext's currentUser.followingList immediately
     if (currentUser && targetUsername) {
@@ -172,16 +182,27 @@ export function useFollowMutation(targetUsername) {
       activeControllers.set(entityKey, controller);
 
       try {
-        if (finalIntent) {
-          await usersApi.follow(targetUsername, { signal: controller.signal });
-        } else {
-          await usersApi.unfollow(targetUsername, { signal: controller.signal });
-        }
+        const res = finalIntent
+          ? await usersApi.follow(targetUsername, { signal: controller.signal })
+          : await usersApi.unfollow(targetUsername, { signal: controller.signal });
 
         // Only reconcile if this is still the latest sequence
         if (seq === mutationSeqRef.current) {
           activeControllers.delete(entityKey);
+          // Release the pending intent BEFORE writing server state: while the
+          // registry still holds an entry for this key, writeServerFollowState
+          // deliberately declines to write (a newer click would outrank a
+          // response already on the wire).
           toggleRegistry.clearIfLatest(entityKey, mutationId);
+
+          // The response is the database's own answer — `isFollowing` after
+          // the write. Recording it means the UI is confirmed against the
+          // server on every action rather than trusting the optimistic guess
+          // until something else happens to refetch.
+          const serverFollowing =
+            typeof res?.isFollowing === 'boolean' ? res.isFollowing : finalIntent;
+          writeServerFollowState(queryClient, cleanTarget, serverFollowing);
+
           // ONE silent background sync — does not update UI (staleTime guard prevents flicker)
           queryClient.invalidateQueries({ queryKey: PROFILE_KEYS.byUsername(cleanTarget), refetchType: 'none' });
           queryClient.invalidateQueries({ queryKey: ['followers', cleanTarget] });
@@ -190,6 +211,12 @@ export function useFollowMutation(targetUsername) {
             queryClient.invalidateQueries({ queryKey: ['followers', cleanCurrent] });
             queryClient.invalidateQueries({ queryKey: ['following', cleanCurrent] });
           }
+          // NOT invalidated, deliberately: ['users', 'recommendations'].
+          // Rebuilding the suggestion list here is what used to make a
+          // followed account vanish from under the cursor. The list is
+          // regenerated when it is next fetched — on a reload, or after its
+          // staleTime — and the account just followed keeps its place until
+          // then, showing "Following".
         }
       } catch (err) {
         activeControllers.delete(entityKey);

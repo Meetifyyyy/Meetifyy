@@ -82,7 +82,21 @@ function hydrateFromIdb(queryClient, idbKey, queryKey) {
         // Only seed a cache that is still empty: a network response that landed
         // while this read was in flight is newer than what IndexedDB holds.
         if (cached?.value && queryClient.getQueryData(queryKey) === undefined) {
-          queryClient.setQueryData(queryKey, cached.value);
+          // `updatedAt: 0` backdates the seed so the query counts as STALE the
+          // instant it is written.
+          //
+          // Without it, `setQueryData` stamps the entry with the current time
+          // and the query's five-minute `staleTime` then suppressed the
+          // revalidating fetch entirely. The mirror is written from a previous
+          // session, and it carries per-viewer membership (`isJoined`,
+          // `userRole`) — so a reload after joining a community restored the
+          // pre-join rows and showed "Join" again, for five minutes, with no
+          // request made that could have corrected it. That is the
+          // "refreshing produces a different membership state" report.
+          //
+          // Backdated, the seed still paints instantly and the network fetch
+          // still runs, so the stale membership is corrected in one round trip.
+          queryClient.setQueryData(queryKey, cached.value, { updatedAt: 0 });
         }
       })
       .catch(() => {})

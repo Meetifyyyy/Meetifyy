@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useToggleMutation } from '@shared/hooks/useToggleMutation';
 import { communitiesApi } from '@shared/api/apiClient';
 import { COMMUNITY_KEYS } from '@shared/hooks/useCommunities';
+import { idbDelete } from '@shared/lib/idb';
 import { isCommunityOwner } from '@shared/utils/community';
 import { showToast } from '@shared/utils/toast';
 import { openVerificationModal } from '@shared/stores/verificationModalStore';
@@ -72,6 +73,19 @@ export function useJoinCommunity() {
     return false;
   }, []);
 
+  /**
+   * The community lists are mirrored into IndexedDB for instant first paint,
+   * and that mirror carries per-viewer membership. Nothing dropped it when a
+   * join or leave succeeded, so the next cold start could rehydrate the
+   * pre-action rows — a community the viewer had joined coming back as "Join"
+   * after a reload. Query invalidation cannot fix that: the invalidated flag
+   * does not survive a page load, but the mirror does.
+   */
+  const dropListMirror = useCallback(() => {
+    idbDelete('communities', 'all').catch(() => {});
+    idbDelete('communities', 'campus').catch(() => {});
+  }, []);
+
   const { mutate: toggle } = useToggleMutation({
     entityKey: (vars) => `joinCommunity:${vars.communityId}`,
     applyOptimistic,
@@ -80,7 +94,23 @@ export function useJoinCommunity() {
     // `['communities']` covers the campus list too — its key is
     // ['communities','campus']. The old list also named ['campusCommunities'],
     // which no query has ever used.
-    invalidateKeys: (vars) => [['communities'], ['community', vars.communityId], ['conversations']],
+    //
+    // Marked stale but NOT refetched: these lists are ordered by member count,
+    // which the join just changed, so refetching them re-sorted the discovery
+    // panel the moment the button was pressed and could move or replace the
+    // card the viewer had just acted on. The optimistic write above already
+    // holds the correct membership and count for the visible cards; the list
+    // itself is regenerated on the next mount or reload, which is where a
+    // joined community is expected to make way for a new suggestion.
+    //
+    // The community's own detail page is refetched actively — it is showing
+    // the member list this action changed, and it is not a ranked list.
+    invalidateKeys: (vars) => [
+      { queryKey: ['communities'], refetchType: 'none' },
+      ['community', vars.communityId],
+      ['conversations'],
+    ],
+    onSettled: dropListMirror,
   });
 
   const queryClient = useQueryClient();

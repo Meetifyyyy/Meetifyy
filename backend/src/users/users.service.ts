@@ -59,6 +59,32 @@ export class UsersService {
    * `isOnline` for every row to every caller. Both sides of a block could watch
    * each other's status here.
    */
+  /**
+   * Which of `targetIds` the viewer already follows, as a Set.
+   *
+   * ONE query for the whole page, keyed on the `Follow` primary key
+   * `(followerId, followingId)`, so the cost does not grow with how many
+   * accounts the viewer follows — a viewer with 10 follows and a viewer with
+   * 10,000 both do a single index probe per candidate. This is deliberately
+   * NOT "fetch my following list and check membership client-side": that
+   * pattern is what made follow state depend on a `.limit()` further up the
+   * stack, so an account past the limit was silently reported as not-followed.
+   *
+   * Every list endpoint that renders a follow button goes through here, so
+   * there is exactly one definition of "does the viewer follow this row".
+   */
+  private async getFollowingSet(
+    viewerId: string | undefined | null,
+    targetIds: string[],
+  ): Promise<Set<string>> {
+    if (!viewerId || targetIds.length === 0) return new Set<string>();
+    const rows = await this.prisma.follow.findMany({
+      where: { followerId: viewerId, followingId: { in: targetIds } },
+      select: { followingId: true },
+    });
+    return new Set(rows.map((r) => r.followingId));
+  }
+
   async getAllUsers(limit: number, offset: number, currentUserId?: string) {
     const where: any = await this.blocksService.injectBlockFilter(
       currentUserId,
@@ -95,7 +121,12 @@ export class UsersService {
     });
 
     const userIds = users.map((u) => u.id);
-    const presenceMap = await this.presenceService.getPresenceMany(userIds);
+    // Presence and follow state are independent reads — issue them together
+    // rather than one after the other.
+    const [presenceMap, followingSet] = await Promise.all([
+      this.presenceService.getPresenceMany(userIds),
+      this.getFollowingSet(currentUserId, userIds),
+    ]);
 
     // Honour each target's own presence rules (and the block list) rather than
     // reporting raw presence to whoever asked.
@@ -118,6 +149,12 @@ export class UsersService {
       const isOnline = canSee && pres?.status === 'online';
       return {
         ...u,
+        // Authoritative, from the `Follow` table, for every row on the page.
+        // This field did not exist on the payload before, so every consumer
+        // that rendered a follow button from this list read `undefined` and
+        // fell back to "not following" — which is why an account the viewer
+        // already followed showed a "Follow" button here.
+        isFollowing: followingSet.has(u.id),
         isOnline,
         online: isOnline,
         lastActive: canSee ? pres?.lastSeen || null : null,
@@ -190,7 +227,15 @@ export class UsersService {
      * presence dot here must resolve it through
      * `resolvePresenceVisibilityForViewer`, as the messaging surfaces do.
      */
-    return users;
+
+    // Follow state IS rendered from this endpoint — the campus lists carry a
+    // follow button — and it was missing, so every row reported "not
+    // following". One batched lookup for the page; see getFollowingSet.
+    const followingSet = await this.getFollowingSet(
+      excludeUserId,
+      users.map((u) => u.id),
+    );
+    return users.map((u) => ({ ...u, isFollowing: followingSet.has(u.id) }));
   }
 
   /**
@@ -616,6 +661,20 @@ export class UsersService {
     }
 
     if (res.newlyFollowed) {
+      // The auth bootstrap (`/api/auth/sync`) serves `followingList` from a
+      // 60-second in-process LRU. Nothing used to drop that entry when the
+      // graph changed, so any auth event inside that window — a token refresh,
+      // a tab return, a reload — answered with the PRE-follow list, the client
+      // overwrote `currentUser.followingList` with it wholesale, and every
+      // account followed in the last minute reverted to "Follow" in the UI.
+      // That is the flip-back bug, and it got worse the more follows a session
+      // performed because each stale answer reverted all of them at once.
+      //
+      // The LRU is per process, so this also broadcasts over Redis to the
+      // other replicas — see clearAuthSyncCache. Without that, whether the UI
+      // reverted came down to which replica the next sync happened to reach.
+      clearAuthSyncCache(followerId);
+
       // Async non-blocking notification queue
       const jobData: FollowNotifJob = {
         followerId,
@@ -707,6 +766,11 @@ export class UsersService {
     const res = rows[0];
 
     if (res.unfollowed) {
+      // Same reason as followUser: drop the cached auth bootstrap so the next
+      // `/api/auth/sync` cannot hand back a `followingList` that still
+      // contains the account just unfollowed.
+      clearAuthSyncCache(followerId);
+
       this.domainEventService
         .emit('follow.deleted', {
           followerId,
@@ -1806,6 +1870,167 @@ export class UsersService {
     }
 
     return results;
+  }
+
+  /**
+   * "Who to follow" — the profile sidebar's recommendation list.
+   *
+   * This surface had no endpoint at all. The client built it by merging
+   * `GET /users?limit=20` (the twenty most recently created accounts), the
+   * campus list, and every participant of every open conversation, then
+   * filtered that pile against `currentUser.followingList` in JavaScript.
+   * Three things followed from that, all of them user-visible:
+   *
+   *   1. None of those payloads carried follow state, so the button's
+   *      `isFollowing` was `undefined` for every row and rendered "Follow"
+   *      whatever the database said.
+   *   2. Follow state therefore came from a cached array on the client, which
+   *      a stale `/auth/sync` could — and did — overwrite with a pre-follow
+   *      snapshot.
+   *   3. The candidate pool was whoever happened to be in those caches, so
+   *      once a viewer had followed most of them the panel simply emptied.
+   *
+   * The list is computed here instead, in ONE database round-trip, and every
+   * row carries `isFollowing` read from the `Follow` table. Excluded: the
+   * viewer, accounts they already follow, either side of a block, and
+   * unavailable accounts.
+   *
+   * Ranking, highest first: mutual connections (people the viewer follows who
+   * follow this candidate), same college, campus rep, follower count. Ties
+   * break on id so the order is stable for a given input rather than shuffling
+   * between two requests that see the same data.
+   *
+   * Cost: the candidate pool is bounded by `POOL` before any of the scoring
+   * joins run, so the aggregate work is proportional to the pool, never to the
+   * size of the user table or to how many people the viewer follows. A viewer
+   * with 10,000 follows pays the same as one with 10.
+   */
+  async getFollowRecommendations(userId: string, limit = 10) {
+    if (!userId) return [];
+
+    // Two index-backed arms — `[collegeId, createdAt DESC]` and
+    // `[accountStatus, createdAt DESC]` — rather than one ORDER BY over the
+    // whole table. The campus arm is what makes the suggestions feel local;
+    // the platform arm keeps the panel populated for an account with no
+    // college, or one that has already followed its whole campus.
+    const POOL = 120;
+
+    const rows: any[] = await this.prisma.$queryRaw`
+      WITH me AS (
+        SELECT "id", "collegeId" FROM "User" WHERE "id" = ${userId} LIMIT 1
+      ),
+      eligible AS (
+        SELECT u."id", u."collegeId", u."createdAt"
+        FROM "User" u, me
+        WHERE u."id" <> me."id"
+          AND u."accountStatus" = 'ACTIVE'
+          AND u."deletedAt" IS NULL
+          -- Already-followed accounts are excluded from GENERATION only. Once
+          -- a row has been handed to the client it stays on screen and its
+          -- button flips to "Following"; the exclusion applies the next time
+          -- the list is generated, which is what makes a refresh bring in new
+          -- faces instead of yanking someone out from under the cursor.
+          AND NOT EXISTS (
+            SELECT 1 FROM "Follow" f
+            WHERE f."followerId" = me."id" AND f."followingId" = u."id"
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM "Block" b
+            WHERE (b."blockerId" = me."id" AND b."blockedId" = u."id")
+               OR (b."blockerId" = u."id" AND b."blockedId" = me."id")
+          )
+      ),
+      campus_arm AS (
+        SELECT e."id" FROM eligible e, me
+        WHERE me."collegeId" IS NOT NULL AND e."collegeId" = me."collegeId"
+        ORDER BY e."createdAt" DESC
+        LIMIT ${POOL}
+      ),
+      platform_arm AS (
+        SELECT e."id" FROM eligible e
+        ORDER BY e."createdAt" DESC
+        LIMIT ${POOL}
+      ),
+      pool AS (
+        SELECT "id" FROM campus_arm
+        UNION
+        SELECT "id" FROM platform_arm
+      ),
+      -- People the viewer follows who also follow the candidate. One grouped
+      -- join over the bounded pool, not a lookup per row.
+      mutuals AS (
+        SELECT f2."followingId" AS "id", COUNT(*)::int AS "mutualCount"
+        FROM "Follow" f1
+        JOIN "Follow" f2 ON f2."followerId" = f1."followingId"
+        JOIN pool p ON p."id" = f2."followingId"
+        CROSS JOIN me
+        WHERE f1."followerId" = me."id"
+        GROUP BY f2."followingId"
+      ),
+      follower_counts AS (
+        SELECT f."followingId" AS "id", COUNT(*)::int AS "followerCount"
+        FROM "Follow" f
+        JOIN pool p ON p."id" = f."followingId"
+        GROUP BY f."followingId"
+      )
+      SELECT
+        u."id",
+        u."username",
+        u."displayName",
+        u."avatar",
+        u."bio",
+        u."isCampusRep",
+        u."collegeId",
+        c."name" AS "collegeName",
+        u."verificationStatus",
+        COALESCE(m."mutualCount", 0) AS "mutualCount",
+        COALESCE(fc."followerCount", 0) AS "followerCount",
+        -- COALESCE, not a bare comparison. The equality is NULL (not false)
+        -- for a candidate with no college, and in Postgres a NULL sorts FIRST
+        -- under ORDER BY ... DESC. Verified against the dev database, where
+        -- without this it put a college-less account above same-college ones
+        -- at equal mutual count -- the opposite of the intended ranking.
+        COALESCE(
+          me."collegeId" IS NOT NULL AND u."collegeId" = me."collegeId",
+          false
+        ) AS "sameCollege"
+      FROM pool p
+      JOIN "User" u ON u."id" = p."id"
+      CROSS JOIN me
+      LEFT JOIN "College" c ON c."id" = u."collegeId"
+      LEFT JOIN mutuals m ON m."id" = u."id"
+      LEFT JOIN follower_counts fc ON fc."id" = u."id"
+      ORDER BY
+        COALESCE(m."mutualCount", 0) DESC,
+        COALESCE(
+          me."collegeId" IS NOT NULL AND u."collegeId" = me."collegeId",
+          false
+        ) DESC,
+        u."isCampusRep" DESC,
+        COALESCE(fc."followerCount", 0) DESC,
+        u."id" ASC
+      LIMIT ${limit};
+    `;
+
+    return rows.map((r) => ({
+      id: r.id,
+      username: r.username,
+      displayName: r.displayName || r.username,
+      avatar: r.avatar,
+      bio: r.bio,
+      isCampusRep: !!r.isCampusRep,
+      collegeId: r.collegeId,
+      college: r.collegeName || null,
+      verified: r.verificationStatus === 'VERIFIED',
+      mutualCount: Number(r.mutualCount || 0),
+      followersCount: Number(r.followerCount || 0),
+      // Always false by construction — the query excludes what the viewer
+      // already follows. Emitted explicitly all the same, so this payload is
+      // self-describing and a consumer never has to infer follow state from
+      // the absence of a field. That inference is the bug this whole change
+      // exists to remove.
+      isFollowing: false,
+    }));
   }
 
   /**

@@ -92,6 +92,22 @@ export class UsersController {
     return this.usersService.getOnlineFriends(req.user.id, limitNum);
   }
 
+  // NOTE: same route-ordering requirement as mention-search above — this must
+  // stay ahead of the catch-all `:username`.
+  @Get('recommendations')
+  @UseGuards(JwtGuard)
+  // `no-cache` for the same reason as the listing above: the payload embeds
+  // avatar keys AND per-viewer follow state, neither of which a browser HTTP
+  // cache can be invalidated for from JS.
+  @CacheControl('private, no-cache')
+  async getFollowRecommendations(
+    @Req() req: AuthenticatedRequest,
+    @Query('limit') limit?: string,
+  ) {
+    const limitNum = clampPageParam(limit, { def: 10, max: 30, min: 1 });
+    return this.usersService.getFollowRecommendations(req.user.id, limitNum);
+  }
+
   // The campus surfaces are verification-gated. The frontend already renders a
   // locked page for them, but that gate wrapped only the JSX — the page's
   // queries still ran, so an unverified account fetched the whole campus

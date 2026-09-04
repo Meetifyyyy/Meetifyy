@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { usersApi, apiClient, postsApi, getBackendUrl } from '@shared/api/apiClient';
+import { followGraphChangedSince } from '../utils/followState';
 import { useSavedPostsStore } from '../stores/savedPostsStore';
 import { useSavedActivitiesStore } from '../stores/savedActivitiesStore';
 import usePostStore from '../stores/postStore';
@@ -120,6 +121,11 @@ export function AuthProvider({ children }) {
       return syncPromiseRef.current;
     }
 
+    // Stamped BEFORE the request goes out, so the merge below can tell whether
+    // the answer predates a follow the viewer performed while it was in
+    // flight. See the followingList branch there.
+    const syncStartedAt = Date.now();
+
     syncPromiseRef.current = (async () => {
       try {
         const syncRes = await apiClient.post('/api/auth/sync');
@@ -133,8 +139,18 @@ export function AuthProvider({ children }) {
               ? syncedUser.email
               : (sbEmail || prev?.email || '');
             const newAvatar = syncedUser.avatar || syncedUser.avatarUrl || prev?.avatar || prev?.avatarUrl;
+            // A sync response carries a snapshot of the follow graph. If the
+            // viewer followed or unfollowed someone after this request was
+            // issued, the snapshot is older than what the client already
+            // knows, and taking it would revert the change — the "it says
+            // Follow again a moment later" report. Keep the local list in that
+            // case; the next sync (or the follow response itself, which is
+            // authoritative) reconciles it.
+            const followListIsStale =
+              followGraphChangedSince(syncStartedAt) && Array.isArray(prev?.followingList);
             const mergedUser = {
               ...syncedUser,
+              ...(followListIsStale ? { followingList: prev.followingList } : {}),
               email: cleanEmail,
               avatar: newAvatar,
               avatarUrl: newAvatar,
