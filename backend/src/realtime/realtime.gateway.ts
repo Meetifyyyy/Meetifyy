@@ -28,10 +28,6 @@ import {
   parseJoinQueuePayload,
   parseMatchRespondPayload,
 } from '../instant-match/dto/join-queue.dto';
-import {
-  RATE_LIMIT_JOIN,
-  RATE_LIMIT_RESPOND,
-} from '../instant-match/instant-match.constants';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   checkPresenceVisibility,
@@ -44,10 +40,54 @@ import { MentionDto } from '../common/dto/mention.dto';
 import { JwtGuard } from '../common/guards/jwt.guard';
 import { VerifiedOnly } from '../common/decorators/verified-only.decorator';
 import { VerificationAccessService } from '../common/verification/verification-access.service';
+import { socketCorsOrigin } from './socket-cors';
+import { RateLimitService } from '../common/rate-limit/rate-limit.service';
+import { RATE_LIMIT_POLICIES } from '../config/rate-limit.config';
+import { config } from '../config';
+import { clientIp, normalizeIp } from '../common/rate-limit/client-ip.util';
+import type { RateLimitPolicyName } from '../config/rate-limit.config';
+
+/**
+ * The client address behind a socket.
+ *
+ * engine.io does not run through Express, so `req.ip` and its trust-proxy
+ * resolution are unavailable here. The handshake does carry the forwarded
+ * chain, and the RIGHT-hand entries are the ones our own infrastructure
+ * appended — the leftmost is caller-supplied, which is the value the HTTP
+ * guards were rewritten to stop trusting. Read from the right by the same hop
+ * count the HTTP side uses.
+ */
+function socketIp(client: any): string {
+  const forwarded = client?.handshake?.headers?.['x-forwarded-for'];
+  const hops = config.rateLimit.trustProxyHops;
+
+  if (typeof forwarded === 'string' && hops > 0) {
+    const chain = forwarded
+      .split(',')
+      .map((v) => v.trim())
+      .filter(Boolean);
+    const picked = chain[chain.length - hops];
+    if (picked) return normalizeIp(picked);
+  }
+
+  return normalizeIp(client?.handshake?.address || client?.conn?.remoteAddress);
+}
+
+/** Ack text per policy, so a socket rejection reads like the REST one. */
+const RATE_LIMIT_MESSAGES: Record<string, string> = Object.fromEntries(
+  Object.entries(RATE_LIMIT_POLICIES).map(([name, spec]) => [
+    name,
+    spec.message,
+  ]),
+);
 
 @WebSocketGateway({
   cors: {
-    origin: true,
+    // Reuses the HTTP allow-list rather than reflecting whatever Origin the
+    // caller sends. `origin: true` echoed any origin back, so the socket
+    // endpoint was reachable cross-origin from any site while the HTTP API
+    // beside it was carefully restricted.
+    origin: socketCorsOrigin,
     credentials: true,
   },
 })
@@ -94,8 +134,59 @@ export class RealtimeGateway
     // The same policy the HTTP guard and the messaging services use, so a
     // socket cannot become the one path with a looser rule.
     private readonly verificationAccess: VerificationAccessService,
+    // Redis-backed limits for the durable socket actions. The in-process
+    // InstantMatchRateLimiter it replaces counted per PROCESS, so the real
+    // ceiling was silently multiplied by the replica count and reset on every
+    // deploy; it is kept below purely for the ephemeral events, where
+    // per-process accuracy is the point.
+    private readonly rateLimit: RateLimitService,
     @Optional() private readonly jwtGuard?: JwtGuard,
   ) {}
+
+  /**
+   * Enforces policies for a socket event.
+   *
+   * Returns an error ack to hand straight back to the client, or null when the
+   * action is allowed. Socket events cannot carry HTTP headers, so the ack
+   * carries the same stable code and retry hint the REST 429 does.
+   */
+  private async limitEvent(
+    userId: string,
+    policies: Array<{ policy: RateLimitPolicyName; identifier: string }>,
+  ): Promise<{
+    status: 'error';
+    error: string;
+    code: number;
+    retryAfterSeconds: number;
+  } | null> {
+    const decision = await this.rateLimit.consumeAll(policies);
+    if (decision.allowed) return null;
+
+    const spec = RATE_LIMIT_MESSAGES[decision.policy];
+    return {
+      status: 'error',
+      error: spec ?? 'Too many requests. Please slow down.',
+      code: 429,
+      retryAfterSeconds: decision.resetSeconds,
+    };
+  }
+
+  /**
+   * Throttle for high-frequency ephemeral events (typing, heartbeat, ping).
+   *
+   * Deliberately in-process and deliberately SILENT: these fire many times a
+   * minute per socket, so a Redis round-trip each would cost more than the
+   * events themselves, and the thing being protected is this process's event
+   * loop. A dropped typing indicator is invisible; a typing indicator that
+   * raises an error toast is a bug.
+   */
+  private allowEphemeral(
+    key: string,
+    points: number,
+    windowMs: number,
+  ): boolean {
+    return this.instantMatchLimiter.consume(key, points, windowMs);
+  }
 
   afterInit() {
     // Register this gateway as the emit target for InstantMatchService
@@ -497,6 +588,41 @@ export class RealtimeGateway
   }
 
   async handleConnection(client: Socket) {
+    // Connection limiting comes in two tiers, and the ORDER is load-bearing.
+    //
+    // This one is per-address and runs BEFORE the token is verified, because
+    // verification is not free: `validateToken` falls back to a remote Supabase
+    // call when local verification fails, so a flood of garbage tokens from one
+    // host would otherwise become one outbound Supabase request per attempt —
+    // turning our own handshake into an amplifier against our auth provider.
+    // Bounding it here caps that exposure.
+    //
+    // It has to stay coarse, though: a campus NAT gateway or carrier CGNAT
+    // presents thousands of students as ONE address, so this budget is shared
+    // by all of them and a tight value would lock out a whole campus after a
+    // deploy. The precise work is done by `socket.connect.user` further down,
+    // which is keyed on the verified account and has no such problem.
+    //
+    // Failing open here is deliberate — a limiter problem must not stop people
+    // reconnecting to chat.
+    try {
+      const connectDecision = await this.rateLimit.consume(
+        'socket.connect.ip',
+        socketIp(client),
+      );
+      if (!connectDecision.allowed) {
+        this.logger.warn('Connection refused: reconnecting too frequently');
+        client.emit('connect:rate_limited', {
+          code: 'rate_limited',
+          retryAfterSeconds: connectDecision.resetSeconds,
+        });
+        client.disconnect();
+        return;
+      }
+    } catch {
+      // Never block a reconnect because the limiter itself failed.
+    }
+
     const token = client.handshake.auth?.token;
 
     if (!token) {
@@ -579,6 +705,34 @@ export class RealtimeGateway
     }
 
     userId = user.id;
+
+    // The per-USER connect tier. Deliberately applied here rather than beside
+    // the per-IP check above: only now is the account known, and being keyed on
+    // a verified identity means it can be tight without a shared campus address
+    // ever collapsing many students into one budget.
+    //
+    // Fails open on a limiter error for the same reason the IP tier does —
+    // nobody should be locked out of chat because a counter broke.
+    try {
+      const perUser = await this.rateLimit.consume(
+        'socket.connect.user',
+        userId,
+      );
+      if (!perUser.allowed) {
+        this.logger.warn(
+          `Connection refused: user=${userId} reconnecting too frequently`,
+        );
+        client.emit('connect:rate_limited', {
+          code: 'rate_limited',
+          retryAfterSeconds: perUser.resetSeconds,
+        });
+        client.disconnect();
+        return;
+      }
+    } catch {
+      // Never block a reconnect because the limiter itself failed.
+    }
+
     userName =
       user.user_metadata?.username ||
       user.user_metadata?.displayName ||
@@ -708,6 +862,9 @@ export class RealtimeGateway
   async handlePresenceHeartbeat(@ConnectedSocket() client: Socket) {
     const userId = (client as any).userId;
     if (!userId) return { status: 'error', error: 'Unauthenticated' };
+    // The client sends one every 25s; 6/min absorbs a reconnect without
+    // letting a stuck client spin. Silent — a dropped heartbeat is harmless.
+    if (!this.allowEphemeral(`hb:${client.id}`, 6, 60_000)) return;
     await this.presenceService.setOnline(userId, client.id);
     return { status: 'ok', timestamp: Date.now() };
   }
@@ -802,6 +959,13 @@ export class RealtimeGateway
     if (!userId || !data?.since)
       return { status: 'error', error: 'Invalid parameters' };
 
+    // The other reconnect-time query. Capped so a mass disconnect cannot turn
+    // into a thundering herd against Postgres.
+    const limited = await this.limitEvent(userId, [
+      { policy: 'socket.catchup.user', identifier: userId },
+    ]);
+    if (limited) return limited;
+
     try {
       const messages = await this.messagesService.getCatchupMessages(
         userId,
@@ -832,13 +996,19 @@ export class RealtimeGateway
   // A client viewing a post joins its room so it receives live comment/like/poll
   // activity; it leaves on unmount. Rooms are per-socket and auto-cleaned on
   // disconnect, so a missed 'post:leave' can't leak.
+  // Each room join carries an authorization check, so a client cycling rooms
+  // is a cheap way to make the server do work.
   @SubscribeMessage('post:join')
-  handlePostJoin(
+  async handlePostJoin(
     @ConnectedSocket() client: Socket,
     @MessageBody() data: { postId?: string },
   ) {
     const userId = (client as any).userId;
     if (!userId || !data?.postId) return;
+    const limited = await this.limitEvent(userId, [
+      { policy: 'socket.roomjoin.user', identifier: userId },
+    ]);
+    if (limited) return limited;
     client.join(`post_${data.postId}`);
   }
 
@@ -861,6 +1031,11 @@ export class RealtimeGateway
   ) {
     const userId = (client as any).userId;
     if (!userId || !data?.activityId) return;
+
+    const limited = await this.limitEvent(userId, [
+      { policy: 'socket.roomjoin.user', identifier: userId },
+    ]);
+    if (limited) return limited;
 
     // Room membership is an authorization decision, not a client preference:
     // the room carries discussion messages, attendee changes and activity
@@ -986,6 +1161,15 @@ export class RealtimeGateway
     const userId = (client as any).userId;
     const userName = (client as any).userName || 'Someone';
     if (!userId || !data?.conversationId) return;
+    // Ephemeral: dropped in silence, never acked with an error.
+    if (
+      !this.allowEphemeral(
+        `typing:${userId}:${data.conversationId}`,
+        15,
+        10_000,
+      )
+    )
+      return;
     // A typing indicator is a message-composer signal. Silently dropping it
     // (rather than throwing) keeps a stale client from spraying error acks
     // while it is refused; the composer it came from is already disabled.
@@ -1004,6 +1188,14 @@ export class RealtimeGateway
   ) {
     const userId = (client as any).userId;
     if (!userId || !data?.conversationId) return;
+    if (
+      !this.allowEphemeral(
+        `typing:${userId}:${data.conversationId}`,
+        15,
+        10_000,
+      )
+    )
+      return;
     await this.emitToConversation(data.conversationId, 'typing:stop', {
       conversationId: data.conversationId,
       userId,
@@ -1246,12 +1438,20 @@ export class RealtimeGateway
     }
   }
 
+  // One of the two database-heavy events that fire on every reconnect, which
+  // is what turns a mass disconnect into a thundering herd against Postgres.
   @SubscribeMessage('conversation:join_rooms')
   async handleJoinRooms(
     @ConnectedSocket() client: Socket,
     @MessageBody() data: { conversationIds: string[] },
   ) {
     const userId = (client as any).userId;
+    if (userId) {
+      const limited = await this.limitEvent(userId, [
+        { policy: 'socket.catchup.user', identifier: userId },
+      ]);
+      if (limited) return limited;
+    }
     if (
       !userId ||
       !data?.conversationIds ||
@@ -1311,6 +1511,15 @@ export class RealtimeGateway
     @MessageBody() data: { communityId: string },
   ) {
     if (!data?.communityId) return;
+
+    const userId = (client as any).userId;
+    if (userId) {
+      const limited = await this.limitEvent(userId, [
+        { policy: 'socket.roomjoin.user', identifier: userId },
+      ]);
+      if (limited) return limited;
+    }
+
     client.join(`community_${data.communityId}`);
 
     // Answer with the count as it stands right now. The community payload the
@@ -1377,19 +1586,14 @@ export class RealtimeGateway
     if (!userId)
       return { status: 'error', error: 'Unauthenticated', code: 401 };
 
-    if (
-      !this.instantMatchLimiter.consume(
-        `join:${userId}`,
-        RATE_LIMIT_JOIN.points,
-        RATE_LIMIT_JOIN.windowMs,
-      )
-    ) {
-      return {
-        status: 'error',
-        error: 'Slow down a moment before searching again',
-        code: 429,
-      };
-    }
+    // Per-minute burst, per-hour quota, and a per-address budget that catches
+    // a farm of throwaway accounts behind one host.
+    const joinLimited = await this.limitEvent(userId, [
+      { policy: 'im.join.user', identifier: userId },
+      { policy: 'im.join.hourly.user', identifier: userId },
+      { policy: 'im.join.ip', identifier: socketIp(client) },
+    ]);
+    if (joinLimited) return joinLimited;
 
     try {
       const dto = parseJoinQueuePayload(userId, data);
@@ -1423,19 +1627,10 @@ export class RealtimeGateway
     if (!userId)
       return { status: 'error', error: 'Unauthenticated', code: 401 };
 
-    if (
-      !this.instantMatchLimiter.consume(
-        `respond:${userId}`,
-        RATE_LIMIT_RESPOND.points,
-        RATE_LIMIT_RESPOND.windowMs,
-      )
-    ) {
-      return {
-        status: 'error',
-        error: 'Too many responses — try again shortly',
-        code: 429,
-      };
-    }
+    const limited = await this.limitEvent(userId, [
+      { policy: 'im.respond.user', identifier: userId },
+    ]);
+    if (limited) return limited;
 
     try {
       const { matchId, action } = parseMatchRespondPayload(data);
@@ -1455,6 +1650,12 @@ export class RealtimeGateway
   @VerifiedOnly()
   async handleQueueSync(@ConnectedSocket() client: Socket) {
     const userId = (client as any).userId;
+    if (userId) {
+      const limited = await this.limitEvent(userId, [
+        { policy: 'im.queuesync.user', identifier: userId },
+      ]);
+      if (limited) return limited;
+    }
     if (!userId)
       return { status: 'error', error: 'Unauthenticated', code: 401 };
     try {
@@ -1506,19 +1707,10 @@ export class RealtimeGateway
     if (!userId)
       return { status: 'error', error: 'Unauthenticated', code: 401 };
 
-    if (
-      !this.instantMatchLimiter.consume(
-        `leave:${userId}`,
-        RATE_LIMIT_RESPOND.points,
-        RATE_LIMIT_RESPOND.windowMs,
-      )
-    ) {
-      return {
-        status: 'error',
-        error: 'Too many requests — try again shortly',
-        code: 429,
-      };
-    }
+    const limited = await this.limitEvent(userId, [
+      { policy: 'im.respond.user', identifier: userId },
+    ]);
+    if (limited) return limited;
 
     try {
       const matchId =

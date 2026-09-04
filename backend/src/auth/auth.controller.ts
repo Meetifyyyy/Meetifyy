@@ -14,7 +14,14 @@ import { JwtGuard } from '../common/guards/jwt.guard';
 import { AllowSuspended } from '../common/decorators/allow-suspended.decorator';
 import { AllowPendingDeletion } from '../common/decorators/allow-pending-deletion.decorator';
 import { AuthRateLimitGuard } from '../common/guards/auth-ratelimit.guard';
-import { LoginRateLimitGuard } from '../common/guards/login-ratelimit.guard';
+import {
+  LoginRateLimitGuard,
+  loginAccountKey,
+} from '../common/guards/login-ratelimit.guard';
+import { RateLimitService } from '../common/rate-limit/rate-limit.service';
+import { RateLimit } from '../common/rate-limit/rate-limit.decorator';
+import { clientIp } from '../common/rate-limit/client-ip.util';
+import { RateLimitPolicyGuard } from '../common/rate-limit/rate-limit-policy.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../common/types/authenticated-request';
 import {
@@ -33,6 +40,7 @@ export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly emailService: EmailService,
+    private readonly rateLimit: RateLimitService,
   ) {}
 
   /**
@@ -74,7 +82,22 @@ export class AuthController {
   @Post('login')
   @UseGuards(LoginRateLimitGuard)
   async login(@Body() body: LoginDto, @Req() req: Request) {
-    const result = await this.authService.login(body.identifier, body.password);
+    let result: Awaited<ReturnType<typeof this.authService.login>>;
+    try {
+      result = await this.authService.login(body.identifier, body.password);
+    } catch (error) {
+      // Only failures spend the per-account budget. LoginRateLimitGuard has
+      // already checked it on the way in; this is where the point is actually
+      // charged, so a user cannot exhaust their own budget by signing in
+      // successfully. Never awaited in a way that could change the error the
+      // caller sees.
+      const account = loginAccountKey(req);
+      if (account) {
+        await this.rateLimit.penalize('auth.login.account', account);
+      }
+      throw error;
+    }
+
     // Fire-and-forget — do not block login on the notification email.
     this.sendLoginNotification(
       result.user.email,
@@ -113,10 +136,11 @@ export class AuthController {
     else if (deviceType === 'tablet') device = 'Tablet';
     else device = 'Desktop / Laptop';
 
-    const ip =
-      (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ||
-      req.socket?.remoteAddress ||
-      'Unknown';
+    // `req.ip` rather than the raw header: this address is shown to the user in
+    // a security email, and the leftmost X-Forwarded-For entry is whatever the
+    // caller wrote — so an attacker could make the "new login from…" notice
+    // display any address they liked.
+    const ip = clientIp(req) || 'Unknown';
 
     const loginTime = new Date().toLocaleString('en-US', {
       weekday: 'short',
@@ -172,7 +196,8 @@ export class AuthController {
   }
 
   @Post('events/welcome')
-  @UseGuards(JwtGuard)
+  @UseGuards(JwtGuard, RateLimitPolicyGuard)
+  @RateLimit('auth.emailtrigger.user')
   async triggerWelcomeEmail(
     @Body() body: TriggerWelcomeEmailDto,
     @CurrentUser() user: { id: string; email: string },
@@ -183,7 +208,8 @@ export class AuthController {
   }
 
   @Post('events/login')
-  @UseGuards(JwtGuard)
+  @UseGuards(JwtGuard, RateLimitPolicyGuard)
+  @RateLimit('auth.emailtrigger.user')
   async triggerLoginEmail(
     @Body() body: TriggerLoginEmailDto,
     @Req() req: Request,
@@ -222,10 +248,11 @@ export class AuthController {
       }
     }
 
-    // Derive real client IP (Render/proxied environments send x-forwarded-for)
+    // Resolved from req.ip (see trust proxy in main.ts), not from the raw
+    // header, whose leftmost entry is supplied by the caller.
     const ip =
       body.ip ||
-      (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ||
+      clientIp(req) ||
       req.socket?.remoteAddress ||
       'Unknown';
 
@@ -277,7 +304,8 @@ export class AuthController {
   }
 
   @Post('events/password-changed')
-  @UseGuards(JwtGuard)
+  @UseGuards(JwtGuard, RateLimitPolicyGuard)
+  @RateLimit('auth.emailtrigger.user')
   async triggerPasswordChangedEmail(
     @Body() body: TriggerPasswordChangedEmailDto,
     @Req() req: Request,
@@ -311,10 +339,11 @@ export class AuthController {
     }
 
     // Derive client IP
-    const ip =
-      (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ||
-      req.socket?.remoteAddress ||
-      'Unknown';
+    // `req.ip` rather than the raw header: this address is shown to the user in
+    // a security email, and the leftmost X-Forwarded-For entry is whatever the
+    // caller wrote — so an attacker could make the "new login from…" notice
+    // display any address they liked.
+    const ip = clientIp(req) || 'Unknown';
 
     // Format timestamp if not provided by the client
     const time =
@@ -369,6 +398,8 @@ export class AuthController {
   }
 
   @Post('request-college')
+  @UseGuards(RateLimitPolicyGuard)
+  @RateLimit('auth.collegerequest.ip', 'auth.collegerequest.email')
   async requestCollege(@Body() body: CreateCollegeRequestDto) {
     const request = await this.authService.createCollegeRequest(body);
     return {

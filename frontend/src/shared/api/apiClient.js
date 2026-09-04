@@ -536,9 +536,13 @@ async function _doFetch(cleanUrl, options, isRetry = false) {
   if (!res.ok) {
     let errorMessage = `API error ${res.status}`;
     let errorCode;
+    let retryAfterFromBody = null;
     try {
       const errorBody = await res.json();
       errorMessage = errorBody?.message || errorMessage;
+      if (typeof errorBody?.retryAfterSeconds === 'number') {
+        retryAfterFromBody = errorBody.retryAfterSeconds;
+      }
       // Authorization failures carry a machine-readable code (e.g.
       // COLLEGE_RESTRICTED, PRIVATE) that callers use to pick the right UI
       // state. The status is attached too so callers can tell "denied" from
@@ -550,6 +554,22 @@ async function _doFetch(cleanUrl, options, isRetry = false) {
     const err = new Error(errorMessage);
     err.status = res.status;
     if (errorCode) err.code = errorCode;
+
+    // Rate limited. The server sends `code: 'rate_limited'`, a human-readable
+    // message and how long to wait; surface all three rather than letting a
+    // bare "API error 429" reach the UI.
+    //
+    // `retryAfterSeconds` is attached so callers can show a countdown, and so
+    // the React Query retry predicate in main.jsx can decline to retry — a
+    // retried 429 spends another point against the very budget that just
+    // refused, which turns being limited into being limited twice as hard.
+    if (res.status === 429) {
+      err.code = errorCode || 'rate_limited';
+      const headerRetry = Number(res.headers.get('Retry-After'));
+      err.retryAfterSeconds =
+        retryAfterFromBody ??
+        (Number.isFinite(headerRetry) && headerRetry > 0 ? headerRetry : null);
+    }
 
     // A lifecycle state the SERVER knows about and this tab does not.
     //

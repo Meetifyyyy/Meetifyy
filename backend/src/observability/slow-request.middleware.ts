@@ -3,6 +3,7 @@ import { NextFunction, Request, Response } from 'express';
 
 import { config } from '../config';
 import { SlowRequestRecorder } from './slow-request.recorder';
+import { clientIp as resolveClientIp } from '../common/rate-limit/client-ip.util';
 
 /**
  * Times every request and hands the slow ones to the recorder.
@@ -90,13 +91,15 @@ export function headerValue(req: Request, name: string): string | null {
 }
 
 /**
- * The first hop in `x-forwarded-for` is the client; the rest are proxies.
- * Falls back to the socket address when the app is not behind a proxy.
+ * The client address for the slow-request record.
+ *
+ * Delegates to the shared resolver rather than reading X-Forwarded-For here:
+ * its leftmost entry is written by the caller, so a recorded address could be
+ * anything the caller chose. `req.ip` is correct now that `trust proxy` is set.
  */
 export function clientIp(req: Request): string | null {
-  const forwarded = headerValue(req, 'x-forwarded-for');
-  const value = forwarded ? forwarded.split(',')[0].trim() : req.ip;
-  return value ? value.slice(0, 64) : null;
+  const value = resolveClientIp(req);
+  return value && value !== 'unknown' ? value.slice(0, 64) : null;
 }
 
 function parseBytes(header: number | string | string[] | undefined) {

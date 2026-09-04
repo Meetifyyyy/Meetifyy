@@ -17,6 +17,7 @@ import { JwtGuard } from '../common/guards/jwt.guard';
 import { CacheControl } from '../common/decorators/cache-control.decorator';
 import { VerifiedOnly } from '../common/decorators/verified-only.decorator';
 import { clampPageParam } from '../common/pagination.util';
+import { clientIp } from '../common/rate-limit/client-ip.util';
 
 @Controller('api/users')
 export class UsersController {
@@ -208,7 +209,7 @@ export class UsersController {
   async deleteAccount(@Req() req: AuthenticatedRequest) {
     return this.accountDeletionService.requestDeletionOtp(req.user.id, {
       ip:
-        (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ||
+        clientIp(req) ||
         req.ip ||
         'unknown',
     });

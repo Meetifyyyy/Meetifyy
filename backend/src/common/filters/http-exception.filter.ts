@@ -159,6 +159,17 @@ export class HttpExceptionFilter implements ExceptionFilter {
         ? (message as any).code
         : undefined;
 
+    // Same allowlisting as `code`: a rate-limited response carries how long to
+    // wait, and the client shows a countdown from it. Without this it was
+    // silently dropped here and only the Retry-After header survived — which
+    // the support form's own 429 already relied on and never received.
+    const retryAfterSeconds =
+      typeof message === 'object' &&
+      message !== null &&
+      typeof (message as any).retryAfterSeconds === 'number'
+        ? (message as any).retryAfterSeconds
+        : undefined;
+
     const errorResponse = {
       statusCode: status,
       timestamp: new Date().toISOString(),
@@ -168,6 +179,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
           ? (message as any).message
           : message,
       ...(errorCode ? { code: errorCode } : {}),
+      ...(retryAfterSeconds !== undefined ? { retryAfterSeconds } : {}),
     };
 
     /**

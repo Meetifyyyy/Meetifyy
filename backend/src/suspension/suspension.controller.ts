@@ -5,6 +5,7 @@ import { IsString, Length } from 'class-validator';
 import { JwtGuard } from '../common/guards/jwt.guard';
 import { AllowSuspended } from '../common/decorators/allow-suspended.decorator';
 import { SuspensionService } from './suspension.service';
+import { clientIp } from '../common/rate-limit/client-ip.util';
 
 export class SubmitSuspensionAppealDto {
   @IsString()
@@ -48,7 +49,7 @@ export class SuspensionController {
   ) {
     return this.suspension.submitAppeal(req.user.id, dto.message, {
       ip:
-        (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ||
+        clientIp(req) ||
         req.ip ||
         'unknown',
       userAgent: (req.headers['user-agent'] as string) ?? null,

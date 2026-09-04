@@ -7,6 +7,7 @@ import { MentionsService } from '../mentions/mentions.service';
 import { RedisService } from '../redis/redis.service';
 import { BlocksService } from '../users/blocks.service';
 import { verificationAccessMockProvider } from '../common/verification/testing/verification-access.mock';
+import { allowAllRateLimitProvider } from '../common/rate-limit/testing/rate-limit.mock';
 
 /**
  * An Instant Match conversation belongs to one match session, and to nothing
@@ -65,6 +66,7 @@ describe('MessagesService — Instant Match conversations', () => {
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
+        allowAllRateLimitProvider(),
         verificationAccessMockProvider(),
         MessagesService,
         { provide: PrismaService, useValue: prisma },

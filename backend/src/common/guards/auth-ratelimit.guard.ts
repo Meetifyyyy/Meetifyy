@@ -1,71 +1,52 @@
+import { Injectable, CanActivate, ExecutionContext } from '@nestjs/common';
+import { RateLimitService } from '../rate-limit/rate-limit.service';
 import {
-  Injectable,
-  CanActivate,
-  ExecutionContext,
-  HttpException,
-  HttpStatus,
-} from '@nestjs/common';
-import { RateLimiterRedis } from 'rate-limiter-flexible';
-import { RedisService } from '../../redis/redis.service';
-import { config } from '../../config';
+  applyRateLimitHeaders,
+  rateLimitException,
+} from '../rate-limit/rate-limit.response';
+import { clientIp } from '../rate-limit/client-ip.util';
 
 /**
- * Stricter, dedicated rate limiter for sensitive unauthenticated auth endpoints
- * (username/email availability checks, username→email lookup, reset-email probe).
+ * Tighter budget for the unauthenticated auth probes — username/email
+ * availability, username→email lookup, the reset-email check.
  *
- * The global RateLimitGuard already applies a loose 100/min ceiling to every
- * route; these endpoints let a caller probe which accounts exist, so they get a
- * tighter per-IP budget on top. Keyed by client IP and namespaced separately so
- * it doesn't share points with the global limiter.
+ * These let a caller ask whether an account exists, so they get their own
+ * per-IP allowance on top of the global tier, namespaced separately so they do
+ * not share points with it.
  *
- * Consistent with the global guard: only active in production with Redis, and
- * fails open if Redis is unavailable (availability > brittle blocking).
+ * The budget is unchanged (20 per minute). What changed is the identifier: this
+ * used to read the leftmost `x-forwarded-for` entry — a client-supplied value —
+ * so an enumeration script could rotate the header and probe without limit. It
+ * now uses `req.ip`.
+ *
+ * Marked sensitive in the policy, so the 429 carries no RateLimit-Remaining (it
+ * would tell a prober exactly when to rotate) and a coarsened Retry-After.
+ *
+ * Paired with auth.probe.daily, because a per-minute limit alone does not stop
+ * enumeration — 20/min sustained is ~28,800 probes a day, which walks the whole
+ * user table without ever tripping the minute window.
  */
 @Injectable()
 export class AuthRateLimitGuard implements CanActivate {
-  private ratelimit: RateLimiterRedis | null = null;
-
-  constructor(private readonly redisService: RedisService) {
-    // Enforced wherever the environment does not ask for relaxed limits —
-    // always on in production, opt-in elsewhere.
-    const enforce = !config.features.relaxedRateLimits;
-    const redis = this.redisService.getClient();
-
-    if (enforce && redis) {
-      this.ratelimit = new RateLimiterRedis({
-        storeClient: redis,
-        points: 20, // 20 requests
-        duration: 60, // per 60 seconds, per IP
-        keyPrefix: 'ratelimit:auth-enum',
-      });
-    }
-  }
+  constructor(private readonly rateLimit: RateLimitService) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    if (!this.ratelimit) {
-      return true; // Bypass if not configured (dev / no Redis)
-    }
+    const http = context.switchToHttp();
+    const request = http.getRequest();
 
-    const request = context.switchToHttp().getRequest();
-    const ip =
-      (request.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ||
-      request.ip ||
-      request.socket?.remoteAddress ||
-      'anonymous';
+    // Both windows are consumed together. The per-minute budget shapes the
+    // signup form; the daily budget is what actually closes enumeration, since
+    // 20/min sustained is ~28,800 probes a day.
+    const ip = clientIp(request);
+    const decision = await this.rateLimit.consumeAll([
+      { policy: 'auth.probe.ip', identifier: ip },
+      { policy: 'auth.probe.daily', identifier: ip },
+    ]);
 
-    try {
-      await this.ratelimit.consume(ip);
-    } catch (e) {
-      if (e instanceof Error) {
-        // Redis error — fail open rather than lock users out.
-        console.warn('Auth rate limit check error (failing open)', e);
-        return true;
-      }
-      // rate-limiter-flexible throws a RateLimiterRes (not an Error) when exceeded.
-      throw new HttpException(
-        'Too many attempts. Please try again shortly.',
-        HttpStatus.TOO_MANY_REQUESTS,
-      );
+    applyRateLimitHeaders(http.getResponse(), decision);
+
+    if (!decision.allowed) {
+      throw rateLimitException(decision, request?.id);
     }
 
     return true;

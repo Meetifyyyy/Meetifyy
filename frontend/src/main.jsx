@@ -25,7 +25,27 @@ const queryClient = new QueryClient({
       gcTime:    1000 * 60 * 15,       // cached for 15 min
       refetchOnWindowFocus: true,     // Refetch when switching back to tab
       refetchOnReconnect: true,
-      retry: 1,
+      // Retry transient failures only.
+      //
+      // A flat `retry: 1` retried 4xx too, which is never useful — the server
+      // has already given its answer — and is actively harmful on a 429: the
+      // retry spends another point against the budget that just refused, so
+      // being rate limited cost two requests instead of one. 401 has its own
+      // refresh-and-retry path inside apiClient and must not be retried here
+      // either.
+      retry: (failureCount, error) => {
+        const status = error?.status;
+        if (typeof status === 'number' && status >= 400 && status < 500) {
+          return false;
+        }
+        return failureCount < 1;
+      },
+      // Exponential backoff with jitter. Without the random component, every
+      // client that failed at the same moment — a deploy, a blip, a burst of
+      // 429s — retries at the same moment too, and the recovering server is hit
+      // by a synchronised wave.
+      retryDelay: (attempt) =>
+        Math.min(30_000, 1000 * 2 ** attempt) * (0.5 + Math.random() * 0.5),
       // NOTE: `placeholderData: (prev) => prev` is deliberately NOT a global
       // default. As a default it applies when the *query key changes*, which
       // means every keyed query renders the previous key's data as though it

@@ -68,8 +68,13 @@ export const CAMPUS_MAX = 120;
 export const EXPIRY_SWEEP_MS = 10_000;
 
 /** Abuse limits, enforced per user on the gateway. */
-export const RATE_LIMIT_JOIN = { points: 10, windowMs: 60_000 };
-export const RATE_LIMIT_RESPOND = { points: 30, windowMs: 60_000 };
+// Instant Match rate limits now live in config/rate-limit.config.ts as
+// `im.join.user`, `im.join.hourly.user`, `im.join.ip`, `im.respond.user` and
+// `im.queuesync.user`, enforced through RateLimitService so they are shared
+// across replicas. The values here were per-process, so the effective ceiling
+// was multiplied by the replica count and reset on every deploy. Removed
+// rather than left in place, because two sources of truth for one limit is how
+// they drift.
 
 export function getAcceptTimerSecs(
   activity: string,
