@@ -24,17 +24,37 @@ export function normalizeIp(raw: string | undefined | null): string {
   let ip = String(raw).trim().toLowerCase();
   if (!ip) return 'unknown';
 
-  // Node reports IPv4 over a dual-stack socket as ::ffff:127.0.0.1.
-  if (ip.startsWith('::ffff:')) {
-    const mapped = ip.slice(7);
-    if (mapped.includes('.')) return mapped;
+  // Bracketed IPv6, with or without a port: [2001:db8::1]:443
+  if (ip.startsWith('[')) {
+    const close = ip.indexOf(']');
+    if (close > 0) ip = ip.slice(1, close);
   }
 
   // Strip a zone index (fe80::1%eth0) — not part of the address identity.
   const zone = ip.indexOf('%');
   if (zone !== -1) ip = ip.slice(0, zone);
 
-  if (!ip.includes(':')) return ip; // IPv4
+  // Node reports IPv4 over a dual-stack socket as ::ffff:127.0.0.1.
+  if (ip.startsWith('::ffff:')) {
+    const mapped = ip.slice(7);
+    if (mapped.includes('.')) ip = mapped;
+  }
+
+  // IPv4, with an optional :port.
+  //
+  // The port MUST come off. Azure Container Apps ingress appends the client as
+  // `address:port` to X-Forwarded-For, and the source port is different on every
+  // TCP connection — so keying on it gave each new connection its own fresh
+  // budget. That silently defeats every per-IP limit in the system: a login
+  // brute-force script opening a new connection per attempt would never meet
+  // one. Observed in production, where repeated requests each reported a full
+  // budget until the connection was reused.
+  if (ip.includes('.')) {
+    const colon = ip.indexOf(':');
+    return colon === -1 ? ip : ip.slice(0, colon);
+  }
+
+  if (!ip.includes(':')) return ip;
 
   return ipv6Prefix64(ip);
 }

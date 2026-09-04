@@ -10,6 +10,44 @@ describe('normalizeIp', () => {
     expect(normalizeIp('::ffff:203.0.113.7')).toBe('203.0.113.7');
   });
 
+  /**
+   * Observed in production against Azure Container Apps: its ingress appends
+   * the client as `address:port` to X-Forwarded-For, and the source port
+   * changes on every TCP connection. Keeping the port meant every new
+   * connection got its own fresh budget, which silently defeats every per-IP
+   * limit — a brute-force script opening one connection per attempt would
+   * never meet one.
+   */
+  describe('port stripping', () => {
+    it('maps every port from one address to the same key', () => {
+      const key = normalizeIp('14.139.98.105');
+      expect(normalizeIp('14.139.98.105:54321')).toBe(key);
+      expect(normalizeIp('14.139.98.105:54322')).toBe(key);
+      expect(normalizeIp('14.139.98.105:1')).toBe(key);
+    });
+
+    it('handles bracketed IPv6 with a port', () => {
+      expect(normalizeIp('[2001:db8::1]:443')).toBe(normalizeIp('2001:db8::1'));
+      expect(normalizeIp('[2001:db8::1]:8080')).toBe(
+        normalizeIp('[2001:db8::1]:443'),
+      );
+    });
+
+    it('does not mistake IPv6 colons for a port separator', () => {
+      // Eight hextets, no port — must still collapse to its /64, not be cut
+      // at the first colon.
+      expect(normalizeIp('2001:db8:abcd:12:dead:beef:1:2')).toBe(
+        '2001:db8:abcd:12',
+      );
+    });
+
+    it('keeps different addresses apart regardless of port', () => {
+      expect(normalizeIp('14.139.98.105:1')).not.toBe(
+        normalizeIp('14.139.98.106:1'),
+      );
+    });
+  });
+
   it('strips a zone index', () => {
     expect(normalizeIp('fe80::1%eth0')).toBe('fe80:0:0:0');
   });
