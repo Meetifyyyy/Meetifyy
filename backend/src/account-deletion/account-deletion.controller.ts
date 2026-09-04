@@ -6,6 +6,9 @@ import { JwtGuard } from '../common/guards/jwt.guard';
 import { AllowPendingDeletion } from '../common/decorators/allow-pending-deletion.decorator';
 import { AccountDeletionService } from './account-deletion.service';
 import { OTP_LENGTH } from '../otp/user-otp.constants';
+import { RateLimit } from '../common/rate-limit/rate-limit.decorator';
+import { clientIp as resolveClientIp } from '../common/rate-limit/client-ip.util';
+import { RateLimitPolicyGuard } from '../common/rate-limit/rate-limit-policy.guard';
 
 export class OtpDto {
   /**
@@ -58,6 +61,11 @@ export class AccountDeletionController {
 
   /** Step 1. Emails a code. Nothing is scheduled yet. */
   @Post('delete/request-otp')
+  // Sends email, and draws on a budget shared platform-wide: because auth is
+  // proxied, Supabase's 30-OTP-per-hour project ceiling is consumed by everyone
+  // at once, so one abuser can stop every other user receiving a code.
+  @UseGuards(RateLimitPolicyGuard)
+  @RateLimit('auth.otp.cooldown', 'auth.otp.user', 'auth.otp.ip')
   async requestDeletionOtp(@Req() req: AuthenticatedRequest) {
     return this.deletion.requestDeletionOtp(req.user.id, {
       ip: clientIp(req),
@@ -77,6 +85,11 @@ export class AccountDeletionController {
   /** Step 1. Emails a code. The deletion stays scheduled until step 2. */
   @AllowPendingDeletion()
   @Post('recover/request-otp')
+  // Sends email, and draws on a budget shared platform-wide: because auth is
+  // proxied, Supabase's 30-OTP-per-hour project ceiling is consumed by everyone
+  // at once, so one abuser can stop every other user receiving a code.
+  @UseGuards(RateLimitPolicyGuard)
+  @RateLimit('auth.otp.cooldown', 'auth.otp.user', 'auth.otp.ip')
   async requestRecoveryOtp(@Req() req: AuthenticatedRequest) {
     return this.deletion.requestRecoveryOtp(req.user.id, {
       ip: clientIp(req),
@@ -93,11 +106,14 @@ export class AccountDeletionController {
   }
 }
 
-/** First hop of `x-forwarded-for`, else the socket address. */
+/**
+ * The client address for the audit record.
+ *
+ * Delegates to the shared resolver, which reads `req.ip` — correct now that
+ * `trust proxy` is configured. This used to take the leftmost X-Forwarded-For
+ * entry, a value the caller supplies, so the address recorded against a
+ * deletion or recovery could be forged.
+ */
 function clientIp(req: AuthenticatedRequest): string {
-  return (
-    (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ||
-    req.ip ||
-    'unknown'
-  );
+  return resolveClientIp(req) || 'unknown';
 }

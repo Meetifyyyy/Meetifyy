@@ -497,6 +497,66 @@ export class JwtGuard implements CanActivate {
     }
   }
 
+  /**
+   * The user id a token proves, or null — WITHOUT ever calling Supabase.
+   *
+   * Used by the rate limiter, which needs an identity for every request but
+   * must not become an amplifier: `validateToken` falls back to a remote
+   * `auth.getUser` call when local verification fails, so a flood of garbage
+   * tokens would turn one attacker into one outbound Supabase request per
+   * request. This path answers only from the token cache or from local
+   * signature verification, and returns null rather than reaching out.
+   *
+   * The signature is still verified. Decoding `sub` without verifying would let
+   * a caller pick any identity: either minting endless fresh buckets, or —
+   * worse — deliberately spending a victim's budget to lock them out.
+   */
+  public async peekUserId(token: string): Promise<string | null> {
+    if (!token) return null;
+
+    const cached = JwtGuard.tokenCache.get(token);
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.userPayload?.id ?? null;
+    }
+
+    const header = this.parseHeader(token);
+    const alg = header?.alg;
+
+    if (
+      header?.kid &&
+      alg &&
+      JwtGuard.ASYMMETRIC_ALGS.includes(alg as jwt.Algorithm)
+    ) {
+      try {
+        const key = await JwtGuard.getSigningKey(header.kid);
+        if (key) {
+          const issuer = JwtGuard.expectedIssuer();
+          const payload: any = jwt.verify(token, key, {
+            algorithms: JwtGuard.ASYMMETRIC_ALGS,
+            ...(issuer ? { issuer } : {}),
+          });
+          return payload?.sub || payload?.id || payload?.user_id || null;
+        }
+      } catch {
+        return null;
+      }
+    }
+
+    const secret = config.auth.supabase.jwtSecret;
+    if (secret && alg === 'HS256') {
+      try {
+        const payload: any = jwt.verify(token, secret, {
+          algorithms: ['HS256'],
+        });
+        return payload?.sub || payload?.id || payload?.user_id || null;
+      } catch {
+        return null;
+      }
+    }
+
+    return null;
+  }
+
   /** Reads the JOSE header ({alg, kid}) to route verification. Not trusted for auth. */
   private parseHeader(token: string): { alg?: string; kid?: string } | null {
     try {

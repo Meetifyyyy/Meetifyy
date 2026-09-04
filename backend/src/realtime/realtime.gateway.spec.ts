@@ -1,5 +1,6 @@
 import { RealtimeGateway } from './realtime.gateway';
 import { createVerificationAccessMock } from '../common/verification/testing/verification-access.mock';
+import { allowAllRateLimit } from '../common/rate-limit/testing/rate-limit.mock';
 
 describe('RealtimeGateway — Authentication', () => {
   let gateway: RealtimeGateway;
@@ -68,6 +69,7 @@ describe('RealtimeGateway — Authentication', () => {
       communitiesService,
       blocksService,
       verificationAccess,
+      allowAllRateLimit(),
       jwtGuard,
     );
   });

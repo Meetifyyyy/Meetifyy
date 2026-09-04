@@ -25,6 +25,7 @@ import {
   SUPPORT_CATEGORY_LABELS,
 } from './support.constants';
 import type { AuthenticatedRequest } from '../common/types/authenticated-request';
+import { clientIp } from '../common/rate-limit/client-ip.util';
 
 /**
  * The public help centre and support-request API.
@@ -122,7 +123,7 @@ export class SupportController {
   ) {
     return this.support.createRequest(dto, {
       ip:
-        (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ||
+        clientIp(req) ||
         req.ip ||
         'unknown',
       userAgent: (req.headers['user-agent'] as string) ?? null,

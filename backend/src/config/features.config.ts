@@ -25,10 +25,13 @@ export const featuresConfigValues = {
   enableExperimentalFeatures: bool('FEATURE_EXPERIMENTAL', {
     default: 'false',
   }),
-  /** Relaxed rate limits (development ergonomics; forced off in production). */
-  relaxedRateLimits: IS_PRODUCTION
-    ? false
-    : bool('FEATURE_RELAXED_RATE_LIMITS', { default: 'true' }),
+  // NOTE: `relaxedRateLimits` was removed deliberately. It defaulted to true
+  // outside production, so every rate limit in the application was inert in
+  // local development, dev, staging and CI — production was the only
+  // environment where the limiters ever ran, which is why several of their bugs
+  // went unnoticed for so long. Limits now apply identically everywhere; see
+  // config/rate-limit.config.ts, where RATE_LIMIT_MODE=shadow provides a
+  // measure-only rollout mode that is refused in production.
 };
 
 export const loggingConfigValues = {

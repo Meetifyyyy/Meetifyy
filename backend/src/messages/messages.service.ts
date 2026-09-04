@@ -20,7 +20,12 @@ import { generatePublicId } from '../common/utils/public-id.util';
 import { LruCache } from '../common/utils/lru-cache.util';
 import { MessagingCoreService } from './core/messaging-core.service';
 import { SendMessageDto } from './core/dto/send-message.dto';
-import { assertMessageTextWithinLimit } from './core/message-limits';
+import {
+  assertMessageTextWithinLimit,
+  assertSendWithinRateLimit,
+  assertForwardWithinRateLimit,
+  assertNewConversationWithinRateLimit,
+} from './core/message-limits';
 import { RedisService } from '../redis/redis.service';
 import { BlocksService } from '../users/blocks.service';
 import { resolvePresenceVisibilityForViewer } from '../users/privacy.helper';
@@ -40,6 +45,7 @@ import {
   asString,
   asStringOrNull,
 } from '../common/utils/coerce.util';
+import { RateLimitService } from '../common/rate-limit/rate-limit.service';
 
 /** The questions MessagesService asks the Instant Match domain. Kept small so
  *  the coupling between the two stays visible: may this user write into this
@@ -91,6 +97,9 @@ export class MessagesService
     // Same reasoning as blocksService: verification gating on every send runs
     // through this, so it must fail at boot rather than silently disappear.
     verificationAccess: VerificationAccessService,
+    // Required, and ahead of the optional params because a required parameter
+    // cannot follow one: the send rate limit runs through this on every path.
+    rateLimit: RateLimitService,
     @Optional() private readonly redisService?: RedisService,
     @Optional() private readonly mediaCleanupService?: MediaCleanupService,
   ) {
@@ -101,6 +110,7 @@ export class MessagesService
       mentionsService,
       blocksService,
       verificationAccess,
+      rateLimit,
     );
     this.redis = this.redisService?.getClient() ?? null;
   }
@@ -352,6 +362,12 @@ export class MessagesService
     payload: SendMessageDto,
   ) {
     const realConvId = await this.resolveConversationId(conversationId);
+
+    // The socket path (`message:send`) lands here, and it carries almost all
+    // real traffic — so the limit has to be here as well as in
+    // MessagingCoreService. Shared budget, so the REST aliases and the socket
+    // cannot be alternated to get more. See message-limits.ts.
+    await assertSendWithinRateLimit(this.rateLimit, senderId, realConvId);
 
     const conv = await this.prisma.conversation.findUnique({
       where: { id: realConvId },
@@ -1621,6 +1637,7 @@ export class MessagesService
       throw new ForbiddenException('Cannot start a conversation with yourself');
     }
 
+
     // Any block in either direction with any invitee blocks the whole
     // conversation. `filterBlockedUsers` drops the blocked ids, so a shorter
     // result means at least one participant is unreachable.
@@ -1660,6 +1677,17 @@ export class MessagesService
     await this.verificationAccess.assertUsersEligible(
       [currentUserId, ...filteredUserIds],
       currentUserId,
+    );
+
+    // Placed here for exactly the reason the verification gate above is: the
+    // existing-conversation branch returned already, so this charges only for
+    // a genuine first contact. Charging before that lookup would spend a point
+    // every time someone reopened a thread they already had, and at 15/hour
+    // ordinary use would start failing.
+    await assertNewConversationWithinRateLimit(
+      this.rateLimit,
+      currentUserId,
+      Boolean(groupName),
     );
 
     const participants = [...new Set([...filteredUserIds, currentUserId])].map(
@@ -1761,6 +1789,14 @@ export class MessagesService
     targetConversationIds: string[],
     userId: string,
   ) {
+    // One point per destination — a forward carries a list, so charging per
+    // call would fan a message out to many conversations for the price of one.
+    await assertForwardWithinRateLimit(
+      this.rateLimit,
+      userId,
+      targetConversationIds,
+    );
+
     const originalMsg = await this.prisma.message.findUnique({
       where: { id: messageId },
       select: { id: true, payload: true, type: true },

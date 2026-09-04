@@ -11,6 +11,7 @@ import {
   PRETTY_MESSAGE_FORMAT,
 } from './common/logging/log-format';
 import { RateLimitGuard } from './common/guards/ratelimit.guard';
+import { JwtGuard } from './common/guards/jwt.guard';
 import { VerificationGuard } from './common/guards/verification.guard';
 import { NoCacheInterceptor } from './common/interceptors/no-cache.interceptor';
 import { config, configNamespaces } from './config';
@@ -48,6 +49,7 @@ import { AccountDeletionModule } from './account-deletion/account-deletion.modul
 import { AdminModule } from './admin/admin.module';
 import { VerificationModule } from './verification/verification.module';
 import { RedisModule } from './redis/redis.module';
+import { RateLimitModule } from './common/rate-limit/rate-limit.module';
 import { EventsModule } from './events/events.module';
 import { DomainValidatorModule } from './common/services/domain-validator.module';
 import { VerificationAccessModule } from './common/verification/verification-access.module';
@@ -157,6 +159,7 @@ import { SupportModule } from './support/support.module';
       },
     }),
     RedisModule,
+    RateLimitModule,
     AcademicsModule,
     SupabaseModule,
     PrismaModule,
@@ -282,6 +285,9 @@ import { SupportModule } from './support/support.module';
   controllers: [AppController],
   providers: [
     AppService,
+    // Provided here so the global RateLimitGuard can resolve a verified user id
+    // itself, rather than depending on guard ordering to populate request.user.
+    JwtGuard,
     {
       provide: APP_GUARD,
       useClass: RateLimitGuard,

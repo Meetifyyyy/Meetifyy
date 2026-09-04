@@ -6,12 +6,21 @@ interface Bucket {
 }
 
 /**
- * Fixed-window per-user limiter for Instant Match socket actions.
+ * In-process fixed-window throttle for HIGH-FREQUENCY EPHEMERAL socket events —
+ * typing indicators, presence heartbeats, pings.
  *
- * Deliberately in-process: these limits exist to stop one client hammering
- * `queue:join` or spamming responses, and a per-instance ceiling is enough
- * for that. Correctness guarantees (duplicate prevention, authorization)
- * live in the database transitions, not here.
+ * It previously also carried the durable Instant Match actions (`queue:join`,
+ * `match:respond`). That was wrong once there was more than one replica: the
+ * counters live in one process's memory, so the real ceiling was silently
+ * multiplied by the number of instances and reset on every deploy. Those
+ * actions now go through RateLimitService and share a Redis-backed budget.
+ *
+ * Per-process counting is the RIGHT choice for what remains. These events fire
+ * many times a minute per socket, so a Redis round-trip each would cost more
+ * than the events themselves, and the resource being protected is this
+ * process's own event loop. Callers drop refused events silently rather than
+ * acking an error — a lost typing indicator is invisible, an error toast is a
+ * bug.
  */
 @Injectable()
 export class InstantMatchRateLimiter {

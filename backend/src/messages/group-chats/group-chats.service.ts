@@ -23,6 +23,8 @@ import { generatePublicId } from '../../common/utils/public-id.util';
 import { MentionsService } from '../../mentions/mentions.service';
 import { MediaCleanupService } from '../../uploads/media-cleanup.service';
 import { VerificationAccessService } from '../../common/verification/verification-access.service';
+import { RateLimitService } from '../../common/rate-limit/rate-limit.service';
+import { assertNewConversationWithinRateLimit } from '../core/message-limits';
 
 @Injectable()
 export class GroupChatsService extends MessagingCoreService {
@@ -39,6 +41,9 @@ export class GroupChatsService extends MessagingCoreService {
     // Same reasoning as blocksService: verification gating on every send runs
     // through this, so it must fail at boot rather than silently disappear.
     verificationAccess: VerificationAccessService,
+    // Required, and ahead of the optional params because a required parameter
+    // cannot follow one: the send rate limit runs through this on every path.
+    rateLimit: RateLimitService,
     @Optional() private readonly redisService?: RedisService,
     @Optional() private readonly mediaCleanupService?: MediaCleanupService,
   ) {
@@ -49,6 +54,7 @@ export class GroupChatsService extends MessagingCoreService {
       mentionsService,
       blocksService,
       verificationAccess,
+      rateLimit,
     );
     this.redis = this.redisService?.getClient() ?? null;
   }
@@ -230,6 +236,13 @@ export class GroupChatsService extends MessagingCoreService {
     currentUserId: string,
     groupName: string,
   ) {
+    // A group additionally fans invitations and notifications out to everyone
+    // in the founding roster, so it spends both budgets.
+    await assertNewConversationWithinRateLimit(
+      this.rateLimit,
+      currentUserId,
+      true,
+    );
     const filteredUserIds = (userIds || []).filter(
       (id) => id && id !== currentUserId,
     );

@@ -61,6 +61,11 @@ describe('MessagingCoreService — messaging an unavailable recipient', () => {
         assertCanMessageInConversation: jest.fn(async () => {}),
         isEligibleStatus: () => true,
       } as any,
+      // Rate limiting is not what this fixture exercises; always allow.
+      {
+        consumeAll: jest.fn(async () => ({ allowed: true })),
+        consume: jest.fn(async () => ({ allowed: true })),
+      } as any,
     );
 
     // The conversation id resolves to itself in this fixture.

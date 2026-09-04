@@ -24,6 +24,9 @@ import {
   clearAdminSessionCookies,
   issueAdminSessionCookies,
 } from './admin-auth-cookies';
+import { RateLimit } from '../../common/rate-limit/rate-limit.decorator';
+import { RateLimitPolicyGuard } from '../../common/rate-limit/rate-limit-policy.guard';
+import { clientIp } from '../../common/rate-limit/client-ip.util';
 
 @Controller('admin/auth')
 export class AdminAuthController {
@@ -43,22 +46,30 @@ export class AdminAuthController {
 
   @Post('login')
   @HttpCode(HttpStatus.OK)
+  // Stricter than user login and blocked for longer: these credentials are the
+  // highest-value target in the system and the console is public-facing.
+  @UseGuards(RateLimitPolicyGuard)
+  @RateLimit('admin.login.ip', 'admin.login.account')
   async login(@Body() dto: AdminLoginDto, @Req() req: AdminRequest) {
-    const ip =
-      (req.headers['x-forwarded-for'] as string) || req.ip || '0.0.0.0';
+    // `req.ip` rather than the raw header: this address is written to the login
+    // audit trail, and the header is caller-controlled — an attacker could
+    // forge every entry attributing their attempts to someone else.
+    const ip = clientIp(req) || '0.0.0.0';
     const userAgent = req.headers['user-agent'] || 'Unknown';
     return this.authService.login(dto, ip, userAgent);
   }
 
   @Post('verify-otp')
   @HttpCode(HttpStatus.OK)
+  @UseGuards(RateLimitPolicyGuard)
+  @RateLimit('admin.login.ip')
   async verifyOtp(
     @Body() dto: VerifyOtpDto,
     @Req() req: AdminRequest,
     @Res({ passthrough: true }) res: any,
   ) {
     const ip =
-      (req.headers['x-forwarded-for'] as string) || req.ip || '0.0.0.0';
+clientIp(req) || '0.0.0.0';
     const userAgent = req.headers['user-agent'] || 'Unknown';
     const result = await this.authService.verifyOtp(dto, ip, userAgent);
 
@@ -76,13 +87,15 @@ export class AdminAuthController {
 
   @Post('verify-totp')
   @HttpCode(HttpStatus.OK)
+  @UseGuards(RateLimitPolicyGuard)
+  @RateLimit('admin.login.ip')
   async verifyTotp(
     @Body() dto: VerifyTotpDto,
     @Req() req: AdminRequest,
     @Res({ passthrough: true }) res: any,
   ) {
     const ip =
-      (req.headers['x-forwarded-for'] as string) || req.ip || '0.0.0.0';
+clientIp(req) || '0.0.0.0';
     const userAgent = req.headers['user-agent'] || 'Unknown';
     const result = await this.authService.verifyTotp(dto, ip, userAgent);
 
@@ -107,7 +120,7 @@ export class AdminAuthController {
     }
 
     const ip =
-      (req.headers['x-forwarded-for'] as string) || req.ip || '0.0.0.0';
+clientIp(req) || '0.0.0.0';
     const userAgent = req.headers['user-agent'] || 'Unknown';
 
     try {

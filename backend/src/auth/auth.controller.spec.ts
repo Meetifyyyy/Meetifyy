@@ -12,6 +12,7 @@ describe('AuthController — Security / Email Notification Spoofing Prevention',
   let controller: AuthController;
   let authService: any;
   let emailService: any;
+  let rateLimit: any;
 
   beforeEach(() => {
     authService = {};
@@ -20,7 +21,12 @@ describe('AuthController — Security / Email Notification Spoofing Prevention',
       sendNewLoginEmail: jest.fn().mockResolvedValue(undefined),
       sendPasswordChangedEmail: jest.fn().mockResolvedValue(undefined),
     };
-    controller = new AuthController(authService, emailService);
+    rateLimit = {
+      consume: jest.fn().mockResolvedValue({ allowed: true }),
+      check: jest.fn().mockResolvedValue({ allowed: true }),
+      penalize: jest.fn().mockResolvedValue(undefined),
+    };
+    controller = new AuthController(authService, emailService, rateLimit);
   });
 
   it('allows welcome email to the authenticated caller’s own email', async () => {

@@ -8,6 +8,7 @@ import { DomainEventService } from '../events/domain-event.service';
 import { MentionsService } from '../mentions/mentions.service';
 import { blocksServiceMockProvider } from '../users/testing/blocks.service.mock';
 import { VerificationAccessService } from '../common/verification/verification-access.service';
+import { allowAllRateLimitProvider } from '../common/rate-limit/testing/rate-limit.mock';
 
 /**
  * Messaging requires BOTH participants of a DM to be currently VERIFIED, and
@@ -59,6 +60,7 @@ describe('messaging — both participants must be verified', () => {
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
+        allowAllRateLimitProvider(),
         VerificationAccessService,
         blocksServiceMockProvider(),
         DmService,
@@ -174,6 +176,7 @@ describe('conversation history carries the send verdict', () => {
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
+        allowAllRateLimitProvider(),
         VerificationAccessService,
         blocksServiceMockProvider(),
         DmService,

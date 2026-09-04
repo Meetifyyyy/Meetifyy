@@ -8,6 +8,7 @@ import { Observable } from 'rxjs';
 import { tap } from 'rxjs/operators';
 import { PrismaService } from '../../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
+import { clientIp } from '../../common/rate-limit/client-ip.util';
 
 @Injectable()
 export class AuditInterceptor implements NestInterceptor {
@@ -113,8 +114,7 @@ export class AuditInterceptor implements NestInterceptor {
               oldValue: Prisma.JsonNull,
               newValue: sanitizedBody,
               ip:
-                (req.headers['x-forwarded-for'] as string) ||
-                req.ip ||
+                clientIp(req) || req.ip ||
                 '0.0.0.0',
               endpoint: url,
               httpMethod: method,

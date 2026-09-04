@@ -1,4 +1,5 @@
 import { NestFactory } from '@nestjs/core';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { config } from './config';
 import { AppModule } from './app.module';
 import { ValidationPipe, Logger as NestLogger } from '@nestjs/common';
@@ -23,7 +24,20 @@ Sentry.init({
 });
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+
+  // How many reverse proxies sit in front of Express.
+  //
+  // This is what makes `req.ip` mean "the client" instead of "whatever spoke to
+  // us last". Set to a NUMBER, never `true`: `true` tells Express to trust the
+  // whole X-Forwarded-For chain, which means trusting the entries the caller
+  // wrote, and that is the hole this closes. With a hop count, Express walks
+  // the header from the right — the end our own infrastructure appends to — and
+  // skips exactly that many trusted proxies.
+  //
+  // Until this was set, every IP-keyed rate limit counted the proxy's address,
+  // so all traffic shared one bucket. See config/rate-limit.config.ts.
+  app.set('trust proxy', config.rateLimit.trustProxyHops);
 
   // Normalize double slashes in incoming request URLs
   app.use((req: any, _res: any, next: any) => {
@@ -181,6 +195,7 @@ API base      ${config.app.apiBaseUrl || `(derived at request time)`}
 
 Database      [OK] PostgreSQL
 Redis         [OK] ${config.redis.url ? 'Connected' : `${config.redis.host}:${config.redis.port}`}
+Rate limits   [OK] ${config.rateLimit.mode} (policy v${config.rateLimit.policyVersion}, trust proxy hops: ${config.rateLimit.trustProxyHops})
 Socket.IO     [OK] Running
 BullMQ        [OK] Running
 Storage       [OK] ${config.storage.provider}

@@ -6,6 +6,7 @@ import { DomainEventService } from '../../events/domain-event.service';
 import { MentionsService } from '../../mentions/mentions.service';
 import { blocksServiceMockProvider } from '../../users/testing/blocks.service.mock';
 import { verificationAccessMockProvider } from '../../common/verification/testing/verification-access.mock';
+import { allowAllRateLimitProvider } from '../../common/rate-limit/testing/rate-limit.mock';
 
 /**
  * `lookupExistingDM` answers "is there a DM here I can open?" for every Send
@@ -45,6 +46,7 @@ describe('DmService — lookupExistingDM', () => {
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
+        allowAllRateLimitProvider(),
         verificationAccessMockProvider(),
         blocksServiceMockProvider(),
         DmService,

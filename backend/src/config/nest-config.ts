@@ -39,6 +39,7 @@ export const resendConfig = registerAs('resend', () => ({
 }));
 
 export const featuresConfig = registerAs('features', () => config.features);
+export const rateLimitConfig = registerAs('rateLimit', () => config.rateLimit);
 export const siteConfig = registerAs('site', () => config.site);
 
 export const configNamespaces = [
@@ -52,5 +53,6 @@ export const configNamespaces = [
   r2Config,
   resendConfig,
   featuresConfig,
+  rateLimitConfig,
   siteConfig,
 ];

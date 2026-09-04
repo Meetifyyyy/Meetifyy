@@ -21,6 +21,8 @@ import {
   presentUserAvatar,
   DELETED_USER_USERNAME,
 } from '../../common/users/deleted-user';
+import { RateLimitService } from '../../common/rate-limit/rate-limit.service';
+import { assertNewConversationWithinRateLimit } from '../core/message-limits';
 
 @Injectable()
 export class DmService extends MessagingCoreService {
@@ -31,6 +33,7 @@ export class DmService extends MessagingCoreService {
     mentionsService: MentionsService,
     blocksService: BlocksService,
     verificationAccess: VerificationAccessService,
+    rateLimit: RateLimitService,
   ) {
     super(
       prisma,
@@ -39,6 +42,7 @@ export class DmService extends MessagingCoreService {
       mentionsService,
       blocksService,
       verificationAccess,
+      rateLimit,
     );
   }
 
@@ -502,6 +506,16 @@ export class DmService extends MessagingCoreService {
       await this.verificationAccess.assertUsersEligible(
         [currentUserId, targetUserId],
         currentUserId,
+      );
+
+      // Only a genuine first contact is charged. The existing-thread branch
+      // above returns before this, so reopening a conversation you already
+      // have costs nothing — otherwise tapping Message on familiar profiles
+      // would exhaust a 15/hour budget during normal browsing.
+      await assertNewConversationWithinRateLimit(
+        this.rateLimit,
+        currentUserId,
+        false,
       );
 
       const newPubId = generatePublicId();

@@ -17,6 +17,7 @@ import { MessageResponseDto } from './dto/message-response.dto';
 import { MentionsService } from '../../mentions/mentions.service';
 import { buildReplyToSnapshot, REPLY_TO_SELECT } from '../reply-preview.util';
 import { VerificationAccessService } from '../../common/verification/verification-access.service';
+import { RateLimitService } from '../../common/rate-limit/rate-limit.service';
 import {
   isUnavailableUser,
   presentUserName,
@@ -28,7 +29,11 @@ import {
   asString,
   asStringOrNull,
 } from '../../common/utils/coerce.util';
-import { assertMessageTextWithinLimit } from './message-limits';
+import {
+  assertMessageTextWithinLimit,
+  assertSendWithinRateLimit,
+  assertForwardWithinRateLimit,
+} from './message-limits';
 
 @Injectable()
 export class MessagingCoreService {
@@ -62,6 +67,10 @@ export class MessagingCoreService {
     // its own — an optional dependency would let that protection vanish
     // silently instead of failing at boot.
     protected verificationAccess: VerificationAccessService,
+    // Required for the same reason as the two above: the send rate limit runs
+    // through it on every path, and an optional dependency would let that
+    // protection disappear silently instead of failing at boot.
+    protected rateLimit: RateLimitService,
   ) {}
 
   /**
@@ -219,6 +228,10 @@ export class MessagingCoreService {
       conversationId,
       senderId,
     );
+
+    // After the id is resolved against this sender, so a 429 cannot be used to
+    // probe whether a conversation exists. See message-limits.ts.
+    await assertSendWithinRateLimit(this.rateLimit, senderId, realConvId);
 
     // 1. Fetch conversation details & active participants in a single query
     const conv = await this.prisma.conversation.findUnique({
@@ -434,7 +447,9 @@ export class MessagingCoreService {
             mentions: sanitizedMentions,
             inviteData: initialInviteData,
             isForwarded: asBoolean(payload.isForwarded),
-            forwardedFromMessageId: asStringOrNull(payload.forwardedFromMessageId),
+            forwardedFromMessageId: asStringOrNull(
+              payload.forwardedFromMessageId,
+            ),
           } as any,
         },
         include: {
@@ -544,8 +559,8 @@ export class MessagingCoreService {
       publicId: pubId,
       internalId: realConvId,
       senderId: message.senderId,
-      senderName: presentUserName(message.sender as any),
-      senderAvatar: presentUserAvatar(message.sender as any) || '',
+      senderName: presentUserName(message.sender),
+      senderAvatar: presentUserAvatar(message.sender) || '',
       createdAt: message.createdAt,
       timestamp: message.createdAt,
       time: new Date(message.createdAt).toLocaleTimeString([], {
@@ -775,8 +790,8 @@ export class MessagingCoreService {
         id: m.id,
         conversationId: m.conversationId,
         senderId: m.senderId,
-        senderName: presentUserName(m.sender as any),
-        senderAvatar: presentUserAvatar(m.sender as any) || '',
+        senderName: presentUserName(m.sender),
+        senderAvatar: presentUserAvatar(m.sender) || '',
         from: currentUserId && m.senderId === currentUserId ? 'me' : 'them',
         createdAt: m.createdAt,
         timestamp: m.createdAt,
@@ -1055,6 +1070,14 @@ export class MessagingCoreService {
     targetConversationIds: string[],
     userId: string,
   ) {
+    // One point per destination — a forward carries a list, so charging per
+    // call would fan a message out to many conversations for the price of one.
+    await assertForwardWithinRateLimit(
+      this.rateLimit,
+      userId,
+      targetConversationIds,
+    );
+
     const originalMsg = await this.prisma.message.findUnique({
       where: { id: messageId },
       select: { id: true, payload: true, type: true },
@@ -1409,10 +1432,8 @@ export class MessagingCoreService {
       // Keeps the original 'System' fallback for an authorless system event;
       // a real author still resolves through the presenter, so a deleted one
       // renders as "Deleted User" here too.
-      senderName: message.sender
-        ? presentUserName(message.sender as any)
-        : 'System',
-      senderAvatar: presentUserAvatar(message.sender as any) || '',
+      senderName: message.sender ? presentUserName(message.sender) : 'System',
+      senderAvatar: presentUserAvatar(message.sender) || '',
       createdAt: message.createdAt,
       timestamp: message.createdAt,
       time: new Date(message.createdAt).toLocaleTimeString([], {

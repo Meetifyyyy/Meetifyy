@@ -25,6 +25,7 @@ import { databaseConfigValues } from './database.config';
 import { emailConfigValues } from './email.config';
 import { storageConfigValues } from './storage.config';
 import { redisConfigValues } from './redis.config';
+import { rateLimitConfigValues } from './rate-limit.config';
 import { featuresConfigValues, loggingConfigValues } from './features.config';
 import { siteConfigValues } from './site.config';
 import { supportConfigValues } from './support.config';
@@ -46,6 +47,7 @@ export const config = {
   email: emailConfigValues,
   storage: storageConfigValues,
   redis: redisConfigValues,
+  rateLimit: rateLimitConfigValues,
   features: featuresConfigValues,
   logging: loggingConfigValues,
   site: siteConfigValues,
