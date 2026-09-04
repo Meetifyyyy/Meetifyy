@@ -18,21 +18,23 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
  *   - the list is mirrored into IndexedDB for first paint, and nothing dropped
  *     that mirror on a join, so a reload could restore the pre-join rows.
  *
- * `useCommunities` is deliberately NOT mocked. The optimistic join writes
- * through the real query cache, and a stubbed hook that ignored the cache
- * would hide exactly the propagation this panel depends on.
+ * `useCommunityRecommendations` is deliberately NOT mocked. The optimistic
+ * join writes through the real query cache — by PREFIX, so that every list
+ * under ['communities'] is covered by one pass — and a stubbed hook that
+ * ignored the cache would hide exactly the propagation this panel depends on.
  */
 
 const joinMock = vi.fn().mockResolvedValue({ success: true, isJoined: true });
 const leaveMock = vi.fn().mockResolvedValue({ success: true, isJoined: false });
 const idbDeleteMock = vi.fn().mockResolvedValue(undefined);
-const getAllMock = vi.fn();
+const getRecommendationsMock = vi.fn();
 
 vi.mock('@shared/api/apiClient', () => ({
   apiClient: { get: async () => ({}), post: async () => ({}) },
   usersApi: { getRecommendations: async () => [], getByUsername: async () => ({}) },
   communitiesApi: {
-    getAll: (...a) => getAllMock(...a),
+    getRecommendations: (...a) => getRecommendationsMock(...a),
+    getAll: async () => [],
     getCampusCommunities: async () => [],
     join: (...a) => joinMock(...a),
     leave: (...a) => leaveMock(...a),
@@ -143,16 +145,39 @@ describe('ProfileRightSidebar — Discover Communities', () => {
       { id: 'c3', name: 'Debate', memberCount: 10, isJoined: false, userRole: null },
     ];
     ['c1', 'c2', 'c3'].forEach((id) => toggleRegistry.clear(`joinCommunity:${id}`));
-    getAllMock.mockImplementation(async () => communities);
+    getRecommendationsMock.mockImplementation(async () => communities);
   });
 
   afterEach(cleanup);
 
-  it('shows the most popular communities with a Join button', async () => {
+  it('renders the server\'s selection, in the server\'s order, with a Join button', async () => {
     await renderSidebar();
 
+    expect(getRecommendationsMock).toHaveBeenCalledWith(3);
     expect(renderedNames()).toEqual(['Chess Club', 'Robotics', 'Debate']);
     expect(actionFor('Robotics').textContent).toBe('Join');
+  });
+
+  it('does not re-sort or re-slice what the server sent', async () => {
+    // Deliberately NOT in member-count order: the endpoint samples at random,
+    // so any client-side sort would fight it and undo the randomisation.
+    communities = [
+      { id: 'c3', name: 'Debate', memberCount: 4, isJoined: false, userRole: null },
+      { id: 'c1', name: 'Chess Club', memberCount: 900, isJoined: false, userRole: null },
+      { id: 'c2', name: 'Robotics', memberCount: 40, isJoined: false, userRole: null },
+    ];
+    await renderSidebar();
+
+    expect(renderedNames()).toEqual(['Debate', 'Chess Club', 'Robotics']);
+  });
+
+  it('renders a short list rather than nothing when few communities are eligible', async () => {
+    communities = [
+      { id: 'c1', name: 'Chess Club', memberCount: 30, isJoined: false, userRole: null },
+    ];
+    await renderSidebar();
+
+    expect(renderedNames()).toEqual(['Chess Club']);
   });
 
   it('KEEPS a joined community in the list and flips its button to Joined', async () => {
@@ -180,11 +205,11 @@ describe('ProfileRightSidebar — Discover Communities', () => {
       fireEvent.click(actionFor('Debate'));
     });
 
-    // And then the list itself reports a much larger count for it, as a
-    // refetch would after enough joins. Ranking is decided once per mount, so
-    // this must not promote Debate past the others.
+    // And then the entry itself reports a much larger count for it. The panel
+    // renders the server's order and does no sorting of its own, so this must
+    // not promote Debate past the others.
     await act(async () => {
-      queryClient.setQueryData(COMMUNITY_KEYS.all, (old) =>
+      queryClient.setQueryData(COMMUNITY_KEYS.recommendations(3), (old) =>
         old.map((c) => (c.id === 'c3' ? { ...c, memberCount: 999, isJoined: true } : c)),
       );
     });
@@ -193,9 +218,30 @@ describe('ProfileRightSidebar — Discover Communities', () => {
     await drainPendingToggles();
   });
 
+  it('still reads Joined once the pending intent has been released', async () => {
+    // The toggle registry carries the button only while the request is in
+    // flight. After it settles the card falls back to the payload, so the
+    // optimistic write has to have reached THIS list — which it does by prefix
+    // match on ['communities'], not by naming the key. Before that, a list
+    // that had not added itself to the updater by hand read "Join" again a
+    // moment after a successful join.
+    const { queryClient } = await renderSidebar();
+
+    await act(async () => {
+      fireEvent.click(actionFor('Robotics'));
+    });
+    await drainPendingToggles();
+
+    expect(toggleRegistry.isPending('joinCommunity:c2')).toBe(false);
+    await expectAction('Robotics', 'Joined');
+
+    const cached = queryClient.getQueryData(COMMUNITY_KEYS.recommendations(3));
+    expect(cached.find((c) => c.id === 'c2')).toMatchObject({ isJoined: true });
+  });
+
   it('does not refetch the whole list after a join', async () => {
     await renderSidebar();
-    expect(getAllMock).toHaveBeenCalledTimes(1);
+    expect(getRecommendationsMock).toHaveBeenCalledTimes(1);
 
     await act(async () => {
       fireEvent.click(actionFor('Robotics'));
@@ -204,7 +250,7 @@ describe('ProfileRightSidebar — Discover Communities', () => {
 
     expect(joinMock).toHaveBeenCalledTimes(1);
     // Marked stale for the next mount, not rebuilt underneath the viewer.
-    expect(getAllMock).toHaveBeenCalledTimes(1);
+    expect(getRecommendationsMock).toHaveBeenCalledTimes(1);
     await expectAction('Robotics', 'Joined');
   });
 

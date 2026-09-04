@@ -307,6 +307,54 @@ describe('Follow state', () => {
       expect(first.displayName).toBe('ravi');
     });
 
+    it('asks for a wider pool than it returns, and draws from it', async () => {
+      const pool = Array.from({ length: 40 }, (_, i) => ({
+        ...row,
+        id: `cand-${i}`,
+        username: `user${i}`,
+      }));
+      prisma.$queryRaw.mockResolvedValue(pool);
+
+      const results = await service.getFollowRecommendations('me', 3);
+
+      expect(results).toHaveLength(3);
+      // Everything returned came out of the ranked pool — the randomisation
+      // chooses among candidates that already earned their place, so variety
+      // costs no relevance.
+      const poolUsernames = new Set(pool.map((p) => p.username));
+      for (const r of results) expect(poolUsernames.has(r.username)).toBe(true);
+      expect(new Set(results.map((r) => r.username)).size).toBe(3);
+    });
+
+    it('produces a different selection across requests', async () => {
+      const pool = Array.from({ length: 40 }, (_, i) => ({
+        ...row,
+        id: `cand-${i}`,
+        username: `user${i}`,
+      }));
+      prisma.$queryRaw.mockResolvedValue(pool);
+
+      const seen = new Set<string>();
+      for (let i = 0; i < 20; i++) {
+        const picked = await service.getFollowRecommendations('me', 3);
+        seen.add(picked.map((p) => p.username).join(','));
+      }
+
+      // A strict top-N of a deterministic ranking gave every viewer the same
+      // three faces forever. That is the behaviour being replaced.
+      expect(seen.size).toBeGreaterThan(1);
+    });
+
+    it('returns the whole pool when fewer candidates than asked for are eligible', async () => {
+      prisma.$queryRaw.mockResolvedValue([row]);
+
+      const results = await service.getFollowRecommendations('me', 3);
+
+      // A short panel, not an empty one.
+      expect(results).toHaveLength(1);
+      expect(results[0].username).toBe('ravi');
+    });
+
     it('returns nothing, and asks nothing, without a viewer', async () => {
       const result = await service.getFollowRecommendations('', 3);
 

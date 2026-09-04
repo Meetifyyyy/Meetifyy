@@ -1,5 +1,3 @@
-import { useMemo, useRef } from 'react';
-
 import { useAuth } from '@shared/context/AuthContext';
 import Avatar from '@shared/components/avatar/Avatar';
 import { CollegeRepresentativeBadge } from '@shared/components/badges/CollegeRepresentativeBadge';
@@ -7,7 +5,7 @@ import FollowButton from '@shared/components/ui/FollowButton';
 import { useNavigate, useLocation } from 'react-router-dom';
 import s from './ProfileRightSidebar.module.css';
 import { useFollowSuggestions } from '@shared/hooks/useFollowSuggestions';
-import { useCommunities } from '@shared/hooks/useCommunities';
+import { useCommunityRecommendations } from '@shared/hooks/useCommunityRecommendations';
 import { useJoinCommunity } from '@features/communities/hooks/useJoinCommunity';
 import { toggleRegistry } from '@shared/utils/mutationRegistry';
 import { resolveCommunityAvatar } from '@shared/utils/avatar';
@@ -44,48 +42,28 @@ export default function ProfileRightSidebar({ embedded = false }) {
    */
   const { suggestions } = useFollowSuggestions(3);
 
-  const { communities, communitiesById } = useCommunities();
+  /**
+   * Communities come from the server too, already filtered and already drawn.
+   *
+   * This used to slice the top three by member count out of the shared
+   * `useCommunities()` list, which had three consequences: every viewer saw
+   * the same three biggest communities on every visit; the panel could be
+   * entirely made of communities they had already joined; and because the
+   * ranking key is member count and joining increments it, the act of joining
+   * could re-sort the panel and swap the card out from under the pointer.
+   *
+   * The endpoint excludes joined communities in SQL and samples the rest, so
+   * none of the three can happen — and the ordering is fixed by the response
+   * rather than recomputed on every render, which is what the frozen-selection
+   * ref here used to be working around.
+   */
+  const { recommendations: popularCommunities } = useCommunityRecommendations(3);
 
   const { mutate: toggleJoin } = useJoinCommunity();
 
   const navigate = useNavigate();
   const location = useLocation();
 
-
-  // `communities` is a plain array. It used to be read with Object.values(),
-  // which returned every entry twice because the hook handed back an array that
-  // also carried id-keyed properties — that is what showed one community as two
-  // identical cards.
-  //
-  // WHICH three are shown is decided once, on the first render that has data,
-  // and then held for the life of this mount. The cards themselves stay live —
-  // they are looked up by id out of the current cache on every render, so
-  // membership and member count update the instant the join lands.
-  //
-  // The two halves have to be separated because the ranking key is member
-  // count and joining increments it: re-deriving the slice on every render
-  // meant the act of joining could re-sort the panel and swap the card out
-  // from under the pointer. Same principle as "Who to follow" — the action
-  // changes the item's state, never the list's membership. The selection is
-  // re-made on the next mount or reload.
-  //
-  // The API field is `memberCount` (the backend even sorts by it); `members`
-  // does not exist on this payload, so the old read was always undefined and
-  // every card fell back to "0 members".
-  const pickedCommunityIdsRef = useRef(null);
-  if (pickedCommunityIdsRef.current === null && communities.length > 0) {
-    pickedCommunityIdsRef.current = [...communities]
-      .sort((a, b) => communityMemberCount(b) - communityMemberCount(a))
-      .slice(0, 3)
-      .map((c) => c.id);
-  }
-  const pickedCommunityIds = pickedCommunityIdsRef.current;
-
-  const popularCommunities = useMemo(() => {
-    if (!pickedCommunityIds) return [];
-    // Deleted communities drop out rather than rendering a hole.
-    return pickedCommunityIds.map((id) => communitiesById[id]).filter(Boolean);
-  }, [pickedCommunityIds, communitiesById]);
 
   // Membership comes from the payload's own `isJoined` / `userRole`, through the
   // same helper every other community surface uses. This used to read

@@ -50,6 +50,22 @@ export class CommunitiesController {
     return result;
   }
 
+  /**
+   * Registered before the `:id` routes below, or it would be swallowed as a
+   * lookup for a community whose id is the literal string "recommendations".
+   */
+  @Get('recommendations')
+  async getCommunityRecommendations(
+    @CurrentUser() user: any,
+    @Query('limit') limit?: string,
+  ) {
+    const limitNum = clampPageParam(limit, { def: 10, max: 30, min: 1 });
+    return this.communitiesService.getCommunityRecommendations(
+      user?.id,
+      limitNum,
+    );
+  }
+
   @Get('campus')
   async getCampusCommunities(
     @CurrentUser() user: any,

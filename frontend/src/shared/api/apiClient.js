@@ -706,6 +706,14 @@ const normalizeCommunity = (c) => {
 
 export const communitiesApi = {
   getAll: () => apiClient.get('/api/communities').then((list) => (Array.isArray(list) ? list.map(normalizeCommunity) : list)),
+  // Discovery suggestions: communities the viewer has NOT joined, drawn at
+  // random from the most popular of the rest. Server-ranked and server-sampled
+  // so the panel varies per load without the client fetching a wide list to
+  // filter down.
+  getRecommendations: (limit = 10) =>
+    apiClient
+      .get(`/api/communities/recommendations?limit=${limit}`)
+      .then((list) => (Array.isArray(list) ? list.map(normalizeCommunity) : list)),
   getCampusCommunities: (search) => {
     const qs = search ? `?search=${encodeURIComponent(search)}` : '';
     return apiClient.get(`/api/communities/campus${qs}`).then((list) => (Array.isArray(list) ? list.map(normalizeCommunity) : list));

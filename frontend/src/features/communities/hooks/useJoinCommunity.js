@@ -23,12 +23,20 @@ export function useJoinCommunity() {
       return oldData;
     };
 
-    // Use the shared key definitions rather than re-typing them: the campus list
-    // was previously written to ['campusCommunities'], which is not a key any
-    // query uses (COMMUNITY_KEYS.campus is ['communities','campus']), so joining
-    // a campus community never updated that list optimistically.
-    queryClient.setQueryData(COMMUNITY_KEYS.all, updater);
-    queryClient.setQueryData(COMMUNITY_KEYS.campus, updater);
+    // Every cache entry under the ['communities'] prefix, in one pass — the
+    // full list, the campus list and the discovery recommendations alike.
+    //
+    // This used to name two exact keys, which meant each new community list
+    // had to remember to add itself here or its cards would show the wrong
+    // membership after a join: the toggle registry's pending intent carries
+    // the button for about fifteen seconds, and once it expires the card falls
+    // back to the payload and reads "Join" again for somewhere the viewer had
+    // just joined. A prefix match cannot drift that way.
+    //
+    // (An earlier version wrote the campus list to ['campusCommunities'],
+    // which is not a key any query has ever used, so joining a campus
+    // community never updated that list at all.)
+    queryClient.setQueriesData({ queryKey: COMMUNITY_KEYS.all }, updater);
 
     queryClient.setQueryData(COMMUNITY_KEYS.byId(communityId), (old) => {
       if (!old) return old;

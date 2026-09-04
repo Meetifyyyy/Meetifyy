@@ -25,6 +25,7 @@ import {
   FollowNotifJob,
 } from '../notifications/notifications.processor';
 import { clearAuthSyncCache } from '../auth/auth.service';
+import { sampleRandom } from '../common/utils/sample-random.util';
 import { validateBirthday } from '../common/utils/birthday-validation.util';
 import { AcademicsService } from '../academics/academics.service';
 import { MediaCleanupService } from '../uploads/media-cleanup.service';
@@ -1897,8 +1898,20 @@ export class UsersService {
    *
    * Ranking, highest first: mutual connections (people the viewer follows who
    * follow this candidate), same college, campus rep, follower count. Ties
-   * break on id so the order is stable for a given input rather than shuffling
-   * between two requests that see the same data.
+   * break on id, so the RANKING is deterministic.
+   *
+   * The SELECTION is not. A strict top-N of a deterministic ranking gave every
+   * viewer the same three faces on every visit — the panel looked broken
+   * rather than personalised, and an account you did not want to follow could
+   * never be replaced by one you did. So the query returns a pool of the
+   * best-ranked candidates and `limit` of them are drawn at random from it.
+   * Everything in the pool has already earned its place, so randomising within
+   * it trades no relevance for the variety; and because it is drawn per
+   * request, a reload produces a different valid selection.
+   *
+   * Sampling here rather than with `ORDER BY random()` in SQL keeps the
+   * ranking itself index-friendly: Postgres can stop at the pool size instead
+   * of sorting every eligible row by a random value.
    *
    * Cost: the candidate pool is bounded by `POOL` before any of the scoring
    * joins run, so the aggregate work is proportional to the pool, never to the
@@ -1907,6 +1920,12 @@ export class UsersService {
    */
   async getFollowRecommendations(userId: string, limit = 10) {
     if (!userId) return [];
+
+    // How many ranked candidates to draw from. Wide enough that the panel
+    // visibly changes between reloads, narrow enough that everything in it is
+    // still a good suggestion. Clamped so a limit of 1 does not sample from a
+    // pool of 8, and a limit of 30 does not pull the whole table.
+    const sampleFrom = Math.min(Math.max(limit * 8, 24), 60);
 
     // Two index-backed arms — `[collegeId, createdAt DESC]` and
     // `[accountStatus, createdAt DESC]` — rather than one ORDER BY over the
@@ -2009,10 +2028,13 @@ export class UsersService {
         u."isCampusRep" DESC,
         COALESCE(fc."followerCount", 0) DESC,
         u."id" ASC
-      LIMIT ${limit};
+      LIMIT ${sampleFrom};
     `;
 
-    return rows.map((r) => ({
+    // A pool smaller than `limit` is returned whole — a new account, or one
+    // that has already followed most of its campus, still gets whatever is
+    // left rather than an empty panel.
+    return sampleRandom(rows, limit).map((r) => ({
       id: r.id,
       username: r.username,
       displayName: r.displayName || r.username,

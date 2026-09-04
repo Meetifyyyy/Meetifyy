@@ -44,9 +44,12 @@ vi.mock('@shared/context/AuthContext', () => ({
 
 // The communities half of the sidebar is exercised by its own test; an empty
 // list keeps this one focused on the follow panel.
-vi.mock('@shared/hooks/useCommunities', () => ({
-  useCommunities: () => ({ communities: [], communitiesById: {} }),
-  COMMUNITY_KEYS: { all: ['communities'], campus: ['communities', 'campus'], byId: (id) => ['community', id] },
+vi.mock('@shared/hooks/useCommunityRecommendations', () => ({
+  useCommunityRecommendations: () => ({
+    recommendations: [],
+    isLoading: false,
+    isError: false,
+  }),
 }));
 vi.mock('@features/communities/hooks/useJoinCommunity', () => ({
   useJoinCommunity: () => ({ mutate: vi.fn(), isLoading: false }),

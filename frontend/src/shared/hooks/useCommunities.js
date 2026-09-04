@@ -22,6 +22,10 @@ const EMPTY_COMMUNITIES = [];
 export const COMMUNITY_KEYS = {
   all:    ['communities'],
   campus: ['communities', 'campus'],
+  // Nested under `all` deliberately: the join mutation updates every entry
+  // under the ['communities'] prefix in one pass, so a new list added here is
+  // kept in sync by construction rather than by remembering to add it.
+  recommendations: (limit) => ['communities', 'recommendations', { limit }],
   byId:   (id) => ['community', id],
 };
 
