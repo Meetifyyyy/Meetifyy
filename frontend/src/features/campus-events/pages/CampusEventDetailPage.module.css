@@ -1,3 +1,7 @@
+/* ============================================================
+   CampusEventDetailPage.module.css — Fluid Responsive Layout
+   ============================================================ */
+
 .page {
   position: relative;
   width: 100%;
@@ -15,25 +19,24 @@
   box-shadow: var(--shadow-sm, 0 1px 3px rgba(0, 0, 0, 0.04));
 }
 
+/* ── Topbar ── */
 .topbar {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
-  padding: 0 1.5rem;
-  height: 56px;
+  gap: 0.75rem;
+  padding: clamp(0.75rem, 1.8vw, 1.25rem) clamp(1rem, 2.5vw, 2rem) clamp(0.4rem, 1vw, 0.6rem);
+  min-height: 52px;
   position: sticky;
   top: 0;
   z-index: 20;
-  background: rgba(255, 255, 255, 0.85);
-  backdrop-filter: blur(16px) saturate(180%);
-  border-bottom: 1px solid var(--color-border-light);
-  border-top-left-radius: var(--radius-xl, 20px);
-  border-top-right-radius: var(--radius-xl, 20px);
+  background: transparent;
+  border-bottom: none;
+  flex-shrink: 0;
 }
 
 :global([data-theme="dark"]) .topbar {
-  background: rgba(32, 32, 32, 0.85);
-  border-bottom-color: rgba(255, 255, 255, 0.05);
+  background: transparent;
+  border-bottom: none;
 }
 
 .topbarActions {
@@ -51,12 +54,24 @@
   color: #fff;
   border: none;
   border-radius: 99px;
-  padding: 0.5rem 1rem;
-  font-size: 0.85rem;
+  height: 38px;
+  min-height: 38px;
+  padding: 0 clamp(1rem, 2vw, 1.25rem);
+  font-size: clamp(0.82rem, 1.5vw, 0.88rem);
   font-weight: 700;
+  line-height: 1;
+  text-align: center;
   cursor: pointer;
   text-decoration: none;
+  box-shadow: none;
   transition: filter 0.15s ease;
+  box-sizing: border-box;
+  white-space: nowrap;
+}
+
+.registerBtnTopbar svg {
+  display: block;
+  flex-shrink: 0;
 }
 
 .registerBtnTopbar:hover {
@@ -66,15 +81,55 @@
 .registerBtnTopbar.disabled {
   background: var(--color-bg-soft, #e5e7eb);
   color: var(--color-text-light, #9ca3af);
+  box-shadow: none;
   cursor: not-allowed;
   pointer-events: none;
+  transform: none;
 }
 
+/* ── Back Button ── */
+.backBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+  min-height: 40px;
+  border-radius: 12px;
+  background: var(--color-bg-soft, #f1f5f9);
+  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.06));
+  color: var(--color-text-main);
+  cursor: pointer;
+  padding: 0;
+  margin: 0;
+  flex-shrink: 0;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+}
+
+.backBtn:hover {
+  background: var(--color-bg-alt, #e2e8f0);
+  border-color: var(--color-border-hover, rgba(0, 0, 0, 0.12));
+  transform: translateX(-1px);
+}
+
+:global([data-theme="dark"]) .backBtn {
+  background: var(--color-bg-soft, #25252b);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+:global([data-theme="dark"]) .backBtn:hover {
+  background: #303038;
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+/* ── Scrollable Body ── */
 .scrollBody {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 1.75rem 2rem 2.5rem;
+  overflow-x: hidden;
+  padding: 0.5rem clamp(1rem, 2.5vw, 2.5rem) 2.5rem;
   display: flex;
   flex-direction: column;
   scrollbar-width: none;
@@ -85,226 +140,217 @@
   display: none;
 }
 
-.backBtn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: none;
-  border: none;
-  color: var(--color-text-main);
-  cursor: pointer;
-  padding: 0.4rem;
-  margin: -0.4rem 0 -0.4rem -0.4rem;
-  border-radius: 50%;
-  transition: background 0.2s;
-}
-
-.backBtn:hover {
-  background: rgba(0, 0, 0, 0.06);
-}
-
-:global([data-theme="dark"]) .backBtn:hover {
-  background: rgba(255, 255, 255, 0.1);
-}
-
+/* ── Layout Grid / Flex ── */
 .detailLayout {
   display: flex;
-  gap: 1.75rem;
+  flex-direction: row;
   align-items: flex-start;
-  padding: 0 0.75rem;
-  margin-bottom: 1.5rem;
+  gap: clamp(1.75rem, 3vw, 3.5rem);
+  padding: 0.5rem 0 2rem;
+  width: 100%;
+  max-width: 1280px;
+  margin: 0 auto;
+  box-sizing: border-box;
 }
 
+/* ── Poster Hero ── */
 .posterHero {
-  width: 280px;
-  min-width: 240px;
-  max-width: 280px;
-  aspect-ratio: 3 / 4;
+  width: clamp(290px, 30vw, 420px);
+  flex: 0 0 clamp(290px, 30vw, 420px);
+  align-self: flex-start;
   margin: 0;
-  border-radius: var(--radius-xl, 16px);
+  border-radius: clamp(14px, 1.8vw, 20px);
   overflow: hidden;
-  background: var(--color-bg-soft, #1e1e24);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12);
-  flex-shrink: 0;
+  background: var(--color-bg-soft, #f8fafc);
+  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.07));
+  box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.08), 0 4px 12px -2px rgba(0, 0, 0, 0.03);
+  box-sizing: border-box;
 }
 
-/* Pin the poster while the details scroll past it — large screens only.
- *
- * It was already `position: sticky`, but with `top: calc(50vh - 180px)`, which
- * pins it to the middle of the viewport rather than the top. On a typical
- * laptop that is a ~270px offset for a ~370px-tall poster, so it sat low
- * enough that on most events the details column ran out before the poster ever
- * reached its stick point — it simply scrolled away with the page.
- *
- * `--sticky-top` is the small gap the scroll container's own top padding
- * already establishes, so the poster lands where the text column starts
- * instead of floating below it. Sticky is naturally bounded by
- * `.detailLayout`, so it releases at the end of its container without any
- * scroll listener.
- *
- * `align-items: flex-start` on `.detailLayout` is what makes this work: a
- * flex item stretched to full height has no room to move within its
- * container, and sticky on it does nothing at all.
- */
-@media (min-width: 681px) {
-  .posterHero {
-    position: sticky;
-    top: 0.5rem;
-    align-self: flex-start;
-  }
+:global([data-theme="dark"]) .posterHero {
+  background: #191920;
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.4);
 }
 
 .posterHero img {
   width: 100%;
-  height: 100%;
-  object-fit: cover;
+  height: auto;
   display: block;
+  object-fit: contain;
+}
+
+/*
+ * Space for the poster before it has decoded.
+ *
+ * `height: auto` on an <img> with no intrinsic size and no width/height
+ * attributes measures zero, so between the skeleton unmounting and the image
+ * decoding the poster box collapsed entirely — the content column jumped up
+ * half a viewport and then back down when the bytes arrived. Two shifts, and a
+ * measured CLS of 0.98 on this page.
+ *
+ * 3/4 is not a guess: it is the exact ratio the loading skeleton already
+ * reserves, so the handover from skeleton to real markup is now seamless. The
+ * class is removed the moment the image loads, at which point the image's own
+ * aspect ratio takes over and the design is unchanged — a poster is never
+ * letterboxed in the state the user actually sees.
+ */
+.posterLoading {
+  aspect-ratio: 3 / 4;
+  min-height: 280px;
+}
+
+.posterLoading img {
+  height: 100%;
 }
 
 .posterHeroFallback {
   width: 100%;
-  height: 100%;
+  aspect-ratio: 3 / 4;
+  min-height: 280px;
   display: flex;
   align-items: center;
   justify-content: center;
   background: linear-gradient(135deg, #70090e 0%, #991b1b 100%);
   color: #fff;
   font-family: "Changa One", cursive;
-  font-size: 1.6rem;
+  font-size: clamp(1.4rem, 2.5vw, 1.8rem);
   text-align: center;
-  padding: 1.5rem;
+  padding: 2rem;
+  box-sizing: border-box;
 }
 
+/* ── Details Content ── */
 .content {
   flex: 1;
+  min-width: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 1rem;
-  min-width: 0;
+  gap: 0.85rem;
 }
 
-@media (max-width: 680px) {
-  .detailLayout {
-    flex-direction: column;
-    align-items: center;
-    gap: 1.25rem;
-  }
-
-  /* Mobile keeps the poster in the flow above the details, unchanged. */
-  .posterHero {
-    position: static;
-    top: auto;
-    width: 100%;
-    max-width: 280px;
-    margin: 0 auto;
-  }
-
-  .content {
-    width: 100%;
-  }
-}
-
-.statusPill {
-  align-self: flex-start;
-  font-size: 0.7rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  padding: 0.25rem 0.65rem;
-  border-radius: 999px;
-  color: #fff;
-}
-
-.pillLive {
-  background: #16a34a;
-}
-
-.pillUpcoming {
-  background: #2563eb;
-}
-
-.pillPast {
-  background: #6b7280;
-}
-
-.pillDraft {
-  background: #ca8a04;
-}
-
+/* ── Typography ── */
 .title {
   font-family: "Inter", sans-serif;
   font-weight: 800;
-  font-size: 2rem;
+  font-size: clamp(1.65rem, 3.2vw, 2.5rem);
+  letter-spacing: -0.02em;
   line-height: 1.15;
   color: var(--color-text-main);
-  margin: 0;
+  margin: -0.25rem 0 0;
+  word-break: break-word;
+  overflow-wrap: break-word;
 }
 
-.hostedBy {
-  font-size: 0.95rem;
-  font-weight: 700;
-  color: var(--color-primary, #8f0c13);
-}
-
-.metaGrid {
+/* ── Info Cards Section ── */
+.infoSection {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
-  background: var(--color-bg-soft, rgba(0, 0, 0, 0.03));
+  gap: 0.75rem;
+  margin-top: 0;
+  width: 100%;
+}
+
+.infoCard {
+  display: flex;
+  align-items: center;
+  gap: clamp(0.75rem, 2vw, 1.1rem);
+  padding: clamp(0.65rem, 1.5vw, 0.8rem) clamp(0.9rem, 2vw, 1.25rem);
+  background: var(--color-bg-soft, #f8fafc);
   border: 1px solid var(--color-border, rgba(0, 0, 0, 0.06));
   border-radius: 14px;
-  padding: 1rem 1.1rem;
+  box-sizing: border-box;
+  min-height: 64px;
+  width: 100%;
 }
 
-.metaItem {
+:global([data-theme="dark"]) .infoCard {
+  background: var(--color-bg-soft, #1e1e24);
+  border-color: rgba(255, 255, 255, 0.06);
+}
+
+.infoIconWrapper {
   display: flex;
-  gap: 0.65rem;
-  align-items: flex-start;
-}
-
-.metaItem svg {
+  align-items: center;
+  justify-content: center;
+  width: clamp(38px, 5vw, 44px);
+  height: clamp(38px, 5vw, 44px);
+  min-width: clamp(38px, 5vw, 44px);
+  min-height: clamp(38px, 5vw, 44px);
+  border-radius: 11px;
+  background: var(--color-bg-white, #ffffff);
+  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.06));
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.03);
   flex-shrink: 0;
-  margin-top: 2px;
-  color: var(--color-primary, #8f0c13);
 }
 
-.metaLabel {
-  font-size: 0.72rem;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  color: var(--color-text-light, #999);
-  font-weight: 700;
+:global([data-theme="dark"]) .infoIconWrapper {
+  background: #25252b;
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
 }
 
-.metaValue {
-  font-size: 0.9rem;
-  color: var(--color-text-main);
+.infoBody {
+  display: flex;
+  flex-direction: column;
+  gap: 0.12rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.infoSubtitle {
+  font-size: clamp(0.6rem, 1.2vw, 0.65rem);
   font-weight: 500;
-  line-height: 1.4;
+  text-transform: none;
+  letter-spacing: 0.01em;
+  color: var(--color-text-light, #64748b);
+  line-height: 1.2;
+}
+
+:global([data-theme="dark"]) .infoSubtitle {
+  color: #94a3b8;
+}
+
+.infoValueLarge {
+  font-size: clamp(0.88rem, 1.8vw, 0.96rem);
+  font-weight: 600;
+  color: var(--color-text-main, #0f172a);
+  line-height: 1.35;
   word-break: break-word;
+  overflow-wrap: break-word;
+}
+
+/* ── Description Section ── */
+.descriptionSection {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
 }
 
 .sectionLabel {
-  font-size: 0.95rem;
-  font-weight: 800;
+  font-size: clamp(1rem, 1.8vw, 1.15rem);
+  font-weight: 600;
   color: var(--color-text-main);
-  margin: 0.5rem 0 0;
+  margin: 0;
+  letter-spacing: -0.01em;
 }
 
 .description {
-  font-size: 0.95rem;
+  font-size: clamp(0.88rem, 1.5vw, 0.95rem);
   line-height: 1.65;
   color: var(--color-text-muted, #555);
   white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: break-word;
   margin: 0;
 }
 
+:global([data-theme="dark"]) .description {
+  color: #94a3b8;
+}
 
-/* States */
+/* ── States ── */
 .centerState {
   display: flex;
   flex-direction: column;
@@ -321,6 +367,37 @@
   border-radius: 10px;
 }
 
+/* ============================================================
+   RESPONSIVE BREAKPOINTS
+   ============================================================ */
+
+/* ── Intermediate Viewports & Tablets with Sidebar (<= 980px) ──
+   Stacks poster above content gracefully to prevent squishing the details column */
+@media (max-width: 980px) {
+  .detailLayout {
+    flex-direction: column;
+    align-items: center;
+    gap: 1.5rem;
+    padding: 0.25rem 0 2rem;
+  }
+
+  .posterHero {
+    width: 100%;
+    max-width: min(100%, 420px);
+    flex: none;
+    margin: 0 auto;
+  }
+
+  .content {
+    width: 100%;
+  }
+
+  .title {
+    margin: 0;
+  }
+}
+
+/* ── Mobile Devices (<= 768px) ── */
 @media (max-width: 768px) {
   .page {
     position: fixed;
@@ -340,8 +417,9 @@
 
   .topbar {
     top: 0;
-    padding: max(0.6rem, env(safe-area-inset-top)) 0.85rem 0.5rem;
+    padding: max(0.6rem, env(safe-area-inset-top)) clamp(0.75rem, 3vw, 1.25rem) 0.5rem;
     height: auto;
+    min-height: 48px;
     border-top-left-radius: 0;
     border-top-right-radius: 0;
     background: var(--color-bg-main, #ffffff);
@@ -350,6 +428,113 @@
   }
 
   .scrollBody {
-    padding: 1rem 1rem max(1.5rem, env(safe-area-inset-bottom));
+    padding: 0.85rem clamp(0.75rem, 3vw, 1.25rem) max(1.5rem, env(safe-area-inset-bottom));
+  }
+
+  .posterHero {
+    width: 100%;
+    max-width: min(100%, 380px);
+  }
+}
+
+/* ── Small Mobile Devices (<= 380px) ── */
+@media (max-width: 380px) {
+  .topbar {
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
+    gap: 0.5rem;
+  }
+
+  .backBtn {
+    width: 36px;
+    height: 36px;
+    min-width: 36px;
+    min-height: 36px;
+    border-radius: 10px;
+  }
+
+  .registerBtnTopbar {
+    height: 36px;
+    min-height: 36px;
+    padding: 0 0.85rem;
+    font-size: 0.8rem;
+  }
+
+  .scrollBody {
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
+  }
+
+  .infoCard {
+    padding: 0.6rem 0.85rem;
+    gap: 0.75rem;
+    border-radius: 12px;
+  }
+
+  .infoIconWrapper {
+    width: 36px;
+    height: 36px;
+    min-width: 36px;
+    min-height: 36px;
+    border-radius: 9px;
+  }
+}
+
+/* ── Short-Height & Landscape Viewports (max-height: 550px) ──
+   In landscape orientation with constrained height, switches to compact
+   side-by-side view so poster doesn't dominate the entire vertical screen */
+@media (orientation: landscape) and (max-height: 550px) {
+  .topbar {
+    min-height: 44px;
+    padding-top: max(0.4rem, env(safe-area-inset-top));
+    padding-bottom: 0.4rem;
+  }
+
+  .detailLayout {
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 1.5rem;
+    padding-top: 0.25rem;
+  }
+
+  .posterHero {
+    width: auto;
+    max-width: 38vw;
+    flex: 0 0 auto;
+    margin: 0;
+  }
+
+  .posterHero img {
+    max-height: calc(100dvh - 80px);
+    width: auto;
+    max-width: 100%;
+    object-fit: contain;
+  }
+
+  .posterHeroFallback {
+    min-height: 180px;
+  }
+
+  .content {
+    flex: 1;
+    min-width: 0;
+    gap: 0.85rem;
+  }
+
+  .title {
+    font-size: 1.4rem;
+  }
+}
+
+/* ── Ultrawide & Large Displays (min-width: 1600px) ── */
+@media (min-width: 1600px) {
+  .detailLayout {
+    max-width: 1360px;
+    gap: 4rem;
+  }
+
+  .posterHero {
+    width: 440px;
+    flex: 0 0 440px;
   }
 }

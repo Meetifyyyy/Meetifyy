@@ -7,15 +7,25 @@
  * on next visit before the network response arrives.
  */
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import { communitiesApi } from '@shared/api/apiClient';
 import { idbGet, idbSet, idbDelete } from '@shared/lib/idb';
 import { useAuth } from '@shared/context/AuthContext';
+import { toggleRegistry } from '@shared/utils/mutationRegistry';
+
+// A stable empty list. `query.data || []` handed every consumer a brand-new
+// array on each render, which re-ran every `useMemo` keyed on it — including
+// the joined-communities derivation the header and sidebar both run.
+const EMPTY_COMMUNITIES = [];
 
 // ── Query keys ───────────────────────────────────────────────────────────────
 export const COMMUNITY_KEYS = {
   all:    ['communities'],
   campus: ['communities', 'campus'],
+  // Nested under `all` deliberately: the join mutation updates every entry
+  // under the ['communities'] prefix in one pass, so a new list added here is
+  // kept in sync by construction rather than by remembering to add it.
+  recommendations: (limit) => ['communities', 'recommendations', { limit }],
   byId:   (id) => ['community', id],
 };
 
@@ -76,7 +86,21 @@ function hydrateFromIdb(queryClient, idbKey, queryKey) {
         // Only seed a cache that is still empty: a network response that landed
         // while this read was in flight is newer than what IndexedDB holds.
         if (cached?.value && queryClient.getQueryData(queryKey) === undefined) {
-          queryClient.setQueryData(queryKey, cached.value);
+          // `updatedAt: 0` backdates the seed so the query counts as STALE the
+          // instant it is written.
+          //
+          // Without it, `setQueryData` stamps the entry with the current time
+          // and the query's five-minute `staleTime` then suppressed the
+          // revalidating fetch entirely. The mirror is written from a previous
+          // session, and it carries per-viewer membership (`isJoined`,
+          // `userRole`) — so a reload after joining a community restored the
+          // pre-join rows and showed "Join" again, for five minutes, with no
+          // request made that could have corrected it. That is the
+          // "refreshing produces a different membership state" report.
+          //
+          // Backdated, the seed still paints instantly and the network fetch
+          // still runs, so the stale membership is corrected in one round trip.
+          queryClient.setQueryData(queryKey, cached.value, { updatedAt: 0 });
         }
       })
       .catch(() => {})
@@ -152,13 +176,28 @@ export function useCommunities() {
 
 /**
  * Fetches communities belonging to the current user's campus.
+ *
+ * The request is skipped for an account with no college. `GET
+ * /communities/campus` resolves the caller's `collegeId` and returns `[]` the
+ * moment it finds none, so for those users the call could only ever answer
+ * with an empty list — and it was being made on every app boot, from the
+ * always-mounted layout, before anything campus-shaped was even on screen.
+ * Skipping it is therefore invisible: the value the hook returns is the same
+ * `[]` either way.
+ *
+ * Note the gate is *college membership*, not verification. The endpoint is not
+ * verification-gated, and an account whose verification was revoked can still
+ * be a member of campus communities it joined while verified — those have to
+ * keep appearing in the sidebar's joined list.
  */
-export function useCampusCommunities(search = '') {
+export function useCampusCommunities(search = '', { enabled = true } = {}) {
   const normSearch = (search || '').trim();
   // Filtered searches are cached under their own key; only the unfiltered list
   // is IDB-hydrated for instant first paint.
   const qk = normSearch ? [...COMMUNITY_KEYS.campus, { search: normSearch }] : COMMUNITY_KEYS.campus;
-  const { isLoggedIn } = useAuth();
+  const { isLoggedIn, currentUser } = useAuth();
+  const hasCollege = Boolean(currentUser?.collegeId);
+  const isEnabled = Boolean(isLoggedIn) && hasCollege && enabled;
 
   const query = useQuery({
     queryKey: qk,
@@ -167,7 +206,7 @@ export function useCampusCommunities(search = '') {
       if (!normSearch) idbSet('communities', 'campus', data);
       return data;
     },
-    enabled: isLoggedIn,
+    enabled: isEnabled,
     staleTime: normSearch ? 60 * 1000 : 10 * 60 * 1000,
     gcTime:    30 * 60 * 1000,
     placeholderData: (prev) => prev,
@@ -175,15 +214,77 @@ export function useCampusCommunities(search = '') {
 
   const queryClient = useQueryClient();
   useEffect(() => {
-    if (normSearch || query.data) return;
+    // The IndexedDB mirror outlives the session, so restoring it for an account
+    // the live query is not allowed to make would put campus data back into the
+    // cache with no request the server could refuse.
+    if (!isEnabled || normSearch || query.data) return;
     hydrateFromIdb(queryClient, 'campus', COMMUNITY_KEYS.campus);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [isEnabled]);
 
   return {
-    campusCommunities: query.data || [],
+    campusCommunities: query.data || EMPTY_COMMUNITIES,
     isLoading: query.isLoading,
   };
+}
+
+/**
+ * The communities this account belongs to, public and campus together.
+ *
+ * The header and the sidebar each render this list, and each had its own copy
+ * of the derivation below — the same de-duplication, the same eight-way
+ * membership test, the same optimistic-intent lookup, thirty lines apiece and
+ * silently free to drift apart. They are the two components mounted on every
+ * route, so the whole pass ran twice on every render of the shell.
+ *
+ * One definition, called from both. The queries underneath are shared cache
+ * entries, so this adds no requests.
+ */
+export function useJoinedCommunities() {
+  const { currentUser } = useAuth();
+  const { communities } = useCommunities();
+  const { campusCommunities } = useCampusCommunities();
+
+  // The membership test reads only these two fields off the user, but
+  // `currentUser` is replaced wholesale by every auth refresh and presence
+  // update. Depending on the object re-ran the whole derivation each time.
+  const userId = currentUser?.id;
+  const userCommunityNames = currentUser?.communities;
+
+  return useMemo(() => {
+    const publicList = Array.isArray(communities)
+      ? communities
+      : Object.values(communities || {});
+    const campusList = Array.isArray(campusCommunities) ? campusCommunities : [];
+
+    const uniqueMap = new Map();
+    for (const c of publicList) {
+      if (c && typeof c === 'object' && c.name && c.id) uniqueMap.set(c.id, c);
+    }
+    for (const c of campusList) {
+      if (c && typeof c === 'object' && c.name && c.id) uniqueMap.set(c.id, c);
+    }
+
+    const named = userCommunityNames || [];
+
+    return Array.from(uniqueMap.values()).filter((c) => {
+      const rawJoined = Boolean(
+        (c.ownerId && userId && c.ownerId === userId) ||
+        c.userRole === 'OWNER' ||
+        c.userRole === 'MODERATOR' ||
+        c.userRole === 'MEMBER' ||
+        (c.isJoined !== undefined && Boolean(c.isJoined)) ||
+        (c.isMember !== undefined && Boolean(c.isMember)) ||
+        (Array.isArray(c.members) && userId && c.members.some(m => (m.userId || m.id || m.user?.id) === userId)) ||
+        named.includes(c.name) ||
+        named.includes(c.id)
+      );
+
+      // An in-flight join/leave outranks whatever the cached list still says.
+      const entityKey = `joinCommunity:${c.id}`;
+      return toggleRegistry.getLatestIntent(entityKey, rawJoined);
+    });
+  }, [communities, campusCommunities, userId, userCommunityNames]);
 }
 
 /**

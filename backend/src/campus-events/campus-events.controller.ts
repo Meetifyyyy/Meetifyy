@@ -20,6 +20,7 @@ import {
   CampusEventScope,
   CAMPUS_EVENT_SCOPES,
 } from './dto/campus-event.dto';
+import { clampPageParam, singleQueryValue } from '../common/pagination.util';
 
 @Controller('api/campus-events')
 @UseGuards(JwtGuard)
@@ -33,7 +34,6 @@ export class CampusEventsController {
   async list(
     @CurrentUser() user: any,
     @Query('scope') scope?: string,
-    @Query('campusId') campusId?: string,
     @Query('limit') limit?: string,
     @Query('cursor') cursor?: string,
   ) {
@@ -43,19 +43,28 @@ export class CampusEventsController {
         'scope must be one of: upcoming, ongoing, past',
       );
     }
-    const parsedLimit = limit ? parseInt(limit, 10) : 20;
+    // `campusId` used to be accepted here and passed straight through, which
+    // let any verified account list any college's events by supplying someone
+    // else's campus id. No client ever sent it. The campus is now resolved from
+    // the caller alone, which is the only campus they are entitled to read.
     return this.service.listByScope(user?.id, s, {
-      campusId: campusId || undefined,
-      limit: parsedLimit,
-      cursor: cursor || undefined,
+      limit: clampPageParam(limit, { def: 20, max: 50, min: 1 }),
+      cursor: singleQueryValue(cursor),
     });
   }
 
   // Static routes before `:id`.
   @Get('mine')
   @VerifiedOnly()
-  async listMine(@CurrentUser() user: any) {
-    return this.service.listMine(user.id);
+  async listMine(
+    @CurrentUser() user: any,
+    @Query('limit') limit?: string,
+    @Query('cursor') cursor?: string,
+  ) {
+    return this.service.listMine(user.id, {
+      limit: clampPageParam(limit, { def: 20, max: 50, min: 1 }),
+      cursor: singleQueryValue(cursor),
+    });
   }
 
   @Get(':id')

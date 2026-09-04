@@ -316,7 +316,7 @@ export default function ResetPasswordPage() {
     <>
       <AuthShell
         headline={'Almost there.\n*Set a fresh password.*'}
-        subtext="Choose something strong you'll remember — your campus circle is waiting."
+        subtext="Choose something strong you'll remember. Your campus circle is waiting."
       >
         <div className={s.content}>
           {uiState === 'loading' && (

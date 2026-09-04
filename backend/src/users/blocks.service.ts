@@ -1,6 +1,7 @@
 import {
   Injectable,
   NotFoundException,
+  OnModuleDestroy,
   OnModuleInit,
   Optional,
 } from '@nestjs/common';
@@ -31,6 +32,24 @@ const BLOCK_CACHE_MAX_ENTRIES = 5_000;
 /** Cross-instance cache-invalidation channel. */
 const BLOCK_INVALIDATE_CHANNEL = 'meetifyy:blocks_invalidate';
 
+/**
+ * Guards the pub/sub wiring, which belongs to the caches below rather than to
+ * any one service instance.
+ *
+ * BlocksService is named in the `providers` array of NINE modules, so Nest
+ * builds nine of it — which is exactly why the caches are static. The
+ * subscription was not deduplicated the same way, so every one of those
+ * instances added its own 'message' handler to the shared subscriber
+ * connection, and all nine then did identical work (parse the payload, delete
+ * from the same two static Maps) on every invalidation. Together with the
+ * realtime gateway's handler that put the connection at Node's default ceiling
+ * of ten listeners, so the next service to subscribe — whichever it happened
+ * to be — tipped it into a MaxListenersExceededWarning at boot.
+ *
+ * One handler is all the caches need.
+ */
+let blockCacheSubscribed = false;
+
 interface CachedBlocks {
   ids: string[];
   expiresAt: number;
@@ -48,7 +67,7 @@ interface CachedOutgoingBlocks {
 }
 
 @Injectable()
-export class BlocksService implements OnModuleInit {
+export class BlocksService implements OnModuleInit, OnModuleDestroy {
   private readonly redis: ReturnType<RedisService['getClient']>;
 
   /**
@@ -76,6 +95,8 @@ export class BlocksService implements OnModuleInit {
    * real-time guarantee the shared Redis key used to provide.
    */
   onModuleInit() {
+    if (blockCacheSubscribed) return;
+
     const subClient = this.redisService?.getSubClient();
     if (!subClient) return;
 
@@ -94,6 +115,16 @@ export class BlocksService implements OnModuleInit {
         // Malformed payload — ignore.
       }
     });
+
+    blockCacheSubscribed = true;
+  }
+
+  /**
+   * Releases the subscription guard so a torn-down process (or a test that
+   * builds a fresh module) can wire it up again.
+   */
+  onModuleDestroy() {
+    blockCacheSubscribed = false;
   }
 
   /**

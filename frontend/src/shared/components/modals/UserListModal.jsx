@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { usersApi } from '@shared/api/apiClient';
@@ -10,6 +10,49 @@ import styles from './UserListModal.module.css';
 import Skeleton from '../skeletons/Skeleton';
 
 const PAGE_SIZE = 20;
+
+/** Stable identity, so the memo below is not busted by a fresh [] each render. */
+const EMPTY_LIST = [];
+
+/**
+ * One row of the list.
+ *
+ * Memoised, and given only primitive/stable props, so toggling one follow
+ * button re-renders that row alone. Without this every row re-rendered — and
+ * re-ran its Avatar and badge — on each state change anywhere in the list,
+ * which on a long followers list is the difference between a frame and a
+ * visible stutter.
+ *
+ * The markup is exactly what was inline before; nothing about the UI changed.
+ */
+const UserRow = memo(function UserRow({ user, isSelf, onOpenProfile }) {
+  return (
+    <div
+      className={styles.userItem}
+      onClick={() => onOpenProfile(user.username)}
+    >
+      <div className={styles.userAvatar}>
+        <Avatar src={user.avatar} name={user.displayName || user.username} size="42px" />
+      </div>
+      <div className={styles.userInfo}>
+        <div className={styles.userName} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+          {user.displayName || user.username}
+          <CollegeRepresentativeBadge isCampusRep={user.isCampusRep} user={user} size="sm" />
+        </div>
+        <div className={styles.userUsername}>@{user.username}</div>
+      </div>
+      <div className={styles.followBtnWrap} onClick={(e) => e.stopPropagation()}>
+        {!isSelf && (
+          <FollowButton
+            targetUsername={user.username}
+            initialFollowing={user.isFollowing}
+            size="sm"
+          />
+        )}
+      </div>
+    </div>
+  );
+});
 
 export default function UserListModal({ type, profileUsername, onClose }) {
   const navigate = useNavigate();
@@ -39,13 +82,54 @@ export default function UserListModal({ type, profileUsername, onClose }) {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onClose]);
 
+  /**
+   * Navigate ONLY. Calling the parent's `onClose` here is what stopped these
+   * rows opening a profile.
+   *
+   * This list is a history entry, not component state: the profile page opens
+   * it by pushing `?tab=followers` (useUrlState with `push: true`), so its
+   * `onClose` is a `goBack`. Running it immediately after `navigate` stepped
+   * history back over the entry that navigation had just pushed, so the tap
+   * landed on the profile and returned from it in the same tick, and nothing
+   * appeared to happen.
+   *
+   * Reordering the two would not fix it either. `goBack` navigates by delta,
+   * which the browser applies asynchronously, so a push issued straight
+   * afterwards races the pop. One navigation and no back-step is the only
+   * version with a single outcome.
+   *
+   * Closing is not lost: the list's visibility is derived from the `tab`
+   * search param, so leaving for a URL without it unmounts this modal.
+   *
+   * REPLACE, not push, and that is the part that actually makes the tap land.
+   * SmartBackTracker reconciles every arrival against its history mirror, and
+   * a PUSH onto a page already in the stack is collapsed: the mirror walks
+   * history back onto the existing entry. Tapping someone whose profile you
+   * had already opened this session therefore rendered their page and
+   * immediately stepped back over it, which is the flicker. Verified against
+   * the real mirror in browserHistoryMirror's tests: the same sequence plans a
+   * -3 step as a push and no step at all as a replace.
+   *
+   * Replacing is also the honest description of what this is. The entry being
+   * left is the open list, and the list is a sub-view of the profile, not a
+   * destination worth its own Back press once you have chosen someone from it.
+   *
+   * Stable identity via useCallback, so it does not defeat the row memo.
+   */
+  const openProfile = useCallback(
+    (username) => navigate(`/profile/${username}`, { replace: true }),
+    [navigate],
+  );
+
   const isFollowers = type === 'followers';
   const cleanProfileUsername = profileUsername?.toLowerCase();
+  const cleanCurrentUsername = currentUser?.username?.toLowerCase();
   const queryKey = [isFollowers ? 'followers' : 'following', cleanProfileUsername];
 
   const {
     data,
-    isLoading,
+    isPending,
+    isFetching,
     isError,
     fetchNextPage,
     hasNextPage,
@@ -63,10 +147,58 @@ export default function UserListModal({ type, profileUsername, onClose }) {
       return allPages.length * PAGE_SIZE;
     },
     enabled: !!profileUsername,
-    staleTime: 15_000,
+
+    // This list does not outlive the modal.
+    //
+    // `gcTime: 0` drops the cache entry as soon as the modal unmounts, so
+    // reopening is a genuine cache miss that renders the skeleton and waits
+    // for the server. Previously the entry survived, and because unfollowing
+    // only marks it stale (it must not refetch while open, or the row the
+    // viewer just acted on disappears under the cursor), reopening painted the
+    // OLD list first and swapped it for the corrected one when the refetch
+    // landed — the unfollowed account visible for a few frames before
+    // vanishing. That flicker is stale cache being rendered, not a timing
+    // quirk, so the fix is to not have a stale cache to render.
+    //
+    // Dropping the entry rather than clearing it by hand on close also covers
+    // every way out of this modal — the X, Escape, the backdrop, browser Back,
+    // and navigating to a profile from a row — because all of them unmount it.
+    //
+    // Chosen over an explicit removeQueries() in an unmount cleanup because
+    // React's StrictMode double-mounts in development: an explicit removal
+    // would run between the two mounts and fire a second request, while a
+    // zero-length GC timer is simply cancelled when the observer re-subscribes.
+    gcTime: 0,
+    staleTime: 0,
+
+    // A background refetch would replace the list under the reader, and the
+    // loading gate below would flash a skeleton over a list they are part-way
+    // through. Nothing here changes without the viewer acting, and acting
+    // already updates the rows in place.
+    refetchOnWindowFocus: false,
   });
 
-  const usersList = data?.pages.flatMap((page) => (Array.isArray(page) ? page : [])) || [];
+  /**
+   * Flattened once per response rather than on every render.
+   *
+   * This runs while a follow button anywhere in the list is toggling, and the
+   * old inline version handed every row a brand-new object array each time,
+   * defeating the row memoisation below.
+   */
+  const usersList = useMemo(
+    () => data?.pages.flatMap((page) => (Array.isArray(page) ? page : [])) ?? EMPTY_LIST,
+    [data],
+  );
+
+  /**
+   * Show the skeleton whenever there is no server-confirmed list for THIS
+   * opening — not merely on a cold start.
+   *
+   * `isFetchingNextPage` is excluded deliberately: paging in more rows is not
+   * a reason to replace the rows already on screen with a skeleton, and doing
+   * so would break infinite scroll's appearance entirely.
+   */
+  const showSkeleton = isPending || (isFetching && !isFetchingNextPage);
 
   useEffect(() => {
     const target = observerTargetRef.current;
@@ -106,7 +238,7 @@ export default function UserListModal({ type, profileUsername, onClose }) {
         </div>
 
         <div className={styles.body}>
-          {isLoading ? (
+          {showSkeleton ? (
             <div className={styles.skeletonList}>
               {[1, 2, 3, 4, 5].map((i) => (
                 <div key={i} className={styles.skeletonItem}>
@@ -151,71 +283,12 @@ export default function UserListModal({ type, profileUsername, onClose }) {
           ) : (
             <>
               {usersList.map((user) => (
-                <div
+                <UserRow
                   key={user.id || user.username}
-                  className={styles.userItem}
-                  onClick={() => {
-                    /*
-                     * Navigate ONLY. Calling the parent's `onClose` here is what
-                     * stopped these rows opening a profile.
-                     *
-                     * This list is a history entry, not component state: the
-                     * profile page opens it by pushing `?tab=followers`
-                     * (useUrlState with `push: true`), so its `onClose` is a
-                     * `goBack`. Running it immediately after `navigate` stepped
-                     * history back over the entry that navigation had just
-                     * pushed, so the tap landed on the profile and returned from
-                     * it in the same tick, and nothing appeared to happen.
-                     *
-                     * Reordering the two would not fix it either. `goBack`
-                     * navigates by delta, which the browser applies
-                     * asynchronously, so a push issued straight afterwards races
-                     * the pop. One navigation and no back-step is the only
-                     * version with a single outcome.
-                     *
-                     * Closing is not lost: the list's visibility is derived from
-                     * the `tab` search param, so leaving for a URL without it
-                     * unmounts this modal.
-                     *
-                     * REPLACE, not push, and that is the part that actually
-                     * makes the tap land. SmartBackTracker reconciles every
-                     * arrival against its history mirror, and a PUSH onto a page
-                     * already in the stack is collapsed: the mirror walks
-                     * history back onto the existing entry. Tapping someone
-                     * whose profile you had already opened this session
-                     * therefore rendered their page and immediately stepped back
-                     * over it, which is the flicker. Verified against the real
-                     * mirror in browserHistoryMirror's tests: the same sequence
-                     * plans a -3 step as a push and no step at all as a replace.
-                     *
-                     * Replacing is also the honest description of what this is.
-                     * The entry being left is the open list, and the list is a
-                     * sub-view of the profile, not a destination worth its own
-                     * Back press once you have chosen someone from it.
-                     */
-                    navigate(`/profile/${user.username}`, { replace: true });
-                  }}
-                >
-                  <div className={styles.userAvatar}>
-                    <Avatar src={user.avatar} name={user.displayName || user.username} size="42px" />
-                  </div>
-                  <div className={styles.userInfo}>
-                    <div className={styles.userName} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      {user.displayName || user.username}
-                      <CollegeRepresentativeBadge isCampusRep={user.isCampusRep} user={user} size="sm" />
-                    </div>
-                    <div className={styles.userUsername}>@{user.username}</div>
-                  </div>
-                  <div className={styles.followBtnWrap} onClick={(e) => e.stopPropagation()}>
-                    {user.username?.toLowerCase() !== currentUser?.username?.toLowerCase() && (
-                      <FollowButton
-                        targetUsername={user.username}
-                        initialFollowing={user.isFollowing}
-                        size="sm"
-                      />
-                    )}
-                  </div>
-                </div>
+                  user={user}
+                  isSelf={user.username?.toLowerCase() === cleanCurrentUsername}
+                  onOpenProfile={openProfile}
+                />
               ))}
 
               <div ref={observerTargetRef} className={styles.loadMoreTrigger}>

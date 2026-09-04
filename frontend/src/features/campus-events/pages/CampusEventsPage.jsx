@@ -1,15 +1,22 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useCallback, lazy, Suspense } from 'react';
 import { ArrowLeft, CalendarPlus } from '@shared/components/icons';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
 import { useAuth } from '@shared/context/AuthContext';
 import { showToast } from '@shared/utils/toast';
 import { useCampusEvents, useDeleteCampusEvent } from '@shared/hooks/useCampusEvents';
 import CampusEventSection from '../components/CampusEventSection';
-import CampusEventForm from '../components/CampusEventForm';
 import ConfirmModal from '@shared/components/modals/ConfirmModal';
 import sharedStyles from '@features/campus/components/skeletons/CampusShared.module.css';
 import VerificationGate from '@shared/components/VerificationGate/VerificationGate';
+
+/**
+ * Only ever opened by a campus representative, from the "+" button or a card's
+ * Edit control. Statically imported it dragged the whole image-upload pipeline
+ * (browser-image-compression) plus two custom pickers onto this route's
+ * critical path — about 87 kB of JavaScript parsed before the first event could
+ * paint, for a page most visitors only read.
+ */
+const CampusEventForm = lazy(() => import('../components/CampusEventForm'));
 
 /**
  * Dedicated Campus Events page — the full event history and categorisation:
@@ -17,7 +24,6 @@ import VerificationGate from '@shared/components/VerificationGate/VerificationGa
  * components; no duplicate data structures.
  */
 export default function CampusEventsPage() {
-  const navigate = useNavigate();
   const goBack = useSmartBack();
   const { currentUser } = useAuth();
   const isCampusRep = Boolean(currentUser?.isCampusRep);
@@ -30,7 +36,7 @@ export default function CampusEventsPage() {
   const [eventFormState, setEventFormState] = useState(null);
   const [deleteCandidate, setDeleteCandidate] = useState(null);
 
-  const handleDeleteEvent = async () => {
+  const handleDeleteEvent = useCallback(async () => {
     if (!deleteCandidate?.id) return;
     try {
       await deleteEvent.mutateAsync(deleteCandidate.id);
@@ -40,7 +46,15 @@ export default function CampusEventsPage() {
     } finally {
       setDeleteCandidate(null);
     }
-  };
+  }, [deleteCandidate, deleteEvent]);
+
+  // Stable across renders so the memoized event cards below stay memoized —
+  // an inline arrow here is a new prop for every card in all three sections on
+  // every render of this page.
+  const editEvent = useCallback((ev) => setEventFormState({ event: ev }), []);
+  const openCreateForm = useCallback(() => setEventFormState({}), []);
+  const closeEventForm = useCallback(() => setEventFormState(null), []);
+  const clearDeleteCandidate = useCallback(() => setDeleteCandidate(null), []);
 
   return (
     <main className={`centre centre-wide ${sharedStyles.hubContainer}`}>
@@ -57,7 +71,7 @@ export default function CampusEventsPage() {
               <div className={sharedStyles.headerActions}>
                 <button
                   className={sharedStyles.headerSquareBtn}
-                  onClick={() => setEventFormState({})}
+                  onClick={openCreateForm}
                   title="Create event"
                 >
                   <CalendarPlus size={20} />
@@ -77,7 +91,7 @@ export default function CampusEventsPage() {
             isLoading={ongoing.isLoading}
             emptyText="No events are live right now."
             canManage={isCampusRep}
-            onEdit={(ev) => setEventFormState({ event: ev })}
+            onEdit={editEvent}
             onDelete={setDeleteCandidate}
             hasNextPage={ongoing.hasNextPage}
             isFetchingNextPage={ongoing.isFetchingNextPage}
@@ -92,7 +106,7 @@ export default function CampusEventsPage() {
             isLoading={upcoming.isLoading}
             emptyText="No upcoming events yet. Check back soon!"
             canManage={isCampusRep}
-            onEdit={(ev) => setEventFormState({ event: ev })}
+            onEdit={editEvent}
             onDelete={setDeleteCandidate}
             hasNextPage={upcoming.hasNextPage}
             isFetchingNextPage={upcoming.isFetchingNextPage}
@@ -114,11 +128,13 @@ export default function CampusEventsPage() {
         </div>
 
         {eventFormState && (
-          <CampusEventForm
-            event={eventFormState.event || null}
-            onClose={() => setEventFormState(null)}
-            onSaved={() => setEventFormState(null)}
-          />
+          <Suspense fallback={null}>
+            <CampusEventForm
+              event={eventFormState.event || null}
+              onClose={closeEventForm}
+              onSaved={closeEventForm}
+            />
+          </Suspense>
         )}
 
         <ConfirmModal
@@ -129,7 +145,7 @@ export default function CampusEventsPage() {
           cancelText="Cancel"
           isDestructive={true}
           onConfirm={handleDeleteEvent}
-          onCancel={() => setDeleteCandidate(null)}
+          onCancel={clearDeleteCandidate}
         />
       </VerificationGate>
     </main>

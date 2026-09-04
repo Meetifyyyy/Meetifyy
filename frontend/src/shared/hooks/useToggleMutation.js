@@ -80,9 +80,23 @@ function scheduleCoalescedRequest({
       if (seq === seqRef.current) {
         _controllers.delete(entityKey);
         release();
-        // Active refetch — triggers immediate background sync on all mounted queries
-        invalidateKeys.forEach(key => {
-          queryClient.invalidateQueries({ queryKey: key, refetchType: 'active' });
+        // Each entry is either a plain query key (refetched immediately on
+        // every mounted observer) or `{ queryKey, refetchType }`.
+        //
+        // The per-key form exists because "invalidate" and "rebuild the list
+        // the user is looking at" are not the same request. A discovery list
+        // is ordered by member count, and joining increments it — so an active
+        // refetch re-sorted the list under the cursor the moment the action
+        // succeeded. Those keys ask for `refetchType: 'none'`: the entry is
+        // marked stale and refreshed the next time it is mounted or the page
+        // is reloaded, while the optimistic write keeps the visible card
+        // correct in the meantime.
+        invalidateKeys.forEach(entry => {
+          const isDescriptor = entry && !Array.isArray(entry) && typeof entry === 'object';
+          const queryKey = isDescriptor ? entry.queryKey : entry;
+          const refetchType = isDescriptor ? (entry.refetchType ?? 'active') : 'active';
+          if (!queryKey) return;
+          queryClient.invalidateQueries({ queryKey, refetchType });
         });
       } else {
         release();
@@ -116,6 +130,10 @@ function scheduleCoalescedRequest({
 
 /**
  * useToggleMutation
+ *
+ * `invalidateKeys` accepts either a query key array or
+ * `{ queryKey, refetchType }` — see the invalidation block above for why the
+ * second form is sometimes the correct one.
  */
 export function useToggleMutation({
   entityKey: getEntityKey,

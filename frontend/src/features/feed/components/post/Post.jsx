@@ -123,7 +123,7 @@ function PollCard({ poll, postId }) {
 }
 
 
-function Post({ postData, onClick, onDeleted, isDetailed = false, hideCommunityTag = false }) {
+function Post({ postData, onClick, onCommentClick, onDeleted, isDetailed = false, hideCommunityTag = false }) {
   const { currentUser } = useAuth();
   const { communitiesById } = useCommunities();
   const { openViewer } = useMediaViewerActions();
@@ -189,9 +189,13 @@ function Post({ postData, onClick, onDeleted, isDetailed = false, hideCommunityT
    * `onCommentClick` on every render of this card and re-rendered its four
    * buttons and their SVGs every time — `memo(PostActions)` never once bailed.
    */
-  const handleCommentClick = useCallback(() => {
-    if (onClick) onClick(postData);
-  }, [onClick, postData]);
+  const handleCommentClick = useCallback((e) => {
+    if (onCommentClick) {
+      onCommentClick(postData, e);
+    } else if (onClick) {
+      onClick(postData, { focusComment: true });
+    }
+  }, [onCommentClick, onClick, postData]);
 
   /**
    * Also stable, for the same reason: MediaGrid is memoised and an inline
@@ -541,6 +545,7 @@ function arePostPropsEqual(prevProps, nextProps) {
   if (prevProps.isDetailed !== nextProps.isDetailed) return false;
   if (prevProps.hideCommunityTag !== nextProps.hideCommunityTag) return false;
   if (prevProps.onClick !== nextProps.onClick) return false;
+  if (prevProps.onCommentClick !== nextProps.onCommentClick) return false;
   if (prevProps.onDeleted !== nextProps.onDeleted) return false;
 
   const prev = prevProps.postData;

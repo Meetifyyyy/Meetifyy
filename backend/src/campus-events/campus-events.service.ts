@@ -7,6 +7,7 @@ import {
   Optional,
 } from '@nestjs/common';
 import type Redis from 'ioredis';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
 import {
@@ -19,6 +20,7 @@ import {
   sanitizeRegistrationUrl,
 } from './campus-event.util';
 import { MediaCleanupService } from '../uploads/media-cleanup.service';
+import { parseKeysetCursor } from '../common/pagination.util';
 import type { UserIdentityLike } from '../common/users/deleted-user';
 import {
   isUnavailableUser,
@@ -57,6 +59,34 @@ const EVENT_SELECT = {
       deletedAt: true,
     },
   },
+} as const;
+
+/**
+ * The narrower projection the discovery lists use.
+ *
+ * A card paints a poster, a title, a date and a host. `EVENT_SELECT` above also
+ * carries the full `creator` relation, `campusId`, `createdBy`, `eventDate`,
+ * `createdAt` and `updatedAt` — none of which is read anywhere in the campus
+ * features, and together roughly a quarter of each row on the wire. Three
+ * scopes are requested when the Events page opens, at up to 20 rows each, so
+ * that quarter is paid three times before anything is painted.
+ *
+ * `description`, `venue`, `registrationUrl` and `endTime` stay: a campus rep's
+ * Edit action opens the form directly from the list row, and the form fills
+ * every one of those fields from it. Dropping them here would trade a payload
+ * win for a broken edit dialog.
+ */
+const EVENT_LIST_SELECT = {
+  id: true,
+  title: true,
+  description: true,
+  posterUrl: true,
+  startTime: true,
+  endTime: true,
+  hostedBy: true,
+  venue: true,
+  registrationUrl: true,
+  status: true,
 } as const;
 
 /**
@@ -106,11 +136,38 @@ export class CampusEventsService {
     return `campus-events:${campusId}:${scope}:${limit}:${cursor || 'none'}`;
   }
 
+  /** Set of live cache keys for one campus, so invalidation never scans. */
+  private listTagKey(campusId: string) {
+    return `campus-events:tag:${campusId}`;
+  }
+
+  /**
+   * Register a cache key against its campus tag-Set.
+   *
+   * The alternative — and what this used to do at invalidation time — is
+   * `KEYS campus-events:<campus>:*`. `KEYS` is O(total keyspace) and Redis is
+   * single-threaded, so it stalls *every other client* for the duration: in
+   * this deployment that is the session store and the job queues, not just
+   * this cache. It ran on every event create, update, publish and delete.
+   *
+   * The same tag-Set pattern already exists in CommunitiesService; this brings
+   * campus events in line with it.
+   */
+  private registerListCacheKey(campusId: string, redisKey: string) {
+    if (!this.redis) return;
+    const tag = this.listTagKey(campusId);
+    this.redis.sadd(tag, redisKey).catch(() => {});
+    // Safety TTL well above the 30s entry TTL, so an abandoned tag cannot leak.
+    this.redis.expire(tag, 300).catch(() => {});
+  }
+
   private async invalidateCampus(campusId: string) {
     if (!this.redis) return;
     try {
-      const keys = await this.redis.keys(`campus-events:${campusId}:*`);
+      const tag = this.listTagKey(campusId);
+      const keys = await this.redis.smembers(tag);
       if (keys.length > 0) await this.redis.del(...keys);
+      await this.redis.del(tag);
     } catch {
       /* non-fatal */
     }
@@ -244,29 +301,31 @@ export class CampusEventsService {
     }
 
     // Cursor: opaque `${sortValueISO}|${id}`.
-    if (opts.cursor) {
-      const [ts, id] = opts.cursor.split('|');
-      const date = new Date(ts);
-      if (!isNaN(date.getTime()) && id) {
-        if (scope === 'past') {
-          where.AND = [
-            {
-              OR: [
-                { endTime: { lt: date } },
-                { endTime: date, id: { lt: id } },
-              ],
-            },
-          ];
-        } else {
-          where.AND = [
-            {
-              OR: [
-                { startTime: { gt: date } },
-                { startTime: date, id: { gt: id } },
-              ],
-            },
-          ];
-        }
+    //
+    // Parsed through the shared helper, which also settles the TYPE of the
+    // value. `cursor` is declared `string`, but Express turns
+    // `?cursor=a&cursor=b` into an array, so calling `.split` on it directly
+    // threw `TypeError: split is not a function` — a 500 from a URL anyone
+    // could construct. A malformed or wrong-typed cursor now falls back to the
+    // first page, which is what a client mistake should cost.
+    const cursor = parseKeysetCursor(opts.cursor);
+    if (cursor) {
+      const { date, id } = cursor;
+      if (scope === 'past') {
+        where.AND = [
+          {
+            OR: [{ endTime: { lt: date } }, { endTime: date, id: { lt: id } }],
+          },
+        ];
+      } else {
+        where.AND = [
+          {
+            OR: [
+              { startTime: { gt: date } },
+              { startTime: date, id: { gt: id } },
+            ],
+          },
+        ];
       }
     }
 
@@ -274,19 +333,37 @@ export class CampusEventsService {
       where,
       orderBy,
       take: limit + 1,
-      select: EVENT_SELECT,
+      select: EVENT_LIST_SELECT,
     });
 
+    /**
+     * The cursor must name the last row this page RETURNS, not the extra row
+     * fetched to detect that another page exists.
+     *
+     * It used to name the extra row — `rows.pop()` — and then drop it. Because
+     * the cursor comparison is strict (`>` for upcoming/ongoing, `<` for past),
+     * the next page started *after* that row, so the popped event was never
+     * returned by any page: one event silently vanished at every page boundary.
+     * Invisible below 20 events per scope, which is why it survived.
+     *
+     * `getDirectory` already did this correctly; this brings the event scopes
+     * in line with it.
+     */
+    const hasMore = rows.length > limit;
+    const pageRows = hasMore ? rows.slice(0, limit) : rows;
+    const last = pageRows[pageRows.length - 1];
     let nextCursor: string | undefined;
-    if (rows.length > limit) {
-      const next = rows.pop()!;
-      const sortVal = scope === 'past' ? next.endTime : next.startTime;
-      nextCursor = `${sortVal.toISOString()}|${next.id}`;
+    if (hasMore && last) {
+      const sortVal = scope === 'past' ? last.endTime : last.startTime;
+      nextCursor = `${sortVal.toISOString()}|${last.id}`;
     }
 
-    const response = { events: rows.map(presentEventCreator), nextCursor };
+    // No `presentEventCreator` here: the list no longer selects `creator`, so
+    // there is no identity to substitute. The single-event read still does.
+    const response = { events: pageRows, nextCursor };
     if (this.redis) {
       this.redis.setex(cacheKey, 30, JSON.stringify(response)).catch(() => {});
+      this.registerListCacheKey(campusId, cacheKey);
     }
     return response;
   }
@@ -298,6 +375,27 @@ export class CampusEventsService {
     });
     if (!found) throw new NotFoundException('Campus event not found.');
     const event = presentEventCreator(found);
+
+    /**
+     * Campus boundary.
+     *
+     * Discovery is scoped to the caller's college, but this read was not: any
+     * verified account holding an event id could fetch another college's event
+     * in full — title, description, venue, organiser and the creator's identity
+     * — simply by asking for it. The id is a UUID, so it was not trivially
+     * enumerable, but "hard to guess" is not an access control, and event ids
+     * travel in shared links.
+     *
+     * 404 rather than 403 on purpose: a 403 would confirm that an event with
+     * this id exists on some other campus.
+     */
+    const viewer = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { collegeId: true },
+    });
+    if (!viewer?.collegeId || viewer.collegeId !== event.campusId) {
+      throw new NotFoundException('Campus event not found.');
+    }
 
     // Drafts are only visible to their creator (a rep managing their own events).
     if (event.status === 'DRAFT' && event.createdBy !== userId) {
@@ -330,6 +428,33 @@ export class CampusEventsService {
     }
 
     const posterKey = await this.resolvePosterKey(dto.posterUrl, user.id);
+    const idempotencyKey = dto.idempotencyKey ?? null;
+
+    /**
+     * Fast path for an obvious retry: the client resent a key we have already
+     * committed. Returning the existing event is what makes the endpoint safe
+     * to retry after a timeout.
+     *
+     * This read alone is not the guarantee — two simultaneous requests can both
+     * miss it — which is why the unique index is the real mechanism and the
+     * P2002 branch below is the one that actually closes the race.
+     */
+    if (idempotencyKey) {
+      const existing = await this.prisma.campusEvent.findFirst({
+        where: { createdBy: user.id, idempotencyKey, deletedAt: null },
+        select: EVENT_SELECT,
+      });
+      if (existing) {
+        return dto.publish && existing.status === 'DRAFT'
+          ? this.publish(user.id, existing.id)
+          : existing;
+      }
+    }
+
+    // Publishing at creation time keeps the event out of the half-created state
+    // the old create-then-publish pair could strand it in.
+    const initialStatus =
+      dto.publish && endTime >= new Date() ? 'PUBLISHED' : 'DRAFT';
 
     let created: any;
     try {
@@ -346,11 +471,31 @@ export class CampusEventsService {
           venue: dto.venue.trim(),
           registrationUrl,
           createdBy: user.id,
-          status: 'DRAFT',
+          status: initialStatus,
+          idempotencyKey,
         },
         select: EVENT_SELECT,
       });
-    } catch (err) {
+    } catch (err: unknown) {
+      // P2002 on (createdBy, idempotencyKey): a concurrent request with the
+      // same key won the insert. That is a duplicate submission, not an error —
+      // hand back the event that did get created. The poster is deliberately
+      // NOT discarded here: the winning row references the same key.
+      const isUniqueViolation =
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002';
+      if (isUniqueViolation && idempotencyKey) {
+        const winner = await this.prisma.campusEvent.findFirst({
+          where: { createdBy: user.id, idempotencyKey },
+          select: EVENT_SELECT,
+        });
+        if (winner) {
+          this.logger.log(
+            `Idempotent create collapsed to existing event ${winner.id} (rep ${user.id})`,
+          );
+          return winner;
+        }
+      }
       if (posterKey) {
         this.mediaCleanupService
           ?.discardFailedNewUpload(posterKey, user.id)
@@ -374,6 +519,10 @@ export class CampusEventsService {
         createdBy: true,
         status: true,
         posterUrl: true,
+        // Carried so `update` and `publish` do not each issue a second
+        // findUnique for the same row they were just handed.
+        startTime: true,
+        endTime: true,
       },
     });
     if (!event) throw new NotFoundException('Campus event not found.');
@@ -410,18 +559,13 @@ export class CampusEventsService {
       data.registrationUrl = sanitizeRegistrationUrl(dto.registrationUrl);
     }
 
-    // Time coherence: validate against the effective (new-or-existing) values.
+    // Time coherence: validate against the effective (new-or-existing) values,
+    // reusing the row `requireOwnedEvent` already loaded.
     if (dto.startTime !== undefined || dto.endTime !== undefined) {
-      const existing = await this.prisma.campusEvent.findUnique({
-        where: { id: eventId },
-        select: { startTime: true, endTime: true },
-      });
       const startTime =
-        dto.startTime !== undefined
-          ? new Date(dto.startTime)
-          : existing!.startTime;
+        dto.startTime !== undefined ? new Date(dto.startTime) : event.startTime;
       const endTime =
-        dto.endTime !== undefined ? new Date(dto.endTime) : existing!.endTime;
+        dto.endTime !== undefined ? new Date(dto.endTime) : event.endTime;
       assertCoherentEventTimes(startTime, endTime);
       data.startTime = startTime;
       data.endTime = endTime;
@@ -464,12 +608,9 @@ export class CampusEventsService {
       throw new BadRequestException('Expired events cannot be published.');
     }
 
-    // Guard against publishing an event that is already over.
-    const full = await this.prisma.campusEvent.findUnique({
-      where: { id: eventId },
-      select: { endTime: true },
-    });
-    const status = full && full.endTime < new Date() ? 'EXPIRED' : 'PUBLISHED';
+    // Guard against publishing an event that is already over — again from the
+    // row already in hand rather than a fresh read.
+    const status = event.endTime < new Date() ? 'EXPIRED' : 'PUBLISHED';
 
     const updated = await this.prisma.campusEvent.update({
       where: { id: eventId },
@@ -494,15 +635,59 @@ export class CampusEventsService {
     return { success: true };
   }
 
-  /** Events created by the acting representative (any status) — for their management view. */
-  async listMine(userId: string) {
+  /**
+   * Events created by the acting representative (any status) — their management
+   * view.
+   *
+   * Keyset-paginated on the same `(startTime desc, id desc)` the list is sorted
+   * by, matching `listByScope`'s cursor format. It previously returned a flat
+   * `take: 100` with no cursor: bounded, so never a runaway query, but a rep
+   * who had run more than a hundred events simply could not reach the older
+   * ones — they were silently absent with nothing to indicate more existed.
+   *
+   * `EVENT_LIST_SELECT` rather than the full `EVENT_SELECT`: this is a list of
+   * cards, and the `creator` relation it would otherwise join is by definition
+   * the caller on every row.
+   *
+   * The response keeps its `{ events }` shape and gains `nextCursor`, so the
+   * existing client hook is unaffected.
+   */
+  async listMine(
+    userId: string,
+    opts: { limit?: number; cursor?: string } = {},
+  ) {
     const user = await this.requireCampusRep(userId);
-    const events = await this.prisma.campusEvent.findMany({
-      where: { createdBy: user.id, deletedAt: null },
-      orderBy: [{ startTime: 'desc' }],
-      take: 100,
-      select: EVENT_SELECT,
+    const limit = Math.min(Math.max(Number(opts.limit) || 20, 1), 50);
+
+    const where: Prisma.CampusEventWhereInput = {
+      createdBy: user.id,
+      deletedAt: null,
+    };
+    // Same parse as listByScope — see the note there on why the type of this
+    // value cannot be taken on trust.
+    const cursor = parseKeysetCursor(opts.cursor);
+    if (cursor) {
+      where.OR = [
+        { startTime: { lt: cursor.date } },
+        { startTime: cursor.date, id: { lt: cursor.id } },
+      ];
+    }
+
+    const rows = await this.prisma.campusEvent.findMany({
+      where,
+      orderBy: [{ startTime: 'desc' }, { id: 'desc' }],
+      take: limit + 1,
+      select: EVENT_LIST_SELECT,
     });
-    return { events };
+
+    // Cursor from the last returned row, not the peeked one — see listByScope.
+    const hasMore = rows.length > limit;
+    const pageRows = hasMore ? rows.slice(0, limit) : rows;
+    const last = pageRows[pageRows.length - 1];
+    const nextCursor =
+      hasMore && last
+        ? `${last.startTime.toISOString()}|${last.id}`
+        : undefined;
+    return { events: pageRows, nextCursor };
   }
 }

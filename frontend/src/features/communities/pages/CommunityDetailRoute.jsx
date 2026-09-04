@@ -21,10 +21,22 @@ export default function CommunityDetailRoute() {
     goBack('/communities');
   };
 
-  const handlePostClick = (post, sourceContext, communityId) => {
+  const handlePostClick = (post, sourceContext, communityId, options) => {
     if (post.id) {
-      navigate(`/post/${post.id}`, { state: { post, sourceContext, communityId, from: location.pathname } });
+      navigate(`/post/${post.id}`, {
+        state: {
+          post,
+          sourceContext,
+          communityId,
+          from: location.pathname,
+          focusComment: options?.focusComment || false,
+        }
+      });
     }
+  };
+
+  const handleCommentClick = (post, sourceContext, communityId) => {
+    handlePostClick(post, sourceContext, communityId, { focusComment: true });
   };
 
   return (
@@ -33,6 +45,7 @@ export default function CommunityDetailRoute() {
         communityId={id} 
         onBack={handleBack} 
         onPostClick={handlePostClick}
+        onCommentClick={handleCommentClick}
       />
     </main>
   );

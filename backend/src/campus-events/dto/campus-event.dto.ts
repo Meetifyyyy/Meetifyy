@@ -4,6 +4,8 @@ import {
   MaxLength,
   IsDateString,
   IsIn,
+  IsUUID,
+  IsBoolean,
 } from 'class-validator';
 
 export class CreateCampusEventDto {
@@ -44,6 +46,27 @@ export class CreateCampusEventDto {
   @IsOptional()
   @MaxLength(2048)
   registrationUrl?: string;
+
+  /**
+   * A key the client generates once per Create-Event dialog and resends on
+   * every attempt. Two requests carrying the same key from the same rep resolve
+   * to one event: the second gets the first one back rather than creating a
+   * duplicate. Optional, so an older client keeps working (without the
+   * guarantee).
+   */
+  @IsUUID()
+  @IsOptional()
+  idempotencyKey?: string;
+
+  /**
+   * Publish as part of creation instead of leaving a DRAFT for a follow-up
+   * `POST /:id/publish`. The two-call sequence was not atomic: when the second
+   * call failed the rep saw an error and was left with an invisible draft that
+   * no discovery scope returns.
+   */
+  @IsBoolean()
+  @IsOptional()
+  publish?: boolean;
 }
 
 export class UpdateCampusEventDto {

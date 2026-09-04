@@ -411,8 +411,15 @@ const DERIVED_THUMB_FOLDERS = [
 ];
 const thumbSizeForFolder = (folder) => {
   if (folder === 'avatars' || folder === 'groups' || folder === 'community-icons') return 160;
-  if (folder === 'communities') return 256;
+  // A community icon is painted at 56px on a card and 52px in the campus
+  // discover row; 160 covers both on a 3x phone. At 256 the "thumbnail" was
+  // within a few hundred bytes of the original and barely worth requesting.
+  if (folder === 'communities') return 160;
   if (folder === 'profile-covers' || folder === 'community-covers') return 640;
+  // Event posters are only ever listed in a 215-245 CSS px card, so 640 still
+  // covers a 3x phone. At 1080 the "thumbnail" came back the same weight as the
+  // original portrait upload and the grid was, in effect, unthumbnailed.
+  if (folder === 'events') return 640;
   return 1080; // posts
 };
 

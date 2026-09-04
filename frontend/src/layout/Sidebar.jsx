@@ -1,6 +1,5 @@
-import { useState, useMemo } from 'react';
+import { useState } from 'react';
 import { useAuth } from '@shared/context/AuthContext';
-import { toggleRegistry } from '@shared/utils/mutationRegistry';
 
 import { useLocation } from 'react-router-dom';
 import { useSmartNavigation } from '@shared/hooks/useSmartNavigation';
@@ -61,12 +60,10 @@ const SidebarCommunityItem = ({ comm, navigate }) => {
 
 import { useUnreadCounts } from '@features/messages/hooks/useUnreadCounts';
 
-import { useCommunities, useCampusCommunities } from '@shared/hooks/useCommunities';
+import { useJoinedCommunities } from '@shared/hooks/useCommunities';
 
 export default function Sidebar({ onCommunityClick }) {
   const { initial, currentUser } = useAuth();
-  const { communities } = useCommunities();
-  const { campusCommunities } = useCampusCommunities();
   const { total: unreadMessagesCount } = useUnreadCounts();
   const { smartNavigate: navigate } = useSmartNavigation();
   const location = useLocation();
@@ -74,34 +71,8 @@ export default function Sidebar({ onCommunityClick }) {
 
   const username = currentUser?.username || '';
   
-  const joinedCommunityObjects = useMemo(() => {
-    const publicList = Array.isArray(communities) ? communities : Object.values(communities || {});
-    const campusList = Array.isArray(campusCommunities) ? campusCommunities : [];
-    
-    const combined = [...publicList, ...campusList].filter(c => c && typeof c === 'object' && c.name && c.id);
-    const uniqueMap = new Map();
-    combined.forEach(c => uniqueMap.set(c.id, c));
-    const commList = Array.from(uniqueMap.values());
-
-    const userCommunities = currentUser?.communities || [];
-
-    return commList.filter((c) => {
-      const rawJoined = Boolean(
-        (c.ownerId && currentUser?.id && c.ownerId === currentUser.id) ||
-        c.userRole === 'OWNER' ||
-        c.userRole === 'MODERATOR' ||
-        c.userRole === 'MEMBER' ||
-        (c.isJoined !== undefined && Boolean(c.isJoined)) ||
-        (c.isMember !== undefined && Boolean(c.isMember)) ||
-        (Array.isArray(c.members) && currentUser?.id && c.members.some(m => (m.userId || m.id || m.user?.id) === currentUser.id)) ||
-        userCommunities.includes(c.name) ||
-        userCommunities.includes(c.id)
-      );
-
-      const entityKey = `joinCommunity:${c.id}`;
-      return toggleRegistry.getLatestIntent(entityKey, rawJoined);
-    });
-  }, [communities, campusCommunities, currentUser]);
+  // Shared with <Header>; see useJoinedCommunities.
+  const joinedCommunityObjects = useJoinedCommunities();
 
   return (
     <aside className={styles.sidebar}>

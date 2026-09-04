@@ -13,6 +13,7 @@ import { RedisService } from '../redis/redis.service';
 import { PresenceService } from '../presence/presence.service';
 import { BlocksService } from '../users/blocks.service';
 import { DefaultAssetsService } from '../uploads/default-assets.service';
+import { sampleRandom } from '../common/utils/sample-random.util';
 import Redis from 'ioredis';
 import {
   roleCan,
@@ -300,6 +301,64 @@ export class CommunitiesService implements OnModuleInit {
     });
   }
 
+  /**
+   * "Discover Communities" — the profile sidebar's suggestion panel.
+   *
+   * It used to slice the top three of `GET /communities` by member count on
+   * the client, which meant every viewer saw the same three biggest
+   * communities forever, joined ones included until the list happened to
+   * refetch. Two problems in one: no variety, and the panel could be entirely
+   * made of communities the viewer was already in.
+   *
+   * Both are fixed the same way "Who to follow" was. Communities the viewer
+   * has already joined are excluded in SQL, the most popular of the rest form
+   * a pool, and `limit` are drawn at random from it — so a reload produces a
+   * different valid selection without ever suggesting somewhere they already
+   * are.
+   *
+   * Membership is tested through `members: { none: … }` alone. That covers
+   * ownership too: creating a community writes the creator a `CommunityMember`
+   * row with role OWNER, so an owner is always a member. (Verified against the
+   * database: no non-deleted community has an owner without a member row.)
+   * Testing `ownerId` as well would need care rather than being free — Prisma
+   * compiles a negated equality on a nullable column to `NOT (ownerId = ?)`,
+   * which is NULL for an ownerless community and would silently drop those
+   * rows from discovery entirely.
+   *
+   * Deliberately NOT cached in Redis like the list endpoints above: the result
+   * is per-viewer AND per-request by construction, so a shared cache entry
+   * could only ever serve someone else's selection.
+   */
+  async getCommunityRecommendations(userId: string, limit = 10) {
+    if (!userId) return [];
+
+    const sampleFrom = Math.min(Math.max(limit * 8, 24), 60);
+
+    // One query. `members: { none: … }` is an anti-join Postgres resolves with
+    // the CommunityMember primary key (userId, communityId) — no per-row
+    // membership lookup, and no second pass to filter joined ones out.
+    const pool = await this.prisma.community.findMany({
+      where: {
+        deletedAt: null,
+        // Campus communities are a separate, verification-gated surface with
+        // its own endpoint; discovery here mirrors getAllCommunities.
+        isCampusCommunity: false,
+        members: { none: { userId } },
+      },
+      orderBy: { memberCount: 'desc' },
+      take: sampleFrom,
+    });
+
+    // Every row is one the viewer is not in, so the membership fields are
+    // known without asking. Emitted explicitly all the same, so the payload is
+    // self-describing and no consumer has to infer state from a missing field.
+    return sampleRandom(pool, limit).map((c) => ({
+      ...c,
+      isJoined: false,
+      userRole: null,
+    }));
+  }
+
   async getCampusCommunities(
     userId: string,
     limit = 30,
@@ -345,6 +404,25 @@ export class CommunitiesService implements OnModuleInit {
           isCampusCommunity: true,
           collegeId,
           ...searchWhere,
+        },
+        // Only what the campus surfaces render: the card (avatar, name,
+        // description, member count, join button) and the sidebar's joined
+        // list (id, name, ownerId, plus the membership fields computed below).
+        //
+        // The unprojected `findMany` this replaces returned every column,
+        // including three that are constant for every row the query can
+        // return — `deletedAt` is null, `isCampusCommunity` is true and
+        // `collegeId` is the caller's, all by construction — plus `slug`,
+        // `isPrivate`, `updatedAt`, `createdAt` and the two cover/media ids,
+        // none of which any consumer of this endpoint reads.
+        select: {
+          id: true,
+          name: true,
+          description: true,
+          avatarKey: true,
+          color: true,
+          memberCount: true,
+          ownerId: true,
         },
         orderBy: { memberCount: 'desc' },
         take: limit,
@@ -1658,19 +1736,26 @@ export class CommunitiesService implements OnModuleInit {
       community.collegeId ?? undefined,
     );
 
+    /**
+     * One targeted delete, where there used to be two full keyspace scans.
+     *
+     * This block ran `KEYS 'posts:*'` and `KEYS 'feed:*'`. `KEYS` is
+     * O(total keyspace) and Redis is single-threaded, so each call stalls every
+     * other client for its duration — and this deployment shares Redis with the
+     * session store and the job queues, so the blast radius was the whole app,
+     * not this cache.
+     *
+     * Both patterns were also dead: no code path in this repository writes or
+     * reads a `posts:*` or `feed:*` key, so the scans walked the entire
+     * keyspace to build a list that was always empty. `community-posts:<id>` is
+     * the only key the block ever actually named, so that is all that is
+     * deleted now. It is unconditional and O(1); `DEL` on a missing key is a
+     * no-op, which is cheaper than any scan that could discover its absence.
+     */
     const redis = this.redisService.getClient();
     if (redis) {
       try {
-        const postKeys = await redis.keys('posts:*');
-        const feedKeys = await redis.keys('feed:*');
-        const allKeys = [
-          ...postKeys,
-          ...feedKeys,
-          `community-posts:${communityId}`,
-        ];
-        if (allKeys.length > 0) {
-          await redis.del(...allKeys);
-        }
+        await redis.del(`community-posts:${communityId}`);
       } catch (err) {
         this.logger.warn(
           `Failed clearing Redis post keys for community ${communityId}: ${err?.message}`,

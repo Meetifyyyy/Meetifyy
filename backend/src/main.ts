@@ -47,6 +47,7 @@ async function bootstrap() {
     origins: configuredCorsOrigins,
     originPatterns,
     allowLocalNetwork,
+    maxAge: corsMaxAge,
   } = config.app.cors;
 
   // Security headers. CSP and HSTS default to production-only: CSP off in dev so
@@ -131,6 +132,16 @@ async function bootstrap() {
     credentials: true,
     methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'x-csrf-token'],
+    // Emits Access-Control-Max-Age. Every request here carries an
+    // Authorization header, so every one of them is preceded by an OPTIONS
+    // preflight; with no max-age that preflight is uncacheable and the round
+    // trip is paid twice for each call. See config.app.cors.maxAge.
+    maxAge: corsMaxAge,
+    // A preflight is answered here and must not continue into the router:
+    // the OPTIONS request carries no auth, so letting it fall through means a
+    // guard rejecting it with a 401 that the browser reads as "CORS failed".
+    preflightContinue: false,
+    optionsSuccessStatus: 204,
   });
 
   // Global validation pipe

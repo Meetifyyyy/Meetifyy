@@ -706,6 +706,14 @@ const normalizeCommunity = (c) => {
 
 export const communitiesApi = {
   getAll: () => apiClient.get('/api/communities').then((list) => (Array.isArray(list) ? list.map(normalizeCommunity) : list)),
+  // Discovery suggestions: communities the viewer has NOT joined, drawn at
+  // random from the most popular of the rest. Server-ranked and server-sampled
+  // so the panel varies per load without the client fetching a wide list to
+  // filter down.
+  getRecommendations: (limit = 10) =>
+    apiClient
+      .get(`/api/communities/recommendations?limit=${limit}`)
+      .then((list) => (Array.isArray(list) ? list.map(normalizeCommunity) : list)),
   getCampusCommunities: (search) => {
     const qs = search ? `?search=${encodeURIComponent(search)}` : '';
     return apiClient.get(`/api/communities/campus${qs}`).then((list) => (Array.isArray(list) ? list.map(normalizeCommunity) : list));
@@ -818,6 +826,11 @@ export const usersApi = {
     return apiClient.get(`/api/users/mention-search?${params.toString()}`);
   },
   getOnlineFriends: (limit = 6) => apiClient.get(`/api/users/online-friends?limit=${limit}`),
+  // "Who to follow". Server-ranked, block- and follow-filtered, and every row
+  // carries an authoritative `isFollowing`. Replaces the old client-side
+  // derivation from getAll() + campus users + conversation participants.
+  getRecommendations: (limit = 10) =>
+    apiClient.get(`/api/users/recommendations?limit=${limit}`),
   getByUsername: (username) => apiClient.get(`/api/users/${username}`),
   // `eligibleOnly` is for recipient pickers only. The profile's follower and
   // following viewer must never pass it: hiding accounts there would misreport
@@ -832,15 +845,12 @@ export const usersApi = {
     if (eligibleOnly) params.set('eligibleOnly', 'true');
     return apiClient.get(`/api/users/${username}/following?${params.toString()}`);
   },
-  getFollowingUsernames: async (username) => {
-    if (!username) return [];
-    try {
-      const res = await apiClient.get(`/api/users/${username}/following?limit=1000`);
-      return Array.isArray(res) ? res.map(u => u?.username).filter(Boolean) : [];
-    } catch {
-      return [];
-    }
-  },
+  // `getFollowingUsernames` was here: a `?limit=1000` fetch of the viewer's
+  // whole following list, so a caller could check membership in JavaScript.
+  // Nothing called it any more, and the pattern is the bug — a relationship
+  // past the limit reads as "not following", and the answer silently depends
+  // on how many people the account follows. Follow state is now carried on the
+  // payloads that render it, resolved per row against the Follow table.
   follow: (username, { signal } = {}) => apiClient.post(`/api/users/${username}/follow`, undefined, { signal }),
   unfollow: (username, { signal } = {}) => apiClient.post(`/api/users/${username}/unfollow`, undefined, { signal }),
   getById: (id) => apiClient.get(`/api/users/id/${id}`),

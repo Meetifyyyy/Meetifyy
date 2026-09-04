@@ -687,7 +687,7 @@ function useSimulatedFetch(data, delay = 0, deps = []) {
   return { isLoading: isLoading && !data, data, error: null, retry: () => {} };
 }
 
-export default function CommunityView({ communityId, onBack, onPostClick }) {
+export default function CommunityView({ communityId, onBack, onPostClick, onCommentClick }) {
   const queryClient = useQueryClient();
   // Declared with the other top-level hooks so every effect below can use
   // it. It used to sit two hundred lines down, which put it in the temporal
@@ -701,6 +701,7 @@ export default function CommunityView({ communityId, onBack, onPostClick }) {
   const users = useUsersMap();
   const { addPost, updateCommunity } = useCommunityActions();
   const { currentUser } = useAuth();
+  const composerRef = useRef(null);
   const { mutate: toggleJoin, isLoading: isJoining } = useJoinCommunity();
   /**
    * The one-time "you're now a moderator" notice.
@@ -983,6 +984,14 @@ export default function CommunityView({ communityId, onBack, onPostClick }) {
     if (onPostClick) onPostClick(post, 'community', comm?.id);
   }, [onPostClick, comm?.id]);
 
+  const handleCommunityCommentClick = useCallback((post) => {
+    if (onCommentClick) {
+      onCommentClick(post, 'community', comm?.id);
+    } else if (onPostClick) {
+      onPostClick(post, 'community', comm?.id, { focusComment: true });
+    }
+  }, [onCommentClick, onPostClick, comm?.id]);
+
   if (isLoading) {
     return (
       <div className={styles.wrapper}>
@@ -1114,14 +1123,20 @@ function DeletedCommunityView({ onBack }) {
       toggleJoin({ communityId, isJoined: true, currentUser });
     }
     setTimeout(() => {
-      const inputEl = document.querySelector(`.${styles.composerWrap} div[contenteditable="true"]`) || 
-                      document.querySelector(`.${styles.composerWrap} textarea`) || 
-                      document.querySelector(`.${styles.composerWrap} input`);
-      if (inputEl) {
-        inputEl.focus();
-        inputEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      if (composerRef.current?.focus) {
+        composerRef.current.focus();
+      } else {
+        const inputEl = document.querySelector(`.${styles.composerWrapper} div[contenteditable="true"]`) || 
+                        document.querySelector(`.${styles.composerWrap} div[contenteditable="true"]`) || 
+                        document.querySelector('[data-community-composer] div[contenteditable="true"]') ||
+                        document.querySelector(`.${styles.composerWrapper} textarea`) || 
+                        document.querySelector(`.${styles.composerWrapper} input`);
+        if (inputEl) {
+          inputEl.focus();
+          inputEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
       }
-    }, 150);
+    }, 120);
   };
 
   const handleDeleteCommunity = async () => {
@@ -1443,9 +1458,12 @@ function DeletedCommunityView({ onBack }) {
           ) : (
             <>
               {joined && (comm.allowMemberPosts !== false || isAdmin) && (
-                <div className={styles.composerWrapper}>
+                <div className={styles.composerWrapper} data-community-composer="true">
                   <VerificationGate message="Verify your account to post in communities.">
-                    <PostComposer onSubmit={(text, poll, media, mentions) => addPost(text, poll, communityId, media, mentions)} />
+                    <PostComposer
+                      ref={composerRef}
+                      onSubmit={(text, poll, media, mentions) => addPost(text, poll, communityId, media, mentions)}
+                    />
                   </VerificationGate>
                 </div>
               )}
@@ -1453,7 +1471,15 @@ function DeletedCommunityView({ onBack }) {
               <div className={styles.postsFeed}>
                 {communityPosts.length === 0 ? (
                   <div className={styles.emptyPosts}>
-                    <div className={styles.emptyPostsIcon}>
+                    <div
+                      className={styles.emptyPostsIcon}
+                      onClick={handleCreatePostClick}
+                      role="button"
+                      tabIndex={0}
+                      style={{ cursor: 'pointer' }}
+                      title="Create post"
+                      aria-label="Create post"
+                    >
                       {comm.trending ? '🚀' : '💭'}
                     </div>
                     <h3 className={styles.emptyPostsTitle}>
@@ -1486,7 +1512,13 @@ function DeletedCommunityView({ onBack }) {
                             </span>
                           )}
                         </div>
-                        <Post key={p.id} postData={p} hideCommunityTag={true} onClick={handleCommunityPostClick} />
+                        <Post
+                          key={p.id}
+                          postData={p}
+                          hideCommunityTag={true}
+                          onClick={handleCommunityPostClick}
+                          onCommentClick={handleCommunityCommentClick}
+                        />
                       </div>
                     ))}
                     {hasMorePosts && (

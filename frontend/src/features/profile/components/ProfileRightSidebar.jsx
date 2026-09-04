@@ -1,14 +1,11 @@
-import { useMemo } from 'react';
-
 import { useAuth } from '@shared/context/AuthContext';
 import Avatar from '@shared/components/avatar/Avatar';
 import { CollegeRepresentativeBadge } from '@shared/components/badges/CollegeRepresentativeBadge';
 import FollowButton from '@shared/components/ui/FollowButton';
 import { useNavigate, useLocation } from 'react-router-dom';
 import s from './ProfileRightSidebar.module.css';
-import { usersApi, activitiesApi } from '@shared/api/apiClient';
-import { useUsersMap } from '@shared/hooks/useUsersMap';
-import { useCommunities } from '@shared/hooks/useCommunities';
+import { useFollowSuggestions } from '@shared/hooks/useFollowSuggestions';
+import { useCommunityRecommendations } from '@shared/hooks/useCommunityRecommendations';
 import { useJoinCommunity } from '@features/communities/hooks/useJoinCommunity';
 import { toggleRegistry } from '@shared/utils/mutationRegistry';
 import { resolveCommunityAvatar } from '@shared/utils/avatar';
@@ -22,44 +19,51 @@ import { isCommunityMember, isCommunityOwner, communityMemberCount } from '@shar
  */
 export default function ProfileRightSidebar({ embedded = false }) {
   const { currentUser } = useAuth();
-  
-  const users = useUsersMap();
-  const { communities } = useCommunities();
-  
+
+  /**
+   * Suggestions come from the server, already ranked and already filtered.
+   *
+   * This used to be derived in the browser: `useUsersMap()` — a merge of the
+   * twenty most recently created accounts, the campus list and every
+   * participant of every open conversation — filtered against
+   * `currentUser.followingList`. Two things were wrong with that beyond the
+   * arbitrary candidate pool.
+   *
+   * First, none of those payloads carried follow state, so `u.isFollowing`
+   * was always `undefined` and the button rendered "Follow" for accounts the
+   * viewer already followed. Second — and this is the behaviour being changed
+   * here — the filter also dropped anyone with a pending follow intent, so
+   * following someone made them disappear from the panel mid-click.
+   *
+   * Now the rows are rendered exactly as the server ranked them. A followed
+   * account KEEPS its place and its button flips to "Following"; the list is
+   * re-ranked (and the followed account dropped) the next time it is fetched,
+   * which is on a reload. Nothing is filtered here at all.
+   */
+  const { suggestions } = useFollowSuggestions(3);
+
+  /**
+   * Communities come from the server too, already filtered and already drawn.
+   *
+   * This used to slice the top three by member count out of the shared
+   * `useCommunities()` list, which had three consequences: every viewer saw
+   * the same three biggest communities on every visit; the panel could be
+   * entirely made of communities they had already joined; and because the
+   * ranking key is member count and joining increments it, the act of joining
+   * could re-sort the panel and swap the card out from under the pointer.
+   *
+   * The endpoint excludes joined communities in SQL and samples the rest, so
+   * none of the three can happen — and the ordering is fixed by the response
+   * rather than recomputed on every render, which is what the frozen-selection
+   * ref here used to be working around.
+   */
+  const { recommendations: popularCommunities } = useCommunityRecommendations(3);
+
   const { mutate: toggleJoin } = useJoinCommunity();
-  
+
   const navigate = useNavigate();
   const location = useLocation();
 
-
-  const suggestedUsers = useMemo(() => {
-    if (!users || !currentUser) return [];
-    const followingSet = new Set((currentUser.followingList || []).map(u => (typeof u === 'string' ? u : u?.username)?.toLowerCase()).filter(Boolean));
-    return Object.values(users)
-      .filter(u => {
-        if (!u || !u.username) return false;
-        const cleanName = u.username.toLowerCase();
-        if (cleanName === currentUser.username?.toLowerCase() || u.id === currentUser.id) return false;
-        if (followingSet.has(cleanName)) return false;
-
-        const entityKey = `follow:${cleanName}`;
-        const intent = toggleRegistry.getLatestIntent(entityKey, u.isFollowing || false);
-        return !intent;
-      })
-      .slice(0, 3);
-  }, [users, currentUser]);
-
-
-  // `communities` is a plain array. It used to be read with Object.values(),
-  // which returned every entry twice because the hook handed back an array that
-  // also carried id-keyed properties — that is what showed one community as two
-  // identical cards.
-  const popularCommunities = [...communities]
-    // The API field is `memberCount` (the backend even sorts by it); `members`
-    // does not exist on this payload, so the old read was always undefined and
-    // every card fell back to "0 members".
-    .sort((a, b) => communityMemberCount(b) - communityMemberCount(a))
-    .slice(0, 3);
 
   // Membership comes from the payload's own `isJoined` / `userRole`, through the
   // same helper every other community surface uses. This used to read
@@ -69,10 +73,10 @@ export default function ProfileRightSidebar({ embedded = false }) {
   // for every community, including ones the viewer owned.
   const cards = (
     <>
-      {suggestedUsers.length > 0 && (
+      {suggestions.length > 0 && (
         <div className={s.panelCard}>
           <h3 className={s.panelTitle}>Who to follow</h3>
-          {suggestedUsers.map(u => (
+          {suggestions.map(u => (
             <div 
               key={u.id} 
               className={s.personItem}
@@ -89,7 +93,11 @@ export default function ProfileRightSidebar({ embedded = false }) {
                 </div>
                 <div className={s.personSub}>@{u.username}</div>
               </div>
-              <FollowButton targetUsername={u.username} initialFollowing={u.isFollowing || false} size="sm" />
+              {/* Passed through unchanged, NOT `|| false`: the payload's
+                  `isFollowing` is read from the Follow table, and coercing a
+                  missing field to `false` is exactly how an already-followed
+                  account came to show a "Follow" button. */}
+              <FollowButton targetUsername={u.username} initialFollowing={u.isFollowing} size="sm" />
             </div>
           ))}
         </div>

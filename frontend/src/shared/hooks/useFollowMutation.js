@@ -3,6 +3,10 @@ import { useQueryClient } from '@tanstack/react-query';
 import { usersApi } from '../api/apiClient';
 import { useAuth } from '../context/AuthContext';
 import { toggleRegistry } from '../utils/mutationRegistry';
+import {
+  writeOptimisticFollowState,
+  writeServerFollowState,
+} from '../utils/followState';
 import { showToast } from '../utils/toast';
 import { PROFILE_KEYS } from './useProfile';
 
@@ -32,6 +36,53 @@ export function useFollowMutation(targetUsername) {
 
   const applyOptimisticUpdate = useCallback((isFollowing) => {
     if (!cleanTarget) return;
+
+    // The shared follow-state entry FIRST. Every button for this account reads
+    // it, so this is what makes Follow → Following happen on the same frame,
+    // wherever that account is rendered — sidebar, search results, profile
+    // header — without any of them refetching.
+    writeOptimisticFollowState(queryClient, cleanTarget, isFollowing);
+
+    /**
+     * The follower/following lists, in place.
+     *
+     * The rows STAY — only their `isFollowing` changes. Unfollowing from your
+     * own Following list must not make the row vanish under the cursor; the
+     * list is regenerated the next time it is opened.
+     *
+     * Writing this through matters even though the button reads its state from
+     * the shared entry above. `FollowButton` seeds that entry from the
+     * `initialFollowing` prop it is handed, and the prop comes from these
+     * cached rows — so leaving a row saying `isFollowing: true` after an
+     * unfollow would make the button read "Following" again the next time the
+     * modal was opened against that cache. The row and the shared entry have
+     * to agree.
+     *
+     * Both shapes are handled deliberately. These are INFINITE queries, so the
+     * cache holds `{ pages: [[user, …], …] }`, not an array — the presence
+     * updaters in SocketManager only test `Array.isArray(old)` and are
+     * therefore silent no-ops against these keys.
+     */
+    const updateRow = (u) =>
+      u && u.username?.toLowerCase() === cleanTarget ? { ...u, isFollowing } : u;
+    const updateUserListData = (old) => {
+      if (!old) return old;
+      if (Array.isArray(old)) return old.map(updateRow);
+      if (Array.isArray(old.pages)) {
+        return {
+          ...old,
+          pages: old.pages.map((page) =>
+            Array.isArray(page) ? page.map(updateRow) : page,
+          ),
+        };
+      }
+      return old;
+    };
+    // Every list for every username: the same account can appear in the
+    // viewer's own following list and in some third party's follower list at
+    // the same time, and both are on screen at once often enough to matter.
+    queryClient.setQueriesData({ queryKey: ['followers'] }, updateUserListData);
+    queryClient.setQueriesData({ queryKey: ['following'] }, updateUserListData);
 
     // Synchronize AuthContext's currentUser.followingList immediately
     if (currentUser && targetUsername) {
@@ -172,24 +223,56 @@ export function useFollowMutation(targetUsername) {
       activeControllers.set(entityKey, controller);
 
       try {
-        if (finalIntent) {
-          await usersApi.follow(targetUsername, { signal: controller.signal });
-        } else {
-          await usersApi.unfollow(targetUsername, { signal: controller.signal });
-        }
+        const res = finalIntent
+          ? await usersApi.follow(targetUsername, { signal: controller.signal })
+          : await usersApi.unfollow(targetUsername, { signal: controller.signal });
 
         // Only reconcile if this is still the latest sequence
         if (seq === mutationSeqRef.current) {
           activeControllers.delete(entityKey);
+          // Release the pending intent BEFORE writing server state: while the
+          // registry still holds an entry for this key, writeServerFollowState
+          // deliberately declines to write (a newer click would outrank a
+          // response already on the wire).
           toggleRegistry.clearIfLatest(entityKey, mutationId);
+
+          // The response is the database's own answer — `isFollowing` after
+          // the write. Recording it means the UI is confirmed against the
+          // server on every action rather than trusting the optimistic guess
+          // until something else happens to refetch.
+          const serverFollowing =
+            typeof res?.isFollowing === 'boolean' ? res.isFollowing : finalIntent;
+          writeServerFollowState(queryClient, cleanTarget, serverFollowing);
+
           // ONE silent background sync — does not update UI (staleTime guard prevents flicker)
           queryClient.invalidateQueries({ queryKey: PROFILE_KEYS.byUsername(cleanTarget), refetchType: 'none' });
-          queryClient.invalidateQueries({ queryKey: ['followers', cleanTarget] });
-          queryClient.invalidateQueries({ queryKey: ['following', cleanTarget] });
+
+          // Marked stale, NOT refetched — `refetchType: 'none'`.
+          //
+          // An active refetch here is what removed the row you had just acted
+          // on. Unfollowing from your own Following list re-ran the query, the
+          // server correctly no longer returned that account, and it
+          // disappeared mid-click. Worse, an infinite query refetches EVERY
+          // loaded page at once, so on a long list the whole thing was rebuilt
+          // and the scroll position moved under the reader.
+          //
+          // The optimistic write above has already put the rows in their
+          // correct state, so nothing on screen is wrong; the lists refetch
+          // when they are next mounted, which for these modals is the next
+          // time one is opened. Same rule as the profile sidebar: an action
+          // changes an item's state, never the list's membership.
+          queryClient.invalidateQueries({ queryKey: ['followers', cleanTarget], refetchType: 'none' });
+          queryClient.invalidateQueries({ queryKey: ['following', cleanTarget], refetchType: 'none' });
           if (cleanCurrent) {
-            queryClient.invalidateQueries({ queryKey: ['followers', cleanCurrent] });
-            queryClient.invalidateQueries({ queryKey: ['following', cleanCurrent] });
+            queryClient.invalidateQueries({ queryKey: ['followers', cleanCurrent], refetchType: 'none' });
+            queryClient.invalidateQueries({ queryKey: ['following', cleanCurrent], refetchType: 'none' });
           }
+          // NOT invalidated, deliberately: ['users', 'recommendations'].
+          // Rebuilding the suggestion list here is what used to make a
+          // followed account vanish from under the cursor. The list is
+          // regenerated when it is next fetched — on a reload, or after its
+          // staleTime — and the account just followed keeps its place until
+          // then, showing "Following".
         }
       } catch (err) {
         activeControllers.delete(entityKey);

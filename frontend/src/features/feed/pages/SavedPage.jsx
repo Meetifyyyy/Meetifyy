@@ -20,8 +20,19 @@ export default function SavedPage() {
     setActiveTab((prev) => (prev === tab ? 'all' : tab));
   };
 
-  const handlePostClick = (post) => {
-    navigate(`/post/${post.id}`, { state: { post, sourceContext: 'saved', from: '/saved' } });
+  const handlePostClick = (post, options) => {
+    navigate(`/post/${post.id}`, {
+      state: {
+        post,
+        sourceContext: 'saved',
+        from: '/saved',
+        focusComment: options?.focusComment || false,
+      }
+    });
+  };
+
+  const handleCommentClick = (post) => {
+    handlePostClick(post, { focusComment: true });
   };
 
   const savedActivities = useSavedActivitiesStore(state => state.savedActivities);
@@ -256,7 +267,8 @@ export default function SavedPage() {
                           <Post 
                             postData={post} 
                             hideCommunityTag={false} 
-                            onClick={handlePostClick} 
+                            onClick={handlePostClick}
+                            onCommentClick={handleCommentClick}
                           />
                         </div>
                       ))}

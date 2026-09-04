@@ -176,8 +176,17 @@ export function useGlobalSocketSync() {
                 },
               };
             });
-            queryClient.invalidateQueries({ queryKey: ['following', cleanCurrent] });
-            queryClient.invalidateQueries({ queryKey: ['followers', cleanTarget] });
+            // Stale, not refetched — this branch only runs for the viewer's
+            // OWN follow action (see `isCurrentUserFollower` above), so it is
+            // the socket echo of something the local optimistic update has
+            // already applied. Refetching here removed the row the viewer had
+            // just unfollowed from an open Following list, whenever the echo
+            // landed after the toggle registry had released its intent — the
+            // same disappearance as the mutation's own invalidation, arriving
+            // by a different route and only sometimes, which is what made it
+            // look intermittent.
+            queryClient.invalidateQueries({ queryKey: ['following', cleanCurrent], refetchType: 'none' });
+            queryClient.invalidateQueries({ queryKey: ['followers', cleanTarget], refetchType: 'none' });
           }
           break;
         }

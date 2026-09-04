@@ -235,7 +235,7 @@
 @media (min-width: 768px) {
   .sideBySideDesktop {
     flex-direction: row;
-    align-items: flex-start;
+    align-items: stretch;
     gap: 2rem;
   }
 

@@ -206,4 +206,255 @@
 
 :global([data-theme="dark"]) .plusMenuItem:hover .plusMenuIcon {
   color: #ffffff;
-}
+}
+
+/* ── Section Header Arrow Button ("See all" replacement) ── */
+.sectionArrowBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  min-height: 32px;
+  border-radius: 9999px;
+  background: var(--color-bg-white, #ffffff);
+  border: 1px solid var(--color-border, #e2e8f0);
+  color: var(--color-primary, #2563eb);
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.sectionArrowBtn:hover {
+  background: var(--color-bg-soft, #f1f5f9);
+  border-color: var(--color-primary, #2563eb);
+  color: var(--color-primary-hover, #1d4ed8);
+}
+
+:global([data-theme="dark"]) .sectionArrowBtn {
+  background: var(--color-bg-white, #1e1e1e);
+  border-color: var(--color-border, rgba(255, 255, 255, 0.15));
+  color: var(--color-primary, #3b82f6);
+  box-shadow: none;
+}
+
+:global([data-theme="dark"]) .sectionArrowBtn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+/* ── Campus Community Items (Single Viewport, No Horizontal Scroll) ── */
+.communitiesSectionWrapper {
+  width: 100%;
+  min-width: 0;
+}
+
+.communitiesScrollContainer {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  gap: 0.75rem;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.communityCardItem {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.95rem 1.15rem;
+  background: var(--color-bg-white, #ffffff);
+  border: 1px solid var(--color-border, #dde3ea);
+  border-radius: var(--radius-lg, 16px);
+  box-shadow: none;
+  box-sizing: border-box;
+  flex: 1 1 0;
+  min-width: 0;
+  cursor: pointer;
+  transition: border-color 0.2s ease;
+}
+
+/* How many cards this row shows is measured from the container in
+   CampusPage.jsx (useFittingCount), not capped here. A hard "at most 2" and a
+   360px "then 1" used to live at this spot; because the cards are flex:1 1 0
+   they never overflowed, they just squeezed, so between roughly 890px and
+   1024px — sidebar shown, window still small — two of them shared ~250px and
+   both the name and the member count ellipsed to nothing. The measurement
+   keeps every rendered card at least MIN_COMMUNITY_CARD_WIDTH_PX wide, which
+   reproduces the 360px rule on phones and drops to one card where it has to. */
+
+@media (hover: hover) and (pointer: fine) {
+  .communityCardItem:hover {
+    border-color: var(--color-border-dark, #cbd5e1);
+    box-shadow: none;
+  }
+}
+
+@media (max-width: 768px) {
+  .communityCardItem:active {
+    transform: scale(0.98) !important;
+  }
+}
+
+@media (max-width: 768px) and (prefers-reduced-motion: reduce) {
+  .communityCardItem:active {
+    transform: none !important;
+  }
+}
+
+:global([data-theme="dark"]) .communityCardItem {
+  background: var(--color-bg-soft, #1e1e24);
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: none;
+}
+
+:global([data-theme="dark"]) .communityCardItem:hover {
+  border-color: rgba(255, 255, 255, 0.18);
+  box-shadow: none;
+}
+
+.communityAvatarWrapper {
+  width: 52px;
+  height: 52px;
+  min-width: 52px;
+  min-height: 52px;
+  border-radius: 50%;
+  background: var(--color-primary, #8f0c13);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.communityAvatarImg {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.communityAvatarLetter {
+  font-family: var(--font-family-display, sans-serif);
+  font-weight: 700;
+  font-size: 1.35rem;
+  color: #ffffff;
+  line-height: 1;
+}
+
+.communityInfo {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  justify-content: center;
+}
+
+.communityCardName {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--color-text-main, #0f172a);
+  margin: 0;
+  line-height: 1.25;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+:global([data-theme="dark"]) .communityCardName {
+  color: #ffffff;
+}
+
+.communityCardSubtitle {
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--color-text-muted, #64748b);
+  line-height: 1.2;
+  margin-top: 0.2rem;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+:global([data-theme="dark"]) .communityCardSubtitle {
+  color: #94a3b8;
+}
+
+/* ── Side-by-Side Sections (Desktop) & Action Button Alignment ── */
+.sideBySideDesktop {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.sideSection {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  height: auto;
+  container-type: inline-size;
+}
+
+@media (min-width: 768px) {
+  .sideBySideDesktop {
+    display: flex;
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 2rem;
+    padding-bottom: 1rem;
+  }
+
+  .sideSection {
+    height: auto;
+  }
+
+  .knowListContainer {
+    overflow-x: hidden;
+    gap: clamp(0.5rem, 1.2vw, 0.85rem);
+    width: 100%;
+    min-width: 0;
+  }
+
+  .viewDirBtn {
+    margin-top: 0;
+    margin-bottom: 0;
+    min-height: 48px;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+  }
+
+  .discoverGroupsCard {
+    margin-top: 0 !important;
+    margin-bottom: 0 !important;
+    min-height: 48px;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    box-sizing: border-box;
+  }
+}
+
+/* How many people this row shows is measured from the container in
+   CampusPage.jsx (useFittingCount), not decided here. Three rules used to live
+   at this spot — an nth-child cap for >=768px and two more trying to reveal a
+   fifth card at a 485px container query and a 1280px viewport. None of them
+   could ever fire: the component rendered exactly four children, so there was
+   never a fifth to reveal, and the row simply left the rest of its width empty.
+   A cap here now would clip cards the measurement had already made room for. */

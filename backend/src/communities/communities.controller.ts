@@ -21,6 +21,7 @@ import {
   UpdateMemberRoleDto,
 } from './dto/community.dto';
 import { moderatorPermissions } from './moderator-permissions';
+import { clampPageParam } from '../common/pagination.util';
 
 @Controller('api/communities')
 @UseGuards(JwtGuard)
@@ -36,8 +37,8 @@ export class CommunitiesController {
     @Query('offset') offset?: string,
   ) {
     const t0 = performance.now();
-    const limitNum = limit ? parseInt(limit, 10) : 30;
-    const offsetNum = offset ? parseInt(offset, 10) : 0;
+    const limitNum = clampPageParam(limit, { def: 30, max: 50, min: 1 });
+    const offsetNum = clampPageParam(offset, { def: 0, max: 5000 });
     const result = await this.communitiesService.getAllCommunities(
       user?.id,
       limitNum,
@@ -49,6 +50,22 @@ export class CommunitiesController {
     return result;
   }
 
+  /**
+   * Registered before the `:id` routes below, or it would be swallowed as a
+   * lookup for a community whose id is the literal string "recommendations".
+   */
+  @Get('recommendations')
+  async getCommunityRecommendations(
+    @CurrentUser() user: any,
+    @Query('limit') limit?: string,
+  ) {
+    const limitNum = clampPageParam(limit, { def: 10, max: 30, min: 1 });
+    return this.communitiesService.getCommunityRecommendations(
+      user?.id,
+      limitNum,
+    );
+  }
+
   @Get('campus')
   async getCampusCommunities(
     @CurrentUser() user: any,
@@ -57,8 +74,8 @@ export class CommunitiesController {
     @Query('search') search?: string,
   ) {
     const t0 = performance.now();
-    const limitNum = limit ? parseInt(limit, 10) : 30;
-    const offsetNum = offset ? parseInt(offset, 10) : 0;
+    const limitNum = clampPageParam(limit, { def: 30, max: 50, min: 1 });
+    const offsetNum = clampPageParam(offset, { def: 0, max: 5000 });
     const result = await this.communitiesService.getCampusCommunities(
       user?.id,
       limitNum,

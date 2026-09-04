@@ -16,6 +16,7 @@ import { AccountDeletionService } from '../account-deletion/account-deletion.ser
 import { JwtGuard } from '../common/guards/jwt.guard';
 import { CacheControl } from '../common/decorators/cache-control.decorator';
 import { VerifiedOnly } from '../common/decorators/verified-only.decorator';
+import { clampPageParam } from '../common/pagination.util';
 
 @Controller('api/users')
 export class UsersController {
@@ -91,6 +92,22 @@ export class UsersController {
     return this.usersService.getOnlineFriends(req.user.id, limitNum);
   }
 
+  // NOTE: same route-ordering requirement as mention-search above — this must
+  // stay ahead of the catch-all `:username`.
+  @Get('recommendations')
+  @UseGuards(JwtGuard)
+  // `no-cache` for the same reason as the listing above: the payload embeds
+  // avatar keys AND per-viewer follow state, neither of which a browser HTTP
+  // cache can be invalidated for from JS.
+  @CacheControl('private, no-cache')
+  async getFollowRecommendations(
+    @Req() req: AuthenticatedRequest,
+    @Query('limit') limit?: string,
+  ) {
+    const limitNum = clampPageParam(limit, { def: 10, max: 30, min: 1 });
+    return this.usersService.getFollowRecommendations(req.user.id, limitNum);
+  }
+
   // The campus surfaces are verification-gated. The frontend already renders a
   // locked page for them, but that gate wrapped only the JSX — the page's
   // queries still ran, so an unverified account fetched the whole campus
@@ -105,8 +122,10 @@ export class UsersController {
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
   ) {
-    const limitNum = limit ? parseInt(limit, 10) : 100;
-    const offsetNum = offset ? parseInt(offset, 10) : 0;
+    // Default stays 100 — the value this endpoint has always used when the
+    // caller omits it. Only the cap is new.
+    const limitNum = clampPageParam(limit, { def: 100, max: 100, min: 1 });
+    const offsetNum = clampPageParam(offset, { def: 0, max: 5000 });
     return this.usersService.getCampusUsers(req.user.id, limitNum, offsetNum);
   }
 
