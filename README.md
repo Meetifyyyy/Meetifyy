@@ -24,6 +24,7 @@ Four documents, kept current:
 | [docs/project-structure.md](docs/project-structure.md) | You need to know how local, dev and prod differ |
 | [docs/azure-setup.md](docs/azure-setup.md) | You're provisioning, deploying, or moving Azure accounts |
 | [docs/operations.md](docs/operations.md) | **Before changing anything in production** |
+| [docs/rate-limiting.md](docs/rate-limiting.md) | You're adding a limit, tuning one, or a 429 is firing where it shouldn't |
 
 `operations.md` is the one that saves time. Every entry in it is a real failure
 that already happened, and they all share a shape: nothing errors at the time,
@@ -49,7 +50,7 @@ meetifyy/
 │       └── shared/           components, hooks, stores
 │
 ├── admin-frontend/           admin portal
-├── docs/                     the four documents above
+├── docs/                     the five documents above
 ├── setup-azure-dev.sh        provisions the DEV Azure stack
 ├── setup-azure-prod.sh       provisions the PROD Azure stack
 └── .github/workflows/        ci.yml · deploy-dev.yml · deploy-prod.yml

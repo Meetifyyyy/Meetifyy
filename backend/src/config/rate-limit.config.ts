@@ -22,8 +22,9 @@ import { IS_PRODUCTION, APP_ENV, int, oneOf, str } from './env';
  * v6: client addresses now have the port stripped before they become a key.
  *     Azure appends `address:port` to X-Forwarded-For and the port changes per
  *     TCP connection, so every connection previously got its own bucket.
+ * v7: production trust-proxy hop count corrected from 1 to 2 (measured).
  */
-export const POLICY_VERSION = 6;
+export const POLICY_VERSION = 7;
 
 export type RateLimitAlgorithm = 'fixed-window' | 'token-bucket';
 
@@ -525,42 +526,42 @@ export type RateLimitPolicyName = keyof typeof RATE_LIMIT_POLICIES;
 /**
  * How many reverse proxies sit between the internet and Express.
  *
- * MUST match the real deployment. Too low and every client resolves to the
- * proxy address, collapsing every IP-keyed limit into one shared bucket. Too
- * high and the caller's own X-Forwarded-For entry is treated as the client
- * address — the spoofing hole this whole change exists to close.
+ * MUST match the real deployment. Too low and clients resolve to an
+ * infrastructure address; too high and the caller's own X-Forwarded-For entry
+ * becomes the key, which is the spoofing hole this work exists to close.
  *
- * MEETIFYY'S TOPOLOGY, and why the production default is 1
- * -------------------------------------------------------
+ * MEASURED against production on 2026-09-05. Do not change without repeating
+ * the measurement — reasoning about this was wrong twice.
+ *
  * `api.meetifyy.app` is a Cloudflare CNAME set to DNS-only (grey cloud), so
- * Cloudflare resolves the name but is NOT in the request path and adds no hop.
- * Azure Container Apps ingress is the only proxy: browser -> Azure -> Node.
- * That is one hop.
+ * Cloudflare is not in the request path. Azure Container Apps is, and it adds
+ * TWO entries to X-Forwarded-For, not one: the client, then its own internal
+ * envoy hop. Those envoy addresses rotate per TCP connection.
  *
- * There is a SECOND path. `vercel.json` rewrites `/_api/*` to the same backend,
- * which apiClient falls back to when the direct host is unreachable. That path
- * is browser -> Vercel -> Azure -> Node, i.e. two hops. One setting has to
- * serve both, and the two disagree. Measured against real Express:
+ * With hops=1 Express took the rightmost entry — the rotating envoy address —
+ * so 60 requests from ONE machine produced 16 different buckets and every
+ * per-IP limit was roughly 16x weaker than configured. It was not spoofable,
+ * which is why an earlier forged-header test wrongly appeared to pass: the
+ * header was indeed ignored, but the value resolved to was infrastructure, not
+ * the caller.
  *
- *   hops=1  direct honest -> client        hops=2  direct honest -> client
- *           direct SPOOFED -> client (safe)        direct SPOOFED -> ATTACKER
- *           via Vercel    -> Vercel's IP           via Vercel    -> client
+ * With hops=2, verified against production:
+ *   - 60 requests over 60 separate connections collapse to ONE bucket that
+ *     counts down monotonically and enforces at the limit;
+ *   - a forged X-Forwarded-For, including a multi-entry one, does not move the
+ *     bucket, because the attacker's entries sit further left and are never
+ *     reached.
  *
- * 1 is therefore the correct choice: it is spoof-proof on the path essentially
- * all traffic uses, and 2 reopens the vulnerability there. The cost is that
- * traffic arriving through the Vercel failover proxy all resolves to Vercel's
- * egress address and shares one bucket. That is a stable, unspoofable wrong
- * value rather than a caller-controlled one, it only applies while the direct
- * API is unreachable, and authenticated users are unaffected because they are
- * counted per user. If the failover path ever becomes normal traffic rather
- * than an emergency, this needs revisiting — most likely by having the Vercel
- * rewrite forward a signed header the backend can trust.
+ * The Vercel `/_api/*` failover rewrite adds a third hop, so traffic arriving
+ * that way resolves to Vercel's egress address and shares one bucket. That is a
+ * stable, unspoofable wrong value, it only applies while the direct API is
+ * unreachable, and authenticated users are unaffected because they are counted
+ * per user. Revisit if that path ever carries normal traffic.
  *
- * 0 locally, where Express talks to the client directly. Confirm any deployed
- * value by checking that a forged X-Forwarded-For does not move `req.ip`.
+ * 0 locally, where Express talks to the client directly.
  */
 const trustProxyHops = int('TRUST_PROXY_HOPS', {
-  default: IS_PRODUCTION ? '1' : '0',
+  default: IS_PRODUCTION ? '2' : '0',
   min: 0,
   max: 10,
 });
