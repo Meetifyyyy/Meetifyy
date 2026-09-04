@@ -20,6 +20,11 @@ import { DomainValidatorService } from '../common/services/domain-validator.serv
 import { RedisService } from '../redis/redis.service';
 import { LruCache } from '../common/utils/lru-cache.util';
 import { validateBirthday } from '../common/utils/birthday-validation.util';
+import {
+  checkEmailFormat,
+  EmailFormat,
+  normalizeEmail,
+} from '../common/validation/email-format.util';
 import type { AuthenticatedUser } from '../common/types/authenticated-request';
 import { randomInt } from 'crypto';
 
@@ -775,19 +780,38 @@ export class AuthService {
     collegeId?: string,
   ): Promise<{
     available: boolean;
+    /**
+     * Why the answer is no, as a stable token. The client keys its UI state off
+     * this rather than off `reason`, which is prose and may be reworded.
+     *
+     *   invalid_email  the string is not an address
+     *   domain_not_allowed  a real address, but not on an approved college domain
+     *   email_taken  already registered
+     */
+    code?: 'invalid_email' | 'domain_not_allowed' | 'email_taken';
     reason?: string;
     collegeName?: string;
     collegeId?: string;
   }> {
     // Cheapest check first — reject malformed input before any DB / domain work.
-    const trimmed = (email || '').trim().toLowerCase();
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(trimmed)) {
+    //
+    // Answered as a 200 with `available: false`, not thrown. A malformed address
+    // is a legitimate answer to "can I register this?", and the client needs to
+    // tell it apart from a transport failure. When this came back as a 400 the
+    // client's catch block could not distinguish the two, called it a network
+    // error, and offered to let the user continue anyway.
+    const format = checkEmailFormat(email);
+    if (!format.valid) {
       return {
         available: false,
-        reason: 'Please enter a valid email address.',
+        code: 'invalid_email',
+        reason:
+          format.code === EmailFormat.Required
+            ? 'Email address is required.'
+            : 'Please enter a valid email address.',
       };
     }
+    const trimmed = normalizeEmail(email);
 
     const domain = trimmed.split('@')[1] || '';
 
@@ -821,10 +845,15 @@ export class AuthService {
         ];
         return {
           available: false,
+          code: 'domain_not_allowed',
           reason: `Please use your official ${targetCollegeName} email.`,
         };
       }
-      return { available: false, reason: 'Please select your college first.' };
+      return {
+        available: false,
+        code: 'domain_not_allowed',
+        reason: 'Please select your college first.',
+      };
     }
 
     // Check collegeId match if collegeId was provided
@@ -833,6 +862,7 @@ export class AuthService {
         domainValidation.info?.collegeName || 'another institution';
       return {
         available: false,
+        code: 'domain_not_allowed',
         reason: `This email belongs to ${emailCollegeName}. Please enter your official ${targetCollegeName || 'college'} email.`,
       };
     }
@@ -851,6 +881,7 @@ export class AuthService {
     if (existingPrismaUser) {
       return {
         available: false,
+        code: 'email_taken',
         reason: 'This email is already registered. Please sign in.',
       };
     }

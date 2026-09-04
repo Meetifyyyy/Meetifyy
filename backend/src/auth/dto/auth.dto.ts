@@ -4,6 +4,7 @@ import {
   IsEmail,
   IsOptional,
   Length,
+  MaxLength,
 } from 'class-validator';
 
 export class CheckUsernameDto {
@@ -13,8 +14,23 @@ export class CheckUsernameDto {
 }
 
 export class CheckEmailDto {
-  @IsEmail({}, { message: 'Please provide a valid email address' })
+  /**
+   * Validated as a bounded string, not with `@IsEmail`.
+   *
+   * This endpoint's job is to answer "can I register this address?", and
+   * "that is not an address" is one of the answers. With `@IsEmail` here the
+   * pipe rejected malformed input with a 400 before the service ever ran, the
+   * client could not tell that apart from the network being down, and it
+   * therefore told the user their email could not be verified but they could
+   * continue anyway. `checkEmailAvailability` now does the format check itself
+   * and replies 200 with `code: 'invalid_email'`.
+   *
+   * The length bound stays: it is what stops an unbounded string reaching the
+   * normaliser and the domain lookup.
+   */
+  @IsString()
   @IsNotEmpty({ message: 'Email address is required' })
+  @MaxLength(254, { message: 'Email address is too long' })
   email: string;
 
   @IsOptional()

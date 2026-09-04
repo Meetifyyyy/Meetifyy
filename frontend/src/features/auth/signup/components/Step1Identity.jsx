@@ -45,18 +45,27 @@ export default function Step1Identity() {
   }, [username]);
 
   const normalizedUsername = username.trim().toLowerCase();
-  const { status: rawUsernameStatus } = useAvailabilityCheck(normalizedUsername, {
+  const { status: usernameStatus, reason: usernameReason } = useAvailabilityCheck(normalizedUsername, {
     endpoint: '/api/auth/check-username',
     field: 'username',
     enabled: !usernameFormatError && normalizedUsername.length >= 3,
   });
-  const usernameStatus = rawUsernameStatus === 'network-error' ? 'network' : rawUsernameStatus;
 
   const dobValidation = useMemo(() => validateDOB(year, month, day), [year, month, day]);
   const dobError = dobValidation.error;
 
   const isChecking = usernameStatus === 'checking';
-  const isUsernameBlocked = !!usernameFormatError || usernameStatus === 'taken';
+  /**
+   * Anything other than a confirmed 'available' blocks.
+   *
+   * This used to block only on 'taken', so a check that failed for technical
+   * reasons left the step passable and the field showed "couldn't verify
+   * availability, you can still continue". The username is unique-constrained
+   * at signup, so continuing meant walking the user through three more steps
+   * before failing on something we could have told them here.
+   */
+  const isUsernameBlocked =
+    !!usernameFormatError || (usernameStatus !== null && usernameStatus !== 'available');
   const isValid = !nameError && !isUsernameBlocked && !dobError && !isChecking;
 
   const handleSubmit = (e) => {
@@ -75,16 +84,18 @@ export default function Step1Identity() {
     }
   };
 
-  const usernameError =
-    attempted && usernameFormatError
-      ? usernameFormatError
-      : usernameStatus === 'taken'
-        ? 'Username not available'
-        : null;
-  const usernameHint =
-    usernameStatus === 'network'
-      ? "Couldn't verify availability — you can still continue."
-      : null;
+  const usernameError = (() => {
+    if (attempted && usernameFormatError) return usernameFormatError;
+    if (usernameFormatError) return null;
+    if (usernameStatus === 'rejected') return usernameReason || 'Username not available.';
+    if (usernameStatus === 'invalid') return 'Please choose a valid username.';
+    if (usernameStatus === 'error') {
+      return "We couldn't check that username right now. Please check your connection and try again.";
+    }
+    return null;
+  })();
+  // No "continue anyway" hint: an unchecked username is not an available one.
+  const usernameHint = null;
 
   return (
     <AnimatedStep className={s.stepWrapper}>
