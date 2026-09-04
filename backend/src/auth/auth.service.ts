@@ -1,5 +1,7 @@
 import {
   Injectable,
+  OnModuleInit,
+  OnModuleDestroy,
   UnauthorizedException,
   ForbiddenException,
   NotFoundException,
@@ -39,12 +41,67 @@ const syncCache = new LruCache<string, { data: any; timestamp: number }>(
   60000,
 );
 
-export function clearAuthSyncCache(userId?: string) {
+/** Cross-instance cache-invalidation channel. Mirrors the block cache's. */
+export const AUTH_SYNC_INVALIDATE_CHANNEL = 'meetifyy:auth_sync_invalidate';
+
+/**
+ * Publishes an invalidation to the other replicas. Installed by AuthService on
+ * init, when Redis is available; null otherwise.
+ *
+ * A module-level hook rather than a parameter because `clearAuthSyncCache` is
+ * called from four services that have no business knowing whether this cache
+ * is replicated. They ask for the entry to be dropped; how far that reaches is
+ * this module's problem.
+ */
+let syncCachePublisher: ((userId?: string) => void) | null = null;
+
+/**
+ * Guards the pub/sub wiring, which belongs to the module-level cache rather
+ * than to any one service instance. Nest may construct AuthService more than
+ * once across modules, and each construction would otherwise add another
+ * 'message' handler to the shared subscriber connection — every one of them
+ * doing identical work on the same Map.
+ */
+let syncCacheSubscribed = false;
+
+export function setAuthSyncCachePublisher(
+  publisher: ((userId?: string) => void) | null,
+) {
+  syncCachePublisher = publisher;
+}
+
+/**
+ * Drop the entry in THIS process only.
+ *
+ * The pub/sub subscriber uses this rather than `clearAuthSyncCache` — handling
+ * a remote invalidation by publishing another one would have every replica
+ * echoing every other replica forever.
+ */
+export function clearAuthSyncCacheLocal(userId?: string) {
   if (userId) {
     syncCache.delete(userId);
   } else {
     syncCache.clear();
   }
+}
+
+/**
+ * Drop a user's cached auth bootstrap everywhere.
+ *
+ * The cache is in-process, so on a multi-replica deployment clearing it
+ * locally is only a third of the job: a follow handled by replica A left
+ * replicas B and C serving a `followingList` from before the write for up to
+ * the full 60-second TTL. The client overwrites `currentUser.followingList`
+ * with whatever `/api/auth/sync` answers, so whether a just-followed account
+ * reverted came down to which replica the next sync happened to land on.
+ *
+ * Local first, then the broadcast — so the caller's own request is correct
+ * even if Redis is down, and the TTL remains the backstop for a dropped
+ * message.
+ */
+export function clearAuthSyncCache(userId?: string) {
+  clearAuthSyncCacheLocal(userId);
+  syncCachePublisher?.(userId);
 }
 
 /**
@@ -114,7 +171,7 @@ function metaString(value: unknown): string | null {
 }
 
 @Injectable()
-export class AuthService {
+export class AuthService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(AuthService.name);
   // syncCache is the module-level bounded LruCache — not a per-instance field.
   private syncCache = syncCache;
@@ -123,6 +180,64 @@ export class AuthService {
 
   clearSyncCache(userId?: string) {
     clearAuthSyncCache(userId);
+  }
+
+  /**
+   * Wire the sync cache into Redis pub/sub so an invalidation on any replica
+   * reaches all of them.
+   *
+   * Both halves are optional by design: with no Redis the cache degrades to
+   * exactly what it was before — process-local, bounded by its 60s TTL — and
+   * nothing here throws. Same guarantee, and the same channel-filtering
+   * shape, as BlocksService.
+   */
+  onModuleInit() {
+    if (syncCacheSubscribed) return;
+
+    const pubClient = this.redisService?.getPubClient();
+    if (pubClient) {
+      setAuthSyncCachePublisher((userId?: string) => {
+        // Fire-and-forget: the local entry is already gone, and a failed
+        // broadcast must never fail the write that triggered it.
+        pubClient
+          .publish(
+            AUTH_SYNC_INVALIDATE_CHANNEL,
+            JSON.stringify({ userId: userId ?? null }),
+          )
+          .catch(() => {
+            /* TTL remains the backstop */
+          });
+      });
+    }
+
+    const subClient = this.redisService?.getSubClient();
+    if (!subClient) return;
+
+    subClient.subscribe(AUTH_SYNC_INVALIDATE_CHANNEL, () => {
+      // Subscribe errors are non-fatal: the TTL still bounds staleness.
+    });
+    subClient.on('message', (channel: string, message: string) => {
+      if (channel !== AUTH_SYNC_INVALIDATE_CHANNEL) return;
+      try {
+        const payload = JSON.parse(message) as { userId?: string | null };
+        // Local-only — see clearAuthSyncCacheLocal.
+        clearAuthSyncCacheLocal(payload?.userId ?? undefined);
+      } catch {
+        // Malformed payload — ignore.
+      }
+    });
+
+    syncCacheSubscribed = true;
+  }
+
+  /**
+   * The publisher holds a Redis client, and the client is closed when the
+   * module tears down. Leaving the hook installed would let a later
+   * invalidation publish through a dead connection.
+   */
+  onModuleDestroy() {
+    setAuthSyncCachePublisher(null);
+    syncCacheSubscribed = false;
   }
 
   constructor(
