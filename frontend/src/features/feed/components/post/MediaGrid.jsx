@@ -435,8 +435,41 @@ function normalizeMedia(mediaInput) {
 // Module-level caches ensure images that were already loaded and sized in the feed
 // render immediately without flashing/flickering when opening a post, navigating back,
 // or on subsequent mounts.
+//
+// Bounded, because they are module-scoped and every distinct media URL adds an
+// entry: a long session scrolling a media-heavy feed grew them without limit.
+//
+// Evicting the OLDEST entry rather than clearing the whole cache at a
+// threshold. Both Set and Map iterate in insertion order, and re-inserting a
+// key moves it to the end, so "oldest" means least recently seen. Clearing
+// wholesale would drop the entries for media currently on screen too, which
+// reintroduces exactly the flicker these caches exist to prevent — and does it
+// every time the threshold is crossed.
+//
+// 500 entries is roughly 150 posts of scroll history at 2-4 images each: far
+// enough back that returning to a post still paints instantly, small enough
+// that the two caches together are tens of kilobytes.
+const MEDIA_CACHE_MAX = 500;
 const loadedUrlCache = new Set();
 const naturalAspectCache = new Map();
+
+function rememberLoaded(src) {
+  if (!src) return;
+  loadedUrlCache.delete(src);
+  loadedUrlCache.add(src);
+  if (loadedUrlCache.size > MEDIA_CACHE_MAX) {
+    loadedUrlCache.delete(loadedUrlCache.values().next().value);
+  }
+}
+
+function rememberAspect(src, aspect) {
+  if (!src) return;
+  naturalAspectCache.delete(src);
+  naturalAspectCache.set(src, aspect);
+  if (naturalAspectCache.size > MEDIA_CACHE_MAX) {
+    naturalAspectCache.delete(naturalAspectCache.keys().next().value);
+  }
+}
 
 export function MediaGrid({ media, onMediaClick, onRemove }) {
   const [mediaList, setMediaList] = useState(() => normalizeMedia(media));
@@ -519,14 +552,14 @@ export function MediaGrid({ media, onMediaClick, onRemove }) {
   const handleImageLoad = (index, e) => {
     setLoadedStates((prev) => (prev[index] ? prev : { ...prev, [index]: true }));
     const src = mediaList[index]?.url || mediaList[index]?.fullUrl;
-    if (src) loadedUrlCache.add(src);
+    rememberLoaded(src);
 
     const naturalWidth = e?.target?.naturalWidth;
     const naturalHeight = e?.target?.naturalHeight;
     if (naturalWidth && naturalHeight && !mediaList[index]?.aspectRatio && !mediaList[index]?.width) {
       const aspect = naturalWidth / naturalHeight;
-      if (src) naturalAspectCache.set(src, aspect);
-      if (mediaList[index]?.rawSrc) naturalAspectCache.set(mediaList[index].rawSrc, aspect);
+      rememberAspect(src, aspect);
+      rememberAspect(mediaList[index]?.rawSrc, aspect);
       setNaturalAspects((prev) => (prev[index] === aspect ? prev : {
         ...prev,
         [index]: aspect,
@@ -583,14 +616,14 @@ export function MediaGrid({ media, onMediaClick, onRemove }) {
   const handleVideoLoaded = (index, e) => {
     setLoadedStates((prev) => (prev[index] ? prev : { ...prev, [index]: true }));
     const src = mediaList[index]?.url || mediaList[index]?.fullUrl;
-    if (src) loadedUrlCache.add(src);
+    rememberLoaded(src);
 
     const vw = e?.target?.videoWidth;
     const vh = e?.target?.videoHeight;
     if (vw && vh && !mediaList[index]?.aspectRatio && !mediaList[index]?.width) {
       const aspect = vw / vh;
-      if (src) naturalAspectCache.set(src, aspect);
-      if (mediaList[index]?.rawSrc) naturalAspectCache.set(mediaList[index].rawSrc, aspect);
+      rememberAspect(src, aspect);
+      rememberAspect(mediaList[index]?.rawSrc, aspect);
       setNaturalAspects((prev) => (prev[index] === aspect ? prev : {
         ...prev,
         [index]: aspect,

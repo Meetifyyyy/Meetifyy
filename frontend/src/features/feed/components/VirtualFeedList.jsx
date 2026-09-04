@@ -59,7 +59,17 @@ function VirtualFeedList({ posts, onPostClick, onCommentClick }) {
       return false;
     },
     scrollToFn: (offset, options, instance) => {
-      if (options?.adjustments && options?.adjustments === 0) return;
+      // `adjustments && adjustments === 0` could never be true — 0 is falsy, so
+      // the first operand rejected the only value the second accepts, and the
+      // guard was dead. Testing for 0 alone makes it do what it says.
+      //
+      // Safe to make live: TanStack passes `adjustments` only when correcting
+      // for a measured size change, and in that path `offset` is the CURRENT
+      // scroll offset, so scrolling to `offset + 0` moves nothing. The call
+      // being skipped is a scroll to where the viewport already is. A
+      // user-initiated scrollToIndex/scrollToOffset passes no `adjustments` at
+      // all and is unaffected.
+      if (options?.adjustments === 0) return;
       instance.scrollElement?.scrollTo({
         top: offset + (options?.adjustments ?? 0),
         left: 0,

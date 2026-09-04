@@ -20,6 +20,7 @@ import {
   sanitizeRegistrationUrl,
 } from './campus-event.util';
 import { MediaCleanupService } from '../uploads/media-cleanup.service';
+import { parseKeysetCursor } from '../common/pagination.util';
 import type { UserIdentityLike } from '../common/users/deleted-user';
 import {
   isUnavailableUser,
@@ -300,29 +301,31 @@ export class CampusEventsService {
     }
 
     // Cursor: opaque `${sortValueISO}|${id}`.
-    if (opts.cursor) {
-      const [ts, id] = opts.cursor.split('|');
-      const date = new Date(ts);
-      if (!isNaN(date.getTime()) && id) {
-        if (scope === 'past') {
-          where.AND = [
-            {
-              OR: [
-                { endTime: { lt: date } },
-                { endTime: date, id: { lt: id } },
-              ],
-            },
-          ];
-        } else {
-          where.AND = [
-            {
-              OR: [
-                { startTime: { gt: date } },
-                { startTime: date, id: { gt: id } },
-              ],
-            },
-          ];
-        }
+    //
+    // Parsed through the shared helper, which also settles the TYPE of the
+    // value. `cursor` is declared `string`, but Express turns
+    // `?cursor=a&cursor=b` into an array, so calling `.split` on it directly
+    // threw `TypeError: split is not a function` — a 500 from a URL anyone
+    // could construct. A malformed or wrong-typed cursor now falls back to the
+    // first page, which is what a client mistake should cost.
+    const cursor = parseKeysetCursor(opts.cursor);
+    if (cursor) {
+      const { date, id } = cursor;
+      if (scope === 'past') {
+        where.AND = [
+          {
+            OR: [{ endTime: { lt: date } }, { endTime: date, id: { lt: id } }],
+          },
+        ];
+      } else {
+        where.AND = [
+          {
+            OR: [
+              { startTime: { gt: date } },
+              { startTime: date, id: { gt: id } },
+            ],
+          },
+        ];
       }
     }
 
@@ -660,15 +663,14 @@ export class CampusEventsService {
       createdBy: user.id,
       deletedAt: null,
     };
-    if (opts.cursor && opts.cursor.includes('|')) {
-      const [ts, id] = opts.cursor.split('|');
-      const date = new Date(ts);
-      if (!isNaN(date.getTime()) && id) {
-        where.OR = [
-          { startTime: { lt: date } },
-          { startTime: date, id: { lt: id } },
-        ];
-      }
+    // Same parse as listByScope — see the note there on why the type of this
+    // value cannot be taken on trust.
+    const cursor = parseKeysetCursor(opts.cursor);
+    if (cursor) {
+      where.OR = [
+        { startTime: { lt: cursor.date } },
+        { startTime: cursor.date, id: { lt: cursor.id } },
+      ];
     }
 
     const rows = await this.prisma.campusEvent.findMany({

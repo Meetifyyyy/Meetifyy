@@ -20,7 +20,7 @@ import {
   CampusEventScope,
   CAMPUS_EVENT_SCOPES,
 } from './dto/campus-event.dto';
-import { clampPageParam } from '../common/pagination.util';
+import { clampPageParam, singleQueryValue } from '../common/pagination.util';
 
 @Controller('api/campus-events')
 @UseGuards(JwtGuard)
@@ -49,7 +49,7 @@ export class CampusEventsController {
     // the caller alone, which is the only campus they are entitled to read.
     return this.service.listByScope(user?.id, s, {
       limit: clampPageParam(limit, { def: 20, max: 50, min: 1 }),
-      cursor: cursor || undefined,
+      cursor: singleQueryValue(cursor),
     });
   }
 
@@ -63,7 +63,7 @@ export class CampusEventsController {
   ) {
     return this.service.listMine(user.id, {
       limit: clampPageParam(limit, { def: 20, max: 50, min: 1 }),
-      cursor: cursor || undefined,
+      cursor: singleQueryValue(cursor),
     });
   }
 
