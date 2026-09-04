@@ -13,8 +13,17 @@ import { IS_PRODUCTION, APP_ENV, int, oneOf, str } from './env';
  * so a shift in the 429 metrics can be attributed to a specific revision.
  */
 
-/** Bumped whenever any policy value below changes. Emitted on every decision. */
-export const POLICY_VERSION = 5;
+/**
+ * Bumped whenever anything changes how a limit BEHAVES — a policy value here,
+ * or the way an identifier is resolved. Emitted on every decision and printed
+ * in the startup banner, so a shift in the 429 metrics can be attributed to a
+ * specific revision, and so a deploy can be confirmed from the logs alone.
+ *
+ * v6: client addresses now have the port stripped before they become a key.
+ *     Azure appends `address:port` to X-Forwarded-For and the port changes per
+ *     TCP connection, so every connection previously got its own bucket.
+ */
+export const POLICY_VERSION = 6;
 
 export type RateLimitAlgorithm = 'fixed-window' | 'token-bucket';
 
