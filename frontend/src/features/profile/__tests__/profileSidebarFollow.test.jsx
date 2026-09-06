@@ -70,6 +70,8 @@ vi.mock('@shared/components/badges/CollegeRepresentativeBadge', () => ({
 }));
 
 import ProfileRightSidebar from '../components/ProfileRightSidebar';
+import FollowButton from '@shared/components/ui/FollowButton';
+import { PROFILE_KEYS } from '@shared/hooks/useProfile';
 import { toggleRegistry } from '@shared/utils/mutationRegistry';
 
 /**
@@ -244,5 +246,145 @@ describe('ProfileRightSidebar — who to follow', () => {
     expect(buttonFor('ann').textContent).toBe('Following');
     expect(followMock).toHaveBeenCalledTimes(1);
     expect(unfollowMock).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Sidebar -> profile, the handoff that reverted.
+ *
+ * Opening a profile mounts `useProfile`, which rehydrates the profile from
+ * IndexedDB. That persisted payload carries the `isFollowing` that was true
+ * when it was written -- up to the store's 15-minute TTL ago. It lands under
+ * the same cache key `FollowButton`'s own lookup uses, and a DISABLED
+ * `useQuery` still returns whatever sits under its key, so the button folded a
+ * payload it never requested into the shared follow-state entry and undid the
+ * click. Both buttons for the account reverted, not just the profile's.
+ *
+ * A reload masked it: a cold cache fetches the profile from the network, and
+ * the network's answer is correct.
+ */
+describe('ProfileRightSidebar — follow state survives opening the profile', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    ['ann', 'bob', 'cal'].forEach((u) => toggleRegistry.clear(`follow:${u}`));
+    getByUsernameMock.mockResolvedValue({ username: 'ann', isFollowing: false, stats: {} });
+    getRecommendationsMock.mockResolvedValue([
+      { id: '1', username: 'ann', displayName: 'Ann', isFollowing: false },
+    ]);
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+  });
+
+  /** A profile as `useProfile` rehydrates it from IndexedDB. */
+  function hydrateStaleProfile(queryClient, isFollowing) {
+    act(() => {
+      queryClient.setQueryData(PROFILE_KEYS.byUsername('ann'), {
+        username: 'ann',
+        displayName: 'Ann',
+        isFollowing,
+        stats: { followers: 3 },
+      });
+    });
+  }
+
+  function openProfileButton(queryClient) {
+    return render(
+      <QueryClientProvider client={queryClient}>
+        <FollowButton targetUsername="ann" />
+      </QueryClientProvider>,
+    );
+  }
+
+  /**
+   * The remount. This is the one that reached production twice.
+   *
+   * `ProfileRightSidebar` is rendered INSIDE `ProfilePage`, so opening a
+   * suggested account's profile unmounts and remounts the panel. Its seed
+   * effect then replays the CACHED recommendation rows -- generated before the
+   * follow, and still saying `isFollowing: false`, because the server excludes
+   * already-followed accounts from generation rather than marking them. No
+   * refetch is involved: this fails with zero network activity.
+   */
+  it('survives the remount that opening a profile causes', async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    const ui = (
+      <QueryClientProvider client={queryClient}>
+        <ProfileRightSidebar embedded />
+      </QueryClientProvider>
+    );
+
+    const first = render(ui);
+    await screen.findByText('Ann');
+    fireEvent.click(buttonFor('ann'));
+    await settleMutation();
+    expect(buttonFor('ann').textContent).toBe('Following');
+
+    const fetchesBefore = getRecommendationsMock.mock.calls.length;
+    first.unmount();
+    render(ui);
+    await settleMutation();
+
+    expect(buttonFor('ann').textContent).toBe('Following');
+    // The replay is served from cache -- no refetch masks or repairs it.
+    expect(getRecommendationsMock.mock.calls.length).toBe(fetchesBefore);
+  });
+
+  it('stays Following when a stale profile payload says otherwise', async () => {
+    const { queryClient } = renderSidebar();
+    await settle();
+
+    fireEvent.click(buttonFor('ann'));
+    expect(buttonFor('ann').textContent).toBe('Following');
+    await settleMutation();
+
+    hydrateStaleProfile(queryClient, false);
+    openProfileButton(queryClient);
+    await settleMutation();
+
+    for (const btn of screen.getAllByRole('button')) {
+      expect(btn.textContent).toBe('Following');
+    }
+  });
+
+  it('stays on Follow after an unfollow, against a stale payload saying followed', async () => {
+    getRecommendationsMock.mockResolvedValue([
+      { id: '1', username: 'ann', displayName: 'Ann', isFollowing: true },
+    ]);
+    const { queryClient } = renderSidebar();
+    await settle();
+
+    expect(buttonFor('ann').textContent).toBe('Following');
+    fireEvent.click(buttonFor('ann'));
+    expect(buttonFor('ann').textContent).toBe('Follow');
+    await settleMutation();
+
+    hydrateStaleProfile(queryClient, true);
+    openProfileButton(queryClient);
+    await settleMutation();
+
+    for (const btn of screen.getAllByRole('button')) {
+      expect(btn.textContent).toBe('Follow');
+    }
+  });
+
+  it('still resolves state from the profile when nothing authoritative is known', async () => {
+    // The fold is gated, not removed: a button handed no state and holding no
+    // shared entry must still answer from the profile lookup it DID request.
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    getByUsernameMock.mockResolvedValue({ username: 'ann', isFollowing: true, stats: {} });
+
+    openProfileButton(queryClient);
+
+    await waitFor(() =>
+      expect(screen.getByRole('button').textContent).toBe('Following'),
+    );
+    expect(getByUsernameMock).toHaveBeenCalled();
   });
 });

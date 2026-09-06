@@ -8,6 +8,7 @@ import {
   writeOptimisticFollowState,
   writeServerFollowState,
   followGraphChangedSince,
+  writeConfirmedFollowState,
 } from '../followState';
 import { toggleRegistry } from '../mutationRegistry';
 
@@ -81,13 +82,60 @@ describe('followState', () => {
       expect(readFollowState(qc, 'ravi')).toBe(true);
     });
 
-    it('accepts the server write again once the toggle settles', () => {
+    /**
+     * This case used to assert the opposite -- that once the toggle settled,
+     * any server write was accepted again. That is the bug, written down as a
+     * contract.
+     *
+     * Settling ends the REQUEST; it does not make older readings valid. The
+     * panel remounts when a profile is opened and replays its cached rows,
+     * which were generated before the follow and still say `isFollowing:
+     * false`. Under the old contract those replays landed, and the button
+     * reverted. Verified live: one `true` from the mutation followed by four
+     * `false` writes from the remount seeds, with no fetch in between.
+     */
+    it('still declines an untimestamped write after the toggle settles', () => {
       toggleRegistry.register('follow:ravi', true);
       writeOptimisticFollowState(qc, 'ravi', true);
       toggleRegistry.clear('follow:ravi');
 
       writeServerFollowState(qc, 'ravi', false);
+      expect(readFollowState(qc, 'ravi')).toBe(true);
+    });
+
+    it('accepts a write that PROVES it is newer than the click', () => {
+      toggleRegistry.register('follow:ravi', true);
+      writeOptimisticFollowState(qc, 'ravi', true);
+      toggleRegistry.clear('follow:ravi');
+
+      // A genuinely fresh refetch -- e.g. the viewer unfollowed on another
+      // device and this payload was generated after the local click.
+      writeServerFollowState(qc, 'ravi', false, Date.now() + 1000);
       expect(readFollowState(qc, 'ravi')).toBe(false);
+    });
+
+    it('declines a payload generated BEFORE the click, even timestamped', () => {
+      const staleAt = Date.now() - 60_000;
+      toggleRegistry.register('follow:ravi', true);
+      writeOptimisticFollowState(qc, 'ravi', true);
+      toggleRegistry.clear('follow:ravi');
+
+      writeServerFollowState(qc, 'ravi', false, staleAt);
+      expect(readFollowState(qc, 'ravi')).toBe(true);
+    });
+
+    it('lets the follow/unfollow response itself win unconditionally', () => {
+      writeOptimisticFollowState(qc, 'ravi', true);
+      // The server's answer to the write the viewer just made.
+      writeConfirmedFollowState(qc, 'ravi', false);
+      expect(readFollowState(qc, 'ravi')).toBe(false);
+    });
+
+    it('leaves untouched accounts seedable, so first paint still works', () => {
+      writeOptimisticFollowState(qc, 'ravi', true);
+      // A different account the viewer has not acted on this session.
+      writeServerFollowState(qc, 'meera', true);
+      expect(readFollowState(qc, 'meera')).toBe(true);
     });
   });
 

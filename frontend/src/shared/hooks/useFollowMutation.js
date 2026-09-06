@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { toggleRegistry } from '../utils/mutationRegistry';
 import {
   writeOptimisticFollowState,
-  writeServerFollowState,
+  writeConfirmedFollowState,
 } from '../utils/followState';
 import { showToast } from '../utils/toast';
 import { PROFILE_KEYS } from './useProfile';
@@ -242,7 +242,10 @@ export function useFollowMutation(targetUsername) {
           // until something else happens to refetch.
           const serverFollowing =
             typeof res?.isFollowing === 'boolean' ? res.isFollowing : finalIntent;
-          writeServerFollowState(queryClient, cleanTarget, serverFollowing);
+          // Confirmed, not merely observed: this response IS the write. It
+          // re-stamps the per-account clock so any list payload still in
+          // flight from before the action cannot land on top of it.
+          writeConfirmedFollowState(queryClient, cleanTarget, serverFollowing);
 
           // ONE silent background sync — does not update UI (staleTime guard prevents flicker)
           queryClient.invalidateQueries({ queryKey: PROFILE_KEYS.byUsername(cleanTarget), refetchType: 'none' });

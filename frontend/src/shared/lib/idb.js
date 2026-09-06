@@ -75,13 +75,19 @@ export async function idbSet(store, key, value) {
 
 /**
  * Read a value from IndexedDB.
- * Returns `{ value, isStale }`. Both fresh and stale entries are returned
- * so the UI can render immediately while revalidating in the background.
- * Returns `null` if the entry doesn't exist.
+ * Returns `{ value, isStale, storedAt }`. Both fresh and stale entries are
+ * returned so the UI can render immediately while revalidating in the
+ * background. Returns `null` if the entry doesn't exist.
+ *
+ * `storedAt` is when the value was written, and a caller that hands a
+ * rehydrated payload to React Query should pass it as `setQueryData`'s
+ * `updatedAt`. Without it the entry is timestamped "now" and `staleTime`
+ * suppresses the revalidating fetch this cache depends on -- the payload stops
+ * being a head start and becomes the answer.
  *
  * @param {string} store
  * @param {string} key
- * @returns {Promise<{ value: any, isStale: boolean } | null>}
+ * @returns {Promise<{ value: any, isStale: boolean, storedAt: number } | null>}
  */
 export async function idbGet(store, key) {
   if (!STORES[store]) return null;
@@ -96,7 +102,11 @@ export async function idbGet(store, key) {
     });
     if (!entry) return null;
     const age = Date.now() - entry.storedAt;
-    return { value: entry.value, isStale: age > entry.ttl };
+    return {
+      value: entry.value,
+      isStale: age > entry.ttl,
+      storedAt: entry.storedAt,
+    };
   } catch {
     return null;
   }

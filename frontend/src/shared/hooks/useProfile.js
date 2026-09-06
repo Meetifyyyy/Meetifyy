@@ -51,12 +51,30 @@ export function useProfile(username) {
     }
   }, [isDataIncomplete, username, qk, queryClient]);
 
-  // Hydrate from IndexedDB before first network response
+  /**
+   * Hydrate from IndexedDB before the first network response.
+   *
+   * `updatedAt` is the persisted record's own `storedAt`, NOT the default of
+   * "now", and that distinction is load-bearing. `setQueryData` timestamps the
+   * entry it writes, and `staleTime` is measured from that timestamp -- so
+   * writing a payload persisted twenty minutes ago as though it had just
+   * arrived told React Query the profile was fresh and cancelled the fetch
+   * that would have corrected it. The rehydrated profile then stood unchallenged
+   * for the full `staleTime`, carrying whatever viewer-relative state
+   * (`isFollowing`, `isFollowedBy`, follower counts) was true when it was
+   * written.
+   *
+   * With the true timestamp, a record older than `staleTime` is stale on
+   * arrival: it paints immediately and React Query revalidates it in the same
+   * tick, which is what this cache was always meant to do.
+   */
   useEffect(() => {
     if (!username || username === 'unknown' || query.data) return;
     idbGet('profiles', username.toLowerCase()).then((cached) => {
       if (cached?.value && cached.value.stats) {
-        queryClient.setQueryData(qk, cached.value);
+        queryClient.setQueryData(qk, cached.value, {
+          updatedAt: cached.storedAt,
+        });
       }
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps

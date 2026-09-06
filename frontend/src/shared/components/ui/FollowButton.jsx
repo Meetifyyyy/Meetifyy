@@ -59,20 +59,53 @@ const FollowButton = ({ targetUsername, initialFollowing, size = 'md', className
   // guess and called it fact. `placeholderData` renders without being written
   // to the cache and without pretending to be fresh.
   const needsLookup = !isSelf && typeof sharedState !== 'boolean';
-  const { data: targetProfile, isLoading: isProfileLoading } = useQuery({
+  const {
+    data: targetProfile,
+    isLoading: isProfileLoading,
+    dataUpdatedAt: targetProfileUpdatedAt,
+  } = useQuery({
     queryKey: PROFILE_KEYS.byUsername(cleanTargetUsername),
     queryFn: () => usersApi.getByUsername(targetUsername),
     enabled: needsLookup && !!cleanTargetUsername && cleanTargetUsername !== 'unknown',
     staleTime: 1000 * 60,
   });
 
-  // Fold a profile response back into the shared entry so a second button for
-  // the same account never repeats the request.
+  /**
+   * Fold a profile response back into the shared entry so a second button for
+   * the same account never repeats the request.
+   *
+   * Gated on `needsLookup`, and that gate is the whole point. A DISABLED
+   * `useQuery` still returns whatever sits under its key, so this effect used
+   * to fire for data the button never asked for -- including the profile that
+   * `useProfile` rehydrates from IndexedDB when the profile route mounts. That
+   * payload carries the `isFollowing` from whenever it was persisted, so
+   * opening the profile of someone you had just followed in the sidebar wrote
+   * `false` straight over the `true` your click had produced, and every button
+   * for that account reverted. A reload fixed it because a cold cache fetches
+   * the profile from the network instead of rehydrating it.
+   *
+   * When the entry already holds a boolean there is nothing to fold in: the
+   * lookup exists only to ANSWER an unknown, never to correct a known.
+   * `dataUpdatedAt` is passed as a second line of defence, so even a requested
+   * response that resolves after a click cannot outrank it.
+   */
   useEffect(() => {
+    if (!needsLookup) return;
     if (typeof targetProfile?.isFollowing === 'boolean') {
-      writeServerFollowState(queryClient, cleanTargetUsername, targetProfile.isFollowing);
+      writeServerFollowState(
+        queryClient,
+        cleanTargetUsername,
+        targetProfile.isFollowing,
+        targetProfileUpdatedAt,
+      );
     }
-  }, [queryClient, cleanTargetUsername, targetProfile?.isFollowing]);
+  }, [
+    queryClient,
+    cleanTargetUsername,
+    needsLookup,
+    targetProfile?.isFollowing,
+    targetProfileUpdatedAt,
+  ]);
 
   const following =
     typeof sharedState === 'boolean'

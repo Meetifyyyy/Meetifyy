@@ -51,9 +51,16 @@ export function useFollowSuggestions(limit = 10) {
 
   const rows = Array.isArray(query.data) ? query.data : EMPTY;
 
+  // `dataUpdatedAt` is when this payload actually arrived from the server, and
+  // passing it is what makes the seed safe to re-run. This effect fires again
+  // on every mount -- and the panel remounts whenever a profile is opened,
+  // because it lives inside ProfilePage -- replaying rows that were generated
+  // before the viewer followed anyone in them. Timestamped, those replays lose
+  // to the click they predate; a genuinely fresh refetch still wins.
+  const rowsUpdatedAt = query.dataUpdatedAt;
   useEffect(() => {
-    seedFollowStateFromList(queryClient, rows);
-  }, [queryClient, rows]);
+    seedFollowStateFromList(queryClient, rows, rowsUpdatedAt);
+  }, [queryClient, rows, rowsUpdatedAt]);
 
   return {
     suggestions: rows,
