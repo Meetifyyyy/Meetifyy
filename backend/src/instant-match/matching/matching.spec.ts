@@ -634,11 +634,15 @@ describe('candidate ordering', () => {
     expect(out.every((o) => o.picked === 'lead')).toBe(true);
   });
 
-  it('an rng pinned to zero reproduces the deterministic order exactly', () => {
-    const list = [cand('a', 90), cand('b', 88, 60_000), cand('c', 70)];
-    expect(order(list, { rng: () => 0 })).toEqual(
-      order(list, { deterministic: true }),
-    );
+  it('pins the order through the flag, not through a constant rng', () => {
+    // A constant rng is not a neutral one. `() => 0` satisfies
+    // `rng() < exploreRate` on every call, so it explores *always* rather
+    // than never — which is why the service has a `deterministic` switch and
+    // not a fixed seed. Asserted here so nobody reaches for the seed again.
+    const list = [cand('a', 90), cand('b', 84), cand('c', 70)];
+
+    expect(order(list, { deterministic: true })).toEqual(['a', 'b', 'c']);
+    expect(order(list, { rng: () => 0 })[0]).toBe('b');
   });
 
   it('handles an empty queue', () => {

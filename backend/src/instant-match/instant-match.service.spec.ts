@@ -60,13 +60,25 @@ describe('InstantMatchService', () => {
     return fake;
   };
 
-  const buildService = () =>
-    new InstantMatchService(
+  /**
+   * The service with its diversification draw pinned.
+   *
+   * Ranking is otherwise deterministic, but the tie-and-explore draw is not,
+   * so without this every assertion about *which* candidate was chosen is a
+   * coin flip that passes locally and fails in CI — which is exactly how it
+   * was found. The draw itself is covered in matching/matching.spec.ts, where
+   * the rng is scripted on purpose.
+   */
+  const buildService = () => {
+    const built = new InstantMatchService(
       prisma as any,
       messages as any,
       blocksStubFor(prisma),
       verificationAccess as any,
     );
+    built.rankingOptions = { deterministic: true };
+    return built;
+  };
 
   beforeEach(() => {
     prisma = freshPrisma();
@@ -306,6 +318,8 @@ describe('InstantMatchService', () => {
       for (let run = 0; run < 40; run += 1) {
         prisma = freshPrisma();
         service = buildService();
+        // The one test that wants the real draw back.
+        service.rankingOptions = {};
         prisma.seedQueueEntry('carol', {
           joinedAt: new Date(Date.now() - 10 * 60_000),
         });

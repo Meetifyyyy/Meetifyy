@@ -42,7 +42,6 @@ const REMATCH_COOLDOWN_MS = 30 * 60 * 1000;
  *  nothing left to link to. */
 const RECENT_MATCH_WINDOW_MS = 24 * 60 * 60 * 1000;
 
-
 /** How many waiting people the browse list shows. Same reasoning as the scan
  *  limit above: bounded work per read, and oldest-first so the people who
  *  have waited longest are the ones on screen. */
@@ -256,6 +255,26 @@ export function setRealtimeGatewayRef(ref: InstantMatchEmitter | null) {
 export class InstantMatchService implements OnModuleInit {
   private readonly logger = new Logger(InstantMatchService.name);
 
+  /**
+   * The one non-deterministic step in ranking, in one replaceable place.
+   *
+   * Every score is a pure function of its inputs; the only draw in the
+   * pipeline is the one that breaks ties and occasionally explores. Holding
+   * its options here lets a test — or a debugging session — pin the ordering
+   * instead of every assertion about *which* candidate was chosen becoming a
+   * coin flip that passes locally and fails in CI.
+   *
+   * `deterministic` is the switch to reach for, not a fixed `rng`. A constant
+   * rng is not a neutral one: `() => 0` satisfies `rng() < exploreRate` on
+   * every call, so it explores *always* rather than never. That mistake cost
+   * a red CI run.
+   *
+   * The default is `Math.random`, which is right here: this is ranking
+   * jitter, not a token, an id, a secret or a lock value, and nothing is
+   * protected by it being unpredictable.
+   */
+  rankingOptions: { rng?: () => number; deterministic?: boolean } = {};
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly messagesService: MessagesService,
@@ -457,6 +476,8 @@ export class InstantMatchService implements OnModuleInit {
     const ordered = orderCandidates(scored, {
       searcherJoinedAt: myEntry.joinedAt.getTime(),
       now,
+      rng: this.rankingOptions.rng,
+      deterministic: this.rankingOptions.deterministic,
     });
 
     if (ordered.length === 0) return;
@@ -720,7 +741,10 @@ export class InstantMatchService implements OnModuleInit {
     for (const edge of follows) {
       const other =
         edge.followerId === userId ? edge.followingId : edge.followerId;
-      const entry = social.get(other) ?? { following: false, followedBy: false };
+      const entry = social.get(other) ?? {
+        following: false,
+        followedBy: false,
+      };
       if (edge.followerId === userId) entry.following = true;
       else entry.followedBy = true;
       social.set(other, entry);
@@ -1761,16 +1785,15 @@ export class InstantMatchService implements OnModuleInit {
   ): Promise<InstantMatchChatState> {
     if (!state.isActive || !state.conversationId) return state;
     try {
-      const participant =
-        await this.prisma.conversationParticipant.findUnique({
-          where: {
-            userId_conversationId: {
-              userId: viewerId,
-              conversationId: state.conversationId,
-            },
+      const participant = await this.prisma.conversationParticipant.findUnique({
+        where: {
+          userId_conversationId: {
+            userId: viewerId,
+            conversationId: state.conversationId,
           },
-          select: { unreadCount: true },
-        });
+        },
+        select: { unreadCount: true },
+      });
       return { ...state, unreadCount: participant?.unreadCount ?? 0 };
     } catch {
       // A badge is not worth failing a state read over.
