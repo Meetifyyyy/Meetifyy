@@ -221,6 +221,18 @@ class MatchSocketClient {
   }
 
   /**
+   * Who is searching Instant Match right now.
+   *
+   * Scoped to the caller by the server — its own blocks and cooldowns are
+   * applied there — so this is never a raw dump of the queue. Re-read when
+   * `queue:changed` says the queue moved, which is the only thing that event
+   * carries.
+   */
+  listQueue() {
+    return this.request('queue:list', {});
+  }
+
+  /**
    * The authoritative state of this user's Instant Match chat.
    *
    * Called on mount, on reconnect, and on tab focus. Realtime events are an

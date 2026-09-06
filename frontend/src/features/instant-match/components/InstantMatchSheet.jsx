@@ -3,12 +3,14 @@ import { createPortal } from 'react-dom';
 import { useInstantMatch } from '../context/InstantMatchContext';
 import {
   ACTIVITY_DETAILS_CONFIG, getActivity, accentVars,
-  STEP_ACTIVITY, STEP_TIME, STEP_DETAILS, STEP_LOCATION, STEP_SEARCHING,
+  STEP_PEOPLE, STEP_ACTIVITY, STEP_TIME, STEP_DETAILS, STEP_LOCATION, STEP_SEARCHING,
 } from '../constants/matchConstants';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import { useAnimatedHeight } from '../hooks/useAnimatedHeight';
+import { useSearchingNow } from '../hooks/useSearchingNow';
 import { useScrollLock } from '@shared/hooks/useScrollLock';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
+import PeopleStep from './steps/PeopleStep';
 import ActivityStep from './steps/ActivityStep';
 import TimeStep from './steps/TimeStep';
 import DetailsStep from './steps/DetailsStep';
@@ -22,6 +24,7 @@ import '../styles/instant-match.css';
 import '../styles/instant-match-sheet.css';
 
 const STEP_COPY = {
+  [STEP_PEOPLE]:   { eyebrow: 'Right now', title: "Who's searching",  lede: 'On Instant Match this minute.' },
   [STEP_ACTIVITY]: { eyebrow: 'Step one', title: "What're you up for?", lede: 'Pick the thing you actually want to do right now.' },
   [STEP_TIME]:     { eyebrow: 'Step two', title: 'When?',                lede: 'How soon do you want to be sitting across from someone?' },
   [STEP_DETAILS]:  { eyebrow: 'Step three', title: 'Any detail?',        lede: 'One line. It helps us put you with the right person.' },
@@ -63,6 +66,10 @@ export default function InstantMatchSheet() {
   const activity = getActivity(formData.activity);
   const activityNeedsDetails = Boolean(ACTIVITY_DETAILS_CONFIG[formData.activity]);
   const searching = step === STEP_SEARCHING;
+  // The opening screen: a roster, not a question, so it carries neither the
+  // progress dots nor a Back button. A result panel still outranks it — those
+  // replace the body, and their footer has to replace this one with it.
+  const browsing = step === STEP_PEOPLE;
   // A fresh pairing outranks the form: reopening after a match should show
   // who you matched with, not step one again.
   // Which panel replaces the form. See resolveSheetPanel for why this keys on
@@ -70,6 +77,15 @@ export default function InstantMatchSheet() {
   const panel = resolveSheetPanel({ status, searching, chat, recentMatch });
   const showingMatched = panel === 'matched';
   const showingEnded = panel === 'ended';
+
+  /**
+   * The roster is read at this level because the sheet's heading depends on
+   * it: with nothing to list there is no list to announce, so the empty state
+   * takes the whole surface rather than sitting under a title about people
+   * who are not there. Only read while that screen is actually up.
+   */
+  const roster = useSearchingNow(sheetActive && step === STEP_PEOPLE);
+  const hasPeople = Boolean(roster.people?.length);
 
   useScrollLock(sheetActive);
   useFocusTrap(sheetRef, sheetActive, closeSheet);
@@ -99,10 +115,10 @@ export default function InstantMatchSheet() {
     const showingResult =
       status === 'searching' || step === STEP_SEARCHING ||
       Boolean(chat) || Boolean(recentMatch);
-    if (showingResult || step <= STEP_ACTIVITY) return false;
+    if (showingResult || step <= STEP_PEOPLE) return false;
 
     if (step === STEP_LOCATION && !ACTIVITY_DETAILS_CONFIG[formData.activity]) setStep(STEP_TIME);
-    else setStep(Math.max(STEP_ACTIVITY, step - 1));
+    else setStep(Math.max(STEP_PEOPLE, step - 1));
     return true;
   }, [sheetActive, status, step, chat, recentMatch, formData.activity, setStep]);
 
@@ -132,7 +148,7 @@ export default function InstantMatchSheet() {
 
   const goBack = () => {
     if (step === STEP_LOCATION && !activityNeedsDetails) setStep(STEP_TIME);
-    else setStep(Math.max(STEP_ACTIVITY, step - 1));
+    else setStep(Math.max(STEP_PEOPLE, step - 1));
   };
 
   const goNext = () => {
@@ -148,6 +164,15 @@ export default function InstantMatchSheet() {
 
   const renderStep = () => {
     switch (step) {
+      case STEP_PEOPLE:
+        return (
+          <PeopleStep
+            people={roster.people}
+            loading={roster.loading}
+            error={roster.error}
+            retry={roster.retry}
+          />
+        );
       case STEP_ACTIVITY:
         return (
           <ActivityStep
@@ -191,7 +216,11 @@ export default function InstantMatchSheet() {
     }
   };
 
-  const copy = (showingMatched || showingEnded) ? null : STEP_COPY[step];
+  const copy = (showingMatched || showingEnded) ? null
+    // The roster announces itself only once it has people in it; loading,
+    // empty and error each speak for themselves in the body.
+    : (browsing && !hasPeople) ? null
+      : STEP_COPY[step];
 
   // Panels are destinations too, so they get the same arrival animation as a
   // step rather than appearing instantly in the middle of an animated resize.
@@ -263,6 +292,9 @@ export default function InstantMatchSheet() {
               <p className="im-lede">{copy.lede}</p>
             </div>
           )}
+          {browsing && !hasPeople && (
+            <h2 id={titleId} className="im-sr-only">Who is searching on Instant Match</h2>
+          )}
           {searching && <h2 id={titleId} className="im-sr-only">Searching for a match</h2>}
           {showingMatched && <h2 id={titleId} className="im-sr-only">You have a new match</h2>}
           {showingEnded && <h2 id={titleId} className="im-sr-only">Your Instant Match has ended</h2>}
@@ -291,7 +323,7 @@ export default function InstantMatchSheet() {
                   ? <MatchedPanel />
                   : showingEnded
                     ? <EndedPanel />
-                    : restoring && step !== STEP_SEARCHING
+                    : restoring && step !== STEP_SEARCHING && step !== STEP_PEOPLE
                       ? <SheetSkeleton />
                       : renderStep()}
               </div>
@@ -347,7 +379,22 @@ export default function InstantMatchSheet() {
             </footer>
           )}
 
-          {!searching && !showingMatched && !showingEnded && (
+          {browsing && !showingMatched && !showingEnded && (
+            <footer className="im-sheet-foot im-sheet-foot-people">
+              <div className="im-sheet-actions">
+                <button
+                  type="button"
+                  className="im-btn im-btn-go"
+                  onClick={() => setStep(STEP_ACTIVITY)}
+                >
+                  Find my match
+                  <Bolt className="im-btn-bolt" />
+                </button>
+              </div>
+            </footer>
+          )}
+
+          {!browsing && !searching && !showingMatched && !showingEnded && (
             <footer className="im-sheet-foot">
               <ol className="im-steps" aria-label="Progress">
                 {visibleSteps.map((idx, i) => (
@@ -365,8 +412,16 @@ export default function InstantMatchSheet() {
               </ol>
 
               <div className="im-sheet-actions">
-                {step > STEP_ACTIVITY && (
+                {step > STEP_ACTIVITY ? (
                   <button type="button" className="im-btn im-btn-ghost im-btn-sm" onClick={goBack}>
+                    Back
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="im-btn im-btn-ghost im-btn-sm"
+                    onClick={() => setStep(STEP_PEOPLE)}
+                  >
                     Back
                   </button>
                 )}

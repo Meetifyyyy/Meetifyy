@@ -30,6 +30,7 @@ describe('InstantMatchService', () => {
     emitSearchResumed: jest.Mock;
     emitQueueStats: jest.Mock;
     emitInstantMatchChatEnded: jest.Mock;
+    emitQueueChanged: jest.Mock;
   };
   let service: InstantMatchService;
 
@@ -49,11 +50,26 @@ describe('InstantMatchService', () => {
     ...overrides,
   });
 
+  /** A fresh fake with the cast seeded. Extracted so a test that needs many
+   *  independent runs — the weighted tie draw — can rebuild between them. */
+  const freshPrisma = () => {
+    const fake = new PrismaFake();
+    fake.seedUser('alice');
+    fake.seedUser('bob');
+    fake.seedUser('carol');
+    return fake;
+  };
+
+  const buildService = () =>
+    new InstantMatchService(
+      prisma as any,
+      messages as any,
+      blocksStubFor(prisma),
+      verificationAccess as any,
+    );
+
   beforeEach(() => {
-    prisma = new PrismaFake();
-    prisma.seedUser('alice');
-    prisma.seedUser('bob');
-    prisma.seedUser('carol');
+    prisma = freshPrisma();
 
     messages = {
       createInstantMatchConversation: jest.fn().mockResolvedValue({
@@ -70,15 +86,11 @@ describe('InstantMatchService', () => {
       emitSearchResumed: jest.fn(),
       emitQueueStats: jest.fn(),
       emitInstantMatchChatEnded: jest.fn(),
+      emitQueueChanged: jest.fn(),
     };
     verificationAccess = createVerificationAccessMock();
     setRealtimeGatewayRef(emitter);
-    service = new InstantMatchService(
-      prisma as any,
-      messages as any,
-      blocksStubFor(prisma),
-      verificationAccess as any,
-    );
+    service = buildService();
   });
 
   afterEach(() => setRealtimeGatewayRef(null));
@@ -251,7 +263,28 @@ describe('InstantMatchService', () => {
       ]);
     });
 
-    it('breaks a score tie toward whoever has waited longest', async () => {
+    /**
+     * Ties now favour the longest wait rather than guaranteeing it.
+     *
+     * Two candidates a point apart are not meaningfully different — the score
+     * is an estimate with a shrinkage term in it — and resolving that gap the
+     * same way every time is how one person ends up being offered to
+     * everybody. So the ranker draws inside the tie band, weighted by wait.
+     * The deterministic ordering, which is what a human debugging a pairing
+     * reads, is still strictly ordered; that is what this pins.
+     */
+    it('puts the longest waiter first in the deterministic ordering', async () => {
+      prisma.seedQueueEntry('carol', {
+        joinedAt: new Date(Date.now() - 60_000),
+      });
+      prisma.seedQueueEntry('bob', { joinedAt: new Date(Date.now() - 1_000) });
+      prisma.seedQueueEntry('alice');
+
+      const { order } = await service.explainRankingFor('alice');
+      expect(order.map((o) => o.userId)).toEqual(['carol', 'bob']);
+    });
+
+    it('still pairs with one of the tied candidates, not with nobody', async () => {
       prisma.seedQueueEntry('carol', {
         joinedAt: new Date(Date.now() - 60_000),
       });
@@ -259,10 +292,32 @@ describe('InstantMatchService', () => {
       await service.joinQueue(joinDto('alice'));
 
       const session = prisma.sessions[0];
-      expect([session.userAId, session.userBId].sort()).toEqual([
-        'alice',
-        'carol',
-      ]);
+      expect(session).toBeDefined();
+      const pair = [session.userAId, session.userBId].sort();
+      expect(pair).toContain('alice');
+      expect(['bob', 'carol']).toContain(pair.find((id) => id !== 'alice'));
+    });
+
+    it('favours the longest waiter across repeated draws', async () => {
+      // Statistical rather than absolute, because the draw is weighted, not
+      // ordered: an occasional pairing with the fresher candidate is the
+      // diversification working, not a fairness bug.
+      let carolWins = 0;
+      for (let run = 0; run < 40; run += 1) {
+        prisma = freshPrisma();
+        service = buildService();
+        prisma.seedQueueEntry('carol', {
+          joinedAt: new Date(Date.now() - 10 * 60_000),
+        });
+        prisma.seedQueueEntry('bob', { joinedAt: new Date(Date.now() - 1_000) });
+        await service.joinQueue(joinDto('alice'));
+        const session = prisma.sessions[0];
+        const other = [session.userAId, session.userBId].find(
+          (id: string) => id !== 'alice',
+        );
+        if (other === 'carol') carolWins += 1;
+      }
+      expect(carolWins).toBeGreaterThan(20);
     });
 
     it('never matches users who have blocked each other, in either direction', async () => {
@@ -851,6 +906,297 @@ describe('InstantMatchService', () => {
   });
 
   // ── Degraded transport ─────────────────────────────────────────────────────
+
+  // ── Who is searching ───────────────────────────────────────────────────────
+
+  describe('getSearchingNow', () => {
+    it('returns the live queue rows, with the detail each person actually gave', async () => {
+      prisma.seedQueueEntry('bob', {
+        activity: 'coffee',
+        timePreference: '30min',
+        area: 'cafeteria',
+        optionalDetail: 'the one near the gate',
+      });
+
+      const [person, ...rest] = await service.getSearchingNow('alice');
+
+      expect(rest).toHaveLength(0);
+      expect(person).toEqual({
+        user: expect.objectContaining({ id: 'bob', displayName: 'BOB' }),
+        activity: 'coffee',
+        timePreference: '30min',
+        area: 'cafeteria',
+        optionalDetail: 'the one near the gate',
+        joinedAt: expect.any(Number),
+      });
+    });
+
+    it('leaves what nobody filled in as null rather than inventing it', async () => {
+      prisma.seedQueueEntry('bob');
+      const [person] = await service.getSearchingNow('alice');
+      expect(person.area).toBeNull();
+      expect(person.optionalDetail).toBeNull();
+    });
+
+    it('never lists the viewer themselves', async () => {
+      prisma.seedQueueEntry('alice');
+      prisma.seedQueueEntry('bob');
+      const people = await service.getSearchingNow('alice');
+      expect(people.map((p) => p.user.id)).toEqual(['bob']);
+    });
+
+    it('applies the same block rule matching applies', async () => {
+      prisma.addBlock('alice', 'bob');
+      prisma.seedQueueEntry('bob');
+      prisma.seedQueueEntry('carol');
+      const people = await service.getSearchingNow('alice');
+      expect(people.map((p) => p.user.id)).toEqual(['carol']);
+    });
+
+    it('drops entries that have expired out of the queue', async () => {
+      prisma.seedQueueEntry('bob', { expiresAt: new Date(Date.now() - 1000) });
+      prisma.seedQueueEntry('carol');
+      const people = await service.getSearchingNow('alice');
+      expect(people.map((p) => p.user.id)).toEqual(['carol']);
+    });
+
+    it('leaves out unverified accounts', async () => {
+      prisma.seedUser('dave', { verificationStatus: 'PENDING' });
+      prisma.seedQueueEntry('dave');
+      prisma.seedQueueEntry('bob');
+      const people = await service.getSearchingNow('alice');
+      expect(people.map((p) => p.user.id)).toEqual(['bob']);
+    });
+
+    it('stops listing someone the moment they cancel', async () => {
+      await service.joinQueue(joinDto('bob'));
+      expect(await service.getSearchingNow('alice')).toHaveLength(1);
+
+      await service.cancelQueue('bob');
+      expect(await service.getSearchingNow('alice')).toHaveLength(0);
+    });
+
+    it('follows a change of activity rather than showing the old one', async () => {
+      await service.joinQueue(joinDto('bob'));
+      await service.joinQueue(joinDto('bob', { activity: 'coffee' }));
+
+      const people = await service.getSearchingNow('alice');
+      expect(people).toHaveLength(1);
+      expect(people[0].activity).toBe('coffee');
+    });
+
+    it('drops both people once they are paired off the queue', async () => {
+      await service.joinQueue(joinDto('bob'));
+      await service.joinQueue(joinDto('carol'));
+      expect(prisma.sessions).toHaveLength(1);
+      expect(await service.getSearchingNow('alice')).toHaveLength(0);
+    });
+
+    it('tells everyone the queue moved whenever it does', async () => {
+      await service.joinQueue(joinDto('bob'));
+      expect(emitter.emitQueueChanged).toHaveBeenCalled();
+
+      emitter.emitQueueChanged.mockClear();
+      await service.cancelQueue('bob');
+      expect(emitter.emitQueueChanged).toHaveBeenCalled();
+    });
+  });
+
+  // ── Ranking feedback ───────────────────────────────────────────────────────
+
+  /**
+   * The behavioural half of the ranker, end to end through the service: a
+   * pass has to be attributed when it happens, read back per candidate, and
+   * spend its influence on the person who made it rather than on both sides.
+   *
+   * The sessions here are stamped two hours old on purpose. Inside the
+   * 30-minute re-match cooldown the pair is hard-excluded by the candidate
+   * query and never reaches the scorer at all, so anything about *ranking*
+   * has to be asserted from outside that window.
+   */
+  describe('feedback from passes', () => {
+    const hoursAgo = (n: number) => new Date(Date.now() - n * 60 * 60 * 1000);
+
+    const rankOf = async (userId: string, candidateId: string) => {
+      const result = await service.explainRankingFor(userId);
+      const row = result.candidates.find((c) => c.userId === candidateId);
+      if (!row) throw new Error(`${candidateId} was not ranked for ${userId}`);
+      return { ...row, feedback: row.feedback ?? null };
+    };
+
+    it('records which side passed, so the pass can be attributed later', async () => {
+      await service.joinQueue(joinDto('alice'));
+      await service.joinQueue(joinDto('bob'));
+      const sessionId = prisma.sessions[0].id;
+
+      await service.respondToMatch('alice', sessionId, 'decline');
+
+      const session = prisma.sessions.find((s) => s.id === sessionId)!;
+      expect(session.status).toBe('DECLINED');
+      expect(session.declinedById).toBe('alice');
+    });
+
+    it('ranks someone this user passed on below someone they have not', async () => {
+      prisma.seedSession({
+        userAId: 'alice',
+        userBId: 'bob',
+        status: 'DECLINED',
+        declinedById: 'alice',
+        createdAt: hoursAgo(2),
+      });
+      prisma.seedQueueEntry('alice');
+      prisma.seedQueueEntry('bob');
+      prisma.seedQueueEntry('carol');
+
+      const passed = await rankOf('alice', 'bob');
+      const fresh = await rankOf('alice', 'carol');
+
+      expect(passed.feedback?.declinedByMe).toBe(1);
+      expect(passed.score).toBeLessThan(fresh.score);
+    });
+
+    it('drops them further with every repeat pass', async () => {
+      prisma.seedQueueEntry('alice');
+      prisma.seedQueueEntry('bob');
+
+      prisma.seedSession({
+        userAId: 'alice',
+        userBId: 'bob',
+        status: 'DECLINED',
+        declinedById: 'alice',
+        createdAt: hoursAgo(3),
+      });
+      const afterOne = (await rankOf('alice', 'bob')).score;
+
+      prisma.seedSession({
+        userAId: 'bob',
+        userBId: 'alice',
+        status: 'DECLINED',
+        declinedById: 'alice',
+        createdAt: hoursAgo(2),
+      });
+      const afterTwo = (await rankOf('alice', 'bob')).score;
+
+      expect(afterTwo).toBeLessThan(afterOne);
+    });
+
+    it('charges the pass to the person who made it, not to both sides', async () => {
+      prisma.seedSession({
+        userAId: 'alice',
+        userBId: 'bob',
+        status: 'DECLINED',
+        declinedById: 'alice',
+        createdAt: hoursAgo(2),
+      });
+      prisma.seedQueueEntry('alice');
+      prisma.seedQueueEntry('bob');
+
+      const forAlice = await rankOf('alice', 'bob');
+      const forBob = await rankOf('bob', 'alice');
+
+      expect(forAlice.feedback?.declinedByMe).toBe(1);
+      expect(forBob.feedback?.declinedByThem).toBe(1);
+      // Being passed on is the milder signal of the two.
+      expect(forBob.score).toBeGreaterThan(forAlice.score);
+    });
+
+    it('does not invent a pass for a decline recorded before attribution existed', async () => {
+      prisma.seedSession({
+        userAId: 'alice',
+        userBId: 'bob',
+        status: 'DECLINED',
+        declinedById: null,
+        createdAt: hoursAgo(2),
+      });
+      prisma.seedQueueEntry('alice');
+      prisma.seedQueueEntry('bob');
+
+      const row = await rankOf('alice', 'bob');
+      expect(row.feedback?.declinedByMe).toBe(0);
+      expect(row.feedback?.declinedByThem).toBe(0);
+      // Read for what it is: a pairing that did not happen.
+      expect(row.feedback?.expired).toBe(1);
+    });
+
+    it('stops offering a pairing after three passes, and says so', async () => {
+      for (const n of [4, 3, 2]) {
+        prisma.seedSession({
+          userAId: 'alice',
+          userBId: 'bob',
+          status: 'DECLINED',
+          declinedById: 'alice',
+          createdAt: hoursAgo(n),
+        });
+      }
+      prisma.seedQueueEntry('alice');
+      prisma.seedQueueEntry('bob');
+      prisma.seedQueueEntry('carol');
+
+      const result = await service.explainRankingFor('alice');
+      expect(
+        result.candidates.find((c) => c.userId === 'bob')?.skipped,
+      ).toBe(true);
+      expect(result.order.map((o) => o.userId)).toEqual(['carol']);
+    });
+
+    it('will not pair two people the skip is holding apart', async () => {
+      for (const n of [4, 3, 2]) {
+        prisma.seedSession({
+          userAId: 'alice',
+          userBId: 'bob',
+          status: 'DECLINED',
+          declinedById: 'alice',
+          createdAt: hoursAgo(n),
+        });
+      }
+      prisma.seedQueueEntry('bob');
+      await service.joinQueue(joinDto('alice'));
+
+      expect(prisma.sessions.filter((s) => s.status === 'PENDING')).toHaveLength(
+        0,
+      );
+    });
+
+    it('lifts a candidate the user follows, and both of them further', async () => {
+      prisma.seedQueueEntry('alice');
+      prisma.seedQueueEntry('bob');
+      prisma.seedQueueEntry('carol');
+      prisma.addFollow('alice', 'bob');
+      prisma.addFollow('bob', 'alice');
+
+      const mutual = await rankOf('alice', 'bob');
+      const stranger = await rankOf('alice', 'carol');
+      expect(mutual.score).toBeGreaterThan(stranger.score);
+    });
+
+    it('lifts a candidate who shares a community', async () => {
+      prisma.seedQueueEntry('alice');
+      prisma.seedQueueEntry('bob');
+      prisma.seedQueueEntry('carol');
+      prisma.addCommunityMember('alice', 'chess-club');
+      prisma.addCommunityMember('bob', 'chess-club');
+
+      const shared = await rankOf('alice', 'bob');
+      const stranger = await rankOf('alice', 'carol');
+      expect(shared.score).toBeGreaterThan(stranger.score);
+    });
+
+    it('explains every candidate it ranked', async () => {
+      prisma.seedQueueEntry('alice');
+      prisma.seedQueueEntry('bob');
+
+      const result = await service.explainRankingFor('alice');
+      expect(result.queued).toBe(true);
+      expect(result.candidates[0].explanation).toContain('coverage=');
+      expect(result.candidates[0].detail.signals.length).toBeGreaterThan(0);
+    });
+
+    it('ranks nothing for someone who is not in the queue', async () => {
+      const result = await service.explainRankingFor('alice');
+      expect(result.queued).toBe(false);
+      expect(result.candidates).toEqual([]);
+    });
+  });
 
   it('completes a match even when no socket gateway is attached', async () => {
     setRealtimeGatewayRef(null);

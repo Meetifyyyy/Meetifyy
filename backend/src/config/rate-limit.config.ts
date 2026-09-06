@@ -496,6 +496,21 @@ export const RATE_LIMIT_POLICIES = {
     message: 'Slow down a moment.',
   },
 
+  /**
+   * The "who is searching right now" list. Its own budget rather than sharing
+   * `im.queuesync.user`: this one is re-read whenever the queue moves, which
+   * on a busy evening is far more often than a state resync, and the two
+   * throttling each other would show a stale roster to somebody who had done
+   * nothing wrong. The client coalesces bursts before they get here.
+   */
+  'im.queuelist.user': {
+    points: 40,
+    duration: 60,
+    dimension: 'user',
+    onRedisFailure: 'open',
+    message: 'Slow down a moment.',
+  },
+
   /** Unauthenticated support intake, per IP. Value unchanged. */
   'support.request.ip': {
     points: 5,

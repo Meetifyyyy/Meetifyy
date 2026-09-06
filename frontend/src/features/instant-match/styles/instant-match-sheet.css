@@ -318,6 +318,16 @@
   .im-sheet-actions-panel .im-btn { flex: 1; }
 }
 
+/*
+ * The roster screen's footer.
+ *
+ * One action, and nothing to sit opposite it — no progress dots, because
+ * nothing on that screen is being answered — so it takes the whole row rather
+ * than hanging off one end of an otherwise empty bar.
+ */
+.im-sheet-foot-people .im-sheet-actions { width: 100%; }
+.im-sheet-foot-people .im-btn { flex: 1; }
+
 /* ── Error ───────────────────────────────────────────────────────────────── */
 
 .im-sheet-error {
@@ -481,6 +491,349 @@
   text-transform: uppercase;
   color: var(--im-ink-soft);
   margin-bottom: 7px;
+}
+
+/* ── Who is searching ────────────────────────────────────────────────────── */
+
+.im-people {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Same plate as the time cards — one card shape for the whole sheet — minus
+   the affordances, because a row here is something to read, not to press. */
+.im-person {
+  --im-tile-ink: var(--im-tile-ink-l, var(--im-accent));
+  --im-tile-wash: var(--im-tile-wash-l, var(--im-accent-wash));
+
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+  overflow: hidden;
+  border: var(--im-border);
+  border-radius: var(--im-radius);
+  background: var(--im-paper);
+  box-shadow: var(--im-shadow-sm);
+}
+
+[data-theme='dark'] .im-person {
+  --im-tile-ink: var(--im-tile-ink-d, var(--im-accent));
+  --im-tile-wash: var(--im-tile-wash-d, var(--im-accent-wash));
+}
+
+/* The activity's colour as a single edge rather than a fill: twelve rows of
+   coloured wash would drown the type this list exists to be read for. */
+.im-person::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  background: var(--im-tile-ink);
+}
+
+.im-person-ticks {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  width: 34px;
+  color: var(--im-tile-ink);
+  opacity: 0.16;
+  pointer-events: none;
+}
+
+.im-person-face {
+  flex-shrink: 0;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  border: 1.5px solid var(--im-line-strong);
+  object-fit: cover;
+  background: var(--im-paper-deep);
+}
+
+.im-person-face-initial {
+  display: grid;
+  place-items: center;
+  font-family: var(--im-display);
+  font-size: 1.15rem;
+  color: var(--im-tile-ink);
+  background: var(--im-tile-wash);
+}
+
+.im-person-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  flex: 1;
+  z-index: 1;
+}
+
+.im-person-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0;
+}
+
+.im-person-name {
+  font-family: var(--im-display);
+  font-size: 1rem;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--im-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* When they want to meet, kept in ink rather than in the time preference's
+   own colour: the row already carries one accent, and a second would compete
+   with it for the same glance. */
+.im-person-when {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--im-ink-soft);
+  white-space: nowrap;
+}
+
+.im-person-when .im-emoji { font-size: 0.82rem; }
+
+.im-person-activity {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+  font-size: 0.86rem;
+  color: var(--im-ink);
+}
+
+.im-person-emoji { font-size: 0.95rem; }
+
+.im-person-label {
+  font-weight: 700;
+  color: var(--im-tile-ink);
+}
+
+/* Their own words, so they are quoted rather than restyled as a label. */
+.im-person-detail {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--im-ink-soft);
+}
+.im-person-detail::before { content: '· '; }
+
+.im-person-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  font-size: 0.76rem;
+  color: var(--im-ink-faint);
+}
+
+.im-person-area {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.im-person-wait { flex-shrink: 0; }
+
+/* ── Roster: empty, error and loading ────────────────────────────────────── */
+
+/*
+ * An empty queue, carried by the poster rather than by a paragraph: the mark
+ * first, then one word of display type. The action that answers it lives in
+ * the footer, so nothing here has to ask for it.
+ */
+.im-people-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 6px;
+  padding: 10px 0 14px;
+}
+
+/*
+ * ── The empty mark ───────────────────────────────────────────────────────
+ *
+ * A flat illustration, drawn the way the rest of Instant Match is printed: a
+ * paper window with a halftone field, two spot-colour plates laid slightly off
+ * register, and the bolt in ink at the centre. Where the two plates meet they
+ * overprint into a third colour — that is `mix-blend-mode: multiply` doing the
+ * job ink does, not an effect, and it is the one thing that makes this read as
+ * printed rather than drawn in a vector app.
+ *
+ * Nothing here animates. It is six elements, painted once.
+ */
+.im-people-empty-art {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 140px;
+  height: 140px;
+  margin-bottom: 6px;
+}
+
+/* The window. Plates are clipped to it, so each one reads as a printed area
+   running off the edge of the paper rather than as a shape floating on it. */
+.im-people-empty-stage {
+  position: absolute;
+  inset: 4px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: var(--im-paper);
+}
+
+.im-people-empty-stage .im-people-empty-field {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  color: var(--im-ink);
+  opacity: 0.1;
+}
+
+.im-people-empty-plate {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  /* Where two plates cross, the ink builds up rather than one hiding the
+     other. Reversed for dark mode below, where multiply would swallow both. */
+  mix-blend-mode: multiply;
+}
+
+/* Violet, high and left. */
+.im-people-empty-stage .im-people-empty-plate-1 {
+  width: 84px;
+  height: 84px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--im-violet) 32%, transparent);
+  transform: translate(-21px, -14px);
+}
+
+/* Lime, low and right, and not a circle — two identical discs would read as a
+   diagram, and this is a poster. */
+.im-people-empty-stage .im-people-empty-plate-2 {
+  width: 88px;
+  height: 88px;
+  color: color-mix(in srgb, var(--im-lime) 55%, transparent);
+  transform: translate(20px, 16px) rotate(18deg);
+}
+
+/* One small coral dot, off in the corner: the third plate, barely inked. */
+.im-people-empty-stage .im-people-empty-plate-3 {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--im-coral) 34%, transparent);
+  transform: translate(34px, -36px);
+}
+
+/*
+ * Dark mode inverts the press: ink does not build up on a black ground, light
+ * does. `screen` is the counterpart of multiply — two plates crossing come out
+ * brighter than either — and the alphas are raised to match, because a 32%
+ * plate that reads as colour on cream reads as sludge on near-black.
+ */
+[data-theme='dark'] .im-people-empty-plate { mix-blend-mode: screen; }
+[data-theme='dark'] .im-people-empty-stage .im-people-empty-plate-1 {
+  background: color-mix(in srgb, var(--im-violet) 52%, transparent);
+}
+[data-theme='dark'] .im-people-empty-stage .im-people-empty-plate-2 {
+  color: color-mix(in srgb, var(--im-lime) 50%, transparent);
+}
+[data-theme='dark'] .im-people-empty-stage .im-people-empty-plate-3 {
+  background: color-mix(in srgb, var(--im-coral) 46%, transparent);
+}
+
+/* ── Rim ─────────────────────────────────────────────────────────────────── */
+
+.im-people-empty-rim {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  fill: none;
+  pointer-events: none;
+}
+
+.im-people-empty-rim-line {
+  stroke: var(--im-line-strong);
+  stroke-width: 1.5;
+}
+
+.im-people-empty-tick {
+  stroke: var(--im-accent);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+}
+
+/* ── Centre ──────────────────────────────────────────────────────────────── */
+
+.im-people-empty-bolt {
+  position: relative;
+  display: grid;
+  place-items: center;
+  color: var(--im-ink);
+}
+
+.im-people-empty-bolt .im-bolt { width: 30px; height: 30px; }
+
+
+.im-people-empty-title { color: var(--im-ink); }
+
+.im-people-empty-squiggle {
+  width: 108px;
+  color: var(--im-accent);
+}
+
+.im-people-empty-lede { color: var(--im-ink-soft); }
+
+.im-people-state {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 18px 4px 6px;
+}
+
+/* One spinner on its own. Row-shaped placeholders drew a list before anyone
+   knew there was one — and an empty queue then had to take them away again. */
+.im-people-loader {
+  display: grid;
+  place-items: center;
+  min-height: 132px;
+  padding: 18px 0;
+  color: var(--im-accent);
+}
+
+.im-people-spinner {
+  width: 30px;
+  height: 30px;
+  animation: im-spin 0.9s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .im-people-spinner { animation-duration: 2.4s; }
 }
 
 /* ── Activity grid ───────────────────────────────────────────────────────── */

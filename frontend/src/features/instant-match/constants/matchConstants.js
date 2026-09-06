@@ -7,6 +7,11 @@
  * safe to change on its own.
  */
 
+/** The screen Instant Match opens on: who is searching right now. It sits
+ *  before step one because it is not a step — nothing is answered on it — and
+ *  numbering it 0 keeps the existing `step - 1` / `step + 1` walk intact. */
+export const STEP_PEOPLE = 0;
+
 export const STEP_ACTIVITY = 1;
 export const STEP_TIME = 2;
 export const STEP_DETAILS = 3;

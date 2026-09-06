@@ -17,7 +17,7 @@ import {
   CAMPUS_AREAS,
   ACTIVITY_DETAILS_CONFIG,
   OPTIONAL_DETAIL_MAX,
-  STEP_ACTIVITY, STEP_TIME, STEP_DETAILS, STEP_LOCATION, STEP_SEARCHING,
+  STEP_PEOPLE, STEP_ACTIVITY, STEP_TIME, STEP_DETAILS, STEP_LOCATION, STEP_SEARCHING,
 } from '../constants/matchConstants';
 
 /** Exported so the DEV-only preview route can drive the UI with fixed state.
@@ -114,7 +114,11 @@ export function InstantMatchProvider({ children }) {
   const isVerified = currentUser?.verificationStatus === 'VERIFIED';
 
   const [sheetOpen, setSheetOpen] = useState(false);
-  const [step, setStep] = useState(STEP_ACTIVITY);
+  // Instant Match opens on the roster of people searching right now, not on
+  // the first question. Every path that returns a user to "the beginning"
+  // therefore lands here too, so the entry point is one place rather than a
+  // set of screens that disagree about where the flow starts.
+  const [step, setStep] = useState(STEP_PEOPLE);
   const [formData, setFormData] = useState(initialFormData);
 
   const [status, setStatus] = useState('idle');
@@ -329,7 +333,7 @@ export function InstantMatchProvider({ children }) {
         matchedHandoffRef.current = null;
         setActiveMatch(null);
         setFormData(initialFormData);
-        setStep(STEP_ACTIVITY);
+        setStep(STEP_PEOPLE);
         // Deliberately NOT back to 'idle': the user has a live 24h chat, and
         // the launcher must keep saying so. `matched` clears when the chat
         // expires, when they dismiss it, or when they start a new search.
@@ -357,7 +361,7 @@ export function InstantMatchProvider({ children }) {
         setStep(STEP_SEARCHING);
       } else {
         setStatus('idle');
-        setStep(STEP_ACTIVITY);
+        setStep(STEP_PEOPLE);
         setFormData(initialFormData);
         setSheetOpen(false);
       }
@@ -552,14 +556,14 @@ export function InstantMatchProvider({ children }) {
       setActiveMatch(null);
       setStatus((prev) => (prev === 'searching' ? prev : 'idle'));
       setFormData(initialFormData);
-      setStep(STEP_ACTIVITY);
+      setStep(STEP_PEOPLE);
     }
     // Minimising while searching keeps the search alive — the connection is
     // held by the provider, not by the sheet.
   }, [dismissEnded]);
 
   const nextStep = useCallback(() => setStep((s) => Math.min(STEP_LOCATION, s + 1)), []);
-  const prevStep = useCallback(() => setStep((s) => Math.max(STEP_ACTIVITY, s - 1)), []);
+  const prevStep = useCallback(() => setStep((s) => Math.max(STEP_PEOPLE, s - 1)), []);
 
   const updateFormData = useCallback((fields) => {
     setError(null);
@@ -568,7 +572,7 @@ export function InstantMatchProvider({ children }) {
 
   const resetForm = useCallback(() => {
     setFormData(initialFormData);
-    setStep(STEP_ACTIVITY);
+    setStep(STEP_PEOPLE);
     setError(null);
   }, []);
 
@@ -794,6 +798,9 @@ export function InstantMatchProvider({ children }) {
       setActiveMatch(null);
       setStatus('idle');
       setFormData(initialFormData);
+      // The one place that deliberately skips the roster: "find someone new"
+      // is already a decision to search, so it opens on the first question
+      // rather than making the user pass the list to get there.
       setStep(STEP_ACTIVITY);
       setSheetOpen(true);
       return true;
@@ -808,7 +815,7 @@ export function InstantMatchProvider({ children }) {
     setRecentMatch(null);
     setStatus((prev) => (prev === 'matched' ? 'idle' : prev));
     setFormData(initialFormData);
-    setStep(STEP_ACTIVITY);
+    setStep(STEP_PEOPLE);
   }, []);
 
   /**

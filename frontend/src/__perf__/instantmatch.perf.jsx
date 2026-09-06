@@ -75,16 +75,12 @@ vi.mock('@stores/useGlobalSocketStore', () => ({
 // intercepts the reference the tree actually renders.
 // `vi.mock` factories are hoisted, so each one is written out rather than
 // produced by a shared helper the hoisted call could not yet see.
-const counts = { radar: 0, metrics: 0, fab: 0, activity: 0, time: 0, location: 0 };
+const counts = { radar: 0, fab: 0, activity: 0, time: 0, location: 0 };
 globalThis.__IM_COUNTS = counts;
 
 vi.mock('@features/instant-match/components/queue/SearchRadar', async (io) => {
   const mod = await io(); const Real = mod.default;
   return { ...mod, default: (p) => { globalThis.__IM_COUNTS.radar++; return <Real {...p} />; } };
-});
-vi.mock('@features/instant-match/components/queue/QueueMetrics', async (io) => {
-  const mod = await io(); const Real = mod.default;
-  return { ...mod, default: (p) => { globalThis.__IM_COUNTS.metrics++; return <Real {...p} />; } };
 });
 vi.mock('@features/instant-match/components/steps/ActivityStep', async (io) => {
   const mod = await io(); const Real = mod.default;
@@ -181,7 +177,7 @@ describe('Instant Match', () => {
     await act(async () => { await ctl.startSearch(); });
     await settle(60);
     console.log('[START SEARCH]', JSON.stringify({
-      radarRenders: counts.radar, metricsRenders: counts.metrics,
+      radarRenders: counts.radar,
       queueJoinEmits: emitted.filter((e) => e[0] === 'queue:join').length,
       actualMs: +rec.get('im').actual.toFixed(2),
       onScreen: document.querySelector('.im-radar') ? 'SearchingScreen' : 'other',
@@ -196,7 +192,6 @@ describe('Instant Match', () => {
     for (let i = 0; i < 6; i++) await settle(1000);
     console.log('[RADAR IDLE 6s]', JSON.stringify({
       searchingScreenReRenders: counts.radar,
-      metricsReRenders: counts.metrics,
       fabCommits: rec.get('fab').mounts + rec.get('fab').updates,
       commits: rec.get('im').mounts + rec.get('im').updates,
       actualMs: +rec.get('im').actual.toFixed(2),
@@ -207,7 +202,7 @@ describe('Instant Match', () => {
     await act(async () => { socketApi.fire('queue:stats', { count: 7, sameActivity: 3, avgWaitSecs: 45 }); });
     await settle(30);
     console.log('[queue:stats PUSH]', JSON.stringify({
-      radarReRenders: counts.radar, metricsReRenders: counts.metrics, fabCommits: rec.get('fab').mounts + rec.get('fab').updates,
+      radarReRenders: counts.radar, fabCommits: rec.get('fab').mounts + rec.get('fab').updates,
       actualMs: +rec.get('im').actual.toFixed(2),
     }));
 

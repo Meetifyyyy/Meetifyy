@@ -11,10 +11,15 @@ import { PrismaService } from '../prisma/prisma.service';
 import { BlocksService } from '../users/blocks.service';
 import { VerificationAccessService } from '../common/verification/verification-access.service';
 import { MessagesService } from '../messages/messages.service';
+import { MatchScore, explainPair, scorePair } from './matching/engine';
+import { orderCandidates } from './matching/selection';
 import {
-  computeCompatibility,
-  relaxedThreshold,
-} from './instant-match.scoring';
+  PairFeedback,
+  PairSocial,
+  SideContext,
+  isHardSkipped,
+} from './matching/signals';
+import { CANDIDATE_SCAN_LIMIT, FEEDBACK } from './matching/matching.config';
 import {
   JoinQueueDto,
   QueueSnapshot,
@@ -37,9 +42,11 @@ const REMATCH_COOLDOWN_MS = 30 * 60 * 1000;
  *  nothing left to link to. */
 const RECENT_MATCH_WINDOW_MS = 24 * 60 * 60 * 1000;
 
-/** Upper bound on how many same-activity waiters one join attempt ranks.
- *  Ordered oldest-first, so the people owed a match are always considered. */
-const CANDIDATE_SCAN_LIMIT = 200;
+
+/** How many waiting people the browse list shows. Same reasoning as the scan
+ *  limit above: bounded work per read, and oldest-first so the people who
+ *  have waited longest are the ones on screen. */
+const SEARCHING_NOW_LIMIT = 50;
 
 export interface MatchCandidateDto {
   id: string;
@@ -96,6 +103,29 @@ export interface RecentMatchPayload {
 
 /** Everything the client needs to rebuild its UI after a reload or a socket
  *  reconnect, so a refresh mid-search does not strand the user. */
+/** One candidate as `explainRankingFor` reports it. */
+export interface RankedCandidateExplanation {
+  userId: string;
+  username: string;
+  score: number;
+  /** True when the pass history has this pairing on hold. */
+  skipped: boolean;
+  feedback: PairFeedback | null;
+  detail: MatchScore;
+  /** The one-line human form of `detail`. */
+  explanation: string;
+  joinedAt: number;
+}
+
+/** Why the ranker would choose what it chooses, for one searcher. */
+export interface RankingExplanation {
+  queued: boolean;
+  /** Every candidate considered, best score first, skipped ones included. */
+  candidates: RankedCandidateExplanation[];
+  /** The order they would actually be tried in, deterministically. */
+  order: Array<{ userId: string; score: number; threshold: number }>;
+}
+
 export interface MatchStateSnapshot {
   queued: {
     activity: string;
@@ -107,6 +137,25 @@ export interface MatchStateSnapshot {
   pendingMatch: MatchFoundPayload | null;
   recentMatch: RecentMatchPayload | null;
   stats: QueueStats | null;
+}
+
+/**
+ * One person currently waiting in the Instant Match queue, as the browse list
+ * shows them.
+ *
+ * Every field is a column of that person's own `MatchQueueEntry` — the same
+ * row matching itself reads — so the list can never describe someone
+ * differently from the way they will be matched. Nothing is derived, guessed
+ * or padded: `area` and `optionalDetail` stay null when they were not given,
+ * and the client simply omits the line.
+ */
+export interface SearchingNowEntry {
+  user: MatchCandidateDto;
+  activity: string;
+  timePreference: string;
+  optionalDetail: string | null;
+  area: string | null;
+  joinedAt: number;
 }
 
 const USER_CARD_SELECT = {
@@ -190,6 +239,9 @@ export interface InstantMatchEmitter {
   ): void;
   emitSearchResumed(userId: string): void;
   emitQueueStats(userId: string, stats: QueueStats): void;
+  /** The set of people waiting has changed. Carries nothing: it is a
+   *  "re-read the roster" ping, and the read it triggers is per-viewer. */
+  emitQueueChanged(): void;
   emitInstantMatchChatEnded(userId: string, state: InstantMatchChatState): void;
 }
 
@@ -354,52 +406,65 @@ export class InstantMatchService implements OnModuleInit {
     });
     if (!me) return;
 
-    const history = await this.getPriorMatchCounts(
-      userId,
-      candidates.map((c) => c.userId),
+    const now = Date.now();
+    const candidateIds = candidates.map((c) => c.userId);
+
+    // Everything the ranker needs about this user's relationship to each
+    // candidate, in four batched reads — never one per candidate. This is the
+    // only place that grows as signals are added, which is why it returns one
+    // object rather than letting each signal fetch its own data.
+    const relations = await this.collectRelations(userId, candidateIds);
+
+    const myContext = this.toScoringContext(
+      myEntry,
+      me,
+      relations.myCommunityIds,
     );
 
-    const myContext = this.toScoringContext(myEntry, me);
-
-    const now = Date.now();
-    const ranked = candidates
+    const scored = candidates
+      // A pairing this user has already passed on three times is not a
+      // ranking problem any more; stop offering it for a while. Bounded and
+      // separate from the score, so it can be reasoned about on its own.
+      .filter(
+        (candidate) =>
+          !isHardSkipped(relations.feedback.get(candidate.userId), now),
+      )
       .map((candidate) => {
-        const { score, breakdown } = computeCompatibility(
+        const detail = scorePair(
           myContext,
           this.toScoringContext(
             candidate,
             candidate.user,
-            history.get(candidate.userId) ?? 0,
+            relations.sharedCommunityIds.get(candidate.userId) ?? null,
           ),
-        );
-        // Whoever has waited longer sets the bar: a five-minute waiter should
-        // not be held back by a partner who joined ten seconds ago.
-        const waitedMs = Math.max(
-          now - myEntry.joinedAt.getTime(),
-          now - candidate.joinedAt.getTime(),
+          {
+            feedback: relations.feedback.get(candidate.userId) ?? null,
+            social: relations.social.get(candidate.userId) ?? null,
+            now,
+          },
         );
         return {
           candidate,
-          score,
-          breakdown,
-          threshold: relaxedThreshold(waitedMs),
+          detail,
+          score: detail.score,
+          joinedAt: candidate.joinedAt.getTime(),
         };
-      })
-      .filter((r) => r.score >= r.threshold)
-      // Best compatibility first; ties break toward whoever has been waiting
-      // longest, so the queue stays fair instead of favouring whatever order
-      // Postgres returned.
-      .sort(
-        (a, b) =>
-          b.score - a.score ||
-          a.candidate.joinedAt.getTime() - b.candidate.joinedAt.getTime(),
-      );
+      });
 
-    if (ranked.length === 0) return;
+    // Threshold, tie bands and exploration all live in `orderCandidates`; the
+    // service's job is only to try the order it is given, in order, falling
+    // through whenever a claim loses its race.
+    const ordered = orderCandidates(scored, {
+      searcherJoinedAt: myEntry.joinedAt.getTime(),
+      now,
+    });
+
+    if (ordered.length === 0) return;
 
     const timer = getAcceptTimerSecs(myEntry.activity, myEntry.timePreference);
 
-    for (const { candidate, score, breakdown } of ranked) {
+    for (const { item, picked } of ordered) {
+      const { candidate, detail, score } = item;
       const session = await this.claimPair(myEntry, candidate, timer);
       if (!session) continue; // lost the race for this candidate — try the next
 
@@ -425,9 +490,13 @@ export class InstantMatchService implements OnModuleInit {
         compatibility: score,
       });
 
+      // Every pairing prints why it happened: the per-signal values, their
+      // resolved weights, the coverage behind the number, and whether this
+      // candidate came from the leading band or from an exploration draw.
+      // "Why were those two put together?" is answerable from the log alone.
       this.logger.log(
         `match:created ${session.id} ${userId} <> ${candidate.userId} ` +
-          `score=${score} ${JSON.stringify(breakdown)}`,
+          `via=${picked} ${explainPair(detail)}`,
       );
 
       // Both are out of the queue now — refresh the depth for everyone left.
@@ -436,7 +505,262 @@ export class InstantMatchService implements OnModuleInit {
     }
   }
 
-  /** Shapes a queue entry plus its owner's profile into scorer input. */
+  /**
+   * The ranked candidate list for one user, with a full explanation of every
+   * score — the debugging counterpart to `tryMatch`.
+   *
+   * Deterministic: no exploration draw, no tie shuffling, so two runs on the
+   * same data give the same answer and a surprising pairing can be picked
+   * apart. Nothing calls this in the request path; it exists for tests, for a
+   * REPL, and for the next time someone asks why the queue chose who it chose.
+   */
+  async explainRankingFor(
+    userId: string,
+    now = Date.now(),
+  ): Promise<RankingExplanation> {
+    const empty: RankingExplanation = {
+      queued: false,
+      candidates: [],
+      order: [],
+    };
+
+    const myEntry = await this.prisma.matchQueueEntry.findUnique({
+      where: { userId },
+    });
+    if (!myEntry) return empty;
+
+    const excludedIds = await this.getExcludedUserIds(userId);
+    const candidates = await this.prisma.matchQueueEntry.findMany({
+      where: {
+        activity: myEntry.activity,
+        user: { verificationStatus: 'VERIFIED' },
+        userId: {
+          not: userId,
+          notIn: excludedIds.length ? excludedIds : undefined,
+        },
+        expiresAt: { gt: new Date() },
+      },
+      include: { user: { select: USER_CARD_SELECT } },
+      orderBy: { joinedAt: 'asc' },
+      take: CANDIDATE_SCAN_LIMIT,
+    });
+
+    const me = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: USER_CARD_SELECT,
+    });
+    if (!me) return { ...empty, queued: true };
+
+    const relations = await this.collectRelations(
+      userId,
+      candidates.map((c) => c.userId),
+    );
+    const myContext = this.toScoringContext(
+      myEntry,
+      me,
+      relations.myCommunityIds,
+    );
+
+    const rows = candidates.map((candidate) => {
+      const feedback = relations.feedback.get(candidate.userId) ?? null;
+      const detail = scorePair(
+        myContext,
+        this.toScoringContext(
+          candidate,
+          candidate.user,
+          relations.sharedCommunityIds.get(candidate.userId) ?? null,
+        ),
+        {
+          feedback,
+          social: relations.social.get(candidate.userId) ?? null,
+          now,
+        },
+      );
+      return {
+        userId: candidate.userId,
+        username: candidate.user.username,
+        score: detail.score,
+        skipped: isHardSkipped(feedback, now),
+        feedback,
+        detail,
+        explanation: explainPair(detail),
+        joinedAt: candidate.joinedAt.getTime(),
+      };
+    });
+
+    const ordered = orderCandidates(
+      rows.filter((r) => !r.skipped),
+      {
+        searcherJoinedAt: myEntry.joinedAt.getTime(),
+        now,
+        deterministic: true,
+      },
+    );
+
+    return {
+      queued: true,
+      candidates: rows.sort((x, y) => y.score - x.score),
+      order: ordered.map((o) => ({
+        userId: o.item.userId,
+        score: o.item.score,
+        threshold: Math.round(o.threshold * 10) / 10,
+      })),
+    };
+  }
+
+  /**
+   * Everything the ranker knows about this user's relationship to a set of
+   * candidates, in four batched queries.
+   *
+   * One query per *kind* of relationship, never one per candidate: the scan
+   * limit keeps every `in` list bounded, and adding a signal that needs data
+   * means adding a read here rather than a read inside the scoring loop. That
+   * distinction is the whole reason this function exists — the moment a signal
+   * fetches its own data, ranking 200 candidates becomes 200 round trips.
+   *
+   * Failures degrade rather than propagate: a ranking without follow edges is
+   * worse than one with them, but a matching request that fails because a
+   * social query timed out is worse than both.
+   */
+  private async collectRelations(
+    userId: string,
+    candidateIds: string[],
+  ): Promise<{
+    feedback: Map<string, PairFeedback>;
+    social: Map<string, PairSocial>;
+    sharedCommunityIds: Map<string, string[]>;
+    myCommunityIds: string[] | null;
+  }> {
+    const feedback = new Map<string, PairFeedback>();
+    const social = new Map<string, PairSocial>();
+    const sharedCommunityIds = new Map<string, string[]>();
+    let myCommunityIds: string[] | null = null;
+
+    if (candidateIds.length === 0) {
+      return { feedback, social, sharedCommunityIds, myCommunityIds };
+    }
+
+    const since = new Date(Date.now() - FEEDBACK.windowMs);
+
+    const [sessions, follows, myMemberships] = await Promise.all([
+      this.prisma.matchSession
+        .findMany({
+          where: {
+            createdAt: { gte: since },
+            OR: [
+              { userAId: userId, userBId: { in: candidateIds } },
+              { userBId: userId, userAId: { in: candidateIds } },
+            ],
+          },
+          select: {
+            userAId: true,
+            userBId: true,
+            status: true,
+            declinedById: true,
+            createdAt: true,
+          },
+        })
+        .catch((err) => {
+          this.logger.warn(
+            `match history unavailable for ${userId}: ${(err as Error)?.message}`,
+          );
+          return [] as Array<{
+            userAId: string;
+            userBId: string;
+            status: string;
+            declinedById: string | null;
+            createdAt: Date;
+          }>;
+        }),
+      this.prisma.follow
+        .findMany({
+          where: {
+            OR: [
+              { followerId: userId, followingId: { in: candidateIds } },
+              { followingId: userId, followerId: { in: candidateIds } },
+            ],
+          },
+          select: { followerId: true, followingId: true },
+        })
+        .catch(() => [] as Array<{ followerId: string; followingId: string }>),
+      this.prisma.communityMember
+        .findMany({ where: { userId }, select: { communityId: true } })
+        .catch(() => [] as Array<{ communityId: string }>),
+    ]);
+
+    for (const session of sessions) {
+      const other =
+        session.userAId === userId ? session.userBId : session.userAId;
+      const entry = feedback.get(other) ?? {
+        accepted: 0,
+        declinedByMe: 0,
+        declinedByThem: 0,
+        expired: 0,
+        lastPairedAt: null,
+      };
+
+      const at = session.createdAt.getTime();
+      entry.lastPairedAt = Math.max(entry.lastPairedAt ?? 0, at) || at;
+
+      if (session.status === 'ACCEPTED') entry.accepted += 1;
+      else if (session.status === 'EXPIRED') entry.expired += 1;
+      else if (session.status === 'DECLINED') {
+        // A decline from before the attribution column existed carries no
+        // side. Counting it as the viewer's would invent a pass they never
+        // made, so it is counted the way it reads: a pairing that did not
+        // happen, which is what `expired` already means.
+        if (session.declinedById === userId) entry.declinedByMe += 1;
+        else if (session.declinedById === other) entry.declinedByThem += 1;
+        else entry.expired += 1;
+      }
+
+      feedback.set(other, entry);
+    }
+
+    for (const edge of follows) {
+      const other =
+        edge.followerId === userId ? edge.followingId : edge.followerId;
+      const entry = social.get(other) ?? { following: false, followedBy: false };
+      if (edge.followerId === userId) entry.following = true;
+      else entry.followedBy = true;
+      social.set(other, entry);
+    }
+
+    myCommunityIds = myMemberships.map((m) => m.communityId);
+
+    if (myCommunityIds.length > 0) {
+      // Scoped to the viewer's own communities on purpose: the signal only
+      // needs the intersection, and fetching every candidate's full
+      // membership list would be thousands of rows to compute an overlap
+      // with at most a handful.
+      const shared = await this.prisma.communityMember
+        .findMany({
+          where: {
+            userId: { in: candidateIds },
+            communityId: { in: myCommunityIds },
+          },
+          select: { userId: true, communityId: true },
+        })
+        .catch(() => [] as Array<{ userId: string; communityId: string }>);
+
+      for (const row of shared) {
+        const list = sharedCommunityIds.get(row.userId) ?? [];
+        list.push(row.communityId);
+        sharedCommunityIds.set(row.userId, list);
+      }
+    }
+
+    return { feedback, social, sharedCommunityIds, myCommunityIds };
+  }
+
+  /**
+   * Shapes a queue entry plus its owner's profile into scorer input.
+   *
+   * `communityIds` is the *intersection* with the viewer's own memberships,
+   * not the candidate's full list — see `collectRelations` for why. An empty
+   * array therefore means "no shared community was found", which the signal
+   * treats as no evidence rather than as a mark against them.
+   */
   private toScoringContext(
     entry: {
       campus: string;
@@ -454,8 +778,8 @@ export class InstantMatchService implements OnModuleInit {
       branch: string | null;
       passingYear: number | null;
     },
-    priorConversations: number | null = null,
-  ) {
+    communityIds: string[] | null = null,
+  ): SideContext {
     return {
       campus: entry.campus,
       activity: entry.activity,
@@ -469,42 +793,8 @@ export class InstantMatchService implements OnModuleInit {
       branch: user.branch,
       passingYear: user.passingYear,
       joinedAt: entry.joinedAt.getTime(),
-      priorConversations,
+      communityIds,
     };
-  }
-
-  /**
-   * How many times this user has previously matched with each candidate.
-   * One batched query rather than one per candidate — the scan limit above
-   * keeps the `in` list small.
-   */
-  private async getPriorMatchCounts(
-    userId: string,
-    candidateIds: string[],
-  ): Promise<Map<string, number>> {
-    const counts = new Map<string, number>();
-    if (candidateIds.length === 0) return counts;
-
-    try {
-      const sessions = await this.prisma.matchSession.findMany({
-        where: {
-          status: 'ACCEPTED',
-          OR: [
-            { userAId: userId, userBId: { in: candidateIds } },
-            { userBId: userId, userAId: { in: candidateIds } },
-          ],
-        },
-        select: { userAId: true, userBId: true },
-      });
-      for (const s of sessions) {
-        const other = s.userAId === userId ? s.userBId : s.userAId;
-        counts.set(other, (counts.get(other) ?? 0) + 1);
-      }
-    } catch (err) {
-      // History is a 6-point nudge — never let it block a match.
-      this.logger.warn(`Could not read match history for ${userId}`);
-    }
-    return counts;
   }
 
   /**
@@ -610,9 +900,14 @@ export class InstantMatchService implements OnModuleInit {
     // Conditional update = the transition claim. Exactly one caller can move
     // a session out of PENDING, so a simultaneous decline from both sides
     // notifies each user once instead of twice.
+    //
+    // The claim is also where the pass is attributed. It has to be written by
+    // the winner of that race and nowhere else: a second write would record
+    // whichever side happened to arrive last, and the ranker would then
+    // penalise the wrong person for a decision they did not make.
     const claimed = await this.prisma.matchSession.updateMany({
       where: { id: session.id, status: 'PENDING' },
-      data: { status: 'DECLINED' },
+      data: { status: 'DECLINED', declinedById: userId },
     });
     if (claimed.count !== 1) return;
 
@@ -948,6 +1243,52 @@ export class InstantMatchService implements OnModuleInit {
     return this.summarise(entries, activity);
   }
 
+  /**
+   * Everyone waiting in the Instant Match queue right now, for one viewer.
+   *
+   * Read straight from `MatchQueueEntry`, which is the queue: a row exists
+   * only while that person is searching, `joinQueue` upserts it (so changing
+   * your activity, time or area rewrites the row rather than adding one), and
+   * `claimPair`, `cancelQueue` and the expiry sweep all delete it. There is
+   * therefore no separate "who is searching" state to keep in step — this
+   * cannot show someone who has stopped.
+   *
+   * Scoped per viewer, and by the same rule matching uses: the people you are
+   * shown are the people you could actually be paired with. Blocks (both
+   * directions) and the recent decline/timeout cooldown come from
+   * `getExcludedUserIds`, so there is one definition of who is off-limits
+   * rather than two that can disagree.
+   *
+   * Ordered oldest-first, the queue's own fairness order, and bounded — a
+   * list nobody can scroll to the end of is not worth the query.
+   */
+  async getSearchingNow(userId: string): Promise<SearchingNowEntry[]> {
+    const excludedIds = await this.getExcludedUserIds(userId);
+
+    const entries = await this.prisma.matchQueueEntry.findMany({
+      where: {
+        expiresAt: { gt: new Date() },
+        user: { verificationStatus: 'VERIFIED' },
+        userId: {
+          not: userId,
+          notIn: excludedIds.length ? excludedIds : undefined,
+        },
+      },
+      include: { user: { select: USER_CARD_SELECT } },
+      orderBy: { joinedAt: 'asc' },
+      take: SEARCHING_NOW_LIMIT,
+    });
+
+    return entries.map((entry) => ({
+      user: this.toCandidateDto(entry.user),
+      activity: entry.activity,
+      timePreference: entry.timePreference,
+      optionalDetail: entry.optionalDetail,
+      area: entry.area,
+      joinedAt: entry.joinedAt.getTime(),
+    }));
+  }
+
   /** Shared by the single-reader and the broadcast path so both can never
    *  disagree about what the same queue contains. */
   private summarise(
@@ -1003,6 +1344,12 @@ export class InstantMatchService implements OnModuleInit {
           sameActivity: byActivity.get(activity) ?? 0,
         });
       }
+
+      // The same five moments that move the counts — a join, a cancel, a
+      // match, an expiry, a re-queue — are exactly the moments the roster
+      // changes, so the browse list is told here rather than through a
+      // parallel set of call sites that could fall out of step with these.
+      realtimeGatewayRef.emitQueueChanged();
     } catch (err) {
       // Stats are cosmetic — never let them break a join or a match.
       this.logger.warn(

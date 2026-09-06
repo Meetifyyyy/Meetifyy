@@ -64,6 +64,7 @@ describe('Instant Match chat lifecycle', () => {
       emitSearchResumed: jest.fn(),
       emitQueueStats: jest.fn(),
       emitInstantMatchChatEnded: jest.fn(),
+      emitQueueChanged: jest.fn(),
     };
     setRealtimeGatewayRef(emitter);
     service = new InstantMatchService(

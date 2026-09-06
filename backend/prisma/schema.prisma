@@ -878,6 +878,14 @@ model MatchSession {
   /// Who walked away, and when. Null while the chat is live.
   endedById      String?
   endedAt        DateTime?
+  /// Who passed, on a DECLINED session. Null on every other status.
+  ///
+  /// Without this a pass was anonymous, so the ranker could only treat a
+  /// declined pairing as mutually bad and hard-exclude both sides for half an
+  /// hour. Attribution is what lets a pass mean "this person, for the person
+  /// who passed" — a graded, decaying penalty on one side rather than a blunt
+  /// symmetric block on both.
+  declinedById   String?
   /// The shared interest the pair was matched on, kept on the session so the
   /// chat header can explain itself without re-deriving it from the queue
   /// snapshots (which are cleared once the match is made).

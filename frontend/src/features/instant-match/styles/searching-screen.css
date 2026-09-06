@@ -247,48 +247,12 @@
   font-weight: 750;
 }
 
-/* ── Metrics ─────────────────────────────────────────────────────────────── */
+/* ── Elapsed ─────────────────────────────────────────────────────────────── */
 
-.im-metrics {
-  width: 100%;
-  padding: 14px 16px;
-  border: var(--im-border);
-  border-radius: var(--im-radius);
-  background: var(--im-accent-wash);
-  box-shadow: var(--im-shadow-sm);
-  text-align: left;
-}
-
-/*
- * The label is centred against the figure, not sat on its baseline.
- *
- * `align-items: baseline` put the 13.6px caption's baseline on the 36.8px
- * number's, which dropped its centre 8.2px below the number's — so the count
- * read as floating above its own label. Centring aligns the two optically,
- * which is what the pair is: one figure and the phrase describing it.
- */
-.im-metrics-row { display: flex; align-items: center; gap: 10px; }
-
-.im-metrics-figure {
-  font-family: var(--im-display);
-  font-size: 2.3rem;
-  line-height: 0.9;
-  color: var(--im-accent);
-}
-
-.im-metrics-caption {
-  font-size: 0.85rem;
-  font-weight: 700;
-  line-height: 1.3;
-  color: var(--im-ink);
-}
-
-.im-metrics-rule { margin: 11px 0 9px; opacity: 0.35; }
-
-.im-metrics-note { margin: 0; font-size: 0.8rem; color: var(--im-ink-soft); line-height: 1.45; }
-
-.im-metrics-elapsed {
-  margin: 7px 0 0;
+/* On its own since the queue-count panel was removed: a quiet readout under
+   the copy, not a figure in a box. */
+.im-searching-elapsed {
+  margin: 0;
   font-family: var(--im-display);
   font-size: 0.82rem;
   letter-spacing: 0.06em;

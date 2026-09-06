@@ -170,6 +170,7 @@ export class PrismaFake {
       chatExpiresAt: null,
       endedById: null,
       endedAt: null,
+      declinedById: null,
       matchReason: null,
       snapshotA: null,
       snapshotB: null,
@@ -256,6 +257,7 @@ export class PrismaFake {
           chatExpiresAt: null,
           endedById: null,
           endedAt: null,
+          declinedById: null,
           matchReason: null,
           ...data,
         };
@@ -274,6 +276,41 @@ export class PrismaFake {
         );
         rows.forEach((r) => Object.assign(r, data));
         return { count: rows.length };
+      },
+    };
+  }
+
+  /** Follow edges and community memberships: the ranker's social signals.
+   *  Both are read once per matching attempt, batched over every candidate. */
+  follows: Row[] = [];
+  communityMembers: Row[] = [];
+
+  addFollow(followerId: string, followingId: string) {
+    this.follows.push({ followerId, followingId, createdAt: new Date() });
+  }
+
+  addCommunityMember(userId: string, communityId: string) {
+    this.communityMembers.push({ userId, communityId });
+  }
+
+  get follow() {
+    const self = this;
+    return {
+      async findMany({ where, select }: any) {
+        return self.follows
+          .filter((f) => matchesWhere(f, where))
+          .map((f) => project(f, select));
+      },
+    };
+  }
+
+  get communityMember() {
+    const self = this;
+    return {
+      async findMany({ where, select }: any) {
+        return self.communityMembers
+          .filter((m) => matchesWhere(m, where))
+          .map((m) => project(m, select));
       },
     };
   }

@@ -1,7 +1,6 @@
 import { memo, useState, useEffect } from 'react';
 import { useInstantMatch } from '../../context/InstantMatchContext';
 import { getActivityLabel, getTimePreference } from '../../constants/matchConstants';
-import QueueMetrics from './QueueMetrics';
 import SearchRadar from './SearchRadar';
 import '../../styles/searching-screen.css';
 
@@ -29,7 +28,9 @@ const LONG_WAIT_MS = 120_000;
  * the animation is handed to the browser once and never touched again.
  */
 
-/** The mm:ss readout. Owns its own clock; nothing else re-renders with it. */
+/** The mm:ss readout. Owns its own clock; nothing else re-renders with it —
+ *  which is why it is a component of its own rather than state on the screen
+ *  that would drag the radar into a re-render once a second. */
 const ElapsedReadout = memo(function ElapsedReadout() {
   const [elapsed, setElapsed] = useState(0);
 
@@ -46,7 +47,7 @@ const ElapsedReadout = memo(function ElapsedReadout() {
   if (elapsed < 10) return null;
 
   return (
-    <p className="im-metrics-elapsed">
+    <p className="im-searching-elapsed">
       <span className="im-sr-only">Time spent searching: </span>
       {Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, '0')}
     </p>
@@ -128,9 +129,7 @@ export default function SearchingScreen() {
         )}
       </div>
 
-      <QueueMetrics>
-        <ElapsedReadout />
-      </QueueMetrics>
+      <ElapsedReadout />
 
       <LongWaitNotice />
       {/*

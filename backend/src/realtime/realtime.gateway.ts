@@ -1667,6 +1667,35 @@ export class RealtimeGateway
   }
 
   /**
+   * Who is searching right now — the first thing Instant Match shows.
+   *
+   * A read, like `queue:sync`, and answered the same way: the server builds
+   * it per viewer (its own blocks and cooldowns apply) from the live queue
+   * rows, so two people opening Instant Match at the same moment see the same
+   * queue described honestly, minus whoever each of them cannot be paired
+   * with. Clients re-read it when `queue:changed` says the queue moved.
+   */
+  @SubscribeMessage('queue:list')
+  @VerifiedOnly()
+  async handleQueueList(@ConnectedSocket() client: Socket) {
+    const userId = (client as any).userId;
+    if (!userId)
+      return { status: 'error', error: 'Unauthenticated', code: 401 };
+
+    const limited = await this.limitEvent(userId, [
+      { policy: 'im.queuelist.user', identifier: userId },
+    ]);
+    if (limited) return limited;
+
+    try {
+      const people = await this.instantMatchService.getSearchingNow(userId);
+      return { status: 'ok', people };
+    } catch (err) {
+      return this.instantMatchAck(err, 'Could not load who is searching');
+    }
+  }
+
+  /**
    * The authoritative state of this user's Instant Match chat.
    *
    * Every Instant Match screen calls this on mount, on reconnect, and on tab
@@ -1764,6 +1793,20 @@ export class RealtimeGateway
 
   emitQueueStats(userId: string, stats: QueueStats) {
     this.server?.to(userId).emit('queue:stats', stats);
+  }
+
+  /**
+   * Somebody joined, left, matched or expired out of the queue.
+   *
+   * Broadcast rather than aimed at a room, because the people who care are
+   * whoever currently has the browse list on screen and the server has no way
+   * to know who that is. It is deliberately payload-free: the roster is
+   * viewer-scoped (blocks, cooldowns), so the only correct thing to push
+   * everyone is the fact that it moved — each client re-reads its own.
+   * Clients with the list closed have no listener registered and drop it.
+   */
+  emitQueueChanged() {
+    this.server?.emit('queue:changed', {});
   }
 
   /**
