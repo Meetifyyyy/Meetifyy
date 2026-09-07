@@ -515,6 +515,18 @@ export class UsersService {
   async getProfileByUsername(username: string, currentUserId?: string) {
     const cleanUsername = username.trim().toLowerCase();
 
+    // Resolved up front so the follower/following counts below can be built
+    // from exactly what `getFollowers`/`getFollowing` will return. Both are
+    // cheap and cached; keeping them here leaves the profile a single query.
+    const [blockedIds, viewerBatchYear] = await Promise.all([
+      currentUserId
+        ? this.blocksService.getExcludedUserIds(currentUserId)
+        : Promise.resolve([] as string[]),
+      this.viewerBatchYear(currentUserId),
+    ]);
+    const socialGraphVisibleWhere =
+      this.studentYearPolicy.visibleUserWhere(viewerBatchYear);
+
     // 1. Find user by exact username (case-insensitive), or ID, or email prefix, or handle prefix, or displayName
     const targetUser = await this.prisma.user.findFirst({
       where: {
@@ -536,14 +548,46 @@ export class UsersService {
         },
         _count: {
           select: {
+            /**
+             * Counted through the SAME visibility rules `getFollowers` and
+             * `getFollowing` apply, not just "is this account alive".
+             *
+             * They used to differ, and the difference was visible: a profile
+             * read "1 Following" above a list that said "No following yet",
+             * because the count included an account the viewer is not allowed
+             * to see and the list — correctly — did not. Blocks cause it
+             * immediately; first-year isolation causes it on 1 January, when a
+             * cohort rolls over and accounts a senior already followed become
+             * invisible to them.
+             *
+             * The consequence is that these numbers are viewer-relative: two
+             * people can see different follower counts on the same profile.
+             * That is the honest reading of a per-viewer visibility rule — the
+             * alternative is a number that describes rows the viewer is being
+             * refused, which is what produced the contradiction.
+             */
             followers: {
               where: {
-                follower: { deletedAt: null, accountStatus: 'ACTIVE' },
+                follower: {
+                  deletedAt: null,
+                  accountStatus: 'ACTIVE',
+                  ...socialGraphVisibleWhere,
+                  ...(blockedIds.length > 0
+                    ? { id: { notIn: blockedIds } }
+                    : {}),
+                },
               },
             },
             following: {
               where: {
-                following: { deletedAt: null, accountStatus: 'ACTIVE' },
+                following: {
+                  deletedAt: null,
+                  accountStatus: 'ACTIVE',
+                  ...socialGraphVisibleWhere,
+                  ...(blockedIds.length > 0
+                    ? { id: { notIn: blockedIds } }
+                    : {}),
+                },
               },
             },
             posts: {
@@ -989,16 +1033,24 @@ export class UsersService {
     // nicety -- it is a visibility boundary. A first-year student must not
     // appear in a senior's follower list at all, and vice versa, whether that
     // list is being read to pick an invitee or simply to browse a profile's
-    // social graph. The counts beside it are computed from the same Follow
-    // rows and are unaffected, so this can under-report a total; that is the
-    // intended trade, and it is the same one the block filter above already
-    // makes.
+    // social graph.
+    //
+    // The counts beside this list are built from the same rules -- see the
+    // `_count` in getProfileByUsername. They were not, and the mismatch was
+    // visible: a profile read "1 Following" above a list that said "No
+    // following yet". Any filter added here has to be added there too, or the
+    // contradiction comes back.
     //
     // In SQL, before LIMIT/OFFSET, for the reason the two filters above are.
     const followersViewerBatch = await this.viewerBatchYear(currentUserId);
     const followerPolicyFilter = Prisma.raw(
       `AND ${this.studentYearPolicy.visibleUserSqlPredicate('u', followersViewerBatch)}`,
     );
+
+    // A deleted or suspended account is not part of anyone's social graph. The
+    // counts beside this list have always excluded them; this list did not, so
+    // the two disagreed in the opposite direction to the policy filter above.
+    const activeOnlyFilter = Prisma.sql`AND u."deletedAt" IS NULL AND u."accountStatus"::text = 'ACTIVE'`;
 
     const rows: any[] = await this.prisma.$queryRaw`
       SELECT 
@@ -1020,6 +1072,7 @@ export class UsersService {
       ${followerBlockFilter}
       ${eligibilityFilter}
       ${followerPolicyFilter}
+      ${activeOnlyFilter}
       ORDER BY f."createdAt" DESC
       LIMIT ${limit} OFFSET ${offset};
     `;
@@ -1093,6 +1146,10 @@ export class UsersService {
       `AND ${this.studentYearPolicy.visibleUserSqlPredicate('u', followingViewerBatch)}`,
     );
 
+    // Same as getFollowers: gone or suspended accounts leave the social graph,
+    // and the counts beside this list already treated them that way.
+    const followingActiveOnlyFilter = Prisma.sql`AND u."deletedAt" IS NULL AND u."accountStatus"::text = 'ACTIVE'`;
+
     const rows: any[] = await this.prisma.$queryRaw`
       SELECT 
         u."id",
@@ -1113,6 +1170,7 @@ export class UsersService {
       ${followingBlockFilter}
       ${eligibilityFilter}
       ${followingPolicyFilter}
+      ${followingActiveOnlyFilter}
       ORDER BY f."createdAt" DESC
       LIMIT ${limit} OFFSET ${offset};
     `;
