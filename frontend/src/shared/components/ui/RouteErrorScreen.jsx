@@ -1,4 +1,4 @@
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import styles from './RouteErrorScreen.module.css';
 
@@ -26,22 +26,19 @@ function AlertCircleIcon() {
  * RouteErrorScreen — rendered by RouteErrorBoundary when an error occurs
  * within a single route.
  *
- * For onboarding (or fullScreen=true), it covers the whole screen on both
- * large screens and mobile devices and applies the identical onboarding ambient
- * theme (white background, ambient blobs, Changa One headline, brand-purple CTA).
+ * It sits inside the main content column so the application shell (header,
+ * sidebar) stays fully intact.
  *
- * For regular dashboard routes, it sits inside the main content column so the
- * application shell (header, sidebar) stays fully intact.
+ * There used to be a second, full-viewport variant. Onboarding was the only
+ * route that asked for it — it was the only caller passing `fullScreen`, and
+ * the only path the component special-cased — so it went with that route.
  *
  * Props:
  *  onRetry — resets the boundary state so React retries the render
- *  fullScreen — whether to cover the entire viewport
  */
-export default function RouteErrorScreen({ onRetry, fullScreen = false }) {
+export default function RouteErrorScreen({ onRetry }) {
   const navigate = useNavigate();
-  const location = useLocation();
   const queryClient = useQueryClient();
-  const isOnboarding = fullScreen || location?.pathname === '/onboarding';
 
   const handleRetry = () => {
     try {
@@ -62,39 +59,6 @@ export default function RouteErrorScreen({ onRetry, fullScreen = false }) {
       window.location.reload();
     }
   };
-
-  if (isOnboarding) {
-    return (
-      <div className={styles.onboardingFullScreenWrapper} role="alert">
-        <div className={styles.ambient} aria-hidden="true">
-          <span className={`${styles.blob} ${styles.blobA}`} />
-          <span className={`${styles.blob} ${styles.blobB}`} />
-        </div>
-
-        <div className={styles.onboardingContainer}>
-          <div className={styles.onboardingIconWrapper}>
-            <AlertCircleIcon />
-          </div>
-
-          <h1 className={styles.onboardingTitle}>Something went wrong</h1>
-
-          <p className={styles.onboardingMessage}>
-            We encountered an error loading your onboarding. Please try again.
-          </p>
-
-          <div className={styles.onboardingActions}>
-            <button
-              type="button"
-              onClick={handleRetry}
-              className={styles.onboardingPrimaryBtn}
-            >
-              Try Again
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className={styles.fullPageWrapper} role="alert">

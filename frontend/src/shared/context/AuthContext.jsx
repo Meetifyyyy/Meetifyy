@@ -156,7 +156,6 @@ export function AuthProvider({ children }) {
               avatarUrl: newAvatar,
               settings: syncedUser.settings || prev?.settings || prev?.preferences,
               preferences: syncedUser.settings || prev?.preferences || prev?.settings,
-              isNewUser: syncedUser.profileCompleted !== true
             };
             try { localStorage.setItem('currentUser', JSON.stringify(mergedUser)); } catch (_) {}
             return mergedUser;
@@ -345,19 +344,17 @@ export function AuthProvider({ children }) {
         if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') {
           const sbUser = supabaseSession?.user;
           if (sbUser) {
-            const isNew = sbUser.user_metadata?.profileCompleted !== true;
             const optProfile = {
               id: sbUser.id,
               email: sbUser.email || '',
               username: sbUser.user_metadata?.username || '',
               displayName: sbUser.user_metadata?.displayName || sbUser.email?.split('@')[0] || '',
-              role: isNew ? 'New User' : 'Student',
-              isNewUser: isNew,
+              role: 'Student',
             };
             setCurrentUser(prev => {
               const isFallbackHandle = (str) => !str || typeof str !== 'string' || str.startsWith('user_');
               if (prev && prev.id === sbUser.id && !isFallbackHandle(prev.username) && !isFallbackHandle(prev.displayName)) {
-                return { ...prev, isNewUser: prev.isNewUser ?? isNew };
+                return prev;
               }
               const validOptUsername = sbUser.user_metadata?.username || (!isFallbackHandle(prev?.username) ? prev.username : '');
               const validOptDisplayName = sbUser.user_metadata?.displayName || (!isFallbackHandle(prev?.displayName) ? prev.displayName : (sbUser.email?.split('@')[0] || ''));
@@ -569,8 +566,7 @@ export function AuthProvider({ children }) {
         email: user.email,
         username: username,
         displayName: displayName,
-        role: 'New User',
-        isNewUser: true,
+        role: 'Student',
       };
       
       localStorage.setItem('currentUser', JSON.stringify(profile));
@@ -591,7 +587,7 @@ export function AuthProvider({ children }) {
         });
         const syncedUser = response?.user || response;
         if (syncedUser) {
-          profile = { ...profile, ...syncedUser, isNewUser: true, profileCompleted: false };
+          profile = { ...profile, ...syncedUser };
           localStorage.setItem('currentUser', JSON.stringify(profile));
           setCurrentUser(profile);
         }
@@ -603,15 +599,24 @@ export function AuthProvider({ children }) {
     return true;
   }, []);
 
-  const completeOnboarding = useCallback(async (updatedData) => {
+  /**
+   * Finishes account setup: marks the profile complete and sends the welcome
+   * email.
+   *
+   * Called from the last signup step. It used to be called from the onboarding
+   * screen, which was the only thing that ever set `profileCompleted` or
+   * triggered the welcome email — so with that screen gone this moved to the
+   * end of signup rather than being deleted with it, or new accounts would stay
+   * flagged incomplete forever and nobody would be welcomed.
+   */
+  const completeSignup = useCallback(async (updatedData = {}) => {
     try {
       const { password, ...safeData } = updatedData;
       const response = await usersApi.updateProfile({ ...safeData, profileCompleted: true });
       const syncedUser = response?.user || response;
 
-      // Mirror the flag into Supabase user_metadata, but don't block navigation on
-      // it — Prisma's profileCompleted (set above) is the source of truth, and the
-      // local currentUser is updated to isNewUser:false immediately below.
+      // Mirror the flag into Supabase user_metadata, but don't block navigation
+      // on it — Prisma's profileCompleted (set above) is the source of truth.
       if (isSupabaseConfigured) {
         supabase.auth.updateUser({
           data: { profileCompleted: true }
@@ -620,7 +625,7 @@ export function AuthProvider({ children }) {
 
       if (syncedUser) {
         setCurrentUser(prev => {
-          const updated = { ...prev, ...syncedUser, profileCompleted: true, isNewUser: false };
+          const updated = { ...prev, ...syncedUser, profileCompleted: true };
           delete updated.password;
           localStorage.setItem('currentUser', JSON.stringify(updated));
           
@@ -924,7 +929,7 @@ export function AuthProvider({ children }) {
     initiateSignup,
     resendSignupOtp,
     verifySignupOtp,
-    completeOnboarding,
+    completeSignup,
     updateProfile,
     updateSettings,
     updateCurrentUser,
@@ -934,7 +939,7 @@ export function AuthProvider({ children }) {
   }), [
     isLoggedIn, session, loading, currentUser, username, displayName, initial,
     collegeName, login, initiateSignup, resendSignupOtp, verifySignupOtp,
-    completeOnboarding, updateProfile, updateSettings, updateCurrentUser,
+    completeSignup, updateProfile, updateSettings, updateCurrentUser,
     changePassword, logout,
   ]);
 
@@ -964,7 +969,7 @@ const NO_AUTH = Object.freeze({
   initiateSignup: async () => {},
   resendSignupOtp: async () => {},
   verifySignupOtp: async () => {},
-  completeOnboarding: async () => {},
+  completeSignup: async () => {},
   updateProfile: async () => {},
   updateSettings: async () => {},
   updateCurrentUser: () => {},

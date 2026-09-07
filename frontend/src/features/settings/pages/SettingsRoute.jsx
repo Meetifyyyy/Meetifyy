@@ -15,7 +15,7 @@ import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 import { useScrollLock } from '@shared/hooks/useScrollLock';
 import { useSmartNavigation } from '@shared/hooks/useSmartNavigation';
 import { validateDOB } from '@shared/utils/dateValidation';
-import { INTERESTS_BY_CATEGORY } from '@features/onboarding/constants/interestsData';
+import { INTERESTS_BY_CATEGORY } from '@shared/constants/interestsData';
 import AcademicSelection from '@shared/academics/AcademicSelection';
 import { useAcademicCatalog } from '@shared/academics/useAcademicCatalog';
 import { validateAcademicSelection } from '@shared/academics/academicCatalog';

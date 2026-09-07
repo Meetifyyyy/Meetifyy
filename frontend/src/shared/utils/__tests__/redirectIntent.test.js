@@ -33,7 +33,7 @@ describe('redirectIntent', () => {
   });
 
   it('refuses auth screens, which would bounce the user straight back out', () => {
-    ['/', '/login', '/signup', '/onboarding'].forEach((path) => {
+    ['/', '/login', '/signup', '/forgot-password', '/reset-password'].forEach((path) => {
       setRedirectIntent(path);
       expect(consumeRedirectIntent()).toBe(null);
     });

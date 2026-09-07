@@ -2,7 +2,7 @@ const KEY = 'postAuthRedirect';
 
 // Auth screens are never a destination worth returning to — bouncing back into
 // one after signing in would loop the user straight out of the app again.
-const NON_DESTINATIONS = ['/', '/login', '/signup', '/forgot-password', '/reset-password', '/onboarding'];
+const NON_DESTINATIONS = ['/', '/login', '/signup', '/forgot-password', '/reset-password'];
 
 /**
  * Only same-origin, absolute in-app paths are accepted. A value starting with

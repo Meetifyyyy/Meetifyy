@@ -33,6 +33,29 @@ const STEP_KEY = 'meetifyy_signup_step';
 const TIMESTAMP_KEY = 'meetifyy_signup_time';
 const MAX_SESSION_AGE_MS = 30 * 60 * 1000; // 30 minutes TTL
 
+/**
+ * Whether a signup is part-way through in this tab.
+ *
+ * The last step runs AFTER the OTP has been verified, so the user is already
+ * authenticated while still inside the flow. `PublicRoute` would otherwise send
+ * them to /home the moment they signed in and strand the signup at step 5, so
+ * it asks this before redirecting.
+ *
+ * Keyed on the step marker the flow itself writes and `clearSignupData` removes,
+ * so "in progress" is the flow's own state rather than a flag maintained
+ * somewhere else that can disagree with it.
+ */
+export function isSignupInProgress() {
+  try {
+    return sessionStorage.getItem(STEP_KEY) !== null;
+  } catch {
+    // Storage blocked. Treating it as "not in progress" only means a signed-in
+    // visitor to /signup is sent home, which is the behaviour for everyone who
+    // is not mid-flow anyway.
+    return false;
+  }
+}
+
 export const SignupProvider = ({ children }) => {
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();

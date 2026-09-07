@@ -12,7 +12,7 @@ const AuthShellContext = createContext(null);
 let globalLastPanelHeight = null;
 
 /**
- * The shared canvas for every auth/onboarding screen: a full-bleed brand
+ * The shared canvas for every auth screen: a full-bleed brand
  * gradient with a decorative story column drifting on the left and a
  * floating form panel offset to the right, slightly overlapping it — an
  * asymmetric composition instead of a hard two-panel split. The panel is

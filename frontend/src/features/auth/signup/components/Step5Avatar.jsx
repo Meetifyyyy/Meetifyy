@@ -19,7 +19,7 @@ import { AuthHeading, AuthButton, styles as s } from '../../shared/ui';
 
 export default function Step5Avatar() {
   const { signupData, updateData, clearSignupData } = useSignup();
-  const { updateProfile } = useAuth();
+  const { completeSignup } = useAuth();
   const navigate = useNavigate();
 
   const [avatar, setAvatar] = useState(signupData.avatar || '');
@@ -67,9 +67,18 @@ export default function Step5Avatar() {
 
   const handleFinish = async () => {
     const chosenAvatar = getProcessedAvatarUrl(avatar) || '';
-    updateProfile({ avatar: chosenAvatar }).catch((err) => console.error('Avatar update error:', err));
+    // This is the end of signup, so it is what marks the profile complete and
+    // sends the welcome email. Both used to happen on the onboarding screen
+    // that followed this step; the step now finishes the account itself.
+    //
+    // Deliberately not awaited, exactly as the avatar save was not: the account
+    // already exists and is usable, and holding the last screen of signup open
+    // on a network round-trip is worse than letting it settle in the background.
+    completeSignup({ avatar: chosenAvatar }).catch((err) =>
+      console.error('Failed to finish signup:', err),
+    );
     clearSignupData();
-    navigate('/onboarding', { replace: true });
+    navigate('/home', { replace: true });
   };
 
   return (

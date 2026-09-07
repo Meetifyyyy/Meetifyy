@@ -161,7 +161,7 @@ export default function SocketManager() {
             messagesApi.markAsRead(convIdToRead).catch(() => {});
           }
         }
-      } else if (!isMuted && window.location.pathname !== '/onboarding') {
+      } else if (!isMuted) {
         const isGroupMessage = Boolean(notification.metadata?.isGroup || notification.metadata?.conversationType === 'GROUP');
         const notifTypeRaw = (notification.type || '').toLowerCase();
         // Strictly only "someone joined your activity" — exclude invites
@@ -1018,7 +1018,7 @@ export default function SocketManager() {
           ? !message.alert
           : Boolean(targetConv?.muted || targetConv?.isMuted);
 
-        if (!isMuted && window.location.pathname !== '/onboarding') {
+        if (!isMuted) {
           const actorName = message.senderName || message.sender?.displayName || message.sender?.username || 'Someone';
           const actorAvatar = message.senderAvatar || message.sender?.avatar || '';
           const isGroupMessage = Boolean(message.isGroup || targetConv?.isGroup);

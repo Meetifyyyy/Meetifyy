@@ -1349,7 +1349,7 @@ export class UsersService {
       updateData.course = academic.course;
       updateData.branch = academic.branch;
       updateData.passingYear = academic.passingYear;
-      // Debug-level: useful while a user is completing onboarding, silent in prod.
+      // Debug-level: useful while a user is filling in their details, silent in prod.
       this.logger.debug(
         `[ACADEMIC] accepted for user=${userId} course=${academic.course} branch=${academic.branch} year=${academic.passingYear}`,
       );

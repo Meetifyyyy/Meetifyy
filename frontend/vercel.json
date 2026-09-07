@@ -99,7 +99,7 @@
       "permanent": false
     },
     {
-      "source": "/((?!api/|_api/|assets/|fonts/|icons/|splash/|og/|(?:about|auth|campus|communities|community-guidelines|contact|cookie-policy|crew|dev|forgot-password|help|help-and-support|home|inbox|login|logo-animation|messages|notifications|onboarding|post|privacy-policy|profile|reset-password|saved|search|settings|signup|support|terms|terms-and-conditions|verify-email)(?:/|$)|.*\\.[a-zA-Z0-9]+$).+)",
+      "source": "/((?!api/|_api/|assets/|fonts/|icons/|splash/|og/|(?:about|auth|campus|communities|community-guidelines|contact|cookie-policy|crew|dev|forgot-password|help|help-and-support|home|inbox|login|logo-animation|messages|notifications|post|privacy-policy|profile|reset-password|saved|search|settings|signup|support|terms|terms-and-conditions|verify-email)(?:/|$)|.*\\.[a-zA-Z0-9]+$).+)",
       "destination": "/",
       "permanent": false
     }
@@ -193,10 +193,6 @@
     },
     {
       "source": "/saved",
-      "destination": "/app.html"
-    },
-    {
-      "source": "/onboarding",
       "destination": "/app.html"
     },
     {

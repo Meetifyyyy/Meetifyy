@@ -299,7 +299,6 @@ export const APP_ROUTE_PATTERNS = [
   '/search',
   '/notifications',
   '/saved',
-  '/onboarding',
   '/settings',
   '/settings/:panel',
   '/communities',

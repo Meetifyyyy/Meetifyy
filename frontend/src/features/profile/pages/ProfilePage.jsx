@@ -35,7 +35,7 @@ import ReportModal from '@shared/components/modals/ReportModal/ReportModal';
 import { getCollegeName } from '@shared/utils/user';
 
 import RightPanel from '@layout/RightPanel';
-import { INTERESTS_BY_CATEGORY } from '@features/onboarding/constants/interestsData';
+import { INTERESTS_BY_CATEGORY } from '@shared/constants/interestsData';
 import { useAcademicSummary } from '@shared/academics/useAcademicSummary';
 
 function balanceTagsIntoTwoRows(tags) {

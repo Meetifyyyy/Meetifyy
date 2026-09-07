@@ -7,7 +7,7 @@ import { CollegeRepresentativeBadge } from '@shared/components/badges/CollegeRep
 import FollowButton from '@shared/components/ui/FollowButton';
 import Skeleton from '@shared/components/skeletons/Skeleton';
 import { getCollegeName } from '@shared/utils/user';
-import { INTERESTS_BY_CATEGORY } from '@features/onboarding/constants/interestsData';
+import { INTERESTS_BY_CATEGORY } from '@shared/constants/interestsData';
 import { useOpenDirectMessage } from '@shared/hooks/useOpenDirectMessage';
 import MessagingRestrictedModal from '@shared/components/modals/MessagingRestrictedModal';
 import { isMessagingRestricted } from '@shared/lib/studentYearPolicy';

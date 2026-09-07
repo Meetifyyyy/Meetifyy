@@ -11,7 +11,8 @@ import PageMetadata from './shared/seo/PageMetadata';
 import SocketManager from './shared/components/SocketManager';
 import OverlayHistoryBridge from './shared/components/OverlayHistoryBridge';
 import LegacyPathRedirect from './shared/components/LegacyPathRedirect';
-import { setRedirectIntent, consumeRedirectIntent, clearRedirectIntent } from './shared/utils/redirectIntent';
+import { setRedirectIntent, consumeRedirectIntent } from './shared/utils/redirectIntent';
+import { isSignupInProgress } from './features/auth/context/SignupContext';
 import CookieBanner, { CookiePreferencesModal } from './shared/components/CookieBanner/CookieBanner';
 // DEV PREVIEW — remove before shipping
 import CriticalErrorScreen from './shared/components/ui/CriticalErrorScreen';
@@ -86,7 +87,6 @@ const LoginPage = lazyRoute(() => import('./features/auth/pages/LoginPage'));
 const SignupPage = lazyRoute(() => import('./features/auth/pages/SignupPage'));
 const ForgotPasswordPage = lazyRoute(() => import('./features/auth/pages/ForgotPasswordPage'));
 const ResetPasswordPage = lazyRoute(() => import('./features/auth/pages/ResetPasswordPage'));
-const OnboardingRoute = lazyRoute(() => import('./features/onboarding/pages/OnboardingRoute'));
 const SettingsRoute = lazyRoute(() => import('./features/settings/pages/SettingsRoute'));
 const FindYourCrewPage = lazyRoute(() => import('./features/crew/pages/FindYourCrewPage'));
 const ActivityDetailPage = lazyRoute(() => import('./features/crew/pages/ActivityDetailPage'));
@@ -191,9 +191,6 @@ function ProtectedRoute({ children }) {
     setRedirectIntent(location.pathname + location.search + location.hash);
     return <Navigate to="/" replace state={{ from: location }} />;
   }
-  if (currentUser?.isNewUser && location.pathname !== '/onboarding') {
-    return <Navigate to="/onboarding" replace />;
-  }
   // Both gates wrap rather than redirect: neither a suspended account nor one
   // inside its deletion window has anywhere to be sent, and a dedicated route
   // would just be somewhere to navigate away from. Each renders its notice over
@@ -227,14 +224,11 @@ function PublicRoute({ children }) {
   const location = useLocation();
   if (loading) return null;
   if (isLoggedIn) {
-    if (currentUser?.isNewUser) {
-      if (location.pathname === '/signup') {
-        return children;
-      }
-      // The pending deep link is for a finished account; onboarding takes
-      // priority and the stale intent must not fire later.
-      clearRedirectIntent();
-      return <Navigate to="/onboarding" replace />;
+    // The last signup step runs after the OTP has been verified, so the user is
+    // authenticated while still inside the flow. Redirecting them here would
+    // strand the signup one step from the end.
+    if (location.pathname === '/signup' && isSignupInProgress()) {
+      return children;
     }
     // Land on the page the user originally asked for, if there was one.
     return <Navigate to={consumeRedirectIntent() || '/home'} replace />;
@@ -242,15 +236,17 @@ function PublicRoute({ children }) {
   return children;
 }
 
+/**
+ * Routes that render the same thing signed in or out — the legal pages, About,
+ * Help, and the password reset.
+ *
+ * It still waits for auth to resolve rather than rendering immediately: some of
+ * these pages read `currentUser` further down, and rendering them against a
+ * half-known session made them flash the signed-out variant first.
+ */
 function StaticRoute({ children }) {
-  const { isLoggedIn, currentUser, loading } = useAuth();
-  const location = useLocation();
+  const { loading } = useAuth();
   if (loading) return null;
-  // Do not redirect to /onboarding from /reset-password — a PASSWORD_RECOVERY
-  // session does not trigger a full sync, so currentUser.isNewUser may be stale.
-  if (isLoggedIn && currentUser?.isNewUser && location.pathname !== '/reset-password') {
-    return <Navigate to="/onboarding" replace />;
-  }
   return children;
 }
 
@@ -438,7 +434,6 @@ export default function App() {
             </ProtectedRoute>
           ),
           children: [
-            { path: '/onboarding', element: withBoundary(<OnboardingRoute />, null, { fullScreen: true }) },
             {
               element: <DashboardLayoutWrapper />,
               children: [
