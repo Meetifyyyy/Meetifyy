@@ -40,7 +40,13 @@ const CURRENT_CACHES = new Set([
   'css-chunks-cache',
   'google-fonts-cache',
   'gstatic-fonts-cache',
-  'meetifyy-images-v3',
+  // v4, not v3. Existing installations hold an image cache that may contain a
+  // share card cached CacheFirst for seven days — possibly a failed or opaque
+  // one, which is returned forever and makes the Instagram button fall back to
+  // a link. Renaming the cache means the activate handler below drops the old
+  // one outright, so nobody is left with a poisoned entry the new route can no
+  // longer reach. Ordinary images simply re-download once.
+  'meetifyy-images-v4',
   // 'meetifyy-api-swr' is deliberately absent. No route writes to it any more,
   // and leaving it off the allowlist means the activate handler below deletes
   // whatever stale bodies an existing installation is still holding.
@@ -169,12 +175,23 @@ registerRoute(
 
 registerRoute(
   ({ request, url }) => {
+    // The share card is an image by extension and by Accept header, and this
+    // route would happily take it — CacheFirst, for seven days, caching status
+    // 0 as well as 200. That is wrong three times over. The card is rendered
+    // from live post content and is invalidated server-side, so a week-old copy
+    // outlives an edit; a single failed or opaque response gets cached and then
+    // returned forever, which makes `fetchShareCard` give up and the Instagram
+    // button fall back to sharing a link; and none of it buys anything, because
+    // the card is fetched once, at the moment of sharing, and handed straight
+    // to another application.
+    if (url.pathname.startsWith('/api/share/')) return false;
+
     const accept = request.headers.get('accept') || '';
     if (accept.includes('image')) return true;
     return /\.(png|jpe?g|webp|gif|svg|avif|ico)$/i.test(url.pathname);
   },
   new CacheFirst({
-    cacheName: 'meetifyy-images-v3',
+    cacheName: 'meetifyy-images-v4',
     plugins: [
       new ExpirationPlugin({ maxEntries: 200, maxAgeSeconds: 7 * 24 * 60 * 60 }),
       new CacheableResponsePlugin({ statuses: [0, 200] }),

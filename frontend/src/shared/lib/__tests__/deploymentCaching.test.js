@@ -117,6 +117,36 @@ describe('service-worker update lifecycle', () => {
     expect(viteSource).not.toContain("globPatterns: ['**/*.{js,css,html");
   });
 
+  /**
+   * The share card must never come out of the image cache.
+   *
+   * `/api/share/post/:id/story.jpg` ends in `.jpg` and is requested with an
+   * image Accept header, so the CacheFirst image route matched it on both
+   * counts. That route holds entries for seven days and treats status 0 as
+   * cacheable, which meant a post edited after somebody shared it kept serving
+   * the old card, and — worse — one failed or opaque response was cached and
+   * returned forever, so `fetchShareCard` returned null every time and the
+   * Instagram button silently fell back to sharing a link. Which is Instagram
+   * Direct and nothing else: the exact symptom the card exists to fix.
+   *
+   * Nothing is lost by excluding it. The card is fetched once, at the moment of
+   * sharing, and handed straight to another application.
+   */
+  it('never serves the share card from the image cache', () => {
+    expect(workerSource).toContain("url.pathname.startsWith('/api/share/')");
+
+    // The exclusion has to sit in the IMAGE route, ahead of both of its tests —
+    // the extension match and the Accept-header match — or it does nothing.
+    const imageRoute = workerSource.slice(
+      workerSource.indexOf("accept.includes('image')") - 400,
+      workerSource.indexOf("cacheName: 'meetifyy-images-v4'"),
+    );
+    expect(imageRoute).toContain("/api/share/");
+    expect(imageRoute.indexOf('/api/share/')).toBeLessThan(
+      imageRoute.indexOf("accept.includes('image')"),
+    );
+  });
+
   it('contains no deployment polling or cache-busting reload workaround', () => {
     const appSource = read('src/App.jsx');
     const boundarySource = read('src/shared/components/ErrorBoundary.jsx');
