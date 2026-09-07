@@ -49,6 +49,8 @@ const ICONS = {
   reddit: Reddit,
   instagram: Instagram,
   copy: LinkIcon,
+  native: ShareIcon,
+  share: ShareIcon,
 };
 
 /** How long a target's transient label stays before reverting. */
@@ -185,6 +187,19 @@ export default function ShareTargets({ payload, onShared }) {
         return;
       }
 
+      if (target.id === 'native' || target.id === 'share') {
+        const outcome = await shareNatively(payload);
+        if (outcome === 'shared') {
+          onShared?.('native');
+          return;
+        }
+        if (outcome === 'unsupported') {
+          if (await copy('native')) onShared?.('native');
+          return;
+        }
+        return;
+      }
+
       if (target.id === 'instagram') {
         // The card is normally downloaded before anybody taps. When it is not —
         // a tap in the first second, or a slow connection — the tap WAITS for
@@ -250,35 +265,37 @@ export default function ShareTargets({ payload, onShared }) {
     [instagramMode],
   );
 
-  const handleNative = useCallback(async () => {
-    const outcome = await shareNatively(payload);
-    if (outcome === 'shared') onShared?.('native');
-    // 'dismissed' is somebody changing their mind, not a failure.
-    else if (outcome === 'unsupported') await copy('copy');
-  }, [copy, onShared, payload]);
+  /**
+   * The list of share destinations.
+   *
+   * When the native Web Share API is available, "Share via" is placed
+   * beside "Copy link" within the same share-options row.
+   */
+  const targets = useMemo(() => {
+    if (!nativeAvailable) return SHARE_TARGETS;
+    const copyIndex = SHARE_TARGETS.findIndex((t) => t.id === 'copy');
+    const nativeTarget = {
+      id: 'native',
+      label: 'Share via',
+      build: () => null,
+    };
+    if (copyIndex === -1) {
+      return [nativeTarget, ...SHARE_TARGETS];
+    }
+    const next = [...SHARE_TARGETS];
+    next.splice(copyIndex + 1, 0, nativeTarget);
+    return next;
+  }, [nativeAvailable]);
 
   return (
     <div className={styles.root}>
-      {nativeAvailable && (
-        <button type="button" className={styles.native} onClick={handleNative}>
-          <ShareIcon size={20} aria-hidden="true" />
-          {/*
-            "link", explicitly. This button hands over the URL, so Instagram
-            shows Direct and nothing else — the Story option comes from the
-            Instagram tile below, which hands over the card as a file. Two
-            buttons that both said "Share" sent people to the wrong one.
-          */}
-          <span>Share link via…</span>
-        </button>
-      )}
-
       {/*
         A list, because that is what it is: a set of destinations rather than a
         paragraph of buttons. Screen readers announce the count, which tells
         somebody how many options they are about to move through.
       */}
       <ul className={styles.targets}>
-        {SHARE_TARGETS.map((target) => {
+        {targets.map((target) => {
           /*
             Instagram is the one destination whose name depends on what it can
             actually do. "Instagram Story" appears only where a Story is
@@ -309,7 +326,7 @@ export default function ShareTargets({ payload, onShared }) {
                 title={target.needsHint ? instagramHint(instagramMode) : undefined}
               >
                 <span className={styles.iconWrap} aria-hidden="true">
-                  <Icon size={22} />
+                  <Icon size={26} />
                 </span>
                 <span className={styles.label}>
                   {active ? feedback.label : labelFor(target)}

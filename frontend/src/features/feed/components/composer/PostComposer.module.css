@@ -155,12 +155,16 @@
 }
 
 .composerSendBtn {
-  width: 36px;
+  min-width: 64px;
   height: 36px;
-  border-radius: 10px;
+  padding: 0 16px;
+  border-radius: var(--radius-full, 9999px);
   background: var(--color-primary);
   border: none;
   color: #FFFFFF;
+  font-family: var(--font-family-sans);
+  font-size: 0.875rem;
+  font-weight: 600;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -171,13 +175,6 @@
 
 .composerSendBtn:hover {
   background: var(--color-primary-hover);
-}
-
-@media (hover: hover) and (pointer: fine) {
-
-  .composerSendBtn:hover {
-  transform: scale(1.05);
-  }
 }
 
 .composerSendBtn:active {

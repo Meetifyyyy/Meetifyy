@@ -10,6 +10,7 @@
 .root {
   display: flex;
   flex-direction: column;
+  flex-shrink: 0;
 }
 
 /* Native share sheet -------------------------------------------------------
@@ -57,7 +58,7 @@
   display: flex;
   gap: 4px;
   margin: 0;
-  padding: 2px 0;
+  padding: 2px 0 0 0;
   list-style: none;
   overflow-x: auto;
   /* Vertical must stay visible or the focus ring is clipped by the horizontal
@@ -85,14 +86,12 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 7px;
+  gap: 5px;
   /* A fixed tile width so the row scrolls in even steps and the labels line
      up. Wide enough for "WhatsApp" and "Copy link" without ellipsis. */
   width: 78px;
-  /* 44px is the accessibility floor for a touch target; the padding and the
-     44px icon well together clear it with room to spare. */
-  min-height: 76px;
-  padding: 10px 4px;
+  min-height: 72px;
+  padding: 6px 4px 2px 4px;
   background: none;
   border: 1px solid transparent;
   border-radius: var(--radius-md);
@@ -123,12 +122,13 @@
 .iconWrap {
   display: grid;
   place-items: center;
-  width: 44px;
-  height: 44px;
+  width: 56px;
+  height: 56px;
   border-radius: var(--radius-full);
   background: var(--color-bg-soft);
   color: var(--color-text-main);
   transition: background-color 0.18s;
+  flex-shrink: 0;
 }
 
 .target:hover .iconWrap {
@@ -139,9 +139,9 @@
    own colour rather than turning green: the tile is already the thing that
    changed, and a second signal for the same event is noise. */
 .label {
-  font-size: 0.75rem;
-  font-weight: 600;
-  line-height: 1.2;
+  font-size: 0.6875rem;
+  font-weight: 400;
+  line-height: 1.15;
   /* Two lines, then ellipsis. Most destinations are one short word, but the
      Instagram tile becomes "Instagram Story" wherever a story can actually be
      sent, and clipping that to "Instagram S…" hides the one thing the label is
@@ -159,7 +159,7 @@
      Instagram tile changes its own label at runtime depending on what the
      device can do, and a row that changes height with it would shift
      everything below at the moment somebody is reaching for it. */
-  min-height: 2.4em;
+  min-height: 2.2em;
 }
 
 /* Screen-reader announcement -----------------------------------------------
@@ -194,13 +194,14 @@
 
 @media (max-width: 480px) {
   .target {
-    width: 72px;
+    width: 76px;
     min-height: 72px;
-    gap: 6px;
+    gap: 5px;
+    padding: 6px 3px 2px 3px;
   }
 
   .iconWrap {
-    width: 42px;
-    height: 42px;
+    width: 56px;
+    height: 56px;
   }
 }

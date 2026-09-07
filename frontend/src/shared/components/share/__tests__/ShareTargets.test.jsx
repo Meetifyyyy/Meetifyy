@@ -344,13 +344,13 @@ describe('<ShareTargets>', () => {
   describe('the native share sheet', () => {
     it('is offered only where the browser has one', () => {
       const { unmount } = render(<ShareTargets payload={payload} />);
-      expect(screen.queryByRole('button', { name: /Share link via/ })).toBeNull();
+      expect(screen.queryByRole('button', { name: /Share via/ })).toBeNull();
       unmount();
 
       navigator.share = vi.fn().mockResolvedValue(undefined);
       navigator.canShare = vi.fn().mockReturnValue(true);
       render(<ShareTargets payload={payload} />);
-      expect(screen.getByRole('button', { name: /Share link via/ })).toBeTruthy();
+      expect(screen.getByRole('button', { name: /Share via/ })).toBeTruthy();
     });
 
     it('stays quiet when the user closes the sheet', async () => {
@@ -361,11 +361,24 @@ describe('<ShareTargets>', () => {
       const onShared = vi.fn();
 
       render(<ShareTargets payload={payload} onShared={onShared} />);
-      fireEvent.click(screen.getByRole('button', { name: /Share link via/ }));
+      fireEvent.click(screen.getByRole('button', { name: /Share via/ }));
 
       await waitFor(() => expect(navigator.share).toHaveBeenCalled());
       expect(onShared).not.toHaveBeenCalled();
       expect(screen.queryByText(/Could not/)).toBeNull();
+    });
+
+    it('places Share via beside Copy link in the destinations row', () => {
+      navigator.share = vi.fn().mockResolvedValue(undefined);
+      navigator.canShare = vi.fn().mockReturnValue(true);
+
+      render(<ShareTargets payload={payload} />);
+      const buttons = screen.getAllByRole('button');
+      const copyIdx = buttons.findIndex((b) => b.textContent.includes('Copy link'));
+      const nativeIdx = buttons.findIndex((b) => b.textContent.includes('Share via'));
+
+      expect(copyIdx).toBeGreaterThanOrEqual(0);
+      expect(nativeIdx).toBe(copyIdx + 1);
     });
   });
 

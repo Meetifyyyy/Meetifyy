@@ -255,6 +255,79 @@ function HeroSection({ comm, onlineNow, joined, joining, onToggleJoin, onCreateP
                   </span>
                 )}
               </div>
+
+              {(comm.description || comm.desc) && (
+                <p className={styles.heroDesc}>
+                  {comm.description || comm.desc}
+                </p>
+              )}
+
+              {(() => {
+                let memberList = Array.isArray(comm.members) && comm.members.length > 0
+                  ? comm.members.map(m => m.user ? { id: m.user.id, name: m.user.displayName || m.user.username, username: m.user.username, avatar: m.user.avatar } : m)
+                  : (Array.isArray(comm.memberList) ? comm.memberList : []);
+
+                if (memberList.length === 0 && comm.ownerId) {
+                  const ownerUser = comm.owner || (currentUser?.id === comm.ownerId ? currentUser : (users && users[comm.ownerId]));
+                  memberList = [{
+                    id: comm.ownerId,
+                    name: ownerUser?.displayName || ownerUser?.username || 'Owner',
+                    username: ownerUser?.username || '',
+                    avatar: ownerUser?.avatar || ''
+                  }];
+                }
+
+                const totalMembers = Math.max(
+                  typeof comm.memberCount === 'number' ? comm.memberCount : 0,
+                  memberList.length,
+                  1
+                );
+
+                return (
+                  <div 
+                    className={styles.memberStackClickable} 
+                    onClick={() => {
+                      if (onViewMembers) onViewMembers();
+                    }} 
+                    style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', cursor: 'pointer' }}
+                    title="View members"
+                  >
+                    <div className={styles.memberStack}>
+                      {memberList.slice(0, 4).map((m, i) => (
+                        <div
+                          key={i}
+                          className={styles.memberAvatar}
+                          style={{ zIndex: 4 - i, background: 'var(--color-bg-alt)', padding: 0, overflow: 'hidden' }}
+                        >
+                          {isImageUrl(m.avatar) ? (
+                            <img
+                              src={getMediaUrl(m.avatar)}
+                              alt={m.name || ''}
+                              style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', borderRadius: '50%' }}
+                              onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.svg'; }} />
+                          ) : (
+                            <DefaultAvatar style={{ width: '100%', height: '100%', borderRadius: '50%', fontSize: '0.65rem' }} />
+                          )}
+                        </div>
+                      ))}
+                      {totalMembers > 4 && (
+                        <div className={styles.memberOverflow}>
+                          +{formatCount(totalMembers - 4)}
+                        </div>
+                      )}
+                    </div>
+                    <div className={styles.heroCounts}>
+                      <span className={styles.heroCount}>
+                        <strong>{formatCount(totalMembers)}</strong> members
+                      </span>
+                      <span className={styles.heroCount}>
+                        <span className={styles.onlineDot} />
+                        <strong>{formatCount(onlineNow)}</strong> active now
+                      </span>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
             <div className={styles.heroActions}>
               {joined && (
@@ -368,75 +441,6 @@ function HeroSection({ comm, onlineNow, joined, joining, onToggleJoin, onCreateP
                 )}
               </div>
             </div>
-          </div>
-          
-          <div className={styles.heroBottomRow}>
-            {(() => {
-              let memberList = Array.isArray(comm.members) && comm.members.length > 0
-                ? comm.members.map(m => m.user ? { id: m.user.id, name: m.user.displayName || m.user.username, username: m.user.username, avatar: m.user.avatar } : m)
-                : (Array.isArray(comm.memberList) ? comm.memberList : []);
-
-              if (memberList.length === 0 && comm.ownerId) {
-                const ownerUser = comm.owner || (currentUser?.id === comm.ownerId ? currentUser : (users && users[comm.ownerId]));
-                memberList = [{
-                  id: comm.ownerId,
-                  name: ownerUser?.displayName || ownerUser?.username || 'Owner',
-                  username: ownerUser?.username || '',
-                  avatar: ownerUser?.avatar || ''
-                }];
-              }
-
-              const totalMembers = Math.max(
-                typeof comm.memberCount === 'number' ? comm.memberCount : 0,
-                memberList.length,
-                1
-              );
-
-              return (
-                <div 
-                  className={styles.memberStackClickable} 
-                  onClick={() => {
-                    if (onViewMembers) onViewMembers();
-                  }} 
-                  style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer' }}
-                  title="View members"
-                >
-                  <div className={styles.memberStack}>
-                    {memberList.slice(0, 4).map((m, i) => (
-                      <div
-                        key={i}
-                        className={styles.memberAvatar}
-                        style={{ zIndex: 4 - i, background: 'var(--color-bg-alt)', padding: 0, overflow: 'hidden' }}
-                      >
-                        {isImageUrl(m.avatar) ? (
-                          <img
-                            src={getMediaUrl(m.avatar)}
-                            alt={m.name || ''}
-                            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', borderRadius: '50%' }}
-                            onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.svg'; }} />
-                        ) : (
-                          <DefaultAvatar style={{ width: '100%', height: '100%', borderRadius: '50%', fontSize: '0.65rem' }} />
-                        )}
-                      </div>
-                    ))}
-                    {totalMembers > 4 && (
-                      <div className={styles.memberOverflow}>
-                        +{formatCount(totalMembers - 4)}
-                      </div>
-                    )}
-                  </div>
-                  <div className={styles.heroCounts}>
-                    <span className={styles.heroCount}>
-                      <strong>{formatCount(totalMembers)}</strong> members
-                    </span>
-                    <span className={styles.heroCount}>
-                      <span className={styles.onlineDot} />
-                      <strong>{formatCount(onlineNow)}</strong> active now
-                    </span>
-                  </div>
-                </div>
-              );
-            })()}
           </div>
         </div>
 
@@ -1004,7 +1008,7 @@ export default function CommunityView({ communityId, onBack, onPostClick, onComm
             <div className={styles.desktopHeroLayout}>
               <div className={styles.heroTopRow}>
                 <div className={styles.avatarWrapper}>
-                  <Skeleton type="circle" width="110px" height="110px" />
+                  <Skeleton type="circle" width="var(--hero-avatar-size, 88px)" height="var(--hero-avatar-size, 88px)" />
                 </div>
                 <div className={styles.heroMeta} style={{ marginTop: '1rem', gap: '0.6rem' }}>
                   <Skeleton type="text" width="220px" height="2rem" style={{ borderRadius: '8px' }} />
