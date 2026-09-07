@@ -19,18 +19,33 @@
  */
 
 /**
- * Instagram has no web share endpoint. None.
+ * Instagram Stories does not render link previews. At all.
  *
- * There is no supported way to hand a URL to Instagram from a browser: it has
- * no `sharer` URL, its deep links open the app to a compose screen that cannot
- * be prefilled with a link, and the story-sharing API is for registered mobile
- * apps with a Facebook App ID. Anything that appears to work is a login wall
- * with a redirect on the other side.
+ * This is the finding that matters, and it is a platform limitation rather
+ * than anything wrong with our Open Graph tags. Instagram has three surfaces
+ * and they behave differently:
  *
- * So the Instagram button does the honest thing. On a device with a native
- * share sheet it opens that — Instagram is in it, and the OS handles the
- * handoff properly. Everywhere else it copies the link and says to paste it,
- * which is what a person was going to have to do regardless.
+ *   - Direct messages DO unfurl a link into a card from `og:` tags.
+ *   - Stories do NOT. A link in a story is a "link sticker": a small pill
+ *     showing the domain, or whatever sticker text the author types. Instagram
+ *     never fetches `og:image` for it, so there is no card to appear and no
+ *     amount of correct metadata will produce one.
+ *   - Feed captions do not linkify at all.
+ *
+ * Sharing a URL to Instagram from the OS share sheet therefore only ever
+ * offers "Direct" — which is exactly the symptom: no "Add to story", no "Add
+ * to post". Instagram's share target advertises those options for `image/*`,
+ * not for text.
+ *
+ * So the closest technically supported approach is not to send a link at all.
+ * It is to send the CARD ITSELF as an image file, which Stories accepts as
+ * story content — see `shareFiles`. The link is copied alongside it, because a
+ * story that shows the card still needs a link sticker to be clickable.
+ *
+ * The story-sharing deep link (`instagram-stories://share` with a
+ * `backgroundImage`) is not an alternative here: it requires a registered
+ * Facebook App ID and a native iOS or Android application, and does nothing
+ * from a web page.
  */
 export const INSTAGRAM_GUIDANCE =
   'Link copied. Paste it into your Instagram story, bio or a DM.';
@@ -45,10 +60,14 @@ export const INSTAGRAM_GUIDANCE =
  * is simply untrue, and the button is surprising enough already.
  */
 export const INSTAGRAM_HINT_SHEET =
-  'Opens your phone’s share sheet, where you can pick Instagram.';
+  'Sends the card as an image, so Instagram offers Story and Post. The link is copied for your story sticker.';
 
 export const INSTAGRAM_HINT_COPY =
   'Instagram cannot be sent a link from the web. We copy it so you can paste it into your story, bio or a DM.';
+
+/** Shown once the card has been handed over and the link copied. */
+export const INSTAGRAM_STORY_GUIDANCE =
+  'Card sent to Instagram. The link is copied — add a link sticker to your story.';
 
 /**
  * The share destinations, in the order they are shown.
@@ -248,6 +267,102 @@ export async function copyToClipboard(value) {
     return false;
   }
 }
+
+/**
+ * Whether this browser can put FILES into the share sheet.
+ *
+ * Web Share API Level 2. Chrome on Android and Safari on iOS support it;
+ * desktop browsers largely do not. This is the capability that decides whether
+ * Instagram can be offered a Story at all, so it is checked with a real File
+ * rather than by sniffing the user agent — a probe that is wrong is worse than
+ * no probe, because the failure lands on the user as a share sheet that does
+ * not contain the app they wanted.
+ */
+export function canShareFiles() {
+  if (typeof navigator === 'undefined') return false;
+  if (typeof navigator.share !== 'function') return false;
+  if (typeof navigator.canShare !== 'function') return false;
+  if (typeof File === 'undefined') return false;
+
+  try {
+    const probe = new File([new Blob([1])], 'probe.jpg', { type: 'image/jpeg' });
+    return navigator.canShare({ files: [probe] });
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Downloads the rendered card and wraps it as a File the share sheet accepts.
+ *
+ * FETCHED AHEAD OF THE TAP, NOT DURING IT
+ * `navigator.share` must be called while the browser still considers the page
+ * to have transient activation from a user gesture. Safari in particular
+ * refuses a share that comes after an awaited `fetch`. So callers prefetch this
+ * when the dialog OPENS and hand the finished File to `share` synchronously
+ * when the button is pressed — the fetch happens in the gap where the person is
+ * still reading the dialog.
+ *
+ * Returns null for anything that goes wrong. A missing card falls back to
+ * sharing the link, which is the behaviour that existed before.
+ */
+export async function fetchShareCard(url, fileName = 'card.jpg') {
+  if (!url) return null;
+
+  try {
+    const response = await fetch(url, {
+      // The card is public and the endpoint takes no session. Sending cookies
+      // would force a credentialed CORS mode for no reason.
+      credentials: 'omit',
+      signal: AbortSignal.timeout(CARD_FETCH_TIMEOUT_MS),
+    });
+    if (!response.ok) return null;
+
+    const blob = await response.blob();
+    if (!blob.size || !/^image\//i.test(blob.type)) return null;
+    // A share sheet has to hold this in memory and hand it to another app.
+    if (blob.size > MAX_CARD_BYTES) return null;
+
+    return new File([blob], fileName, {
+      type: blob.type,
+      lastModified: Date.now(),
+    });
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Hands files to the OS share sheet.
+ *
+ * Files ONLY — no `url`, no `text`. Some share targets refuse a payload that
+ * mixes them, and Instagram is one of the ones that behaves least predictably:
+ * given an image plus a URL it can fall back to treating the whole thing as a
+ * message, which is the case this whole path exists to get away from. The link
+ * travels via the clipboard instead, which is where a story link sticker needs
+ * it anyway.
+ */
+export async function shareFiles(files) {
+  if (!files?.length) return 'unsupported';
+  if (typeof navigator?.share !== 'function') return 'unsupported';
+
+  try {
+    if (typeof navigator.canShare === 'function' && !navigator.canShare({ files })) {
+      return 'unsupported';
+    }
+    await navigator.share({ files });
+    return 'shared';
+  } catch (error) {
+    if (error?.name === 'AbortError') return 'dismissed';
+    return 'unsupported';
+  }
+}
+
+/** How long to wait for the card before giving up and sharing the link. */
+const CARD_FETCH_TIMEOUT_MS = 8000;
+
+/** Ceiling on a card handed to another application. Ours are well under it. */
+const MAX_CARD_BYTES = 8 * 1024 * 1024;
 
 /** Whether this browser can open a native share sheet for a payload. */
 export function canNativeShare(payload) {

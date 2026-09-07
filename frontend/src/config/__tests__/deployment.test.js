@@ -152,6 +152,45 @@ describe('vercel.json', () => {
       }
     });
 
+    it('lets the CDN cache the crawler document', () => {
+      // A blanket `/((?!assets/|…).*)` rule sets `no-store` on every SPA route,
+      // which is right for the shell and wrong for the crawler document behind
+      // the same path: it meant every unfurl went to the origin, and Facebook
+      // alone re-fetches a popular link repeatedly. Measured on dev before the
+      // fix — the origin said `s-maxage=300`, the edge said `no-store`.
+      //
+      // Scoped to the same user-agent condition as the rewrite, so a person
+      // still gets an uncacheable shell.
+      const rule = frontend.headers.find(
+        (h) =>
+          h.source === '/post/:id' &&
+          h.has?.some((c) => c.key === 'user-agent'),
+      );
+
+      expect(rule).toBeDefined();
+      const cacheControl = rule.headers.find((h) => h.key === 'Cache-Control');
+      expect(cacheControl.value).toContain('s-maxage=300');
+      expect(cacheControl.value).not.toContain('no-store');
+    });
+
+    it('describes the same clients in the rewrite and the header rule', () => {
+      // Two lists of crawler user agents would drift, and the drift is silent:
+      // a crawler routed to the metadata document but served `no-store`, or
+      // cached but served the SPA shell.
+      const uaOf = (rules) =>
+        rules
+          .filter((r) => r.source === '/post/:id')
+          .flatMap((r) => r.has ?? [])
+          .filter((c) => c.key === 'user-agent')
+          .map((c) => c.value);
+
+      const rewriteAgents = new Set(uaOf(frontend.rewrites));
+      const headerAgents = uaOf(frontend.headers);
+
+      expect(headerAgents.length).toBeGreaterThan(0);
+      for (const agent of headerAgents) expect(rewriteAgents.has(agent)).toBe(true);
+    });
+
     it('still serves a person the SPA shell', () => {
       const shell = postRules.find((rule) => rule.destination === '/app.html');
       expect(shell.has).toBeUndefined();

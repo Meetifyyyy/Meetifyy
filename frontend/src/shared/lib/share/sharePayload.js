@@ -42,6 +42,24 @@ export function postShareUrl(postId) {
   return absoluteUrl(postId ? `/post/${postId}` : null);
 }
 
+/**
+ * The rendered share card, as an image a browser can fetch.
+ *
+ * SAME ORIGIN, DELIBERATELY
+ * `og:image` names the API's own host, because a crawler does not care about
+ * origins. This one is for JavaScript, which does: fetching it as a Blob so it
+ * can be handed to the share sheet as a FILE means a cross-origin request, a
+ * preflight, and a dependency on CORS staying correct. `vercel.json` rewrites
+ * `/api/share/*` to the API, and Vite proxies it in development, so the
+ * same-origin path reaches the same bytes with none of that.
+ *
+ * No version parameter: the endpoint ignores it, and this URL is fetched at the
+ * moment of sharing rather than cached by anything that needs to be busted.
+ */
+export function postCardImageUrl(postId) {
+  return absoluteUrl(postId ? `/api/share/post/${postId}/image.jpg` : null);
+}
+
 /** The canonical URL for a profile. */
 export function profileShareUrl(username) {
   return absoluteUrl(username ? `/profile/${username}` : null);
@@ -94,6 +112,10 @@ export function buildPostShare(post, author) {
     // Reddit prefills its submission with. It has to stand on its own.
     title: body ? `${name} on ${APP}: ${body}` : `${name} shared ${kind} on ${APP}`,
     text: body || `See ${kind} by ${name} on ${APP}.`,
+    // The card as an image, for the destinations that take a picture rather
+    // than a link. Only posts have one — see postCardImageUrl.
+    cardImageUrl: postCardImageUrl(post?.id),
+    cardFileName: `${slug(APP)}-post.jpg`,
   };
 }
 
@@ -205,6 +227,16 @@ export function isPoll(post) {
   if (post?.isPoll === true) return true;
   if (post?.poll && typeof post.poll === 'object') return true;
   return Array.isArray(post?.pollOptions) && post.pollOptions.length > 0;
+}
+
+/** A filename-safe form of a name. */
+function slug(value) {
+  return (
+    String(value ?? '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '') || 'share'
+  );
 }
 
 function authorName(post, author) {

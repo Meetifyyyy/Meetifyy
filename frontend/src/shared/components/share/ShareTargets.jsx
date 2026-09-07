@@ -27,10 +27,14 @@ import {
   INSTAGRAM_GUIDANCE,
   INSTAGRAM_HINT_COPY,
   INSTAGRAM_HINT_SHEET,
+  INSTAGRAM_STORY_GUIDANCE,
   SHARE_TARGETS,
   canNativeShare,
+  canShareFiles,
   copyToClipboard,
+  fetchShareCard,
   openShareWindow,
+  shareFiles,
   shareNatively,
 } from '@shared/lib/share/shareTargets';
 import styles from './ShareTargets.module.css';
@@ -66,6 +70,22 @@ export default function ShareTargets({ payload, onShared }) {
   // during the life of a dialog, and calling `canShare` on every render is work
   // for an answer that cannot change.
   const [nativeAvailable] = useState(() => canNativeShare(payload));
+  const [fileShareAvailable] = useState(() => canShareFiles());
+
+  /**
+   * The rendered card, fetched while the dialog is merely open.
+   *
+   * This is not an optimisation, it is the thing that makes the Instagram path
+   * work at all. `navigator.share` has to be called while the page still holds
+   * transient activation from the tap, and Safari refuses one that comes after
+   * an awaited `fetch`. Downloading the card here — in the seconds somebody
+   * spends looking at the dialog — means the tap itself does nothing but hand
+   * over a File that is already in memory.
+   *
+   * A ref rather than state: nothing renders from it, and a re-render on
+   * arrival would be a re-render for no visible reason.
+   */
+  const cardRef = useRef(null);
 
   useEffect(
     () => () => {
@@ -73,6 +93,22 @@ export default function ShareTargets({ payload, onShared }) {
     },
     [],
   );
+
+  useEffect(() => {
+    // Only where a File can actually be shared, and only for the things that
+    // have a card. Everywhere else this would be a wasted download of an image
+    // nothing can use.
+    if (!fileShareAvailable || !payload?.cardImageUrl) return undefined;
+
+    let cancelled = false;
+    fetchShareCard(payload.cardImageUrl, payload.cardFileName).then((file) => {
+      if (!cancelled) cardRef.current = file;
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [fileShareAvailable, payload?.cardImageUrl, payload?.cardFileName]);
 
   const announce = useCallback((targetId, tone, label, announcement) => {
     setFeedback({ targetId, tone, label, announcement: announcement ?? label });
@@ -110,9 +146,35 @@ export default function ShareTargets({ payload, onShared }) {
       }
 
       if (target.id === 'instagram') {
-        // Instagram has no web share endpoint — see shareTargets.js. On a
-        // device with a share sheet the OS hands off properly; everywhere else
-        // the honest answer is the copied link and an instruction.
+        // Instagram Stories renders no link preview — see shareTargets.js. A
+        // URL handed to Instagram only ever opens a Direct message, which is
+        // exactly the symptom this branch exists to fix. Sending the CARD as an
+        // image is what makes Instagram offer Story and Post.
+        const card = cardRef.current;
+
+        if (card) {
+          // Clipboard first, while the document still has focus: the share
+          // sheet takes it, and the Clipboard API refuses to write from an
+          // unfocused document. A story showing the card still needs a link
+          // sticker, and this is where that link comes from.
+          const copied = await copyToClipboard(payload.url);
+          const outcome = await shareFiles([card]);
+
+          if (outcome === 'shared') {
+            announce(
+              'instagram',
+              'ok',
+              'Sent!',
+              copied ? INSTAGRAM_STORY_GUIDANCE : 'Card sent to Instagram.',
+            );
+            onShared?.('instagram');
+            return;
+          }
+          if (outcome === 'dismissed') return;
+          // Fall through: this device advertised file sharing and then refused
+          // it, so try the link.
+        }
+
         const outcome = nativeAvailable ? await shareNatively(payload) : 'unsupported';
         if (outcome === 'shared') {
           onShared?.('instagram');
@@ -181,7 +243,7 @@ export default function ShareTargets({ payload, onShared }) {
                 // and describing the wrong one is worse than describing none.
                 title={
                   target.needsHint
-                    ? nativeAvailable
+                    ? fileShareAvailable
                       ? INSTAGRAM_HINT_SHEET
                       : INSTAGRAM_HINT_COPY
                     : undefined

@@ -5,8 +5,11 @@ import {
   INSTAGRAM_HINT_SHEET,
   SHARE_TARGETS,
   canNativeShare,
+  canShareFiles,
   copyToClipboard,
+  fetchShareCard,
   openShareWindow,
+  shareFiles,
   shareNatively,
 } from '../shareTargets';
 
@@ -124,11 +127,96 @@ describe('share targets', () => {
       ]);
     });
 
-    it('describes the share sheet on a phone and a copy everywhere else', () => {
-      // Telling somebody holding a phone that the link "will be copied", a
-      // moment before their share sheet opens, is simply untrue.
-      expect(INSTAGRAM_HINT_SHEET).toMatch(/share sheet/i);
+    it('describes what the button really does on each kind of device', () => {
+      // Where a File can be shared, the card goes to Instagram as an image and
+      // Story becomes available; where it cannot, the honest answer is a copied
+      // link. Telling somebody the wrong one is worse than telling them
+      // nothing.
+      expect(INSTAGRAM_HINT_SHEET).toMatch(/image/i);
+      expect(INSTAGRAM_HINT_SHEET).toMatch(/story/i);
       expect(INSTAGRAM_HINT_COPY).toMatch(/copy/i);
+    });
+  });
+
+  describe('sharing the card as a file', () => {
+    // The mechanism behind the Instagram fix: Instagram's share target offers
+    // "Add to story" and "Add to post" for `image/*` and only "Direct" for a
+    // URL, so the card has to travel as a File.
+
+    it('detects file support with a real File rather than a user-agent guess', () => {
+      expect(canShareFiles()).toBe(false); // no navigator.share in jsdom
+
+      navigator.share = vi.fn();
+      navigator.canShare = vi.fn().mockReturnValue(true);
+      expect(canShareFiles()).toBe(true);
+      expect(navigator.canShare).toHaveBeenCalledWith({
+        files: [expect.any(File)],
+      });
+
+      navigator.canShare = vi.fn().mockReturnValue(false);
+      expect(canShareFiles()).toBe(false);
+    });
+
+    it('wraps the fetched card as an image File', async () => {
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        blob: async () => new Blob(['x'], { type: 'image/jpeg' }),
+      });
+
+      const file = await fetchShareCard('https://x.test/card.jpg', 'card.jpg');
+      expect(file).toBeInstanceOf(File);
+      expect(file.type).toBe('image/jpeg');
+      expect(file.name).toBe('card.jpg');
+    });
+
+    it('refuses anything that is not an image', async () => {
+      // A rewrite that falls through to the SPA returns HTML with a 200. Handing
+      // that to a share sheet as a "card" is worse than not offering one.
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        blob: async () => new Blob(['<!doctype html>'], { type: 'text/html' }),
+      });
+      await expect(fetchShareCard('https://x.test/card.jpg')).resolves.toBeNull();
+    });
+
+    it('returns null rather than throwing on any failure', async () => {
+      global.fetch = vi.fn().mockResolvedValue({ ok: false });
+      await expect(fetchShareCard('https://x.test/card.jpg')).resolves.toBeNull();
+
+      global.fetch = vi.fn().mockRejectedValue(new Error('offline'));
+      await expect(fetchShareCard('https://x.test/card.jpg')).resolves.toBeNull();
+
+      await expect(fetchShareCard('')).resolves.toBeNull();
+    });
+
+    it('shares files alone, never mixed with a url', async () => {
+      navigator.share = vi.fn().mockResolvedValue(undefined);
+      navigator.canShare = vi.fn().mockReturnValue(true);
+      const file = new File([new Blob(['x'])], 'c.jpg', { type: 'image/jpeg' });
+
+      await expect(shareFiles([file])).resolves.toBe('shared');
+      expect(navigator.share).toHaveBeenCalledWith({ files: [file] });
+    });
+
+    it('reports a dismissal separately from a refusal', async () => {
+      const file = new File([new Blob(['x'])], 'c.jpg', { type: 'image/jpeg' });
+      navigator.canShare = vi.fn().mockReturnValue(true);
+
+      const abort = new Error('cancelled');
+      abort.name = 'AbortError';
+      navigator.share = vi.fn().mockRejectedValue(abort);
+      await expect(shareFiles([file])).resolves.toBe('dismissed');
+
+      navigator.share = vi.fn().mockRejectedValue(new Error('nope'));
+      await expect(shareFiles([file])).resolves.toBe('unsupported');
+    });
+
+    it('is unsupported where the browser declines the payload', async () => {
+      navigator.share = vi.fn();
+      navigator.canShare = vi.fn().mockReturnValue(false);
+      const file = new File([new Blob(['x'])], 'c.jpg', { type: 'image/jpeg' });
+      await expect(shareFiles([file])).resolves.toBe('unsupported');
+      expect(navigator.share).not.toHaveBeenCalled();
     });
   });
 
