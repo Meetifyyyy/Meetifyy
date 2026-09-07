@@ -23,7 +23,7 @@ import {
   Pencil, Lock, AlertCircle, Trash2,
   User, GraduationCap, Shield, Bell, HelpCircle, LogOut,
   ChevronRight, ChevronDown, Check, Ban,
-  LockKeyhole, Cookie, Sparkles,
+  LockKeyhole, Cookie, Sparkles, Eye,
 } from '@shared/components/icons';
 import wordmark from '@assets/images/meetifyy_wordmark.svg';
 import PasswordToggle, { usePasswordVisibility } from '@shared/components/forms/PasswordToggle';
@@ -76,10 +76,9 @@ export const SETTINGS_TREE = [
   {
     slug: 'privacy-security',
     label: 'Privacy & Security',
-    description: 'Who can see you, your password, and your data',
+    description: 'Blocked accounts, your password, and your data',
     icon: LockKeyhole,
     items: [
-      { panel: 'privacy', label: 'Privacy Settings', icon: LockKeyhole },
       { panel: 'blocked-contacts', label: 'Blocked Contacts', icon: Ban },
       { panel: 'security', label: 'Change Password', icon: Lock },
       { action: 'cookies', label: 'Cookie Preferences', icon: Cookie },
@@ -92,6 +91,13 @@ export const SETTINGS_TREE = [
      * confirmation, the same emailed code, the same 30-day countdown.
      */
     danger: [{ action: 'delete', label: 'Delete Account', icon: Trash2 }],
+  },
+  {
+    slug: 'privacy',
+    label: 'Visibility',
+    description: 'Who can see your profile, your status and your reads',
+    icon: Eye,
+    panel: 'privacy',
   },
   {
     slug: 'notifications',
@@ -602,7 +608,7 @@ export default function SettingsRoute() {
       }
     } else if (activePanel === 'privacy') {
       closePanel();
-      showToast('Privacy settings saved', 'success');
+      showToast('Visibility settings saved', 'success');
       if (updateCurrentUser) {
         updateCurrentUser({
           ...currentUser,
@@ -678,7 +684,7 @@ export default function SettingsRoute() {
     account: 'Edit Profile',
     academic: 'Academic Info',
     security: 'Change Password',
-    privacy: 'Privacy Settings',
+    privacy: 'Visibility Settings',
     notifications: 'Notifications',
     interests: 'Interests & Topics',
     'blocked-contacts': 'Blocked Contacts',
@@ -1189,7 +1195,7 @@ export default function SettingsRoute() {
         </button>
       </div>
 
-      <button className={styles.saveBtn} onClick={handleSave}>Save Privacy Preferences</button>
+      <button className={styles.saveBtn} onClick={handleSave}>Save Visibility Settings</button>
     </div>
   );
 
