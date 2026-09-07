@@ -11,6 +11,7 @@ import styles from './Feed.module.css';
 import { useAuth } from '@shared/context/AuthContext';
 import { addCreatedPostToCaches } from '../utils/postCache';
 import VerificationGate from '@shared/components/VerificationGate/VerificationGate';
+import HeaderScrollEdge from '@shared/components/ui/HeaderScrollEdge';
 
 function Feed({ onPostClick, onCommentClick }) {
   const { currentUser } = useAuth();
@@ -120,6 +121,9 @@ function Feed({ onPostClick, onCommentClick }) {
   return (
     <PullToRefresh onRefresh={handlePullToRefresh}>
       <div className={styles.feed}>
+        {/* `gap` matches `.feed`'s own, so this occupies no layout space. */}
+        <HeaderScrollEdge gap="0.5rem" />
+
         <VerificationGate message="Verify your account to create posts.">
           <PostComposer onSubmit={handleNewPost} />
         </VerificationGate>

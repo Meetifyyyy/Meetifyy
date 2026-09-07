@@ -1,0 +1,82 @@
+/* ── Rounded edge where content scrolls under the sticky header ─────────────
+   The header is a fixed-height sticky band and the page scrolls on the body,
+   so a rounded card passing beneath it is shown as a horizontal slice: its own
+   rounding is hundreds of pixels further up, and what meets the header is a
+   hard square edge.
+
+   This paints the page background back over just the two corner squares, which
+   reads as a rounded corner at exactly the line where the card emerges.
+
+   It is an overlay rather than a clip because making `.centre` a real scroll
+   container — the other way to round that cut — is the change global.css
+   explicitly warns against: it turns `.centre` into the nearest scroll
+   container and steals `position: sticky` from every page shell nested inside
+   it, which has already broken ProfilePage's sidebar once.
+
+   The gradient is the header's own, `background-attachment: fixed` included,
+   so it is anchored to the viewport rather than to this element. That is what
+   makes the two wedges pixel-identical to the background behind them instead
+   of a visible patch of flat colour, in either theme. */
+.edge {
+  /* Matches the fixed .header height in Header.module.css. */
+  --header-height: 60px;
+  /* The radius of the cards this sits above (`--radius-lg`). Falls back so the
+     shape is still correct if the variable ever goes missing. */
+  --edge-radius: var(--radius-lg, 16px);
+
+  position: sticky;
+  top: var(--header-height);
+  height: var(--edge-radius);
+  /* Occupies no layout space: its own height, plus the one flex gap it would
+     otherwise add to the column it sits in. */
+  margin-bottom: calc((var(--edge-radius) + var(--edge-gap, 0px)) * -1);
+  /* Above the cards, below the header (z-index 500), so the header still wins. */
+  z-index: 400;
+  pointer-events: none;
+  background: radial-gradient(
+    circle at center,
+    var(--bg-gradient-center) 0%,
+    var(--bg-gradient-mid) 45%,
+    var(--bg-gradient-edge) 100%
+  );
+  background-attachment: fixed;
+  /* One tile in each top corner. Inside each, the quarter circle is transparent
+     and the wedge outside it is painted — precisely the area a border-radius
+     would cut away. Nothing is painted between the tiles, so the card's top
+     edge is untouched across its width. */
+  -webkit-mask:
+    radial-gradient(circle var(--edge-radius) at var(--edge-radius) var(--edge-radius), transparent 98%, #000 100%)
+      left top / var(--edge-radius) var(--edge-radius) no-repeat,
+    radial-gradient(circle var(--edge-radius) at 0 var(--edge-radius), transparent 98%, #000 100%)
+      right top / var(--edge-radius) var(--edge-radius) no-repeat;
+  mask:
+    radial-gradient(circle var(--edge-radius) at var(--edge-radius) var(--edge-radius), transparent 98%, #000 100%)
+      left top / var(--edge-radius) var(--edge-radius) no-repeat,
+    radial-gradient(circle var(--edge-radius) at 0 var(--edge-radius), transparent 98%, #000 100%)
+      right top / var(--edge-radius) var(--edge-radius) no-repeat;
+}
+
+@media (max-width: 768px) {
+  .edge {
+    /* The mobile header is 56px (see Header.module.css). */
+    --header-height: 56px;
+    /* Matches the header's own easing so the two move as one thing. */
+    transition: transform 0.26s cubic-bezier(0.22, 0.9, 0.3, 1);
+  }
+
+  /* The mobile header slides away on scroll (`useAutoHideChrome` writes this
+     attribute; Header.module.css translates it off-screen). This edge only
+     exists because the header covers one, so it has to leave with it —
+     otherwise it stays pinned below the top and paints two background wedges
+     into the middle of whatever card happens to be there. Its own height is
+     added so it clears the viewport entirely rather than half-showing. */
+  :global(html[data-chrome-hidden]) .edge {
+    transform: translateY(calc((var(--header-height) + 100%) * -1));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .edge {
+    transition: none;
+  }
+}

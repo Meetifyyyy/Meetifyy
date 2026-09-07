@@ -8,6 +8,7 @@ import PostView from '../components/post/PostView';
 import RightPanel from '@layout/RightPanel';
 import UserSidebarCard, { UserSidebarCardSkeleton } from '@shared/components/ui/UserSidebarCard';
 import NotFoundState from '@shared/components/ui/NotFoundState';
+import HeaderScrollEdge from '@shared/components/ui/HeaderScrollEdge';
 
 export default function PostDetailRoute() {
   const goBack = useSmartBack();
@@ -91,6 +92,10 @@ export default function PostDetailRoute() {
   return (
     <>
       <main className="centre centre--post centre--sheet">
+        {/* Outside PostView on purpose: its root sets `overflow: hidden`, which
+            would clip this and re-anchor its sticky positioning to the card
+            instead of the viewport. `.centre`'s gap is 1rem. */}
+        <HeaderScrollEdge gap="1rem" />
         <PostView post={displayPost} onBack={handleBack} autoFocusComment={focusComment} />
       </main>
       <RightPanel>
