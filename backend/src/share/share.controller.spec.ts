@@ -1,9 +1,23 @@
 process.env.APP_ENV = process.env.APP_ENV || 'development';
-process.env.FRONTEND_URL = process.env.FRONTEND_URL || 'https://meetifyy.app';
 
+import { config } from '../config';
 import { ShareController } from './share.controller';
 import type { PublicSharePost } from './share-preview.service';
 import { sharePost } from './testing/share-post.fixture';
+
+/**
+ * The site origin these tests assert against.
+ *
+ * Read from configuration rather than hardcoded. `FRONTEND_URL` is a required
+ * variable that differs per environment — CI sets `http://localhost:3000`, a
+ * developer's `.env` sets the dev host — so a spec that asserts a literal
+ * `https://meetifyy.app` passes on one machine and fails on the other. It did:
+ * these suites went green locally and red in CI on the same commit.
+ *
+ * What is worth asserting is the RELATIONSHIP — that the canonical URL is the
+ * configured site plus `/post/:id` — and that holds everywhere.
+ */
+const SITE = config.app.frontendUrl.replace(/\/+$/, '');
 
 /**
  * The three public endpoints, tested for the one property that matters most:
@@ -115,7 +129,7 @@ describe('ShareController', () => {
       expect(res.statusCode).toBe(200);
       expect(res.headers['content-type']).toBe('text/html; charset=utf-8');
       expect(res.body).toContain('property="og:image"');
-      expect(res.body).toContain(`https://meetifyy.app/post/${POST_ID}`);
+      expect(res.body).toContain(`${SITE}/post/${POST_ID}`);
     });
 
     it('serves the card as a JPEG with its length declared', async () => {
@@ -163,9 +177,7 @@ describe('ShareController', () => {
       // so the cache key can see a rename, and it is nobody else's business.
       expect(body.post).not.toHaveProperty('authorUpdatedAt');
       expect(body.post).not.toHaveProperty('updatedAt');
-      expect(body.share.canonicalUrl).toBe(
-        `https://meetifyy.app/post/${POST_ID}`,
-      );
+      expect(body.share.canonicalUrl).toBe(`${SITE}/post/${POST_ID}`);
     });
   });
 

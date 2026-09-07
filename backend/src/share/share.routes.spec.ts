@@ -1,6 +1,6 @@
 process.env.APP_ENV = process.env.APP_ENV || 'development';
-process.env.FRONTEND_URL = process.env.FRONTEND_URL || 'https://meetifyy.app';
 
+import { config } from '../config';
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
@@ -14,6 +14,20 @@ import { MediaCleanupService } from '../uploads/media-cleanup.service';
 import { RedisService } from '../redis/redis.service';
 import { NoCacheInterceptor } from '../common/interceptors/no-cache.interceptor';
 import { APP_INTERCEPTOR } from '@nestjs/core';
+
+/**
+ * The site origin these tests assert against.
+ *
+ * Read from configuration rather than hardcoded. `FRONTEND_URL` is a required
+ * variable that differs per environment — CI sets `http://localhost:3000`, a
+ * developer's `.env` sets the dev host — so a spec that asserts a literal
+ * `https://meetifyy.app` passes on one machine and fails on the other. It did:
+ * these suites went green locally and red in CI on the same commit.
+ *
+ * What is worth asserting is the RELATIONSHIP — that the canonical URL is the
+ * configured site plus `/post/:id` — and that holds everywhere.
+ */
+const SITE = config.app.frontendUrl.replace(/\/+$/, '');
 
 /**
  * The routes as HTTP, with a real renderer.
@@ -118,7 +132,7 @@ describe('share routes', () => {
 
       expect(res.headers['content-type']).toMatch(/text\/html/);
       expect(res.text).toContain('property="og:image"');
-      expect(res.text).toContain(`https://meetifyy.app/post/${POST_ID}`);
+      expect(res.text).toContain(`${SITE}/post/${POST_ID}`);
     });
 
     it('serves a real 1200x630 JPEG at /image.jpg', async () => {

@@ -1,6 +1,6 @@
 process.env.APP_ENV = process.env.APP_ENV || 'development';
-process.env.FRONTEND_URL = process.env.FRONTEND_URL || 'https://meetifyy.app';
 
+import { config } from '../config';
 import {
   buildShareMetadata,
   canonicalPostUrl,
@@ -10,6 +10,20 @@ import {
 } from './share-document';
 import type { PublicSharePost } from './share-preview.service';
 import { sharePost } from './testing/share-post.fixture';
+
+/**
+ * The site origin these tests assert against.
+ *
+ * Read from configuration rather than hardcoded. `FRONTEND_URL` is a required
+ * variable that differs per environment — CI sets `http://localhost:3000`, a
+ * developer's `.env` sets the dev host — so a spec that asserts a literal
+ * `https://meetifyy.app` passes on one machine and fails on the other. It did:
+ * these suites went green locally and red in CI on the same commit.
+ *
+ * What is worth asserting is the RELATIONSHIP — that the canonical URL is the
+ * configured site plus `/post/:id` — and that holds everywhere.
+ */
+const SITE = config.app.frontendUrl.replace(/\/+$/, '');
 
 /**
  * The document a crawler reads.
@@ -29,7 +43,7 @@ describe('share document', () => {
   describe('urls', () => {
     it('canonicalises to the app route, not to an API path', () => {
       expect(canonicalPostUrl(post().id)).toBe(
-        'https://meetifyy.app/post/11111111-2222-4333-8444-555555555555',
+        `${SITE}/post/11111111-2222-4333-8444-555555555555`,
       );
     });
 
@@ -49,9 +63,10 @@ describe('share document', () => {
     });
 
     it('serves the image from the frontend origin, where the CDN is', () => {
-      expect(shareImageUrl(post()).startsWith('https://meetifyy.app/')).toBe(
-        true,
-      );
+      // Not the API's origin, even though the API renders it: `/api/share/*` is
+      // rewritten at the edge, so going through the frontend host puts Vercel's
+      // CDN in front of the one expensive operation in this feature.
+      expect(shareImageUrl(post()).startsWith(`${SITE}/`)).toBe(true);
     });
   });
 
@@ -94,8 +109,17 @@ describe('share document', () => {
       expect(tag(html, /rel="canonical" href="([^"]+)"/)).toBe(
         meta.canonicalUrl,
       );
-      expect(meta.canonicalUrl.startsWith('https://')).toBe(true);
-      expect(meta.imageUrl.startsWith('https://')).toBe(true);
+      // ABSOLUTE, which is the property that matters: an unfurler silently
+      // ignores a relative `og:url` or `og:image`, and the card then fails to
+      // appear with nothing anywhere saying why. The scheme itself is whatever
+      // the environment's site URL uses — https in production, http on a CI
+      // runner — so asserting the scheme would be asserting the environment.
+      for (const url of [meta.canonicalUrl, meta.imageUrl]) {
+        const parsed = new URL(url);
+        expect(parsed.protocol).toMatch(/^https?:$/);
+        expect(parsed.host).toBeTruthy();
+        expect(url.startsWith(`${SITE}/`)).toBe(true);
+      }
     });
 
     it('publishes a teaser, not the post', () => {
