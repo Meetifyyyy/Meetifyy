@@ -441,83 +441,11 @@ export default function CampusPage() {
       {/* CAMPUS BODY SECTIONS */}
       <div className={styles.campusBody}>
 
-        {/* Campus Events — lightweight discovery: upcoming only. */}
-        <section className={styles.section}>
-          <div className={styles.sectionHeaderRow} style={{ justifyContent: 'space-between' }}>
-            <div className={styles.sectionHeaderRow}>
-              <span className={styles.sectionEmoji}>🎟️</span>
-              <h2 className={styles.sectionTitleText}>campus events</h2>
-            </div>
-            {hasUpcoming && (
-              <button
-                className={styles.sectionArrowBtn}
-                onClick={() => navigate('/campus/events')}
-                aria-label="See all campus events"
-              >
-                <ChevronRight size={16} />
-              </button>
-            )}
-          </div>
-
-          <CampusEventSection
-            scope="upcoming"
-            showCount={false}
-            /* The only event section on this page, and the first content under
-               the header — its lead poster is the mobile LCP element. */
-            eagerFirstPoster
-            events={upcoming.events}
-            isLoading={upcoming.isLoading}
-            emptyText="No events yet."
-            canManage={isCampusRep}
-            onEdit={editEvent}
-            onDelete={setDeleteCandidate}
-            hasNextPage={upcoming.hasNextPage}
-            isFetchingNextPage={upcoming.isFetchingNextPage}
-            fetchNextPage={upcoming.fetchNextPage}
-          />
-        </section>
-
-        {/* Campus activities — the college-only crew activities of this campus. */}
-        <section className={styles.section}>
-          <div className={styles.sectionHeaderRow} style={{ justifyContent: 'space-between' }}>
-            <div className={styles.sectionHeaderRow}>
-              <span className={styles.sectionEmoji}>🎉</span>
-              <h2 className={styles.sectionTitleText}>campus activities</h2>
-            </div>
-            {campusActivityItems.length > 0 && (
-              <button
-                className={styles.sectionArrowBtn}
-                onClick={() => navigate('/crew?tab=college')}
-                aria-label="See all campus activities"
-              >
-                <ChevronRight size={16} />
-              </button>
-            )}
-          </div>
-
-          {campusActivities.isLoading && campusActivityItems.length === 0 ? (
-            <>
-              <CrewCardSkeleton />
-              <CrewCardSkeleton />
-            </>
-          ) : campusActivityItems.length === 0 ? (
-            <div className={eventStyles.emptyState}>
-              <p className={eventStyles.emptyText}>
-                No activities yet.
-              </p>
-            </div>
-          ) : (
-            campusActivityItems.map(activity => (
-              <CrewCard
-                key={activity.id}
-                activity={activity}
-                onClick={openActivity}
-              />
-            ))
-          )}
-        </section>
-
-        {/* Wrapper for Side by Side Sections on Desktop */}
+        {/* People and communities lead the page: they are the parts a student
+            can always act on, where events and activities are frequently empty
+            on a quiet campus. Side by side on desktop; the base rule stacks
+            them, so on mobile "you may know" sits above "discover
+            communities". */}
         <div className={styles.sideBySideDesktop}>
           {/* you may know */}
           <section className={`${styles.section} ${styles.sideSection}`}>
@@ -577,6 +505,85 @@ export default function CampusPage() {
             </div>
           </section>
         </div>
+
+        {/* Campus Events — lightweight discovery: upcoming only. */}
+        <section className={styles.section}>
+          <div className={styles.sectionHeaderRow} style={{ justifyContent: 'space-between' }}>
+            <div className={styles.sectionHeaderRow}>
+              <span className={styles.sectionEmoji}>🎟️</span>
+              <h2 className={styles.sectionTitleText}>campus events</h2>
+            </div>
+            {hasUpcoming && (
+              <button
+                className={styles.sectionArrowBtn}
+                onClick={() => navigate('/campus/events')}
+                aria-label="See all campus events"
+              >
+                <ChevronRight size={16} />
+              </button>
+            )}
+          </div>
+
+          <CampusEventSection
+            scope="upcoming"
+            showCount={false}
+            /* No `eagerFirstPoster`: this section used to be the first content
+               under the header, which made its lead poster the mobile LCP
+               element worth fetching eagerly. People and communities sit above
+               it now, so on mobile that poster is below the fold and eager
+               loading it would compete with the element that IS the LCP. */
+            events={upcoming.events}
+            isLoading={upcoming.isLoading}
+            emptyText="No events yet."
+            canManage={isCampusRep}
+            onEdit={editEvent}
+            onDelete={setDeleteCandidate}
+            hasNextPage={upcoming.hasNextPage}
+            isFetchingNextPage={upcoming.isFetchingNextPage}
+            fetchNextPage={upcoming.fetchNextPage}
+          />
+        </section>
+
+        {/* Campus activities — the college-only crew activities of this campus. */}
+        <section className={styles.section}>
+          <div className={styles.sectionHeaderRow} style={{ justifyContent: 'space-between' }}>
+            <div className={styles.sectionHeaderRow}>
+              <span className={styles.sectionEmoji}>🎉</span>
+              <h2 className={styles.sectionTitleText}>campus activities</h2>
+            </div>
+            {campusActivityItems.length > 0 && (
+              <button
+                className={styles.sectionArrowBtn}
+                onClick={() => navigate('/crew?tab=college')}
+                aria-label="See all campus activities"
+              >
+                <ChevronRight size={16} />
+              </button>
+            )}
+          </div>
+
+          {campusActivities.isLoading && campusActivityItems.length === 0 ? (
+            <>
+              <CrewCardSkeleton />
+              <CrewCardSkeleton />
+            </>
+          ) : campusActivityItems.length === 0 ? (
+            <div className={eventStyles.emptyState}>
+              <p className={eventStyles.emptyText}>
+                No activities yet.
+              </p>
+            </div>
+          ) : (
+            campusActivityItems.map(activity => (
+              <CrewCard
+                key={activity.id}
+                activity={activity}
+                onClick={openActivity}
+              />
+            ))
+          )}
+        </section>
+
       </div>
 
         {isGroupModalOpen && (
