@@ -218,9 +218,49 @@ function authorName(post, author) {
   );
 }
 
-/** A single readable line from a block of user text, or ''. */
+/**
+ * A link written the explicit way: with a scheme, or with `www.`.
+ */
+const EXPLICIT_URL = /(?:https?:\/\/|www\.)\S+/gi;
+
+/**
+ * A link written the way people actually paste them — `meetifyy.app/home`, no
+ * scheme. A chat app linkifies these identically, so the preview is hijacked
+ * identically.
+ *
+ * Deliberately NOT case-insensitive on the final segment. A lowercase
+ * top-level domain is what a real host has, and requiring it means `etc.Also`
+ * or `sentence.Then` — a missing space after a full stop — is left alone. The
+ * cost is that `node.js` in prose is treated as a host and dropped from the
+ * teaser, which is rare and harmless next to sending somebody a message whose
+ * preview is the wrong page.
+ */
+const BARE_HOST =
+  /\b[a-zA-Z0-9][a-zA-Z0-9-]*(?:\.[a-zA-Z0-9-]+)*\.[a-z]{2,24}(?:\/\S*)?/g;
+
+/**
+ * A single readable line from a block of user text, or ''.
+ *
+ * URLS ARE REMOVED, AND THAT IS THE POINT
+ * This string becomes the body of a WhatsApp message with the post link
+ * appended — and WhatsApp previews the FIRST url it finds in a message. A post
+ * whose text contains a link therefore unfurled that link instead of the post,
+ * which defeats the entire feature on the platform it matters most on. X has a
+ * milder version of the same problem: a url inside `text` is linkified beside
+ * the one in `url`, and eats 23 characters of the budget doing it.
+ *
+ * Nothing is lost by dropping them. A raw url is not a readable summary of a
+ * post, the card carries the post's content visually, and the link that should
+ * be previewed — the Meetifyy one — is appended by the caller.
+ *
+ * `og:description` deliberately keeps its urls: it is a faithful description of
+ * the post rather than a message being composed, and there is nothing there for
+ * a stray link to hijack.
+ */
 function teaser(value) {
   const text = String(value ?? '')
+    .replace(EXPLICIT_URL, ' ')
+    .replace(BARE_HOST, ' ')
     .replace(/\s+/g, ' ')
     .trim();
   if (!text) return '';

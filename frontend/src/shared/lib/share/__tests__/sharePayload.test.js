@@ -158,6 +158,61 @@ describe('share payloads', () => {
       ).toBe('See a video by Alex Kuriakose on Meetifyy.');
     });
 
+    it('never lets a link in the post hijack the preview', () => {
+      // WhatsApp previews the FIRST url in a message, and the caller appends
+      // the Meetifyy link after this text. A post whose body contains a link
+      // therefore unfurled THAT link instead of the post — the whole feature,
+      // defeated, on the platform it matters most on.
+      const payload = buildPostShare(
+        { id: 'p1', text: 'check this out https://meetifyy.app/home really cool' },
+        author,
+      );
+      expect(payload.text).toBe('check this out really cool');
+      expect(payload.text).not.toContain('http');
+    });
+
+    it('strips a bare host too, because that is how people paste links', () => {
+      expect(
+        buildPostShare({ id: 'p1', text: 'see meetifyy.app/home for more' }, author)
+          .text,
+      ).toBe('see for more');
+    });
+
+    it('falls back to a description when the post was only a link', () => {
+      // The exact post that surfaced this: its entire body is one URL, so after
+      // stripping there is nothing left to quote.
+      const payload = buildPostShare(
+        { id: 'p1', text: 'https://meetifyy.app/home' },
+        author,
+      );
+      expect(payload.text).toBe('See a post by Alex Kuriakose on Meetifyy.');
+      expect(payload.text).not.toContain('http');
+    });
+
+    it('leaves the canonical link as the only url in the message', () => {
+      const payload = buildPostShare(
+        { id: 'p1', text: 'look https://example.test/x and https://other.test/y' },
+        author,
+      );
+      // Reconstructs what the WhatsApp target actually sends.
+      const message = `${payload.text} ${payload.url}`;
+      expect(message.match(/https?:\/\//g)).toHaveLength(1);
+      expect(message).toContain('/post/p1');
+    });
+
+    it('leaves ordinary prose alone', () => {
+      // The stripping must not eat real writing. A missing space after a full
+      // stop is the shape most likely to be mistaken for a host, so the pattern
+      // requires a lowercase top-level domain and these survive.
+      for (const text of [
+        'Meet at 3.30 in room B.Bring your own racket',
+        'It cost 3.14 per hour. Worth it.',
+        'See you Tues.Also bring water',
+      ]) {
+        expect(buildPostShare({ id: 'p1', text }, author).text).toBe(text);
+      }
+    });
+
     it('sends a teaser, never the whole post', () => {
       const payload = buildPostShare(
         { id: 'p1', text: 'word '.repeat(400) },
