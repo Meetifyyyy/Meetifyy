@@ -720,3 +720,44 @@
   background: var(--color-bg-main, #e4e4e7);
   border-color: var(--color-border-dark, var(--color-border));
 }
+
+/* ── Narrow layouts: give the chat pane room ────────────────────────────────
+   The 350px above is a comfortable desktop width, but it is a fixed cost: when
+   the layout itself is narrow — a small window, a split screen, or a zoomed-in
+   large display, which shrinks the CSS viewport without shrinking the dashboard
+   chrome around it — that fixed cost is taken out of the chat pane, and the
+   pane is where the content is.
+
+   Sized against the layout's own width (see `container-name: messages`) rather
+   than the viewport, because the viewport does not know what the grid already
+   spent. The floor keeps a conversation row readable: avatar, name and a line
+   of preview text. */
+@container messages (max-width: 900px) {
+  .msgConvList {
+    width: clamp(248px, 40cqi, 350px);
+  }
+
+  /* The header, search and filters all sit on the same 1.25rem gutter, so they
+     come in together — pulling only one of them in misaligns the column.
+     Without this the four filter chips no longer fit: the row does scroll, but
+     its scrollbar is hidden, so a clipped "Groups" reads as broken rather than
+     as scrollable. Tightened just enough that all four fit at the floor width
+     above. */
+  .msgConvHeader {
+    padding: 0 0.85rem;
+  }
+
+  .searchRow {
+    padding: 0.75rem 0.85rem 0.5rem;
+  }
+
+  .filterRow {
+    padding: 0.65rem 0.75rem 0.75rem;
+    gap: 0.3rem;
+  }
+
+  .filterChip {
+    padding: 0.35rem 0.6rem;
+    font-size: 0.78rem;
+  }
+}

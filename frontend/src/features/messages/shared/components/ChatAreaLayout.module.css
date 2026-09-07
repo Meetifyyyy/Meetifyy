@@ -206,6 +206,46 @@
   transform: translateY(0);
 }
 
+/* ── The empty state in a narrow pane ───────────────────────────────────────
+   Measured against the chat pane itself (`container-name: chatpane`), which is
+   what actually varies: the pane is whatever the layout has left after the
+   conversation list, so a zoomed-in window can leave it a few hundred pixels
+   while the viewport still reports a desktop width.
+
+   At that size the defaults broke down — "Your Messages" split across two
+   lines, the description wrapped to six, and "New Message" wrapped inside its
+   own pill. The type and the icon come down a step and the button is told not
+   to break, so it stays one line and shrinks the padding instead. */
+@container chatpane (max-width: 420px) {
+  .emptyState {
+    padding: 1.25rem 1rem;
+  }
+
+  .emptyStateIcon {
+    width: 56px;
+    height: 56px;
+    margin-bottom: 0.75rem;
+  }
+
+  .emptyStateTitle {
+    font-size: 1.05rem;
+  }
+
+  .emptyStateDesc {
+    font-size: 0.84rem;
+    /* Was a fixed 320px, which is wider than the pane it has to sit in. */
+    max-width: 100%;
+    margin-bottom: 1rem;
+  }
+
+  .emptyStateBtn {
+    padding: 0.6rem 1rem;
+    font-size: 0.84rem;
+    white-space: nowrap;
+    max-width: 100%;
+  }
+}
+
 /* ── Typing bubble (sits between message list and input) ─── */
 
 .typingRow {

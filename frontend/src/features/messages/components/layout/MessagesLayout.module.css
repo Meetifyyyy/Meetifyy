@@ -17,6 +17,16 @@
   height: 100%;
   max-height: 100%;
   box-sizing: border-box;
+  /* The two panes have to size themselves against the space THIS element got,
+     not against the viewport. They are not the same number: the dashboard grid
+     spends ~360px on the left rail and gutters before Messages sees anything,
+     and browser zoom shrinks the CSS viewport without changing that split. A
+     viewport media query therefore reports "desktop" while the layout is
+     actually 722px wide, which is how a zoomed-in window ended up with a 350px
+     conversation list beside a 370px chat pane — too narrow for the empty
+     state, which wrapped its heading and its button onto several lines. */
+  container-type: inline-size;
+  container-name: messages;
   background: var(--color-bg-white, #ffffff);
   border-radius: var(--radius-xl, 20px);
   border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
