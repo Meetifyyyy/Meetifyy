@@ -338,8 +338,24 @@ const PostComposer = forwardRef(function PostComposer({ onSubmit }, ref) {
 
       <div
         className={`${styles.postComposer}${showPoll ? ` ${styles.hasPoll}` : ''}${expandedState ? ` ${styles.expanded}` : ''}`}
-        onClick={() => {
+        onClick={(e) => {
           if (!expandedState) setIsExpanded(true);
+          // Clicking the composer's empty area focuses the text field. But this
+          // handler sits on the element that WRAPS the poll editor, so a click
+          // into a poll option bubbled up here and had focus yanked straight
+          // back to the main editor — which made the option fields impossible
+          // to type into: every keystroke landed in the post text instead.
+          //
+          // Anything the browser can focus on its own is left alone; the
+          // convenience only applies to the inert areas that have no focus
+          // behaviour of their own.
+          if (
+            e.target.closest(
+              'input, textarea, select, button, a, label, [contenteditable]',
+            )
+          ) {
+            return;
+          }
           inputRef.current?.focus();
         }}
       >
