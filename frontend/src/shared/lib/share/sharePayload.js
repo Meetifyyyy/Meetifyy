@@ -16,6 +16,17 @@
  * says it is a video — and none of them carries more of the body than a teaser,
  * because the platforms truncate it anyway and the card is what people read.
  */
+import { config } from '@config';
+
+/**
+ * What this deployment calls itself.
+ *
+ * `VITE_APP_NAME`, same as everywhere else in the app. Typing "Meetifyy" into
+ * the share text would be the one string a rename or a white-label build could
+ * not reach — and it is the string that travels furthest, into other people's
+ * chat threads.
+ */
+const APP = config.app.name;
 
 /**
  * How much post text travels in a share payload.
@@ -81,8 +92,8 @@ export function buildPostShare(post, author) {
     url: postShareUrl(post?.id),
     // The title is what a platform without link previews shows, and what
     // Reddit prefills its submission with. It has to stand on its own.
-    title: body ? `${name} on Meetifyy: ${body}` : `${name} shared ${kind} on Meetifyy`,
-    text: body || `See ${kind} by ${name} on Meetifyy.`,
+    title: body ? `${name} on ${APP}: ${body}` : `${name} shared ${kind} on ${APP}`,
+    text: body || `See ${kind} by ${name} on ${APP}.`,
   };
 }
 
@@ -90,8 +101,8 @@ export function buildProfileShare(user) {
   const name = user?.displayName?.trim() || user?.username || 'Someone';
   return {
     url: profileShareUrl(user?.username),
-    title: `${name} on Meetifyy`,
-    text: `See ${name}'s profile on Meetifyy.`,
+    title: `${name} on ${APP}`,
+    text: `See ${name}'s profile on ${APP}.`,
   };
 }
 
@@ -99,8 +110,8 @@ export function buildCommunityShare(community) {
   const name = community?.name?.trim() || 'this community';
   return {
     url: communityShareUrl(community?.id),
-    title: `${name} on Meetifyy`,
-    text: teaser(community?.description) || `Join ${name} on Meetifyy.`,
+    title: `${name} on ${APP}`,
+    text: teaser(community?.description) || `Join ${name} on ${APP}.`,
   };
 }
 
@@ -112,8 +123,10 @@ export function buildActivityShare(activity) {
 
   return {
     url: activityShareUrl(activity?.id),
-    title: `${title} on Meetifyy`,
-    text: when ? `${title} — ${when}. Join on Meetifyy.` : `Join ${title} on Meetifyy.`,
+    title: `${title} on ${APP}`,
+    text: when
+      ? `${title} — ${when}. Join on ${APP}.`
+      : `Join ${title} on ${APP}.`,
   };
 }
 

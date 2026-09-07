@@ -59,14 +59,38 @@ export function canonicalPostUrl(postId: string): string {
 }
 
 /**
- * The OG image URL for a post.
+ * The origin the card image is served from.
  *
- * Served from the FRONTEND origin rather than the API's, even though the API is
- * what renders it. `vercel.json` rewrites `/api/share/*` to the API, so the
- * bytes come from the same place either way — but going through the frontend
- * host puts Vercel's CDN in front of the one genuinely expensive operation in
- * this feature, and gives the card a URL on the same origin as the page that
- * references it, which a couple of unfurlers are happier about.
+ * The API's OWN public origin, not the frontend's. Every value here comes from
+ * this deployment's configuration, so a development build advertises the
+ * development API and a production build advertises the production one with no
+ * per-environment special case anywhere.
+ *
+ * WHY NOT THE FRONTEND ORIGIN
+ * It was, briefly. `vercel.json` rewrites `/api/share/*` to the API, so a
+ * frontend URL reaches the same bytes and gets Vercel's CDN in front of them —
+ * which is a real benefit, and the reason the rewrite still exists. But it
+ * makes the card's address depend on a routing rule living in a different file
+ * that has to name every host by hand. Any deployment that rule does not
+ * enumerate — a preview build, a renamed environment, a new region — would
+ * publish an `og:image` pointing at somebody else's API, and the failure is
+ * invisible: the crawler simply gets a 404 and shows a card with no picture.
+ *
+ * Pointing at the API directly cannot be wrong. `BACKEND_URL` is required in
+ * staging and production, and an image served from an API subdomain while the
+ * page lives on the apex is ordinary — most sites do exactly that.
+ *
+ * The frontend origin remains the fallback for local development, where
+ * `BACKEND_URL` is usually unset and Vite proxies `/api` to the backend.
+ */
+function imageOrigin(): string {
+  const configured =
+    config.app.apiBaseUrl || config.app.backendUrl || config.app.frontendUrl;
+  return trimSlash(configured);
+}
+
+/**
+ * The OG image URL for a post.
  *
  * The path is stable and the version rides in the query string. That is what
  * lets the response be `immutable` for a year while an edited post still
@@ -75,7 +99,7 @@ export function canonicalPostUrl(postId: string): string {
  */
 export function shareImageUrl(post: PublicSharePost): string {
   const version = SharePreviewService.versionToken(post);
-  return `${trimSlash(config.app.frontendUrl)}/api/share/post/${post.id}/image.jpg?v=${version}`;
+  return `${imageOrigin()}/api/share/post/${post.id}/image.jpg?v=${version}`;
 }
 
 export function buildShareMetadata(post: PublicSharePost): ShareMetadata {

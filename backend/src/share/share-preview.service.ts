@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { config } from '../config';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../uploads/uploads.service';
 import { MediaCleanupService } from '../uploads/media-cleanup.service';
@@ -310,7 +311,7 @@ export class SharePreviewService {
    * be an image with no text at all, and platforms render a missing description
    * as a bare URL.
    */
-  static description(post: PublicSharePost): string {
+  static description(post: PublicSharePost, appName = config.app.name): string {
     const text = post.text.replace(/\n+/g, ' ').trim();
 
     // A poll's question IS its text, so the description leads with it and then
@@ -320,8 +321,8 @@ export class SharePreviewService {
     if (post.isPoll) {
       const options =
         post.pollOptionCount > 0
-          ? `Poll · ${post.pollOptionCount} options · Vote on Meetifyy.`
-          : 'Vote in this poll on Meetifyy.';
+          ? `Poll · ${post.pollOptionCount} options · Vote on ${appName}.`
+          : `Vote in this poll on ${appName}.`;
       if (!text) return options;
       return truncateToChars(
         `${text} — ${options}`,
@@ -332,16 +333,16 @@ export class SharePreviewService {
     if (text) {
       return truncateToChars(text, SharePreviewService.DESCRIPTION_MAX_CHARS);
     }
-    if (post.mediaKind === 'video') return 'Watch this video on Meetifyy.';
+    if (post.mediaKind === 'video') return `Watch this video on ${appName}.`;
     if (post.imageCount > 1) {
-      return `See these ${post.imageCount} photos on Meetifyy.`;
+      return `See these ${post.imageCount} photos on ${appName}.`;
     }
-    if (post.mediaKind === 'image') return 'See this photo on Meetifyy.';
-    return 'See this post on Meetifyy.';
+    if (post.mediaKind === 'image') return `See this photo on ${appName}.`;
+    return `See this post on ${appName}.`;
   }
 
   /** The `og:title`, e.g. "Alex shared a post on Meetifyy". */
-  static title(post: PublicSharePost, appName: string): string {
+  static title(post: PublicSharePost, appName = config.app.name): string {
     const name = post.author.displayName?.trim() || `@${post.author.username}`;
     return `${name} shared ${SharePreviewService.noun(post)} on ${appName}`;
   }

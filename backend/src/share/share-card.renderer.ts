@@ -65,7 +65,7 @@ export class ShareCardRenderer {
    * throw away every cached card for a release that did not touch this file,
    * which is the cost the cache exists to avoid.
    */
-  static readonly REVISION = 11;
+  static readonly REVISION = 12;
 
   /** Shared with the site card. See the class comment. */
   private static readonly BG = '#FDFDFD';
@@ -301,7 +301,7 @@ export class ShareCardRenderer {
 
     const question =
       post.text.trim() ||
-      (post.pollOptionCount > 0 ? 'Poll' : 'Shared a poll on Meetifyy.');
+      (post.pollOptionCount > 0 ? 'Poll' : fallbackBody(post));
     const questionSize =
       question.length > 90 ? 34 : question.length > 44 ? 40 : 46;
     const lineHeight = Math.round(questionSize * 1.3);
@@ -842,9 +842,9 @@ export class ShareCardRenderer {
       `<g transform="translate(${padding} ${wordmarkY}) scale(${wordmarkWidth / this.wordmark.width})">${this.wordmark.body}</g>`,
     );
 
-    if (!hasPhoto) {
+    if (!hasPhoto && SITE_HOST) {
       parts.push(
-        `<text x="${WIDTH - padding}" y="${wordmarkY + wordmarkHeight - 2}" text-anchor="end" font-family="${FONT}" font-size="22" font-weight="500" fill="${FAINT}">meetifyy.app</text>`,
+        `<text x="${WIDTH - padding}" y="${wordmarkY + wordmarkHeight - 2}" text-anchor="end" font-family="${FONT}" font-size="22" font-weight="500" fill="${FAINT}">${escapeXml(SITE_HOST)}</text>`,
       );
     }
 
@@ -919,19 +919,39 @@ export class ShareCardRenderer {
  * gives the card a subject where there would otherwise be blank space.
  */
 function fallbackBody(post: PublicSharePost): string {
-  if (post.isPoll) return 'Shared a poll on Meetifyy.';
+  const app = config.app.name;
+  if (post.isPoll) return `Shared a poll on ${app}.`;
   if (post.videoCount > 0 && post.imageCount === 0) {
     return post.videoCount === 1
-      ? 'Shared a video on Meetifyy.'
-      : `Shared ${post.videoCount} videos on Meetifyy.`;
+      ? `Shared a video on ${app}.`
+      : `Shared ${post.videoCount} videos on ${app}.`;
   }
   if (post.imageCount > 0) {
     return post.imageCount === 1
-      ? 'Shared a photo on Meetifyy.'
-      : `Shared ${post.imageCount} photos on Meetifyy.`;
+      ? `Shared a photo on ${app}.`
+      : `Shared ${post.imageCount} photos on ${app}.`;
   }
-  return 'Shared a post on Meetifyy.';
+  return `Shared a post on ${app}.`;
 }
+
+/**
+ * The site host printed in the card's footer.
+ *
+ * Derived from this deployment's own `FRONTEND_URL`, so a development build
+ * says `dev.meetifyy.app` and a production build says `meetifyy.app` — the card
+ * names the site it will actually take somebody to. Typing the production host
+ * in here would have put it on every card a development deployment rendered,
+ * which is a link that does not go where it says it does.
+ */
+const SITE_HOST = (() => {
+  try {
+    return new URL(config.app.frontendUrl).host;
+  } catch {
+    // A malformed FRONTEND_URL is a configuration error the isolation guard
+    // will catch at boot. It must not also take the renderer down.
+    return '';
+  }
+})();
 
 /**
  * Which of the four compositions a card uses. See `render`.

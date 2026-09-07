@@ -161,6 +161,12 @@ describe('vercel.json', () => {
       // CLAUDE.md rule 2: a development deployment must never reach the
       // production API. Every rewrite this feature adds is either scoped to the
       // dev host and pointed at the dev API, or unscoped and pointed at prod.
+      //
+      // Note what does NOT depend on this: the card's `og:image` names the
+      // API's own origin, read from that deployment's `BACKEND_URL`, so a
+      // deployment this table does not enumerate still publishes a correct
+      // image URL. Only the crawler document's routing lives here, because
+      // reaching the API at all is something the edge has to be told.
       const shareRules = frontend.rewrites.filter(
         (rule) => rule.source.startsWith('/api/share/') || rule.source === '/post/:id',
       );
