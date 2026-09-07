@@ -647,6 +647,46 @@ export function AuthProvider({ children }) {
     const userId = currentUserIdRef.current;
     const username = currentUsernameRef.current;
 
+    /**
+     * What the optimistic write below is about to overwrite.
+     *
+     * The write reaches `localStorage` and dozens of cached payloads, so a save
+     * that then fails used to leave the browser showing a change the server
+     * never received — and showing it across reloads, because it had been
+     * persisted locally. An avatar picked while the network was down looked
+     * applied to its owner and to nobody else, including on their own posts,
+     * which read the server's copy.
+     */
+    /**
+     * A synchronous snapshot of what the optimistic write is about to replace.
+     *
+     * Read from storage rather than captured from `currentUser` or from inside
+     * the state updater: the closure can hold an older render, and React does
+     * not run a functional update synchronously — the updater had not fired yet
+     * by the time a failed request reached the catch, so there was nothing to
+     * restore. This is the same string the optimistic write overwrites, read
+     * before it happens.
+     */
+    let rollbackRaw = null;
+    try {
+      rollbackRaw = localStorage.getItem('currentUser');
+    } catch (_) {
+      // Storage unavailable; the optimistic write below will not have persisted
+      // anything either, so there is nothing to put back.
+    }
+    const rollbackUser = (() => {
+      try {
+        return rollbackRaw ? JSON.parse(rollbackRaw) : null;
+      } catch (_) {
+        return null;
+      }
+    })();
+    const rollbackMedia = {
+      avatar: rollbackUser?.avatar,
+      cover: rollbackUser?.cover,
+      displayName: rollbackUser?.displayName,
+    };
+
     // Avatar/cover live denormalised inside dozens of cached payloads (post
     // authors, comment authors, chat participants, search hits, directory
     // cards). Patch them all up front so the new image is on screen at the next
@@ -705,8 +745,41 @@ export function AuthProvider({ children }) {
       }
       return true;
     } catch (e) {
+      // Put back what was on screen before, so local state matches what the
+      // server actually holds rather than a change it refused.
+      if (rollbackUser) {
+        // Restored through the updater queue, not before it. The optimistic
+        // write persists to storage from inside its own updater, which React
+        // runs whenever it next renders — writing the old value here directly
+        // put it back before that updater had run, and the optimistic one then
+        // overwrote it again.
+        setCurrentUser(() => {
+          try {
+            localStorage.setItem('currentUser', rollbackRaw);
+          } catch (_) {
+            // Storage failure is not worth masking the save error below.
+          }
+          return rollbackUser;
+        });
+      }
+      if (userId) {
+        propagateUserMedia(queryClient, {
+          userId,
+          username,
+          ...(rollbackMedia.avatar !== undefined ? { avatar: rollbackMedia.avatar } : {}),
+          ...(rollbackMedia.cover !== undefined ? { cover: rollbackMedia.cover } : {}),
+          ...(rollbackMedia.displayName !== undefined
+            ? { displayName: rollbackMedia.displayName }
+            : {}),
+        });
+      }
+      // Rethrown rather than returned as `false`: every caller already wraps
+      // this in a `.catch()` or a try/catch that shows the user the save
+      // failed, and none of them could ever fire while this resolved. The
+      // avatar picker in particular reported "Avatar updated" on a save that
+      // had not happened.
       console.error(e);
-      return false;
+      throw e;
     }
   }, [queryClient]);
 
