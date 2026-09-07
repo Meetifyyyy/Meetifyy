@@ -1,9 +1,10 @@
 import React, { useMemo, useState } from 'react';
 import { getProcessedAvatarUrl } from '@shared/components/avatar/Avatar';
+import emptyMascotImg from '@assets/images/instant_match_mascot.webp';
 import {
   getActivity, getAreaLabel, getTimePreference, accentVars,
 } from '../../constants/matchConstants';
-import { Blob, Bolt, Halftone, Squiggle, Ticks } from '../decor/Decor';
+import { Ticks } from '../decor/Decor';
 
 /**
  * Who is searching right now — the screen Instant Match opens on.
@@ -72,45 +73,21 @@ function RosterError({ message, onRetry }) {
 /**
  * Nobody is waiting.
  *
- * The whole screen, carried by one mark and two lines of type — the sheet
- * drops its own heading for this state, because a title that announces a list
- * above an empty one is the noise, not the information.
- *
- * The mark is a flat, still illustration in the feature's own printing idiom:
- * a paper window, two spot-colour plates laid slightly off register so they
- * overprint into a third colour where they meet, a registration tick on the
- * rim, and the bolt in ink at the centre. Nothing moves — it is a printed
- * thing, and it is drawn once.
+ * Carried entirely by the friendly mascot illustration (which incorporates the
+ * "nobody yet?" lettering). Screen reader text is retained for accessibility.
  */
 function EmptyQueue() {
   return (
     <div className="im-people-empty" role="status">
-      <span className="im-people-empty-art" aria-hidden="true">
-        <span className="im-people-empty-stage">
-          <Halftone className="im-people-empty-field" id="im-dots-empty" />
-          <span className="im-people-empty-plate im-people-empty-plate-1" />
-          <Blob className="im-people-empty-plate im-people-empty-plate-2" variant={3} />
-          <span className="im-people-empty-plate im-people-empty-plate-3" />
-        </span>
-
-        {/* The rim sits outside the window, so the plates read as printed
-            under it rather than inside a ring. */}
-        <svg className="im-people-empty-rim" viewBox="0 0 140 140" aria-hidden="true">
-          <circle className="im-people-empty-rim-line" cx="70" cy="70" r="66" />
-          {/* Registration ticks at the quarters, the way a plate is squared
-              up on press — they straddle the rim rather than sit beside it. */}
-          <path
-            className="im-people-empty-tick"
-            d="M70 0v8M70 140v-8M0 70h8M140 70h-8"
-          />
-        </svg>
-
-        <span className="im-people-empty-bolt"><Bolt /></span>
-      </span>
-
-      <p className="im-display im-display-lg im-people-empty-title">Nobody yet</p>
-      <Squiggle className="im-people-empty-squiggle" />
-      <p className="im-lede im-people-empty-lede">Be the first.</p>
+      <img
+        src={emptyMascotImg}
+        alt="Nobody yet?"
+        className="im-people-empty-mascot"
+        width={1671}
+        height={941}
+      />
+      <span className="im-sr-only">Nobody yet</span>
+      <span className="im-sr-only">Be the first.</span>
     </div>
   );
 }

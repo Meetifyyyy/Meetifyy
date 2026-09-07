@@ -667,146 +667,34 @@
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   text-align: center;
-  gap: 6px;
-  padding: 10px 0 14px;
+  padding: 8px 0 12px;
 }
 
 /*
  * ── The empty mark ───────────────────────────────────────────────────────
  *
- * A flat illustration, drawn the way the rest of Instant Match is printed: a
- * paper window with a halftone field, two spot-colour plates laid slightly off
- * register, and the bolt in ink at the centre. Where the two plates meet they
- * overprint into a third colour — that is `mix-blend-mode: multiply` doing the
- * job ink does, not an effect, and it is the one thing that makes this read as
- * printed rather than drawn in a vector app.
- *
- * Nothing here animates. It is six elements, painted once.
+ * Mascot character shown when nobody is currently searching in the queue.
  */
-.im-people-empty-art {
-  position: relative;
-  display: grid;
-  place-items: center;
-  width: 140px;
-  height: 140px;
-  margin-bottom: 6px;
-}
-
-/* The window. Plates are clipped to it, so each one reads as a printed area
-   running off the edge of the paper rather than as a shape floating on it. */
-.im-people-empty-stage {
-  position: absolute;
-  inset: 4px;
-  border-radius: 50%;
-  overflow: hidden;
-  background: var(--im-paper);
-}
-
-.im-people-empty-stage .im-people-empty-field {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  color: var(--im-ink);
-  opacity: 0.1;
-}
-
-.im-people-empty-plate {
-  position: absolute;
-  inset: 0;
-  margin: auto;
-  /* Where two plates cross, the ink builds up rather than one hiding the
-     other. Reversed for dark mode below, where multiply would swallow both. */
-  mix-blend-mode: multiply;
-}
-
-/* Violet, high and left. */
-.im-people-empty-stage .im-people-empty-plate-1 {
-  width: 84px;
-  height: 84px;
-  border-radius: 50%;
-  background: color-mix(in srgb, var(--im-violet) 32%, transparent);
-  transform: translate(-21px, -14px);
-}
-
-/* Lime, low and right, and not a circle — two identical discs would read as a
-   diagram, and this is a poster. */
-.im-people-empty-stage .im-people-empty-plate-2 {
-  width: 88px;
-  height: 88px;
-  color: color-mix(in srgb, var(--im-lime) 55%, transparent);
-  transform: translate(20px, 16px) rotate(18deg);
-}
-
-/* One small coral dot, off in the corner: the third plate, barely inked. */
-.im-people-empty-stage .im-people-empty-plate-3 {
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  background: color-mix(in srgb, var(--im-coral) 34%, transparent);
-  transform: translate(34px, -36px);
-}
-
-/*
- * Dark mode inverts the press: ink does not build up on a black ground, light
- * does. `screen` is the counterpart of multiply — two plates crossing come out
- * brighter than either — and the alphas are raised to match, because a 32%
- * plate that reads as colour on cream reads as sludge on near-black.
- */
-[data-theme='dark'] .im-people-empty-plate { mix-blend-mode: screen; }
-[data-theme='dark'] .im-people-empty-stage .im-people-empty-plate-1 {
-  background: color-mix(in srgb, var(--im-violet) 52%, transparent);
-}
-[data-theme='dark'] .im-people-empty-stage .im-people-empty-plate-2 {
-  color: color-mix(in srgb, var(--im-lime) 50%, transparent);
-}
-[data-theme='dark'] .im-people-empty-stage .im-people-empty-plate-3 {
-  background: color-mix(in srgb, var(--im-coral) 46%, transparent);
-}
-
-/* ── Rim ─────────────────────────────────────────────────────────────────── */
-
-.im-people-empty-rim {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  fill: none;
+.im-people-empty-mascot {
+  display: block;
+  width: auto;
+  height: 250px;
+  max-width: 440px;
+  object-fit: contain;
+  margin: 0 auto;
+  user-select: none;
+  -webkit-user-drag: none;
   pointer-events: none;
 }
 
-.im-people-empty-rim-line {
-  stroke: var(--im-line-strong);
-  stroke-width: 1.5;
+@media (max-width: 480px) {
+  .im-people-empty-mascot {
+    height: 195px;
+    max-width: 100%;
+  }
 }
-
-.im-people-empty-tick {
-  stroke: var(--im-accent);
-  stroke-width: 2.5;
-  stroke-linecap: round;
-}
-
-/* ── Centre ──────────────────────────────────────────────────────────────── */
-
-.im-people-empty-bolt {
-  position: relative;
-  display: grid;
-  place-items: center;
-  color: var(--im-ink);
-}
-
-.im-people-empty-bolt .im-bolt { width: 30px; height: 30px; }
-
-
-.im-people-empty-title { color: var(--im-ink); }
-
-.im-people-empty-squiggle {
-  width: 108px;
-  color: var(--im-accent);
-}
-
-.im-people-empty-lede { color: var(--im-ink-soft); }
 
 .im-people-state {
   display: flex;
