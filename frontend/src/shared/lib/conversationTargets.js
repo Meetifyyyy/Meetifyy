@@ -30,9 +30,24 @@ export function isConversationUnavailable(conversation) {
  * Groups are kept even when a member has deleted their account: the rest of
  * the group is still there to receive the message, and the backend only
  * refuses a one-to-one thread whose sole counterpart is gone.
+ *
+ * `canSendMessages === false` covers first-year isolation as well as
+ * verification, because the server computes that flag from every rule it will
+ * apply on the send — so a restricted thread cannot be offered as a share
+ * target even if it somehow survived the server's own list filter. Checked
+ * only when the field is present, for the reason spelled out on
+ * `isUserUnavailable`: a narrow payload must not be able to empty a picker.
  */
 export function sendableConversations(conversations) {
-  return (conversations || []).filter((c) => !isConversationUnavailable(c));
+  return (conversations || []).filter(
+    (c) =>
+      !isConversationUnavailable(c) &&
+      !(
+        c &&
+        Object.prototype.hasOwnProperty.call(c, 'canSendMessages') &&
+        c.canSendMessages === false
+      ),
+  );
 }
 
 /**

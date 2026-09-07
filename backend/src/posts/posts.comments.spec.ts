@@ -10,6 +10,7 @@ import { DomainEventService } from '../events/domain-event.service';
 import { RedisService } from '../redis/redis.service';
 import { MentionsService } from '../mentions/mentions.service';
 import { StorageService } from '../uploads/uploads.service';
+import { studentYearPolicyMockProvider } from '../common/student-year/testing/student-year-policy.mock';
 
 describe('PostsService — comments', () => {
   const POST = 'post-1';
@@ -63,6 +64,7 @@ describe('PostsService — comments', () => {
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
+        studentYearPolicyMockProvider(),
         PostsService,
         { provide: PrismaService, useValue: prisma },
         // Deletion permissions have their own suite

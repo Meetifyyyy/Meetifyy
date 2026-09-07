@@ -12,6 +12,7 @@ import { PresenceService } from '../presence/presence.service';
 import { AcademicsService } from '../academics/academics.service';
 import { NOTIFICATIONS_QUEUE } from '../notifications/notifications.processor';
 import { VerificationAccessService } from '../common/verification/verification-access.service';
+import { studentYearPolicyMockProvider } from '../common/student-year/testing/student-year-policy.mock';
 
 /**
  * `/api/users/connections` is the recipient list behind every Invite selector
@@ -35,6 +36,7 @@ describe('UsersService — selector eligibility', () => {
 
     const moduleRef = await Test.createTestingModule({
       providers: [
+        studentYearPolicyMockProvider(),
         UsersService,
         {
           provide: PrismaService,
@@ -57,7 +59,10 @@ describe('UsersService — selector eligibility', () => {
         { provide: RedisService, useValue: { getClient: () => null } },
         { provide: PresenceService, useValue: { getPresenceMany: jest.fn() } },
         AcademicsService,
-        { provide: getQueueToken(NOTIFICATIONS_QUEUE), useValue: { add: jest.fn() } },
+        {
+          provide: getQueueToken(NOTIFICATIONS_QUEUE),
+          useValue: { add: jest.fn() },
+        },
         VerificationAccessService,
       ],
     }).compile();
@@ -133,8 +138,12 @@ describe('UsersService — connections cache', () => {
 
     const moduleRef = await Test.createTestingModule({
       providers: [
+        studentYearPolicyMockProvider(),
         UsersService,
-        { provide: PrismaService, useValue: { user: { findMany: jest.fn().mockResolvedValue([]) } } },
+        {
+          provide: PrismaService,
+          useValue: { user: { findMany: jest.fn().mockResolvedValue([]) } },
+        },
         {
           provide: BlocksService,
           useValue: {
@@ -145,17 +154,27 @@ describe('UsersService — connections cache', () => {
         { provide: NotificationsService, useValue: {} },
         { provide: NotificationFactory, useValue: {} },
         { provide: DomainEventService, useValue: { publish: jest.fn() } },
-        { provide: RedisService, useValue: { getClient: () => ({ get, setex }) } },
+        {
+          provide: RedisService,
+          useValue: { getClient: () => ({ get, setex }) },
+        },
         { provide: PresenceService, useValue: {} },
         AcademicsService,
-        { provide: getQueueToken(NOTIFICATIONS_QUEUE), useValue: { add: jest.fn() } },
+        {
+          provide: getQueueToken(NOTIFICATIONS_QUEUE),
+          useValue: { add: jest.fn() },
+        },
         VerificationAccessService,
       ],
     }).compile();
 
     await moduleRef.get(UsersService).getConnections('me', 'john', 50);
 
-    expect(get).toHaveBeenCalledWith('connections:v2:me:john:50');
-    expect(setex.mock.calls[0][0]).toBe('connections:v2:me:john:50');
+    // The prefix is bumped whenever the MEANING of a cached entry changes, so
+    // entries written by the previous build are retired instantly rather than
+    // being served for the rest of their TTL under a rule that no longer
+    // applies. v2 was the verification filter; v3 is first-year isolation.
+    expect(get).toHaveBeenCalledWith('connections:v3:me:john:50');
+    expect(setex.mock.calls[0][0]).toBe('connections:v3:me:john:50');
   });
 });

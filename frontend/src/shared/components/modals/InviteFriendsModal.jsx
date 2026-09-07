@@ -9,6 +9,7 @@ import { useScrollLock } from '@shared/hooks/useScrollLock';
 import ShareModalAvatar from '../avatar/ShareModalAvatar';
 import styles from './InviteFriendsModal.module.css';
 import { Search, X, Check } from '@shared/components/icons';
+import { filterCompatibleUsers } from '@shared/lib/studentYearPolicy';
 
 export default function InviteFriendsModal({
   activityId,
@@ -43,7 +44,13 @@ export default function InviteFriendsModal({
       const users = selectableUsers(
         await usersApi.getConnections(searchQuery, 50).catch(() => [])
       );
-      return (users || []).filter(u => u && u.id && String(u.id) !== String(currentUser?.id));
+      // First-year isolation. `getConnections` is filtered server-side and the
+      // invite endpoint refuses a restricted recipient outright, so this only
+      // catches a row held over in this query's own 30s cache (or the
+      // server's 20s one) from before the viewer's batch resolved.
+      return filterCompatibleUsers(currentUser, users || []).filter(
+        (u) => u && u.id && String(u.id) !== String(currentUser?.id)
+      );
     },
     staleTime: 30_000,
   });

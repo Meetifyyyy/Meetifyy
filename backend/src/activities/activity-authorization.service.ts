@@ -4,6 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ActivityVisibility, CrewActivityStatus, Prisma } from '@prisma/client';
+import { StudentYearPolicyService } from '../common/student-year/student-year-policy.service';
 
 /**
  * Centralised activity access policy.
@@ -25,6 +26,18 @@ import { ActivityVisibility, CrewActivityStatus, Prisma } from '@prisma/client';
 export interface UserAuthContext {
   id: string;
   collegeId?: string | null;
+  /**
+   * The viewer's batch year, for first-year isolation.
+   *
+   * Carried on the auth context rather than fetched inside the policy because
+   * every caller already resolves this context from the database once per
+   * request, and adding a lookup inside a method that runs per activity would
+   * be an N+1. `undefined` means the caller did not resolve it; the policy
+   * then treats the viewer as batch-unresolved, which is the non-first-year
+   * bucket -- the safe default, since it can only ever hide first-year content
+   * from someone, never reveal it.
+   */
+  batchYear?: number | null;
 }
 
 /** Minimal invitation shape the policy needs to judge validity. */
@@ -39,6 +52,30 @@ export interface ActivityAuthTarget {
   id: string;
   creatorId: string;
   collegeId?: string | null;
+  /**
+   * The HOST's batch year. Activity visibility is judged on whoever created
+   * the activity, exactly as every other row in the app is judged on its
+   * owner.
+   *
+   * Read either from this field or from `creator.batchYear` -- the detail
+   * paths already embed the creator, so selecting one more column there is all
+   * the plumbing this needs, and a caller building a synthetic target by
+   * spreading the row keeps working without remapping anything.
+   *
+   * When NEITHER is present the runtime checks below fall back to allowing.
+   * The query-layer filters are what actually keep restricted activities out
+   * of every list; a detail path that has not selected the column must not
+   * start refusing rows it has always served.
+   */
+  creatorBatchYear?: number | null;
+  /**
+   * @see creatorBatchYear
+   *
+   * Typed loosely on purpose: callers pass the creator row their own query
+   * selected, which carries a dozen presentation fields this policy has no
+   * interest in. Narrowing it would force every call site to remap the row.
+   */
+  creator?: ({ batchYear?: number | null } & Record<string, any>) | null;
   visibility: ActivityVisibility;
   status: CrewActivityStatus;
   shareToCampus?: boolean;
@@ -85,6 +122,8 @@ const ALLOW: AuthDecision = { allowed: true, code: 'ALLOWED' };
 
 @Injectable()
 export class ActivityAuthorizationService {
+  constructor(private readonly studentYearPolicy: StudentYearPolicyService) {}
+
   // ── Invitation validity ────────────────────────────────────────────────────
 
   /**
@@ -162,6 +201,42 @@ export class ActivityAuthorizationService {
     return user.collegeId === activity.collegeId;
   }
 
+  /**
+   * First-year isolation for a single activity already in hand.
+   *
+   * `creatorBatchYear` is only present when the caller selected it. When it is
+   * `undefined` this ALLOWS, because the query-layer filters above are the
+   * real enforcement for lists, and a detail path that has not been updated to
+   * select the field must not start refusing rows it has always served. Every
+   * detail path that can be reached by a restricted viewer does select it --
+   * see `ActivitiesService.getActivityById` and the realtime room join.
+   *
+   * `null` is different from `undefined` and is honoured: the host's batch was
+   * looked up and could not be resolved, which puts them in the
+   * non-first-year bucket.
+   */
+  private hostIsVisibleTo(
+    user: UserAuthContext | null,
+    activity: ActivityAuthTarget,
+  ): boolean {
+    if (!this.studentYearPolicy.isEnforcementEnabled()) return true;
+    // The host always sees their own activity, whatever cohort they are in.
+    if (user && activity.creatorId === user.id) return true;
+
+    const hostBatch =
+      activity.creatorBatchYear !== undefined
+        ? activity.creatorBatchYear
+        : activity.creator
+          ? (activity.creator.batchYear ?? null)
+          : undefined;
+    if (hostBatch === undefined) return true;
+
+    return this.studentYearPolicy.areBatchYearsCompatible(
+      user?.batchYear ?? null,
+      hostBatch,
+    );
+  }
+
   // ── 1. VIEW ────────────────────────────────────────────────────────────────
 
   /**
@@ -177,6 +252,22 @@ export class ActivityAuthorizationService {
     user: UserAuthContext | null,
     activity: ActivityAuthTarget,
   ): AuthDecision {
+    // First-year isolation runs BEFORE the visibility ladder, and before the
+    // host short-circuit, because it is not a visibility *mode* -- it says
+    // these two people are not in each other's world at all. A PUBLIC activity
+    // is no exception; that is the whole point of a symmetric rule.
+    //
+    // Answers 404, like PRIVATE: to a restricted viewer the activity must be
+    // indistinguishable from one that does not exist, and a 403 would confirm
+    // both that the id is real and that its host is in the other cohort.
+    if (!this.hostIsVisibleTo(user, activity)) {
+      return {
+        allowed: false,
+        reason: ACCESS_DENIED_MESSAGES.PRIVATE,
+        code: 'PRIVATE',
+      };
+    }
+
     if (activity.visibility === ActivityVisibility.PUBLIC) return ALLOW;
 
     // Every restricted mode requires an identified caller.
@@ -264,6 +355,7 @@ export class ActivityAuthorizationService {
     activity: ActivityAuthTarget,
   ): boolean {
     if (activity.deletedAt) return false;
+    if (!this.hostIsVisibleTo(user, activity)) return false;
     if (activity.visibility === ActivityVisibility.PRIVATE) return false;
     if (activity.visibility === ActivityVisibility.PUBLIC) return true;
 
@@ -377,6 +469,28 @@ export class ActivityAuthorizationService {
   };
 
   /**
+   * First-year isolation, as a `where` fragment on the activity's HOST.
+   *
+   * ANDed into all three builders below for exactly the reason AVAILABLE_HOST
+   * is: there are a dozen call sites and one of them would eventually be
+   * missed. Putting it here means every list, feed, search, recommendation and
+   * bookmark query that goes through this service inherits it, and a new
+   * caller cannot forget it.
+   *
+   * The rule is symmetric, so it does both halves at once: a first-year viewer
+   * sees only first-year hosts' activities, and everyone else sees only
+   * everyone else's.
+   */
+  private hostVisibilityWhere(
+    user: UserAuthContext | null,
+  ): Prisma.CrewActivityWhereInput {
+    if (!this.studentYearPolicy.isEnforcementEnabled()) return {};
+    return {
+      creator: this.studentYearPolicy.visibleUserWhere(user?.batchYear ?? null),
+    };
+  }
+
+  /**
    * `where` fragment restricting a query to activities the viewer may ORGANICALLY
    * DISCOVER. Applied at the database layer so restricted rows are never fetched
    * (and therefore can never leak through pagination, caching or a serializer).
@@ -390,6 +504,7 @@ export class ActivityAuthorizationService {
         AND: [
           { visibility: ActivityVisibility.PUBLIC },
           ActivityAuthorizationService.AVAILABLE_HOST,
+          this.hostVisibilityWhere(null),
         ],
       };
     }
@@ -418,7 +533,11 @@ export class ActivityAuthorizationService {
     }
 
     return {
-      AND: [{ OR: clauses }, ActivityAuthorizationService.AVAILABLE_HOST],
+      AND: [
+        { OR: clauses },
+        ActivityAuthorizationService.AVAILABLE_HOST,
+        this.hostVisibilityWhere(user),
+      ],
     };
   }
 
@@ -437,11 +556,20 @@ export class ActivityAuthorizationService {
   sharedAudienceWhere(
     user: UserAuthContext | null,
   ): Prisma.CrewActivityWhereInput {
+    // First-year isolation belongs in the SHAREABLE half, not only the
+    // personal one, and it is safe there: the clause depends solely on the
+    // viewer's batch, which is a coarse audience attribute exactly like their
+    // college. A page cached under an audience tag is therefore correct for
+    // every viewer carrying that tag -- provided the tag includes the batch
+    // bucket. See `ActivitiesService`, where the cache key was extended to
+    // carry it; a page keyed by college alone would hand a first-year
+    // student's activities to their whole campus.
     if (!user?.collegeId) {
       return {
         AND: [
           { visibility: ActivityVisibility.PUBLIC },
           ActivityAuthorizationService.AVAILABLE_HOST,
+          this.hostVisibilityWhere(user),
         ],
       };
     }
@@ -457,6 +585,7 @@ export class ActivityAuthorizationService {
           ],
         },
         ActivityAuthorizationService.AVAILABLE_HOST,
+        this.hostVisibilityWhere(user),
       ],
     };
   }
@@ -473,6 +602,7 @@ export class ActivityAuthorizationService {
         AND: [
           { visibility: ActivityVisibility.PUBLIC },
           ActivityAuthorizationService.AVAILABLE_HOST,
+          this.hostVisibilityWhere(null),
         ],
       };
     }
@@ -495,6 +625,13 @@ export class ActivityAuthorizationService {
           ],
         },
         ActivityAuthorizationService.AVAILABLE_HOST,
+        // Applied to the wider builder too. Bookmarks and "my activities" are
+        // personal lists, but a bookmark taken before the policy applied is
+        // still a link to a restricted host's activity, and the personal
+        // clauses above (creator / member / invitee) would otherwise re-admit
+        // it. The viewer's own activities are unaffected: a host is always in
+        // their own cohort.
+        this.hostVisibilityWhere(user),
       ],
     };
   }

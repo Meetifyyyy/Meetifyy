@@ -7,6 +7,7 @@ import { ConfigService } from '@nestjs/config';
 import { RedisService } from '../redis/redis.service';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { NotificationType } from '@prisma/client';
+import { studentYearPolicyMockProvider } from '../common/student-year/testing/student-year-policy.mock';
 
 /**
  * Which notification types reach the Notifications page and the bell badge.
@@ -38,6 +39,7 @@ describe('NotificationsService — what reaches the notifications page', () => {
     jest.clearAllMocks();
     const module: TestingModule = await Test.createTestingModule({
       providers: [
+        studentYearPolicyMockProvider(),
         NotificationsService,
         EventEmitter2,
         { provide: PrismaService, useValue: prisma },

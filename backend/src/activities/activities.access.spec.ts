@@ -12,6 +12,7 @@ import { DomainEventService } from '../events/domain-event.service';
 import { RedisService } from '../redis/redis.service';
 import { getQueueToken } from '@nestjs/bullmq';
 import { NOTIFICATIONS_QUEUE } from '../notifications/notifications.processor';
+import { studentYearPolicyMockProvider } from '../common/student-year/testing/student-year-policy.mock';
 
 /**
  * Endpoint-level enforcement: the same matrix as the policy spec, but driven
@@ -124,6 +125,7 @@ describe('Activity access enforcement (service level)', () => {
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
+        studentYearPolicyMockProvider(),
         ActivitiesService,
         ActivityDiscussionService,
         ActivityAuthorizationService,

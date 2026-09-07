@@ -1,5 +1,6 @@
 import { NotFoundException } from '@nestjs/common';
 import { PostsService } from './posts.service';
+import { createStudentYearPolicyMock } from '../common/student-year/testing/student-year-policy.mock';
 
 describe('PostsService — deletion lifecycle & data cleanup', () => {
   const POST_ID = 'post-123';
@@ -80,6 +81,8 @@ describe('PostsService — deletion lifecycle & data cleanup', () => {
       {} as any,
       storageService,
       authorizer,
+      // First-year isolation — not what the deletion lifecycle is about.
+      createStudentYearPolicyMock() as any,
       mediaCleanupService,
     );
   });

@@ -5,6 +5,7 @@ import { ActivityAuthorizationService } from '../activities/activity-authorizati
 import { PrismaService } from '../prisma/prisma.service';
 import { BlocksService } from '../users/blocks.service';
 import { RedisService } from '../redis/redis.service';
+import { studentYearPolicyMockProvider } from '../common/student-year/testing/student-year-policy.mock';
 
 describe('SearchService', () => {
   let service: SearchService;
@@ -30,6 +31,7 @@ describe('SearchService', () => {
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
+        studentYearPolicyMockProvider(),
         SearchService,
         ActivityAuthorizationService,
         { provide: PrismaService, useValue: prismaMock },

@@ -1,5 +1,6 @@
 import { RealtimeGateway } from './realtime.gateway';
 import { createVerificationAccessMock } from '../common/verification/testing/verification-access.mock';
+import { createStudentYearPolicyMock } from '../common/student-year/testing/student-year-policy.mock';
 import { allowAllRateLimit } from '../common/rate-limit/testing/rate-limit.mock';
 
 describe('RealtimeGateway — Authentication', () => {
@@ -69,6 +70,7 @@ describe('RealtimeGateway — Authentication', () => {
       communitiesService,
       blocksService,
       verificationAccess,
+      createStudentYearPolicyMock() as any,
       allowAllRateLimit(),
       jwtGuard,
     );

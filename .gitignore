@@ -212,6 +212,7 @@ docs/*
 !docs/azure-setup.md
 !docs/operations.md
 !docs/rate-limiting.md
+!docs/first-year-isolation.md
 
 diff_*.txt
 all_files.txt

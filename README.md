@@ -25,6 +25,7 @@ Four documents, kept current:
 | [docs/azure-setup.md](docs/azure-setup.md) | You're provisioning, deploying, or moving Azure accounts |
 | [docs/operations.md](docs/operations.md) | **Before changing anything in production** |
 | [docs/rate-limiting.md](docs/rate-limiting.md) | You're adding a limit, tuning one, or a 429 is firing where it shouldn't |
+| [docs/first-year-isolation.md](docs/first-year-isolation.md) | **Before adding any endpoint that returns users or their content** |
 
 `operations.md` is the one that saves time. Every entry in it is a real failure
 that already happened, and they all share a shape: nothing errors at the time,
@@ -50,7 +51,7 @@ meetifyy/
 │       └── shared/           components, hooks, stores
 │
 ├── admin-frontend/           admin portal
-├── docs/                     the five documents above
+├── docs/                     the six documents above
 ├── setup-azure-dev.sh        provisions the DEV Azure stack
 ├── setup-azure-prod.sh       provisions the PROD Azure stack
 └── .github/workflows/        ci.yml · deploy-dev.yml · deploy-prod.yml

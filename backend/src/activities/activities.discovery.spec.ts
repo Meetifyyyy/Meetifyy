@@ -9,6 +9,7 @@ import { DomainEventService } from '../events/domain-event.service';
 import { RedisService } from '../redis/redis.service';
 import { getQueueToken } from '@nestjs/bullmq';
 import { NOTIFICATIONS_QUEUE } from '../notifications/notifications.processor';
+import { studentYearPolicyMockProvider } from '../common/student-year/testing/student-year-policy.mock';
 
 /**
  * Crew discovery: the personalized "For You" ranking and the three-section
@@ -92,6 +93,7 @@ describe('Crew discovery', () => {
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
+        studentYearPolicyMockProvider(),
         ActivitiesService,
         ActivityAuthorizationService,
         { provide: PrismaService, useValue: prisma },

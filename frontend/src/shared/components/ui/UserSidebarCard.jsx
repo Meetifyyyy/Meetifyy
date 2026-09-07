@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useProfile } from '@shared/hooks/useProfile';
 import { useAuth } from '@shared/context/AuthContext';
@@ -8,6 +9,9 @@ import Skeleton from '@shared/components/skeletons/Skeleton';
 import { getCollegeName } from '@shared/utils/user';
 import { INTERESTS_BY_CATEGORY } from '@features/onboarding/constants/interestsData';
 import { useOpenDirectMessage } from '@shared/hooks/useOpenDirectMessage';
+import MessagingRestrictedModal from '@shared/components/modals/MessagingRestrictedModal';
+import { isMessagingRestricted } from '@shared/lib/studentYearPolicy';
+import { Lock } from '@shared/components/icons';
 import CoverImage from './CoverImage';
 import s from './UserSidebarCard.module.css';
 import { useAcademicSummary } from '@shared/academics/useAcademicSummary';
@@ -106,6 +110,10 @@ export default function UserSidebarCard({ username: propUsername, initialUser = 
   const location = useLocation();
   const { currentUser } = useAuth();
   const openDirectMessage = useOpenDirectMessage();
+  // First-year isolation: the "Messaging Restricted" dialog, kept local to
+  // this card so removing the feature is a matter of deleting this line and
+  // its two uses.
+  const [restrictedModalOpen, setRestrictedModalOpen] = useState(false);
 
   const targetUsername = propUsername || initialUser?.username || '';
   const { profile, isLoading } = useProfile(targetUsername);
@@ -184,8 +192,25 @@ export default function UserSidebarCard({ username: propUsername, initialUser = 
     }
   };
 
+  /**
+   * First-year isolation, same rule and same UX as the profile page: the
+   * Message control stays visible, shows a lock, and opens the explanatory
+   * dialog instead of starting anything.
+   *
+   * The flag rides on the profile payload this card already fetches. When the
+   * card is seeded from a post or a notification and the profile has not
+   * resolved yet, it is absent and the button renders unlocked -- the server
+   * still refuses the send, and the state corrects itself the moment the
+   * profile arrives.
+   */
+  const messagingRestricted = !isSelf && isMessagingRestricted(effectiveUser);
+
   const handleMessageClick = () => {
     if (isSelf) return;
+    if (messagingRestricted) {
+      setRestrictedModalOpen(true);
+      return;
+    }
     openDirectMessage(effectiveUser);
   };
 
@@ -304,12 +329,17 @@ export default function UserSidebarCard({ username: propUsername, initialUser = 
               <button 
                 className={s.iconBtn} 
                 onClick={handleMessageClick}
-                title="Send Message"
-                aria-label="Send Message"
+                title={messagingRestricted ? 'Messaging restricted' : 'Send Message'}
+                aria-label={messagingRestricted ? 'Send Message (restricted)' : 'Send Message'}
+                aria-haspopup={messagingRestricted ? 'dialog' : undefined}
               >
-                <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
-                </svg>
+                {messagingRestricted ? (
+                  <Lock size={18} strokeWidth={2} aria-hidden="true" />
+                ) : (
+                  <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                  </svg>
+                )}
               </button>
             </>
           ) : (
@@ -326,6 +356,12 @@ export default function UserSidebarCard({ username: propUsername, initialUser = 
         </div>
         )}
       </div>
+
+      {/* First-year isolation. Rendered only while open and touching nothing
+          else on this card. */}
+      {restrictedModalOpen && (
+        <MessagingRestrictedModal onClose={() => setRestrictedModalOpen(false)} />
+      )}
     </div>
   );
 }

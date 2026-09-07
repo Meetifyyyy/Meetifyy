@@ -5,6 +5,7 @@ import {
 } from './instant-match.service';
 import { PrismaFake } from './testing/prisma-fake';
 import { createVerificationAccessMock } from '../common/verification/testing/verification-access.mock';
+import { createStudentYearPolicyMock } from '../common/student-year/testing/student-year-policy.mock';
 
 /**
  * The dedicated 24h Instant Match chat.
@@ -72,6 +73,7 @@ describe('Instant Match chat lifecycle', () => {
       messages,
       blocksStubFor(prisma),
       createVerificationAccessMock() as any,
+      createStudentYearPolicyMock() as any,
     );
   });
 
@@ -383,7 +385,7 @@ describe('Instant Match chat lifecycle', () => {
       expect(conv?.expiresAt?.getTime()).toBeLessThanOrEqual(Date.now());
     });
 
-    it('clears both participants\' unread counts, so no badge outlives the session', async () => {
+    it("clears both participants' unread counts, so no badge outlives the session", async () => {
       seedChatWithMessages();
 
       await service.leaveChatSession('alice');
@@ -439,7 +441,7 @@ describe('Instant Match chat lifecycle', () => {
   // ── Unread ─────────────────────────────────────────────────────────────────
 
   describe('unread count', () => {
-    it('reports the viewer\'s own count for the live session', async () => {
+    it("reports the viewer's own count for the live session", async () => {
       seedChat();
       prisma.participants.push(
         { userId: 'alice', conversationId: 'conv-1', unreadCount: 2 },

@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import { VerificationStatus } from '@prisma/client';
 import { verificationAccessMockProvider } from '../../common/verification/testing/verification-access.mock';
+import { studentYearPolicyMockProvider } from '../../common/student-year/testing/student-year-policy.mock';
 
 describe('AdminVerificationService', () => {
   let service: AdminVerificationService;
@@ -54,6 +55,7 @@ describe('AdminVerificationService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         verificationAccessMockProvider(),
+        studentYearPolicyMockProvider(),
         AdminVerificationService,
         { provide: PrismaService, useValue: mockPrisma },
         { provide: StorageService, useValue: mockStorage },

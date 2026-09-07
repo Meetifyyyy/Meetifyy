@@ -54,6 +54,7 @@ import { RateLimitModule } from './common/rate-limit/rate-limit.module';
 import { EventsModule } from './events/events.module';
 import { DomainValidatorModule } from './common/services/domain-validator.module';
 import { VerificationAccessModule } from './common/verification/verification-access.module';
+import { StudentYearPolicyModule } from './common/student-year/student-year-policy.module';
 import { AcademicsModule } from './academics/academics.module';
 import { SupportModule } from './support/support.module';
 
@@ -61,6 +62,7 @@ import { SupportModule } from './support/support.module';
   imports: [
     DomainValidatorModule,
     VerificationAccessModule,
+    StudentYearPolicyModule,
     ConfigModule.forRoot({
       isGlobal: true,
       // The namespaces are views onto the central `config` object, which has

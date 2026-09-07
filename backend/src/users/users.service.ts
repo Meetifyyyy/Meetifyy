@@ -13,6 +13,7 @@ import { DomainEventService } from '../events/domain-event.service';
 import { RedisService } from '../redis/redis.service';
 import { BlocksService } from './blocks.service';
 import { VerificationAccessService } from '../common/verification/verification-access.service';
+import { StudentYearPolicyService } from '../common/student-year/student-year-policy.service';
 import { PresenceService } from '../presence/presence.service';
 import {
   checkPresenceVisibility,
@@ -48,6 +49,10 @@ export class UsersService {
     private readonly presenceService: PresenceService,
     private readonly academicsService: AcademicsService,
     private readonly verificationAccess: VerificationAccessService,
+    // First-year isolation. Required, not optional: every list this service
+    // produces is a discovery or recipient surface the policy covers, so an
+    // unwired instance must fail at boot rather than quietly stop filtering.
+    private readonly studentYearPolicy: StudentYearPolicyService,
     @InjectQueue(NOTIFICATIONS_QUEUE) private readonly notifQueue: Queue,
     @Optional() private readonly mediaCleanupService?: MediaCleanupService,
   ) {}
@@ -86,13 +91,34 @@ export class UsersService {
     return new Set(rows.map((r) => r.followingId));
   }
 
+  /**
+   * The viewer's batch year, for the first-year isolation filters below.
+   *
+   * One cached lookup per request (StudentYearPolicyService memoises it for
+   * ten minutes and the value is effectively immutable), so adding the policy
+   * to a list endpoint costs at most one extra indexed read on a cold cache
+   * and nothing at all on a warm one -- never a query per row.
+   */
+  private async viewerBatchYear(
+    userId: string | null | undefined,
+  ): Promise<number | null> {
+    return this.studentYearPolicy.getBatchYearFor(userId);
+  }
+
   async getAllUsers(limit: number, offset: number, currentUserId?: string) {
+    // First-year isolation, in the query rather than after it. This list feeds
+    // the New Message modal's recipient map, so a row that reached the client
+    // here would be selectable there.
+    const batchYear = await this.viewerBatchYear(currentUserId);
     const where: any = await this.blocksService.injectBlockFilter(
       currentUserId,
-      {
-        accountStatus: 'ACTIVE',
-        deletedAt: null,
-      },
+      this.studentYearPolicy.injectUserFilter(
+        {
+          accountStatus: 'ACTIVE',
+          deletedAt: null,
+        },
+        batchYear,
+      ),
       'id',
     );
     const users = await this.prisma.user.findMany({
@@ -150,6 +176,13 @@ export class UsersService {
       const isOnline = canSee && pres?.status === 'online';
       return {
         ...u,
+        // First-year isolation. Every row here is already in the viewer's own
+        // cohort -- the query guarantees it -- so this discloses nothing new.
+        // It exists as a MARKER: it tells the client "this row came from a
+        // policy-aware payload", which is what lets a recipient picker drop
+        // rows left in a client-side cache from before the viewer's batch
+        // resolved. See `filterCompatibleUsers` on the frontend.
+        isFirstYearStudent: this.studentYearPolicy.isFirstYearBatch(batchYear),
         // Authoritative, from the `Follow` table, for every row on the page.
         // This field did not exist on the payload before, so every consumer
         // that rendered a follow button from this list read `undefined` and
@@ -175,7 +208,7 @@ export class UsersService {
     // Check if the argument is a userId by performing a database lookup
     const targetUser = await this.prisma.user.findUnique({
       where: { id: userIdOrCollegeId },
-      select: { collegeId: true },
+      select: { collegeId: true, batchYear: true, email: true },
     });
     if (targetUser) {
       if (!targetUser.collegeId) return [];
@@ -183,12 +216,25 @@ export class UsersService {
       excludeUserId = userIdOrCollegeId;
     }
 
-    const where: any = {
-      collegeId,
-      accountStatus: 'ACTIVE',
-      deletedAt: null,
-      ...(excludeUserId ? { id: { not: excludeUserId } } : {}),
-    };
+    // First-year isolation. This is the second source the New Message modal
+    // builds its recipient map from, so it needs the same filter getAllUsers
+    // has -- and it is applied only when the caller identified themselves as a
+    // user; a bare collegeId caller has no viewer to judge against, and
+    // returns the college's non-first-year population (the safe default for an
+    // unidentified viewer).
+    const viewerBatch = targetUser
+      ? this.studentYearPolicy.getUserBatchYear(targetUser)
+      : null;
+
+    const where: any = this.studentYearPolicy.injectUserFilter(
+      {
+        collegeId,
+        accountStatus: 'ACTIVE',
+        deletedAt: null,
+        ...(excludeUserId ? { id: { not: excludeUserId } } : {}),
+      },
+      viewerBatch,
+    );
 
     const users = await this.prisma.user.findMany({
       where,
@@ -236,7 +282,15 @@ export class UsersService {
       excludeUserId,
       users.map((u) => u.id),
     );
-    return users.map((u) => ({ ...u, isFollowing: followingSet.has(u.id) }));
+    // `isFirstYearStudent` is the same cohort marker getAllUsers emits -- see
+    // the comment there. This list is the New Message modal's other source.
+    const campusIsFirstYear =
+      this.studentYearPolicy.isFirstYearBatch(viewerBatch);
+    return users.map((u) => ({
+      ...u,
+      isFollowing: followingSet.has(u.id),
+      isFirstYearStudent: campusIsFirstYear,
+    }));
   }
 
   /**
@@ -263,9 +317,10 @@ export class UsersService {
     if (!userId) return { users: [], nextCursor: undefined };
     const me = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { collegeId: true },
+      select: { collegeId: true, batchYear: true, email: true },
     });
     if (!me?.collegeId) return { users: [], nextCursor: undefined };
+    const viewerBatch = this.studentYearPolicy.getUserBatchYear(me);
 
     const limit = Math.min(Math.max(Number(opts.limit) || 30, 1), 50);
     const search = (opts.search || '').trim();
@@ -309,10 +364,14 @@ export class UsersService {
 
     // Blocked users must not appear in the campus directory, in either
     // direction. Applied to the query so the page size stays honest.
-    const directoryWhere = await this.blocksService.injectBlockFilter(
-      userId,
-      where,
-      'id',
+    //
+    // First-year isolation is ANDed on for the same reason, and through
+    // `injectUserFilter` rather than a spread: `where` above already carries
+    // an `OR` (the search clause, and the keyset cursor), so assigning another
+    // one would drop it.
+    const directoryWhere = this.studentYearPolicy.injectUserFilter(
+      await this.blocksService.injectBlockFilter(userId, where, 'id'),
+      viewerBatch,
     );
 
     // Exactly the columns a directory card paints: the avatar, the name it is
@@ -389,6 +448,10 @@ export class UsersService {
         passingYear: true,
         profileCompleted: true,
         deletedAt: true,
+        // Read for the first-year isolation flag below, and stripped from the
+        // response with `settings` -- a viewer must never receive another
+        // account's batch year, only the yes/no the button needs.
+        batchYear: true,
         settings: { select: { showOnlineStatus: true, whoCanSeeOnline: true } },
       },
     });
@@ -420,12 +483,32 @@ export class UsersService {
       ? await this.presenceService.getPresence(id)
       : null;
     const isOnline = canSeeOnline && pres?.status === 'online';
-    const { settings: _settings, ...publicUser } = user as any;
+
+    // The by-id twin of getProfileByUsername must report the same lock state,
+    // or a client that resolved a profile by id would draw an unlocked
+    // Message button for a pair the server refuses.
+    const messagingRestricted =
+      currentUserId && currentUserId !== id
+        ? !this.studentYearPolicy.canCreateMessage(
+            {
+              id: currentUserId,
+              batchYear: await this.viewerBatchYear(currentUserId),
+            },
+            user,
+          )
+        : false;
+
+    const {
+      settings: _settings,
+      batchYear: _batchYear,
+      ...publicUser
+    } = user as any;
     return {
       ...publicUser,
       isOnline,
       online: isOnline,
       lastActive: canSeeOnline ? pres?.lastSeen || null : null,
+      messagingRestricted,
     };
   }
 
@@ -477,6 +560,23 @@ export class UsersService {
     if (!targetUser || targetUser.deletedAt) {
       throw new NotFoundException("This profile isn't available.");
     }
+
+    // The viewer's own batch, for the `messagingRestricted` flag below.
+    //
+    // Resolved through the policy (one cached lookup; see `viewerBatchYear`)
+    // rather than from a row, because this method never loads the VIEWER --
+    // only the profile being read. The policy's own lookup does the address
+    // fallback internally, so a batch is returned even for an account whose
+    // column has not been written yet.
+    //
+    // Null when the viewer is anonymous or is looking at themselves: neither
+    // is a restricted pair.
+    const hasDistinctViewer = Boolean(
+      currentUserId && currentUserId !== targetUser.id,
+    );
+    const viewerBatchForPolicy = hasDistinctViewer
+      ? await this.viewerBatchYear(currentUserId)
+      : null;
 
     let isFollowing = false;
     let isFollowedBy = false;
@@ -585,6 +685,30 @@ export class UsersService {
       isFollowing,
       isFollowedBy,
       isMutual: isFollowing && isFollowedBy,
+      // First-year isolation, as a flag rather than a hidden profile.
+      //
+      // The profile itself stays reachable on purpose: the product decision is
+      // that the Message button remains VISIBLE and shows a lock, so the
+      // client needs to be told which state to draw. Everything the flag gates
+      // is separately enforced server-side -- getOrCreateDM, every send path
+      // and every recipient selector refuse the same pair -- so a client that
+      // ignores it gains nothing.
+      //
+      // Computed from the row already in hand, so it costs no extra query.
+      //
+      // `false` unless there is a DISTINCT viewer to judge against. Without
+      // that guard an anonymous reader — and, worse, a first-year student
+      // looking at their OWN profile — has a null viewer batch compared
+      // against the target's 2026, which is "incompatible", and the API would
+      // report your own profile as restricted from you. The client happens to
+      // guard this with `!isOwnProfile`, but the flag has to be true on its
+      // own terms; the by-id twin already did this and the two must agree.
+      messagingRestricted: hasDistinctViewer
+        ? !this.studentYearPolicy.canCreateMessage(
+            { id: currentUserId ?? null, batchYear: viewerBatchForPolicy },
+            targetUser,
+          )
+        : false,
     };
   }
 
@@ -592,13 +716,27 @@ export class UsersService {
     const t0 = performance.now();
     const cleanUsername = followingUsername.trim().toLowerCase();
 
+    // Resolved before the CTE below so the whole thing stays one round trip.
+    const followerBatch = await this.viewerBatchYear(followerId);
+    const followPolicyFilter = Prisma.raw(
+      this.studentYearPolicy.visibleUserSqlPredicate('u', followerBatch),
+    );
+
     // Single atomic CTE query combining: user lookup + block check + follow insert + count calculation
     // Reduces database network round-trips from 4 down to 1!
     const rows: any[] = await this.prisma.$queryRaw`
       WITH target_user AS (
         SELECT "id", "username", "displayName", "avatar"
-        FROM "User"
+        FROM "User" u
         WHERE ("username" = ${cleanUsername} OR "id" = ${cleanUsername})
+          -- First-year isolation. Following is an interaction: it seeds
+          -- recommendations, opens the follower/following lists to each other
+          -- and raises a notification. Every surface that offers a Follow
+          -- button already hides restricted accounts, so reaching here means
+          -- a direct API call or a stale client -- and the CTE simply finds no
+          -- target, which returns the same neutral "user not found" as a
+          -- typo'd username rather than confirming the account exists.
+          AND ${followPolicyFilter}
           -- Unavailable accounts are not followable. During the 30-day
           -- deletion window the username is still the real one, so anybody
           -- who already knew it could otherwise follow an account that is
@@ -846,6 +984,22 @@ export class UsersService {
         ? Prisma.sql`AND u."verificationStatus"::text = ${VerificationStatus.VERIFIED}`
         : Prisma.empty;
 
+    // First-year isolation. Unlike the verification filter above this is NOT
+    // conditional on `eligibleOnly`, because it is not a recipient-picker
+    // nicety -- it is a visibility boundary. A first-year student must not
+    // appear in a senior's follower list at all, and vice versa, whether that
+    // list is being read to pick an invitee or simply to browse a profile's
+    // social graph. The counts beside it are computed from the same Follow
+    // rows and are unaffected, so this can under-report a total; that is the
+    // intended trade, and it is the same one the block filter above already
+    // makes.
+    //
+    // In SQL, before LIMIT/OFFSET, for the reason the two filters above are.
+    const followersViewerBatch = await this.viewerBatchYear(currentUserId);
+    const followerPolicyFilter = Prisma.raw(
+      `AND ${this.studentYearPolicy.visibleUserSqlPredicate('u', followersViewerBatch)}`,
+    );
+
     const rows: any[] = await this.prisma.$queryRaw`
       SELECT 
         u."id",
@@ -865,6 +1019,7 @@ export class UsersService {
       WHERE f."followingId" = ${targetUser.id}
       ${followerBlockFilter}
       ${eligibilityFilter}
+      ${followerPolicyFilter}
       ORDER BY f."createdAt" DESC
       LIMIT ${limit} OFFSET ${offset};
     `;
@@ -931,6 +1086,13 @@ export class UsersService {
         ? Prisma.sql`AND u."verificationStatus"::text = ${VerificationStatus.VERIFIED}`
         : Prisma.empty;
 
+    // First-year isolation. Unconditional, for the reason spelled out in
+    // getFollowers: this is a visibility boundary rather than a picker filter.
+    const followingViewerBatch = await this.viewerBatchYear(currentUserId);
+    const followingPolicyFilter = Prisma.raw(
+      `AND ${this.studentYearPolicy.visibleUserSqlPredicate('u', followingViewerBatch)}`,
+    );
+
     const rows: any[] = await this.prisma.$queryRaw`
       SELECT 
         u."id",
@@ -950,6 +1112,7 @@ export class UsersService {
       WHERE f."followerId" = ${targetUser.id}
       ${followingBlockFilter}
       ${eligibilityFilter}
+      ${followingPolicyFilter}
       ORDER BY f."createdAt" DESC
       LIMIT ${limit} OFFSET ${offset};
     `;
@@ -1549,7 +1712,19 @@ export class UsersService {
     // serving them for the whole TTL after a deploy. A new prefix retires them
     // instantly instead of leaving a 20-second window where the rule does not
     // apply.
-    const cacheKey = `connections:v2:${userId}:${cleanQuery}:${limit}`;
+    //
+    // `v3` retires every v2 entry the moment this build deploys, for the same
+    // reason v2 retired v1: the value shape changed MEANING, not structure.
+    // A v2 entry was written before first-year isolation applied and holds
+    // recipients this viewer may no longer contact; serving one for the rest
+    // of its TTL would be a 20-second hole in the policy on the exact surface
+    // (share/invite recipients) the policy is meant to close.
+    //
+    // The key is scoped by `userId`, so a cached list can never be handed to a
+    // viewer in a different cohort. That was already true and is what makes
+    // caching safe here at all -- a list keyed by query alone would leak
+    // across the isolation boundary.
+    const cacheKey = `connections:v3:${userId}:${cleanQuery}:${limit}`;
     if (redis) {
       try {
         const cached = await redis.get(cacheKey);
@@ -1557,6 +1732,7 @@ export class UsersService {
       } catch {}
     }
 
+    const viewerBatch = await this.viewerBatchYear(userId);
     const whereClause: any = await this.blocksService.injectBlockFilter(
       userId,
       {
@@ -1588,8 +1764,21 @@ export class UsersService {
       'id',
     );
 
+    // First-year isolation, for exactly the reasons stated above about
+    // verification: this list IS the recipient picker for every Share and
+    // Invite modal, the send it feeds is refused server-side for a restricted
+    // recipient anyway, and offering one would both present a choice that can
+    // only end in an error and disclose the handle of an account the viewer is
+    // not allowed to reach.
+    //
+    // ANDed rather than spread because the search clause above is an `OR`.
+    const policyWhereClause = this.studentYearPolicy.injectUserFilter(
+      whereClause,
+      viewerBatch,
+    );
+
     const users = await this.prisma.user.findMany({
-      where: whereClause,
+      where: policyWhereClause,
       take: limit,
       select: {
         id: true,
@@ -1603,13 +1792,24 @@ export class UsersService {
       orderBy: { createdAt: 'desc' },
     });
 
+    // The cohort marker, for the share/invite pickers this list feeds. Same
+    // reasoning as getAllUsers: every row is already in the viewer's cohort,
+    // so this adds no disclosure and lets the client drop rows held over from
+    // a pre-policy cache.
+    const connectionsIsFirstYear =
+      this.studentYearPolicy.isFirstYearBatch(viewerBatch);
+    const payload = users.map((u) => ({
+      ...u,
+      isFirstYearStudent: connectionsIsFirstYear,
+    }));
+
     if (redis) {
       // 20s TTL — long enough to make a modal session feel instant, short
       // enough that a new block/signup surfaces quickly.
-      redis.setex(cacheKey, 20, JSON.stringify(users)).catch(() => {});
+      redis.setex(cacheKey, 20, JSON.stringify(payload)).catch(() => {});
     }
 
-    return users;
+    return payload;
   }
 
   // Candidate pool pulled from the DB before scoring — bounded regardless of
@@ -1669,18 +1869,27 @@ export class UsersService {
 
     const excludeSet = new Set([...excludedUserIds, userId]);
 
-    const whereClause: any = {
-      id: { notIn: Array.from(excludeSet) },
-      accountStatus: 'ACTIVE',
-      ...(cleanQuery
-        ? {
-            OR: [
-              { username: { contains: cleanQuery, mode: 'insensitive' } },
-              { displayName: { contains: cleanQuery, mode: 'insensitive' } },
-            ],
-          }
-        : {}),
-    };
+    // First-year isolation. A mention is a way to reach someone -- it renders
+    // a link and raises a notification -- so the candidate pool is filtered on
+    // the same rule as every other recipient surface, and in the query, before
+    // `take: MENTION_CANDIDATE_POOL` is applied.
+    const mentionViewerBatch = await this.viewerBatchYear(userId);
+
+    const whereClause: any = this.studentYearPolicy.injectUserFilter(
+      {
+        id: { notIn: Array.from(excludeSet) },
+        accountStatus: 'ACTIVE',
+        ...(cleanQuery
+          ? {
+              OR: [
+                { username: { contains: cleanQuery, mode: 'insensitive' } },
+                { displayName: { contains: cleanQuery, mode: 'insensitive' } },
+              ],
+            }
+          : {}),
+      },
+      mentionViewerBatch,
+    );
 
     const recentConvIds = recentConvs.map((c) => c.conversationId);
 
@@ -1806,12 +2015,20 @@ export class UsersService {
     // "follows me AND I follow them" as two relation filters lets Postgres do
     // the intersection with the existing Follow indexes and hands back the
     // hydrated rows directly.
+    //
+    // First-year isolation. A mutual follow predating the policy does not
+    // exempt the pair from it: the widget is a messaging entry point, and the
+    // messaging layer would refuse the conversation it offers.
+    const onlineViewerBatch = await this.viewerBatchYear(userId);
     const candidates = await this.prisma.user.findMany({
-      where: {
-        accountStatus: 'ACTIVE',
-        followers: { some: { followerId: userId } }, // I follow them
-        following: { some: { followingId: userId } }, // they follow me
-      },
+      where: this.studentYearPolicy.injectUserFilter(
+        {
+          accountStatus: 'ACTIVE',
+          followers: { some: { followerId: userId } }, // I follow them
+          following: { some: { followingId: userId } }, // they follow me
+        },
+        onlineViewerBatch,
+      ),
       select: {
         id: true,
         username: true,
@@ -1934,6 +2151,18 @@ export class UsersService {
     // college, or one that has already followed its whole campus.
     const POOL = 120;
 
+    // First-year isolation, inside the CANDIDATE GENERATION rather than after
+    // it. Placed in `eligible`, which every arm and every scoring join reads
+    // from, so an incompatible account is never ranked, never counted towards
+    // a mutual total, and never enters the pool the random draw samples from.
+    // Filtering the final `sampleRandom` instead would leave the panel
+    // silently short -- and would still have paid for scoring rows nobody may
+    // see.
+    const recommendationBatch = await this.viewerBatchYear(userId);
+    const recommendationPolicyFilter = Prisma.raw(
+      `AND ${this.studentYearPolicy.visibleUserSqlPredicate('u', recommendationBatch)}`,
+    );
+
     const rows: any[] = await this.prisma.$queryRaw`
       WITH me AS (
         SELECT "id", "collegeId" FROM "User" WHERE "id" = ${userId} LIMIT 1
@@ -1944,6 +2173,7 @@ export class UsersService {
         WHERE u."id" <> me."id"
           AND u."accountStatus" = 'ACTIVE'
           AND u."deletedAt" IS NULL
+          ${recommendationPolicyFilter}
           -- Already-followed accounts are excluded from GENERATION only. Once
           -- a row has been handed to the client it stays on screen and its
           -- button flips to "Following"; the exclusion applies the next time

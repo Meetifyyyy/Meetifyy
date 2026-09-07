@@ -21,6 +21,7 @@ import {
   ActivityAuthorizationService,
   UserAuthContext,
 } from './activity-authorization.service';
+import { StudentYearPolicyService } from '../common/student-year/student-year-policy.service';
 import type { UserIdentityLike } from '../common/users/deleted-user';
 import {
   isUnavailableUser,
@@ -61,6 +62,11 @@ export class ActivitiesService implements OnModuleInit {
     private readonly blocksService: BlocksService,
     private readonly domainEventService: DomainEventService,
     private readonly activityAuthorizationService: ActivityAuthorizationService,
+    // First-year isolation. Required, not optional: the activity feed is the
+    // surface the policy is strictest about, and the filters run through
+    // ActivityAuthorizationService, which needs this viewer context to be
+    // resolved correctly or it silently widens.
+    private readonly studentYearPolicy: StudentYearPolicyService,
     @Optional() private readonly redisService?: RedisService,
     @Optional()
     @InjectQueue(NOTIFICATIONS_QUEUE)
@@ -328,9 +334,24 @@ export class ActivitiesService implements OnModuleInit {
     if (!userId) return null;
     const u = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, collegeId: true },
+      select: {
+        id: true,
+        collegeId: true,
+        // First-year isolation. Selected here, on the one lookup that already
+        // runs per request, so the activity policy never has to resolve it per
+        // activity -- which is what an N+1 would look like on a feed page.
+        batchYear: true,
+        email: true,
+        collegeEmail: true,
+      },
     });
-    return u ? { id: u.id, collegeId: u.collegeId } : null;
+    return u
+      ? {
+          id: u.id,
+          collegeId: u.collegeId,
+          batchYear: this.studentYearPolicy.getUserBatchYear(u),
+        }
+      : null;
   }
 
   /**
@@ -419,7 +440,21 @@ export class ActivitiesService implements OnModuleInit {
 
     // The audience tag pins every SHARED page to the college allowed to see it,
     // so a page built for one college can never be served to another.
-    const audienceTag = `aud:${viewer?.collegeId || 'none'}`;
+    //
+    // It carries the ISOLATION BUCKET as well as the college, because
+    // `sharedAudienceWhere` now filters on the viewer's batch too. Without
+    // this half of the tag, the first page a first-year student requested
+    // would be written under their college's key and then served to the whole
+    // campus -- handing every senior a feed of first-year activities, and
+    // vice versa. The bucket, not the batch year, is what the query actually
+    // discriminates on, so two seniors from different intakes still share a
+    // page and the cache stays effective.
+    const isolationTag = this.studentYearPolicy.isEnforcementEnabled()
+      ? this.studentYearPolicy.isFirstYearBatch(viewer?.batchYear ?? null)
+        ? 'fy'
+        : 'nfy'
+      : 'off';
+    const audienceTag = `aud:${viewer?.collegeId || 'none'}:${isolationTag}`;
     const scopeTag = isCollegeScope ? `${scope}:${scopeCollegeId}` : scope;
 
     // A shared page is only sound for viewers with the same audience tag, no
@@ -1137,6 +1172,11 @@ export class ActivitiesService implements OnModuleInit {
         select: {
           id: true,
           collegeId: true,
+          // See getViewer: the batch travels with the viewer lookup that this
+          // path already performs.
+          batchYear: true,
+          email: true,
+          collegeEmail: true,
           college: { select: { name: true } },
         },
       }),
@@ -1145,7 +1185,11 @@ export class ActivitiesService implements OnModuleInit {
     ]);
 
     const viewer: UserAuthContext | null = user
-      ? { id: user.id, collegeId: user.collegeId }
+      ? {
+          id: user.id,
+          collegeId: user.collegeId,
+          batchYear: this.studentYearPolicy.getUserBatchYear(user),
+        }
       : null;
     const now = new Date();
     const creatorFilter =
@@ -1321,6 +1365,11 @@ export class ActivitiesService implements OnModuleInit {
           creator: {
             select: {
               id: true,
+              // First-year isolation reads the host's batch straight off the
+              // creator row this query already embeds -- see
+              // ActivityAuthTarget.creatorBatchYear. Server side only; every
+              // response below is built field by field.
+              batchYear: true,
               username: true,
               displayName: true,
               avatar: true,
@@ -1485,6 +1534,10 @@ export class ActivitiesService implements OnModuleInit {
               expiresAt: true,
             },
           },
+          // The host's batch, for first-year isolation. Selected on every
+          // path that runs `assertCanView`/`canJoin`, so the runtime check has
+          // a value to judge rather than falling through to allow.
+          creator: { select: { batchYear: true } },
         },
       }),
       this.getViewer(userId),
@@ -1520,13 +1573,43 @@ export class ActivitiesService implements OnModuleInit {
     // host, who must keep a complete guest list to run the event. Filtering in
     // the query (not after) keeps the keyset page size honest.
     const isHost = activity.creatorId === userId;
-    const attendeeWhere = isHost
-      ? { activityId: cleanId, status: 'MEMBER' as const, ...cursorFilter }
+    const baseAttendeeWhere = {
+      activityId: cleanId,
+      status: 'MEMBER' as const,
+      ...cursorFilter,
+    };
+    const attendeeWhere: any = isHost
+      ? baseAttendeeWhere
       : await this.blocksService.injectBlockFilter(
           userId,
-          { activityId: cleanId, status: 'MEMBER' as const, ...cursorFilter },
+          baseAttendeeWhere,
           'userId',
         );
+
+    // First-year isolation on the ATTENDEE LIST.
+    //
+    // The activity itself is already restricted to one cohort, so in steady
+    // state every attendee is in it. This covers a membership taken before the
+    // policy applied, which would otherwise put a restricted student's name and
+    // photograph in front of a viewer on a page they are allowed to open. In
+    // the query, before `take`, so the page size and the `hasMore` cursor stay
+    // honest.
+    //
+    // The host is exempt, exactly as they are from the block filter: they must
+    // see their own guest list in full.
+    if (!isHost && this.studentYearPolicy.isEnforcementEnabled()) {
+      const attendeeViewerBatch =
+        await this.studentYearPolicy.getBatchYearFor(userId);
+      const existingAnd = Array.isArray(attendeeWhere.AND)
+        ? attendeeWhere.AND
+        : attendeeWhere.AND
+          ? [attendeeWhere.AND]
+          : [];
+      attendeeWhere.AND = [
+        ...existingAnd,
+        { user: this.studentYearPolicy.visibleUserWhere(attendeeViewerBatch) },
+      ];
+    }
 
     const rows = await this.prisma.crewActivityMember.findMany({
       where: attendeeWhere,
@@ -1854,12 +1937,13 @@ export class ActivitiesService implements OnModuleInit {
             },
           },
           _count: { select: { members: true } },
+          // The host's batch, for first-year isolation. Selected on every
+          // path that runs `assertCanView`/`canJoin`, so the runtime check has
+          // a value to judge rather than falling through to allow.
+          creator: { select: { batchYear: true } },
         },
       }),
-      this.prisma.user.findUnique({
-        where: { id: userId },
-        select: { id: true, collegeId: true },
-      }),
+      this.getViewer(userId),
       // Check membership in the same parallel round-trip
       this.prisma.crewActivityMember.findUnique({
         where: { userId_activityId: { userId, activityId } },
@@ -2187,6 +2271,10 @@ export class ActivitiesService implements OnModuleInit {
               expiresAt: true,
             },
           },
+          // The host's batch, for first-year isolation. Saving is a
+          // read-granting action -- getSavedActivities re-serves the row later
+          // -- so the check here needs a value to judge.
+          creator: { select: { batchYear: true } },
         },
       }),
       this.getViewer(userId),
@@ -2243,6 +2331,27 @@ export class ActivitiesService implements OnModuleInit {
     // outcome the detail route gives a non-attendee.
     const excludedUserIds = await this.blocksService.getExcludedUserIds(userId);
 
+    // First-year isolation, on the same terms as the block rule above and for
+    // the same reason. A membership that predates the policy would otherwise
+    // keep an activity on this list whose detail page now answers 404 -- a card
+    // that goes nowhere. The viewer's own activities are exempt by
+    // construction: a host is always in their own cohort.
+    const myActivitiesBatch =
+      await this.studentYearPolicy.getBatchYearFor(userId);
+    const hostVisibility = this.studentYearPolicy.isEnforcementEnabled()
+      ? [
+          {
+            OR: [
+              { creatorId: userId },
+              {
+                creator:
+                  this.studentYearPolicy.visibleUserWhere(myActivitiesBatch),
+              },
+            ],
+          },
+        ]
+      : [];
+
     const activities = await this.prisma.crewActivity.findMany({
       where: {
         deletedAt: null,
@@ -2253,6 +2362,7 @@ export class ActivitiesService implements OnModuleInit {
           { creatorId: userId },
           { members: { some: { userId, status: 'MEMBER' } } },
         ],
+        AND: hostVisibility,
       },
       include: {
         _count: { select: { members: true } },
@@ -2484,6 +2594,28 @@ export class ActivitiesService implements OnModuleInit {
       existingInvitations.map((inv) => [inv.inviteeId, inv]),
     );
     const excludedSet = new Set(excludedUserIds);
+
+    // First-year isolation for the INVITE MODAL, server-side.
+    //
+    // The recipient picker already hides restricted users, but this endpoint
+    // takes a list of ids straight from a request body, so a hand-built call,
+    // a replayed one, or a stale client holding pre-policy search results
+    // would otherwise create the invitation, the notification and the join
+    // path in one go. Resolved as a set, in one batched lookup, so a 50-person
+    // invite costs one query rather than fifty.
+    //
+    // The refusal is reported per invitee under the same neutral `BLOCKED`
+    // status the block rule uses, rather than failing the whole call: the
+    // response already reports a mixed outcome per recipient, and using a
+    // distinct status here would tell the inviter which of the people they
+    // picked is in the other cohort.
+    const yearRestrictedSet = new Set(
+      await this.studentYearPolicy.getIncompatibleUserIds(
+        inviterId,
+        cleanInviteeIds,
+      ),
+    );
+
     const results: any[] = [];
     const inviteesToProcess: string[] = [];
     const fourHoursMs = 4 * 60 * 60 * 1000;
@@ -2540,7 +2672,7 @@ export class ActivitiesService implements OnModuleInit {
         }
       }
 
-      if (excludedSet.has(inviteeId)) {
+      if (excludedSet.has(inviteeId) || yearRestrictedSet.has(inviteeId)) {
         results.push({
           inviteeId,
           status: 'BLOCKED',

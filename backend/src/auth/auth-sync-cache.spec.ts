@@ -10,6 +10,7 @@ import { SupabaseService } from '../supabase/supabase.service';
 import { DefaultAssetsService } from '../uploads/default-assets.service';
 import { DomainValidatorService } from '../common/services/domain-validator.service';
 import { RedisService } from '../redis/redis.service';
+import { studentYearPolicyMockProvider } from '../common/student-year/testing/student-year-policy.mock';
 
 /**
  * The auth bootstrap cache, and its cross-instance invalidation.
@@ -113,6 +114,7 @@ describe('Auth sync cache', () => {
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
+        studentYearPolicyMockProvider(),
         AuthService,
         { provide: PrismaService, useValue: { $queryRaw: queryRaw, user: {} } },
         {
@@ -123,9 +125,10 @@ describe('Auth sync cache', () => {
         {
           provide: DomainValidatorService,
           useValue: {
-            validateDomain: jest
-              .fn()
-              .mockResolvedValue({ isValid: true, info: { collegeId: 'college-1' } }),
+            validateDomain: jest.fn().mockResolvedValue({
+              isValid: true,
+              info: { collegeId: 'college-1' },
+            }),
           },
         },
         {
@@ -141,7 +144,10 @@ describe('Auth sync cache', () => {
   };
 
   /** Deliver a message as another replica's broadcast would arrive. */
-  const deliver = (payload: unknown, channel = AUTH_SYNC_INVALIDATE_CHANNEL) => {
+  const deliver = (
+    payload: unknown,
+    channel = AUTH_SYNC_INVALIDATE_CHANNEL,
+  ) => {
     for (const handler of messageHandlers) {
       handler(channel, JSON.stringify(payload));
     }

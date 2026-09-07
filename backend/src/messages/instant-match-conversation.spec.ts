@@ -7,6 +7,7 @@ import { MentionsService } from '../mentions/mentions.service';
 import { RedisService } from '../redis/redis.service';
 import { BlocksService } from '../users/blocks.service';
 import { verificationAccessMockProvider } from '../common/verification/testing/verification-access.mock';
+import { studentYearPolicyMockProvider } from '../common/student-year/testing/student-year-policy.mock';
 import { allowAllRateLimitProvider } from '../common/rate-limit/testing/rate-limit.mock';
 
 /**
@@ -68,16 +69,24 @@ describe('MessagesService — Instant Match conversations', () => {
       providers: [
         allowAllRateLimitProvider(),
         verificationAccessMockProvider(),
+        studentYearPolicyMockProvider(),
         MessagesService,
         { provide: PrismaService, useValue: prisma },
         {
           provide: PresenceService,
-          useValue: { setOnline: jest.fn(), setOffline: jest.fn(), getPresence: jest.fn() },
+          useValue: {
+            setOnline: jest.fn(),
+            setOffline: jest.fn(),
+            getPresence: jest.fn(),
+          },
         },
         { provide: DomainEventService, useValue: { emit: jest.fn() } },
         {
           provide: MentionsService,
-          useValue: { sanitize: jest.fn().mockResolvedValue([]), persistAndNotify: jest.fn() },
+          useValue: {
+            sanitize: jest.fn().mockResolvedValue([]),
+            persistAndNotify: jest.fn(),
+          },
         },
         {
           provide: RedisService,
@@ -112,8 +121,16 @@ describe('MessagesService — Instant Match conversations', () => {
   });
 
   it('gives a re-matched pair a second, unrelated conversation', async () => {
-    const first = await service.createInstantMatchConversation('alice', 'bob', 'study');
-    const second = await service.createInstantMatchConversation('alice', 'bob', 'study');
+    const first = await service.createInstantMatchConversation(
+      'alice',
+      'bob',
+      'study',
+    );
+    const second = await service.createInstantMatchConversation(
+      'alice',
+      'bob',
+      'study',
+    );
 
     // Different rows and different public ids: the second session cannot
     // route to, join, or read the first session's thread.
@@ -235,10 +252,12 @@ describe('MessagesService — Instant Match conversations', () => {
       // Both get past the guard; they fail later in the send path for reasons
       // this mock does not model, which is fine — the guard is what is under
       // test, and it is the only thing that rejects with this message.
-      await expect(send({ mediaUrl: 'r2://clip.mp4', mediaType: 'video' }))
-        .rejects.not.toThrow(/empty message/i);
-      await expect(send({ inviteData: { groupName: 'Chess' } }))
-        .rejects.not.toThrow(/empty message/i);
+      await expect(
+        send({ mediaUrl: 'r2://clip.mp4', mediaType: 'video' }),
+      ).rejects.not.toThrow(/empty message/i);
+      await expect(
+        send({ inviteData: { groupName: 'Chess' } }),
+      ).rejects.not.toThrow(/empty message/i);
     });
   });
 

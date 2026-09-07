@@ -40,6 +40,7 @@ import { MentionDto } from '../common/dto/mention.dto';
 import { JwtGuard } from '../common/guards/jwt.guard';
 import { VerifiedOnly } from '../common/decorators/verified-only.decorator';
 import { VerificationAccessService } from '../common/verification/verification-access.service';
+import { StudentYearPolicyService } from '../common/student-year/student-year-policy.service';
 import { socketCorsOrigin } from './socket-cors';
 import { RateLimitService } from '../common/rate-limit/rate-limit.service';
 import { RATE_LIMIT_POLICIES } from '../config/rate-limit.config';
@@ -134,6 +135,9 @@ export class RealtimeGateway
     // The same policy the HTTP guard and the messaging services use, so a
     // socket cannot become the one path with a looser rule.
     private readonly verificationAccess: VerificationAccessService,
+    // First-year isolation: only to resolve the viewer's batch onto the
+    // activity auth context below. The decision belongs to the two policies.
+    private readonly studentYearPolicy: StudentYearPolicyService,
     // Redis-backed limits for the durable socket actions. The in-process
     // InstantMatchRateLimiter it replaces counted per PROCESS, so the real
     // ceiling was silently multiplied by the replica count and reset on every
@@ -1085,11 +1089,24 @@ export class RealtimeGateway
                 expiresAt: true,
               },
             },
+            // The host's batch, for first-year isolation. The realtime room is
+            // the activity's live surface; the socket must apply the same rule
+            // the REST detail endpoint does, or a restricted viewer could
+            // subscribe to updates for an activity they cannot open.
+            creator: { select: { batchYear: true } },
           },
         }),
         this.prisma.user.findUnique({
           where: { id: userId },
-          select: { id: true, collegeId: true },
+          select: {
+            id: true,
+            collegeId: true,
+            // First-year isolation: the viewer's batch, resolved on the
+            // lookup this path already performs.
+            batchYear: true,
+            email: true,
+            collegeEmail: true,
+          },
         }),
       ]);
 
@@ -1100,7 +1117,16 @@ export class RealtimeGateway
           reason: 'Activity not found',
         };
       }
-      return this.activityPolicy.canView(user, activity);
+      return this.activityPolicy.canView(
+        user
+          ? {
+              id: user.id,
+              collegeId: user.collegeId,
+              batchYear: this.studentYearPolicy.getUserBatchYear(user),
+            }
+          : null,
+        activity,
+      );
     } catch (err) {
       this.logger.warn(`activity room access check failed: ${err?.message}`);
       // Fail closed.

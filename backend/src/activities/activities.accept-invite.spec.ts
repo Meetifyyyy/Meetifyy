@@ -10,6 +10,7 @@ import { DomainEventService } from '../events/domain-event.service';
 import { RedisService } from '../redis/redis.service';
 import { getQueueToken } from '@nestjs/bullmq';
 import { NOTIFICATIONS_QUEUE } from '../notifications/notifications.processor';
+import { studentYearPolicyMockProvider } from '../common/student-year/testing/student-year-policy.mock';
 
 /**
  * Accept → join → answer recorded → caller may navigate.
@@ -81,6 +82,7 @@ describe('acceptInvitation', () => {
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
+        studentYearPolicyMockProvider(),
         ActivitiesService,
         ActivityAuthorizationService,
         { provide: PrismaService, useValue: prisma },
@@ -326,6 +328,7 @@ describe('inviteFriends — already-accepted invitees', () => {
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
+        studentYearPolicyMockProvider(),
         ActivitiesService,
         ActivityAuthorizationService,
         { provide: PrismaService, useValue: prisma },

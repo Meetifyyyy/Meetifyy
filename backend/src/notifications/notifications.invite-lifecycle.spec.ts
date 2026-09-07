@@ -6,6 +6,7 @@ import { DomainEventService } from '../events/domain-event.service';
 import { ConfigService } from '@nestjs/config';
 import { RedisService } from '../redis/redis.service';
 import { EventEmitter2 } from '@nestjs/event-emitter';
+import { studentYearPolicyMockProvider } from '../common/student-year/testing/student-year-policy.mock';
 
 /**
  * An activity invite notification is a record of what happened, so answering it
@@ -67,6 +68,7 @@ describe('NotificationsService - activity invite lifecycle', () => {
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
+        studentYearPolicyMockProvider(),
         NotificationsService,
         EventEmitter2,
         { provide: PrismaService, useValue: mockPrisma },

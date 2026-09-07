@@ -7,6 +7,7 @@ import { MentionsService } from '../mentions/mentions.service';
 import { RedisService } from '../redis/redis.service';
 import { BlocksService } from '../users/blocks.service';
 import { verificationAccessMockProvider } from '../common/verification/testing/verification-access.mock';
+import { studentYearPolicyMockProvider } from '../common/student-year/testing/student-year-policy.mock';
 import { allowAllRateLimitProvider } from '../common/rate-limit/testing/rate-limit.mock';
 
 /**
@@ -56,6 +57,7 @@ describe('MessagesService — deleting a conversation', () => {
       providers: [
         allowAllRateLimitProvider(),
         verificationAccessMockProvider(),
+        studentYearPolicyMockProvider(),
         MessagesService,
         { provide: PrismaService, useValue: prisma },
         {
@@ -185,6 +187,7 @@ describe('MessagingCoreService — per-user conversation actions', () => {
       providers: [
         allowAllRateLimitProvider(),
         verificationAccessMockProvider(),
+        studentYearPolicyMockProvider(),
         MessagesService,
         { provide: PrismaService, useValue: prisma },
         {

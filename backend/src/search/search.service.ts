@@ -1,5 +1,6 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { StudentYearPolicyService } from '../common/student-year/student-year-policy.service';
 import { Prisma } from '@prisma/client';
 import { BlocksService } from '../users/blocks.service';
 import { RedisService } from '../redis/redis.service';
@@ -41,19 +42,43 @@ export class SearchService {
     private readonly prisma: PrismaService,
     private readonly blocksService: BlocksService,
     private readonly activityPolicy: ActivityAuthorizationService,
+    // First-year isolation. Search is a discovery surface that can lead
+    // straight to a follow or a message, so it enforces the same rule as the
+    // recipient pickers.
+    private readonly studentYearPolicy: StudentYearPolicyService,
     @Optional() private readonly redisService?: RedisService,
   ) {
     this.redis = this.redisService?.getClient() ?? null;
   }
 
-  /** Trusted viewer context (id + collegeId) straight from the database. */
+  /**
+   * Trusted viewer context (id + collegeId + batch year) straight from the
+   * database.
+   *
+   * `batchYear` joins the other two here rather than being fetched separately
+   * because every consumer of this context needs it, and this lookup already
+   * runs once per search. Both policies -- activity visibility and first-year
+   * isolation -- then read the same trusted row, so they cannot disagree about
+   * who is asking.
+   */
   private async resolveViewer(userId?: string) {
     if (!userId) return null;
     const u = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, collegeId: true },
+      select: {
+        id: true,
+        collegeId: true,
+        batchYear: true,
+        email: true,
+        collegeEmail: true,
+      },
     });
-    return u ? { id: u.id, collegeId: u.collegeId } : null;
+    if (!u) return null;
+    return {
+      id: u.id,
+      collegeId: u.collegeId,
+      batchYear: this.studentYearPolicy.getUserBatchYear(u),
+    };
   }
 
   async globalSearch(
@@ -70,7 +95,11 @@ export class SearchService {
     const cursor = decodeCursor(cursorParam);
     const isPaginating = Boolean(cursor.p || cursor.a);
 
-    const cacheKey = `search:${cleanQuery || 'discovery'}:${type || 'all'}:${currentUserId ?? 'anon'}:${limit}:${cursorParam || 'first'}`;
+    // `v2` retires every entry written before first-year isolation applied.
+    // The key is already scoped by viewer, which is what makes caching a
+    // policy-filtered result safe -- a key shared across viewers would hand a
+    // senior's result set to a first-year student.
+    const cacheKey = `search:v2:${cleanQuery || 'discovery'}:${type || 'all'}:${currentUserId ?? 'anon'}:${limit}:${cursorParam || 'first'}`;
 
     // 1. Cache read
     if (this.redis) {
@@ -204,31 +233,41 @@ export class SearchService {
       await Promise.all([
         fetchUsers
           ? this.prisma.user.findMany({
-              where: {
-                ...(isDiscovery
-                  ? {}
-                  : {
-                      OR: [
-                        {
-                          username: {
-                            contains: searchQuery,
-                            mode: 'insensitive',
+              where: this.studentYearPolicy.injectUserFilter(
+                {
+                  ...(isDiscovery
+                    ? {}
+                    : {
+                        OR: [
+                          {
+                            username: {
+                              contains: searchQuery,
+                              mode: 'insensitive',
+                            },
                           },
-                        },
-                        {
-                          displayName: {
-                            contains: searchQuery,
-                            mode: 'insensitive',
+                          {
+                            displayName: {
+                              contains: searchQuery,
+                              mode: 'insensitive',
+                            },
                           },
-                        },
-                        { bio: { contains: searchQuery, mode: 'insensitive' } },
-                      ],
-                    }),
-                deletedAt: null,
-                ...(searchExcludedUserIds.length > 0
-                  ? { id: { notIn: searchExcludedUserIds } }
-                  : {}),
-              },
+                          {
+                            bio: { contains: searchQuery, mode: 'insensitive' },
+                          },
+                        ],
+                      }),
+                  deletedAt: null,
+                  ...(searchExcludedUserIds.length > 0
+                    ? { id: { notIn: searchExcludedUserIds } }
+                    : {}),
+                },
+                // First-year isolation. ANDed in (not spread) because the
+                // search clause above is itself an `OR`, and applied in the
+                // query so a restricted account is never fetched, never
+                // written into the Redis entry below, and never counted
+                // against `take`.
+                viewer?.batchYear ?? null,
+              ),
               select: {
                 id: true,
                 username: true,
@@ -593,7 +632,8 @@ export class SearchService {
     if (searchQuery.length < 2) {
       return { users: [], communities: [], activities: [], keywords: [] };
     }
-    const cacheKey = `search:suggestions:${searchQuery.toLowerCase()}:${currentUserId ?? 'anon'}`;
+    // `v2` for the same reason as the full-search key above.
+    const cacheKey = `search:suggestions:v2:${searchQuery.toLowerCase()}:${currentUserId ?? 'anon'}`;
 
     if (this.redis) {
       try {
@@ -616,16 +656,23 @@ export class SearchService {
 
     const [users, communities, activities] = await Promise.all([
       this.prisma.user.findMany({
-        where: {
-          OR: [
-            { username: { contains: searchQuery, mode: 'insensitive' } },
-            { displayName: { contains: searchQuery, mode: 'insensitive' } },
-          ],
-          deletedAt: null,
-          ...(suggestionExcludedUserIds.length > 0
-            ? { id: { notIn: suggestionExcludedUserIds } }
-            : {}),
-        },
+        // Same first-year isolation filter the full search applies -- the
+        // typeahead is a discovery surface in its own right and would
+        // otherwise disclose the handle of an account the viewer may not
+        // reach.
+        where: this.studentYearPolicy.injectUserFilter(
+          {
+            OR: [
+              { username: { contains: searchQuery, mode: 'insensitive' } },
+              { displayName: { contains: searchQuery, mode: 'insensitive' } },
+            ],
+            deletedAt: null,
+            ...(suggestionExcludedUserIds.length > 0
+              ? { id: { notIn: suggestionExcludedUserIds } }
+              : {}),
+          },
+          suggestionViewer?.batchYear ?? null,
+        ),
         select: {
           id: true,
           username: true,

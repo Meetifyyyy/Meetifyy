@@ -10,6 +10,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { BlocksService } from '../users/blocks.service';
 import { VerificationAccessService } from '../common/verification/verification-access.service';
+import { StudentYearPolicyService } from '../common/student-year/student-year-policy.service';
 import { MessagesService } from '../messages/messages.service';
 import { MatchScore, explainPair, scorePair } from './matching/engine';
 import { orderCandidates } from './matching/selection';
@@ -280,6 +281,10 @@ export class InstantMatchService implements OnModuleInit {
     private readonly messagesService: MessagesService,
     private readonly blocksService: BlocksService,
     private readonly verificationAccess: VerificationAccessService,
+    // First-year isolation. Applied to candidate GENERATION, not to the
+    // final response -- see `tryMatch` -- and again as a guard immediately
+    // before a session becomes a conversation.
+    private readonly studentYearPolicy: StudentYearPolicyService,
   ) {}
 
   onModuleInit() {
@@ -394,6 +399,12 @@ export class InstantMatchService implements OnModuleInit {
 
     const excludedIds = await this.getExcludedUserIds(userId);
 
+    // First-year isolation, resolved once for this attempt and pushed into the
+    // candidate query below. The searcher's own batch is the only thing the
+    // filter needs, and the policy caches it, so this costs nothing per
+    // candidate.
+    const myBatchYear = await this.studentYearPolicy.getBatchYearFor(userId);
+
     // The activity is the only strict requirement. Campus, time preference,
     // area and GPS used to be equality filters here, which is what made a
     // sparse queue feel broken: a perfectly good partner who picked "30min"
@@ -403,7 +414,18 @@ export class InstantMatchService implements OnModuleInit {
     const candidates = await this.prisma.matchQueueEntry.findMany({
       where: {
         activity: myEntry.activity,
-        user: { verificationStatus: 'VERIFIED' },
+        user: {
+          verificationStatus: 'VERIFIED',
+          // First-year isolation, inside CANDIDATE GENERATION rather than as a
+          // filter over the ranked list. An incompatible queue entry is
+          // therefore never scored, never enters an exploration draw and never
+          // reaches `claimPair` -- so the ranker's tie bands and exploration
+          // probabilities describe the pool that actually exists. Filtering
+          // after `orderCandidates` would leave a searcher queued behind
+          // candidates that were only ever going to be discarded, and would
+          // still have paid to score them.
+          ...this.studentYearPolicy.visibleUserWhere(myBatchYear),
+        },
         userId: {
           not: userId,
           notIn: excludedIds.length ? excludedIds : undefined,
@@ -551,10 +573,18 @@ export class InstantMatchService implements OnModuleInit {
     if (!myEntry) return empty;
 
     const excludedIds = await this.getExcludedUserIds(userId);
+    // The same filter `tryMatch` applies. This method exists to explain why
+    // the queue chose who it chose, so it has to see the same candidate pool
+    // -- an explanation drawn from a wider pool would describe a decision the
+    // matcher never made.
+    const explainBatchYear = await this.studentYearPolicy.getBatchYearFor(userId);
     const candidates = await this.prisma.matchQueueEntry.findMany({
       where: {
         activity: myEntry.activity,
-        user: { verificationStatus: 'VERIFIED' },
+        user: {
+          verificationStatus: 'VERIFIED',
+          ...this.studentYearPolicy.visibleUserWhere(explainBatchYear),
+        },
         userId: {
           not: userId,
           notIn: excludedIds.length ? excludedIds : undefined,
@@ -838,6 +868,24 @@ export class InstantMatchService implements OnModuleInit {
       Date.now() + timerSecs * 1000 + ACCEPT_TIMER_GRACE_MS,
     );
 
+    // First-year isolation guard on the CREATE, not only on the accept.
+    //
+    // `tryMatch` cannot hand this method an incompatible candidate -- the
+    // filter is in the query -- so this is the belt to that braces: it makes
+    // "a restricted MatchSession cannot be written" true of the method that
+    // writes them, rather than true only of the one caller that happens to
+    // filter first. Any future caller, retry path or test harness that reaches
+    // `claimPair` inherits the rule for free. One cached lookup per attempt.
+    if (
+      !(await this.studentYearPolicy.canIdsInteract(
+        myEntry.userId,
+        candidate.userId,
+        'instant_match',
+      ))
+    ) {
+      return null;
+    }
+
     try {
       return await this.prisma.$transaction(async (tx) => {
         const a = await tx.matchQueueEntry.findUnique({
@@ -1005,6 +1053,34 @@ export class InstantMatchService implements OnModuleInit {
     ) {
       this.logger.warn(
         `match:refused-ineligible ${session.id} — a participant is no longer eligible`,
+      );
+      await this.prisma.matchSession.updateMany({
+        where: { id: session.id, status: 'PENDING' },
+        data: { status: 'EXPIRED' },
+      });
+      return;
+    }
+
+    // FINAL first-year isolation guard, immediately before the session becomes
+    // a conversation.
+    //
+    // Candidate generation already excludes an incompatible pairing, so
+    // reaching here means something upstream was bypassed or has since
+    // changed: a session created before the policy shipped and accepted now, a
+    // batch that resolved while the match sat PENDING, or a request that got
+    // to the service layer by a path the queue did not build. This is the last
+    // point at which refusing costs nothing, and the first at which allowing
+    // would hand the pair a 24h chat that the messaging layer then refuses
+    // every send into.
+    if (
+      !(await this.studentYearPolicy.canIdsInteract(
+        session.userAId,
+        session.userBId,
+        'instant_match',
+      ))
+    ) {
+      this.logger.warn(
+        `match:refused-year-policy ${session.id} — participants are in isolated cohorts`,
       );
       await this.prisma.matchSession.updateMany({
         where: { id: session.id, status: 'PENDING' },
@@ -1288,11 +1364,20 @@ export class InstantMatchService implements OnModuleInit {
    */
   async getSearchingNow(userId: string): Promise<SearchingNowEntry[]> {
     const excludedIds = await this.getExcludedUserIds(userId);
+    // "Searching now" paints other students' cards, so it is a discovery
+    // surface in its own right and carries the same filter the candidate query
+    // does. Without it a first-year student would watch a list of people they
+    // can never be matched with.
+    const searchingBatchYear =
+      await this.studentYearPolicy.getBatchYearFor(userId);
 
     const entries = await this.prisma.matchQueueEntry.findMany({
       where: {
         expiresAt: { gt: new Date() },
-        user: { verificationStatus: 'VERIFIED' },
+        user: {
+          verificationStatus: 'VERIFIED',
+          ...this.studentYearPolicy.visibleUserWhere(searchingBatchYear),
+        },
         userId: {
           not: userId,
           notIn: excludedIds.length ? excludedIds : undefined,

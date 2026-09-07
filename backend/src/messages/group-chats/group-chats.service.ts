@@ -23,6 +23,7 @@ import { generatePublicId } from '../../common/utils/public-id.util';
 import { MentionsService } from '../../mentions/mentions.service';
 import { MediaCleanupService } from '../../uploads/media-cleanup.service';
 import { VerificationAccessService } from '../../common/verification/verification-access.service';
+import { StudentYearPolicyService } from '../../common/student-year/student-year-policy.service';
 import { RateLimitService } from '../../common/rate-limit/rate-limit.service';
 import { assertNewConversationWithinRateLimit } from '../core/message-limits';
 
@@ -41,6 +42,10 @@ export class GroupChatsService extends MessagingCoreService {
     // Same reasoning as blocksService: verification gating on every send runs
     // through this, so it must fail at boot rather than silently disappear.
     verificationAccess: VerificationAccessService,
+    // Required for the same reason as verificationAccess: first-year
+    // isolation is enforced on every send path through the base class, so
+    // it must fail at boot rather than silently disappear.
+    studentYearPolicy: StudentYearPolicyService,
     // Required, and ahead of the optional params because a required parameter
     // cannot follow one: the send rate limit runs through this on every path.
     rateLimit: RateLimitService,
@@ -54,6 +59,7 @@ export class GroupChatsService extends MessagingCoreService {
       mentionsService,
       blocksService,
       verificationAccess,
+      studentYearPolicy,
       rateLimit,
     );
     this.redis = this.redisService?.getClient() ?? null;
@@ -254,6 +260,16 @@ export class GroupChatsService extends MessagingCoreService {
     await this.verificationAccess.assertUsersEligible(
       allParticipantIds,
       currentUserId,
+    );
+
+    // First-year isolation across the whole founding roster. Compatibility is
+    // an equivalence relation -- everyone in one cohort or everyone outside it
+    // -- so checking each invitee against the creator is enough to guarantee
+    // the roster is uniform, and no pair inside it is restricted.
+    await this.studentYearPolicy.assertCanInteract(
+      currentUserId,
+      filteredUserIds,
+      'new_message_modal',
     );
 
     const participantRows = allParticipantIds.map((id) => ({
@@ -677,6 +693,28 @@ export class GroupChatsService extends MessagingCoreService {
     await this.verificationAccess.assertUsersEligible(
       [requesterId, targetUserId],
       requesterId,
+    );
+
+    // First-year isolation, checked against EVERY current member rather than
+    // just the requester.
+    //
+    // Compatibility is an equivalence relation, so in a group formed under
+    // this policy the requester alone would be sufficient. Groups that predate
+    // it are not guaranteed to be uniform, and "add them, then the two of us
+    // can talk in here" is exactly the flow the rule has to close -- a group
+    // must not become a room where a restricted pair can reach each other.
+    // Checking the whole roster costs one batched lookup and makes the
+    // guarantee hold for legacy threads too.
+    const currentMemberIds = (
+      await this.prisma.conversationParticipant.findMany({
+        where: { conversationId: realConvId, leftAt: null },
+        select: { userId: true },
+      })
+    ).map((m) => m.userId);
+    await this.studentYearPolicy.assertCanInteract(
+      targetUserId,
+      Array.from(new Set([requesterId, ...currentMemberIds])),
+      'messaging',
     );
 
     // Block enforcement: don't let a member pull someone they've blocked (or who

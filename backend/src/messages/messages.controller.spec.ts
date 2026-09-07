@@ -7,6 +7,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationFactory } from '../notifications/notification.factory';
 import { SupabaseService } from '../supabase/supabase.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { studentYearPolicyMockProvider } from '../common/student-year/testing/student-year-policy.mock';
 
 describe('MessagesController', () => {
   let controller: MessagesController;
@@ -15,6 +16,7 @@ describe('MessagesController', () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [MessagesController],
       providers: [
+        studentYearPolicyMockProvider(),
         { provide: MessagesService, useValue: {} },
         { provide: DomainEventService, useValue: {} },
         { provide: NotificationsService, useValue: {} },

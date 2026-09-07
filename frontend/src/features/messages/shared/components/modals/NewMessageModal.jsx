@@ -7,6 +7,7 @@ import { useScrollLock } from '@shared/hooks/useScrollLock';
 import styles from './NewMessageModal.module.css';
 import { useUsersMap } from '@shared/hooks/useUsersMap';
 import { getProcessedAvatarUrl } from '@shared/components/avatar/Avatar';
+import { filterCompatibleUsers } from '@shared/lib/studentYearPolicy';
 
 export default function NewMessageModal({ onClose, onStartChat, onCreateGroup }) {
   // Rendered only while open, so `true` is the open state.
@@ -23,7 +24,26 @@ export default function NewMessageModal({ onClose, onStartChat, onCreateGroup })
   const [selectedUserIds, setSelectedUserIds] = useState([]);
   const [groupName, setGroupName] = useState('');
 
-  const allUsers = Object.values(users || {}).filter(
+  /**
+   * First-year isolation.
+   *
+   * The recipient map is assembled client-side from three server payloads
+   * (`GET /users`, the campus list, and open conversations), and ALL THREE are
+   * already filtered server-side -- so in normal operation nothing restricted
+   * reaches here. This pass exists for the one case the server cannot reach: a
+   * `['users']` or campus entry still sitting in the React Query cache (5 min
+   * staleTime) from before the viewer's batch resolved, or a conversation
+   * partner cached from an older build.
+   *
+   * A no-op when the payload does not carry the flag, so it can only ever
+   * remove a row the server would also have removed. It is a cache guard, not
+   * the filter: selecting a restricted recipient is refused by the server on
+   * both `startDM` and the group create.
+   */
+  const allUsers = filterCompatibleUsers(
+    currentUser,
+    Object.values(users || {}),
+  ).filter(
     (u) => String(u.id) !== String(currentUser?.id) && u.username !== currentUser?.username
   );
 

@@ -4,6 +4,7 @@ import {
   ActivityAuthTarget,
   UserAuthContext,
 } from './activity-authorization.service';
+import { createStudentYearPolicyMock } from '../common/student-year/testing/student-year-policy.mock';
 
 /**
  * The §15 access matrix, expressed as executable expectations. Every row is a
@@ -12,7 +13,13 @@ import {
  * but permitted the API.
  */
 describe('ActivityAuthorizationService', () => {
-  const policy = new ActivityAuthorizationService();
+  // The existing matrix is about visibility MODES, not batch years, so the
+  // isolation policy is wired to "everyone is compatible" here. First-year
+  // isolation of activities has its own coverage in
+  // common/student-year/first-year-isolation.spec.ts.
+  const policy = new ActivityAuthorizationService(
+    createStudentYearPolicyMock() as any,
+  );
 
   const GLA = 'college-gla';
   const OTHER = 'college-other';
@@ -390,11 +397,14 @@ describe('ActivityAuthorizationService', () => {
       ['a signed-in viewer', () => sameCollege],
       ['a viewer with no college', () => noCollege],
       ['an anonymous viewer', () => null],
-    ])('excludes activities hosted by a deleted account for %s', (_who, who) => {
-      expect(hostFilterOf(build(who()))).toEqual({
-        creator: { deletedAt: null },
-      });
-    });
+    ])(
+      'excludes activities hosted by a deleted account for %s',
+      (_who, who) => {
+        expect(hostFilterOf(build(who()))).toEqual({
+          creator: { deletedAt: null },
+        });
+      },
+    );
   });
 
   describe('discoveryWhere', () => {

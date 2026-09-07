@@ -9,6 +9,7 @@ import {
 } from './instant-match.service';
 import { PrismaFake } from './testing/prisma-fake';
 import { createVerificationAccessMock } from '../common/verification/testing/verification-access.mock';
+import { createStudentYearPolicyMock } from '../common/student-year/testing/student-year-policy.mock';
 
 /**
  * Instant Match is a two-party state machine driven entirely by socket events,
@@ -75,6 +76,7 @@ describe('InstantMatchService', () => {
       messages as any,
       blocksStubFor(prisma),
       verificationAccess as any,
+      createStudentYearPolicyMock() as any,
     );
     built.rankingOptions = { deterministic: true };
     return built;
@@ -323,7 +325,9 @@ describe('InstantMatchService', () => {
         prisma.seedQueueEntry('carol', {
           joinedAt: new Date(Date.now() - 10 * 60_000),
         });
-        prisma.seedQueueEntry('bob', { joinedAt: new Date(Date.now() - 1_000) });
+        prisma.seedQueueEntry('bob', {
+          joinedAt: new Date(Date.now() - 1_000),
+        });
         await service.joinQueue(joinDto('alice'));
         const session = prisma.sessions[0];
         const other = [session.userAId, session.userBId].find(
@@ -1147,9 +1151,9 @@ describe('InstantMatchService', () => {
       prisma.seedQueueEntry('carol');
 
       const result = await service.explainRankingFor('alice');
-      expect(
-        result.candidates.find((c) => c.userId === 'bob')?.skipped,
-      ).toBe(true);
+      expect(result.candidates.find((c) => c.userId === 'bob')?.skipped).toBe(
+        true,
+      );
       expect(result.order.map((o) => o.userId)).toEqual(['carol']);
     });
 
@@ -1166,9 +1170,9 @@ describe('InstantMatchService', () => {
       prisma.seedQueueEntry('bob');
       await service.joinQueue(joinDto('alice'));
 
-      expect(prisma.sessions.filter((s) => s.status === 'PENDING')).toHaveLength(
-        0,
-      );
+      expect(
+        prisma.sessions.filter((s) => s.status === 'PENDING'),
+      ).toHaveLength(0);
     });
 
     it('lifts a candidate the user follows, and both of them further', async () => {

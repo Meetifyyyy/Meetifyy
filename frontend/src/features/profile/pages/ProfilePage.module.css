@@ -741,3 +741,30 @@
     gap: 1.75rem !important;
   }
 }
+
+/* ── First-year isolation: locked Message button ──────────────────────────
+ *
+ * Deliberately NOT a `:disabled` style. The button stays fully interactive --
+ * clicking it opens the "Messaging Restricted" dialog, which is the whole
+ * point of the design: a greyed-out control explains nothing, and a hidden one
+ * makes the profile look broken. So this reads as "locked", not "unavailable":
+ * the same outline button, dimmed a step, with a lock glyph before the label.
+ *
+ * Remove this block together with `MessagingRestrictedModal` when the feature
+ * is retired -- nothing else references it.
+ */
+.secondaryBtnLocked {
+  gap: 0.4rem;
+  color: var(--color-text-muted);
+  border-style: dashed;
+}
+
+.secondaryBtnLocked:hover {
+  background: var(--color-bg-hover);
+  border-color: var(--color-text-muted);
+  color: var(--color-text-main);
+}
+
+.secondaryBtnLocked svg {
+  flex-shrink: 0;
+}

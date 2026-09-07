@@ -158,6 +158,19 @@ model User {
   avatar                     String?
   avatarMediaId              String?
   collegeEmail               String?
+  // ── First-year isolation (see StudentYearPolicyService) ──────────────────
+  // The student's JOINING batch, derived server-side from the verified
+  // institutional address (`sarthak.saini_cs25@gla.ac.in` -> 2025). Never
+  // accepted from a client: no /api/* endpoint reads it from a request body,
+  // and it is re-derived from the address on every sign-in, so a wrong or
+  // missing value self-heals.
+  //
+  // This is the batch, NOT a first-year flag. "First year" is derived per
+  // request as `batchYear === currentAcademicYear`, so the cohort rolls over
+  // on its own and no row ever has to be corrected when the year changes.
+  // NULL means the address carried no recognisable batch — treated as NOT
+  // first-year, never as first-year.
+  batchYear                  Int?
   collegeId                  String?
   cover                      String?
   coverMediaId               String?
@@ -253,6 +266,15 @@ model User {
   @@index([accountStatus, scheduledPurgeAt])
   // Speeds up the signup email-availability check (OR email/collegeEmail).
   @@index([collegeEmail])
+  // First-year isolation. Every user-producing query gains a `batchYear = ?`
+  // or `batchYear <> ? OR IS NULL` predicate, so this is on the hot path of
+  // search, recommendations, the directory and every recipient picker.
+  @@index([batchYear])
+  // The directory/campus lists filter by college first, then batch.
+  @@index([collegeId, batchYear])
+  // Empty-query recipient pickers: WHERE accountStatus='ACTIVE' AND batchYear=?
+  // ORDER BY createdAt DESC.
+  @@index([accountStatus, batchYear, createdAt(sort: Desc)])
 }
 
 model Post {

@@ -13,6 +13,7 @@ import { PresenceService } from '../presence/presence.service';
 import { AcademicsService } from '../academics/academics.service';
 import { VerificationAccessService } from '../common/verification/verification-access.service';
 import { NOTIFICATIONS_QUEUE } from '../notifications/notifications.processor';
+import { studentYearPolicyMockProvider } from '../common/student-year/testing/student-year-policy.mock';
 
 describe('UsersService — blocking', () => {
   let service: UsersService;
@@ -45,6 +46,7 @@ describe('UsersService — blocking', () => {
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
+        studentYearPolicyMockProvider(),
         UsersService,
         { provide: PrismaService, useValue: mockPrisma },
         {

@@ -61,6 +61,11 @@ describe('MessagingCoreService — messaging an unavailable recipient', () => {
         assertCanMessageInConversation: jest.fn(async () => {}),
         isEligibleStatus: () => true,
       } as any,
+      // First-year isolation is not what this fixture exercises; always allow.
+      {
+        isEnforcementEnabled: () => false,
+        assertCanInteract: jest.fn(async () => {}),
+      } as any,
       // Rate limiting is not what this fixture exercises; always allow.
       {
         consumeAll: jest.fn(async () => ({ allowed: true })),

@@ -1,5 +1,6 @@
 import { NotificationFactory } from '../notifications/notification.factory';
 import { PostsService } from './posts.service';
+import { createStudentYearPolicyMock } from '../common/student-year/testing/student-year-policy.mock';
 
 /**
  * The author of removed content gets told — and the notification is fired at
@@ -144,6 +145,7 @@ describe('Content removal notifications', () => {
         {} as any,
         {} as any,
         authorizer,
+        createStudentYearPolicyMock() as any,
       );
       return { service, created, notifications, authorizer };
     };

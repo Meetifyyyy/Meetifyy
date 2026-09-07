@@ -1,5 +1,6 @@
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { PostsService } from './posts.service';
+import { createStudentYearPolicyMock } from '../common/student-year/testing/student-year-policy.mock';
 
 /**
  * Who may write a post into a community.
@@ -56,6 +57,8 @@ describe('PostsService — community post authorization', () => {
       {} as any,
       // Deletion authorizer — unused by the write-path guard under test.
       {} as any,
+      // First-year isolation — not what this guard is about.
+      createStudentYearPolicyMock() as any,
     );
   };
 

@@ -24,6 +24,7 @@ import { StorageService } from '../uploads/uploads.service';
 import { MediaCleanupService } from '../uploads/media-cleanup.service';
 import { MentionDto } from '../common/dto/mention.dto';
 import { ContentDeletionAuthorizer } from './content-deletion.authorizer';
+import { StudentYearPolicyService } from '../common/student-year/student-year-policy.service';
 
 @Injectable()
 export class PostsService {
@@ -39,6 +40,10 @@ export class PostsService {
     private readonly mentionsService: MentionsService,
     private readonly storageService: StorageService,
     private readonly contentDeletionAuthorizer: ContentDeletionAuthorizer,
+    // First-year isolation. A post is content authored by a student, so the
+    // feed applies the same rule the activity feed does -- judged on the
+    // AUTHOR, in the query.
+    private readonly studentYearPolicy: StudentYearPolicyService,
     @Optional() private readonly mediaCleanupService?: MediaCleanupService,
   ) {}
 
@@ -658,6 +663,15 @@ export class PostsService {
     const excludedUserIds = userId
       ? await this.blocksService.getExcludedUserIds(userId)
       : [];
+
+    // First-year isolation, resolved once per page and pushed into the SQL
+    // below. The feed already joins "User" for the author card, so the
+    // predicate costs an index lookup, not a join.
+    const feedViewerBatch = await this.studentYearPolicy.getBatchYearFor(userId);
+    const feedPolicyFilter = Prisma.raw(
+      `AND ${this.studentYearPolicy.visibleUserSqlPredicate('u', feedViewerBatch)}`,
+    );
+
     // Compound keyset cursor: "<iso>__<postId>". The trailing post id is a
     // stable tiebreaker so two posts sharing an exact createdAt (same
     // millisecond) can never straddle a page boundary — one being skipped or
@@ -770,6 +784,12 @@ export class PostsService {
       LEFT JOIN "College" col ON u."collegeId" = col.id
       LEFT JOIN "Community" c ON p."communityId" = c.id
       WHERE p."deletedAt" IS NULL
+        -- First-year isolation, judged on the post's AUTHOR. Applied here, in
+        -- the same WHERE as the availability and community rules, so a
+        -- restricted post is never fetched and the keyset page size stays
+        -- honest -- dropping rows afterwards would return short pages and let
+        -- the cursor skip posts that were never shown.
+        ${feedPolicyFilter}
         -- The author must still be an available account. A user inside their
         -- 30-day deletion window is hidden from everyone, so their posts go
         -- with them; the posts themselves are deliberately NOT soft-deleted at
@@ -909,6 +929,22 @@ export class PostsService {
     if (
       userId &&
       (await this.blocksService.isBlocked(userId, targetAuthor.id))
+    ) {
+      return { posts: [], nextCursor: undefined };
+    }
+
+    // First-year isolation, decided once for the whole author rather than
+    // per post: every row here has the same author, so an incompatible pair
+    // means the entire profile activity section is empty. Returning the same
+    // shape as the block case above keeps the two indistinguishable, so the
+    // endpoint cannot be used to tell "restricted" apart from "no posts".
+    if (
+      userId &&
+      !(await this.studentYearPolicy.canIdsInteract(
+        userId,
+        targetAuthor.id,
+        'activity_visibility',
+      ))
     ) {
       return { posts: [], nextCursor: undefined };
     }
@@ -1833,6 +1869,19 @@ export class PostsService {
       if (await this.blocksService.isBlocked(userId, post.authorId)) {
         throw new NotFoundException('Post not found');
       }
+      // First-year isolation, judged on the post's author and answering the
+      // same neutral 404 the block rule does. The feed already excludes the
+      // post; this closes the direct route to its comment thread, which is
+      // reachable by id from a deep link or a hand-built request.
+      if (
+        !(await this.studentYearPolicy.canIdsInteract(
+          userId,
+          post.authorId,
+          'activity_visibility',
+        ))
+      ) {
+        throw new NotFoundException('Post not found');
+      }
     }
 
     // Compound keyset cursor "<iso>|<commentId>" or legacy "<iso>__<commentId>"
@@ -1924,6 +1973,22 @@ export class PostsService {
       post.deletedAt ||
       (post.community && post.community.deletedAt) ||
       (excludedUserIds.length > 0 && excludedUserIds.includes(post.authorId))
+    ) {
+      throw new NotFoundException('Post not found');
+    }
+
+    // First-year isolation on the post DETAIL route, judged on the author.
+    // The feed filter keeps a restricted post out of every list; this closes
+    // the by-id route a deep link, a shared URL or a hand-built request takes.
+    // Same neutral 404 as the block case above, so the two are
+    // indistinguishable.
+    if (
+      userId &&
+      !(await this.studentYearPolicy.canIdsInteract(
+        userId,
+        post.authorId,
+        'activity_visibility',
+      ))
     ) {
       throw new NotFoundException('Post not found');
     }

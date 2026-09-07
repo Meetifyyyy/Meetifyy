@@ -14,6 +14,7 @@ import { AcademicsService } from '../academics/academics.service';
 import { VerificationAccessService } from '../common/verification/verification-access.service';
 import { createBlocksServiceMock } from './testing/blocks.service.mock';
 import { clearAuthSyncCache } from '../auth/auth.service';
+import { studentYearPolicyMockProvider } from '../common/student-year/testing/student-year-policy.mock';
 
 // Only `clearAuthSyncCache` is imported from the auth module by the code under
 // test, and it is a module-level function rather than an injectable, so it can
@@ -44,7 +45,9 @@ describe('Follow state', () => {
   /** `Follow` rows the fake `prisma.follow.findMany` answers from. */
   let follows: { followerId: string; followingId: string }[] = [];
 
-  const makeModule = async (blocks: { blockerId: string; blockedId: string }[] = []) => {
+  const makeModule = async (
+    blocks: { blockerId: string; blockedId: string }[] = [],
+  ) => {
     prisma = {
       user: { findUnique: jest.fn(), findMany: jest.fn() },
       userSettings: { findUnique: jest.fn().mockResolvedValue(null) },
@@ -53,7 +56,9 @@ describe('Follow state', () => {
           const followerId = where.followerId;
           const ids: string[] = where.followingId?.in ?? [];
           return follows
-            .filter((f) => f.followerId === followerId && ids.includes(f.followingId))
+            .filter(
+              (f) => f.followerId === followerId && ids.includes(f.followingId),
+            )
             .map((f) =>
               select?.followingId ? { followingId: f.followingId } : f,
             );
@@ -64,13 +69,23 @@ describe('Follow state', () => {
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
+        studentYearPolicyMockProvider(),
         UsersService,
         { provide: PrismaService, useValue: prisma },
-        { provide: NotificationsService, useValue: { createNotification: jest.fn() } },
+        {
+          provide: NotificationsService,
+          useValue: { createNotification: jest.fn() },
+        },
         { provide: NotificationFactory, useValue: { createFollow: jest.fn() } },
-        { provide: DomainEventService, useValue: { emit: jest.fn().mockResolvedValue(undefined) } },
+        {
+          provide: DomainEventService,
+          useValue: { emit: jest.fn().mockResolvedValue(undefined) },
+        },
         { provide: ConfigService, useValue: { get: jest.fn() } },
-        { provide: RedisService, useValue: { withLock: jest.fn(async (_k, _t, fn) => fn()) } },
+        {
+          provide: RedisService,
+          useValue: { withLock: jest.fn(async (_k, _t, fn) => fn()) },
+        },
         { provide: BlocksService, useValue: createBlocksServiceMock(blocks) },
         {
           provide: PresenceService,
@@ -82,9 +97,15 @@ describe('Follow state', () => {
         AcademicsService,
         {
           provide: VerificationAccessService,
-          useValue: { eligibleUserWhere: () => ({}), isEnforcementEnabled: () => true },
+          useValue: {
+            eligibleUserWhere: () => ({}),
+            isEnforcementEnabled: () => true,
+          },
         },
-        { provide: getQueueToken(NOTIFICATIONS_QUEUE), useValue: { add: jest.fn().mockResolvedValue(undefined) } },
+        {
+          provide: getQueueToken(NOTIFICATIONS_QUEUE),
+          useValue: { add: jest.fn().mockResolvedValue(undefined) },
+        },
       ],
     }).compile();
 
@@ -148,7 +169,11 @@ describe('Follow state', () => {
         where: { followerId: 'me', followingId: { in: ['u0', 'u1', 'u2'] } },
         select: { followingId: true },
       });
-      expect(result.map((u: any) => u.isFollowing)).toEqual([false, false, true]);
+      expect(result.map((u: any) => u.isFollowing)).toEqual([
+        false,
+        false,
+        true,
+      ]);
     });
 
     it('reports not-following, and asks nothing, for an anonymous caller', async () => {
@@ -235,7 +260,9 @@ describe('Follow state', () => {
       // A repeat follow writes nothing (ON CONFLICT DO NOTHING), so there is
       // no cached snapshot to invalidate — and rapid repeat clicks should not
       // each cost every replica its bootstrap cache entry.
-      prisma.$queryRaw.mockResolvedValue([{ ...followRow, newlyFollowed: false }]);
+      prisma.$queryRaw.mockResolvedValue([
+        { ...followRow, newlyFollowed: false },
+      ]);
 
       await service.followUser('follower-id', 'sarthak');
 
@@ -246,7 +273,9 @@ describe('Follow state', () => {
       // Idempotence matters for the debounced client: a coalesced burst can
       // re-send a follow that already exists, and the answer must be the state
       // of the relationship, not "nothing happened".
-      prisma.$queryRaw.mockResolvedValue([{ ...followRow, newlyFollowed: false }]);
+      prisma.$queryRaw.mockResolvedValue([
+        { ...followRow, newlyFollowed: false },
+      ]);
 
       const res = await service.followUser('follower-id', 'sarthak');
 

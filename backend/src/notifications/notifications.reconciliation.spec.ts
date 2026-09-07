@@ -6,6 +6,7 @@ import { DomainEventService } from '../events/domain-event.service';
 import { ConfigService } from '@nestjs/config';
 import { RedisService } from '../redis/redis.service';
 import { EventEmitter2 } from '@nestjs/event-emitter';
+import { studentYearPolicyMockProvider } from '../common/student-year/testing/student-year-policy.mock';
 
 describe('NotificationsService - Event Driven Reconciliation', () => {
   let service: NotificationsService;
@@ -46,6 +47,7 @@ describe('NotificationsService - Event Driven Reconciliation', () => {
     jest.clearAllMocks();
     const module: TestingModule = await Test.createTestingModule({
       providers: [
+        studentYearPolicyMockProvider(),
         NotificationsService,
         EventEmitter2,
         { provide: PrismaService, useValue: mockPrisma },

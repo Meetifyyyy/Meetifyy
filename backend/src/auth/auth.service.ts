@@ -29,6 +29,7 @@ import {
 } from '../common/validation/email-format.util';
 import type { AuthenticatedUser } from '../common/types/authenticated-request';
 import { randomInt } from 'crypto';
+import { StudentYearPolicyService } from '../common/student-year/student-year-policy.service';
 
 /**
  * Bounded LRU cache for auth sync results.
@@ -122,6 +123,7 @@ interface ProfileRow {
   course: string | null;
   branch: string | null;
   passingYear: number | null;
+  batchYear: number | null;
   location: string | null;
   createdAt: Date;
   updatedAt: Date;
@@ -245,6 +247,10 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     private readonly supabaseService: SupabaseService,
     private readonly domainValidatorService: DomainValidatorService,
     private readonly defaultAssets: DefaultAssetsService,
+    // First-year isolation. Sign-in is the one moment the server holds the
+    // verified institutional address AND is already writing the row, so it is
+    // where `batchYear` is derived and kept honest -- see the write below.
+    private readonly studentYearPolicy: StudentYearPolicyService,
     @Optional() private readonly redisService?: RedisService,
   ) {}
 
@@ -282,6 +288,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
         u."course",
         u."branch",
         u."passingYear",
+        u."batchYear",
         u."location",
         u."createdAt",
         u."updatedAt",
@@ -435,6 +442,36 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
           );
       }
 
+      // Auto-heal `batchYear` from the verified institutional address.
+      //
+      // Sign-in is the right place for this: the column is only ever a cache
+      // of `extractBatchYearFromEmail(email)`, and this is the one path that
+      // runs for every account, holds the address, and is already touching the
+      // row. It covers accounts created before the backfill, accounts whose
+      // address an admin corrected, and any row the backfill's SQL and the
+      // TypeScript parser would disagree about -- the parser wins, because it
+      // is what every runtime check uses.
+      //
+      // Fire-and-forget, and only when the value actually differs, so the
+      // normal login pays nothing. Even if the write never lands, enforcement
+      // is unaffected: `getUserBatchYear` re-parses the address whenever the
+      // column is absent or implausible.
+      const derivedBatchYear = this.studentYearPolicy.deriveBatchYearForStorage(
+        row.email ?? row.collegeEmail,
+      );
+      if (derivedBatchYear !== (row.batchYear ?? null)) {
+        row.batchYear = derivedBatchYear;
+        this.prisma.user
+          .update({
+            where: { id: row.id },
+            data: { batchYear: derivedBatchYear },
+          })
+          .then(() => this.studentYearPolicy.invalidate(row.id))
+          .catch((err) =>
+            this.logger.error(`Failed to heal batchYear: ${err.message}`),
+          );
+      }
+
       // Auto-heal legacy / fallback usernames or displayNames starting with user_
       const isRandomUsername =
         typeof row.username === 'string' && row.username.startsWith('user_');
@@ -544,6 +581,18 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
         course: row.course,
         branch: row.branch,
         passingYear: row.passingYear,
+        // The viewer's OWN batch, and the first-year flag derived from it.
+        // The client uses these only to decide whether to draw a Message
+        // button in its locked state -- every actual restriction is enforced
+        // by the server. Emitting the derived flag as well as the raw year
+        // means the client never has to know what "first year" means, so the
+        // year rollover needs no client deploy.
+        batchYear: row.batchYear ?? null,
+        isFirstYearStudent: this.studentYearPolicy.isFirstYearStudent({
+          batchYear: row.batchYear,
+          email: row.email,
+          collegeEmail: row.collegeEmail,
+        }),
         location: row.location,
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,
@@ -739,6 +788,11 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
           cover: null,
           collegeId: collegeId,
           collegeEmail: email,
+          // Derived here, never accepted from the client. A brand-new account
+          // is therefore correctly bucketed by the isolation policy on its
+          // very first request, before the backfill or a later login could
+          // have run.
+          batchYear: this.studentYearPolicy.deriveBatchYearForStorage(email),
           birthday: userBirthday,
           settings: {
             create: {},
@@ -1095,7 +1149,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
 
   private async _getUnreadNotifCount(userId: string): Promise<number> {
     const redis = this.redisService?.getClient();
-    const redisKey = `notifications:unread:${userId}`;
+    const redisKey = `notifications:unread:v2:${userId}`;
     if (redis) {
       try {
         const cached = await redis.get(redisKey);

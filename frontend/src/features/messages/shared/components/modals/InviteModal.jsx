@@ -16,6 +16,7 @@ import { generateConversationUrl } from '@shared/utils/conversationUrl';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 import { useScrollLock } from '@shared/hooks/useScrollLock';
 import { getProcessedAvatarUrl } from '@shared/components/avatar/Avatar';
+import { filterCompatibleUsers } from '@shared/lib/studentYearPolicy';
 
 export default function InviteModal({ isOpen, onClose, group }) {
   // Back dismisses this dialog rather than navigating the page behind it.
@@ -164,7 +165,12 @@ export default function InviteModal({ isOpen, onClose, group }) {
       // `selectableUsers` drops deleted accounts. The server already excludes
       // them; this covers the window where a cached response (20s server-side,
       // 30s here) still carries somebody who has since deleted.
-      return selectableUsers(list).filter(
+      // `filterCompatibleUsers` is the first-year isolation counterpart of
+      // `selectableUsers` above, and is here for the same reason: the server
+      // already excludes restricted accounts and refuses them on the add, but
+      // a response cached either side (20s server, 30s here) can outlive the
+      // moment the viewer's batch resolved.
+      return filterCompatibleUsers(currentUser, selectableUsers(list)).filter(
         (u) => String(u.id) !== String(currentUser?.id)
       );
     },

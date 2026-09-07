@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationFactory } from '../notifications/notification.factory';
 import { MentionDto } from '../common/dto/mention.dto';
+import { StudentYearPolicyService } from '../common/student-year/student-year-policy.service';
 
 export interface SanitizedMention {
   userId: string;
@@ -38,6 +39,9 @@ export class MentionsService {
     private readonly prisma: PrismaService,
     private readonly notificationsService: NotificationsService,
     private readonly notificationFactory: NotificationFactory,
+    // First-year isolation: a mention is a link plus a notification, so it is
+    // filtered on the same rule the @-suggestion endpoint uses.
+    private readonly studentYearPolicy: StudentYearPolicyService,
   ) {}
 
   /**
@@ -88,8 +92,19 @@ export class MentionsService {
 
     // One batched existence check for the whole set — never N+1.
     const candidateIds = structurallyValid.map((m) => m.userId);
+    // First-year isolation, in the query. A mention is not decoration: it
+    // renders a link to the account, raises a notification and is stored on
+    // the post. The @-suggestion endpoint already hides restricted accounts,
+    // so a restricted id arriving here came from a hand-built payload or a
+    // stale client -- and dropping it silently is the right answer, since the
+    // author is not entitled to learn that the handle they typed exists.
+    const mentionAuthorBatch =
+      await this.studentYearPolicy.getBatchYearFor(actorId);
     const realUsers = await this.prisma.user.findMany({
-      where: { id: { in: candidateIds }, deletedAt: null },
+      where: this.studentYearPolicy.injectUserFilter(
+        { id: { in: candidateIds }, deletedAt: null },
+        mentionAuthorBatch,
+      ),
       select: { id: true, username: true },
     });
     const realUserMap = new Map(realUsers.map((u) => [u.id, u.username]));

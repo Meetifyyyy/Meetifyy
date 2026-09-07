@@ -10,6 +10,8 @@ import { useProfile, PROFILE_KEYS } from '@shared/hooks/useProfile';
 
 import { showToast } from '@shared/utils/toast';
 import { useOpenDirectMessage } from '@shared/hooks/useOpenDirectMessage';
+import MessagingRestrictedModal from '@shared/components/modals/MessagingRestrictedModal';
+import { isMessagingRestricted } from '@shared/lib/studentYearPolicy';
 import Post from '@features/feed/components/post/Post';
 import UserListModal from '@shared/components/modals/UserListModal';
 import { ErrorState } from '@shared/components/ui/StateViews';
@@ -69,7 +71,7 @@ INTERESTS_BY_CATEGORY.forEach(category => {
 
 
 import CoverImage from '@shared/components/ui/CoverImage';
-import { Bookmark } from '@shared/components/icons';
+import { Bookmark, Lock } from '@shared/components/icons';
 
 
 export default function ProfilePage() {
@@ -100,6 +102,10 @@ export default function ProfilePage() {
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [shareModalOpen, setShareModalOpen] = useState(false);
+  // First-year isolation: the "Messaging Restricted" dialog raised by the
+  // locked Message button. Kept isolated from every other profile action so
+  // the feature can be removed by deleting this line and its two uses.
+  const [restrictedModalOpen, setRestrictedModalOpen] = useState(false);
   const [showCoverEditor, setShowCoverEditor] = useState(false);
   const [isAvatarPickerOpen, setIsAvatarPickerOpen] = useState(false);
   const [savingCover, setSavingCover] = useState(false);
@@ -306,8 +312,26 @@ export default function ProfilePage() {
 
   const posts = postsData?.posts || [];
 
+  /**
+   * First-year isolation: the Message button is never hidden or disabled.
+   *
+   * When the server says this pair may not message, the button stays in place
+   * with a lock and opens an explanatory dialog instead. Nothing is created
+   * and no request is sent -- the locked branch returns before
+   * `openDirectMessage`, so there is no conversation to leave behind.
+   *
+   * The flag is the server's answer for this exact viewer/target pair, not
+   * something the client derives. It is UX only; `startDM`, every send path
+   * and every recipient selector refuse the same pair independently.
+   */
+  const messagingRestricted = !isOwnProfile && isMessagingRestricted(profileUser);
+
   const handleMessageClick = () => {
     if (isOwnProfile) return;
+    if (messagingRestricted) {
+      setRestrictedModalOpen(true);
+      return;
+    }
     openDirectMessage(profileUser);
   };
 
@@ -483,7 +507,21 @@ export default function ProfilePage() {
               {!isOwnProfile ? (
                 <div className={s.actionButtons}>
                   <FollowButton targetUsername={profileUser.username} style={{ height: '42px', width: '100%', flex: '1 1 0%' }} />
-                  <button className={s.secondaryBtn} onClick={handleMessageClick}>
+                  <button
+                    className={`${s.secondaryBtn} ${messagingRestricted ? s.secondaryBtnLocked : ''}`}
+                    onClick={handleMessageClick}
+                    // Not `disabled`: the button must stay reachable by
+                    // keyboard and click so the explanation is one activation
+                    // away. `aria-describedby` is not used because the reason
+                    // lives in the dialog this opens, which is announced then.
+                    aria-label={messagingRestricted ? 'Message (restricted)' : undefined}
+                    aria-haspopup={messagingRestricted ? 'dialog' : undefined}
+                  >
+                    {messagingRestricted && (
+                      // Decorative: `aria-label` above already carries the
+                      // state, so announcing the glyph would repeat it.
+                      <Lock size={15} strokeWidth={2.25} aria-hidden="true" />
+                    )}
                     Message
                   </button>
                 </div>
@@ -552,6 +590,13 @@ export default function ProfilePage() {
         onClose={() => setShareModalOpen(false)}
         profileUser={profileUser}
       />
+
+      {/* First-year isolation. Rendered only while open, and touching nothing
+          else on this page -- deleting these three lines and the two above
+          removes the whole client half of the feature from the profile. */}
+      {restrictedModalOpen && (
+        <MessagingRestrictedModal onClose={() => setRestrictedModalOpen(false)} />
+      )}
 
       {/* Cover editor bottom sheet */}
       {showCoverEditor && createPortal(

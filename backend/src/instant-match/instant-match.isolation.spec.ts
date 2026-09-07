@@ -30,7 +30,11 @@ describe('Instant Match isolation from normal Messages', () => {
 
     it('keeps the DM list scoped to DMs', () => {
       const src = readSource('messages/dm/dm.service.ts');
-      expect(src).toContain("conversation: { type: 'DM' }");
+      // The `conversation` filter is no longer a one-liner -- first-year
+      // isolation adds a participant clause beside the type -- so this asserts
+      // the type constraint itself rather than the exact literal it used to be
+      // written as.
+      expect(src).toMatch(/conversation:\s*\{\s*\n?\s*type:\s*'DM',?/);
     });
 
     it('no longer exempts Instant Match from the empty-conversation rule', () => {
