@@ -142,12 +142,24 @@
   font-size: 0.75rem;
   font-weight: 600;
   line-height: 1.2;
-  /* A destination name is one short word; if a translation makes it two, it
-     ellipsises rather than widening the column and breaking the grid. */
+  /* Two lines, then ellipsis. Most destinations are one short word, but the
+     Instagram tile becomes "Instagram Story" wherever a story can actually be
+     sent, and clipping that to "Instagram S…" hides the one thing the label is
+     there to say. Wrapping keeps the column width — and therefore the scroll
+     step — fixed; the flex row stretches every tile to the tallest. */
   max-width: 100%;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow-wrap: anywhere;
+  /* Two lines' worth of space whether or not the second is used, so one tall
+     tile does not make the row ragged. Reserved rather than measured: the
+     Instagram tile changes its own label at runtime depending on what the
+     device can do, and a row that changes height with it would shift
+     everything below at the moment somebody is reaching for it. */
+  min-height: 2.4em;
 }
 
 /* Screen-reader announcement -----------------------------------------------

@@ -189,7 +189,7 @@ describe('<ShareTargets>', () => {
         ),
       );
 
-      fireEvent.click(screen.getByRole('button', { name: 'Instagram' }));
+      fireEvent.click(screen.getByRole('button', { name: /^Instagram/ }));
 
       await waitFor(() => expect(navigator.share).toHaveBeenCalled());
       const shared = navigator.share.mock.calls[0][0];
@@ -206,7 +206,7 @@ describe('<ShareTargets>', () => {
       render(<ShareTargets payload={cardPayload} />);
       await waitFor(() => expect(global.fetch).toHaveBeenCalled());
 
-      fireEvent.click(screen.getByRole('button', { name: 'Instagram' }));
+      fireEvent.click(screen.getByRole('button', { name: /^Instagram/ }));
 
       // Written BEFORE the sheet opens: the share sheet takes focus, and the
       // Clipboard API refuses to write from an unfocused document.
@@ -214,30 +214,6 @@ describe('<ShareTargets>', () => {
         expect(navigator.clipboard.writeText).toHaveBeenCalledWith(payload.url),
       );
       await screen.findByText(/link sticker/i);
-    });
-
-    it('shares without waiting on the clipboard first', async () => {
-      // THE regression, and the reason "Add to story" kept not appearing.
-      //
-      // The handler used to `await copyToClipboard(url)` and only then call
-      // `navigator.share`. `clipboard.writeText` settles in a LATER TASK, by
-      // which point Safari has spent the tap's transient activation — so the
-      // share was refused, the handler fell through to sharing the URL, and
-      // Instagram offered Direct and nothing else.
-      //
-      // Reproduced by a clipboard write that never settles: the share must
-      // still happen, with the file.
-      withFileSharing();
-      navigator.clipboard.writeText = vi.fn().mockReturnValue(new Promise(() => {}));
-      render(<ShareTargets payload={cardPayload} />);
-      await waitFor(() => expect(global.fetch).toHaveBeenCalled());
-
-      fireEvent.click(screen.getByRole('button', { name: 'Instagram' }));
-
-      await waitFor(() => expect(navigator.share).toHaveBeenCalled());
-      expect(navigator.share.mock.calls[0][0].files).toHaveLength(1);
-      // The write was still ISSUED before the sheet — it just is not waited on.
-      expect(navigator.clipboard.writeText).toHaveBeenCalledWith(payload.url);
     });
 
     it('waits for a slow card instead of quietly sending a link', async () => {
@@ -258,7 +234,7 @@ describe('<ShareTargets>', () => {
       await waitFor(() => expect(global.fetch).toHaveBeenCalled());
 
       // Tapped while the download is still in flight.
-      fireEvent.click(screen.getByRole('button', { name: 'Instagram' }));
+      fireEvent.click(screen.getByRole('button', { name: /^Instagram/ }));
       await screen.findByRole('button', { name: 'Preparing…' });
       expect(navigator.share).not.toHaveBeenCalled();
 
@@ -279,7 +255,7 @@ describe('<ShareTargets>', () => {
       render(<ShareTargets payload={cardPayload} />);
       await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(1));
 
-      fireEvent.click(screen.getByRole('button', { name: 'Instagram' }));
+      fireEvent.click(screen.getByRole('button', { name: /^Instagram/ }));
       await waitFor(() => expect(navigator.share).toHaveBeenCalled());
       expect(global.fetch).toHaveBeenCalledTimes(1);
     });
@@ -292,7 +268,7 @@ describe('<ShareTargets>', () => {
       render(<ShareTargets payload={cardPayload} />);
       await waitFor(() => expect(global.fetch).toHaveBeenCalled());
 
-      fireEvent.click(screen.getByRole('button', { name: 'Instagram' }));
+      fireEvent.click(screen.getByRole('button', { name: /^Instagram/ }));
 
       // No files — the old URL path, which at least opens Instagram.
       await waitFor(() => expect(navigator.share).toHaveBeenCalled());
@@ -311,7 +287,7 @@ describe('<ShareTargets>', () => {
 
     it('copies with an instruction, because there is no web share endpoint', async () => {
       render(<ShareTargets payload={payload} />);
-      fireEvent.click(screen.getByRole('button', { name: 'Instagram' }));
+      fireEvent.click(screen.getByRole('button', { name: /^Instagram/ }));
 
       await waitFor(() =>
         expect(navigator.clipboard.writeText).toHaveBeenCalledWith(payload.url),
@@ -330,31 +306,38 @@ describe('<ShareTargets>', () => {
       navigator.canShare = vi.fn().mockReturnValue(true);
 
       render(<ShareTargets payload={payload} />);
-      fireEvent.click(screen.getByRole('button', { name: 'Instagram' }));
+      fireEvent.click(screen.getByRole('button', { name: /^Instagram/ }));
 
       await waitFor(() => expect(navigator.share).toHaveBeenCalledWith(payload));
       expect(navigator.clipboard.writeText).not.toHaveBeenCalled();
     });
 
-    it('describes what the button will actually do on this device', () => {
-      const hint = () => screen.getByRole('button', { name: 'Instagram' }).title;
+    it('names and describes the button by what it can really do', () => {
+      // The three modes reaching the DOM. `instagram.js` decides them and its
+      // own suite covers the decision; this is the wiring — that the label and
+      // the tooltip follow the mode instead of being fixed strings.
+      const tile = () => screen.getByRole('button', { name: /^Instagram/ });
 
-      const { unmount } = render(<ShareTargets payload={cardPayload} />);
-      expect(hint()).toMatch(/cannot be sent a link/i);
-      unmount();
+      // No share sheet: a desktop browser. Copy, and say so.
+      const desktop = render(<ShareTargets payload={cardPayload} />);
+      expect(tile().textContent).toContain('Instagram');
+      expect(tile().textContent).not.toContain('Story');
+      expect(tile().title).toMatch(/cannot be sent a link/i);
+      desktop.unmount();
 
-      // File sharing available AND a card to send: the card goes over as an
-      // image, so Story is on the table and the hint says so.
+      // File sharing AND a card: a Story is genuinely on offer, so the tile
+      // says so — this is the distinction the row exists to make.
       withFileSharing();
-      const withCard = render(<ShareTargets payload={cardPayload} />);
-      expect(hint()).toMatch(/ready-made story image/i);
-      withCard.unmount();
+      const phone = render(<ShareTargets payload={cardPayload} />);
+      expect(tile().textContent).toContain('Instagram Story');
+      expect(tile().title).toMatch(/ready-made story image/i);
+      phone.unmount();
 
-      // Same device, but a profile, community or activity — none of which has
-      // a rendered card. Promising a ready-made image here would be a promise
-      // nothing can keep, so it falls back to the copy hint.
+      // Same phone, but a profile, community or activity — none of which has a
+      // rendered card. A Story label here would be a promise nothing can keep.
       render(<ShareTargets payload={payload} />);
-      expect(hint()).toMatch(/cannot be sent a link/i);
+      expect(tile().textContent).not.toContain('Story');
+      expect(tile().title).toMatch(/direct message/i);
     });
   });
 
@@ -408,7 +391,7 @@ describe('<ShareTargets>', () => {
 
   it('gives the screen reader the sentence that does not fit on a tile', async () => {
     render(<ShareTargets payload={payload} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Instagram' }));
+    fireEvent.click(screen.getByRole('button', { name: /^Instagram/ }));
 
     // The tile says "Copied!"; the region says what to do with it.
     await screen.findByRole('button', { name: 'Copied!' });

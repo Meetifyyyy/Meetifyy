@@ -19,61 +19,16 @@
  */
 
 /**
- * Instagram Stories does not render link previews. At all.
+ * Instagram is not a URL, and its whole story lives in `./instagram.js`.
  *
- * This is the finding that matters, and it is a platform limitation rather
- * than anything wrong with our Open Graph tags. Instagram has three surfaces
- * and they behave differently:
- *
- *   - Direct messages DO unfurl a link into a card from `og:` tags.
- *   - Stories do NOT. A link in a story is a "link sticker": a small pill
- *     showing the domain, or whatever sticker text the author types. Instagram
- *     never fetches `og:image` for it, so there is no card to appear and no
- *     amount of correct metadata will produce one.
- *
- *     Nor can that sticker be attached from here. Sharing an image to a story
- *     creates the story with the image and nothing else; the sticker is added
- *     by the author, in Instagram, by hand. There is no parameter, no
- *     intent extra and no deep link that carries it — which is why the link is
- *     put on the clipboard for them to paste rather than promised to them.
- *   - Feed captions do not linkify at all.
- *
- * Sharing a URL to Instagram from the OS share sheet therefore only ever
- * offers "Direct" — which is exactly the symptom: no "Add to story", no "Add
- * to post". Instagram's share target advertises those options for `image/*`,
- * not for text.
- *
- * So the closest technically supported approach is not to send a link at all.
- * It is to send the CARD ITSELF as an image file, which Stories accepts as
- * story content — see `shareFiles`. The link is copied alongside it, because a
- * story that shows the card still needs a link sticker to be clickable.
- *
- * The story-sharing deep link (`instagram-stories://share` with a
- * `backgroundImage`) is not an alternative here: it requires a registered
- * Facebook App ID and a native iOS or Android application, and does nothing
- * from a web page.
+ * The short version, because it is the finding that shaped this file: Stories
+ * renders no link preview at all — a link there is a sticker Instagram never
+ * fetches `og:image` for — so handing Instagram a URL only ever offers Direct.
+ * The card has to travel as an image FILE instead. `instagram.js` owns the
+ * capability check, the three modes and the action; the primitives it uses
+ * (`canShareFiles`, `shareFiles`, `copyToClipboard`, `shareNatively`) are all
+ * below and are not Instagram-specific.
  */
-export const INSTAGRAM_GUIDANCE =
-  'Link copied. Paste it into your Instagram story, bio or a DM.';
-
-/**
- * What the Instagram button will do, which depends on the device.
- *
- * With a share sheet it hands the link to the OS and Instagram appears in the
- * list like every other installed app — that is the good path, and it is what
- * a phone gets. Without one there is nothing to hand it to, so the link is
- * copied. Saying "we copy it" on a phone that is about to open a share sheet
- * is simply untrue, and the button is surprising enough already.
- */
-export const INSTAGRAM_HINT_SHEET =
-  'Sends a ready-made story image, so Instagram offers Story and Post. The link is copied — Instagram only lets you add a link sticker by hand.';
-
-export const INSTAGRAM_HINT_COPY =
-  'Instagram cannot be sent a link from the web. We copy it so you can paste it into your story, bio or a DM.';
-
-/** Shown once the card has been handed over and the link copied. */
-export const INSTAGRAM_STORY_GUIDANCE =
-  'Story sent. Link copied — add a link sticker and paste it.';
 
 /**
  * The share destinations, in the order they are shown.
@@ -101,9 +56,9 @@ export const SHARE_TARGETS = [
     id: 'instagram',
     label: 'Instagram',
     /**
-     * Not a URL — see INSTAGRAM_GUIDANCE. The hint is resolved by the component
-     * because it depends on whether this device has a share sheet; see
-     * INSTAGRAM_HINT_SHEET and INSTAGRAM_HINT_COPY.
+     * Not a URL, and its label and hint are not fixed either: both depend on
+     * what this device can do for this payload, so `./instagram.js` resolves
+     * them and the component asks it. The label here is the fallback.
      */
     needsHint: true,
     build: () => null,

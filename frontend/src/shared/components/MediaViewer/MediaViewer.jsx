@@ -4,6 +4,7 @@ import { useMediaViewer } from '@shared/context/MediaViewerContext';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 import { useScrollLock } from '@shared/hooks/useScrollLock';
 import { showToast } from '@shared/utils/toast';
+import { copyToClipboard, shareNatively } from '@shared/lib/share/shareTargets';
 import ImageViewer from './ImageViewer';
 import VideoViewer from './VideoViewer';
 import styles from './MediaViewer.module.css';
@@ -571,13 +572,28 @@ export default function MediaViewer() {
     downloadAbortRef.current?.abort();
   };
 
+  /**
+   * Shares the media being viewed.
+   *
+   * Goes through the same helpers every share dialog uses rather than calling
+   * `navigator.share` directly. The hand-rolled version here swallowed every
+   * outcome in an empty catch, so a browser that refused the share and a
+   * clipboard that refused the write both looked exactly like success: nothing
+   * happened and nothing was said.
+   *
+   * It still shares the media's own URL, not the post's — that is what this
+   * viewer is showing, and changing it is a product decision rather than a
+   * cleanup.
+   */
   const handleShare = async () => {
     const url = currentItem?.url;
     if (!url) return;
-    try {
-      if (navigator.share) await navigator.share({ url });
-      else { await navigator.clipboard?.writeText(url); showToast('Link copied'); }
-    } catch (_) {}
+
+    const outcome = await shareNatively({ url });
+    // Somebody closing the sheet is a change of mind, not a failure.
+    if (outcome === 'shared' || outcome === 'dismissed') return;
+
+    showToast((await copyToClipboard(url)) ? 'Link copied' : 'Could not copy the link');
   };
 
   if (!open) return null;

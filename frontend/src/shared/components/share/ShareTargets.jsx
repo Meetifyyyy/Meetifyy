@@ -12,7 +12,7 @@
  * it stays useful for the next thing Meetifyy makes shareable without learning
  * about it. The payloads are built in `@shared/lib/share/sharePayload`.
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Check,
   Instagram,
@@ -25,16 +25,19 @@ import {
 } from '@shared/components/icons';
 import {
   INSTAGRAM_GUIDANCE,
-  INSTAGRAM_HINT_COPY,
-  INSTAGRAM_HINT_SHEET,
+  INSTAGRAM_MODE,
   INSTAGRAM_STORY_GUIDANCE,
+  instagramHint,
+  instagramLabel,
+  resolveInstagramMode,
+  shareToInstagram,
+} from '@shared/lib/share/instagram';
+import {
   SHARE_TARGETS,
   canNativeShare,
-  canShareFiles,
   copyToClipboard,
   fetchShareCard,
   openShareWindow,
-  shareFiles,
   shareNatively,
 } from '@shared/lib/share/shareTargets';
 import styles from './ShareTargets.module.css';
@@ -50,16 +53,6 @@ const ICONS = {
 
 /** How long a target's transient label stays before reverting. */
 const FEEDBACK_MS = 2400;
-
-/**
- * The type of the file handed to a share sheet.
- *
- * Named here because two things must agree about it: the capability probe that
- * decides whether to offer file sharing at all, and the endpoint that renders
- * the story. Probing for one type and sharing another is a question whose
- * answer is only right by accident.
- */
-const CARD_MIME = 'image/jpeg';
 
 export default function ShareTargets({ payload, onShared }) {
   /**
@@ -80,10 +73,16 @@ export default function ShareTargets({ payload, onShared }) {
   // during the life of a dialog, and calling `canShare` on every render is work
   // for an answer that cannot change.
   const [nativeAvailable] = useState(() => canNativeShare(payload));
-  const [fileShareAvailable] = useState(() => canShareFiles(CARD_MIME));
 
-  /** Whether this dialog can hand over a card at all. */
-  const cardAvailable = fileShareAvailable && Boolean(payload?.cardImageUrl);
+  /**
+   * What the Instagram button can do here — see `resolveInstagramMode`.
+   *
+   * Resolved once per payload rather than per render: the browser's answer
+   * cannot change during the life of a dialog, and it decides the tile's label,
+   * its hint and whether the card is worth downloading at all.
+   */
+  const instagramMode = useMemo(() => resolveInstagramMode(payload), [payload]);
+  const cardAvailable = instagramMode === INSTAGRAM_MODE.STORY;
 
   /**
    * The rendered card, fetched while the dialog is merely open.
@@ -187,60 +186,47 @@ export default function ShareTargets({ payload, onShared }) {
       }
 
       if (target.id === 'instagram') {
-        // Instagram Stories renders no link preview — see shareTargets.js. A
-        // URL handed to Instagram only ever opens a Direct message, which is
-        // exactly the symptom this branch exists to fix. Sending the CARD as an
-        // image is what makes Instagram offer Story and Post.
-        //
-        // Waited for rather than skipped. The card is normally downloaded
-        // before anybody taps, but on a slow connection it is not, and falling
-        // back to the link there produces precisely the broken behaviour with
-        // no explanation. So the tap waits, and says that it is waiting.
+        // The card is normally downloaded before anybody taps. When it is not —
+        // a tap in the first second, or a slow connection — the tap WAITS for
+        // the request already in flight and says so, rather than quietly
+        // sharing the link instead. Quietly sharing the link is how this
+        // arrived as "Instagram only offers Direct".
         let card = cardFileRef.current;
         if (!card && cardRef.current) {
           announce('instagram', 'busy', 'Preparing…');
           card = await cardRef.current;
         }
 
-        if (card) {
-          // The copy is STARTED here and awaited afterwards, never before the
-          // share.
-          //
-          // It has to start here because the Clipboard API refuses to write
-          // from an unfocused document and the share sheet takes focus — a
-          // story showing the card still needs a link sticker, and this is
-          // where that link comes from. But awaiting it first was the bug:
-          // `clipboard.writeText` settles in a later task, by which point
-          // Safari has spent the tap's transient activation, so `share` threw
-          // NotAllowedError, the handler fell through to sharing the URL, and
-          // Instagram offered Direct and nothing else. Which is exactly the
-          // symptom this whole branch exists to remove.
-          const copying = copyToClipboard(payload.url);
-          const outcome = await shareFiles([card]);
-          const copied = await copying.catch(() => false);
+        const { outcome, copied } = await shareToInstagram({
+          mode: instagramMode,
+          card,
+          payload,
+        });
 
-          if (outcome === 'shared') {
-            announce(
-              'instagram',
-              'ok',
-              'Sent!',
-              copied ? INSTAGRAM_STORY_GUIDANCE : 'Card sent to Instagram.',
-            );
-            onShared?.('instagram');
-            return;
-          }
-          if (outcome === 'dismissed') return;
-          // Fall through: this device advertised file sharing and then refused
-          // it, so try the link.
-        }
-
-        const outcome = nativeAvailable ? await shareNatively(payload) : 'unsupported';
-        if (outcome === 'shared') {
-          onShared?.('instagram');
+        // 'dismissed' is somebody changing their mind at the share sheet, not
+        // a failure, and gets no feedback at all.
+        if (outcome === 'dismissed') {
+          setFeedback(null);
           return;
         }
-        if (outcome === 'dismissed') return;
-        if (await copy('instagram', INSTAGRAM_GUIDANCE)) onShared?.('instagram');
+        if (outcome === 'failed') {
+          announce('instagram', 'error', 'Failed', 'Could not copy the link');
+          return;
+        }
+
+        announce(
+          'instagram',
+          'ok',
+          outcome === 'copied' ? 'Copied!' : 'Sent!',
+          outcome === 'story'
+            ? copied
+              ? INSTAGRAM_STORY_GUIDANCE
+              : 'Card sent to Instagram.'
+            : outcome === 'link'
+              ? 'Shared to Instagram.'
+              : INSTAGRAM_GUIDANCE,
+        );
+        onShared?.('instagram');
         return;
       }
 
@@ -255,7 +241,13 @@ export default function ShareTargets({ payload, onShared }) {
       // possible response, so the link is copied instead.
       if (await copy(target.id, 'Link copied instead')) onShared?.(target.id);
     },
-    [announce, copy, nativeAvailable, onShared, payload],
+    [announce, copy, instagramMode, onShared, payload],
+  );
+
+  const labelFor = useCallback(
+    (target) =>
+      target.id === 'instagram' ? instagramLabel(instagramMode) : target.label,
+    [instagramMode],
   );
 
   const handleNative = useCallback(async () => {
@@ -287,6 +279,15 @@ export default function ShareTargets({ payload, onShared }) {
       */}
       <ul className={styles.targets}>
         {SHARE_TARGETS.map((target) => {
+          /*
+            Instagram is the one destination whose name depends on what it can
+            actually do. "Instagram Story" appears only where a Story is
+            genuinely on offer — a browser that can share files AND something
+            with a rendered card. Everywhere else the tile says "Instagram",
+            because that is all it can deliver, and a Story label that opens a
+            direct message is the kind of promise that costs the whole row its
+            credibility.
+          */
           const active = feedback?.targetId === target.id;
           const succeeded = active && feedback.tone === 'ok';
           // The check replaces the destination's own mark only while the
@@ -304,24 +305,14 @@ export default function ShareTargets({ payload, onShared }) {
                 // override the visible text, which breaks voice control.
                 data-target={target.id}
                 // Only Instagram carries one, and what it says depends on
-                // what this dialog can actually do: the sheet hint promises a
-                // ready-made story image, which only a POST has. A profile,
-                // community or activity has no rendered card, so it gets the
-                // copy hint even on a phone that could share files — promising
-                // an image that does not exist is worse than promising none.
-                title={
-                  target.needsHint
-                    ? cardAvailable
-                      ? INSTAGRAM_HINT_SHEET
-                      : INSTAGRAM_HINT_COPY
-                    : undefined
-                }
+                // what this dialog can actually do here — see instagramHint.
+                title={target.needsHint ? instagramHint(instagramMode) : undefined}
               >
                 <span className={styles.iconWrap} aria-hidden="true">
                   <Icon size={22} />
                 </span>
                 <span className={styles.label}>
-                  {active ? feedback.label : target.label}
+                  {active ? feedback.label : labelFor(target)}
                 </span>
               </button>
             </li>

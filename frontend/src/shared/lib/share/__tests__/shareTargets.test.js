@@ -1,8 +1,6 @@
 /** @vitest-environment jsdom */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
-  INSTAGRAM_HINT_COPY,
-  INSTAGRAM_HINT_SHEET,
   SHARE_TARGETS,
   canNativeShare,
   canShareFiles,
@@ -118,6 +116,9 @@ describe('share targets', () => {
       expect(target('instagram').build(payload)).toBeNull();
     });
 
+    // The label, the hint and the action all live in `instagram.js` and are
+    // covered by its own suite: they depend on the browser and the payload, and
+    // this table knows about neither.
     it('is the only target that needs explaining', () => {
       // It is the only one whose behaviour is not obvious from its name, so it
       // is the only one that carries a hint — and the hint depends on the
@@ -125,16 +126,6 @@ describe('share targets', () => {
       expect(SHARE_TARGETS.filter((t) => t.needsHint).map((t) => t.id)).toEqual([
         'instagram',
       ]);
-    });
-
-    it('describes what the button really does on each kind of device', () => {
-      // Where a File can be shared, the card goes to Instagram as an image and
-      // Story becomes available; where it cannot, the honest answer is a copied
-      // link. Telling somebody the wrong one is worse than telling them
-      // nothing.
-      expect(INSTAGRAM_HINT_SHEET).toMatch(/image/i);
-      expect(INSTAGRAM_HINT_SHEET).toMatch(/story/i);
-      expect(INSTAGRAM_HINT_COPY).toMatch(/copy/i);
     });
   });
 
