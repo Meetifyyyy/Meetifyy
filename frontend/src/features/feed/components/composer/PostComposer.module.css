@@ -12,12 +12,14 @@
   align-items: stretch;
   gap: 0;
   box-shadow: none;
-  transition: border-color 0.2s ease;
+  /* Same curve as the expand animation below, so focusing the composer and it
+     growing read as one motion rather than two unrelated ones. */
+  transition: border-color 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .postComposer:focus-within {
-  box-shadow: none;
   border-color: var(--color-border);
+  box-shadow: none;
 }
 
 .composerTopRow {
@@ -70,8 +72,18 @@
   border: none;
   color: var(--color-icon-base);
   cursor: pointer;
-  transition: all var(--transition-normal);
+  /* Named properties rather than `all`: `all` also animates layout and colour
+     changes that should be instant, which is what made the controls feel
+     slightly laggy instead of responsive. */
+  transition:
+    color var(--transition-fast),
+    background var(--transition-fast),
+    transform var(--transition-fast);
   flex-shrink: 0;
+}
+
+.composerEmojiBtn:active {
+  transform: scale(0.92);
 }
 
 .composerEmojiBtn:hover {
@@ -133,7 +145,7 @@
   gap: 0.4rem;
   padding: 0 0.75rem;
   height: 34px;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-full, 9999px);
   background: none;
   border: none;
   color: var(--color-icon-base);
@@ -141,17 +153,32 @@
   font-size: 0.85rem;
   font-weight: 500;
   cursor: pointer;
-  transition: all var(--transition-normal);
+  transition:
+    color var(--transition-fast),
+    background var(--transition-fast),
+    transform var(--transition-fast);
 }
 
-.composerIconBtn:hover {
+.composerIconBtn:hover:not(:disabled) {
   color: var(--color-primary);
-  background: var(--color-border-light);
+  background: rgba(var(--color-primary-rgb), 0.08);
+}
+
+.composerIconBtn:active:not(:disabled) {
+  transform: scale(0.96);
 }
 
 .composerIconBtn.active {
   color: var(--color-primary);
-  background: none;
+  background: rgba(var(--color-primary-rgb), 0.1);
+}
+
+/* These carry `disabled` in the markup — the media buttons once six items are
+   attached — but had no styling for it, so a button that could not be pressed
+   looked exactly like one that could. */
+.composerIconBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .composerSendBtn {
@@ -170,15 +197,27 @@
   justify-content: center;
   cursor: pointer;
   flex-shrink: 0;
-  transition: all var(--transition-normal);
+  transition:
+    background var(--transition-fast),
+    transform var(--transition-fast),
+    opacity var(--transition-fast);
 }
 
-.composerSendBtn:hover {
+.composerSendBtn:hover:not(:disabled) {
   background: var(--color-primary-hover);
+  transform: translateY(-1px);
 }
 
-.composerSendBtn:active {
-  transform: scale(0.96);
+.composerSendBtn:active:not(:disabled) {
+  transform: translateY(0) scale(0.97);
+}
+
+/* The button is disabled until there is something to post, which the markup
+   already said and the styling did not — it left the browser's default
+   rendering to imply it, so "Post" looked pressable on an empty composer. */
+.composerSendBtn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .emojiPicker {
@@ -415,7 +454,6 @@
   top: 2px;
   left: 2px;
   transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow:(--shadow-sm);
 }
 
 .pollToggleTrack.on .pollToggleThumb {
@@ -453,5 +491,31 @@
 @media (max-width: 768px) {
   .composerEmojiBtn {
     display: none;
+  }
+}
+
+/* Every control in the composer is reachable by keyboard; none of them showed
+   where focus was, because the surrounding rules only ever styled :hover. */
+.composerIconBtn:focus-visible,
+.composerSendBtn:focus-visible,
+.composerEmojiBtn:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .postComposer,
+  .composerIconBtn,
+  .composerSendBtn,
+  .composerEmojiBtn,
+  .composerExpandContainer {
+    transition: none;
+  }
+
+  .composerIconBtn:active:not(:disabled),
+  .composerSendBtn:hover:not(:disabled),
+  .composerSendBtn:active:not(:disabled),
+  .composerEmojiBtn:active {
+    transform: none;
   }
 }
