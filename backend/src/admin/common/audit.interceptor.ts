@@ -57,6 +57,10 @@ export class AuditInterceptor implements NestInterceptor {
         // distinguishable in the audit log from an ordinary user edit.
         else if (url.includes('/admin/account-deletion'))
           targetType = 'ACCOUNT_DELETION';
+        // Legal documents get their own type rather than falling into SYSTEM:
+        // publishing a policy and changing a feature flag are not the same
+        // kind of event, and a compliance review reads this column first.
+        else if (url.includes('/admin/legal')) targetType = 'LEGAL_DOCUMENT';
 
         if (
           !targetId &&
@@ -64,6 +68,14 @@ export class AuditInterceptor implements NestInterceptor {
           (responseData.id || responseData.key)
         ) {
           targetId = responseData.id || responseData.key;
+        }
+
+        // `/admin/legal/documents/TERMS_OF_SERVICE/publish` — the route param
+        // is named `type`, so the generic `params.id` lookup above misses it,
+        // and the response id is a uuid nobody can read. The document type is
+        // what makes the entry legible.
+        if (targetType === 'LEGAL_DOCUMENT' && params.type) {
+          targetId = String(params.type);
         }
 
         // Infer Action Name
@@ -91,6 +103,28 @@ export class AuditInterceptor implements NestInterceptor {
           action = `${targetType}_STATUS_CHANGE`;
         else if (url.includes('/domains')) action = 'COLLEGE_DOMAIN_CHANGE';
         else if (url.includes('/reply')) action = 'SUPPORT_TICKET_REPLY';
+        // Legal actions are named individually because "what happened to the
+        // Terms" is the question this log gets asked, and LEGAL_DOCUMENT_POST
+        // answers none of it. Whether acceptance was made mandatory is part of
+        // the row already — it is in `newValue.requiresAcknowledgement`, the
+        // publish body — so enabling and disabling the requirement is auditable
+        // without a separate action name.
+        else if (targetType === 'LEGAL_DOCUMENT') {
+          if (url.includes('/publish')) action = 'LEGAL_VERSION_PUBLISH';
+          else if (url.includes('/rollback')) action = 'LEGAL_VERSION_ROLLBACK';
+          else if (url.includes('/draft')) {
+            action =
+              method === 'DELETE'
+                ? 'LEGAL_DRAFT_DELETE'
+                : method === 'PUT'
+                  ? 'LEGAL_DRAFT_EDIT'
+                  : 'LEGAL_DRAFT_CREATE';
+          } else if (url.includes('/preview')) {
+            // Renders nothing and stores nothing. Logging it would bury the
+            // decisions under keystrokes.
+            return;
+          }
+        }
 
         // Sanitize body (strip passwords or tokens if any)
         const sanitizedBody = { ...body };
@@ -102,6 +136,12 @@ export class AuditInterceptor implements NestInterceptor {
         // note's contents are not, and this row is read back into an admin
         // list view. The reason itself is still stored on the request row.
         if (targetType === 'VERIFICATION') delete sanitizedBody.adminNotes;
+        // A legal draft body is the whole document — up to 200KB of HTML, saved
+        // repeatedly while it is being written. The version row already stores
+        // every byte of it under a version number this entry names, so copying
+        // it here would bloat the audit table without adding a fact. The change
+        // summary, the effective date and the acknowledgement switch stay.
+        if (targetType === 'LEGAL_DOCUMENT') delete sanitizedBody.content;
 
         // Async write to AuditLog (non-blocking)
         this.prisma.auditLog

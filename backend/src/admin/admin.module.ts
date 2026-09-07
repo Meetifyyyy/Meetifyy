@@ -11,6 +11,7 @@ import { AdminHelpModule } from './help/admin-help.module';
 import { AdminAnalyticsModule } from './analytics/admin-analytics.module';
 import { AdminAuditModule } from './audit/admin-audit.module';
 import { AdminAccountDeletionModule } from './account-deletion/admin-account-deletion.module';
+import { AdminLegalModule } from './legal/admin-legal.module';
 import { AuditInterceptor } from './common/audit.interceptor';
 import { PrismaModule } from '../prisma/prisma.module';
 
@@ -33,6 +34,10 @@ import { PrismaModule } from '../prisma/prisma.module';
     AdminAccountDeletionModule,
     // Infrastructure + resource usage, measured live.
     AdminAnalyticsModule,
+    // Terms, Privacy, Cookies and Community Guidelines: draft → preview →
+    // publish, with the mandatory-acknowledgement switch. The public read side
+    // is LegalModule.
+    AdminLegalModule,
   ],
   providers: [
     {

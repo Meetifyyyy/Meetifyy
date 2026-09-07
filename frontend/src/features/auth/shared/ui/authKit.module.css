@@ -1654,3 +1654,44 @@
     font-size: 1.2rem;
   }
 }
+
+/* ── Legal consent checkbox ─────────────────────────────────────────────────
+   Signup's agreement to the Terms and Privacy Policy. A checkbox rather than
+   the fine print it replaced: the person has to make the agreement themselves
+   rather than be told, after the fact, that clicking a button was one. It sits
+   on the first step so nobody reaches the end of the flow and discovers a
+   condition they will not accept. */
+.consentRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  margin-top: 0.35rem;
+  font-size: 0.82rem;
+  line-height: 1.55;
+  color: var(--color-text-main);
+  cursor: pointer;
+}
+
+.consentBox {
+  margin-top: 0.15rem;
+  width: 1rem;
+  height: 1rem;
+  flex-shrink: 0;
+  cursor: pointer;
+  accent-color: var(--color-primary);
+}
+
+.consentBox:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.consentLink {
+  color: var(--color-primary);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.consentLink:hover {
+  text-decoration: underline;
+}

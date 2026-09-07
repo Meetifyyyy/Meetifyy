@@ -30,6 +30,7 @@ import {
 import type { AuthenticatedUser } from '../common/types/authenticated-request';
 import { randomInt } from 'crypto';
 import { StudentYearPolicyService } from '../common/student-year/student-year-policy.service';
+import { LegalConsentService } from '../common/legal/legal-consent.service';
 
 /**
  * Bounded LRU cache for auth sync results.
@@ -251,6 +252,10 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     // verified institutional address AND is already writing the row, so it is
     // where `batchYear` is derived and kept honest -- see the write below.
     private readonly studentYearPolicy: StudentYearPolicyService,
+    // Records what a new account agreed to at signup. Account creation is the
+    // only moment that agreement happens, and it is the only place that can
+    // write it down.
+    private readonly legalConsent: LegalConsentService,
     @Optional() private readonly redisService?: RedisService,
   ) {}
 
@@ -828,6 +833,16 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
         throw err;
       }
     }
+
+    // The signup form required agreement to the Terms and Privacy Policy before
+    // it would proceed, so the account exists BECAUSE that agreement was given.
+    // Recorded here rather than trusted from the client: the client tells us a
+    // box was ticked, the server decides which versions that ticking applied to.
+    //
+    // Not awaited — a consent row is not worth delaying the first screen for,
+    // and the method swallows its own failures. It is idempotent, so the sync
+    // that runs on every subsequent sign-in adds nothing.
+    void this.legalConsent.recordSignupConsent(userRecord.id);
 
     this.logger.log(`User login ${userRecord.username}`);
     const followingList =

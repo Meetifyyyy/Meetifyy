@@ -10,6 +10,9 @@ export default function StaticDocLayout({
   title,
   subtitle,
   effectiveDate,
+  // Shown for the four admin-managed legal documents, which are served from the
+  // database. Absent on the pages that are still hand-written (About).
+  effectiveFrom,
   noHeroCard = false,
   leftAlign = false,
   children,
@@ -100,9 +103,12 @@ export default function StaticDocLayout({
             {badge && <div className={styles.badge}>{badge}</div>}
             <h1 className={`${leftAlign ? styles.titleNoCardLeft : styles.titleNoCard} landing-font-display`}>{title}</h1>
             {subtitle && <p className={leftAlign ? styles.subtitleLeft : styles.subtitle}>{subtitle}</p>}
-            {effectiveDate && (
+            {(effectiveDate || effectiveFrom) && (
               <div className={leftAlign ? styles.metaRowLeft : styles.metaRow}>
-                <span>Last Updated: <strong className={styles.effectiveBadge}>{effectiveDate}</strong></span>
+                {effectiveDate && (
+                  <span>Last Updated: <strong className={styles.effectiveBadge}>{effectiveDate}</strong></span>
+                )}
+                {effectiveFrom && <span>Effective: <strong className={styles.effectiveBadge}>{effectiveFrom}</strong></span>}
               </div>
             )}
           </div>
@@ -112,9 +118,12 @@ export default function StaticDocLayout({
             {badge && <div className={styles.badge}>{badge}</div>}
             <h1 className={`${styles.title} landing-font-display`}>{title}</h1>
             {subtitle && <p className={styles.subtitle}>{subtitle}</p>}
-            {effectiveDate && (
+            {(effectiveDate || effectiveFrom) && (
               <div className={styles.metaRow}>
-                <span>Last Updated: <strong className={styles.effectiveBadge}>{effectiveDate}</strong></span>
+                {effectiveDate && (
+                  <span>Last Updated: <strong className={styles.effectiveBadge}>{effectiveDate}</strong></span>
+                )}
+                {effectiveFrom && <span>Effective: <strong className={styles.effectiveBadge}>{effectiveFrom}</strong></span>}
               </div>
             )}
           </div>

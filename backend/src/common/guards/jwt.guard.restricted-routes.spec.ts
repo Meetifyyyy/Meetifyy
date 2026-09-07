@@ -51,9 +51,16 @@ describe('JwtGuard — routes a restricted account may reach', () => {
         findUnique: jest.fn(async () => ({ accountStatus })),
       },
     };
-    // (supabaseService, prisma, reflector) — the reflector is swapped per test
-    // by `contextWith`, which is what selects the decorators under test.
-    guard = new JwtGuard({} as any, prisma, new Reflector());
+    // (supabaseService, prisma, reflector, legalConsent) — the reflector is
+    // swapped per test by `contextWith`, which is what selects the decorators
+    // under test. The legal gate has its own spec; a service reporting
+    // "satisfied" keeps these tests about account status alone.
+    guard = new JwtGuard(
+      {} as any,
+      prisma,
+      new Reflector(),
+      { isSatisfied: async () => true } as any,
+    );
   });
 
   afterEach(() => JwtGuard.clearAccountStatus(USER_ID));

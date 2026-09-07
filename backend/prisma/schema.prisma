@@ -246,6 +246,7 @@ model User {
   settings                   UserSettings?
   verificationRequests       VerificationRequest[]
   otps                       UserOtp[]
+  legalAcknowledgements      LegalAcknowledgement[]
 
   @@index([collegeId])
   @@index([collegeId, createdAt(sort: Desc)])
@@ -930,22 +931,24 @@ model MatchSession {
 }
 
 model SuperAdmin {
-  id                     String                @id @default(uuid())
-  email                  String                @unique
+  id                     String                 @id @default(uuid())
+  email                  String                 @unique
   passwordHash           String
   name                   String
-  isActive               Boolean               @default(true)
+  isActive               Boolean                @default(true)
   totpSecret             String?
-  totpEnabled            Boolean               @default(false)
-  createdAt              DateTime              @default(now())
-  updatedAt              DateTime              @updatedAt
+  totpEnabled            Boolean                @default(false)
+  createdAt              DateTime               @default(now())
+  updatedAt              DateTime               @updatedAt
   otps                   AdminOtp[]
   recoveryCodes          AdminRecoveryCode[]
   auditLogs              AuditLog[]
   loginAudits            LoginAudit[]
   sessions               SuperAdminSession[]
-  assignedSupportTickets SupportTicket[]       @relation("AssignedSupportTickets")
-  reviewedVerifications  VerificationRequest[] @relation("VerificationReviewer")
+  assignedSupportTickets SupportTicket[]        @relation("AssignedSupportTickets")
+  reviewedVerifications  VerificationRequest[]  @relation("VerificationReviewer")
+  authoredLegalVersions  LegalDocumentVersion[] @relation("LegalVersionAuthor")
+  publishedLegalVersions LegalDocumentVersion[] @relation("LegalVersionPublisher")
 }
 
 model SuperAdminSession {
@@ -1722,4 +1725,135 @@ model SlowRequest {
   @@index([occurredAt])
   @@index([durationMs])
   @@index([route, occurredAt])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Legal documents
+//
+// The Terms, Privacy Policy, Cookie Policy and Community Guidelines used to be
+// hand-written JSX in the frontend, which meant a policy change was a code
+// deploy and nothing recorded WHICH text a user had agreed to. Both models
+// below exist to fix exactly that, and the split between them is the point:
+// `LegalDocumentVersion` is the immutable text, `LegalAcknowledgement` is the
+// immutable fact that one user accepted one of those texts.
+//
+// Never add a "current content" column to some other table. There is one source
+// of truth for what is published — the row with `isCurrent` — and one source of
+// truth for who agreed to what — a row per (user, version).
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// The documents the platform publishes. Adding a member here is all that is
+/// needed for the admin portal to manage it; both the portal and the public
+/// pages enumerate this enum rather than a hard-coded list.
+enum LegalDocumentType {
+  TERMS_OF_SERVICE
+  PRIVACY_POLICY
+  COOKIE_POLICY
+  COMMUNITY_GUIDELINES
+}
+
+enum LegalDocumentStatus {
+  /// Editable. Never served to a user, never acknowledgeable.
+  DRAFT
+  /// Frozen. Exactly one per document type also carries `isCurrent`.
+  PUBLISHED
+  /// Was published, has been superseded. Still readable, still referenced by
+  /// every acknowledgement made against it.
+  ARCHIVED
+}
+
+/// One version of one legal document.
+///
+/// A PUBLISHED row is immutable: nothing in the service layer updates
+/// `content`, `versionNumber`, `effectiveAt`, `changeSummary` or
+/// `requiresAcknowledgement` once `status` has left DRAFT. Superseding a
+/// version flips `isCurrent`/`status` on the old row and inserts a new one, and
+/// a rollback is an insert too — history is never rewritten, so
+/// `LegalAcknowledgement.versionId` always points at the exact text that was
+/// shown.
+model LegalDocumentVersion {
+  id                      String              @id @default(uuid())
+  documentType            LegalDocumentType
+  /// Monotonic per document type. Allocated when the row is created (a draft
+  /// reserves its number), which is what makes `@@unique` below the structural
+  /// guard against two admins publishing the same version concurrently: the
+  /// second insert fails rather than silently producing two "v4"s.
+  versionNumber           Int
+  title                   String
+  /// One-line subtitle for the public page header. Not the change summary.
+  subtitle                String?
+  /// Sanitized HTML, written through `sanitizeArticleHtml` on every save — the
+  /// same sanitizer the help centre uses, so there is never an unsanitized copy
+  /// stored for some other consumer to render.
+  content                 String              @db.Text
+  status                  LegalDocumentStatus @default(DRAFT)
+  /// The one version the public pages serve. At most one true per document
+  /// type; maintained inside the publish/rollback transaction under an
+  /// advisory lock rather than by a partial index, which Prisma cannot express.
+  isCurrent               Boolean             @default(false)
+  /// Set at publish time and never afterwards. Turning this on is what puts
+  /// every user who has not acknowledged THIS row behind the consent gate.
+  requiresAcknowledgement Boolean             @default(false)
+  /// Why this version exists. Mandatory when publishing.
+  changeSummary           String?
+  /// When the text takes effect. Shown to users in the consent flow.
+  effectiveAt             DateTime?
+  /// NULL for the four documents seeded with the feature — they were imported
+  /// from the frontend, not authored by an admin. `onDelete: SetNull` for the
+  /// same reason the row is immutable: removing an admin account must not
+  /// remove or rewrite a published legal text.
+  createdById             String?
+  createdBy               SuperAdmin?         @relation("LegalVersionAuthor", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt               DateTime            @default(now())
+  /// Only ever set while the row is still a draft.
+  updatedAt               DateTime            @updatedAt
+  publishedById           String?
+  publishedBy             SuperAdmin?         @relation("LegalVersionPublisher", fields: [publishedById], references: [id], onDelete: SetNull)
+  publishedAt             DateTime?
+  /// Set when this row was created by rolling back to an earlier version, so
+  /// the history shows "v6 restored the text of v4" rather than an unexplained
+  /// repeat. Never a foreign key cycle: it points backwards only.
+  restoredFromVersionId   String?
+
+  acknowledgements LegalAcknowledgement[]
+
+  /// Two concurrent publishes cannot both win.
+  @@unique([documentType, versionNumber])
+  /// The admin list view: every version of one document, newest first.
+  @@index([documentType, versionNumber(sort: Desc)])
+  /// The public page and the consent gate: WHERE documentType=? AND isCurrent.
+  @@index([documentType, isCurrent])
+  /// The gate's "which versions require acknowledgement" read.
+  @@index([isCurrent, requiresAcknowledgement])
+}
+
+/// One user accepted one exact version. Insert-only.
+///
+/// Nothing updates these rows. A user who accepted Terms v3 keeps a v3 row
+/// forever; publishing v4 adds a second row when they accept it, and until they
+/// do the gate refuses them. Making this an update would destroy the only
+/// evidence of what they were actually shown.
+model LegalAcknowledgement {
+  id             String               @id @default(uuid())
+  userId         String
+  user           User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Denormalised from the version so the record still reads correctly on its
+  /// own, and so "has this user accepted the current Terms" can be answered
+  /// without a join.
+  documentType   LegalDocumentType
+  versionId      String
+  version        LegalDocumentVersion @relation(fields: [versionId], references: [id], onDelete: Restrict)
+  versionNumber  Int
+  acknowledgedAt DateTime             @default(now())
+  /// Consent metadata, matching what the rest of the platform records for a
+  /// consequential action (see UserOtp.requestIp). Coarse on purpose.
+  ip             String?
+  userAgent      String?              @db.VarChar(300)
+
+  /// Idempotent acceptance: a double-submitted modal, a retry after a network
+  /// failure, or two tabs agreeing at once all collapse onto one row.
+  @@unique([userId, versionId])
+  @@index([userId])
+  @@index([versionId])
+  @@index([documentType, acknowledgedAt])
 }

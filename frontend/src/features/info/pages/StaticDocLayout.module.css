@@ -544,3 +544,169 @@
     padding: 1.25rem 1rem;
   }
 }
+
+/* ── Admin-managed document body ──
+   The four legal pages render sanitized HTML from the database rather than
+   hand-written JSX, so the styling has to attach to plain tags instead of the
+   class names above. Every rule here mirrors its `clean*` counterpart exactly,
+   so a document served from the database is indistinguishable from the markup
+   it replaced. */
+.docHtml {
+  font-family: 'Inter', sans-serif;
+}
+
+.docHtml h2 {
+  font-family: 'Changa One', sans-serif;
+  font-size: clamp(1.4rem, 4vw, 2.2rem);
+  font-weight: 400;
+  color: #0c0a09;
+  margin: 2.25rem 0 0.5rem;
+  letter-spacing: -0.01em;
+}
+
+.docHtml h2:first-child {
+  margin-top: 0;
+}
+
+.docHtml h3 {
+  font-family: 'Changa One', sans-serif;
+  font-size: 1.25rem;
+  font-weight: 400;
+  color: #1c1917;
+  margin: 1.5rem 0 0.4rem;
+  letter-spacing: -0.01em;
+}
+
+.docHtml p {
+  font-size: clamp(0.95rem, 2vw, 1.075rem);
+  line-height: 1.8;
+  color: #374151;
+  margin: 0 0 1rem;
+}
+
+.docHtml ul,
+.docHtml ol {
+  list-style: none;
+  padding: 0;
+  margin: 1rem 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.docHtml li {
+  position: relative;
+  padding-left: 1.35rem;
+  font-size: clamp(0.925rem, 2vw, 1rem);
+  line-height: 1.65;
+  color: #44403c;
+}
+
+/* The orange dot, which used to be an empty <span> in the JSX. A pseudo-element
+   instead, because the stored HTML is sanitized and must stay free of markup
+   that exists only to be styled. */
+.docHtml li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.55rem;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: #ea580c;
+}
+
+.docHtml a {
+  color: #ea580c;
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.docHtml a:hover {
+  text-decoration: underline;
+}
+
+.docHtml strong {
+  color: #1c1917;
+  font-weight: 600;
+}
+
+.docHtml table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0;
+  font-size: 0.95rem;
+}
+
+.docHtml th,
+.docHtml td {
+  padding: 0.6rem 0.75rem;
+  border: 1px solid #e7e5e4;
+  text-align: left;
+  color: #44403c;
+}
+
+.docHtml th {
+  background: #fafaf9;
+  font-weight: 600;
+  color: #1c1917;
+}
+
+/* ── Load / error / empty states for a database-backed document ── */
+.docState {
+  padding: 3rem 0;
+  text-align: center;
+  font-family: 'Inter', sans-serif;
+  font-size: 0.95rem;
+  color: #57534e;
+}
+
+.docStateTitle {
+  font-family: 'Changa One', sans-serif;
+  font-size: 1.35rem;
+  font-weight: 400;
+  color: #0c0a09;
+  margin: 0 0 0.5rem;
+}
+
+.docRetryBtn {
+  margin-top: 1.25rem;
+  padding: 0.6rem 1.2rem;
+  font-family: 'Inter', sans-serif;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #ffffff;
+  background: #ea580c;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.docRetryBtn:hover {
+  background: #c2410c;
+}
+
+.docSkeletonLine {
+  height: 0.9rem;
+  margin: 0 auto 0.85rem;
+  max-width: 34rem;
+  border-radius: 6px;
+  background: linear-gradient(90deg, #f5f5f4 25%, #ecebe9 37%, #f5f5f4 63%);
+  background-size: 400% 100%;
+  animation: docSkeleton 1.4s ease infinite;
+}
+
+@keyframes docSkeleton {
+  0% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0 50%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .docSkeletonLine {
+    animation: none;
+  }
+}

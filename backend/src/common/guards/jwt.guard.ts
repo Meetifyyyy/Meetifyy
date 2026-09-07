@@ -13,6 +13,9 @@ import { SupabaseService } from '../../supabase/supabase.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ALLOW_SUSPENDED_KEY } from '../decorators/allow-suspended.decorator';
 import { ALLOW_PENDING_DELETION_KEY } from '../decorators/allow-pending-deletion.decorator';
+import { ALLOW_PENDING_LEGAL_ACK_KEY } from '../decorators/allow-pending-legal-ack.decorator';
+import { LegalConsentService } from '../legal/legal-consent.service';
+import { LEGAL_ACKNOWLEDGEMENT_REQUIRED_CODE } from '../legal/legal.constants';
 import { config } from '../../config';
 
 interface CachedTokenUser {
@@ -30,6 +33,9 @@ export const SUSPENDED_ERROR_CODE = 'ACCOUNT_SUSPENDED';
 
 /** Shape the client keys its full-screen deletion/recovery gate off. */
 export const PENDING_DELETION_ERROR_CODE = 'ACCOUNT_PENDING_DELETION';
+
+/** Shape the client keys its mandatory legal-acknowledgement flow off. */
+export const LEGAL_ACK_ERROR_CODE = LEGAL_ACKNOWLEDGEMENT_REQUIRED_CODE;
 
 /**
  * Authenticates requests bearing a Supabase-issued JWT.
@@ -217,6 +223,7 @@ export class JwtGuard implements CanActivate {
     private supabaseService: SupabaseService,
     private readonly prisma: PrismaService,
     private readonly reflector: Reflector,
+    private readonly legalConsent: LegalConsentService,
   ) {
     // Warm the JWKS cache once at boot so the very first authenticated request
     // doesn't pay the JWKS fetch, and log the result so it's obvious in the
@@ -289,6 +296,12 @@ export class JwtGuard implements CanActivate {
     // marked `@AllowSuspended()` is refused server-side.
     await this.enforceAccountStatus(context, userPayload);
 
+    // Mandatory legal acceptance, enforced beside the other two lifecycle
+    // gates rather than by the modal the client chooses to render. A second
+    // tab, the browser's back button, a direct URL, a hand-driven REST call and
+    // a replayed access token all land here.
+    await this.enforceLegalAcknowledgement(context, userPayload);
+
     request.user = userPayload;
     return true;
   }
@@ -345,6 +358,41 @@ export class JwtGuard implements CanActivate {
         });
       }
     }
+  }
+
+  /**
+   * Refuses an account that has not accepted every currently required legal
+   * version, on everything except the flow that lets them accept.
+   *
+   * Deliberately the LAST gate: a suspended or deleting account has a more
+   * specific screen to see, and asking someone to accept new Terms for a
+   * product they cannot use would be both confusing and pointless.
+   *
+   * `LegalConsentService` answers from cache, and answers instantly when no
+   * document requires acknowledgement — which is the normal state of the
+   * system — so this adds no query to the common request.
+   */
+  private async enforceLegalAcknowledgement(
+    context: ExecutionContext,
+    userPayload: any,
+  ): Promise<void> {
+    const userId = userPayload?.id;
+    if (!userId) return;
+
+    const allowed = this.reflector.getAllAndOverride<boolean>(
+      ALLOW_PENDING_LEGAL_ACK_KEY,
+      [context.getHandler(), context.getClass()],
+    );
+    if (allowed) return;
+
+    const satisfied = await this.legalConsent.isSatisfied(userId);
+    if (satisfied) return;
+
+    throw new ForbiddenException({
+      code: LEGAL_ACK_ERROR_CODE,
+      message:
+        'Meetifyy has updated its policies. Review and accept them to continue.',
+    });
   }
 
   /** Cached account-status read, so this costs one query per user per window. */

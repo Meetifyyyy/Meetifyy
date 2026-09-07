@@ -5,6 +5,7 @@ import { UploadsController } from './uploads.controller';
 import { StorageService } from './uploads.service';
 import { SupabaseService } from '../supabase/supabase.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { legalConsentMockProvider } from '../common/legal/testing/legal-consent.mock';
 
 /**
  * `GET /api/media/*` end-to-end. This is the endpoint that was serving identity
@@ -37,6 +38,10 @@ describe('GET /api/media — verification documents', () => {
           provide: PrismaService,
           useValue: { user: { findUnique: async () => null } },
         },
+        // JwtGuard takes the consent gate as a constructor argument, so the
+        // guard cannot be instantiated without it. Defaults to "nothing
+        // requires acknowledgement", which is this suite's subject.
+        legalConsentMockProvider(),
       ],
     }).compile();
     app = moduleRef.createNestApplication();

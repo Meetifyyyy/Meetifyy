@@ -41,6 +41,8 @@ import { JwtGuard } from '../common/guards/jwt.guard';
 import { VerifiedOnly } from '../common/decorators/verified-only.decorator';
 import { VerificationAccessService } from '../common/verification/verification-access.service';
 import { StudentYearPolicyService } from '../common/student-year/student-year-policy.service';
+import { LegalConsentService } from '../common/legal/legal-consent.service';
+import { LEGAL_ACKNOWLEDGEMENT_REQUIRED_CODE } from '../common/legal/legal.constants';
 import { socketCorsOrigin } from './socket-cors';
 import { RateLimitService } from '../common/rate-limit/rate-limit.service';
 import { RATE_LIMIT_POLICIES } from '../config/rate-limit.config';
@@ -144,6 +146,9 @@ export class RealtimeGateway
     // deploy; it is kept below purely for the ephemeral events, where
     // per-process accuracy is the point.
     private readonly rateLimit: RateLimitService,
+    // The same mandatory-acknowledgement gate JwtGuard applies to every REST
+    // route, so a socket cannot become the one path that skips it.
+    private readonly legalConsent: LegalConsentService,
     @Optional() private readonly jwtGuard?: JwtGuard,
   ) {}
 
@@ -706,6 +711,34 @@ export class RealtimeGateway
       });
       client.disconnect();
       return;
+    }
+
+    // The same gate JwtGuard applies to every REST route. A socket is not a
+    // read-only side channel — it delivers messages, presence and typing — so
+    // an account that has not accepted a mandatory policy update must not hold
+    // one. Without this, refusing every HTTP route while leaving the socket
+    // connected would let someone keep using the parts of Meetifyy that matter
+    // most while the modal sat on screen.
+    try {
+      const consentSatisfied = await this.legalConsent.isSatisfied(user.id);
+      if (!consentSatisfied) {
+        this.logger.warn(
+          `Client connection rejected: account ${user.id} has not accepted a required legal update`,
+        );
+        // Told apart from an auth failure so the client shows the consent flow
+        // rather than bouncing the user to the sign-in screen.
+        client.emit('account:unavailable', {
+          code: LEGAL_ACKNOWLEDGEMENT_REQUIRED_CODE,
+        });
+        client.disconnect();
+        return;
+      }
+    } catch (err) {
+      // Fails open, exactly as the service itself does: a broken consent
+      // lookup must not take chat down for everyone.
+      this.logger.warn(
+        `Legal consent check failed for ${user.id}: ${(err as Error).message}`,
+      );
     }
 
     userId = user.id;

@@ -42,7 +42,14 @@ describe('JwtGuard — suspension enforcement', () => {
     JwtGuard.clearAccountStatus(USER_ID);
     prisma = { user: { findUnique: jest.fn() } };
     reflector = new Reflector();
-    guard = new JwtGuard({ isConfigured: true } as any, prisma, reflector);
+    guard = new JwtGuard(
+      { isConfigured: true } as any,
+      prisma,
+      reflector,
+      // The legal gate has its own spec; a service that always reports
+      // "satisfied" keeps this one about suspension alone.
+      { isSatisfied: async () => true } as any,
+    );
   });
 
   it('refuses a suspended account on an ordinary route', async () => {

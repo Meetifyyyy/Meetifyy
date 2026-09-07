@@ -6,6 +6,7 @@ import { UploadsController } from './uploads.controller';
 import { StorageService } from './uploads.service';
 import { SupabaseService } from '../supabase/supabase.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { legalConsentMockProvider } from '../common/legal/testing/legal-consent.mock';
 import { bundledDefaultAssetPath, defaultAssetFilePath } from './default-assets.service';
 import { DEFAULT_AVATAR_SVG } from './default-avatar';
 
@@ -43,6 +44,10 @@ describe('GET /api/media — default profile avatar', () => {
           provide: PrismaService,
           useValue: { user: { findUnique: async () => null } },
         },
+        // JwtGuard takes the consent gate as a constructor argument, so the
+        // guard cannot be instantiated without it. Defaults to "nothing
+        // requires acknowledgement", which is this suite's subject.
+        legalConsentMockProvider(),
       ],
     }).compile();
     app = moduleRef.createNestApplication();

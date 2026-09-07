@@ -8,6 +8,7 @@ import { NotificationFactory } from '../notifications/notification.factory';
 import { SupabaseService } from '../supabase/supabase.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { studentYearPolicyMockProvider } from '../common/student-year/testing/student-year-policy.mock';
+import { legalConsentMockProvider } from '../common/legal/testing/legal-consent.mock';
 
 describe('MessagesController', () => {
   let controller: MessagesController;
@@ -26,6 +27,10 @@ describe('MessagesController', () => {
           provide: PrismaService,
           useValue: { user: { findUnique: async () => null } },
         },
+        // JwtGuard takes the consent gate as a constructor argument, so the
+        // guard cannot be instantiated without it. Defaults to "nothing
+        // requires acknowledgement", which is this suite's subject.
+        legalConsentMockProvider(),
       ],
     }).compile();
 

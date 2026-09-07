@@ -207,10 +207,16 @@ function ProtectedRoute({ children }) {
   return (
     <AccountDeletionGate>
       <SuspensionGate>
-        {children}
-        {/* Sits inside the gates on purpose: an account that is suspended or
-            being deleted should not be congratulated on being verified. */}
-        <VerifiedWelcome />
+        {/* Innermost of the three: a suspended or deleting account has a more
+            specific screen to see, and asking someone to accept new Terms for a
+            product they cannot use would be both confusing and pointless. The
+            server orders the gates the same way, in JwtGuard. */}
+        <LegalUpdateGate>
+          {children}
+          {/* Sits inside the gates on purpose: an account that is suspended or
+              being deleted should not be congratulated on being verified. */}
+          <VerifiedWelcome />
+        </LegalUpdateGate>
       </SuspensionGate>
     </AccountDeletionGate>
   );
@@ -250,6 +256,7 @@ function StaticRoute({ children }) {
 
 import SuspensionGate from './shared/components/SuspensionGate';
 import AccountDeletionGate from './shared/components/AccountDeletionGate';
+import LegalUpdateGate from './shared/components/LegalUpdateGate';
 import VerifiedWelcome from './shared/components/VerifiedWelcome';
 import NotFoundState from './shared/components/ui/NotFoundState';
 import PublicNotFound from './shared/components/PublicNotFound';

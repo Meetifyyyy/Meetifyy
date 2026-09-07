@@ -9,6 +9,10 @@
  */
 import { supabase } from '@shared/lib/supabase';
 import { applyAccountStatusCorrection } from '@shared/lib/accountStatusCorrection';
+import {
+  announceLegalConsentChange,
+  LEGAL_ACK_REQUIRED_CODE,
+} from '@shared/lib/legalConsent';
 import { config } from '@config';
 
 // ── Token cache ──────────────────────────────────────────────────────────────
@@ -388,6 +392,16 @@ const PUBLIC_PATHS = [
   // backend/src/share/share-preview.service.ts); this list only decides whether
   // the browser is willing to ask.
   '/api/share',
+  // The published legal documents. The Terms and Privacy pages are linked from
+  // the landing footer and the signup form, so the reader is signed out by
+  // definition — and a user held behind the mandatory-acknowledgement gate has
+  // to be able to read the document they are being asked to accept. Without
+  // this entry `request` rejects both cases with "Missing access token" before
+  // a byte reaches the network, and the page renders its error state.
+  //
+  // Only the two document routes. `/api/legal/consent` is deliberately NOT
+  // here: it is about a specific user and must carry their token.
+  '/api/legal/documents',
 ];
 
 function isPublicPath(path) {
@@ -591,6 +605,15 @@ async function _doFetch(cleanUrl, options, isRetry = false) {
     // waiting for a reload or a re-sync.
     if (res.status === 403) {
       applyAccountStatusCorrection(errorCode);
+
+      // A policy update went live while this tab was open. Every background
+      // request now comes back gated, and without this the user would see a
+      // stream of generic 403 toasts with no way to resolve them. Announcing it
+      // is what makes the consent flow appear in the tab that hit the wall,
+      // rather than only in one that happens to boot afterwards.
+      if (errorCode === LEGAL_ACK_REQUIRED_CODE) {
+        announceLegalConsentChange('required');
+      }
     }
 
     throw err;
@@ -1147,6 +1170,44 @@ export const reportsApi = {
  * assume a session. `apiClient` attaches a token when one happens to exist and
  * omits it otherwise, which is exactly the behaviour needed.
  */
+/**
+ * The legal documents and this user's consent state.
+ *
+ * The two document reads are deliberately unauthenticated on the server, so
+ * they work for a signed-out visitor on the public Terms page and for a signed-
+ * in user who is blocked behind the consent modal — the one flow where every
+ * other endpoint refuses.
+ */
+export const legalApi = {
+  /** Published documents without their bodies. */
+  listDocuments: ({ signal } = {}) =>
+    apiClient.get('/api/legal/documents', { signal }),
+
+  /** One published document, in full. */
+  getDocument: (type, { signal } = {}) =>
+    apiClient.get(`/api/legal/documents/${encodeURIComponent(type)}`, { signal }),
+
+  /**
+   * Whether this user may continue, and what is outstanding if not.
+   * The authority for the gate — the cached profile is never more than a hint.
+   */
+  getConsentState: ({ signal } = {}) =>
+    apiClient.get('/api/legal/consent', { signal }),
+
+  /**
+   * Records acceptance of every version the user was shown.
+   *
+   * Idempotent server-side, so a retry after a network failure is safe and does
+   * not produce a second record.
+   */
+  acknowledge: (versionIds, { signal } = {}) =>
+    apiClient.post('/api/legal/consent', { versionIds }, { signal }),
+
+  /** This user's own record of what they accepted and when. */
+  getConsentHistory: ({ signal } = {}) =>
+    apiClient.get('/api/legal/consent/history', { signal }),
+};
+
 export const supportApi = {
   /** Category list and attachment rules, so the form never carries its own copy. */
   getFormMeta: ({ signal } = {}) => apiClient.get('/api/support/meta', { signal }),

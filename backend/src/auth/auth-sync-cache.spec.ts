@@ -11,6 +11,7 @@ import { DefaultAssetsService } from '../uploads/default-assets.service';
 import { DomainValidatorService } from '../common/services/domain-validator.service';
 import { RedisService } from '../redis/redis.service';
 import { studentYearPolicyMockProvider } from '../common/student-year/testing/student-year-policy.mock';
+import { legalConsentMockProvider } from '../common/legal/testing/legal-consent.mock';
 
 /**
  * The auth bootstrap cache, and its cross-instance invalidation.
@@ -115,6 +116,9 @@ describe('Auth sync cache', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         studentYearPolicyMockProvider(),
+        // Account creation records what the new user agreed to at signup. This
+        // suite is about the sync cache, so the double records nothing.
+        legalConsentMockProvider(),
         AuthService,
         { provide: PrismaService, useValue: { $queryRaw: queryRaw, user: {} } },
         {

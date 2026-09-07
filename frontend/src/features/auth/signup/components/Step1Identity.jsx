@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { AlertCircle, ArrowRight } from '@shared/components/icons';
 import { useSignup } from '../../context/SignupContext';
 import AnimatedStep from './AnimatedStep';
@@ -24,6 +25,10 @@ export default function Step1Identity() {
   const [month, setMonth] = useState(initialMonth);
   const [day, setDay] = useState(initialDay);
   const [attempted, setAttempted] = useState(false);
+  // Agreement to the Terms and Privacy Policy, asked here rather than as fine
+  // print beside the final button. It is carried through `signupData` so it
+  // survives stepping back and forth.
+  const [agreedToLegal, setAgreedToLegal] = useState(!!signupData.agreedToLegal);
 
   // ── Validation ────────────────────────────────────────────────────────────
   const nameError = useMemo(() => {
@@ -66,7 +71,8 @@ export default function Step1Identity() {
    */
   const isUsernameBlocked =
     !!usernameFormatError || (usernameStatus !== null && usernameStatus !== 'available');
-  const isValid = !nameError && !isUsernameBlocked && !dobError && !isChecking;
+  const isValid =
+    !nameError && !isUsernameBlocked && !dobError && !isChecking && agreedToLegal;
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -79,6 +85,7 @@ export default function Step1Identity() {
         lastName: parts.slice(1).join(' '),
         username: normalizedUsername,
         birthday: dobValidation.dobString,
+        agreedToLegal: true,
       });
       nextStep();
     }
@@ -187,12 +194,40 @@ export default function Step1Identity() {
           </div>
         </div>
 
+        <label className={s.consentRow} htmlFor="signup-legal-consent">
+          <input
+            id="signup-legal-consent"
+            type="checkbox"
+            className={s.consentBox}
+            checked={agreedToLegal}
+            onChange={(e) => setAgreedToLegal(e.target.checked)}
+          />
+          <span>
+            I agree to the{' '}
+            <Link to="/terms-and-conditions" target="_blank" rel="noopener noreferrer" className={s.consentLink}>
+              Terms of Service
+            </Link>{' '}
+            and have read the{' '}
+            <Link to="/privacy-policy" target="_blank" rel="noopener noreferrer" className={s.consentLink}>
+              Privacy Policy
+            </Link>
+            .
+          </span>
+        </label>
+        <div className={s.messageSlot}>
+          {attempted && !agreedToLegal ? (
+            <div className={`${s.message} ${s.messageError}`} role="alert">
+              <AlertCircle size={13} /> Please accept the Terms of Service and Privacy Policy to continue.
+            </div>
+          ) : null}
+        </div>
+
         <AuthButton
           type="submit"
           loading={isChecking}
           loadingText="Checking..."
           icon={<ArrowRight size={18} />}
-          style={{ marginTop: '0.5rem' }}
+          style={{ marginTop: '0.25rem' }}
         >
           Continue
         </AuthButton>

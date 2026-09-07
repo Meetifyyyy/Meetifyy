@@ -55,14 +55,20 @@ import { EventsModule } from './events/events.module';
 import { DomainValidatorModule } from './common/services/domain-validator.module';
 import { VerificationAccessModule } from './common/verification/verification-access.module';
 import { StudentYearPolicyModule } from './common/student-year/student-year-policy.module';
+import { LegalConsentModule } from './common/legal/legal-consent.module';
 import { AcademicsModule } from './academics/academics.module';
 import { SupportModule } from './support/support.module';
+import { LegalModule } from './legal/legal.module';
 
 @Module({
   imports: [
     DomainValidatorModule,
     VerificationAccessModule,
     StudentYearPolicyModule,
+    // The mandatory legal-acknowledgement gate. Global, and listed here beside
+    // the other cross-cutting policies for the same reason: JwtGuard resolves
+    // it in whichever feature module applies the guard.
+    LegalConsentModule,
     ConfigModule.forRoot({
       isGlobal: true,
       // The namespaces are views onto the central `config` object, which has
@@ -278,6 +284,9 @@ import { SupportModule } from './support/support.module';
     // Public help centre + support-request intake. The admin-facing half lives
     // inside AdminModule, behind AdminJwtGuard.
     SupportModule,
+    // Public legal pages + the user's own consent record. Same split: the
+    // admin-facing half is AdminLegalModule inside AdminModule.
+    LegalModule,
     // Slow-request capture. Applies a global middleware, so it must be
     // imported for any route to be measured.
     ObservabilityModule,

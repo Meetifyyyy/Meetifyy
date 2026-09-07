@@ -1,0 +1,387 @@
+/* ── Mandatory legal-acknowledgement gate ──
+   Covers the viewport on every authenticated route, built the same way as
+   SuspensionGate and AccountDeletionGate: the app shell is not rendered behind
+   it, because there is nothing to navigate to until the update is accepted.
+
+   Deliberately NOT alarming. This is a policy update, not a penalty, and a red
+   full-bleed warning would misrepresent what has happened. */
+.wrapper {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  overflow-y: auto;
+  background: var(--color-bg-main, #f4f6fb);
+  box-sizing: border-box;
+}
+
+.card {
+  width: 100%;
+  max-width: 620px;
+  margin: auto;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100dvh - 3rem);
+  box-sizing: border-box;
+  background: var(--color-bg-white, #ffffff);
+  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
+  border-radius: var(--radius-xl, 20px);
+  box-shadow: var(--shadow-md, 0 4px 16px rgba(15, 23, 42, 0.06));
+  overflow: hidden;
+}
+
+.header {
+  padding: 2rem 2rem 1.25rem;
+  text-align: center;
+}
+
+.iconBadge {
+  width: 56px;
+  height: 56px;
+  margin: 0 auto 1.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: var(--color-primary, #2563eb);
+  background: var(--color-primary-tint, rgba(37, 99, 235, 0.1));
+}
+
+.title {
+  margin: 0 0 0.5rem;
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: var(--color-text-main, #0f172a);
+}
+
+.body {
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.6;
+  color: var(--color-text-light, #64748b);
+}
+
+/* ── The list of documents awaiting acceptance ── */
+.docList {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.doc {
+  padding: 1rem 1.1rem;
+  text-align: left;
+  border-radius: var(--radius-md, 12px);
+  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
+  background: var(--color-bg-soft, #f8fafc);
+}
+
+.docHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.docTitle {
+  margin: 0;
+  font-size: 0.98rem;
+  font-weight: 600;
+  color: var(--color-text-main, #0f172a);
+}
+
+.docVersion {
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.15rem 0.5rem;
+  border-radius: 9999px;
+  color: var(--color-text-light, #64748b);
+  background: var(--color-bg-white, #ffffff);
+  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
+}
+
+.docSummary {
+  margin: 0.6rem 0 0;
+  font-size: 0.87rem;
+  line-height: 1.55;
+  color: var(--color-text-light, #64748b);
+}
+
+.docMeta {
+  margin: 0.6rem 0 0;
+  font-size: 0.78rem;
+  color: var(--color-text-light, #64748b);
+}
+
+.readBtn {
+  margin-top: 0.75rem;
+  padding: 0.45rem 0.8rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  cursor: pointer;
+  border-radius: var(--radius-sm, 8px);
+  color: var(--color-primary, #2563eb);
+  background: transparent;
+  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
+}
+
+.readBtn:hover {
+  background: var(--color-bg-white, #ffffff);
+}
+
+/* ── Reader: the full document, in the flow ── */
+.reader {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.readerHead {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0 2rem 0.85rem;
+  border-bottom: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
+}
+
+.backBtn {
+  padding: 0.35rem 0.65rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  cursor: pointer;
+  border-radius: var(--radius-sm, 8px);
+  color: var(--color-text-main, #0f172a);
+  background: transparent;
+  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
+}
+
+.backBtn:hover {
+  background: var(--color-bg-soft, #f8fafc);
+}
+
+.readerTitle {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--color-text-main, #0f172a);
+}
+
+.readerBody {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 1.25rem 2rem;
+  font-size: 0.9rem;
+  line-height: 1.7;
+  color: var(--color-text-main, #0f172a);
+  overflow-wrap: anywhere;
+}
+
+.readerBody h2 {
+  margin: 1.5rem 0 0.5rem;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.readerBody h2:first-child {
+  margin-top: 0;
+}
+
+.readerBody h3 {
+  margin: 1.1rem 0 0.4rem;
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
+.readerBody p {
+  margin: 0 0 0.85rem;
+}
+
+.readerBody ul,
+.readerBody ol {
+  margin: 0 0 0.85rem;
+  padding-left: 1.25rem;
+}
+
+.readerBody li {
+  margin-bottom: 0.4rem;
+}
+
+.readerBody a {
+  color: var(--color-primary, #2563eb);
+}
+
+/* ── Footer: the consent control and the primary action ── */
+.footer {
+  flex-shrink: 0;
+  padding: 1.25rem 2rem 2rem;
+  border-top: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
+  background: var(--color-bg-white, #ffffff);
+}
+
+.consentRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  margin-bottom: 1rem;
+  font-size: 0.88rem;
+  line-height: 1.55;
+  color: var(--color-text-main, #0f172a);
+  cursor: pointer;
+}
+
+.consentRow input {
+  margin-top: 0.15rem;
+  width: 1rem;
+  height: 1rem;
+  flex-shrink: 0;
+  cursor: pointer;
+  accent-color: var(--color-primary, #2563eb);
+}
+
+.requiredNote {
+  margin: 0 0 1rem;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--color-text-light, #64748b);
+}
+
+.primaryBtn {
+  width: 100%;
+  padding: 0.85rem 1.25rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  border: none;
+  border-radius: var(--radius-md, 12px);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  color: #ffffff;
+  background: var(--color-primary, #2563eb);
+  transition: background 0.15s ease, opacity 0.15s ease;
+}
+
+.primaryBtn:hover:not(:disabled) {
+  background: var(--color-primary-hover, #1d4ed8);
+}
+
+.primaryBtn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.primaryBtn:focus-visible,
+.readBtn:focus-visible,
+.backBtn:focus-visible,
+.signOutBtn:focus-visible,
+.consentRow input:focus-visible {
+  outline: 2px solid var(--color-primary, #2563eb);
+  outline-offset: 2px;
+}
+
+.error {
+  margin: 0 0 0.85rem;
+  padding: 0.7rem 0.9rem;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  border-radius: var(--radius-md, 12px);
+  color: var(--color-danger, #ef4444);
+  background: var(--color-danger-tint, rgba(239, 68, 68, 0.1));
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+/* Sign-out is not an escape from the requirement — the gate is waiting again on
+   the next sign-in. It is here because a shared machine is a real situation and
+   being unable to leave an account would be worse. */
+.signOutBtn {
+  display: block;
+  width: 100%;
+  margin-top: 0.85rem;
+  padding: 0.4rem;
+  font-size: 0.82rem;
+  font-weight: 500;
+  text-align: center;
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  color: var(--color-text-light, #64748b);
+  text-decoration: underline;
+}
+
+.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 2rem;
+  font-size: 0.9rem;
+  color: var(--color-text-light, #64748b);
+}
+
+.spin {
+  animation: legal-gate-spin 0.9s linear infinite;
+}
+
+@keyframes legal-gate-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spin {
+    animation: none;
+  }
+}
+
+@media (max-width: 560px) {
+  .wrapper {
+    padding: 0;
+  }
+
+  .card {
+    max-width: none;
+    max-height: 100dvh;
+    height: 100dvh;
+    border: none;
+    border-radius: 0;
+  }
+
+  .header {
+    padding: 1.5rem 1.25rem 1rem;
+  }
+
+  .docList,
+  .readerHead {
+    padding-left: 1.25rem;
+    padding-right: 1.25rem;
+  }
+
+  .readerBody {
+    padding: 1rem 1.25rem;
+  }
+
+  .footer {
+    padding: 1rem 1.25rem 1.5rem;
+    padding-bottom: max(1.5rem, env(safe-area-inset-bottom));
+  }
+}

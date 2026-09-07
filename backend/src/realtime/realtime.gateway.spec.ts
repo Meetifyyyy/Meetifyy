@@ -1,6 +1,7 @@
 import { RealtimeGateway } from './realtime.gateway';
 import { createVerificationAccessMock } from '../common/verification/testing/verification-access.mock';
 import { createStudentYearPolicyMock } from '../common/student-year/testing/student-year-policy.mock';
+import { createLegalConsentMock } from '../common/legal/testing/legal-consent.mock';
 import { allowAllRateLimit } from '../common/rate-limit/testing/rate-limit.mock';
 
 describe('RealtimeGateway — Authentication', () => {
@@ -72,6 +73,9 @@ describe('RealtimeGateway — Authentication', () => {
       verificationAccess,
       createStudentYearPolicyMock() as any,
       allowAllRateLimit(),
+      // The socket applies the same mandatory-acknowledgement gate the REST
+      // routes do. Defaults to satisfied, which is this suite's subject.
+      createLegalConsentMock() as any,
       jwtGuard,
     );
   });
@@ -175,5 +179,53 @@ describe('RealtimeGateway — Authentication', () => {
 
     await gateway.handleConnection(client);
     expect(client.disconnect).toHaveBeenCalled();
+  });
+
+  /**
+   * The socket is not a read-only side channel: it delivers messages, presence
+   * and typing. Refusing every HTTP route while leaving this connected would
+   * let an account that has not accepted a mandatory policy update keep using
+   * the parts of Meetifyy that matter most, with the modal sitting on screen.
+   */
+  it('rejects connection when a required legal update has not been accepted', async () => {
+    const gatedGateway = new RealtimeGateway(
+      supabaseService,
+      messagesService,
+      presenceService,
+      instantMatchService,
+      instantMatchLimiter,
+      prisma,
+      redisService,
+      activityPolicy,
+      communitiesService,
+      blocksService,
+      verificationAccess,
+      createStudentYearPolicyMock() as any,
+      allowAllRateLimit(),
+      createLegalConsentMock({ satisfied: false }) as any,
+      jwtGuard,
+    );
+
+    jwtGuard.validateToken.mockResolvedValue({
+      id: 'unconsented-user',
+      email: 'someone@example.edu',
+    });
+
+    const client: any = {
+      id: 'socket-legal',
+      handshake: { auth: { token: 'valid.token.signature' }, headers: {} },
+      emit: jest.fn(),
+      disconnect: jest.fn(),
+      join: jest.fn(),
+    };
+
+    await gatedGateway.handleConnection(client);
+
+    expect(client.disconnect).toHaveBeenCalled();
+    // Told apart from an auth failure so the client shows the consent flow
+    // rather than bouncing the user to the sign-in screen.
+    expect(client.emit).toHaveBeenCalledWith('account:unavailable', {
+      code: 'LEGAL_ACKNOWLEDGEMENT_REQUIRED',
+    });
   });
 });

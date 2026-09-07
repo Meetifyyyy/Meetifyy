@@ -19,6 +19,7 @@ import {
   X,
   CheckCircle,
   Trash2,
+  BookOpen,
 } from './icons';
 
 export const AdminLayout: React.FC = () => {
@@ -72,6 +73,9 @@ export const AdminLayout: React.FC = () => {
     // deadline the platform has committed to, which is a different job from
     // moderating an account.
     { label: 'Account Deletion', path: '/account-deletion', icon: Trash2 },
+    // Its own entry rather than a tab under Support: publishing a policy is a
+    // decision with a legal record attached, not content management.
+    { label: 'Legal', path: '/legal', icon: BookOpen },
     { label: 'Audit Logs', path: '/audit', icon: FileText },
     { label: 'Sessions', path: '/sessions', icon: ShieldCheck },
   ];
