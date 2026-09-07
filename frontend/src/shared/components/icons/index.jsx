@@ -40,9 +40,11 @@ import {
   GridIcon,
   HelpCircleIcon,
   Image01Icon,
+  InstagramIcon,
   ImageAdd01Icon,
   ImageNotFound01Icon,
   InformationCircleIcon,
+  Linkedin02Icon,
   Link01Icon,
   LinkSquare02Icon,
   ListViewIcon,
@@ -58,6 +60,8 @@ import {
   MaximizeScreenIcon,
   MinimizeScreenIcon,
   Moon02Icon,
+  NewTwitterIcon,
+  RedditIcon,
   MoreHorizontalIcon,
   MoreVerticalIcon,
   Megaphone01Icon,
@@ -95,6 +99,7 @@ import {
   UserRemove01Icon,
   Video01Icon,
   ViewIcon,
+  WhatsappIcon,
   ViewOffSlashIcon,
   VolumeHighIcon,
   VolumeLowIcon,
@@ -292,7 +297,19 @@ const GLYPHS = {
   Link: Link01Icon,
   Link2: Link01Icon,
   Cookie: BiscuitIcon,
-  Fingerprint: FingerPrintIcon
+  Fingerprint: FingerPrintIcon,
+
+  // -- Share destinations.
+  //    Brand marks, from the same Hugeicons set as everything else here rather
+  //    than from a second icon library or a folder of hand-pasted SVGs. They
+  //    are the ONLY icons in this file that depict something outside Meetifyy,
+  //    which is why they are grouped and named for the platform: `Whatsapp`
+  //    means WhatsApp and must never be reused to mean "messaging".
+  Whatsapp: WhatsappIcon,
+  Instagram: InstagramIcon,
+  XPlatform: NewTwitterIcon,
+  Linkedin: Linkedin02Icon,
+  Reddit: RedditIcon
 };
 
 export const ChevronDown = /*#__PURE__*/ icon(GLYPHS.ChevronDown, 'ChevronDown');
@@ -412,4 +429,11 @@ export const Globe2 = /*#__PURE__*/ icon(GLYPHS.Globe2, 'Globe2');
 export const Link = /*#__PURE__*/ icon(GLYPHS.Link, 'Link');
 export const Link2 = /*#__PURE__*/ icon(GLYPHS.Link2, 'Link2');
 export const Cookie = /*#__PURE__*/ icon(GLYPHS.Cookie, 'Cookie');
+
+// Share destinations. See the GLYPHS entry above.
+export const Whatsapp = /*#__PURE__*/ icon(GLYPHS.Whatsapp, 'Whatsapp');
+export const Instagram = /*#__PURE__*/ icon(GLYPHS.Instagram, 'Instagram');
+export const XPlatform = /*#__PURE__*/ icon(GLYPHS.XPlatform, 'XPlatform');
+export const Linkedin = /*#__PURE__*/ icon(GLYPHS.Linkedin, 'Linkedin');
+export const Reddit = /*#__PURE__*/ icon(GLYPHS.Reddit, 'Reddit');
 export const Fingerprint = /*#__PURE__*/ icon(GLYPHS.Fingerprint, 'Fingerprint');

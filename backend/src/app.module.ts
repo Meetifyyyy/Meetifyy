@@ -21,6 +21,7 @@ import { LinkPreviewModule } from './link-preview/link-preview.module';
 import { HealthModule } from './health/health.module';
 import { AuthModule } from './auth/auth.module';
 import { PostsModule } from './posts/posts.module';
+import { ShareModule } from './share/share.module';
 import { RealtimeModule } from './realtime/realtime.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -167,6 +168,7 @@ import { SupportModule } from './support/support.module';
     HealthModule,
     AuthModule,
     PostsModule,
+    ShareModule,
     RealtimeModule,
     CommunitiesModule,
     ActivitiesModule,

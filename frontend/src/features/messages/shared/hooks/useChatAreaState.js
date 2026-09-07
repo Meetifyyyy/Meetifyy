@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { copyToClipboard } from '@shared/lib/share/shareTargets';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@shared/context/AuthContext';
 import { useUsersMap } from '@shared/hooks/useUsersMap';
@@ -119,11 +120,13 @@ export function useChatAreaState(conversation) {
     pushedDetailsRef.current = false;
   }, [conversation?.id]);
 
-  const handleCopyMessage = useCallback((msg) => {
-    if (msg?.text) {
-      navigator.clipboard.writeText(msg.text);
-      showToast('Copied', 'success');
-    }
+  const handleCopyMessage = useCallback(async (msg) => {
+    if (!msg?.text) return;
+    // Through the shared helper: `navigator.clipboard` is undefined on any
+    // non-secure origin — including the LAN addresses used to test on a real
+    // phone — where this used to reject unhandled and still toast "Copied".
+    const copied = await copyToClipboard(msg.text);
+    showToast(copied ? 'Copied' : 'Could not copy', copied ? 'success' : 'error');
   }, []);
 
   const handleUnsend = useCallback(async () => {

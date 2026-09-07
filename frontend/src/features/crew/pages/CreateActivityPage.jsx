@@ -1,4 +1,6 @@
 import { useState, useEffect, useLayoutEffect, useRef, useMemo } from 'react';
+import { copyToClipboard } from '@shared/lib/share/shareTargets';
+import { activityShareUrl } from '@shared/lib/share/sharePayload';
 import { createPortal } from 'react-dom';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
@@ -599,8 +601,11 @@ function ActivityCreatedModal({ activityTitle, coverImage, activityDate, creatio
   const handleCopy = async () => {
     try {
       const activity = await creationPromise;
-      const url = `${window.location.origin}/crew/${activity?.id || ''}`;
-      await navigator.clipboard.writeText(url);
+      // The same builder the share dialog uses, so a link copied here and a
+      // link copied there are the same link. Hand-built copies are how the
+      // share dialog ended up pointing at `/activity/:id`, a route that does
+      // not exist.
+      if (!(await copyToClipboard(activityShareUrl(activity?.id)))) return;
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {}

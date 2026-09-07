@@ -154,27 +154,6 @@
   cursor: default;
 }
 
-.copyLinkBtn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  width: 100%;
-  padding: 14px;
-  background: var(--color-bg-soft);
-  border: 1px solid var(--color-border);
-  border-radius: 12px;
-  color: var(--color-text-main);
-  font-weight: 600;
-  font-size: 1rem;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.copyLinkBtn:hover {
-  background: rgba(0, 0, 0, 0.05);
-}
-
 @keyframes fadeIn {
   from { opacity: 0; }
   to { opacity: 1; }

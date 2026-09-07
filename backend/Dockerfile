@@ -44,10 +44,21 @@ RUN npm run build
 # ─────────────────────────────────────────────────────────────────────────────
 FROM node:22-alpine AS prod
 
-# dumb-init provides correct PID 1 signal forwarding (SIGTERM → graceful
+# dumb-init provides correct PID 1 signal forwarding (SIGTERM -> graceful
 # shutdown). NestJS calls app.enableShutdownHooks(), so this is required for
 # graceful draining of in-flight requests and BullMQ job completion.
-RUN apk add --no-cache dumb-init
+#
+# The fonts are for the Open Graph share card (src/share/share-card.renderer.ts).
+# sharp rasterises the card's SVG with librsvg, which resolves <text> through
+# fontconfig — and node:22-alpine ships with no fonts at all, so without these
+# every glyph on a shared post's preview image renders as an empty box. Inter is
+# the brand face the app itself is set in; Noto covers the scripts and emoji
+# students actually post in, per glyph, so a card in Devanagari or with an emoji
+# degrades to a different face rather than to tofu.
+#
+# If a share card ever renders as blank rectangles, this line is the first place
+# to look.
+RUN apk add --no-cache dumb-init fontconfig font-inter font-noto font-noto-emoji
 
 WORKDIR /app
 
@@ -66,7 +77,8 @@ COPY --from=build /app/prisma ./prisma
 # runtime engine binary is present (build stage may have used a different arch).
 RUN npx prisma generate
 
-# Copy static assets (email template images, etc.) if present.
+# Copy static assets (email template images, the default avatars, and the
+# vector wordmark the share card composites) if present.
 COPY --from=build /app/assets ./assets
 
 # Run as the built-in non-root `node` user for security.

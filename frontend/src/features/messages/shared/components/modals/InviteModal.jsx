@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
+import { copyToClipboard } from '@shared/lib/share/shareTargets';
 import { selectableUsers } from '@shared/lib/conversationTargets';
 import { createPortal } from 'react-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -50,15 +51,21 @@ export default function InviteModal({ isOpen, onClose, group }) {
 
     const relativeUrl = generateConversationUrl(group, currentUser?.id, '/inbox');
     const link = `${window.location.origin}${relativeUrl}`;
-    navigator.clipboard.writeText(link).then(() => {
+
+    // Through the shared helper, which falls back where `navigator.clipboard`
+    // does not exist and reports failure rather than leaving the lock stuck.
+    copyToClipboard(link).then((copied) => {
+      if (!copied) {
+        copyLockRef.current = false;
+        showToast('Could not copy the invite link', 'error');
+        return;
+      }
       setCopied(true);
       showToast('Invite link copied', 'success');
       setTimeout(() => {
         setCopied(false);
         copyLockRef.current = false;
       }, 2000);
-    }).catch(() => {
-      copyLockRef.current = false;
     });
   };
 

@@ -1,0 +1,194 @@
+/**
+ * The share destinations row.
+ *
+ * Built entirely on the tokens in styles/variables.css, so it follows the
+ * light/dark theme with the rest of the application and carries no palette of
+ * its own. It sits at the foot of every share dialog and inherits that dialog's
+ * width, which is why nothing here sets one.
+ */
+
+.root {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Native share sheet -------------------------------------------------------
+   Full width and above the grid, because on the devices where it exists it is
+   the fastest route to every destination below it — including the ones the
+   grid cannot offer properly, like Instagram. */
+.native {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 14px;
+  background: var(--color-bg-soft);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text-main);
+  font-family: inherit;
+  font-weight: 600;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: background-color 0.18s, border-color 0.18s;
+  /* Margin rather than a gap on the parent: the status line below collapses to
+     nothing when there is no message, and a flex gap would still reserve its
+     own space beneath it. */
+  margin-bottom: 10px;
+}
+
+.native:hover {
+  background: var(--color-bg-alt);
+  border-color: var(--color-border-dark);
+}
+
+/* Destinations ------------------------------------------------------------
+   ONE ROW, ALWAYS, scrolling sideways when it does not fit.
+
+   A wrapping grid put the last one or two destinations on a second row that
+   reads as a separate group and pushes the dialog taller than a phone can show
+   without scrolling the page itself. A single row keeps the set legible as one
+   set: what does not fit is still obviously there, one swipe away.
+
+   The row is a real scroll container, so it works with a trackpad, a touch
+   drag, and shift+wheel, and keyboard focus scrolls it into view for free. */
+.targets {
+  display: flex;
+  gap: 4px;
+  margin: 0;
+  padding: 2px 0;
+  list-style: none;
+  overflow-x: auto;
+  /* Vertical must stay visible or the focus ring is clipped by the horizontal
+     scroll container. `auto`/`hidden` on one axis forces the other to clip. */
+  overflow-y: visible;
+  /* Momentum on iOS, and a snap so a half-cut tile never comes to rest. */
+  scroll-snap-type: x proximity;
+  -webkit-overflow-scrolling: touch;
+  /* No visible scrollbar: the row is six items and the overflow is obvious
+     from the cut edge, so a bar here is chrome on a control, not an
+     affordance. The content is still reachable by every input method. */
+  scrollbar-width: none;
+}
+
+.targets::-webkit-scrollbar {
+  display: none;
+}
+
+.targets > li {
+  flex: 0 0 auto;
+  scroll-snap-align: start;
+}
+
+.target {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  /* A fixed tile width so the row scrolls in even steps and the labels line
+     up. Wide enough for "WhatsApp" and "Copy link" without ellipsis. */
+  width: 78px;
+  /* 44px is the accessibility floor for a touch target; the padding and the
+     44px icon well together clear it with room to spare. */
+  min-height: 76px;
+  padding: 10px 4px;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  color: var(--color-text-muted);
+  font-family: inherit;
+  cursor: pointer;
+  transition: background-color 0.18s, border-color 0.18s, color 0.18s;
+}
+
+.target:hover {
+  background: var(--color-bg-soft);
+  color: var(--color-text-main);
+}
+
+.target:active {
+  background: var(--color-bg-alt);
+}
+
+/* Keyboard focus only. A mouse user who has just clicked does not need a ring;
+   somebody tabbing through six destinations needs to know where they are. */
+.target:focus-visible,
+.native:focus-visible {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(var(--color-primary-rgb), 0.22);
+}
+
+.iconWrap {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-full);
+  background: var(--color-bg-soft);
+  color: var(--color-text-main);
+  transition: background-color 0.18s;
+}
+
+.target:hover .iconWrap {
+  background: var(--color-bg-alt);
+}
+
+/* The label doubles as the transient "Copied!" state, so it keeps the tile's
+   own colour rather than turning green: the tile is already the thing that
+   changed, and a second signal for the same event is noise. */
+.label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.2;
+  /* A destination name is one short word; if a translation makes it two, it
+     ellipsises rather than widening the column and breaking the grid. */
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Screen-reader announcement -----------------------------------------------
+   The outcome is shown ON the tile that was pressed, which is where a sighted
+   user is already looking. This is the same information for somebody who
+   cannot see it change.
+
+   Clipped rather than `display: none` or `visibility: hidden`: both of those
+   remove the node from the accessibility tree, which is exactly what a live
+   region must not be. It also takes no space, which is the other half of why
+   the visible status line went away. */
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .native,
+  .target,
+  .iconWrap {
+    transition: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .target {
+    width: 72px;
+    min-height: 72px;
+    gap: 6px;
+  }
+
+  .iconWrap {
+    width: 42px;
+    height: 42px;
+  }
+}

@@ -7,6 +7,8 @@ import styles from '@features/crew/components/modals/ShareActivityModal.module.c
 // actually be sent into. See useRecipientConversations.
 import { useRecipientConversations } from '@shared/hooks/useRecipientConversations';
 import { useMessageActions } from '@shared/hooks/useMessageActions';
+import ShareTargets from '@shared/components/share/ShareTargets';
+import { buildCommunityShare } from '@shared/lib/share/sharePayload';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 import { useScrollLock } from '@shared/hooks/useScrollLock';
 
@@ -30,19 +32,11 @@ export default function ShareCommunityModal({ isOpen, onClose, community }) {
   useScrollLock(Boolean(isOpen));
 
   const [searchTerm, setSearchTerm] = useState('');
-  const [copied, setCopied] = useState(false);
   const [sentTo, setSentTo] = useState(new Set());
   
   const { conversations } = useRecipientConversations(isOpen);
   const { sendDirectMessage } = useMessageActions();
 
-  const handleCopyLink = () => {
-    const link = `${window.location.origin}/communities/${community.id}`;
-    navigator.clipboard.writeText(link).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
-  };
 
   const handleSend = async (convId) => {
     await sendDirectMessage(convId, { 
@@ -140,24 +134,12 @@ export default function ShareCommunityModal({ isOpen, onClose, community }) {
           )}
         </div>
 
-        <button className={styles.copyLinkBtn} onClick={handleCopyLink}>
-          {copied ? (
-            <>
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="20 6 9 17 4 12"></polyline>
-              </svg>
-              Copied!
-            </>
-          ) : (
-            <>
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
-                <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
-              </svg>
-              Copy Link
-            </>
-          )}
-        </button>
+        {/*
+          Every external destination, from one component. See
+          @shared/components/share/ShareTargets — this dialog supplies
+          only what is being shared.
+        */}
+        <ShareTargets payload={buildCommunityShare(community)} />
       </div>
     </div>,
     document.body

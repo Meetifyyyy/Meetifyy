@@ -380,6 +380,14 @@ const PUBLIC_PATHS = [
   // The backend controller marks both as deliberately unauthenticated.
   '/api/academics/catalog',
   '/api/academics/colleges',
+  // The public view of a shared post. A visitor arriving from a link on
+  // WhatsApp has no session by definition, and without this entry `request`
+  // rejects the call before a byte reaches the network — which presented every
+  // valid shared link as "post not found", indistinguishably from a genuinely
+  // private one. The server applies the real gate (see
+  // backend/src/share/share-preview.service.ts); this list only decides whether
+  // the browser is willing to ask.
+  '/api/share',
 ];
 
 function isPublicPath(path) {
@@ -700,6 +708,28 @@ export const postsApi = {
     if (cursor) params.set('cursor', cursor);
     return apiClient.get(`/api/posts/bookmarks?${params.toString()}`);
   },
+};
+
+/**
+ * The public, unauthenticated view of a post.
+ *
+ * The only surface that serves post content without a session, and
+ * deliberately narrow: the author, the text and the first image, and nothing
+ * about comments, likes, bookmarks or the viewer. It is what a signed-out
+ * visitor arriving from a shared link is shown, so widening it widens what
+ * "sharing a link" exposes. The server enforces that; this is just the caller.
+ *
+ * See `backend/src/share/share-preview.service.ts`.
+ */
+export const shareApi = {
+  /**
+   * Rejects with `status === 404` for a post that is not publicly shareable —
+   * deleted, private, in a restricted community, by an unavailable author, or
+   * simply not a post. The server answers all of those identically on purpose,
+   * so callers must not try to tell them apart.
+   */
+  getPublicPost: (postId, { signal } = {}) =>
+    apiClient.get(`/api/share/post/${encodeURIComponent(postId)}`, { signal }),
 };
 
 export const linkPreviewApi = {

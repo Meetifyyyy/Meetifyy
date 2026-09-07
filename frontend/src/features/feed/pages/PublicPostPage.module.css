@@ -1,0 +1,309 @@
+/**
+ * The signed-out post page.
+ *
+ * Built entirely on the design tokens in styles/variables.css, so it follows
+ * the light/dark theme with everything else and does not need a second palette
+ * of its own. The landing chrome above and below it is the same navbar and
+ * footer every other public page uses.
+ */
+
+.page {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  background: var(--color-bg-main);
+}
+
+.main {
+  flex: 1;
+  width: 100%;
+  max-width: 680px;
+  margin: 0 auto;
+  /* Top padding clears the fixed landing navbar. */
+  padding: 104px 16px 64px;
+}
+
+.card {
+  background: var(--color-bg-white);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-md);
+  overflow: hidden;
+  padding: 24px;
+}
+
+.identity {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.avatar,
+.avatarFallback {
+  width: 52px;
+  height: 52px;
+  border-radius: var(--radius-full);
+  flex-shrink: 0;
+}
+
+.avatar {
+  object-fit: cover;
+  background: var(--color-bg-soft);
+}
+
+.avatarFallback {
+  display: grid;
+  place-items: center;
+  background: var(--color-primary);
+  color: #fff;
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+.identityText {
+  min-width: 0;
+}
+
+.name {
+  margin: 0;
+  font-size: 1.0625rem;
+  font-weight: 700;
+  color: var(--color-text-main);
+  /* A display name is user input and can be arbitrarily long; without this it
+     pushes the handle out of the card. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.handle {
+  margin: 2px 0 0;
+  font-size: 0.9375rem;
+  color: var(--color-text-light);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.body {
+  margin: 20px 0 0;
+  font-size: 1.125rem;
+  line-height: 1.6;
+  color: var(--color-text-main);
+  /* Post text carries the author's own line breaks, and `break-word` keeps a
+     pasted URL inside the card instead of widening the page. */
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+.figure {
+  margin: 20px 0 0;
+}
+
+.image {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: var(--radius-lg);
+  background: var(--color-bg-soft);
+}
+
+.caption {
+  margin-top: 8px;
+  font-size: 0.875rem;
+  color: var(--color-text-light);
+}
+
+.cta {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--color-border);
+}
+
+.ctaText {
+  margin: 0 0 14px;
+  font-size: 0.9375rem;
+  color: var(--color-text-light);
+}
+
+.ctaActions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.primary,
+.secondary {
+  flex: 1 1 160px;
+  padding: 12px 20px;
+  border-radius: var(--radius-md);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  text-align: center;
+  text-decoration: none;
+  transition: background-color 0.2s, border-color 0.2s;
+}
+
+.primary {
+  background: var(--color-primary);
+  color: #fff;
+}
+
+.primary:hover {
+  background: var(--color-primary-hover);
+}
+
+.secondary {
+  background: transparent;
+  border: 1px solid var(--color-border);
+  color: var(--color-text-main);
+}
+
+.secondary:hover {
+  border-color: var(--color-border-dark);
+}
+
+/* Loading placeholders ---------------------------------------------------- */
+
+.skeleton {
+  display: block;
+  background: var(--color-bg-soft);
+  border-radius: var(--radius-sm);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+.skeletonLine {
+  width: 160px;
+  height: 16px;
+}
+
+.skeletonLineShort {
+  width: 100px;
+  height: 13px;
+  margin-top: 8px;
+}
+
+.skeletonBlock {
+  height: 180px;
+  margin-top: 20px;
+  border-radius: var(--radius-lg);
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    animation: none;
+  }
+}
+
+@media (max-width: 600px) {
+  .main {
+    padding: 88px 12px 48px;
+  }
+
+  .card {
+    padding: 18px;
+    border-radius: var(--radius-lg);
+  }
+
+  .body {
+    font-size: 1.0625rem;
+  }
+}
+
+/* Gallery ------------------------------------------------------------------
+   A grid rather than a stack of full-width images: a post with three
+   photographs should read as a post with three photographs at a glance, not as
+   a scroll. `data-count` drives the shape, mirroring the mosaic the share card
+   composes so the page and its preview agree. */
+.gallery {
+  display: grid;
+  gap: 4px;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.gallery[data-count='2'] {
+  grid-template-columns: 1fr 1fr;
+}
+
+.gallery[data-count='3'] {
+  grid-template-columns: 1fr 1fr;
+}
+
+/* The first of three spans the top, the other two share the row beneath —
+   the same hierarchy the OG card draws, and the same one the author chose. */
+.gallery[data-count='3'] .image:first-child {
+  grid-column: 1 / -1;
+}
+
+.gallery[data-count='2'] .image,
+.gallery[data-count='3'] .image {
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  border-radius: 0;
+}
+
+/* Media note ---------------------------------------------------------------
+   For the video a signed-out page names but does not play. */
+.mediaNote {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 16px 0 0;
+  padding: 12px 16px;
+  background: var(--color-bg-soft);
+  border-radius: var(--radius-md);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+/* Poll ---------------------------------------------------------------------
+   Rows, not controls. Nothing here is focusable or clickable, because nothing
+   here can be voted on without an account — a disabled radio would imply the
+   opposite and a result bar would imply a tally that is not published. */
+.pollOptions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 20px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pollOption {
+  padding: 14px 20px;
+  background: var(--color-bg-white);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-full);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--color-text-main);
+  overflow-wrap: break-word;
+}
+
+.pollMore {
+  padding: 2px 20px;
+  font-size: 0.875rem;
+  color: var(--color-text-light);
+}
+
+/* Share --------------------------------------------------------------------
+   Above the sign-in call to action, separated by the same hairline: passing
+   the link on is something a visitor can do without an account, and the CTA
+   below is the thing that needs one. */
+.share {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--color-border);
+}

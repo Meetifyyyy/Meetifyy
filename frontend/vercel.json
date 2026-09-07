@@ -114,6 +114,20 @@
       "destination": "https://api.meetifyy.app/api/media/:path*"
     },
     {
+      "source": "/api/share/:path*",
+      "has": [
+        {
+          "type": "host",
+          "value": "dev.meetifyy.app"
+        }
+      ],
+      "destination": "https://dev-api.meetifyy.app/api/share/:path*"
+    },
+    {
+      "source": "/api/share/:path*",
+      "destination": "https://api.meetifyy.app/api/share/:path*"
+    },
+    {
       "source": "/sw.js",
       "destination": "/sw.js"
     },
@@ -200,6 +214,32 @@
     {
       "source": "/communities/:id",
       "destination": "/app.html"
+    },
+    {
+      "source": "/post/:id",
+      "has": [
+        {
+          "type": "host",
+          "value": "dev.meetifyy.app"
+        },
+        {
+          "type": "header",
+          "key": "user-agent",
+          "value": ".*(facebookexternalhit|facebookcatalog|Facebot|Twitterbot|LinkedInBot|Slackbot|Slack-ImgProxy|WhatsApp|TelegramBot|Discordbot|Pinterest|redditbot|Applebot|SkypeUriPreview|vkShare|Embedly|Iframely|Bluesky Cardyb|Mastodon|nitter|XING-contenttabreceiver|Google-InspectionTool).*"
+        }
+      ],
+      "destination": "https://dev-api.meetifyy.app/api/share/post/:id/preview"
+    },
+    {
+      "source": "/post/:id",
+      "has": [
+        {
+          "type": "header",
+          "key": "user-agent",
+          "value": ".*(facebookexternalhit|facebookcatalog|Facebot|Twitterbot|LinkedInBot|Slackbot|Slack-ImgProxy|WhatsApp|TelegramBot|Discordbot|Pinterest|redditbot|Applebot|SkypeUriPreview|vkShare|Embedly|Iframely|Bluesky Cardyb|Mastodon|nitter|XING-contenttabreceiver|Google-InspectionTool).*"
+        }
+      ],
+      "destination": "https://api.meetifyy.app/api/share/post/:id/preview"
     },
     {
       "source": "/post/:id",

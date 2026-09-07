@@ -1,6 +1,6 @@
 import { lazy, Suspense, useMemo } from 'react';
 import { IS_DEV_BUILD } from '@config';
-import { isKnownAppRoute } from '@config/seo';
+import { isKnownAppRoute, normalisePathname } from '@config/seo';
 import { createBrowserRouter, RouterProvider, Navigate, Outlet, ScrollRestoration, useLocation } from 'react-router-dom';
 import { QueryErrorResetBoundary } from '@tanstack/react-query';
 import { SmartBackTracker } from './shared/hooks/useSmartBack';
@@ -76,6 +76,9 @@ const FeedRoute = lazyRoute(() => import('./features/feed/pages/FeedRoute'));
 const CommunitiesRoute = lazyRoute(() => import('./features/communities/pages/CommunitiesRoute'));
 const CommunityDetailRoute = lazyRoute(() => import('./features/communities/pages/CommunityDetailRoute'));
 const PostDetailRoute = lazyRoute(() => import('./features/feed/pages/PostDetailRoute'));
+// The signed-out view of the same route. Lazy for the same reason every other
+// route chunk is: it is never loaded for a session that has one.
+const PublicPostPage = lazyRoute(() => import('./features/feed/pages/PublicPostPage'));
 const MessagesRoute = lazyRoute(() => import('./features/messages/pages/MessagesRoute'));
 const ProfilePage = lazyRoute(() => import('./features/profile/pages/ProfilePage'));
 const SearchResultsRoute = lazyRoute(() => import('./features/search/pages/SearchResultsRoute'));
@@ -127,6 +130,35 @@ function withBoundary(element, fallback = null, boundaryProps = {}) {
 }
 
 
+/**
+ * Routes that render something for a signed-out visitor instead of bouncing
+ * them to the landing page.
+ *
+ * An ALLOW-LIST, matching the direction `PUBLIC_ROUTES` in config/seo.js takes,
+ * and for the same reason: every app route is private unless it is deliberately
+ * listed here, rather than private until someone remembers to exclude it.
+ *
+ * `/post/:id` is here because it is the URL Meetifyy posts are shared with. The
+ * whole external sharing pipeline — the canonical link, the server-rendered Open
+ * Graph metadata, the share card — exists to get somebody to a post, and
+ * bouncing them to a sign-in wall at the final step wastes all of it. The
+ * component it renders publishes only what the share card already published;
+ * see PublicPostPage.
+ *
+ * Each entry parses its OWN parameters out of the path and passes them down.
+ * `useParams` is not available to these components: this gate short-circuits
+ * the parent layout route, so the child route carrying `:id` never matches and
+ * a `useParams()` call inside the rendered component returns `{}`. That failed
+ * silently — the page mounted, asked for a post with no id, and rendered "post
+ * not found" for every valid link.
+ */
+const PUBLIC_VIEW_ROUTES = [
+  {
+    match: (path) => /^\/post\/([^/]+)$/.exec(path),
+    render: ([, postId]) => <PublicPostPage postId={postId} />,
+  },
+];
+
 function ProtectedRoute({ children }) {
   const { isLoggedIn, currentUser, loading } = useAuth();
   const location = useLocation();
@@ -142,6 +174,16 @@ function ProtectedRoute({ children }) {
     // the visitor sees always agree.
     if (!isKnownAppRoute(location.pathname)) {
       return <PublicNotFound />;
+    }
+    // Returning here rather than inside the dashboard shell is deliberate: the
+    // shell's header, sidebar and bottom nav are all built from `currentUser`,
+    // which does not exist. The public view brings the landing chrome instead.
+    const path = normalisePathname(location.pathname);
+    for (const route of PUBLIC_VIEW_ROUTES) {
+      const params = route.match(path);
+      if (params) {
+        return <Suspense fallback={null}>{route.render(params)}</Suspense>;
+      }
     }
     // Remember the deep link so signing in returns the user to the page they
     // actually asked for. History state can't carry it: the user walks through
