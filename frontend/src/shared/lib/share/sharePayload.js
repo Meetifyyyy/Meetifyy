@@ -43,7 +43,8 @@ export function postShareUrl(postId) {
 }
 
 /**
- * The rendered share card, as an image a browser can fetch.
+ * The rendered share card, as an image a browser can fetch and hand to another
+ * application.
  *
  * SAME ORIGIN, DELIBERATELY
  * `og:image` names the API's own host, because a crawler does not care about
@@ -53,11 +54,20 @@ export function postShareUrl(postId) {
  * `/api/share/*` to the API, and Vite proxies it in development, so the
  * same-origin path reaches the same bytes with none of that.
  *
+ * `story.png`, NOT the `image.jpg` that `og:image` names. They are different
+ * pictures on purpose: the JPEG is a 1200x630 landscape thumbnail sized so
+ * WhatsApp still shows a large preview, while this is a whole 1080x1920 story
+ * canvas — the card on a background we drew ourselves.
+ *
+ * Filling the canvas exactly is the point. Handed a landscape image, Instagram
+ * decides what surrounds it and offers no way to change that decision; handed
+ * a story-shaped one it has nothing to decide.
+ *
  * No version parameter: the endpoint ignores it, and this URL is fetched at the
  * moment of sharing rather than cached by anything that needs to be busted.
  */
 export function postCardImageUrl(postId) {
-  return absoluteUrl(postId ? `/api/share/post/${postId}/image.jpg` : null);
+  return absoluteUrl(postId ? `/api/share/post/${postId}/story.png` : null);
 }
 
 /** The canonical URL for a profile. */
@@ -115,7 +125,7 @@ export function buildPostShare(post, author) {
     // The card as an image, for the destinations that take a picture rather
     // than a link. Only posts have one — see postCardImageUrl.
     cardImageUrl: postCardImageUrl(post?.id),
-    cardFileName: `${slug(APP)}-post.jpg`,
+    cardFileName: `${slug(APP)}-story.png`,
   };
 }
 

@@ -30,6 +30,12 @@
  *     showing the domain, or whatever sticker text the author types. Instagram
  *     never fetches `og:image` for it, so there is no card to appear and no
  *     amount of correct metadata will produce one.
+ *
+ *     Nor can that sticker be attached from here. Sharing an image to a story
+ *     creates the story with the image and nothing else; the sticker is added
+ *     by the author, in Instagram, by hand. There is no parameter, no
+ *     intent extra and no deep link that carries it — which is why the link is
+ *     put on the clipboard for them to paste rather than promised to them.
  *   - Feed captions do not linkify at all.
  *
  * Sharing a URL to Instagram from the OS share sheet therefore only ever
@@ -60,14 +66,14 @@ export const INSTAGRAM_GUIDANCE =
  * is simply untrue, and the button is surprising enough already.
  */
 export const INSTAGRAM_HINT_SHEET =
-  'Sends the card as an image, so Instagram offers Story and Post. The link is copied for your story sticker.';
+  'Sends a ready-made story image, so Instagram offers Story and Post. The link is copied — Instagram only lets you add a link sticker by hand.';
 
 export const INSTAGRAM_HINT_COPY =
   'Instagram cannot be sent a link from the web. We copy it so you can paste it into your story, bio or a DM.';
 
 /** Shown once the card has been handed over and the link copied. */
 export const INSTAGRAM_STORY_GUIDANCE =
-  'Card sent to Instagram. The link is copied — add a link sticker to your story.';
+  'Story sent. Link copied — add a link sticker and paste it.';
 
 /**
  * The share destinations, in the order they are shown.

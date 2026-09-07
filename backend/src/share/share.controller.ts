@@ -85,6 +85,36 @@ export class ShareController {
    * immutable year-long cache safe. Reading it and comparing would only create
    * a way for a stale crawler to pin an old card.
    */
+  /**
+   * The finished 1080x1920 story image, for handing to Instagram as a file.
+   *
+   * A separate endpoint rather than a query parameter on the one above, because
+   * it is a different resource entirely: a different shape, a different size
+   * and a different purpose. The path says so, caches key on it for free, and
+   * the `.png` extension is what a share sheet reads to decide the file's type.
+   *
+   * NOT referenced by any `og:` tag. An unfurler wants the small landscape JPEG
+   * — see shareImageUrl — and would letterbox this one into a chat thumbnail.
+   */
+  @Get('post/:id/story.png')
+  @CacheControl('public, max-age=31536000, s-maxage=31536000, immutable')
+  async story(@Param('id') id: string, @Res() res: Response) {
+    const post = await this.preview.getPublicPost(id);
+
+    if (!post) {
+      res.setHeader('Cache-Control', 'no-store');
+      res.status(404).end();
+      return;
+    }
+
+    const card = await this.cards.get(post, 'story');
+
+    res.setHeader('Content-Type', 'image/png');
+    res.setHeader('Content-Length', String(card.length));
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.status(200).end(card);
+  }
+
   @Get('post/:id/image.jpg')
   @CacheControl('public, max-age=31536000, s-maxage=31536000, immutable')
   async image(@Param('id') id: string, @Res() res: Response) {

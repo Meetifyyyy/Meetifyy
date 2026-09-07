@@ -230,6 +230,33 @@ describe('share payloads', () => {
     });
   });
 
+  describe('the image handed to a share sheet', () => {
+    it('is the story canvas, not the unfurl thumbnail', () => {
+      // Two different pictures on purpose. `og:image` is a 1200x630 JPEG sized
+      // for a chat thumbnail; this is a whole 1080x1920 story. Sending the
+      // thumbnail to Instagram leaves Instagram to decide what surrounds it,
+      // which is the thing that cannot be changed afterwards.
+      const payload = buildPostShare({ id: 'p1', text: 'x' }, author);
+      expect(payload.cardImageUrl).toBe(
+        'http://localhost:3000/api/share/post/p1/story.png',
+      );
+      expect(payload.cardImageUrl).not.toContain('image.jpg');
+      expect(payload.cardFileName).toMatch(/\.png$/);
+    });
+
+    it('is absent when there is no post to draw', () => {
+      expect(buildPostShare({}, author).cardImageUrl).toBe('');
+    });
+
+    it('is offered for posts only', () => {
+      // A profile, community or activity has no rendered card, so there is
+      // nothing to hand over as a file and the link is the whole payload.
+      expect(buildProfileShare({ username: 'a' }).cardImageUrl).toBeUndefined();
+      expect(buildCommunityShare({ id: 'c' }).cardImageUrl).toBeUndefined();
+      expect(buildActivityShare({ id: 'a' }).cardImageUrl).toBeUndefined();
+    });
+  });
+
   describe('the other shareable things', () => {
     it('builds a profile payload', () => {
       const payload = buildProfileShare({

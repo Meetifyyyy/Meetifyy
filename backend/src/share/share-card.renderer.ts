@@ -65,7 +65,7 @@ export class ShareCardRenderer {
    * throw away every cached card for a release that did not touch this file,
    * which is the cost the cache exists to avoid.
    */
-  static readonly REVISION = 12;
+  static readonly REVISION = 13;
 
   /** Shared with the site card. See the class comment. */
   private static readonly BG = '#FDFDFD';
@@ -121,6 +121,43 @@ export class ShareCardRenderer {
   };
 
   /**
+   * How much bigger the shareable variant is drawn.
+   *
+   * The unfurl card is displayed as a thumbnail in a chat list; the shareable
+   * one is posted to an Instagram story and looked at full-screen on a phone
+   * held at arm's length, where 1200x630 upscaled to a 1080-wide canvas is
+   * visibly soft on the type. Everything is composed at this multiple — the
+   * SVG is vector so it rasterises sharper rather than larger, and the
+   * photographs are cropped from the original at the bigger size rather than
+   * being scaled up afterwards.
+   *
+   * Two, not three: at 3x a photographic card runs past what is comfortable to
+   * hand to another application, and the difference is invisible on a phone.
+   */
+  private static readonly SHARE_SCALE = 2;
+
+  /**
+   * The corner radius of the shareable variant, at 1x.
+   *
+   * ONLY the shareable variant. An unfurl card must have square corners: every
+   * platform draws it inside its own rounded container, so corners rounded here
+   * would show as four hard notches of the wrong colour against whatever that
+   * container's background is — and in a dark theme those notches are white.
+   * A story has no container, so a card with square corners reads as a
+   * screenshot and a rounded one reads as a card.
+   */
+  private static readonly SHARE_RADIUS = 28;
+
+  /**
+   * The story canvas. 9:16 at the resolution Instagram actually stores.
+   *
+   * Matching it exactly is what stops Instagram making its own decision about
+   * what surrounds the image — see `renderStory`.
+   */
+  static readonly STORY_WIDTH = 1080;
+  static readonly STORY_HEIGHT = 1920;
+
+  /**
    * Renders the card for one post as JPEG bytes.
    *
    * Never throws for a post it cannot draw fully. Every external asset is
@@ -128,7 +165,11 @@ export class ShareCardRenderer {
    * the worst outcome is a plainer card — not a 500 on a link somebody has
    * already sent to a group chat.
    */
-  async render(post: PublicSharePost): Promise<Buffer> {
+  async render(
+    post: PublicSharePost,
+    variant: CardVariant = 'unfurl',
+  ): Promise<Buffer> {
+    const scale = variant === 'story' ? ShareCardRenderer.SHARE_SCALE : 1;
     // Every download starts together and none of them can block another. They
     // are the only slow part of this function, and an unfurler is holding the
     // connection open for all of it — so a gallery of three costs one round
@@ -164,49 +205,150 @@ export class ShareCardRenderer {
     const showsMedia = layout === 'split' || layout === 'full';
 
     if (showsMedia) {
-      const panel = await this.renderMediaPanel(tiles, post, layout);
+      const panel = await this.renderMediaPanel(tiles, post, layout, scale);
       // Files that decode nowhere are not worth failing the card for: fall
       // back to the layout that needs no picture at all.
       if (!panel) {
-        return this.render({ ...post, image: null, gallery: [] });
+        return this.render({ ...post, image: null, gallery: [] }, variant);
       }
       composites.push(panel);
     }
 
     if (avatar) {
       const size = layout === 'full' ? 88 : layout === 'split' ? 88 : 104;
+      // Cropped AT the final size rather than cropped small and scaled up:
+      // the whole point of the larger variant is that nothing is upscaled.
       const circle = await renderCircle(
         avatar,
-        size,
+        size * scale,
         layout === 'full' ? 'light' : 'dark',
       );
       if (circle) {
         composites.push({
           input: circle,
-          left: 76,
-          top: avatarTop(layout, size),
+          left: 76 * scale,
+          top: avatarTop(layout, size) * scale,
         });
       }
     }
 
     composites.push({
-      input: Buffer.from(this.renderLayer(post, layout, Boolean(avatar))),
+      input: Buffer.from(
+        atScale(this.renderLayer(post, layout, Boolean(avatar)), scale),
+      ),
       left: 0,
       top: 0,
     });
 
-    return (
-      sharp(Buffer.from(this.renderPlate(layout)))
-        .composite(composites)
-        // Not optional, for two reasons. JPEG has no alpha channel at all, so
-        // without this the transparent parts of the composited layers would be
-        // undefined rather than the card colour. And an OG image WITH alpha is
-        // composited onto whatever the unfurler puts behind it, which is black
-        // in Slack's dark theme.
-        .flatten({ background: ShareCardRenderer.BG })
-        .jpeg(ShareCardRenderer.ENCODE)
-        .toBuffer()
+    const composed = sharp(
+      Buffer.from(atScale(this.renderPlate(layout), scale)),
+    ).composite(composites);
+
+    if (variant === 'unfurl') {
+      return (
+        composed
+          // Not optional, for two reasons. JPEG has no alpha channel at all, so
+          // without this the transparent parts of the composited layers would
+          // be undefined rather than the card colour. And an OG image WITH
+          // alpha is composited onto whatever the unfurler puts behind it,
+          // which is black in Slack's dark theme.
+          .flatten({ background: ShareCardRenderer.BG })
+          .jpeg(ShareCardRenderer.ENCODE)
+          .toBuffer()
+      );
+    }
+
+    // The story variant. The card is rounded and then set onto a whole
+    // 1080x1920 canvas — see `renderStory` for why the canvas is ours.
+    const rounded = await sharp(await composed.png().toBuffer())
+      .composite([
+        {
+          input: Buffer.from(this.cornerMask(scale)),
+          // `dest-in` keeps the card only where the mask is opaque. Drawing
+          // rounded corners ON TOP instead would need to know what colour is
+          // behind them, which is the story background.
+          blend: 'dest-in',
+        },
+      ])
+      .png()
+      .toBuffer();
+
+    return this.renderStory(rounded);
+  }
+
+  /**
+   * Sets the card on a finished 1080x1920 story canvas.
+   *
+   * WHY WE DRAW THE BACKGROUND AND NOT INSTAGRAM
+   * Handing Instagram a landscape image leaves it to decide what surrounds it
+   * on a 9:16 screen, and its answer depends on how the image arrived: it may
+   * fill the canvas by cropping, or letterbox it against a blurred copy of
+   * itself. Neither is controllable from here — the background colour picker
+   * is not offered for media that arrives through the share sheet, which is
+   * exactly the reported symptom.
+   *
+   * So there is nothing to control. A story-shaped image fills the canvas
+   * exactly, which means no cropping, no blurred bars, no picker to go looking
+   * for, and a background that is deliberately designed rather than whatever
+   * Instagram inferred. This is what every app that shares well to stories
+   * does.
+   *
+   * The card is drawn at twice this width and scaled DOWN into place, so its
+   * type is resampled rather than stretched.
+   */
+  private async renderStory(card: Buffer): Promise<Buffer> {
+    const { STORY_WIDTH, STORY_HEIGHT, BRAND } = ShareCardRenderer;
+
+    const cardWidth = STORY_WIDTH - STORY_MARGIN * 2;
+    const cardHeight = Math.round(
+      (cardWidth / ShareCardRenderer.WIDTH) * ShareCardRenderer.HEIGHT,
     );
+
+    const scaled = await sharp(card)
+      .resize(cardWidth, cardHeight, { fit: 'fill' })
+      .png()
+      .toBuffer();
+
+    const wordmarkWidth = 300;
+
+    // Optically centred: a block on the exact midpoint of a tall canvas reads
+    // as low. It also has to clear Instagram's own chrome — the author's name
+    // sits over the top of a story and the reply bar over the bottom — and at
+    // this position the card and its caption are comfortably inside both.
+    const cardTop = Math.round((STORY_HEIGHT - cardHeight) / 2) - 40;
+
+    const backdrop = `<svg xmlns="http://www.w3.org/2000/svg" width="${STORY_WIDTH}" height="${STORY_HEIGHT}">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0.3" y2="1">
+      <stop offset="0%" stop-color="#1D4ED8"/>
+      <stop offset="55%" stop-color="#132A63"/>
+      <stop offset="100%" stop-color="#080D1A"/>
+    </linearGradient>
+    <radialGradient id="lift" cx="0.5" cy="0.42" r="0.7">
+      <stop offset="0%" stop-color="${BRAND}" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="${BRAND}" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="${STORY_WIDTH}" height="${STORY_HEIGHT}" fill="url(#sky)"/>
+  <rect width="${STORY_WIDTH}" height="${STORY_HEIGHT}" fill="url(#lift)"/>
+  <rect x="${STORY_MARGIN}" y="${cardTop + 16}" width="${cardWidth}" height="${cardHeight}" rx="${ShareCardRenderer.SHARE_RADIUS}" fill="#000000" fill-opacity="0.28"/>
+  <g transform="translate(${(STORY_WIDTH - wordmarkWidth) / 2} ${cardTop - 190}) scale(${wordmarkWidth / this.wordmark.width})">${this.wordmark.light}</g>
+  <text x="${STORY_WIDTH / 2}" y="${cardTop + cardHeight + 96}" text-anchor="middle" font-family="${ShareCardRenderer.FONT}" font-size="34" font-weight="600" fill="#FFFFFF" fill-opacity="0.82">${escapeXml(STORY_CAPTION)}</text>
+  <text x="${STORY_WIDTH / 2}" y="${cardTop + cardHeight + 148}" text-anchor="middle" font-family="${ShareCardRenderer.FONT}" font-size="30" font-weight="500" fill="#FFFFFF" fill-opacity="0.55">${escapeXml(SITE_HOST)}</text>
+</svg>`;
+
+    return sharp(Buffer.from(backdrop))
+      .composite([{ input: scaled, left: STORY_MARGIN, top: cardTop }])
+      .png({ compressionLevel: 9 })
+      .toBuffer();
+  }
+
+  /** A full-canvas rounded rectangle, used as the shareable card's alpha. */
+  private cornerMask(scale: number): string {
+    const w = ShareCardRenderer.WIDTH * scale;
+    const h = ShareCardRenderer.HEIGHT * scale;
+    const r = ShareCardRenderer.SHARE_RADIUS * scale;
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}"><rect width="${w}" height="${h}" rx="${r}" ry="${r}" fill="#fff"/></svg>`;
   }
 
   /** Dispatches to the composition this layout uses. */
@@ -444,18 +586,28 @@ export class ShareCardRenderer {
     tiles: Buffer[],
     post: PublicSharePost,
     layout: Layout,
+    scale = 1,
   ): Promise<OverlayOptions | null> {
     const { WIDTH, HEIGHT, MEDIA_X } = ShareCardRenderer;
     const left = layout === 'full' ? 0 : MEDIA_X;
     const panelWidth = WIDTH - left;
 
+    // Geometry stays in 1x units — every layout number in this file is written
+    // against a 1200x630 canvas and should stay readable that way — and only
+    // the pixels each tile is cut to are multiplied.
     const rects = mosaicTiles(tiles.length, panelWidth, HEIGHT);
     if (rects.length === 0) return null;
 
     const cut = await Promise.all(
       rects.map(async (rect, index) => {
-        const cropped = await this.cropTile(tiles[index], rect.w, rect.h);
-        return cropped ? { input: cropped, left: rect.x, top: rect.y } : null;
+        const cropped = await this.cropTile(
+          tiles[index],
+          rect.w * scale,
+          rect.h * scale,
+        );
+        return cropped
+          ? { input: cropped, left: rect.x * scale, top: rect.y * scale }
+          : null;
       }),
     );
 
@@ -467,8 +619,8 @@ export class ShareCardRenderer {
     try {
       const composed = await sharp({
         create: {
-          width: panelWidth,
-          height: HEIGHT,
+          width: panelWidth * scale,
+          height: HEIGHT * scale,
           channels: 4,
           // The gutter colour, showing through between tiles.
           background: { r: 253, g: 253, b: 253, alpha: 1 },
@@ -476,13 +628,19 @@ export class ShareCardRenderer {
       })
         .composite([
           ...usable,
-          { input: this.panelScrim(panelWidth, layout), left: 0, top: 0 },
-          ...this.panelBadges(post, panelWidth, tiles.length),
+          {
+            input: Buffer.from(
+              atScale(this.panelScrim(panelWidth, layout), scale),
+            ),
+            left: 0,
+            top: 0,
+          },
+          ...this.panelBadges(post, panelWidth, tiles.length, scale),
         ])
         .png()
         .toBuffer();
 
-      return { input: composed, left, top: 0 };
+      return { input: composed, left: left * scale, top: 0 };
     } catch (error) {
       this.logger.warn(`share.card_panel_failed: ${(error as Error)?.message}`);
       return null;
@@ -540,11 +698,10 @@ export class ShareCardRenderer {
    * sky as well as a dark one. It is a readability floor, not decoration — the
    * top two thirds are untouched.
    */
-  private panelScrim(panelWidth: number, layout: Layout): Buffer {
+  private panelScrim(panelWidth: number, layout: Layout): string {
     const { HEIGHT } = ShareCardRenderer;
-    return Buffer.from(
-      layout === 'full'
-        ? `<svg xmlns="http://www.w3.org/2000/svg" width="${panelWidth}" height="${HEIGHT}">
+    return layout === 'full'
+      ? `<svg xmlns="http://www.w3.org/2000/svg" width="${panelWidth}" height="${HEIGHT}">
   <defs>
     <linearGradient id="base" x1="0" y1="0" x2="0" y2="1">
       <stop offset="42%" stop-color="#050B16" stop-opacity="0"/>
@@ -554,7 +711,7 @@ export class ShareCardRenderer {
   </defs>
   <rect width="${panelWidth}" height="${HEIGHT}" fill="url(#base)"/>
 </svg>`
-        : `<svg xmlns="http://www.w3.org/2000/svg" width="${panelWidth}" height="${HEIGHT}">
+      : `<svg xmlns="http://www.w3.org/2000/svg" width="${panelWidth}" height="${HEIGHT}">
   <defs>
     <linearGradient id="seam" x1="0" y1="0" x2="1" y2="0">
       <stop offset="0%" stop-color="#0B1220" stop-opacity="0.16"/>
@@ -562,8 +719,7 @@ export class ShareCardRenderer {
     </linearGradient>
   </defs>
   <rect width="${panelWidth}" height="${HEIGHT}" fill="url(#seam)"/>
-</svg>`,
-    );
+</svg>`;
   }
 
   /**
@@ -579,6 +735,7 @@ export class ShareCardRenderer {
     post: PublicSharePost,
     panelWidth: number,
     shownTiles: number,
+    scale = 1,
   ): OverlayOptions[] {
     const { HEIGHT, FONT } = ShareCardRenderer;
     const marks: string[] = [];
@@ -614,7 +771,10 @@ export class ShareCardRenderer {
     return [
       {
         input: Buffer.from(
-          `<svg xmlns="http://www.w3.org/2000/svg" width="${panelWidth}" height="${HEIGHT}">${marks.join('\n')}</svg>`,
+          atScale(
+            `<svg xmlns="http://www.w3.org/2000/svg" width="${panelWidth}" height="${HEIGHT}">${marks.join('\n')}</svg>`,
+            scale,
+          ),
         ),
         left: 0,
         top: 0,
@@ -954,6 +1114,56 @@ const SITE_HOST = (() => {
 })();
 
 /**
+ * Redraws an SVG at a multiple of its authored size.
+ *
+ * Every layout number in this file is written against a 1200x630 canvas, and
+ * that is worth keeping: geometry expressed in the size you are looking at is
+ * readable, and geometry multiplied by a variable at every use site is not.
+ * So the coordinates stay as they are and the SVG is given a viewBox instead —
+ * librsvg then rasterises the same vector description into a larger bitmap,
+ * which is genuinely sharper rather than merely bigger. Scaling the finished
+ * raster afterwards would just be an upscale.
+ *
+ * Returns the source untouched at 1x, so the unfurl path pays nothing.
+ */
+function atScale(svg: string, scale: number): string {
+  if (scale === 1) return svg;
+
+  const width = Number(svg.match(/\bwidth="(\d+(?:\.\d+)?)"/)?.[1]);
+  const height = Number(svg.match(/\bheight="(\d+(?:\.\d+)?)"/)?.[1]);
+  // A layer this cannot measure is left alone rather than guessed at: a wrong
+  // viewBox silently crops the layer, which is worse than a soft one.
+  if (!Number.isFinite(width) || !Number.isFinite(height)) return svg;
+
+  return svg
+    .replace(
+      /<svg\b([^>]*)>/,
+      `<svg$1 viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">`,
+    )
+    .replace(/\bwidth="\d+(?:\.\d+)?"/, `width="${Math.round(width * scale)}"`)
+    .replace(
+      /\bheight="\d+(?:\.\d+)?"/,
+      `height="${Math.round(height * scale)}"`,
+    );
+}
+
+/**
+ * Who the card is being drawn for.
+ *
+ *   unfurl — the `og:image` a crawler fetches. 1200x630 JPEG, square corners,
+ *            flattened. Sized and encoded for a chat thumbnail, and small
+ *            enough that WhatsApp still shows it large.
+ *   story  — the file handed to Instagram. A whole 1080x1920 story canvas with
+ *            the card composed onto a background we control.
+ *
+ * Two variants rather than one compromise: the constraints genuinely conflict.
+ * A file big enough to look sharp on a story is big enough for WhatsApp to
+ * downgrade the preview, and a 9:16 canvas is the wrong shape for a chat
+ * thumbnail entirely.
+ */
+export type CardVariant = 'unfurl' | 'story';
+
+/**
  * Which of the four compositions a card uses. See `render`.
  */
 type Layout = 'text' | 'split' | 'full' | 'poll';
@@ -982,6 +1192,12 @@ const POLL_MAX_ROWS = 4;
 
 /** The question never takes more than this, however long it is. */
 const POLL_MAX_QUESTION_LINES = 3;
+
+/** Side margin of the card on the story canvas. */
+const STORY_MARGIN = 84;
+
+/** The one line of prose on the story, beneath the card. */
+const STORY_CAPTION = 'Tap the link to open this post';
 
 /**
  * Where each picture sits inside the media panel.

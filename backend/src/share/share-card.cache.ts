@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { RedisService } from '../redis/redis.service';
-import { ShareCardRenderer } from './share-card.renderer';
+import { ShareCardRenderer, type CardVariant } from './share-card.renderer';
 import type { PublicSharePost } from './share-preview.service';
 import { SharePreviewService } from './share-preview.service';
 
@@ -62,8 +62,11 @@ export class ShareCardCache {
     private readonly renderer: ShareCardRenderer,
   ) {}
 
-  async get(post: PublicSharePost): Promise<Buffer> {
-    const key = ShareCardCache.keyFor(post);
+  async get(
+    post: PublicSharePost,
+    variant: CardVariant = 'unfurl',
+  ): Promise<Buffer> {
+    const key = ShareCardCache.keyFor(post, variant);
     const client = this.redis.getClient();
 
     if (client) {
@@ -91,7 +94,7 @@ export class ShareCardCache {
           // Fall through and render.
         }
       }
-      return this.renderer.render(post);
+      return this.renderer.render(post, variant);
     });
 
     if (client && card.length <= ShareCardCache.MAX_CACHED_BYTES) {
@@ -107,7 +110,14 @@ export class ShareCardCache {
     return card;
   }
 
-  static keyFor(post: PublicSharePost): string {
-    return `share:card:v${ShareCardRenderer.REVISION}:${post.id}:${SharePreviewService.versionToken(post)}`;
+  static keyFor(
+    post: PublicSharePost,
+    variant: CardVariant = 'unfurl',
+  ): string {
+    // The variant is part of the key, not a suffix on the value: the two are
+    // different images of the same post — different size, format and corners —
+    // and one served in place of the other is a JPEG where a transparent PNG
+    // was wanted, or a 2400px file in a chat thumbnail.
+    return `share:card:v${ShareCardRenderer.REVISION}:${variant}:${post.id}:${SharePreviewService.versionToken(post)}`;
   }
 }

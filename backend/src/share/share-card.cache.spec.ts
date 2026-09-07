@@ -31,6 +31,19 @@ describe('ShareCardCache — the key', () => {
     expect(ShareCardCache.keyFor(post())).toBe(ShareCardCache.keyFor(post()));
   });
 
+  it('separates the two variants of the same post', () => {
+    // They are different images — 1200x630 flattened JPEG against a 2400x1260
+    // PNG with transparent corners. One served in place of the other is either
+    // a chat thumbnail four times too big or a story card with a white box
+    // where the rounding should be.
+    expect(ShareCardCache.keyFor(post(), 'unfurl')).not.toBe(
+      ShareCardCache.keyFor(post(), 'story'),
+    );
+    expect(ShareCardCache.keyFor(post())).toBe(
+      ShareCardCache.keyFor(post(), 'unfurl'),
+    );
+  });
+
   it('separates posts', () => {
     expect(ShareCardCache.keyFor(post())).not.toBe(
       ShareCardCache.keyFor(
