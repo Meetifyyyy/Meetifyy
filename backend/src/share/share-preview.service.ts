@@ -181,7 +181,6 @@ export class SharePreviewService {
       mediaKind: gallery.kind,
       imageCount: gallery.imageCount,
       videoCount: gallery.videoCount,
-      mediaCount: post._count.media,
       isPoll: post._count.pollOptions > 0,
       pollOptions,
       pollOptionCount: post._count.pollOptions,
@@ -472,8 +471,6 @@ export interface PublicSharePost {
   imageCount: number;
   /** Publicly servable videos on the post. */
   videoCount: number;
-  /** Every attachment, whatever its kind, so the card can say "+3". */
-  mediaCount: number;
 
   isPoll: boolean;
   /** The poll's options, in ballot order, capped. Never their vote counts. */

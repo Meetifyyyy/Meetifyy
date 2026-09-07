@@ -415,6 +415,31 @@ describe('share routes', () => {
         height: 630,
       });
     });
+
+    /**
+     * The same shapes through the OTHER renderer.
+     *
+     * `/story.jpg` is not `/image.jpg` scaled: it composes the card onto a
+     * 1080x1920 backdrop and flattens it, and only this endpoint's output is
+     * ever handed to Instagram as a file. It had been exercised for the default
+     * post alone, so a gallery, a video or a poll could have thrown here while
+     * every test stayed green.
+     */
+    it.each(shapes)('renders %s as a story canvas', async (_label, over) => {
+      findFirst.mockResolvedValue(postRow(over));
+      const res = await request(app.getHttpServer())
+        .get(`/api/share/post/${POST_ID}/story.jpg`)
+        .responseType('blob')
+        .expect(200);
+
+      const body = res.body as Buffer;
+      expect(body.subarray(0, 2)).toEqual(Buffer.from([0xff, 0xd8]));
+      expect(jpegSize(body)).toEqual({ width: 1080, height: 1920 });
+      // Every shape has to stay small enough to finish downloading before
+      // somebody taps — a card that loses that race is a link, and a link is
+      // Instagram Direct and nothing else.
+      expect(body.length).toBeLessThan(250 * 1024);
+    });
   });
 });
 

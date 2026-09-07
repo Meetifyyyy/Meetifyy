@@ -168,9 +168,6 @@ const X_TEXT_LIMIT = 280 - 23 - 1;
 /** Reddit rejects a submission whose title is over 300 characters. */
 const REDDIT_TITLE_LIMIT = 300;
 
-/** The targets that open a web page, keyed by id. */
-export const WEB_SHARE_TARGETS = new Set(['whatsapp', 'x', 'linkedin', 'reddit']);
-
 /**
  * Truncates on a word boundary, because a share composer showing a word cut in
  * half reads as a bug in Meetifyy rather than as a platform limit.

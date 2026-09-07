@@ -216,6 +216,30 @@ describe('<ShareTargets>', () => {
       await screen.findByText(/link sticker/i);
     });
 
+    it('shares without waiting on the clipboard first', async () => {
+      // THE regression, and the reason "Add to story" kept not appearing.
+      //
+      // The handler used to `await copyToClipboard(url)` and only then call
+      // `navigator.share`. `clipboard.writeText` settles in a LATER TASK, by
+      // which point Safari has spent the tap's transient activation — so the
+      // share was refused, the handler fell through to sharing the URL, and
+      // Instagram offered Direct and nothing else.
+      //
+      // Reproduced by a clipboard write that never settles: the share must
+      // still happen, with the file.
+      withFileSharing();
+      navigator.clipboard.writeText = vi.fn().mockReturnValue(new Promise(() => {}));
+      render(<ShareTargets payload={cardPayload} />);
+      await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+
+      fireEvent.click(screen.getByRole('button', { name: 'Instagram' }));
+
+      await waitFor(() => expect(navigator.share).toHaveBeenCalled());
+      expect(navigator.share.mock.calls[0][0].files).toHaveLength(1);
+      // The write was still ISSUED before the sheet — it just is not waited on.
+      expect(navigator.clipboard.writeText).toHaveBeenCalledWith(payload.url);
+    });
+
     it('waits for a slow card instead of quietly sending a link', async () => {
       // THE regression. The card is normally downloaded before anybody taps,
       // but on mobile data it is not — and the first version, finding no card
@@ -313,33 +337,37 @@ describe('<ShareTargets>', () => {
     });
 
     it('describes what the button will actually do on this device', () => {
-      const { unmount } = render(<ShareTargets payload={payload} />);
-      expect(screen.getByRole('button', { name: 'Instagram' }).title).toMatch(
-        /cannot be sent a link/i,
-      );
+      const hint = () => screen.getByRole('button', { name: 'Instagram' }).title;
+
+      const { unmount } = render(<ShareTargets payload={cardPayload} />);
+      expect(hint()).toMatch(/cannot be sent a link/i);
       unmount();
 
-      // File sharing available: the card goes over as an image, so Story is on
-      // the table and the hint says so.
-      navigator.share = vi.fn();
-      navigator.canShare = vi.fn().mockReturnValue(true);
+      // File sharing available AND a card to send: the card goes over as an
+      // image, so Story is on the table and the hint says so.
+      withFileSharing();
+      const withCard = render(<ShareTargets payload={cardPayload} />);
+      expect(hint()).toMatch(/ready-made story image/i);
+      withCard.unmount();
+
+      // Same device, but a profile, community or activity — none of which has
+      // a rendered card. Promising a ready-made image here would be a promise
+      // nothing can keep, so it falls back to the copy hint.
       render(<ShareTargets payload={payload} />);
-      expect(screen.getByRole('button', { name: 'Instagram' }).title).toMatch(
-        /story/i,
-      );
+      expect(hint()).toMatch(/cannot be sent a link/i);
     });
   });
 
   describe('the native share sheet', () => {
     it('is offered only where the browser has one', () => {
       const { unmount } = render(<ShareTargets payload={payload} />);
-      expect(screen.queryByRole('button', { name: /Share via/ })).toBeNull();
+      expect(screen.queryByRole('button', { name: /Share link via/ })).toBeNull();
       unmount();
 
       navigator.share = vi.fn().mockResolvedValue(undefined);
       navigator.canShare = vi.fn().mockReturnValue(true);
       render(<ShareTargets payload={payload} />);
-      expect(screen.getByRole('button', { name: /Share via/ })).toBeTruthy();
+      expect(screen.getByRole('button', { name: /Share link via/ })).toBeTruthy();
     });
 
     it('stays quiet when the user closes the sheet', async () => {
@@ -350,7 +378,7 @@ describe('<ShareTargets>', () => {
       const onShared = vi.fn();
 
       render(<ShareTargets payload={payload} onShared={onShared} />);
-      fireEvent.click(screen.getByRole('button', { name: /Share via/ }));
+      fireEvent.click(screen.getByRole('button', { name: /Share link via/ }));
 
       await waitFor(() => expect(navigator.share).toHaveBeenCalled());
       expect(onShared).not.toHaveBeenCalled();

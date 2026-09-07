@@ -82,6 +82,9 @@ export default function ShareTargets({ payload, onShared }) {
   const [nativeAvailable] = useState(() => canNativeShare(payload));
   const [fileShareAvailable] = useState(() => canShareFiles(CARD_MIME));
 
+  /** Whether this dialog can hand over a card at all. */
+  const cardAvailable = fileShareAvailable && Boolean(payload?.cardImageUrl);
+
   /**
    * The rendered card, fetched while the dialog is merely open.
    *
@@ -103,6 +106,18 @@ export default function ShareTargets({ payload, onShared }) {
    */
   const cardRef = useRef(null);
 
+  /**
+   * The same card once it has resolved, so the common path awaits NOTHING.
+   *
+   * `await` on an already-settled promise still defers to a microtask, and a
+   * tap handler that reaches `navigator.share` a turn later is at the mercy of
+   * how each browser accounts for transient activation. When the download has
+   * finished — which it has, in every case but a tap within the first second —
+   * this ref lets the handler call `share` synchronously, which no browser
+   * argues with.
+   */
+  const cardFileRef = useRef(null);
+
   useEffect(
     () => () => {
       if (timerRef.current) clearTimeout(timerRef.current);
@@ -114,14 +129,22 @@ export default function ShareTargets({ payload, onShared }) {
     // Only where a File can actually be shared, and only for the things that
     // have a card. Everywhere else this would be a wasted download of an image
     // nothing can use.
-    if (!fileShareAvailable || !payload?.cardImageUrl) return undefined;
+    if (!cardAvailable) return undefined;
 
-    cardRef.current = fetchShareCard(payload.cardImageUrl, payload.cardFileName);
+    const pending = fetchShareCard(payload.cardImageUrl, payload.cardFileName);
+    cardRef.current = pending;
+    cardFileRef.current = null;
+    pending.then((file) => {
+      // Guard against a payload that changed while this was in flight: the
+      // dialog may now be sharing a different post.
+      if (cardRef.current === pending) cardFileRef.current = file;
+    });
 
     return () => {
       cardRef.current = null;
+      cardFileRef.current = null;
     };
-  }, [fileShareAvailable, payload?.cardImageUrl, payload?.cardFileName]);
+  }, [cardAvailable, payload?.cardImageUrl, payload?.cardFileName]);
 
   const announce = useCallback((targetId, tone, label, announcement) => {
     setFeedback({ targetId, tone, label, announcement: announcement ?? label });
@@ -173,19 +196,28 @@ export default function ShareTargets({ payload, onShared }) {
         // before anybody taps, but on a slow connection it is not, and falling
         // back to the link there produces precisely the broken behaviour with
         // no explanation. So the tap waits, and says that it is waiting.
-        let card = null;
-        if (cardRef.current) {
+        let card = cardFileRef.current;
+        if (!card && cardRef.current) {
           announce('instagram', 'busy', 'Preparing…');
           card = await cardRef.current;
         }
 
         if (card) {
-          // Clipboard first, while the document still has focus: the share
-          // sheet takes it, and the Clipboard API refuses to write from an
-          // unfocused document. A story showing the card still needs a link
-          // sticker, and this is where that link comes from.
-          const copied = await copyToClipboard(payload.url);
+          // The copy is STARTED here and awaited afterwards, never before the
+          // share.
+          //
+          // It has to start here because the Clipboard API refuses to write
+          // from an unfocused document and the share sheet takes focus — a
+          // story showing the card still needs a link sticker, and this is
+          // where that link comes from. But awaiting it first was the bug:
+          // `clipboard.writeText` settles in a later task, by which point
+          // Safari has spent the tap's transient activation, so `share` threw
+          // NotAllowedError, the handler fell through to sharing the URL, and
+          // Instagram offered Direct and nothing else. Which is exactly the
+          // symptom this whole branch exists to remove.
+          const copying = copyToClipboard(payload.url);
           const outcome = await shareFiles([card]);
+          const copied = await copying.catch(() => false);
 
           if (outcome === 'shared') {
             announce(
@@ -238,7 +270,13 @@ export default function ShareTargets({ payload, onShared }) {
       {nativeAvailable && (
         <button type="button" className={styles.native} onClick={handleNative}>
           <ShareIcon size={20} aria-hidden="true" />
-          <span>Share via…</span>
+          {/*
+            "link", explicitly. This button hands over the URL, so Instagram
+            shows Direct and nothing else — the Story option comes from the
+            Instagram tile below, which hands over the card as a file. Two
+            buttons that both said "Share" sent people to the wrong one.
+          */}
+          <span>Share link via…</span>
         </button>
       )}
 
@@ -265,12 +303,15 @@ export default function ShareTargets({ payload, onShared }) {
                 // name, so no aria-label is needed — and adding one would
                 // override the visible text, which breaks voice control.
                 data-target={target.id}
-                // Only Instagram carries one, and what it says depends on the
-                // device: a phone gets the share sheet, a desktop gets a copy,
-                // and describing the wrong one is worse than describing none.
+                // Only Instagram carries one, and what it says depends on
+                // what this dialog can actually do: the sheet hint promises a
+                // ready-made story image, which only a POST has. A profile,
+                // community or activity has no rendered card, so it gets the
+                // copy hint even on a phone that could share files — promising
+                // an image that does not exist is worse than promising none.
                 title={
                   target.needsHint
-                    ? fileShareAvailable
+                    ? cardAvailable
                       ? INSTAGRAM_HINT_SHEET
                       : INSTAGRAM_HINT_COPY
                     : undefined

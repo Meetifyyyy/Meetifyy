@@ -36,7 +36,6 @@ export function sharePost(
     mediaKind: 'none',
     imageCount: 0,
     videoCount: 0,
-    mediaCount: 0,
     isPoll: false,
     pollOptions: [],
     pollOptionCount: 0,
@@ -84,7 +83,6 @@ export function postWithImages(
     image: gallery[0] ?? null,
     mediaKind: count > 0 ? 'image' : 'none',
     imageCount: count,
-    mediaCount: count,
     ...over,
   });
 }
@@ -98,7 +96,6 @@ export function postWithVideos(
     video: count > 0 ? shareVideo() : null,
     mediaKind: count > 0 ? 'video' : 'none',
     videoCount: count,
-    mediaCount: count,
     ...over,
   });
 }

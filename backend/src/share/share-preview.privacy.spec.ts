@@ -342,9 +342,6 @@ describe('SharePreviewService — what may be shared publicly', () => {
       const post = await service.getPublicPost(POST_ID);
       expect(post?.image).toBeNull();
       expect(post?.imageCount).toBe(0);
-      // Still counted as an attachment: the card can say the post has one
-      // without showing something it may not show.
-      expect(post?.mediaCount).toBe(1);
     });
 
     it('never serves anything under the verification prefix', async () => {
@@ -479,7 +476,7 @@ describe('SharePreviewService — what may be shared publicly', () => {
         [postWithVideos(1), 'a video'],
         [postWithVideos(2), '2 videos'],
         [
-          postWithImages(3, { videoCount: 1, mediaCount: 4 }),
+          postWithImages(3, { videoCount: 1 }),
           'a video and photos',
         ],
         [pollPost(['A', 'B']), 'a poll'],

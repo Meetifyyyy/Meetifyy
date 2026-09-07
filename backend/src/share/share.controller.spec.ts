@@ -162,7 +162,6 @@ describe('ShareController', () => {
         'image',
         'imageCount',
         'isPoll',
-        'mediaCount',
         'mediaKind',
         'pollOptionCount',
         'pollOptions',

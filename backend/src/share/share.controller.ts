@@ -183,7 +183,6 @@ export class ShareController {
         mediaKind: post.mediaKind,
         imageCount: post.imageCount,
         videoCount: post.videoCount,
-        mediaCount: post.mediaCount,
         isPoll: post.isPoll,
         // Options without counts. A signed-out reader can see what is being
         // asked and what the choices are; how anyone voted needs an account,

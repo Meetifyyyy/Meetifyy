@@ -6,9 +6,6 @@ import {
   buildCommunityShare,
   buildPostShare,
   buildProfileShare,
-  countMedia,
-  describePost,
-  isPoll,
   postShareUrl,
 } from '../sharePayload';
 
@@ -39,194 +36,74 @@ describe('share payloads', () => {
     });
   });
 
-  describe('describing a post', () => {
-    const cases = [
-      ['text only', { text: 'hello' }, 'a post'],
-      ['one image', { imageCount: 1, videoCount: 0 }, 'a photo'],
-      ['a gallery', { imageCount: 4, videoCount: 0 }, '4 photos'],
-      ['one video', { imageCount: 0, videoCount: 1 }, 'a video'],
-      ['two videos', { imageCount: 0, videoCount: 2 }, '2 videos'],
-      ['mixed media', { imageCount: 3, videoCount: 1 }, 'a video and photos'],
-      ['a poll', { isPoll: true, imageCount: 2 }, 'a poll'],
-    ];
-
-    it.each(cases)('calls %s "%s"', (_label, post, expected) => {
-      expect(describePost(post)).toBe(expected);
-    });
-
-    it('matches the wording the server puts in og:title', () => {
-      // `SharePreviewService.noun` is the other half of this. They are two
-      // languages and cannot share a function, so they share their cases
-      // instead — the text a person sends and the title a crawler reads must
-      // describe the same thing.
-      expect(describePost({ imageCount: 4 })).toBe('4 photos');
-      expect(describePost({ videoCount: 1, imageCount: 2 })).toBe(
-        'a video and photos',
-      );
-    });
-  });
-
-  describe('counting media across the shapes this app uses', () => {
-    it('reads counts the server already computed', () => {
-      expect(countMedia({ imageCount: 3, videoCount: 1 })).toEqual({
-        images: 3,
-        videos: 1,
-      });
-    });
-
-    it('reads a feed row’s media array', () => {
-      expect(
-        countMedia({
-          media: [
-            { mimeType: 'image/webp', objectKey: 'posts/a.webp' },
-            { mimeType: 'video/mp4', objectKey: 'posts/b.mp4' },
-          ],
-        }),
-      ).toEqual({ images: 1, videos: 1 });
-    });
-
-    it('ignores derived thumbnails, as the server does', () => {
-      // A post attachment is stored as TWO Media rows — the original and a
-      // `_thumb.webp` variant — so counting both reports a gallery of two as
-      // four, and the share text says so.
-      expect(
-        countMedia({
-          media: [
-            { mimeType: 'image/webp', objectKey: 'posts/a.webp' },
-            { mimeType: 'image/webp', objectKey: 'posts/a_thumb.webp' },
-            { mimeType: 'image/webp', objectKey: 'posts/b.webp' },
-            { mimeType: 'image/webp', objectKey: 'posts/b_thumb.webp' },
-          ],
-        }),
-      ).toEqual({ images: 2, videos: 0 });
-    });
-
-    it('classifies by extension when there is no mime type', () => {
-      expect(countMedia({ media: ['posts/clip.mp4', 'posts/pic.webp'] })).toEqual({
-        images: 1,
-        videos: 1,
-      });
-    });
-
-    it('handles the oldest shape, a single image on the post', () => {
-      expect(countMedia({ mediaUrl: '/api/media/posts/x.webp' })).toEqual({
-        images: 1,
-        videos: 0,
-      });
-    });
-
-    it('returns zeroes rather than throwing on nothing at all', () => {
-      expect(countMedia(undefined)).toEqual({ images: 0, videos: 0 });
-      expect(countMedia({ media: null })).toEqual({ images: 0, videos: 0 });
-    });
-  });
-
-  describe('recognising a poll', () => {
-    it('accepts every shape the app passes around', () => {
-      expect(isPoll({ isPoll: true })).toBe(true);
-      expect(isPoll({ poll: { question: 'x' } })).toBe(true);
-      expect(isPoll({ pollOptions: [{ text: 'a' }] })).toBe(true);
-      expect(isPoll({ text: 'not a poll' })).toBe(false);
-      expect(isPoll({ pollOptions: [] })).toBe(false);
-    });
-  });
-
   describe('the text that travels with a link', () => {
-    it('leads with the post, not with boilerplate', () => {
+    /**
+     * One fixed line, and the same line in both fields.
+     *
+     * The payload used to lead with a teaser of the post body. That read well
+     * and republished somebody's writing into whatever thread the link was
+     * pasted into — a recipient who could not open the post still received its
+     * first 140 characters. The message now says whose post it is and nothing
+     * else; the card behind `url` is the only thing that shows content, and the
+     * server has already checked that post is public before drawing it.
+     */
+    it('is exactly "See a post by {username} on Meetifyy"', () => {
       const payload = buildPostShare(
         { id: 'p1', text: 'Badminton at six on the north court.' },
         author,
       );
-      expect(payload.text).toBe('Badminton at six on the north court.');
-      expect(payload.title).toContain('Alex Kuriakose');
+      expect(payload.text).toBe('See a post by alexk on Meetifyy');
+      expect(payload.title).toBe(payload.text);
     });
 
-    it('leads a poll with its question', () => {
-      const payload = buildPostShare(
+    it('says the same thing whatever the post is', () => {
+      // A gallery, a video, a poll and a bare caption all share one line: the
+      // shape of the post is the card's business, not the message's.
+      for (const post of [
+        { id: 'p1', text: '', imageCount: 3 },
+        { id: 'p1', text: '', videoCount: 1 },
         { id: 'p1', text: 'Where after exams?', isPoll: true },
-        author,
-      );
-      expect(payload.text).toBe('Where after exams?');
+        { id: 'p1', media: [{ mimeType: 'video/mp4' }, { mimeType: 'image/webp' }] },
+      ]) {
+        expect(buildPostShare(post, author).text).toBe(
+          'See a post by alexk on Meetifyy',
+        );
+      }
     });
 
-    it('says what a captionless post is', () => {
-      expect(
-        buildPostShare({ id: 'p1', text: '', imageCount: 3 }, author).text,
-      ).toBe('See 3 photos by Alex Kuriakose on Meetifyy.');
-      expect(
-        buildPostShare({ id: 'p1', text: '', videoCount: 1 }, author).text,
-      ).toBe('See a video by Alex Kuriakose on Meetifyy.');
-    });
-
-    it('never lets a link in the post hijack the preview', () => {
-      // WhatsApp previews the FIRST url in a message, and the caller appends
-      // the Meetifyy link after this text. A post whose body contains a link
-      // therefore unfurled THAT link instead of the post — the whole feature,
-      // defeated, on the platform it matters most on.
+    it('never carries a word of the post', () => {
       const payload = buildPostShare(
-        { id: 'p1', text: 'check this out https://meetifyy.app/home really cool' },
+        { id: 'p1', text: 'meet me behind the library at midnight' },
         author,
       );
-      expect(payload.text).toBe('check this out really cool');
-      expect(payload.text).not.toContain('http');
-    });
-
-    it('strips a bare host too, because that is how people paste links', () => {
-      expect(
-        buildPostShare({ id: 'p1', text: 'see meetifyy.app/home for more' }, author)
-          .text,
-      ).toBe('see for more');
-    });
-
-    it('falls back to a description when the post was only a link', () => {
-      // The exact post that surfaced this: its entire body is one URL, so after
-      // stripping there is nothing left to quote.
-      const payload = buildPostShare(
-        { id: 'p1', text: 'https://meetifyy.app/home' },
-        author,
-      );
-      expect(payload.text).toBe('See a post by Alex Kuriakose on Meetifyy.');
-      expect(payload.text).not.toContain('http');
+      expect(payload.text).not.toContain('library');
+      expect(payload.title).not.toContain('library');
     });
 
     it('leaves the canonical link as the only url in the message', () => {
+      // The old text quoted the body, so a post containing a link put that link
+      // FIRST — and WhatsApp previews the first url it finds. A fixed line
+      // cannot carry one at all.
       const payload = buildPostShare(
         { id: 'p1', text: 'look https://example.test/x and https://other.test/y' },
         author,
       );
-      // Reconstructs what the WhatsApp target actually sends.
       const message = `${payload.text} ${payload.url}`;
       expect(message.match(/https?:\/\//g)).toHaveLength(1);
       expect(message).toContain('/post/p1');
     });
 
-    it('leaves ordinary prose alone', () => {
-      // The stripping must not eat real writing. A missing space after a full
-      // stop is the shape most likely to be mistaken for a host, so the pattern
-      // requires a lowercase top-level domain and these survive.
-      for (const text of [
-        'Meet at 3.30 in room B.Bring your own racket',
-        'It cost 3.14 per hour. Worth it.',
-        'See you Tues.Also bring water',
-      ]) {
-        expect(buildPostShare({ id: 'p1', text }, author).text).toBe(text);
-      }
-    });
-
-    it('sends a teaser, never the whole post', () => {
-      const payload = buildPostShare(
-        { id: 'p1', text: 'word '.repeat(400) },
-        author,
-      );
-      expect(payload.text.length).toBeLessThanOrEqual(140);
-      expect(payload.text.endsWith('…')).toBe(true);
-    });
-
-    it('never shows "undefined" when the author is unknown', () => {
-      expect(buildPostShare({ id: 'p1' }, null).title).toContain('Someone');
+    it('names the handle, falling back through the shapes the app passes', () => {
       expect(
-        buildPostShare({ id: 'p1', author: { username: 'zed' } }, null).title,
-      ).toContain('zed');
+        buildPostShare({ id: 'p1', author: { username: 'zed' } }, null).text,
+      ).toBe('See a post by zed on Meetifyy');
+      // No username anywhere: a display name still beats the word `undefined`.
+      expect(buildPostShare({ id: 'p1' }, { displayName: 'Alex K' }).text).toBe(
+        'See a post by Alex K on Meetifyy',
+      );
+      expect(buildPostShare({ id: 'p1' }, null).text).toBe(
+        'See a post by someone on Meetifyy',
+      );
     });
   });
 
