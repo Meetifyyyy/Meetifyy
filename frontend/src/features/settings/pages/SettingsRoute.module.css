@@ -203,6 +203,26 @@
   color: var(--color-text-main);
 }
 
+/* Wraps the label and its optional one-line description so the two stack
+   without the row itself becoming a column — the icon and chevron stay
+   vertically centred against the pair. */
+.rowText {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* Only the root category rows carry one. It is what lets four entries replace
+   the ten that used to be listed: the row says what is inside without the user
+   having to open it to find out. */
+.rowDesc {
+  font-size: 0.76rem;
+  line-height: 1.35;
+  color: var(--color-text-muted);
+}
+
 .rowChev {
   color: var(--color-border-dark);
   display: flex;
@@ -1258,4 +1278,24 @@ input:checked + .slider::before {
 @keyframes scaleIn {
   from { transform: scale(0.96); opacity: 0; }
   to { transform: scale(1); opacity: 1; }
+}
+
+/* ── Danger zone ────────────────────────────────────────────────────────────
+   Destructive actions are separated from the settings above them rather than
+   listed among them: this group sits under its own heading, carries the danger
+   border, and is followed by a plain statement of what the action does. The
+   row itself already turns red through `.rowDanger`. */
+.dangerGroup {
+  border-color: rgba(var(--color-danger-rgb), 0.28);
+}
+
+:global([data-theme="dark"]) .dangerGroup {
+  border-color: rgba(var(--color-danger-rgb), 0.35);
+}
+
+.dangerNote {
+  margin: -4px var(--settings-gutter) 16px;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: var(--color-text-muted);
 }

@@ -23,7 +23,7 @@ import {
   Pencil, Lock, AlertCircle, Trash2,
   User, GraduationCap, Shield, Bell, HelpCircle, LogOut,
   ChevronRight, ChevronDown, Check, Ban,
-  LockKeyhole, Cookie,
+  LockKeyhole, Cookie, Sparkles,
 } from '@shared/components/icons';
 import wordmark from '@assets/images/meetifyy_wordmark.svg';
 import PasswordToggle, { usePasswordVisibility } from '@shared/components/forms/PasswordToggle';
@@ -39,14 +39,110 @@ import { useCookieConsent } from '@shared/context/CookieConsentContext';
 // keep the existing single-pane list/detail swap untouched.
 const LARGE_SCREEN_QUERY = '(min-width: 1024px)';
 
-// Every settings sub-page is addressable as /settings/:panel. The panel used to
-// live in component state seeded from location.state, which meant it could not
-// be linked to, did not survive a reload, and gave mobile Back nothing to pop —
-// so Back from a sub-page left Settings altogether.
-const SETTINGS_PANELS = ['profile', 'academic', 'security', 'privacy', 'notifications', 'interests', 'blocked-contacts', 'verification', 'help'];
+/**
+ * The Settings tree: what the root lists, and what sits under each entry.
+ *
+ * Two levels, and no more. The root used to render every individual setting at
+ * once — ten rows under seven headings, with Delete Account among them — so the
+ * page that exists to be scanned was the longest one in the product. Grouping
+ * moves the scanning to four entries and puts each setting one predictable step
+ * away: Settings -> category -> setting.
+ *
+ * Declared as data rather than markup because the same tree answers four
+ * separate questions: what the root renders, what a category renders, which
+ * URLs are valid, and which category a panel belongs to (which is where Back
+ * goes). Those drifted apart when they were four hand-maintained lists.
+ *
+ * An entry with `panel` and no `items` is a leaf: the root row opens the panel
+ * directly, because a category holding one setting is a step that exists only
+ * to be walked through. Notifications and Help & Support are the two.
+ *
+ * Nothing here is new. Every `panel` is a panel that already existed at the
+ * same URL, and every `action` is a handler that already existed on the root.
+ */
+export const SETTINGS_TREE = [
+  {
+    slug: 'account',
+    label: 'Account',
+    description: 'Profile, academic details, interests and verification',
+    icon: User,
+    items: [
+      { panel: 'profile', label: 'Edit Profile', icon: Pencil },
+      { panel: 'academic', label: 'Academic Info', icon: GraduationCap },
+      { panel: 'interests', label: 'Interests & Topics', icon: Sparkles },
+      { panel: 'verification', label: 'Account Verification', icon: Shield },
+    ],
+  },
+  {
+    slug: 'privacy-security',
+    label: 'Privacy & Security',
+    description: 'Who can see you, your password, and your data',
+    icon: LockKeyhole,
+    items: [
+      { panel: 'privacy', label: 'Privacy Settings', icon: LockKeyhole },
+      { panel: 'blocked-contacts', label: 'Blocked Contacts', icon: Ban },
+      { panel: 'security', label: 'Change Password', icon: Lock },
+      { action: 'cookies', label: 'Cookie Preferences', icon: Cookie },
+    ],
+    /**
+     * Kept apart from the settings above rather than listed among them, and off
+     * the root page entirely. Deleting an account is not a preference, and a
+     * row that ends the account should not sit one mis-tap away from the row
+     * that changes a display name. The flow it opens is untouched: the same
+     * confirmation, the same emailed code, the same 30-day countdown.
+     */
+    danger: [{ action: 'delete', label: 'Delete Account', icon: Trash2 }],
+  },
+  {
+    slug: 'notifications',
+    label: 'Notifications',
+    description: 'Email and push alerts',
+    icon: Bell,
+    panel: 'notifications',
+  },
+  {
+    slug: 'help',
+    label: 'Help & Support',
+    description: 'Answers, and a way to reach the team',
+    icon: HelpCircle,
+    panel: 'help',
+  },
+];
 
-// Old links and in-app callers that still say `account` mean the profile panel.
-const PANEL_ALIASES = { account: 'profile', 'help-and-support': 'help', 'help-support': 'help' };
+/** Category slugs — the entries that open a list rather than a settings panel. */
+export const SETTINGS_CATEGORIES = SETTINGS_TREE.filter((e) => e.items).map((e) => e.slug);
+
+/**
+ * Every settings sub-page is addressable as /settings/:panel. The panel used to
+ * live in component state seeded from location.state, which meant it could not
+ * be linked to, did not survive a reload, and gave mobile Back nothing to pop —
+ * so Back from a sub-page left Settings altogether.
+ *
+ * Derived from the tree so a panel cannot be reachable in the UI but rejected
+ * by the URL, or the reverse.
+ */
+export const SETTINGS_PANELS = SETTINGS_TREE.flatMap((entry) =>
+  entry.items
+    ? [...entry.items, ...(entry.danger || [])].filter((i) => i.panel).map((i) => i.panel)
+    : entry.panel
+      ? [entry.panel]
+      : [],
+);
+
+/** Which category a panel sits under — where closing that panel returns to. */
+export const PANEL_PARENT = SETTINGS_TREE.reduce((acc, entry) => {
+  if (!entry.items) return acc;
+  for (const item of [...entry.items, ...(entry.danger || [])]) {
+    if (item.panel) acc[item.panel] = entry.slug;
+  }
+  return acc;
+}, {});
+
+// Old links that named a panel differently. `account` is deliberately absent:
+// it is now a category of its own, and it opens with Edit Profile as its first
+// row. Everything that links into Settings from elsewhere in the app names
+// `profile` or `verification`, both unchanged.
+const PANEL_ALIASES = { 'help-and-support': 'help', 'help-support': 'help' };
 
 function useIsLargeScreen() {
   const [isLarge, setIsLarge] = useState(() => {
@@ -228,17 +324,44 @@ export default function SettingsRoute() {
   const goBack = useSmartBack();
   const { smartNavigate } = useSmartNavigation();
 
-  const canonicalPanel = PANEL_ALIASES[panelParam] || panelParam || null;
-  const isKnownPanel = !canonicalPanel || SETTINGS_PANELS.includes(canonicalPanel);
-  const activePanel = isKnownPanel ? canonicalPanel : null; // null = main list
+  // One route param serves both levels: /settings/:panel is a category slug or a
+  // settings panel. Keeping it as one segment means the existing route, every
+  // saved link and the SEO route table need no change, and a panel URL stays
+  // exactly as long as it was.
+  const canonicalSlug = PANEL_ALIASES[panelParam] || panelParam || null;
+  const activeCategory = canonicalSlug && SETTINGS_CATEGORIES.includes(canonicalSlug)
+    ? canonicalSlug
+    : null;
+  const isKnownPanel = SETTINGS_PANELS.includes(canonicalSlug);
+  const activePanel = isKnownPanel ? canonicalSlug : null; // null = category list
+
+  // The category whose list belongs behind whatever is open. A panel shows its
+  // parent's list, so the left pane on desktop keeps its context and Back has
+  // somewhere to go that is not the root.
+  const openCategory = activeCategory || (activePanel ? PANEL_PARENT[activePanel] : null) || null;
 
   const openPanel = (next) => navigate(`/settings/${next}`);
-  // Returning to the list is a move *up*, not a plain history pop: panels can be
-  // opened from inside one another (Privacy -> Blocked Contacts -> Privacy), so
-  // popping one entry would land on a sibling panel instead of the list.
-  // smartNavigate pops when the entry behind us really is the list, and replaces
-  // otherwise, so closing a panel always shows the list exactly once.
-  const closePanel = () => smartNavigate('/settings');
+
+  /**
+   * Closing is a move UP the tree, not a plain history pop.
+   *
+   * Panels can be reached from more than one place — Blocked Contacts from the
+   * Privacy panel as well as from its category — so popping one entry could
+   * land on a sibling rather than on the list above. `smartNavigate` pops when
+   * the entry behind us really is the destination and replaces otherwise, so
+   * closing always shows the parent exactly once whichever way it was opened.
+   */
+  const closePanel = () => {
+    const parent = activePanel ? PANEL_PARENT[activePanel] : null;
+    smartNavigate(parent ? `/settings/${parent}` : '/settings');
+  };
+
+  /** Leaving a category goes to the root; leaving a panel goes to its category. */
+  const goUp = () => {
+    if (activePanel) return closePanel();
+    if (activeCategory) return smartNavigate('/settings');
+    return goBack('/home');
+  };
 
   // Account & Profile state
   const [displayName, setDisplayName] = useState(currentUser?.displayName || '');
@@ -568,168 +691,74 @@ export default function SettingsRoute() {
   // (side by side), while mobile/tablet keeps swapping a single one in place,
   // exactly as before. Defining them once avoids duplicating any of this JSX
   // or the handlers/state it closes over.
+  /**
+   * Shared row markup, so a category row, a settings row and a destructive row
+   * cannot drift apart. `to` is only for highlighting the active panel in the
+   * desktop split, where the list stays on screen beside the detail.
+   */
+  const settingsRow = ({ key, icon: Icon, label, description, onClick, active, danger, chevron = true }) => (
+    <button
+      key={key}
+      className={`${styles.row} ${active ? styles.rowActive : ''} ${danger ? styles.rowDanger : ''}`}
+      onClick={onClick}
+    >
+      <span className={styles.rowIcon}>
+        <Icon size={20} strokeWidth={2} />
+      </span>
+      <span className={styles.rowText}>
+        <span className={styles.rowLabel}>{label}</span>
+        {description && <span className={styles.rowDesc}>{description}</span>}
+      </span>
+      {chevron && (
+        <span className={styles.rowChev}><ChevronRight size={18} strokeWidth={2.25} /></span>
+      )}
+    </button>
+  );
+
+  const runItemAction = (action) => {
+    if (action === 'cookies') return openCookiePreferences();
+    if (action === 'delete') return setShowDeleteConfirm(true);
+  };
+
+  /**
+   * The root: four entries and a way out.
+   *
+   * Everything else moved one level down. What stays here is what belongs on a
+   * page whose job is to be scanned — the categories, and Log Out, which is
+   * frequent, reversible and not a setting. Delete Account is deliberately not
+   * here; it lives under Privacy & Security, separated from the settings above
+   * it.
+   */
   const listPanel = (
     <div className={`${styles.body} animate-in`}>
-
-      {/* Profile & Academic section */}
-      <div className={styles.sectionLabel}>Profile &amp; Academic</div>
       <div className={styles.group}>
-        <button
-          className={`${styles.row} ${activePanel === 'profile' && isLargeScreen ? styles.rowActive : ''}`}
-          onClick={() => openPanel('profile')}
-        >
-          <span className={styles.rowIcon}>
-            <User size={20} strokeWidth={2} />
-          </span>
-          <span className={styles.rowLabel}>Edit Profile</span>
-          <span className={styles.rowChev}><ChevronRight size={18} strokeWidth={2.25} /></span>
-        </button>
-        <div className={styles.divider} />
-        <button
-          className={`${styles.row} ${activePanel === 'academic' && isLargeScreen ? styles.rowActive : ''}`}
-          onClick={() => openPanel('academic')}
-        >
-          <span className={styles.rowIcon}>
-            <GraduationCap size={20} strokeWidth={2} />
-          </span>
-          <span className={styles.rowLabel}>Academic Info</span>
-          <span className={styles.rowChev}><ChevronRight size={18} strokeWidth={2.25} /></span>
-        </button>
-        <div className={styles.divider} />
-        <button
-          className={`${styles.row} ${activePanel === 'verification' && isLargeScreen ? styles.rowActive : ''}`}
-          onClick={() => openPanel('verification')}
-        >
-          <span className={styles.rowIcon}>
-            <Shield size={20} strokeWidth={2} />
-          </span>
-          <span className={styles.rowLabel}>Account Verification</span>
-          <span className={styles.rowChev}><ChevronRight size={18} strokeWidth={2.25} /></span>
-        </button>
-      </div>
-
-      {/* Security section */}
-      <div className={styles.sectionLabel}>Security</div>
-      <div className={styles.group}>
-        <button
-          className={`${styles.row} ${activePanel === 'security' && isLargeScreen ? styles.rowActive : ''}`}
-          onClick={() => openPanel('security')}
-        >
-          <span className={styles.rowIcon}>
-            <Lock size={20} strokeWidth={2} />
-          </span>
-          <span className={styles.rowLabel}>Change Password</span>
-          <span className={styles.rowChev}><ChevronRight size={18} strokeWidth={2.25} /></span>
-        </button>
-      </div>
-
-      {/* Preferences section */}
-      <div className={styles.sectionLabel}>Preferences</div>
-      <div className={styles.group}>
-        <button
-          className={`${styles.row} ${activePanel === 'privacy' && isLargeScreen ? styles.rowActive : ''}`}
-          onClick={() => openPanel('privacy')}
-        >
-          <span className={styles.rowIcon}>
-            <LockKeyhole size={20} strokeWidth={2} />
-          </span>
-          <span className={styles.rowLabel}>Privacy Settings</span>
-          <span className={styles.rowChev}><ChevronRight size={18} strokeWidth={2.25} /></span>
-        </button>
-        <div className={styles.divider} />
-        <button
-          className={`${styles.row} ${activePanel === 'notifications' && isLargeScreen ? styles.rowActive : ''}`}
-          onClick={() => openPanel('notifications')}
-        >
-          <span className={styles.rowIcon}>
-            <Bell size={20} strokeWidth={2} />
-          </span>
-          <span className={styles.rowLabel}>Notifications</span>
-          <span className={styles.rowChev}><ChevronRight size={18} strokeWidth={2.25} /></span>
-        </button>
-      </div>
-
-      {/* Interests section */}
-      <div className={styles.sectionHeader}>
-        <div className={styles.sectionLabel} style={{ padding: 0 }}>Interests</div>
-        <button
-          className={styles.editInterestsHeaderBtn}
-          onClick={() => openPanel('interests')}
-          aria-label="Edit interests"
-        >
-          <Pencil size={18} strokeWidth={2.2} />
-        </button>
-      </div>
-      <div className={styles.group}>
-        <div className={styles.interestsRow}>
-          <div className={styles.interestsInfo}>
-            {currentUser?.interests && currentUser.interests.length > 0 ? (
-              <div className={styles.selectedTagsContainer}>
-                {[
-                  currentUser.interests.filter((_, i) => i % 2 === 0),
-                  currentUser.interests.filter((_, i) => i % 2 !== 0)
-                ].map((rowTags, rowIndex) => (
-                  <div key={rowIndex} className={styles.tagsRow}>
-                    {rowTags.map(interest => {
-                      const emoji = emojiMap[interest] || '✨';
-                      return (
-                        <span key={interest} className={styles.tagPillPreview}>
-                          <span>{emoji}</span> {interest}
-                        </span>
-                      );
-                    })}
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <span className={styles.toggleDesc}>No interests selected. Add some topics!</span>
-            )}
+        {SETTINGS_TREE.map((entry, i) => (
+          <div key={entry.slug}>
+            {i > 0 && <div className={styles.divider} />}
+            {settingsRow({
+              key: entry.slug,
+              icon: entry.icon,
+              label: entry.label,
+              description: entry.description,
+              // A leaf opens its panel; a category opens its list.
+              onClick: () => openPanel(entry.slug),
+              active: isLargeScreen && openCategory === entry.slug,
+            })}
           </div>
-        </div>
+        ))}
       </div>
 
-      {/* Support section */}
-      <div className={styles.sectionLabel}>Support</div>
       <div className={styles.group}>
-        <button
-          className={`${styles.row} ${activePanel === 'help' && isLargeScreen ? styles.rowActive : ''}`}
-          onClick={() => openPanel('help')}
-        >
-          <span className={styles.rowIcon}>
-            <HelpCircle size={20} strokeWidth={2} />
-          </span>
-          <span className={styles.rowLabel}>Help &amp; Support</span>
-          <span className={styles.rowChev}><ChevronRight size={18} strokeWidth={2.25} /></span>
-        </button>
-        <div className={styles.divider} />
-        <button className={styles.row} onClick={openCookiePreferences}>
-          <span className={styles.rowIcon}>
-            <Cookie size={20} strokeWidth={2} />
-          </span>
-          <span className={styles.rowLabel}>Cookie Preferences</span>
-          <span className={styles.rowChev}><ChevronRight size={18} strokeWidth={2.25} /></span>
-        </button>
+        {settingsRow({
+          key: 'logout',
+          icon: LogOut,
+          label: 'Log Out',
+          onClick: logout,
+          chevron: false,
+        })}
       </div>
 
-      {/* Account section */}
-      <div className={styles.sectionLabel}>Account</div>
-      <div className={styles.group}>
-        <button className={styles.row} onClick={logout}>
-          <span className={styles.rowIcon}>
-            <LogOut size={20} strokeWidth={2} />
-          </span>
-          <span className={styles.rowLabel}>Log Out</span>
-        </button>
-        <div className={styles.divider} />
-        <button className={`${styles.row} ${styles.rowDanger}`} onClick={() => setShowDeleteConfirm(true)}>
-          <span className={styles.rowIcon}>
-            <Trash2 size={20} strokeWidth={2} />
-          </span>
-          <span className={styles.rowLabel}>Delete Account</span>
-        </button>
-      </div>
-
-      {/* Developer section — dev builds only. `enableDevRoutes` folds to a
+      {/* Developer section — dev builds only. `IS_DEV_BUILD` folds to a
           build-time constant, so this whole block drops out in production. */}
       {IS_DEV_BUILD && (
         <>
@@ -761,6 +790,92 @@ export default function SettingsRoute() {
       </div>
     </div>
   );
+
+  /** One category's settings. Built from the same tree the root is built from. */
+  const categoryPanel = (slug) => {
+    const entry = SETTINGS_TREE.find((e) => e.slug === slug);
+    if (!entry || !entry.items) return null;
+
+    return (
+      <div className={`${styles.body} animate-in`}>
+        <div className={styles.group}>
+          {entry.items.map((item, i) => (
+            <div key={item.panel || item.action}>
+              {i > 0 && <div className={styles.divider} />}
+              {settingsRow({
+                key: item.panel || item.action,
+                icon: item.icon,
+                label: item.label,
+                onClick: () => (item.panel ? openPanel(item.panel) : runItemAction(item.action)),
+                active: isLargeScreen && item.panel && activePanel === item.panel,
+              })}
+            </div>
+          ))}
+        </div>
+
+        {/* Interests are worth seeing without opening the picker, and this is
+            the block that used to sit on the root. It follows the row that
+            edits it rather than replacing it. */}
+        {slug === 'account' && (
+          <>
+            <div className={styles.sectionLabel}>Your interests</div>
+            <div className={styles.group}>
+              <div className={styles.interestsRow}>
+                <div className={styles.interestsInfo}>
+                  {currentUser?.interests && currentUser.interests.length > 0 ? (
+                    <div className={styles.selectedTagsContainer}>
+                      {[
+                        currentUser.interests.filter((_, i) => i % 2 === 0),
+                        currentUser.interests.filter((_, i) => i % 2 !== 0)
+                      ].map((rowTags, rowIndex) => (
+                        <div key={rowIndex} className={styles.tagsRow}>
+                          {rowTags.map(interest => {
+                            const emoji = emojiMap[interest] || '✨';
+                            return (
+                              <span key={interest} className={styles.tagPillPreview}>
+                                <span>{emoji}</span> {interest}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <span className={styles.toggleDesc}>No interests selected. Add some topics!</span>
+                  )}
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+
+        {entry.danger && (
+          <>
+            <div className={styles.sectionLabel}>Danger zone</div>
+            <div className={`${styles.group} ${styles.dangerGroup}`}>
+              {entry.danger.map((item, i) => (
+                <div key={item.action}>
+                  {i > 0 && <div className={styles.divider} />}
+                  {settingsRow({
+                    key: item.action,
+                    icon: item.icon,
+                    label: item.label,
+                    onClick: () => runItemAction(item.action),
+                    danger: true,
+                    chevron: false,
+                  })}
+                </div>
+              ))}
+            </div>
+            <p className={styles.dangerNote}>
+              Deleting your account removes your profile, posts and messages.
+              You have 30 days to change your mind before anything is erased.
+            </p>
+          </>
+        )}
+      </div>
+    );
+  };
 
   const profilePanel = (
     <div className={`${styles.body} animate-in`}>
@@ -1171,12 +1286,15 @@ export default function SettingsRoute() {
   );
 
   // Address hygiene, after every hook has run so the order stays stable.
-  // An unknown panel segment is not a valid address: send it to the settings
-  // root rather than render the list under a URL that means nothing.
-  if (panelParam && !isKnownPanel) return <Navigate to="/settings" replace />;
-  // Aliases canonicalise, so each panel has exactly one URL.
-  if (panelParam && canonicalPanel !== panelParam) {
-    return <Navigate to={`/settings/${canonicalPanel}`} replace />;
+  // An unknown segment is neither a category nor a panel, so it is not a valid
+  // address: send it to the settings root rather than render the list under a
+  // URL that means nothing.
+  if (panelParam && !isKnownPanel && !activeCategory) {
+    return <Navigate to="/settings" replace />;
+  }
+  // Aliases canonicalise, so each destination has exactly one URL.
+  if (panelParam && canonicalSlug !== panelParam) {
+    return <Navigate to={`/settings/${canonicalSlug}`} replace />;
   }
 
   return (
@@ -1187,7 +1305,7 @@ export default function SettingsRoute() {
         <button
           className={styles.backBtn}
           aria-label="Go back"
-          onClick={() => (activePanel ? closePanel() : goBack('/home'))}
+          onClick={goUp}
         >
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
             stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -1197,7 +1315,11 @@ export default function SettingsRoute() {
         </button>
 
         <span className={styles.topBarTitle}>
-          {activePanel ? panelTitle[activePanel] : 'Settings'}
+          {activePanel
+            ? panelTitle[activePanel]
+            : activeCategory
+              ? SETTINGS_TREE.find((e) => e.slug === activeCategory)?.label
+              : 'Settings'}
         </span>
 
         {/* Spacer to keep title centred — matches backBtn's own width exactly */}
@@ -1209,7 +1331,10 @@ export default function SettingsRoute() {
       {isLargeScreen ? (
         <div className={styles.splitBody}>
           <div className={styles.splitListPane}>
-            {listPanel}
+            {/* The list beside the detail is the OPEN CATEGORY's list, so the
+                pane keeps the context the panel was reached through instead of
+                resetting to the root the moment something is opened. */}
+            {openCategory ? categoryPanel(openCategory) : listPanel}
           </div>
           <div className={styles.splitDetailPane}>
             {activePanel === 'profile' && profilePanel}
@@ -1226,7 +1351,8 @@ export default function SettingsRoute() {
         </div>
       ) : (
         <>
-          {!activePanel && listPanel}
+          {!activePanel && !activeCategory && listPanel}
+          {!activePanel && activeCategory && categoryPanel(activeCategory)}
           {activePanel === 'profile' && profilePanel}
           {activePanel === 'academic' && academicPanel}
           {activePanel === 'security' && securityPanel}
