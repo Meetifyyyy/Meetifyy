@@ -67,7 +67,7 @@ export function postShareUrl(postId) {
  * moment of sharing rather than cached by anything that needs to be busted.
  */
 export function postCardImageUrl(postId) {
-  return absoluteUrl(postId ? `/api/share/post/${postId}/story.png` : null);
+  return absoluteUrl(postId ? `/api/share/post/${postId}/story.jpg` : null);
 }
 
 /** The canonical URL for a profile. */
@@ -125,7 +125,7 @@ export function buildPostShare(post, author) {
     // The card as an image, for the destinations that take a picture rather
     // than a link. Only posts have one — see postCardImageUrl.
     cardImageUrl: postCardImageUrl(post?.id),
-    cardFileName: `${slug(APP)}-story.png`,
+    cardFileName: `${slug(APP)}-story.jpg`,
   };
 }
 

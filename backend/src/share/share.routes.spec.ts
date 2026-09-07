@@ -151,30 +151,30 @@ describe('share routes', () => {
       expect(jpegSize(body)).toEqual({ width: 1200, height: 630 });
     });
 
-    it('serves a full 1080x1920 story canvas at /story.png', async () => {
+    it('serves a full 1080x1920 story canvas at /story.jpg', async () => {
       // The Instagram path hands this to another application as a file. Filling
       // the story canvas exactly is what stops Instagram deciding for itself
       // what surrounds the image — see renderStory.
       findFirst.mockResolvedValue(postRow());
       const res = await request(app.getHttpServer())
-        .get(`/api/share/post/${POST_ID}/story.png`)
+        .get(`/api/share/post/${POST_ID}/story.jpg`)
         .responseType('blob')
         .expect(200);
 
-      expect(res.headers['content-type']).toBe('image/png');
+      expect(res.headers['content-type']).toBe('image/jpeg');
       const body = res.body as Buffer;
-      expect(body.subarray(0, 8)).toEqual(
-        Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
-      );
+      expect(body.subarray(0, 2)).toEqual(Buffer.from([0xff, 0xd8]));
       // 9:16 exactly, at the resolution Instagram stores a story at.
-      expect(body.readUInt32BE(16)).toBe(1080);
-      expect(body.readUInt32BE(20)).toBe(1920);
+      expect(jpegSize(body)).toEqual({ width: 1080, height: 1920 });
+      // Small enough to finish downloading before somebody taps the button —
+      // see the encode comment in renderStory.
+      expect(body.length).toBeLessThan(250 * 1024);
     });
 
     it('refuses the story image for a post that may not be shared', async () => {
       findFirst.mockResolvedValue(null);
       const res = await request(app.getHttpServer())
-        .get(`/api/share/post/${POST_ID}/story.png`)
+        .get(`/api/share/post/${POST_ID}/story.jpg`)
         .expect(404);
       expect(res.headers['cache-control']).toContain('no-store');
     });

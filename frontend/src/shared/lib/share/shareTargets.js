@@ -284,14 +284,19 @@ export async function copyToClipboard(value) {
  * no probe, because the failure lands on the user as a share sheet that does
  * not contain the app they wanted.
  */
-export function canShareFiles() {
+export function canShareFiles(type = 'image/jpeg') {
   if (typeof navigator === 'undefined') return false;
   if (typeof navigator.share !== 'function') return false;
   if (typeof navigator.canShare !== 'function') return false;
   if (typeof File === 'undefined') return false;
 
   try {
-    const probe = new File([new Blob([1])], 'probe.jpg', { type: 'image/jpeg' });
+    // Probed with the type actually being shared. A probe that says `image/jpeg`
+    // while the code goes on to share something else is asking the wrong
+    // question, and the answer only looks right by luck.
+    const probe = new File([new Blob([1])], `probe.${type.split('/')[1]}`, {
+      type,
+    });
     return navigator.canShare({ files: [probe] });
   } catch {
     return false;

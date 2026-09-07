@@ -51,6 +51,16 @@ const ICONS = {
 /** How long a target's transient label stays before reverting. */
 const FEEDBACK_MS = 2400;
 
+/**
+ * The type of the file handed to a share sheet.
+ *
+ * Named here because two things must agree about it: the capability probe that
+ * decides whether to offer file sharing at all, and the endpoint that renders
+ * the story. Probing for one type and sharing another is a question whose
+ * answer is only right by accident.
+ */
+const CARD_MIME = 'image/jpeg';
+
 export default function ShareTargets({ payload, onShared }) {
   /**
    * The outcome of the last action, attached to the target it belongs to.
@@ -70,7 +80,7 @@ export default function ShareTargets({ payload, onShared }) {
   // during the life of a dialog, and calling `canShare` on every render is work
   // for an answer that cannot change.
   const [nativeAvailable] = useState(() => canNativeShare(payload));
-  const [fileShareAvailable] = useState(() => canShareFiles());
+  const [fileShareAvailable] = useState(() => canShareFiles(CARD_MIME));
 
   /**
    * The rendered card, fetched while the dialog is merely open.
@@ -82,8 +92,14 @@ export default function ShareTargets({ payload, onShared }) {
    * spends looking at the dialog — means the tap itself does nothing but hand
    * over a File that is already in memory.
    *
-   * A ref rather than state: nothing renders from it, and a re-render on
-   * arrival would be a re-render for no visible reason.
+   * The PROMISE is kept, not just the resolved File. A tap that lands before
+   * the download finishes then awaits the request already in flight instead of
+   * starting a second one — and, crucially, instead of silently giving up.
+   *
+   * Giving up was the bug. The first version stored only the resolved value and
+   * fell through to sharing the link whenever it was still null, so anyone who
+   * tapped promptly got the old behaviour — Instagram Direct, no Story — with
+   * nothing on screen to say why.
    */
   const cardRef = useRef(null);
 
@@ -100,20 +116,22 @@ export default function ShareTargets({ payload, onShared }) {
     // nothing can use.
     if (!fileShareAvailable || !payload?.cardImageUrl) return undefined;
 
-    let cancelled = false;
-    fetchShareCard(payload.cardImageUrl, payload.cardFileName).then((file) => {
-      if (!cancelled) cardRef.current = file;
-    });
+    cardRef.current = fetchShareCard(payload.cardImageUrl, payload.cardFileName);
 
     return () => {
-      cancelled = true;
+      cardRef.current = null;
     };
   }, [fileShareAvailable, payload?.cardImageUrl, payload?.cardFileName]);
 
   const announce = useCallback((targetId, tone, label, announcement) => {
     setFeedback({ targetId, tone, label, announcement: announcement ?? label });
     if (timerRef.current) clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(() => setFeedback(null), FEEDBACK_MS);
+    // 'busy' is a state, not a result: it stands until whatever it is waiting
+    // for replaces it, rather than timing out and leaving the button looking
+    // idle while work is still going on.
+    if (tone !== 'busy') {
+      timerRef.current = setTimeout(() => setFeedback(null), FEEDBACK_MS);
+    }
   }, []);
 
   const copy = useCallback(
@@ -150,7 +168,16 @@ export default function ShareTargets({ payload, onShared }) {
         // URL handed to Instagram only ever opens a Direct message, which is
         // exactly the symptom this branch exists to fix. Sending the CARD as an
         // image is what makes Instagram offer Story and Post.
-        const card = cardRef.current;
+        //
+        // Waited for rather than skipped. The card is normally downloaded
+        // before anybody taps, but on a slow connection it is not, and falling
+        // back to the link there produces precisely the broken behaviour with
+        // no explanation. So the tap waits, and says that it is waiting.
+        let card = null;
+        if (cardRef.current) {
+          announce('instagram', 'busy', 'Preparing…');
+          card = await cardRef.current;
+        }
 
         if (card) {
           // Clipboard first, while the document still has focus: the share

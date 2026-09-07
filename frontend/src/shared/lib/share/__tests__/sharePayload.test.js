@@ -238,10 +238,15 @@ describe('share payloads', () => {
       // which is the thing that cannot be changed afterwards.
       const payload = buildPostShare({ id: 'p1', text: 'x' }, author);
       expect(payload.cardImageUrl).toBe(
-        'http://localhost:3000/api/share/post/p1/story.png',
+        'http://localhost:3000/api/share/post/p1/story.jpg',
       );
       expect(payload.cardImageUrl).not.toContain('image.jpg');
-      expect(payload.cardFileName).toMatch(/\.png$/);
+      // JPEG, not PNG. The story canvas is fully opaque — the backdrop covers
+      // all 1080x1920 — so PNG spent 450KB carrying an alpha channel that was
+      // entirely 255, against 107KB as JPEG. That size lost the download race
+      // on mobile data, which is what left Instagram with a link instead of an
+      // image.
+      expect(payload.cardFileName).toMatch(/\.jpg$/);
     });
 
     it('is absent when there is no post to draw', () => {

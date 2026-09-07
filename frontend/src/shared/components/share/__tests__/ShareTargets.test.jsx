@@ -216,6 +216,50 @@ describe('<ShareTargets>', () => {
       await screen.findByText(/link sticker/i);
     });
 
+    it('waits for a slow card instead of quietly sending a link', async () => {
+      // THE regression. The card is normally downloaded before anybody taps,
+      // but on mobile data it is not — and the first version, finding no card
+      // yet, silently shared the URL. Instagram then offered Direct and
+      // nothing else, with no indication that anything had gone wrong. This is
+      // the reported symptom, reproduced.
+      let release;
+      const pending = new Promise((resolve) => {
+        release = resolve;
+      });
+      navigator.share = vi.fn().mockResolvedValue(undefined);
+      navigator.canShare = vi.fn().mockReturnValue(true);
+      global.fetch = vi.fn().mockReturnValue(pending);
+
+      render(<ShareTargets payload={cardPayload} />);
+      await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+
+      // Tapped while the download is still in flight.
+      fireEvent.click(screen.getByRole('button', { name: 'Instagram' }));
+      await screen.findByRole('button', { name: 'Preparing…' });
+      expect(navigator.share).not.toHaveBeenCalled();
+
+      release({
+        ok: true,
+        blob: async () => new Blob(['jpeg'], { type: 'image/jpeg' }),
+      });
+
+      // And when it lands, the FILE goes — not the link.
+      await waitFor(() => expect(navigator.share).toHaveBeenCalled());
+      const shared = navigator.share.mock.calls[0][0];
+      expect(shared.files).toHaveLength(1);
+      expect(shared.url).toBeUndefined();
+    });
+
+    it('reuses the request already in flight rather than starting another', async () => {
+      withFileSharing();
+      render(<ShareTargets payload={cardPayload} />);
+      await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(1));
+
+      fireEvent.click(screen.getByRole('button', { name: 'Instagram' }));
+      await waitFor(() => expect(navigator.share).toHaveBeenCalled());
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+    });
+
     it('falls back to the link when the card cannot be fetched', async () => {
       navigator.share = vi.fn().mockResolvedValue(undefined);
       navigator.canShare = vi.fn().mockReturnValue(true);

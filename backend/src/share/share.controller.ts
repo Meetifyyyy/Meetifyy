@@ -91,12 +91,13 @@ export class ShareController {
    * A separate endpoint rather than a query parameter on the one above, because
    * it is a different resource entirely: a different shape, a different size
    * and a different purpose. The path says so, caches key on it for free, and
-   * the `.png` extension is what a share sheet reads to decide the file's type.
+   * the extension is what a share sheet reads to decide the file's type.
    *
-   * NOT referenced by any `og:` tag. An unfurler wants the small landscape JPEG
-   * — see shareImageUrl — and would letterbox this one into a chat thumbnail.
+   * NOT referenced by any `og:` tag. An unfurler wants the small landscape
+   * image — see shareImageUrl — and would letterbox this one into a chat
+   * thumbnail.
    */
-  @Get('post/:id/story.png')
+  @Get('post/:id/story.jpg')
   @CacheControl('public, max-age=31536000, s-maxage=31536000, immutable')
   async story(@Param('id') id: string, @Res() res: Response) {
     const post = await this.preview.getPublicPost(id);
@@ -109,7 +110,7 @@ export class ShareController {
 
     const card = await this.cards.get(post, 'story');
 
-    res.setHeader('Content-Type', 'image/png');
+    res.setHeader('Content-Type', 'image/jpeg');
     res.setHeader('Content-Length', String(card.length));
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.status(200).end(card);

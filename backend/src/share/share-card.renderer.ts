@@ -65,7 +65,7 @@ export class ShareCardRenderer {
    * throw away every cached card for a release that did not touch this file,
    * which is the cost the cache exists to avoid.
    */
-  static readonly REVISION = 13;
+  static readonly REVISION = 14;
 
   /** Shared with the site card. See the class comment. */
   private static readonly BG = '#FDFDFD';
@@ -322,7 +322,7 @@ export class ShareCardRenderer {
     <linearGradient id="sky" x1="0" y1="0" x2="0.3" y2="1">
       <stop offset="0%" stop-color="#1D4ED8"/>
       <stop offset="55%" stop-color="#132A63"/>
-      <stop offset="100%" stop-color="#080D1A"/>
+      <stop offset="100%" stop-color="${STORY_BACKDROP_BOTTOM}"/>
     </linearGradient>
     <radialGradient id="lift" cx="0.5" cy="0.42" r="0.7">
       <stop offset="0%" stop-color="${BRAND}" stop-opacity="0.35"/>
@@ -337,10 +337,23 @@ export class ShareCardRenderer {
   <text x="${STORY_WIDTH / 2}" y="${cardTop + cardHeight + 148}" text-anchor="middle" font-family="${ShareCardRenderer.FONT}" font-size="30" font-weight="500" fill="#FFFFFF" fill-opacity="0.55">${escapeXml(SITE_HOST)}</text>
 </svg>`;
 
-    return sharp(Buffer.from(backdrop))
-      .composite([{ input: scaled, left: STORY_MARGIN, top: cardTop }])
-      .png({ compressionLevel: 9 })
-      .toBuffer();
+    return (
+      sharp(Buffer.from(backdrop))
+        .composite([{ input: scaled, left: STORY_MARGIN, top: cardTop }])
+        // JPEG, not PNG. The backdrop covers all 1080x1920, so the finished
+        // story has no transparent pixel anywhere — measured, not assumed: the
+        // alpha channel came back min=255, max=255. PNG was spending 450KB to
+        // carry a channel that was entirely opaque, against 107KB as JPEG.
+        //
+        // That size was not merely wasteful, it was the bug. The file is
+        // downloaded while the dialog is open so the tap can hand it over
+        // immediately; at 450KB on mobile data that download loses the race,
+        // the card is not ready, and Instagram gets a link instead of an image
+        // — which is exactly the "only Direct" symptom.
+        .flatten({ background: STORY_BACKDROP_BOTTOM })
+        .jpeg({ quality: 90, chromaSubsampling: '4:4:4', mozjpeg: true })
+        .toBuffer()
+    );
   }
 
   /** A full-canvas rounded rectangle, used as the shareable card's alpha. */
@@ -1198,6 +1211,9 @@ const STORY_MARGIN = 84;
 
 /** The one line of prose on the story, beneath the card. */
 const STORY_CAPTION = 'Tap the link to open this post';
+
+/** The foot of the story gradient, and what the flatten fills behind it. */
+const STORY_BACKDROP_BOTTOM = '#080D1A';
 
 /**
  * Where each picture sits inside the media panel.
