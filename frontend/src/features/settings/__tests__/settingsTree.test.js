@@ -84,4 +84,23 @@ describe('the Settings tree', () => {
   it('exposes exactly the categories that have items', () => {
     expect(SETTINGS_CATEGORIES).toEqual(categories.map((c) => c.slug));
   });
+
+  /**
+   * Interests is the one setting here people come back to, and it is not an
+   * account detail — it feeds the feed. It was nested under Account, two steps
+   * in behind settings that get touched once. Its place at the root is the
+   * point, so it is pinned rather than left to the generic invariants above,
+   * all of which a nested Interests would also satisfy.
+   */
+  it('opens Interests from the root rather than from inside Account', () => {
+    const interests = SETTINGS_TREE.find((e) => e.slug === 'interests');
+    expect(interests).toBeDefined();
+    expect(interests.panel).toBe('interests');
+    expect(PANEL_PARENT.interests).toBeUndefined();
+
+    for (const category of categories) {
+      const nested = [...category.items, ...(category.danger || [])];
+      expect(nested.map((i) => i.panel)).not.toContain('interests');
+    }
+  });
 });

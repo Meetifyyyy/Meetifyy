@@ -145,11 +145,6 @@
   padding: 16px 0 32px;
 }
 
-/* ── Section Header / Label Skeleton ── */
-.sectionLabelWrap {
-  padding: 16px var(--settings-gutter) 8px;
-}
-
 /* ── Minimal Card Group Skeleton ── */
 .cardGroup {
   background: var(--color-bg-white);
@@ -173,6 +168,18 @@
   gap: 12px;
 }
 
+/* Mirrors .rowText in SettingsRoute.module.css — the label/description column
+   between the icon tile and the chevron. Its 2px gap and the 13px/10px bars
+   add up to the same height as the real two-line row, which is what keeps the
+   list from shifting when the content arrives. */
+.rowText {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
 .rowDivider {
   height: 1px;
   background: var(--color-border-light);
@@ -183,33 +190,10 @@
   background: var(--color-border, #333945);
 }
 
-/* ── Detail Pane Header Block ── */
-.detailHeaderBlock {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 8px var(--settings-gutter) 20px;
-}
-
-/* ── Detail Pane Form Group Block ── */
-.detailFieldBlock {
-  padding: 16px var(--settings-gutter);
+/* ── Detail Pane Row ── */
+.detailRow {
+  padding: 14px var(--settings-gutter);
   display: flex;
   flex-direction: column;
   gap: 10px;
-}
-
-.fieldDivider {
-  height: 1px;
-  background: var(--color-border-light);
-  margin: 0 var(--settings-gutter);
-}
-
-:global([data-theme="dark"]) .fieldDivider {
-  background: var(--color-border, #333945);
-}
-
-/* ── Action / Save Button Placeholder ── */
-.actionBtnWrap {
-  padding: 16px var(--settings-gutter) 0;
 }

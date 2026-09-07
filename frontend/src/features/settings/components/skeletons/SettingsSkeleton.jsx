@@ -3,13 +3,67 @@ import Skeleton from '@shared/components/skeletons/Skeleton';
 import styles from './SettingsSkeleton.module.css';
 
 /**
- * SettingsSkeleton
+ * The loading state for Settings.
  *
- * Minimal, clean, and responsive skeleton loading screen for Settings.
- * - Large screens (>=1024px): Renders the two-pane split layout (nav list + detail content).
- * - Small screens (<1024px): Renders contextual single pane (list view on /settings, detail view on /settings/:panel).
- * - Avoids cluttered micro-placeholders and ensures zero layout shift on content mount.
+ * A skeleton is only worth rendering if it is the shape of what replaces it —
+ * otherwise it is a second layout the user watches collapse into the real one.
+ * This one had drifted: it drew three labelled sections of seven flat rows and
+ * a detail pane built around an avatar and a form, from before Settings was
+ * grouped into categories. What actually mounts is one card of six category
+ * rows — icon, label, description — a Log Out card below it, and, until
+ * something is chosen, a centred brand panel rather than a form.
+ *
+ * So the structure here is derived from the same shape SettingsRoute renders:
+ * same gutter, same 36px icon tile, same two-line row, same card grouping.
+ *
+ * ROW_WIDTHS varies the label and description widths per row. Uniform bars read
+ * as a table; real labels are ragged, and the eye reads the ragged one as text
+ * that has not arrived rather than as content that is missing.
  */
+const ROW_WIDTHS = [
+  { label: '84px', desc: '190px' },
+  { label: '132px', desc: '168px' },
+  { label: '146px', desc: '176px' },
+  { label: '78px', desc: '158px' },
+  { label: '112px', desc: '104px' },
+  { label: '134px', desc: '182px' },
+];
+
+function SkeletonRow({ label, desc }) {
+  return (
+    <div className={styles.rowItem}>
+      <Skeleton type="rect" width="36px" height="36px" style={{ borderRadius: '10px' }} />
+      <div className={styles.rowText}>
+        <Skeleton type="rect" width={label} height="13px" style={{ borderRadius: '4px' }} />
+        {desc && (
+          <Skeleton type="rect" width={desc} height="10px" style={{ borderRadius: '4px' }} />
+        )}
+      </div>
+      <Skeleton type="rect" width="8px" height="14px" style={{ borderRadius: '3px' }} />
+    </div>
+  );
+}
+
+/** The root list — the six category cards and Log Out. */
+function ListPaneSkeleton() {
+  return (
+    <div className={styles.bodyContent}>
+      <div className={styles.cardGroup}>
+        {ROW_WIDTHS.map((w, i) => (
+          <div key={i}>
+            {i > 0 && <div className={styles.rowDivider} />}
+            <SkeletonRow label={w.label} desc={w.desc} />
+          </div>
+        ))}
+      </div>
+
+      <div className={styles.cardGroup}>
+        <SkeletonRow label="66px" />
+      </div>
+    </div>
+  );
+}
+
 export default function SettingsSkeleton() {
   const { panel } = useParams();
   const hasActivePanel = Boolean(panel);
@@ -17,129 +71,34 @@ export default function SettingsSkeleton() {
   return (
     <main className="centre centre-wide centre--sheet animate-in">
       <div className={styles.page}>
-        {/* Top Header Bar */}
         <header className={styles.topBar}>
-          <Skeleton 
-            type="rect" 
-            width="36px" 
-            height="36px" 
-            style={{ borderRadius: '50%' }} 
-          />
-          <Skeleton 
-            type="rect" 
-            width="110px" 
-            height="18px" 
-            style={{ borderRadius: '6px' }} 
-          />
+          <Skeleton type="rect" width="36px" height="36px" style={{ borderRadius: '50%' }} />
+          <Skeleton type="rect" width="88px" height="16px" style={{ borderRadius: '6px' }} />
+          {/* Matches the real spacer, so the title sits in the same place */}
           <div style={{ width: 36 }} />
         </header>
 
-        {/* Responsive Body Container */}
         <div className={styles.splitBody}>
-          {/* Left Navigation List Pane */}
           <div className={`${styles.listPane} ${hasActivePanel ? styles.hideMobileList : ''}`}>
-            <div className={styles.bodyContent}>
-              {/* Account Section */}
-              <div className={styles.sectionLabelWrap}>
-                <Skeleton type="rect" width="72px" height="10px" style={{ borderRadius: '4px' }} />
-              </div>
-              <div className={styles.cardGroup}>
-                <div className={styles.rowItem}>
-                  <Skeleton type="rect" width="36px" height="36px" style={{ borderRadius: '10px' }} />
-                  <Skeleton type="rect" width="120px" height="14px" style={{ borderRadius: '4px' }} />
-                </div>
-                <div className={styles.rowDivider} />
-                <div className={styles.rowItem}>
-                  <Skeleton type="rect" width="36px" height="36px" style={{ borderRadius: '10px' }} />
-                  <Skeleton type="rect" width="140px" height="14px" style={{ borderRadius: '4px' }} />
-                </div>
-                <div className={styles.rowDivider} />
-                <div className={styles.rowItem}>
-                  <Skeleton type="rect" width="36px" height="36px" style={{ borderRadius: '10px' }} />
-                  <Skeleton type="rect" width="150px" height="14px" style={{ borderRadius: '4px' }} />
-                </div>
-              </div>
-
-              {/* Preferences Section */}
-              <div className={styles.sectionLabelWrap}>
-                <Skeleton type="rect" width="88px" height="10px" style={{ borderRadius: '4px' }} />
-              </div>
-              <div className={styles.cardGroup}>
-                <div className={styles.rowItem}>
-                  <Skeleton type="rect" width="36px" height="36px" style={{ borderRadius: '10px' }} />
-                  <Skeleton type="rect" width="130px" height="14px" style={{ borderRadius: '4px' }} />
-                </div>
-                <div className={styles.rowDivider} />
-                <div className={styles.rowItem}>
-                  <Skeleton type="rect" width="36px" height="36px" style={{ borderRadius: '10px' }} />
-                  <Skeleton type="rect" width="110px" height="14px" style={{ borderRadius: '4px' }} />
-                </div>
-              </div>
-
-              {/* More Section */}
-              <div className={styles.sectionLabelWrap}>
-                <Skeleton type="rect" width="54px" height="10px" style={{ borderRadius: '4px' }} />
-              </div>
-              <div className={styles.cardGroup}>
-                <div className={styles.rowItem}>
-                  <Skeleton type="rect" width="36px" height="36px" style={{ borderRadius: '10px' }} />
-                  <Skeleton type="rect" width="125px" height="14px" style={{ borderRadius: '4px' }} />
-                </div>
-                <div className={styles.rowDivider} />
-                <div className={styles.rowItem}>
-                  <Skeleton type="rect" width="36px" height="36px" style={{ borderRadius: '10px' }} />
-                  <Skeleton type="rect" width="145px" height="14px" style={{ borderRadius: '4px' }} />
-                </div>
-              </div>
-            </div>
+            <ListPaneSkeleton />
           </div>
 
-          {/* Right Detail Pane */}
+          {/* On large screens the right pane is where a category's settings or a
+              panel lands. Which of the two is coming is not knowable from the
+              URL alone — a slug can be either — so this draws the neutral form
+              of both: a card of rows the width of a settings list. */}
           <div className={`${styles.detailPane} ${!hasActivePanel ? styles.hideMobileDetail : ''}`}>
             <div className={styles.bodyContent}>
-              {/* Detail Header Silhouette */}
-              <div className={styles.detailHeaderBlock}>
-                <Skeleton type="circle" width="60px" height="60px" />
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
-                  <Skeleton type="rect" width="140px" height="16px" style={{ borderRadius: '4px' }} />
-                  <Skeleton type="rect" width="200px" height="12px" style={{ borderRadius: '4px' }} />
-                </div>
-              </div>
-
-              {/* Primary Content Group Block */}
               <div className={styles.cardGroup}>
-                <div className={styles.detailFieldBlock}>
-                  <Skeleton type="rect" width="90px" height="11px" style={{ borderRadius: '3px' }} />
-                  <Skeleton type="rect" width="100%" height="24px" style={{ borderRadius: '4px' }} />
-                </div>
-                <div className={styles.fieldDivider} />
-                <div className={styles.detailFieldBlock}>
-                  <Skeleton type="rect" width="75px" height="11px" style={{ borderRadius: '3px' }} />
-                  <Skeleton type="rect" width="100%" height="24px" style={{ borderRadius: '4px' }} />
-                </div>
-                <div className={styles.fieldDivider} />
-                <div className={styles.detailFieldBlock}>
-                  <Skeleton type="rect" width="110px" height="11px" style={{ borderRadius: '3px' }} />
-                  <Skeleton type="rect" width="100%" height="24px" style={{ borderRadius: '4px' }} />
-                </div>
-              </div>
-
-              {/* Secondary Content Group Block */}
-              <div className={styles.cardGroup}>
-                <div className={styles.detailFieldBlock}>
-                  <Skeleton type="rect" width="100px" height="11px" style={{ borderRadius: '3px' }} />
-                  <Skeleton type="rect" width="100%" height="48px" style={{ borderRadius: '8px' }} />
-                </div>
-              </div>
-
-              {/* Action Button Placeholder */}
-              <div className={styles.actionBtnWrap}>
-                <Skeleton 
-                  type="rect" 
-                  width="100%" 
-                  height="42px" 
-                  style={{ borderRadius: '9999px' }} 
-                />
+                {['128px', '150px', '112px', '138px'].map((w, i) => (
+                  <div key={w}>
+                    {i > 0 && <div className={styles.rowDivider} />}
+                    <div className={styles.detailRow}>
+                      <Skeleton type="rect" width={w} height="13px" style={{ borderRadius: '4px' }} />
+                      <Skeleton type="rect" width="100%" height="34px" style={{ borderRadius: '10px' }} />
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           </div>

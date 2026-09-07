@@ -64,14 +64,26 @@ export const SETTINGS_TREE = [
   {
     slug: 'account',
     label: 'Account',
-    description: 'Profile, academic details, interests and verification',
+    description: 'Profile, academic details and verification',
     icon: User,
     items: [
       { panel: 'profile', label: 'Edit Profile', icon: Pencil },
       { panel: 'academic', label: 'Academic Info', icon: GraduationCap },
-      { panel: 'interests', label: 'Interests & Topics', icon: Sparkles },
       { panel: 'verification', label: 'Account Verification', icon: Shield },
     ],
+  },
+  /**
+   * Interests sat under Account, which put the one setting people actually
+   * revisit two steps in behind the ones they set once. It is not an account
+   * detail either — it feeds the feed and the people suggestions, so it reads
+   * as its own thing at the root. The picker it opens is unchanged.
+   */
+  {
+    slug: 'interests',
+    label: 'Interests & Topics',
+    description: 'Topics that shape your feed and who you meet',
+    icon: Sparkles,
+    panel: 'interests',
   },
   {
     slug: 'privacy-security',
@@ -208,14 +220,6 @@ function SettingsWelcomePanel() {
     </div>
   );
 }
-
-// Build emoji lookup map
-const emojiMap = {};
-INTERESTS_BY_CATEGORY.forEach(category => {
-  category.tags.forEach(tag => {
-    emojiMap[tag.label] = tag.emoji;
-  });
-});
 
 function CustomSelect({ value, onChange, options = [], disabled, placeholder, searchable, placement = 'bottom', id }) {
   const [isOpen, setIsOpen] = useState(false);
@@ -748,7 +752,10 @@ export default function SettingsRoute() {
               description: entry.description,
               // A leaf opens its panel; a category opens its list.
               onClick: () => openPanel(entry.slug),
-              active: isLargeScreen && openCategory === entry.slug,
+              // A leaf is "open" when its panel is showing; a category when
+              // either its list or one of its panels is.
+              active: isLargeScreen
+                && (openCategory === entry.slug || activePanel === entry.slug),
             })}
           </div>
         ))}
@@ -818,42 +825,6 @@ export default function SettingsRoute() {
             </div>
           ))}
         </div>
-
-        {/* Interests are worth seeing without opening the picker, and this is
-            the block that used to sit on the root. It follows the row that
-            edits it rather than replacing it. */}
-        {slug === 'account' && (
-          <>
-            <div className={styles.sectionLabel}>Your interests</div>
-            <div className={styles.group}>
-              <div className={styles.interestsRow}>
-                <div className={styles.interestsInfo}>
-                  {currentUser?.interests && currentUser.interests.length > 0 ? (
-                    <div className={styles.selectedTagsContainer}>
-                      {[
-                        currentUser.interests.filter((_, i) => i % 2 === 0),
-                        currentUser.interests.filter((_, i) => i % 2 !== 0)
-                      ].map((rowTags, rowIndex) => (
-                        <div key={rowIndex} className={styles.tagsRow}>
-                          {rowTags.map(interest => {
-                            const emoji = emojiMap[interest] || '✨';
-                            return (
-                              <span key={interest} className={styles.tagPillPreview}>
-                                <span>{emoji}</span> {interest}
-                              </span>
-                            );
-                          })}
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <span className={styles.toggleDesc}>No interests selected. Add some topics!</span>
-                  )}
-                </div>
-              </div>
-            </div>
-          </>
-        )}
 
         {entry.danger && (
           <>
@@ -1337,12 +1308,17 @@ export default function SettingsRoute() {
       {isLargeScreen ? (
         <div className={styles.splitBody}>
           <div className={styles.splitListPane}>
-            {/* The list beside the detail is the OPEN CATEGORY's list, so the
-                pane keeps the context the panel was reached through instead of
-                resetting to the root the moment something is opened. */}
-            {openCategory ? categoryPanel(openCategory) : listPanel}
+            {/* The root list, always. It used to be replaced by the open
+                category's list, which meant opening anything cost you the
+                navigation you opened it from — on the one layout with room to
+                keep both. The category's own list moved to the pane on the
+                right, where there is space for it. */}
+            {listPanel}
           </div>
           <div className={styles.splitDetailPane}>
+            {/* A category shows its settings here; choosing one swaps this pane
+                for the panel, with the root list on the left unmoved. */}
+            {!activePanel && activeCategory && categoryPanel(activeCategory)}
             {activePanel === 'profile' && profilePanel}
             {activePanel === 'academic' && academicPanel}
             {activePanel === 'security' && securityPanel}
