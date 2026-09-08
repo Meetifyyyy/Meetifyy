@@ -125,10 +125,18 @@ export function useAutoHideChrome({ enabled = true } = {}) {
         {
           y: Math.max(0, window.scrollY),
           scrollable: document.documentElement.scrollHeight - window.innerHeight,
-          // Two signals for one condition. The attribute is the authoritative
-          // one and covers the whole time the keyboard is up; the focus check
-          // is synchronous and covers the frame before `useKeyboardInset` has
-          // had its rAF to set it.
+          // Two signals for one condition. The attribute is authoritative and
+          // covers the whole time the keyboard is up; the focus check is
+          // synchronous and covers the frame before `useKeyboardInset` has had
+          // its rAF to set it.
+          //
+          // The focus half is deliberately broader than "keyboard is visible":
+          // it also holds while a field keeps focus after the keyboard has been
+          // dismissed by the OS button, so on a screen like search the chrome
+          // stays put until the field is blurred. That is the right trade —
+          // chrome sliding around underneath a caret is the behaviour this is
+          // here to stop, and the failure mode is a nav that stays visible
+          // rather than one that flickers.
           keyboardOpen: root.hasAttribute('data-keyboard-open') || isTextFieldFocused(),
         },
       );
