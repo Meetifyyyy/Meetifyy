@@ -82,14 +82,40 @@ function handleTouchMove(event) {
 }
 
 function engage() {
-  const freeze = (el) => {
+  const freeze = (el, value) => {
     if (!el) return;
     restore.push([el, el.style.overflow]);
-    el.style.overflow = 'hidden';
+    el.style.overflow = value;
   };
 
-  freeze(document.documentElement);
-  freeze(document.body);
+  /**
+   * The root and <body> are clipped, NOT hidden.
+   *
+   * `overflow: hidden` makes an element a scroll container. `<html>` is not one
+   * — global.css goes out of its way to keep it that way, using `overflow-x:
+   * clip` and explaining at length that a scrolling `<html>` steals
+   * `position: sticky` from the window. Both sidebars are sticky, so freezing
+   * the root with `hidden` re-created exactly that: they bound to `<html>`,
+   * whose own scrollTop is always 0, and rendered at their natural document
+   * position instead of their stuck one.
+   *
+   * Measured at 1400x900, scrolled to y=800, opening the Instant Match sheet:
+   * both sidebars moved from `top: 60` to `top: -740` — 800px off the top of
+   * the screen — and came back the moment it closed. Every overlay in the app
+   * did it; Instant Match is just where it is most visible, because the scrim
+   * is translucent and you can watch them go.
+   *
+   * `clip` blocks user scrolling exactly as `hidden` does (verified with real
+   * wheel events, not programmatic scrolls — `hidden` permits those by design)
+   * while NOT being a scroll container, so sticky keeps looking past it to the
+   * window. Assigned after `hidden` rather than instead of it: a browser that
+   * does not understand `clip` drops the second declaration and keeps the
+   * first, so the lock still holds there and only the sticky fix is lost.
+   */
+  freeze(document.documentElement, 'hidden');
+  document.documentElement.style.overflow = 'clip';
+  freeze(document.body, 'hidden');
+  document.body.style.overflow = 'clip';
 
   const root = document.getElementById('root');
   if (root) {
@@ -98,7 +124,11 @@ function engage() {
       const cs = getComputedStyle(el);
       const y = SCROLLABLE.test(cs.overflowY) && el.scrollHeight > el.clientHeight;
       const x = SCROLLABLE.test(cs.overflowX) && el.scrollWidth > el.clientWidth;
-      if (y || x) freeze(el);
+      // `hidden` here, deliberately not `clip`. These elements ALREADY are
+      // scroll containers and have a scrollTop of their own; `clip` would stop
+      // them being one, forcing that offset to 0 and jumping their content to
+      // the top for as long as the overlay is open.
+      if (y || x) freeze(el, 'hidden');
     });
   }
 
