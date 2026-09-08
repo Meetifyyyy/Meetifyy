@@ -19,6 +19,11 @@ export default function HeaderScrollEdge({ gap = '0px' }) {
       className={styles.edge}
       style={{ '--edge-gap': gap }}
       aria-hidden="true"
+      // Marks this as a zero-height decorative overlay rather than page content.
+      // `.centre--sheet > *` on mobile stretches the sheet's children to 100dvh;
+      // without this the edge was stretched too, and on the post route that
+      // pushed the post a full screen down — see global.css.
+      data-sheet-overlay=""
     />
   );
 }

@@ -594,7 +594,25 @@ nav a.active {
     padding-bottom: 0 !important;
   }
 
-  .centre--sheet > * {
+  /* The sheet SURFACE fills the viewport — not every child indiscriminately.
+     `HeaderScrollEdge` is a direct sibling of the surface on the post route
+     (deliberately, so `.centre`'s `overflow: hidden` cannot clip it or steal
+     its sticky anchor). It is a 16px decorative overlay that cancels its own
+     height with a negative margin, so it normally occupies no layout space at
+     all — but `> *` stretched it to a full 100dvh, and its -32px margin could
+     only claw back 32 of those pixels.
+
+     Measured on the post route at 375x812: the edge became 812px tall and the
+     post itself started 796px down the page. Opening a post on a phone showed
+     one entirely blank screen, which reads as "the post did not load" rather
+     than as something to scroll past. Every viewport <= 768px was affected,
+     small tablets included; above the breakpoint the rule never applied, which
+     is why it only ever reproduced on mobile.
+
+     Overlays opt out by marking themselves, rather than the rule listing the
+     pages that have one — a second sheet page with an overlay would otherwise
+     reintroduce this silently. */
+  .centre--sheet > *:not([data-sheet-overlay]) {
     min-height: 100dvh;
     box-sizing: border-box;
   }
