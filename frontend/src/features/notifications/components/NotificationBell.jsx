@@ -3,11 +3,15 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { BellIcon as BellOutline } from '@heroicons/react/24/outline';
 import { BellIcon as BellSolid } from '@heroicons/react/24/solid';
 import NavIcon from '@layout/NavIcon';
-import { useNotifications } from '../../../shared/hooks/useNotifications';
+import { useUnreadNotificationCount } from '../../../shared/hooks/useNotifications';
 import styles from './NotificationBell.module.css';
 
 export default function NotificationBell() {
-  const { unreadCount } = useNotifications();
+  // The count alone. `useNotifications()` also mounts the infinite feed query,
+  // and this bell is in the header on every route — so every page in the app
+  // was fetching page one of the notification list to render a number that
+  // comes from a different endpoint entirely.
+  const unreadCount = useUnreadNotificationCount();
   const location = useLocation();
   const isActive = location.pathname.startsWith('/notifications');
 

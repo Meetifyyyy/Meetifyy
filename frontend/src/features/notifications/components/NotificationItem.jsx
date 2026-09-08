@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import FollowButton from '@shared/components/ui/FollowButton';
 import Avatar from '@shared/components/avatar/Avatar';
@@ -6,7 +7,7 @@ import styles from './NotificationItem.module.css';
 import { getMediaUrl } from '@shared/api/apiClient';
 import { DEFAULT_ACTIVITY_COVERS, getDefaultActivityCover } from '@shared/utils/activityCover';
 
-export default function NotificationItem({
+function NotificationItem({
   notif,
   actor,
   timeStr,
@@ -186,3 +187,15 @@ export default function NotificationItem({
     </div>
   );
 }
+
+/**
+ * Memoised because the list is virtualised: scrolling re-runs the parent
+ * constantly, and without this every visible row re-rendered on every frame
+ * even though none of their props had changed.
+ *
+ * Props are compared shallowly, which is why NotificationList caches the
+ * `actor` object rather than building it in the render loop. `notif` comes
+ * straight from the query cache and keeps its identity between renders,
+ * `timeStr` is a string, and `onClick` is stable from the route.
+ */
+export default memo(NotificationItem);

@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, useRef } from 'react';
+import { useCallback, useMemo, useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useUrlState } from '@shared/hooks/useUrlState';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -7,8 +7,6 @@ import { useAuth } from '@shared/context/AuthContext';
 import { activitiesApi } from '@shared/api/apiClient';
 import { showToast } from '@shared/utils/toast';
 import { timeAgo } from '@shared/utils/time';
-import { useSmartBack } from '@shared/hooks/useSmartBack';
-import Skeleton from '@shared/components/skeletons/Skeleton';
 import { ErrorState } from '@shared/components/ui/StateViews';
 import PageHeader from '@layout/PageHeader';
 
@@ -16,9 +14,7 @@ import NotificationList from '../components/NotificationList';
 import InvitationList from '../components/InvitationList';
 import styles from './NotificationsRoute.module.css';
 import { useUsersMap } from '@shared/hooks/useUsersMap';
-import { useCrewActivities, useCrewActions } from '@shared/hooks/useCrew';
 
-import { NotifRowSkeleton } from '../components/skeletons/NotificationsSkeleton';
 import { requestOpenInstantMatchChat } from '@features/instant-match/context/InstantMatchContext';
 import { isInstantChatNotification } from '@shared/utils/instantChatRouting';
 import {
@@ -27,6 +23,13 @@ import {
   patchInviteNotification,
   resolveInviteStatus,
 } from '../utils/inviteLifecycle';
+
+/**
+ * Pure, and identical on every render — so it lives out here rather than being
+ * rebuilt inside the component on each one.
+ */
+const SAFE_ID = /^[a-zA-Z0-9_-]{1,64}$/;
+const safeId = (v) => (v && SAFE_ID.test(v) ? v : null);
 
 export default function NotificationsRoute() {
   // ?tab=invitations survives a reload and gives Back a step inside the module
@@ -40,7 +43,6 @@ export default function NotificationsRoute() {
     notifications,
     markAsRead,
     markAllRead,
-    dismissNotification,
     fetchNextPage,
     hasNextPage,
     isFetchingNextPage,
@@ -51,8 +53,6 @@ export default function NotificationsRoute() {
   // getUserById was defined as exactly `users[id] || null` over this same map.
   const usersMap = useUsersMap();
   const getUserById = (id) => usersMap[id] || null;
-  const crewActivities = useCrewActivities();
-  const { joinCrewActivity, declineCrewInvitation } = useCrewActions();
   const navigate = useNavigate();
   const loadMoreRef = useRef(null);
   const hasMarkedReadRef = useRef(false);
@@ -299,12 +299,7 @@ export default function NotificationsRoute() {
   const error = null;
   const retry = () => {};
 
-  const SAFE_ID = /^[a-zA-Z0-9_-]{1,64}$/;
-  const SAFE_USERNAME = /^[a-zA-Z0-9_.]{1,50}$/;
-  const safeId = (v) => (v && SAFE_ID.test(v) ? v : null);
-  const safeUsername = (v) => (v && SAFE_USERNAME.test(v) ? v : null);
-
-  const handleClick = (notif) => {
+  const handleClick = useCallback((notif) => {
     markAsRead(notif.id);
 
     const type = (notif.type || '').toUpperCase();
@@ -408,14 +403,7 @@ export default function NotificationsRoute() {
         }
         break;
     }
-  };
-
-  const resolveActor = (actorId) => {
-    if (!actorId) return { name: 'Someone', avatar: '?' };
-    const user = getUserById(actorId);
-    if (user) return { name: user.displayName || user.name || user.username, username: user.username, avatar: user.avatar };
-    return { name: 'Someone', avatar: '?' };
-  };
+  }, [markAsRead, navigate, setActiveTab]);
 
   const groupedNotifications = useMemo(() => {
     if (!loadedNotifications) return [];
@@ -492,13 +480,9 @@ export default function NotificationsRoute() {
 
         <div className={styles.list}>
           {(activeTab === 'invitations' ? inviteFeed.isLoading : isLoading) ? (
-            <div className={styles.groupItems}>
-              <NotifRowSkeleton />
-              <NotifRowSkeleton />
-              <NotifRowSkeleton />
-              <NotifRowSkeleton />
-              <NotifRowSkeleton />
-              <NotifRowSkeleton />
+            <div className={styles.loadingState} role="status" aria-live="polite">
+              <span className={styles.spinner} aria-hidden="true" />
+              <span>Loading notifications…</span>
             </div>
           ) : error ? (
             <ErrorState onRetry={retry} />
@@ -524,7 +508,6 @@ export default function NotificationsRoute() {
               groupedNotifications={groupedNotifications}
               timeAgo={timeAgo}
               onNotifClick={handleClick}
-              getUserById={getUserById}
               pageStyles={styles}
               scrollRef={pageRef}
             />
@@ -552,10 +535,8 @@ export default function NotificationsRoute() {
             </div>
           )}
           {activeTab !== 'invitations' && isFetchingNextPage && !isLoading && (
-            <div className={styles.groupItems} style={{ marginTop: '0.75rem' }}>
-              <NotifRowSkeleton />
-              <NotifRowSkeleton />
-              <NotifRowSkeleton />
+            <div role="status" aria-live="polite" aria-label="Loading more notifications">
+              <span className={`${styles.spinner} ${styles.spinnerInline}`} aria-hidden="true" />
             </div>
           )}
           {activeTab !== 'invitations' && hasNextPage && (

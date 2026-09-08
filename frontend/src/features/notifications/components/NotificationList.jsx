@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { EmptyState } from '@shared/components/ui/StateViews';
 import NotificationItem from './NotificationItem';
@@ -13,21 +13,32 @@ export default function NotificationList({
 }) {
   const users = useUsersMap();
 
-  const resolveActor = (notif) => {
+  /**
+   * username -> user, built once per change of the users map.
+   *
+   * `resolveActor` fell back to `Object.values(users).find(u => u.username ===
+   * ...)` for any notification whose actor id is not in the map — a full scan
+   * of every user the client knows, per row, on every render. Virtualisation
+   * keeps that to the dozen or so visible rows, but it still ran on every
+   * scroll frame, and it grows with the size of the users map rather than with
+   * the list.
+   */
+  const usersByUsername = useMemo(() => {
+    const index = new Map();
+    for (const user of Object.values(users || {})) {
+      if (user?.username) index.set(user.username, user);
+    }
+    return index;
+  }, [users]);
+
+  const resolveActor = useCallback((notif) => {
     const actorId = notif.actor?.id || notif.actorId || notif.metadata?.actorId;
     const actorUsername = notif.actor?.username || notif.metadata?.actorUsername;
 
     // getUserById was defined as exactly `users[id] || null` over this same map.
-    let liveUser = null;
-    if (actorId) {
-      liveUser = users[actorId] || null;
-    }
-    if (!liveUser && users) {
-      if (actorId && users[actorId]) {
-        liveUser = users[actorId];
-      } else if (actorUsername) {
-        liveUser = Object.values(users).find(u => u.username === actorUsername);
-      }
+    let liveUser = (actorId && users?.[actorId]) || null;
+    if (!liveUser && actorUsername) {
+      liveUser = usersByUsername.get(actorUsername) || null;
     }
 
     if (liveUser) {
@@ -57,7 +68,7 @@ export default function NotificationList({
     }
 
     return { name: 'Someone', avatar: '', username: '' };
-  };
+  }, [users, usersByUsername]);
 
   const formatTimeStr = (createdAt) => {
     return timeAgo(createdAt)
@@ -86,6 +97,28 @@ export default function NotificationList({
     });
     return list;
   }, [groupedNotifications]);
+
+  /**
+   * One actor object per row, rebuilt only when the rows or the users map
+   * change — not on every render.
+   *
+   * `actor` is an object, so resolving it inline in the render loop handed
+   * every row a brand-new reference each time and made `React.memo` on
+   * NotificationItem useless: nothing would ever compare equal. Scrolling
+   * re-rendered every visible row for that reason alone.
+   *
+   * `timeStr` is deliberately NOT cached here. It is a string, so it compares
+   * by value and memo skips the row anyway while it reads the same — and
+   * caching it would freeze relative timestamps at whatever they said when the
+   * list last changed.
+   */
+  const actorsById = useMemo(() => {
+    const map = new Map();
+    for (const item of flatItems) {
+      if (item.type === 'item') map.set(item.key, resolveActor(item.notif));
+    }
+    return map;
+  }, [flatItems, resolveActor]);
 
   const virtualizer = useVirtualizer({
     count: flatItems.length,
@@ -154,7 +187,7 @@ export default function NotificationList({
             ) : (
               <NotificationItem
                 notif={item.notif}
-                actor={resolveActor(item.notif)}
+                actor={actorsById.get(item.key)}
                 timeStr={formatTimeStr(item.notif.createdAt)}
                 onClick={onNotifClick}
               />

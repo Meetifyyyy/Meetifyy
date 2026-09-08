@@ -318,3 +318,62 @@
     margin: 0.25rem 0 0.25rem 0.5rem;
   }
 }
+/* ── Loading ────────────────────────────────────────────────────────────────
+   Shown while the first page of notifications is on its way.
+
+   A spinner rather than the six skeleton rows this used to render. Skeletons
+   are the right choice when the shape of what is coming is known and fixed;
+   a notification list is not — the rows are different heights, there may be
+   four of them or none, and the skeletons were guessing wrong often enough
+   that content visibly jumped when it landed. One spinner makes no promise
+   about the shape, so nothing has to be corrected. It is also a great deal
+   less DOM on a page whose whole job is to render quickly. */
+.loadingState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.85rem;
+  /* Holds the same vertical space the empty state does, so switching between
+     loading, empty and loaded does not resize the scroll container. */
+  min-height: 60vh;
+  color: var(--color-text-muted);
+  font-size: 0.9rem;
+}
+
+.spinner {
+  width: 28px;
+  height: 28px;
+  border: 2.5px solid var(--color-border-light);
+  border-top-color: var(--color-primary);
+  border-radius: 50%;
+  animation: notifSpin 0.7s linear infinite;
+}
+
+/* The pagination spinner sits inline under the last row, so it is smaller and
+   claims only its own line. */
+.spinnerInline {
+  width: 20px;
+  height: 20px;
+  border-width: 2px;
+  /* `block` + auto margins rather than a flex wrapper: one element instead of
+     two for a spinner that appears for a few hundred milliseconds. */
+  display: block;
+  margin: 1rem auto;
+}
+
+@keyframes notifSpin {
+  to { transform: rotate(360deg); }
+}
+
+/* The label already says what is happening, so the motion is decoration. A
+   static ring would read as a stalled spinner, so it pulses instead. */
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation: notifPulse 1.4s ease-in-out infinite;
+  }
+  @keyframes notifPulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.35; }
+  }
+}
