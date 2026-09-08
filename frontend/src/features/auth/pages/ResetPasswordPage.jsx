@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { supabase } from '@shared/context/AuthContext';
+import { isRecoveryTab, clearRecoveryTab } from '@shared/lib/supabase';
 import Toast from '@shared/components/ui/Toast';
 import { CheckCircle2, XCircle } from '@shared/components/icons';
 import { getBackendUrl } from '@shared/api/apiClient';
@@ -208,6 +209,32 @@ export default function ResetPasswordPage() {
       isMounted = false;
       clearTimeout(timeoutId);
       subscription.unsubscribe();
+    };
+  }, []);
+
+  // ─── Leaving this page abandons the recovery credential ───────────────────
+  //
+  // Two things depend on the tab being marked as a recovery tab for as long as
+  // the recovery session is live: AuthContext keeps it out of global auth
+  // state, and apiClient refuses to attach it to any API call. Both are correct
+  // WHILE the user is here. Neither should outlive the visit.
+  //
+  // Every path that finishes the flow already signs out — success does, and so
+  // does the expired branch — and that clears the marker. The path that does
+  // not is abandonment: back button, in-app navigation, a typed URL. That left
+  // the marker set for the rest of the tab's life, so a user who then signed in
+  // WITHOUT reloading got a session the app accepted and an API client that
+  // withheld its token from every request. Signed in, and nothing loads.
+  //
+  // So the visit itself is the scope. On the way out, if this is still a
+  // recovery tab, the session is abandoned exactly as the expired branch
+  // abandons it — which also stops a usable recovery credential sitting in
+  // localStorage after the user has walked away from it.
+  useEffect(() => {
+    return () => {
+      if (!isRecoveryTab()) return;
+      clearRecoveryTab();
+      supabase.auth.signOut().catch(() => {});
     };
   }, []);
 

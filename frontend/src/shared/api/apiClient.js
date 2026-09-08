@@ -7,7 +7,7 @@
  * Token caching: we keep a module-level reference updated via onAuthStateChange
  * so every API call is a synchronous read — no async getSession() per request.
  */
-import { supabase } from '@shared/lib/supabase';
+import { supabase, isRecoveryTab, clearRecoveryTab } from '@shared/lib/supabase';
 import { applyAccountStatusCorrection } from '@shared/lib/accountStatusCorrection';
 import {
   announceLegalConsentChange,
@@ -21,18 +21,49 @@ let _cachedToken = '';
 let _hasSession = false;
 let _initSessionPromise = null;
 
+/**
+ * A password-recovery session must never become the token this client attaches.
+ *
+ * `AuthContext` already keeps a recovery session out of React state, so the app
+ * never renders as signed in on the reset page. This cache had no such guard:
+ * it has its own auth listener and cached whatever token came past, so while a
+ * tab sat on /reset-password the recovery credential WAS the Authorization
+ * header on every API call the client made.
+ *
+ * A recovery token is an ordinary session JWT — the backend cannot tell it from
+ * a login, which is exactly why it must not be handed to it. The isolation has
+ * to be enforced here, on the way out.
+ *
+ * Scoped to the tab, not to the event: `PASSWORD_RECOVERY` fires once, but the
+ * session it establishes lives on through `INITIAL_SESSION` replays and token
+ * refreshes, and each of those would otherwise cache it. `isRecoveryTab()` stays
+ * true until the recovery session is signed out.
+ */
+function cacheSessionToken(session) {
+  if (isRecoveryTab()) {
+    _cachedToken = '';
+    _hasSession = false;
+    return;
+  }
+  _cachedToken = session?.access_token ?? '';
+  _hasSession = !!session;
+}
+
 if (supabase) {
   // Seed immediately from stored session — keep reference so initial requests can await it
   _initSessionPromise = supabase.auth.getSession().then(({ data: { session } }) => {
-    _cachedToken = session?.access_token ?? '';
-    _hasSession = !!session;
+    cacheSessionToken(session);
     return session;
   }).catch(() => null);
 
   // Keep in sync with all future auth events (login, logout, token refresh)
-  supabase.auth.onAuthStateChange((_event, session) => {
-    _cachedToken = session?.access_token ?? '';
-    _hasSession = !!session;
+  supabase.auth.onAuthStateChange((event, session) => {
+    // The reset page signs the recovery session out when it finishes (or when
+    // the link turns out to be expired). That is the point the tab stops being
+    // a recovery tab — withholding tokens past it would break every request a
+    // user makes after signing back in without reloading.
+    if (event === 'SIGNED_OUT') clearRecoveryTab();
+    cacheSessionToken(session);
   });
 }
 
@@ -289,6 +320,12 @@ export const deriveThumbnailKey = (rawSrc) => {
 function getToken() {
   if (_cachedToken) return _cachedToken;
 
+  // The fallback below reads the session straight out of storage, which would
+  // walk right around the recovery guard on the cache: a recovery session is in
+  // localStorage like any other, and an empty `_cachedToken` is exactly the
+  // state that sends us here.
+  if (isRecoveryTab()) return '';
+
   try {
     if (typeof localStorage !== 'undefined') {
       for (let i = 0; i < localStorage.length; i++) {
@@ -338,18 +375,20 @@ async function refreshSessionIfNeeded() {
   _refreshPromise = (async () => {
     try {
       if (!supabase) return null;
+      // Same guard as getToken: refreshing a recovery session yields another
+      // recovery session, and caching it here would reintroduce exactly what
+      // cacheSessionToken exists to prevent.
+      if (isRecoveryTab()) return null;
       const { data, error } = await supabase.auth.refreshSession();
       if (error || !data?.session) {
         const { data: sData } = await supabase.auth.getSession();
         if (sData?.session) {
-          _cachedToken = sData.session.access_token;
-          _hasSession = true;
+          cacheSessionToken(sData.session);
           return sData.session;
         }
         return null;
       }
-      _cachedToken = data.session.access_token;
-      _hasSession = true;
+      cacheSessionToken(data.session);
       return data.session;
     } catch {
       return null;
