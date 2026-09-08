@@ -5,6 +5,7 @@ import {
   rateLimitException,
 } from '../rate-limit/rate-limit.response';
 import { clientIp } from '../rate-limit/client-ip.util';
+import { normalizeEmail } from '../validation/email-format.util';
 
 /**
  * Brute-force / credential-stuffing protection for the server-side login proxy.
@@ -74,6 +75,10 @@ export class LoginRateLimitGuard implements CanActivate {
 export function loginAccountKey(request: any): string | null {
   const identifier = request?.body?.identifier;
   if (typeof identifier !== 'string') return null;
-  const normalized = identifier.trim().toLowerCase();
+  // Normalised the same way every other account-keyed budget is, so a caller
+  // cannot mint a fresh bucket per attempt by varying invisible characters or
+  // Unicode width in the address they type. Harmless for usernames, which this
+  // also receives: for them it is still just trim-and-lowercase.
+  const normalized = normalizeEmail(identifier);
   return normalized || null;
 }

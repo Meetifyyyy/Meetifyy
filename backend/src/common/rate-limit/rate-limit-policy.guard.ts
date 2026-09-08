@@ -12,6 +12,7 @@ import {
   rateLimitException,
 } from './rate-limit.response';
 import { clientIp } from './client-ip.util';
+import { normalizeEmail } from '../validation/email-format.util';
 import { RATE_LIMIT_POLICIES_KEY } from './rate-limit.decorator';
 import {
   RATE_LIMIT_POLICIES,
@@ -119,9 +120,27 @@ export class RateLimitPolicyGuard implements CanActivate {
 
       case 'account': {
         const raw = request?.body?.email ?? request?.body?.identifier;
-        return typeof raw === 'string' && raw.trim()
-          ? raw.trim().toLowerCase()
-          : null;
+        if (typeof raw !== 'string') return null;
+
+        // The SAME normalisation the services use to resolve the address, not
+        // a lookalike. This used to be `trim().toLowerCase()`, which agrees
+        // with `normalizeEmail` on case and whitespace and disagrees with it on
+        // everything else it does — stripping invisible characters, and NFKC.
+        //
+        // That gap was a way out of every per-account budget. `ｖictim@x.com`
+        // (fullwidth v) and `victim<ZWSP>@x.com` both satisfy `@IsEmail`, so
+        // they reach the service; the service folds both to `victim@x.com` and
+        // mails the real person; and each one landed in a BUCKET OF ITS OWN
+        // here. An attacker could mint a fresh budget per request and point the
+        // resulting mail at one address — which is precisely what the
+        // per-account dimension exists to stop, the per-IP one having already
+        // failed to (that is the whole reason both exist).
+        //
+        // Guards run before validation pipes, so this deliberately does not
+        // care whether the value is a valid address: it only has to key the
+        // same way the service will resolve it.
+        const normalized = normalizeEmail(raw);
+        return normalized || null;
       }
 
       case 'resource':

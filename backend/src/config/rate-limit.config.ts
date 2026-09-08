@@ -27,8 +27,13 @@ import { IS_PRODUCTION, APP_ENV, int, oneOf, str } from './env';
  *     current-password verification moved behind this backend and given
  *     budgets. All four previously went from the browser straight to Supabase
  *     and were governed only by its shared per-project ceilings.
+ * v9: account-dimension identifiers now resolve through `normalizeEmail`, the
+ *     same function the services use. They were trimmed and lowercased only,
+ *     so an address varying by invisible characters or Unicode width keyed a
+ *     fresh bucket while still delivering to the same real inbox — an escape
+ *     hatch from every per-account budget. Buckets re-key once on deploy.
  */
-export const POLICY_VERSION = 8;
+export const POLICY_VERSION = 9;
 
 export type RateLimitAlgorithm = 'fixed-window' | 'token-bucket';
 
