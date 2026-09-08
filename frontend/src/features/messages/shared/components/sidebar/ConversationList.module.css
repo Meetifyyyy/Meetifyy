@@ -135,7 +135,7 @@
 @media (hover: hover) and (pointer: fine) {
 
   .msgNewBtn:hover {
-  transform: scale(1.05);
+    transform: scale(1.05);
   }
 }
 
@@ -280,8 +280,13 @@
 }
 
 /* Old stale classes — unused */
-.calendarBadge { display: none; }
-.startedCalendarBadge { display: none; }
+.calendarBadge {
+  display: none;
+}
+
+.startedCalendarBadge {
+  display: none;
+}
 
 
 
@@ -480,6 +485,7 @@
 }
 
 @media (max-width: 768px) {
+
   .mobileHeaderWrapper,
   .desktopHeaderWrapper,
   .headerWrapper {
@@ -502,7 +508,7 @@
     flex: 1;
     min-height: 0;
     border-right: none;
-    padding: 8px 0.75rem 0;
+    padding: 12px 0rem 0;
     box-sizing: border-box;
   }
 

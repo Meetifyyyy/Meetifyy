@@ -285,11 +285,14 @@
   padding: 14px 20px;
   background: var(--color-bg-white);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-full);
+  border-radius: var(--radius-lg, 12px);
   font-size: 0.9375rem;
   font-weight: 600;
+  line-height: 1.4;
   color: var(--color-text-main);
-  overflow-wrap: break-word;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  white-space: normal;
 }
 
 .pollMore {

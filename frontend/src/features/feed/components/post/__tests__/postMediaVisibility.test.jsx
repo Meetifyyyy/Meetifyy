@@ -210,6 +210,26 @@ describe('post media is independent of text truncation', () => {
     expect(container.querySelector('[class*="collapsibleMedia"]')).toBeNull();
   });
 
+  it('renders poll options inside pollOptionText to ensure wrapping', () => {
+    const longOption = 'ibiibibiibbibibibiibiibibiibbibibibiibibibiibbibibiibi';
+    const { q } = renderPost(makePost({
+      text: SHORT_TEXT,
+      media: [],
+      poll: {
+        options: [
+          { id: 'a', text: 'Short option', votes: 0 },
+          { id: 'b', text: longOption, votes: 1 },
+        ],
+        totalVotes: 1,
+      },
+    }));
+
+    const optEl = q.getByText(longOption);
+    expect(optEl).toBeTruthy();
+    expect(optEl.className).toMatch(/pollOptionText/);
+    expect(optEl.closest('button')?.className).toMatch(/pollCardOption/);
+  });
+
   it('keeps a link preview visible under a truncated caption', () => {
     const { q } = renderPost(makePost({
       text: LONG_TEXT,

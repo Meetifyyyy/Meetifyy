@@ -114,4 +114,28 @@ describe('PostComposer — typing into poll options', () => {
 
     expect(document.activeElement).toBe(container.querySelector('#mock-mention-input'));
   });
+
+  it('enforces a 150-character limit on poll options and displays remaining count', () => {
+    const { container } = render(<PostComposer onSubmit={async () => {}} />);
+    const options = openPoll(container);
+
+    const first = options()[0];
+    expect(first.getAttribute('maxlength')).toBe('150');
+
+    // Entering a string longer than 150 characters is capped at 150
+    const over150 = 'a'.repeat(160);
+    clickInto(first);
+    fireEvent.change(first, { target: { value: over150 } });
+
+    expect(first.value.length).toBe(150);
+    expect(first.value).toBe('a'.repeat(150));
+
+    // A character counter indicator appears when length >= 100 showing remaining characters (0 left)
+    expect(container.textContent).toContain('0');
+
+    // Change to 120 characters: shows 30 remaining
+    fireEvent.change(first, { target: { value: 'b'.repeat(120) } });
+    expect(first.value.length).toBe(120);
+    expect(container.textContent).toContain('30');
+  });
 });

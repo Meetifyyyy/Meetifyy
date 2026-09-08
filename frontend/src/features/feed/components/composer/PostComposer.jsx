@@ -137,7 +137,7 @@ const PostComposer = forwardRef(function PostComposer({ onSubmit }, ref) {
       }
 
       if (showPoll) {
-        const opts = pollOptions.map((o) => o.trim()).filter(Boolean);
+        const opts = pollOptions.map((o) => o.trim().slice(0, 150)).filter(Boolean);
         await onSubmit(text, { question: text || 'Poll', options: opts, multiSelect: pollMulti }, finalMedia, mentions);
         setPollOptions(['', '']);
         setPollMulti(false);
@@ -318,7 +318,7 @@ const PostComposer = forwardRef(function PostComposer({ onSubmit }, ref) {
 
   const updatePollOption = (idx, val) => {
     const next = [...pollOptions];
-    next[idx] = val;
+    next[idx] = val.slice(0, 150);
     setPollOptions(next);
   };
 
@@ -410,6 +410,10 @@ const PostComposer = forwardRef(function PostComposer({ onSubmit }, ref) {
                 {pollOptions.map((opt, i) => {
                   const isLast = i === pollOptions.length - 1;
                   const hasAdd = isLast && pollOptions.length < 5;
+                  const hasDelete = pollOptions.length > 2;
+                  const remaining = 150 - opt.length;
+                  const showCount = opt.length >= 100;
+
                   return (
                     <div key={i} className={styles.pollOptionRow}>
                       <div className={styles.pollOptionInputWrapper}>
@@ -418,9 +422,23 @@ const PostComposer = forwardRef(function PostComposer({ onSubmit }, ref) {
                           type="text"
                           placeholder={`Option ${i + 1}`}
                           value={opt}
+                          maxLength={150}
                           onChange={(e) => updatePollOption(i, e.target.value)}
+                          style={{
+                            paddingRight: hasDelete
+                              ? (showCount ? '3.6rem' : '2.2rem')
+                              : (showCount ? '2.4rem' : '0.75rem'),
+                          }}
                         />
-                        {pollOptions.length > 2 && (
+                        {showCount && (
+                          <span
+                            className={`${styles.pollOptionCharCount}${hasDelete ? ` ${styles.hasDelete}` : ''}${remaining === 0 ? ` ${styles.limit}` : remaining <= 20 ? ` ${styles.warning}` : ''}`}
+                            title={`${remaining} characters remaining (max 150)`}
+                          >
+                            {remaining}
+                          </span>
+                        )}
+                        {hasDelete && (
                           <button className={styles.pollOptionRemove} onClick={() => removePollOption(i)} title="Remove option">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
                           </button>

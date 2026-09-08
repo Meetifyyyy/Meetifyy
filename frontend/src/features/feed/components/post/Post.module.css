@@ -331,6 +331,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 0.75rem;
   padding: 0.75rem 1rem;
   background: var(--color-bg-soft, rgba(255, 255, 255, 0.03));
   border: 1px solid var(--color-border, rgba(255, 255, 255, 0.15));
@@ -341,8 +342,13 @@
   font-family: var(--font-family-sans);
   font-size: 0.9rem;
   font-weight: 600;
+  line-height: 1.4;
   text-align: left;
   color: var(--color-text-main);
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  box-sizing: border-box;
 }
 
 .pollCardOption:hover:not(:disabled) {
@@ -377,8 +383,21 @@
   position: relative;
   z-index: 2;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 0.5rem;
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  white-space: normal;
+}
+
+.pollOptionText {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  white-space: normal;
 }
 
 .pollCheckbox {
@@ -392,6 +411,7 @@
   transition: all 0.15s;
   background: var(--color-bg-white);
   flex-shrink: 0;
+  margin-top: 3px;
 }
 
 .pollCheckbox.checked {
@@ -407,7 +427,9 @@
   font-weight: 600;
   font-size: 0.82rem;
   color: var(--color-primary);
-  margin-left: 0.5rem;
+  margin-left: auto;
+  flex-shrink: 0;
+  align-self: center;
 }
 
 .pollCardFooter {

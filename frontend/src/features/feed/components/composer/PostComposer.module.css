@@ -348,6 +348,34 @@
   background: rgba(239, 68, 68, 0.08);
 }
 
+.pollOptionCharCount {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 0.72rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-muted);
+  pointer-events: none;
+  user-select: none;
+  transition: color 0.15s ease;
+  line-height: 1;
+}
+
+.pollOptionCharCount.hasDelete {
+  right: 32px;
+}
+
+.pollOptionCharCount.warning {
+  color: #f59e0b;
+}
+
+.pollOptionCharCount.limit {
+  color: var(--color-danger);
+  font-weight: 700;
+}
+
 .pollOptionActionSpace {
   width: 24px;
   height: 24px;

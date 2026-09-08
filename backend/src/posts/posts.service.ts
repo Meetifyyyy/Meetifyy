@@ -172,6 +172,15 @@ export class PostsService {
       await this.assertCanPostInCommunity(authorId, communityId);
     }
 
+    if (poll && Array.isArray(poll.options) && poll.options.length > 0) {
+      for (const opt of poll.options) {
+        const str = typeof opt === 'string' ? opt.trim() : String(opt ?? '');
+        if (str.length > 150) {
+          throw new BadRequestException('Poll options cannot exceed 150 characters');
+        }
+      }
+    }
+
     // Re-derive the true mention set from the actual text before it's ever
     // persisted — never trust client-claimed indices/usernames as-is.
     const sanitizedMentions = await this.mentionsService.sanitize(
@@ -302,15 +311,21 @@ export class PostsService {
 
     let createdPollOptions: any[] = [];
     if (poll && Array.isArray(poll.options) && poll.options.length > 0) {
-      await this.prisma.pollOption.createMany({
-        data: poll.options.map((opt: string) => ({
-          postId: post.id,
-          text: opt,
-        })),
-      });
-      createdPollOptions = await this.prisma.pollOption.findMany({
-        where: { postId: post.id },
-      });
+      const sanitizedOptions = poll.options
+        .map((opt: any) => (typeof opt === 'string' ? opt.trim() : String(opt ?? '')).slice(0, 150))
+        .filter(Boolean);
+
+      if (sanitizedOptions.length > 0) {
+        await this.prisma.pollOption.createMany({
+          data: sanitizedOptions.map((optText: string) => ({
+            postId: post.id,
+            text: optText,
+          })),
+        });
+        createdPollOptions = await this.prisma.pollOption.findMany({
+          where: { postId: post.id },
+        });
+      }
     }
 
     const formattedMedia = (post.media || []).map((m: any) => ({

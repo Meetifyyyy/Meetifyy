@@ -211,6 +211,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
   padding: 6px 10px;
   border-radius: 6px;
   background: rgba(255, 255, 255, 0.06);
@@ -236,9 +237,11 @@
   position: relative;
   z-index: 1;
   font-weight: 500;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  line-height: 1.35;
 }
 
 .pollOptionVotes {
@@ -247,4 +250,6 @@
   font-size: 0.75rem;
   opacity: 0.75;
   margin-left: 8px;
+  flex-shrink: 0;
+  align-self: center;
 }
