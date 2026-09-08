@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { AlertCircle, ArrowRight } from '@shared/components/icons';
-import { useSignup, DEV_BYPASS_SIGNUP } from '../../context/SignupContext';
+import { useSignup } from '../../context/SignupContext';
 import { useAuth } from '@shared/context/AuthContext';
 import AnimatedStep from './AnimatedStep';
 import { AuthHeading, AuthField, PasswordField, AuthButton, styles as s } from '../../shared/ui';
@@ -32,16 +32,6 @@ export default function Step3Password() {
     setAttempted(true);
     setSubmitError(null);
     if (!isValid) return;
-
-    // ── DEV BYPASS ──────────────────────────────────────────────────────────
-    // Skip initiateSignup so no account is created during dev/design mode.
-    // Remove this block (and the DEV_BYPASS_SIGNUP flag) before shipping.
-    if (DEV_BYPASS_SIGNUP) {
-      updateData({ password });
-      nextStep();
-      return;
-    }
-    // ────────────────────────────────────────────────────────────────────────
 
     setIsSubmitting(true);
     try {

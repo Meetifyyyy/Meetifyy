@@ -362,16 +362,19 @@ async function refreshSessionIfNeeded() {
 }
 
 const PUBLIC_PATHS = [
-  '/api/auth/verify-otp',
-  '/api/auth/resend-otp',
+  // Signup and its confirmation-code resend. Both are made before the account
+  // has a session by definition — that is the whole point of the step — and
+  // `/api/auth/signup` also covers `/api/auth/signup/resend` by prefix.
   '/api/auth/signup',
   '/api/auth/login',
   '/api/health',
   // These are called during signup before the user has a session
   '/api/auth/check-username',
   '/api/auth/check-email',
-  // Forgot password asks this before sending a reset link, and the person
-  // asking is by definition signed out.
+  // Forgot password. The person asking is by definition signed out, so without
+  // this entry `request` refuses the call before a byte reaches the network and
+  // the reset screen fails for everyone who actually needs it.
+  '/api/auth/request-password-reset',
   '/api/auth/account-exists',
   // The help centre and the support-request form. These have to work for a
   // signed-out visitor — someone locked out of their account is exactly the

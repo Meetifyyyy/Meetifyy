@@ -23,8 +23,12 @@ import { IS_PRODUCTION, APP_ENV, int, oneOf, str } from './env';
  *     Azure appends `address:port` to X-Forwarded-For and the port changes per
  *     TCP connection, so every connection previously got its own bucket.
  * v7: production trust-proxy hop count corrected from 1 to 2 (measured).
+ * v8: signup, confirmation-code resend, password-reset requests and
+ *     current-password verification moved behind this backend and given
+ *     budgets. All four previously went from the browser straight to Supabase
+ *     and were governed only by its shared per-project ceilings.
  */
-export const POLICY_VERSION = 7;
+export const POLICY_VERSION = 8;
 
 export type RateLimitAlgorithm = 'fixed-window' | 'token-bucket';
 
@@ -189,6 +193,99 @@ export const RATE_LIMIT_POLICIES = {
     onRedisFailure: 'closed',
     sensitive: true,
     message: 'Too many attempts. Please try again later.',
+  },
+
+  /**
+   * Current-password verification, from the change-password screen.
+   *
+   * This is a password oracle for an already-authenticated caller, so it needs
+   * a brute-force budget of its own. It previously had none at all: the check
+   * ran as `supabase.auth.signInWithPassword` straight from the browser, which
+   * never touched this backend, so `auth.login.account` — the budget that
+   * exists precisely to bound guesses against one account — was not spent and
+   * an attacker holding a stolen session could work through a password list
+   * through the settings panel without ever tripping a limit here.
+   *
+   * Keyed on the authenticated user rather than a submitted address: the route
+   * sits behind JwtGuard and verifies the password of the caller's own account,
+   * so there is no address in the body to key on and nothing to enumerate.
+   *
+   * Tighter than the login budget (6/15min) because the legitimate shape is
+   * narrower — someone changing their password types it once, maybe twice.
+   */
+  'auth.verifypassword.user': {
+    points: 5,
+    duration: 900,
+    blockDuration: 900,
+    dimension: 'user',
+    onRedisFailure: 'closed',
+    sensitive: true,
+    message:
+      'Too many incorrect password attempts. Please wait a few minutes and try again.',
+  },
+
+  /**
+   * Password-reset emails, per targeted account.
+   *
+   * The reset request used to go from the browser straight to Supabase, so the
+   * only thing standing between one script and an unbounded stream of reset
+   * mail to a chosen address was Supabase's own per-project ceiling — which is
+   * shared platform-wide, so exhausting it stops every other user receiving a
+   * reset link too. Proxying the request through this backend is what makes a
+   * per-account budget possible at all.
+   *
+   * Keyed on the submitted address, normalised and hashed like every other
+   * account-dimension policy. Deliberately spent whether or not an account
+   * exists: charging only real accounts would turn the remaining budget into
+   * the enumeration oracle the `sensitive` flag exists to prevent.
+   */
+  'auth.passwordreset.account': {
+    points: 3,
+    duration: 3600,
+    dimension: 'account',
+    onRedisFailure: 'closed',
+    sensitive: true,
+    message:
+      "You've requested several reset links recently. Please wait a while before requesting another.",
+  },
+
+  /**
+   * Signup attempts and confirmation-code resends, per client IP.
+   *
+   * `supabase.auth.signUp` and `auth.resend` were both called directly from the
+   * browser, so neither passed through any limit of ours. Both send mail, and
+   * both draw on the same shared Supabase mail budget as the OTP routes above —
+   * one abuser could stop every other student receiving a confirmation code
+   * during registration week.
+   *
+   * Sized for the real flow rather than for a single account: a student may
+   * legitimately restart signup a few times (wrong address, abandoned tab) and
+   * ask for a resend once or twice inside it.
+   */
+  'auth.signup.ip': {
+    points: 10,
+    duration: 3600,
+    dimension: 'ip',
+    onRedisFailure: 'closed',
+    sensitive: true,
+    message: 'Too many signup attempts. Please try again later.',
+  },
+
+  /**
+   * The per-address companion to auth.signup.ip.
+   *
+   * The IP budget bounds one host; this bounds how much mail a chosen address
+   * can be made to receive, which is the shape an IP limit alone does not stop
+   * when the attacker has more than one address to send from.
+   */
+  'auth.signup.account': {
+    points: 5,
+    duration: 3600,
+    dimension: 'account',
+    onRedisFailure: 'closed',
+    sensitive: true,
+    message:
+      "You've tried signing up with this address several times. Please wait a while before trying again.",
   },
 
   /**

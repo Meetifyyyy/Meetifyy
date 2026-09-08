@@ -3,12 +3,6 @@ import { useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@shared/context/AuthContext';
 import { config } from '@config';
 
-// ─── DEV BYPASS ────────────────────────────────────────────────────────────────
-// Set to true to skip all signup validation and API calls (dev/design mode).
-// Set back to false before shipping.
-export const DEV_BYPASS_SIGNUP = false;
-// ───────────────────────────────────────────────────────────────────────────────
-
 const SignupContext = createContext();
 
 const initialData = {

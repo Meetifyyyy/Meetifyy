@@ -4,12 +4,12 @@ import {
   OnModuleDestroy,
   UnauthorizedException,
   ForbiddenException,
-  NotFoundException,
   ConflictException,
   BadRequestException,
   Logger,
   Optional,
 } from '@nestjs/common';
+import { config } from '../config';
 import { PrismaService } from '../prisma/prisma.service';
 import { resolveSignInEligibility } from './sign-in-eligibility';
 import {
@@ -928,6 +928,242 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     };
   }
 
+  /**
+   * Confirms a password belongs to the calling account, without handing back a
+   * session.
+   *
+   * The change-password screen has to prove the person at the keyboard knows
+   * the current password before it will set a new one. It used to do that with
+   * `supabase.auth.signInWithPassword` straight from the browser, which is
+   * correct as a check and wrong as a place to put it: the call never reached
+   * this backend, so `auth.login.account` — the budget whose entire job is to
+   * bound guesses against one account — was never spent. Anyone holding a
+   * stolen session could work through a password list in the settings panel and
+   * trip nothing on our side. Behind this route it spends
+   * `auth.verifypassword.user` on every attempt.
+   *
+   * It also removes a side effect of doing it client-side: signing in again
+   * replaced the browser's session with a fresh one mid-flow, which is what the
+   * client then had to suppress auth events to hide.
+   *
+   * Returns a boolean rather than throwing on a wrong password — the caller is
+   * already authenticated, so "wrong password" is an answer to their question,
+   * not an authorization failure, and 401 is the status the client's own
+   * interceptor treats as a dead session and signs the user out over.
+   */
+  async verifyPassword(
+    user: AuthenticatedUser,
+    password: string,
+  ): Promise<{ valid: boolean }> {
+    if (!this.supabaseService.isConfigured) {
+      throw new UnauthorizedException('Authentication is not configured.');
+    }
+
+    const email = (user?.email || '').trim().toLowerCase();
+    // A placeholder address means the account has no password identity to
+    // verify against; treating that as "wrong password" is the safe answer.
+    if (!email || email.endsWith('@meetifyy.user') || !password) {
+      return { valid: false };
+    }
+
+    const { data, error } =
+      await this.supabaseService.client.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+    if (error || !data?.session) {
+      return { valid: false };
+    }
+
+    // The session this check just minted is an artefact of the check, not
+    // something anyone asked for. Left alone, every password change would
+    // strand a live refresh token that neither the browser nor the user knows
+    // exists. Revoked with `local` scope so it takes only itself down and not
+    // the caller's real session.
+    try {
+      await this.supabaseService.client.auth.admin.signOut(
+        data.session.access_token,
+        'local',
+      );
+    } catch {
+      // Best effort. Requires the service-role key; on a deployment running
+      // with the anon key the orphan simply expires on its own, and failing a
+      // password change over it would be far worse.
+    }
+
+    return { valid: true };
+  }
+
+  /**
+   * Creates the Supabase auth user and triggers the confirmation code.
+   *
+   * Proxied rather than called from the browser for the same reason login is:
+   * a call the client makes directly is a call this backend cannot limit. Both
+   * this and `resendSignupOtp` send mail, and they draw on the same shared
+   * per-project Supabase budget as every OTP in the app — so an unmetered
+   * signup endpoint is not just an account-spam problem, it is a way to stop
+   * every other student receiving their code during registration week.
+   * `auth.signup.ip` and `auth.signup.account` are enforced on the route.
+   *
+   * No session comes back and none is expected: the project runs with
+   * `mailer_autoconfirm: false`, so Supabase creates an unconfirmed user and
+   * emails a code. The browser establishes its session later, by verifying that
+   * code with `verifyOtp` — which stays client-side because it is the call that
+   * mints the session the browser then holds.
+   *
+   * The metadata written here is the same set the client used to send, minus
+   * academic details: Prisma owns those, and `user_metadata` is writable by the
+   * user it belongs to, so a copy here could disagree with the validated record.
+   */
+  async signUpWithEmail(input: {
+    email: string;
+    password: string;
+    displayName?: string;
+    username?: string;
+    birthday?: string;
+    firstName?: string;
+    lastName?: string;
+  }): Promise<{ pending: boolean }> {
+    if (!this.supabaseService.isAnonConfigured) {
+      throw new UnauthorizedException('Authentication is not configured.');
+    }
+
+    const email = normalizeEmail(input.email || '');
+    if (!email || !input.password) {
+      throw new BadRequestException('Email and password are required.');
+    }
+
+    // anonClient, not client. With the service-role key GoTrue treats this as
+    // an admin creating a user: the account comes back already confirmed and no
+    // code is sent, which would hand out verified accounts to anyone who can
+    // type an address. See SupabaseService.
+    const { data, error } = await this.supabaseService.anonClient.auth.signUp({
+      email,
+      password: input.password,
+      options: {
+        data: {
+          displayName: input.displayName,
+          username: input.username,
+          birthday: input.birthday,
+          firstName: input.firstName,
+          lastName: input.lastName,
+        },
+      },
+    });
+
+    if (error) {
+      // Surfaced as a 400 with Supabase's own wording — it is the only thing
+      // that can explain a weak password or a malformed address usefully, and
+      // it says nothing this caller did not already supply.
+      throw new BadRequestException(
+        error.message || 'Signup failed. Please try again.',
+      );
+    }
+
+    // Supabase answers a signup for an address that already exists — but has
+    // never been confirmed — with a user carrying an empty `identities` array,
+    // and no error. Without this check the client saw a success and moved to a
+    // code-entry screen for a code that was never sent.
+    //
+    // Deliberately NOT treated as an enumeration leak to close: reaching it
+    // costs a full signup attempt against both budgets on this route, and the
+    // alternative is stranding every user who closes the tab and starts again.
+    if (data?.user && (data.user.identities?.length ?? 0) === 0) {
+      throw new ConflictException(
+        'A signup is already pending for this email. Check your inbox for the verification code, or wait a moment and try again.',
+      );
+    }
+
+    return { pending: true };
+  }
+
+  /**
+   * Re-sends the signup confirmation code.
+   *
+   * Split from `signUpWithEmail` only because the client calls it separately;
+   * everything in that method's note about mail budgets and the anon client
+   * applies here identically, and the route carries the same two policies.
+   */
+  async resendSignupOtp(email: string): Promise<{ sent: boolean }> {
+    if (!this.supabaseService.isAnonConfigured) {
+      throw new UnauthorizedException('Authentication is not configured.');
+    }
+
+    const trimmed = normalizeEmail(email || '');
+    if (!trimmed) {
+      throw new BadRequestException('Please enter a valid email address.');
+    }
+
+    const { error } = await this.supabaseService.anonClient.auth.resend({
+      type: 'signup',
+      email: trimmed,
+    });
+
+    if (error) {
+      throw new BadRequestException(
+        error.message || 'Failed to resend code. Please try again.',
+      );
+    }
+
+    return { sent: true };
+  }
+
+  /**
+   * Sends a password-reset link, and says whether an account was there to send
+   * it to.
+   *
+   * One call where the forgot-password screen used to make two: an
+   * `account-exists` probe to decide whether to say "No account found",
+   * followed by `supabase.auth.resetPasswordForEmail` fired from the browser.
+   * That second call never reached this backend, so the mail-sending half of
+   * the flow was governed only by Supabase's per-project ceiling — which is
+   * shared platform-wide, meaning one script pointed at one address could stop
+   * every other user receiving a reset link. `auth.passwordreset.account` on
+   * this route is the budget that was missing.
+   *
+   * `exists` is the same disclosure `accountExistsForEmail` already made, kept
+   * deliberately (see that method) and rate-limited the same way.
+   *
+   * The redirect target is built from FRONTEND_URL and the configured reset
+   * path rather than accepted from the caller: a client-supplied `redirectTo`
+   * on a reset link is an open redirect that carries a recovery token in its
+   * fragment.
+   */
+  async requestPasswordReset(
+    email: string,
+  ): Promise<{ exists: boolean; sent: boolean }> {
+    const trimmed = normalizeEmail(email || '');
+    if (!trimmed) return { exists: false, sent: false };
+
+    const { exists } = await this.accountExistsForEmail(trimmed);
+    if (!exists) return { exists: false, sent: false };
+
+    if (!this.supabaseService.isAnonConfigured) {
+      throw new UnauthorizedException('Authentication is not configured.');
+    }
+
+    // anonClient, not client — see SupabaseService. These calls have to look to
+    // GoTrue exactly like the browser calls they replaced.
+    const { error } =
+      await this.supabaseService.anonClient.auth.resetPasswordForEmail(
+        trimmed,
+        { redirectTo: config.auth.redirects.resetPasswordUrl },
+      );
+
+    if (error) {
+      // The account is known to exist, so this is a transport or upstream
+      // failure rather than a wrong address. Reported as `sent: false` so the
+      // screen can decide what to show; it is not something the user can act on.
+      this.logger.warn(
+        `password reset dispatch failed for a known account: ${error.message}`,
+      );
+      return { exists: true, sent: false };
+    }
+
+    return { exists: true, sent: true };
+  }
+
   async checkUsernameAvailability(
     username: string,
   ): Promise<{ available: boolean; reason?: string }> {
@@ -1110,10 +1346,12 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
   /**
    * Whether an account exists for this address, as a plain boolean.
    *
-   * Deliberately narrower than `findUserByEmail` below: the forgot-password
-   * screen only needs to know whether to say "No account found", and returning
-   * the row would hand an unauthenticated caller a display name and username
-   * for any address they guessed.
+   * Deliberately a boolean and nothing more: the forgot-password screen only
+   * needs to know whether to say "No account found", and returning the row
+   * would hand an unauthenticated caller a display name and username for any
+   * address they guessed. An earlier `findUserByEmail` did exactly that; it
+   * had no callers left and was removed rather than left as a ready-made
+   * disclosure for whoever next needed an email lookup.
    *
    * This does make account existence observable, which is a change from the
    * previous always-say-"check your email" behaviour. That was a deliberate
@@ -1136,30 +1374,6 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     });
 
     return { exists: Boolean(user) };
-  }
-
-  /** Returns user if account exists, or throws NotFoundException if account does not exist. */
-  async findUserByEmail(email: string) {
-    const trimmed = (email || '').trim().toLowerCase();
-    if (!trimmed) {
-      throw new BadRequestException('Please enter a valid email address.');
-    }
-
-    const user = await this.prisma.user.findFirst({
-      where: {
-        OR: [
-          { email: { equals: trimmed, mode: 'insensitive' } },
-          { collegeEmail: { equals: trimmed, mode: 'insensitive' } },
-        ],
-      },
-      select: { id: true, email: true, displayName: true, username: true },
-    });
-
-    if (!user) {
-      throw new NotFoundException('No account found with this email address.');
-    }
-
-    return user;
   }
 
   private async _getUnreadNotifCount(userId: string): Promise<number> {

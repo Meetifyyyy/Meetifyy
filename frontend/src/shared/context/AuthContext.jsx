@@ -12,7 +12,6 @@ import { propagateUserMedia } from '@shared/utils/propagateUserMedia';
 
 import { supabase, isSupabaseConfigured } from '@shared/lib/supabase';
 import { describeNetworkError, logNetworkFailure } from '@shared/utils/networkErrors';
-import { config } from '@config';
 export { supabase, isSupabaseConfigured };
 
 /**
@@ -20,22 +19,33 @@ export { supabase, isSupabaseConfigured };
  *
  * Supabase sends the confirmation email inside the signup request itself
  * (`mailer_autoconfirm: false`), so this call is only as fast as the mail
- * provider behind it. The browser's own timeout is minutes, which on a stalled
- * provider leaves the user staring at a spinner with no idea whether their
- * account was created. Twenty-five seconds is far longer than a healthy signup
- * (measured: well under a second to reach the server) and short enough to fail
- * honestly.
+ * provider behind it — and since signup is now proxied, our backend is waiting
+ * on that same provider before it can answer. The browser's own timeout is
+ * minutes, which on a stalled provider leaves the user staring at a spinner
+ * with no idea whether their account was created. Twenty-five seconds is far
+ * longer than a healthy signup (measured: well under a second to reach the
+ * server) and short enough to fail honestly.
  */
 const SIGNUP_TIMEOUT_MS = 25_000;
 
-/** The host signup actually talks to, named in errors so a failure is traceable. */
-const supabaseHost = (() => {
+/**
+ * The host signup actually talks to, named in errors so a failure is traceable.
+ *
+ * This is our API, not Supabase, since signup was moved behind
+ * `POST /api/auth/signup` — the backend is the only place a per-IP and
+ * per-address budget can be enforced on a call that sends mail. Resolved
+ * lazily because `getBackendUrl()` can change origin at runtime: the client
+ * fails over to a same-origin proxy prefix on campus networks that blocklist
+ * the API's own hostname, and an error naming the wrong host sends whoever
+ * reads it to the wrong system.
+ */
+const signupHost = () => {
   try {
-    return new URL(config.supabase.url).host;
+    return new URL(getBackendUrl(), window.location.origin).host;
   } catch {
     return '';
   }
-})();
+};
 
 /**
  * Rejects with a TimeoutError if the promise has not settled in time.
@@ -97,15 +107,9 @@ export function AuthProvider({ children }) {
   const bookmarksHydratedRef = useRef(false);
   const syncDebounceRef = useRef(null);
   const isLoggingOutRef = useRef(false);
-  // Suppresses the spurious SIGNED_IN that signInWithPassword fires during
-  // the current-password verification step inside changePassword.
-  const isChangingPasswordRef = useRef(false);
   // Counts back-to-back 401s from /api/auth/sync so a token the backend will
   // never accept can't spin forever (see performSync's catch block).
   const consecutiveSyncAuthFailuresRef = useRef(0);
-  // Suppresses the SIGNED_OUT that signOut({ scope: 'others' }) may fire
-  // locally on this device during the changePassword session-revocation step.
-  const isRevokingSessionsRef = useRef(false);
   // Read inside updateProfile without making it a dependency: adding currentUser
   // to that callback's deps would change its identity on every profile change
   // and re-render every consumer of the auth context.
@@ -266,12 +270,12 @@ export function AuthProvider({ children }) {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, supabaseSession) => {
         if (event === 'SIGNED_OUT') {
-          // signOut({ scope: 'others' }) during a password change can fire a local
-          // SIGNED_OUT event. Block it from clearing this device's session/user.
-          if (isRevokingSessionsRef.current) {
-            setLoading(false);
-            return;
-          }
+          // No guard for the password-change revocation here, deliberately.
+          // `signOut({ scope: 'others' })` does not touch this device's stored
+          // session and never emits SIGNED_OUT locally (auth-js removes the
+          // local session only when the scope is NOT 'others'), so a flag
+          // suppressing that event was guarding against something that cannot
+          // happen — and would have swallowed a real sign-out if it ever stuck.
           isLoggingOutRef.current = false;
           setSession(null);
           setCurrentUser(null);
@@ -314,13 +318,6 @@ export function AuthProvider({ children }) {
         if (isLoggingOutRef.current) {
           setSession(null);
           setCurrentUser(null);
-          setLoading(false);
-          return;
-        }
-
-        // Suppress the SIGNED_IN event fired by signInWithPassword during the
-        // current-password verification step inside changePassword.
-        if (isChangingPasswordRef.current) {
           setLoading(false);
           return;
         }
@@ -427,6 +424,10 @@ export function AuthProvider({ children }) {
   }, []);
 
   const initiateSignup = useCallback(async (userData) => {
+    // Checked here even though this step no longer talks to Supabase itself.
+    // The very next step does — `verifySignupOtp` is what mints the browser's
+    // session — so creating an account that can never be verified in this
+    // build would be worse than refusing at the start.
     if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
 
     if (!userData.email || !userData.email.trim()) {
@@ -448,91 +449,95 @@ export function AuthProvider({ children }) {
     /*
      * This one call is the whole of the "Next" button on the password step.
      *
-     * It goes straight to Supabase Auth — not to our API, and not to Resend.
-     * That matters when this fails: a failure here is between the browser and
-     * `<project>.supabase.co`, so the backend's logs, CORS and deploy state are
-     * the wrong places to look.
+     * It goes to OUR API, not straight to Supabase Auth. It used to go direct,
+     * which meant the request passed through nothing of ours and could not be
+     * metered: signup sends mail, and every message it sends draws on the same
+     * shared per-project Supabase budget as every OTP in the app, so an
+     * unmetered signup endpoint is a way to stop every other student receiving
+     * their confirmation code. The backend enforces a per-IP and a per-address
+     * budget before it forwards anything.
      *
-     * The project has `mailer_autoconfirm: false`, which means Supabase sends
-     * the confirmation email as part of THIS request rather than after it. The
-     * call therefore waits on the mail provider, and a provider that is slow or
+     * The project has `mailer_autoconfirm: false`, which means the confirmation
+     * email is sent as part of THIS request rather than after it. The call
+     * therefore waits on the mail provider, and a provider that is slow or
      * failing shows up here as a slow or failed signup, not as a mail problem.
      * That is why it is given a deadline below instead of waiting on the
      * browser's own, which is minutes long.
+     *
+     * No session comes back and none should: the account is created
+     * unconfirmed, and the browser gets its session from `verifyOtp` once the
+     * emailed code is entered.
      */
-    let data;
-    let error;
     try {
-      ({ data, error } = await withTimeout(
-        supabase.auth.signUp({
+      await withTimeout(
+        apiClient.post('/api/auth/signup', {
           email: userData.email.trim().toLowerCase(),
           password: userData.password,
-          options: {
-            data: {
-              displayName: computedDisplayName,
-              username: userData.username,
-              birthday: userData.birthday,
-              firstName: userData.firstName,
-              lastName: userData.lastName,
-              // Academic info is NOT mirrored into Supabase user_metadata: Prisma is
-              // the source of truth for it, and metadata is client-writable, so a
-              // copy here could disagree with the validated record.
-            }
-          }
+          displayName: computedDisplayName,
+          username: userData.username,
+          birthday: userData.birthday,
+          firstName: userData.firstName,
+          lastName: userData.lastName,
+          // Academic info is NOT sent to Supabase user_metadata: Prisma is the
+          // source of truth for it, and metadata is writable by the user it
+          // belongs to, so a copy there could disagree with the validated
+          // record. The backend drops anything else this object carries.
         }),
         SIGNUP_TIMEOUT_MS,
-      ));
-    } catch (networkErr) {
+      );
+    } catch (err) {
       /*
-       * Thrown rather than returned means the request never produced a
-       * response: blocked, offline, or timed out. Supabase reports those as a
-       * bare "Failed to fetch", which tells the user nothing and sends whoever
-       * reads the bug report looking at the server.
+       * An error carrying a status reached the server and came back — a weak
+       * password, an address already part-way through signup (409), a spent
+       * rate-limit budget (429). Its message is the useful one and is passed
+       * through untouched.
+       *
+       * An error without one never produced a response at all: blocked,
+       * offline, or timed out. The browser reports those as a bare "Failed to
+       * fetch", which tells the user nothing and sends whoever reads the bug
+       * report looking at the wrong system.
        */
-      logNetworkFailure('signup', networkErr, {
-        host: supabaseHost,
-        step: 'supabase.auth.signUp',
-      });
-      const explained = describeNetworkError(networkErr, {
-        host: supabaseHost,
+      if (err?.status) {
+        throw new Error(err.message || 'Signup failed. Please try again.');
+      }
+
+      const host = signupHost();
+      logNetworkFailure('signup', err, { host, step: 'POST /api/auth/signup' });
+      const explained = describeNetworkError(err, {
+        host,
         action: 'create your account',
       });
-      throw new Error(explained || networkErr?.message || 'Signup failed. Please try again.');
+      throw new Error(explained || err?.message || 'Signup failed. Please try again.');
     }
 
-    if (error) {
-      const msg = typeof error.message === 'string' && error.message.trim() !== '' && error.message !== '{}'
-        ? error.message
-        : (error.error_description || error.msg || 'Signup failed. Please try again.');
-      throw new Error(msg);
-    }
-
-    // Supabase signUp returns a user with identities=[] when the email already
-    // exists but is unconfirmed. Detect this and surface a clean error so the
-    // user knows to check their inbox rather than seeing a silent failure.
-    if (data?.user && (!data.user.identities || data.user.identities.length === 0)) {
-      throw new Error(
-        'A signup is already pending for this email. Check your inbox for the verification code, or wait a moment and try again.'
-      );
-    }
-    
     // We don't log them in yet — they must verify OTP first.
     return true;
   }, []);
 
+  /**
+   * Re-send the signup confirmation code.
+   *
+   * Proxied for the same reason signup itself is, and metered by the same two
+   * budgets: this is the other button on the code screen that sends mail, and
+   * leaving it direct would have left the cheaper of the two paths open.
+   */
   const resendSignupOtp = useCallback(async (email) => {
-    if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
-
-    const { data, error } = await supabase.auth.resend({
-      type: 'signup',
-      email: email,
-    });
-    
-    if (error) {
-      const msg = typeof error.message === 'string' && error.message.trim() !== '' && error.message !== '{}'
-        ? error.message
-        : (error.error_description || error.msg || 'Failed to resend code. Please try again.');
-      throw new Error(msg);
+    try {
+      await apiClient.post('/api/auth/signup/resend', { email });
+    } catch (err) {
+      if (err?.status) {
+        throw new Error(err.message || 'Failed to resend code. Please try again.');
+      }
+      const host = signupHost();
+      logNetworkFailure('signup-resend', err, {
+        host,
+        step: 'POST /api/auth/signup/resend',
+      });
+      const explained = describeNetworkError(err, {
+        host,
+        action: 'send your code',
+      });
+      throw new Error(explained || err?.message || 'Failed to resend code. Please try again.');
     }
     return true;
   }, []);
@@ -848,25 +853,47 @@ export function AuthProvider({ children }) {
 
   const changePassword = useCallback(async (currentPassword, newPassword) => {
     if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
-    if (!currentUser?.email) throw new Error('User email not found');
 
+    // No email precondition here any more. It was required back when this
+    // verified the current password with `signInWithPassword`, which needed an
+    // address to sign in with. Verification is now a server call that reads the
+    // caller's identity from their token, so demanding a client-side copy only
+    // refused the password change outright — with "User email not found" — for
+    // an account whose cached profile happened not to carry one.
     if (currentPassword === newPassword) {
       const err = new Error('New password must be different from current password.');
       err.code = 'PASSWORD_REUSE';
       throw err;
     }
 
-    // 1. Verify current password.
-    //    signInWithPassword fires a SIGNED_IN auth event — the isChangingPasswordRef
-    //    flag tells onAuthStateChange to ignore it so we don't trigger a sync mid-flow.
-    isChangingPasswordRef.current = true;
-    const { error: signInError } = await supabase.auth.signInWithPassword({
-      email: currentUser.email,
-      password: currentPassword,
-    });
-    isChangingPasswordRef.current = false;
+    // 1. Verify the current password, server-side.
+    //
+    //    This used to be a `supabase.auth.signInWithPassword` from the browser,
+    //    which was wrong in two ways. It never reached our backend, so
+    //    `auth.login.account` — the budget whose whole job is to bound guesses
+    //    against one account — was never spent, and anyone holding a stolen
+    //    session could work through a password list in this panel without
+    //    tripping a single limit of ours. And signing in again minted a REPLACEMENT
+    //    session mid-flow, which is why this code had to suppress the resulting
+    //    auth events and then repair the state they would have set.
+    //
+    //    `/api/auth/verify-password` answers the same question behind JwtGuard
+    //    and a per-user budget, and hands back nothing but a boolean — so the
+    //    device keeps the session it already had and there is no event to hide.
+    let verified;
+    try {
+      verified = await apiClient.post('/api/auth/verify-password', {
+        password: currentPassword,
+      });
+    } catch (err) {
+      // A spent budget is the one failure the user can act on, so its message
+      // (which carries the wait) is passed through rather than being flattened
+      // into "incorrect password" — which would also be a lie.
+      if (err?.status === 429) throw err;
+      throw new Error(err?.message || "Couldn't verify your current password. Please try again.");
+    }
 
-    if (signInError) {
+    if (!verified?.valid) {
       const err = new Error('Incorrect current password.');
       err.code = 'WRONG_CURRENT_PASSWORD';
       throw err;
@@ -881,26 +908,55 @@ export function AuthProvider({ children }) {
       throw new Error(updateError.message);
     }
 
-    // 3. Revoke all other active sessions (other devices/tabs).
-    //    scope: 'others' keeps the current session alive so the user stays
-    //    logged in on the device they just changed the password from.
-    //    isRevokingSessionsRef prevents the local SIGNED_OUT event from
-    //    clearing this device's session state.
+    // 3. Revoke every OTHER active session.
+    //
+    //    A password change is the point at which any session someone else is
+    //    holding has to stop working, so this is enforcement, not tidying.
+    //    `scope: 'others'` leaves this device signed in — the user asked to
+    //    change their password, not to be logged out of the screen they are
+    //    standing on — and takes every other device down with it.
+    //
+    //    Failure here is non-fatal but not silent-by-design: the password IS
+    //    already changed at this point, so throwing would tell the user their
+    //    change failed when it did not. Logged so a revocation that stopped
+    //    working is visible rather than merely absent.
     try {
-      isRevokingSessionsRef.current = true;
       await supabase.auth.signOut({ scope: 'others' });
-    } catch {
-      // Non-fatal — password was still changed successfully
-    } finally {
-      isRevokingSessionsRef.current = false;
+    } catch (revokeErr) {
+      console.error('Failed to revoke other sessions after password change', revokeErr);
     }
 
-    // 4. Send "Password Changed" security notification email.
+    // 4. Adopt whatever session this flow ended up holding.
+    //
+    //    `updateUser` rotates the session and announces it as USER_UPDATED,
+    //    which onAuthStateChange deliberately drops (that branch belongs to the
+    //    reset-password screen, where the session is a recovery credential that
+    //    must never reach global state). So without this, `session` kept the
+    //    pre-change token.
+    //
+    //    Nothing broke immediately, because an access token is a JWT and stays
+    //    verifiable until it expires. What it cost was the realtime socket:
+    //    SocketManager keys its connection on `session.access_token`, so it
+    //    held a superseded token and had no reason to reconnect — the effect's
+    //    dependency never changed. It recovered only at the next
+    //    TOKEN_REFRESHED, up to an hour later.
+    try {
+      const { data: { session: freshSession } } = await supabase.auth.getSession();
+      if (freshSession) setSession(freshSession);
+    } catch {
+      // Non-fatal: the password is changed either way, and the next auth event
+      // installs the current session.
+    }
+
+    // 5. Send "Password Changed" security notification email.
     //    Fire-and-forget — the password is already changed, so don't make the
     //    user wait on an email round-trip before the success UI shows.
     apiClient.post('/api/auth/events/password-changed', {
-      email: currentUser.email,
-      name: currentUser.displayName || 'User',
+      // Omitted rather than sent empty when we do not have one: the server then
+      // resolves the recipient from the verified token, which is the address
+      // that actually owns the account.
+      ...(currentUser?.email ? { email: currentUser.email } : {}),
+      name: currentUser?.displayName || 'User',
       time: new Date().toLocaleString('en-US', {
         timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         weekday: 'short',

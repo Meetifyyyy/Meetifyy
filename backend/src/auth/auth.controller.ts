@@ -33,6 +33,10 @@ import {
   TriggerLoginEmailDto,
   TriggerPasswordChangedEmailDto,
   CreateCollegeRequestDto,
+  VerifyPasswordDto,
+  RequestPasswordResetDto,
+  SignUpDto,
+  ResendSignupOtpDto,
 } from './dto/auth.dto';
 
 @Controller('api/auth')
@@ -163,6 +167,68 @@ export class AuthController {
       os,
       ip,
     );
+  }
+
+  /**
+   * Signup, proxied so it can be metered.
+   *
+   * `supabase.auth.signUp` used to be called from the browser, so it passed
+   * through nothing of ours and the only ceiling on it was Supabase's — which
+   * is per-project and therefore shared by every user at once. See
+   * `auth.signup.ip` / `auth.signup.account`.
+   *
+   * Returns no session, because signup does not produce one: the account is
+   * created unconfirmed and the browser gets its session later by verifying the
+   * emailed code.
+   */
+  @Post('signup')
+  @UseGuards(RateLimitPolicyGuard)
+  @RateLimit('auth.signup.ip', 'auth.signup.account')
+  async signUp(@Body() body: SignUpDto) {
+    return this.authService.signUpWithEmail(body);
+  }
+
+  /** Re-send the signup confirmation code. Same budgets as signup itself. */
+  @Post('signup/resend')
+  @UseGuards(RateLimitPolicyGuard)
+  @RateLimit('auth.signup.ip', 'auth.signup.account')
+  async resendSignupOtp(@Body() body: ResendSignupOtpDto) {
+    return this.authService.resendSignupOtp(body.email);
+  }
+
+  /**
+   * Request a password-reset link.
+   *
+   * Replaces the pair the forgot-password screen used to make — an
+   * `account-exists` probe followed by `resetPasswordForEmail` fired straight
+   * at Supabase from the browser. Only the first half was ever rate-limited,
+   * which left the half that actually sends mail unmetered.
+   */
+  @Post('request-password-reset')
+  @UseGuards(AuthRateLimitGuard, RateLimitPolicyGuard)
+  @RateLimit('auth.passwordreset.account')
+  async requestPasswordReset(@Body() body: RequestPasswordResetDto) {
+    return this.authService.requestPasswordReset(body.email);
+  }
+
+  /**
+   * Confirm the caller knows their current password.
+   *
+   * Behind JwtGuard because it verifies the password of the account making the
+   * request and nobody else's — there is no address in the body, so this cannot
+   * be pointed at another user.
+   *
+   * `RateLimitPolicyGuard` is listed after `JwtGuard` deliberately: the policy
+   * is user-keyed, and it reads the identity the auth guard attaches.
+   */
+  @Post('verify-password')
+  @UseGuards(JwtGuard, RateLimitPolicyGuard)
+  @RateLimit('auth.verifypassword.user')
+  async verifyPassword(
+    @Body() body: VerifyPasswordDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.authService.verifyPassword(user, body.password);
   }
 
   @Post('check-username')

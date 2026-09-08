@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
-import { supabase } from '@shared/context/AuthContext';
 import Toast from '@shared/components/ui/Toast';
 import { MailCheck, ArrowRight } from '@shared/components/icons';
 import {
@@ -13,7 +12,6 @@ import {
   BackButton,
   styles as s,
 } from '../shared/ui';
-import { config } from '@config';
 import { apiClient } from '@shared/api/apiClient';
 
 export default function ForgotPasswordPage() {
@@ -43,54 +41,61 @@ export default function ForgotPasswordPage() {
     setNotFound(false);
     try {
       /*
-       * Tell the user when there is no account, rather than claiming an email
-       * was sent.
+       * One request where this screen used to make two.
        *
-       * This screen used to always report success, deliberately, so that an
-       * attacker could not learn which addresses are registered. That
-       * protection is given up here as a product decision: someone mistyping
-       * the address they signed up with was being shown "check your email" and
-       * then waiting for a message that was never going to arrive, with no way
-       * to tell the difference between a typo and a slow inbox.
+       * It asked `account-exists`, then fired `resetPasswordForEmail` at
+       * Supabase straight from the browser. Only the first of those reached our
+       * backend, so the half that actually SENDS MAIL passed through no limit
+       * of ours — and the only ceiling left was Supabase's, which is per
+       * project and therefore shared by everybody at once. One script pointed
+       * at one address could exhaust it and stop every other user receiving a
+       * reset link. `/api/auth/request-password-reset` does both halves behind
+       * a per-address budget.
        *
-       * What limits the exposure is that `account-exists` is rate-limited on
-       * the server exactly like the other unauthenticated lookups, so it is not
-       * a usable bulk oracle.
+       * It also closes a smaller gap: the redirect target is now built
+       * server-side from configuration instead of being supplied by the
+       * caller, and a client-chosen `redirectTo` on a reset link is an open
+       * redirect carrying a recovery token in its fragment.
+       *
+       * Telling the user when there is no account is a deliberate product
+       * decision — someone mistyping the address they signed up with was being
+       * shown "check your email" and then waiting for a message that was never
+       * going to arrive. What limits the exposure is that this route is
+       * rate-limited exactly like the other unauthenticated lookups, so it is
+       * not a usable bulk oracle.
        */
-      const check = await apiClient
-        .post('/api/auth/account-exists', { email: cleanEmail })
-        // A failure here must never block a real reset: if the lookup is down
-        // we assume the account exists and let the email path proceed.
-        .catch(() => ({ exists: true }));
+      const result = await apiClient.post('/api/auth/request-password-reset', {
+        email: cleanEmail,
+      });
 
-      if (check && check.exists === false) {
+      if (result && result.exists === false) {
         setNotFound(true);
         return;
       }
 
-      // The redirect target comes from configuration (VITE_SITE_URL, falling
-      // back to the current origin) so the same code produces a localhost link
-      // in development and the production domain in production.
-      const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
-        redirectTo: config.auth.resetPasswordUrl,
-      });
-
-      if (error && error.message?.toLowerCase().includes('rate limit')) {
-        showToast('Too many requests');
-        return;
+      // The account exists but the mail could not be dispatched — an upstream
+      // or transport failure, not a wrong address. The sent screen still shows,
+      // because the message may yet arrive and telling someone with a real
+      // account that it does not exist is the one answer that must never come
+      // out of a failure. The toast is what stops that screen being the only
+      // thing they see, so "nothing arrived" reads as something to retry rather
+      // than as a silent dead end.
+      if (result && result.exists === true && result.sent === false) {
+        showToast("We couldn't send the email just now. Try again shortly.");
       }
 
       setIsSubmitted(true);
     } catch (err) {
-      if (err?.message?.toLowerCase().includes('rate limit')) {
-        showToast('Too many requests');
-      } else {
-        // The account was confirmed to exist above, so a failure at this point
-        // is a transport problem rather than a wrong address. Showing the sent
-        // screen keeps the user from re-submitting into the same error; the
-        // link genuinely may still arrive.
-        setIsSubmitted(true);
+      if (err?.status === 429 || err?.message?.toLowerCase().includes('rate limit')) {
+        // The server's message carries how long to wait; it is more useful than
+        // our own wording.
+        showToast(err?.message || 'Too many requests');
+        return;
       }
+      // A failure that is not a refusal is a transport problem rather than a
+      // wrong address, and the request may well have gone through. Showing the
+      // sent screen keeps the user from re-submitting into the same error.
+      setIsSubmitted(true);
     } finally {
       setIsSubmitting(false);
     }
