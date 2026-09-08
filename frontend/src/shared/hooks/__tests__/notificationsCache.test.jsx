@@ -29,7 +29,9 @@ const { useNotifications, useUnreadNotificationCount } = await import('../useNot
 const LIST_KEY = ['notifications'];
 const COUNT_KEY = ['notifications', 'unreadCount'];
 
-const row = (id, read = false) => ({ id, read, readAt: read ? '2026-01-01' : null, type: 'FOLLOW' });
+// Only `readAt`: there is no `read` column and no response carries one.
+// NotificationItem derives "unread" from this field.
+const row = (id, read = false) => ({ id, readAt: read ? '2026-01-01T00:00:00.000Z' : null, type: 'FOLLOW' });
 
 let queryClient;
 const wrapper = ({ children }) => (
@@ -69,9 +71,9 @@ describe('notification cache updates', () => {
     await act(async () => { result.current.markAsRead('n1'); });
     await waitFor(() => expect(api.markAsRead).toHaveBeenCalledWith('n1'));
 
-    expect(rows().find((n) => n.id === 'n1').read).toBe(true);
+    expect(rows().find((n) => n.id === 'n1').readAt).toBeTruthy();
     // Untouched rows keep their identity, so memoised consumers do not re-render.
-    expect(rows().find((n) => n.id === 'n2').read).toBe(false);
+    expect(rows().find((n) => n.id === 'n2').readAt).toBeNull();
     expect(count()).toBe(1);
     expect(invalidate).not.toHaveBeenCalled();
     // Not even the initial load: the cache was already warm and inside its
@@ -93,7 +95,7 @@ describe('notification cache updates', () => {
     await act(async () => { result.current.markAllRead(); });
     await waitFor(() => expect(api.markAllAsRead).toHaveBeenCalled());
 
-    expect(rows().every((n) => n.read)).toBe(true);
+    expect(rows().every((n) => !!n.readAt)).toBe(true);
     expect(count()).toBe(0);
     expect(invalidate).not.toHaveBeenCalled();
     // This is the mutation that fires automatically on opening the page, so it
@@ -134,7 +136,11 @@ describe('notification cache updates', () => {
 
     // The optimistic write is undone, so the list never sits there claiming
     // something the server did not do — with or without the refetch landing.
-    await waitFor(() => expect(rows().find((n) => n.id === 'n1')?.read).toBe(false));
+    await waitFor(() => {
+      const n1 = rows().find((n) => n.id === 'n1');
+      expect(n1).toBeDefined();
+      expect(n1.readAt).toBeNull();
+    });
     expect(count()).toBe(2);
   });
 
@@ -145,6 +151,42 @@ describe('notification cache updates', () => {
     await act(async () => { result.current.markAllRead(); });
     await waitFor(() => expect(api.markAllAsRead).toHaveBeenCalled());
     expect(queryClient.getQueryData(COUNT_KEY)).toEqual({ count: 0 });
+  });
+
+  it('leaves a feed that has not loaded yet alone', async () => {
+    // The predicate matches every notification list, including the filtered
+    // Invitations feed — which may be in the cache with no data at all when the
+    // user is on the All tab. The page-mapping function has to fall straight
+    // through that rather than write something into it.
+    const INVITE_KEY = ['notifications', { type: 'ACTIVITY_INVITE' }];
+    queryClient.setQueryData(INVITE_KEY, undefined);
+
+    const { result } = renderHook(() => useNotifications(), { wrapper });
+    await act(async () => { result.current.markAllRead(); });
+    await waitFor(() => expect(api.markAllAsRead).toHaveBeenCalled());
+
+    expect(queryClient.getQueryData(INVITE_KEY)).toBeUndefined();
+    // And the feed that DID have data was still updated.
+    expect(rows().every((n) => !!n.readAt)).toBe(true);
+  });
+
+  it('updates every loaded feed, not just the main one', async () => {
+    // The same notification can sit in both the main feed and the filtered
+    // Invitations feed. Patching one would let the two tabs disagree.
+    const INVITE_KEY = ['notifications', { type: 'ACTIVITY_INVITE' }];
+    queryClient.setQueryData(INVITE_KEY, {
+      pages: [{ data: [row('n1')], nextCursor: null }],
+      pageParams: [undefined],
+    });
+
+    const { result } = renderHook(() => useNotifications(), { wrapper });
+    await act(async () => { result.current.markAsRead('n1'); });
+    await waitFor(() => expect(api.markAsRead).toHaveBeenCalled());
+
+    const inviteRows = queryClient.getQueryData(INVITE_KEY).pages.flatMap((p) => p.data);
+    expect(inviteRows[0].readAt).toBeTruthy();
+    // Counted once, not once per feed it appears in.
+    expect(count()).toBe(1);
   });
 
   it('returns a stable object and array while nothing changes', async () => {

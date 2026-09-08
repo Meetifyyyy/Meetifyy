@@ -36,16 +36,28 @@ function mapRows(old, fn) {
   return changed ? { ...old, pages } : old;
 }
 
+/**
+ * `readAt` is the only thing the server sends — there is no `read` column, and
+ * no endpoint returns one. `read` is still checked because
+ * NotificationItem accepts either, and a row could carry one from elsewhere.
+ */
 const isUnread = (n) => !n.read && !n.readAt;
-const markRead = (n) => (isUnread(n) ? { ...n, read: true, readAt: new Date().toISOString() } : n);
+
+/**
+ * Marks a row read the way the SERVER would.
+ *
+ * Only `readAt`, deliberately. Setting an extra `read: true` works — the item
+ * component accepts either — but it invents a field no response carries, so an
+ * optimistic row and the same row after a refetch would no longer be the same
+ * shape. Mirroring the server means nothing downstream can tell which it got.
+ */
+const markRead = (n) => (isUnread(n) ? { ...n, readAt: new Date().toISOString() } : n);
 
 /**
  * The notification feed, its unread count, and the three things you can do to a
  * notification.
- *
- * `enabled` defers the request for a feed that is not on screen yet.
  */
-export function useNotifications({ type, enabled = true } = {}) {
+export function useNotifications({ type } = {}) {
   const queryClient = useQueryClient();
   const { currentUser } = useAuth();
 
@@ -58,8 +70,10 @@ export function useNotifications({ type, enabled = true } = {}) {
     queryKey,
     queryFn: ({ pageParam = undefined }) => notificationsApi.getAll(15, pageParam, type),
     getNextPageParam: (lastPage) => lastPage?.nextCursor || undefined,
+    // Stated rather than left to the `pageParam = undefined` default in the
+    // queryFn signature. Same first request either way; v5 expects it declared.
     initialPageParam: undefined,
-    enabled: enabled && Boolean(currentUser?.id),
+    enabled: Boolean(currentUser?.id),
     staleTime: 1000 * 60, // 1 minute
   });
 
