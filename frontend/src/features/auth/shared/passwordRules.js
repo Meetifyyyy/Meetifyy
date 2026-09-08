@@ -72,3 +72,52 @@ export function validatePassword(password) {
   }
   return null;
 }
+
+/**
+ * The change-password form's three fields, checked against the same rules.
+ *
+ * Settings carried its own copy of the limits — a bare `length < 8` — which is
+ * the drift this module exists to prevent. It accepted anything above eight
+ * characters, so a password over the 72-byte bcrypt limit passed validation and
+ * failed at GoTrue instead, surfacing as an opaque server error on a screen
+ * where signup and reset would have named the limit in the field. It also
+ * worded the minimum differently from the other two screens.
+ *
+ * Returns a map keyed by field name (`current`, `new`, `confirm`) — the shape
+ * the panel already stores in `passwordErrors` — and an empty object when
+ * everything is acceptable.
+ *
+ * The "required" messages stay field-specific rather than reusing
+ * `validatePassword`'s generic "Password is required.": three password inputs
+ * sit on this form at once, and naming which one is empty is the difference
+ * between a usable error and a puzzle.
+ */
+export function validatePasswordChange({
+  currentPassword,
+  newPassword,
+  confirmPassword,
+}) {
+  const errors = {};
+
+  if (!currentPassword) {
+    errors.current = 'Current password is required';
+  }
+
+  if (!newPassword) {
+    errors.new = 'New password is required';
+  } else if (newPassword === currentPassword) {
+    // Checked before the strength rules so that re-entering the existing
+    // password is reported as reuse rather than as whatever else it may also
+    // be; AuthContext.changePassword repeats this check server-side of the UI.
+    errors.new = 'Must differ from your current password';
+  } else {
+    const problem = validatePassword(newPassword);
+    if (problem) errors.new = problem;
+  }
+
+  if (confirmPassword !== newPassword) {
+    errors.confirm = 'Passwords do not match';
+  }
+
+  return errors;
+}

@@ -15,6 +15,7 @@ import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 import { useScrollLock } from '@shared/hooks/useScrollLock';
 import { useSmartNavigation } from '@shared/hooks/useSmartNavigation';
 import { validateDOB } from '@shared/utils/dateValidation';
+import { validatePasswordChange } from '@features/auth/shared/passwordRules';
 import { INTERESTS_BY_CATEGORY } from '@shared/constants/interestsData';
 import AcademicSelection from '@shared/academics/AcademicSelection';
 import { useAcademicCatalog } from '@shared/academics/useAcademicCatalog';
@@ -566,20 +567,14 @@ export default function SettingsRoute() {
         showToast(err?.message || "Couldn't save academic details", 'error');
       });
     } else if (activePanel === 'security') {
-      const errors = {};
-      if (!currentPassword) {
-        errors.current = 'Current password is required';
-      }
-      if (!newPassword) {
-        errors.new = 'New password is required';
-      } else if (newPassword.length < 8) {
-        errors.new = 'Password must be at least 8 characters';
-      } else if (newPassword === currentPassword) {
-        errors.new = 'Must differ from your current password';
-      }
-      if (confirmPassword !== newPassword) {
-        errors.confirm = 'Passwords do not match';
-      }
+      // Shared with signup and reset — see passwordRules. This panel used to
+      // carry its own `length < 8`, which let a password over bcrypt's 72-byte
+      // limit through to GoTrue and back as an opaque error.
+      const errors = validatePasswordChange({
+        currentPassword,
+        newPassword,
+        confirmPassword,
+      });
 
       if (Object.keys(errors).length > 0) {
         setPasswordErrors(errors);
@@ -1010,6 +1005,24 @@ export default function SettingsRoute() {
     </div>
   );
 
+  /**
+   * Enter submits the change-password fields.
+   *
+   * This panel is a div rather than a <form> — the whole settings tree is, and
+   * each panel's Save is an onClick — so it got none of the implicit submit
+   * behaviour every other password screen in the app has. Typing a password and
+   * pressing Enter did nothing at all, which on a three-field password form
+   * reads as the page being broken rather than as a missing shortcut.
+   *
+   * Bound to the inputs rather than the container so it cannot fire from the
+   * toggle buttons beside them.
+   */
+  const submitPasswordOnEnter = (e) => {
+    if (e.key !== 'Enter' || isSavingPassword) return;
+    e.preventDefault();
+    handleSave();
+  };
+
   const securityPanel = (
     <div className={`${styles.body} animate-in`}>
       <div className={styles.group}>
@@ -1029,6 +1042,7 @@ export default function SettingsRoute() {
                 setCurrentPassword(e.target.value);
                 if (passwordErrors.current) setPasswordErrors(prev => ({ ...prev, current: null }));
               }}
+              onKeyDown={submitPasswordOnEnter}
             />
             <PasswordToggle
               {...currentPw.toggleProps}
@@ -1059,6 +1073,7 @@ export default function SettingsRoute() {
                 setNewPassword(e.target.value);
                 if (passwordErrors.new) setPasswordErrors(prev => ({ ...prev, new: null }));
               }}
+              onKeyDown={submitPasswordOnEnter}
             />
             <PasswordToggle
               {...newPw.toggleProps}
@@ -1089,6 +1104,7 @@ export default function SettingsRoute() {
                 setConfirmPassword(e.target.value);
                 if (passwordErrors.confirm) setPasswordErrors(prev => ({ ...prev, confirm: null }));
               }}
+              onKeyDown={submitPasswordOnEnter}
             />
             <PasswordToggle
               {...confirmPw.toggleProps}
