@@ -28,7 +28,14 @@ import { useEffect } from 'react';
 /** Below this a height change is browser chrome (URL bar), not a keyboard. */
 const KEYBOARD_MIN_HEIGHT = 80;
 
-function isTextFieldFocused() {
+/**
+ * Exported because `useAutoHideChrome` needs the same answer, synchronously.
+ * The `data-keyboard-open` attribute below is written on a rAF, and the scroll
+ * handler that consults it also runs on a rAF — so on the frame the keyboard
+ * opens, which of the two lands first is not defined. Focus is set before
+ * either, so it is the signal that cannot be raced.
+ */
+export function isTextFieldFocused() {
   const el = document.activeElement;
   if (!el) return false;
   const tag = el.tagName;

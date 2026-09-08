@@ -13,6 +13,9 @@ import {
 const TALL = 5000;
 const start = (over = {}) => ({ lastY: 0, downTravel: 0, hidden: false, ...over });
 const scrollTo = (state, y, scrollable = TALL) => nextChromeState(state, { y, scrollable });
+/** The same move, but with the soft keyboard up. */
+const scrollToWithKeyboard = (state, y, scrollable = TALL) =>
+  nextChromeState(state, { y, scrollable, keyboardOpen: true });
 
 /** Walk down the page in realistic increments. */
 const scrollDownBy = (state, px, from = 200) => scrollTo(state, from + px);
@@ -93,6 +96,51 @@ describe('nextChromeState', () => {
     it('reveals again if it was already hidden when content shrank', () => {
       const hidden = start({ lastY: 400, hidden: true });
       expect(scrollTo(hidden, 500, 50).hidden).toBe(false);
+    });
+  });
+
+  describe('while the soft keyboard is open', () => {
+    /*
+     * Opening the keyboard shrinks the layout viewport and makes the browser
+     * scroll the focused field into view. That arrives here as one large
+     * delta — well past the hide threshold — so the chrome hid; then the
+     * keyboard settled, the counter-scroll read as an upward flick, and it
+     * revealed again. The bottom nav flickering in and out while the keyboard
+     * animated, most visibly when writing a comment on a post.
+     */
+    it('does not hide, however far the viewport jumps', () => {
+      const jumped = scrollToWithKeyboard(start({ lastY: 200 }), 200 + HIDE_AFTER_PX * 4);
+      expect(jumped.hidden).toBe(false);
+      expect(jumped.downTravel).toBe(0);
+    });
+
+    it('reveals chrome that was already hidden when the field was tapped', () => {
+      // Otherwise the nav animates up from off-screen to sit behind the
+      // keyboard, which is the flicker seen from the other direction.
+      const hiddenState = start({ lastY: 400, hidden: true, downTravel: HIDE_AFTER_PX });
+      expect(scrollToWithKeyboard(hiddenState, 420).hidden).toBe(false);
+    });
+
+    it('adopts the scrolled-to position, so closing does not replay the jump', () => {
+      // `lastY` must advance even though nothing else does. Left behind, the
+      // first real scroll after dismissal would measure its delta against a
+      // pre-keyboard position and hide instantly.
+      const after = scrollToWithKeyboard(start({ lastY: 200 }), 900);
+      expect(after.lastY).toBe(900);
+
+      const resumed = scrollTo(after, 905);
+      expect(resumed.hidden).toBe(false);
+      expect(resumed.downTravel).toBe(0);
+    });
+
+    it('resumes normal hiding once the keyboard is gone', () => {
+      const typed = scrollToWithKeyboard(start({ lastY: 200 }), 600);
+      const scrolled = scrollTo(typed, 600 + HIDE_AFTER_PX + JITTER_PX);
+      expect(scrolled.hidden).toBe(true);
+    });
+
+    it('is ignored on a page with nowhere to scroll, same as always', () => {
+      expect(scrollToWithKeyboard(start({ lastY: 200 }), 900, 0).hidden).toBe(false);
     });
   });
 

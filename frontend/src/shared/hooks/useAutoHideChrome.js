@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
+import { isTextFieldFocused } from './useKeyboardInset';
 
 /**
  * Hides the mobile chrome — header, bottom nav, Instant Match launcher — while
@@ -43,7 +44,26 @@ export const MIN_SCROLLABLE_PX = 240;
  *
  * Returns the next state; `hidden` is what the caller writes to the DOM.
  */
-export function nextChromeState(prev, { y, scrollable }) {
+export function nextChromeState(prev, { y, scrollable, keyboardOpen = false }) {
+  // The soft keyboard is not a scroll gesture.
+  //
+  // Opening it shrinks the layout viewport and makes the browser scroll the
+  // focused field into view, which arrives here as a large sudden delta — big
+  // enough to cross the hide threshold. The chrome then hid, the keyboard
+  // settled, the counter-scroll read as an upward flick and it revealed again:
+  // the bottom nav flickering in and out while the keyboard animated, which is
+  // most visible writing a comment on a post.
+  //
+  // It also resolves a conflict rather than papering over one. Hiding sets
+  // `transform: translateY(100%)` on the nav, and staying put over the keyboard
+  // needs `translateY(--kb-layout-shift)` — the same property, so whichever
+  // rule wins the other is simply lost, and the 0.26s transition animates
+  // between two unrelated positions.
+  //
+  // `lastY` is still advanced, so the position the keyboard scrolled to becomes
+  // the new reference and closing it does not replay that jump as travel.
+  if (keyboardOpen) return { ...prev, lastY: y, downTravel: 0, hidden: false };
+
   const delta = y - prev.lastY;
 
   // Jitter: a resting thumb, a rubber-band bounce. Nothing changes, and
@@ -105,6 +125,11 @@ export function useAutoHideChrome({ enabled = true } = {}) {
         {
           y: Math.max(0, window.scrollY),
           scrollable: document.documentElement.scrollHeight - window.innerHeight,
+          // Two signals for one condition. The attribute is the authoritative
+          // one and covers the whole time the keyboard is up; the focus check
+          // is synchronous and covers the frame before `useKeyboardInset` has
+          // had its rAF to set it.
+          keyboardOpen: root.hasAttribute('data-keyboard-open') || isTextFieldFocused(),
         },
       );
 
@@ -123,12 +148,20 @@ export function useAutoHideChrome({ enabled = true } = {}) {
     };
 
     window.addEventListener('scroll', onScroll, { passive: true });
+    // Focus changes matter even without a scroll: tapping a field while the
+    // chrome is already hidden has to bring it back before the keyboard covers
+    // the position it would otherwise animate to. Blur re-measures so normal
+    // scrolling resumes immediately rather than at the next scroll event.
+    window.addEventListener('focusin', onScroll);
+    window.addEventListener('focusout', onScroll);
     // Rotating a phone or resizing a window crosses the breakpoint.
     mq.addEventListener('change', onMediaChange);
 
     return () => {
       if (frame) window.cancelAnimationFrame(frame);
       window.removeEventListener('scroll', onScroll);
+      window.removeEventListener('focusin', onScroll);
+      window.removeEventListener('focusout', onScroll);
       mq.removeEventListener('change', onMediaChange);
       clear();
     };
