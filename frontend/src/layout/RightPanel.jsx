@@ -13,13 +13,32 @@ import { useQuery } from '@tanstack/react-query';
 import { usersApi, activitiesApi, getMediaUrl } from '@shared/api/apiClient';
 import { useAuth } from '@shared/context/AuthContext';
 import { useUsersMap } from '@shared/hooks/useUsersMap';
+import { useMediaQuery } from '@shared/hooks/useMediaQuery';
 import { useCrewActivities } from '@shared/hooks/useCrew';
 import {
   DEFAULT_ACTIVITY_COVERS,
   getDefaultActivityCover,
 } from '@shared/utils/activityCover';
 
+/**
+ * The third column — and nothing at all below the width it is shown at.
+ *
+ * `.rightPanel` is `display: none !important` under 1100px, but its children
+ * were still mounted, and these children fetch: Recent Activity pulls the
+ * notification feed, Online Friends, Upcoming Events and the people list each
+ * run their own query. So every phone opening /home or /search made four
+ * requests for a panel it could not see — on exactly the devices least able to
+ * afford them.
+ *
+ * The query string is character-for-character the stylesheet's, because a JS
+ * gate on a *nearby* breakpoint leaves a band of widths where JS removed what
+ * CSS would have shown. `null` means matchMedia could not be consulted, and is
+ * deliberately treated as "render it": this gate may only ever drop work the
+ * CSS was already hiding.
+ */
 export default function RightPanel({ children, className = '' }) {
+  const isNarrow = useMediaQuery('(max-width: 1100px)');
+  if (isNarrow === true) return null;
   return <aside className={`${styles.rightPanel} ${className}`.trim()}>{children}</aside>;
 }
 
