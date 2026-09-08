@@ -6,6 +6,7 @@ import { useConversations } from './useMessages';
 import { PROFILE_KEYS } from './useProfile';
 import { toggleRegistry } from '../utils/mutationRegistry';
 import { propagateUserMedia } from '../utils/propagateUserMedia';
+import { isPostListQuery } from '../../features/feed/utils/postCache';
 import {
   applyMembershipEvent,
   patchCommunityInLists,
@@ -323,11 +324,12 @@ export function useGlobalSocketSync() {
               }
               return old;
             };
-            queryClient.setQueriesData({ queryKey: ['feed'] }, removePost);
-            queryClient.setQueriesData({ queryKey: ['posts'] }, removePost);
-            queryClient.setQueriesData({ queryKey: ['user-posts'] }, removePost);
-            queryClient.setQueriesData({ queryKey: ['bookmarks'] }, removePost);
-            queryClient.setQueriesData({ queryKey: ['community-posts'] }, removePost);
+            // One predicate rather than five hardcoded prefixes. The list of
+            // caches a post can live in belongs in postCache.js — that module
+            // exists precisely because these lists drifted once already, and
+            // three copies of it in this file were three chances to drift
+            // again. Also one cache scan per event instead of five.
+            queryClient.setQueriesData({ predicate: isPostListQuery }, removePost);
             queryClient.removeQueries({ queryKey: ['post', deletedId] });
           }
           if (commId) {
@@ -451,11 +453,7 @@ export function useGlobalSocketSync() {
               }
               return old;
             };
-            queryClient.setQueriesData({ queryKey: ['feed'] }, updater);
-            queryClient.setQueriesData({ queryKey: ['posts'] }, updater);
-            queryClient.setQueriesData({ queryKey: ['user-posts'] }, updater);
-            queryClient.setQueriesData({ queryKey: ['bookmarks'] }, updater);
-            queryClient.setQueriesData({ queryKey: ['community-posts'] }, updater);
+            queryClient.setQueriesData({ predicate: isPostListQuery }, updater);
             queryClient.setQueryData(['post', likedPostId], updater);
           }
           break;
@@ -492,11 +490,7 @@ export function useGlobalSocketSync() {
               }
               return old;
             };
-            queryClient.setQueriesData({ queryKey: ['feed'] }, updater);
-            queryClient.setQueriesData({ queryKey: ['posts'] }, updater);
-            queryClient.setQueriesData({ queryKey: ['user-posts'] }, updater);
-            queryClient.setQueriesData({ queryKey: ['bookmarks'] }, updater);
-            queryClient.setQueriesData({ queryKey: ['community-posts'] }, updater);
+            queryClient.setQueriesData({ predicate: isPostListQuery }, updater);
             queryClient.setQueryData(['post', postId], updater);
           }
           break;
