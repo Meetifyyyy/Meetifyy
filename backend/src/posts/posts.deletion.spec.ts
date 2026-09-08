@@ -13,8 +13,11 @@ describe('PostsService — deletion lifecycle & data cleanup', () => {
   let mediaCleanupService: any;
   let domainEventService: any;
   let authorizer: any;
+  /** Every raw statement the service issued, in order. */
+  let rawCalls: Array<{ sql: string; values: any[] }>;
 
   beforeEach(() => {
+    rawCalls = [];
     prisma = {
       post: {
         findUnique: jest.fn(async ({ where }: any) => {
@@ -50,6 +53,20 @@ describe('PostsService — deletion lifecycle & data cleanup', () => {
         ]),
         deleteMany: jest.fn(async () => ({ count: 2 })),
       },
+      /**
+       * Post deletion is now one statement, so this is where it lands.
+       *
+       * Captured as (sql, params) rather than stubbed blind: the assertions
+       * below are about what that single statement actually does, and the whole
+       * point of the change is that there is exactly one of them.
+       */
+      $queryRaw: jest.fn(async (strings: TemplateStringsArray, ...values: any[]) => {
+        rawCalls.push({ sql: strings.join('?'), values });
+        return [
+          { objectKey: 'posts/uuid1.jpg' },
+          { objectKey: 'posts/uuid2.webp' },
+        ];
+      }),
       $transaction: jest.fn(async (fn: any) =>
         typeof fn === 'function' ? fn(prisma) : fn,
       ),
@@ -87,65 +104,100 @@ describe('PostsService — deletion lifecycle & data cleanup', () => {
     );
   });
 
-  it('performs full transactional cleanup on post deletion', async () => {
+  it('performs the whole cleanup in a single database round trip', async () => {
+    // This is the fix, stated as a test. It used to be thirteen awaited
+    // queries inside an interactive transaction — thirteen network latencies,
+    // in series, on a connection that cannot multiplex them. That, and not the
+    // amount of data, is what made deletion feel slow.
     const result = await service.deletePost(POST_ID, AUTHOR_ID);
     expect(result).toEqual({ success: true });
 
-    // 1. Post is soft-deleted
-    expect(prisma.post.update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { id: POST_ID },
-        data: expect.objectContaining({ deletedAt: expect.any(Date) }),
-      }),
-    );
+    expect(rawCalls).toHaveLength(1);
+    // A single statement is atomic on its own; the explicit BEGIN/COMMIT were
+    // two further round trips guarding nothing.
+    expect(prisma.$transaction).not.toHaveBeenCalled();
 
-    // 2. Comments are scrubbed with text='', mentions=null, likeCount=0
-    expect(prisma.comment.updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { postId: POST_ID },
-        data: expect.objectContaining({
-          isDeleted: true,
-          deletedAt: expect.any(Date),
-          text: '',
-          likeCount: 0,
-        }),
-      }),
-    );
+    // The whole endpoint, counted end to end. Two: the authorization read, and
+    // the statement. Deletion latency is this number times the round trip to
+    // Postgres, so it is the number worth pinning — it was sixteen.
+    const dbCalls =
+      prisma.post.findUnique.mock.calls.length + prisma.$queryRaw.mock.calls.length;
+    expect(dbCalls).toBe(2);
+  });
 
-    // 3. Disposable engagement relations are hard-deleted
-    expect(prisma.postLike.deleteMany).toHaveBeenCalledWith({
-      where: { postId: POST_ID },
+  it('reads only the columns authorization needs, not the whole row', async () => {
+    // The post body was being fetched to decide who may delete it.
+    await service.deletePost(POST_ID, AUTHOR_ID);
+    const [{ select }] = prisma.post.findUnique.mock.calls[0];
+    expect(select).toEqual({
+      authorId: true,
+      communityId: true,
+      deletedAt: true,
+      text: true,
     });
-    expect(prisma.postBookmark.deleteMany).toHaveBeenCalledWith({
-      where: { postId: POST_ID },
-    });
-    expect(prisma.postShare.deleteMany).toHaveBeenCalledWith({
-      where: { postId: POST_ID },
-    });
-    expect(prisma.postHashtag.deleteMany).toHaveBeenCalledWith({
-      where: { postId: POST_ID },
-    });
-    expect(prisma.pollVote.deleteMany).toHaveBeenCalledWith({
-      where: { postId: POST_ID },
-    });
-    expect(prisma.pollOption.deleteMany).toHaveBeenCalledWith({
-      where: { postId: POST_ID },
-    });
+  });
 
-    // 4. Post and Comment mentions are hard-deleted
-    expect(prisma.mention.deleteMany).toHaveBeenCalledWith({
-      where: { sourceId: POST_ID, sourceType: 'POST' },
-    });
-    expect(prisma.mention.deleteMany).toHaveBeenCalledWith({
-      where: { sourceId: { in: ['c1', 'c2'] }, sourceType: 'COMMENT' },
-    });
+  it('does no database work at all when the author deletes their own post beyond those two', async () => {
+    // The authorizer settles `actorId === authorId` without a query, so the
+    // common path must not have grown one.
+    await service.deletePost(POST_ID, AUTHOR_ID);
+    expect(authorizer.assertCanDelete).toHaveBeenCalledTimes(1);
+    expect(prisma.comment.findMany).not.toHaveBeenCalled();
+    expect(prisma.media.findMany).not.toHaveBeenCalled();
+  });
 
-    // 5. Comment likes are deleted
-    expect(prisma.commentLike.deleteMany).toHaveBeenCalledWith({
-      where: { commentId: { in: ['c1', 'c2'] } },
-    });
+  it('still does every piece of cleanup the thirteen queries did', async () => {
+    await service.deletePost(POST_ID, AUTHOR_ID);
+    const { sql, values } = rawCalls[0];
 
-    // 6. Durable R2 media deletion queue is called
+    // 1. The post itself is soft-deleted, not removed.
+    expect(sql).toMatch(/UPDATE "Post"\s+SET "deletedAt"/);
+
+    // 2. Comments are scrubbed, not merely tombstoned: no original text or
+    //    mentions survive in the database.
+    expect(sql).toMatch(/UPDATE "Comment"/);
+    expect(sql).toMatch(/"isDeleted" = true/);
+    expect(sql).toMatch(/"text" = ''/);
+    expect(sql).toMatch(/"mentions" = NULL/);
+    expect(sql).toMatch(/"likeCount" = 0/);
+
+    // 3. Disposable engagement relations. A database cascade cannot reach
+    //    these, because Post is soft-deleted rather than deleted.
+    for (const table of [
+      'PostLike',
+      'PostBookmark',
+      'PostShare',
+      'PostHashtag',
+      'PollVote',
+      'PollOption',
+    ]) {
+      expect(sql).toContain(`DELETE FROM "${table}"`);
+    }
+
+    // 4. Mentions of the post, and mentions made inside its comments.
+    expect(sql).toMatch(/"sourceType" = 'POST'::"MentionSource"/);
+    expect(sql).toMatch(/"sourceType" = 'COMMENT'::"MentionSource"/);
+
+    // 5. Likes on those comments.
+    expect(sql).toContain('DELETE FROM "CommentLike"');
+
+    // 6. The comment ids come from the scrub's own RETURNING. That dependency
+    //    is the only real ordering constraint in the statement, and taking the
+    //    ids this way is what removes the separate read they used to need.
+    expect(sql).toMatch(/RETURNING "id"/);
+    expect(sql).toMatch(/IN \(SELECT "id" FROM scrubbed_comments\)/);
+
+    // 7. Media keys come back for object-storage cleanup.
+    expect(sql).toMatch(/SELECT "objectKey" FROM "Media"/);
+
+    // Every parameter is bound, never interpolated — this statement is built
+    // from a tagged template and must stay that way.
+    expect(values).toContain(POST_ID);
+    expect(values.some((v) => v instanceof Date)).toBe(true);
+  });
+
+  it('queues the returned media keys for durable object-storage cleanup', async () => {
+    await service.deletePost(POST_ID, AUTHOR_ID);
     expect(mediaCleanupService.queueMediaDeletion).toHaveBeenCalledWith([
       'posts/uuid1.jpg',
       'posts/uuid2.webp',

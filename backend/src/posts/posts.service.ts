@@ -382,84 +382,135 @@ export class PostsService {
   }
 
   /**
-   * Shared transactional core for post deletion.
-   * Soft-deletes post, scrubs comments, hard-deletes disposable engagement relations,
-   * and collects media keys for subsequent R2 deletion.
-   * Used identically by deletePost() and CommunitiesService.deleteCommunity().
+   * The whole of a post deletion, as ONE statement.
+   *
+   * It used to be thirteen: a soft-delete, a comment scrub, seven `deleteMany`
+   * calls, a read of the comment ids, two more deletes keyed on those ids, and
+   * a read of the media keys — each `await`ed in turn inside an interactive
+   * transaction. Every one of those is a separate round trip to Postgres, and
+   * `Promise.all` cannot help: an interactive transaction is pinned to a single
+   * connection, so concurrent Prisma calls inside it are queued and go out one
+   * after another anyway.
+   *
+   * That is what made deletion feel slow, and it is why it felt slower for some
+   * people than others: the cost is thirteen network latencies, so it scales
+   * with the distance between the API and the database rather than with the
+   * size of the post. Nothing here was ever slow because of the data — every
+   * column touched below is indexed (see schema.prisma) and a post has at most
+   * a few hundred rows hanging off it.
+   *
+   * As a single statement it is 1 round trip, and it needs no explicit
+   * transaction: one statement in Postgres is already atomic, so the `BEGIN`
+   * and `COMMIT` go too.
+   *
+   * Data-modifying CTEs all read the same snapshot — the state before the
+   * statement — so none of the deletes below can be affected by the ordering of
+   * the others. The one genuine dependency, the comment ids that
+   * `commentLike`/`mention` need, is taken from the comment scrub's own
+   * `RETURNING`, which is what makes this expressible as one statement at all.
+   *
+   * Returns the media object keys, exactly as before, for R2 cleanup after the
+   * row-level work has committed.
+   *
+   * `tx` is a Prisma client or transaction client — the signature is unchanged
+   * so a caller that already holds a transaction can still enlist this in it.
    */
   async deletePostInternal(
     tx: any,
     postId: string,
     now = new Date(),
   ): Promise<string[]> {
-    // 1. Soft-delete the post row.
-    await tx.post.update({
-      where: { id: postId },
-      data: { deletedAt: now },
-    });
+    const rows = await tx.$queryRaw<Array<{ objectKey: string }>>`
+      WITH
+        -- 1. Soft-delete the post itself.
+        soft_deleted AS (
+          UPDATE "Post" SET "deletedAt" = ${now}
+          WHERE "id" = ${postId}
+          RETURNING "id"
+        ),
+        -- 2. Scrub every comment. Not just tombstoned: the original text and
+        --    mentions are removed from the row, so nothing survives in the
+        --    database either. isDeleted is what every read path branches on
+        --    (shapeComments, fetchCommentPage), so neither needs to consult
+        --    deletedAt. The returned ids are the input to steps 3 and 4.
+        scrubbed_comments AS (
+          UPDATE "Comment"
+          SET "deletedAt" = ${now},
+              "isDeleted" = true,
+              "text" = '',
+              "mentions" = NULL,
+              "likeCount" = 0
+          WHERE "postId" = ${postId}
+          RETURNING "id"
+        ),
+        -- 3. Likes on those comments.
+        del_comment_likes AS (
+          DELETE FROM "CommentLike"
+          WHERE "commentId" IN (SELECT "id" FROM scrubbed_comments)
+        ),
+        -- 4. Mentions made inside those comments, and mentions of the post
+        --    itself. Both are keyed by (sourceType, sourceId), which is indexed.
+        del_comment_mentions AS (
+          DELETE FROM "Mention"
+          WHERE "sourceType" = 'COMMENT'::"MentionSource"
+            AND "sourceId" IN (SELECT "id" FROM scrubbed_comments)
+        ),
+        del_post_mentions AS (
+          DELETE FROM "Mention"
+          WHERE "sourceType" = 'POST'::"MentionSource" AND "sourceId" = ${postId}
+        ),
+        -- 5. Disposable engagement relations. These have no independent
+        --    user-facing meaning once the post is gone, and a database cascade
+        --    cannot reach them because Post is soft-deleted rather than removed.
+        del_likes AS (
+          DELETE FROM "PostLike" WHERE "postId" = ${postId}
+        ),
+        del_bookmarks AS (
+          DELETE FROM "PostBookmark" WHERE "postId" = ${postId}
+        ),
+        del_shares AS (
+          DELETE FROM "PostShare" WHERE "postId" = ${postId}
+        ),
+        del_hashtags AS (
+          DELETE FROM "PostHashtag" WHERE "postId" = ${postId}
+        ),
+        del_poll_votes AS (
+          DELETE FROM "PollVote" WHERE "postId" = ${postId}
+        ),
+        del_poll_options AS (
+          DELETE FROM "PollOption" WHERE "postId" = ${postId}
+        )
+      -- 6. The media keys, for object-storage cleanup once this has committed.
+      --    The Media rows themselves are left alone, exactly as before: they
+      --    are cleaned up by the storage pipeline, not here.
+      SELECT "objectKey" FROM "Media" WHERE "postId" = ${postId};
+    `;
 
-    // 2. Scrub every comment fully — same behaviour as deleteComment(), so
-    //    no original text or mentions survive anywhere, even in the DB.
-    //    isDeleted is set so every read path (shapeComments, fetchCommentPage)
-    //    uses the tombstone branch without needing to check deletedAt.
-    await tx.comment.updateMany({
-      where: { postId },
-      data: {
-        deletedAt: now,
-        isDeleted: true,
-        text: '',
-        mentions: Prisma.DbNull,
-        likeCount: 0,
-      },
-    });
-
-    // 3. Hard-delete all disposable engagement relations. These have no
-    //    independent user-facing purpose once the post is gone, and database
-    //    cascades cannot reach them because we use soft deletes on Post.
-    await tx.postLike.deleteMany({ where: { postId } });
-    await tx.postBookmark.deleteMany({ where: { postId } });
-    await tx.postShare.deleteMany({ where: { postId } });
-    await tx.postHashtag.deleteMany({ where: { postId } });
-
-    // Mention records reference the post as their source.
-    await tx.mention.deleteMany({
-      where: { sourceId: postId, sourceType: 'POST' },
-    });
-
-    // Comment mentions — the sourceId is the commentId; find all comments on
-    // this post and delete their mention entries.
-    const commentIds = await tx.comment
-      .findMany({ where: { postId }, select: { id: true } })
-      .then((rows: any[]) => rows.map((r) => r.id));
-
-    if (commentIds.length > 0) {
-      await tx.mention.deleteMany({
-        where: { sourceId: { in: commentIds }, sourceType: 'COMMENT' },
-      });
-      await tx.commentLike.deleteMany({
-        where: { commentId: { in: commentIds } },
-      });
-    }
-
-    await tx.pollVote.deleteMany({ where: { postId } });
-    await tx.pollOption.deleteMany({ where: { postId } });
-
-    // Collect media keys for this post
-    const mediaRows = await tx.media.findMany({
-      where: { postId },
-      select: { objectKey: true },
-    });
-    return mediaRows.map((m: any) => m.objectKey);
+    return rows.map((r: { objectKey: string }) => r.objectKey);
   }
 
   async deletePost(postId: string, userId: string) {
-    const post = await this.prisma.post.findUnique({ where: { id: postId } });
+    // Only the columns authorization and the notification actually read.
+    // This used to select every column of the row, including the post body,
+    // for a decision that needs three fields.
+    const post = await this.prisma.post.findUnique({
+      where: { id: postId },
+      select: {
+        authorId: true,
+        communityId: true,
+        deletedAt: true,
+        text: true,
+      },
+    });
     if (!post) throw new NotFoundException('Post not found');
     // Already deleted — treat as idempotent success so retries are safe.
     if (post.deletedAt) throw new NotFoundException('Post not found');
 
     // Server-side, on the one path every client shares. Hiding the delete
     // button is a courtesy; this is the rule.
+    //
+    // Costs nothing on the common path: an author deleting their own post is
+    // decided from `actorId === authorId` without touching the database.
     const authority = await this.contentDeletionAuthorizer.assertCanDelete(
       {
         actorId: userId,
@@ -469,15 +520,17 @@ export class PostsService {
       'post',
     );
 
-    const now = new Date();
-    let mediaKeys: string[] = [];
+    // No explicit transaction: deletePostInternal is a single statement, and a
+    // single statement in Postgres is already atomic. Wrapping it added a
+    // BEGIN and a COMMIT — two more round trips guarding nothing.
+    const mediaKeys = await this.deletePostInternal(
+      this.prisma,
+      postId,
+      new Date(),
+    );
 
-    // Use the interactive-callback form so we can chain dependent deletes.
-    await this.prisma.$transaction(async (tx) => {
-      mediaKeys = await this.deletePostInternal(tx, postId, now);
-    });
-
-    // Queue physical R2 objects for durable deletion after transaction commit.
+    // Queue physical R2 objects for durable deletion, now the row work has
+    // committed.
     if (mediaKeys.length > 0) {
       if (this.mediaCleanupService) {
         this.mediaCleanupService.queueMediaDeletion(mediaKeys);
@@ -515,7 +568,10 @@ export class PostsService {
         entityId: postId,
         postId,
         communityId: post.communityId ?? null,
-        preview: (post as any).text || '',
+        // No cast: the `select` above names `text`, so this is typed. It used
+        // to read off an untyped whole-row fetch, which would have gone on
+        // compiling if the column were ever dropped from the query.
+        preview: post.text || '',
       });
     }
 

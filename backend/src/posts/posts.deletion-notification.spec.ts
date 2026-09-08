@@ -100,31 +100,16 @@ describe('Content removal notifications', () => {
           })),
           update: jest.fn(async () => ({})),
         },
-        comment: {
-          updateMany: jest.fn(async () => ({})),
-          findMany: jest.fn(async () => []),
-        },
-        postLike: { deleteMany: jest.fn(async () => ({})) },
-        postBookmark: { deleteMany: jest.fn(async () => ({})) },
-        postShare: { deleteMany: jest.fn(async () => ({})) },
-        postHashtag: { deleteMany: jest.fn(async () => ({})) },
-        mention: { deleteMany: jest.fn(async () => ({})) },
-        commentLike: { deleteMany: jest.fn(async () => ({})) },
-        pollVote: { deleteMany: jest.fn(async () => ({})) },
-        pollOption: { deleteMany: jest.fn(async () => ({})) },
-        media: {
-          findMany: jest.fn(async () => []),
-          deleteMany: jest.fn(async () => ({})),
-        },
         user: { findUnique: jest.fn(async () => actor) },
         community: {
           findUnique: jest.fn(async () => ({ name: 'Chess Club' })),
         },
-        // Use the interactive-callback form: call fn(prisma) so the new
-        // transaction body executes against the same mock object.
-        $transaction: jest.fn(async (fn: any) =>
-          typeof fn === 'function' ? fn(prisma) : fn,
-        ),
+        // The row-level cleanup is one raw statement (see deletePostInternal),
+        // so that is all the deletion needs from Prisma here. What this suite
+        // is actually about is what happens AFTER it: who gets told.
+        // Returns no media keys — object-storage cleanup is not this test's
+        // subject and is covered in posts.deletion.spec.ts.
+        $queryRaw: jest.fn(async () => []),
       };
 
       const notifications: any = {
