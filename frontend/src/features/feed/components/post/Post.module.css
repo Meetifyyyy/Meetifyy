@@ -768,3 +768,77 @@
 .postAttachments {
   margin-top: 0.75rem;
 }
+/* ── "Deleting post…" ────────────────────────────────────────────────────────
+   Shown from the moment the DELETE goes out until the server answers.
+
+   An overlay rather than a replacement for the card's content: the card keeps
+   its exact height, so a delete from halfway down a feed does not collapse the
+   list and jump everything below it under the reader's thumb. It also means a
+   failed delete restores in place with nothing having moved.
+
+   The card underneath is inert while this is up (`pointer-events: none` on the
+   card, `auto` back on the overlay so it swallows taps rather than letting them
+   through to the post behind it). */
+.postDeleting {
+  pointer-events: none;
+}
+
+.deletingOverlay {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  /* Matches the card's own radius so the overlay does not square off its
+     corners while it is up. */
+  border-radius: var(--radius-lg);
+  /* Legible over whatever the post contains — text, a photo, a video frame —
+     without hiding it entirely, so the user can still see WHICH post is going.
+
+     Two declarations, and the order is load-bearing. The other `color-mix` uses
+     in this codebase are decorative (skeleton tints, hover washes) and degrade
+     to transparent harmlessly where it is unsupported — iOS Safari before 16.2,
+     which is still a real share of phones. This one is not decorative: it is
+     what makes the label readable, and a dropped declaration would leave the
+     spinner and text sitting directly on top of the post's own photo. So the
+     opaque surface goes first and stands wherever `color-mix` is not understood;
+     browsers that do understand it take the translucent version on the next
+     line and let the post show through. */
+  background: var(--color-bg-white);
+  background: color-mix(in srgb, var(--color-bg-white) 82%, transparent);
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+  color: var(--color-text-secondary);
+  font-size: 0.9rem;
+  font-weight: 500;
+  pointer-events: auto;
+}
+
+.deletingSpinner {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  border: 2px solid var(--color-border-light);
+  border-top-color: var(--color-text-secondary);
+  border-radius: 50%;
+  animation: postDeletingSpin 0.7s linear infinite;
+}
+
+@keyframes postDeletingSpin {
+  to { transform: rotate(360deg); }
+}
+
+/* Respecting the user's setting rather than spinning regardless: the label
+   already says what is happening, so the motion is decoration. A static ring
+   would read as a stalled spinner, so it pulses instead. */
+@media (prefers-reduced-motion: reduce) {
+  .deletingSpinner {
+    animation: postDeletingPulse 1.4s ease-in-out infinite;
+  }
+  @keyframes postDeletingPulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.35; }
+  }
+}

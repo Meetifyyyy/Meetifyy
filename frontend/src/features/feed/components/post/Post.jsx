@@ -16,7 +16,7 @@ import { useMediaViewerActions } from '@shared/context/MediaViewerContext';
 import ConfirmModal from '@shared/components/modals/ConfirmModal';
 import ReportModal from '@shared/components/modals/ReportModal/ReportModal';
 import MediaGrid from './MediaGrid';
-import { useDeletePost } from '../../hooks/useDeletePost';
+import { useDeletePost, DELETING_FLAG } from '../../hooks/useDeletePost';
 import { useVotePoll } from '../../hooks/useVotePoll';
 import { getMediaUrl } from '@shared/api/apiClient';
 
@@ -137,6 +137,17 @@ function Post({ postData, onClick, onCommentClick, onDeleted, isDetailed = false
   const id = postData?.id;
 
   const { mutate: deletePost } = useDeletePost();
+
+  /**
+   * Set on the cached post by useDeletePost the instant the request goes out,
+   * and cleared (or the post removed) when it settles. Read from the cached
+   * data rather than held in this component's own state on purpose: the same
+   * post can be mounted in several places at once — the feed behind an open
+   * detail view, a profile list, a community list — and all of them have to
+   * show the same thing and refuse a second delete, not just the card the
+   * user happened to click.
+   */
+  const isDeleting = postData?.[DELETING_FLAG] === true;
 
   useEffect(() => {
     if (!showMenu) return;
@@ -272,7 +283,20 @@ function Post({ postData, onClick, onCommentClick, onDeleted, isDetailed = false
         || null);
 
   return (
-    <div className={styles.post} onClick={handleCardClick} style={{ cursor: (!isDetailed && onClick) ? 'pointer' : 'default' }}>
+    <div
+      className={`${styles.post}${isDeleting ? ` ${styles.postDeleting}` : ''}`}
+      onClick={isDeleting ? undefined : handleCardClick}
+      // Announces the pending state to assistive tech, which the visual
+      // overlay alone does not.
+      aria-busy={isDeleting || undefined}
+      style={{ cursor: isDeleting ? 'default' : ((!isDetailed && onClick) ? 'pointer' : 'default') }}
+    >
+      {isDeleting && (
+        <div className={styles.deletingOverlay} role="status" onClick={(e) => e.stopPropagation()}>
+          <span className={styles.deletingSpinner} aria-hidden="true" />
+          <span>Deleting post…</span>
+        </div>
+      )}
       <div className={styles.postHeader}>
         <div className={styles.postAvatarContainer}>
           <Link to={`/profile/${author.username}`} style={{ textDecoration: 'none' }} onClick={(e) => e.stopPropagation()}>
@@ -352,12 +376,26 @@ function Post({ postData, onClick, onCommentClick, onDeleted, isDetailed = false
             <div className="dropdown open" style={{ right: 0, top: '100%', width: '140px' }} onClick={(e) => e.stopPropagation()}>
               {canDeletePost && (
                 <button
+                  // Disabled while a delete is in flight so the confirm dialog
+                  // cannot be reopened and a second DELETE issued for the same
+                  // post. The card also renders its own progress state, so this
+                  // is the belt to that braces.
+                  disabled={isDeleting}
                   onClick={(e) => {
                     e.stopPropagation();
+                    if (isDeleting) return;
                     setShowMenu(false);
                     setShowDeleteConfirm(true);
                   }}
-                  style={{ color: 'var(--color-danger)', display: 'flex', alignItems: 'center', gap: '0.5rem', width: '100%' }}
+                  style={{
+                    color: 'var(--color-danger)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem',
+                    width: '100%',
+                    opacity: isDeleting ? 0.5 : 1,
+                    cursor: isDeleting ? 'not-allowed' : undefined,
+                  }}
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <polyline points="3 6 5 6 21 6" />
@@ -514,7 +552,22 @@ function Post({ postData, onClick, onCommentClick, onDeleted, isDetailed = false
             onCancel={() => setShowDeleteConfirm(false)}
             onConfirm={() => {
               setShowDeleteConfirm(false);
+              // Third guard. Not airtight on its own — `isDeleting` is read
+              // from this render's closure, so two confirms dispatched in the
+              // same tick would both see `false`. What actually makes that
+              // unreachable is the line above: the modal unmounts on the first
+              // confirm. This catches the case that IS reachable — the menu
+              // reopened while a delete from this card is still in flight.
+              //
+              // A duplicate that somehow got through would be harmless anyway:
+              // the second DELETE answers 404, which useDeletePost treats as
+              // already-done rather than as an error.
+              if (isDeleting) return;
               deletePost({ postId: id });
+              // The detail view has nothing left to show, so it leaves at once
+              // rather than sitting on a progress state it cannot act on. The
+              // list underneath carries the "Deleting post..." card, which is
+              // where the outcome — removal, or restore with an error — lands.
               if (isDetailed && onDeleted) onDeleted();
             }}
             confirmText="Delete"
@@ -553,6 +606,11 @@ function arePostPropsEqual(prevProps, nextProps) {
   if (prev === next) return true;
   if (!prev || !next) return false;
   if (prev.id !== next.id) return false;
+  // The deletion progress state. This comparator is an allowlist of the fields
+  // the card renders, so a new one is invisible until it is listed here — and
+  // the symptom would be the worst kind: the delete fires, the card carries on
+  // looking untouched, and the user presses Delete again.
+  if (prev[DELETING_FLAG] !== next[DELETING_FLAG]) return false;
   if (prev.text !== next.text) return false;
   // The community tag is part of what this card renders, so a post that
   // gains its community (a cached row refetched with the field populated)

@@ -409,7 +409,7 @@ function isPublicPath(path) {
   return PUBLIC_PATHS.some(p => clean === p || clean.startsWith(`${p}?`) || clean.startsWith(`${p}/`));
 }
 
-async function request(method, path, body, signal) {
+async function request(method, path, body, signal, timeoutMs) {
   // If session seeding is in-flight on initial page load / reload, wait for it
   if (!_cachedToken && _initSessionPromise) {
     await _initSessionPromise;
@@ -441,6 +441,10 @@ async function request(method, path, body, signal) {
   // POST/PATCH/PUT/DELETE: always bypass cache — never stale mutation responses.
   const options = { method, headers, cache: method === 'GET' ? 'default' : 'no-store' };
   if (signal) options.signal = signal;
+  // Per-call deadline, for the few mutations whose UI holds a visible spinner
+  // and where the 30s default is far longer than the user will wait before
+  // deciding the app is broken. Omitted, `_doFetch` applies that default.
+  if (timeoutMs !== undefined) options.timeoutMs = timeoutMs;
   if (body !== undefined) {
     if (body instanceof FormData) {
       delete headers['Content-Type'];
@@ -646,11 +650,11 @@ if (typeof window !== 'undefined') {
 export const getAccessToken = () => getToken();
 
 export const apiClient = {
-  get: (path, { signal } = {}) => request('GET', path, undefined, signal),
-  post: (path, body, { signal } = {}) => request('POST', path, body, signal),
-  patch: (path, body, { signal } = {}) => request('PATCH', path, body, signal),
-  put: (path, body, { signal } = {}) => request('PUT', path, body, signal),
-  delete: (path, { signal } = {}) => request('DELETE', path, undefined, signal),
+  get: (path, { signal, timeoutMs } = {}) => request('GET', path, undefined, signal, timeoutMs),
+  post: (path, body, { signal, timeoutMs } = {}) => request('POST', path, body, signal, timeoutMs),
+  patch: (path, body, { signal, timeoutMs } = {}) => request('PATCH', path, body, signal, timeoutMs),
+  put: (path, body, { signal, timeoutMs } = {}) => request('PUT', path, body, signal, timeoutMs),
+  delete: (path, { signal, timeoutMs } = {}) => request('DELETE', path, undefined, signal, timeoutMs),
 };
 
 // ──────────────────────────────────────────────
@@ -718,7 +722,15 @@ export const postsApi = {
   unlikeComment: (commentId, { signal } = {}) => apiClient.post(`/api/posts/comments/${commentId}/unlike`, undefined, { signal }),
   deleteComment: (commentId) => apiClient.delete(`/api/posts/comments/${commentId}`),
   getPostById: (postId) => apiClient.get(`/api/posts/${postId}`),
-  deletePost: (postId) => apiClient.delete(`/api/posts/${postId}`),
+  /**
+   * 12s rather than the 30s default: the card sits under a visible "Deleting
+   * post..." spinner for the whole request, and a user watching that spinner
+   * decides the app is broken long before thirty seconds. The server side is
+   * two database round trips, so anything past a few seconds is a stalled
+   * connection rather than slow work — failing at 12s lets the post come back
+   * with an error the user can act on instead of a spinner that never ends.
+   */
+  deletePost: (postId) => apiClient.delete(`/api/posts/${postId}`, { timeoutMs: 12_000 }),
 
   voteInPoll: (postId, payload) => {
     const body = Array.isArray(payload) ? { indices: payload } : (typeof payload === 'object' ? payload : { index: payload });
