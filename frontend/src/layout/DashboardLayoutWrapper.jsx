@@ -10,6 +10,7 @@ import { InstantMatchProvider } from '@features/instant-match/context/InstantMat
 import InstantMatchFAB from '@features/instant-match/components/InstantMatchFAB';
 import InstantMatchChat from '@features/instant-match/components/chat/InstantMatchChat';
 import { useAutoHideChrome } from '@shared/hooks/useAutoHideChrome';
+import { useKeyboardInset } from '@shared/hooks/useKeyboardInset';
 import { VerificationModal } from '@shared/components/VerificationGate';
 
 /**
@@ -38,11 +39,31 @@ export default function DashboardLayoutWrapper() {
     match.pathname.startsWith('/search') ||
     /^\/communities\/.+/.test(match.pathname)
   );
+  /**
+   * Publishes the keyboard geometry (`--kb-layout-shift`, `--kb-inset`) that
+   * the BottomNav's transform reads.
+   *
+   * Mounted HERE, at the layout that renders the nav, rather than on a route.
+   * It used to be called only by MessagesRoute, so the variable existed only
+   * while /messages was open — and `.bottomNav`'s `translateY(var(...))` fell
+   * back to `0px` everywhere else. On Android the keyboard shrinks the layout
+   * viewport, which makes `bottom: 0` mean "the top of the keyboard", so on
+   * every other screen the nav was lifted up and parked on top of the keyboard.
+   * Writing a comment on a post was where that was most obvious: the nav
+   * covered the composer the moment the keyboard opened.
+   *
+   * One instance, not one per route: the hook zeroes the variables in its
+   * cleanup, so a second copy unmounting would blank them underneath the one
+   * still running.
+   */
+  useKeyboardInset();
+
   // The BottomNav stays visible with a conversation open: the messages layout
   // reserves a 60px bottom row for it (see `.centre--messages` in global.css),
-  // so the chat input sits above the nav rather than under it. It is only
-  // hidden while the soft keyboard is open (handled in CSS via
-  // `html[data-keyboard-open]`), so the input can rise to the keyboard.
+  // so the chat input sits above the nav rather than under it. When the
+  // keyboard opens the nav does not hide — it translates down by the layout
+  // shift so it stays on the physical bottom edge, behind the keyboard (see
+  // `.bottomNav` in BottomNav.module.css).
   const hideBottomNav = matches.some(match =>
     match.pathname.startsWith('/saved') ||
     match.pathname.startsWith('/settings') ||

@@ -1,12 +1,14 @@
 import { useParams } from 'react-router-dom';
 import MessagesLayout from '../components/layout/MessagesLayout';
-import { useKeyboardInset } from '@shared/hooks/useKeyboardInset';
 
 import VerificationGate from '@shared/components/VerificationGate/VerificationGate';
 
 export default function MessagesRoute() {
-  // Keep the chat input above the soft keyboard on mobile (see hook docs).
-  useKeyboardInset();
+  // The keyboard geometry this layout depends on (`--kb-inset`, used by
+  // `.centre--messages` in global.css) is published once by
+  // DashboardLayoutWrapper, which is also where the BottomNav that reads it
+  // lives. It used to be mounted here, which meant every other screen — the
+  // post composer most visibly — got no keyboard handling at all.
   const { param1, param2 } = useParams();
   const isChatOpen = !!(param1 || param2);
 
