@@ -57,11 +57,24 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
     exit 1
   fi
 
-  # An API that reports no commit predates this mechanism. Waiting for a field
-  # it will never send would block every deploy, so treat it as "cannot tell"
-  # and ship — the situation this guards against needs a NEW backend anyway.
+  # An API that reports no commit predates this mechanism — including, exactly
+  # once, the deploy that introduces it. Falling straight through to "build"
+  # there would leave the very first rollout unprotected, so before giving up
+  # we ask a question an old API answers differently: does the session endpoint
+  # exist? It is 404 on a backend without cookie sessions and 401 on one with
+  # them, and the frontend's hard requirement is precisely that it has them.
   if [ -z "$live" ]; then
-    say "API reports no commit (older build or unreachable). Building."
+    status=$(curl -o /dev/null -s -w '%{http_code}' --max-time 10 \
+      "$API_URL/api/auth/sessions" 2>/dev/null)
+
+    if [ "$status" = "404" ]; then
+      say "API has no commit marker and no session endpoint — it predates the"
+      say "cookie session work the frontend needs. Waiting…"
+      sleep "$POLL_SECONDS"
+      continue
+    fi
+
+    say "API reports no commit but answers /api/auth/sessions ($status). Building."
     exit 1
   fi
 
