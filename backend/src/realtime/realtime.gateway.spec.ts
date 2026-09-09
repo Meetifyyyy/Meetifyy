@@ -355,3 +355,76 @@ describe('RealtimeGateway — room join authorization', () => {
     });
   });
 });
+
+/**
+ * The socket must accept the HttpOnly session cookie.
+ *
+ * Handshake auth required the page to be holding an access token in
+ * JavaScript, which is exactly what moving the session into a cookie removes.
+ * Without this the realtime connection would be the one surface that still
+ * demanded a script-readable credential.
+ */
+describe('RealtimeGateway — cookie handshake', () => {
+  let gateway: RealtimeGateway;
+  let jwtGuard: any;
+
+  beforeEach(() => {
+    jwtGuard = { validateToken: jest.fn() };
+    gateway = new RealtimeGateway(
+      { isConfigured: true, client: { auth: { getUser: jest.fn() } } } as any,
+      {} as any,
+      { registerSocketValidator: jest.fn(), onStatusChange: jest.fn(), setOnline: jest.fn() } as any,
+      {} as any, {} as any,
+      {
+        user: { findUnique: jest.fn().mockResolvedValue({ accountStatus: 'ACTIVE' }) },
+        conversationParticipant: { findMany: jest.fn().mockResolvedValue([]) },
+      } as any,
+      { getClient: jest.fn(), subscriber: jest.fn() } as any,
+      {} as any, {} as any, {} as any,
+      createVerificationAccessMock() as any,
+      createStudentYearPolicyMock() as any,
+      allowAllRateLimit(),
+      createLegalConsentMock() as any,
+      jwtGuard,
+    );
+  });
+
+  const client = (headers: any, auth: any = {}) => ({
+    id: 'sock-1',
+    handshake: { auth, headers },
+    disconnect: jest.fn(),
+    join: jest.fn(),
+    emit: jest.fn(),
+  });
+
+  it('authenticates from the mf_access cookie when no handshake token is given', async () => {
+    jwtGuard.validateToken.mockResolvedValue({ id: 'u1', email: 'a@b.c' });
+    const c = client({ cookie: 'other=1; mf_access=cookie-token; mf_csrf=x' });
+
+    await gateway.handleConnection(c as any);
+
+    expect(jwtGuard.validateToken).toHaveBeenCalledWith('cookie-token');
+    expect(c.disconnect).not.toHaveBeenCalled();
+  });
+
+  it('still prefers an explicit handshake token', async () => {
+    jwtGuard.validateToken.mockResolvedValue({ id: 'u1', email: 'a@b.c' });
+    const c = client({ cookie: 'mf_access=cookie-token' }, { token: 'header-token' });
+
+    await gateway.handleConnection(c as any);
+
+    expect(jwtGuard.validateToken).toHaveBeenCalledWith('header-token');
+  });
+
+  it('rejects when neither is present', async () => {
+    const c = client({ cookie: 'unrelated=1' });
+    await gateway.handleConnection(c as any);
+    expect(c.disconnect).toHaveBeenCalled();
+  });
+
+  it('does not accept a cookie whose name merely contains mf_access', async () => {
+    const c = client({ cookie: 'not_mf_access=evil' });
+    await gateway.handleConnection(c as any);
+    expect(c.disconnect).toHaveBeenCalled();
+  });
+});

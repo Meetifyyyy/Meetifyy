@@ -25,6 +25,9 @@ const getByUsernameMock = vi.fn();
 const getRecommendationsMock = vi.fn();
 
 vi.mock('@shared/api/apiClient', () => ({
+  // Added with the cookie migration: AuthContext reads this to decide
+  // whether a cookie session is worth recovering.
+  readCsrfCookie: () => '',
   apiClient: { get: async () => ({}), post: async () => ({}) },
   usersApi: {
     getRecommendations: (...a) => getRecommendationsMock(...a),

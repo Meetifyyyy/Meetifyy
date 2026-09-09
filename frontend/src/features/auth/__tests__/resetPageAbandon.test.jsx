@@ -40,7 +40,10 @@ vi.mock('@shared/lib/supabase', () => ({
   isRecoveryTab: () => recoveryTab,
   clearRecoveryTab: () => { cleared.count += 1; recoveryTab = false; },
 }));
-vi.mock('@shared/api/apiClient', () => ({ getBackendUrl: () => 'http://api.test' }));
+vi.mock('@shared/api/apiClient', () => ({
+  // Added with the cookie migration: AuthContext reads this to decide
+  // whether a cookie session is worth recovering.
+  readCsrfCookie: () => '', getBackendUrl: () => 'http://api.test' }));
 
 const { default: ResetPasswordPage } = await import('@features/auth/pages/ResetPasswordPage');
 

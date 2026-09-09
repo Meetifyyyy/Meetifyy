@@ -3,7 +3,10 @@ import { describe, it, expect, vi } from 'vitest';
 // The module pulls in the whole settings screen. Only the tree constants are
 // under test, so its heavy leaves are stubbed rather than rendered.
 vi.mock('@shared/context/AuthContext', () => ({ useAuth: () => ({}) }));
-vi.mock('@shared/api/apiClient', () => ({ apiClient: {} }));
+vi.mock('@shared/api/apiClient', () => ({
+  // Added with the cookie migration: AuthContext reads this to decide
+  // whether a cookie session is worth recovering.
+  readCsrfCookie: () => '', apiClient: {} }));
 vi.mock('@shared/lib/supabase', () => ({ supabase: {}, isSupabaseConfigured: false }));
 
 const { SETTINGS_TREE, SETTINGS_CATEGORIES, SETTINGS_PANELS, PANEL_PARENT } =

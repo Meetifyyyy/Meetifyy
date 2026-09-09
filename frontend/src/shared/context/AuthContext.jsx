@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { usersApi, apiClient, postsApi, getBackendUrl } from '@shared/api/apiClient';
+import { usersApi, apiClient, postsApi, getBackendUrl, readCsrfCookie } from '@shared/api/apiClient';
 import { followGraphChangedSince } from '../utils/followState';
 import { useSavedPostsStore } from '../stores/savedPostsStore';
 import { useSavedActivitiesStore } from '../stores/savedActivitiesStore';
@@ -220,6 +220,45 @@ export function AuthProvider({ children }) {
     return syncPromiseRef.current;
   }, []);
 
+  /**
+   * Asks the server whether this browser is still signed in.
+   *
+   * The session's durable half is an HttpOnly cookie, so on a fresh load there
+   * is nothing in JavaScript to inspect — the question can only be answered by
+   * making a request and seeing whether the cookie authenticates it. `sync`
+   * returns the caller's own profile and is reachable in the restricted account
+   * states too, which is exactly what a boot needs.
+   *
+   * Returns the user, or null when the cookie is missing, expired or revoked.
+   * A revoked session lands here as a 401 and signs the app out, which is the
+   * whole point of the session table behind it.
+   */
+  const hydrateFromCookie = useCallback(async () => {
+    // The CSRF cookie is set beside the session cookies and, unlike them, is
+    // readable. Its absence means there is no cookie session to recover, so a
+    // signed-out visitor — every first-time arrival, every logged-out share
+    // link — skips this entirely instead of spending a request to be told 401.
+    // This is a hint, not a decision: the server still authorizes, and a forged
+    // CSRF cookie buys nothing but a wasted round trip.
+    if (!readCsrfCookie()) return null;
+
+    try {
+      const res = await apiClient.post('/api/auth/sync');
+      const user = res?.user || null;
+      if (user) {
+        setCurrentUser(user);
+        try {
+          localStorage.setItem('currentUser', JSON.stringify(user));
+          localStorage.setItem('loggedIn', 'true');
+        } catch (_) {}
+      }
+      return user;
+    } catch (_) {
+      // 401, offline, anything: treat as not signed in. The caller clears state.
+      return null;
+    }
+  }, []);
+
   useEffect(() => {
     if (!isSupabaseConfigured) {
        setLoading(false);
@@ -254,8 +293,31 @@ export function AuthProvider({ children }) {
       }
 
       if (!session) {
-        setCurrentUser(null);
-        try { localStorage.removeItem('currentUser'); } catch (_) {}
+        /**
+         * No session in memory does not mean signed out any more.
+         *
+         * Tokens are no longer written to localStorage, so a reload always
+         * starts with an empty client — the durable half of the session is an
+         * HttpOnly cookie this code cannot read. The only way to find out
+         * whether the browser is still signed in is to ask the server, which
+         * `sync` answers using that cookie.
+         *
+         * Without this, moving the session out of localStorage would log
+         * everyone out on every refresh.
+         */
+        hydrateFromCookie()
+          .then((user) => {
+            if (!user) {
+              setCurrentUser(null);
+              try { localStorage.removeItem('currentUser'); } catch (_) {}
+            }
+          })
+          .finally(() => setLoading(false));
+
+        if (!isLoggingOutRef.current) {
+          setSession(session);
+        }
+        return;
       }
       if (!isLoggingOutRef.current) {
         setSession(session);
@@ -379,7 +441,7 @@ export function AuthProvider({ children }) {
     );
     
     return () => subscription.unsubscribe();
-  }, [performSync]);
+  }, [performSync, hydrateFromCookie]);
 
 
   const login = useCallback(async (usernameOrEmail, password) => {

@@ -14,6 +14,9 @@ if (!window.matchMedia) window.matchMedia = () => ({ matches: false, addEventLis
 
 vi.mock('@shared/lib/supabase', () => ({ supabase: { auth: { getSession: () => Promise.resolve({ data: { session: null } }), onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }), signOut: () => Promise.resolve({}) } }, isSupabaseConfigured: false }));
 vi.mock('@shared/api/apiClient', () => ({
+  // Added with the cookie migration: AuthContext reads this to decide
+  // whether a cookie session is worth recovering.
+  readCsrfCookie: () => '',
   getMediaUrl: (u) => u,
   postsApi: {
     getPostById: async () => ({

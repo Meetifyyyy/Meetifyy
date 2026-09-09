@@ -21,7 +21,10 @@ const api = {
   delete: vi.fn(),
 };
 
-vi.mock('@shared/api/apiClient', () => ({ notificationsApi: api }));
+vi.mock('@shared/api/apiClient', () => ({
+  // Added with the cookie migration: AuthContext reads this to decide
+  // whether a cookie session is worth recovering.
+  readCsrfCookie: () => '', notificationsApi: api }));
 vi.mock('../../context/AuthContext', () => ({ useAuth: () => ({ currentUser: { id: 'u1' } }) }));
 
 const { useNotifications, useUnreadNotificationCount } = await import('../useNotifications');

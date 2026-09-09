@@ -36,7 +36,10 @@ vi.mock('@shared/utils/mediaPipeline', () => ({
   processAndUploadImage: async () => ({}),
   processAndUploadVideo: async () => ({}),
 }));
-vi.mock('@shared/api/apiClient', () => ({ uploadsApi: {} }));
+vi.mock('@shared/api/apiClient', () => ({
+  // Added with the cookie migration: AuthContext reads this to decide
+  // whether a cookie session is worth recovering.
+  readCsrfCookie: () => '', uploadsApi: {} }));
 vi.mock('@shared/utils/toast', () => ({ showToast: () => {} }));
 
 const { default: PostComposer } = await import('../PostComposer');

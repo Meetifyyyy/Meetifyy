@@ -26,6 +26,9 @@ const getConnectionsMock = vi.fn();
 const getGroupDetailsMock = vi.fn();
 
 vi.mock('@shared/api/apiClient', () => ({
+  // Added with the cookie migration: AuthContext reads this to decide
+  // whether a cookie session is worth recovering.
+  readCsrfCookie: () => '',
   apiClient: { get: async () => ({}), post: async () => ({}) },
   usersApi: { getConnections: (...a) => getConnectionsMock(...a) },
   groupApi: { getDetails: (...a) => getGroupDetailsMock(...a) },

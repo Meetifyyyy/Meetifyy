@@ -14,6 +14,7 @@ import { OnEvent } from '@nestjs/event-emitter';
 import { SupabaseService } from '../supabase/supabase.service';
 import { MessagesService } from '../messages/messages.service';
 import { PresenceService } from '../presence/presence.service';
+import { USER_ACCESS_COOKIE } from '../auth/session/user-session-cookies';
 import { BlocksService } from '../users/blocks.service';
 import {
   InstantMatchService,
@@ -632,7 +633,20 @@ export class RealtimeGateway
       // Never block a reconnect because the limiter itself failed.
     }
 
-    const token = client.handshake.auth?.token;
+    /**
+     * Handshake token, or the session cookie.
+     *
+     * Sockets used to take the access token from `handshake.auth`, which meant
+     * the page had to be holding one in JavaScript to connect at all. Now that
+     * the durable session is an HttpOnly cookie the page cannot read, the
+     * cookie the browser attaches to the handshake is the credential — and it
+     * is the better one, because a script on the origin cannot lift it.
+     *
+     * Both paths land on the same `validateToken` below; neither is trusted
+     * more than the other.
+     */
+    const token =
+      client.handshake.auth?.token || cookieToken(client.handshake.headers);
 
     if (!token) {
       this.logger.warn(`Client connection rejected: missing token`);
@@ -1985,4 +1999,27 @@ export class RealtimeGateway
   emitInstantMatchChatEnded(userId: string, state: InstantMatchChatState) {
     this.server?.to(userId).emit('instant_match:chat_ended', state);
   }
+}
+
+/**
+ * Reads the access token out of a raw Cookie header.
+ *
+ * Socket.IO hands the handshake headers through unparsed — `cookie-parser` is
+ * Express middleware and never runs for a WebSocket upgrade — so this does the
+ * one lookup it needs rather than pulling in a parser for it.
+ */
+function cookieToken(headers: Record<string, any> | undefined): string {
+  const raw = headers?.cookie;
+  if (typeof raw !== 'string' || !raw) return '';
+  for (const part of raw.split(';')) {
+    const eq = part.indexOf('=');
+    if (eq === -1) continue;
+    if (part.slice(0, eq).trim() !== USER_ACCESS_COOKIE) continue;
+    try {
+      return decodeURIComponent(part.slice(eq + 1).trim());
+    } catch {
+      return part.slice(eq + 1).trim();
+    }
+  }
+  return '';
 }

@@ -3,6 +3,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // getMediaUrl reads window.location and the Supabase client; stub it to the one
 // behaviour under test — turning a bare object key into an absolute media URL.
 vi.mock('@shared/api/apiClient', () => ({
+  // Added with the cookie migration: AuthContext reads this to decide
+  // whether a cookie session is worth recovering.
+  readCsrfCookie: () => '',
   getMediaUrl: (v) => (/^(https?:|data:|blob:)/.test(v) ? v : `https://api.test/api/media/${v.replace(/^\/+/, '')}`),
 }));
 

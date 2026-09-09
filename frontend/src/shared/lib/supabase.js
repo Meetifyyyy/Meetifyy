@@ -95,9 +95,67 @@ if (typeof window !== 'undefined') {
  * to keep deriving from the project ref the same way, or every signed-in user
  * would be silently logged out by this change.
  */
+/**
+ * Session storage that lives in memory and nowhere else.
+ *
+ * The tokens used to be written to `localStorage`, where any script running on
+ * the origin could read them — and where they stayed. That is what made a
+ * stolen session unbounded: the refresh token sat on disk, so an attacker who
+ * read it once could mint fresh access tokens indefinitely, and there was no
+ * way to take it back.
+ *
+ * The durable half of the session is now an HttpOnly cookie the server sets,
+ * which scripts cannot read at all. What remains here is the access token, held
+ * for the lifetime of the tab so the AuthClient can keep answering
+ * `getSession()` for the code that needs it. Closing the tab loses it, a
+ * reload starts from the cookie again, and nothing survives on disk for a
+ * later reader to find.
+ *
+ * Shaped like the Storage interface the AuthClient expects — it only ever calls
+ * these three.
+ */
+function createMemoryStorage() {
+  const store = new Map();
+  return {
+    getItem: (key) => (store.has(key) ? store.get(key) : null),
+    setItem: (key, value) => {
+      store.set(key, value);
+    },
+    removeItem: (key) => {
+      store.delete(key);
+    },
+  };
+}
+
+/**
+ * Anything this app previously left in `localStorage` under the Supabase key.
+ *
+ * Existing users are carrying a token on disk right now from before the switch.
+ * Changing where new sessions are kept does not remove those, so the exposure
+ * would simply persist for everyone already signed in. This clears them once,
+ * on load.
+ */
+function purgeLegacyPersistedSession() {
+  try {
+    if (typeof localStorage === 'undefined') return;
+    const doomed = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && (key.startsWith('sb-') || key.includes('auth-token'))) {
+        doomed.push(key);
+      }
+    }
+    doomed.forEach((key) => localStorage.removeItem(key));
+  } catch (_) {
+    // Private mode, disabled storage: nothing to purge and nothing to report.
+  }
+}
+
 function createAuthClient() {
   const baseUrl = new URL(supabaseUrl);
   const projectRef = baseUrl.hostname.split('.')[0];
+
+  purgeLegacyPersistedSession();
 
   return new AuthClient({
     url: new URL('auth/v1', baseUrl).href,
@@ -107,7 +165,11 @@ function createAuthClient() {
     },
     storageKey: `sb-${projectRef}-auth-token`,
     autoRefreshToken: true,
+    // Still "persist" — but into memory. The flag has to stay on or the client
+    // keeps no session at all between calls within the tab, and every
+    // `getSession()` would come back empty.
     persistSession: true,
+    storage: createMemoryStorage(),
     detectSessionInUrl: true,
     flowType: 'implicit',
   });

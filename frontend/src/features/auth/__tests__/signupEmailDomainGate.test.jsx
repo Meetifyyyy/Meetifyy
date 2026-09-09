@@ -26,6 +26,9 @@ const nextStepMock = vi.fn();
 const updateDataMock = vi.fn();
 
 vi.mock('@shared/api/apiClient', () => ({
+  // Added with the cookie migration: AuthContext reads this to decide
+  // whether a cookie session is worth recovering.
+  readCsrfCookie: () => '',
   apiClient: { post: (...a) => postMock(...a), get: async () => ({}) },
   getMediaUrl: (v) => v,
   deriveThumbnailKey: () => null,

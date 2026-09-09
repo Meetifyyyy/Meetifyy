@@ -1,15 +1,19 @@
 /**
  * The auth calls a signed-out visitor has to be able to make.
  *
- * `apiClient` refuses any request whose path is not on its public allowlist
- * BEFORE a byte reaches the network — it throws "Unauthorized: Missing access
- * token". That is the right default, but it means moving an auth call behind
- * our API is only half the job: a route that is unauthenticated on the server
- * and missing from this list fails for exactly the people who need it, and
- * fails in the browser where no server log will ever show it.
+ * `apiClient` used to refuse any path outside its public allowlist before a
+ * byte reached the network, so moving an auth call behind our API was only half
+ * the job: a route unauthenticated on the server but missing from the list
+ * failed for exactly the people who needed it, in the browser, where no server
+ * log would ever show it. That nearly happened when the password-reset request
+ * moved here.
  *
- * This nearly happened when the password-reset request moved here. Pinned so
- * the next route to move does not have to rediscover it.
+ * The refusal is gone — with the session in an HttpOnly cookie the client can
+ * no longer tell whether it has one, so refusing locally would have blocked
+ * every authenticated request the moment tokens stopped being readable. It was
+ * never the security control anyway; JwtGuard is, and it is untouched. What is
+ * still worth pinning is that these paths reach the network at all, and that
+ * every request carries the cookie the server authorizes with.
  */
 import { describe, it, expect, vi } from 'vitest';
 
@@ -72,10 +76,36 @@ describe('auth routes reachable without a session', () => {
     expect(await isAllowedWithoutSession(path)).toBe(true);
   });
 
-  it('still refuses an authenticated route with no session', async () => {
-    // The allowlist has to stay an allowlist. If this passes, the guard is off
-    // and every assertion above is meaningless.
-    expect(await isAllowedWithoutSession('/api/auth/verify-password')).toBe(false);
-    expect(await isAllowedWithoutSession('/api/auth/sync')).toBe(false);
+  /**
+   * Authenticated routes are now SENT rather than refused locally, because the
+   * credential is a cookie this code cannot see. The server decides, and a
+   * request with no valid cookie comes back 401.
+   */
+  it.each(['/api/auth/verify-password', '/api/auth/sync'])(
+    'sends %s and lets the server authorize it',
+    async (path) => {
+      expect(await isAllowedWithoutSession(path)).toBe(true);
+    },
+  );
+
+  /**
+   * The replacement guarantee, and the one that matters now: if the request
+   * did not carry credentials, the cookie would never arrive and every
+   * authenticated call would 401 no matter who was signed in.
+   */
+  it('sends every request with credentials, so the session cookie travels', async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      headers: { get: () => null },
+      json: async () => ({}),
+      text: async () => '{}',
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+    await apiClient.post('/api/auth/sync', {});
+    vi.unstubAllGlobals();
+
+    expect(fetchMock).toHaveBeenCalled();
+    expect(fetchMock.mock.calls[0][1].credentials).toBe('include');
   });
 });

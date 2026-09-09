@@ -33,7 +33,10 @@ vi.mock('@shared/context/AuthContext', () => ({
   },
   isSupabaseConfigured: true,
 }));
-vi.mock('@shared/api/apiClient', () => ({ getBackendUrl: () => 'http://api.test' }));
+vi.mock('@shared/api/apiClient', () => ({
+  // Added with the cookie migration: AuthContext reads this to decide
+  // whether a cookie session is worth recovering.
+  readCsrfCookie: () => '', getBackendUrl: () => 'http://api.test' }));
 
 const { default: ResetPasswordPage } = await import('@features/auth/pages/ResetPasswordPage');
 

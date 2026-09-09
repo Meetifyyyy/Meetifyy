@@ -39,6 +39,23 @@ let _initSessionPromise = null;
  * refreshes, and each of those would otherwise cache it. `isRecoveryTab()` stays
  * true until the recovery session is signed out.
  */
+/**
+ * The CSRF token the server set alongside the session cookies.
+ *
+ * Readable on purpose — it is not a credential on its own, and the whole
+ * double-submit scheme depends on the page being able to echo it back. The
+ * session cookies beside it are HttpOnly and this cannot reach them.
+ */
+export function readCsrfCookie() {
+  try {
+    if (typeof document === 'undefined') return '';
+    const match = document.cookie.match(/(?:^|;\s*)mf_csrf=([^;]+)/);
+    return match ? decodeURIComponent(match[1]) : '';
+  } catch (_) {
+    return '';
+  }
+}
+
 function cacheSessionToken(session) {
   if (isRecoveryTab()) {
     _cachedToken = '';
@@ -460,15 +477,22 @@ function isPublicPath(path) {
 
 async function request(method, path, body, signal, timeoutMs) {
   // If session seeding is in-flight on initial page load / reload, wait for it
-  if (!_cachedToken && _initSessionPromise) {
+  // — unless the path is public, where there is nothing to wait for. A visitor
+  // arriving on a shared post has no session by definition, so blocking their
+  // first request on one only delays the page.
+  if (!_cachedToken && _initSessionPromise && !isPublicPath(path)) {
     await _initSessionPromise;
   }
 
   const token = getToken(); // synchronous
 
-  if (!token && !isPublicPath(path)) {
-    throw new Error('Unauthorized: Missing access token');
-  }
+  // No bearer token is no longer fatal.
+  //
+  // Authentication moved to an HttpOnly cookie, which this code cannot see by
+  // design — so "no token in JS" is the normal signed-in state, not an error.
+  // Refusing here would have made every request fail the moment tokens stopped
+  // being kept where scripts can read them. The server decides; a request with
+  // neither credential simply comes back 401.
 
   const headers = {
     'Content-Type': 'application/json',
@@ -488,7 +512,24 @@ async function request(method, path, body, signal, timeoutMs) {
 
   // GET: use browser default caching (backend sends Cache-Control).
   // POST/PATCH/PUT/DELETE: always bypass cache — never stale mutation responses.
-  const options = { method, headers, cache: method === 'GET' ? 'default' : 'no-store' };
+  // `include`, not `same-origin`: the app and the API are different origins in
+  // production, and this is what carries the HttpOnly session cookie. The
+  // backend allows credentials for exactly the configured origins.
+  const options = {
+    method,
+    headers,
+    credentials: 'include',
+    cache: method === 'GET' ? 'default' : 'no-store',
+  };
+
+  // Double-submit CSRF. The cookie ride-along is readable on purpose and is
+  // worthless without the HttpOnly cookie beside it; echoing it in a header is
+  // what proves the request came from our own page rather than from a form on
+  // someone else's site that the browser happened to attach cookies to.
+  if (method !== 'GET') {
+    const csrf = readCsrfCookie();
+    if (csrf) headers['x-csrf-token'] = csrf;
+  }
   if (signal) options.signal = signal;
   // Per-call deadline, for the few mutations whose UI holds a visible spinner
   // and where the 30s default is far longer than the user will wait before

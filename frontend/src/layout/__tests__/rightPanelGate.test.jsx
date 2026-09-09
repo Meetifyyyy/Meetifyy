@@ -22,6 +22,9 @@ vi.mock('@shared/context/AuthContext', () => ({ useAuth: () => ({ currentUser: {
 vi.mock('@shared/hooks/useUsersMap', () => ({ useUsersMap: () => ({}) }));
 vi.mock('@shared/hooks/useCrew', () => ({ useCrewActivities: () => [] }));
 vi.mock('@shared/api/apiClient', () => ({
+  // Added with the cookie migration: AuthContext reads this to decide
+  // whether a cookie session is worth recovering.
+  readCsrfCookie: () => '',
   usersApi: {}, activitiesApi: {}, getMediaUrl: (x) => x,
 }));
 vi.mock('@tanstack/react-query', () => ({ useQuery: () => ({ data: [], isLoading: false }) }));

@@ -20,6 +20,9 @@ vi.mock('@config', () => ({
   IS_DEV_BUILD: false,
 }));
 vi.mock('@shared/api/apiClient', () => ({
+  // Added with the cookie migration: AuthContext reads this to decide
+  // whether a cookie session is worth recovering.
+  readCsrfCookie: () => '',
   getBackendUrl: () => 'https://api.example',
   apiClient: { post: async () => ({}), get: async () => ({}) },
   usersApi: { updateProfile: (...a) => updateProfileMock(...a) },

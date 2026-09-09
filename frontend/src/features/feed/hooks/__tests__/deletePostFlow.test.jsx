@@ -17,6 +17,9 @@ const deletePost = vi.fn();
 const toasts = [];
 
 vi.mock('@shared/api/apiClient', () => ({
+  // Added with the cookie migration: AuthContext reads this to decide
+  // whether a cookie session is worth recovering.
+  readCsrfCookie: () => '',
   postsApi: { deletePost: (...a) => deletePost(...a) },
 }));
 vi.mock('@shared/utils/toast', () => ({

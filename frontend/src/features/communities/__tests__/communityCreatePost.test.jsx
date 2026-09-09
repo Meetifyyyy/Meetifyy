@@ -17,6 +17,9 @@ window.HTMLElement.prototype.scrollIntoView = function() {};
 
 vi.mock('@shared/lib/supabase', () => ({ supabase: { auth: { getSession: () => Promise.resolve({ data: { session: null } }), onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }), signOut: () => Promise.resolve({}) } }, isSupabaseConfigured: false }));
 vi.mock('@shared/api/apiClient', () => ({
+  // Added with the cookie migration: AuthContext reads this to decide
+  // whether a cookie session is worth recovering.
+  readCsrfCookie: () => '',
   getMediaUrl: (u) => u,
   postsApi: {
     getFeed: async () => ({ posts: [], nextCursor: null }),

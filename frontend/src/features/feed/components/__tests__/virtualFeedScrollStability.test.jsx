@@ -41,6 +41,9 @@ vi.mock('@shared/lib/supabase', () => ({
   isSupabaseConfigured: false,
 }));
 vi.mock('@shared/api/apiClient', () => ({
+  // Added with the cookie migration: AuthContext reads this to decide
+  // whether a cookie session is worth recovering.
+  readCsrfCookie: () => '',
   getMediaUrl: (u) => (typeof u === 'string' ? u : ''),
   postsApi: {
     likePost: async () => ({}),

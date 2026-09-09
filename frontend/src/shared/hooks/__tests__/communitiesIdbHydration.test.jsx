@@ -32,6 +32,9 @@ const getAllMock = vi.fn();
 const idbGetMock = vi.fn();
 
 vi.mock('@shared/api/apiClient', () => ({
+  // Added with the cookie migration: AuthContext reads this to decide
+  // whether a cookie session is worth recovering.
+  readCsrfCookie: () => '',
   apiClient: { get: async () => ({}), post: async () => ({}) },
   communitiesApi: {
     getAll: (...a) => getAllMock(...a),

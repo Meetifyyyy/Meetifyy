@@ -46,8 +46,16 @@ export default function SocketManager() {
   }, [currentUser, updateCurrentUser]);
 
   useEffect(() => {
-    if (isLoggedIn && session?.access_token) {
-      connect(session.access_token);
+    // Being signed in is the condition, not holding a token.
+    //
+    // The session lives in an HttpOnly cookie now, which this code cannot read
+    // — so waiting for `session.access_token` would leave the socket
+    // permanently disconnected after a reload, when the cookie is the only
+    // credential present. The cookie rides the handshake automatically
+    // (`withCredentials` on the client, cookie parsing on the gateway); the
+    // token is still passed when there is one, and the gateway prefers it.
+    if (isLoggedIn) {
+      connect(session?.access_token || undefined);
     } else {
       disconnect();
     }
