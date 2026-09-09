@@ -8,7 +8,7 @@ import { CollegeRepresentativeBadge } from '@shared/components/badges/CollegeRep
 import styles from './CommunityMembersModal.module.css';
 import { useUsersMap } from '@shared/hooks/useUsersMap';
 import { useAuth } from '@shared/context/AuthContext';
-import { usersApi, communitiesApi, getMediaUrl } from '@shared/api/apiClient';
+import { usersApi, communitiesApi } from '@shared/api/apiClient';
 import { showToast } from '@shared/utils/toast';
 import ReportModal from '@shared/components/modals/ReportModal/ReportModal';
 import { sortGroupMembers } from '@shared/utils/memberSort';

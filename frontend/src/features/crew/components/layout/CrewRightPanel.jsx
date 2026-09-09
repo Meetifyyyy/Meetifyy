@@ -2,7 +2,6 @@ import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import styles from './CrewRightPanel.module.css';
 
-import createActivityBackgroundCharacter from '@assets/images/createactivitybackgroundcharacter.webp';
 import CalendarIcon from '@shared/components/ui/CalendarIcon';
 import { useAuth } from '@shared/context/AuthContext';
 import { useMyActivitiesQuery } from '@shared/hooks/useCrew';

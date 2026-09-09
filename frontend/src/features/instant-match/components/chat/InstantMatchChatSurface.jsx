@@ -2,8 +2,6 @@ import { useMemo, useState, useCallback, useEffect, useRef } from 'react';
 import PropTypes from 'prop-types';
 import { createPortal } from 'react-dom';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { useAuth } from '@shared/context/AuthContext';
-import { useScrollLock } from '@shared/hooks/useScrollLock';
 import { useMediaViewerActions } from '@shared/context/MediaViewerContext';
 import { showToast } from '@shared/utils/toast';
 import Avatar from '@shared/components/avatar/Avatar';
@@ -11,7 +9,6 @@ import { useChatManager } from '@features/messages/shared/hooks/useChatManager';
 import ChatMessageList from '@features/messages/shared/components/ChatMessageList';
 import ChatInputArea from '@features/messages/shared/components/ChatInputArea';
 import { useTypingIndicator } from '@features/messages/shared/hooks/useTypingIndicator';
-import { useInstantMatch } from '../../context/InstantMatchContext';
 import { useCountdown } from '../../hooks/useCountdown';
 import { getActivity, getActivityVerb, accentVars } from '../../constants/matchConstants';
 import {
@@ -21,7 +18,6 @@ import {
 import { Bolt } from '../decor/Decor';
 import '../../styles/instant-match.css';
 import '../../styles/instant-match-chat.css';
-import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 
 /**
  * Split out so the hooks below never run for a closed overlay — and, more

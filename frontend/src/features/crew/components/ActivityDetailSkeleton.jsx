@@ -1,4 +1,3 @@
-import { useNavigate, useLocation } from 'react-router-dom';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
 import Skeleton from '@shared/components/skeletons/Skeleton';
 import pageStyles from '../pages/ActivityDetailPage.module.css';
@@ -13,9 +12,7 @@ import styles from './skeletons/ActivityDetailSkeleton.module.css';
  * the real data arrives.
  */
 export default function ActivityDetailSkeleton() {
-  const navigate  = useNavigate();
   const goBack = useSmartBack();
-  const location  = useLocation();
 
   return (
     <div data-theme="dark" className={pageStyles.root}>

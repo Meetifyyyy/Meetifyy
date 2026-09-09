@@ -206,9 +206,9 @@ const InlineVideoPlayer = memo(function InlineVideoPlayer({
 
   // ── Cleanup on unmount ───────────────────────────────────────────────────
   useEffect(() => {
+    const v = videoRef.current;
     return () => {
       stopRAF();
-      const v = videoRef.current;
       if (v && !v.paused) v.pause();
     };
   }, [stopRAF]);

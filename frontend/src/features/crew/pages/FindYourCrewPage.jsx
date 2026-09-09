@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { ChevronLeft, ChevronRight } from '@shared/components/icons';
 import { useAuth } from '@shared/context/AuthContext';
@@ -57,7 +57,6 @@ export default function FindYourCrewPage() {
   const isVerified = currentUser?.verificationStatus === 'VERIFIED';
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const location = useLocation();
 
   // The tab lives in the URL (?tab=saved), so a refresh, a shared link and the
   // Back button all agree on which list is showing. Slugs are fixed even though

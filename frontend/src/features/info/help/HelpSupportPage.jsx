@@ -138,7 +138,7 @@ export default function HelpSupportPage() {
   const searching = search.state === 'searching';
   const isSearchActive = query.trim().length >= MIN_QUERY_LENGTH;
 
-  const categories = content?.categories ?? [];
+  const categories = useMemo(() => content?.categories ?? [], [content?.categories]);
   const featured = content?.featured ?? [];
 
   /** The sentence read out by the live region below the field. */

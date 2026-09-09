@@ -5,7 +5,6 @@ import {
   AlertTriangle,
   Check,
   CheckCircle2,
-  FileText,
   Loader2,
   Send,
   Upload,

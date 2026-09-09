@@ -1,5 +1,4 @@
 import { useEffect, useLayoutEffect, useRef } from 'react';
-import Background from '@shared/components/ui/Background';
 import LandingNavbar from '../../auth/landing/components/LandingNavbar';
 import LandingFooter from '../../auth/landing/components/LandingFooter';
 import '../../auth/landing/landing.css';

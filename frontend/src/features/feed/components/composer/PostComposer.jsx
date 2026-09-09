@@ -11,18 +11,6 @@ import { showToast } from '@shared/utils/toast';
 import { normalizeBodyText } from '@shared/utils/bodyText';
 import { ALLOWED_IMAGE_ACCEPT } from '@shared/constants/mediaLimits';
 
-const overlayStyle = {
-  position: 'absolute',
-  inset: 0,
-  display: 'flex',
-  flexDirection: 'column',
-  alignItems: 'center',
-  justifyContent: 'center',
-  background: 'rgba(15, 23, 42, 0.55)',
-  backdropFilter: 'blur(2px)',
-  borderRadius: '12px',
-  zIndex: 15,
-};
 
 /**
  * The longest a single poll option may be. Mirrored by POLL_OPTION_MAX_LENGTH
@@ -79,8 +67,9 @@ const PostComposer = forwardRef(function PostComposer({ onSubmit }, ref) {
 
   // Abort any in-flight upload on unmount + revoke preview URLs
   useEffect(() => {
+    const abortControllers = uploadAbortRefs.current;
     return () => {
-      uploadAbortRefs.current.forEach(controller => controller.abort());
+      abortControllers.forEach(controller => controller.abort());
       media.forEach(m => {
         if (m.previewUrl) {
           try { URL.revokeObjectURL(m.previewUrl); } catch (_) {}

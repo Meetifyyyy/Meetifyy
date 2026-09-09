@@ -1,5 +1,4 @@
 import { useState, useRef, useEffect, useMemo, useCallback, memo, lazy, Suspense } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { isImageUrl } from '@shared/utils/avatar';
 import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
 import { getProcessedAvatarUrl } from '@shared/components/avatar/Avatar';
@@ -133,7 +132,6 @@ function deriveAttendees(activity) {
 
 function CrewCard({ activity, onClick, onMouseEnter }) {
   const { currentUser } = useAuth();
-  const navigate = useNavigate();
   const [showMenu, setShowMenu] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
@@ -188,11 +186,7 @@ function CrewCard({ activity, onClick, onMouseEnter }) {
   // renders and React throws.
   if (!activity) return null;
 
-  const {
-    title = '', description, dateLabel, time, location,
-    hostName, hostAvatar, hostUsername, slotsNeeded, slotsFilled,
-    category
-  } = activity;
+  const { title = '' } = activity;
 
   // A solid-colour cover is an explicit choice, so it must win over the
   // deterministic default-image fallback.

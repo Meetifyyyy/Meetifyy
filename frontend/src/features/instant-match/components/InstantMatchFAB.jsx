@@ -73,26 +73,27 @@ const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
  * still closes smoothly rather than stepping.
  */
 function useCountdownProgress(countdown) {
-  const [remaining, setRemaining] = useState(() => progressOf(countdown));
+  const startedAt = countdown?.startedAt;
+  const expiresAt = countdown?.expiresAt;
+  const [remaining, setRemaining] = useState(() => progressOf(startedAt, expiresAt));
 
   useEffect(() => {
-    if (!countdown) {
+    if (!startedAt || !expiresAt) {
       setRemaining(0);
       return undefined;
     }
-    setRemaining(progressOf(countdown));
+    setRemaining(progressOf(startedAt, expiresAt));
     const id = window.setInterval(() => {
-      setRemaining(progressOf(countdown));
+      setRemaining(progressOf(startedAt, expiresAt));
     }, 30_000);
     return () => window.clearInterval(id);
-  }, [countdown?.startedAt, countdown?.expiresAt]);
+  }, [startedAt, expiresAt]);
 
   return remaining;
 }
 
-function progressOf(countdown) {
-  if (!countdown) return 0;
-  const { startedAt, expiresAt } = countdown;
+function progressOf(startedAt, expiresAt) {
+  if (!startedAt || !expiresAt) return 0;
   const total = expiresAt - startedAt;
   if (!(total > 0)) return 0;
   return Math.max(0, Math.min(1, (expiresAt - Date.now()) / total));

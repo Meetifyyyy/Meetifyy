@@ -97,9 +97,6 @@ export default function CommunityAdminModal({ community, onClose, onDeleteCommun
     }
   };
 
-  const handleKick = (memberId) => {
-    setKickTarget(memberId);
-  };
 
   const confirmKickMember = async () => {
     if (!kickTarget) return;
@@ -504,7 +501,11 @@ export default function CommunityAdminModal({ community, onClose, onDeleteCommun
             <div style={{ fontWeight: 600, fontSize: '1rem', color: 'var(--color-text-main)' }}>
               Pending Requests ({requests.length})
             </div>
-            {requests.length === 0 ? (
+            {isLoadingRequests ? (
+              <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>
+                Loading requests...
+              </div>
+            ) : requests.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>
                 No pending join requests.
               </div>
