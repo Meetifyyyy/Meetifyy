@@ -401,6 +401,23 @@ export const RATE_LIMIT_POLICIES = {
     message: 'Too many attempts. Please try again later.',
   },
 
+  /**
+   * Admin refresh. The only admin auth route that carried no limit, which left
+   * the refresh cookie as a free oracle: a stolen or guessed token could be
+   * replayed indefinitely, and a revoked session could be probed until it was
+   * reinstated. Looser than sign-in because a legitimate console session
+   * refreshes on a timer and several tabs refresh independently.
+   */
+  'admin.refresh.ip': {
+    points: 30,
+    duration: 300,
+    blockDuration: 900,
+    dimension: 'ip',
+    onRedisFailure: 'closed',
+    sensitive: true,
+    message: 'Too many attempts. Please try again later.',
+  },
+
   // ── Messaging ──────────────────────────────────────────────────────────────
   //
   // Keyed on the OPERATION, never on the path. `/api/messages/:id/messages`,

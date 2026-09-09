@@ -109,6 +109,8 @@ clientIp(req) || '0.0.0.0';
 
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
+  @UseGuards(RateLimitPolicyGuard)
+  @RateLimit('admin.refresh.ip')
   async refresh(
     @Req() req: AdminRequest,
     @Res({ passthrough: true }) res: any,

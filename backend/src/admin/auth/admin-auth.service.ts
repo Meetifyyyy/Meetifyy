@@ -157,8 +157,58 @@ export class AdminAuthService implements OnModuleInit {
     return secret;
   }
 
+  /**
+   * The HMAC key for admin one-time codes. Mirrors UserOtpService: prefer the
+   * dedicated secret, fall back to the service-role key (required in staging
+   * and production, so no deployed environment drops to an unkeyed hash), and
+   * keep a well-known development key so local runs still exercise the keyed
+   * path.
+   */
+  private otpHmacKey(): string {
+    return (
+      config.auth.otp.hashSecret ||
+      config.auth.supabase.serviceRoleKey ||
+      'meetifyy-development-otp-key'
+    );
+  }
+
+  /**
+   * Keyed, not bare.
+   *
+   * This was `sha256(otp)` with no key and no salt. A six-digit code has a
+   * million possible values, so anyone who obtained the `AdminOtp` table could
+   * recover every live code by hashing all million — a second's work — and the
+   * codes in it are the second factor on the highest-privilege accounts in the
+   * system. An HMAC makes that table useless without the key, which lives in
+   * the environment rather than the database.
+   */
   private hashOtp(otp: string): string {
+    return crypto
+      .createHmac('sha256', this.otpHmacKey())
+      .update(otp)
+      .digest('hex');
+  }
+
+  /** Legacy unkeyed digest, kept only to verify codes issued before the change. */
+  private legacyHashOtp(otp: string): string {
     return crypto.createHash('sha256').update(otp).digest('hex');
+  }
+
+  /**
+   * Constant-time comparison, so timing cannot reveal how much of a code
+   * matched. Accepts the legacy digest too: codes already in flight when this
+   * deploys were stored unkeyed, and they expire within minutes — after which
+   * this branch is dead and can be deleted.
+   */
+  private otpMatches(otp: string, storedHash: string): boolean {
+    const stored = Buffer.from(storedHash, 'utf8');
+    for (const candidate of [this.hashOtp(otp), this.legacyHashOtp(otp)]) {
+      const buf = Buffer.from(candidate, 'utf8');
+      if (buf.length === stored.length && crypto.timingSafeEqual(buf, stored)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /**
@@ -297,8 +347,7 @@ export class AdminAuthService implements OnModuleInit {
       );
     }
 
-    const inputHash = this.hashOtp(dto.otp);
-    if (inputHash !== otpRecord.otpHash) {
+    if (!this.otpMatches(dto.otp, otpRecord.otpHash)) {
       await this.prisma.adminOtp.update({
         where: { id: otpRecord.id },
         data: { attempts: { increment: 1 } },
