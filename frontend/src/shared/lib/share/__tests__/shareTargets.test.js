@@ -149,7 +149,7 @@ describe('share targets', () => {
     });
 
     it('wraps the fetched card as an image File', async () => {
-      global.fetch = vi.fn().mockResolvedValue({
+      globalThis.fetch = vi.fn().mockResolvedValue({
         ok: true,
         blob: async () => new Blob(['x'], { type: 'image/jpeg' }),
       });
@@ -163,7 +163,7 @@ describe('share targets', () => {
     it('refuses anything that is not an image', async () => {
       // A rewrite that falls through to the SPA returns HTML with a 200. Handing
       // that to a share sheet as a "card" is worse than not offering one.
-      global.fetch = vi.fn().mockResolvedValue({
+      globalThis.fetch = vi.fn().mockResolvedValue({
         ok: true,
         blob: async () => new Blob(['<!doctype html>'], { type: 'text/html' }),
       });
@@ -171,10 +171,10 @@ describe('share targets', () => {
     });
 
     it('returns null rather than throwing on any failure', async () => {
-      global.fetch = vi.fn().mockResolvedValue({ ok: false });
+      globalThis.fetch = vi.fn().mockResolvedValue({ ok: false });
       await expect(fetchShareCard('https://x.test/card.jpg')).resolves.toBeNull();
 
-      global.fetch = vi.fn().mockRejectedValue(new Error('offline'));
+      globalThis.fetch = vi.fn().mockRejectedValue(new Error('offline'));
       await expect(fetchShareCard('https://x.test/card.jpg')).resolves.toBeNull();
 
       await expect(fetchShareCard('')).resolves.toBeNull();

@@ -164,7 +164,7 @@ describe('<ShareTargets>', () => {
       });
       navigator.share = vi.fn().mockResolvedValue(undefined);
       navigator.canShare = vi.fn().mockReturnValue(true);
-      global.fetch = vi.fn().mockResolvedValue({
+      globalThis.fetch = vi.fn().mockResolvedValue({
         ok: true,
         blob: async () => new Blob(['jpeg'], { type: 'image/jpeg' }),
       });
@@ -184,7 +184,7 @@ describe('<ShareTargets>', () => {
       // The card is fetched while the dialog is merely open, so the tap itself
       // still holds the user gesture `navigator.share` requires.
       await waitFor(() =>
-        expect(global.fetch).toHaveBeenCalledWith(
+        expect(globalThis.fetch).toHaveBeenCalledWith(
           cardPayload.cardImageUrl,
           expect.objectContaining({ credentials: 'omit' }),
         ),
@@ -205,7 +205,7 @@ describe('<ShareTargets>', () => {
     it('copies the link too, because a story needs a link sticker', async () => {
       withFileSharing();
       render(<ShareTargets payload={cardPayload} />);
-      await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+      await waitFor(() => expect(globalThis.fetch).toHaveBeenCalled());
 
       fireEvent.click(screen.getByRole('button', { name: /^Instagram/ }));
 
@@ -229,10 +229,10 @@ describe('<ShareTargets>', () => {
       });
       navigator.share = vi.fn().mockResolvedValue(undefined);
       navigator.canShare = vi.fn().mockReturnValue(true);
-      global.fetch = vi.fn().mockReturnValue(pending);
+      globalThis.fetch = vi.fn().mockReturnValue(pending);
 
       render(<ShareTargets payload={cardPayload} />);
-      await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+      await waitFor(() => expect(globalThis.fetch).toHaveBeenCalled());
 
       // Tapped while the download is still in flight.
       fireEvent.click(screen.getByRole('button', { name: /^Instagram/ }));
@@ -280,20 +280,20 @@ describe('<ShareTargets>', () => {
     it('reuses the request already in flight rather than starting another', async () => {
       withFileSharing();
       render(<ShareTargets payload={cardPayload} />);
-      await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(globalThis.fetch).toHaveBeenCalledTimes(1));
 
       fireEvent.click(screen.getByRole('button', { name: /^Instagram/ }));
       await waitFor(() => expect(navigator.share).toHaveBeenCalled());
-      expect(global.fetch).toHaveBeenCalledTimes(1);
+      expect(globalThis.fetch).toHaveBeenCalledTimes(1);
     });
 
     it('falls back to the link when the card cannot be fetched', async () => {
       navigator.share = vi.fn().mockResolvedValue(undefined);
       navigator.canShare = vi.fn().mockReturnValue(true);
-      global.fetch = vi.fn().mockResolvedValue({ ok: false });
+      globalThis.fetch = vi.fn().mockResolvedValue({ ok: false });
 
       render(<ShareTargets payload={cardPayload} />);
-      await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+      await waitFor(() => expect(globalThis.fetch).toHaveBeenCalled());
 
       fireEvent.click(screen.getByRole('button', { name: /^Instagram/ }));
 
@@ -306,10 +306,10 @@ describe('<ShareTargets>', () => {
     it('does not download a card on a device that cannot share files', async () => {
       // Desktop. Fetching an image nothing can use is a wasted request on every
       // dialog open.
-      global.fetch = vi.fn();
+      globalThis.fetch = vi.fn();
       render(<ShareTargets payload={cardPayload} />);
       await new Promise((r) => setTimeout(r, 20));
-      expect(global.fetch).not.toHaveBeenCalled();
+      expect(globalThis.fetch).not.toHaveBeenCalled();
     });
 
     it('copies with an instruction, because there is no web share endpoint', async () => {
