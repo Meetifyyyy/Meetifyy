@@ -85,6 +85,16 @@ This is the credential-rotation command. It restarts the active revision,
 because updating a Container App secret does **not** restart it and a running
 replica keeps the value it booted with.
 
+`SESSION_SECRET` and `OTP_HASH_SECRET` are generated when the env file leaves
+them blank, then **reused** on later runs by reading what the app already holds.
+That second step is deliberate: both have a code-level fallback to
+`SUPABASE_SERVICE_ROLE_KEY`, so they are optional — but once set they must not
+change by accident. A new `SESSION_SECRET` makes every stored session
+unreadable and signs out the entire user base; a new `OTP_HASH_SECRET`
+invalidates every code in flight. Setting them explicitly is still worth doing:
+left on the fallback, rotating the service-role key invalidates every session
+and every OTP at the same time.
+
 ## Moving production to a different Azure account
 
 The script is tenant-agnostic — it prompts for subscription and tenant rather

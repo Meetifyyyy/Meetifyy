@@ -118,6 +118,8 @@ if [ -n "$ENV_FILE" ]; then
   SUPABASE_URL="$(get_env SUPABASE_URL)"
   SUPABASE_ANON_KEY="$(get_env SUPABASE_ANON_KEY)"
   SUPABASE_SERVICE_ROLE_KEY="$(get_env SUPABASE_SERVICE_ROLE_KEY)"
+  SESSION_SECRET="$(get_env SESSION_SECRET)"
+  OTP_HASH_SECRET="$(get_env OTP_HASH_SECRET)"
   RESEND_API_KEY="$(get_env RESEND_API_KEY)"
   SMTP_HOST="$(get_env SMTP_HOST)"
   SMTP_PORT="$(get_env SMTP_PORT)"
@@ -218,6 +220,31 @@ ADMIN_JWT_ACCESS_SECRET="${ADMIN_JWT_ACCESS_SECRET:-$(gen_secret)}"
 ADMIN_JWT_REFRESH_SECRET="${ADMIN_JWT_REFRESH_SECRET:-$(gen_secret)}"
 ADMIN_JWT_PENDING_SECRET="${ADMIN_JWT_PENDING_SECRET:-$(gen_secret)}"
 
+# Session encryption and OTP hashing.
+#
+# Both already have a fallback in code — they degrade to
+# SUPABASE_SERVICE_ROLE_KEY — which works but ties three unrelated things to one
+# value: rotating that key would invalidate every session AND every stored OTP
+# at the same time. Setting them explicitly decouples that.
+#
+# Resolved env file -> whatever the app already holds -> freshly generated, and
+# the middle step is the one that matters. These are not like the admin JWT
+# secrets above, where regenerating costs admins a re-login: a new
+# SESSION_SECRET makes every stored session unreadable and signs out the whole
+# user base, and a new OTP_HASH_SECRET invalidates every code in flight. A
+# routine `--sync-secrets` against a blank env file must not do that by
+# accident.
+existing_secret() {
+  az containerapp secret list \
+    --name "$APP_NAME" --resource-group "$RESOURCE_GROUP" \
+    --show-values --query "[?name=='$1'].value" --output tsv 2>/dev/null || true
+}
+
+SESSION_SECRET="${SESSION_SECRET:-$(existing_secret session-secret)}"
+SESSION_SECRET="${SESSION_SECRET:-$(gen_secret)}"
+OTP_HASH_SECRET="${OTP_HASH_SECRET:-$(existing_secret otp-hash-secret)}"
+OTP_HASH_SECRET="${OTP_HASH_SECRET:-$(gen_secret)}"
+
 echo ""
 echo "==> 1. Setting Azure Subscription..."
 az account set --subscription "$SUBSCRIPTION_ID"
@@ -239,6 +266,8 @@ if [ "$SYNC_ONLY" = "true" ]; then
     "supabase-url=${SUPABASE_URL}"
     "supabase-anon-key=${SUPABASE_ANON_KEY}"
     "supabase-service-role-key=${SUPABASE_SERVICE_ROLE_KEY}"
+    "session-secret=${SESSION_SECRET}"
+    "otp-hash-secret=${OTP_HASH_SECRET}"
     "admin-jwt-access-secret=${ADMIN_JWT_ACCESS_SECRET}"
     "admin-jwt-refresh-secret=${ADMIN_JWT_REFRESH_SECRET}"
     "admin-jwt-pending-secret=${ADMIN_JWT_PENDING_SECRET}"
@@ -565,6 +594,8 @@ az containerapp create \
     "supabase-url=${SUPABASE_URL}" \
     "supabase-anon-key=${SUPABASE_ANON_KEY}" \
     "supabase-service-role-key=${SUPABASE_SERVICE_ROLE_KEY}" \
+    "session-secret=${SESSION_SECRET}" \
+    "otp-hash-secret=${OTP_HASH_SECRET}" \
     "admin-jwt-access-secret=${ADMIN_JWT_ACCESS_SECRET}" \
     "admin-jwt-refresh-secret=${ADMIN_JWT_REFRESH_SECRET}" \
     "admin-jwt-pending-secret=${ADMIN_JWT_PENDING_SECRET}" \
@@ -628,6 +659,8 @@ az containerapp update \
     "SUPABASE_URL=secretref:supabase-url" \
     "SUPABASE_ANON_KEY=secretref:supabase-anon-key" \
     "SUPABASE_SERVICE_ROLE_KEY=secretref:supabase-service-role-key" \
+    "SESSION_SECRET=secretref:session-secret" \
+    "OTP_HASH_SECRET=secretref:otp-hash-secret" \
     "ADMIN_JWT_ACCESS_SECRET=secretref:admin-jwt-access-secret" \
     "ADMIN_JWT_REFRESH_SECRET=secretref:admin-jwt-refresh-secret" \
     "ADMIN_JWT_PENDING_SECRET=secretref:admin-jwt-pending-secret" \
