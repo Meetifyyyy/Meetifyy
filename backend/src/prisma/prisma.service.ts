@@ -10,6 +10,7 @@ import { Pool } from 'pg';
 import { config } from '../config';
 import { dbLine } from '../common/logging/log-format';
 import { detach } from '../common/utils/detach.util';
+import * as os from 'node:os';
 
 /**
  * Connects through node-postgres rather than Prisma's own Rust connection layer.
@@ -117,7 +118,7 @@ export class PrismaService
     const raw = config.database.url;
     const match = raw.match(/[?&]connection_limit=(\d+)/);
     const fromUrl = match ? parseInt(match[1], 10) : NaN;
-    const fallback = require('os').cpus().length * 2 + 1;
+    const fallback = os.cpus().length * 2 + 1;
     const size = Number.isFinite(fromUrl) && fromUrl > 0 ? fromUrl : fallback;
     return Math.max(1, Math.min(size, 30));
   }
@@ -251,7 +252,6 @@ export class PrismaService
   async onModuleInit() {
     const logQueries = config.logging.logQueries;
 
-    // @ts-ignore
     this.$on('query', (e: any) => {
       // A full Prisma-generated SQL string is several hundred characters of
       // JSONB_BUILD_OBJECT and LATERAL joins. Printing one per query buried
@@ -268,7 +268,6 @@ export class PrismaService
       }
     });
 
-    // @ts-ignore
     this.$on('error', (e: any) => {
       // Ignore noisy raw logs for P1001 transient connection drops,
       // as our $use middleware already handles them gracefully with retries.
@@ -286,7 +285,6 @@ export class PrismaService
       this.logger.error(e.message || e);
     });
 
-    // @ts-ignore
     this.$on('warn', (e: any) => {
       if (this.isDestroyed) return;
       this.logger.warn(e.message || e);
@@ -325,7 +323,9 @@ export class PrismaService
                   this.$queryRawUnsafe('SELECT 1').catch(() => {}),
                 ),
               );
-            } catch {}
+            } catch {
+              // The keep-alive is a warm-up ping. Its whole purpose is to fail quietly when the pool is not reachable.
+            }
           }),
         25000,
       );
@@ -345,11 +345,15 @@ export class PrismaService
     }
     try {
       await this.$disconnect().catch(() => {});
-    } catch {}
+    } catch {
+      // Shutting down. There is nothing left to recover to.
+    }
     try {
       // The adapter owns this pool, so Prisma's disconnect does not close it —
       // leaving it open holds sockets to the pooler after shutdown.
       await this.pool.end().catch(() => {});
-    } catch {}
+    } catch {
+      // Shutting down. There is nothing left to recover to.
+    }
   }
 }

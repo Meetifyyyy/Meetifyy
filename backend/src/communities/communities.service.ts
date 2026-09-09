@@ -15,11 +15,7 @@ import { BlocksService } from '../users/blocks.service';
 import { DefaultAssetsService } from '../uploads/default-assets.service';
 import { sampleRandom } from '../common/utils/sample-random.util';
 import Redis from 'ioredis';
-import {
-  roleCan,
-  moderatorPermissions,
-  type CommunityRoleName,
-} from './moderator-permissions';
+import { roleCan, moderatorPermissions } from './moderator-permissions';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationFactory } from '../notifications/notification.factory';
 import { MediaCleanupService } from '../uploads/media-cleanup.service';
@@ -149,7 +145,7 @@ export class CommunitiesService implements OnModuleInit {
   }
 
   /** Cache a single community detail object. */
-  private async getCachedCommunity(id: string): Promise<any | null> {
+  private async getCachedCommunity(id: string): Promise<any> {
     if (!this.redis) return null;
     try {
       const raw = await this.redis.get(`community:${id}`);
@@ -523,8 +519,6 @@ export class CommunitiesService implements OnModuleInit {
   }
 
   async getCommunityById(id: string, userId?: string) {
-    const t0 = Date.now();
-
     // Check Redis first for a cached detail response
     let community = await this.getCachedCommunity(id);
     if (!community) {
@@ -820,7 +814,7 @@ export class CommunitiesService implements OnModuleInit {
         }
       }
       return online;
-    } catch (err) {
+    } catch {
       // A presence read must never take the community page down with it.
       this.logger.warn(`Failed to count online members for ${communityId}`);
       return 0;

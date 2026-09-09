@@ -42,7 +42,7 @@ export class AdminJwtGuard implements CanActivate {
     let payload: any;
     try {
       payload = jwt.verify(token, secret);
-    } catch (err) {
+    } catch {
       throw new UnauthorizedException('Invalid or expired admin session token');
     }
 

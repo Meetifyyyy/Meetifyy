@@ -10,8 +10,6 @@ import {
   Query,
   Delete,
   BadRequestException,
-  NotFoundException,
-  ForbiddenException,
 } from '@nestjs/common';
 import type { AuthenticatedRequest } from '../common/types/authenticated-request';
 import { MessagesService } from './messages.service';

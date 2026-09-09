@@ -606,7 +606,7 @@ export class JwtGuard implements CanActivate {
    * Validates the token and returns a normalized user payload, or null if the
    * token is invalid/expired. Never trusts an unverified payload.
    */
-  public async validateToken(token: string): Promise<any | null> {
+  public async validateToken(token: string): Promise<any> {
     const now = Date.now();
     const cached = JwtGuard.tokenCache.get(token);
     if (cached && cached.expiresAt > now) {

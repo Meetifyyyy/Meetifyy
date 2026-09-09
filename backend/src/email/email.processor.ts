@@ -20,7 +20,6 @@ import { PrismaService } from '../prisma/prisma.service';
 import { EmailUsageService } from './email-usage.service';
 import { classifyResendFailure, ResendRejection } from './resend-failure';
 import {
-  BuiltEmail,
   DeliveryTarget,
   SUPPORT_EMAIL_JOBS,
   SupportEmailBuilder,

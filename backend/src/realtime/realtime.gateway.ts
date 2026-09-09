@@ -51,7 +51,7 @@ import { socketCorsOrigin } from './socket-cors';
 import { RateLimitService } from '../common/rate-limit/rate-limit.service';
 import { RATE_LIMIT_POLICIES } from '../config/rate-limit.config';
 import { config } from '../config';
-import { clientIp, normalizeIp } from '../common/rate-limit/client-ip.util';
+import { normalizeIp } from '../common/rate-limit/client-ip.util';
 import type { RateLimitPolicyName } from '../config/rate-limit.config';
 import { detach } from '../common/utils/detach.util';
 
@@ -295,7 +295,7 @@ export class RealtimeGateway
           .to(room)
           .emit('community:presence', { communityId, online });
       }
-    } catch (err) {
+    } catch {
       this.logger.warn(`Failed to broadcast community presence for ${userId}`);
     }
   }
@@ -1625,13 +1625,13 @@ export class RealtimeGateway
         'conversation:seen',
         payload,
       );
-    } catch (e) {
+    } catch {
       // Ignore transient pool timeouts or seen processing failures
     }
   }
 
   @SubscribeMessage('ping')
-  handlePing(@ConnectedSocket() client: Socket) {
+  handlePing(@ConnectedSocket() _client: Socket) {
     return { event: 'pong', timestamp: Date.now() };
   }
 

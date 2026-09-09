@@ -5,6 +5,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import type { StorageProvider } from './providers/storage-provider.interface';
+import { randomBytes } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { ConfigService } from '@nestjs/config';
 import { config } from '../config';
@@ -84,7 +85,7 @@ export class StorageService {
     }
 
     const ext = this.extensionForMime(file.mimetype);
-    const randomHex = require('crypto').randomBytes(16).toString('hex');
+    const randomHex = randomBytes(16).toString('hex');
     const key = `${safeFolder}/${randomHex}.${ext}`;
 
     await this.storageProvider.upload(key, file.buffer, file.mimetype);
@@ -166,11 +167,7 @@ export class StorageService {
       explicitKey = variantKey;
     }
 
-    const {
-      uploadUrl,
-      publicUrl: providerUrl,
-      key,
-    } = await this.storageProvider.createSignedUploadUrl(
+    const { uploadUrl, key } = await this.storageProvider.createSignedUploadUrl(
       filename,
       contentType,
       safeFolder,
@@ -644,7 +641,7 @@ export class StorageService {
     }
 
     const ext = this.extensionForMime(file.mimetype);
-    const key = `support/${require('crypto').randomBytes(16).toString('hex')}.${ext}`;
+    const key = `support/${randomBytes(16).toString('hex')}.${ext}`;
 
     await this.storageProvider.upload(key, file.buffer, file.mimetype);
 

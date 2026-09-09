@@ -587,7 +587,9 @@ export class GroupChatsController {
             participantIds,
           );
         }
-      } catch {}
+      } catch {
+        // The update itself is committed. A realtime broadcast that fails leaves clients to catch up on their next fetch.
+      }
     });
 
     return { success: true, conversationId: result.conversationId };
@@ -621,7 +623,9 @@ export class GroupChatsController {
             participantIds,
           );
         }
-      } catch {}
+      } catch {
+        // The update itself is committed. A realtime broadcast that fails leaves clients to catch up on their next fetch.
+      }
     });
 
     return { success: true };

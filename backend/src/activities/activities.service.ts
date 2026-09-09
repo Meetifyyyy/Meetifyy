@@ -4,8 +4,6 @@ import {
   BadRequestException,
   ForbiddenException,
   Logger,
-  Inject,
-  forwardRef,
   OnModuleInit,
   Optional,
 } from '@nestjs/common';
@@ -106,7 +104,9 @@ export class ActivitiesService implements OnModuleInit {
       }
       // Remove the tag set itself so it is cleanly re-seeded on next cache write
       await this.redis.del(ActivitiesService.FEED_TAG);
-    } catch {}
+    } catch {
+      // Best effort. A feed cache that fails to clear goes stale until its TTL, which is not worth failing the write that triggered this.
+    }
   }
 
   onModuleInit() {
@@ -306,7 +306,9 @@ export class ActivitiesService implements OnModuleInit {
       try {
         const cached = await this.redis.get(cacheKey);
         if (cached) return new Date(cached);
-      } catch {}
+      } catch {
+        // A cache miss and an unreachable Redis are the same thing here: fall through to the database.
+      }
     }
 
     // 4. DB lookup for legacy cursor ID (cached for 1h)
@@ -472,7 +474,9 @@ export class ActivitiesService implements OnModuleInit {
       try {
         const cachedBase = await this.redis.get(baseCacheKeyFor(cursorDate));
         if (cachedBase) baseFeed = JSON.parse(cachedBase);
-      } catch {}
+      } catch {
+        // A cache miss and an unreachable Redis are the same thing here: fall through to the database.
+      }
     }
 
     // ── Main DB fetch (skipped on base cache HIT) ─────────────────────────────
@@ -833,7 +837,9 @@ export class ActivitiesService implements OnModuleInit {
       try {
         const cached = await this.redis.get(cacheKey);
         if (cached) return JSON.parse(cached);
-      } catch {}
+      } catch {
+        // A cache miss and an unreachable Redis are the same thing here: recompute the ranking.
+      }
     }
 
     const now = new Date();
@@ -1163,7 +1169,9 @@ export class ActivitiesService implements OnModuleInit {
       try {
         const cached = await this.redis.get(cacheKey);
         if (cached) return JSON.parse(cached);
-      } catch {}
+      } catch {
+        // A cache miss and an unreachable Redis are the same thing here: recompute the list.
+      }
     }
 
     const PREVIEW = ActivitiesService.PREVIEW_SIZE;

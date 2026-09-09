@@ -3,15 +3,13 @@ import {
   NotFoundException,
   ForbiddenException,
   BadRequestException,
-  Inject,
-  forwardRef,
   OnModuleInit,
   OnModuleDestroy,
   Logger,
   Optional,
 } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
-import { Prisma, MentionSource, NotificationEntityType } from '@prisma/client';
+import { MentionSource, NotificationEntityType } from '@prisma/client';
 import Redis from 'ioredis';
 import { PrismaService } from '../prisma/prisma.service';
 import { PresenceService } from '../presence/presence.service';
@@ -238,7 +236,9 @@ export class MessagesService
           if (keys && keys.length > 0) await this.redis.del(...keys);
         } while (cursor !== '0');
       }
-    } catch {}
+    } catch {
+      // Best effort cache sweep; stale entries expire on their own.
+    }
   }
 
   async onModuleInit() {
@@ -356,7 +356,7 @@ export class MessagesService
           return dm.id;
         }
       }
-    } catch (err) {
+    } catch {
       // ignore
     }
     return identifier;
@@ -1262,7 +1262,9 @@ export class MessagesService
       try {
         const cached = await this.redis.get(cacheKey);
         if (cached) return JSON.parse(cached);
-      } catch {}
+      } catch {
+        // A cache miss and an unreachable Redis are the same thing here: rebuild the list.
+      }
     }
 
     const conversationViewerBatch =
@@ -1876,7 +1878,7 @@ export class MessagesService
     );
 
     const newPubId = generatePublicId();
-    const conv = await this.prisma.conversation.create({
+    await this.prisma.conversation.create({
       data: {
         publicId: newPubId,
         name: groupName || null,
@@ -2343,7 +2345,7 @@ export class MessagesService
   async createInstantMatchConversation(
     userAId: string,
     userBId: string,
-    activity: string,
+    _activity: string,
   ): Promise<{ id: string; internalId: string; expiresAt: number }> {
     if (!userAId || !userBId || userAId === userBId) {
       throw new BadRequestException('Invalid instant match participants');

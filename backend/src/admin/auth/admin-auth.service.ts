@@ -2,7 +2,6 @@ import {
   Injectable,
   UnauthorizedException,
   ForbiddenException,
-  BadRequestException,
   HttpException,
   HttpStatus,
   Logger,
@@ -21,12 +20,10 @@ import {
   AdminLoginDto,
   VerifyOtpDto,
   VerifyTotpDto,
-  ResetPasswordRequestDto,
-  ResetPasswordDto,
 } from './dto/admin-auth.dto';
 import { config } from '../../config';
-const { authenticator } = require('otplib');
-const { UAParser } = require('ua-parser-js');
+import { verifySync } from 'otplib';
+import { UAParser } from 'ua-parser-js';
 
 @Injectable()
 export class AdminAuthService implements OnModuleInit {
@@ -311,7 +308,7 @@ export class AdminAuthService implements OnModuleInit {
     let payload: any;
     try {
       payload = jwt.verify(dto.pendingToken, this.getPendingSecret());
-    } catch (err) {
+    } catch {
       throw new UnauthorizedException(
         'Verification session expired or invalid',
       );
@@ -387,7 +384,7 @@ export class AdminAuthService implements OnModuleInit {
     let payload: any;
     try {
       payload = jwt.verify(dto.pendingToken, this.getPendingSecret());
-    } catch (err) {
+    } catch {
       throw new UnauthorizedException('Verification session expired');
     }
 
@@ -403,12 +400,18 @@ export class AdminAuthService implements OnModuleInit {
       throw new ForbiddenException('TOTP authentication not configured');
     }
 
-    const isValid = authenticator.verify({
+    // otplib 13 dropped the `authenticator` singleton this used to call. The
+    // property is simply absent on the module, so `authenticator.verify` threw
+    // a TypeError rather than returning false — every TOTP sign-in failed as a
+    // 500 instead of being verified. `epochTolerance` accepts one time step of
+    // clock drift in either direction, which is what the old default did.
+    const result = verifySync({
       token: dto.totpCode,
       secret: admin.totpSecret,
+      epochTolerance: 30,
     });
 
-    if (!isValid) {
+    if (!result.valid) {
       await this.prisma.loginAudit.create({
         data: {
           adminId: admin.id,
@@ -525,7 +528,7 @@ export class AdminAuthService implements OnModuleInit {
     let payload: any;
     try {
       payload = jwt.verify(refreshTokenStr, this.getRefreshSecret());
-    } catch (err) {
+    } catch {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
 

@@ -493,7 +493,6 @@ describe('composing with the rules that were already there', () => {
    * assertion to say so. Both belong in `AND`.
    */
   it('keeps both clauses when a share picker asks for eligible threads only', () => {
-    const policy = makePolicy();
     const verificationClause = {
       OR: [{ type: 'GROUP' }, { participants: { some: {} } }],
     };

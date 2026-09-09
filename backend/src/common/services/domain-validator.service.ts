@@ -55,6 +55,7 @@ export class DomainValidatorService implements OnModuleInit {
 
     // Strip invisible characters, tabs, newlines, null bytes, zero-width spaces
     let cleaned = rawDomain
+      // eslint-disable-next-line no-control-regex -- matching control characters is the point: this strips them from untrusted input
       .replace(/[\u200B-\u200D\uFEFF\u0000-\u001F\u007F-\u009F\s]/g, '')
       .normalize('NFKC')
       .trim()
@@ -91,6 +92,7 @@ export class DomainValidatorService implements OnModuleInit {
 
     // Strip spaces and invisible characters
     const sanitizedEmail = email
+      // eslint-disable-next-line no-control-regex -- matching control characters is the point: this strips them from untrusted input
       .replace(/[\u200B-\u200D\uFEFF\u0000-\u001F\u007F-\u009F]/g, '')
       .normalize('NFKC')
       .trim();

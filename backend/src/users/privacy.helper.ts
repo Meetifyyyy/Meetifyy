@@ -13,10 +13,23 @@ import { BlocksService } from './blocks.service';
  * compile.
  */
 
+/**
+ * A stored privacy rule.
+ *
+ * The four named values are the ones the app writes. The open `string` is not
+ * decoration: the column is free text, so a row can hold anything a previous
+ * version wrote, and every caller here treats an unrecognised rule as its
+ * closed default. Spelling it `string & {}` keeps the named values as
+ * suggestions instead of letting them collapse into plain `string`, which is
+ * what the union above it did.
+ */
+export type PrivacyRule =
+  'everyone' | 'following' | 'mutual' | 'nobody' | (string & {});
+
 export async function checkPresenceVisibility(
   targetUserId: string,
   viewerUserId: string,
-  rule: 'everyone' | 'following' | 'mutual' | 'nobody' | string,
+  rule: PrivacyRule,
   isEnabled: boolean,
   prisma: PrismaService,
   blocksService: BlocksService,
@@ -174,7 +187,7 @@ export async function resolvePresenceVisibilityForViewer(
 export async function checkPresenceVisibilityBatch(
   targetUserId: string,
   viewerUserIds: string[],
-  rule: 'everyone' | 'following' | 'mutual' | 'nobody' | string,
+  rule: PrivacyRule,
   isEnabled: boolean,
   prisma: PrismaService,
   blocksService: BlocksService,

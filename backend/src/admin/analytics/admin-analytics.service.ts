@@ -1208,7 +1208,8 @@ async function tcpProbe(
     const done = (err?: Error) => {
       socket.removeAllListeners();
       socket.destroy();
-      err ? reject(err) : resolve();
+      if (err) reject(err);
+      else resolve();
     };
     socket.setTimeout(timeoutMs, () => done(new Error('connection timed out')));
     socket.once('connect', () => done());

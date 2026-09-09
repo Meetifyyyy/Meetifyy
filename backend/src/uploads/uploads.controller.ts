@@ -308,7 +308,9 @@ export class UploadsController {
         UploadsController.cachedManifest = { data, etag, lastModified };
         return UploadsController.cachedManifest;
       }
-    } catch (_) {}
+    } catch (_) {
+      // An unreadable or malformed manifest falls through to rebuilding it below.
+    }
     return null;
   }
 
@@ -516,7 +518,7 @@ export class UploadsController {
         res.setHeader('Cache-Control', 'public, max-age=3600');
         return res.redirect(url);
       }
-    } catch (e) {
+    } catch {
       // Fallback below
     }
 

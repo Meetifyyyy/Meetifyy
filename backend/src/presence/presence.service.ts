@@ -246,7 +246,9 @@ export class PresenceService {
                         this.logger.log(`Offline user=${userId}`);
                         this.notifyStatusChange(userId, 'offline', now);
                       }
-                    } catch (e) {}
+                    } catch {
+                      // One user failing to be marked offline must not abandon the rest of the sweep.
+                    }
                   }),
                 2000,
               );
@@ -336,7 +338,9 @@ export class PresenceService {
               let pres: UserPresence | null = JSON.parse(val);
               pres = this.cleanPresence(pres);
               if (pres) result.set(uId, pres);
-            } catch {}
+            } catch {
+              // A presence record that will not parse is treated as absent.
+            }
           }
         });
       } else {

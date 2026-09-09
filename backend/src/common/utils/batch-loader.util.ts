@@ -41,7 +41,7 @@ export class BatchLoader<K, V> {
         resolverFns.forEach((fn) => fn(val));
       });
       return results;
-    } catch (err) {
+    } catch {
       currentResolvers.forEach((resolverFns) => {
         resolverFns.forEach((fn) => fn(undefined));
       });

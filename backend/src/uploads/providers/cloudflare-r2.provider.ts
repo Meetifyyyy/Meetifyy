@@ -198,7 +198,7 @@ export class CloudflareR2Provider implements StorageProvider {
           });
           const url = await getSignedUrl(this.s3!, command, { expiresIn });
           result[key] = url;
-        } catch (e) {
+        } catch {
           result[key] = `/mock-download/${key}`;
         }
       }),
@@ -218,7 +218,9 @@ export class CloudflareR2Provider implements StorageProvider {
     try {
       const localPath = this.getLocalFilePath(key);
       if (fs.existsSync(localPath)) fs.unlinkSync(localPath);
-    } catch (_) {}
+    } catch (_) {
+      // Local disk is the unconfigured-development fallback; a file that will not delete is not worth reporting as a storage failure.
+    }
 
     if (!this.isConfigured || !this.s3) return true;
     try {
@@ -312,7 +314,9 @@ export class CloudflareR2Provider implements StorageProvider {
       try {
         const stat = fs.statSync(localPath);
         return { contentLength: stat.size };
-      } catch (_) {}
+      } catch (_) {
+        // Local disk is the unconfigured-development fallback; without metadata the caller gets the same answer as a missing object.
+      }
     }
 
     if (!this.isConfigured || !this.s3) return null;
@@ -321,7 +325,7 @@ export class CloudflareR2Provider implements StorageProvider {
         new HeadObjectCommand({ Bucket: this.bucketFor(key), Key: key }),
       );
       return head;
-    } catch (e) {
+    } catch {
       return null;
     }
   }
@@ -346,7 +350,7 @@ export class CloudflareR2Provider implements StorageProvider {
         }),
       );
       return true;
-    } catch (e) {
+    } catch {
       return false;
     }
   }
@@ -364,7 +368,7 @@ export class CloudflareR2Provider implements StorageProvider {
       try {
         const files = fs.readdirSync(localFolder, { recursive: true });
         return files.map((f) => ({
-          Key: `${folder}/${f}`,
+          Key: `${folder}/${String(f)}`,
           Size: 0,
         }));
       } catch (_) {

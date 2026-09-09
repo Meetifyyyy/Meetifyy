@@ -23,7 +23,7 @@ async function runSend(opts: {
   fallbackDriver: '' | 'smtp';
   primaryFails: boolean;
   /** What the primary failed with. Decides whether failover is even attempted. */
-  primaryError?: unknown;
+  primaryError?: Error;
   fallbackFails: boolean;
   log: string[];
   recorded: { error?: string; messageId?: string }[];

@@ -1,10 +1,4 @@
-import {
-  Injectable,
-  ForbiddenException,
-  NotFoundException,
-  Inject,
-  forwardRef,
-} from '@nestjs/common';
+import { Injectable, ForbiddenException } from '@nestjs/common';
 import { MessagingCoreService } from '../core/messaging-core.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { BlocksService } from '../../users/blocks.service';
@@ -606,7 +600,7 @@ export class DmService extends MessagingCoreService {
       );
 
       const newPubId = generatePublicId();
-      const conv = await tx.conversation.create({
+      await tx.conversation.create({
         data: {
           publicId: newPubId,
           type: 'DM',

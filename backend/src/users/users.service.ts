@@ -30,7 +30,6 @@ import { sampleRandom } from '../common/utils/sample-random.util';
 import { validateBirthday } from '../common/utils/birthday-validation.util';
 import { AcademicsService } from '../academics/academics.service';
 import { MediaCleanupService } from '../uploads/media-cleanup.service';
-import { JwtGuard } from '../common/guards/jwt.guard';
 import {
   isReservedUsername,
   RESERVED_USERNAME_MESSAGE,
@@ -1874,7 +1873,9 @@ export class UsersService {
       try {
         const cached = await redis.get(cacheKey);
         if (cached) return JSON.parse(cached);
-      } catch {}
+      } catch {
+        // A cache miss and an unreachable Redis are the same thing here: fall through to the query.
+      }
     }
 
     const viewerBatch = await this.viewerBatchYear(userId);

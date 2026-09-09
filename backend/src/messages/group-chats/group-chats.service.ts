@@ -3,8 +3,6 @@ import {
   ForbiddenException,
   NotFoundException,
   BadRequestException,
-  Inject,
-  forwardRef,
   Optional,
 } from '@nestjs/common';
 import { MessagingCoreService } from '../core/messaging-core.service';
@@ -101,7 +99,9 @@ export class GroupChatsService extends MessagingCoreService {
           if (keys && keys.length > 0) await redis.del(...keys);
         } while (cursor !== '0');
       }
-    } catch {}
+    } catch {
+      // Best effort cache sweep; stale entries expire on their own.
+    }
   }
 
   async getUserGroupConversations(
@@ -365,7 +365,9 @@ export class GroupChatsService extends MessagingCoreService {
     if (!this.redis) return;
     try {
       await this.redis.incr(this.groupDetailsVerKey(realConvId));
-    } catch {}
+    } catch {
+      // A version counter that fails to bump serves stale details until the 15s TTL, which beats failing the caller.
+    }
   }
   async invalidateGroupDetailsCache(conversationId: string) {
     const realConvId = await this.resolveConversationId(conversationId);
@@ -383,7 +385,9 @@ export class GroupChatsService extends MessagingCoreService {
           this.groupDetailsDataKey(realConvId, userId, ver),
         );
         if (cached) return JSON.parse(cached);
-      } catch {}
+      } catch {
+        // A cache miss and an unreachable Redis are the same thing here: rebuild the response.
+      }
     }
 
     const conv = await this.prisma.conversation.findFirst({
@@ -555,7 +559,9 @@ export class GroupChatsService extends MessagingCoreService {
             JSON.stringify(result),
           )
           .catch(() => {});
-      } catch {}
+      } catch {
+        // Writing the cache is an optimisation; the response is already built.
+      }
     }
 
     return result;

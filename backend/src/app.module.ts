@@ -59,6 +59,7 @@ import { LegalConsentModule } from './common/legal/legal-consent.module';
 import { AcademicsModule } from './academics/academics.module';
 import { SupportModule } from './support/support.module';
 import { LegalModule } from './legal/legal.module';
+import { randomUUID } from 'node:crypto';
 
 @Module({
   imports: [
@@ -81,7 +82,7 @@ import { LegalModule } from './legal/legal.module';
     LoggerModule.forRoot({
       pinoHttp: {
         genReqId: (req) => {
-          return req.headers['x-request-id'] || require('crypto').randomUUID();
+          return req.headers['x-request-id'] || randomUUID();
         },
         customSuccessMessage: (req, res, time) => {
           if (time > 1000) {

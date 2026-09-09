@@ -137,7 +137,10 @@
       "**/*.(t|j)s"
     ],
     "coverageDirectory": "../coverage",
-    "testEnvironment": "node"
+    "testEnvironment": "node",
+    "transformIgnorePatterns": [
+      "/node_modules/(?!(otplib|@otplib|@scure|@noble)/)"
+    ]
   },
   "overrides": {
     "brace-expansion": "^5.0.9",

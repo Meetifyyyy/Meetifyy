@@ -310,9 +310,6 @@ export class PostsService {
     if (allMediaKeys.length > 0) {
       await Promise.all(
         allMediaKeys.map(async (key, index) => {
-          const objectKey = key.replace('/api/media/', '');
-          const thumbKey = objectKey.replace(/\.([a-z0-9]+)$/i, '_thumb.webp');
-
           const mediaId = mediaIdsToConnect[index];
           await this.prisma.media.update({
             where: { id: mediaId },

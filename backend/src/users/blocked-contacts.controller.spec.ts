@@ -6,7 +6,6 @@ import {
 import { UsersService } from './users.service';
 import { JwtGuard } from '../common/guards/jwt.guard';
 import type { AuthenticatedRequest } from '../common/types/authenticated-request';
-import { studentYearPolicyMockProvider } from '../common/student-year/testing/student-year-policy.mock';
 
 /**
  * A request carrying only what these controllers actually read off it — the

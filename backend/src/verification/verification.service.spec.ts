@@ -9,7 +9,6 @@ import { StorageService } from '../uploads/uploads.service';
 
 describe('VerificationService', () => {
   let service: VerificationService;
-  let prisma: PrismaService;
 
   const mockStorage = { delete: jest.fn(async () => true) };
 
@@ -55,7 +54,6 @@ describe('VerificationService', () => {
     }).compile();
 
     service = module.get<VerificationService>(VerificationService);
-    prisma = module.get<PrismaService>(PrismaService);
     jest.clearAllMocks();
   });
 

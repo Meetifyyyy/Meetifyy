@@ -264,7 +264,6 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
       throw new UnauthorizedException('Supabase is not configured');
     }
 
-    const now = Date.now();
     // LruCache.get() already enforces the 60s TTL internally — returns undefined if stale.
     const cached = this.syncCache.get(user.id);
     if (cached) {
@@ -683,7 +682,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
             },
           };
         }
-      } catch (err) {
+      } catch {
         // Fallback admin lookup failed; proceed with whatever info we have from JwtGuard
       }
     }
@@ -1329,8 +1328,6 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     }
     const trimmed = normalizeEmail(email);
 
-    const domain = trimmed.split('@')[1] || '';
-
     // If collegeId is provided, get target college name for clearer error messaging
     let targetCollegeName: string | undefined;
     if (collegeId) {
@@ -1348,17 +1345,6 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
       await this.domainValidatorService.validateDomain(trimmed);
     if (!domainValidation.isValid) {
       if (targetCollegeName) {
-        const commonCommercialDomains = [
-          'gmail.com',
-          'yahoo.com',
-          'outlook.com',
-          'hotmail.com',
-          'icloud.com',
-          'protonmail.com',
-          'zoho.com',
-          'mail.com',
-          'aol.com',
-        ];
         return {
           available: false,
           code: 'domain_not_allowed',
@@ -1481,7 +1467,9 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
         if (cached !== null && cached !== undefined) {
           return parseInt(cached, 10);
         }
-      } catch {}
+      } catch {
+        // A cache miss and an unreachable Redis are the same thing here: fall through to the count query.
+      }
     }
 
     const count = await this.prisma.notification
@@ -1510,6 +1498,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     const sanitizeStr = (str: string) =>
       (str || '')
         .replace(/<[^>]*>?/g, '')
+        // eslint-disable-next-line no-control-regex -- matching control characters is the point: this strips them from untrusted input
         .replace(/[\u200B-\u200D\uFEFF\u0000-\u001F\u007F-\u009F]/g, '')
         .trim();
 

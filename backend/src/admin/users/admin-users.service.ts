@@ -335,7 +335,9 @@ export class AdminUsersService {
     if (this.supabaseService.isConfigured) {
       try {
         await this.supabaseService.client.auth.admin.signOut(id);
-      } catch (e) {}
+      } catch {
+        // Our own session rows are already revoked; failing to also revoke the provider side must not fail the request.
+      }
     }
 
     return { success: true, message: 'User forced logout' };

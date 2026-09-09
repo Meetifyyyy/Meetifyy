@@ -3,8 +3,6 @@ import {
   NotFoundException,
   ForbiddenException,
   BadRequestException,
-  Inject,
-  forwardRef,
   Logger,
 } from '@nestjs/common';
 import { MentionSource, NotificationEntityType } from '@prisma/client';
@@ -247,7 +245,7 @@ export class MessagingCoreService {
           return dm.id;
         }
       }
-    } catch (err) {
+    } catch {
       // ignore transient errors, return identifier as-is
     }
     return identifier;

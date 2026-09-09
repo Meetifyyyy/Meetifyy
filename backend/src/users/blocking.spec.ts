@@ -2,7 +2,6 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getQueueToken } from '@nestjs/bullmq';
 import { ConfigService } from '@nestjs/config';
 import { UsersService } from './users.service';
-import { BlocksService } from './blocks.service';
 import { blocksServiceMockProvider } from './testing/blocks.service.mock';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';

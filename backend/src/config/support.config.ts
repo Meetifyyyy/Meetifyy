@@ -1,7 +1,6 @@
 import { email, invariant, str } from './env';
 import { appConfigValues } from './app.config';
 import { authConfigValues } from './auth.config';
-import { siteConfigValues } from './site.config';
 
 /**
  * Support-desk configuration.

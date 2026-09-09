@@ -3,7 +3,6 @@ import {
   IsOptional,
   MaxLength,
   IsDateString,
-  IsIn,
   IsUUID,
   IsBoolean,
 } from 'class-validator';
