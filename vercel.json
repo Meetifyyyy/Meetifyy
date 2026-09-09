@@ -1,6 +1,6 @@
 {
   "buildCommand": "npm --prefix frontend run build",
-  "ignoreCommand": "bash scripts/await-backend.sh",
+  "ignoreCommand": "f=scripts/await-backend.sh; [ -f $f ] || f=../scripts/await-backend.sh; [ -f $f ] && bash $f || exit 1",
   "outputDirectory": "frontend/dist",
   "framework": "vite",
   "redirects": [

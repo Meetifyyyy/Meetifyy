@@ -1,6 +1,6 @@
 {
   "buildCommand": "npm run build",
-  "ignoreCommand": "bash scripts/await-backend.sh",
+  "ignoreCommand": "f=scripts/await-backend.sh; [ -f $f ] || f=../scripts/await-backend.sh; [ -f $f ] && bash $f || exit 1",
   "installCommand": "npm install",
   "outputDirectory": "dist",
   "framework": "vite",
