@@ -5,7 +5,6 @@ import { useLocation } from 'react-router-dom';
 import { useSmartNavigation } from '@shared/hooks/useSmartNavigation';
 import { isImageUrl } from '@shared/utils/avatar';
 import { getMediaUrl } from '@shared/api/apiClient';
-import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
 import NavIcon from './NavIcon';
 import { CampusOutline, CampusSolid } from './CampusIcon';
 import { CrewOutline, CrewSolid } from './CrewIcon';
@@ -17,17 +16,14 @@ import {
   UserIcon as ProfileOutline,
   Cog6ToothIcon as SettingsOutline,
   ChevronDownIcon,
-  ChevronUpIcon,
   BellIcon as BellOutline,
 } from '@heroicons/react/24/outline';
 import {
   HomeIcon as HomeSolid,
-  UserGroupIcon as CommunitiesSolid,
   UserIcon as ProfileSolid,
   Cog6ToothIcon as SettingsSolid,
   BellIcon as BellSolid,
 } from '@heroicons/react/24/solid';
-import NotificationBell from '@features/notifications/components/NotificationBell';
 
 const SidebarCommunityItem = ({ comm, navigate }) => {
   const location = useLocation();
@@ -63,7 +59,7 @@ import { useUnreadCounts } from '@features/messages/hooks/useUnreadCounts';
 import { useJoinedCommunities } from '@shared/hooks/useCommunities';
 
 export default function Sidebar({ onCommunityClick }) {
-  const { initial, currentUser } = useAuth();
+  const { currentUser } = useAuth();
   const { total: unreadMessagesCount } = useUnreadCounts();
   const { smartNavigate: navigate } = useSmartNavigation();
   const location = useLocation();

@@ -1,8 +1,8 @@
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { useUrlState } from '@shared/hooks/useUrlState';
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
-import { messagesApi, usersApi, postsApi, getMediaUrl } from '@shared/api/apiClient';
+import { postsApi } from '@shared/api/apiClient';
 import { useAuth } from '@shared/context/AuthContext';
 import { CollegeRepresentativeBadge } from '@shared/components/badges/CollegeRepresentativeBadge';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -14,7 +14,6 @@ import MessagingRestrictedModal from '@shared/components/modals/MessagingRestric
 import { isMessagingRestricted } from '@shared/lib/studentYearPolicy';
 import Post from '@features/feed/components/post/Post';
 import UserListModal from '@shared/components/modals/UserListModal';
-import { ErrorState } from '@shared/components/ui/StateViews';
 import Avatar from '@shared/components/avatar/Avatar';
 import NotFoundState from '@shared/components/ui/NotFoundState';
 import s from './ProfilePage.module.css';
@@ -76,14 +75,13 @@ import { Bookmark, Lock } from '@shared/components/icons';
 
 export default function ProfilePage() {
   const { profileUsername } = useParams();
-  const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const goBack = useSmartBack();
   const queryClient = useQueryClient();
   // handleMessageClick called openDirectMessage without ever obtaining it, so
   // the profile's Message button threw ReferenceError instead of opening a DM.
   const openDirectMessage = useOpenDirectMessage();
-  const { username: currentUserUsername, logout, currentUser: authUser, updateProfile } = useAuth();
+  const { username: currentUserUsername, currentUser: authUser, updateProfile } = useAuth();
   const targetUsername = profileUsername || currentUserUsername;
 
   // The followers/following list is a sub-view of the profile, so the URL owns
@@ -228,13 +226,11 @@ export default function ProfilePage() {
     profile: profileUser, 
     isLoading: isLoadingProfile,
     isError: profileError, 
-    refetch: refetchProfile 
   } = useProfile(targetUsername);
 
   // Query User Posts
   const {
     data: postsData,
-    isLoading: isLoadingPosts,
   } = useQuery({
     queryKey: ['user-posts', targetUsername],
     queryFn: () => postsApi.getUserPosts(targetUsername, 20),

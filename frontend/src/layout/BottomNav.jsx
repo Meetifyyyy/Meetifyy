@@ -1,4 +1,4 @@
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
 import { useSmartNavigation } from '@shared/hooks/useSmartNavigation';
 import { useAuth } from '@shared/context/AuthContext';
 import Avatar from '@shared/components/avatar/Avatar';
@@ -33,7 +33,6 @@ export default function BottomNav({ hidden }) {
   const isHomeActive = location.pathname === '/home';
   const isCampusActive = location.pathname.startsWith('/campus');
   const isMessagesActive = location.pathname.startsWith('/messages');
-  const isNotificationsActive = location.pathname.startsWith('/notifications');
   const isCrewActive = location.pathname.startsWith('/crew');
   const isProfileActive = location.pathname.startsWith('/profile');
 

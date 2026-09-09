@@ -1,10 +1,8 @@
-import { useNavigate } from 'react-router-dom';
 import { isImageUrl } from '@shared/utils/avatar';
 import { getMediaUrl } from '@shared/api/apiClient';
 import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
 import Avatar from '@shared/components/avatar/Avatar';
 import { CollegeRepresentativeBadge } from '@shared/components/badges/CollegeRepresentativeBadge';
-import { getRelativeDateLabel } from '@shared/utils/time';
 import styles from './SearchResultCards.module.css';
 import { getProcessedAvatarUrl } from '@shared/components/avatar/Avatar';
 

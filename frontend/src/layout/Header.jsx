@@ -8,8 +8,7 @@ import { useAuth } from '@shared/context/AuthContext';
 import { useJoinedCommunities } from '@shared/hooks/useCommunities';
 import { Bookmark, Moon, Sun } from '@shared/components/icons';
 
-import useUIStore from '@stores/uiStore';
-import { showToast } from '@shared/utils/toast';
+
 import Avatar from '@shared/components/avatar/Avatar';
 import GlobalSearch from '@features/search/components/GlobalSearch';
 import { useTheme } from '@shared/context/ThemeContext';
@@ -23,8 +22,8 @@ import {
 } from '@heroicons/react/24/outline';
 import styles from './Header.module.css';
 import wordmark from '@assets/images/meetifyy_wordmark.svg';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { communitiesApi, getMediaUrl } from '@shared/api/apiClient';
+import { useQueryClient } from '@tanstack/react-query';
+import { getMediaUrl } from '@shared/api/apiClient';
 import dashboardStyles from './DashboardLayout.module.css';
 
 const DrawerCommunityItem = ({ comm, navigate, onClose }) => {
@@ -63,11 +62,8 @@ const DrawerCommunityItem = ({ comm, navigate, onClose }) => {
 export default function Header({ variant = 'dashboard', wide = false }) {
   const { loading, logout, currentUser } = useAuth();
   const queryClient = useQueryClient();
-  const searchQuery = useUIStore(state => state.searchQuery);
-  const setSearchQuery = useUIStore(state => state.setSearchQuery);
   const { theme, toggleTheme } = useTheme();
   const [dropdownOpen, setDropdownOpen] = useState(false);
-  const [notifOpen, setNotifOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const closeDrawer = useCallback(() => setDrawerOpen(false), []);
   const [isCommunitiesMenuOpen, setIsCommunitiesMenuOpen] = useState(false);
@@ -101,7 +97,6 @@ export default function Header({ variant = 'dashboard', wide = false }) {
   useEffect(() => { setDrawerOpen(false); }, [location.pathname]);
   const isHomePage = location.pathname === '/home' || location.pathname === '/';
   const dropdownRef = useRef(null);
-  const notifRef = useRef(null);
   const avatarRef = useRef(null);
 
   useEffect(() => {
@@ -346,7 +341,7 @@ export default function Header({ variant = 'dashboard', wide = false }) {
 
       {variant === 'dashboard' ? (
         <nav className={styles.nav}>
-          <div style={{ position: 'relative' }} ref={notifRef}>
+          <div style={{ position: 'relative' }}>
             <NotificationBell />
           </div>
           <div className={`${styles.avatarWrap} ${styles.desktopOnlyAvatar}`}>
@@ -354,7 +349,7 @@ export default function Header({ variant = 'dashboard', wide = false }) {
               ref={avatarRef}
               data-header-avatar="true"
               className={styles.userAvatar}
-              onClick={(e) => { e.stopPropagation(); setDropdownOpen(!dropdownOpen); setNotifOpen(false); }}
+              onClick={(e) => { e.stopPropagation(); setDropdownOpen(!dropdownOpen); }}
               role="button"
               aria-label="User menu"
               aria-expanded={dropdownOpen}
