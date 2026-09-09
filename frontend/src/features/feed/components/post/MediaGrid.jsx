@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, memo, useCallback, useId } from 'react';
+import { useState, useEffect, useRef, memo, useCallback, useId } from 'react';
 import { mediaCache } from '@shared/utils/MediaCacheManager';
 import { deriveThumbnailKey, getMediaUrl } from '@shared/api/apiClient';
 import { Play, Pause, VolumeHigh, VolumeOff, Maximize } from '@shared/components/icons';

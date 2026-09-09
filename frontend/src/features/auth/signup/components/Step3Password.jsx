@@ -1,9 +1,9 @@
-import React, { useState, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { AlertCircle, ArrowRight } from '@shared/components/icons';
 import { useSignup } from '../../context/SignupContext';
 import { useAuth } from '@shared/context/AuthContext';
 import AnimatedStep from './AnimatedStep';
-import { AuthHeading, AuthField, PasswordField, AuthButton, styles as s } from '../../shared/ui';
+import { AuthHeading, PasswordField, AuthButton, styles as s } from '../../shared/ui';
 import { validatePassword } from '../../shared/passwordRules';
 
 export default function Step3Password() {

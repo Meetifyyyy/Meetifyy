@@ -1,4 +1,3 @@
-import React from 'react';
 import createActivityBackgroundCharacter from '@assets/images/createactivitybackgroundcharacter.webp';
 import styles from './CreateActivityCard.module.css';
 

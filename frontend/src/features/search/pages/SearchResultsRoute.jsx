@@ -1,20 +1,19 @@
-import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
+import { useMemo, useState, useEffect, useRef, useCallback, memo } from 'react';
 import { useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import { useUrlState } from '@shared/hooks/useUrlState';
-import { Search, Clock, X, RefreshCw, AlertCircle, Calendar, ArrowLeft, Loader2, Users, Activity, Globe2, FileText } from '@shared/components/icons';
+import { Search, Clock, X, RefreshCw, AlertCircle, ArrowLeft, Loader2, Users, Activity, Globe2, FileText } from '@shared/components/icons';
 import { useGlobalSearch } from '@features/search/hooks/useGlobalSearch';
-import Avatar, { getProcessedAvatarUrl } from '@shared/components/avatar/Avatar';
+import Avatar from '@shared/components/avatar/Avatar';
 import { CollegeRepresentativeBadge } from '@shared/components/badges/CollegeRepresentativeBadge';
-import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
 import { isImageUrl } from '@shared/utils/avatar';
+import { getProcessedAvatarUrl } from '@shared/components/avatar/Avatar';
 import Skeleton from '@shared/components/skeletons/Skeleton';
 import RightPanel, { NotificationsActivity, OnlineFriends, UpcomingEvents } from '@layout/RightPanel';
 import FollowButton from '@shared/components/ui/FollowButton';
-import { useUsersMap } from '@shared/hooks/useUsersMap';
 import { useCrewActivities } from '@shared/hooks/useCrew';
 import { useDebouncedState } from '@shared/hooks/useDebounce';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
-import { searchApi, getMediaUrl } from '@shared/api/apiClient';
+import { searchApi } from '@shared/api/apiClient';
 import Post from '@features/feed/components/post/Post';
 import CrewCard from '@features/crew/components/cards/CrewCard';
 import styles from './SearchResultsRoute.module.css';
@@ -27,45 +26,12 @@ const QUICK_CHIPS = [
   { id: 'posts', label: 'Posts', Icon: FileText },
 ];
 
-import {
-  DEFAULT_ACTIVITY_COVERS,
-  getDefaultActivityCover as getDefaultCover,
-} from '@shared/utils/activityCover';
-
-
-function formatDateTime(activity) {
-  if (!activity) return '';
-  const startRaw = activity.startDate || activity.date;
-  if (!startRaw) {
-    if (!activity.createdAt) return '';
-    const postedD = new Date(activity.createdAt);
-    if (isNaN(postedD.getTime())) return '';
-    return `Posted ${postedD.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
-  }
-  const startD = new Date(startRaw);
-  if (isNaN(startD.getTime())) return '';
-  const endRaw = activity.endDate;
-  const endD = endRaw ? new Date(endRaw) : startD;
-  const startDateFormatted = startD.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-  const startTimeStr = activity.time || startD.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-  if (endD && !isNaN(endD.getTime())) {
-    const endDateFormatted = endD.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    const endTimeStr = activity.endTime || endD.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-    if (startDateFormatted === endDateFormatted) {
-      if (startTimeStr === endTimeStr) return `${startDateFormatted} • ${startTimeStr}`;
-      return `${startDateFormatted} • ${startTimeStr} – ${endTimeStr}`;
-    }
-    return `${startDateFormatted} • ${startTimeStr} → ${endDateFormatted} • ${endTimeStr}`;
-  }
-  return `${startDateFormatted} • ${startTimeStr}`;
-}
-
 // ── Memoized row components ──────────────────────────────────────────────────
-// React.memo + stable props (data refs are stable between renders via the query
+// memo + stable props (data refs are stable between renders via the query
 // cache; onOpen is a useCallback) means unchanged rows skip re-rendering entirely
 // when the user types or a background refetch resolves.
 
-const UserRow = React.memo(function UserRow({ data, onOpen }) {
+const UserRow = memo(function UserRow({ data, onOpen }) {
   return (
     <div className={styles.resultCard} onClick={() => onOpen('user', data)}>
       <Avatar src={data.avatar} name={data.displayName} size="44px" disableHover />
@@ -83,7 +49,7 @@ const UserRow = React.memo(function UserRow({ data, onOpen }) {
   );
 });
 
-const CommunityRow = React.memo(function CommunityRow({ data, onOpen }) {
+const CommunityRow = memo(function CommunityRow({ data, onOpen }) {
   const [imgError, setImgError] = useState(false);
   const avatar = data.avatarKey || data.avatar;
   const memberCount = data.memberCount || data.membersCount || data.members || 0;
@@ -120,106 +86,7 @@ const CommunityRow = React.memo(function CommunityRow({ data, onOpen }) {
   );
 });
 
-const ActivityRow = React.memo(function ActivityRow({ data, storeActivity, usersById, onOpen }) {
-  const activityData = storeActivity || data;
-  const coverColor = activityData.coverColor || null;
-  const coverUrl = (activityData.coverImage ? getMediaUrl(activityData.coverImage) : null) || getDefaultCover(activityData.title || activityData.id);
-  const timeFormatted = formatDateTime(activityData);
-
-  const seenIds = new Set();
-  const displayUsers = [];
-  if (activityData.hostAvatar || activityData.hostName || activityData.creator) {
-    const hId = activityData.hostId || activityData.creatorId || 'host';
-    const hAv = activityData.hostAvatar || activityData.creator?.avatar;
-    const hName = activityData.hostName || activityData.creator?.displayName;
-    if (hAv || hName) {
-      displayUsers.push({ id: hId, avatar: hAv, displayName: hName });
-      seenIds.add(hId);
-    }
-  }
-  const participantIds = activityData.participants || (activityData.members || []).map(m => m.userId || m.id || m);
-  const memberObjs = activityData._membersData || activityData.members || [];
-  participantIds.forEach(id => {
-    const cleanId = typeof id === 'object' ? id.id || id.userId : id;
-    if (!cleanId || seenIds.has(cleanId)) return;
-    // O(1) map lookup instead of Object.values(users).find() per participant per render.
-    const uObj = usersById.get(cleanId) || memberObjs.find(m => m?.id === cleanId || m?.userId === cleanId || m?.user?.id === cleanId);
-    const userRef = uObj?.user || uObj;
-    if (userRef) {
-      displayUsers.push({
-        id: cleanId,
-        avatar: userRef?.avatar || userRef?.profileImage,
-        displayName: userRef?.displayName || userRef?.name || userRef?.username,
-      });
-      seenIds.add(cleanId);
-    }
-  });
-
-  const finalAvatars = displayUsers.slice(0, 5);
-  const totalCount = participantIds.length || (activityData.members || []).length || activityData.slotsFilled || (displayUsers.length > 0 ? displayUsers.length : 1);
-  const isPastOrEnded = activityData.status === 'ENDED' || activityData.status === 'CANCELLED' || activityData.status === 'COMPLETED' || (activityData.startDate && new Date(activityData.startDate) < new Date());
-  const goingLabelText = `${totalCount} ${isPastOrEnded ? 'participated' : 'going'}`;
-
-  return (
-    <div className={styles.resultCard} onClick={() => onOpen('activity', activityData)}>
-      <div className={styles.activityCoverThumb}>
-        {coverColor ? (
-          <div
-            className={styles.activityCoverImg}
-            style={{ background: coverColor }}
-            role="img"
-            aria-label={activityData.title || 'Activity'}
-          />
-        ) : (
-          <img
-            src={coverUrl}
-            alt={activityData.title || 'Activity'}
-            className={styles.activityCoverImg}
-            loading="lazy"
-            decoding="async"
-            onError={(e) => { e.target.onerror = null; e.target.src = DEFAULT_ACTIVITY_COVERS[0]; }}
-          />
-        )}
-      </div>
-      <div className={styles.feedInfo}>
-        <div className={styles.rowHeaderTitle}>
-          <span className={styles.feedName}>{activityData.title}</span>
-        </div>
-        {timeFormatted && (
-          <div className={styles.activityTimeLabel}>
-            <Calendar size={13} /> {timeFormatted}
-          </div>
-        )}
-        <div className={styles.activityFooterRow}>
-          <div className={styles.goingLine}>
-            <div className={styles.goingAvatarsGroup}>
-              {finalAvatars.map((u, i) => (
-                <div key={u.id || i} className={styles.goingAvatarWrap} style={{ zIndex: 5 - i }}>
-                  {u.avatar && isImageUrl(u.avatar) ? (
-                    <img
-                      src={getProcessedAvatarUrl(u.avatar)}
-                      alt={u.displayName || 'Participant'}
-                      className={styles.goingAvatarImg}
-                      loading="lazy"
-                      decoding="async"
-                      onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.svg'; }}
-                    />
-                  ) : (
-                    <DefaultAvatar />
-                  )}
-                </div>
-              ))}
-            </div>
-            <span className={styles.goingText}>{goingLabelText}</span>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-});
-
 export default function SearchResultsRoute() {
-  const users = useUsersMap();
   const crewActivities = useCrewActivities();
   const [searchParams, setSearchParams] = useSearchParams();
   const rawQ = searchParams.get('q') || '';
@@ -378,14 +245,6 @@ export default function SearchResultsRoute() {
     localStorage.setItem('meetifyy_recent_searches', JSON.stringify([]));
     searchApi.clearRecentSearches().catch(() => {});
   };
-
-  // O(1) lookup maps built once per store change, so the activity rows resolve
-  // participants/store-data without an O(n) scan per row per render.
-  const usersById = useMemo(() => {
-    const m = new Map();
-    Object.values(users || {}).forEach((u) => { if (u?.id) m.set(u.id, u); });
-    return m;
-  }, [users]);
 
   const activitiesById = useMemo(() => {
     const m = new Map();

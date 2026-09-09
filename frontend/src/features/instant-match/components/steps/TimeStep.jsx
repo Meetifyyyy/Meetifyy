@@ -1,4 +1,3 @@
-import React from 'react';
 import { TIME_PREFERENCES, accentVars } from '../../constants/matchConstants';
 import { Blob } from '../decor/Decor';
 

@@ -1,4 +1,3 @@
-import React from 'react';
 import styles from './PageLayout.module.css';
 
 export default function PageLayout({ children, className = '', containerRef, ...props }) {

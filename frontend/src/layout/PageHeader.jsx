@@ -1,4 +1,3 @@
-import React from 'react';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
 import styles from './PageHeader.module.css';
 

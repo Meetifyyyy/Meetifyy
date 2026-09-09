@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { ImageOff } from '@shared/components/icons';
 import { mediaCache } from '../../utils/MediaCacheManager';
 

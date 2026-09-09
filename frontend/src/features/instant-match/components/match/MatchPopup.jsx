@@ -1,4 +1,4 @@
-import React, { useRef, useMemo, useId } from 'react';
+import { useRef, useMemo, useId, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useInstantMatch } from '../../context/InstantMatchContext';
 import { useMatchTimer } from '../../hooks/useMatchTimer';
@@ -225,9 +225,9 @@ function SuccessPanel({ name, titleId }) {
  * which reads better here than the generic silhouette.
  */
 function Avatar({ candidate }) {
-  const [failed, setFailed] = React.useState(false);
+  const [failed, setFailed] = useState(false);
 
-  const resolved = React.useMemo(
+  const resolved = useMemo(
     () => getProcessedAvatarUrl(candidate?.avatar),
     [candidate?.avatar],
   );

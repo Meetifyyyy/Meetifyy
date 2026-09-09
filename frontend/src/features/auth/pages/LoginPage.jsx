@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import { useState, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '@shared/context/AuthContext';
 import { ArrowRight, AlertCircle } from '@shared/components/icons';

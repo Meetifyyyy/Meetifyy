@@ -1,4 +1,3 @@
-import React from 'react';
 import styles from './CalendarIcon.module.css';
 
 const getMonthLabel = (date, dateLabel) => {

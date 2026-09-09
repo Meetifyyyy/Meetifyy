@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useId } from 'react';
+import { useRef, useEffect, useId } from 'react';
 import { ACTIVITY_DETAILS_CONFIG, OPTIONAL_DETAIL_MAX, getActivity } from '../../constants/matchConstants';
 import { Starburst } from '../decor/Decor';
 

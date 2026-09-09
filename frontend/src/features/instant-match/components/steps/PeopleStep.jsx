@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { getProcessedAvatarUrl } from '@shared/components/avatar/Avatar';
 import emptyMascotImg from '@assets/images/instant_match_mascot.webp';
 import {

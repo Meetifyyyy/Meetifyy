@@ -1,4 +1,3 @@
-import React from 'react';
 
 /**
  * The Instant Match decorative kit.

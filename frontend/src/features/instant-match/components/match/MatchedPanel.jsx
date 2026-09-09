@@ -1,4 +1,4 @@
-import React from 'react';
+import { useState, useMemo } from 'react';
 import { useInstantMatch } from '../../context/InstantMatchContext';
 import { useAuth } from '@shared/context/AuthContext';
 import { getProcessedAvatarUrl } from '@shared/components/avatar/Avatar';
@@ -26,7 +26,7 @@ export default function MatchedPanel() {
     recentMatch, openMatchChat, busy, chat, matchPartner, leaveMatch, leaving,
     unreadCount,
   } = useInstantMatch();
-  const [confirmLeave, setConfirmLeave] = React.useState(false);
+  const [confirmLeave, setConfirmLeave] = useState(false);
   const { currentUser } = useAuth();
 
   // A live chat is reason enough to render this panel. `recentMatch` is the
@@ -143,8 +143,8 @@ export default function MatchedPanel() {
 }
 
 function Portrait({ person, tilt }) {
-  const [failed, setFailed] = React.useState(false);
-  const resolved = React.useMemo(
+  const [failed, setFailed] = useState(false);
+  const resolved = useMemo(
     () => getProcessedAvatarUrl(person.avatar),
     [person.avatar],
   );

@@ -1,4 +1,3 @@
-import React from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { HugeiconsIcon } from '@hugeicons/react';
 import { LockKeyholeIcon } from '@hugeicons/core-free-icons';

@@ -1,16 +1,15 @@
-import React, { useMemo } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import FollowButton from '@shared/components/ui/FollowButton';
 import CalendarIcon from '@shared/components/ui/CalendarIcon';
 import { useNotifications } from '@shared/hooks/useNotifications';
 import { timeAgo } from '@shared/utils/time';
-import { showToast } from '@shared/utils/toast';
 import Avatar from '@shared/components/avatar/Avatar';
 import { canSeeOnlineStatus } from '@shared/utils/presence';
 import styles from './RightPanel.module.css';
 import { useQuery } from '@tanstack/react-query';
-import { usersApi, activitiesApi, getMediaUrl } from '@shared/api/apiClient';
+import { usersApi, getMediaUrl } from '@shared/api/apiClient';
 import { useAuth } from '@shared/context/AuthContext';
 import { useUsersMap } from '@shared/hooks/useUsersMap';
 import { useMediaQuery } from '@shared/hooks/useMediaQuery';
@@ -406,9 +405,9 @@ export function UpcomingEvents() {
   const crewActivities = useCrewActivities();
   const { currentUser } = useAuth();
   const navigate = useNavigate();
-  const [nowTime, setNowTime] = React.useState(Date.now());
+  const [nowTime, setNowTime] = useState(Date.now());
 
-  React.useEffect(() => {
+  useEffect(() => {
     const timer = setInterval(() => {
       setNowTime(Date.now());
     }, 1000);
@@ -501,7 +500,7 @@ export function UniversityEvents({ events, title = 'Ongoing Events', onViewAll }
 export function UniversityMembers({ members, title = 'Members', onViewAll }) {
   const { currentUser } = useAuth();
   const { data: usersData = [] } = useQuery({ queryKey: ['users'], queryFn: () => usersApi.getAll() });
-  const users = React.useMemo(() => usersData.reduce((acc, u) => ({ ...acc, [u.id]: u }), {}), [usersData]);
+  const users = useMemo(() => usersData.reduce((acc, u) => ({ ...acc, [u.id]: u }), {}), [usersData]);
   const navigate = useNavigate();
   if (!members || members.length === 0) return null;
 

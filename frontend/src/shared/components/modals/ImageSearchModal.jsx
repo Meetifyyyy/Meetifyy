@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, memo, useCallback } from 'react';
+import { useState, useEffect, useRef, memo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import styles from './ImageSearchModal.module.css';
 import { X, Upload, Loader2 } from '@shared/components/icons';

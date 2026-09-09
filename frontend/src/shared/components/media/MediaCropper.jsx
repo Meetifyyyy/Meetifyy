@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import Cropper from 'react-easy-crop';
 import { getCroppedImg } from './cropImageUtils';
@@ -19,7 +19,7 @@ export default function MediaCropper({ imageFile, aspect, cropShape = 'rect', on
   const [imageSrc, setImageSrc] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
   
-  React.useEffect(() => {
+  useEffect(() => {
     if (imageFile) {
       if (typeof imageFile === 'string') {
         setImageSrc(imageFile);

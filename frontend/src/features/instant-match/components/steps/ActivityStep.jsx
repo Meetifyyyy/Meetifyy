@@ -1,4 +1,3 @@
-import React from 'react';
 import { MATCH_ACTIVITIES, accentVars } from '../../constants/matchConstants';
 import { Ticks } from '../decor/Decor';
 

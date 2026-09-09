@@ -1,4 +1,3 @@
-import React from 'react';
 
 /**
  * High-quality, tasteful 3D-style vector icons designed specifically for Meetifyy.

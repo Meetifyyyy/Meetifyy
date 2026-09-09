@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useId, useCallback } from 'react';
+import { useState, useEffect, useRef, useId, useCallback } from 'react';
 import { CAMPUS_AREAS, getActivity } from '../../constants/matchConstants';
 import { classifyActivity } from '../../utils/activityClassifier';
 import { useGPSLocation } from '../../hooks/useGPSLocation';

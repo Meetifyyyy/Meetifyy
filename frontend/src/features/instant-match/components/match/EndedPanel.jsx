@@ -1,4 +1,3 @@
-import React from 'react';
 import { useInstantMatch } from '../../context/InstantMatchContext';
 import { Bolt, Squiggle } from '../decor/Decor';
 

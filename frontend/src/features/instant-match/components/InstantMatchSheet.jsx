@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useId, useCallback } from 'react';
+import { useRef, useEffect, useId, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useInstantMatch } from '../context/InstantMatchContext';
 import {

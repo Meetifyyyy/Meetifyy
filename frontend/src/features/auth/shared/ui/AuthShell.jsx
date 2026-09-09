@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createContext, Fragment, memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft } from '@shared/components/icons';
 import wordmark from '@assets/images/meetifyy_wordmark.svg';
@@ -41,17 +41,17 @@ export default function AuthShell({ children, headline = DEFAULT_HEADLINE, subte
   return <AuthShellMaster headline={headline} subtext={subtext}>{children}</AuthShellMaster>;
 }
 
-const StoryColumn = React.memo(function StoryColumn({ headline = DEFAULT_HEADLINE, subtext = DEFAULT_SUBTEXT }) {
+const StoryColumn = memo(function StoryColumn({ headline = DEFAULT_HEADLINE, subtext = DEFAULT_SUBTEXT }) {
   const headlineLines = headline.split('\n');
   return (
     <aside className={s.story}>
       <span className={s.storyMark} aria-hidden="true" />
       <h2 className={s.storyHeadline}>
         {headlineLines.map((line, i) => (
-          <React.Fragment key={i}>
+          <Fragment key={i}>
             {renderHighlighted(line)}
             {i < headlineLines.length - 1 ? <br /> : null}
-          </React.Fragment>
+          </Fragment>
         ))}
       </h2>
       <p className={s.storySub}>{subtext}</p>

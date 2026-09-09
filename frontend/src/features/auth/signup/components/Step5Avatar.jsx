@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowRight, Upload, Loader2, Plus } from '@shared/components/icons';
 import Avatar from '@shared/components/avatar/Avatar';
