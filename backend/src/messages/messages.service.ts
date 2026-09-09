@@ -1232,13 +1232,23 @@ export class MessagesService
   /**
    * @param eligibleOnly Restrict to threads that can actually be SENT into by a
    *   recipient picker. Share modals pass true; the inbox never does.
+   * @param search Match the thread by the name the picker actually renders --
+   *   the group's name, or the DM partner's display name / username. Applied
+   *   in the QUERY, before skip/take, for the same reason every other
+   *   predicate here is: a share modal that filtered the page in JavaScript
+   *   could only ever find the counterparts that happened to be on the first
+   *   page, so a user with more threads than the page size could not reach the
+   *   rest by typing. Isolation, verification and block filters all still
+   *   apply -- this narrows the eligible set, it never widens it.
    */
   async getUserConversations(
     userId: string,
     limit: number = 20,
     offset: number = 0,
     eligibleOnly = false,
+    search?: string,
   ) {
+    const cleanSearch = (search || '').trim();
     // Distinct key. The two shapes are different lists for the same user and
     // sharing one entry would let whichever call happened first decide what the
     // other saw, which in the wrong order means the inbox silently loses
@@ -1247,7 +1257,7 @@ export class MessagesService
     // a v1 entry can hold a restricted thread, and serving one would be a hole
     // in the policy for the length of its TTL. The key is scoped by viewer,
     // which is what makes caching a policy-filtered list safe at all.
-    const cacheKey = `user:conversations:v2:${eligibleOnly ? 'pick:' : ''}${userId}:${limit}:${offset}`;
+    const cacheKey = `user:conversations:v2:${eligibleOnly ? 'pick:' : ''}${userId}:${limit}:${offset}:${cleanSearch.toLowerCase()}`;
     if (this.redis) {
       try {
         const cached = await this.redis.get(cacheKey);
@@ -1356,6 +1366,67 @@ export class MessagesService
                               user: this.studentYearPolicy.incompatibleUserWhere(
                                 conversationViewerBatch,
                               ),
+                            },
+                          },
+                        },
+                      ],
+                    },
+                  ]
+                : []),
+              /**
+               * The picker's search box, answered by the database.
+               *
+               * A thread is matched on the name the list actually shows: a
+               * group by its own name, a one-to-one thread by the other
+               * person's display name or username (a DM row has no stored
+               * name of its own).
+               *
+               * `some` rather than `every`, and a positive predicate, so the
+               * NULL trap described above does not apply -- nothing here is
+               * negated.
+               *
+               * Sits inside the same `AND` as the two filters above, so a
+               * search can only ever narrow what those already allow. A user
+               * restricted by isolation or verification stays unreachable no
+               * matter what is typed.
+               */
+              ...(cleanSearch
+                ? [
+                    {
+                      OR: [
+                        {
+                          type: 'GROUP' as const,
+                          name: {
+                            contains: cleanSearch,
+                            mode: 'insensitive' as const,
+                          },
+                        },
+                        {
+                          // DM only: a group row is rendered under its own
+                          // name, so matching it on a member nobody can see in
+                          // the list would look like a result out of nowhere.
+                          type: 'DM' as const,
+                          participants: {
+                            some: {
+                              userId: { not: userId },
+                              leftAt: null,
+                              deletedAt: null,
+                              user: {
+                                OR: [
+                                  {
+                                    displayName: {
+                                      contains: cleanSearch,
+                                      mode: 'insensitive' as const,
+                                    },
+                                  },
+                                  {
+                                    username: {
+                                      contains: cleanSearch,
+                                      mode: 'insensitive' as const,
+                                    },
+                                  },
+                                ],
+                              },
                             },
                           },
                         },

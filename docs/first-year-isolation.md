@@ -159,6 +159,7 @@ surface that returns users or content, add it here.**
 | Jump to an existing DM | `messages/dm/dm.service.ts` → `lookupExistingDM` | Returns `null` for a restricted pair |
 | DM list | `messages/dm/dm.service.ts` | Nested `participants.none` filter, in the query |
 | Combined conversation list + share picker | `messages/messages.service.ts` → `getUserConversations` | Nested `participants.none`; `canSendMessages` mirrors it |
+| Share/Forward picker **search** | same, `search` parameter | A third clause in the same `AND`, so a term can only narrow what isolation already allows |
 | Create conversation | `messages/messages.service.ts` | `assertCanInteract`, **before** the existing-thread branch |
 | Create group | `messages/group-chats/group-chats.service.ts` | `assertCanInteract` over the founding roster |
 | Add group member | both services | `assertCanInteract` against **every current member** |
@@ -293,6 +294,22 @@ and the API's own refusal say the same thing.
 modals, and `sendableConversations` drops threads whose `canSendMessages` is
 false (which covers share pickers). All are **second lines** — a row without the
 marker is kept, so a narrow payload can never empty a picker.
+
+**Every picker's search is answered by the server**, for the reason the rest of
+this document gives for putting the policy in the query: a modal that fetched a
+page and filtered it in JavaScript could only ever find the rows that page
+happened to contain. The New Message modal asks `GET /users/connections?q=`
+(which is also what the Invite modals use), and the Share pickers pass their
+term to `getUserConversations` through
+`useRecipientConversations(isOpen, term)`. Both endpoints apply isolation,
+verification and blocks in the query, ahead of the limit — so widening what can
+be *found* does not widen what is *allowed*.
+
+`matchesRecipientSearch` in `shared/lib/conversationTargets.js` repeats the
+match client-side. It must stay aligned with the fields the server matches on
+(group name, DM partner display name and username): the share modals used to
+test `conversation.name` alone, and threw away rows the server had correctly
+returned for a username match.
 
 ---
 

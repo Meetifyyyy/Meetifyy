@@ -193,17 +193,23 @@ export class MessagesController {
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
     @Query('eligibleOnly') eligibleOnly?: string,
+    @Query('search') search?: string,
   ) {
     const userId = req.user?.id;
     const parsedLimit = limit ? parseInt(limit, 10) : 20;
     const parsedOffset = offset ? parseInt(offset, 10) : 0;
     const limitNum = isNaN(parsedLimit) ? 20 : parsedLimit;
     const offsetNum = isNaN(parsedOffset) ? 0 : parsedOffset;
+    // Capped so a pathological query string cannot become the cache key or a
+    // very wide `contains` scan. Longer input is truncated, not rejected: the
+    // extra characters could only have narrowed the result further.
+    const searchTerm = (search || '').slice(0, 100);
     return this.messagesService.getUserConversations(
       userId,
       limitNum,
       offsetNum,
       eligibleOnly === 'true',
+      searchTerm,
     );
   }
 

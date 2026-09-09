@@ -93,3 +93,35 @@ export function isUserUnavailable(user) {
 export function selectableUsers(users) {
   return (users || []).filter((u) => u && u.id && !isUserUnavailable(u));
 }
+
+/**
+ * Whether a conversation row matches what the user typed into a picker.
+ *
+ * The server has already matched the term against the group's name or the DM
+ * partner's display name / username, in the query, before the page limit — so
+ * this is a second line, exactly like `sendableConversations` above, and it
+ * must match on the SAME fields the server does. A client filter that only
+ * looked at `conversation.name` (which is what every share modal did) dropped
+ * the rows the server had returned for a username match, so searching by
+ * handle found nothing even though the request had succeeded.
+ *
+ * An empty term matches everything, and a row is kept whenever the term is
+ * present in any field the list can render it under.
+ */
+export function matchesRecipientSearch(conversation, term) {
+  const needle = (term || '').trim().toLowerCase();
+  if (!needle) return true;
+  if (!conversation) return false;
+
+  const haystacks = [
+    conversation.name,
+    conversation.targetUser?.displayName,
+    conversation.targetUser?.username,
+    conversation.otherUser?.displayName,
+    conversation.otherUser?.username,
+  ];
+
+  return haystacks.some(
+    (value) => typeof value === 'string' && value.toLowerCase().includes(needle),
+  );
+}

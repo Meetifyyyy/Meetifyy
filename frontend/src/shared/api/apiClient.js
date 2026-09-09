@@ -1077,7 +1077,7 @@ export const messagesApi = {
    *   be sent into. Share and Forward pickers pass true; the inbox must not,
    *   because it has to keep showing every conversation the user owns.
    */
-  getConversations: (limit, offset, eligibleOnly = false) => {
+  getConversations: (limit, offset, eligibleOnly = false, search = '') => {
     const params = new URLSearchParams();
     const resolvedLimit = typeof limit === 'number' ? limit : (typeof limit === 'object' && typeof limit?.limit === 'number' ? limit.limit : 20);
     const resolvedOffset = typeof offset === 'number' ? offset : (typeof limit === 'object' && typeof limit?.offset === 'number' ? limit.offset : 0);
@@ -1085,6 +1085,11 @@ export const messagesApi = {
     if (resolvedLimit) params.set('limit', String(resolvedLimit));
     if (resolvedOffset) params.set('offset', String(resolvedOffset));
     if (eligibleOnly) params.set('eligibleOnly', 'true');
+    // Matched by the database against the group's name or the DM partner's
+    // handle, so a picker's search reaches every eligible thread rather than
+    // only the page already in memory.
+    const resolvedSearch = typeof search === 'string' ? search.trim() : '';
+    if (resolvedSearch) params.set('search', resolvedSearch);
     const query = params.toString();
     return apiClient.get(`/api/messages${query ? `?${query}` : ''}`);
   },

@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { matchesRecipientSearch } from '@shared/lib/conversationTargets';
 import { createPortal } from 'react-dom';
 import { messagesApi } from '@shared/api/apiClient';
 import { useRecipientConversations } from '@shared/hooks/useRecipientConversations';
@@ -23,7 +24,7 @@ export default function ShareProfileModal({ isOpen, onClose, profileUser }) {
   // this modal show every thread the user has, including ones whose
   // counterpart cannot be sent to. Recipient lists are a different question
   // from the inbox and now have their own server-filtered query.
-  const { conversations } = useRecipientConversations(isOpen);
+  const { conversations } = useRecipientConversations(isOpen, searchTerm);
 
   const handleSend = async (convId) => {
     if (sentTo.has(convId)) return;
@@ -59,10 +60,11 @@ export default function ShareProfileModal({ isOpen, onClose, profileUser }) {
       return (b.createdAt || 0) - (a.createdAt || 0);
     });
 
-    if (!searchTerm.trim()) return sorted;
-    
-    const lowerSearch = searchTerm.toLowerCase();
-    return sorted.filter(c => c.name?.toLowerCase().includes(lowerSearch));
+    // The server has already matched the term, in the query, across every
+    // eligible thread rather than only the page in memory. This repeats the
+    // match on the same fields so rows held over from the previous term (kept
+    // on screen while the next request is in flight) do not linger.
+    return sorted.filter((c) => matchesRecipientSearch(c, searchTerm));
   }, [conversations, searchTerm]);
 
   if (!isOpen) return null;

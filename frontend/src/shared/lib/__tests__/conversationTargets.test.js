@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   isConversationUnavailable,
+  matchesRecipientSearch,
   sendableConversations,
 } from '../conversationTargets';
 
@@ -59,5 +60,54 @@ describe('conversation send targets', () => {
     // offer a send that errors.
     expect(isConversationUnavailable(null)).toBe(true);
     expect(isConversationUnavailable(undefined)).toBe(true);
+  });
+});
+
+/**
+ * `matchesRecipientSearch` — the picker's client-side second line.
+ *
+ * The server matches the term against the group's name or the DM partner's
+ * display name and username. This helper has to match the SAME fields: the
+ * share modals used to test `conversation.name` alone, so a row the server
+ * had correctly returned for a username match was thrown away in the browser
+ * and searching by @handle found nothing.
+ */
+describe('matchesRecipientSearch', () => {
+  const dm = {
+    name: 'Anita Sharma',
+    targetUser: { displayName: 'Anita Sharma', username: 'anita_cs25' },
+  };
+  const group = { name: 'Weekend Hike' };
+
+  it('keeps everything when nothing has been typed', () => {
+    expect(matchesRecipientSearch(dm, '')).toBe(true);
+    expect(matchesRecipientSearch(group, '   ')).toBe(true);
+  });
+
+  it('matches a group on its name', () => {
+    expect(matchesRecipientSearch(group, 'hike')).toBe(true);
+    expect(matchesRecipientSearch(group, 'kayak')).toBe(false);
+  });
+
+  it('matches a DM on the handle, not only the rendered name', () => {
+    expect(matchesRecipientSearch(dm, 'anita_cs25')).toBe(true);
+    expect(matchesRecipientSearch(dm, 'cs25')).toBe(true);
+  });
+
+  it('is case-insensitive and ignores surrounding whitespace', () => {
+    expect(matchesRecipientSearch(dm, '  ANITA  ')).toBe(true);
+  });
+
+  it('reads the older `otherUser` shape too', () => {
+    // Some conversation payloads carry the partner under `otherUser`. Missing
+    // it would drop rows the server had deliberately returned.
+    expect(
+      matchesRecipientSearch({ otherUser: { username: 'bharat' } }, 'bharat'),
+    ).toBe(true);
+  });
+
+  it('drops a row with a term and nothing to match it against', () => {
+    expect(matchesRecipientSearch({}, 'anita')).toBe(false);
+    expect(matchesRecipientSearch(null, 'anita')).toBe(false);
   });
 });

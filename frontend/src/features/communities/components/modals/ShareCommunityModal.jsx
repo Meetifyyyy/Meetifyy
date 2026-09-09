@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { matchesRecipientSearch } from '@shared/lib/conversationTargets';
 import { createPortal } from 'react-dom';
 
 import ShareModalAvatar from '@shared/components/avatar/ShareModalAvatar';
@@ -34,7 +35,7 @@ export default function ShareCommunityModal({ isOpen, onClose, community }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [sentTo, setSentTo] = useState(new Set());
   
-  const { conversations } = useRecipientConversations(isOpen);
+  const { conversations } = useRecipientConversations(isOpen, searchTerm);
   const { sendDirectMessage } = useMessageActions();
 
 
@@ -72,10 +73,11 @@ export default function ShareCommunityModal({ isOpen, onClose, community }) {
       return (b.createdAt || 0) - (a.createdAt || 0);
     });
 
-    if (!searchTerm.trim()) return sorted;
-    
-    const lowerSearch = searchTerm.toLowerCase();
-    return sorted.filter(c => c.name?.toLowerCase().includes(lowerSearch));
+    // The server has already matched the term, in the query, across every
+    // eligible thread rather than only the page in memory. This repeats the
+    // match on the same fields so rows held over from the previous term (kept
+    // on screen while the next request is in flight) do not linger.
+    return sorted.filter((c) => matchesRecipientSearch(c, searchTerm));
   }, [conversations, searchTerm]);
 
   if (!isOpen) return null;

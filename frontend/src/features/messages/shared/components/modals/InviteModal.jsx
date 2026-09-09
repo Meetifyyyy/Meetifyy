@@ -1,14 +1,14 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
+import { useDebounce } from '@shared/hooks/useDebounce';
 import { copyToClipboard } from '@shared/lib/share/shareTargets';
 import { selectableUsers } from '@shared/lib/conversationTargets';
 import { createPortal } from 'react-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import { usersApi, groupApi } from '@shared/api/apiClient';
 import { useAuth } from '@shared/context/AuthContext';
 import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
 import { isImageUrl } from '@shared/utils/avatar';
 import styles from './InviteModal.module.css';
-import { useUsersMap } from '@shared/hooks/useUsersMap';
 import { useConversations } from '@shared/hooks/useMessages';
 import { useMessageActions } from '@shared/hooks/useMessageActions';
 import { showToast } from '@shared/utils/toast';
@@ -26,12 +26,16 @@ export default function InviteModal({ isOpen, onClose, group }) {
   useScrollLock(Boolean(isOpen));
 
   const [searchTerm, setSearchTerm] = useState('');
+  // One request per pause in typing rather than one per keystroke. The search
+  // itself is answered by the database (`/api/users/connections?q=`), which
+  // matches display name and username across every eligible account before
+  // applying the limit -- so a name outside the first page is still findable.
+  const debouncedSearchTerm = useDebounce(searchTerm.trim(), 250);
   const [copied, setCopied] = useState(false);
   const [sentTo, setSentTo] = useState(new Set());
   const [sendingIds, setSendingIds] = useState(new Set());
 
   const { currentUser } = useAuth();
-  const users = useUsersMap();
   const { conversations } = useConversations();
   const { startConversation, sendDirectMessage } = useMessageActions();
   const modalRef = useRef(null);
@@ -158,10 +162,12 @@ export default function InviteModal({ isOpen, onClose, group }) {
   }, [conversations, group, modalGroupDetails, currentUser?.id, groupConvId]);
 
   // Fetch registered candidate users for invitation
-  const { data: fetchedUsers = [] } = useQuery({
-    queryKey: ['all-users-for-invite', searchTerm],
+  const { data: fetchedUsers = [], isFetching: isSearching } = useQuery({
+    queryKey: ['all-users-for-invite', debouncedSearchTerm],
     queryFn: async () => {
-      const list = await usersApi.getConnections(searchTerm, 50).catch(() => []);
+      const list = await usersApi
+        .getConnections(debouncedSearchTerm, 50)
+        .catch(() => []);
       // `selectableUsers` drops deleted accounts. The server already excludes
       // them; this covers the window where a cached response (20s server-side,
       // 30s here) still carries somebody who has since deleted.
@@ -176,9 +182,27 @@ export default function InviteModal({ isOpen, onClose, group }) {
     },
     enabled: Boolean(isOpen),
     staleTime: 30_000,
+    // Keeps the previous term's rows on screen while the next request is in
+    // flight, so the list does not blink empty between keystrokes.
+    placeholderData: keepPreviousData,
   });
 
-  const filteredUsers = fetchedUsers;
+  /**
+   * People already in the group are not invitable.
+   *
+   * `currentMemberIds` was assembled above and then never used, so every
+   * existing member -- including the group's owner and the viewer -- was
+   * listed with a live "Invite" button that could only produce a redundant
+   * invite. The set is small and entirely in memory (group details plus the
+   * conversation row), which is why this one is a client-side exclusion: it is
+   * a property of the group being invited to, not an eligibility rule. Every
+   * eligibility rule -- blocks, verification, first-year isolation -- is
+   * applied by the database inside `getConnections`, before the limit.
+   */
+  const filteredUsers = useMemo(
+    () => fetchedUsers.filter((u) => !currentMemberIds.has(String(u.id))),
+    [fetchedUsers, currentMemberIds],
+  );
 
   if (!isOpen) return null;
 
@@ -250,7 +274,11 @@ export default function InviteModal({ isOpen, onClose, group }) {
             })
           ) : (
             <div style={{ textAlign: 'center', padding: '20px', color: 'var(--color-text-light)' }}>
-              {searchTerm ? 'No matching users.' : 'No users found.'}
+              {isSearching
+                ? 'Searching\u2026'
+                : searchTerm.trim()
+                  ? 'No matching users.'
+                  : 'No users found.'}
             </div>
           )}
         </div>

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { selectableUsers } from '@shared/lib/conversationTargets';
 import { createPortal } from 'react-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import { usersApi, activitiesApi } from '@shared/api/apiClient';
 import { useAuth } from '@shared/context/AuthContext';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
@@ -10,6 +10,7 @@ import ShareModalAvatar from '../avatar/ShareModalAvatar';
 import styles from './InviteFriendsModal.module.css';
 import { Search, X, Check } from '@shared/components/icons';
 import { filterCompatibleUsers } from '@shared/lib/studentYearPolicy';
+import { useDebounce } from '@shared/hooks/useDebounce';
 
 export default function InviteFriendsModal({
   activityId,
@@ -20,6 +21,11 @@ export default function InviteFriendsModal({
 }) {
   const { currentUser } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
+  // One request per pause in typing rather than one per keystroke. The match
+  // itself happens in the database (`/api/users/connections?q=`), across every
+  // eligible account and before the limit, so a friend outside the first page
+  // is still findable by name or handle.
+  const debouncedSearchQuery = useDebounce(searchQuery.trim(), 250);
   const [selectedIds, setSelectedIds] = useState(initialSelectedIds);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -39,10 +45,10 @@ export default function InviteFriendsModal({
 
   // Fetch candidate connections to invite using fast single endpoint
   const { data: friendsList = [], isLoading: isLoadingFriends } = useQuery({
-    queryKey: ['user-connections-candidate', searchQuery],
+    queryKey: ['user-connections-candidate', debouncedSearchQuery],
     queryFn: async () => {
       const users = selectableUsers(
-        await usersApi.getConnections(searchQuery, 50).catch(() => [])
+        await usersApi.getConnections(debouncedSearchQuery, 50).catch(() => [])
       );
       // First-year isolation. `getConnections` is filtered server-side and the
       // invite endpoint refuses a restricted recipient outright, so this only
@@ -53,6 +59,9 @@ export default function InviteFriendsModal({
       );
     },
     staleTime: 30_000,
+    // Keeps the previous term's rows on screen while the next request is in
+    // flight, so the list does not blink empty between keystrokes.
+    placeholderData: keepPreviousData,
   });
 
   // Fetch invitation statuses for existing activity if activityId is provided

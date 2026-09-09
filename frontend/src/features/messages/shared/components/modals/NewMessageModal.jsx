@@ -1,4 +1,8 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
+import { useQuery, keepPreviousData } from '@tanstack/react-query';
+import { usersApi } from '@shared/api/apiClient';
+import { useDebounce } from '@shared/hooks/useDebounce';
+import { selectableUsers } from '@shared/lib/conversationTargets';
 import { useAuth } from '@shared/context/AuthContext';
 import { isImageUrl } from '@shared/utils/avatar';
 import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
@@ -19,40 +23,87 @@ export default function NewMessageModal({ onClose, onStartChat, onCreateGroup })
   const { currentUser } = useAuth();
   const users = useUsersMap();
   const [searchQuery, setSearchQuery] = useState('');
+  // One request per pause in typing rather than one per keystroke.
+  const debouncedQuery = useDebounce(searchQuery.trim(), 250);
   
   const [mode, setMode] = useState('single'); // 'single', 'multi_select', 'group_name'
   const [selectedUserIds, setSelectedUserIds] = useState([]);
   const [groupName, setGroupName] = useState('');
 
   /**
-   * First-year isolation.
+   * The recipient list, ASKED OF THE SERVER.
    *
-   * The recipient map is assembled client-side from three server payloads
-   * (`GET /users`, the campus list, and open conversations), and ALL THREE are
-   * already filtered server-side -- so in normal operation nothing restricted
-   * reaches here. This pass exists for the one case the server cannot reach: a
-   * `['users']` or campus entry still sitting in the React Query cache (5 min
-   * staleTime) from before the viewer's batch resolved, or a conversation
-   * partner cached from an older build.
+   * This modal used to search `useUsersMap()` and nothing else -- a map built
+   * from the first 20 rows of `GET /users`, 50 campus users and whoever the
+   * viewer already had a thread with. Typing filtered that map in JavaScript,
+   * so anybody outside those few dozen preloaded rows simply could not be
+   * found, however exactly their handle was spelled. The fix is to ask the
+   * database, which matches display name and username across every eligible
+   * account before applying the page limit.
+   *
+   * `/api/users/connections` is the right endpoint rather than a new one: it
+   * is already the recipient picker's source for every Share and Invite
+   * surface, and it applies -- in the QUERY -- the block filter, the
+   * verification filter and first-year isolation. So the rules cannot drift
+   * between this modal and the others, and a restricted account is never in
+   * the payload to begin with.
+   */
+  const { data: searchedUsers = [], isFetching } = useQuery({
+    queryKey: ['new-message-recipients', debouncedQuery],
+    queryFn: () => usersApi.getConnections(debouncedQuery, 50).catch(() => []),
+    enabled: Boolean(currentUser?.id),
+    staleTime: 30_000,
+    // Keeps the previous term's rows on screen while the next request is in
+    // flight, so the list does not blink empty between keystrokes.
+    placeholderData: keepPreviousData,
+  });
+
+  /**
+   * First-year isolation, and the other picker rules, as a SECOND line.
+   *
+   * Every source below is already filtered server-side -- so in normal
+   * operation nothing restricted reaches here. This pass exists for the one
+   * case the server cannot reach: a `['users']` or campus entry still sitting
+   * in the React Query cache (5 min staleTime) from before the viewer's batch
+   * resolved, or a conversation partner cached from an older build.
    *
    * A no-op when the payload does not carry the flag, so it can only ever
    * remove a row the server would also have removed. It is a cache guard, not
    * the filter: selecting a restricted recipient is refused by the server on
    * both `startDM` and the group create.
    */
-  const allUsers = filterCompatibleUsers(
-    currentUser,
-    Object.values(users || {}),
-  ).filter(
-    (u) => String(u.id) !== String(currentUser?.id) && u.username !== currentUser?.username
-  );
+  const filteredUsers = useMemo(() => {
+    const needle = searchQuery.trim().toLowerCase();
+    const matchesLocally = (u) =>
+      !needle ||
+      u?.name?.toLowerCase().includes(needle) ||
+      u?.displayName?.toLowerCase().includes(needle) ||
+      u?.username?.toLowerCase().includes(needle);
 
-  const filteredUsers = allUsers.filter(
-    (u) =>
-      u.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      u.displayName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      u.username?.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+    // Server rows first, so an account the viewer has never spoken to is
+    // reachable, then the locally-known people (open threads, campus list) so
+    // the suggested list keeps the faces it always showed. Deduped by id.
+    const merged = [];
+    const seen = new Set();
+    const push = (u) => {
+      if (!u?.id) return;
+      const key = String(u.id);
+      if (seen.has(key)) return;
+      seen.add(key);
+      merged.push(u);
+    };
+
+    (Array.isArray(searchedUsers) ? searchedUsers : []).forEach(push);
+    Object.values(users || {})
+      .filter(matchesLocally)
+      .forEach(push);
+
+    return filterCompatibleUsers(currentUser, selectableUsers(merged)).filter(
+      (u) =>
+        String(u.id) !== String(currentUser?.id) &&
+        u.username !== currentUser?.username,
+    );
+  }, [searchedUsers, users, searchQuery, currentUser]);
 
   const handleUserClick = (user) => {
     if (mode === 'single') {
@@ -183,7 +234,11 @@ export default function NewMessageModal({ onClose, onStartChat, onCreateGroup })
 
               {filteredUsers.length === 0 ? (
                 <div className={styles.empty}>
-                  No accounts found matching "{searchQuery}".
+                  {isFetching
+                    ? 'Searching\u2026'
+                    : searchQuery.trim()
+                      ? `No accounts found matching "${searchQuery.trim()}".`
+                      : 'No accounts available to message right now.'}
                 </div>
               ) : (
                 filteredUsers.map((user, i) => {

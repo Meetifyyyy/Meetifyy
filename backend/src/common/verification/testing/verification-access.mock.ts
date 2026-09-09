@@ -30,6 +30,11 @@ export function createVerificationAccessMock(ineligibleUserIds: string[] = []) {
     getIneligibleUserIds: jest.fn(async (userIds: string[]) =>
       (userIds || []).filter((id) => id && !isEligible(id)),
     ),
+    // The query-layer form of the same rule, for suites that assert on an
+    // emitted `where` rather than on a thrown refusal.
+    eligibleUserWhere: jest.fn(() => ({
+      verificationStatus: VerificationStatus.VERIFIED,
+    })),
     assertUsersEligible: jest.fn(async () => {}),
     assertCanMessageInConversation: jest.fn(async () => {}),
     announceStatusChange: jest.fn(async () => {}),

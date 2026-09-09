@@ -53,6 +53,14 @@ export function createStudentYearPolicyMock(
     canCreateMessage: jest.fn(() => true),
     canUsersMatch: jest.fn(() => true),
     visibleUserWhere: jest.fn(() => ({})),
+    // The exact complement, for the `participants: { none: ... }` filters.
+    // Real shape, not `{}`, so a suite asserting on the emitted `where` can
+    // tell the isolation clause apart from the rest of the query.
+    incompatibleUserWhere: jest.fn((viewerBatch: number | null | undefined) =>
+      isFirstYear(viewerBatch ?? null)
+        ? { OR: [{ batchYear: { not: currentYear } }, { batchYear: null }] }
+        : { batchYear: currentYear },
+    ),
     // Returns the caller's `where` untouched, so a suite that is not about
     // batch years sees exactly the query it was written against.
     injectUserFilter: jest.fn((where: any) => where),
