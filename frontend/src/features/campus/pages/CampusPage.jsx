@@ -68,6 +68,40 @@ const SUGGESTED_CARD_WIDTH_PX = 88;
  * happens to reproduce the old hand-placed 360px breakpoint exactly — below
  * that, one card; above it, two — so phones see no change at all.
  */
+/**
+ * mulberry32 — a tiny deterministic PRNG.
+ *
+ * Deterministic so a seed held for the life of the page gives one order: a
+ * background refetch, a resize or an auth refresh must not deal a new hand
+ * under someone's cursor. `Math.random()` straight into a sort would.
+ */
+function makeRng(seed) {
+  let state = seed >>> 0;
+  return () => {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let t = Math.imul(state ^ (state >>> 15), 1 | state);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/**
+ * Fisher-Yates, stopped once the first `wanted` slots are settled.
+ *
+ * Only the head of the list is ever painted, so the tail of a 50-item pool
+ * never needs to move. Shuffles a copy: these arrays come from the query cache
+ * and are shared with every other view reading the same key.
+ */
+function partialShuffle(items, wanted, rand) {
+  const pool = items.slice();
+  const n = Math.min(wanted, pool.length);
+  for (let i = 0; i < n; i++) {
+    const j = i + Math.floor(rand() * (pool.length - i));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  return pool;
+}
+
 const MIN_COMMUNITY_CARD_WIDTH_PX = 170;
 const MAX_COMMUNITY_CARDS = 4;
 
@@ -307,27 +341,16 @@ export default function CampusPage() {
 
   const suggestedUsers = useMemo(() => {
     const pool = (campusUsers || []).filter(u => u.id !== currentUserId);
-    // mulberry32 — a tiny deterministic PRNG so the order is stable per mount.
-    let seed = shuffleSeed.current;
-    const rand = () => {
-      seed = (seed + 0x6d2b79f5) >>> 0;
-      let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
-      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-    };
-    // Partial Fisher-Yates: only the first few slots are ever painted, so the
-    // tail of a 50-user pool never needs to be shuffled.
-    //
     // Shuffled to the maximum rather than to the count actually on screen, so
     // this does not depend on the measured width. Widening the window appends
     // the next faces instead of reshuffling the ones already under the reader's
     // eyes — and dragging a desktop window does not deal a new hand per frame.
-    const wanted = Math.min(MAX_SUGGESTED_USERS, pool.length);
-    for (let i = 0; i < wanted; i++) {
-      const j = i + Math.floor(rand() * (pool.length - i));
-      [pool[i], pool[j]] = [pool[j], pool[i]];
-    }
-    return pool.slice(0, MAX_SUGGESTED_USERS);
+    const shuffled = partialShuffle(
+      pool,
+      MAX_SUGGESTED_USERS,
+      makeRng(shuffleSeed.current),
+    );
+    return shuffled.slice(0, MAX_SUGGESTED_USERS);
   }, [campusUsers, currentUserId]);
 
   const visibleSuggestedUsers = useMemo(
@@ -369,9 +392,24 @@ export default function CampusPage() {
   const hasUpcoming = upcoming.events.length > 0;
   const hasCommunities = campusCommunities.length > 0;
 
+  // A different set of communities on each reload rather than the same head of
+  // the campus list every time — a community that happens to sort first should
+  // not be the only one anyone ever discovers. Same seed as the faces above, so
+  // it is fixed for the life of the page: the row settles once and stays put
+  // while it is being read, and a refresh deals a new hand.
+  const discoverCommunities = useMemo(
+    () =>
+      partialShuffle(
+        campusCommunities,
+        MAX_COMMUNITY_CARDS,
+        makeRng(shuffleSeed.current),
+      ),
+    [campusCommunities],
+  );
+
   const visibleCommunities = useMemo(
-    () => campusCommunities.slice(0, visibleCommunityCount),
-    [campusCommunities, visibleCommunityCount],
+    () => discoverCommunities.slice(0, visibleCommunityCount),
+    [discoverCommunities, visibleCommunityCount],
   );
 
   return (
