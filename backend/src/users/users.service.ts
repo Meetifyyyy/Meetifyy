@@ -471,47 +471,7 @@ export class UsersService {
         : { ...u, blocked: false },
     );
 
-    /**
-     * The viewer sits at the top of their own directory.
-     *
-     * Prepended to the first page rather than ordered into the query, and the
-     * query still excludes them, for two reasons: an alphabetical ORDER BY
-     * cannot express "this one row first", and letting them fall wherever their
-     * name lands would mean the pin moved between pages — on page four you
-     * would simply not be there. Pinning outside the query keeps the keyset
-     * cursor built purely from the alphabetical rows, so pagination stays
-     * correct.
-     *
-     * Only when there is no cursor, i.e. the first page. A later page prepending
-     * the viewer again would repeat them down the list.
-     *
-     * No search term either: typing a name and being shown yourself regardless
-     * of whether you match is noise, and it would push a real result off a
-     * short result set.
-     */
-    const isFirstPage = !opts.cursor;
-    const selfRow =
-      isFirstPage && !search
-        ? await this.prisma.user.findUnique({
-            where: { id: userId },
-            select: {
-              id: true,
-              username: true,
-              displayName: true,
-              avatar: true,
-              course: true,
-              branch: true,
-              passingYear: true,
-            },
-          })
-        : null;
-
-    return {
-      users: selfRow
-        ? [{ ...selfRow, blocked: false, isSelf: true }, ...users]
-        : users,
-      nextCursor,
-    };
+    return { users, nextCursor };
   }
 
   /**

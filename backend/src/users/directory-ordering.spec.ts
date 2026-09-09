@@ -63,26 +63,24 @@ describe('UsersService — directory ordering', () => {
     ]);
   });
 
-  it('puts the viewer first on the first page', async () => {
+  /**
+   * The viewer is NOT in this payload, and must not be.
+   *
+   * DirectoryPage renders their card itself, above the list, labelled "(You)" —
+   * and relies on the server excluding them, in as many words. Pinning them
+   * here as well put the same person on screen twice: once as the page's own
+   * "(You)" card and once as an ordinary row. The sort was the missing piece;
+   * the pin already existed.
+   */
+  it('excludes the viewer, whose card the page renders itself', async () => {
     const { users } = await service.getDirectory(ME, {});
-    expect(users[0].id).toBe(ME);
-    expect(users[0].isSelf).toBe(true);
+    expect(users.some((u: any) => u.id === ME)).toBe(false);
+    expect(lastArgs.where.id).toEqual({ not: ME });
   });
 
-  it('does not repeat the viewer on later pages', async () => {
+  it('excludes them on later pages too', async () => {
     const { users } = await service.getDirectory(ME, { cursor: 'Bella|u-b' });
     expect(users.some((u: any) => u.id === ME)).toBe(false);
-  });
-
-  /** Being shown yourself when you searched for someone else is just noise. */
-  it('does not pin the viewer when a search term is given', async () => {
-    const { users } = await service.getDirectory(ME, { search: 'chet' });
-    expect(users.some((u: any) => u.isSelf)).toBe(false);
-  });
-
-  it('never lets the viewer appear twice — the query still excludes them', async () => {
-    await service.getDirectory(ME, {});
-    expect(lastArgs.where.id).toEqual({ not: ME });
   });
 
   describe('the keyset cursor', () => {
