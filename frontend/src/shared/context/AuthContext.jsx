@@ -926,6 +926,18 @@ export function AuthProvider({ children }) {
       console.error('Failed to revoke other sessions after password change', revokeErr);
     }
 
+    //    The same enforcement against our own session table, which the call
+    //    above knows nothing about. Supabase revoking its sessions stops new
+    //    access tokens being minted through it; this stops the device rows we
+    //    issue — the ones behind "sign out this device" — from continuing to
+    //    refresh. Both have to happen or a password change leaves one half of
+    //    the session state alive.
+    try {
+      await apiClient.post('/api/auth/sessions/revoke-all');
+    } catch (revokeErr) {
+      console.error('Failed to revoke server sessions after password change', revokeErr);
+    }
+
     // 4. Adopt whatever session this flow ended up holding.
     //
     //    `updateUser` rotates the session and announces it as USER_UPDATED,

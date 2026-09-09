@@ -408,6 +408,21 @@ export const RATE_LIMIT_POLICIES = {
    * reinstated. Looser than sign-in because a legitimate console session
    * refreshes on a timer and several tabs refresh independently.
    */
+  /**
+   * User session refresh. Bounded for the same reason the admin one is: the
+   * refresh cookie must not be a free oracle for probing whether a stolen or
+   * revoked token still works. Generous, because every open tab refreshes.
+   */
+  'auth.session.refresh': {
+    points: 60,
+    duration: 300,
+    blockDuration: 900,
+    dimension: 'ip',
+    onRedisFailure: 'closed',
+    sensitive: true,
+    message: 'Too many attempts. Please try again later.',
+  },
+
   'admin.refresh.ip': {
     points: 30,
     duration: 300,

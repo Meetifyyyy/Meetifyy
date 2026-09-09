@@ -929,6 +929,44 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
+   * Exchanges a stored provider refresh token for a fresh access token.
+   *
+   * This is what makes HttpOnly cookies possible without re-architecting
+   * identity: Supabase remains the token authority, but its refresh token lives
+   * in our session row instead of the browser, so the client never holds a
+   * credential that can mint access tokens.
+   *
+   * Returns null on any failure. The caller's response is the same either way —
+   * clear the cookies and make the user sign in — and distinguishing "revoked
+   * upstream" from "network blip" here would only invite treating one of them
+   * as recoverable when it is not.
+   */
+  async refreshProviderSession(providerRefreshToken: string): Promise<{
+    access_token: string;
+    refresh_token: string;
+    expires_in?: number;
+  } | null> {
+    if (!this.supabaseService.isConfigured) return null;
+
+    try {
+      const { data, error } =
+        await this.supabaseService.client.auth.refreshSession({
+          refresh_token: providerRefreshToken,
+        });
+
+      if (error || !data?.session?.access_token) return null;
+
+      return {
+        access_token: data.session.access_token,
+        refresh_token: data.session.refresh_token,
+        expires_in: data.session.expires_in,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * Confirms a password belongs to the calling account, without handing back a
    * session.
    *

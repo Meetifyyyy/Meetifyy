@@ -10,6 +10,7 @@ import { Reflector } from '@nestjs/core';
 import * as jwt from 'jsonwebtoken';
 import { createPublicKey, KeyObject } from 'crypto';
 import { SupabaseService } from '../../supabase/supabase.service';
+import { USER_ACCESS_COOKIE } from '../../auth/session/user-session-cookies';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ALLOW_SUSPENDED_KEY } from '../decorators/allow-suspended.decorator';
 import { ALLOW_PENDING_DELETION_KEY } from '../decorators/allow-pending-deletion.decorator';
@@ -260,13 +261,25 @@ export class JwtGuard implements CanActivate {
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest();
+
+    /**
+     * Cookie first, Authorization header second.
+     *
+     * The cookie is the direction of travel: it is HttpOnly, so a script on the
+     * origin cannot read it, and it carries a session id the server can revoke.
+     * The header path stays because clients already hold tokens issued before
+     * cookies existed, and because it is the only thing an `<img>` tag cannot
+     * send — media routes will need the cookie. Both are verified identically;
+     * neither is trusted more than the other.
+     */
+    const cookieToken = request.cookies?.[USER_ACCESS_COOKIE];
     const authHeader = request.headers.authorization;
+    const token =
+      (typeof cookieToken === 'string' && cookieToken.trim()) ||
+      (typeof authHeader === 'string'
+        ? authHeader.replace('Bearer ', '').trim()
+        : '');
 
-    if (!authHeader) {
-      throw new UnauthorizedException('Missing authorization header');
-    }
-
-    const token = authHeader.replace('Bearer ', '').trim();
     if (!token) {
       throw new UnauthorizedException('Missing authorization header');
     }

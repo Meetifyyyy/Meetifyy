@@ -1,10 +1,18 @@
 import {
   Controller,
   Post,
+  Get,
+  Delete,
+  Param,
   Body,
   UseGuards,
   Req,
+  Res,
+  HttpCode,
+  HttpStatus,
   ForbiddenException,
+  UnauthorizedException,
+  NotFoundException,
 } from '@nestjs/common';
 import { Request } from 'express';
 import { UAParser } from 'ua-parser-js';
@@ -23,6 +31,13 @@ import { RateLimit } from '../common/rate-limit/rate-limit.decorator';
 import { clientIp } from '../common/rate-limit/client-ip.util';
 import { RateLimitPolicyGuard } from '../common/rate-limit/rate-limit-policy.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { UserSessionService } from './session/user-session.service';
+import {
+  issueUserSessionCookies,
+  clearUserSessionCookies,
+  USER_REFRESH_COOKIE,
+} from './session/user-session-cookies';
+import { UserSessionRevokedReason } from '@prisma/client';
 import type { AuthenticatedUser } from '../common/types/authenticated-request';
 import {
   CheckUsernameDto,
@@ -45,7 +60,16 @@ export class AuthController {
     private readonly authService: AuthService,
     private readonly emailService: EmailService,
     private readonly rateLimit: RateLimitService,
+    private readonly sessions: UserSessionService,
   ) {}
+
+  /** IP and user agent, for the device row and for rotation. */
+  private deviceOf(req: Request) {
+    return {
+      ip: clientIp(req) || null,
+      userAgent: (req.headers['user-agent'] as string) || null,
+    };
+  }
 
   /**
    * The client's own profile, and the route that tells it which screen to show.
@@ -85,7 +109,11 @@ export class AuthController {
    */
   @Post('login')
   @UseGuards(LoginRateLimitGuard)
-  async login(@Body() body: LoginDto, @Req() req: Request) {
+  async login(
+    @Body() body: LoginDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: any,
+  ) {
     let result: Awaited<ReturnType<typeof this.authService.login>>;
     try {
       result = await this.authService.login(body.identifier, body.password);
@@ -108,7 +136,167 @@ export class AuthController {
       result.user.displayName || result.user.email,
       req,
     ).catch(() => {});
-    return result;
+
+    /**
+     * Record the device and set HttpOnly cookies.
+     *
+     * The body still carries the session, because existing clients read it from
+     * there and this must not sign everyone out on deploy. The cookies are what
+     * new clients use, and they are what makes the session revocable: the row
+     * created here is the thing "sign out this device" acts on.
+     */
+    const issued = await this.sessions.issue(
+      result.user.id,
+      this.deviceOf(req),
+      result.session.refresh_token,
+    );
+    const { csrfToken } = issueUserSessionCookies(
+      res,
+      result.session.access_token,
+      issued.refreshToken,
+      (result.session.expires_in ?? 3600) * 1000,
+      issued.expiresAt.getTime() - Date.now(),
+    );
+
+    return { ...result, csrfToken, sessionId: issued.sessionId };
+  }
+
+  /**
+   * Rotates the refresh cookie.
+   *
+   * Reads the token from the cookie, never the body: the whole point is that
+   * the credential is not reachable by script. A rotation that fails clears the
+   * cookies, so a client holding something stale ends up signed out rather than
+   * retrying against a session that will never come back.
+   */
+  @Post('session/refresh')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(RateLimitPolicyGuard)
+  @RateLimit('auth.session.refresh')
+  async refreshSession(
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: any,
+  ) {
+    const token = req.cookies?.[USER_REFRESH_COOKIE];
+    if (!token || typeof token !== 'string') {
+      clearUserSessionCookies(res);
+      throw new UnauthorizedException('Session expired');
+    }
+
+    const rotated = await this.sessions.rotate(token, this.deviceOf(req));
+    if (!rotated.ok) {
+      clearUserSessionCookies(res);
+      throw new UnauthorizedException('Session expired');
+    }
+
+    const providerToken = rotated.session.providerRefreshToken;
+    if (!providerToken) {
+      clearUserSessionCookies(res);
+      throw new UnauthorizedException('Session expired');
+    }
+
+    const refreshed =
+      await this.authService.refreshProviderSession(providerToken);
+    if (!refreshed) {
+      clearUserSessionCookies(res);
+      throw new UnauthorizedException('Session expired');
+    }
+
+    // Supabase retires the presented token and issues a new one, so the row has
+    // to hold the new value or the next rotation presents a dead token.
+    await this.sessions.storeProviderRefresh(
+      rotated.session.sessionId,
+      refreshed.refresh_token,
+    );
+
+    const { csrfToken } = issueUserSessionCookies(
+      res,
+      refreshed.access_token,
+      rotated.session.refreshToken,
+      (refreshed.expires_in ?? 3600) * 1000,
+      rotated.session.expiresAt.getTime() - Date.now(),
+    );
+
+    return { csrfToken, sessionId: rotated.session.sessionId };
+  }
+
+  /** Ends this device's session server-side, then clears its cookies. */
+  @Post('session/logout')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtGuard)
+  @AllowSuspended()
+  @AllowPendingDeletion()
+  async logoutSession(
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: any,
+  ) {
+    const token = req.cookies?.[USER_REFRESH_COOKIE];
+    if (typeof token === 'string' && token) {
+      const hash = this.sessions.hashRefreshToken(token);
+      await this.sessions.revokeByRefreshHash(
+        hash,
+        UserSessionRevokedReason.USER_LOGOUT,
+      );
+    }
+    clearUserSessionCookies(res);
+    return { success: true };
+  }
+
+  /** The device list for the settings screen. */
+  @Get('sessions')
+  @UseGuards(JwtGuard)
+  async listSessions(
+    @CurrentUser() user: AuthenticatedUser,
+    @Req() req: Request,
+  ) {
+    const token = req.cookies?.[USER_REFRESH_COOKIE];
+    const currentId =
+      typeof token === 'string' && token
+        ? await this.sessions.sessionIdForRefreshToken(token)
+        : undefined;
+    return this.sessions.listForUser(user.id, currentId ?? undefined);
+  }
+
+  /**
+   * Signs out one other device.
+   *
+   * Scoped to the caller's own sessions in the service, so naming someone
+   * else's session id revokes nothing.
+   */
+  @Delete('sessions/:id')
+  @UseGuards(JwtGuard)
+  async revokeSession(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+  ) {
+    const revoked = await this.sessions.revokeOwnedByUser(
+      user.id,
+      id,
+      UserSessionRevokedReason.USER_REVOKED_DEVICE,
+    );
+    if (!revoked) throw new NotFoundException('Session not found');
+    return { success: true };
+  }
+
+  /** Signs out everywhere except here. */
+  @Post('sessions/revoke-all')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtGuard)
+  async revokeAllSessions(
+    @CurrentUser() user: AuthenticatedUser,
+    @Req() req: Request,
+  ) {
+    const token = req.cookies?.[USER_REFRESH_COOKIE];
+    const currentId =
+      typeof token === 'string' && token
+        ? await this.sessions.sessionIdForRefreshToken(token)
+        : undefined;
+    const count = await this.sessions.revokeAllForUser(
+      user.id,
+      UserSessionRevokedReason.USER_LOGOUT_ALL,
+      currentId ?? undefined,
+    );
+    return { success: true, revoked: count };
   }
 
   /** Builds device/UA/IP context and queues the new-login email. Never awaited by callers. */

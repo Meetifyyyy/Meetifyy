@@ -79,6 +79,19 @@ export const authConfigValues = {
     hashSecret: str('OTP_HASH_SECRET'),
   },
 
+  /**
+   * Keys the encryption of secrets the session table holds — currently the
+   * Supabase refresh token, which the server keeps so the browser does not.
+   *
+   * Falls back to the service-role key for the same reason the OTP secret does:
+   * it is already required in staging and production, so this adds no new
+   * mandatory variable and no deployed environment can silently end up storing
+   * those tokens unprotected. Set it explicitly to rotate session encryption on
+   * its own — note that doing so invalidates every stored session, which signs
+   * everyone out.
+   */
+  sessionSecret: str('SESSION_SECRET'),
+
   admin: {
     accessSecret: str('ADMIN_JWT_ACCESS_SECRET', {
       requiredIn: ['staging', 'production'],

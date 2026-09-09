@@ -13,6 +13,7 @@ describe('AuthController — Security / Email Notification Spoofing Prevention',
   let authService: any;
   let emailService: any;
   let rateLimit: any;
+  let sessions: any;
 
   beforeEach(() => {
     authService = {};
@@ -26,7 +27,28 @@ describe('AuthController — Security / Email Notification Spoofing Prevention',
       check: jest.fn().mockResolvedValue({ allowed: true }),
       penalize: jest.fn().mockResolvedValue(undefined),
     };
-    controller = new AuthController(authService, emailService, rateLimit);
+    sessions = {
+      issue: jest.fn().mockResolvedValue({
+        sessionId: 's1',
+        familyId: 'f1',
+        refreshToken: 'r1',
+        expiresAt: new Date(Date.now() + 86400000),
+      }),
+      rotate: jest.fn(),
+      hashRefreshToken: jest.fn((t: string) => `hash:${t}`),
+      revokeByRefreshHash: jest.fn().mockResolvedValue(undefined),
+      revokeOwnedByUser: jest.fn().mockResolvedValue(true),
+      revokeAllForUser: jest.fn().mockResolvedValue(2),
+      listForUser: jest.fn().mockResolvedValue([]),
+      sessionIdForRefreshToken: jest.fn().mockResolvedValue('s1'),
+      storeProviderRefresh: jest.fn().mockResolvedValue(undefined),
+    };
+    controller = new AuthController(
+      authService,
+      emailService,
+      rateLimit,
+      sessions,
+    );
   });
 
   it('allows welcome email to the authenticated caller’s own email', async () => {

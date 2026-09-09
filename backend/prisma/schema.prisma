@@ -247,6 +247,7 @@ model User {
   verificationRequests       VerificationRequest[]
   otps                       UserOtp[]
   legalAcknowledgements      LegalAcknowledgement[]
+  sessions                   UserSession[]
 
   @@index([collegeId])
   @@index([collegeId, createdAt(sort: Desc)])
@@ -1856,4 +1857,68 @@ model LegalAcknowledgement {
   @@index([userId])
   @@index([versionId])
   @@index([documentType, acknowledgedAt])
+}
+
+/// Why a session stopped being usable. Recorded rather than inferred so an
+/// investigation can tell a deliberate sign-out from a security response.
+enum UserSessionRevokedReason {
+  USER_LOGOUT
+  USER_LOGOUT_ALL
+  USER_REVOKED_DEVICE
+  PASSWORD_CHANGED
+  REFRESH_REPLAY
+  ADMIN_REVOKED
+  ACCOUNT_DELETED
+}
+
+/// A signed-in device.
+///
+/// The point of this table is revocation. Before it existed a user's access
+/// token was a pure bearer credential with no server-side record behind it:
+/// nothing bound it to a device, nothing could invalidate it, and a copy taken
+/// off one machine kept working — and kept refreshing itself — until it
+/// expired. Signing out cleared the browser it was signed out from and nothing
+/// else.
+///
+/// `familyId` groups every rotation of one login. Refresh rotates the token and
+/// records `replacedById`, so presenting a token that has already been rotated
+/// is proof that either the old copy or the new one is in someone else's hands.
+/// That is unresolvable from the server's side, so the whole family is revoked
+/// and both parties have to sign in again.
+model UserSession {
+  id              String                    @id @default(uuid())
+  userId          String
+  /// SHA-256 of the refresh token. The token itself is 64 random bytes, so a
+  /// fast digest is appropriate — there is nothing to brute force.
+  refreshHash     String                    @unique
+  /// All rotations of one login share this.
+  familyId        String
+  /// Set when this token is rotated; its presence is what makes a replay
+  /// detectable.
+  replacedById    String?
+  /// The provider's own refresh token, sealed with AES-256-GCM.
+  ///
+  /// Held here so the browser never has to. Encrypted rather than stored plain
+  /// because an unencrypted column would make this table a set of live
+  /// credentials: one row, one account, indefinitely refreshable.
+  providerRefresh String?
+  ip              String?
+  userAgent       String?
+  deviceName      String?
+  browser         String?
+  os              String?
+  createdAt       DateTime                  @default(now())
+  lastActiveAt    DateTime                  @default(now())
+  expiresAt       DateTime
+  revoked         Boolean                   @default(false)
+  revokedAt       DateTime?
+  revokedReason   UserSessionRevokedReason?
+  user            User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// The device list, newest first.
+  @@index([userId, revoked, lastActiveAt(sort: Desc)])
+  /// Replay detection revokes by family.
+  @@index([familyId])
+  /// The expiry sweep.
+  @@index([expiresAt])
 }
