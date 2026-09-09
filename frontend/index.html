@@ -168,7 +168,6 @@
   </div>
 
   <div id="root"></div>
-  <meta name="x-build-version" content="__MEETIFYY_BUILD_VERSION__" />
   <script>
     /**
      * Launch-time version gate.
@@ -200,7 +199,7 @@
      * gives up rather than reloading forever.
      */
     (function () {
-      var BUILD = (document.querySelector('meta[name="x-build-version"]') || {}).content || '';
+      var BUILD = '__MEETIFYY_BUILD_VERSION__';
       var TIMEOUT_MS = 2500;
       var TRIED_KEY = 'meetifyy_version_reload_for';
 

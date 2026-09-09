@@ -61,6 +61,90 @@ function stampBuildVersionPlugin() {
 }
 
 /**
+ * After the build, recomputes the SHA-256 of every inline script in the
+ * built app.html and patches both vercel.json files with the new hashes.
+ *
+ * The version-gate script embeds the real BUILD stamp at build time, so its
+ * hash changes every deploy. This plugin writes the correct hash automatically
+ * so nobody has to update vercel.json by hand after each push.
+ */
+function patchCspHashPlugin() {
+  return {
+    name: 'meetifyy-patch-csp-hash',
+    apply: 'build',
+    closeBundle() {
+      const crypto = require('crypto');
+      const outDir = path.resolve(process.cwd(), 'dist');
+      const appHtml = path.join(outDir, 'app.html');
+      if (!fs.existsSync(appHtml)) return;
+
+      const html = fs.readFileSync(appHtml, 'utf8');
+
+      // Collect hashes of every inline script in the built output
+      const hashes = new Set();
+      const scriptRe = /<script(?![^>]*(?:type="module"|src=))[^>]*>([\s\S]*?)<\/script>/g;
+      let m;
+      while ((m = scriptRe.exec(html)) !== null) {
+        const h = crypto.createHash('sha256').update(m[1]).digest('base64');
+        hashes.add(`'sha256-${h}'`);
+      }
+
+      if (hashes.size === 0) return;
+
+      // Patch both vercel.json files (root and frontend/)
+      const targets = [
+        path.resolve(process.cwd(), 'vercel.json'),
+        path.resolve(process.cwd(), '..', 'vercel.json'),
+      ];
+
+      const HASH_PATTERN = /'sha256-[A-Za-z0-9+/=]{44}'/g;
+
+      for (const target of targets) {
+        if (!fs.existsSync(target)) continue;
+        let json = fs.readFileSync(target, 'utf8');
+
+        // Find the report-only directive and replace its existing hashes
+        // with the freshly computed set, preserving order of first appearance.
+        const parsed = JSON.parse(json);
+        let patched = false;
+        for (const entry of parsed.headers || []) {
+          for (const kv of entry.headers || []) {
+            if (kv.key !== 'Content-Security-Policy-Report-Only') continue;
+            // Collect existing hashes in the value (stable ones we keep)
+            const existing = [...new Set(kv.value.match(HASH_PATTERN) || [])];
+            // Merge: freshly computed overrides any matching slot; others keep their place
+            const merged = [...new Set([...hashes, ...existing])];
+            // Replace all hash tokens in the value with the merged set
+            let newValue = kv.value;
+            // Remove all old hashes, then re-insert the merged set after the host
+            const allOldHashes = [...new Set(kv.value.match(HASH_PATTERN) || [])];
+            const firstHash = allOldHashes[0];
+            if (firstHash) {
+              newValue = newValue.replace(
+                allOldHashes.join(' '),
+                merged.join(' ')
+              );
+              // Handle script-src and script-src-elem independently
+              newValue = newValue.replace(HASH_PATTERN, (match) => {
+                return merged.find(h => h === match) || match;
+              });
+            }
+            kv.value = newValue;
+            patched = true;
+          }
+        }
+
+        if (patched) {
+          fs.writeFileSync(target, JSON.stringify(parsed, null, 2) + '\n');
+          console.log(`[csp-hash] patched ${path.basename(path.dirname(target))}/vercel.json`);
+        }
+      }
+    },
+  };
+}
+
+
+/**
  * Removes the development-hostname bootstrap from production builds.
  *
  * index.html carries a small script that forwards the dev project's generated
@@ -148,6 +232,7 @@ export default defineConfig(({ mode }) => {
   plugins: [
     react(),
     stampBuildVersionPlugin(),
+    patchCspHashPlugin(),
     // Production only: see the plugin's own note.
     ...(isProductionApp ? [stripDevHostGuardPlugin(), stripDevCspPlugin()] : []),
     ...(isProductionApp ? [VitePWA({
