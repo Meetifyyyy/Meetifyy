@@ -236,7 +236,8 @@ export class LinkPreviewService {
   }
 
   private isPrivateAddress(address: string): boolean {
-    const normalized = address.toLowerCase();
+    const normalized = this.normalizeAddress(address);
+
     if (isIP(normalized) === 4) {
       const octets = normalized.split('.').map(Number);
       const [a, b] = octets;
@@ -247,9 +248,14 @@ export class LinkPreviewService {
         (a === 169 && b === 254) ||
         (a === 172 && b >= 16 && b <= 31) ||
         (a === 192 && b === 168) ||
+        // Carrier-grade NAT. Several clouds put their metadata service in here
+        // (Alibaba's sits at 100.100.100.200), so it is as sensitive as the
+        // link-local range above.
+        (a === 100 && b >= 64 && b <= 127) ||
         a >= 224
       );
     }
+
     return (
       normalized === '::1' ||
       normalized === '::' ||
@@ -258,10 +264,30 @@ export class LinkPreviewService {
       normalized.startsWith('fe8') ||
       normalized.startsWith('fe9') ||
       normalized.startsWith('fea') ||
-      normalized.startsWith('feb') ||
-      normalized.startsWith('::ffff:127.') ||
-      normalized.startsWith('::ffff:10.') ||
-      normalized.startsWith('::ffff:192.168.')
+      normalized.startsWith('feb')
     );
+  }
+
+  /**
+   * Collapses an IPv4-mapped IPv6 address to its IPv4 form.
+   *
+   * The mapped forms used to be screened by a list of string prefixes —
+   * `::ffff:127.`, `::ffff:10.`, `::ffff:192.168.` — which covered three of the
+   * private ranges and missed the rest. `::ffff:169.254.169.254` is the cloud
+   * metadata endpoint and it is not any of those three, so it passed the check
+   * and the fetch went through; `::ffff:172.16.0.1` did the same. Neither is
+   * exotic to reach: the host being previewed publishes its own DNS, so an
+   * attacker can simply answer with an AAAA record in mapped form.
+   *
+   * Normalizing instead of listing means the IPv4 rules below are the only
+   * place a private range is defined, and a mapped address cannot be private in
+   * one notation and public in the other.
+   */
+  private normalizeAddress(address: string): string {
+    const lower = address.toLowerCase();
+    const mapped = /^(?:::ffff:|::)(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/.exec(
+      lower,
+    );
+    return mapped && isIP(mapped[1]) === 4 ? mapped[1] : lower;
   }
 }
