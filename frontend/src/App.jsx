@@ -160,7 +160,7 @@ const PUBLIC_VIEW_ROUTES = [
 ];
 
 function ProtectedRoute({ children }) {
-  const { isLoggedIn, currentUser, loading } = useAuth();
+  const { isLoggedIn, loading } = useAuth();
   const location = useLocation();
   if (loading) return null;
   if (!isLoggedIn) {
@@ -220,7 +220,7 @@ function ProtectedRoute({ children }) {
 }
 
 function PublicRoute({ children }) {
-  const { isLoggedIn, currentUser, loading } = useAuth();
+  const { isLoggedIn, loading } = useAuth();
   const location = useLocation();
   if (loading) return null;
   if (isLoggedIn) {

@@ -157,9 +157,6 @@ export default function LegalDocumentPage({
           {/* Sanitized on write by the admin save path — the same sanitizer the
               help centre uses — so no unsanitized copy of this exists anywhere
               for some other consumer to render. */}
-          {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions,
-              jsx-a11y/click-events-have-key-events -- delegation for anchors
-              that are already keyboard-operable in their own right. */}
           <div
             ref={contentRef}
             className={styles.docHtml}

@@ -160,7 +160,6 @@ export default function LocationStep({
           </button>
 
           {open && (
-            // eslint-disable-next-line jsx-a11y/no-noninteractive-element-to-interactive-role
             <ul
               id={listId}
               ref={listRef}

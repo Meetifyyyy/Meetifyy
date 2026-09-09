@@ -135,7 +135,7 @@ describe('Forgot password', () => {
 
   it('does not claim "no account" when the request itself failed', async () => {
     resetResponse = new Error('service down');
-    const { q, container } = renderForgot();
+    const { container } = renderForgot();
     await submit(null, container, 'real@college.edu');
     // An outage is not evidence the address is wrong. Telling a real user their
     // account does not exist is the one answer that must never come from a

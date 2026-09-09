@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
-import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, cleanup, act, within, fireEvent } from '@testing-library/react';
+import { describe, it, expect, afterEach } from 'vitest';
+import { render, cleanup, act, fireEvent } from '@testing-library/react';
 import { useState } from 'react';
 import PasswordField from '@features/auth/shared/ui/PasswordField';
 
@@ -131,7 +131,6 @@ describe('the visibility toggle does not disturb the value', () => {
     fireEvent.change(input, { target: { value: 'stable-value' } });
     const toggle = container.querySelector('button[aria-label*="password" i]');
     for (let i = 0; i < 10; i++) {
-      // eslint-disable-next-line no-await-in-loop
       await act(async () => { toggle.click(); });
     }
     expect(read()).toBe('stable-value');

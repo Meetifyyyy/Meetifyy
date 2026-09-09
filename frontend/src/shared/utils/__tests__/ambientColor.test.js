@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest';
 import {
   getPresetAmbientRgb,
   parseHexRgb,
-  getDeterministicAmbientRgb,
   resolveAmbientRgb,
   THEME_AMBIENT_RGBS,
   PRESET_IMAGE_RGB_MAP,

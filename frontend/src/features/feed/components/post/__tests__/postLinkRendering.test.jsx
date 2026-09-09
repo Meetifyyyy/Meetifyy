@@ -91,7 +91,7 @@ describe('links rendered in a real post', () => {
 
 describe('the expand control is inline', () => {
   it('sits as a sibling of the text, not inside a block of its own', () => {
-    const { container, q } = renderPost('word '.repeat(120));
+    const { q } = renderPost('word '.repeat(120));
     const btn = q.getByText('See more');
     // Its parent must be the post body itself, with the RichText span beside it,
     // rather than a wrapper div that forces its own line.
@@ -104,7 +104,7 @@ describe('the expand control is inline', () => {
   });
 
   it('swaps to See less in place when expanded', async () => {
-    const { container, q } = renderPost('word '.repeat(120));
+    const { q } = renderPost('word '.repeat(120));
     const before = q.getByText('See more').parentElement;
     await act(async () => { q.getByText('See more').click(); });
     const after = q.getByText('See less').parentElement;

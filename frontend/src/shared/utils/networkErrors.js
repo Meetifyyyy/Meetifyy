@@ -70,7 +70,6 @@ export function describeNetworkError(err, { host, action = 'complete that' } = {
  */
 export function logNetworkFailure(scope, err, context = {}) {
   try {
-    // eslint-disable-next-line no-console
     console.error(`[${scope}] request failed before reaching the server`, {
       name: err?.name,
       message: err?.message,

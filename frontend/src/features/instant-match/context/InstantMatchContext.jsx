@@ -978,7 +978,6 @@ function notifyMatchFound(match) {
     if (!document.hidden) return;
     if (!('Notification' in window) || Notification.permission !== 'granted') return;
     const name = match.candidate?.displayName || 'Someone';
-    // eslint-disable-next-line no-new
     new Notification('⚡ Match found!', {
       body: `${name} is up for ${match.activity}. Tap to respond.`,
       icon: '/logo-192.png',

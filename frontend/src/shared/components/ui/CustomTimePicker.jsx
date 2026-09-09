@@ -74,7 +74,6 @@ export default function CustomTimePicker({
   // the draft follows it rather than lingering from a previous open.
   useEffect(() => {
     setDraft(parseTime(value));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value]);
 
   const formatted = value ? parsed : draft;
