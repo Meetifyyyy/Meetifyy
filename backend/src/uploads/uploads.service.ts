@@ -288,12 +288,28 @@ export class StorageService {
       select: { id: true, ownerId: true },
     });
 
+    // The uploader, always — including in the window between uploading an
+    // attachment and sending it, when no message references it yet.
     if (media?.ownerId === viewerId) return true;
-    if (!media) return false;
+
+    /**
+     * Otherwise: is this attachment in a conversation the viewer is in?
+     *
+     * Matched through the message payload's `mediaUrl`, because that is where
+     * chat attachments actually live. `Message.attachmentMediaId` exists in the
+     * schema and is never written by anything — authorizing against it looked
+     * right and would have refused every recipient, breaking chat images for
+     * everyone except the person who sent them.
+     *
+     * A thumbnail is derived from its original and has no message of its own,
+     * so `chat/<id>_thumb.webp` is matched against `chat/<id>.webp`. Without
+     * that, thumbnails would 404 while the full images loaded.
+     */
+    const baseKey = key.replace(/_thumb(\.[A-Za-z0-9]+)$/i, '$1');
 
     const participating = await this.prisma.message.findFirst({
       where: {
-        attachmentMediaId: media.id,
+        payload: { path: ['mediaUrl'], string_contains: baseKey },
         conversation: {
           participants: {
             some: { userId: viewerId, deletedAt: null, leftAt: null },

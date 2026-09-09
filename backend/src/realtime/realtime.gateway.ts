@@ -9,12 +9,15 @@ import {
   OnGatewayInit,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
-import { Logger, Optional } from '@nestjs/common';
+import { Logger, Optional , OnModuleDestroy } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
 import { SupabaseService } from '../supabase/supabase.service';
 import { MessagesService } from '../messages/messages.service';
 import { PresenceService } from '../presence/presence.service';
-import { USER_ACCESS_COOKIE } from '../auth/session/user-session-cookies';
+import {
+  USER_ACCESS_COOKIE,
+  USER_SESSION_ID_COOKIE,
+} from '../auth/session/user-session-cookies';
 import { BlocksService } from '../users/blocks.service';
 import {
   InstantMatchService,
@@ -96,7 +99,11 @@ const RATE_LIMIT_MESSAGES: Record<string, string> = Object.fromEntries(
   },
 })
 export class RealtimeGateway
-  implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect
+  implements
+    OnGatewayInit,
+    OnGatewayConnection,
+    OnGatewayDisconnect,
+    OnModuleDestroy
 {
   private readonly logger = new Logger('SOCKET');
   private readonly chatLogger = new Logger('CHAT');
@@ -120,6 +127,7 @@ export class RealtimeGateway
   private readonly PRESENCE_SETTINGS_TTL_MS = 60 * 1000; // 60 seconds
 
   // Sweep interval for proactive in-memory cache eviction
+  private sessionSweepTimer?: NodeJS.Timeout;
   private cacheEvictionTimer: NodeJS.Timeout | null = null;
 
   constructor(
@@ -213,6 +221,26 @@ export class RealtimeGateway
     });
 
     this.setupDomainEventSubscriber();
+
+    /**
+     * Disconnect sockets whose session has since been revoked.
+     *
+     * The connect-time check above stops a revoked session opening a NEW
+     * connection; this is what ends one that is already open. Without it,
+     * signing out a device left its existing socket in place, still receiving
+     * messages, until the user happened to close the tab.
+     *
+     * A sweep rather than a push: revocation happens in the HTTP process, which
+     * on more than one replica is not the process holding the socket, so a
+     * direct call would only ever reach a fraction of them. Sixty seconds
+     * bounds how long a revoked device keeps listening; making it immediate
+     * everywhere needs the revocation broadcast over Redis, which is the right
+     * next step if that minute matters.
+     */
+    this.sessionSweepTimer = setInterval(() => {
+      void this.disconnectRevokedSessions();
+    }, 60_000);
+    this.sessionSweepTimer.unref?.();
 
     // Proactively evict stale entries from in-memory caches every 10 minutes.
     // Without this, entries only age out on access; long-lived servers with many
@@ -597,6 +625,62 @@ export class RealtimeGateway
     }
   }
 
+  /**
+   * Ends the connections of sessions that are no longer valid.
+   *
+   * Reads the ids off the live sockets and asks in one query which of them are
+   * dead, rather than one query per socket — a busy instance holds thousands.
+   */
+  private async disconnectRevokedSessions(): Promise<void> {
+    try {
+      const sockets = this.server?.sockets?.sockets;
+      if (!sockets || sockets.size === 0) return;
+
+      const bySession = new Map<string, Socket[]>();
+      for (const socket of sockets.values()) {
+        const id = (socket as any).sessionId;
+        if (typeof id !== 'string' || !id) continue;
+        const list = bySession.get(id) || [];
+        list.push(socket);
+        bySession.set(id, list);
+      }
+      if (bySession.size === 0) return;
+
+      const ids = Array.from(bySession.keys());
+      const alive = await this.prisma.userSession.findMany({
+        where: { id: { in: ids }, revoked: false, expiresAt: { gt: new Date() } },
+        select: { id: true },
+      });
+      const aliveIds = new Set(alive.map((s) => s.id));
+
+      for (const [sessionId, list] of bySession) {
+        if (aliveIds.has(sessionId)) continue;
+        for (const socket of list) {
+          socket.emit('session:revoked', { reason: 'signed_out' });
+          socket.disconnect(true);
+        }
+      }
+    } catch (err) {
+      // A sweep that fails must not take the gateway with it; the next one runs
+      // in a minute, and the connect-time check still holds the line.
+      this.logger.warn(`session sweep failed: ${(err as Error).message}`);
+    }
+  }
+
+  /**
+   * Stop the timers.
+   *
+   * Neither was cleared before: the cache eviction interval outlived the
+   * gateway, which in tests means an open handle keeping the process alive and
+   * in production means a stale instance still doing work after shutdown
+   * begins. The sweep is unref'd so it cannot hold the process open on its own,
+   * but both should stop when the module does.
+   */
+  onModuleDestroy(): void {
+    if (this.sessionSweepTimer) clearInterval(this.sessionSweepTimer);
+    if (this.cacheEvictionTimer) clearInterval(this.cacheEvictionTimer);
+  }
+
   async handleConnection(client: Socket) {
     // Connection limiting comes in two tiers, and the ORDER is load-bearing.
     //
@@ -704,6 +788,50 @@ export class RealtimeGateway
     // every HTTP route told them the account was gone. The status is read from
     // the database rather than the token because the token predates the state
     // change and will keep asserting an active account until it expires.
+    /**
+     * A revoked session must not hold a socket either.
+     *
+     * The REST guard refuses a revoked session on the next request, but the
+     * socket was authenticated once at connect and never re-checked — so a
+     * device that had been signed out kept its connection and went on receiving
+     * new messages, typing and presence in real time. Signing a device out has
+     * to mean it stops seeing things, not just that it stops being able to ask.
+     *
+     * Only enforced for cookie handshakes, which carry a session id. A
+     * handshake token has no session behind it and is left as it was.
+     */
+    const handshakeSessionId = cookieValue(
+      client.handshake.headers,
+      USER_SESSION_ID_COOKIE,
+    );
+    if (!client.handshake.auth?.token) {
+      if (!handshakeSessionId) {
+        this.logger.warn('Client connection rejected: no session id on a cookie handshake');
+        client.disconnect();
+        return;
+      }
+      const session = await this.prisma.userSession
+        .findUnique({
+          where: { id: handshakeSessionId },
+          select: { revoked: true, expiresAt: true, userId: true },
+        })
+        .catch(() => null);
+
+      // Fails closed, like the REST path: a lookup that did not answer must not
+      // grant the connection.
+      if (
+        !session ||
+        session.revoked ||
+        session.expiresAt <= new Date() ||
+        session.userId !== user.id
+      ) {
+        this.logger.warn('Client connection rejected: session revoked or not the caller\'s');
+        client.disconnect();
+        return;
+      }
+      (client as any).sessionId = handshakeSessionId;
+    }
+
     const lifecycle = await this.prisma.user
       .findUnique({
         where: { id: user.id },
@@ -2008,13 +2136,16 @@ export class RealtimeGateway
  * Express middleware and never runs for a WebSocket upgrade — so this does the
  * one lookup it needs rather than pulling in a parser for it.
  */
-function cookieToken(headers: Record<string, any> | undefined): string {
+function cookieValue(
+  headers: Record<string, any> | undefined,
+  name: string,
+): string {
   const raw = headers?.cookie;
   if (typeof raw !== 'string' || !raw) return '';
   for (const part of raw.split(';')) {
     const eq = part.indexOf('=');
     if (eq === -1) continue;
-    if (part.slice(0, eq).trim() !== USER_ACCESS_COOKIE) continue;
+    if (part.slice(0, eq).trim() !== name) continue;
     try {
       return decodeURIComponent(part.slice(eq + 1).trim());
     } catch {
@@ -2022,4 +2153,8 @@ function cookieToken(headers: Record<string, any> | undefined): string {
     }
   }
   return '';
+}
+
+function cookieToken(headers: Record<string, any> | undefined): string {
+  return cookieValue(headers, USER_ACCESS_COOKIE);
 }

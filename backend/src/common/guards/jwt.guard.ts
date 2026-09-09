@@ -116,10 +116,13 @@ export class JwtGuard implements CanActivate {
    * list, and failing open on a revocation list is the conventional trade —
    * the alternative turns one slow query into a total outage.
    */
+  /** Methods that cannot change state, so cannot be a CSRF target. */
+  private static readonly SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+
   private static readonly SESSION_STATE_TTL_MS = 15 * 1000;
   private static readonly sessionState = new Map<
     string,
-    { active: boolean; expiresAt: number }
+    { active: boolean; userId: string | null; expiresAt: number }
   >();
 
   /** Drops a session from the cache so a revocation is felt immediately. */
@@ -127,25 +130,46 @@ export class JwtGuard implements CanActivate {
     JwtGuard.sessionState.delete(sessionId);
   }
 
-  private async isSessionActive(sessionId: string): Promise<boolean> {
+  /**
+   * A session's liveness AND its owner, cached briefly.
+   *
+   * The owner is part of the answer rather than a separate lookup because the
+   * two are only meaningful together: "is this session live" is not a security
+   * question on its own, and answering it alone is what let a live session
+   * belonging to anybody vouch for a revoked token belonging to someone else.
+   *
+   * A lookup failure returns null, which the caller treats as a refusal. This
+   * fails CLOSED, unlike the user-revocation list above: that one is an
+   * exception list where failing open costs a delayed logout, while this is the
+   * mechanism that makes a session valid at all, and failing open there would
+   * turn one slow query into "every revoked session works again".
+   */
+  private async resolveSession(
+    sessionId: string,
+  ): Promise<{ active: boolean; userId: string | null } | null> {
     const now = Date.now();
     const hit = JwtGuard.sessionState.get(sessionId);
-    if (hit && hit.expiresAt > now) return hit.active;
+    if (hit && hit.expiresAt > now) {
+      return { active: hit.active, userId: hit.userId };
+    }
 
-    let active = true;
+    let resolved: { active: boolean; userId: string | null };
     try {
       const session = await this.prisma.userSession.findUnique({
         where: { id: sessionId },
-        select: { revoked: true, expiresAt: true },
+        select: { revoked: true, expiresAt: true, userId: true },
       });
-      active = Boolean(
-        session && !session.revoked && session.expiresAt > new Date(),
-      );
+      resolved = {
+        active: Boolean(
+          session && !session.revoked && session.expiresAt > new Date(),
+        ),
+        userId: session?.userId ?? null,
+      };
     } catch (e) {
       this.logger.warn(
-        `session state lookup failed; treating as active: ${(e as Error).message}`,
+        `session state lookup failed; refusing the request: ${(e as Error).message}`,
       );
-      active = true;
+      return null;
     }
 
     // Bound the map so a long-running process cannot accumulate one entry per
@@ -158,14 +182,11 @@ export class JwtGuard implements CanActivate {
     }
 
     JwtGuard.sessionState.set(sessionId, {
-      active,
+      ...resolved,
       expiresAt: now + JwtGuard.SESSION_STATE_TTL_MS,
     });
-    return active;
+    return resolved;
   }
-
-  /** Methods that cannot change state, so cannot be a CSRF target. */
-  private static readonly SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
   public static isUserRevoked(userId: string): boolean {
     return JwtGuard.revokedUsers.has(userId);
@@ -422,10 +443,26 @@ export class JwtGuard implements CanActivate {
      * cookie-authenticated request. A bearer token from a client that predates
      * cookies has no session to check and is left alone.
      */
-    const sessionId = request.cookies?.[USER_SESSION_ID_COOKIE];
-    if (typeof sessionId === 'string' && sessionId) {
-      const active = await this.isSessionActive(sessionId);
-      if (!active) {
+    if (usedCookie) {
+      const sessionId = request.cookies?.[USER_SESSION_ID_COOKIE];
+
+      // The id must be PRESENT. Treating its absence as "nothing to check" made
+      // revocation optional: a stolen cookie jar with `mf_sid` removed skipped
+      // the check entirely and the revoked token kept working. Anything
+      // authenticating by cookie has a session, so a cookie request without one
+      // is not a legacy client, it is a tampered request.
+      if (typeof sessionId !== 'string' || !sessionId) {
+        throw new UnauthorizedException('Session has been signed out');
+      }
+
+      const session = await this.resolveSession(sessionId);
+
+      // And it must be THIS user's. Without the ownership check the id was just
+      // a liveness token that any live session satisfied — an attacker could
+      // pair a revoked access token with a session id from their own account
+      // and be served the victim's data, because identity came from the JWT and
+      // liveness from an unrelated row.
+      if (!session || !session.active || session.userId !== userPayload.id) {
         throw new UnauthorizedException('Session has been signed out');
       }
     }

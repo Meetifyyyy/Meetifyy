@@ -378,6 +378,15 @@ describe('RealtimeGateway — cookie handshake', () => {
       {
         user: { findUnique: jest.fn().mockResolvedValue({ accountStatus: 'ACTIVE' }) },
         conversationParticipant: { findMany: jest.fn().mockResolvedValue([]) },
+        // A cookie handshake now has to name a live session that belongs to the
+        // caller, exactly as the REST guard requires.
+        userSession: {
+          findUnique: jest.fn().mockResolvedValue({
+            revoked: false,
+            expiresAt: new Date(Date.now() + 86_400_000),
+            userId: 'u1',
+          }),
+        },
       } as any,
       { getClient: jest.fn(), subscriber: jest.fn() } as any,
       {} as any, {} as any, {} as any,
@@ -399,7 +408,7 @@ describe('RealtimeGateway — cookie handshake', () => {
 
   it('authenticates from the mf_access cookie when no handshake token is given', async () => {
     jwtGuard.validateToken.mockResolvedValue({ id: 'u1', email: 'a@b.c' });
-    const c = client({ cookie: 'other=1; mf_access=cookie-token; mf_csrf=x' });
+    const c = client({ cookie: 'other=1; mf_access=cookie-token; mf_sid=sess-1; mf_csrf=x' });
 
     await gateway.handleConnection(c as any);
 
@@ -425,6 +434,89 @@ describe('RealtimeGateway — cookie handshake', () => {
   it('does not accept a cookie whose name merely contains mf_access', async () => {
     const c = client({ cookie: 'not_mf_access=evil' });
     await gateway.handleConnection(c as any);
+    expect(c.disconnect).toHaveBeenCalled();
+  });
+});
+
+/**
+ * A socket is a long-lived read on the account, so revocation has to reach it.
+ * The REST guard refuses a revoked session on the next request; the socket was
+ * authenticated once and never re-checked, so a signed-out device kept
+ * receiving messages until the tab closed.
+ */
+describe('RealtimeGateway — session binding on the handshake', () => {
+  const build = (sessionRow: any) => {
+    const jwtGuard = {
+      validateToken: jest.fn().mockResolvedValue({ id: 'u1', email: 'a@b.c' }),
+    };
+    const gateway = new RealtimeGateway(
+      { isConfigured: true, client: { auth: { getUser: jest.fn() } } } as any,
+      {} as any,
+      { registerSocketValidator: jest.fn(), onStatusChange: jest.fn(), setOnline: jest.fn() } as any,
+      {} as any, {} as any,
+      {
+        user: { findUnique: jest.fn().mockResolvedValue({ accountStatus: 'ACTIVE' }) },
+        conversationParticipant: { findMany: jest.fn().mockResolvedValue([]) },
+        userSession: { findUnique: jest.fn().mockResolvedValue(sessionRow) },
+      } as any,
+      { getClient: jest.fn(), subscriber: jest.fn() } as any,
+      {} as any, {} as any, {} as any,
+      createVerificationAccessMock() as any,
+      createStudentYearPolicyMock() as any,
+      allowAllRateLimit(),
+      createLegalConsentMock() as any,
+      jwtGuard as any,
+    );
+    return gateway;
+  };
+
+  const socket = (cookie: string) => ({
+    id: 's1',
+    handshake: { auth: {}, headers: { cookie } },
+    disconnect: jest.fn(),
+    join: jest.fn(),
+    emit: jest.fn(),
+  });
+
+  const live = {
+    revoked: false,
+    expiresAt: new Date(Date.now() + 86_400_000),
+    userId: 'u1',
+  };
+
+  it('accepts a live session belonging to the caller', async () => {
+    const c = socket('mf_access=tok; mf_sid=sess-1');
+    await build(live).handleConnection(c as any);
+    expect(c.disconnect).not.toHaveBeenCalled();
+  });
+
+  it('refuses a cookie handshake carrying no session id', async () => {
+    const c = socket('mf_access=tok');
+    await build(live).handleConnection(c as any);
+    expect(c.disconnect).toHaveBeenCalled();
+  });
+
+  it('refuses a revoked session', async () => {
+    const c = socket('mf_access=tok; mf_sid=sess-1');
+    await build({ ...live, revoked: true }).handleConnection(c as any);
+    expect(c.disconnect).toHaveBeenCalled();
+  });
+
+  it('refuses an expired session', async () => {
+    const c = socket('mf_access=tok; mf_sid=sess-1');
+    await build({ ...live, expiresAt: new Date(Date.now() - 1000) }).handleConnection(c as any);
+    expect(c.disconnect).toHaveBeenCalled();
+  });
+
+  it("refuses a session belonging to somebody else", async () => {
+    const c = socket('mf_access=tok; mf_sid=sess-1');
+    await build({ ...live, userId: 'someone-else' }).handleConnection(c as any);
+    expect(c.disconnect).toHaveBeenCalled();
+  });
+
+  it('fails closed when the session cannot be looked up', async () => {
+    const c = socket('mf_access=tok; mf_sid=sess-1');
+    await build(null).handleConnection(c as any);
     expect(c.disconnect).toHaveBeenCalled();
   });
 });

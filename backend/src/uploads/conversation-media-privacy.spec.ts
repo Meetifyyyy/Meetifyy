@@ -55,6 +55,42 @@ describe('conversation media privacy', () => {
     expect(await service.canViewConversationMedia(KEY, 'recipient')).toBe(true);
   });
 
+  /**
+   * Attachments are matched through the message payload's `mediaUrl`, which is
+   * where they actually live. `Message.attachmentMediaId` exists in the schema
+   * and nothing ever writes it — authorizing against it read correctly and
+   * would have refused every recipient, breaking chat images for everyone but
+   * the sender.
+   */
+  it('matches on the payload mediaUrl, not the unused attachment column', async () => {
+    prisma.media.findUnique.mockResolvedValue({ id: 'm1', ownerId: 'sender' });
+    prisma.message.findFirst.mockResolvedValue({ id: 'msg1' });
+    await service.canViewConversationMedia(KEY, 'recipient');
+
+    const where = prisma.message.findFirst.mock.calls[0][0].where;
+    expect(where.payload).toEqual({
+      path: ['mediaUrl'],
+      string_contains: KEY,
+    });
+    expect(where.attachmentMediaId).toBeUndefined();
+  });
+
+  /**
+   * A thumbnail is derived from its original and has no message of its own, so
+   * it has to be matched against the original's key or every thumbnail 404s
+   * while the full images load.
+   */
+  it('resolves a thumbnail against its original', async () => {
+    prisma.media.findUnique.mockResolvedValue({ id: 'm1', ownerId: 'sender' });
+    prisma.message.findFirst.mockResolvedValue({ id: 'msg1' });
+
+    const thumb = 'chat/deadbeefdeadbeefdeadbeefdeadbeef_thumb.webp';
+    expect(await service.canViewConversationMedia(thumb, 'recipient')).toBe(true);
+
+    const where = prisma.message.findFirst.mock.calls[0][0].where;
+    expect(where.payload.string_contains).toBe(KEY);
+  });
+
   /** The actual vulnerability: a stranger holding the URL. */
   it('refuses someone who is in no conversation it was sent to', async () => {
     prisma.media.findUnique.mockResolvedValue({ id: 'm1', ownerId: 'sender' });
