@@ -1,4 +1,3 @@
-import React from 'react';
 import { ArrowLeft } from '@shared/components/icons';
 import s from './authKit.module.css';
 

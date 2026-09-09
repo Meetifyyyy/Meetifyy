@@ -1,4 +1,3 @@
-import React from 'react';
 import s from './authKit.module.css';
 
 /** Title + subtitle block shown at the top of the form panel on every auth screen. */

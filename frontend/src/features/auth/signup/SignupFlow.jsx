@@ -1,4 +1,3 @@
-import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { SignupProvider, useSignup } from '../context/SignupContext';
 import { AuthShell, StepProgress, styles as s } from '../shared/ui';
