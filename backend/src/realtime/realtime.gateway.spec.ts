@@ -229,3 +229,129 @@ describe('RealtimeGateway — Authentication', () => {
     });
   });
 });
+
+/**
+ * Realtime room joins are authorization decisions.
+ *
+ * `activity:join` always resolved one; `post:join` and `community:join_room`
+ * took the id from the client and joined unconditionally. The post room carries
+ * `comment.created`, which includes the comment body and its author, so any
+ * authenticated socket could name any post id and read its comments live —
+ * including posts whose REST route answers a neutral 404 because the author is
+ * blocked or hidden by first-year isolation.
+ */
+describe('RealtimeGateway — room join authorization', () => {
+  let gateway: RealtimeGateway;
+  let prisma: any;
+  let blocksService: any;
+  let yearPolicy: any;
+
+  const socket = () => ({ join: jest.fn(), leave: jest.fn(), emit: jest.fn(), userId: 'viewer' });
+
+  beforeEach(() => {
+    prisma = {
+      post: { findFirst: jest.fn() },
+      community: { findFirst: jest.fn() },
+      communityMember: { findFirst: jest.fn().mockResolvedValue(null) },
+      user: { findUnique: jest.fn() },
+      conversationParticipant: { findMany: jest.fn().mockResolvedValue([]) },
+    };
+    blocksService = { getExcludedUserIds: jest.fn().mockResolvedValue([]) };
+    yearPolicy = createStudentYearPolicyMock() as any;
+    yearPolicy.canIdsInteract = jest.fn().mockResolvedValue(true);
+
+    gateway = new RealtimeGateway(
+      { isConfigured: true, client: { auth: { getUser: jest.fn() } } } as any,
+      {} as any,
+      { registerSocketValidator: jest.fn(), onStatusChange: jest.fn() } as any,
+      {} as any, {} as any,
+      prisma,
+      { getClient: jest.fn(), subscriber: jest.fn() } as any,
+      {} as any,
+      { countOnlineMembers: jest.fn().mockResolvedValue(0) } as any,
+      blocksService,
+      createVerificationAccessMock() as any,
+      yearPolicy,
+      allowAllRateLimit(),
+      createLegalConsentMock() as any,
+      { validateToken: jest.fn() } as any,
+    );
+  });
+
+  describe('post:join', () => {
+    it('joins a post the viewer may see', async () => {
+      prisma.post.findFirst.mockResolvedValue({ authorId: 'author', community: null });
+      const client = socket();
+      await gateway.handlePostJoin(client as any, { postId: 'p1' });
+      expect(client.join).toHaveBeenCalledWith('post_p1');
+    });
+
+    it('refuses a post whose author blocks the viewer', async () => {
+      prisma.post.findFirst.mockResolvedValue({ authorId: 'author', community: null });
+      blocksService.getExcludedUserIds.mockResolvedValue(['author']);
+      const client = socket();
+      await gateway.handlePostJoin(client as any, { postId: 'p1' });
+      expect(client.join).not.toHaveBeenCalled();
+    });
+
+    it('refuses a post hidden by first-year isolation', async () => {
+      prisma.post.findFirst.mockResolvedValue({ authorId: 'author', community: null });
+      yearPolicy.canIdsInteract.mockResolvedValue(false);
+      const client = socket();
+      await gateway.handlePostJoin(client as any, { postId: 'p1' });
+      expect(client.join).not.toHaveBeenCalled();
+    });
+
+    it('refuses a deleted post, and a post in a deleted community', async () => {
+      const client = socket();
+      prisma.post.findFirst.mockResolvedValue(null);
+      await gateway.handlePostJoin(client as any, { postId: 'gone' });
+      expect(client.join).not.toHaveBeenCalled();
+
+      prisma.post.findFirst.mockResolvedValue({
+        authorId: 'author', community: { deletedAt: new Date() },
+      });
+      await gateway.handlePostJoin(client as any, { postId: 'p2' });
+      expect(client.join).not.toHaveBeenCalled();
+    });
+
+    it('fails closed when the policy lookup throws', async () => {
+      prisma.post.findFirst.mockRejectedValue(new Error('db down'));
+      const client = socket();
+      await gateway.handlePostJoin(client as any, { postId: 'p1' });
+      expect(client.join).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('community:join_room', () => {
+    it('joins a public community', async () => {
+      prisma.community.findFirst.mockResolvedValue({ id: 'c1', isPrivate: false, ownerId: 'someone' });
+      const client = socket();
+      await gateway.handleJoinCommunityRoom(client as any, { communityId: 'c1' });
+      expect(client.join).toHaveBeenCalledWith('community_c1');
+    });
+
+    it('refuses a private community the viewer is not in', async () => {
+      prisma.community.findFirst.mockResolvedValue({ id: 'c1', isPrivate: true, ownerId: 'someone' });
+      prisma.communityMember.findFirst.mockResolvedValue(null);
+      const client = socket();
+      await gateway.handleJoinCommunityRoom(client as any, { communityId: 'c1' });
+      expect(client.join).not.toHaveBeenCalled();
+    });
+
+    it('joins a private community the viewer belongs to', async () => {
+      prisma.community.findFirst.mockResolvedValue({ id: 'c1', isPrivate: true, ownerId: 'someone' });
+      prisma.communityMember.findFirst.mockResolvedValue({ userId: 'viewer' });
+      const client = socket();
+      await gateway.handleJoinCommunityRoom(client as any, { communityId: 'c1' });
+      expect(client.join).toHaveBeenCalledWith('community_c1');
+    });
+
+    it('refuses a deleted community', async () => {
+      prisma.community.findFirst.mockResolvedValue(null);
+      const client = socket();
+      await gateway.handleJoinCommunityRoom(client as any, { communityId: 'gone' });
+      expect(client.join).not.toHaveBeenCalled();
+    });
+  });
+});

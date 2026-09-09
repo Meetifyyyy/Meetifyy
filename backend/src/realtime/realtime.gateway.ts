@@ -1046,7 +1046,66 @@ export class RealtimeGateway
       { policy: 'socket.roomjoin.user', identifier: userId },
     ]);
     if (limited) return limited;
+
+    // Same reasoning as `activity:join` below: room membership is an
+    // authorization decision, not a client preference.
+    //
+    // This room carries `comment.created` — which includes the comment body and
+    // its author — plus like and poll activity. Joining it took the post id on
+    // the client's word, so any authenticated socket could name any post id and
+    // receive its comments live, including posts the REST route answers with a
+    // 404: a blocked author's, or one hidden by first-year isolation. The
+    // policy below is the one `getPostById` applies, so the two paths agree.
+    const allowed = await this.checkPostRoomAccess(userId, data.postId);
+    if (!allowed) {
+      client.leave(`post_${data.postId}`);
+      return;
+    }
+
     client.join(`post_${data.postId}`);
+  }
+
+  /**
+   * Server-side authorization for the `post_<id>` realtime room.
+   *
+   * Deliberately mirrors `PostsService.getPostById`'s denial set — deleted post,
+   * deleted community, unavailable author, a block in either direction, and
+   * first-year isolation judged on the author — because a viewer who cannot
+   * open the post must not be able to subscribe to it either. It answers a bare
+   * boolean for the same reason that route answers a neutral 404: the caller
+   * must not be able to tell "no such post" from "not for you".
+   */
+  private async checkPostRoomAccess(
+    userId: string,
+    postId: string,
+  ): Promise<boolean> {
+    try {
+      const post = await this.prisma.post.findFirst({
+        where: { id: postId, deletedAt: null, author: { deletedAt: null } },
+        select: {
+          authorId: true,
+          community: { select: { deletedAt: true } },
+        },
+      });
+      if (!post || post.community?.deletedAt) return false;
+
+      // A user is always allowed into the room for their own post, and the
+      // policy calls below would say the same — this just skips them.
+      if (post.authorId === userId) return true;
+
+      const excluded = await this.blocksService.getExcludedUserIds(userId);
+      if (excluded.includes(post.authorId)) return false;
+
+      return await this.studentYearPolicy.canIdsInteract(
+        userId,
+        post.authorId,
+        'activity_visibility',
+      );
+    } catch (err) {
+      // Fail closed: an error resolving the policy must not grant the room.
+      this.logger.error('Failed to authorize post room join', err);
+      return false;
+    }
   }
 
   @SubscribeMessage('post:leave')
@@ -1579,6 +1638,19 @@ export class RealtimeGateway
       if (limited) return limited;
     }
 
+    // The room carries membership-change events for the community. A private
+    // community's are not public information, and this took the id from the
+    // client without checking anything at all — so any socket could name a
+    // private community and watch its membership change in real time.
+    const allowed = await this.checkCommunityRoomAccess(
+      userId,
+      data.communityId,
+    );
+    if (!allowed) {
+      client.leave(`community_${data.communityId}`);
+      return;
+    }
+
     client.join(`community_${data.communityId}`);
 
     // Answer with the count as it stands right now. The community payload the
@@ -1595,6 +1667,38 @@ export class RealtimeGateway
       });
     } catch {
       // Non-fatal: the room join itself succeeded.
+    }
+  }
+
+  /**
+   * Server-side authorization for the `community_<id>` realtime room.
+   *
+   * A public community's activity is visible to anyone who can open it, so the
+   * room follows: it needs the community to exist and not be deleted. A private
+   * one additionally needs the viewer to actually be a member.
+   */
+  private async checkCommunityRoomAccess(
+    userId: string | undefined,
+    communityId: string,
+  ): Promise<boolean> {
+    if (!userId) return false;
+    try {
+      const community = await this.prisma.community.findFirst({
+        where: { id: communityId, deletedAt: null },
+        select: { id: true, isPrivate: true, ownerId: true },
+      });
+      if (!community) return false;
+      if (!community.isPrivate) return true;
+      if (community.ownerId === userId) return true;
+
+      const membership = await this.prisma.communityMember.findFirst({
+        where: { communityId, userId },
+        select: { userId: true },
+      });
+      return Boolean(membership);
+    } catch (err) {
+      this.logger.error('Failed to authorize community room join', err);
+      return false;
     }
   }
 
