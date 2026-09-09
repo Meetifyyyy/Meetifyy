@@ -69,6 +69,7 @@ function AuthShellMaster({ children, headline: defaultHeadline, subtext: default
   const setStoryCallback = useCallback((next) => setStory(next), []);
   const contextValue = useMemo(() => ({ setStory: setStoryCallback }), [setStoryCallback]);
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- re-measures panel height on every render after DOM commits to track dynamic form size
   useLayoutEffect(() => {
     const el = panelInnerRef.current;
     if (el) {

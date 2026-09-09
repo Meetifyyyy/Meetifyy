@@ -5,7 +5,7 @@ import {
   beginDeletionCountdown,
   endDeletionCountdown,
 } from '@shared/lib/deletionHandoff';
-import { useNavigate, useLocation, useParams, Navigate, Link } from 'react-router-dom';
+import { useNavigate, useParams, Navigate, Link } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@shared/context/AuthContext';
 import { showToast } from '@shared/utils/toast';
@@ -332,7 +332,6 @@ export default function SettingsRoute() {
   const { openPreferences: openCookiePreferences } = useCookieConsent();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const location = useLocation();
   const { panel: panelParam } = useParams();
   const isLargeScreen = useIsLargeScreen();
 
@@ -408,6 +407,7 @@ export default function SettingsRoute() {
     if (activePanel === 'interests') {
       setInitialPanelInterests(selectedInterests);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally snapshot initial interests when switching to interests panel
   }, [activePanel]);
 
   // Security state
@@ -434,6 +434,7 @@ export default function SettingsRoute() {
       newPw.hide();
       confirmPw.hide();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally reset security inputs only when activePanel changes
   }, [activePanel]);
 
   // Privacy & notifications state
@@ -507,6 +508,7 @@ export default function SettingsRoute() {
     };
     loadFreshData();
     return () => { active = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs once on mount to seed fresh data without re-fetching on user updates
   }, []);
 
   const handleSave = async () => {

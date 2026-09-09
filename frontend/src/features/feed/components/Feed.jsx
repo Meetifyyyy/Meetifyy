@@ -75,12 +75,13 @@ function Feed({ onPostClick, onCommentClick }) {
   }, [hasNextPage, isLoading, isFetchingNextPage, fetchNextPage]);
 
   // Restore scroll position when navigating back to feed
+  const hasPosts = allPosts.length > 0;
   useEffect(() => {
     const savedY = sessionStorage.getItem('meetifyy_feed_scrollY');
-    if (savedY && !isLoading && allPosts.length > 0) {
+    if (savedY && !isLoading && hasPosts) {
       window.scrollTo(0, parseInt(savedY, 10));
     }
-  }, [isLoading, allPosts.length > 0]);
+  }, [isLoading, hasPosts]);
 
   // Save scroll position on scroll
   useEffect(() => {

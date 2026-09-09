@@ -261,7 +261,7 @@ export default function MessagesLayout() {
     if (location.pathname !== targetPath && targetPath !== location.pathname) {
       navigate(targetPath, { replace: true, state: location.state });
     }
-  }, [activeChatId, activeConv, currentUser?.id, location.pathname, navigate]);
+  }, [activeChatId, activeConv, currentUser?.id, location.pathname, location.state, navigate]);
 
   const handleSendMessage = async (convId, text, replyTo, mentions, mediaUrl, mediaType, explicitLinkPreview, explicitInviteData, options) => {
     if (activeConv?.isDraft) {

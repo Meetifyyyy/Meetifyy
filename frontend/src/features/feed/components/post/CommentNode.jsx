@@ -13,9 +13,6 @@
 import { useState, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useContext, createContext, useSyncExternalStore, memo } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-import { showToast } from '@shared/utils/toast';
-import { isImageUrl } from '@shared/utils/avatar';
-import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
 import { CollegeRepresentativeBadge } from '@shared/components/badges/CollegeRepresentativeBadge';
 import { getCollegeName } from '@shared/utils/user';
 import Avatar, { getProcessedAvatarUrl } from '@shared/components/avatar/Avatar';
@@ -331,7 +328,7 @@ function ConnectorSVG({ nodeContainerRef, avatarRef, repliesContainerRef, isHigh
     const ro = new ResizeObserver(() => requestAnimationFrame(measure));
     if (nodeContainerRef.current) ro.observe(nodeContainerRef.current);
     return () => { cancelAnimationFrame(raf); ro.disconnect(); };
-  }, [measure]);
+  }, [measure, nodeContainerRef]);
 
   // Re-measure after collapse/expand animation finishes (250ms + small buffer)
   useEffect(() => {
@@ -427,7 +424,7 @@ function CommentNodeImpl({
   const { currentUser } = useAuth();
   const { communitiesById } = useCommunities();
   const { mutate: deleteCommentMutate } = useDeleteComment();
-  const { mutate: toggleLike, isLoading: isLiking } = useLikeComment();
+  const { mutate: toggleLike } = useLikeComment();
   const { tier, toggleExpanded, expand, setActiveReplyId, setActiveMenuId } = useContext(TreeActionsContext);
   // This node's own three flags, and only this node's — a sibling opening its
   // reply box or its menu does not notify this subscription.

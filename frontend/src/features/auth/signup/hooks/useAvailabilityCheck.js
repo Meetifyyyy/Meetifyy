@@ -77,7 +77,7 @@ export function useAvailabilityCheck(value, { endpoint, field, extraBody, enable
       setReason('');
       setCode('');
       try {
-        const payload = { [field]: value, ...(extraBody || {}) };
+        const payload = { [field]: value, ...(extraBodyStr ? JSON.parse(extraBodyStr) : {}) };
         const res = await apiClient.post(endpoint, payload, { signal: controller.signal });
         if (!active) return;
         const settled = res?.available === true

@@ -298,7 +298,7 @@ export function useFollowMutation(targetUsername) {
     }, DEBOUNCE_MS);
 
     pendingTimers.set(entityKey, timerId);
-  }, [entityKey, targetUsername, cleanTarget, queryClient, applyOptimisticUpdate]);
+  }, [entityKey, targetUsername, cleanTarget, cleanCurrent, queryClient, applyOptimisticUpdate]);
 
   const toggle = useCallback((intentFollow) => {
     if (!entityKey) return;

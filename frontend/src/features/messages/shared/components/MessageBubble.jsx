@@ -3,9 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { showToast } from '@shared/utils/toast';
 
 import { Reply, MoreVertical, Image as ImageIcon, AlertCircle, Play } from '@shared/components/icons';
-import CalendarIcon from '@shared/components/ui/CalendarIcon';
 import Avatar from '@shared/components/avatar/Avatar';
-import { isImageUrl } from '@shared/utils/avatar';
 import { mediaCache } from '@shared/utils/MediaCacheManager';
 import RichText from '@shared/components/mentions/RichText';
 import { generateConversationUrl } from '@shared/utils/conversationUrl';
@@ -138,6 +136,8 @@ function ImageWithSkeleton({ src, alt, className, onClick, isStandalone = false,
   const [error, setError] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
   const prevSrcRef = useRef(src);
+  const onErrorRef = useRef(onErrorChange);
+  onErrorRef.current = onErrorChange;
   const aspect = (width && height) ? (width / height) : 1;
 
   useEffect(() => {
@@ -154,11 +154,11 @@ function ImageWithSkeleton({ src, alt, className, onClick, isStandalone = false,
       setLoaded(true);
     }
     setError(false);
-    if (onErrorChange) onErrorChange(false);
+    onErrorRef.current?.(false);
 
     if (!src) {
       setError(true);
-      if (onErrorChange) onErrorChange(true);
+      onErrorRef.current?.(true);
       return;
     }
 
@@ -184,13 +184,13 @@ function ImageWithSkeleton({ src, alt, className, onClick, isStandalone = false,
             }
           } else if (!resolvedSync) {
             setError(true);
-            if (onErrorChange) onErrorChange(true);
+            onErrorRef.current?.(true);
           }
         }
       } catch (err) {
         if (isMounted && !resolvedSync) {
           setError(true);
-          if (onErrorChange) onErrorChange(true);
+          onErrorRef.current?.(true);
         }
       }
     };
@@ -209,7 +209,7 @@ function ImageWithSkeleton({ src, alt, className, onClick, isStandalone = false,
       return;
     }
     setError(true);
-    if (onErrorChange) onErrorChange(true);
+    onErrorRef.current?.(true);
   };
 
   const handleImageLoad = () => {

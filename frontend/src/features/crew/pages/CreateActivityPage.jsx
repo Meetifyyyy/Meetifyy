@@ -14,7 +14,6 @@ import { openVerificationModal } from '@shared/stores/verificationModalStore';
 import { commitDraftImage, removeDraftImage } from '@shared/utils/draftImageCache';
 import { useAmbientTint } from '@shared/hooks/useAmbientTint';
 
-import { getRelativeDateLabel } from '@shared/utils/time';
 import {
   Send,
   MapPin,
@@ -119,6 +118,7 @@ function DateTimeModal({ formData, set, onClose }) {
       setViewYear(formData.endDateYear || today.getFullYear());
       setViewMonth((formData.endDateMonth || (today.getMonth() + 1)) - 1);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only sync view month/year when switching tabs, not while user navigates months
   }, [activeTab]);
 
   const selectedHour = isStart ? formData.startTimeHour : formData.endTimeHour;
@@ -857,7 +857,6 @@ export default function CreateActivityPage() {
   const isFromCampus = returnTo.includes('/campus') || !!location.state?.fromCampus || !!prefill.fromCampus;
   const { currentUser, collegeName } = useAuth();
   const queryClient = useQueryClient();
-  const today = new Date();
 
   const [showImageSearch, setShowImageSearch] = useState(false);
   const [showDT, setShowDT] = useState(false);
@@ -1011,18 +1010,6 @@ export default function CreateActivityPage() {
 
   const getEndDateTime = () => {
     return getParsedDate(formData.endDateYear, formData.endDateMonth, formData.endDateDay, formData.endTimeHour, formData.endTimeMinute, formData.endTimeAmPm);
-  };
-
-  const getDurationString = (start, end) => {
-    if (!start || !end) return '';
-    const diffMs = end - start;
-    if (diffMs <= 0) return '0 mins';
-    const diffMins = Math.round(diffMs / 60000);
-    const hrs = Math.floor(diffMins / 60);
-    const mins = diffMins % 60;
-    if (hrs === 0) return `${mins} min${mins !== 1 ? 's' : ''}`;
-    if (mins === 0) return `${hrs} hour${hrs !== 1 ? 's' : ''}`;
-    return `${hrs}h ${mins}m`;
   };
 
   const getCorrectedDates = () => {

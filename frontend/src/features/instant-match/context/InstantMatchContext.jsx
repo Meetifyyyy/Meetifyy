@@ -627,6 +627,7 @@ export function InstantMatchProvider({ children }) {
       setStep(STEP_LOCATION);
       setError(res.error);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- isVerified omitted deliberately to avoid re-registration loop
   }, [formData, currentUser]);
 
   const cancelSearch = useCallback(async () => {
@@ -732,6 +733,7 @@ export function InstantMatchProvider({ children }) {
       openingChatRef.current = false;
       setBusy(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- isVerified omitted deliberately to avoid re-registration loop
   }, [refreshChat]);
 
   /**

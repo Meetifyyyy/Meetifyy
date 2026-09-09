@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
 import { PlusIcon } from '@heroicons/react/24/outline';
 import { useAuth } from '@shared/context/AuthContext';
 import { useCommunities } from '@shared/hooks/useCommunities';
@@ -71,7 +71,6 @@ function matchesCategory(c, activeCategory, matchedCats, catLabel) {
 export default function CommunitiesBrowse({ onOpenCommunity }) {
   const { currentUser } = useAuth();
   const location = useLocation();
-  const navigate = useNavigate();
   const [activeCategory, setActiveCategory] = useState(location.state?.category || 'all');
   const [showCreate, setShowCreate] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -97,7 +96,6 @@ export default function CommunitiesBrowse({ onOpenCommunity }) {
 
   const { rawCommunities, isLoading, isError, refetch } = useCommunities();
   const error = isError;
-  const allComms = rawCommunities || [];
 
   /**
    * Filter and search, derived once per change of input rather than on every
@@ -106,6 +104,7 @@ export default function CommunitiesBrowse({ onOpenCommunity }) {
    * which the debounce was there to keep OUT of the filtering.
    */
   const remaining = useMemo(() => {
+    const allComms = rawCommunities || [];
     const catObj = categoriesList.find((cat) => cat.id === activeCategory);
     const catLabel = catObj?.label?.toLowerCase() || '';
     const matchedCats = CATEGORY_ALIASES[activeCategory] || [activeCategory];
@@ -121,7 +120,7 @@ export default function CommunitiesBrowse({ onOpenCommunity }) {
         c.description?.toLowerCase().includes(q)
       );
     });
-  }, [allComms, activeCategory, debouncedSearchQuery]);
+  }, [rawCommunities, activeCategory, debouncedSearchQuery]);
 
   const retry = refetch;
 

@@ -133,7 +133,8 @@ export default function SocketManager() {
       // Suppress toasts the current user fired themselves (e.g. they invited
       // someone — the backend echoes ACTIVITY_INVITE back to the actor too).
       const actorId = notification.actor?.id || notification.actorId || notification.metadata?.actorId;
-      if (actorId && currentUser?.id && String(actorId) === String(currentUser.id)) {
+      const selfId = currentUserRef.current?.id;
+      if (actorId && selfId && String(actorId) === String(selfId)) {
         // Still invalidate queries so counts/lists stay fresh, but no toast.
         queryClient.invalidateQueries({ queryKey: ['notifications'] });
         return;
@@ -670,14 +671,6 @@ export default function SocketManager() {
           return old;
         }
 
-        const currentPath = window.location.pathname;
-        const isMessagesRoute = currentPath.startsWith('/messages') || currentPath.startsWith('/inbox');
-        const pathParts = currentPath.split('/').filter(Boolean);
-        const param1 = pathParts[1];
-        const param2 = pathParts[2];
-        const routeInfo = isMessagesRoute ? parseConversationRoute(param1, param2) : { publicId: null };
-        const viewedId = routeInfo.publicId;
-
         const incomingAvatar = payload.avatarKey !== undefined ? payload.avatarKey : payload.avatar;
         return old.map((c) => {
           if (c.id === convId || c.publicId === convId || c.internalId === convId) {
@@ -768,117 +761,6 @@ export default function SocketManager() {
       if (targetConvId) {
         updateConversationPreview(queryClient, targetConvId, payload.text || 'This message was unsent');
       }
-    };
-
-    const handleGlobalConversationSeen = (payload) => {
-      if (!payload) return;
-      const convId = payload.conversationId || payload.realConvId || payload.publicId;
-      if (!convId) return;
-
-      const currentUserId = session?.user?.id;
-      const isMySeen = payload.readerId && String(payload.readerId) === String(currentUserId);
-
-      if (isMySeen) {
-        queryClient.setQueryData(['conversations'], (oldConvs) => {
-          if (!Array.isArray(oldConvs)) return oldConvs;
-          return oldConvs.map((c) => {
-            if (c.id === convId || c.publicId === convId || c.internalId === convId) {
-              return { ...c, unreadCount: 0, unread: 0 };
-            }
-            return c;
-          });
-        });
-        return;
-      }
-
-      if (!payload.lastReadAt) return;
-
-      const lastReadTime = new Date(payload.lastReadAt).getTime();
-      const keys = [payload.conversationId, payload.realConvId, payload.publicId].filter(Boolean);
-      const uniqueKeys = [...new Set(keys)];
-
-      uniqueKeys.forEach((convKey) => {
-        queryClient.setQueryData(['messages', convKey], (oldData) => {
-          if (!oldData) return oldData;
-
-          const updateMessageList = (messages) => {
-            if (!Array.isArray(messages)) return messages;
-            return messages.map((msg) => {
-              const isMyMsg = msg.from === 'me' || (currentUserId && String(msg.senderId) === String(currentUserId)) || msg.senderId === 'me';
-              if (isMyMsg && msg.status !== 'read') {
-                const msgTime = new Date(msg.createdAt).getTime();
-                if (isNaN(msgTime) || msgTime <= lastReadTime + 2000) {
-                  return { ...msg, status: 'read' };
-                }
-              }
-              return msg;
-            });
-          };
-
-          if (oldData.pages) {
-            return {
-              ...oldData,
-              pages: oldData.pages.map((page) => ({
-                ...page,
-                messages: updateMessageList(page.messages),
-              })),
-            };
-          }
-
-          if (oldData.messages) {
-            return {
-              ...oldData,
-              messages: updateMessageList(oldData.messages),
-            };
-          }
-
-          return oldData;
-        });
-      });
-    };
-
-    const handleGlobalMessageDelivered = (payload) => {
-      if (!payload) return;
-      const convId = payload.conversationId || payload.realConvId;
-      if (!convId || !payload.messageId) return;
-
-      const keys = [payload.conversationId, payload.realConvId, payload.publicId].filter(Boolean);
-      const uniqueKeys = [...new Set(keys)];
-
-      uniqueKeys.forEach((convKey) => {
-        queryClient.setQueryData(['messages', convKey], (oldData) => {
-          if (!oldData) return oldData;
-
-          const updateMessageList = (messages) => {
-            if (!Array.isArray(messages)) return messages;
-            return messages.map((msg) => {
-              if (msg.id === payload.messageId && msg.status !== 'read' && msg.status !== 'seen') {
-                return { ...msg, status: 'delivered' };
-              }
-              return msg;
-            });
-          };
-
-          if (oldData.pages) {
-            return {
-              ...oldData,
-              pages: oldData.pages.map((page) => ({
-                ...page,
-                messages: updateMessageList(page.messages),
-              })),
-            };
-          }
-
-          if (oldData.messages) {
-            return {
-              ...oldData,
-              messages: updateMessageList(oldData.messages),
-            };
-          }
-
-          return oldData;
-        });
-      });
     };
 
     const handleGlobalMessageNew = (message) => {
