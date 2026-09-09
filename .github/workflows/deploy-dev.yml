@@ -185,10 +185,13 @@ jobs:
           ACR: ${{ secrets.ACR_LOGIN_SERVER }}
           TAG: ${{ env.DEV_TAG }}
         run: |
+          # Mirrors production: /health reports the commit so a deploy can be
+          # waited on from outside.
           az containerapp update \
             --name "${CONTAINERAPP}" \
             --resource-group "${RESOURCE_GROUP}" \
-            --image "${ACR}/meetifyy-api:${TAG}"
+            --image "${ACR}/meetifyy-api:${TAG}" \
+            --set-env-vars "GIT_COMMIT_SHA=${GITHUB_SHA}"
 
           echo "DEV deployment complete — image: ${ACR}/meetifyy-api:${TAG}"
 

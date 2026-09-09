@@ -1,5 +1,6 @@
 {
   "buildCommand": "npm run build",
+  "ignoreCommand": "bash scripts/await-backend.sh",
   "installCommand": "npm install",
   "outputDirectory": "dist",
   "framework": "vite",

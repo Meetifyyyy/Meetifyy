@@ -1,5 +1,6 @@
 {
   "buildCommand": "npm --prefix frontend run build",
+  "ignoreCommand": "bash scripts/await-backend.sh",
   "outputDirectory": "frontend/dist",
   "framework": "vite",
   "redirects": [

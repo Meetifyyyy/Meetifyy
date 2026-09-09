@@ -251,10 +251,14 @@ jobs:
           ACR: ${{ secrets.ACR_LOGIN_SERVER }}
           PROD_TAG: ${{ env.PROD_TAG }}
         run: |
+          # GIT_COMMIT_SHA is surfaced by /health, which is what the frontend
+          # build waits on before shipping. Without it the two pipelines race
+          # and the faster one wins — see scripts/await-backend.sh.
           az containerapp update \
             --name "${CONTAINERAPP}" \
             --resource-group "${RESOURCE_GROUP}" \
-            --image "${ACR}/meetifyy-api:${PROD_TAG}"
+            --image "${ACR}/meetifyy-api:${PROD_TAG}" \
+            --set-env-vars "GIT_COMMIT_SHA=${GITHUB_SHA}"
 
           echo "PRODUCTION deployment complete."
           echo "Image: ${ACR}/meetifyy-api:${PROD_TAG}"
