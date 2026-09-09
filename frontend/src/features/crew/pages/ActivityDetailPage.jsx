@@ -1,13 +1,11 @@
 import { useState, useMemo, useEffect, useRef, lazy, Suspense } from 'react';
 import { createPortal } from 'react-dom';
 import { useLocation, useParams, useNavigate } from 'react-router-dom';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@shared/context/AuthContext';
 import { CollegeRepresentativeBadge } from '@shared/components/badges/CollegeRepresentativeBadge';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
-import { useIsMobile } from '@shared/hooks/useIsMobile';
 import { useMediaQuery } from '@shared/hooks/useMediaQuery';
-import { getRelativeDateLabel } from '@shared/utils/time';
 import Avatar from '@shared/components/avatar/Avatar';
 import ConfirmModal from '@shared/components/modals/ConfirmModal';
 import ShareActivityModal from '../components/modals/ShareActivityModal';
@@ -98,24 +96,6 @@ function formatDateTime(activity) {
   return `${startDateFormatted} • ${startTimeStr}`;
 }
 
-/* ── Details card ──────────────────────────────────────────── */
-function DetailsCard({ date, time, duration, actLocation, isOnline, slotsFilled, spotsLeft, activity }) {
-  const computedDateLabel = getRelativeDateLabel(date) || activity?.dateLabel;
-  return (
-    <div className={styles.detailsCard}>
-      <h2 className={styles.detailsTitle}>Details</h2>
-      <div className={styles.detailsGrid}>
-        <div className={styles.detailRow} style={{ alignItems: 'center' }}>
-          <CalendarIcon date={date} dateLabel={computedDateLabel} />
-          <div>
-            <div className={styles.detailLabel}>{computedDateLabel}</div>
-            <div className={styles.detailValue}>{new Date(date).toLocaleDateString()}</div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 /**
  * Tail control for the attendee list.
@@ -252,7 +232,7 @@ export default function ActivityDetailPage() {
       slotsNeeded: baseAct.maxMembers || 999,
       _membersData: enrichedMembersData
     };
-  }, [rawActivity, location.state]);
+  }, [rawActivity, location.state, isAccessDenied]);
 
   // Attendees past the embedded first page load only when asked for.
   // Declared here rather than further down because useActivityAttendees below
@@ -313,7 +293,6 @@ export default function ActivityDetailPage() {
 
   const { savedActivities, toggleSaveActivity } = useSavedActivitiesStore();
   const navigate = useNavigate();
-  const isMobile = useIsMobile();
   const containerRef = useRef(null);
 
   useAmbientTint(containerRef, {
@@ -324,10 +303,8 @@ export default function ActivityDetailPage() {
 
   const [showShareModal, setShowShareModal] = useState(false);
   const [showEndConfirm, setShowEndConfirm] = useState(false);
-  const [showJoinedModal, setShowJoinedModal] = useState(false);
   const [showInviteModal, setShowInviteModal] = useState(false);
   const isSaved = savedActivities?.includes(activity?.id);
-  const [showHeaderTitle, setShowHeaderTitle] = useState(false);
 
   // The discussion is the heaviest module on the page (its own paginated fetch
   // plus a realtime subscription), and it sits below the fold. An observer
@@ -373,10 +350,7 @@ export default function ActivityDetailPage() {
     },
   });
 
-  const handleScroll = (e) => {
-    const scrolled = e.target.scrollTop > 50;
-    setShowHeaderTitle(prev => prev !== scrolled ? scrolled : prev);
-  };
+
 
 
   // Hoisted above the early returns below: as a hook it must run on every
@@ -421,9 +395,9 @@ export default function ActivityDetailPage() {
   }
 
   const {
-    title, description, category, tags,
-    date, time, duration, location: actLocation, isOnline,
-    participationType, slotsNeeded, slotsFilled,
+    title, description,
+    location: actLocation, isOnline,
+    slotsNeeded, slotsFilled,
     hostName, hostAvatar, hostIsCampusRep,
   } = activity;
 
@@ -557,7 +531,7 @@ export default function ActivityDetailPage() {
         </div>
 
         {/* Scroll Area */}
-        <div className={styles.scrollArea} onScroll={handleScroll}>
+        <div className={styles.scrollArea}>
           {/* Content */}
           <div className={styles.contentRow}>
             {/* Left: Image & Info */}

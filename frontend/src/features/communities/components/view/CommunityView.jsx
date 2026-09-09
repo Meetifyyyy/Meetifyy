@@ -22,14 +22,12 @@ import { ErrorState } from '@shared/components/ui/StateViews';
 import NotFoundState from '@shared/components/ui/NotFoundState';
 import Post from '@features/feed/components/post/Post';
 import VerificationGate from '@shared/components/VerificationGate/VerificationGate';
-import { ShieldCheck, Calendar, Users, Eye, EyeOff, Check, X, ShieldAlert, Sparkles, MessageCircle, Heart, Bell, Trash2, Edit2, Share2, CornerUpRight, MapPin, ExternalLink, Settings, Plus, Camera, Link as LinkIcon, Info } from '@shared/components/icons';
 import PostComposer from '@features/feed/components/composer/PostComposer';
 import PostSkeleton from '@features/feed/components/skeletons/PostSkeleton';
 import CommunityMembersModal from '../modals/CommunityMembersModal';
 import CommunityAdminModal from '../modals/CommunityAdminModal';
 import ConfirmModal from '@shared/components/modals/ConfirmModal';
 import styles from './CommunityView.module.css';
-import { useMediaViewerActions } from '@shared/context/MediaViewerContext';
 import { useJoinCommunity } from '../../hooks/useJoinCommunity';
 import { useCommunityById } from '@shared/hooks/useCommunities';
 import { toggleRegistry } from '@shared/utils/mutationRegistry';
@@ -57,15 +55,6 @@ import ReportModal from '@shared/components/modals/ReportModal/ReportModal';
 import ModeratorWelcomeModal from '../moderation/ModeratorWelcomeModal';
 import { NotificationOff, NotificationOn } from '@shared/components/icons';
 
-function getActivityPhrase(comm) {
-  if (comm.trending) return 'Growing Fast';
-  if ((comm.discussionsToday || 0) >= 30) return 'Active Today';
-  if ((comm.newMembersThisWeek || 0) >= 200) return 'Building Momentum';
-  if (comm.members < 500) return 'Just Getting Started';
-  if (comm.members < 2000) return 'Early Members Welcome';
-  return 'Recently Active';
-}
-
 function formatCount(n) {
   if (n === undefined || n === null) return '0';
   if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
@@ -74,10 +63,8 @@ function formatCount(n) {
 }
 
 function HeroSection({ comm, onlineNow, joined, joining, onToggleJoin, onCreatePost, userCommunities, onViewMembers, isAdmin, onOpenAdmin, onUpdateCommunity, isMuted, onMuteClick, onTitleClick, onShare }) {
-  const navigate = useNavigate();
   const users = useUsersMap();
   const { currentUser } = useAuth();
-  const { openViewer } = useMediaViewerActions();
   const coverInputRef = useRef(null);
   const avatarInputRef = useRef(null);
   const [showDropdown, setShowDropdown] = useState(false);
@@ -702,7 +689,7 @@ export default function CommunityView({ communityId, onBack, onPostClick, onComm
   const { addPost, updateCommunity } = useCommunityActions();
   const { currentUser } = useAuth();
   const composerRef = useRef(null);
-  const { mutate: toggleJoin, isLoading: isJoining } = useJoinCommunity();
+  const { mutate: toggleJoin } = useJoinCommunity();
   /**
    * The one-time "you're now a moderator" notice.
    *
@@ -781,7 +768,7 @@ export default function CommunityView({ communityId, onBack, onPostClick, onComm
   const [showAdminModal, setShowAdminModal] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [showMobileDetails, setShowMobileDetails] = useState(() => {
+  const [showMobileDetails] = useState(() => {
     const saved = localStorage.getItem('meetify_show_community_details');
     return saved !== null ? JSON.parse(saved) : true;
   });
@@ -904,9 +891,8 @@ export default function CommunityView({ communityId, onBack, onPostClick, onComm
   // `apiComm` — reading it above its own declaration would throw.
   const onlineNow = liveOnline ?? comm?.online ?? comm?.onlineCount ?? 0;
   const isLoading = isApiLoading || (!comm && !isDeletedError && !isApiError);
-  const error = isApiError && !isDeletedError;
 
-  const [joining, setJoining] = useState(false);
+  const [joining] = useState(false);
   const loadMorePostsRef = useRef(null);
 
   const userCommunities = useMemo(() => {
@@ -1053,23 +1039,6 @@ export default function CommunityView({ communityId, onBack, onPostClick, onComm
       </div>
     );
   }
-
-function DeletedCommunityView({ onBack }) {
-  const navigate = useNavigate();
-
-  return (
-    <NotFoundState
-      type="community"
-      title="Community not found"
-      message="This community doesn't exist, has been deleted, or is no longer accessible."
-      actionLabel="Back to Communities"
-      onAction={() => navigate('/communities', { replace: true })}
-      secondaryActionLabel="Back to Home Feed"
-      onSecondaryAction={() => navigate('/home', { replace: true })}
-      coverPage={true}
-    />
-  );
-}
 
   if (isApiError || (!isApiLoading && !comm)) {
     const status = apiError?.response?.status;
