@@ -36,13 +36,25 @@ function makeService(
   return { service, prisma };
 }
 
-const originalFlag = process.env.FEATURE_FIRST_YEAR_ISOLATION;
+/**
+ * The baseline for this file is "policy ON", declared here instead of inherited.
+ *
+ * Jest loads `.env`, so the suite used to restore whatever the developer had
+ * set. Someone working with `FEATURE_FIRST_YEAR_ISOLATION=false` — a reasonable
+ * thing to want locally, and exactly what a populated dev feed needs — turned
+ * every rule below into a no-op, and the suite failed for a reason that had
+ * nothing to do with the code under test. A test for what a policy does when
+ * enabled has to enable it.
+ *
+ * Tests that exercise the disabled path still set the flag themselves; the
+ * afterEach returns to the enforced baseline rather than to the environment.
+ */
+const ENFORCED = 'true';
+process.env.FEATURE_FIRST_YEAR_ISOLATION = ENFORCED;
 const originalYear = process.env.ACADEMIC_YEAR;
 
 afterEach(() => {
-  if (originalFlag === undefined)
-    delete process.env.FEATURE_FIRST_YEAR_ISOLATION;
-  else process.env.FEATURE_FIRST_YEAR_ISOLATION = originalFlag;
+  process.env.FEATURE_FIRST_YEAR_ISOLATION = ENFORCED;
   if (originalYear === undefined) delete process.env.ACADEMIC_YEAR;
   else process.env.ACADEMIC_YEAR = originalYear;
 });

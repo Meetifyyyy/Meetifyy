@@ -378,18 +378,18 @@
   flex-shrink: 0;
 }
 
-.msgDateSeparatorLine {
-  flex: 1;
-  height: 1px;
-  background: var(--color-border, #e4e4e7);
-}
-
 .msgDateSeparatorText {
   font-size: 0.75rem;
   color: var(--color-text-muted, #71717a);
   font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  /* Sentence case: the string already arrives as "Yesterday" / "Today", so the
+     uppercase was purely presentational and made a date read as a heading. */
+  letter-spacing: 0.02em;
+  padding: 3px 12px;
+  border: 1px solid var(--color-border, #e4e4e7);
+  border-radius: 100px;
+  background: var(--color-bg-white, #ffffff);
+  white-space: nowrap;
 }
 
 .systemMessageContainer {

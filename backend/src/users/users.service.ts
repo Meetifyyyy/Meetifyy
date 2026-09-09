@@ -327,14 +327,29 @@ export class UsersService {
 
     // Decode keyset cursor.
     let cursorWhere: any = undefined;
+    /**
+     * Keyset pagination on the name, because that is what the list is ordered
+     * by now. It used to page on `createdAt`, which was correct for a
+     * newest-first directory and would silently return the wrong rows against
+     * an alphabetical one — the cursor has to be built from the same key the
+     * ORDER BY uses or pages overlap and skip.
+     *
+     * `id` breaks ties so two people with the same display name cannot make the
+     * cursor ambiguous and drop one of them.
+     *
+     * Split on the LAST `|`, not the first. The id is a uuid and never contains
+     * one; a display name can, and splitting on the first would truncate the
+     * name at that character and page from the wrong place.
+     */
     if (opts.cursor && opts.cursor.includes('|')) {
-      const [ts, id] = opts.cursor.split('|');
-      const createdAt = new Date(ts);
-      if (!isNaN(createdAt.getTime()) && id) {
+      const separator = opts.cursor.lastIndexOf('|');
+      const name = opts.cursor.slice(0, separator);
+      const id = opts.cursor.slice(separator + 1);
+      if (id) {
         cursorWhere = {
           OR: [
-            { createdAt: { lt: createdAt } },
-            { createdAt: createdAt, id: { lt: id } },
+            { displayName: { gt: name } },
+            { displayName: name, id: { gt: id } },
           ],
         };
       }
@@ -409,16 +424,16 @@ export class UsersService {
         passingYear: true,
         createdAt: true,
       },
-      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      // Alphabetical, with `id` as the tie-break that keeps the keyset cursor
+      // above unambiguous.
+      orderBy: [{ displayName: 'asc' }, { id: 'asc' }],
     });
 
     const hasMore = rows.length > limit;
     const pageRows = hasMore ? rows.slice(0, limit) : rows;
     const last = pageRows[pageRows.length - 1];
     const nextCursor =
-      hasMore && last
-        ? `${new Date(last.createdAt).toISOString()}|${last.id}`
-        : undefined;
+      hasMore && last ? `${last.displayName ?? ''}|${last.id}` : undefined;
 
     // No presence on this response, because no directory card draws a presence
     // dot — it renders an avatar, a name and an academic line, and nothing else.
@@ -456,7 +471,47 @@ export class UsersService {
         : { ...u, blocked: false },
     );
 
-    return { users, nextCursor };
+    /**
+     * The viewer sits at the top of their own directory.
+     *
+     * Prepended to the first page rather than ordered into the query, and the
+     * query still excludes them, for two reasons: an alphabetical ORDER BY
+     * cannot express "this one row first", and letting them fall wherever their
+     * name lands would mean the pin moved between pages — on page four you
+     * would simply not be there. Pinning outside the query keeps the keyset
+     * cursor built purely from the alphabetical rows, so pagination stays
+     * correct.
+     *
+     * Only when there is no cursor, i.e. the first page. A later page prepending
+     * the viewer again would repeat them down the list.
+     *
+     * No search term either: typing a name and being shown yourself regardless
+     * of whether you match is noise, and it would push a real result off a
+     * short result set.
+     */
+    const isFirstPage = !opts.cursor;
+    const selfRow =
+      isFirstPage && !search
+        ? await this.prisma.user.findUnique({
+            where: { id: userId },
+            select: {
+              id: true,
+              username: true,
+              displayName: true,
+              avatar: true,
+              course: true,
+              branch: true,
+              passingYear: true,
+            },
+          })
+        : null;
+
+    return {
+      users: selfRow
+        ? [{ ...selfRow, blocked: false, isSelf: true }, ...users]
+        : users,
+      nextCursor,
+    };
   }
 
   /**

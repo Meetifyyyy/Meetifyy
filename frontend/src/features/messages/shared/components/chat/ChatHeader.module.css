@@ -194,7 +194,14 @@
   transition: background-color 0.2s;
 }
 
-@media (min-width: 769px) {
+/* The Back button belongs to the single-pane layout, so it is hidden only when
+   there are actually two panes to be between.
+   This was a viewport query, which meant any window wider than 768px hid it —
+   including one where the layout had already collapsed to a single pane because
+   the left rail took its share. That left no way back to the conversation list
+   once a chat was open. Measured against the messages container, it appears
+   exactly when the list is the thing it returns to. */
+@container messages (min-width: 769px) {
   .msgBackBtn {
     display: none !important;
   }

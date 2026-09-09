@@ -660,9 +660,11 @@ export default function ChatMessageList({
         if (item.type === 'date_separator') {
           return (
             <div key={item.key} className={styles.msgDateSeparator}>
-              <span className={styles.msgDateSeparatorLine} />
+              {/* The date stands on its own now — a bordered pill rather than a
+                  label threaded through a rule. The two lines were doing the
+                  separating; the outline does it, and takes less width to do
+                  it in a narrow pane. */}
               <span className={styles.msgDateSeparatorText}>{item.dateGroup}</span>
-              <span className={styles.msgDateSeparatorLine} />
             </div>
           );
         }

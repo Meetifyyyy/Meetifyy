@@ -386,7 +386,13 @@
   object-fit: cover;
 }
 
-@media (max-width: 768px) {
+/* Single-pane chrome: the back button, and the chat filling the layout.
+   Keyed to the messages container, not the viewport and not `chatpane`. The
+   viewport is wrong for the reason described in ConversationList; `chatpane`
+   is wrong too, because a chat pane can be under 768px while the list still
+   sits beside it — showing a Back button there would offer to return to a list
+   that never went away. What decides this is whether the LAYOUT collapsed. */
+@container messages (max-width: 768px) {
   .msgChatUser {
     gap: 0.5rem;
   }

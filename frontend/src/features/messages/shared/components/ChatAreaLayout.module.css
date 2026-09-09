@@ -33,7 +33,14 @@
   display: flex;
 }
 
-@media (min-width: 769px) {
+/* Both panes at once only when the LAYOUT has room for both.
+   This was a viewport query, so the chat pane was forced visible beside the
+   list on any window wider than 768px — including one where the pane itself
+   had only ~370px, which is how the composer ended up showing "Type a m…".
+   Measured against the messages container, a cramped layout falls back to the
+   single-pane behaviour the phone already uses: the list, or the chat with its
+   back button, never both squeezed together. */
+@container messages (min-width: 769px) {
   .chatArea {
     display: flex;
   }

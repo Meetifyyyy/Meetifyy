@@ -484,7 +484,15 @@
   flex-shrink: 0;
 }
 
-@media (max-width: 768px) {
+/* Narrow LAYOUT, not narrow device.
+   Keyed to the messages container rather than the viewport, because the two
+   are not the same number: the dashboard spends ~360px on the left rail before
+   Messages sees anything, so a 1040px window leaves this pane around 620px —
+   wide enough for the browser to call it desktop and far too narrow for a
+   conversation list and a chat side by side. Measuring the pane collapses it to
+   one column exactly when the space runs out, and on a phone the container is
+   the viewport, so every rule below still applies there unchanged. */
+@container messages (max-width: 768px) {
 
   .mobileHeaderWrapper,
   .desktopHeaderWrapper,
@@ -765,5 +773,35 @@
   .filterChip {
     padding: 0.35rem 0.6rem;
     font-size: 0.78rem;
+  }
+}
+
+/* A collapsed layout is not a phone.
+   The single-pane rules above were written for a ~375px screen, where 0.85rem
+   gutters are the right call. They now also apply when a desktop layout
+   collapses, and there the same gutters leave the list hugging both edges of a
+   680px card. This restores the roomier spacing once there is room for it —
+   above phone width and below the two-pane threshold — so the narrow-device
+   values are untouched where they belong. */
+@container messages (min-width: 480px) and (max-width: 768px) {
+  .msgConvList {
+    padding: 12px 0 0;
+  }
+
+  .msgConvHeader {
+    padding: 0 1.25rem;
+  }
+
+  .searchRow {
+    padding: 0.75rem 1.25rem 0.5rem;
+  }
+
+  .filterRow {
+    padding: 0.65rem 1.25rem 0.75rem;
+    gap: 0.4rem;
+  }
+
+  .convItem {
+    padding: 0.85rem 1.25rem;
   }
 }
