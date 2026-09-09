@@ -200,10 +200,6 @@ export default function ImageSearchModal({ onClose, onSelect, theme }) {
     e.target.value = '';
   };
 
-  const isGifUrl = (url) => {
-    if (!url || typeof url !== 'string') return false;
-    return url.includes('.gif') || url.startsWith('data:image/gif');
-  };
 
   const handleSelectItem = useCallback(
     (itemUrl) => {

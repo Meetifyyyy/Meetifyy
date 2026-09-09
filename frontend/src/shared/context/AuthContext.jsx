@@ -4,7 +4,6 @@ import { followGraphChangedSince } from '../utils/followState';
 import { useSavedPostsStore } from '../stores/savedPostsStore';
 import { useSavedActivitiesStore } from '../stores/savedActivitiesStore';
 import usePostStore from '../stores/postStore';
-import { showToast } from '@shared/utils/toast';
 import { getCollegeName } from '@shared/utils/user';
 import { idbClearAll } from '@shared/lib/idb';
 import { useQueryClient } from '@tanstack/react-query';
@@ -1012,7 +1011,7 @@ export function AuthProvider({ children }) {
     });
 
     return true;
-  }, [currentUser, isSupabaseConfigured]);
+  }, [currentUser]);
 
   const logout = useCallback(async () => {
     isLoggingOutRef.current = true;

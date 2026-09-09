@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import { createContext, useContext, useState, useCallback } from 'react';
 
 const CONSENT_KEY = 'meetifyy_consent';
 const CONSENT_VERSION = '1.0';

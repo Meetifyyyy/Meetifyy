@@ -89,8 +89,6 @@ export default function MediaViewer() {
   useScrollLock(open);
 
   const currentItem = items[index] || null;
-  const prevItem    = items[index - 1] || null;
-  const nextItem    = items[index + 1] || null;
   const isVid       = isVideo(currentItem);
 
   // Keep index in a ref so gesture callbacks always see the latest value
@@ -100,8 +98,6 @@ export default function MediaViewer() {
   useEffect(() => { indexRef.current = index; }, [index]);
   useEffect(() => { itemsLenRef.current = items.length; }, [items.length]);
 
-  // Ref to mirror controlsVisible without causing gesture-path re-renders
-  const controlsVisibleRef     = useRef(true);
   const controlsHiddenByGesture = useRef(false);
 
   // ── Smart adjacent image preloading (immediate async decode, memory-safe) ──
@@ -142,7 +138,7 @@ export default function MediaViewer() {
       setControlsVisible(true);
       if (trackRef.current) {
         trackRef.current.style.transition = 'none';
-        trackRef.current.style.transform = `translate3d(-${index * 100}%, 0, 0)`;
+        trackRef.current.style.transform = `translate3d(-${indexRef.current * 100}%, 0, 0)`;
       }
       requestAnimationFrame(() => setVisible(true));
     } else {
@@ -167,7 +163,7 @@ export default function MediaViewer() {
       }, 320);
       return () => clearTimeout(timer);
     }
-  }, [open]);
+  }, [open, savedScrollRef]);
 
   // ── Close more menu on outside click ───────────────────────────────────────
   useEffect(() => {

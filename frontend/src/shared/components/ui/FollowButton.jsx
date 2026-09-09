@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { useAuth } from '@shared/context/AuthContext';
 import { useFollowMutation } from '@shared/hooks/useFollowMutation';
 import { toggleRegistry } from '@shared/utils/mutationRegistry';
@@ -21,7 +21,6 @@ import styles from './FollowButton.module.css';
 const FollowButton = ({ targetUsername, initialFollowing, size = 'md', className, style }) => {
   const { currentUser } = useAuth();
   const queryClient = useQueryClient();
-  const [hovered, setHovered] = useState(false);
   const sizeClass = size === 'sm' ? styles.sizeSm : styles.sizeMd;
 
   const cleanTargetUsername = targetUsername?.toLowerCase();
@@ -158,8 +157,6 @@ const FollowButton = ({ targetUsername, initialFollowing, size = 'md', className
   return (
     <button
       onClick={handleClick}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
       disabled={false} // allowed for rapid toggle
       className={className || `${styles.followBtn} ${sizeClass} ${stateClass}`.trim()}
       style={{

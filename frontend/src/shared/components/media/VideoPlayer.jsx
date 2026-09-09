@@ -19,17 +19,12 @@ export default function VideoPlayer({ src }) {
   const [quality, setQuality] = useState('Auto');
   const [showQualityMenu, setShowQualityMenu] = useState(false);
   const [currentSrc, setCurrentSrc] = useState(src);
-  const [volumeHovered, setVolumeHovered] = useState(false);
   const volumeTimer = useRef(null);
   const [showVolumeSlider, setShowVolumeSlider] = useState(false);
   const [isDraggingVolume, setIsDraggingVolume] = useState(false);
   const [availableQualities, setAvailableQualities] = useState(['Auto']);
   const [isChangingQuality, setIsChangingQuality] = useState(false);
 
-  // Premium interactive feedback states & refs
-  const [tapFeedback, setTapFeedback] = useState(null); // 'play' | 'pause' | null
-  const tapFeedbackTimerRef = useRef(null);
-  const clickTimerRef = useRef(null);
 
   const showVolume = useCallback(() => {
     clearTimeout(volumeTimer.current);

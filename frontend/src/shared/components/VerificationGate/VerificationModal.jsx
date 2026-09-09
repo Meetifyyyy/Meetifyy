@@ -50,7 +50,7 @@ export default function VerificationModal() {
         </h2>
 
         <p className={styles.message}>
-          Verify your account to unlock full access to Meetifyy. This helps us maintain a safe and trusted community.
+          {message || 'Verify your account to unlock full access to Meetifyy. This helps us maintain a safe and trusted community.'}
         </p>
 
         {isPending && (

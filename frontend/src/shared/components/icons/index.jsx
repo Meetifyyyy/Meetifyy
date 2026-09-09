@@ -31,7 +31,6 @@ import {
   Delete02Icon,
   Download04Icon,
   Edit02Icon,
-  EllipsisVerticalIcon,
   File02Icon,
   FileImageIcon,
   FileRemoveIcon,
