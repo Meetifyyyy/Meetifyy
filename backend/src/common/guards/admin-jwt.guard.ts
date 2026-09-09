@@ -9,6 +9,7 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
 import * as jwt from 'jsonwebtoken';
 import { config } from '../../config';
+import { timingSafeEqual } from 'crypto';
 
 @Injectable()
 export class AdminJwtGuard implements CanActivate {
@@ -84,7 +85,7 @@ export class AdminJwtGuard implements CanActivate {
       if (
         !csrfCookie ||
         typeof csrfHeader !== 'string' ||
-        csrfHeader !== csrfCookie
+        !constantTimeEquals(csrfHeader, csrfCookie)
       ) {
         throw new ForbiddenException('CSRF validation failed');
       }
@@ -104,4 +105,21 @@ export class AdminJwtGuard implements CanActivate {
 
     return true;
   }
+}
+
+/**
+ * Compares two CSRF tokens without leaking their contents through timing.
+ *
+ * `!==` on strings returns as soon as it finds a differing byte. That is a weak
+ * oracle here — the attacker must already be able to read the response — but the
+ * token is a plain secret compared on every mutating admin request, and a
+ * constant-time compare costs nothing. The length check is deliberately outside
+ * the timing-safe path: `timingSafeEqual` throws on a length mismatch, and the
+ * length of a fixed-format token is not the secret.
+ */
+function constantTimeEquals(a: string, b: string): boolean {
+  const left = Buffer.from(a);
+  const right = Buffer.from(b);
+  if (left.length !== right.length) return false;
+  return timingSafeEqual(left, right);
 }

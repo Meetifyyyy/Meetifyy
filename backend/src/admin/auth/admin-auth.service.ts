@@ -100,7 +100,12 @@ export class AdminAuthService implements OnModuleInit {
         }
       }
 
-      const passwordHash = await bcrypt.hash(pass, 10);
+      // Cost 12, not 10. bcrypt's factor is the only thing standing between a
+      // dumped `passwordHash` and an offline guessing run, and 10 was chosen
+      // when hardware was slower. Existing hashes keep the cost they were made
+      // with and still verify — `compare` reads it from the hash — so this
+      // applies to seeding and to any password set from here on.
+      const passwordHash = await bcrypt.hash(pass, 12);
 
       await this.prisma.superAdmin.upsert({
         where: { email },
