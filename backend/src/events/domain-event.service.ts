@@ -49,7 +49,18 @@ export class DomainEventService {
     };
 
     // 1. Emit locally via EventEmitter2 (for internal services like Notifications)
-    this.eventEmitter.emit(type, payload);
+    //
+    // Guarded because EventEmitter2 dispatches listeners synchronously and lets
+    // a throw propagate back out of `emit`. Every caller of this method treats
+    // it as fire-and-forget, so that throw became a rejection nobody was
+    // waiting on — and an unhandled rejection ends the process under Node's
+    // default. A listener that fails should lose its own notification, not the
+    // request that triggered it and not the server.
+    try {
+      this.eventEmitter.emit(type, payload);
+    } catch (err) {
+      this.logger.error(`Local listener for domain event ${type} threw`, err);
+    }
 
     // 2. Publish to Redis Pub/Sub for RealtimeGateway to broadcast to clients
     const pubClient = this.redisService.getPubClient();

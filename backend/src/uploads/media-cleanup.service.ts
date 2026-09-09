@@ -2,6 +2,7 @@ import { Injectable, Logger, Inject } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import type { StorageProvider } from './providers/storage-provider.interface';
 import { config } from '../config';
+import { detach } from '../common/utils/detach.util';
 
 export type ReplaceableEntityType =
   | 'USER_AVATAR'
@@ -800,28 +801,30 @@ export class MediaCleanupService {
 
     if (validKeys.length === 0) return;
 
-    setImmediate(async () => {
-      let pending = [...validKeys];
-      for (let attempt = 1; attempt <= 3 && pending.length > 0; attempt++) {
-        const nextPending: string[] = [];
-        for (const key of pending) {
-          const res = await this.deletePermanently(key);
-          if (!res.success && !res.skipped) {
-            nextPending.push(key);
+    setImmediate(() =>
+      detach('media cleanup sweep', async () => {
+        let pending = [...validKeys];
+        for (let attempt = 1; attempt <= 3 && pending.length > 0; attempt++) {
+          const nextPending: string[] = [];
+          for (const key of pending) {
+            const res = await this.deletePermanently(key);
+            if (!res.success && !res.skipped) {
+              nextPending.push(key);
+            }
+          }
+          pending = nextPending;
+          if (pending.length > 0 && attempt < 3) {
+            const delayMs = attempt * 2000;
+            await new Promise((r) => setTimeout(r, delayMs));
           }
         }
-        pending = nextPending;
-        if (pending.length > 0 && attempt < 3) {
-          const delayMs = attempt * 2000;
-          await new Promise((r) => setTimeout(r, delayMs));
+        if (pending.length > 0) {
+          this.logger.error(
+            `queueMediaDeletion: exhausted retries for ${pending.length} media keys: ${pending.join(', ')} (Media rows preserved in DB for recovery)`,
+          );
         }
-      }
-      if (pending.length > 0) {
-        this.logger.error(
-          `queueMediaDeletion: exhausted retries for ${pending.length} media keys: ${pending.join(', ')} (Media rows preserved in DB for recovery)`,
-        );
-      }
-    });
+      }),
+    );
   }
 
   /**

@@ -965,7 +965,7 @@ export class MessagingCoreService {
           otherReadTimestamps.length === others.length;
         const minOtherReadAt = isAllRead ? Math.min(...otherReadTimestamps) : 0;
 
-        this.domainEventService.emit(
+        void this.domainEventService.emit(
           'conversation:seen',
           {
             conversationId,

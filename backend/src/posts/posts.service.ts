@@ -390,7 +390,7 @@ export class PostsService {
     this.logger.log(
       `createPost: created post id=${post.id} author=${authorId} media=${formattedMedia.length} community=${post.communityId || 'none'}`,
     );
-    this.domainEventService.emit('post.created', {
+    void this.domainEventService.emit('post.created', {
       postId: post.id,
       authorId,
       communityId: post.communityId || undefined,
@@ -551,7 +551,7 @@ export class PostsService {
     // committed.
     if (mediaKeys.length > 0) {
       if (this.mediaCleanupService) {
-        this.mediaCleanupService.queueMediaDeletion(mediaKeys);
+        void this.mediaCleanupService.queueMediaDeletion(mediaKeys);
       } else {
         const deleteMediaJobs = mediaKeys.map((key) =>
           this.storageService.delete(key).catch((err) => {
@@ -569,7 +569,7 @@ export class PostsService {
     // such room, so explicitly target the deleting user's OTHER devices/tabs —
     // this device already removed the post optimistically with no network
     // round-trip needed.
-    this.domainEventService.emit(
+    void this.domainEventService.emit(
       'post.deleted',
       { postId, communityId: post.communityId || undefined },
       [userId],
@@ -1226,7 +1226,7 @@ export class PostsService {
             });
         }
 
-        this.domainEventService.emit(
+        void this.domainEventService.emit(
           'post.liked',
           { postId, userId, likeCount: updatedCount },
           [post.authorId],
@@ -1272,7 +1272,7 @@ export class PostsService {
       const deleted = Number(rows?.[0]?.deleted ?? 0);
       const updatedCount = Number(rows?.[0]?.likeCount ?? post.likeCount);
       if (deleted === 1) {
-        this.domainEventService.emit(
+        void this.domainEventService.emit(
           'post.unliked',
           { postId, userId, likeCount: updatedCount },
           [post.authorId],
@@ -1357,7 +1357,7 @@ export class PostsService {
       .deleteMany({ where: { commentId } })
       .catch(() => {});
 
-    this.domainEventService.emit('comment.deleted', {
+    void this.domainEventService.emit('comment.deleted', {
       commentId,
       postId: comment.postId,
       userId,
@@ -1453,7 +1453,7 @@ export class PostsService {
 
         // Carry the authoritative likeCount so post-room viewers apply an
         // absolute value (idempotent) rather than a relative bump.
-        this.domainEventService.emit('comment.liked', {
+        void this.domainEventService.emit('comment.liked', {
           commentId,
           postId: comment.postId,
           userId,
@@ -1491,7 +1491,7 @@ export class PostsService {
       const deleted = Number(rows?.[0]?.deleted ?? 0);
       if (deleted === 1) {
         const likeCount = Number(rows?.[0]?.likeCount ?? 0);
-        this.domainEventService.emit('comment.unliked', {
+        void this.domainEventService.emit('comment.unliked', {
           commentId,
           postId: comment.postId,
           userId,
@@ -1638,7 +1638,7 @@ export class PostsService {
       isLiked: false,
       isLikedByMe: false,
     };
-    this.domainEventService.emit('comment.created', {
+    void this.domainEventService.emit('comment.created', {
       commentId: comment.id,
       postId,
       authorId,
@@ -2209,7 +2209,9 @@ export class PostsService {
       create: { userId, postId },
     });
 
-    this.domainEventService.emit('post.saved', { postId, userId }, [userId]);
+    void this.domainEventService.emit('post.saved', { postId, userId }, [
+      userId,
+    ]);
     return { success: true };
   }
 
@@ -2221,7 +2223,7 @@ export class PostsService {
       await this.prisma.postBookmark.delete({
         where: { userId_postId: { userId, postId } },
       });
-      this.domainEventService.emit('post.unsaved', { postId, userId }, [
+      void this.domainEventService.emit('post.unsaved', { postId, userId }, [
         userId,
       ]);
     }
@@ -2450,7 +2452,7 @@ export class PostsService {
       };
 
       // Real-time broadcast
-      this.domainEventService.emit('post.pollVoted', {
+      void this.domainEventService.emit('post.pollVoted', {
         postId,
         userId,
         poll: updatedPoll,

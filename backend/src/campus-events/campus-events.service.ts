@@ -629,7 +629,7 @@ export class CampusEventsService {
       data: { deletedAt: new Date() },
     });
     if (event.posterUrl && this.mediaCleanupService) {
-      this.mediaCleanupService.queueMediaDeletion([event.posterUrl]);
+      void this.mediaCleanupService.queueMediaDeletion([event.posterUrl]);
     }
     await this.invalidateCampus(event.campusId);
     return { success: true };

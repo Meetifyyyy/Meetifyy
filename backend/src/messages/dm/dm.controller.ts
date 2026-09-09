@@ -134,7 +134,7 @@ export class DmController {
     }
 
     const res = await this.dmService.startDM(userId, targetId);
-    this.domainEventService.emit(
+    void this.domainEventService.emit(
       'conversation:updated',
       { conversationId: res.id },
       [targetId],
@@ -196,7 +196,9 @@ export class DmController {
       emitMessageNew(this.domainEventService, message, {
         recipientIds: unblockedParticipantIds,
         unmutedRecipientIds,
-      }).forEach((p) => p.catch(() => {}));
+      }).forEach((p) => {
+        void p.catch(() => {});
+      });
       this.domainEventService
         .emit(
           'conversation:updated',
@@ -315,7 +317,7 @@ export class DmController {
       const pubId = (result as any).publicId || result.conversationId;
       const participantIds = (result as any).participantIds || [];
       setImmediate(() => {
-        this.domainEventService.emit(
+        void this.domainEventService.emit(
           'message:updated',
           {
             id: messageId,
@@ -331,7 +333,7 @@ export class DmController {
           },
           participantIds,
         );
-        this.domainEventService.emit(
+        void this.domainEventService.emit(
           'conversation:updated',
           {
             conversationId: pubId,
@@ -385,12 +387,12 @@ export class DmController {
             otherParticipantIds,
           );
 
-        this.domainEventService.emit(
+        void this.domainEventService.emit(
           'message:new',
           message,
           unblockedParticipantIds,
         );
-        this.domainEventService.emit(
+        void this.domainEventService.emit(
           'conversation:updated',
           {
             conversationId: message.conversationId,
@@ -435,7 +437,7 @@ export class DmController {
               .catch(() => {});
           }
         }
-        this.domainEventService.emit('message:new', message, [userId]);
+        void this.domainEventService.emit('message:new', message, [userId]);
       }
     }
 

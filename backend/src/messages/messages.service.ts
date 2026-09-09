@@ -2107,7 +2107,9 @@ export class MessagesService
       submitted: avatarVal !== undefined,
     });
 
-    this.invalidateUserConversationsCache(participantRows.map((p) => p.userId));
+    void this.invalidateUserConversationsCache(
+      participantRows.map((p) => p.userId),
+    );
 
     return updated;
   }

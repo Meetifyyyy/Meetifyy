@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { RedisService } from '../redis/redis.service';
 import Redis from 'ioredis';
 import { PrismaService } from '../prisma/prisma.service';
+import { detach } from '../common/utils/detach.util';
 
 export interface UserPresence {
   lastSeen: string;
@@ -216,32 +217,39 @@ export class PresenceService {
               if (this.disconnectTimers.has(userId)) {
                 clearTimeout(this.disconnectTimers.get(userId));
               }
-              const timer = setTimeout(async () => {
-                this.disconnectTimers.delete(userId);
-                try {
-                  const currentData = await this.redis?.get(key);
-                  let currPresence: UserPresence | null = currentData
-                    ? JSON.parse(currentData)
-                    : null;
-                  currPresence = this.cleanPresence(currPresence);
-                  if (!currPresence || currPresence.socketIds.length === 0) {
-                    const now = new Date().toISOString();
-                    const updatedPresence: UserPresence = {
-                      lastSeen: now,
-                      status: 'offline',
-                      socketIds: [],
-                    };
-                    await this.redis?.set(
-                      key,
-                      JSON.stringify(updatedPresence),
-                      'EX',
-                      90,
-                    );
-                    this.logger.log(`Offline user=${userId}`);
-                    this.notifyStatusChange(userId, 'offline', now);
-                  }
-                } catch (e) {}
-              }, 2000);
+              const timer = setTimeout(
+                () =>
+                  detach('presence timeout', async () => {
+                    this.disconnectTimers.delete(userId);
+                    try {
+                      const currentData = await this.redis?.get(key);
+                      let currPresence: UserPresence | null = currentData
+                        ? JSON.parse(currentData)
+                        : null;
+                      currPresence = this.cleanPresence(currPresence);
+                      if (
+                        !currPresence ||
+                        currPresence.socketIds.length === 0
+                      ) {
+                        const now = new Date().toISOString();
+                        const updatedPresence: UserPresence = {
+                          lastSeen: now,
+                          status: 'offline',
+                          socketIds: [],
+                        };
+                        await this.redis?.set(
+                          key,
+                          JSON.stringify(updatedPresence),
+                          'EX',
+                          90,
+                        );
+                        this.logger.log(`Offline user=${userId}`);
+                        this.notifyStatusChange(userId, 'offline', now);
+                      }
+                    } catch (e) {}
+                  }),
+                2000,
+              );
               this.disconnectTimers.set(userId, timer);
             } else {
               await this.redis.set(key, JSON.stringify(presence), 'EX', 90);

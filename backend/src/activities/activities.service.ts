@@ -49,6 +49,7 @@ import { NOTIFICATIONS_QUEUE } from '../notifications/notifications.processor';
 import { RedisService } from '../redis/redis.service';
 import { MediaCleanupService } from '../uploads/media-cleanup.service';
 import { ActivityVisibility } from '@prisma/client';
+import { detach } from '../common/utils/detach.util';
 
 @Injectable()
 export class ActivitiesService implements OnModuleInit {
@@ -269,7 +270,7 @@ export class ActivitiesService implements OnModuleInit {
         }
 
         for (const actId of expiredIds) {
-          this.domainEventService.emit('activity.updated', {
+          void this.domainEventService.emit('activity.updated', {
             id: actId,
             status: 'ENDED',
           });
@@ -1822,12 +1823,12 @@ export class ActivitiesService implements OnModuleInit {
     }
 
     setImmediate(() => {
-      this.domainEventService.emit('activity.created', {
+      void this.domainEventService.emit('activity.created', {
         id: createdActivity.id,
         creatorId,
         collegeId: user?.collegeId || null,
       });
-      this.clearActivityFeedCaches();
+      void this.clearActivityFeedCaches();
     });
 
     return createdActivity;
@@ -2054,7 +2055,7 @@ export class ActivitiesService implements OnModuleInit {
 
     // Fire socket event side-effects in background
     setImmediate(() => {
-      this.domainEventService.emit('activity.memberJoined', {
+      void this.domainEventService.emit('activity.memberJoined', {
         activityId,
         userId,
       });
@@ -2133,7 +2134,7 @@ export class ActivitiesService implements OnModuleInit {
 
     // Fire socket event side-effects in background
     setImmediate(() => {
-      this.domainEventService.emit('activity.memberLeft', {
+      void this.domainEventService.emit('activity.memberLeft', {
         activityId,
         userId,
       });
@@ -2159,7 +2160,7 @@ export class ActivitiesService implements OnModuleInit {
       where: { activityId, userId, status: 'PENDING' },
       data: { status: 'DECLINED' },
     });
-    this.domainEventService.emit('activity.updated', { id: activityId });
+    void this.domainEventService.emit('activity.updated', { id: activityId });
     return { success: true };
   }
 
@@ -2223,11 +2224,11 @@ export class ActivitiesService implements OnModuleInit {
     );
 
     setImmediate(() => {
-      this.domainEventService.emit('activity.updated', {
+      void this.domainEventService.emit('activity.updated', {
         id: activityId,
         status: terminalStatus,
       });
-      this.clearActivityFeedCaches();
+      void this.clearActivityFeedCaches();
     });
 
     return { success: true };
@@ -2764,27 +2765,29 @@ export class ActivitiesService implements OnModuleInit {
         // a queue client can throw synchronously or hand back something that is
         // not a promise, and this runs detached in a setImmediate where either
         // would surface as an unhandled crash instead of a failed enqueue.
-        setImmediate(async () => {
-          try {
-            await this.notifQueue?.add(
-              'activity-invitations',
-              notificationPayload,
-              {
-                removeOnComplete: true,
-                attempts: 3,
-                backoff: { type: 'exponential', delay: 1000 },
-              },
-            );
-          } catch (err) {
-            this.logger.warn(
-              'Failed to enqueue activity invitations job to BullMQ',
-              err,
-            );
-            await dispatchInline();
-          }
-        });
+        setImmediate(() =>
+          detach('activity fan-out', async () => {
+            try {
+              await this.notifQueue?.add(
+                'activity-invitations',
+                notificationPayload,
+                {
+                  removeOnComplete: true,
+                  attempts: 3,
+                  backoff: { type: 'exponential', delay: 1000 },
+                },
+              );
+            } catch (err) {
+              this.logger.warn(
+                'Failed to enqueue activity invitations job to BullMQ',
+                err,
+              );
+              await dispatchInline();
+            }
+          }),
+        );
       } else {
-        setImmediate(dispatchInline);
+        setImmediate(() => detach('activity fan-out', dispatchInline));
       }
     }
 
@@ -2961,7 +2964,7 @@ export class ActivitiesService implements OnModuleInit {
       userId,
     ]);
 
-    this.domainEventService.emit(
+    void this.domainEventService.emit(
       'invitation:updated',
       {
         invitationId,
@@ -3006,7 +3009,7 @@ export class ActivitiesService implements OnModuleInit {
       userId,
     ]);
 
-    this.domainEventService.emit(
+    void this.domainEventService.emit(
       'invitation:updated',
       {
         invitationId,

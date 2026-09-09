@@ -26,6 +26,7 @@ import { VerificationAccessService } from '../../common/verification/verificatio
 import { StudentYearPolicyService } from '../../common/student-year/student-year-policy.service';
 import { RateLimitService } from '../../common/rate-limit/rate-limit.service';
 import { assertNewConversationWithinRateLimit } from '../core/message-limits';
+import { detach } from '../../common/utils/detach.util';
 
 @Injectable()
 export class GroupChatsService extends MessagingCoreService {
@@ -290,7 +291,7 @@ export class GroupChatsService extends MessagingCoreService {
       },
     });
 
-    this.invalidateUserConversationsCache(allParticipantIds);
+    void this.invalidateUserConversationsCache(allParticipantIds);
 
     // Return full conversation shape so frontend can render immediately
     return {
@@ -446,17 +447,19 @@ export class GroupChatsService extends MessagingCoreService {
       });
 
     // Clean up expired join requests in background
-    setImmediate(async () => {
-      await this.prisma.conversationJoinRequest
-        .deleteMany({
-          where: {
-            conversationId: conv.id,
-            status: 'PENDING',
-            expiresAt: { lte: now },
-          },
-        })
-        .catch(() => {});
-    });
+    setImmediate(() =>
+      detach('group creation fan-out', async () => {
+        await this.prisma.conversationJoinRequest
+          .deleteMany({
+            where: {
+              conversationId: conv.id,
+              status: 'PENDING',
+              expiresAt: { lte: now },
+            },
+          })
+          .catch(() => {});
+      }),
+    );
 
     // Deterministic role order: OWNER (0), ADMIN (1), MEMBER (2)
     const roleRank = { OWNER: 0, ADMIN: 1, MEMBER: 2 };
@@ -655,7 +658,7 @@ export class GroupChatsService extends MessagingCoreService {
     });
 
     const participantIds = participantRows.map((p) => p.userId);
-    this.invalidateUserConversationsCache(participantIds);
+    void this.invalidateUserConversationsCache(participantIds);
     this._invalidateGroupDetailsByRealId(realConvId).catch(() => {});
 
     const rawName = user?.username || user?.displayName || 'Someone';
@@ -981,7 +984,7 @@ export class GroupChatsService extends MessagingCoreService {
     const updatedConv = results[results.length - 2];
     const participantRows = results[results.length - 1] || [];
     const participantIds = participantRows.map((p: any) => p.userId);
-    this.invalidateUserConversationsCache(participantIds);
+    void this.invalidateUserConversationsCache(participantIds);
     this._invalidateGroupDetailsByRealId(realConvId).catch(() => {});
 
     return {
@@ -1020,7 +1023,7 @@ export class GroupChatsService extends MessagingCoreService {
     ]);
 
     const participantIds = participantRows.map((p) => p.userId);
-    this.invalidateUserConversationsCache(participantIds);
+    void this.invalidateUserConversationsCache(participantIds);
     this._invalidateGroupDetailsByRealId(realConvId).catch(() => {});
 
     return {

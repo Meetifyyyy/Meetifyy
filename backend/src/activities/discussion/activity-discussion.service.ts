@@ -226,7 +226,7 @@ export class ActivityDiscussionService {
 
     // Fan out to everyone currently viewing the activity (they joined the
     // `activity_<id>` socket room). Room-only broadcast — no participant set.
-    this.domainEventService.emit('activity_discussion.created', {
+    void this.domainEventService.emit('activity_discussion.created', {
       activityId,
       message,
     });

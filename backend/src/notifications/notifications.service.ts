@@ -17,6 +17,7 @@ import { RedisService } from '../redis/redis.service';
 import { BlocksService } from '../users/blocks.service';
 import Redis from 'ioredis';
 import { StudentYearPolicyService } from '../common/student-year/student-year-policy.service';
+import { detach } from '../common/utils/detach.util';
 
 @Injectable()
 export class NotificationsService implements OnModuleInit {
@@ -94,9 +95,8 @@ export class NotificationsService implements OnModuleInit {
     // (presence updates, feed invalidation) but notification creation is decoupled.
 
     // Unfollow: cancel notification when user unfollows
-    this.eventEmitter.on(
-      'follow.deleted',
-      async (payload: DomainEventPayload) => {
+    this.eventEmitter.on('follow.deleted', (payload: DomainEventPayload) =>
+      detach('notification listener', async () => {
         const { followerId, followingId } = payload.data || {};
         if (!followerId || !followingId) return;
         await this.cancelNotificationByCriteria({
@@ -107,13 +107,12 @@ export class NotificationsService implements OnModuleInit {
         }).catch((err) =>
           this.logger.warn('Failed to reconcile follow.deleted event', err),
         );
-      },
+      }),
     );
 
     // 2. Post Like / Unlike Reconciliation
-    this.eventEmitter.on(
-      'post.unliked',
-      async (payload: DomainEventPayload) => {
+    this.eventEmitter.on('post.unliked', (payload: DomainEventPayload) =>
+      detach('notification listener', async () => {
         const { postId, userId } = payload.data || {};
         if (!postId || !userId) return;
         const post = await this.prisma.post.findUnique({
@@ -130,13 +129,12 @@ export class NotificationsService implements OnModuleInit {
             this.logger.warn('Failed to reconcile post.unliked event', err),
           );
         }
-      },
+      }),
     );
 
     // 3. Comment Like / Unlike Reconciliation
-    this.eventEmitter.on(
-      'comment.unliked',
-      async (payload: DomainEventPayload) => {
+    this.eventEmitter.on('comment.unliked', (payload: DomainEventPayload) =>
+      detach('notification listener', async () => {
         const { commentId, userId } = payload.data || {};
         if (!commentId || !userId) return;
         const comment = await this.prisma.comment.findUnique({
@@ -153,7 +151,7 @@ export class NotificationsService implements OnModuleInit {
             this.logger.warn('Failed to reconcile comment.unliked event', err),
           );
         }
-      },
+      }),
     );
   }
 
@@ -379,7 +377,7 @@ export class NotificationsService implements OnModuleInit {
                 updatedAt: new Date(),
               },
             });
-            this.domainEventService.emit('notification:new', updated, [
+            void this.domainEventService.emit('notification:new', updated, [
               dto.recipientId,
             ]);
             await this.incrementUnreadCount(dto.recipientId);
@@ -486,7 +484,7 @@ export class NotificationsService implements OnModuleInit {
         populatedNotif = { ...notification, actor };
       }
 
-      this.domainEventService.emit('notification:new', populatedNotif, [
+      void this.domainEventService.emit('notification:new', populatedNotif, [
         dto.recipientId,
       ]);
       // Must mirror getNotifications()/getUnreadCount()'s type filter — MESSAGE
@@ -746,7 +744,7 @@ export class NotificationsService implements OnModuleInit {
       knownCount !== undefined
         ? knownCount
         : (await this.getUnreadCount(userId)).count;
-    this.domainEventService.emit('notifications:unread_count', { count }, [
+    void this.domainEventService.emit('notifications:unread_count', { count }, [
       userId,
     ]);
   }
@@ -832,7 +830,7 @@ export class NotificationsService implements OnModuleInit {
       await this.emitUnreadCount(recipientId, newCount ?? undefined);
     }
 
-    this.domainEventService.emit(
+    void this.domainEventService.emit(
       'notification:cancelled',
       {
         notificationId: existing.id,
@@ -932,7 +930,7 @@ export class NotificationsService implements OnModuleInit {
         },
       });
 
-      this.domainEventService.emit(
+      void this.domainEventService.emit(
         'invitation:new',
         {
           id: invitationId,
@@ -960,7 +958,9 @@ export class NotificationsService implements OnModuleInit {
       );
 
       if (notif) {
-        this.domainEventService.emit('notification:new', notif, [inviteeId]);
+        void this.domainEventService.emit('notification:new', notif, [
+          inviteeId,
+        ]);
       }
     }
   }
@@ -1063,7 +1063,7 @@ export class NotificationsService implements OnModuleInit {
 
       const populated = { ...updated, actor: notif.actor };
       updatedRows.push(populated);
-      this.domainEventService.emit('notification:updated', populated, [
+      void this.domainEventService.emit('notification:updated', populated, [
         notif.recipientId,
       ]);
     }

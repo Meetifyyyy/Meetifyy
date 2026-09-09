@@ -24,7 +24,7 @@ describe('emitMessageNew', () => {
   it('delivers to muted recipients too, flagged not to alert', () => {
     const { calls, service } = makeService();
 
-    emitMessageNew(
+    void emitMessageNew(
       service,
       { id: 'm1', text: 'hi' },
       {
@@ -47,7 +47,7 @@ describe('emitMessageNew', () => {
   it('never alerts the sender on their own other devices', () => {
     const { calls, service } = makeService();
 
-    emitMessageNew(
+    void emitMessageNew(
       service,
       { id: 'm1' },
       {
@@ -63,7 +63,7 @@ describe('emitMessageNew', () => {
 
   it('emits nothing for an empty recipient list', () => {
     const { calls, service } = makeService();
-    emitMessageNew(
+    void emitMessageNew(
       service,
       { id: 'm1' },
       { recipientIds: [], unmutedRecipientIds: [] },

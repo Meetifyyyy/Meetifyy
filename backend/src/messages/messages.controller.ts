@@ -54,7 +54,7 @@ export class MessagesController {
       const pubId = (result as any).publicId || result.conversationId;
       const participantIds = (result as any).participantIds || [];
       setImmediate(() => {
-        this.domainEventService.emit(
+        void this.domainEventService.emit(
           'message:updated',
           {
             id: messageId,
@@ -70,7 +70,7 @@ export class MessagesController {
           },
           participantIds,
         );
-        this.domainEventService.emit(
+        void this.domainEventService.emit(
           'conversation:updated',
           {
             conversationId: pubId,
@@ -123,11 +123,11 @@ export class MessagesController {
         ]);
 
         // Emit to others; muted recipients get the message without the alert.
-        emitMessageNew(this.domainEventService, message, {
+        void emitMessageNew(this.domainEventService, message, {
           recipientIds: unblockedParticipantIds,
           unmutedRecipientIds,
         });
-        this.domainEventService.emit(
+        void this.domainEventService.emit(
           'conversation:updated',
           {
             conversationId: message.conversationId,
@@ -173,7 +173,7 @@ export class MessagesController {
         }
 
         // Emit to sender (multi-device sync, never alerted)
-        this.domainEventService.emit(
+        void this.domainEventService.emit(
           'message:new',
           { ...message, alert: false },
           [userId],
@@ -255,11 +255,11 @@ export class MessagesController {
 
     // Emit to others. Muted recipients still receive the message (mute is not
     // a delivery filter) but receive it flagged `alert: false`.
-    emitMessageNew(this.domainEventService, message, {
+    void emitMessageNew(this.domainEventService, message, {
       recipientIds: unblockedParticipantIds,
       unmutedRecipientIds,
     });
-    this.domainEventService.emit(
+    void this.domainEventService.emit(
       'conversation:updated',
       {
         conversationId: message.conversationId,
@@ -347,12 +347,12 @@ export class MessagesController {
     if (targetUserIds.length > 0) {
       const others = targetUserIds.filter((tId) => tId && tId !== userId);
       if (others.length > 0) {
-        this.domainEventService.emit(
+        void this.domainEventService.emit(
           'group:member_added',
           { conversationId: res.id, userId },
           others,
         );
-        this.domainEventService.emit(
+        void this.domainEventService.emit(
           'conversation:updated',
           { conversationId: res.id },
           others,
@@ -446,7 +446,7 @@ export class MessagesController {
           conversationId,
         );
       if (participantIds.length > 0) {
-        this.domainEventService.emit(
+        void this.domainEventService.emit(
           'group:role_changed',
           { conversationId, targetUserId, newRole },
           participantIds,
@@ -472,7 +472,7 @@ export class MessagesController {
         await this.messagesService.getConversationParticipantIds(
           conversationId,
         );
-      this.domainEventService.emit('message:new', message, participantIds);
+      void this.domainEventService.emit('message:new', message, participantIds);
       return message;
     } catch {
       // Ignore background system message errors
@@ -535,7 +535,7 @@ export class MessagesController {
         result.id,
       );
       const avatarVal = result.avatarKey || result.avatar || null;
-      this.domainEventService.emit(
+      void this.domainEventService.emit(
         'conversation:updated',
         {
           conversationId: pubId,
@@ -578,14 +578,16 @@ export class MessagesController {
       `${actorHandle} added ${targetHandle} to the group`,
     );
 
-    this.domainEventService.emit(
+    void this.domainEventService.emit(
       'group:member_added',
       { conversationId, userId: targetUserId },
       [targetUserId],
     );
-    this.domainEventService.emit('conversation:updated', { conversationId }, [
-      targetUserId,
-    ]);
+    void this.domainEventService.emit(
+      'conversation:updated',
+      { conversationId },
+      [targetUserId],
+    );
     return result;
   }
 
@@ -616,7 +618,7 @@ export class MessagesController {
       text,
     );
 
-    this.domainEventService.emit(
+    void this.domainEventService.emit(
       'group:member_removed',
       {
         conversationId,
@@ -626,7 +628,7 @@ export class MessagesController {
       },
       [targetUserId],
     );
-    this.domainEventService.emit('message:new', message, [targetUserId]);
+    void this.domainEventService.emit('message:new', message, [targetUserId]);
 
     const remainingParticipantIds =
       await this.messagesService.getConversationParticipantIds(conversationId);
@@ -634,8 +636,8 @@ export class MessagesController {
       (pId) => pId !== targetUserId,
     );
     if (others.length > 0) {
-      this.domainEventService.emit('message:new', message, others);
-      this.domainEventService.emit(
+      void this.domainEventService.emit('message:new', message, others);
+      void this.domainEventService.emit(
         'group:member_removed',
         {
           conversationId,
@@ -671,7 +673,7 @@ export class MessagesController {
       text,
     );
 
-    this.domainEventService.emit(
+    void this.domainEventService.emit(
       'group:member_removed',
       {
         conversationId,
@@ -686,8 +688,8 @@ export class MessagesController {
       await this.messagesService.getConversationParticipantIds(conversationId);
     const others = remainingParticipantIds.filter((pId) => pId !== userId);
     if (others.length > 0) {
-      this.domainEventService.emit('message:new', message, others);
-      this.domainEventService.emit(
+      void this.domainEventService.emit('message:new', message, others);
+      void this.domainEventService.emit(
         'group:member_removed',
         {
           conversationId,
@@ -751,7 +753,7 @@ export class MessagesController {
     const participantIds =
       await this.messagesService.getConversationParticipantIds(conversationId);
     if (participantIds.length > 0) {
-      this.domainEventService.emit(
+      void this.domainEventService.emit(
         'conversation:updated',
         {
           conversationId,
@@ -855,7 +857,7 @@ export class MessagesController {
     const text = `${actorHandle} approved ${targetHandle}'s request to join`;
     await this.broadcastSystemMessage(conversationId, userId, text);
 
-    this.domainEventService.emit(
+    void this.domainEventService.emit(
       'group:member_added',
       { conversationId, userId: targetUserId },
       [targetUserId],

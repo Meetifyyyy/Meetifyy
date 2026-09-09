@@ -205,4 +205,13 @@ Supabase      [OK] Connected
 Ready in ${process.uptime().toFixed(2)}s
 ===============================`);
 }
-bootstrap();
+
+// A rejection here is the process failing to start. Left floating it surfaced
+// as an unhandled rejection, which reports the failure without the context of
+// what was being attempted and, under Node's default, tears the process down
+// on its own terms rather than ours.
+bootstrap().catch((err) => {
+  // eslint-disable-next-line no-console
+  console.error('Failed to start Meetifyy API', err);
+  process.exit(1);
+});

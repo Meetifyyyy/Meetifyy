@@ -19,6 +19,7 @@ import { DomainEventService } from '../../events/domain-event.service';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { NotificationFactory } from '../../notifications/notification.factory';
 import { SendMessageDto } from '../core/dto/send-message.dto';
+import { detach } from '../../common/utils/detach.util';
 
 @Controller('api/group-chats')
 export class GroupChatsController {
@@ -76,7 +77,7 @@ export class GroupChatsController {
     const others = allParticipants.filter((id) => id !== userId);
 
     if (others.length > 0) {
-      this.domainEventService.emit(
+      void this.domainEventService.emit(
         'group:member_added',
         { conversationId: res.id, userId },
         others,
@@ -84,7 +85,7 @@ export class GroupChatsController {
     }
     // Emit full conversation payload to ALL participants so each client can
     // inject the real group into their conversation list immediately.
-    this.domainEventService.emit(
+    void this.domainEventService.emit(
       'conversation:updated',
       {
         conversationId: res.id,
@@ -156,12 +157,12 @@ export class GroupChatsController {
       new Set([userId, ...unblockedParticipantIds]),
     );
 
-    this.domainEventService.emit(
+    void this.domainEventService.emit(
       'message:new',
       message,
       unblockedParticipantIds,
     );
-    this.domainEventService.emit(
+    void this.domainEventService.emit(
       'conversation:updated',
       {
         conversationId: message.conversationId,
@@ -204,7 +205,7 @@ export class GroupChatsController {
       }
     });
 
-    this.domainEventService.emit('message:new', message, [userId]);
+    void this.domainEventService.emit('message:new', message, [userId]);
 
     return message;
   }
@@ -287,7 +288,7 @@ export class GroupChatsController {
         await this.groupChatsService.getConversationParticipantIds(
           conversationId,
         );
-      this.domainEventService.emit('message:new', message, participantIds);
+      void this.domainEventService.emit('message:new', message, participantIds);
       return message;
     } catch {
       // ignore
@@ -336,53 +337,55 @@ export class GroupChatsController {
     else if (body.name || body.avatarKey || body.avatar || body.description)
       text = `${actorHandle} updated group details`;
 
-    setImmediate(async () => {
-      let systemMsg = null;
-      if (text) {
-        systemMsg = await this.groupChatsService
-          .createSystemMessage(conversationId, userId, text)
-          .catch(() => null);
-        if (systemMsg) {
-          this.domainEventService.emit(
-            'message:new',
-            systemMsg,
-            participantIds,
-          );
+    setImmediate(() =>
+      detach('group details update fan-out', async () => {
+        let systemMsg = null;
+        if (text) {
+          systemMsg = await this.groupChatsService
+            .createSystemMessage(conversationId, userId, text)
+            .catch(() => null);
+          if (systemMsg) {
+            void this.domainEventService.emit(
+              'message:new',
+              systemMsg,
+              participantIds,
+            );
+          }
         }
-      }
-      const pubId = updated.publicId || updated.id;
-      const avatarVal =
-        updated.avatarKey !== undefined
-          ? updated.avatarKey
-          : updated.avatar !== undefined
-            ? updated.avatar
-            : convBefore?.avatarKey || null;
+        const pubId = updated.publicId || updated.id;
+        const avatarVal =
+          updated.avatarKey !== undefined
+            ? updated.avatarKey
+            : updated.avatar !== undefined
+              ? updated.avatar
+              : convBefore?.avatarKey || null;
 
-      const payload: any = {
-        conversationId: pubId,
-        id: pubId,
-        publicId: pubId,
-        internalId: updated.id,
-        name: updated.name,
-        avatar: avatarVal,
-        avatarKey: avatarVal,
-        description: updated.description,
-      };
-
-      if (systemMsg) {
-        payload.lastMessage = {
-          text: systemMsg.text,
-          createdAt: systemMsg.createdAt,
-          senderId: userId,
+        const payload: any = {
+          conversationId: pubId,
+          id: pubId,
+          publicId: pubId,
+          internalId: updated.id,
+          name: updated.name,
+          avatar: avatarVal,
+          avatarKey: avatarVal,
+          description: updated.description,
         };
-      }
 
-      this.domainEventService.emit(
-        'conversation:updated',
-        payload,
-        participantIds,
-      );
-    });
+        if (systemMsg) {
+          payload.lastMessage = {
+            text: systemMsg.text,
+            createdAt: systemMsg.createdAt,
+            senderId: userId,
+          };
+        }
+
+        void this.domainEventService.emit(
+          'conversation:updated',
+          payload,
+          participantIds,
+        );
+      }),
+    );
 
     return {
       ...updated,
@@ -407,25 +410,29 @@ export class GroupChatsController {
     this.groupChatsService
       .invalidateGroupDetailsCache(conversationId)
       .catch(() => {});
-    setImmediate(async () => {
-      const [actorHandle, targetHandle] = await Promise.all([
-        this.groupChatsService.getUserHandle(userId),
-        this.groupChatsService.getUserHandle(targetUserId),
-      ]);
-      await this.broadcastSystemMessage(
-        conversationId,
-        userId,
-        `${actorHandle} added ${targetHandle} to the group`,
-      );
-      this.domainEventService.emit(
-        'group:member_added',
-        { conversationId, userId: targetUserId },
-        [targetUserId],
-      );
-      this.domainEventService.emit('conversation:updated', { conversationId }, [
-        targetUserId,
-      ]);
-    });
+    setImmediate(() =>
+      detach('group member added fan-out', async () => {
+        const [actorHandle, targetHandle] = await Promise.all([
+          this.groupChatsService.getUserHandle(userId),
+          this.groupChatsService.getUserHandle(targetUserId),
+        ]);
+        await this.broadcastSystemMessage(
+          conversationId,
+          userId,
+          `${actorHandle} added ${targetHandle} to the group`,
+        );
+        void this.domainEventService.emit(
+          'group:member_added',
+          { conversationId, userId: targetUserId },
+          [targetUserId],
+        );
+        void this.domainEventService.emit(
+          'conversation:updated',
+          { conversationId },
+          [targetUserId],
+        );
+      }),
+    );
     return result;
   }
 
@@ -447,39 +454,45 @@ export class GroupChatsController {
       .invalidateGroupDetailsCache(conversationId)
       .catch(() => {});
 
-    setImmediate(async () => {
-      const [actorHandle, targetHandle, remainingParticipantIds] =
-        await Promise.all([
-          this.groupChatsService.getUserHandle(userId),
-          this.groupChatsService.getUserHandle(targetUserId),
-          this.groupChatsService.getConversationParticipantIds(conversationId),
-        ]);
-      const text = `${actorHandle} removed ${targetHandle} from the group`;
-      const message = await this.groupChatsService.createSystemMessage(
-        conversationId,
-        userId,
-        text,
-      );
+    setImmediate(() =>
+      detach('group member removed fan-out', async () => {
+        const [actorHandle, targetHandle, remainingParticipantIds] =
+          await Promise.all([
+            this.groupChatsService.getUserHandle(userId),
+            this.groupChatsService.getUserHandle(targetUserId),
+            this.groupChatsService.getConversationParticipantIds(
+              conversationId,
+            ),
+          ]);
+        const text = `${actorHandle} removed ${targetHandle} from the group`;
+        const message = await this.groupChatsService.createSystemMessage(
+          conversationId,
+          userId,
+          text,
+        );
 
-      this.domainEventService.emit(
-        'group:member_removed',
-        { conversationId, targetUserId, removedBy: userId, message },
-        [targetUserId],
-      );
-      this.domainEventService.emit('message:new', message, [targetUserId]);
-
-      const others = remainingParticipantIds.filter(
-        (pId) => pId !== targetUserId,
-      );
-      if (others.length > 0) {
-        this.domainEventService.emit('message:new', message, others);
-        this.domainEventService.emit(
+        void this.domainEventService.emit(
           'group:member_removed',
           { conversationId, targetUserId, removedBy: userId, message },
-          others,
+          [targetUserId],
         );
-      }
-    });
+        void this.domainEventService.emit('message:new', message, [
+          targetUserId,
+        ]);
+
+        const others = remainingParticipantIds.filter(
+          (pId) => pId !== targetUserId,
+        );
+        if (others.length > 0) {
+          void this.domainEventService.emit('message:new', message, others);
+          void this.domainEventService.emit(
+            'group:member_removed',
+            { conversationId, targetUserId, removedBy: userId, message },
+            others,
+          );
+        }
+      }),
+    );
 
     return result;
   }
@@ -499,33 +512,20 @@ export class GroupChatsController {
       .invalidateGroupDetailsCache(conversationId)
       .catch(() => {});
 
-    setImmediate(async () => {
-      const [actorHandle, remainingParticipantIds] = await Promise.all([
-        this.groupChatsService.getUserHandle(userId),
-        this.groupChatsService.getConversationParticipantIds(conversationId),
-      ]);
-      const text = `${actorHandle} left the group`;
-      const message = await this.groupChatsService.createSystemMessage(
-        conversationId,
-        userId,
-        text,
-      );
-
-      this.domainEventService.emit(
-        'group:member_removed',
-        {
+    setImmediate(() =>
+      detach('group leave fan-out', async () => {
+        const [actorHandle, remainingParticipantIds] = await Promise.all([
+          this.groupChatsService.getUserHandle(userId),
+          this.groupChatsService.getConversationParticipantIds(conversationId),
+        ]);
+        const text = `${actorHandle} left the group`;
+        const message = await this.groupChatsService.createSystemMessage(
           conversationId,
-          targetUserId: userId,
-          removedBy: userId,
-          message,
-        },
-        [userId],
-      );
+          userId,
+          text,
+        );
 
-      const others = remainingParticipantIds.filter((pId) => pId !== userId);
-      if (others.length > 0) {
-        this.domainEventService.emit('message:new', message, others);
-        this.domainEventService.emit(
+        void this.domainEventService.emit(
           'group:member_removed',
           {
             conversationId,
@@ -533,10 +533,25 @@ export class GroupChatsController {
             removedBy: userId,
             message,
           },
-          others,
+          [userId],
         );
-      }
-    });
+
+        const others = remainingParticipantIds.filter((pId) => pId !== userId);
+        if (others.length > 0) {
+          void this.domainEventService.emit('message:new', message, others);
+          void this.domainEventService.emit(
+            'group:member_removed',
+            {
+              conversationId,
+              targetUserId: userId,
+              removedBy: userId,
+              message,
+            },
+            others,
+          );
+        }
+      }),
+    );
 
     return result;
   }
@@ -559,7 +574,7 @@ export class GroupChatsController {
       try {
         const { updatedConv, participantIds } = result;
         if (participantIds && participantIds.length > 0) {
-          this.domainEventService.emit(
+          void this.domainEventService.emit(
             'conversation:updated',
             {
               conversationId:
@@ -596,7 +611,7 @@ export class GroupChatsController {
       try {
         const { updatedConv, participantIds } = result;
         if (participantIds && participantIds.length > 0) {
-          this.domainEventService.emit(
+          void this.domainEventService.emit(
             'conversation:updated',
             {
               conversationId:
@@ -638,7 +653,7 @@ export class GroupChatsController {
         conversationId,
       );
     if (participantIds.length > 0) {
-      this.domainEventService.emit(
+      void this.domainEventService.emit(
         'conversation:updated',
         {
           conversationId,
@@ -646,7 +661,7 @@ export class GroupChatsController {
         },
         participantIds,
       );
-      this.domainEventService.emit(
+      void this.domainEventService.emit(
         'group:role_changed',
         {
           conversationId,
@@ -655,7 +670,7 @@ export class GroupChatsController {
         },
         participantIds,
       );
-      this.domainEventService.emit(
+      void this.domainEventService.emit(
         'group:role_changed',
         {
           conversationId,
@@ -699,7 +714,7 @@ export class GroupChatsController {
         conversationId,
       );
     if (participantIds.length > 0) {
-      this.domainEventService.emit(
+      void this.domainEventService.emit(
         'group:role_changed',
         {
           conversationId,
@@ -742,7 +757,7 @@ export class GroupChatsController {
         conversationId,
       );
     if (participantIds.length > 0) {
-      this.domainEventService.emit(
+      void this.domainEventService.emit(
         'group:role_changed',
         {
           conversationId,
@@ -799,7 +814,7 @@ export class GroupChatsController {
     const text = `${actorHandle} approved ${targetHandle}'s request to join`;
     await this.broadcastSystemMessage(conversationId, userId, text);
 
-    this.domainEventService.emit(
+    void this.domainEventService.emit(
       'group:member_added',
       { conversationId, userId: targetUserId },
       [targetUserId],
@@ -873,12 +888,12 @@ export class GroupChatsController {
           );
         // The joiner needs conversation:updated to pull the group into their
         // own chat list; existing members need member_added to refresh rosters.
-        this.domainEventService.emit(
+        void this.domainEventService.emit(
           'group:member_added',
           { conversationId: result.conversationId, userId },
           participantIds,
         );
-        this.domainEventService.emit(
+        void this.domainEventService.emit(
           'conversation:updated',
           { conversationId: result.conversationId },
           participantIds,
@@ -925,7 +940,7 @@ export class GroupChatsController {
       const pubId = (result as any).publicId || result.conversationId;
       const participantIds = (result as any).participantIds || [];
       setImmediate(() => {
-        this.domainEventService.emit(
+        void this.domainEventService.emit(
           'message:updated',
           {
             id: messageId,
@@ -941,7 +956,7 @@ export class GroupChatsController {
           },
           participantIds,
         );
-        this.domainEventService.emit(
+        void this.domainEventService.emit(
           'conversation:updated',
           {
             conversationId: pubId,
@@ -991,12 +1006,12 @@ export class GroupChatsController {
           this.groupChatsService.getConversationById(conversationId),
         ]);
 
-        this.domainEventService.emit(
+        void this.domainEventService.emit(
           'message:new',
           message,
           unblockedParticipantIds,
         );
-        this.domainEventService.emit(
+        void this.domainEventService.emit(
           'conversation:updated',
           {
             conversationId: message.conversationId,
@@ -1035,7 +1050,7 @@ export class GroupChatsController {
             )
             .catch(() => {});
         }
-        this.domainEventService.emit('message:new', message, [userId]);
+        void this.domainEventService.emit('message:new', message, [userId]);
       }
     }
 

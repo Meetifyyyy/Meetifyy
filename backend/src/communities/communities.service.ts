@@ -907,7 +907,7 @@ export class CommunitiesService implements OnModuleInit {
       });
 
       if (community.ownerId) {
-        this.domainEventService.emit('community.joinRequested', {
+        void this.domainEventService.emit('community.joinRequested', {
           communityId,
           userId,
           ownerId: community.ownerId,
@@ -946,7 +946,7 @@ export class CommunitiesService implements OnModuleInit {
       });
 
       if (joined) {
-        this.domainEventService.emit('community.memberJoined', {
+        void this.domainEventService.emit('community.memberJoined', {
           communityId,
           userId,
           memberCount: newCount,
@@ -1069,7 +1069,7 @@ export class CommunitiesService implements OnModuleInit {
       communityId,
       community?.collegeId ?? undefined,
     );
-    this.domainEventService.emit('community.requestAccepted', {
+    void this.domainEventService.emit('community.requestAccepted', {
       communityId,
       userId: joinReq.userId,
       memberCount: newMemberCount,
@@ -1118,7 +1118,7 @@ export class CommunitiesService implements OnModuleInit {
       data: { status: 'DECLINED' },
     });
 
-    this.domainEventService.emit('community.requestDeclined', {
+    void this.domainEventService.emit('community.requestDeclined', {
       communityId,
       userId: joinReq.userId,
     });
@@ -1167,7 +1167,7 @@ export class CommunitiesService implements OnModuleInit {
       });
 
       if (left) {
-        this.domainEventService.emit('community.memberLeft', {
+        void this.domainEventService.emit('community.memberLeft', {
           communityId,
           userId,
           memberCount: newCount,
@@ -1354,7 +1354,7 @@ export class CommunitiesService implements OnModuleInit {
       throw err;
     }
 
-    this.domainEventService.emit('community.created', {
+    void this.domainEventService.emit('community.created', {
       communityId: created.id,
       creatorId,
       community: created,
@@ -1509,7 +1509,7 @@ export class CommunitiesService implements OnModuleInit {
       submitted: coverInput !== undefined,
     });
 
-    this.domainEventService.emit('community.updated', {
+    void this.domainEventService.emit('community.updated', {
       communityId,
       community: updated,
     });
@@ -1660,7 +1660,7 @@ export class CommunitiesService implements OnModuleInit {
       },
     });
 
-    this.domainEventService.emit('community.roleUpdated', {
+    void this.domainEventService.emit('community.roleUpdated', {
       communityId,
       memberId,
       newRole,
@@ -1683,7 +1683,7 @@ export class CommunitiesService implements OnModuleInit {
       // room: the welcome modal is theirs alone, and the room carries every
       // member. `community.roleUpdated` above still goes to the room for the
       // member-list refresh everyone needs.
-      this.domainEventService.emit(
+      void this.domainEventService.emit(
         'community:moderator_promoted',
         { communityId },
         [memberId],
@@ -1752,7 +1752,7 @@ export class CommunitiesService implements OnModuleInit {
       newCount = Math.max(0, updated.memberCount);
     });
 
-    this.domainEventService.emit('community.memberLeft', {
+    void this.domainEventService.emit('community.memberLeft', {
       communityId,
       userId: memberId,
       memberCount: newCount,
@@ -1931,7 +1931,7 @@ export class CommunitiesService implements OnModuleInit {
     ].filter(Boolean) as string[];
 
     if (mediaKeysToClean.length > 0 && this.mediaCleanupService) {
-      this.mediaCleanupService.queueMediaDeletion(mediaKeysToClean);
+      void this.mediaCleanupService.queueMediaDeletion(mediaKeysToClean);
     }
 
     // ✅ 10. Invalidate all relevant Redis & local memory caches
@@ -1968,7 +1968,7 @@ export class CommunitiesService implements OnModuleInit {
     }
 
     // ✅ 11. Emit real-time domain event so WebSockets notify all clients immediately
-    this.domainEventService.emit('community.deleted', {
+    void this.domainEventService.emit('community.deleted', {
       communityId,
       deletedAt: now.toISOString(),
     });

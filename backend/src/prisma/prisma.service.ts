@@ -9,6 +9,7 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
 import { config } from '../config';
 import { dbLine } from '../common/logging/log-format';
+import { detach } from '../common/utils/detach.util';
 
 /**
  * Connects through node-postgres rather than Prisma's own Rust connection layer.
@@ -314,16 +315,20 @@ export class PrismaService
       // across the whole pool for the same reason the warmup does — a single
       // serial ping only keeps one connection hot and lets the rest go cold,
       // reintroducing the very handshake cost the warmup just paid.
-      this.keepAliveTimer = setInterval(async () => {
-        if (this.isDestroyed) return;
-        try {
-          await Promise.all(
-            Array.from({ length: poolSize }, () =>
-              this.$queryRawUnsafe('SELECT 1').catch(() => {}),
-            ),
-          );
-        } catch {}
-      }, 25000);
+      this.keepAliveTimer = setInterval(
+        () =>
+          detach('database keep-alive', async () => {
+            if (this.isDestroyed) return;
+            try {
+              await Promise.all(
+                Array.from({ length: poolSize }, () =>
+                  this.$queryRawUnsafe('SELECT 1').catch(() => {}),
+                ),
+              );
+            } catch {}
+          }),
+        25000,
+      );
     } catch (error) {
       if (!this.isDestroyed) {
         this.logger.error('Could not connect to database on startup.');

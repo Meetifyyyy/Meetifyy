@@ -100,7 +100,7 @@ export class BlocksService implements OnModuleInit, OnModuleDestroy {
     const subClient = this.redisService?.getSubClient();
     if (!subClient) return;
 
-    subClient.subscribe(BLOCK_INVALIDATE_CHANNEL, () => {
+    void subClient.subscribe(BLOCK_INVALIDATE_CHANNEL, () => {
       // Subscribe errors are non-fatal: the TTL still bounds staleness.
     });
     subClient.on('message', (channel: string, message: string) => {

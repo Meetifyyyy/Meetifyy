@@ -1625,7 +1625,7 @@ export class UsersService {
       update: { ...payload },
     });
 
-    this.domainEventService.emit(
+    void this.domainEventService.emit(
       'user.settings_updated',
       { userId, settings: updated },
       [userId],

@@ -53,6 +53,7 @@ import { RATE_LIMIT_POLICIES } from '../config/rate-limit.config';
 import { config } from '../config';
 import { clientIp, normalizeIp } from '../common/rate-limit/client-ip.util';
 import type { RateLimitPolicyName } from '../config/rate-limit.config';
+import { detach } from '../common/utils/detach.util';
 
 /**
  * The client address behind a socket.
@@ -215,10 +216,12 @@ export class RealtimeGateway
       return Boolean(s && s.connected);
     });
 
-    this.presenceService.onStatusChange(async (userId, status, lastSeen) => {
-      await this.broadcastPresenceUpdate(userId, status, lastSeen);
-      void this.broadcastCommunityPresence(userId);
-    });
+    this.presenceService.onStatusChange((userId, status, lastSeen) =>
+      detach('presence status broadcast', async () => {
+        await this.broadcastPresenceUpdate(userId, status, lastSeen);
+        void this.broadcastCommunityPresence(userId);
+      }),
+    );
 
     this.setupDomainEventSubscriber();
 
@@ -374,7 +377,7 @@ export class RealtimeGateway
   private setupDomainEventSubscriber() {
     const subClient = this.redisService.getSubClient();
     if (subClient) {
-      subClient.subscribe('meetifyy:domain_events', (err) => {
+      void subClient.subscribe('meetifyy:domain_events', (err) => {
         if (err) this.logger.error('Failed to subscribe to domain events', err);
       });
       subClient.on('message', (channel, message) => {
@@ -443,7 +446,7 @@ export class RealtimeGateway
           .then((presence) => {
             const status = presence?.status || 'offline';
             const lastSeen = presence?.lastSeen || new Date().toISOString();
-            this.broadcastPresenceUpdate(uId, status, lastSeen);
+            void this.broadcastPresenceUpdate(uId, status, lastSeen);
           })
           .catch(() => {});
       }
@@ -457,7 +460,7 @@ export class RealtimeGateway
         if (userSockets) {
           userSockets.forEach((socketId) => {
             const socket = this.server.sockets.sockets.get(socketId);
-            if (socket) socket.join(`conv_${convId}`);
+            if (socket) void socket.join(`conv_${convId}`);
           });
         }
       }
@@ -474,7 +477,7 @@ export class RealtimeGateway
         if (userSockets) {
           userSockets.forEach((socketId) => {
             const socket = this.server.sockets.sockets.get(socketId);
-            if (socket) socket.leave(`conv_${convId}`);
+            if (socket) void socket.leave(`conv_${convId}`);
           });
         }
       }
@@ -928,7 +931,7 @@ export class RealtimeGateway
 
     (client as any).userId = userId;
     (client as any).userName = userName;
-    client.join(userId); // Join user's personal room for multiplexed broadcasting
+    void client.join(userId); // Join user's personal room for multiplexed broadcasting
 
     // Automatically join all active conversation rooms for O(1) broadcasting.
     // Cache the internal conv IDs on the socket so handleDisconnect can read them
@@ -944,11 +947,11 @@ export class RealtimeGateway
       const cachedConvIds: string[] = [];
       activeConvs.forEach((p) => {
         if (p.conversationId) {
-          client.join(`conv_${p.conversationId}`);
+          void client.join(`conv_${p.conversationId}`);
           cachedConvIds.push(p.conversationId);
         }
         if (p.conversation?.publicId)
-          client.join(`conv_${p.conversation.publicId}`);
+          void client.join(`conv_${p.conversation.publicId}`);
       });
       (client as any).userConvIds = cachedConvIds;
     } catch (err) {
@@ -1208,11 +1211,11 @@ export class RealtimeGateway
     // policy below is the one `getPostById` applies, so the two paths agree.
     const allowed = await this.checkPostRoomAccess(userId, data.postId);
     if (!allowed) {
-      client.leave(`post_${data.postId}`);
+      void client.leave(`post_${data.postId}`);
       return;
     }
 
-    client.join(`post_${data.postId}`);
+    void client.join(`post_${data.postId}`);
   }
 
   /**
@@ -1264,7 +1267,7 @@ export class RealtimeGateway
     @MessageBody() data: { postId?: string },
   ) {
     if (!data?.postId) return;
-    client.leave(`post_${data.postId}`);
+    void client.leave(`post_${data.postId}`);
   }
 
   // A client viewing an activity joins its discussion room so it receives live
@@ -1296,10 +1299,10 @@ export class RealtimeGateway
         code: decision.code,
         message: decision.reason,
       });
-      client.leave(`activity_${data.activityId}`);
+      void client.leave(`activity_${data.activityId}`);
       return;
     }
-    client.join(`activity_${data.activityId}`);
+    void client.join(`activity_${data.activityId}`);
   }
 
   /**
@@ -1397,12 +1400,12 @@ export class RealtimeGateway
       const userId = socket ? (socket as any).userId : null;
       if (!socket) continue;
       if (!userId) {
-        socket.leave(`activity_${activityId}`);
+        void socket.leave(`activity_${activityId}`);
         continue;
       }
       const decision = await this.checkActivityRoomAccess(userId, activityId);
       if (!decision.allowed) {
-        socket.leave(`activity_${activityId}`);
+        void socket.leave(`activity_${activityId}`);
         socket.emit('activity:access_revoked', {
           activityId,
           code: decision.code,
@@ -1418,7 +1421,7 @@ export class RealtimeGateway
     @MessageBody() data: { activityId?: string },
   ) {
     if (!data?.activityId) return;
-    client.leave(`activity_${data.activityId}`);
+    void client.leave(`activity_${data.activityId}`);
   }
 
   @SubscribeMessage('typing:start')
@@ -1612,8 +1615,12 @@ export class RealtimeGateway
         lastReadAt,
       };
 
-      this.emitToConversation(data.conversationId, 'messages:seen', payload);
-      this.emitToConversation(
+      void this.emitToConversation(
+        data.conversationId,
+        'messages:seen',
+        payload,
+      );
+      void this.emitToConversation(
         data.conversationId,
         'conversation:seen',
         payload,
@@ -1764,8 +1771,8 @@ export class RealtimeGateway
 
       matchingConvs.forEach((c) => {
         if (allowedInternalIds.has(c.id)) {
-          if (c.id) client.join(`conv_${c.id}`);
-          if (c.publicId) client.join(`conv_${c.publicId}`);
+          if (c.id) void client.join(`conv_${c.id}`);
+          if (c.publicId) void client.join(`conv_${c.publicId}`);
         }
       });
     } catch (err) {
@@ -1797,11 +1804,11 @@ export class RealtimeGateway
       data.communityId,
     );
     if (!allowed) {
-      client.leave(`community_${data.communityId}`);
+      void client.leave(`community_${data.communityId}`);
       return;
     }
 
-    client.join(`community_${data.communityId}`);
+    void client.join(`community_${data.communityId}`);
 
     // Answer with the count as it stands right now. The community payload the
     // page rendered from can be up to 60s stale (it is Redis-cached), and
@@ -1858,7 +1865,7 @@ export class RealtimeGateway
     @MessageBody() data: { communityId: string },
   ) {
     if (data?.communityId) {
-      client.leave(`community_${data.communityId}`);
+      void client.leave(`community_${data.communityId}`);
     }
   }
 
@@ -2086,8 +2093,8 @@ export class RealtimeGateway
       for (const socketId of userSockets) {
         const socket = this.server.sockets.sockets.get(socketId);
         if (!socket) continue;
-        socket.join(`conv_${payload.internalId}`);
-        if (payload.chatId) socket.join(`conv_${payload.chatId}`);
+        void socket.join(`conv_${payload.internalId}`);
+        if (payload.chatId) void socket.join(`conv_${payload.chatId}`);
       }
     }
     this.server?.to(userId).emit('match:accepted', payload);
