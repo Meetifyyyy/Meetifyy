@@ -1,6 +1,6 @@
 import { useState, useEffect, memo, useMemo, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { isImageUrl } from '@shared/utils/avatar';
+import { resolveCommunityAvatarThumb } from '@shared/utils/avatar';
 import { sanitizeUrl } from '@shared/utils/urlSanitize';
 import Avatar, { getProcessedAvatarUrl } from '@shared/components/avatar/Avatar';
 import { CollegeRepresentativeBadge } from '@shared/components/badges/CollegeRepresentativeBadge';
@@ -276,15 +276,42 @@ function Post({ postData, onClick, onCommentClick, onDeleted, isDetailed = false
   // posts written before that field existed — it is built from the user's
   // community list, which the API paginates to 30, so relying on it alone
   // meant posts from a user's 31st community rendered with no tag at all.
-  const postCommunity = hideCommunityTag
-    ? null
-    : (postData.community
-        || (postData.communityId && communitiesById ? communitiesById[postData.communityId] : null)
-        || null);
+  //
+  // The two sources are MERGED rather than one winning outright. Different
+  // endpoints carry different amounts of community: the feed builds a full
+  // object, while the single-post route used to return only id/name — so the
+  // same post showed its real icon in the feed and a letter on a default blue
+  // circle once opened. Post fields win where present; the cached list fills
+  // the gaps.
+  // Deliberately NOT a useMemo: there is an early `return null` above (line
+  // ~229), and a hook added below it would run on some renders and not others
+  // — "Rendered more hooks than during the previous render". The merge is a
+  // spread of a handful of fields, so it is cheap enough to do inline.
+  const postCommunity = (() => {
+    if (hideCommunityTag) return null;
+    const fromPost = postData.community || null;
+    const fromList =
+      (postData.communityId && communitiesById
+        ? communitiesById[postData.communityId]
+        : null) || null;
+    if (!fromPost) return fromList;
+    if (!fromList) return fromPost;
+    const merged = { ...fromList };
+    for (const [k, v] of Object.entries(fromPost)) {
+      if (v !== null && v !== undefined) merged[k] = v;
+    }
+    return merged;
+  })();
+
+  // One resolution path for the community icon, shared with the community
+  // cards and the community header. The badge below read `.avatar` raw and put
+  // it through the *user* avatar helper, so a stored object key — which is
+  // what the column actually holds — never resolved to an image.
+  const postCommunityAvatar = postCommunity ? resolveCommunityAvatarThumb(postCommunity) : null;
 
   return (
     <div
-      className={`${styles.post}${isDeleting ? ` ${styles.postDeleting}` : ''}`}
+      className={`${styles.post}${isDetailed ? ` ${styles.postDetailed}` : ''}${isDeleting ? ` ${styles.postDeleting}` : ''}`}
       onClick={isDeleting ? undefined : handleCardClick}
       // Announces the pending state to assistive tech, which the visual
       // overlay alone does not.
@@ -310,12 +337,12 @@ function Post({ postData, onClick, onCommentClick, onDeleted, isDetailed = false
               className={styles.communityBadgeOverlay}
               onClick={(e) => e.stopPropagation()}
               title={postCommunity.name}
-              style={{ background: (!isImageUrl(postCommunity.avatar)) ? (postCommunity.color || 'var(--color-primary)') : 'var(--color-bg-white)' }}
+              style={{ background: postCommunityAvatar ? 'var(--color-bg-white)' : (postCommunity.color || 'var(--color-primary)') }}
             >
-              {isImageUrl(postCommunity.avatar) ? (
-                <img src={getProcessedAvatarUrl(postCommunity.avatar)} alt="" loading="lazy" onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.svg'; }} />
+              {postCommunityAvatar ? (
+                <img src={postCommunityAvatar} alt="" loading="lazy" decoding="async" onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.svg'; }} />
               ) : (
-                <span>{postCommunity.avatar || postCommunity.name?.charAt(0).toUpperCase()}</span>
+                <span>{postCommunity.name?.charAt(0).toUpperCase()}</span>
               )}
             </Link>
           )}

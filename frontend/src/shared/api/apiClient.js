@@ -444,6 +444,13 @@ const PUBLIC_PATHS = [
   // Only the two document routes. `/api/legal/consent` is deliberately NOT
   // here: it is about a specific user and must carry their token.
   '/api/legal/documents',
+  // "Bring Meetifyy to your campus" on the landing page. The person asking for
+  // their college to be added has, by definition, no account yet — that is the
+  // entire point of the form. The server treats this route as public too (see
+  // AuthController.requestCollege: rate limiting only, no JwtGuard), so
+  // without this entry `request` would refuse the call before a byte reached
+  // the network and the form could never work for its actual audience.
+  '/api/auth/request-college',
 ];
 
 function isPublicPath(path) {
@@ -677,7 +684,29 @@ async function _doFetch(cleanUrl, options, isRetry = false) {
 
   // Globally sanitize dicebear initials avatars from backend responses
   const sanitizedText = text.replace(/https:\/\/api\.dicebear\.com\/7\.x\/initials\/[^"'\\]+/g, '');
-  return JSON.parse(sanitizedText);
+  try {
+    return JSON.parse(sanitizedText);
+  } catch (err) {
+    /**
+     * A 2xx body that is not JSON and not HTML.
+     *
+     * The guard above only catches markup. A hosting layer that answers with
+     * plain text — Vercel's own 404 is literally `The page could not be
+     * found`, served as text/plain — fell straight through to `JSON.parse`,
+     * and the raw `SyntaxError: Unexpected token 'T', "The page c"... is not
+     * valid JSON` became the error every caller reported. Several of them put
+     * `err.message` directly on screen.
+     *
+     * Converted to one recognisable failure with the body kept on the error
+     * for the console, so callers can show ordinary copy and developers still
+     * get the evidence.
+     */
+    const parseError = new Error('API server returned a malformed response.');
+    parseError.code = 'invalid_response';
+    parseError.status = res.status;
+    parseError.responseSnippet = sanitizedText.slice(0, 200);
+    throw parseError;
+  }
 }
 
 if (typeof window !== 'undefined') {

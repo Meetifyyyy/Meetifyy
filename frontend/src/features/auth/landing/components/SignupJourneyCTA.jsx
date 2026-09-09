@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Sparkles, ArrowRight, School, Compass, X, Check, Loader2 } from '@shared/components/icons';
 import wordmark from '@assets/images/meetifyy_wordmark.svg';
 import styles from './SignupJourneyCTA.module.css';
+import { apiClient } from '@shared/api/apiClient';
 
 const titleVariants = {
   hidden: { opacity: 0, y: 25 },
@@ -70,6 +71,57 @@ const formVariants = {
     transition: { duration: 0.6, delay: 0.45 }
   }
 };
+
+
+/** The one message shown when nothing more specific is safe to say. */
+const GENERIC_ERROR = 'Something went wrong. Please try again.';
+
+/**
+ * Turn any thrown value into copy a visitor should read.
+ *
+ * The rule is deliberately an allow-list, not a deny-list: a message reaches
+ * the screen only when it comes from a status this endpoint answers with
+ * human-written copy. Everything else — parser failures, 404s from a
+ * misrouted request, 5xx, a dropped connection — collapses to one neutral
+ * sentence, because those messages are written for developers and some of
+ * them (`Unexpected token 'T', "The page c"...`) are pure noise to a person
+ * trying to register their college.
+ *
+ *   400  the server's own validation copy, e.g. "Please enter a valid full
+ *        name (2-80 characters)." — written to be read by the person filling
+ *        the form, and the counterpart to the client-side checks above.
+ *   429  rate limited; the server sends a human message and how long to wait.
+ *
+ * Anything else is generic. `err.status` is attached by apiClient.
+ */
+function campusRequestErrorMessage(err) {
+  const status = err?.status;
+
+  if (status === 429) {
+    const wait = err?.retryAfterSeconds;
+    if (Number.isFinite(wait) && wait > 0) {
+      const mins = Math.ceil(wait / 60);
+      return wait < 60
+        ? `Too many requests. Please try again in ${Math.ceil(wait)} seconds.`
+        : `Too many requests. Please try again in ${mins} minute${mins === 1 ? '' : 's'}.`;
+    }
+    return 'Too many requests. Please try again in a little while.';
+  }
+
+  if (status === 400) {
+    let msg = err?.message;
+    // A validation failure can arrive as an array of messages; show the first.
+    if (Array.isArray(msg)) msg = msg[0];
+    // Guard against a 400 whose body was empty: apiClient falls back to
+    // "API error 400", which is exactly the kind of string this exists to keep
+    // off the screen.
+    if (typeof msg === 'string' && msg.trim() && !/^API error\b/.test(msg)) {
+      return msg;
+    }
+  }
+
+  return GENERIC_ERROR;
+}
 
 export default function SignupJourneyCTA() {
   const [collegeInput, setCollegeInput] = useState('');
@@ -145,43 +197,65 @@ export default function SignupJourneyCTA() {
 
     setIsSubmitting(true);
     try {
-      // Check if domain is already whitelisted by checking the email
-      const checkRes = await fetch('/api/auth/check-email', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: collegeEmail.trim().toLowerCase() }),
-      });
-      const checkData = await checkRes.json();
+      /**
+       * Both calls go through `apiClient`, not bare `fetch`.
+       *
+       * They used to be `fetch('/api/auth/check-email')` — a same-origin,
+       * relative URL. That works in local development only because the Vite
+       * dev server proxies `/api` to the backend (see `server.proxy` in
+       * vite.config.js). On the deployed site there is no such proxy: the API
+       * lives on its own host, and `vercel.json` rewrites only `/_api/*`,
+       * `/api/media/*` and `/api/share/*` — while the SPA catch-all
+       * deliberately EXCLUDES `api/`. So `POST /api/auth/check-email` matched
+       * nothing, and Vercel answered with its own 404: status 404,
+       * `content-type: text/plain`, body `The page could not be found`.
+       * `res.json()` on that threw
+       * `Unexpected token 'T', "The page c"... is not valid JSON`, which the
+       * catch below then printed on screen.
+       *
+       * `apiClient` resolves the correct API origin for every environment —
+       * localhost in dev, the configured API host in production — which is why
+       * every other caller of this same endpoint has always worked.
+       */
+
+      /**
+       * Best-effort courtesy check: is this college already on Meetifyy?
+       *
+       * Deliberately not allowed to fail the submission. If the availability
+       * check itself errors, the right outcome is to go ahead and file the
+       * request — dead-ending someone on a check that is only there to save
+       * them a step would be worse than a duplicate request for the admin team
+       * to dismiss.
+       */
+      let checkData = null;
+      try {
+        checkData = await apiClient.post('/api/auth/check-email', {
+          email: collegeEmail.trim().toLowerCase(),
+        });
+      } catch (checkErr) {
+        console.error('[campus-request] email availability check failed', checkErr);
+      }
 
       // If available is true, or if it says it's already registered, it means the domain IS whitelisted.
-      if (checkData.available === true || checkData.reason === 'This email is already registered. Please sign in.') {
+      if (checkData && (checkData.available === true || checkData.reason === 'This email is already registered. Please sign in.')) {
         setErrorMsg('Your college is already added to Meetifyy! You can sign up directly.');
         setIsSubmitting(false);
         return;
       }
 
       // If domain is not whitelisted, submit the request
-      const res = await fetch('/api/auth/request-college', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: name.trim(),
-          collegeName: collegeName.trim(),
-          personalEmail: personalEmail.trim().toLowerCase(),
-          collegeEmail: collegeEmail.trim().toLowerCase(),
-        }),
+      await apiClient.post('/api/auth/request-college', {
+        name: name.trim(),
+        collegeName: collegeName.trim(),
+        personalEmail: personalEmail.trim().toLowerCase(),
+        collegeEmail: collegeEmail.trim().toLowerCase(),
       });
-
-      const data = await res.json();
-      if (!res.ok) {
-        let msg = data.message || 'Failed to submit campus request';
-        if (Array.isArray(msg)) msg = msg[0];
-        throw new Error(msg);
-      }
 
       setIsSuccess(true);
     } catch (err) {
-      setErrorMsg(err.message || 'Something went wrong. Please try again.');
+      // The technical detail goes to the console, and only to the console.
+      console.error('[campus-request] submission failed', err);
+      setErrorMsg(campusRequestErrorMessage(err));
     } finally {
       setIsSubmitting(false);
     }

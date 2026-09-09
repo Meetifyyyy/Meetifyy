@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { useUsersMap } from '@shared/hooks/useUsersMap';
 import { useCommunityActions } from '@shared/hooks/useCommunityActions';
 import { useAuth } from '@shared/context/AuthContext';
-import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { communitiesApi, postsApi, getMediaUrl } from '@shared/api/apiClient';
 import { showToast } from '@shared/utils/toast';
 import { isImageUrl, resolveCommunityAvatar } from '@shared/utils/avatar';
@@ -40,6 +40,19 @@ import { useGlobalSocketStore } from '@shared/stores/useGlobalSocketStore';
 /** Posts fetched per page. Sized to fill roughly one screen plus a little,
  *  so the first paint is cheap and the observer has room to prefetch. */
 const POSTS_PAGE_SIZE = 15;
+
+/**
+ * Locally-created posts the server pages have not caught up with.
+ *
+ * Always empty — it is what the removed `useData` hook returned — but it was
+ * written as a fresh `[]` inside the component, which made it a new dependency
+ * identity on every render and re-ran the `communityPosts` memo below each
+ * time: a flatMap over every page loaded so far plus a Set built from all of
+ * them, on every keystroke, hover and state change on the page. Module scope
+ * gives it one stable identity, so the memo now recomputes only when a page
+ * actually arrives.
+ */
+const PENDING_LOCAL_POSTS = [];
 import ReportModal from '@shared/components/modals/ReportModal/ReportModal';
 import ModeratorWelcomeModal from '../moderation/ModeratorWelcomeModal';
 import { NotificationOff, NotificationOn } from '@shared/components/icons';
@@ -677,20 +690,6 @@ function GuidelinesCard() {
 }
 
 
-function useSimulatedFetch(data, delay = 0, deps = []) {
-  const [isLoading, setIsLoading] = useState(!data);
-
-  useEffect(() => {
-    if (data) {
-      setIsLoading(false);
-    } else {
-      setIsLoading(true);
-    }
-  }, [data, ...deps]);
-
-  return { isLoading: isLoading && !data, data, error: null, retry: () => {} };
-}
-
 export default function CommunityView({ communityId, onBack, onPostClick, onCommentClick }) {
   const queryClient = useQueryClient();
   // Declared with the other top-level hooks so every effect below can use
@@ -699,9 +698,6 @@ export default function CommunityView({ communityId, onBack, onPostClick, onComm
   // render, so referencing it earlier throws rather than merely being stale.
   const { socket, isConnected } = useGlobalSocketStore();
   const navigate = useNavigate();
-  // `posts` was always the literal [] the old hook returned, so it is inlined
-  // here rather than sourced from a hook.
-  const posts = [];
   const users = useUsersMap();
   const { addPost, updateCommunity } = useCommunityActions();
   const { currentUser } = useAuth();
@@ -719,12 +715,14 @@ export default function CommunityView({ communityId, onBack, onPostClick, onComm
    * acknowledging; the server's answer is what stops it coming back.
    */
   const [noticeDismissed, setNoticeDismissed] = useState(false);
-  const { data: moderatorNotice } = useQuery({
-    queryKey: ['moderatorNotice', communityId],
-    queryFn: async () => (await communitiesApi.getModeratorNotice(communityId))?.notice ?? null,
-    enabled: Boolean(communityId && currentUser?.id),
-    staleTime: 0,
-  });
+  // Read off the community payload (see `moderatorNotice` in
+  // CommunitiesService.getCommunityById), not fetched separately. This was its
+  // own query with `staleTime: 0`, so opening any community — and every
+  // subsequent window focus — fired a second request whose answer is `null`
+  // for everyone who is not a freshly promoted moderator. The server derives
+  // it from the membership row it already reads for `userRole`, so carrying it
+  // on the community costs nothing and removes the round trip entirely.
+  // Declared further down, once `comm` exists.
 
   /**
    * Promoted while the community is already open.
@@ -748,9 +746,10 @@ export default function CommunityView({ communityId, onBack, onPostClick, onComm
     const onPromoted = (payload) => {
       if (payload?.communityId && payload.communityId !== communityId) return;
       setNoticeDismissed(false);
-      queryClient.invalidateQueries({ queryKey: ['moderatorNotice', communityId] });
       // Their role changed, so the moderator controls the page offers change
-      // with it — otherwise the modal lists powers the UI still hides.
+      // with it — otherwise the modal lists powers the UI still hides. The
+      // notice now travels on that same payload, so this one invalidation
+      // fetches both.
       queryClient.invalidateQueries({ queryKey: ['community', communityId] });
       queryClient.invalidateQueries({ queryKey: ['communities'] });
       queryClient.invalidateQueries({ queryKey: ['notifications'] });
@@ -770,7 +769,11 @@ export default function CommunityView({ communityId, onBack, onPostClick, onComm
       // mildly annoying, and the right failure direction for a notice whose
       // whole purpose is to be seen.
     }
-    queryClient.setQueryData(['moderatorNotice', communityId], null);
+    // Clear it on the cached community too, so a refetch that lands after this
+    // (the socket handler above invalidates the same key) cannot bring the
+    // modal back before the server's acknowledgement is reflected.
+    queryClient.setQueryData(['community', communityId], (prev) =>
+      (prev ? { ...prev, moderatorNotice: null } : prev));
   }, [communityId, queryClient]);
 
   const [showMembersModal, setShowMembersModal] = useState(false);
@@ -893,6 +896,9 @@ export default function CommunityView({ communityId, onBack, onPostClick, onComm
 
   const comm = apiComm;
 
+  // The pending "you're now a moderator" notice, carried on the community.
+  const moderatorNotice = comm?.moderatorNotice ?? null;
+
   // Prefer the live figure; fall back to whatever the (possibly cached)
   // payload carried until the first socket update arrives. Declared after
   // `apiComm` — reading it above its own declaration would throw.
@@ -948,11 +954,11 @@ export default function CommunityView({ communityId, onBack, onPostClick, onComm
     const seen = new Set(listFromApi.map((p) => p.id));
     // Posts this session created locally that the server pages have not
     // caught up with yet.
-    const pending = (posts || []).filter(
+    const pending = PENDING_LOCAL_POSTS.filter(
       (p) => p.communityId === comm.id && !seen.has(p.id),
     );
     return [...pending, ...listFromApi];
-  }, [comm, fetchedPostsData, posts]);
+  }, [comm, fetchedPostsData]);
   const isOwner = isCommunityOwner(comm, currentUser);
   const isMod = comm ? (comm.userRole === 'MODERATOR' || (Array.isArray(comm.members) && comm.members.some(m => (m.userId === currentUser?.id || m.user?.id === currentUser?.id) && m.role === 'MODERATOR'))) : false;
   const isAdmin = isOwner;

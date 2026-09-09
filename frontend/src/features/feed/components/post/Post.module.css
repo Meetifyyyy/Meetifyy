@@ -504,6 +504,29 @@
   color: var(--color-text-main, #0f172a);
 }
 
+/**
+ * The single-post view runs edge to edge on a phone.
+ *
+ * `.post` is the shared card, and its rounded corners are right in a feed of
+ * stacked cards. On the post's own route there is no stack — it is the page —
+ * so the radius drew a curved corner against the page background at the very
+ * top of the screen, immediately under the "Post" header.
+ *
+ * The breakpoint is 768px, matching `.postViewContainer` in
+ * PostView.module.css, which drops its own border and radius at exactly that
+ * width for exactly this reason. They have to agree: at 700px the sheet was
+ * already square and full-bleed while the card inside it still carried 16px,
+ * so the page showed a rounded card floating inside a square sheet. An earlier
+ * version of this rule stopped at 500px and left that band visibly wrong.
+ *
+ * Scoped to the detailed view, so the feed's stacked cards keep their radius.
+ */
+@media (max-width: 768px) {
+  .postDetailed {
+    border-radius: 0;
+  }
+}
+
 @media (max-width: 500px) {
   .postHeader {
     flex-wrap: wrap;

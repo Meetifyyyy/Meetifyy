@@ -617,6 +617,29 @@ nav a.active {
     box-sizing: border-box;
   }
 
+  /* HeaderScrollEdge exists to make a ROUNDED card look rounded where it slides
+     under the sticky header: it paints the page background back over the two
+     corner squares. On the post route below this breakpoint there is no rounded
+     card to simulate — `.postViewContainer` drops its own radius at exactly
+     768px, and the post inside it is squared to match — so the overlay was
+     painting two curved wedges onto a square, full-bleed sheet. That curve
+     under the "Post" header IS the artifact.
+
+     Scoped to `.centre--post`, which only PostDetailRoute uses. The feed's
+     cards really are rounded at this width, so its own HeaderScrollEdge is
+     correct and must keep drawing.
+
+     The radius is zeroed rather than the element removed, so the layout is
+     untouched: both the element's height and its cancelling negative margin are
+     derived from `--edge-radius`, and the two still sum to the same offset
+     (16 + -32 before, 0 + -16 after — -16px either way). Removing it would
+     drop the negative margin and push the post down.
+
+     Nothing paints: the mask tiles become 0x0 and the box has no height. */
+  .centre--post > [data-sheet-overlay] {
+    --edge-radius: 0px;
+  }
+
   /* Applies to the search *skeleton* only (SearchSkeleton's PageLayout); the
      loaded page is `.centre centre--sheet`.
 

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
 import { useAuth } from '../../context/AuthContext';
 import { legalApi } from '@shared/api/apiClient';
+import { hardenExternalLinks } from '@shared/utils/legalHtmlLinks';
 import {
   AlertCircle,
   ArrowLeft,
@@ -57,6 +58,7 @@ export default function LegalUpdateGate({ children }) {
   const [agreed, setAgreed] = useState(false);
   const [reading, setReading] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  const readerRef = useRef(null);
   const [error, setError] = useState(null);
 
   // Guards against a response from a check that was superseded (a sign-out, or
@@ -156,6 +158,13 @@ export default function LegalUpdateGate({ children }) {
     };
   }, [isLoggedIn, check]);
 
+  // The reader renders stored HTML; off-site links in it must open in a new
+  // tab with noopener, or they replace the modal the user has to complete.
+  useEffect(() => {
+    if (!reading) return;
+    hardenExternalLinks(readerRef.current);
+  }, [reading]);
+
   const confirming = isLoggedIn && state === 'confirming';
   const blocking =
     isLoggedIn && ((state === 'pending' && pending.length > 0) || confirming);
@@ -191,10 +200,31 @@ export default function LegalUpdateGate({ children }) {
         setAgreed(false);
       }
     } catch (err) {
-      setError(
-        err?.message ||
+      /**
+       * One neutral sentence, whatever went wrong.
+       *
+       * `err.message` was rendered directly, so a malformed response, a 5xx or
+       * a parse failure put developer text in front of someone who cannot
+       * dismiss this modal or navigate away from it — the single worst screen
+       * in the product to leak a technical string onto. The detail goes to the
+       * console instead.
+       *
+       * 429 is the one case worth naming: it is not a failure the reader should
+       * retry immediately, and the server supplies a wait.
+       */
+      console.error('[legal-consent] acknowledgement failed', err);
+      if (err?.status === 429) {
+        const wait = err?.retryAfterSeconds;
+        setError(
+          Number.isFinite(wait) && wait > 0
+            ? `Too many attempts. Please try again in ${Math.ceil(wait / 60)} minute${Math.ceil(wait / 60) === 1 ? '' : 's'}.`
+            : 'Too many attempts. Please try again in a little while.',
+        );
+      } else {
+        setError(
           'We could not record your acceptance. Check your connection and try again.',
-      );
+        );
+      }
     } finally {
       setSubmitting(false);
     }
@@ -246,8 +276,14 @@ export default function LegalUpdateGate({ children }) {
               </h2>
             </div>
             {/* Server-sanitized on write (the same sanitizer the admin save
-                path uses), so there is no unsanitized copy of this anywhere. */}
+                path uses), so there is no unsanitized copy of this anywhere.
+                External links are hardened on render as well, because the
+                seeded documents predate the sanitizer's link rule and their
+                anchors carry no rel/target — and this modal is the one screen
+                the reader cannot navigate away from, so a link that quietly
+                replaced it would strand them mid-acceptance. */}
             <div
+              ref={readerRef}
               className={styles.readerBody}
               dangerouslySetInnerHTML={{ __html: readingDoc.content }}
             />

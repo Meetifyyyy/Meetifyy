@@ -2011,7 +2011,33 @@ export class PostsService {
                 deletedAt: true,
               },
             },
-            community: { select: { id: true, name: true, deletedAt: true } },
+            /**
+             * The same community fields the feed's SQL emits.
+             *
+             * This selected only id/name/deletedAt, so a post opened on its
+             * own detail route carried no avatar and no colour — and the
+             * community badge on the author's picture fell back to the name's
+             * first letter on the default primary blue. The identical post in
+             * the feed rendered the real icon, because `getFeed` builds a full
+             * community object. Same post, two different badges, depending on
+             * which screen you were looking at.
+             *
+             * `avatar` is emitted alongside `avatarKey` for the same reason
+             * the feed query does it: the column is `avatarKey`, and consumers
+             * read `.avatar`.
+             */
+            community: {
+              select: {
+                id: true,
+                name: true,
+                slug: true,
+                avatarKey: true,
+                color: true,
+                isPrivate: true,
+                isCampusCommunity: true,
+                deletedAt: true,
+              },
+            },
             pollOptions: {
               orderBy: { id: 'asc' },
               include: { _count: { select: { votes: true } } },
@@ -2129,6 +2155,12 @@ export class PostsService {
       // was missed — and the consequence should be a post that leaks nothing,
       // not a deleted person's name and photograph.
       ...PostsService.presentAuthor(post),
+      // `avatar` mirrors `avatarKey`, exactly as the feed's SQL does it — the
+      // column is `avatarKey` and every community consumer on the client reads
+      // `.avatar`. Prisma's `select` cannot alias, so it is added here.
+      community: post.community
+        ? { ...post.community, avatar: post.community.avatarKey }
+        : null,
       canDelete: canDeleteThis,
       media: formattedMedia,
       pollOptions,

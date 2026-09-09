@@ -46,11 +46,55 @@ const ARTICLE_TAGS = [
   'td',
 ];
 
+/** An absolute http(s) destination — i.e. a link that leaves Meetifyy. */
+const EXTERNAL_HREF = /^https?:\/\//i;
+
+/**
+ * Decides `rel` and `target` from the destination, and never from the input.
+ *
+ * Author-supplied `rel`/`target` are discarded rather than merged: the whole
+ * point is that these two attributes are the sanitizer's decision, so an author
+ * (or a compromised admin session) cannot opt a link out of them or aim one at
+ * a named frame.
+ *
+ * Only EXTERNAL links get them. `simpleTransform` applied them to every link
+ * including relative ones, which would have made an internal cross-reference —
+ * the Privacy Policy's link to the Cookie Policy, say — open a second tab and
+ * carry `nofollow` on our own page. Off-site is what the rule is about.
+ */
+export function transformAnchor(
+  _tagName: string,
+  attribs: Record<string, string>,
+): { tagName: string; attribs: Record<string, string> } {
+  const href = attribs?.href ?? '';
+  const out: Record<string, string> = {};
+  if (href) out.href = href;
+  if (EXTERNAL_HREF.test(href)) {
+    out.target = '_blank';
+    out.rel = 'noopener noreferrer nofollow';
+  }
+  return { tagName: 'a', attribs: out };
+}
+
 const BASE_OPTIONS: sanitizeHtml.IOptions = {
   allowedAttributes: {
-    // `title` is dropped along with everything else not named here; `rel` and
-    // `target` are forced below rather than accepted from the input.
-    a: ['href'],
+    /**
+     * `target` and `rel` are listed because sanitize-html applies this filter
+     * AFTER `transformTags` runs. With `a: ['href']` alone the transform below
+     * injected both attributes and this filter immediately stripped them again,
+     * so every link shipped WITHOUT `rel="noopener noreferrer nofollow"` and
+     * without `target="_blank"` — the protection the code documents was never
+     * actually applied to a single link.
+     *
+     * It went unnoticed because the unit test mocks `sanitize-html` (the package
+     * is ESM and cannot be loaded in this jest setup) and only asserted that a
+     * transform was configured, never what came out the other side.
+     *
+     * Allowing them here is safe: `transformAnchor` rebuilds the attribute set
+     * from scratch, so an author-supplied `target`/`rel` is dropped rather than
+     * passed through.
+     */
+    a: ['href', 'target', 'rel'],
   },
   // No `javascript:` and no `data:` - a data URL can carry an HTML document.
   allowedSchemes: ['http', 'https', 'mailto'],
@@ -62,12 +106,9 @@ const BASE_OPTIONS: sanitizeHtml.IOptions = {
   nonTextTags: ['script', 'style', 'textarea', 'option', 'noscript'],
   disallowedTagsMode: 'discard',
   transformTags: {
-    // Every surviving link is untrusted and opens off-site.
-    a: sanitizeHtml.simpleTransform(
-      'a',
-      { rel: 'noopener noreferrer nofollow', target: '_blank' },
-      true,
-    ),
+    // Off-site links open in a new tab and carry noopener/noreferrer/nofollow;
+    // internal ones are left as ordinary in-app links. See transformAnchor.
+    a: transformAnchor,
   },
 };
 

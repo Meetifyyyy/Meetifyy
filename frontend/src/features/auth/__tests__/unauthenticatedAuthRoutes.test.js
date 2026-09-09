@@ -65,6 +65,9 @@ describe('auth routes reachable without a session', () => {
     ['/api/auth/login', 'login'],
     ['/api/auth/check-username', 'the username availability check'],
     ['/api/auth/check-email', 'the email availability check'],
+    // "Bring Meetifyy to your campus": the person asking for their college to
+    // be added has no account yet, which is the whole point of the form.
+    ['/api/auth/request-college', 'the campus access request'],
   ])('allows %s (%s)', async (path) => {
     expect(await isAllowedWithoutSession(path)).toBe(true);
   });

@@ -74,7 +74,12 @@ export function useCommunityActions() {
       // Same shared writer the home composer uses, so a community post shows up
       // in the community view, the author's profile and the home feed together.
       addCreatedPostToCaches(queryClient, newPost);
-      queryClient.invalidateQueries({ queryKey: ['communities'] });
+      // Only the community that was posted into is invalidated — its payload
+      // carries the post count. The community LIST does not: nothing about it
+      // changes when a post is written, so refetching it here meant every post
+      // sent a second request for thirty communities and their membership
+      // flags, and dropped the list every consumer on screen was rendering
+      // from while it was in flight.
       if (communityId) {
         queryClient.invalidateQueries({ queryKey: ['community', communityId] });
       }

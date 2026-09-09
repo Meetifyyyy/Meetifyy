@@ -1344,7 +1344,13 @@ export default function SettingsRoute() {
             {activePanel === 'blocked-contacts' && blockedContactsPanel}
             {activePanel === 'verification' && verificationPanel}
             {activePanel === 'help' && helpPanel}
-            {!activePanel && <SettingsWelcomePanel />}
+            {/* Only when nothing at all is open. `activeCategory` has to be
+                tested too: a category with no leaf panel selected renders its
+                own list in this pane above, and checking `!activePanel` alone
+                let the placeholder render underneath it — so opening Privacy &
+                Security showed the brand wordmark, the legal links and the
+                version string stacked below the Danger zone. */}
+            {!activePanel && !activeCategory && <SettingsWelcomePanel />}
           </div>
         </div>
       ) : (

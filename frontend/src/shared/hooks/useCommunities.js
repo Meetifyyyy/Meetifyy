@@ -168,9 +168,16 @@ export function useCommunities() {
   return {
     communities,
     communitiesById,
-    rawCommunities: query.data || [],
+    // The de-duplicated list, not `query.data || []`. The fallback allocated a
+    // new empty array on every render while the query was still loading, which
+    // is a changed dependency for anything memoising on it downstream.
+    rawCommunities: communities,
     isLoading: query.isLoading,
     isError: query.isError,
+    // CommunitiesBrowse has always destructured `refetch` from this hook and
+    // handed it to <ErrorState onRetry>, but the hook never returned one — so
+    // the retry button on a failed community list did nothing at all.
+    refetch: query.refetch,
   };
 }
 

@@ -30,6 +30,7 @@ const mockSanitizeHtml = jest.fn((html: string) => html ?? '');
 jest.mock('sanitize-html', () => mockSanitizeHtml);
 
 import {
+  transformAnchor,
   sanitizeReplyHtml,
   sanitizeArticleHtml,
   htmlToPlainText,
@@ -101,6 +102,26 @@ describe('sanitize-html utilities (configuration tests)', () => {
       const opts = (mockSanitizeHtml.mock.calls[0] as any)[1];
       expect(opts.transformTags).toHaveProperty('a');
       expect(typeof opts.transformTags['a']).toBe('function');
+    });
+
+    /**
+     * The attributes the transform emits must also be ALLOWED, or the filter
+     * strips them straight back off.
+     *
+     * sanitize-html applies `allowedAttributes` after `transformTags`. With
+     * `a: ['href']` the injected `rel`/`target` were removed again, so no link
+     * in a help article, an admin reply or a legal document ever carried
+     * `rel="noopener noreferrer nofollow"` — the documented protection was
+     * inert. The assertion above could not catch it: it only checks that a
+     * transform is configured, and the real package is mocked here (it is ESM
+     * and cannot be loaded in this setup), so nothing observed the output.
+     */
+    it('allows the attributes the transform emits, so they survive the filter', () => {
+      sanitizeReplyHtml('<a href="https://example.com">Link</a>');
+      const opts = (mockSanitizeHtml.mock.calls[0] as any)[1];
+      expect(opts.allowedAttributes.a).toContain('href');
+      expect(opts.allowedAttributes.a).toContain('target');
+      expect(opts.allowedAttributes.a).toContain('rel');
     });
 
     it('handles null gracefully (no throw)', () => {
@@ -206,6 +227,53 @@ describe('sanitize-html utilities (configuration tests)', () => {
 
     it('handles undefined gracefully', () => {
       expect(escapeHtml(undefined as any)).toBe('');
+    });
+  });
+
+  /**
+   * The link rule itself, tested directly.
+   *
+   * `transformAnchor` is a pure function precisely so it can be asserted
+   * without loading the mocked package: this is the one part of the sanitizer
+   * whose OUTPUT the rest of this file cannot see.
+   */
+  describe('transformAnchor', () => {
+    const run = (attribs: Record<string, string>) =>
+      transformAnchor('a', attribs).attribs;
+
+    it('marks an off-site link noopener/noreferrer/nofollow in a new tab', () => {
+      expect(run({ href: 'https://example.com' })).toEqual({
+        href: 'https://example.com',
+        target: '_blank',
+        rel: 'noopener noreferrer nofollow',
+      });
+    });
+
+    it.each([
+      ['a relative path', '/cookie-policy'],
+      ['a fragment', '#section-3'],
+      ['a mailto', 'mailto:app.meetifyy@gmail.com'],
+    ])('leaves %s as an ordinary in-app link', (_label, href) => {
+      // An internal cross-reference — the Privacy Policy linking the Cookie
+      // Policy — must not open a second tab or carry nofollow on our own page.
+      expect(run({ href })).toEqual({ href });
+    });
+
+    it('discards author-supplied target and rel rather than merging them', () => {
+      // These two attributes are the sanitizer's decision. An author must not
+      // be able to aim a link at a named frame or opt out of nofollow.
+      expect(run({ href: '/x', target: '_top', rel: 'dofollow' })).toEqual({
+        href: '/x',
+      });
+      expect(run({ href: 'https://example.com', target: '_self', rel: 'me' })).toEqual({
+        href: 'https://example.com',
+        target: '_blank',
+        rel: 'noopener noreferrer nofollow',
+      });
+    });
+
+    it('emits no href when there is none to keep', () => {
+      expect(run({})).toEqual({});
     });
   });
 });

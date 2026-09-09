@@ -60,33 +60,31 @@ export class CommunitiesService implements OnModuleInit {
           `ALTER TYPE "CommunityRole" ADD VALUE IF NOT EXISTS 'MODERATOR'`,
         )
         .catch(() => {});
-      const communities = await this.prisma.community.findMany({
-        where: { ownerId: { not: null }, deletedAt: null },
-        select: { id: true, ownerId: true },
-      });
-      for (const comm of communities) {
-        if (!comm.ownerId) continue;
-        await this.prisma.communityMember
-          .upsert({
-            where: {
-              userId_communityId: {
-                userId: comm.ownerId,
-                communityId: comm.id,
-              },
-            },
-            create: {
-              userId: comm.ownerId,
-              communityId: comm.id,
-              role: 'OWNER',
-            },
-            update: { role: 'OWNER' },
-          })
-          .catch(() => {});
-      }
-      this.logger.log(
-        `Repaired owner roles for ${communities.length} communities.`,
-      );
-      await this.invalidateCommunityCache();
+      // One set-based statement, where this used to read every community into
+      // the process and issue one `upsert` per row, sequentially, on every
+      // boot. That is O(communities) round trips before the instance is
+      // ready — the repair is idempotent and almost always a no-op, so the
+      // cost was paid in full on each deploy for nothing.
+      //
+      // The `WHERE` on the conflict branch matters as much as the batching:
+      // without it Postgres rewrites every owner row on every boot, producing
+      // a dead tuple per community per restart for rows that already said
+      // OWNER. Now only genuinely wrong rows are touched, so a healthy
+      // database does zero writes here.
+      const repaired = await this.prisma.$executeRawUnsafe(`
+        INSERT INTO "CommunityMember" ("userId", "communityId", "role", "joinedAt")
+        SELECT c."ownerId", c.id, 'OWNER'::"CommunityRole", NOW()
+          FROM "Community" c
+         WHERE c."ownerId" IS NOT NULL
+           AND c."deletedAt" IS NULL
+        ON CONFLICT ("userId", "communityId") DO UPDATE
+           SET "role" = 'OWNER'::"CommunityRole"
+         WHERE "CommunityMember"."role" <> 'OWNER'::"CommunityRole"
+      `);
+      this.logger.log(`Repaired owner roles for ${repaired} communities.`);
+      // Only worth dropping the caches if something actually changed. A clean
+      // boot no longer starts every instance with a cold community cache.
+      if (repaired > 0) await this.invalidateCommunityCache();
     } catch (e: any) {
       if (e?.message?.includes('Cannot use a pool after calling end')) return;
       this.logger.error('Failed to auto-repair community owner roles', e);
@@ -94,6 +92,16 @@ export class CommunitiesService implements OnModuleInit {
   }
 
   // ── Cache helpers ──────────────────────────────────────────────────────────
+
+  /**
+   * How many members the community detail loads for the member strip.
+   *
+   * One constant for the query's `take` and for the "is this strip a complete
+   * membership or a window onto a larger one?" test below — if those two ever
+   * disagreed, a member just past the boundary would silently be reported as
+   * a non-member.
+   */
+  private static readonly MEMBER_STRIP_LIMIT = 50;
 
   /** Tag-Set name that tracks all live community list cache keys in Redis. */
   private static readonly LIST_TAG = 'communities:tag:lists';
@@ -160,7 +168,13 @@ export class CommunitiesService implements OnModuleInit {
     try {
       const redisKey = `community:${id}`;
       await this.redis.set(redisKey, JSON.stringify(data), 'EX', ttlSeconds);
-      this.registerListCacheKey(redisKey);
+      // Deliberately NOT registered in the list tag-Set. A detail key is
+      // addressable by its own id, so the writes that change one community can
+      // delete exactly that key. Registering it here put every community's
+      // detail entry into the set that invalidation empties wholesale, so one
+      // person joining one community evicted the cached page of every other
+      // community on the platform — on a busy instance the detail cache could
+      // never survive long enough to serve a second reader.
     } catch {
       /* ignore */
     }
@@ -212,6 +226,50 @@ export class CommunitiesService implements OnModuleInit {
   }
 
   /**
+   * A user's collegeId, from the in-process cache or the database.
+   *
+   * The same six lines were written out three times — in getCampusCommunities,
+   * in getCommunityById and in joinCommunity — and only two of the three wrote
+   * the value back into the cache, so the join path re-queried it every time.
+   */
+  private async resolveCollegeId(userId: string): Promise<string | null> {
+    if (!userId) return null;
+    const cached = await this.getCachedCollegeId(userId);
+    if (cached) return cached;
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { collegeId: true },
+    });
+    if (!user?.collegeId) return null;
+    await this.setCachedCollegeId(userId, user.collegeId);
+    return user.collegeId;
+  }
+
+  /**
+   * Whether a membership row has an unacknowledged moderator welcome notice,
+   * and the notice itself.
+   *
+   * One definition, used by both the dedicated endpoint and the copy carried
+   * on the community payload, so the two can never disagree about whether a
+   * notice is still pending.
+   */
+  private pendingModeratorNotice(member: {
+    role: string;
+    moderatorPromotedAt: Date | null;
+    moderatorNoticeAckedAt: Date | null;
+  } | null) {
+    if (!member || member.role !== 'MODERATOR' || !member.moderatorPromotedAt) {
+      return null;
+    }
+    const acked = member.moderatorNoticeAckedAt;
+    if (acked && acked >= member.moderatorPromotedAt) return null;
+    return {
+      promotedAt: member.moderatorPromotedAt,
+      permissions: moderatorPermissions(),
+    };
+  }
+
+  /**
    * Targeted cache invalidation using tag-Set pattern.
    * Previously used hardcoded page-size keys which missed non-standard limit/offset values.
    * Now: fetches only the keys that were actually written via setCachedList/setCachedCommunity
@@ -226,17 +284,14 @@ export class CommunitiesService implements OnModuleInit {
   ): Promise<void> {
     if (this.redis) {
       try {
-        // Fetch all registered list/detail keys from the tag Set
-        const taggedKeys = await this.redis.smembers(
-          CommunitiesService.LIST_TAG,
-        );
-        const toDelete = [...taggedKeys];
+        // The list keys, which every write can invalidate: member counts drive
+        // the ordering of every list, so a join anywhere reorders all of them.
+        const toDelete = await this.redis.smembers(CommunitiesService.LIST_TAG);
 
-        // Also delete the specific detail key if provided (may not be in tag-Set yet)
-        if (communityId) {
-          const detailKey = `community:${communityId}`;
-          if (!toDelete.includes(detailKey)) toDelete.push(detailKey);
-        }
+        // The detail key for the one community that actually changed. Other
+        // communities' cached detail bodies are left alone — nothing in this
+        // write can have altered them.
+        if (communityId) toDelete.push(`community:${communityId}`);
 
         if (toDelete.length > 0) {
           await this.redis.del(...toDelete);
@@ -266,6 +321,27 @@ export class CommunitiesService implements OnModuleInit {
     if (!communities) {
       communities = await this.prisma.community.findMany({
         where: { deletedAt: null, isCampusCommunity: false },
+        // Projected to what the browse grid, the sidebar's joined list and the
+        // post/comment community tags actually read. The unprojected findMany
+        // this replaces also returned `deletedAt` (null for every row it can
+        // return, by construction), `collegeId`, `updatedAt` and the two media
+        // foreign keys — none of which any consumer reads, on a payload that
+        // is cached, mirrored into IndexedDB on the client, and fetched on
+        // every app boot.
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          description: true,
+          avatarKey: true,
+          coverKey: true,
+          color: true,
+          memberCount: true,
+          ownerId: true,
+          isPrivate: true,
+          isCampusCommunity: true,
+          createdAt: true,
+        },
         orderBy: { memberCount: 'desc' },
         take: limit,
         skip: offset,
@@ -367,17 +443,8 @@ export class CommunitiesService implements OnModuleInit {
   ) {
     if (!userId) return [];
 
-    // Try Redis first — avoids a DB round-trip for the collegeId lookup
-    let collegeId = await this.getCachedCollegeId(userId);
-    if (!collegeId) {
-      const user = await this.prisma.user.findUnique({
-        where: { id: userId },
-        select: { collegeId: true },
-      });
-      if (!user?.collegeId) return [];
-      collegeId = user.collegeId;
-      await this.setCachedCollegeId(userId, collegeId);
-    }
+    const collegeId = await this.resolveCollegeId(userId);
+    if (!collegeId) return [];
 
     const searchTerm = (search || '').trim();
     const searchWhere = searchTerm
@@ -474,7 +541,7 @@ export class CommunitiesService implements OnModuleInit {
             select: { id: true, name: true, shortName: true },
           },
           members: {
-            take: 50,
+            take: CommunitiesService.MEMBER_STRIP_LIMIT,
             orderBy: [{ role: 'asc' }, { joinedAt: 'asc' }],
             include: {
               user: {
@@ -524,33 +591,106 @@ export class CommunitiesService implements OnModuleInit {
       } as any);
     }
 
-    // Hide blocked members from this viewer only. Membership itself is never
-    // touched by a block — both users stay in the community with full access —
-    // so this filters the loaded strip and nothing else. `_count.members` is
-    // left alone deliberately: the count must stay accurate ("2,341 members")
-    // even though some of them are not rendered for this viewer.
-    //
-    // Applied after the viewer-independent Redis cache is read, so one cached
-    // community body can still serve every viewer with a different block list.
-    if (userId && community.members?.length) {
-      const visibleIds = new Set(
-        await this.blocksService.filterBlockedUsers(
-          userId,
-          community.members.map((m: any) => m.userId).filter(Boolean),
-        ),
-      );
+    /**
+     * Everything this viewer needs on top of the shared community body.
+     *
+     * The four reads below used to run strictly one after another — block
+     * list, presence, the viewer's college, the online count — and the client
+     * made a fifth HTTP request of its own for the moderator notice. None of
+     * them depends on another, so the page paid the sum where it only ever
+     * needed the slowest.
+     *
+     * The two viewer-membership reads are deliberately NOT in this batch.
+     * Making them unconditional so they could join it measured SLOWER on the
+     * common case (a small community whose viewer is already in the loaded
+     * strip): it turns two reads that usually cost nothing into two the
+     * database always serves. They are resolved below instead, from the strip
+     * when the strip can answer, and from the database only when it cannot.
+     */
+    const loadedMemberIds: string[] = (community.members || [])
+      .map((m: any) => m.userId)
+      .filter(Boolean);
+
+    const needsCollege = Boolean(
+      userId && community.isCampusCommunity && community.collegeId,
+    );
+
+    const [visibleIdList, presenceMap, viewerCollegeId, onlineCount] =
+      await Promise.all([
+        // Hide blocked members from this viewer only. Membership itself is
+        // never touched by a block — both users stay in the community with
+        // full access — so this filters the loaded strip and nothing else.
+        // `_count.members` is left alone deliberately: the count must stay
+        // accurate ("2,341 members") even though some of them are not
+        // rendered for this viewer.
+        //
+        // Applied after the viewer-independent Redis cache is read, so one
+        // cached community body can still serve every viewer with a different
+        // block list.
+        userId && loadedMemberIds.length
+          ? this.blocksService.filterBlockedUsers(userId, loadedMemberIds)
+          : Promise.resolve(null),
+        // Fetched for every loaded member rather than only the unblocked ones,
+        // which is what lets it run alongside the block query instead of after
+        // it. The strip is capped, so this is at most a few dozen extra keys
+        // in an MGET that was already being issued, and the entries for
+        // filtered-out members are simply never read.
+        loadedMemberIds.length
+          ? this.presenceService.getPresenceMany(loadedMemberIds)
+          : Promise.resolve(new Map()),
+        needsCollege ? this.resolveCollegeId(userId!) : Promise.resolve(null),
+        this.countOnlineMembers(id, community.ownerId),
+      ]);
+
+    /**
+     * The viewer's own membership.
+     *
+     * Taken from the loaded strip when the strip is complete — that is the
+     * overwhelmingly common case and it costs nothing. The strip is capped at
+     * MEMBER_STRIP_LIMIT, though, and when it comes back full it may be a
+     * window onto a larger membership: a genuine member outside that window
+     * was previously reported as `isJoined: false` with a null role, and shown
+     * a Join button for a community they were already in. So when the strip is
+     * full AND the viewer is not in it, and only then, ask the database.
+     *
+     * The row also carries the moderator-notice timestamps, so the notice
+     * below costs no query of its own either way.
+     */
+    const rawMembers: any[] = community.members || [];
+    let viewerMembership: {
+      role: string;
+      moderatorPromotedAt: Date | null;
+      moderatorNoticeAckedAt: Date | null;
+    } | null = null;
+
+    if (userId) {
+      const fromStrip = rawMembers.find((m: any) => m.userId === userId);
+      if (fromStrip) {
+        viewerMembership = {
+          role: fromStrip.role,
+          moderatorPromotedAt: fromStrip.moderatorPromotedAt ?? null,
+          moderatorNoticeAckedAt: fromStrip.moderatorNoticeAckedAt ?? null,
+        };
+      } else if (rawMembers.length >= CommunitiesService.MEMBER_STRIP_LIMIT) {
+        viewerMembership = await this.prisma.communityMember.findUnique({
+          where: { userId_communityId: { userId, communityId: id } },
+          select: {
+            role: true,
+            moderatorPromotedAt: true,
+            moderatorNoticeAckedAt: true,
+          },
+        });
+      }
+    }
+
+    if (visibleIdList) {
+      const visibleIds = new Set(visibleIdList);
       community.members = community.members.filter((m: any) =>
         visibleIds.has(m.userId),
       );
     }
 
     if (community.members) {
-      const memberUserIds = community.members
-        .map((m: any) => m.userId)
-        .filter(Boolean);
-      const presenceMap =
-        await this.presenceService.getPresenceMany(memberUserIds);
-
       community.members.forEach((m: any) => {
         if (community.ownerId && m.userId === community.ownerId) {
           m.role = 'OWNER';
@@ -570,54 +710,53 @@ export class CommunitiesService implements OnModuleInit {
     const isOwner = Boolean(
       userId && community.ownerId && community.ownerId === userId,
     );
-    const currentMember = userId
-      ? community.members.find((m: any) => m.userId === userId)
-      : null;
-    const isJoined = !!currentMember || isOwner;
-    const userRole = isOwner ? 'OWNER' : currentMember?.role || null;
+    const isJoined = !!viewerMembership || isOwner;
+    const userRole = isOwner ? 'OWNER' : viewerMembership?.role || null;
 
     // Eligibility check for Campus communities
     let isEligibleToJoin = true;
     let eligibilityMessage: string | null = null;
 
     if (community.isCampusCommunity && community.collegeId) {
-      let requestingUserCollegeId: string | null = null;
-      if (userId) {
-        requestingUserCollegeId = await this.getCachedCollegeId(userId);
-        if (!requestingUserCollegeId) {
-          const userRec = await this.prisma.user.findUnique({
-            where: { id: userId },
-            select: { collegeId: true },
-          });
-          requestingUserCollegeId = userRec?.collegeId || null;
-          if (requestingUserCollegeId) {
-            await this.setCachedCollegeId(userId, requestingUserCollegeId);
-          }
-        }
-      }
-
-      if (
-        !requestingUserCollegeId ||
-        requestingUserCollegeId !== community.collegeId
-      ) {
+      if (!viewerCollegeId || viewerCollegeId !== community.collegeId) {
         isEligibleToJoin = false;
         const collegeName = community.college?.name || 'this college';
         eligibilityMessage = `You're not eligible to join this community. This community is limited to verified students of ${collegeName}.`;
       }
     }
 
-    // Pending join request check for Private communities
+    // Pending join request check for Private communities.
+    //
+    // Only for a non-member of a private community — the one case whose answer
+    // can be anything but false. Issuing it unconditionally so it could join
+    // the batch above meant every member of every private community paid for a
+    // lookup whose result was thrown away.
     let hasPendingRequest = false;
     if (userId && community.isPrivate && !isJoined) {
       const pendingReq = await this.prisma.communityJoinRequest.findUnique({
         where: { communityId_userId: { communityId: id, userId } },
+        select: { status: true },
       });
       hasPendingRequest = pendingReq?.status === 'PENDING';
     }
 
-    const canViewPosts = isJoined || (!community.isPrivate && isEligibleToJoin);
+    /**
+     * The pending "you're now a moderator" notice, carried on the community.
+     *
+     * The doc comment on `getModeratorNotice` has always claimed this travels
+     * with the community "so opening it costs no extra round trip", but the
+     * client had to ask a separate endpoint for it — with `staleTime: 0`, so
+     * every mount and every window focus fired another request, for every
+     * viewer, the overwhelming majority of whom are not moderators and get
+     * `null`. The timestamps needed to answer it are already on the membership
+     * row read above, so this now costs nothing and the request is gone.
+     *
+     * `GET :id/moderator-notice` is unchanged and still served, for any client
+     * that has not been updated.
+     */
+    const moderatorNotice = this.pendingModeratorNotice(viewerMembership);
 
-    const onlineCount = await this.countOnlineMembers(id, community.ownerId);
+    const canViewPosts = isJoined || (!community.isPrivate && isEligibleToJoin);
 
     return {
       ...community,
@@ -629,6 +768,7 @@ export class CommunitiesService implements OnModuleInit {
       eligibilityMessage,
       canViewPosts,
       hasPendingRequest,
+      moderatorNotice,
     };
   }
 
@@ -660,10 +800,22 @@ export class CommunitiesService implements OnModuleInit {
       if (ownerId) ids.add(ownerId);
       if (ids.size === 0) return 0;
 
-      const presence = await this.presenceService.getPresenceMany([...ids]);
+      // Chunked, because this is one MGET per community view over every member
+      // the community has. Redis executes a command to completion on its single
+      // thread, so a ten-thousand-key MGET is ten thousand lookups during which
+      // no other client — the session store and the job queues share this
+      // instance — is served. Slicing it bounds that stall; the answer is
+      // identical, since the counts are summed either way.
+      const allIds = [...ids];
+      const CHUNK = 500;
       let online = 0;
-      for (const p of presence.values()) {
-        if (p?.status === 'online') online += 1;
+      for (let i = 0; i < allIds.length; i += CHUNK) {
+        const presence = await this.presenceService.getPresenceMany(
+          allIds.slice(i, i + CHUNK),
+        );
+        for (const p of presence.values()) {
+          if (p?.status === 'online') online += 1;
+        }
       }
       return online;
     } catch (err) {
@@ -699,31 +851,37 @@ export class CommunitiesService implements OnModuleInit {
   }
 
   async joinCommunity(communityId: string, userId: string) {
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: { verificationStatus: true },
-    });
+    // The verification check and the community read are independent; the
+    // join used to wait for the first before starting the second. The
+    // community is also projected now — the `include` pulled every column of
+    // the row, of which this method reads six.
+    const [user, community] = await Promise.all([
+      this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { verificationStatus: true },
+      }),
+      this.prisma.community.findUnique({
+        where: { id: communityId },
+        select: {
+          deletedAt: true,
+          isPrivate: true,
+          isCampusCommunity: true,
+          collegeId: true,
+          ownerId: true,
+          memberCount: true,
+          college: { select: { name: true } },
+        },
+      }),
+    ]);
     if (!user || user.verificationStatus !== 'VERIFIED') {
       throw new ForbiddenException('Verify your account to join communities');
     }
-
-    const community = await this.prisma.community.findUnique({
-      where: { id: communityId },
-      include: { college: { select: { name: true } } },
-    });
     if (!community || community.deletedAt)
       throw new NotFoundException('Community not found');
 
     // 1. Campus Eligibility Check
     if (community.isCampusCommunity && community.collegeId) {
-      let userCollegeId = await this.getCachedCollegeId(userId);
-      if (!userCollegeId) {
-        const u = await this.prisma.user.findUnique({
-          where: { id: userId },
-          select: { collegeId: true },
-        });
-        userCollegeId = u?.collegeId || null;
-      }
+      const userCollegeId = await this.resolveCollegeId(userId);
       if (!userCollegeId || userCollegeId !== community.collegeId) {
         const collegeName = community.college?.name || 'this college';
         throw new ForbiddenException(
@@ -802,13 +960,18 @@ export class CommunitiesService implements OnModuleInit {
   }
 
   async getPendingRequests(communityId: string, requestingUserId: string) {
-    const member = await this.prisma.communityMember.findUnique({
-      where: { userId_communityId: { userId: requestingUserId, communityId } },
-    });
-    const community = await this.prisma.community.findUnique({
-      where: { id: communityId },
-      select: { ownerId: true },
-    });
+    // Two independent lookups, previously awaited one after the other for
+    // every request that only needed to know whether the caller may act.
+    const [member, community] = await Promise.all([
+      this.prisma.communityMember.findUnique({
+        where: { userId_communityId: { userId: requestingUserId, communityId } },
+        select: { role: true },
+      }),
+      this.prisma.community.findUnique({
+        where: { id: communityId },
+        select: { ownerId: true },
+      }),
+    ]);
 
     const isOwnerOrMod =
       community?.ownerId === requestingUserId ||
@@ -840,13 +1003,18 @@ export class CommunitiesService implements OnModuleInit {
     requestId: string,
     requestingUserId: string,
   ) {
-    const member = await this.prisma.communityMember.findUnique({
-      where: { userId_communityId: { userId: requestingUserId, communityId } },
-    });
-    const community = await this.prisma.community.findUnique({
-      where: { id: communityId },
-      select: { ownerId: true, collegeId: true },
-    });
+    // Two independent lookups, previously awaited one after the other for
+    // every request that only needed to know whether the caller may act.
+    const [member, community] = await Promise.all([
+      this.prisma.communityMember.findUnique({
+        where: { userId_communityId: { userId: requestingUserId, communityId } },
+        select: { role: true },
+      }),
+      this.prisma.community.findUnique({
+        where: { id: communityId },
+        select: { ownerId: true, collegeId: true },
+      }),
+    ]);
 
     const isOwnerOrMod =
       community?.ownerId === requestingUserId ||
@@ -908,13 +1076,18 @@ export class CommunitiesService implements OnModuleInit {
     requestId: string,
     requestingUserId: string,
   ) {
-    const member = await this.prisma.communityMember.findUnique({
-      where: { userId_communityId: { userId: requestingUserId, communityId } },
-    });
-    const community = await this.prisma.community.findUnique({
-      where: { id: communityId },
-      select: { ownerId: true },
-    });
+    // Two independent lookups, previously awaited one after the other for
+    // every request that only needed to know whether the caller may act.
+    const [member, community] = await Promise.all([
+      this.prisma.communityMember.findUnique({
+        where: { userId_communityId: { userId: requestingUserId, communityId } },
+        select: { role: true },
+      }),
+      this.prisma.community.findUnique({
+        where: { id: communityId },
+        select: { ownerId: true },
+      }),
+    ]);
 
     const isOwnerOrMod =
       community?.ownerId === requestingUserId ||
@@ -947,6 +1120,12 @@ export class CommunitiesService implements OnModuleInit {
   async leaveCommunity(communityId: string, userId: string) {
     const community = await this.prisma.community.findUnique({
       where: { id: communityId },
+      select: {
+        deletedAt: true,
+        ownerId: true,
+        collegeId: true,
+        memberCount: true,
+      },
     });
     if (!community || community.deletedAt)
       throw new NotFoundException('Community not found');
@@ -1181,15 +1360,17 @@ export class CommunitiesService implements OnModuleInit {
     data: any,
     requestingUserId: string,
   ) {
-    const community = await this.prisma.community.findUnique({
-      where: { id: communityId },
-      select: { ownerId: true, avatarKey: true, coverKey: true },
-    });
+    const [community, member] = await Promise.all([
+      this.prisma.community.findUnique({
+        where: { id: communityId },
+        select: { ownerId: true, avatarKey: true, coverKey: true },
+      }),
+      this.prisma.communityMember.findUnique({
+        where: { userId_communityId: { userId: requestingUserId, communityId } },
+        select: { role: true },
+      }),
+    ]);
     if (!community) throw new NotFoundException('Community not found');
-
-    const member = await this.prisma.communityMember.findUnique({
-      where: { userId_communityId: { userId: requestingUserId, communityId } },
-    });
 
     const isOwner =
       community.ownerId === requestingUserId || member?.role === 'OWNER';
@@ -1378,17 +1559,7 @@ export class CommunitiesService implements OnModuleInit {
         moderatorNoticeAckedAt: true,
       },
     });
-    if (!member || member.role !== 'MODERATOR' || !member.moderatorPromotedAt)
-      return null;
-
-    const acked = member.moderatorNoticeAckedAt;
-    const pending = !acked || acked < member.moderatorPromotedAt;
-    if (!pending) return null;
-
-    return {
-      promotedAt: member.moderatorPromotedAt,
-      permissions: moderatorPermissions(),
-    };
+    return this.pendingModeratorNotice(member);
   }
 
   /**
@@ -1423,15 +1594,23 @@ export class CommunitiesService implements OnModuleInit {
       throw new ForbiddenException('Role must be MODERATOR or MEMBER');
     }
 
-    const community = await this.prisma.community.findUnique({
-      where: { id: communityId },
-      select: { ownerId: true },
-    });
+    // The community, the caller's role and the target's row are all
+    // independent reads; they were three sequential round trips.
+    const [community, requesterMember, targetMember] = await Promise.all([
+      this.prisma.community.findUnique({
+        where: { id: communityId },
+        select: { ownerId: true },
+      }),
+      this.prisma.communityMember.findUnique({
+        where: { userId_communityId: { userId: requestingUserId, communityId } },
+        select: { role: true },
+      }),
+      this.prisma.communityMember.findUnique({
+        where: { userId_communityId: { userId: memberId, communityId } },
+        select: { role: true },
+      }),
+    ]);
     if (!community) throw new NotFoundException('Community not found');
-
-    const requesterMember = await this.prisma.communityMember.findUnique({
-      where: { userId_communityId: { userId: requestingUserId, communityId } },
-    });
 
     const isOwner =
       community.ownerId === requestingUserId ||
@@ -1448,9 +1627,6 @@ export class CommunitiesService implements OnModuleInit {
       );
     }
 
-    const targetMember = await this.prisma.communityMember.findUnique({
-      where: { userId_communityId: { userId: memberId, communityId } },
-    });
     if (!targetMember)
       throw new NotFoundException('Member not found in community');
 
@@ -1510,15 +1686,21 @@ export class CommunitiesService implements OnModuleInit {
     memberId: string,
     requestingUserId: string,
   ) {
-    const community = await this.prisma.community.findUnique({
-      where: { id: communityId },
-      select: { ownerId: true },
-    });
+    const [community, requester, memberToRemove] = await Promise.all([
+      this.prisma.community.findUnique({
+        where: { id: communityId },
+        select: { ownerId: true },
+      }),
+      this.prisma.communityMember.findUnique({
+        where: { userId_communityId: { userId: requestingUserId, communityId } },
+        select: { role: true },
+      }),
+      this.prisma.communityMember.findUnique({
+        where: { userId_communityId: { userId: memberId, communityId } },
+        select: { role: true },
+      }),
+    ]);
     if (!community) throw new NotFoundException('Community not found');
-
-    const requester = await this.prisma.communityMember.findUnique({
-      where: { userId_communityId: { userId: requestingUserId, communityId } },
-    });
 
     const isOwner =
       community.ownerId === requestingUserId || requester?.role === 'OWNER';
@@ -1533,9 +1715,6 @@ export class CommunitiesService implements OnModuleInit {
       );
     }
 
-    const memberToRemove = await this.prisma.communityMember.findUnique({
-      where: { userId_communityId: { userId: memberId, communityId } },
-    });
     if (!memberToRemove) throw new NotFoundException('Member not found');
 
     if (memberId === community.ownerId || memberToRemove.role === 'OWNER') {
@@ -1570,17 +1749,26 @@ export class CommunitiesService implements OnModuleInit {
   }
 
   async deleteCommunity(communityId: string, requestingUserId: string) {
-    const community = await this.prisma.community.findUnique({
-      where: { id: communityId },
-    });
+    const [community, member] = await Promise.all([
+      this.prisma.community.findUnique({
+        where: { id: communityId },
+        select: {
+          ownerId: true,
+          deletedAt: true,
+          collegeId: true,
+          avatarKey: true,
+          coverKey: true,
+        },
+      }),
+      this.prisma.communityMember.findUnique({
+        where: { userId_communityId: { userId: requestingUserId, communityId } },
+        select: { role: true },
+      }),
+    ]);
 
     if (!community || community.deletedAt) {
       throw new NotFoundException('COMMUNITY_NOT_FOUND');
     }
-
-    const member = await this.prisma.communityMember.findUnique({
-      where: { userId_communityId: { userId: requestingUserId, communityId } },
-    });
 
     const isOwner =
       community.ownerId === requestingUserId || member?.role === 'OWNER';

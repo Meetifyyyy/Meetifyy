@@ -1,8 +1,14 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
 import StaticDocLayout from './StaticDocLayout';
 import styles from './StaticDocLayout.module.css';
+import { useNavigate } from 'react-router-dom';
 import { legalApi } from '@shared/api/apiClient';
+import {
+  hardenExternalLinks,
+  makeInternalLinkHandler,
+  wrapTablesForScroll,
+} from '@shared/utils/legalHtmlLinks';
 
 /**
  * A public legal page, rendered from the currently published version in the
@@ -30,6 +36,26 @@ export default function LegalDocumentPage({
   const [doc, setDoc] = useState(null);
   const [loadState, setLoadState] = useState('loading'); // loading | ready | error
   const loadIdRef = useRef(0);
+  const contentRef = useRef(null);
+  const navigate = useNavigate();
+
+  /**
+   * Link behaviour for the injected document body — see legalHtmlLinks.
+   *
+   * The seeded documents predate the sanitizer's link rule, so their external
+   * anchors carry no `rel`/`target` at all; and an internal cross-reference
+   * inside injected HTML would otherwise full-page-reload the SPA.
+   */
+  const handleContentClick = useMemo(
+    () => makeInternalLinkHandler(navigate),
+    [navigate],
+  );
+
+  useEffect(() => {
+    if (loadState !== 'ready') return;
+    hardenExternalLinks(contentRef.current);
+    wrapTablesForScroll(contentRef.current);
+  }, [loadState, doc?.content]);
 
   /**
    * A load-id sequence rather than an AbortController, which is the pattern
@@ -131,8 +157,13 @@ export default function LegalDocumentPage({
           {/* Sanitized on write by the admin save path — the same sanitizer the
               help centre uses — so no unsanitized copy of this exists anywhere
               for some other consumer to render. */}
+          {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions,
+              jsx-a11y/click-events-have-key-events -- delegation for anchors
+              that are already keyboard-operable in their own right. */}
           <div
+            ref={contentRef}
             className={styles.docHtml}
+            onClick={handleContentClick}
             dangerouslySetInnerHTML={{ __html: doc.content }}
           />
           {/* Page chrome that is app behaviour rather than document text, e.g.
