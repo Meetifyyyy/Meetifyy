@@ -20,6 +20,7 @@ export default function ForgotPasswordPage() {
   const [toastVisible, setToastVisible] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [notFound, setNotFound] = useState(false);
   const goBack = useSmartBack();
 
   const showToast = (msg) => {
@@ -37,6 +38,7 @@ export default function ForgotPasswordPage() {
     }
 
     setIsSubmitting(true);
+    setNotFound(false);
     try {
       /*
        * One request where this screen used to make two.
@@ -55,22 +57,32 @@ export default function ForgotPasswordPage() {
        * caller, and a client-chosen `redirectTo` on a reset link is an open
        * redirect carrying a recovery token in its fragment.
        *
-       * The reply no longer says whether the address has an account.
-       *
-       * Telling the user was once a deliberate product decision — someone
-       * mistyping the address they signed up with was shown "check your email"
-       * and then waited for a message that never came. It is also an oracle:
-       * one request answers "is this person on Meetifyy?" for any address, and
-       * on a student platform that is a question about a real, identifiable
-       * person. Rate limiting bounds the volume of that question, not the
-       * asking of it.
-       *
-       * So the mistyped case is handled by wording instead — the screen says
-       * "if an account exists" — which is what every major service does.
+       * Telling the user when there is no account is a deliberate product
+       * decision — someone mistyping the address they signed up with was being
+       * shown "check your email" and then waiting for a message that was never
+       * going to arrive. What limits the exposure is that this route is
+       * rate-limited exactly like the other unauthenticated lookups, so it is
+       * not a usable bulk oracle.
        */
-      await apiClient.post('/api/auth/request-password-reset', {
+      const result = await apiClient.post('/api/auth/request-password-reset', {
         email: cleanEmail,
       });
+
+      if (result && result.exists === false) {
+        setNotFound(true);
+        return;
+      }
+
+      // The account exists but the mail could not be dispatched — an upstream
+      // or transport failure, not a wrong address. The sent screen still shows,
+      // because the message may yet arrive and telling someone with a real
+      // account that it does not exist is the one answer that must never come
+      // out of a failure. The toast is what stops that screen being the only
+      // thing they see, so "nothing arrived" reads as something to retry rather
+      // than as a silent dead end.
+      if (result && result.exists === true && result.sent === false) {
+        showToast("We couldn't send the email just now. Try again shortly.");
+      }
 
       setIsSubmitted(true);
     } catch (err) {
@@ -116,8 +128,9 @@ export default function ForgotPasswordPage() {
                     setEmail(e.target.value);
                     // Editing the address is the user answering the message, so
                     // it should not sit there contradicting what they now see.
+                    if (notFound) setNotFound(false);
                   }}
-                  error={null}
+                  error={notFound ? 'No account found. Check your email and try again.' : null}
                 />
 
                 <AuthButton
