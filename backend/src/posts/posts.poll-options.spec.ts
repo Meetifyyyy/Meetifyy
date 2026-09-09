@@ -44,23 +44,23 @@ describe('PostsService — poll options validation', () => {
     );
   });
 
-  it('rejects post creation when a poll option exceeds 150 characters', async () => {
-    const validOption = 'A'.repeat(150);
-    const excessiveOption = 'B'.repeat(151);
+  it('rejects post creation when a poll option exceeds 100 characters', async () => {
+    const validOption = 'A'.repeat(100);
+    const excessiveOption = 'B'.repeat(101);
 
     await expect(
       service.createPost('u1', 'Question?', undefined, undefined, {
         options: [validOption, excessiveOption],
       }),
-    ).rejects.toThrow(new BadRequestException('Poll options cannot exceed 150 characters'));
+    ).rejects.toThrow(new BadRequestException('Poll options cannot exceed 100 characters'));
 
     // Verify post was never created in DB
     expect(prisma.post.create).not.toHaveBeenCalled();
   });
 
-  it('allows post creation when poll options are within 150 characters', async () => {
+  it('allows post creation when poll options are within 100 characters', async () => {
     const option1 = 'Option 1';
-    const option2 = 'A'.repeat(150);
+    const option2 = 'A'.repeat(100);
 
     const result = await service.createPost('u1', 'Question?', undefined, undefined, {
       options: [option1, option2],

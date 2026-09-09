@@ -26,6 +26,18 @@ import { MentionDto } from '../common/dto/mention.dto';
 import { ContentDeletionAuthorizer } from './content-deletion.authorizer';
 import { StudentYearPolicyService } from '../common/student-year/student-year-policy.service';
 
+
+/**
+ * The longest a single poll option may be.
+ *
+ * Enforced here rather than only in the composer's `maxLength`, which is a
+ * client-side hint a request can simply not send. The value is named because
+ * it was a literal in both the check and the truncation below, and the two
+ * have to agree — a check at one number and a slice at another silently
+ * stores something different from what was validated.
+ */
+const POLL_OPTION_MAX_LENGTH = 100;
+
 @Injectable()
 export class PostsService {
   private readonly logger = new Logger('PostsService');
@@ -175,8 +187,10 @@ export class PostsService {
     if (poll && Array.isArray(poll.options) && poll.options.length > 0) {
       for (const opt of poll.options) {
         const str = typeof opt === 'string' ? opt.trim() : String(opt ?? '');
-        if (str.length > 150) {
-          throw new BadRequestException('Poll options cannot exceed 150 characters');
+        if (str.length > POLL_OPTION_MAX_LENGTH) {
+          throw new BadRequestException(
+            `Poll options cannot exceed ${POLL_OPTION_MAX_LENGTH} characters`,
+          );
         }
       }
     }
@@ -312,7 +326,12 @@ export class PostsService {
     let createdPollOptions: any[] = [];
     if (poll && Array.isArray(poll.options) && poll.options.length > 0) {
       const sanitizedOptions = poll.options
-        .map((opt: any) => (typeof opt === 'string' ? opt.trim() : String(opt ?? '')).slice(0, 150))
+        .map((opt: any) =>
+          (typeof opt === 'string' ? opt.trim() : String(opt ?? '')).slice(
+            0,
+            POLL_OPTION_MAX_LENGTH,
+          ),
+        )
         .filter(Boolean);
 
       if (sanitizedOptions.length > 0) {

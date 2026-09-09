@@ -24,6 +24,26 @@ const overlayStyle = {
   zIndex: 15,
 };
 
+/**
+ * The longest a single poll option may be. Mirrored by POLL_OPTION_MAX_LENGTH
+ * in posts.service.ts, which is where it is actually enforced — `maxLength`
+ * only stops typing, not a crafted request.
+ *
+ * Named because the limit appeared as a literal in five places here (the input
+ * cap, the truncation in updatePollOption, the truncation on submit, the
+ * counter's arithmetic and its tooltip), which is how the counter came to be
+ * keyed to a different number than the cap it counts down to.
+ */
+const POLL_OPTION_MAX_LENGTH = 100;
+
+/**
+ * The counter appears in the last stretch of the limit and turns amber nearer
+ * the end. Both are expressed as characters remaining so they stay meaningful
+ * if the cap changes; keyed to the length, they silently stopped matching it.
+ */
+const POLL_OPTION_COUNT_VISIBLE_AT = 30;
+const POLL_OPTION_COUNT_WARNING_AT = 10;
+
 const PostComposer = forwardRef(function PostComposer({ onSubmit }, ref) {
   const { loading, currentUser } = useAuth();
   const [value, setValue] = useState({ text: '', mentions: [] });
@@ -137,7 +157,9 @@ const PostComposer = forwardRef(function PostComposer({ onSubmit }, ref) {
       }
 
       if (showPoll) {
-        const opts = pollOptions.map((o) => o.trim().slice(0, 150)).filter(Boolean);
+        const opts = pollOptions
+          .map((o) => o.trim().slice(0, POLL_OPTION_MAX_LENGTH))
+          .filter(Boolean);
         await onSubmit(text, { question: text || 'Poll', options: opts, multiSelect: pollMulti }, finalMedia, mentions);
         setPollOptions(['', '']);
         setPollMulti(false);
@@ -318,7 +340,7 @@ const PostComposer = forwardRef(function PostComposer({ onSubmit }, ref) {
 
   const updatePollOption = (idx, val) => {
     const next = [...pollOptions];
-    next[idx] = val.slice(0, 150);
+    next[idx] = val.slice(0, POLL_OPTION_MAX_LENGTH);
     setPollOptions(next);
   };
 
@@ -411,8 +433,8 @@ const PostComposer = forwardRef(function PostComposer({ onSubmit }, ref) {
                   const isLast = i === pollOptions.length - 1;
                   const hasAdd = isLast && pollOptions.length < 5;
                   const hasDelete = pollOptions.length > 2;
-                  const remaining = 150 - opt.length;
-                  const showCount = opt.length >= 100;
+                  const remaining = POLL_OPTION_MAX_LENGTH - opt.length;
+                  const showCount = remaining <= POLL_OPTION_COUNT_VISIBLE_AT;
 
                   return (
                     <div key={i} className={styles.pollOptionRow}>
@@ -422,7 +444,7 @@ const PostComposer = forwardRef(function PostComposer({ onSubmit }, ref) {
                           type="text"
                           placeholder={`Option ${i + 1}`}
                           value={opt}
-                          maxLength={150}
+                          maxLength={POLL_OPTION_MAX_LENGTH}
                           onChange={(e) => updatePollOption(i, e.target.value)}
                           style={{
                             paddingRight: hasDelete
@@ -432,8 +454,8 @@ const PostComposer = forwardRef(function PostComposer({ onSubmit }, ref) {
                         />
                         {showCount && (
                           <span
-                            className={`${styles.pollOptionCharCount}${hasDelete ? ` ${styles.hasDelete}` : ''}${remaining === 0 ? ` ${styles.limit}` : remaining <= 20 ? ` ${styles.warning}` : ''}`}
-                            title={`${remaining} characters remaining (max 150)`}
+                            className={`${styles.pollOptionCharCount}${hasDelete ? ` ${styles.hasDelete}` : ''}${remaining === 0 ? ` ${styles.limit}` : remaining <= POLL_OPTION_COUNT_WARNING_AT ? ` ${styles.warning}` : ''}`}
+                            title={`${remaining} characters remaining (max ${POLL_OPTION_MAX_LENGTH})`}
                           >
                             {remaining}
                           </span>

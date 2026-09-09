@@ -115,27 +115,27 @@ describe('PostComposer — typing into poll options', () => {
     expect(document.activeElement).toBe(container.querySelector('#mock-mention-input'));
   });
 
-  it('enforces a 150-character limit on poll options and displays remaining count', () => {
+  it('enforces a 100-character limit on poll options and displays remaining count', () => {
     const { container } = render(<PostComposer onSubmit={async () => {}} />);
     const options = openPoll(container);
 
     const first = options()[0];
-    expect(first.getAttribute('maxlength')).toBe('150');
+    expect(first.getAttribute('maxlength')).toBe('100');
 
-    // Entering a string longer than 150 characters is capped at 150
-    const over150 = 'a'.repeat(160);
+    // Entering a string longer than 100 characters is capped at 100
+    const overLimit = 'a'.repeat(160);
     clickInto(first);
-    fireEvent.change(first, { target: { value: over150 } });
+    fireEvent.change(first, { target: { value: overLimit } });
 
-    expect(first.value.length).toBe(150);
-    expect(first.value).toBe('a'.repeat(150));
+    expect(first.value.length).toBe(100);
+    expect(first.value).toBe('a'.repeat(100));
 
-    // A character counter indicator appears when length >= 100 showing remaining characters (0 left)
+    // The counter appears in the last 30 characters; at the cap it reads 0 left
     expect(container.textContent).toContain('0');
 
-    // Change to 120 characters: shows 30 remaining
-    fireEvent.change(first, { target: { value: 'b'.repeat(120) } });
-    expect(first.value.length).toBe(120);
-    expect(container.textContent).toContain('30');
+    // Inside the counter's window but under the cap: 80 characters leaves 20
+    fireEvent.change(first, { target: { value: 'b'.repeat(80) } });
+    expect(first.value.length).toBe(80);
+    expect(container.textContent).toContain('20');
   });
 });
