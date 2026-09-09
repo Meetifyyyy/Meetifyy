@@ -279,9 +279,16 @@ export class BlocksService implements OnModuleInit, OnModuleDestroy {
   /**
    * Both directions for one pair, in one place, so callers stop hand-rolling it.
    *
-   * `blockedByThem` is derived rather than queried: the pair is related if the
-   * mutual set contains them, and if this user is not the one who blocked, the
-   * other side must be.
+   * `blockedByThem` is looked up, not derived. It used to be computed as
+   * "related by a block, and I am not the blocker" — which is right in the
+   * ordinary case and WRONG whenever both users have blocked each other: there
+   * `blockedByMe` is true, so the derivation concluded `blockedByThem` was
+   * false and reported a mutual block as one-way. Any caller that refuses on
+   * `blockedByThem` would then have let each side reach the other precisely
+   * when both had asked not to be reached.
+   *
+   * The extra lookup is a primary-key hit on a cached list, which is a small
+   * price for a flag whose whole job is to be exact.
    */
   async getBlockDirection(
     userId: string,
@@ -294,13 +301,15 @@ export class BlocksService implements OnModuleInit, OnModuleDestroy {
     if (!userId || !otherUserId || userId === otherUserId) {
       return { isBlocked: false, blockedByMe: false, blockedByThem: false };
     }
-    const [mutual, outgoing] = await Promise.all([
+    const [mutual, outgoing, theirOutgoing] = await Promise.all([
       this.getExcludedUserIds(userId),
       this.getBlockedByUserIds(userId),
+      this.getBlockedByUserIds(otherUserId),
     ]);
     const isBlocked = mutual.includes(otherUserId);
     const blockedByMe = outgoing.includes(otherUserId);
-    return { isBlocked, blockedByMe, blockedByThem: isBlocked && !blockedByMe };
+    const blockedByThem = theirOutgoing.includes(userId);
+    return { isBlocked, blockedByMe, blockedByThem };
   }
 
   /**

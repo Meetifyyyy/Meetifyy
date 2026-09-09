@@ -203,7 +203,19 @@ describe('Activity access enforcement (service level)', () => {
       ).rejects.toBeInstanceOf(NotFoundException);
     });
 
-    it('still serves the essentials to an attendee who has blocked the host', async () => {
+    /**
+     * Attendance no longer earns an exception.
+     *
+     * This used to serve an attendee who had blocked the host the essentials —
+     * when, where, what — with the host's identity withheld, so that blocking a
+     * host did not cost you an event you were actually going to. The product
+     * rule is now that a block means neither party sees the other's activities
+     * at all, and the refusal is the ordinary "not found" so it cannot be told
+     * apart from a deleted event.
+     *
+     * The membership row is untouched, so unblocking restores the event.
+     */
+    it('404s for an attendee who has blocked the host', async () => {
       activityRow = baseActivity('PUBLIC');
       blockedIds = ['host-1'];
       prisma.crewActivityMember.findUnique = jest.fn(async () => ({
@@ -211,27 +223,31 @@ describe('Activity access enforcement (service level)', () => {
         status: 'MEMBER',
       }));
 
-      const res: any = await service.getActivityById('act-1', 'user-other');
-
-      // Blocking the host must not cost the attendee the event itself.
-      expect(res.id).toBe('act-1');
-      expect(res.title).toBe('Secret rooftop dinner');
-      expect(res.isJoined).toBe(true);
+      await expect(
+        service.getActivityById('act-1', 'user-other'),
+      ).rejects.toBeInstanceOf(NotFoundException);
     });
 
-    it('withholds the host identity from that attendee', async () => {
+    it('answers an attendee and a non-attendee identically', async () => {
       activityRow = baseActivity('PUBLIC');
       blockedIds = ['host-1'];
+
+      prisma.crewActivityMember.findUnique = jest.fn(async () => null);
+      const nonAttendee = await service
+        .getActivityById('act-1', 'user-other')
+        .catch((e: any) => e);
+
       prisma.crewActivityMember.findUnique = jest.fn(async () => ({
         userId: 'user-other',
         status: 'MEMBER',
       }));
+      const attendee = await service
+        .getActivityById('act-1', 'user-other')
+        .catch((e: any) => e);
 
-      const res: any = await service.getActivityById('act-1', 'user-other');
-
-      expect(res.creator).toBeNull();
-      expect(res.creatorId).toBeNull();
-      expect(res.hostUnavailable).toBe(true);
+      // Differing answers would make attendance detectable from outside.
+      expect(attendee.message).toBe(nonAttendee.message);
+      expect(attendee.getStatus()).toBe(nonAttendee.getStatus());
     });
 
     it('leaves the host visible when there is no block', async () => {

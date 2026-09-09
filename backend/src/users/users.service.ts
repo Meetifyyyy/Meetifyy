@@ -362,15 +362,25 @@ export class UsersService {
       ...(cursorWhere || {}),
     };
 
-    // Blocked users must not appear in the campus directory, in either
-    // direction. Applied to the query so the page size stays honest.
-    //
-    // First-year isolation is ANDed on for the same reason, and through
-    // `injectUserFilter` rather than a spread: `where` above already carries
-    // an `OR` (the search clause, and the keyset cursor), so assigning another
-    // one would drop it.
+    /**
+     * Blocked users stay IN the campus directory.
+     *
+     * They used to be filtered out of the query entirely, which reads as the
+     * cautious choice and is the wrong one for a directory of the people at
+     * your college: a block is a personal boundary, not a claim that someone
+     * has stopped attending. Removing them also makes the directory a probe —
+     * a name that vanishes tells you something a neutral listing does not.
+     *
+     * What they lose is everything past the name. The row is stripped below and
+     * marked so the card does not link anywhere, and the profile routes enforce
+     * the real rule: the blocker may open the profile, the blocked user may not.
+     *
+     * First-year isolation still filters the query, through `injectUserFilter`
+     * rather than a spread: `where` already carries an `OR` (the search clause
+     * and the keyset cursor), so assigning another one would drop it.
+     */
     const directoryWhere = this.studentYearPolicy.injectUserFilter(
-      await this.blocksService.injectBlockFilter(userId, where, 'id'),
+      where,
       viewerBatch,
     );
 
@@ -418,7 +428,33 @@ export class UsersService {
     // lookups for the 'following' / 'mutual' rules — five or six round trips to
     // compute three fields that were serialized and then dropped on the floor.
     // If a dot is ever wanted here, resolve it then; it is not free.
-    const users = pageRows.map(({ createdAt: _createdAt, ...u }) => u);
+    /**
+     * A blocked row keeps its name and loses the rest.
+     *
+     * Avatar, username and the academic line all go: the requirement is that
+     * the person remains listed, not that the card stays useful. `blocked`
+     * tells the card to render a plain, unlinked entry — and the username in
+     * particular is withheld because it is the one field that would let the
+     * viewer hand-build a profile URL from what they were shown.
+     */
+    const excludedIds = userId
+      ? new Set(await this.blocksService.getExcludedUserIds(userId))
+      : new Set<string>();
+
+    const users = pageRows.map(({ createdAt: _createdAt, ...u }) =>
+      excludedIds.has(u.id)
+        ? {
+            id: u.id,
+            displayName: u.displayName,
+            username: null,
+            avatar: null,
+            course: null,
+            branch: null,
+            passingYear: null,
+            blocked: true,
+          }
+        : { ...u, blocked: false },
+    );
 
     return { users, nextCursor };
   }
@@ -460,11 +496,18 @@ export class UsersService {
     if (!user || user.deletedAt)
       throw new NotFoundException("This profile isn't available.");
 
-    if (
-      currentUserId &&
-      currentUserId !== id &&
-      (await this.blocksService.isBlocked(currentUserId, id))
-    ) {
+    /**
+     * Directional, matching getProfileByUsername — this is its by-id twin and
+     * the two must not disagree, or the rule becomes "whichever route you
+     * happened to use". The blocker keeps access to a profile they blocked; the
+     * blocked user is refused with the same neutral 404 as a missing account.
+     */
+    const blockDirection =
+      currentUserId && currentUserId !== id
+        ? await this.blocksService.getBlockDirection(currentUserId, id)
+        : { isBlocked: false, blockedByMe: false, blockedByThem: false };
+
+    if (blockDirection.blockedByThem) {
       throw new NotFoundException("This profile isn't available.");
     }
 
@@ -509,6 +552,9 @@ export class UsersService {
       online: isOnline,
       lastActive: canSeeOnline ? pres?.lastSeen || null : null,
       messagingRestricted,
+      // Same flag the username route emits, for the same reason: only the
+      // blocker ever sees it, and it tells them something they did themselves.
+      blockedByMe: blockDirection.blockedByMe,
     };
   }
 
@@ -633,15 +679,19 @@ export class UsersService {
       currentUserId && currentUserId !== targetUser.id,
     );
     const [
-      isBlockedPair,
+      blockDirection,
       followRecord,
       followedByRecord,
       presence,
       canSeeOnline,
     ] = await Promise.all([
       needsRelational
-        ? this.blocksService.isBlocked(currentUserId!, targetUser.id)
-        : Promise.resolve(false),
+        ? this.blocksService.getBlockDirection(currentUserId!, targetUser.id)
+        : Promise.resolve({
+            isBlocked: false,
+            blockedByMe: false,
+            blockedByThem: false,
+          }),
       needsRelational
         ? this.prisma.follow.findUnique({
             where: {
@@ -673,11 +723,24 @@ export class UsersService {
       ),
     ]);
 
-    if (isBlockedPair) {
-      // Deliberately the SAME message and status as the genuine
-      // profile-not-found above. If the two differed, comparing responses would
-      // let a user tell "this account blocked me" apart from "no such account"
-      // — which is exactly the disclosure the neutral 404 exists to prevent.
+    /**
+     * Blocking is DIRECTIONAL here, which it was not before.
+     *
+     * The person who placed the block keeps access: they may want to check what
+     * they blocked, or undo it, and refusing them their own decision is not
+     * protection. The person who was blocked loses access entirely.
+     *
+     * Refusing both was the safer-looking rule and the wrong one — it told the
+     * blocker nothing useful and, by making the pair symmetric, meant a user
+     * could infer a block simply by noticing a profile they had blocked
+     * themselves had become unreachable.
+     *
+     * The refusal keeps the SAME message and status as the genuine
+     * profile-not-found above. If the two differed, comparing responses would
+     * let a user tell "this account blocked me" apart from "no such account" —
+     * exactly the disclosure the neutral 404 exists to prevent.
+     */
+    if (blockDirection.blockedByThem) {
       throw new NotFoundException("This profile isn't available.");
     }
     isFollowing = !!followRecord;
@@ -729,6 +792,15 @@ export class UsersService {
       isFollowing,
       isFollowedBy,
       isMutual: isFollowing && isFollowedBy,
+      /**
+       * True when the VIEWER has blocked this profile.
+       *
+       * Only ever true for the blocker — the blocked side does not reach this
+       * response at all — so it discloses nothing: it tells a user something
+       * they did themselves. The profile header renders it where the Follow
+       * button would go, and following is refused server-side regardless.
+       */
+      blockedByMe: blockDirection.blockedByMe,
       // First-year isolation, as a flag rather than a hidden profile.
       //
       // The profile itself stays reachable on purpose: the product decision is

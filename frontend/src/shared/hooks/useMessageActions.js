@@ -430,6 +430,31 @@ export function useMessageActions() {
       queryClient.invalidateQueries({ queryKey: ['following'] });
       queryClient.invalidateQueries({ queryKey: ['userProfile'] });
       queryClient.invalidateQueries({ queryKey: ['profile'] });
+
+      /**
+       * Everywhere the other person's content can still be sitting in cache.
+       *
+       * The lists above cover the relationship; these cover the content. A
+       * block takes effect server-side immediately, but a feed already in
+       * memory keeps painting the posts it was handed — so without this the
+       * person stays visible until something else happens to refetch, which on
+       * a quiet screen can be indefinitely. Blocking someone and still seeing
+       * their posts is the one outcome this feature cannot have.
+       *
+       * Broad on purpose: the keys are refetched, not dropped, and the cost of
+       * a few extra requests at the moment someone blocks is not worth the
+       * precision of enumerating every variant key.
+       */
+      queryClient.invalidateQueries({ queryKey: ['feed'] });
+      queryClient.invalidateQueries({ queryKey: ['posts'] });
+      queryClient.invalidateQueries({ queryKey: ['post'] });
+      queryClient.invalidateQueries({ queryKey: ['user-posts'] });
+      queryClient.invalidateQueries({ queryKey: ['activities'] });
+      queryClient.invalidateQueries({ queryKey: ['activity'] });
+      queryClient.invalidateQueries({ queryKey: ['communities'] });
+      queryClient.invalidateQueries({ queryKey: ['community'] });
+      queryClient.invalidateQueries({ queryKey: ['notifications'] });
+      queryClient.invalidateQueries({ queryKey: ['search'] });
     }
   };
 

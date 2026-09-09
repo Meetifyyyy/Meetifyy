@@ -31,15 +31,13 @@ export function createBlocksServiceMock(
     hasBlocked: jest.fn(
       async (a: string, b: string) => a !== b && outgoingFor(a).includes(b),
     ),
-    getBlockDirection: jest.fn(async (userId: string, otherId: string) => {
-      const isBlocked = excludedFor(userId).includes(otherId);
-      const blockedByMe = outgoingFor(userId).includes(otherId);
-      return {
-        isBlocked,
-        blockedByMe,
-        blockedByThem: isBlocked && !blockedByMe,
-      };
-    }),
+    getBlockDirection: jest.fn(async (userId: string, otherId: string) => ({
+      isBlocked: excludedFor(userId).includes(otherId),
+      blockedByMe: outgoingFor(userId).includes(otherId),
+      // Looked up, not derived: a mutual block makes both true, and deriving
+      // "them" from "not me" reported it as one-way.
+      blockedByThem: outgoingFor(otherId).includes(userId),
+    })),
     filterBlockedUsers: jest.fn(async (userId: string, ids: string[]) => {
       if (!userId) return ids;
       const set = new Set(excludedFor(userId));

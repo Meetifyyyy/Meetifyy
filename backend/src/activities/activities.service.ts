@@ -1401,16 +1401,28 @@ export class ActivitiesService implements OnModuleInit {
         : Promise.resolve(null),
     ]);
 
-    // Blocking the host must not make an event the viewer already joined
-    // unusable. An attendee keeps access to the essentials — when, where, what —
-    // and only the host's identity is withheld; a non-attendee still gets the
-    // neutral 404 that every other blocked surface returns.
+    /**
+     * A blocked pair cannot see each other's activities, attendee or not.
+     *
+     * There used to be a carve-out here: someone who had joined an event and
+     * then blocked the host kept access to the essentials — when, where, what —
+     * with only the host's identity withheld, on the grounds that blocking a
+     * host should not cost you an event you are actually going to.
+     *
+     * That reading is defensible, and it is not the rule this product asked
+     * for: a block means neither party sees the other's activities, and the
+     * refusal is the ordinary "Activity not found" so it cannot be told apart
+     * from an event that was deleted. The consequence is worth being clear
+     * about — blocking the host of an event you have joined now removes that
+     * event from your view, and the membership row survives, so unblocking
+     * restores it.
+     */
     const hostBlocked =
       !!activity &&
       excludedUserIds.length > 0 &&
       excludedUserIds.includes(activity.creatorId);
 
-    if (!activity || activity.deletedAt || (hostBlocked && !myMembership)) {
+    if (!activity || activity.deletedAt || hostBlocked) {
       throw new NotFoundException('Activity not found');
     }
 

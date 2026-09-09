@@ -187,3 +187,111 @@ describe('BlocksService', () => {
     });
   });
 });
+
+/**
+ * `getBlockDirection` answers which side placed the block, and callers refuse
+ * on it — so an inexact answer is an access-control failure, not a cosmetic one.
+ *
+ * It used to derive "they blocked me" as "we are related by a block and I am
+ * not the blocker". That is right in the ordinary case and wrong exactly when
+ * both users have blocked each other: `blockedByMe` is true there, so the
+ * derivation concluded `blockedByThem` was false and reported a mutual block as
+ * one-way. Anything refusing on that flag would then have let each side reach
+ * the other precisely when both had asked not to be.
+ */
+describe('BlocksService — getBlockDirection', () => {
+  const A = 'user-a';
+  const B = 'user-b';
+
+  const build = (rows: { blockerId: string; blockedId: string }[]) => {
+    const prisma: any = {
+      block: {
+        findMany: jest.fn(async ({ where }: any) => {
+          if (where.blockerId && where.blockedId === undefined) {
+            return rows
+              .filter((r) => r.blockerId === where.blockerId)
+              .map((r) => ({ blockedId: r.blockedId }));
+          }
+          if (where.OR) {
+            return rows
+              .filter(
+                (r) =>
+                  r.blockerId === where.OR[0].blockerId ||
+                  r.blockedId === where.OR[1].blockedId,
+              )
+              .map((r) => ({ blockerId: r.blockerId, blockedId: r.blockedId }));
+          }
+          return [];
+        }),
+      },
+    };
+    const redis: any = {
+      getClient: () => ({ on: jest.fn(), subscribe: jest.fn(), publish: jest.fn() }),
+      subscriber: () => ({ on: jest.fn(), subscribe: jest.fn() }),
+    };
+    return new (require('./blocks.service').BlocksService)(prisma, redis);
+  };
+
+  const clearCaches = () => {
+    const S: any = require('./blocks.service').BlocksService;
+    S.cache?.clear?.();
+    S.outgoingCache?.clear?.();
+  };
+
+  beforeEach(clearCaches);
+  afterEach(clearCaches);
+
+  it('reports a one-way block from the blocker’s side', async () => {
+    const service = build([{ blockerId: A, blockedId: B }]);
+    const direction = await service.getBlockDirection(A, B);
+    expect(direction).toEqual({
+      isBlocked: true,
+      blockedByMe: true,
+      blockedByThem: false,
+    });
+  });
+
+  it('reports a one-way block from the blocked side', async () => {
+    const service = build([{ blockerId: A, blockedId: B }]);
+    const direction = await service.getBlockDirection(B, A);
+    expect(direction).toEqual({
+      isBlocked: true,
+      blockedByMe: false,
+      blockedByThem: true,
+    });
+  });
+
+  /** The case the derivation got wrong. */
+  it('reports a mutual block as blocked in BOTH directions', async () => {
+    const service = build([
+      { blockerId: A, blockedId: B },
+      { blockerId: B, blockedId: A },
+    ]);
+
+    const fromA = await service.getBlockDirection(A, B);
+    expect(fromA.blockedByMe).toBe(true);
+    expect(fromA.blockedByThem).toBe(true);
+
+    const fromB = await service.getBlockDirection(B, A);
+    expect(fromB.blockedByMe).toBe(true);
+    expect(fromB.blockedByThem).toBe(true);
+  });
+
+  it('reports nothing for an unrelated pair', async () => {
+    const service = build([]);
+    expect(await service.getBlockDirection(A, B)).toEqual({
+      isBlocked: false,
+      blockedByMe: false,
+      blockedByThem: false,
+    });
+  });
+
+  it('never reports a user as blocking themselves', async () => {
+    const service = build([{ blockerId: A, blockedId: B }]);
+    expect(await service.getBlockDirection(A, A)).toEqual({
+      isBlocked: false,
+      blockedByMe: false,
+      blockedByThem: false,
+    });
+  });
+});

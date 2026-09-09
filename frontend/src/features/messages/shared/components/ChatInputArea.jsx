@@ -269,7 +269,7 @@ export default function ChatInputArea({
         if (conversation.isBlockedByMe) {
           return (
             <div className={styles.msgBlockedInputOverlay}>
-              <span>You blocked this user. Unblock them to continue messaging.</span>
+              <span>You have blocked this user.</span>
               <button 
                 type="button" 
                 className={styles.unblockBannerBtn}
@@ -289,11 +289,13 @@ export default function ChatInputArea({
         // Shown to the blocked user, and to anyone whose thread is closed for a
         // reason we do not name. Deliberately identical to the message used for
         // restricted and limited accounts, so it reveals nothing about why —
-        // and carries no Unblock affordance.
+        // and carries no Unblock affordance. "Not available" rather than
+        // anything about blocking, because the one thing this state must not do
+        // is confirm that a block is what happened.
         if (conversation.isBlockedByThem || conversation.blocked) {
           return (
             <div className={styles.msgBlockedInputOverlay}>
-              <span>You can no longer send messages to this user.</span>
+              <span>User not available</span>
             </div>
           );
         }
