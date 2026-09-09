@@ -1170,12 +1170,28 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
    */
   async requestPasswordReset(
     email: string,
-  ): Promise<{ exists: boolean; sent: boolean }> {
+  ): Promise<{ sent: true }> {
     const trimmed = normalizeEmail(email || '');
-    if (!trimmed) return { exists: false, sent: false };
+    /**
+     * The reply is the same whether or not the address has an account.
+     *
+     * It used to answer `exists`, so that the screen could say "no account
+     * found" to someone who mistyped the address they signed up with. That was
+     * a deliberate trade — better for the mistyped case, and rate-limited so it
+     * was not a bulk oracle — but it is still an oracle: one request answers
+     * "is this person on Meetifyy?" for any address you care to name, and on a
+     * student platform that is a question about a real, identifiable person.
+     * A per-address budget bounds volume, not targeting.
+     *
+     * The cost is real and worth stating: someone who mistypes now waits for an
+     * email that will not arrive. The screen carries that ambiguity in its
+     * wording instead — "if an account exists" — which is the usual resolution
+     * and the one every major service settles on.
+     */
+    if (!trimmed) return { sent: true };
 
     const { exists } = await this.accountExistsForEmail(trimmed);
-    if (!exists) return { exists: false, sent: false };
+    if (!exists) return { sent: true };
 
     if (!this.supabaseService.isAnonConfigured) {
       throw new UnauthorizedException('Authentication is not configured.');
@@ -1196,10 +1212,12 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
       this.logger.warn(
         `password reset dispatch failed for a known account: ${error.message}`,
       );
-      return { exists: true, sent: false };
+      // Reported as sent regardless: the caller must not be able to tell a
+      // dispatch failure from a missing account, and neither is actionable.
+      return { sent: true };
     }
 
-    return { exists: true, sent: true };
+    return { sent: true };
   }
 
   async checkUsernameAvailability(

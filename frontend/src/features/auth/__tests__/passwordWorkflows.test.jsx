@@ -70,17 +70,37 @@ const submit = async (q, container, email) => {
 };
 
 describe('Forgot password', () => {
-  beforeEach(() => { apiCalls.length = 0; supabaseCalls.reset.length = 0; resetResponse = { exists: true, sent: true }; });
+  beforeEach(() => { apiCalls.length = 0; supabaseCalls.reset.length = 0; resetResponse = { sent: true }; });
   afterEach(() => cleanup());
 
-  it('tells the user plainly when no account exists', async () => {
-    resetResponse = { exists: false, sent: false };
-    const { q, container } = renderForgot();
-    await submit(q, container, 'nobody@college.edu');
+  /**
+   * The screen must not reveal whether the address has an account.
+   *
+   * It used to say "No account found", which is friendlier to someone who
+   * mistyped and is also an oracle: one submission answers "is this person on
+   * Meetifyy?" for any address. The ambiguity now lives in the wording.
+   */
+  it('gives the same answer whether or not the account exists', async () => {
+    const render1 = renderForgot();
+    await submit(null, render1.container, 'nobody@college.edu');
+    // The address is echoed back because the user typed it; that is their own
+    // input, not something the server disclosed. Everything else must match.
+    const forMissing = render1.container.textContent.replace(
+      'nobody@college.edu',
+      '<address>',
+    );
 
-    expect(q.getByText('No account found. Check your email and try again.')).toBeTruthy();
-    // Crucially it must NOT also claim an email went out.
-    expect(container.textContent).not.toMatch(/check your (inbox|email) for/i);
+    cleanup();
+    const render2 = renderForgot();
+    await submit(null, render2.container, 'real@college.edu');
+    const forReal = render2.container.textContent.replace(
+      'real@college.edu',
+      '<address>',
+    );
+
+    expect(forReal).toBe(forMissing);
+    expect(forMissing).not.toMatch(/no account found/i);
+    expect(forMissing).toMatch(/if an account exists/i);
   });
 
   it('asks the server to send, and never calls Supabase from the browser', async () => {
@@ -100,14 +120,10 @@ describe('Forgot password', () => {
     expect(apiCalls[0].body.email).toBe('real@college.edu');
   });
 
-  it('clears the message as soon as the user edits the address', async () => {
-    resetResponse = { exists: false, sent: false };
-    const { q, container } = renderForgot();
-    await submit(q, container, 'nobody@college.edu');
-    expect(q.getByText('No account found. Check your email and try again.')).toBeTruthy();
-
-    fireEvent.change(container.querySelector('#forgot-email'), { target: { value: 'nobody2@college.edu' } });
-    expect(q.queryByText('No account found. Check your email and try again.')).toBeNull();
+  it('never renders a "no account" message at all', async () => {
+    const { container } = renderForgot();
+    await submit(null, container, 'nobody@college.edu');
+    expect(container.textContent).not.toMatch(/no account found/i);
   });
 
   it('rejects an invalid address without calling the server', async () => {
@@ -122,15 +138,16 @@ describe('Forgot password', () => {
     expect(button.disabled).toBe(true);
   });
 
-  it('says so when the account exists but the mail could not be dispatched', async () => {
-    // Telling someone with a real account that it does not exist is the one
-    // answer that must never come out of a failure — so the sent screen still
-    // shows — but it must not be the only thing they see.
-    resetResponse = { exists: true, sent: false };
+  it('does not distinguish a dispatch failure either', async () => {
+    // The server reports every outcome as sent, so a mail-transport failure
+    // looks exactly like success here. Surfacing it would put back the
+    // difference the generic reply exists to remove, and it is not something
+    // the person can act on anyway.
+    resetResponse = { sent: true };
     const { container } = renderForgot();
     await submit(null, container, 'real@college.edu');
     expect(container.textContent).toMatch(/check your email/i);
-    expect(document.body.textContent).toMatch(/couldn't send the email just now/i);
+    expect(document.body.textContent).not.toMatch(/couldn't send the email/i);
   });
 
   it('does not claim "no account" when the request itself failed', async () => {

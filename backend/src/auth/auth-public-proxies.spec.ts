@@ -156,11 +156,28 @@ describe('the public auth proxies', () => {
   });
 
   describe('password reset request', () => {
-    it('sends nothing when no account exists, and says so', async () => {
+    /**
+     * The reply must not distinguish the cases. One request would otherwise
+     * answer "is this person on Meetifyy?" for any address you name — targeting
+     * that a per-address rate limit bounds in volume but does not prevent.
+     */
+    it('sends nothing when no account exists, and does not say so', async () => {
       prisma.user.findFirst.mockResolvedValue(null);
       const result = await service.requestPasswordReset('nobody@college.edu');
-      expect(result).toEqual({ exists: false, sent: false });
+      expect(result).toEqual({ sent: true });
+      expect(result).not.toHaveProperty('exists');
       expect(anonAuth.resetPasswordForEmail).not.toHaveBeenCalled();
+    });
+
+    it('answers a real account identically to a missing one', async () => {
+      prisma.user.findFirst.mockResolvedValue(null);
+      const missing = await service.requestPasswordReset('nobody@college.edu');
+
+      prisma.user.findFirst.mockResolvedValue({ id: 'u1' });
+      anonAuth.resetPasswordForEmail.mockResolvedValue({ error: null });
+      const real = await service.requestPasswordReset('student@college.edu');
+
+      expect(real).toEqual(missing);
     });
 
     it('builds the redirect target itself rather than taking one from the caller', async () => {
@@ -177,9 +194,10 @@ describe('the public auth proxies', () => {
         error: { message: 'smtp unavailable' },
       });
       const result = await service.requestPasswordReset('student@college.edu');
-      // `exists` stays true: an outage is not evidence the address is wrong,
-      // and the screen must not tell a real user they have no account.
-      expect(result).toEqual({ exists: true, sent: false });
+      // Indistinguishable from every other outcome: a dispatch failure is not
+      // something the caller can act on, and reporting it would reintroduce the
+      // difference the generic reply exists to remove.
+      expect(result).toEqual({ sent: true });
     });
   });
 
