@@ -4,10 +4,8 @@ import { useAuth } from '@shared/context/AuthContext';
 
 import Avatar from '@shared/components/avatar/Avatar';
 import ConfirmModal from '@shared/components/modals/ConfirmModal';
-import CalendarIcon from '@shared/components/ui/CalendarIcon';
 import styles from './ChatDetailsPanel.module.css';
 import { useAcademicSummary } from '@shared/academics/useAcademicSummary';
-import sidebarStyles from '../sidebar/ConversationList.module.css';
 import { Pin, Trash2, ChevronRight, User, Search, Ban, UserPlus, UserCheck, Image as ImageIcon, ArrowLeft, MoreVertical } from '@shared/components/icons';
 import InviteModal from '../modals/InviteModal';
 import ReportModal from '@shared/components/modals/ReportModal/ReportModal';
@@ -20,7 +18,6 @@ import GroupEditPage from './GroupEditPage';
 import GroupSettingsPage from './GroupSettingsPage';
 import GroupJoinRequestsPage from './GroupJoinRequestsPage';
 import { useUsersMap } from '@shared/hooks/useUsersMap';
-import { useCrewActivities, useCrewActions } from '@shared/hooks/useCrew';
 import { useGroupActions } from '@shared/hooks/useGroupActions';
 import { processAndUploadImage } from '@shared/utils/mediaPipeline';
 import {
@@ -75,8 +72,6 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
   const navigate = useNavigate();
   const { currentUser } = useAuth();
   const users = useUsersMap();
-  const crewActivities = useCrewActivities();
-  const { endCrewActivity } = useCrewActions();
   const {
     leaveGroup, updateGroupInfo, updateGroupEditPermission, updateGroupSettings,
     removeGroupMember, changeGroupOwner, promoteToAdmin, demoteFromAdmin, endGroup,
@@ -340,15 +335,15 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
   const isMember = isGroup ? (conversation.isMember !== false && Boolean(memberMap[currentUser?.id] || conversation.isMember || isOwner || isAdmin)) : true;
   const isClosed = conversation.status === 'Closed';
   const canEditGroupInfo = isAdmin || (editGroupPermission || '').toUpperCase() === 'EVERYONE';
-  const rawParticipants = isGroup ? (groupDetails?.memberDetails || []) : (conversation.members || conversation.participants || []);
   const sortedParticipants = useMemo(() => {
+    const rawParticipants = isGroup ? (groupDetails?.memberDetails || []) : (conversation.members || conversation.participants || []);
     return sortGroupMembers(rawParticipants, {
       ownerId: isGroup ? groupDetails?.ownerId : conversation.ownerId,
       hostId: conversation.hostId || null,
       admins: isGroup ? groupDetails?.admins : conversation.admins,
       users
     });
-  }, [rawParticipants, isGroup, groupDetails?.ownerId, groupDetails?.admins, conversation.ownerId, conversation.hostId, conversation.admins, users]);
+  }, [isGroup, groupDetails?.memberDetails, groupDetails?.ownerId, groupDetails?.admins, conversation.members, conversation.participants, conversation.ownerId, conversation.hostId, conversation.admins, users]);
   const memberIds = sortedParticipants.map(p => p?.userId || p?.id || (typeof p === 'string' ? p : ''));
 
   // Formatted date for group creation

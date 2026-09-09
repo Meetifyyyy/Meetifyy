@@ -30,8 +30,6 @@ export default function GroupSettingsPage({
   handleLeaveGroup,
   handleEndGroup
 }) {
-  const isCancelled = (conversation?.status || '').toUpperCase() === 'CANCELLED';
-
   return (
     <div className={sharedStyles.container}>
       {/* Header */}

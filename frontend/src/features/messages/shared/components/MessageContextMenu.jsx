@@ -130,17 +130,20 @@ export default function MessageContextMenu({
     return true;
   });
 
+  const posX = position?.x;
+  const posY = position?.y;
+
   useLayoutEffect(() => {
-    if (!menuRef.current) return;
+    if (!menuRef.current || posX == null || posY == null) return;
     setCoords({
       ...computeMenuPosition(
-        position,
+        { x: posX, y: posY },
         { width: menuRef.current.offsetWidth || 180, height: menuRef.current.offsetHeight || 220 },
         { width: window.innerWidth, height: window.visualViewport?.height || window.innerHeight }
       ),
       ready: true,
     });
-  }, [position?.x, position?.y, visibleActions.length]);
+  }, [posX, posY, visibleActions.length]);
 
   // Moved below the hook, which is the whole point: same rendered output,
   // but the hook count no longer changes between renders.

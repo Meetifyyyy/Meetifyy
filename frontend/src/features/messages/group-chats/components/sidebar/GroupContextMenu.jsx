@@ -14,17 +14,20 @@ export default function GroupContextMenu({ conv, position, onClose, onMarkRead, 
   //
   // Declared before the early return so the hook order never changes between
   // an open and a closed menu.
+  const posX = position?.x;
+  const posY = position?.y;
+
   useLayoutEffect(() => {
-    if (!menuRef.current || !position) return;
+    if (!menuRef.current || posX == null || posY == null) return;
     setCoords({
       ...computeMenuPosition(
-        position,
+        { x: posX, y: posY },
         { width: menuRef.current.offsetWidth || 180, height: menuRef.current.offsetHeight || 200 },
         { width: window.innerWidth, height: window.visualViewport?.height || window.innerHeight }
       ),
       ready: true,
     });
-  }, [position?.x, position?.y, conv?.id, conv?.unread]);
+  }, [posX, posY, conv?.id, conv?.unread]);
 
   if (!conv) return null;
 

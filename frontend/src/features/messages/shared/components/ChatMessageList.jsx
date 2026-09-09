@@ -3,9 +3,8 @@ import { ErrorState } from '@shared/components/ui/StateViews';
 import Avatar from '@shared/components/avatar/Avatar';
 import { showToast } from '@shared/utils/toast';
 import MessageBubble from './MessageBubble';
-import { usePostLookup } from '@shared/hooks/usePostLookup';
 import styles from './ChatMessageList.module.css';
-import { getMsgTimestamp, compareMessages } from '../utils/cacheUtils';
+import { compareMessages } from '../utils/cacheUtils';
 import { createMessageHighlighter } from '../utils/messageHighlight';
 
 
@@ -154,7 +153,6 @@ export default function ChatMessageList({
   onCancelUpload,
   onOpenEmojiPicker,
 }) {
-  const getPostById = usePostLookup();
   const bodyRef = useRef(null);
 
   // Scroll position tracking
@@ -286,7 +284,6 @@ export default function ChatMessageList({
     const currentConvId = conversation?.id || conversation?.publicId;
     const currentCount = sortedMessages.length;
     const firstMsgId = sortedMessages[0]?.id;
-    const lastMsgId = sortedMessages[sortedMessages.length - 1]?.id;
     const prevFirstMsgId = prevFirstMsgIdRef.current;
     const prevCount = prevMessagesLengthRef.current;
 
@@ -560,7 +557,6 @@ export default function ChatMessageList({
     if (!container) return;
 
     const distFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
-    const wasAtBottom = isAtBottomRef.current;
     isAtBottomRef.current = distFromBottom < 180;
 
     // Clear "new messages" badge once user scrolls to bottom

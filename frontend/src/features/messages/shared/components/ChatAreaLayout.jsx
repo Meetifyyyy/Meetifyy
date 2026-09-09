@@ -4,7 +4,6 @@ import { useMediaViewerActions } from '@shared/context/MediaViewerContext';
 import { useMessageActions } from '@shared/hooks/useMessageActions';
 import { useRecipientConversations } from '@shared/hooks/useRecipientConversations';
 import { showToast } from '@shared/utils/toast';
-import Avatar from '@shared/components/avatar/Avatar';
 import ChatMessageList from './ChatMessageList';
 import ChatInputArea from './ChatInputArea';
 import MessageContextMenu from './MessageContextMenu';
@@ -69,7 +68,7 @@ export default function ChatAreaLayout({
   onLeaveActivity = null,
 
   // Whether to show avatar next to typing bubble (groups only)
-  showTypingAvatar = false,
+  _showTypingAvatar = false,
 }) {
   const { openViewer } = useMediaViewerActions();
   const { sendDirectMessage } = useMessageActions();
@@ -131,15 +130,7 @@ export default function ChatAreaLayout({
 
   const messages = conversation?.messages || [];
 
-  // Resolve the first typing user's info for the avatar
-  const firstTypingEntry = typingUsers?.size > 0 ? typingUsers.entries().next().value : null;
-  const firstTypingUserId = firstTypingEntry?.[0];
-  const firstTypingUserName = firstTypingEntry?.[1];
-  const typingParticipant = conversation?.participants?.find(
-    (p) => String(p.id || p.userId) === String(firstTypingUserId)
-  );
-  const typingAvatar = typingParticipant?.avatar || typingParticipant?.profileImage || null;
-  const typingName = firstTypingUserName || typingParticipant?.name || '';
+
 
   if (notFound) {
     return (

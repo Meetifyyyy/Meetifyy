@@ -1,11 +1,9 @@
 import Avatar from '@shared/components/avatar/Avatar';
 import { timeAgo } from '@shared/utils/time';
 import { Pin, NotificationOff } from '@shared/components/icons';
-import { useAuth } from '@shared/context/AuthContext';
 import styles from '../../../shared/components/sidebar/ConversationList.module.css';
 
 export default function DMItem({ conv, activeChatId, onSelect, onContextMenu }) {
-  const { currentUser } = useAuth();
   const isActive = Boolean(activeChatId) && (
     String(conv.id) === String(activeChatId) ||
     (Boolean(conv.publicId) && String(conv.publicId) === String(activeChatId))

@@ -14,9 +14,6 @@ export default function GroupItem({ conv, activeChatId, onSelect, onContextMenu 
     (Boolean(conv.publicId) && String(conv.publicId) === String(activeChatId))
   );
   const isUnread = conv.unread > 0;
-  const isCampusGroup = String(conv.id).startsWith('c_') || conv.isCampusGroup;
-
-  const memberCount = conv.memberCount || conv.members?.length || conv.participants?.length || 0;
   const pendingCount = conv.pendingRequests?.length || conv.pendingCount || 0;
 
   const previewText = (() => {

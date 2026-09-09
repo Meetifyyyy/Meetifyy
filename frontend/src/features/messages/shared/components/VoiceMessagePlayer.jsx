@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { getMediaUrl } from '@shared/api/apiClient';
 import styles from './VoiceMessagePlayer.module.css';
 
@@ -253,12 +253,13 @@ export default function VoiceMessagePlayer({ src, audioUrl, duration: initialDur
 
   // Clean up audio on unmount
   useEffect(() => {
+    const audio = audioRef.current;
     return () => {
-      if (audioRef.current) {
-        if (activeAudioInstance === audioRef.current) {
+      if (audio) {
+        if (activeAudioInstance === audio) {
           activeAudioInstance = null;
         }
-        audioRef.current.pause();
+        audio.pause();
       }
     };
   }, []);

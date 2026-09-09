@@ -45,10 +45,11 @@ export function useTypingIndicator(conversationId, currentUserId) {
 
   // Cleanup on conversation change or unmount
   useEffect(() => {
+    const timers = autoClearTimersRef.current;
     return () => {
       stopTypingNow();
-      autoClearTimersRef.current.forEach((timer) => clearTimeout(timer));
-      autoClearTimersRef.current.clear();
+      timers.forEach((timer) => clearTimeout(timer));
+      timers.clear();
       setTypingUsers(new Map());
     };
   }, [conversationId, stopTypingNow]);
@@ -117,7 +118,8 @@ export function useTypingIndicator(conversationId, currentUserId) {
 
       setTypingUsers((prev) => {
         const next = new Map(prev);
-        const name = data.userName || users[uId]?.displayName || users[uId]?.username || 'Someone';
+        const userObj = usersRef.current?.[uId];
+        const name = data.userName || userObj?.displayName || userObj?.username || 'Someone';
         next.set(uId, name);
         return next;
       });

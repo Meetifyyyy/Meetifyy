@@ -5,7 +5,7 @@ import { useGlobalSocketStore } from '@shared/stores/useGlobalSocketStore';
 import { processAndUploadImage, processAndUploadVideo, uploadFileDirect, getImageDimensions } from '@shared/utils/mediaPipeline';
 import { useAuth } from '@shared/context/AuthContext';
 import { useConversations } from '@shared/hooks/useMessages';
-import { appendMessageToCache, updateMessageInCache, updateConversationPreview, matchesConversationId, getConversationAliases, compareMessages, STATUS_RANK, checkIsMe } from '../utils/cacheUtils';
+import { appendMessageToCache, updateMessageInCache, updateConversationPreview, matchesConversationId, getConversationAliases, compareMessages, checkIsMe } from '../utils/cacheUtils';
 
 import { idbGetMessages, idbSaveMessages, idbPatchMessage, idbDeleteMessage, migrateHistoricalFailedMessages, trimMessageCache } from '../utils/idbMessages';
 
@@ -95,7 +95,7 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
    * Declared as a hoisted function so the upload callbacks below can call it
    * without taking it as a dependency.
    */
-  function releaseLocalPreview(convId, clientId, url) {
+  const releaseLocalPreview = useCallback((convId, clientId, url) => {
     if (!url) return;
     try {
       updateMessageInCache(queryClient, convId, clientId, (existing) => ({
@@ -107,7 +107,7 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
     // one — and idbPatchMessage shallow-merges, so patching `payload` would
     // replace the whole object and drop mediaUrl, dimensions and duration with it.
     try { URL.revokeObjectURL(url); } catch (_) { /* already revoked */ }
-  }
+  }, [queryClient]);
   const { conversations = [] } = useConversations();
   const { currentUser: dataUser } = useAuth();
   const currentUser = currentUserParam || dataUser;
@@ -121,15 +121,15 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
 
   const isNearBottomRef = useRef(true);
 
-  const getApi = () => {
+  const getApi = useCallback(() => {
     switch(type) {
       case 'dm': return dmApi;
       case 'group': return groupApi;
       default: return messagesApi;
     }
-  };
+  }, [type]);
 
-  const [idbLoaded, setIdbLoaded] = useState(false);
+  const [_idbLoaded, setIdbLoaded] = useState(false);
   // IDB messages are stored here as placeholder — they are NOT injected into the
   // TanStack cache directly (which would set isLoading:false prematurely).
   // Instead they are passed as placeholderData so the query still reports isLoading:true
@@ -346,7 +346,7 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
       });
       return hasChanges ? { ...oldData, pages: newPages } : oldData;
     });
-  }, [activeChatId, currentUser?.id, queryClient]);
+  }, [activeChatId, currentUser, queryClient]);
 
   const clearActiveChatUnread = useCallback((force = false) => {
     if (!activeChatId) return;
@@ -394,7 +394,7 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
     }
     lastMarkedReadRef.current = null;
     clearActiveChatUnread(true);
-  }, [activeChatId]);
+  }, [activeChatId, clearActiveChatUnread]);
 
   // Seen evaluator: debounced 800ms to avoid repeated calls during scroll/focus events
   const markSeenIfEligible = useCallback((isNearBottom = true) => {
@@ -734,7 +734,7 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
         handleFailure();
       }
     }
-  }, [activeChatId, currentUser, queryClient, socket, applySeenToCache]);
+  }, [activeChatId, currentUser, queryClient, socket, getApi, releaseLocalPreview]);
 
   // Retry a failed media upload with the SAME clientId — appendMessageToCache
   // matches by clientId and updates in place, so no duplicate message/record.
