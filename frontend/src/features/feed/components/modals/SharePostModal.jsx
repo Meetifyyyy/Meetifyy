@@ -38,7 +38,7 @@ function getOptText(o) {
   return '';
 }
 
-export default function SharePostModal({ isOpen, onClose, post, author }) {
+export default function SharePostModal({ isOpen, onClose, post, author, postCardElement }) {
   // Back dismisses this dialog rather than navigating the page behind it.
   useOverlayBack(Boolean(isOpen), onClose);
   // Background stays put while this dialog is open. Counted, so a
@@ -228,7 +228,10 @@ export default function SharePostModal({ isOpen, onClose, post, author }) {
           @shared/components/share/ShareTargets — this dialog supplies
           only what is being shared.
         */}
-        <ShareTargets payload={buildPostShare(post, author)} />
+        <ShareTargets
+          payload={buildPostShare(post, author)}
+          cardElement={postCardElement}
+        />
       </div>
     </div>,
     document.body

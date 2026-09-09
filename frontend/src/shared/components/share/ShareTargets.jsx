@@ -40,6 +40,7 @@ import {
   openShareWindow,
   shareNatively,
 } from '@shared/lib/share/shareTargets';
+import { capturePostCard } from '@shared/lib/share/cardCapture';
 import styles from './ShareTargets.module.css';
 
 const ICONS = {
@@ -56,7 +57,7 @@ const ICONS = {
 /** How long a target's transient label stays before reverting. */
 const FEEDBACK_MS = 2400;
 
-export default function ShareTargets({ payload, onShared }) {
+export default function ShareTargets({ payload, onShared, cardElement }) {
   /**
    * The outcome of the last action, attached to the target it belongs to.
    *
@@ -132,7 +133,33 @@ export default function ShareTargets({ payload, onShared }) {
     // nothing can use.
     if (!cardAvailable) return undefined;
 
-    const pending = fetchShareCard(payload.cardImageUrl, payload.cardFileName);
+    // Prefer capturing the exact rendered DOM card element from the feed.
+    // If cardElement is passed, or if the post element is present in the DOM by data-post-id:
+    const el =
+      cardElement ||
+      payload?.cardElement ||
+      (typeof document !== 'undefined' && payload?.url
+        ? (() => {
+            const match = payload.url.match(/\/post\/([^/?#]+)/);
+            return match
+              ? document.querySelector(`[data-post-id="${match[1]}"]`)
+              : null;
+          })()
+        : null);
+
+    const getCard = async () => {
+      if (el) {
+        try {
+          const captured = await capturePostCard(el, payload?.cardFileName);
+          if (captured) return captured;
+        } catch {
+          // Fall through to network fetch
+        }
+      }
+      return fetchShareCard(payload?.cardImageUrl, payload?.cardFileName);
+    };
+
+    const pending = getCard();
     cardRef.current = pending;
     cardFileRef.current = null;
     pending.then((file) => {
@@ -145,7 +172,14 @@ export default function ShareTargets({ payload, onShared }) {
       cardRef.current = null;
       cardFileRef.current = null;
     };
-  }, [cardAvailable, payload?.cardImageUrl, payload?.cardFileName]);
+  }, [
+    cardAvailable,
+    cardElement,
+    payload?.cardElement,
+    payload?.cardImageUrl,
+    payload?.cardFileName,
+    payload?.url,
+  ]);
 
   const announce = useCallback((targetId, tone, label, announcement) => {
     setFeedback({ targetId, tone, label, announcement: announcement ?? label });

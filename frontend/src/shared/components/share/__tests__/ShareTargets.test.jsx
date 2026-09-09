@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import ShareTargets from '../ShareTargets';
+import * as cardCaptureModule from '@shared/lib/share/cardCapture';
 
 /**
  * The share row every dialog ends in.
@@ -248,6 +249,32 @@ describe('<ShareTargets>', () => {
       const shared = navigator.share.mock.calls[0][0];
       expect(shared.files).toHaveLength(1);
       expect(shared.url).toBeUndefined();
+    });
+
+    it('captures and sends the DOM cardElement when provided', async () => {
+      withFileSharing();
+      const div = document.createElement('div');
+      div.className = 'post';
+      document.body.appendChild(div);
+
+      const capturedFile = new File(['capture'], 'meetifyy-story.jpg', {
+        type: 'image/jpeg',
+      });
+      const captureSpy = vi
+        .spyOn(cardCaptureModule, 'capturePostCard')
+        .mockResolvedValue(capturedFile);
+
+      render(<ShareTargets payload={cardPayload} cardElement={div} />);
+
+      fireEvent.click(screen.getByRole('button', { name: /^Instagram/ }));
+
+      await waitFor(() => expect(navigator.share).toHaveBeenCalled());
+      const shared = navigator.share.mock.calls[0][0];
+      expect(shared.files).toHaveLength(1);
+      expect(shared.files[0]).toBe(capturedFile);
+
+      captureSpy.mockRestore();
+      document.body.removeChild(div);
     });
 
     it('reuses the request already in flight rather than starting another', async () => {
