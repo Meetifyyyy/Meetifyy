@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 import path from 'path';
 import fs from 'fs';
+import crypto from 'node:crypto';
 import { visualizer } from 'rollup-plugin-visualizer';
 import { postcssHoverMedia } from './scripts/postcss-hover-media.js';
 import { isProductionAppEnv } from './src/config/deploymentEnv.js';
@@ -73,7 +74,6 @@ function patchCspHashPlugin() {
     name: 'meetifyy-patch-csp-hash',
     apply: 'build',
     closeBundle() {
-      const crypto = require('crypto');
       const outDir = path.resolve(process.cwd(), 'dist');
       const appHtml = path.join(outDir, 'app.html');
       if (!fs.existsSync(appHtml)) return;
