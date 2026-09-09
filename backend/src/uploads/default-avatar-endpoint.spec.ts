@@ -3,6 +3,7 @@ import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import * as fs from 'fs';
 import { UploadsController } from './uploads.controller';
+import { OptionalJwtGuard } from '../common/guards/optional-jwt.guard';
 import { StorageService } from './uploads.service';
 import { SupabaseService } from '../supabase/supabase.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -29,6 +30,10 @@ describe('GET /api/media — default profile avatar', () => {
   // to resolve it, which is the production failure this endpoint must survive.
   const storage = {
     isSafeStorageKey: jest.fn(() => true),
+    // Conversation attachments are authorized against the viewer; nothing
+    // in these suites is one, so this is uniformly false.
+    isConversationScopedKey: jest.fn(() => false),
+    canViewConversationMedia: jest.fn(async () => false),
     isAlwaysPrivateKey: jest.fn(() => false),
     exists: jest.fn(async () => false),
     getResolvedPublicUrl: jest.fn(async () => null),
@@ -49,7 +54,14 @@ describe('GET /api/media — default profile avatar', () => {
         // requires acknowledgement", which is this suite's subject.
         legalConsentMockProvider(),
       ],
-    }).compile();
+    })
+      // The media GET routes resolve the viewer now, so conversation
+      // attachments can be authorized against the person asking. They stay
+      // reachable anonymously — the guard only attaches a user when one is
+      // present — and this suite is about what happens with no session at all.
+      .overrideGuard(OptionalJwtGuard)
+      .useValue({ canActivate: () => true })
+      .compile();
     app = moduleRef.createNestApplication();
     await app.init();
   });

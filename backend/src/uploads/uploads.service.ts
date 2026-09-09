@@ -241,6 +241,72 @@ export class StorageService {
   private static readonly PRIVATE_FOLDERS = new Set(['verification']);
 
   /**
+   * Folders whose contents belong to a conversation rather than to the public.
+   *
+   * Distinct from PRIVATE_FOLDERS, which is never served through the media
+   * route at all. These are served — a chat image has to render — but only to
+   * someone who is in the conversation it was sent to.
+   *
+   * They were public. The key is 32 random hex characters, so nobody was going
+   * to guess one; the exposure is that the URL is a bearer credential in its own
+   * right. Anyone who came by one — a forwarded link, a referrer header, a proxy
+   * log, a screenshot of an address bar — had the image permanently, with no way
+   * to revoke it, and it kept working after the message was deleted.
+   */
+  private static readonly CONVERSATION_FOLDERS = new Set([
+    'chat',
+    'messages',
+    'voice',
+  ]);
+
+  /** True when this key needs the viewer to be in the conversation. */
+  isConversationScopedKey(key: string): boolean {
+    const folder = (key || '').split('/')[0];
+    return StorageService.CONVERSATION_FOLDERS.has(folder);
+  }
+
+  /**
+   * May this viewer see this conversation attachment?
+   *
+   * Two ways in, and both are ownership of a sort: the person who uploaded it,
+   * and anyone still participating in a conversation it was sent to. The
+   * uploader case matters on its own because an attachment exists between being
+   * uploaded and being sent, and the sender has to be able to see their own
+   * preview in that window.
+   *
+   * A key with no media row and no message is refused. That is the safe default
+   * for anything unregistered rather than a judgement that it is secret.
+   */
+  async canViewConversationMedia(
+    key: string,
+    viewerId: string | null | undefined,
+  ): Promise<boolean> {
+    if (!viewerId || !this.isSafeStorageKey(key)) return false;
+
+    const media = await this.prisma.media.findUnique({
+      where: { objectKey: key },
+      select: { id: true, ownerId: true },
+    });
+
+    if (media?.ownerId === viewerId) return true;
+    if (!media) return false;
+
+    const participating = await this.prisma.message.findFirst({
+      where: {
+        attachmentMediaId: media.id,
+        conversation: {
+          participants: {
+            some: { userId: viewerId, deletedAt: null, leftAt: null },
+          },
+        },
+      },
+      select: { id: true },
+    });
+
+    return Boolean(participating);
+  }
+
+  /**
    * The `visibility` value a new upload into this folder must be born with.
    *
    * Set at creation rather than patched afterwards: the previous flow uploaded
@@ -250,7 +316,13 @@ export class StorageService {
    * the user abandoned the form after uploading.
    */
   visibilityForFolder(folder: string): string {
-    return this.isAlwaysPrivateKey(`${folder}/x`) ? 'private' : 'public';
+    const key = `${folder}/x`;
+    // Conversation attachments join identity documents in being born private.
+    // `visibility` is what stops `getSignedUrlsForUser` handing out the CDN URL
+    // — which is public and unauthenticated — instead of a signed, expiring one.
+    return this.isAlwaysPrivateKey(key) || this.isConversationScopedKey(key)
+      ? 'private'
+      : 'public';
   }
 
   /** True when a storage key sits under a folder that is never public. */
@@ -364,6 +436,7 @@ export class StorageService {
     const mediaMap = new Map(media.map((m) => [m.objectKey, m]));
     const result: { [key: string]: string } = {};
     const keysToSign: string[] = [];
+    const conversationKeysToCheck: string[] = [];
 
     for (const key of keys) {
       const item = mediaMap.get(key);
@@ -380,7 +453,24 @@ export class StorageService {
         result[key] = this.getPublicUrl(key);
       } else if (item.ownerId === userId) {
         keysToSign.push(key);
+      } else if (this.isConversationScopedKey(key)) {
+        // A chat attachment's recipient is not its owner, so ownership alone
+        // would sign for the sender and leave everyone they sent it to with a
+        // blank image. Participation is the right test, and it is the same one
+        // the media route applies.
+        conversationKeysToCheck.push(key);
       }
+    }
+
+    if (conversationKeysToCheck.length > 0) {
+      const allowed = await Promise.all(
+        conversationKeysToCheck.map((key) =>
+          this.canViewConversationMedia(key, userId),
+        ),
+      );
+      conversationKeysToCheck.forEach((key, i) => {
+        if (allowed[i]) keysToSign.push(key);
+      });
     }
 
     if (keysToSign.length > 0) {

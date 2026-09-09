@@ -142,10 +142,25 @@ export class CloudflareR2Provider implements StorageProvider {
    * secrecy alone. Keyed off the prefix rather than passed by every caller, so
    * a new call site cannot forget to ask for the right bucket.
    */
+  private static readonly PRIVATE_PREFIXES = [
+    'verification/',
+    // Conversation attachments, for the same reason. The main bucket's public
+    // host resolves any key with no authentication, so an object placed there
+    // is readable by anyone who ever sees its URL — after the message is
+    // deleted, and with no way to revoke it. Authorizing `/api/media` does not
+    // help if the CDN will serve the same bytes directly.
+    'chat/',
+    'messages/',
+    'voice/',
+  ];
+
   private bucketFor(key: string): string {
-    return key?.startsWith('verification/')
-      ? this.verificationBucketName
-      : this.bucketName;
+    const isPrivate = CloudflareR2Provider.PRIVATE_PREFIXES.some((prefix) =>
+      key?.startsWith(prefix),
+    );
+    // Falls back to the main bucket when no private one is configured, which
+    // keeps existing deployments working exactly as before.
+    return isPrivate ? this.verificationBucketName : this.bucketName;
   }
 
   async createSignedDownloadUrl(

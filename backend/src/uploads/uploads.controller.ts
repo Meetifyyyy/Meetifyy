@@ -16,6 +16,7 @@ import {
 } from '@nestjs/common';
 import { StorageService } from './uploads.service';
 import { JwtGuard } from '../common/guards/jwt.guard';
+import { OptionalJwtGuard } from '../common/guards/optional-jwt.guard';
 import { FileInterceptor } from '@nestjs/platform-express';
 import type { Response, Request } from 'express';
 import * as path from 'path';
@@ -423,6 +424,7 @@ export class UploadsController {
     key: string,
     folder: string | undefined,
     res: Response,
+    viewerId?: string | null,
   ) {
     if (!this.storageService.isSafeStorageKey(key)) {
       return this.sendMediaMiss(res, 400);
@@ -439,6 +441,31 @@ export class UploadsController {
     // particular verification document exists.
     if (this.storageService.isAlwaysPrivateKey(key)) {
       return this.sendMediaMiss(res, 404);
+    }
+
+    /**
+     * Conversation attachments are served, but only to the conversation.
+     *
+     * These were public: the key is unguessable, which is not the same as
+     * private. The URL was itself the credential, so anyone who ever came by
+     * one — forwarded, logged by a proxy, left in a referrer — held the image
+     * for good, after the message was deleted and with no way to revoke it.
+     *
+     * This is only enforceable now because the session is a cookie. An `<img>`
+     * tag cannot send an Authorization header, so while the token lived in
+     * JavaScript there was no way to authorize a plain image request at all;
+     * the browser attaches the cookie by itself, and every existing tag keeps
+     * working untouched.
+     *
+     * The refusal is the ordinary miss, so it cannot be used to learn whether a
+     * given attachment exists.
+     */
+    if (this.storageService.isConversationScopedKey(key)) {
+      const allowed = await this.storageService.canViewConversationMedia(
+        key,
+        viewerId,
+      );
+      if (!allowed) return this.sendMediaMiss(res, 404);
     }
 
     const cwd = process.cwd();
@@ -571,13 +598,15 @@ export class UploadsController {
    * Serves file directly if stored locally, or redirects to cloud storage provider URL
    */
   @Get(':folder/:filename')
+  @UseGuards(OptionalJwtGuard)
   async getMedia(
     @Param('folder') folder: string,
     @Param('filename') filename: string,
     @Res() res: Response,
+    @Req() req: AuthenticatedRequest,
   ) {
     const key = `${folder}/${filename}`;
-    return this.handleGetMedia(key, folder, res);
+    return this.handleGetMedia(key, folder, res, req.user?.id ?? null);
   }
 
   /**
@@ -585,10 +614,12 @@ export class UploadsController {
    * Fallback for files stored without a folder prefix
    */
   @Get(':filename')
+  @UseGuards(OptionalJwtGuard)
   async getMediaNoFolder(
     @Param('filename') filename: string,
     @Res() res: Response,
+    @Req() req: AuthenticatedRequest,
   ) {
-    return this.handleGetMedia(filename, undefined, res);
+    return this.handleGetMedia(filename, undefined, res, req.user?.id ?? null);
   }
 }

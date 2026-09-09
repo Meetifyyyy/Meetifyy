@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 
 import { JwtGuard } from './jwt.guard';
+import { USER_ACCESS_COOKIE } from '../../auth/session/user-session-cookies';
 
 /**
  * Attaches `request.user` when the caller happens to present a valid session,
@@ -31,8 +32,12 @@ export class OptionalJwtGuard implements CanActivate {
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest();
+    // The cookie name has to match the one the session actually sets. This read
+    // `access_token`, which nothing ever wrote, so a cookie-authenticated
+    // caller looked anonymous here and the request they were signed in for was
+    // handled as if they were not.
     const hasCredential = Boolean(
-      request.headers?.authorization || request.cookies?.access_token,
+      request.headers?.authorization || request.cookies?.[USER_ACCESS_COOKIE],
     );
 
     // No credential offered: skip verification entirely rather than paying for

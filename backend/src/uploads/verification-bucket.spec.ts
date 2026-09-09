@@ -24,11 +24,30 @@ describe('verification bucket routing', () => {
     expect(bucketFor(p, 'verification/abc.webp')).toBe('meetifyy-verification');
   });
 
-  it('leaves every other key on the main bucket', () => {
+  /**
+   * Conversation attachments moved across with verification documents.
+   *
+   * They used to live on the main bucket, which is fronted by a public host
+   * that resolves any key with no authentication — so a chat image was
+   * readable by anyone who ever saw its URL, after the message was deleted,
+   * with nothing able to revoke it. Authorizing `/api/media` does not help
+   * while the CDN will serve the same bytes directly, so the object has to be
+   * somewhere the CDN cannot reach.
+   */
+  it.each(['chat/abc.webp', 'messages/abc.webp', 'voice/abc.ogg'])(
+    'sends %s to the private bucket',
+    (key) => {
+      const p = build('meetifyy-verification');
+      expect(bucketFor(p, key)).toBe('meetifyy-verification');
+    },
+  );
+
+  it('leaves genuinely public media on the main bucket', () => {
     const p = build('meetifyy-verification');
     expect(bucketFor(p, 'posts/abc.webp')).toBe('meetifyy-media');
     expect(bucketFor(p, 'avatars/abc.webp')).toBe('meetifyy-media');
-    expect(bucketFor(p, 'chat/abc.webp')).toBe('meetifyy-media');
+    expect(bucketFor(p, 'community/abc.webp')).toBe('meetifyy-media');
+    expect(bucketFor(p, 'defaults/abc.webp')).toBe('meetifyy-media');
   });
 
   it('falls back to the main bucket when unconfigured, changing nothing', () => {
