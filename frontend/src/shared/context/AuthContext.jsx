@@ -99,8 +99,18 @@ export function AuthProvider({ children }) {
   
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
+  /**
+   * True when the server has confirmed this browser's cookie session.
+   *
+   * Needed because `session` holds the Supabase session, which now lives in
+   * memory and is therefore empty after every reload — the durable half is an
+   * HttpOnly cookie this code cannot read. Deriving "signed in" from `session`
+   * alone meant a refresh looked exactly like a sign-out: the cookie was
+   * valid, the server said so, and the app still showed the landing page.
+   */
+  const [hasCookieSession, setHasCookieSession] = useState(false);
 
-  const isLoggedIn = !!session;
+  const isLoggedIn = !!session || hasCookieSession;
 
   const lastSyncAtRef = useRef(0);
   const syncPromiseRef = useRef(null);
@@ -246,6 +256,7 @@ export function AuthProvider({ children }) {
       const res = await apiClient.post('/api/auth/sync');
       const user = res?.user || null;
       if (user) {
+        setHasCookieSession(true);
         setCurrentUser(user);
         try {
           localStorage.setItem('currentUser', JSON.stringify(user));
@@ -255,6 +266,7 @@ export function AuthProvider({ children }) {
       return user;
     } catch (_) {
       // 401, offline, anything: treat as not signed in. The caller clears state.
+      setHasCookieSession(false);
       return null;
     }
   }, []);
@@ -455,6 +467,11 @@ export function AuthProvider({ children }) {
     const BASE_URL = getBackendUrl();
     const res = await fetch(`${BASE_URL}/api/auth/login`, {
       method: 'POST',
+      // Without this the browser discards the Set-Cookie on the response,
+      // because the API is a different origin from the app. Login would appear
+      // to succeed and leave no session cookie behind, so the next reload would
+      // find nothing to recover and drop the user back at the login screen.
+      credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ identifier: usernameOrEmail.trim(), password }),
     });
@@ -928,99 +945,46 @@ export function AuthProvider({ children }) {
       throw err;
     }
 
-    // 1. Verify the current password, server-side.
-    //
-    //    This used to be a `supabase.auth.signInWithPassword` from the browser,
-    //    which was wrong in two ways. It never reached our backend, so
-    //    `auth.login.account` — the budget whose whole job is to bound guesses
-    //    against one account — was never spent, and anyone holding a stolen
-    //    session could work through a password list in this panel without
-    //    tripping a single limit of ours. And signing in again minted a REPLACEMENT
-    //    session mid-flow, which is why this code had to suppress the resulting
-    //    auth events and then repair the state they would have set.
-    //
-    //    `/api/auth/verify-password` answers the same question behind JwtGuard
-    //    and a per-user budget, and hands back nothing but a boolean — so the
-    //    device keeps the session it already had and there is no event to hide.
-    let verified;
+    /**
+     * One server call: verify, change, and sign every other device out.
+     *
+     * This used to be three client-side steps — verify, `supabase.auth
+     * .updateUser`, then `signOut({ scope: 'others' })`. The middle one broke
+     * when the session moved out of localStorage: the provider's client keeps
+     * its session in memory, so after any reload there was nothing for it to
+     * update with, and the change failed on a form that had already reported
+     * success.
+     *
+     * Server-side it also gets what the client version never had — the current
+     * password checked against a per-user budget rather than trusted, and the
+     * revocation performed as part of the change rather than as a follow-up
+     * call that could be skipped or fail on its own.
+     */
     try {
-      verified = await apiClient.post('/api/auth/verify-password', {
-        password: currentPassword,
+      await apiClient.post('/api/auth/change-password', {
+        currentPassword,
+        newPassword,
       });
     } catch (err) {
-      // A spent budget is the one failure the user can act on, so its message
-      // (which carries the wait) is passed through rather than being flattened
-      // into "incorrect password" — which would also be a lie.
+      // A spent budget carries its own wait and is the one failure the user can
+      // act on, so it passes through unflattened.
       if (err?.status === 429) throw err;
-      throw new Error(err?.message || "Couldn't verify your current password. Please try again.");
+      if (err?.status === 401) {
+        const wrong = new Error('Incorrect current password.');
+        wrong.code = 'WRONG_CURRENT_PASSWORD';
+        throw wrong;
+      }
+      throw new Error(err?.message || "Couldn't update your password.");
     }
 
-    if (!verified?.valid) {
-      const err = new Error('Incorrect current password.');
-      err.code = 'WRONG_CURRENT_PASSWORD';
-      throw err;
-    }
-
-    // 2. Update to new password
-    const { error: updateError } = await supabase.auth.updateUser({
-      password: newPassword,
-    });
-
-    if (updateError) {
-      throw new Error(updateError.message);
-    }
-
-    // 3. Revoke every OTHER active session.
+    // Nothing to adopt afterwards.
     //
-    //    A password change is the point at which any session someone else is
-    //    holding has to stop working, so this is enforcement, not tidying.
-    //    `scope: 'others'` leaves this device signed in — the user asked to
-    //    change their password, not to be logged out of the screen they are
-    //    standing on — and takes every other device down with it.
-    //
-    //    Failure here is non-fatal but not silent-by-design: the password IS
-    //    already changed at this point, so throwing would tell the user their
-    //    change failed when it did not. Logged so a revocation that stopped
-    //    working is visible rather than merely absent.
-    try {
-      await supabase.auth.signOut({ scope: 'others' });
-    } catch (revokeErr) {
-      console.error('Failed to revoke other sessions after password change', revokeErr);
-    }
-
-    //    The same enforcement against our own session table, which the call
-    //    above knows nothing about. Supabase revoking its sessions stops new
-    //    access tokens being minted through it; this stops the device rows we
-    //    issue — the ones behind "sign out this device" — from continuing to
-    //    refresh. Both have to happen or a password change leaves one half of
-    //    the session state alive.
-    try {
-      await apiClient.post('/api/auth/sessions/revoke-all');
-    } catch (revokeErr) {
-      console.error('Failed to revoke server sessions after password change', revokeErr);
-    }
-
-    // 4. Adopt whatever session this flow ended up holding.
-    //
-    //    `updateUser` rotates the session and announces it as USER_UPDATED,
-    //    which onAuthStateChange deliberately drops (that branch belongs to the
-    //    reset-password screen, where the session is a recovery credential that
-    //    must never reach global state). So without this, `session` kept the
-    //    pre-change token.
-    //
-    //    Nothing broke immediately, because an access token is a JWT and stays
-    //    verifiable until it expires. What it cost was the realtime socket:
-    //    SocketManager keys its connection on `session.access_token`, so it
-    //    held a superseded token and had no reason to reconnect — the effect's
-    //    dependency never changed. It recovered only at the next
-    //    TOKEN_REFRESHED, up to an hour later.
-    try {
-      const { data: { session: freshSession } } = await supabase.auth.getSession();
-      if (freshSession) setSession(freshSession);
-    } catch {
-      // Non-fatal: the password is changed either way, and the next auth event
-      // installs the current session.
-    }
+    // The old flow had to re-read the session because `updateUser` rotated it
+    // and announced a USER_UPDATED that onAuthStateChange deliberately drops,
+    // leaving `session` on the pre-change token — which the realtime socket
+    // keys on, so it held a superseded token until the next refresh. The change
+    // no longer happens in the browser, so no rotation happens here and the
+    // session this device holds is the one it keeps.
 
     // 5. Send "Password Changed" security notification email.
     //    Fire-and-forget — the password is already changed, so don't make the

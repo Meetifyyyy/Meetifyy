@@ -24,7 +24,7 @@ import {
   Pencil, Lock, AlertCircle, Trash2,
   User, GraduationCap, Shield, Bell, HelpCircle, LogOut,
   ChevronRight, ChevronDown, Check, Ban,
-  LockKeyhole, Cookie, Sparkles, Eye,
+  LockKeyhole, Cookie, Sparkles, Eye, Devices,
 } from '@shared/components/icons';
 import wordmark from '@assets/images/meetifyy_wordmark.svg';
 import PasswordToggle, { usePasswordVisibility } from '@shared/components/forms/PasswordToggle';
@@ -33,6 +33,7 @@ import useDevToolsStore from '@shared/stores/devToolsStore';
 import BlockedContacts from '../panels/BlockedContacts';
 import SettingsVerificationPanel from '../panels/SettingsVerificationPanel';
 import SettingsHelpPanel from '../panels/SettingsHelpPanel';
+import DevicesPanel from '../panels/DevicesPanel';
 import { IS_DEV_BUILD } from '@config';
 import { useCookieConsent } from '@shared/context/CookieConsentContext';
 
@@ -94,6 +95,9 @@ export const SETTINGS_TREE = [
     items: [
       { panel: 'blocked-contacts', label: 'Blocked Contacts', icon: Ban },
       { panel: 'security', label: 'Change Password', icon: Lock },
+      // Where a signed-in device is ended. Sits beside Change Password because
+      // the two are the same job — deciding who still has access.
+      { panel: 'devices', label: 'Devices', icon: Devices },
       { action: 'cookies', label: 'Cookie Preferences', icon: Cookie },
     ],
     /**
@@ -687,6 +691,7 @@ export default function SettingsRoute() {
     notifications: 'Notifications',
     interests: 'Interests & Topics',
     'blocked-contacts': 'Blocked Contacts',
+    devices: 'Devices',
     verification: 'Account Verification',
     help: 'Help & Support',
   };
@@ -1192,6 +1197,14 @@ export default function SettingsRoute() {
   const verificationPanel = <SettingsVerificationPanel />;
   const helpPanel = <SettingsHelpPanel />;
 
+  // Wrapped in the same body/group scaffolding every other panel uses, so it
+  // scrolls and gutters identically.
+  const devicesPanel = (
+    <div className={`${styles.body} animate-in`}>
+      <DevicesPanel />
+    </div>
+  );
+
   const notificationsPanel = (
     <div className={`${styles.body} animate-in`}>
       <div className={styles.sectionLabel}>Notification Preferences</div>
@@ -1343,6 +1356,7 @@ export default function SettingsRoute() {
             {activePanel === 'interests' && interestsPanel}
             {activePanel === 'blocked-contacts' && blockedContactsPanel}
             {activePanel === 'verification' && verificationPanel}
+            {activePanel === 'devices' && devicesPanel}
             {activePanel === 'help' && helpPanel}
             {/* Only when nothing at all is open. `activeCategory` has to be
                 tested too: a category with no leaf panel selected renders its
@@ -1365,6 +1379,7 @@ export default function SettingsRoute() {
           {activePanel === 'interests' && interestsPanel}
           {activePanel === 'blocked-contacts' && blockedContactsPanel}
           {activePanel === 'verification' && verificationPanel}
+          {activePanel === 'devices' && devicesPanel}
           {activePanel === 'help' && helpPanel}
         </>
       )}

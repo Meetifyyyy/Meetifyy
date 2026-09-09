@@ -253,3 +253,21 @@ export class CreateCollegeRequestDto {
   })
   personalEmail: string;
 }
+
+/**
+ * A password change.
+ *
+ * The length floor is deliberately generous and the real policy lives with the
+ * provider — mirroring it here would give two sources of truth that drift, and
+ * the provider's message is the one the user is shown.
+ */
+export class ChangePasswordDto {
+  @IsString({ message: 'Current password must be a string' })
+  @IsNotEmpty({ message: 'Current password is required' })
+  currentPassword: string;
+
+  @IsString({ message: 'New password must be a string' })
+  @IsNotEmpty({ message: 'New password is required' })
+  @Length(8, 200, { message: 'New password must be at least 8 characters' })
+  newPassword: string;
+}

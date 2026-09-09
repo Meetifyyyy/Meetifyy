@@ -36,6 +36,7 @@ import {
   issueUserSessionCookies,
   clearUserSessionCookies,
   USER_REFRESH_COOKIE,
+  USER_SESSION_ID_COOKIE,
 } from './session/user-session-cookies';
 import { UserSessionRevokedReason } from '@prisma/client';
 import type { AuthenticatedUser } from '../common/types/authenticated-request';
@@ -52,6 +53,7 @@ import {
   RequestPasswordResetDto,
   SignUpDto,
   ResendSignupOtpDto,
+  ChangePasswordDto
 } from './dto/auth.dto';
 
 @Controller('api/auth')
@@ -62,6 +64,20 @@ export class AuthController {
     private readonly rateLimit: RateLimitService,
     private readonly sessions: UserSessionService,
   ) {}
+
+  /**
+   * The session this request is coming from.
+   *
+   * Reads the id cookie rather than deriving it from the refresh token: the
+   * refresh cookie's path is `/api/auth/session`, which by RFC 6265 path
+   * matching does not cover `/api/auth/sessions`, so on the device-list and
+   * revoke routes it is simply not sent. Deriving it there always answered
+   * "none", which made every session look like somebody else's.
+   */
+  private currentSessionId(req: Request): string | null {
+    const id = req.cookies?.[USER_SESSION_ID_COOKIE];
+    return typeof id === 'string' && id ? id : null;
+  }
 
   /** IP and user agent, for the device row and for rotation. */
   private deviceOf(req: Request) {
@@ -156,6 +172,7 @@ export class AuthController {
       issued.refreshToken,
       (result.session.expires_in ?? 3600) * 1000,
       issued.expiresAt.getTime() - Date.now(),
+      issued.sessionId,
     );
 
     return { ...result, csrfToken, sessionId: issued.sessionId };
@@ -215,6 +232,7 @@ export class AuthController {
       rotated.session.refreshToken,
       (refreshed.expires_in ?? 3600) * 1000,
       rotated.session.expiresAt.getTime() - Date.now(),
+      rotated.session.sessionId,
     );
 
     return { csrfToken, sessionId: rotated.session.sessionId };
@@ -227,14 +245,15 @@ export class AuthController {
   @AllowSuspended()
   @AllowPendingDeletion()
   async logoutSession(
+    @CurrentUser() user: AuthenticatedUser,
     @Req() req: Request,
     @Res({ passthrough: true }) res: any,
   ) {
-    const token = req.cookies?.[USER_REFRESH_COOKIE];
-    if (typeof token === 'string' && token) {
-      const hash = this.sessions.hashRefreshToken(token);
-      await this.sessions.revokeByRefreshHash(
-        hash,
+    const sessionId = this.currentSessionId(req);
+    if (sessionId) {
+      await this.sessions.revokeOwnedByUser(
+        user.id,
+        sessionId,
         UserSessionRevokedReason.USER_LOGOUT,
       );
     }
@@ -249,12 +268,10 @@ export class AuthController {
     @CurrentUser() user: AuthenticatedUser,
     @Req() req: Request,
   ) {
-    const token = req.cookies?.[USER_REFRESH_COOKIE];
-    const currentId =
-      typeof token === 'string' && token
-        ? await this.sessions.sessionIdForRefreshToken(token)
-        : undefined;
-    return this.sessions.listForUser(user.id, currentId ?? undefined);
+    return this.sessions.listForUser(
+      user.id,
+      this.currentSessionId(req) ?? undefined,
+    );
   }
 
   /**
@@ -278,25 +295,51 @@ export class AuthController {
     return { success: true };
   }
 
-  /** Signs out everywhere except here. */
+  /**
+   * Signs out other devices, or every device including this one.
+   *
+   * The two password-change paths want different things, and the difference is
+   * not cosmetic. Changing a password from Settings is done by someone sitting
+   * at a device they trust: they are ending everyone else's access, not their
+   * own, and logging them out of the screen they are standing on would be a
+   * bug. A reset through the emailed link is the opposite — it is the flow
+   * someone uses when they believe their account is compromised, and the device
+   * completing it may itself be the one they are worried about. There,
+   * everything goes, this session included.
+   *
+   * `scope` defaults to 'others' so a caller that forgets it cannot
+   * accidentally sign the user out of the tab they are using.
+   */
   @Post('sessions/revoke-all')
   @HttpCode(HttpStatus.OK)
   @UseGuards(JwtGuard)
+  @AllowSuspended()
+  @AllowPendingDeletion()
   async revokeAllSessions(
     @CurrentUser() user: AuthenticatedUser,
     @Req() req: Request,
+    @Res({ passthrough: true }) res: any,
+    @Body() body?: { scope?: 'others' | 'all' },
   ) {
-    const token = req.cookies?.[USER_REFRESH_COOKIE];
-    const currentId =
-      typeof token === 'string' && token
-        ? await this.sessions.sessionIdForRefreshToken(token)
-        : undefined;
+    const scope = body?.scope === 'all' ? 'all' : 'others';
+
+    const currentId = scope === 'others' ? this.currentSessionId(req) : null;
+
     const count = await this.sessions.revokeAllForUser(
       user.id,
-      UserSessionRevokedReason.USER_LOGOUT_ALL,
+      scope === 'all'
+        ? UserSessionRevokedReason.PASSWORD_CHANGED
+        : UserSessionRevokedReason.USER_LOGOUT_ALL,
       currentId ?? undefined,
     );
-    return { success: true, revoked: count };
+
+    // Nothing this browser holds is valid any more, so the cookies go with it.
+    // Leaving them set would have the client keep presenting a credential the
+    // server has already revoked, and reading the 401 as a bug rather than as
+    // the sign-out it asked for.
+    if (scope === 'all') clearUserSessionCookies(res);
+
+    return { success: true, revoked: count, scope };
   }
 
   /** Builds device/UA/IP context and queues the new-login email. Never awaited by callers. */
@@ -417,6 +460,39 @@ export class AuthController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.authService.verifyPassword(user, body.password);
+  }
+
+  /**
+   * Change password, and sign every OTHER device out.
+   *
+   * The revocation is part of the operation rather than a follow-up call the
+   * client might skip or fail to make: a password change is the moment any
+   * session someone else is holding has to stop working. This device is spared
+   * — the person changing their password asked for that, not to be logged out
+   * of the screen they are standing on.
+   */
+  @Post('change-password')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtGuard, RateLimitPolicyGuard)
+  @RateLimit('auth.verifypassword.user')
+  async changePassword(
+    @Body() body: ChangePasswordDto,
+    @CurrentUser() user: AuthenticatedUser,
+    @Req() req: Request,
+  ) {
+    await this.authService.changePassword(
+      user,
+      body.currentPassword,
+      body.newPassword,
+    );
+
+    const revoked = await this.sessions.revokeAllForUser(
+      user.id,
+      UserSessionRevokedReason.PASSWORD_CHANGED,
+      this.currentSessionId(req) ?? undefined,
+    );
+
+    return { success: true, otherSessionsRevoked: revoked };
   }
 
   @Post('check-username')

@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { UserSessionRevokedReason } from '@prisma/client';
 import * as crypto from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
+import { JwtGuard } from '../../common/guards/jwt.guard';
 import { sealSecret, openSecret } from '../../common/crypto/secret-box';
 
 /** How long a refresh token stays usable before the user must sign in again. */
@@ -286,18 +287,25 @@ export class UserSessionService {
         data: { revoked: true, revokedAt: new Date(), revokedReason: reason },
       })
       .catch(() => undefined);
+    JwtGuard.forgetSession(sessionId);
   }
 
   async revokeFamily(
     familyId: string,
     reason: UserSessionRevokedReason,
   ): Promise<void> {
+    const affected = await this.prisma.userSession
+      .findMany({ where: { familyId }, select: { id: true } })
+      .catch(() => [] as { id: string }[]);
+
     await this.prisma.userSession
       .updateMany({
         where: { familyId, revoked: false },
         data: { revoked: true, revokedAt: new Date(), revokedReason: reason },
       })
       .catch(() => undefined);
+
+    affected.forEach((s) => JwtGuard.forgetSession(s.id));
   }
 
   /**
@@ -313,14 +321,22 @@ export class UserSessionService {
     reason: UserSessionRevokedReason,
     exceptSessionId?: string,
   ): Promise<number> {
+    const where = {
+      userId,
+      revoked: false,
+      ...(exceptSessionId ? { id: { not: exceptSessionId } } : {}),
+    };
+
+    const affected = await this.prisma.userSession
+      .findMany({ where, select: { id: true } })
+      .catch(() => [] as { id: string }[]);
+
     const result = await this.prisma.userSession.updateMany({
-      where: {
-        userId,
-        revoked: false,
-        ...(exceptSessionId ? { id: { not: exceptSessionId } } : {}),
-      },
+      where,
       data: { revoked: true, revokedAt: new Date(), revokedReason: reason },
     });
+
+    affected.forEach((s) => JwtGuard.forgetSession(s.id));
     return result.count;
   }
 
@@ -364,12 +380,18 @@ export class UserSessionService {
     refreshHash: string,
     reason: UserSessionRevokedReason,
   ): Promise<void> {
+    const existing = await this.prisma.userSession
+      .findUnique({ where: { refreshHash }, select: { id: true } })
+      .catch(() => null);
+
     await this.prisma.userSession
       .updateMany({
         where: { refreshHash, revoked: false },
         data: { revoked: true, revokedAt: new Date(), revokedReason: reason },
       })
       .catch(() => undefined);
+
+    if (existing) JwtGuard.forgetSession(existing.id);
   }
 
   /**
@@ -388,6 +410,11 @@ export class UserSessionService {
       where: { id: sessionId, userId, revoked: false },
       data: { revoked: true, revokedAt: new Date(), revokedReason: reason },
     });
+    // The guard caches liveness for a few seconds; dropping the entry makes the
+    // revocation felt on the very next request rather than at the end of that
+    // window. Correctness does not depend on it — the cache expires either way
+    // — but "sign out" should not appear to do nothing for ten seconds.
+    JwtGuard.forgetSession(sessionId);
     return result.count > 0;
   }
 

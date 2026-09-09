@@ -992,6 +992,19 @@ export const activitiesApi = {
   getBookmarkIds: () => apiClient.get('/api/activities/bookmarks/ids'),
 };
 
+/**
+ * The signed-in devices behind the account.
+ *
+ * Backed by the UserSession table — these are the rows that make a session
+ * revocable at all, so what this lists is exactly what can be signed out.
+ */
+export const sessionsApi = {
+  list: () => apiClient.get('/api/auth/sessions'),
+  revoke: (id) => apiClient.delete(`/api/auth/sessions/${id}`),
+  /** Signs out every other device, leaving this one alone. */
+  revokeOthers: () => apiClient.post('/api/auth/sessions/revoke-all', { scope: 'others' }),
+};
+
 export const usersApi = {
   getConnections: (query = '', limit = 50) => {
     const params = new URLSearchParams({ limit: String(limit) });

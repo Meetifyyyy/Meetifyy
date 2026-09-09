@@ -10,7 +10,12 @@ import { Reflector } from '@nestjs/core';
 import * as jwt from 'jsonwebtoken';
 import { createPublicKey, KeyObject } from 'crypto';
 import { SupabaseService } from '../../supabase/supabase.service';
-import { USER_ACCESS_COOKIE } from '../../auth/session/user-session-cookies';
+import {
+  USER_ACCESS_COOKIE,
+  USER_CSRF_COOKIE,
+  USER_SESSION_ID_COOKIE,
+} from '../../auth/session/user-session-cookies';
+import { timingSafeEqual } from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ALLOW_SUSPENDED_KEY } from '../decorators/allow-suspended.decorator';
 import { ALLOW_PENDING_DELETION_KEY } from '../decorators/allow-pending-deletion.decorator';
@@ -95,6 +100,72 @@ export class JwtGuard implements CanActivate {
       }
     }
   }
+
+  /**
+   * Session liveness, cached briefly.
+   *
+   * Reading the table on every request would put a query in front of all 194
+   * authenticated endpoints. The cache is the entire cost of revocation: a
+   * session revoked now keeps working for at most SESSION_STATE_TTL_MS. Fifteen
+   * seconds is short enough to feel immediate to the person clicking "sign
+   * out", and to the attacker holding the token, and long enough that the table
+   * is not read on every request of every user.
+   *
+   * A lookup failure is cached as ACTIVE rather than revoked: a database blip
+   * must not sign the whole application out. The session table is a revocation
+   * list, and failing open on a revocation list is the conventional trade —
+   * the alternative turns one slow query into a total outage.
+   */
+  private static readonly SESSION_STATE_TTL_MS = 15 * 1000;
+  private static readonly sessionState = new Map<
+    string,
+    { active: boolean; expiresAt: number }
+  >();
+
+  /** Drops a session from the cache so a revocation is felt immediately. */
+  public static forgetSession(sessionId: string): void {
+    JwtGuard.sessionState.delete(sessionId);
+  }
+
+  private async isSessionActive(sessionId: string): Promise<boolean> {
+    const now = Date.now();
+    const hit = JwtGuard.sessionState.get(sessionId);
+    if (hit && hit.expiresAt > now) return hit.active;
+
+    let active = true;
+    try {
+      const session = await this.prisma.userSession.findUnique({
+        where: { id: sessionId },
+        select: { revoked: true, expiresAt: true },
+      });
+      active = Boolean(
+        session && !session.revoked && session.expiresAt > new Date(),
+      );
+    } catch (e) {
+      this.logger.warn(
+        `session state lookup failed; treating as active: ${(e as Error).message}`,
+      );
+      active = true;
+    }
+
+    // Bound the map so a long-running process cannot accumulate one entry per
+    // session ever seen.
+    if (JwtGuard.sessionState.size > 10_000) {
+      for (const [key, value] of JwtGuard.sessionState) {
+        if (value.expiresAt <= now) JwtGuard.sessionState.delete(key);
+      }
+      if (JwtGuard.sessionState.size > 10_000) JwtGuard.sessionState.clear();
+    }
+
+    JwtGuard.sessionState.set(sessionId, {
+      active,
+      expiresAt: now + JwtGuard.SESSION_STATE_TTL_MS,
+    });
+    return active;
+  }
+
+  /** Methods that cannot change state, so cannot be a CSRF target. */
+  private static readonly SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
   public static isUserRevoked(userId: string): boolean {
     return JwtGuard.revokedUsers.has(userId);
@@ -284,6 +355,38 @@ export class JwtGuard implements CanActivate {
       throw new UnauthorizedException('Missing authorization header');
     }
 
+    /**
+     * CSRF, for cookie-authenticated mutations only.
+     *
+     * Moving the session into a cookie introduced this: a bearer token cannot
+     * be forged from another site because a page there cannot read it, but a
+     * cookie is attached by the browser to whatever request it is asked to
+     * make. SameSite=Strict is the first line and a good one, yet the cookie
+     * domain is the registrable domain, so every subdomain counts as same-site
+     * — SameSite says nothing about a request from one of those.
+     *
+     * Scoped deliberately: only when the credential came from the cookie (a
+     * Bearer caller is not CSRF-able) and only on mutating methods. The token
+     * is the readable `mf_csrf` cookie echoed in a header, which a cross-site
+     * page cannot read and therefore cannot echo.
+     */
+    const usedCookie = Boolean(
+      typeof cookieToken === 'string' && cookieToken.trim(),
+    );
+    const method = (request.method || '').toUpperCase();
+    if (usedCookie && !JwtGuard.SAFE_METHODS.has(method)) {
+      const header = request.headers['x-csrf-token'];
+      const cookie = request.cookies?.[USER_CSRF_COOKIE];
+      if (
+        typeof header !== 'string' ||
+        typeof cookie !== 'string' ||
+        !cookie ||
+        !constantTimeEquals(header, cookie)
+      ) {
+        throw new ForbiddenException('CSRF validation failed');
+      }
+    }
+
     if (!this.supabaseService.isConfigured) {
       throw new UnauthorizedException(
         'Supabase Auth is not configured on this server',
@@ -301,6 +404,30 @@ export class JwtGuard implements CanActivate {
       throw new UnauthorizedException(
         'Account has been deleted or deactivated',
       );
+    }
+
+    /**
+     * A revoked session must stop working NOW, not when its access token
+     * expires.
+     *
+     * The access token is a Supabase JWT and stays cryptographically valid for
+     * its full hour no matter what we do to our own records — so without this,
+     * "sign out this device" revoked a row that nothing consulted, and the
+     * signed-out device kept making authenticated requests for up to an hour.
+     * Revocation only prevented the NEXT refresh, which is not what the button
+     * says and not what someone signing out a device they do not recognise
+     * needs.
+     *
+     * Only requests carrying a session id are checked, which is every
+     * cookie-authenticated request. A bearer token from a client that predates
+     * cookies has no session to check and is left alone.
+     */
+    const sessionId = request.cookies?.[USER_SESSION_ID_COOKIE];
+    if (typeof sessionId === 'string' && sessionId) {
+      const active = await this.isSessionActive(sessionId);
+      if (!active) {
+        throw new UnauthorizedException('Session has been signed out');
+      }
     }
 
     // Suspension is enforced here, not on the screen the client chooses to
@@ -642,4 +769,16 @@ export class JwtGuard implements CanActivate {
       return undefined;
     }
   }
+}
+
+/**
+ * Compares two CSRF tokens without leaking their contents through timing.
+ * The length check sits outside the timing-safe path because `timingSafeEqual`
+ * throws on a length mismatch and a token's length is not the secret.
+ */
+function constantTimeEquals(a: string, b: string): boolean {
+  const left = Buffer.from(a);
+  const right = Buffer.from(b);
+  if (left.length !== right.length) return false;
+  return timingSafeEqual(left, right);
 }

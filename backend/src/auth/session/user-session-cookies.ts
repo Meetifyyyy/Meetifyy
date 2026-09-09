@@ -12,6 +12,24 @@ export const USER_ACCESS_COOKIE = 'mf_access';
 export const USER_REFRESH_COOKIE = 'mf_refresh';
 export const USER_CSRF_COOKIE = 'mf_csrf';
 
+/**
+ * The current session's id.
+ *
+ * Needed because the refresh cookie deliberately is not sent to most routes.
+ * Its path is `/api/auth/session`, and RFC 6265 path-matching means that does
+ * NOT cover `/api/auth/sessions` — prefix alone is not a match unless the next
+ * character is a slash. So the device list could not tell which row was the
+ * caller's, and "sign out other devices" could not tell which one to spare:
+ * it would have signed the user out of the device they were sitting at, which
+ * is precisely what that action promises not to do.
+ *
+ * Carrying the id separately keeps the long-lived credential narrow. The id is
+ * not a credential — every operation that takes one is scoped to the caller's
+ * own user, so naming a session id grants nothing — but it is HttpOnly anyway,
+ * because nothing in the page needs to read it.
+ */
+export const USER_SESSION_ID_COOKIE = 'mf_sid';
+
 export interface IssuedUserSessionCookies {
   /**
    * The CSRF token just written to `mf_csrf`, returned for the response body.
@@ -48,6 +66,7 @@ export function issueUserSessionCookies(
   refreshToken: string,
   accessMaxAgeMs: number,
   refreshMaxAgeMs: number,
+  sessionId?: string,
 ): IssuedUserSessionCookies {
   const csrfToken = crypto.randomBytes(32).toString('hex');
   const base = cookieBase();
@@ -64,6 +83,14 @@ export function issueUserSessionCookies(
     path: '/api/auth/session',
     maxAge: refreshMaxAgeMs,
   });
+
+  if (sessionId) {
+    res.cookie(USER_SESSION_ID_COOKIE, sessionId, {
+      ...base,
+      httpOnly: true,
+      maxAge: refreshMaxAgeMs,
+    });
+  }
 
   res.cookie(USER_CSRF_COOKIE, csrfToken, {
     // Readable on purpose. It is not a credential by itself — it is worthless
@@ -92,5 +119,6 @@ export function clearUserSessionCookies(res: Response): void {
     httpOnly: true,
     path: '/api/auth/session',
   });
+  res.clearCookie(USER_SESSION_ID_COOKIE, { ...base, httpOnly: true });
   res.clearCookie(USER_CSRF_COOKIE, { ...base, httpOnly: false });
 }

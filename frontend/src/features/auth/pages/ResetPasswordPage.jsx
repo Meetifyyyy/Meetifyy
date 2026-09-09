@@ -316,6 +316,30 @@ export default function ResetPasswordPage() {
         }
       }
 
+      // ── Sign out every device, this one included ──────────────────────
+      //
+      // A reset through the emailed link is the flow someone uses when they
+      // think their account is compromised — so unlike a password change from
+      // Settings, which spares the device performing it, this one spares
+      // nothing. The device completing the reset may itself be the one they are
+      // worried about.
+      //
+      // Sent with the recovery token explicitly: apiClient refuses to attach it
+      // to anything, deliberately, so this is the one way to make an
+      // authenticated call from this page.
+      const revokeToken = recoverySessionRef.current?.access_token;
+      if (revokeToken) {
+        await fetch(`${API_URL}/api/auth/sessions/revoke-all`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${revokeToken}`,
+          },
+          body: JSON.stringify({ scope: 'all' }),
+        }).catch(() => {}); // Non-fatal: the password is already changed.
+      }
+
       // ── Destroy the recovery session ──────────────────────────────────
       // This call:
       //   1. Invalidates the recovery token server-side immediately.
@@ -323,8 +347,10 @@ export default function ResetPasswordPage() {
       //      be clicked again and show the form.
       //   3. Fires SIGNED_OUT in AuthContext, which correctly clears any
       //      residual auth state (even though we kept it isolated earlier).
-      // Fire-and-forget — the success state is already shown.
-      supabase.auth.signOut().catch(() => {});
+      // Fire-and-forget — the success state is already shown. Global scope, so
+      // the provider's sessions on other devices end as well; the call above
+      // does the same for ours.
+      supabase.auth.signOut({ scope: 'global' }).catch(() => {});
 
     } catch (err) {
       // Revert to the form so the user can try again (e.g. weak password,

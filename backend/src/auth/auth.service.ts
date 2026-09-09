@@ -989,6 +989,64 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
    * not an authorization failure, and 401 is the status the client's own
    * interceptor treats as a dead session and signs the user out over.
    */
+  /**
+   * Changes the caller's password, server-side.
+   *
+   * This used to be `supabase.auth.updateUser` from the browser, which stopped
+   * working the moment the session moved out of localStorage: the provider's
+   * client keeps its session in memory now, so after any reload there was no
+   * session for it to update with and the change failed — silently, on a form
+   * that reported success.
+   *
+   * Doing it here is also the better place for it. The current password is
+   * verified against a per-user budget rather than trusted from the client,
+   * and the whole operation is one call the server can meter and audit.
+   */
+  async changePassword(
+    user: AuthenticatedUser,
+    currentPassword: string,
+    newPassword: string,
+  ): Promise<{ success: true }> {
+    if (!this.supabaseService.isConfigured) {
+      throw new UnauthorizedException('Authentication is not configured.');
+    }
+
+    if (!newPassword || newPassword.length < 8) {
+      throw new BadRequestException(
+        'New password must be at least 8 characters.',
+      );
+    }
+
+    if (currentPassword === newPassword) {
+      throw new BadRequestException(
+        'New password must be different from your current password.',
+      );
+    }
+
+    // Proof the person at the keyboard knows the existing password, so a
+    // stolen session alone cannot change it and lock the owner out.
+    const { valid } = await this.verifyPassword(user, currentPassword);
+    if (!valid) {
+      throw new UnauthorizedException('Current password is incorrect.');
+    }
+
+    const { error } = await this.supabaseService.client.auth.admin.updateUserById(
+      user.id,
+      { password: newPassword },
+    );
+
+    if (error) {
+      // The provider's message can be shown — it carries its own password
+      // policy failures, which the user can act on. It never contains the
+      // password itself.
+      throw new BadRequestException(
+        error.message || "Couldn't update your password.",
+      );
+    }
+
+    return { success: true };
+  }
+
   async verifyPassword(
     user: AuthenticatedUser,
     password: string,

@@ -1,0 +1,245 @@
+/* Devices — the signed-in sessions list.
+   Matches the settings row metrics (36px icon tile, 12px gutter padding) so it
+   reads as part of the same screen rather than as a panel of its own. */
+
+.wrap {
+  display: flex;
+  flex-direction: column;
+}
+
+.intro {
+  margin: 0 var(--settings-gutter, 20px) 12px;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: var(--color-text-muted);
+}
+
+.list {
+  background: var(--color-bg-white);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-lg, 16px);
+  margin: 0 var(--settings-gutter, 20px) 12px;
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+}
+
+:global([data-theme="dark"]) .list {
+  background: var(--color-bg-alt);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px var(--settings-gutter, 20px);
+}
+
+.row + .row {
+  border-top: 1px solid var(--color-border-light);
+}
+
+.icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: var(--color-bg-soft);
+  color: var(--color-icon-base);
+  flex-shrink: 0;
+}
+
+.info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-family-sans);
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--color-text-main);
+}
+
+/* The row the person is looking at. Marked rather than hidden — knowing which
+   one is "here" is what makes the rest of the list actionable. */
+.currentTag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 7px;
+  border-radius: 100px;
+  background: rgba(var(--color-primary-rgb), 0.1);
+  color: var(--color-primary);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+.meta {
+  font-size: 0.76rem;
+  line-height: 1.35;
+  color: var(--color-text-muted);
+  overflow-wrap: anywhere;
+}
+
+.revokeBtn {
+  flex-shrink: 0;
+  padding: 6px 12px;
+  border-radius: var(--radius-full, 9999px);
+  border: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-text-muted);
+  font-family: var(--font-family-sans);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    color var(--transition-fast),
+    border-color var(--transition-fast),
+    background var(--transition-fast);
+}
+
+.revokeBtn:hover:not(:disabled) {
+  color: var(--color-danger);
+  border-color: var(--color-danger);
+  background: rgba(var(--color-danger-rgb), 0.06);
+}
+
+.revokeBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.revokeBtn:focus-visible,
+.allBtn:focus-visible,
+.dangerBtn:focus-visible,
+.cancelBtn:focus-visible,
+.retryBtn:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.allWrap {
+  margin: 0 var(--settings-gutter, 20px) 12px;
+}
+
+.allBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-radius: var(--radius-full, 9999px);
+  border: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-danger);
+  font-family: var(--font-family-sans);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+
+.allBtn:hover {
+  background: rgba(var(--color-danger-rgb), 0.06);
+  border-color: var(--color-danger);
+}
+
+/* Confirmation is inline rather than a modal: the action is reversible by
+   signing in again, and a dialog for it would be heavier than the decision. */
+.confirmRow {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg, 16px);
+  background: var(--color-bg-soft);
+}
+
+.confirmText {
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: var(--color-text-main);
+}
+
+.confirmActions {
+  display: flex;
+  gap: 8px;
+}
+
+.cancelBtn,
+.dangerBtn {
+  padding: 8px 16px;
+  border-radius: var(--radius-full, 9999px);
+  font-family: var(--font-family-sans);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: opacity var(--transition-fast), background var(--transition-fast);
+}
+
+.cancelBtn {
+  background: transparent;
+  border-color: var(--color-border);
+  color: var(--color-text-muted);
+}
+
+.dangerBtn {
+  background: var(--color-danger);
+  color: #fff;
+}
+
+.dangerBtn:hover:not(:disabled) {
+  opacity: 0.92;
+}
+
+.cancelBtn:disabled,
+.dangerBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 32px var(--settings-gutter, 20px);
+  text-align: center;
+}
+
+.stateText {
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}
+
+.retryBtn {
+  padding: 8px 18px;
+  border-radius: var(--radius-full, 9999px);
+  border: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-text-main);
+  font-family: var(--font-family-sans);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .revokeBtn,
+  .allBtn,
+  .cancelBtn,
+  .dangerBtn {
+    transition: none;
+  }
+}

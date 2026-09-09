@@ -2,6 +2,7 @@ import { forwardRef } from 'react';
 import { HugeiconsIcon } from '@hugeicons/react';
 import {
   Add01Icon,
+  ComputerPhoneSyncIcon,
   Alert02Icon,
   AlertCircleIcon,
   ArrowDown01Icon,
@@ -298,6 +299,8 @@ const GLYPHS = {
   Link2: Link01Icon,
   Cookie: BiscuitIcon,
   Fingerprint: FingerPrintIcon,
+  // The signed-in devices list in Settings.
+  Devices: ComputerPhoneSyncIcon,
 
   // -- Share destinations.
   //    Brand marks, from the same Hugeicons set as everything else here rather
@@ -437,3 +440,4 @@ export const XPlatform = /*#__PURE__*/ icon(GLYPHS.XPlatform, 'XPlatform');
 export const Linkedin = /*#__PURE__*/ icon(GLYPHS.Linkedin, 'Linkedin');
 export const Reddit = /*#__PURE__*/ icon(GLYPHS.Reddit, 'Reddit');
 export const Fingerprint = /*#__PURE__*/ icon(GLYPHS.Fingerprint, 'Fingerprint');
+export const Devices = /*#__PURE__*/ icon(GLYPHS.Devices, 'Devices');
