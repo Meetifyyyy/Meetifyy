@@ -72,9 +72,7 @@ export class EmailProcessor extends WorkerHost implements OnModuleInit {
        * to intercept the connection — which matters now that SMTP is a
        * production transport rather than a local-only one.
        */
-      ...(driver === 'mailpit'
-        ? { tls: { rejectUnauthorized: false } }
-        : {}),
+      ...(driver === 'mailpit' ? { tls: { rejectUnauthorized: false } } : {}),
     });
 
     this.from = from;

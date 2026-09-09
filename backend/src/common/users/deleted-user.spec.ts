@@ -50,7 +50,9 @@ describe('deleted-user presentation', () => {
     // Half the call sites select one column, half the other. Either alone has
     // to be enough or a narrow select becomes a silent leak.
     expect(isUnavailableUser({ id: 'u1', deletedAt: new Date() })).toBe(true);
-    expect(isUnavailableUser({ id: 'u1', accountStatus: 'DELETED' })).toBe(true);
+    expect(isUnavailableUser({ id: 'u1', accountStatus: 'DELETED' })).toBe(
+      true,
+    );
   });
 
   it('does not pass extra selected fields through the tombstone', () => {

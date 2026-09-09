@@ -253,11 +253,13 @@ export class CommunitiesService implements OnModuleInit {
    * on the community payload, so the two can never disagree about whether a
    * notice is still pending.
    */
-  private pendingModeratorNotice(member: {
-    role: string;
-    moderatorPromotedAt: Date | null;
-    moderatorNoticeAckedAt: Date | null;
-  } | null) {
+  private pendingModeratorNotice(
+    member: {
+      role: string;
+      moderatorPromotedAt: Date | null;
+      moderatorNoticeAckedAt: Date | null;
+    } | null,
+  ) {
     if (!member || member.role !== 'MODERATOR' || !member.moderatorPromotedAt) {
       return null;
     }
@@ -964,7 +966,9 @@ export class CommunitiesService implements OnModuleInit {
     // every request that only needed to know whether the caller may act.
     const [member, community] = await Promise.all([
       this.prisma.communityMember.findUnique({
-        where: { userId_communityId: { userId: requestingUserId, communityId } },
+        where: {
+          userId_communityId: { userId: requestingUserId, communityId },
+        },
         select: { role: true },
       }),
       this.prisma.community.findUnique({
@@ -1007,7 +1011,9 @@ export class CommunitiesService implements OnModuleInit {
     // every request that only needed to know whether the caller may act.
     const [member, community] = await Promise.all([
       this.prisma.communityMember.findUnique({
-        where: { userId_communityId: { userId: requestingUserId, communityId } },
+        where: {
+          userId_communityId: { userId: requestingUserId, communityId },
+        },
         select: { role: true },
       }),
       this.prisma.community.findUnique({
@@ -1080,7 +1086,9 @@ export class CommunitiesService implements OnModuleInit {
     // every request that only needed to know whether the caller may act.
     const [member, community] = await Promise.all([
       this.prisma.communityMember.findUnique({
-        where: { userId_communityId: { userId: requestingUserId, communityId } },
+        where: {
+          userId_communityId: { userId: requestingUserId, communityId },
+        },
         select: { role: true },
       }),
       this.prisma.community.findUnique({
@@ -1366,7 +1374,9 @@ export class CommunitiesService implements OnModuleInit {
         select: { ownerId: true, avatarKey: true, coverKey: true },
       }),
       this.prisma.communityMember.findUnique({
-        where: { userId_communityId: { userId: requestingUserId, communityId } },
+        where: {
+          userId_communityId: { userId: requestingUserId, communityId },
+        },
         select: { role: true },
       }),
     ]);
@@ -1602,7 +1612,9 @@ export class CommunitiesService implements OnModuleInit {
         select: { ownerId: true },
       }),
       this.prisma.communityMember.findUnique({
-        where: { userId_communityId: { userId: requestingUserId, communityId } },
+        where: {
+          userId_communityId: { userId: requestingUserId, communityId },
+        },
         select: { role: true },
       }),
       this.prisma.communityMember.findUnique({
@@ -1692,7 +1704,9 @@ export class CommunitiesService implements OnModuleInit {
         select: { ownerId: true },
       }),
       this.prisma.communityMember.findUnique({
-        where: { userId_communityId: { userId: requestingUserId, communityId } },
+        where: {
+          userId_communityId: { userId: requestingUserId, communityId },
+        },
         select: { role: true },
       }),
       this.prisma.communityMember.findUnique({
@@ -1761,7 +1775,9 @@ export class CommunitiesService implements OnModuleInit {
         },
       }),
       this.prisma.communityMember.findUnique({
-        where: { userId_communityId: { userId: requestingUserId, communityId } },
+        where: {
+          userId_communityId: { userId: requestingUserId, communityId },
+        },
         select: { role: true },
       }),
     ]);

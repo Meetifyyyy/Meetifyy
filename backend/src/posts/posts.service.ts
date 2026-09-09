@@ -26,7 +26,6 @@ import { MentionDto } from '../common/dto/mention.dto';
 import { ContentDeletionAuthorizer } from './content-deletion.authorizer';
 import { StudentYearPolicyService } from '../common/student-year/student-year-policy.service';
 
-
 /**
  * The longest a single poll option may be.
  *
@@ -757,7 +756,8 @@ export class PostsService {
     // First-year isolation, resolved once per page and pushed into the SQL
     // below. The feed already joins "User" for the author card, so the
     // predicate costs an index lookup, not a join.
-    const feedViewerBatch = await this.studentYearPolicy.getBatchYearFor(userId);
+    const feedViewerBatch =
+      await this.studentYearPolicy.getBatchYearFor(userId);
     const feedPolicyFilter = Prisma.raw(
       `AND ${this.studentYearPolicy.visibleUserSqlPredicate('u', feedViewerBatch)}`,
     );

@@ -53,7 +53,7 @@ import {
   RequestPasswordResetDto,
   SignUpDto,
   ResendSignupOtpDto,
-  ChangePasswordDto
+  ChangePasswordDto,
 } from './dto/auth.dto';
 
 @Controller('api/auth')
@@ -581,10 +581,7 @@ export class AuthController {
     // Resolved from req.ip (see trust proxy in main.ts), not from the raw
     // header, whose leftmost entry is supplied by the caller.
     const ip =
-      body.ip ||
-      clientIp(req) ||
-      req.socket?.remoteAddress ||
-      'Unknown';
+      body.ip || clientIp(req) || req.socket?.remoteAddress || 'Unknown';
 
     // Format login time in the user's local timezone sent from the browser
     let loginTime: string;

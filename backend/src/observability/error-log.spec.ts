@@ -60,10 +60,15 @@ describe('ErrorLogRecorder', () => {
      * app receives traffic; without a cap the first minute of a database
      * failure would try to write one row per request TO THAT DATABASE.
      */
-    const ceiling = Math.max(1, Math.ceil(config.observability.errorLogs.maxPerMinute / 12));
+    const ceiling = Math.max(
+      1,
+      Math.ceil(config.observability.errorLogs.maxPerMinute / 12),
+    );
     for (let i = 0; i < ceiling + 50; i++) recorder.record(baseRecord());
     await recorder.flush();
-    expect(createMany.mock.calls[0][0].data.length).toBeLessThanOrEqual(ceiling);
+    expect(createMany.mock.calls[0][0].data.length).toBeLessThanOrEqual(
+      ceiling,
+    );
   });
 
   it('drops a failed batch instead of retrying it', async () => {
@@ -83,13 +88,17 @@ describe('ErrorLogRecorder', () => {
     // Letting the insert fail would lose the row entirely.
     recorder.record(baseRecord({ message: 'x'.repeat(5000) }));
     await recorder.flush();
-    expect(createMany.mock.calls[0][0].data[0].message.length).toBeLessThanOrEqual(1000);
+    expect(
+      createMany.mock.calls[0][0].data[0].message.length,
+    ).toBeLessThanOrEqual(1000);
   });
 
   it('truncates an over-long stack', async () => {
     recorder.record(baseRecord({ stack: 'y'.repeat(9000) }));
     await recorder.flush();
-    expect(createMany.mock.calls[0][0].data[0].stack.length).toBeLessThanOrEqual(4000);
+    expect(
+      createMany.mock.calls[0][0].data[0].stack.length,
+    ).toBeLessThanOrEqual(4000);
   });
 
   it('never stores a request body', async () => {
@@ -97,7 +106,9 @@ describe('ErrorLogRecorder', () => {
     // diagnostics table read by admins is the wrong home for one.
     recorder.record(baseRecord());
     await recorder.flush();
-    expect(Object.keys(createMany.mock.calls[0][0].data[0])).not.toContain('body');
+    expect(Object.keys(createMany.mock.calls[0][0].data[0])).not.toContain(
+      'body',
+    );
   });
 });
 
@@ -108,14 +119,20 @@ describe('ErrorLogRetentionService', () => {
 
   it('computes a cutoff that many days back', () => {
     const service = new ErrorLogRetentionService({} as any);
-    const days = (Date.now() - service.cutoff.getTime()) / (24 * 60 * 60 * 1000);
+    const days =
+      (Date.now() - service.cutoff.getTime()) / (24 * 60 * 60 * 1000);
     expect(days).toBeCloseTo(config.observability.errorLogs.retentionDays, 1);
   });
 
   it('deletes only rows older than the cutoff', async () => {
-    const findMany = jest.fn().mockResolvedValueOnce([{ id: 'a' }]).mockResolvedValueOnce([]);
+    const findMany = jest
+      .fn()
+      .mockResolvedValueOnce([{ id: 'a' }])
+      .mockResolvedValueOnce([]);
     const deleteMany = jest.fn().mockResolvedValue({ count: 1 });
-    const service = new ErrorLogRetentionService({ errorLog: { findMany, deleteMany } } as any);
+    const service = new ErrorLogRetentionService({
+      errorLog: { findMany, deleteMany },
+    } as any);
 
     const removed = await service.sweep();
 
@@ -128,7 +145,9 @@ describe('ErrorLogRetentionService', () => {
     // A long-neglected table must not be cleared by a delete that holds locks
     // for however long it takes.
     const findMany = jest.fn().mockResolvedValue([]);
-    const service = new ErrorLogRetentionService({ errorLog: { findMany, deleteMany: jest.fn() } } as any);
+    const service = new ErrorLogRetentionService({
+      errorLog: { findMany, deleteMany: jest.fn() },
+    } as any);
     await service.sweep();
     expect(findMany.mock.calls[0][0].take).toBeGreaterThan(0);
   });

@@ -60,13 +60,15 @@ describe('PostsService — deletion lifecycle & data cleanup', () => {
        * below are about what that single statement actually does, and the whole
        * point of the change is that there is exactly one of them.
        */
-      $queryRaw: jest.fn(async (strings: TemplateStringsArray, ...values: any[]) => {
-        rawCalls.push({ sql: strings.join('?'), values });
-        return [
-          { objectKey: 'posts/uuid1.jpg' },
-          { objectKey: 'posts/uuid2.webp' },
-        ];
-      }),
+      $queryRaw: jest.fn(
+        async (strings: TemplateStringsArray, ...values: any[]) => {
+          rawCalls.push({ sql: strings.join('?'), values });
+          return [
+            { objectKey: 'posts/uuid1.jpg' },
+            { objectKey: 'posts/uuid2.webp' },
+          ];
+        },
+      ),
       $transaction: jest.fn(async (fn: any) =>
         typeof fn === 'function' ? fn(prisma) : fn,
       ),
@@ -121,7 +123,8 @@ describe('PostsService — deletion lifecycle & data cleanup', () => {
     // the statement. Deletion latency is this number times the round trip to
     // Postgres, so it is the number worth pinning — it was sixteen.
     const dbCalls =
-      prisma.post.findUnique.mock.calls.length + prisma.$queryRaw.mock.calls.length;
+      prisma.post.findUnique.mock.calls.length +
+      prisma.$queryRaw.mock.calls.length;
     expect(dbCalls).toBe(2);
   });
 

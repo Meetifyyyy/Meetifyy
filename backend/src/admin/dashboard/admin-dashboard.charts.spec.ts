@@ -18,7 +18,9 @@ describe('AdminDashboardService - registrations chart', () => {
   let findMany: jest.Mock;
 
   const build = async (createdAt: Date[]) => {
-    findMany = jest.fn().mockResolvedValue(createdAt.map((d) => ({ createdAt: d })));
+    findMany = jest
+      .fn()
+      .mockResolvedValue(createdAt.map((d) => ({ createdAt: d })));
     const moduleRef = await Test.createTestingModule({
       providers: [
         AdminDashboardService,
@@ -60,14 +62,21 @@ describe('AdminDashboardService - registrations chart', () => {
 
   it('counts every registration it was given, losing none', async () => {
     // 37 accounts created today: the exact shape of the reported dashboard.
-    const { registrations } = await build(Array.from({ length: 37 }, () => daysAgo(0)));
+    const { registrations } = await build(
+      Array.from({ length: 37 }, () => daysAgo(0)),
+    );
     const total = registrations.reduce((sum, r) => sum + r.registrations, 0);
     expect(total).toBe(37);
     expect(registrations.at(-1)!.registrations).toBe(37);
   });
 
   it('places older registrations in their own day', async () => {
-    const { registrations } = await build([daysAgo(0), daysAgo(1), daysAgo(1), daysAgo(5)]);
+    const { registrations } = await build([
+      daysAgo(0),
+      daysAgo(1),
+      daysAgo(1),
+      daysAgo(5),
+    ]);
     const byDate = new Map(registrations.map((r) => [r.date, r.registrations]));
     expect(byDate.get(localKey(daysAgo(0)))).toBe(1);
     expect(byDate.get(localKey(daysAgo(1)))).toBe(2);

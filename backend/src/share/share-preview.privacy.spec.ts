@@ -475,10 +475,7 @@ describe('SharePreviewService — what may be shared publicly', () => {
         [postWithImages(4), '4 photos'],
         [postWithVideos(1), 'a video'],
         [postWithVideos(2), '2 videos'],
-        [
-          postWithImages(3, { videoCount: 1 }),
-          'a video and photos',
-        ],
+        [postWithImages(3, { videoCount: 1 }), 'a video and photos'],
         [pollPost(['A', 'B']), 'a poll'],
       ];
 

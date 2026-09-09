@@ -143,7 +143,11 @@ export class MessagingCoreService {
     if (!this.studentYearPolicy.isEnforcementEnabled()) return;
     const others = (participantUserIds || []).filter((id) => id !== senderId);
     if (others.length === 0) return;
-    await this.studentYearPolicy.assertCanInteract(senderId, others, 'messaging');
+    await this.studentYearPolicy.assertCanInteract(
+      senderId,
+      others,
+      'messaging',
+    );
   }
 
   async getBatchUnblockedAndUnmutedParticipants(

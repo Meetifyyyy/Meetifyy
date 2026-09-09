@@ -5,11 +5,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import {
-  LegalDocumentStatus,
-  LegalDocumentType,
-  Prisma,
-} from '@prisma/client';
+import { LegalDocumentStatus, LegalDocumentType, Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { LegalConsentService } from '../../common/legal/legal-consent.service';
 import {
@@ -451,10 +447,7 @@ export class AdminLegalService {
 
       await this.archiveCurrent(tx, documentType);
 
-      const nextVersionNumber = await this.nextVersionNumber(
-        documentType,
-        tx,
-      );
+      const nextVersionNumber = await this.nextVersionNumber(documentType, tx);
 
       return tx.legalDocumentVersion.create({
         data: {

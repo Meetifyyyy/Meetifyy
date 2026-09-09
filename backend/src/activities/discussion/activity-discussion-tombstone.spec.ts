@@ -35,8 +35,7 @@ describe('ActivityDiscussionService — deleted author presentation', () => {
   };
 
   /** `format` is private; this is the projection every read path goes through. */
-  const format = (user: any) =>
-    (service as any).format(message(user), 'act-1');
+  const format = (user: any) => (service as any).format(message(user), 'act-1');
 
   beforeEach(() => {
     service = Object.create(

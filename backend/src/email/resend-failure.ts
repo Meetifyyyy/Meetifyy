@@ -68,7 +68,10 @@ export function classifyResendFailure(error: unknown): ResendFailureKind {
     const status = error.statusCode ?? 0;
 
     if (QUOTA_NAMES.has(name) || status === 429) return 'not-sent';
-    if (PERMANENT_NAMES.has(name) || (status >= 400 && status < 500 && status !== 429)) {
+    if (
+      PERMANENT_NAMES.has(name) ||
+      (status >= 400 && status < 500 && status !== 429)
+    ) {
       // A 4xx that is not a rate limit is a complaint about the request. Resend
       // did not send it, but neither would Brevo, so there is nothing to gain.
       return 'permanent';

@@ -794,8 +794,8 @@ export class MessagesService
       publicId: pubId,
       internalId: realConvId,
       senderId: message.senderId,
-      senderName: presentUserName(message.sender as any),
-      senderAvatar: presentUserAvatar(message.sender as any) || '',
+      senderName: presentUserName(message.sender),
+      senderAvatar: presentUserAvatar(message.sender) || '',
       createdAt: message.createdAt,
       timestamp: message.createdAt,
       time: new Date(message.createdAt).toLocaleTimeString([], {
@@ -1152,8 +1152,8 @@ export class MessagesService
         id: m.id,
         conversationId: m.conversationId,
         senderId: m.senderId,
-        senderName: presentUserName(m.sender as any),
-        senderAvatar: presentUserAvatar(m.sender as any) || '',
+        senderName: presentUserName(m.sender),
+        senderAvatar: presentUserAvatar(m.sender) || '',
         from: currentUserId && m.senderId === currentUserId ? 'me' : 'them',
         createdAt: m.createdAt,
         timestamp: m.createdAt,
@@ -1699,10 +1699,10 @@ export class MessagesService
           isGroup: isGroupConv,
           name: isGroupConv
             ? conv.name || 'Group'
-            : conv.name || presentUserName(otherUser as any) || 'Chat',
+            : conv.name || presentUserName(otherUser) || 'Chat',
           avatar: isGroupConv
             ? groupAvatar
-            : conv.avatarKey || presentUserAvatar(otherUser as any) || null,
+            : conv.avatarKey || presentUserAvatar(otherUser) || null,
           description: conv.description || null,
           status: conv.status || 'ACTIVE',
           isInstantMatch: conv.isInstantMatch || false,
@@ -1750,7 +1750,7 @@ export class MessagesService
               (!otherUser ||
                 this.studentYearPolicy.areBatchYearsCompatible(
                   conversationViewerBatch,
-                  this.studentYearPolicy.getUserBatchYear(otherUser as any),
+                  this.studentYearPolicy.getUserBatchYear(otherUser),
                 )),
           targetUserUnavailable: targetUnavailable,
           targetUser: otherUser
@@ -1759,8 +1759,8 @@ export class MessagesService
                 username: targetUnavailable
                   ? DELETED_USER_USERNAME
                   : otherUser.username,
-                displayName: presentUserName(otherUser as any),
-                avatar: presentUserAvatar(otherUser as any),
+                displayName: presentUserName(otherUser),
+                avatar: presentUserAvatar(otherUser),
                 isDeleted: targetUnavailable,
                 profileAvailable: !targetUnavailable,
                 verificationStatus: targetUnavailable

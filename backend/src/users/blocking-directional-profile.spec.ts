@@ -50,7 +50,7 @@ describe('UsersService — directional profile access', () => {
       },
     };
 
-    const service = Object.create(UsersService.prototype) as any;
+    const service = Object.create(UsersService.prototype);
     service.prisma = prisma;
     service.blocksService = blocksService;
     service.studentYearPolicy = {
@@ -81,9 +81,9 @@ describe('UsersService — directional profile access', () => {
 
     it('refuses the BLOCKED user the blocker’s profile', async () => {
       const service = buildService(blocks);
-      await expect(service.getUserById(BLOCKER, BLOCKED)).rejects.toBeInstanceOf(
-        NotFoundException,
-      );
+      await expect(
+        service.getUserById(BLOCKER, BLOCKED),
+      ).rejects.toBeInstanceOf(NotFoundException);
     });
 
     /**
@@ -133,12 +133,12 @@ describe('UsersService — directional profile access', () => {
      */
     it('refuses both, because each has been blocked by the other', async () => {
       const service = buildService(mutual);
-      await expect(service.getUserById(BLOCKED, BLOCKER)).rejects.toBeInstanceOf(
-        NotFoundException,
-      );
-      await expect(service.getUserById(BLOCKER, BLOCKED)).rejects.toBeInstanceOf(
-        NotFoundException,
-      );
+      await expect(
+        service.getUserById(BLOCKED, BLOCKER),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      await expect(
+        service.getUserById(BLOCKER, BLOCKED),
+      ).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 

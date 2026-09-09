@@ -49,7 +49,9 @@ describe('message length limit', () => {
      */
     const emoji = '😀'.repeat(MAX_MESSAGE_TEXT_LENGTH / 2); // 2 UTF-16 units each
     expect(emoji.length).toBe(MAX_MESSAGE_TEXT_LENGTH);
-    expect(Buffer.byteLength(emoji, 'utf8')).toBeGreaterThan(MAX_MESSAGE_TEXT_LENGTH);
+    expect(Buffer.byteLength(emoji, 'utf8')).toBeGreaterThan(
+      MAX_MESSAGE_TEXT_LENGTH,
+    );
     expect(() => assertMessageTextWithinLimit(emoji)).not.toThrow();
   });
 

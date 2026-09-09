@@ -64,10 +64,7 @@ function key(): Buffer {
 export function sealSecret(plaintext: string): string {
   const iv = crypto.randomBytes(IV_BYTES);
   const cipher = crypto.createCipheriv(ALGORITHM, key(), iv);
-  const enc = Buffer.concat([
-    cipher.update(plaintext, 'utf8'),
-    cipher.final(),
-  ]);
+  const enc = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
   const tag = cipher.getAuthTag();
   return [
     VERSION,
@@ -95,10 +92,9 @@ export function openSecret(sealed: string | null | undefined): string | null {
     const data = Buffer.from(parts[3], 'base64url');
     const decipher = crypto.createDecipheriv(ALGORITHM, key(), iv);
     decipher.setAuthTag(tag);
-    return Buffer.concat([
-      decipher.update(data),
-      decipher.final(),
-    ]).toString('utf8');
+    return Buffer.concat([decipher.update(data), decipher.final()]).toString(
+      'utf8',
+    );
   } catch {
     return null;
   }

@@ -23,7 +23,10 @@ describe('JwtGuard — session binding', () => {
   const OTHER = 'user-2';
 
   let guard: any;
-  let sessions: Record<string, { revoked: boolean; expiresAt: Date; userId: string }>;
+  let sessions: Record<
+    string,
+    { revoked: boolean; expiresAt: Date; userId: string }
+  >;
 
   const context = (cookies: Record<string, string>, method = 'GET') => ({
     switchToHttp: () => ({
@@ -35,15 +38,33 @@ describe('JwtGuard — session binding', () => {
 
   beforeEach(() => {
     sessions = {
-      'live-own': { revoked: false, expiresAt: new Date(Date.now() + 8.64e7), userId: USER },
-      'revoked-own': { revoked: true, expiresAt: new Date(Date.now() + 8.64e7), userId: USER },
-      'expired-own': { revoked: false, expiresAt: new Date(Date.now() - 1000), userId: USER },
-      'live-other': { revoked: false, expiresAt: new Date(Date.now() + 8.64e7), userId: OTHER },
+      'live-own': {
+        revoked: false,
+        expiresAt: new Date(Date.now() + 8.64e7),
+        userId: USER,
+      },
+      'revoked-own': {
+        revoked: true,
+        expiresAt: new Date(Date.now() + 8.64e7),
+        userId: USER,
+      },
+      'expired-own': {
+        revoked: false,
+        expiresAt: new Date(Date.now() - 1000),
+        userId: USER,
+      },
+      'live-other': {
+        revoked: false,
+        expiresAt: new Date(Date.now() + 8.64e7),
+        userId: OTHER,
+      },
     };
 
     const prisma = {
       userSession: {
-        findUnique: jest.fn(async ({ where }: any) => sessions[where.id] ?? null),
+        findUnique: jest.fn(
+          async ({ where }: any) => sessions[where.id] ?? null,
+        ),
       },
     };
 
@@ -55,7 +76,7 @@ describe('JwtGuard — session binding', () => {
     // have their own specs and would otherwise need a real JWT here.
     guard.validateToken = jest.fn(async () => ({ id: USER, email: 'a@b.c' }));
     guard.enforceAccountStatus = jest.fn(async () => undefined);
-    (guard as any).supabaseService = { isConfigured: true };
+    guard.supabaseService = { isConfigured: true };
     Object.defineProperty(guard, 'supabaseService', {
       value: { isConfigured: true },
       writable: true,
@@ -139,7 +160,10 @@ describe('JwtGuard — session binding', () => {
   describe('CSRF, for cookie mutations only', () => {
     it('refuses a cookie mutation with no CSRF header', async () => {
       await expect(
-        attempt({ mf_access: 'tok', mf_sid: 'live-own', mf_csrf: 'secret' }, 'POST'),
+        attempt(
+          { mf_access: 'tok', mf_sid: 'live-own', mf_csrf: 'secret' },
+          'POST',
+        ),
       ).rejects.toBeInstanceOf(ForbiddenException);
     });
 
@@ -155,14 +179,20 @@ describe('JwtGuard — session binding', () => {
           method: 'POST',
         }),
       });
-      await expect(guard.canActivate(ctx)).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(guard.canActivate(ctx)).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
     });
 
     it('accepts a matching CSRF header', async () => {
       const ctx: any = {
         switchToHttp: () => ({
           getRequest: () => ({
-            cookies: { mf_access: 'tok', mf_sid: 'live-own', mf_csrf: 'secret' },
+            cookies: {
+              mf_access: 'tok',
+              mf_sid: 'live-own',
+              mf_csrf: 'secret',
+            },
             headers: { 'x-csrf-token': 'secret' },
             method: 'POST',
           }),

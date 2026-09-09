@@ -122,10 +122,7 @@ export class SupportController {
     @Req() req: AuthenticatedRequest,
   ) {
     return this.support.createRequest(dto, {
-      ip:
-        clientIp(req) ||
-        req.ip ||
-        'unknown',
+      ip: clientIp(req) || req.ip || 'unknown',
       userAgent: (req.headers['user-agent'] as string) ?? null,
       // Populated by OptionalAuthMiddleware when a valid session happens to be
       // present. Absent for the guest flow, which is the normal case.

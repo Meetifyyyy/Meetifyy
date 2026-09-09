@@ -239,7 +239,9 @@ describe('AdminLegalService', () => {
     });
 
     it('records who published it and why', async () => {
-      const published = await publish({ changeSummary: 'Added a data clause.' });
+      const published = await publish({
+        changeSummary: 'Added a data clause.',
+      });
       // `publishedById` is not in the select (the API returns the joined admin
       // instead), so the stored row is what proves attribution.
       expect(rows.find((r) => r.id === published.id).publishedById).toBe(ADMIN);
@@ -333,9 +335,9 @@ describe('AdminLegalService', () => {
     });
 
     it('refuses a version that does not exist', async () => {
-      await expect(rollback({ targetVersionNumber: 99 })).rejects.toBeInstanceOf(
-        NotFoundException,
-      );
+      await expect(
+        rollback({ targetVersionNumber: 99 }),
+      ).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 

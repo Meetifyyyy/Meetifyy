@@ -63,7 +63,10 @@ describe('Follower counts and the lists behind them', () => {
         findMany: jest.fn().mockResolvedValue([]),
       },
       userSettings: { findUnique: jest.fn().mockResolvedValue(null) },
-      follow: { findMany: jest.fn().mockResolvedValue([]), findUnique: jest.fn() },
+      follow: {
+        findMany: jest.fn().mockResolvedValue([]),
+        findUnique: jest.fn(),
+      },
       post: { count: jest.fn().mockResolvedValue(0) },
       $queryRaw: jest.fn().mockResolvedValue([]),
     };
@@ -73,11 +76,22 @@ describe('Follower counts and the lists behind them', () => {
         studentYearPolicyMockProvider(),
         UsersService,
         { provide: PrismaService, useValue: prisma },
-        { provide: NotificationsService, useValue: { createNotification: jest.fn() } },
+        {
+          provide: NotificationsService,
+          useValue: { createNotification: jest.fn() },
+        },
         { provide: NotificationFactory, useValue: { createFollow: jest.fn() } },
-        { provide: DomainEventService, useValue: { emit: jest.fn().mockResolvedValue(undefined) } },
+        {
+          provide: DomainEventService,
+          useValue: { emit: jest.fn().mockResolvedValue(undefined) },
+        },
         { provide: ConfigService, useValue: { get: jest.fn() } },
-        { provide: RedisService, useValue: { withLock: jest.fn(async (_k: any, _t: any, fn: any) => fn()) } },
+        {
+          provide: RedisService,
+          useValue: {
+            withLock: jest.fn(async (_k: any, _t: any, fn: any) => fn()),
+          },
+        },
         { provide: BlocksService, useValue: createBlocksServiceMock(blocks) },
         {
           provide: PresenceService,
@@ -89,7 +103,10 @@ describe('Follower counts and the lists behind them', () => {
         AcademicsService,
         {
           provide: VerificationAccessService,
-          useValue: { eligibleUserWhere: () => ({}), isEnforcementEnabled: () => true },
+          useValue: {
+            eligibleUserWhere: () => ({}),
+            isEnforcementEnabled: () => true,
+          },
         },
         {
           provide: getQueueToken(NOTIFICATIONS_QUEUE),
@@ -150,6 +167,9 @@ describe('Follower counts and the lists behind them', () => {
   it('leaves the post count alone — it is not a per-viewer social edge', async () => {
     await service.getProfileByUsername('target', VIEWER);
 
-    expect(countArgs.posts.where).toEqual({ deletedAt: null, communityId: null });
+    expect(countArgs.posts.where).toEqual({
+      deletedAt: null,
+      communityId: null,
+    });
   });
 });

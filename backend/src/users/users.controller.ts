@@ -208,10 +208,7 @@ export class UsersController {
   @UseGuards(JwtGuard)
   async deleteAccount(@Req() req: AuthenticatedRequest) {
     return this.accountDeletionService.requestDeletionOtp(req.user.id, {
-      ip:
-        clientIp(req) ||
-        req.ip ||
-        'unknown',
+      ip: clientIp(req) || req.ip || 'unknown',
     });
   }
 

@@ -68,8 +68,7 @@ export class AdminAuthController {
     @Req() req: AdminRequest,
     @Res({ passthrough: true }) res: any,
   ) {
-    const ip =
-clientIp(req) || '0.0.0.0';
+    const ip = clientIp(req) || '0.0.0.0';
     const userAgent = req.headers['user-agent'] || 'Unknown';
     const result = await this.authService.verifyOtp(dto, ip, userAgent);
 
@@ -94,8 +93,7 @@ clientIp(req) || '0.0.0.0';
     @Req() req: AdminRequest,
     @Res({ passthrough: true }) res: any,
   ) {
-    const ip =
-clientIp(req) || '0.0.0.0';
+    const ip = clientIp(req) || '0.0.0.0';
     const userAgent = req.headers['user-agent'] || 'Unknown';
     const result = await this.authService.verifyTotp(dto, ip, userAgent);
 
@@ -121,8 +119,7 @@ clientIp(req) || '0.0.0.0';
       throw new UnauthorizedException('Refresh token missing');
     }
 
-    const ip =
-clientIp(req) || '0.0.0.0';
+    const ip = clientIp(req) || '0.0.0.0';
     const userAgent = req.headers['user-agent'] || 'Unknown';
 
     try {

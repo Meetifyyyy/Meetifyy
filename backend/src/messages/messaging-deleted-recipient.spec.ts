@@ -91,7 +91,7 @@ describe('MessagingCoreService — messaging an unavailable recipient', () => {
   it('carries a machine-readable code so the client can show the right notice', async () => {
     participants[1] = buildParticipant(THEM, 'DELETED');
     try {
-      await service.sendMessage(ME, CONV, { text: 'hi' } as any);
+      await service.sendMessage(ME, CONV, { text: 'hi' });
       throw new Error('should have been refused');
     } catch (err: any) {
       expect(err.getResponse?.()).toMatchObject({

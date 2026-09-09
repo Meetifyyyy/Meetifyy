@@ -44,7 +44,7 @@ describe('AuthController — rate-limit wiring on the proxied auth routes', () =
     ['requestPasswordReset', ['auth.passwordreset.account']],
     ['verifyPassword', ['auth.verifypassword.user']],
   ])('%s declares %j', (method, expected) => {
-    expect(policiesOn(method as string)).toEqual(expected);
+    expect(policiesOn(method)).toEqual(expected);
   });
 
   it('every declared policy actually exists in the policy map', () => {

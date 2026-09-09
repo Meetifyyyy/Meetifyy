@@ -9,7 +9,7 @@ import {
   OnGatewayInit,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
-import { Logger, Optional , OnModuleDestroy } from '@nestjs/common';
+import { Logger, Optional, OnModuleDestroy } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
 import { SupabaseService } from '../supabase/supabase.service';
 import { MessagesService } from '../messages/messages.service';
@@ -648,7 +648,11 @@ export class RealtimeGateway
 
       const ids = Array.from(bySession.keys());
       const alive = await this.prisma.userSession.findMany({
-        where: { id: { in: ids }, revoked: false, expiresAt: { gt: new Date() } },
+        where: {
+          id: { in: ids },
+          revoked: false,
+          expiresAt: { gt: new Date() },
+        },
         select: { id: true },
       });
       const aliveIds = new Set(alive.map((s) => s.id));
@@ -806,7 +810,9 @@ export class RealtimeGateway
     );
     if (!client.handshake.auth?.token) {
       if (!handshakeSessionId) {
-        this.logger.warn('Client connection rejected: no session id on a cookie handshake');
+        this.logger.warn(
+          'Client connection rejected: no session id on a cookie handshake',
+        );
         client.disconnect();
         return;
       }
@@ -825,7 +831,9 @@ export class RealtimeGateway
         session.expiresAt <= new Date() ||
         session.userId !== user.id
       ) {
-        this.logger.warn('Client connection rejected: session revoked or not the caller\'s');
+        this.logger.warn(
+          "Client connection rejected: session revoked or not the caller's",
+        );
         client.disconnect();
         return;
       }

@@ -36,7 +36,11 @@ describe('UsersService — directory ordering', () => {
         ),
         findMany: jest.fn(async (args: any) => {
           lastArgs = args;
-          return [row('u-b', 'Bella'), row('u-a', 'Aarav'), row('u-c', 'Chetan')];
+          return [
+            row('u-b', 'Bella'),
+            row('u-a', 'Aarav'),
+            row('u-c', 'Chetan'),
+          ];
         }),
       },
     };
@@ -57,10 +61,7 @@ describe('UsersService — directory ordering', () => {
 
   it('orders by display name, with id as the tie-break', async () => {
     await service.getDirectory(ME, {});
-    expect(lastArgs.orderBy).toEqual([
-      { displayName: 'asc' },
-      { id: 'asc' },
-    ]);
+    expect(lastArgs.orderBy).toEqual([{ displayName: 'asc' }, { id: 'asc' }]);
   });
 
   /**
@@ -111,7 +112,9 @@ describe('UsersService — directory ordering', () => {
      */
     it('splits on the last separator, so a name containing one survives', async () => {
       await service.getDirectory(ME, { cursor: 'Bella | B|u-b' });
-      expect(lastArgs.where.OR[0]).toEqual({ displayName: { gt: 'Bella | B' } });
+      expect(lastArgs.where.OR[0]).toEqual({
+        displayName: { gt: 'Bella | B' },
+      });
       expect(lastArgs.where.OR[1]).toEqual({
         displayName: 'Bella | B',
         id: { gt: 'u-b' },

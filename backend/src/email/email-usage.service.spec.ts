@@ -14,8 +14,14 @@ class FakeRedis {
   multi() {
     const ops: Array<() => void> = [];
     const chain: any = {
-      incr: (k: string) => { ops.push(() => this.store.set(k, (this.store.get(k) ?? 0) + 1)); return chain; },
-      expire: (k: string, s: number) => { ops.push(() => this.expires.set(k, s)); return chain; },
+      incr: (k: string) => {
+        ops.push(() => this.store.set(k, (this.store.get(k) ?? 0) + 1));
+        return chain;
+      },
+      expire: (k: string, s: number) => {
+        ops.push(() => this.expires.set(k, s));
+        return chain;
+      },
       exec: async () => {
         if (this.failMode === 'throw') throw new Error('redis down');
         ops.forEach((op) => op());
@@ -91,10 +97,14 @@ describe('EmailUsageService', () => {
 
   it('never throws from recordSent, whatever Redis does', async () => {
     // A counter that cannot be written must not fail an email that was sent.
-    await expect(makeService(null).recordSent('resend')).resolves.toBeUndefined();
+    await expect(
+      makeService(null).recordSent('resend'),
+    ).resolves.toBeUndefined();
 
     const failing = new FakeRedis();
     failing.failMode = 'throw';
-    await expect(makeService(failing).recordSent('resend')).resolves.toBeUndefined();
+    await expect(
+      makeService(failing).recordSent('resend'),
+    ).resolves.toBeUndefined();
   });
 });

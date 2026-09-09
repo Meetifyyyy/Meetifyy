@@ -85,7 +85,9 @@ describe('conversation media privacy', () => {
     prisma.message.findFirst.mockResolvedValue({ id: 'msg1' });
 
     const thumb = 'chat/deadbeefdeadbeefdeadbeefdeadbeef_thumb.webp';
-    expect(await service.canViewConversationMedia(thumb, 'recipient')).toBe(true);
+    expect(await service.canViewConversationMedia(thumb, 'recipient')).toBe(
+      true,
+    );
 
     const where = prisma.message.findFirst.mock.calls[0][0].where;
     expect(where.payload.string_contains).toBe(KEY);
@@ -110,7 +112,9 @@ describe('conversation media privacy', () => {
   });
 
   it('refuses a malformed key without touching the database', async () => {
-    expect(await service.canViewConversationMedia('../../etc/passwd', 'u1')).toBe(false);
+    expect(
+      await service.canViewConversationMedia('../../etc/passwd', 'u1'),
+    ).toBe(false);
     expect(prisma.media.findUnique).not.toHaveBeenCalled();
   });
 

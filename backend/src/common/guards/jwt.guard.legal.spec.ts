@@ -23,7 +23,7 @@ describe('JwtGuard — mandatory legal acknowledgement', () => {
     const reflector = new Reflector();
     jest
       .spyOn(reflector, 'getAllAndOverride')
-      .mockImplementation((key: any) => decorators.includes(key) as any);
+      .mockImplementation((key: any) => decorators.includes(key));
     (guard as any).reflector = reflector;
     return {
       getHandler: () => () => undefined,

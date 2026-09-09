@@ -17,7 +17,12 @@ describe('AdminDashboardService - platform status', () => {
     const moduleRef = await Test.createTestingModule({
       providers: [
         AdminDashboardService,
-        { provide: PrismaService, useValue: { $queryRaw: jest.fn().mockResolvedValue([{ '?column?': 1 }]) } },
+        {
+          provide: PrismaService,
+          useValue: {
+            $queryRaw: jest.fn().mockResolvedValue([{ '?column?': 1 }]),
+          },
+        },
         { provide: RedisService, useValue: { getClient: () => redisClient } },
       ],
     }).compile();
@@ -58,10 +63,15 @@ describe('AdminDashboardService - platform status', () => {
       providers: [
         AdminDashboardService,
         { provide: PrismaService, useValue: { $queryRaw } },
-        { provide: RedisService, useValue: { getClient: () => ({ ping: jest.fn() }) } },
+        {
+          provide: RedisService,
+          useValue: { getClient: () => ({ ping: jest.fn() }) },
+        },
       ],
     }).compile();
-    const status = await moduleRef.get(AdminDashboardService).getPlatformStatus();
+    const status = await moduleRef
+      .get(AdminDashboardService)
+      .getPlatformStatus();
     // Counting a table measures the table, so "database latency" would climb
     // with the user count for reasons unrelated to database health.
     expect($queryRaw).toHaveBeenCalled();
@@ -72,11 +82,21 @@ describe('AdminDashboardService - platform status', () => {
     const moduleRef = await Test.createTestingModule({
       providers: [
         AdminDashboardService,
-        { provide: PrismaService, useValue: { $queryRaw: jest.fn().mockRejectedValue(new Error('no connection')) } },
-        { provide: RedisService, useValue: { getClient: () => ({ ping: jest.fn() }) } },
+        {
+          provide: PrismaService,
+          useValue: {
+            $queryRaw: jest.fn().mockRejectedValue(new Error('no connection')),
+          },
+        },
+        {
+          provide: RedisService,
+          useValue: { getClient: () => ({ ping: jest.fn() }) },
+        },
       ],
     }).compile();
-    const status = await moduleRef.get(AdminDashboardService).getPlatformStatus();
+    const status = await moduleRef
+      .get(AdminDashboardService)
+      .getPlatformStatus();
     expect(status.database.status).toBe('DOWN');
   });
 });

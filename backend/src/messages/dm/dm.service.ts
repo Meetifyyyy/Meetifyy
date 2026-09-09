@@ -230,7 +230,7 @@ export class DmService extends MessagingCoreService {
       lastMsgMap.set(msg.conversationId, {
         createdAt: msg.createdAt,
         senderId: msg.senderId,
-        senderName: msg.sender ? presentUserName(msg.sender as any) : 'Member',
+        senderName: msg.sender ? presentUserName(msg.sender) : 'Member',
         type: msg.type ? msg.type.toLowerCase() : 'chat',
         text,
         mediaUrl: payload.mediaUrl || null,
@@ -374,7 +374,7 @@ export class DmService extends MessagingCoreService {
         // the target-user block below, so those four can never disagree about
         // whether this person still exists.
         const targetUnavailable = otherUser
-          ? isUnavailableUser(otherUser as any)
+          ? isUnavailableUser(otherUser)
           : false;
 
         return {
@@ -387,8 +387,8 @@ export class DmService extends MessagingCoreService {
           // `conv.name` and `conv.avatarKey` are null on a DM (they are group
           // fields), so the partner's own values are what actually render —
           // which is exactly why they have to go through the presenter.
-          name: conv.name || presentUserName(otherUser as any) || 'Chat',
-          avatar: conv.avatarKey || presentUserAvatar(otherUser as any) || null,
+          name: conv.name || presentUserName(otherUser) || 'Chat',
+          avatar: conv.avatarKey || presentUserAvatar(otherUser) || null,
           description: conv.description || null,
           status: conv.status || 'ACTIVE',
           isInstantMatch: conv.isInstantMatch || false,
@@ -438,7 +438,7 @@ export class DmService extends MessagingCoreService {
             (!otherUser ||
               this.studentYearPolicy.areBatchYearsCompatible(
                 viewerBatch,
-                this.studentYearPolicy.getUserBatchYear(otherUser as any),
+                this.studentYearPolicy.getUserBatchYear(otherUser),
               )),
           // Distinct from `canSendMessages` on purpose: the client renders a
           // different, specific notice for "this user is no longer available"
@@ -450,8 +450,8 @@ export class DmService extends MessagingCoreService {
                 username: targetUnavailable
                   ? DELETED_USER_USERNAME
                   : otherUser.username,
-                displayName: presentUserName(otherUser as any),
-                avatar: presentUserAvatar(otherUser as any),
+                displayName: presentUserName(otherUser),
+                avatar: presentUserAvatar(otherUser),
                 isDeleted: targetUnavailable,
                 // No profile page should resolve for a deleted account, so the
                 // client renders the name as text rather than a link.

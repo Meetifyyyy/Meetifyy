@@ -79,7 +79,9 @@ describe('CommunitiesService — community detail', () => {
         findUnique: jest.fn(async () =>
           viewerOutsideStrip ? viewerMembership : null,
         ),
-        findMany: jest.fn(async () => members.map((m: any) => ({ userId: m.userId }))),
+        findMany: jest.fn(async () =>
+          members.map((m: any) => ({ userId: m.userId })),
+        ),
       },
       communityJoinRequest: { findUnique: jest.fn(async () => joinRequest) },
       user: {
@@ -156,7 +158,10 @@ describe('CommunitiesService — community detail', () => {
     // database always serves.
 
     it('answers membership from the loaded strip without touching the database', async () => {
-      build({ members: [member('someone')], viewerMembership: { role: 'MEMBER' } });
+      build({
+        members: [member('someone')],
+        viewerMembership: { role: 'MEMBER' },
+      });
 
       const result: any = await service.getCommunityById(ID, VIEWER);
 
@@ -209,7 +214,9 @@ describe('CommunitiesService — community detail', () => {
 
       const result: any = await service.getCommunityById(ID, VIEWER);
 
-      expect(result.moderatorNotice?.promotedAt).toEqual(new Date('2026-02-01'));
+      expect(result.moderatorNotice?.promotedAt).toEqual(
+        new Date('2026-02-01'),
+      );
       expect(Array.isArray(result.moderatorNotice.permissions)).toBe(true);
     });
 

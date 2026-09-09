@@ -28,23 +28,32 @@ async function runSend(opts: {
   log: string[];
   recorded: { error?: string; messageId?: string }[];
 }): Promise<Outcome> {
-  const { driver, fallbackDriver, primaryFails, fallbackFails, log, recorded } = opts;
+  const { driver, fallbackDriver, primaryFails, fallbackFails, log, recorded } =
+    opts;
 
   const sendViaSmtp = async (tag: string) => {
-    if ((tag === 'primary' && primaryFails) || (tag === 'fallback' && fallbackFails)) {
+    if (
+      (tag === 'primary' && primaryFails) ||
+      (tag === 'fallback' && fallbackFails)
+    ) {
       throw new Error(`smtp ${tag} failed`);
     }
     recorded.push({ messageId: `smtp-${tag}` });
     return { ok: true };
   };
   const sendViaResend = async () => {
-    if (primaryFails) throw (opts.primaryError ?? new ResendRejection('quota', 'daily_quota_exceeded', 429));
+    if (primaryFails)
+      throw (
+        opts.primaryError ??
+        new ResendRejection('quota', 'daily_quota_exceeded', 429)
+      );
     recorded.push({ messageId: 'resend-1' });
     return { ok: true };
   };
 
   try {
-    if (driver === 'mailpit' || driver === 'smtp') return await sendViaSmtp('primary');
+    if (driver === 'mailpit' || driver === 'smtp')
+      return await sendViaSmtp('primary');
     return await sendViaResend();
   } catch (primaryError) {
     const relayAvailable =
@@ -74,14 +83,26 @@ describe('email failover', () => {
 
   it('sends via Resend and never touches the fallback when the primary works', async () => {
     const s = setup();
-    await runSend({ driver: 'resend', fallbackDriver: 'smtp', primaryFails: false, fallbackFails: false, ...s });
+    await runSend({
+      driver: 'resend',
+      fallbackDriver: 'smtp',
+      primaryFails: false,
+      fallbackFails: false,
+      ...s,
+    });
     expect(s.recorded).toEqual([{ messageId: 'resend-1' }]);
     expect(s.log).toEqual([]);
   });
 
   it('falls over to SMTP when Resend fails, and records the delivery', async () => {
     const s = setup();
-    const out = await runSend({ driver: 'resend', fallbackDriver: 'smtp', primaryFails: true, fallbackFails: false, ...s });
+    const out = await runSend({
+      driver: 'resend',
+      fallbackDriver: 'smtp',
+      primaryFails: true,
+      fallbackFails: false,
+      ...s,
+    });
     expect(out).toEqual({ ok: true });
     expect(s.log).toEqual(['email.failover']);
     expect(s.recorded).toEqual([{ messageId: 'smtp-fallback' }]);
@@ -92,24 +113,45 @@ describe('email failover', () => {
     // error was never logged and the delivery was never marked failed.
     const s = setup();
     await expect(
-      runSend({ driver: 'resend', fallbackDriver: 'smtp', primaryFails: true, fallbackFails: true, ...s }),
+      runSend({
+        driver: 'resend',
+        fallbackDriver: 'smtp',
+        primaryFails: true,
+        fallbackFails: true,
+        ...s,
+      }),
     ).rejects.toThrow(/quota/);
 
-    expect(s.log).toEqual(['email.failover', 'email.failover_failed', 'email.send_error']);
+    expect(s.log).toEqual([
+      'email.failover',
+      'email.failover_failed',
+      'email.send_error',
+    ]);
     expect(s.recorded[0].error).toMatch(/quota/);
   });
 
   it('reports the PRIMARY error, not the fallback one, so the cause is not masked', async () => {
     const s = setup();
-    const err = await runSend({ driver: 'resend', fallbackDriver: 'smtp', primaryFails: true, fallbackFails: true, ...s })
-      .catch((e) => e);
+    const err = await runSend({
+      driver: 'resend',
+      fallbackDriver: 'smtp',
+      primaryFails: true,
+      fallbackFails: true,
+      ...s,
+    }).catch((e) => e);
     expect(err.message).toMatch(/quota/);
   });
 
   it('does not retry SMTP through the same transporter that just failed', async () => {
     const s = setup();
     await expect(
-      runSend({ driver: 'smtp', fallbackDriver: 'smtp', primaryFails: true, fallbackFails: false, ...s }),
+      runSend({
+        driver: 'smtp',
+        fallbackDriver: 'smtp',
+        primaryFails: true,
+        fallbackFails: false,
+        ...s,
+      }),
     ).rejects.toThrow('smtp primary failed');
     // No failover attempted: same host, same credentials, same outcome.
     expect(s.log).toEqual(['email.send_error']);
@@ -119,7 +161,13 @@ describe('email failover', () => {
   it('records the failure normally when no fallback is configured', async () => {
     const s = setup();
     await expect(
-      runSend({ driver: 'resend', fallbackDriver: '', primaryFails: true, fallbackFails: false, ...s }),
+      runSend({
+        driver: 'resend',
+        fallbackDriver: '',
+        primaryFails: true,
+        fallbackFails: false,
+        ...s,
+      }),
     ).rejects.toThrow(/quota/);
     expect(s.log).toEqual(['email.send_error']);
     expect(s.recorded[0].error).toMatch(/quota/);
@@ -135,14 +183,18 @@ describe('failover is skipped when it would risk a duplicate', () => {
     const s = setup();
     await expect(
       runSend({
-        driver: 'resend', fallbackDriver: 'smtp',
-        primaryFails: true, fallbackFails: false,
-        primaryError: Object.assign(new Error('request timed out'), { name: 'TimeoutError' }),
+        driver: 'resend',
+        fallbackDriver: 'smtp',
+        primaryFails: true,
+        fallbackFails: false,
+        primaryError: Object.assign(new Error('request timed out'), {
+          name: 'TimeoutError',
+        }),
         ...s,
       }),
     ).rejects.toThrow(/timed out/);
 
-    expect(s.log).toEqual(['email.send_error']);           // no failover attempted
+    expect(s.log).toEqual(['email.send_error']); // no failover attempted
     expect(s.recorded.some((r) => r.messageId)).toBe(false); // nothing sent twice
   });
 
@@ -150,9 +202,15 @@ describe('failover is skipped when it would risk a duplicate', () => {
     const s = setup();
     await expect(
       runSend({
-        driver: 'resend', fallbackDriver: 'smtp',
-        primaryFails: true, fallbackFails: false,
-        primaryError: new ResendRejection('bad address', 'validation_error', 422),
+        driver: 'resend',
+        fallbackDriver: 'smtp',
+        primaryFails: true,
+        fallbackFails: false,
+        primaryError: new ResendRejection(
+          'bad address',
+          'validation_error',
+          422,
+        ),
         ...s,
       }),
     ).rejects.toThrow(/bad address/);
@@ -163,9 +221,15 @@ describe('failover is skipped when it would risk a duplicate', () => {
     // The case the fallback exists for.
     const s = setup();
     const out = await runSend({
-      driver: 'resend', fallbackDriver: 'smtp',
-      primaryFails: true, fallbackFails: false,
-      primaryError: new ResendRejection('over quota', 'daily_quota_exceeded', 429),
+      driver: 'resend',
+      fallbackDriver: 'smtp',
+      primaryFails: true,
+      fallbackFails: false,
+      primaryError: new ResendRejection(
+        'over quota',
+        'daily_quota_exceeded',
+        429,
+      ),
       ...s,
     });
     expect(out).toEqual({ ok: true });
@@ -176,9 +240,13 @@ describe('failover is skipped when it would risk a duplicate', () => {
   it('DOES reach for Brevo when Resend itself is unreachable', async () => {
     const s = setup();
     const out = await runSend({
-      driver: 'resend', fallbackDriver: 'smtp',
-      primaryFails: true, fallbackFails: false,
-      primaryError: Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' }),
+      driver: 'resend',
+      fallbackDriver: 'smtp',
+      primaryFails: true,
+      fallbackFails: false,
+      primaryError: Object.assign(new Error('connect ECONNREFUSED'), {
+        code: 'ECONNREFUSED',
+      }),
       ...s,
     });
     expect(out).toEqual({ ok: true });

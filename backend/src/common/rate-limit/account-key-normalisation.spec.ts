@@ -79,7 +79,9 @@ describe('account-dimension rate-limit keys', () => {
 
   it('leaves usernames alone beyond trim and lowercase', () => {
     // The login identifier may be a username, which must still key sensibly.
-    expect(loginAccountKey({ body: { identifier: '  Alice_01  ' } })).toBe('alice_01');
+    expect(loginAccountKey({ body: { identifier: '  Alice_01  ' } })).toBe(
+      'alice_01',
+    );
     expect(loginAccountKey({ body: { identifier: '' } })).toBeNull();
     expect(loginAccountKey({ body: {} })).toBeNull();
   });

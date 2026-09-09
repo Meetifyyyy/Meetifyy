@@ -8,7 +8,10 @@ import { StorageService } from './uploads.service';
 import { SupabaseService } from '../supabase/supabase.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { legalConsentMockProvider } from '../common/legal/testing/legal-consent.mock';
-import { bundledDefaultAssetPath, defaultAssetFilePath } from './default-assets.service';
+import {
+  bundledDefaultAssetPath,
+  defaultAssetFilePath,
+} from './default-assets.service';
 import { DEFAULT_AVATAR_SVG } from './default-avatar';
 
 /**
@@ -77,7 +80,12 @@ describe('GET /api/media — default profile avatar', () => {
 
     expect(res.headers['content-type']).toContain('image/webp');
     // The real artwork, byte for byte — not a placeholder standing in for it.
-    expect(Buffer.compare(res.body, fs.readFileSync(defaultAssetFilePath('profile-avatar')))).toBe(0);
+    expect(
+      Buffer.compare(
+        res.body,
+        fs.readFileSync(defaultAssetFilePath('profile-avatar')),
+      ),
+    ).toBe(0);
   });
 
   it('does not depend on storage at all for a bundled default', async () => {
@@ -96,7 +104,9 @@ describe('GET /api/media — default profile avatar', () => {
       .expect(200);
 
     expect(res.headers['content-type']).toContain('image/svg+xml');
-    const svg = Buffer.isBuffer(res.body) ? res.body.toString('utf8') : res.text;
+    const svg = Buffer.isBuffer(res.body)
+      ? res.body.toString('utf8')
+      : res.text;
     expect(svg).toBe(DEFAULT_AVATAR_SVG);
     // The grey placeholder this endpoint used to serve.
     expect(svg).not.toContain('#94a3b8');
@@ -126,12 +136,20 @@ describe('GET /api/media — default profile avatar', () => {
   });
 
   it('treats only the current version as bundled, leaving older keys to storage', () => {
-    expect(bundledDefaultAssetPath('defaults/profile-avatar-v2.webp')).not.toBeNull();
-    expect(bundledDefaultAssetPath('defaults/community-avatar-v2.webp')).not.toBeNull();
+    expect(
+      bundledDefaultAssetPath('defaults/profile-avatar-v2.webp'),
+    ).not.toBeNull();
+    expect(
+      bundledDefaultAssetPath('defaults/community-avatar-v2.webp'),
+    ).not.toBeNull();
     // Superseded artwork this build no longer ships still resolves from the
     // bucket, where the object it was uploaded as is retained.
-    expect(bundledDefaultAssetPath('defaults/profile-avatar-v1.webp')).toBeNull();
+    expect(
+      bundledDefaultAssetPath('defaults/profile-avatar-v1.webp'),
+    ).toBeNull();
     // A user's own picture can never be mistaken for a platform default.
-    expect(bundledDefaultAssetPath('avatars/profile-avatar-v2.webp')).toBeNull();
+    expect(
+      bundledDefaultAssetPath('avatars/profile-avatar-v2.webp'),
+    ).toBeNull();
   });
 });

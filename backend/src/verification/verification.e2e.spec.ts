@@ -139,7 +139,9 @@ describe('account verification — end to end', () => {
       },
       findMany: async ({ where, orderBy }: any = {}) =>
         Object.values(db.requests)
-          .filter((r: any) => (where?.userId ? r.userId === where.userId : true))
+          .filter((r: any) =>
+            where?.userId ? r.userId === where.userId : true,
+          )
           .sort((a: any, b: any) =>
             orderBy?.attemptNumber === 'desc'
               ? b.attemptNumber - a.attemptNumber
@@ -164,8 +166,7 @@ describe('account verification — end to end', () => {
         // test would pass for the wrong reason.
         const openAlready = Object.values(db.requests).some(
           (r: any) =>
-            r.userId === data.userId &&
-            r.status === VerificationStatus.PENDING,
+            r.userId === data.userId && r.status === VerificationStatus.PENDING,
         );
         if (openAlready) {
           throw new Prisma.PrismaClientKnownRequestError(

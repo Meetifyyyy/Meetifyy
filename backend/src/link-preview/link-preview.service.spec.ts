@@ -64,7 +64,10 @@ describe('LinkPreviewService', () => {
 describe('LinkPreviewService — private address detection', () => {
   const isPrivate = (address: string): boolean =>
     (LinkPreviewService.prototype as any).isPrivateAddress.call(
-      { normalizeAddress: (LinkPreviewService.prototype as any).normalizeAddress },
+      {
+        normalizeAddress: (LinkPreviewService.prototype as any)
+          .normalizeAddress,
+      },
       address,
     );
 

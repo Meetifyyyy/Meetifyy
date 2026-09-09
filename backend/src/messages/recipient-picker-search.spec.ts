@@ -25,7 +25,9 @@ describe('getUserConversations — picker search', () => {
   let service: MessagesService;
   let prisma: any;
 
-  const buildModule = async (batchYears: Record<string, number | null> = {}) => {
+  const buildModule = async (
+    batchYears: Record<string, number | null> = {},
+  ) => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         allowAllRateLimitProvider(),
@@ -97,9 +99,7 @@ describe('getUserConversations — picker search', () => {
   };
 
   const searchClause = () =>
-    emittedAnd().find((clause) =>
-      JSON.stringify(clause).includes('contains'),
-    );
+    emittedAnd().find((clause) => JSON.stringify(clause).includes('contains'));
 
   beforeEach(async () => {
     await buildModule();

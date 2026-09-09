@@ -31,7 +31,7 @@ describe('JwtGuard — routes a restricted account may reach', () => {
     const reflector = new Reflector();
     jest
       .spyOn(reflector, 'getAllAndOverride')
-      .mockImplementation((key: any) => decorators.includes(key) as any);
+      .mockImplementation((key: any) => decorators.includes(key));
     (guard as any).reflector = reflector;
 
     return {
@@ -55,12 +55,9 @@ describe('JwtGuard — routes a restricted account may reach', () => {
     // swapped per test by `contextWith`, which is what selects the decorators
     // under test. The legal gate has its own spec; a service reporting
     // "satisfied" keeps these tests about account status alone.
-    guard = new JwtGuard(
-      {} as any,
-      prisma,
-      new Reflector(),
-      { isSatisfied: async () => true } as any,
-    );
+    guard = new JwtGuard({} as any, prisma, new Reflector(), {
+      isSatisfied: async () => true,
+    } as any);
   });
 
   afterEach(() => JwtGuard.clearAccountStatus(USER_ID));
@@ -97,9 +94,9 @@ describe('JwtGuard — routes a restricted account may reach', () => {
       // The two gates are independent. An early return on the suspension
       // decorator would have opened the entire appeal flow to a deleting
       // account.
-      await expect(
-        enforce(contextWith([ALLOW_SUSPENDED_KEY])),
-      ).rejects.toThrow(ForbiddenException);
+      await expect(enforce(contextWith([ALLOW_SUSPENDED_KEY]))).rejects.toThrow(
+        ForbiddenException,
+      );
     });
   });
 

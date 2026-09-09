@@ -226,7 +226,11 @@ describe('BlocksService — getBlockDirection', () => {
       },
     };
     const redis: any = {
-      getClient: () => ({ on: jest.fn(), subscribe: jest.fn(), publish: jest.fn() }),
+      getClient: () => ({
+        on: jest.fn(),
+        subscribe: jest.fn(),
+        publish: jest.fn(),
+      }),
       subscriber: () => ({ on: jest.fn(), subscribe: jest.fn() }),
     };
     return new (require('./blocks.service').BlocksService)(prisma, redis);

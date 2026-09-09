@@ -55,8 +55,9 @@ describe('MessagesService — conversation-cache eviction on lifecycle change', 
     // with more partners than that deletes itself, and the overflow keeps
     // seeing a real name — a privacy bug whose trigger is "unusually popular
     // user", i.e. precisely the account where it matters most.
-    partners = Array.from({ length: 1200 }, (_, i) =>
-      `p${String(i).padStart(5, '0')}`,
+    partners = Array.from(
+      { length: 1200 },
+      (_, i) => `p${String(i).padStart(5, '0')}`,
     );
 
     await service.handleAccountLifecycleChanged({ data: { userId: USER_ID } });

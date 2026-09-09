@@ -239,7 +239,9 @@ export class PrismaService
        * denominator also moved on its own as the pool grew. `max` is the figure
        * saturation should actually be measured against.
        */
-      max: (this.pool as unknown as { options?: { max?: number } }).options?.max ?? total,
+      max:
+        (this.pool as unknown as { options?: { max?: number } }).options?.max ??
+        total,
       peakActive: this.peakActive,
       peakWaiting: this.peakWaiting,
     };

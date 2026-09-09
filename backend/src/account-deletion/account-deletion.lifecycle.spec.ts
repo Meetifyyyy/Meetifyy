@@ -404,13 +404,16 @@ describe('AccountDeletionService — 30-day recovery window', () => {
       ['half a day remains', 0.5 * DAY, 1],
       ['a minute remains', 60_000, 1],
       ['the deadline has passed', 0, 0],
-    ])('reports the right day count when %s', async (_label, msLeft, expected) => {
-      await service.requestDeletion(USER_ID);
-      row.scheduledPurgeAt = new Date(Date.now() + msLeft);
+    ])(
+      'reports the right day count when %s',
+      async (_label, msLeft, expected) => {
+        await service.requestDeletion(USER_ID);
+        row.scheduledPurgeAt = new Date(Date.now() + msLeft);
 
-      const status = await service.getStatus(USER_ID);
-      expect(status.daysRemaining).toBe(expected);
-    });
+        const status = await service.getStatus(USER_ID);
+        expect(status.daysRemaining).toBe(expected);
+      },
+    );
 
     it('hides the recover button once the row is claimed', async () => {
       await service.requestDeletion(USER_ID);

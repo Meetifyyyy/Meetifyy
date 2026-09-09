@@ -17,9 +17,7 @@ import { PrismaService } from '../prisma/prisma.service';
  * boot, then on an interval, never throw, and never hold the process open.
  */
 @Injectable()
-export class ErrorLogRetentionService
-  implements OnModuleInit, OnModuleDestroy
-{
+export class ErrorLogRetentionService implements OnModuleInit, OnModuleDestroy {
   private static readonly SWEEP_INTERVAL_MS = 6 * 60 * 60 * 1000;
   /** Bounded per pass so a long-neglected table cannot lock up one statement. */
   private static readonly BATCH = 5_000;

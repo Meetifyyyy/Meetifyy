@@ -74,12 +74,12 @@ describe('pool statistics', () => {
   it('but the PEAK remembers the busy moment the probe missed', () => {
     const pool = new FakePool();
     const stats = attach(pool);
-    for (let i = 0; i < 6; i++) pool.checkout();   // six concurrent
+    for (let i = 0; i < 6; i++) pool.checkout(); // six concurrent
     expect(stats().active).toBe(6);
-    for (let i = 0; i < 6; i++) pool.release();    // all released again
+    for (let i = 0; i < 6; i++) pool.release(); // all released again
 
-    expect(stats().active).toBe(0);      // what the probe sees
-    expect(stats().peakActive).toBe(6);  // what actually happened
+    expect(stats().active).toBe(0); // what the probe sees
+    expect(stats().peakActive).toBe(6); // what actually happened
   });
 
   it('holds the high-water mark rather than tracking the latest value down', () => {
@@ -87,7 +87,7 @@ describe('pool statistics', () => {
     const stats = attach(pool);
     for (let i = 0; i < 5; i++) pool.checkout();
     for (let i = 0; i < 5; i++) pool.release();
-    pool.checkout();                       // a much quieter burst afterwards
+    pool.checkout(); // a much quieter burst afterwards
     expect(stats().peakActive).toBe(5);
   });
 
@@ -98,8 +98,8 @@ describe('pool statistics', () => {
     pool.checkout();
     pool.waitingCount = 0;
 
-    expect(stats().waiting).toBe(0);      // gone by the time anyone looked
-    expect(stats().peakWaiting).toBe(3);  // but it happened
+    expect(stats().waiting).toBe(0); // gone by the time anyone looked
+    expect(stats().peakWaiting).toBe(3); // but it happened
   });
 
   it('never reports more in use than the pool can open', () => {

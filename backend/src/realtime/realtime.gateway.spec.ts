@@ -246,7 +246,12 @@ describe('RealtimeGateway — room join authorization', () => {
   let blocksService: any;
   let yearPolicy: any;
 
-  const socket = () => ({ join: jest.fn(), leave: jest.fn(), emit: jest.fn(), userId: 'viewer' });
+  const socket = () => ({
+    join: jest.fn(),
+    leave: jest.fn(),
+    emit: jest.fn(),
+    userId: 'viewer',
+  });
 
   beforeEach(() => {
     prisma = {
@@ -264,7 +269,8 @@ describe('RealtimeGateway — room join authorization', () => {
       { isConfigured: true, client: { auth: { getUser: jest.fn() } } } as any,
       {} as any,
       { registerSocketValidator: jest.fn(), onStatusChange: jest.fn() } as any,
-      {} as any, {} as any,
+      {} as any,
+      {} as any,
       prisma,
       { getClient: jest.fn(), subscriber: jest.fn() } as any,
       {} as any,
@@ -280,14 +286,20 @@ describe('RealtimeGateway — room join authorization', () => {
 
   describe('post:join', () => {
     it('joins a post the viewer may see', async () => {
-      prisma.post.findFirst.mockResolvedValue({ authorId: 'author', community: null });
+      prisma.post.findFirst.mockResolvedValue({
+        authorId: 'author',
+        community: null,
+      });
       const client = socket();
       await gateway.handlePostJoin(client as any, { postId: 'p1' });
       expect(client.join).toHaveBeenCalledWith('post_p1');
     });
 
     it('refuses a post whose author blocks the viewer', async () => {
-      prisma.post.findFirst.mockResolvedValue({ authorId: 'author', community: null });
+      prisma.post.findFirst.mockResolvedValue({
+        authorId: 'author',
+        community: null,
+      });
       blocksService.getExcludedUserIds.mockResolvedValue(['author']);
       const client = socket();
       await gateway.handlePostJoin(client as any, { postId: 'p1' });
@@ -295,7 +307,10 @@ describe('RealtimeGateway — room join authorization', () => {
     });
 
     it('refuses a post hidden by first-year isolation', async () => {
-      prisma.post.findFirst.mockResolvedValue({ authorId: 'author', community: null });
+      prisma.post.findFirst.mockResolvedValue({
+        authorId: 'author',
+        community: null,
+      });
       yearPolicy.canIdsInteract.mockResolvedValue(false);
       const client = socket();
       await gateway.handlePostJoin(client as any, { postId: 'p1' });
@@ -309,7 +324,8 @@ describe('RealtimeGateway — room join authorization', () => {
       expect(client.join).not.toHaveBeenCalled();
 
       prisma.post.findFirst.mockResolvedValue({
-        authorId: 'author', community: { deletedAt: new Date() },
+        authorId: 'author',
+        community: { deletedAt: new Date() },
       });
       await gateway.handlePostJoin(client as any, { postId: 'p2' });
       expect(client.join).not.toHaveBeenCalled();
@@ -325,32 +341,52 @@ describe('RealtimeGateway — room join authorization', () => {
 
   describe('community:join_room', () => {
     it('joins a public community', async () => {
-      prisma.community.findFirst.mockResolvedValue({ id: 'c1', isPrivate: false, ownerId: 'someone' });
+      prisma.community.findFirst.mockResolvedValue({
+        id: 'c1',
+        isPrivate: false,
+        ownerId: 'someone',
+      });
       const client = socket();
-      await gateway.handleJoinCommunityRoom(client as any, { communityId: 'c1' });
+      await gateway.handleJoinCommunityRoom(client as any, {
+        communityId: 'c1',
+      });
       expect(client.join).toHaveBeenCalledWith('community_c1');
     });
 
     it('refuses a private community the viewer is not in', async () => {
-      prisma.community.findFirst.mockResolvedValue({ id: 'c1', isPrivate: true, ownerId: 'someone' });
+      prisma.community.findFirst.mockResolvedValue({
+        id: 'c1',
+        isPrivate: true,
+        ownerId: 'someone',
+      });
       prisma.communityMember.findFirst.mockResolvedValue(null);
       const client = socket();
-      await gateway.handleJoinCommunityRoom(client as any, { communityId: 'c1' });
+      await gateway.handleJoinCommunityRoom(client as any, {
+        communityId: 'c1',
+      });
       expect(client.join).not.toHaveBeenCalled();
     });
 
     it('joins a private community the viewer belongs to', async () => {
-      prisma.community.findFirst.mockResolvedValue({ id: 'c1', isPrivate: true, ownerId: 'someone' });
+      prisma.community.findFirst.mockResolvedValue({
+        id: 'c1',
+        isPrivate: true,
+        ownerId: 'someone',
+      });
       prisma.communityMember.findFirst.mockResolvedValue({ userId: 'viewer' });
       const client = socket();
-      await gateway.handleJoinCommunityRoom(client as any, { communityId: 'c1' });
+      await gateway.handleJoinCommunityRoom(client as any, {
+        communityId: 'c1',
+      });
       expect(client.join).toHaveBeenCalledWith('community_c1');
     });
 
     it('refuses a deleted community', async () => {
       prisma.community.findFirst.mockResolvedValue(null);
       const client = socket();
-      await gateway.handleJoinCommunityRoom(client as any, { communityId: 'gone' });
+      await gateway.handleJoinCommunityRoom(client as any, {
+        communityId: 'gone',
+      });
       expect(client.join).not.toHaveBeenCalled();
     });
   });
@@ -373,10 +409,17 @@ describe('RealtimeGateway — cookie handshake', () => {
     gateway = new RealtimeGateway(
       { isConfigured: true, client: { auth: { getUser: jest.fn() } } } as any,
       {} as any,
-      { registerSocketValidator: jest.fn(), onStatusChange: jest.fn(), setOnline: jest.fn() } as any,
-      {} as any, {} as any,
       {
-        user: { findUnique: jest.fn().mockResolvedValue({ accountStatus: 'ACTIVE' }) },
+        registerSocketValidator: jest.fn(),
+        onStatusChange: jest.fn(),
+        setOnline: jest.fn(),
+      } as any,
+      {} as any,
+      {} as any,
+      {
+        user: {
+          findUnique: jest.fn().mockResolvedValue({ accountStatus: 'ACTIVE' }),
+        },
         conversationParticipant: { findMany: jest.fn().mockResolvedValue([]) },
         // A cookie handshake now has to name a live session that belongs to the
         // caller, exactly as the REST guard requires.
@@ -389,7 +432,9 @@ describe('RealtimeGateway — cookie handshake', () => {
         },
       } as any,
       { getClient: jest.fn(), subscriber: jest.fn() } as any,
-      {} as any, {} as any, {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
       createVerificationAccessMock() as any,
       createStudentYearPolicyMock() as any,
       allowAllRateLimit(),
@@ -408,7 +453,9 @@ describe('RealtimeGateway — cookie handshake', () => {
 
   it('authenticates from the mf_access cookie when no handshake token is given', async () => {
     jwtGuard.validateToken.mockResolvedValue({ id: 'u1', email: 'a@b.c' });
-    const c = client({ cookie: 'other=1; mf_access=cookie-token; mf_sid=sess-1; mf_csrf=x' });
+    const c = client({
+      cookie: 'other=1; mf_access=cookie-token; mf_sid=sess-1; mf_csrf=x',
+    });
 
     await gateway.handleConnection(c as any);
 
@@ -418,7 +465,10 @@ describe('RealtimeGateway — cookie handshake', () => {
 
   it('still prefers an explicit handshake token', async () => {
     jwtGuard.validateToken.mockResolvedValue({ id: 'u1', email: 'a@b.c' });
-    const c = client({ cookie: 'mf_access=cookie-token' }, { token: 'header-token' });
+    const c = client(
+      { cookie: 'mf_access=cookie-token' },
+      { token: 'header-token' },
+    );
 
     await gateway.handleConnection(c as any);
 
@@ -452,15 +502,24 @@ describe('RealtimeGateway — session binding on the handshake', () => {
     const gateway = new RealtimeGateway(
       { isConfigured: true, client: { auth: { getUser: jest.fn() } } } as any,
       {} as any,
-      { registerSocketValidator: jest.fn(), onStatusChange: jest.fn(), setOnline: jest.fn() } as any,
-      {} as any, {} as any,
       {
-        user: { findUnique: jest.fn().mockResolvedValue({ accountStatus: 'ACTIVE' }) },
+        registerSocketValidator: jest.fn(),
+        onStatusChange: jest.fn(),
+        setOnline: jest.fn(),
+      } as any,
+      {} as any,
+      {} as any,
+      {
+        user: {
+          findUnique: jest.fn().mockResolvedValue({ accountStatus: 'ACTIVE' }),
+        },
         conversationParticipant: { findMany: jest.fn().mockResolvedValue([]) },
         userSession: { findUnique: jest.fn().mockResolvedValue(sessionRow) },
       } as any,
       { getClient: jest.fn(), subscriber: jest.fn() } as any,
-      {} as any, {} as any, {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
       createVerificationAccessMock() as any,
       createStudentYearPolicyMock() as any,
       allowAllRateLimit(),
@@ -504,11 +563,14 @@ describe('RealtimeGateway — session binding on the handshake', () => {
 
   it('refuses an expired session', async () => {
     const c = socket('mf_access=tok; mf_sid=sess-1');
-    await build({ ...live, expiresAt: new Date(Date.now() - 1000) }).handleConnection(c as any);
+    await build({
+      ...live,
+      expiresAt: new Date(Date.now() - 1000),
+    }).handleConnection(c as any);
     expect(c.disconnect).toHaveBeenCalled();
   });
 
-  it("refuses a session belonging to somebody else", async () => {
+  it('refuses a session belonging to somebody else', async () => {
     const c = socket('mf_access=tok; mf_sid=sess-1');
     await build({ ...live, userId: 'someone-else' }).handleConnection(c as any);
     expect(c.disconnect).toHaveBeenCalled();

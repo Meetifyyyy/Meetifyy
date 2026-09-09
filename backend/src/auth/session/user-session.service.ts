@@ -190,7 +190,8 @@ export class UserSessionService {
     }
 
     if (existing.revoked) return { ok: false, reason: 'revoked' };
-    if (existing.expiresAt <= new Date()) return { ok: false, reason: 'expired' };
+    if (existing.expiresAt <= new Date())
+      return { ok: false, reason: 'expired' };
 
     const nextToken = this.newRefreshToken();
     const expiresAt = new Date(Date.now() + REFRESH_TOKEN_TTL_MS);

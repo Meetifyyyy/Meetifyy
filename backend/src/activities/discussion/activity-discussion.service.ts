@@ -134,14 +134,14 @@ export class ActivityDiscussionService {
         ? this.prisma.user.findUnique({
             where: { id: userId },
             select: {
-            id: true,
-            collegeId: true,
-            // First-year isolation: the viewer's batch, resolved on the
-            // lookup this path already performs.
-            batchYear: true,
-            email: true,
-            collegeEmail: true,
-          },
+              id: true,
+              collegeId: true,
+              // First-year isolation: the viewer's batch, resolved on the
+              // lookup this path already performs.
+              batchYear: true,
+              email: true,
+              collegeEmail: true,
+            },
           })
         : Promise.resolve(null),
     ]);

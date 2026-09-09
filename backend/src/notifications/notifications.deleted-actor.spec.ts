@@ -19,9 +19,7 @@ describe('NotificationsService — deleted actors', () => {
 
   it('keeps system notifications, which have no actor at all', () => {
     // Without the null branch, every system notification would vanish.
-    expect(filter.OR).toEqual(
-      expect.arrayContaining([{ actorId: null }]),
-    );
+    expect(filter.OR).toEqual(expect.arrayContaining([{ actorId: null }]));
   });
 
   it('keeps notifications whose actor is still available', () => {
@@ -57,9 +55,9 @@ describe('NotificationsService — deleted actors', () => {
       expect(
         NotificationsService.prototype.getNotifications.toString(),
       ).toContain('AVAILABLE_ACTOR');
-      expect(NotificationsService.prototype.getUnreadCount.toString()).toContain(
-        'AVAILABLE_ACTOR',
-      );
+      expect(
+        NotificationsService.prototype.getUnreadCount.toString(),
+      ).toContain('AVAILABLE_ACTOR');
     });
   });
 });

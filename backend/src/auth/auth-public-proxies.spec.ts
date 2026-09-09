@@ -133,7 +133,10 @@ describe('the public auth proxies', () => {
         error: null,
       });
       await expect(
-        service.signUpWithEmail({ email: 'a@b.edu', password: 'a-good-password' }),
+        service.signUpWithEmail({
+          email: 'a@b.edu',
+          password: 'a-good-password',
+        }),
       ).rejects.toBeInstanceOf(ConflictException);
     });
 

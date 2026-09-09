@@ -1030,10 +1030,10 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
       throw new UnauthorizedException('Current password is incorrect.');
     }
 
-    const { error } = await this.supabaseService.client.auth.admin.updateUserById(
-      user.id,
-      { password: newPassword },
-    );
+    const { error } =
+      await this.supabaseService.client.auth.admin.updateUserById(user.id, {
+        password: newPassword,
+      });
 
     if (error) {
       // The provider's message can be shown — it carries its own password

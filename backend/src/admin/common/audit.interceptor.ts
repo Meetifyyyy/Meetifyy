@@ -153,9 +153,7 @@ export class AuditInterceptor implements NestInterceptor {
               targetId: targetId ? String(targetId) : null,
               oldValue: Prisma.JsonNull,
               newValue: sanitizedBody,
-              ip:
-                clientIp(req) || req.ip ||
-                '0.0.0.0',
+              ip: clientIp(req) || req.ip || '0.0.0.0',
               endpoint: url,
               httpMethod: method,
               requestId: (req.headers['x-request-id'] as string) || null,

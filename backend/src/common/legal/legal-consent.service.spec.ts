@@ -190,15 +190,17 @@ describe('LegalConsentService', () => {
      * asked again and nothing recorded what they had accepted.
      */
     beforeEach(() => {
-      prisma.legalAcknowledgement.createMany = jest.fn(async ({ data }: any) => {
-        for (const row of data) {
-          const clash = acknowledgements.some(
-            (a) => a.userId === row.userId && a.versionId === row.versionId,
-          );
-          if (!clash) acknowledgements.push(row);
-        }
-        return { count: data.length };
-      });
+      prisma.legalAcknowledgement.createMany = jest.fn(
+        async ({ data }: any) => {
+          for (const row of data) {
+            const clash = acknowledgements.some(
+              (a) => a.userId === row.userId && a.versionId === row.versionId,
+            );
+            if (!clash) acknowledgements.push(row);
+          }
+          return { count: data.length };
+        },
+      );
     });
 
     it('records the Terms and Privacy versions in force at signup', async () => {
@@ -235,7 +237,9 @@ describe('LegalConsentService', () => {
       prisma.legalAcknowledgement.createMany = jest.fn(async () => {
         throw new Error('connection reset');
       });
-      await expect(service.recordSignupConsent('new-user')).resolves.toBeUndefined();
+      await expect(
+        service.recordSignupConsent('new-user'),
+      ).resolves.toBeUndefined();
     });
 
     it('does nothing when no document has been published', async () => {
@@ -260,7 +264,7 @@ describe('LegalConsentService', () => {
     it('reads the database once and serves everyone else from memory', async () => {
       await service.getPublishedVersions();
       await service.getPublishedVersions();
-      await service.getPublishedVersion('TERMS_OF_SERVICE' as any);
+      await service.getPublishedVersion('TERMS_OF_SERVICE');
       await service.getRequiredVersions();
       expect(prisma.legalDocumentVersion.findMany).toHaveBeenCalledTimes(1);
     });
@@ -286,10 +290,7 @@ describe('LegalConsentService', () => {
      * so a publish cannot leave the two disagreeing about which version is live.
      */
     it('derives the required list from the same cache', async () => {
-      required = [
-        { ...TERMS_V4, requiresAcknowledgement: false },
-        PRIVACY_V2,
-      ];
+      required = [{ ...TERMS_V4, requiresAcknowledgement: false }, PRIVACY_V2];
       const all = await service.getPublishedVersions();
       const gated = await service.getRequiredVersions();
       expect(all).toHaveLength(2);
@@ -298,7 +299,7 @@ describe('LegalConsentService', () => {
     });
 
     it('serves the body, so a reader needs no second query for the text', async () => {
-      const terms = await service.getPublishedVersion('TERMS_OF_SERVICE' as any);
+      const terms = await service.getPublishedVersion('TERMS_OF_SERVICE');
       expect(terms?.content).toBe('<p>Terms text.</p>');
     });
   });

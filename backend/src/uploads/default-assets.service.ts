@@ -54,7 +54,15 @@ const ASSETS: DefaultAssetName[] = ['community-avatar', 'profile-avatar'];
 export function defaultAssetFilePath(name: DefaultAssetName): string {
   const candidates = [
     path.join(__dirname, '..', '..', 'assets', 'defaults', `${name}.webp`),
-    path.join(__dirname, '..', '..', '..', 'assets', 'defaults', `${name}.webp`),
+    path.join(
+      __dirname,
+      '..',
+      '..',
+      '..',
+      'assets',
+      'defaults',
+      `${name}.webp`,
+    ),
     path.join(process.cwd(), 'assets', 'defaults', `${name}.webp`),
   ];
   return candidates.find((p) => fs.existsSync(p)) ?? candidates[0];

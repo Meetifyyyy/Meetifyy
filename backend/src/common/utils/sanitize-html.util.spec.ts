@@ -265,7 +265,9 @@ describe('sanitize-html utilities (configuration tests)', () => {
       expect(run({ href: '/x', target: '_top', rel: 'dofollow' })).toEqual({
         href: '/x',
       });
-      expect(run({ href: 'https://example.com', target: '_self', rel: 'me' })).toEqual({
+      expect(
+        run({ href: 'https://example.com', target: '_self', rel: 'me' }),
+      ).toEqual({
         href: 'https://example.com',
         target: '_blank',
         rel: 'noopener noreferrer nofollow',

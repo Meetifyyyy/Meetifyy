@@ -22,9 +22,9 @@ describe('resolveSignInEligibility', () => {
   it('allows a suspended account', () => {
     // It needs a working session to be told what happened and to appeal.
     // JwtGuard refuses every route other than that flow.
-    expect(resolveSignInEligibility(row({ accountStatus: 'SUSPENDED' }))).toEqual(
-      { allowed: true },
-    );
+    expect(
+      resolveSignInEligibility(row({ accountStatus: 'SUSPENDED' })),
+    ).toEqual({ allowed: true });
   });
 
   it('allows an account inside its 30-day deletion window', () => {

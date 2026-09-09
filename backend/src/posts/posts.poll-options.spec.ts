@@ -52,7 +52,9 @@ describe('PostsService — poll options validation', () => {
       service.createPost('u1', 'Question?', undefined, undefined, {
         options: [validOption, excessiveOption],
       }),
-    ).rejects.toThrow(new BadRequestException('Poll options cannot exceed 100 characters'));
+    ).rejects.toThrow(
+      new BadRequestException('Poll options cannot exceed 100 characters'),
+    );
 
     // Verify post was never created in DB
     expect(prisma.post.create).not.toHaveBeenCalled();
@@ -62,9 +64,15 @@ describe('PostsService — poll options validation', () => {
     const option1 = 'Option 1';
     const option2 = 'A'.repeat(100);
 
-    const result = await service.createPost('u1', 'Question?', undefined, undefined, {
-      options: [option1, option2],
-    });
+    const result = await service.createPost(
+      'u1',
+      'Question?',
+      undefined,
+      undefined,
+      {
+        options: [option1, option2],
+      },
+    );
 
     expect(prisma.post.create).toHaveBeenCalled();
     expect(prisma.pollOption.createMany).toHaveBeenCalledWith({

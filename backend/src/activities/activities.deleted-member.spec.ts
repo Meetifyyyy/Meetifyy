@@ -21,8 +21,7 @@ describe('ActivitiesService — deleted members', () => {
     deletedAt: null,
   };
 
-  const present = (user: any) =>
-    (ActivitiesService as any).presentMember(user);
+  const present = (user: any) => (ActivitiesService as any).presentMember(user);
   const presentCard = (row: any) =>
     (ActivitiesService as any).presentCardRow(row);
 

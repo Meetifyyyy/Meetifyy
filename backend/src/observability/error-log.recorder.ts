@@ -136,7 +136,9 @@ export class ErrorLogRecorder implements OnModuleDestroy {
     if (this.droppedSinceLastFlush === 0) return;
     // Worth knowing: it means errors arrived faster than the write budget,
     // which is itself the signal.
-    this.logger.warn(`error-log:rate-capped dropped=${this.droppedSinceLastFlush}`);
+    this.logger.warn(
+      `error-log:rate-capped dropped=${this.droppedSinceLastFlush}`,
+    );
     this.droppedSinceLastFlush = 0;
   }
 

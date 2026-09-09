@@ -80,9 +80,7 @@ export class LegalService {
       // Only reachable if a document has never been published at all. The four
       // shipped documents are seeded by migration, so this means someone added
       // a new enum member and has not published its first version yet.
-      throw new NotFoundException(
-        'That document has not been published yet.',
-      );
+      throw new NotFoundException('That document has not been published yet.');
     }
     return this.toPublic(row);
   }
@@ -121,7 +119,7 @@ export class LegalService {
       pending: pending.map((row) => ({
         ...this.toPublic(row),
         changeSummary: row.changeSummary,
-      })) as PublicLegalDocument[],
+      })),
     };
   }
 
@@ -163,9 +161,7 @@ export class LegalService {
           ip: context.ip ?? null,
           // Truncated to the column width rather than rejected: a long UA must
           // never be the reason an acceptance fails to record.
-          userAgent: context.userAgent
-            ? context.userAgent.slice(0, 300)
-            : null,
+          userAgent: context.userAgent ? context.userAgent.slice(0, 300) : null,
         })),
         skipDuplicates: true,
       });

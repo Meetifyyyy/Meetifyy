@@ -64,7 +64,10 @@ describe('UserSessionService', () => {
     service = new UserSessionService(prisma);
   });
 
-  const device = { ip: '1.2.3.4', userAgent: 'Mozilla/5.0 (Windows NT) Chrome/1' };
+  const device = {
+    ip: '1.2.3.4',
+    userAgent: 'Mozilla/5.0 (Windows NT) Chrome/1',
+  };
 
   it('stores a hash of the refresh token, never the token', async () => {
     const issued = await service.issue('u1', device);
@@ -111,10 +114,7 @@ describe('UserSessionService', () => {
     expect(replay.reason).toBe('replayed');
 
     // The successor is dead too — that is the point.
-    const successor = await service.rotate(
-      second.session.refreshToken,
-      device,
-    );
+    const successor = await service.rotate(second.session.refreshToken, device);
     expect(successor.ok).toBe(false);
 
     // Every row in the family is unusable. The predecessor carries no replay

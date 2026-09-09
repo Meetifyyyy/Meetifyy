@@ -144,7 +144,11 @@ describe('AuthController — session revocation scope', () => {
   const user = { id: 'u1' } as any;
 
   it("defaults to sparing the caller's own session", async () => {
-    await controller.revokeAllSessions(user, req('current-session') as any, res);
+    await controller.revokeAllSessions(
+      user,
+      req('current-session') as any,
+      res,
+    );
     expect(sessions.revokeAllForUser).toHaveBeenCalledWith(
       'u1',
       expect.anything(),
@@ -155,9 +159,14 @@ describe('AuthController — session revocation scope', () => {
   });
 
   it("spares the caller's session for scope 'others'", async () => {
-    await controller.revokeAllSessions(user, req('current-session') as any, res, {
-      scope: 'others',
-    });
+    await controller.revokeAllSessions(
+      user,
+      req('current-session') as any,
+      res,
+      {
+        scope: 'others',
+      },
+    );
     expect(sessions.revokeAllForUser).toHaveBeenCalledWith(
       'u1',
       expect.anything(),
@@ -167,9 +176,14 @@ describe('AuthController — session revocation scope', () => {
   });
 
   it("spares nothing for scope 'all', and clears this browser's cookies", async () => {
-    await controller.revokeAllSessions(user, req('current-session') as any, res, {
-      scope: 'all',
-    });
+    await controller.revokeAllSessions(
+      user,
+      req('current-session') as any,
+      res,
+      {
+        scope: 'all',
+      },
+    );
     expect(sessions.revokeAllForUser).toHaveBeenCalledWith(
       'u1',
       expect.anything(),
@@ -181,16 +195,26 @@ describe('AuthController — session revocation scope', () => {
   });
 
   it("does not even look up the current session for scope 'all'", async () => {
-    await controller.revokeAllSessions(user, req('current-session') as any, res, {
-      scope: 'all',
-    });
+    await controller.revokeAllSessions(
+      user,
+      req('current-session') as any,
+      res,
+      {
+        scope: 'all',
+      },
+    );
     expect(sessions.sessionIdForRefreshToken).not.toHaveBeenCalled();
   });
 
   it('treats an unrecognised scope as "others", never as "all"', async () => {
-    await controller.revokeAllSessions(user, req('current-session') as any, res, {
-      scope: 'everything' as any,
-    });
+    await controller.revokeAllSessions(
+      user,
+      req('current-session') as any,
+      res,
+      {
+        scope: 'everything' as any,
+      },
+    );
     expect(sessions.revokeAllForUser).toHaveBeenCalledWith(
       'u1',
       expect.anything(),
@@ -229,10 +253,15 @@ describe('AuthController — change password', () => {
   let sessions: any;
 
   const user = { id: 'u1' } as any;
-  const req = (sid = 'this-device') => ({ cookies: { mf_sid: sid }, headers: {} });
+  const req = (sid = 'this-device') => ({
+    cookies: { mf_sid: sid },
+    headers: {},
+  });
 
   beforeEach(() => {
-    authService = { changePassword: jest.fn().mockResolvedValue({ success: true }) };
+    authService = {
+      changePassword: jest.fn().mockResolvedValue({ success: true }),
+    };
     sessions = { revokeAllForUser: jest.fn().mockResolvedValue(2) };
     controller = new AuthController(
       authService,

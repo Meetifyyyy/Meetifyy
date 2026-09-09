@@ -577,7 +577,8 @@ export class InstantMatchService implements OnModuleInit {
     // the queue chose who it chose, so it has to see the same candidate pool
     // -- an explanation drawn from a wider pool would describe a decision the
     // matcher never made.
-    const explainBatchYear = await this.studentYearPolicy.getBatchYearFor(userId);
+    const explainBatchYear =
+      await this.studentYearPolicy.getBatchYearFor(userId);
     const candidates = await this.prisma.matchQueueEntry.findMany({
       where: {
         activity: myEntry.activity,

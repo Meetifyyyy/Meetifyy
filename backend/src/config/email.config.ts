@@ -28,11 +28,9 @@ const driver = oneOf('EMAIL_DRIVER', ['mailpit', 'smtp', 'resend'] as const, {
 // SMTP before the job is marked failed. Empty string = no fallback (default).
 // Only 'smtp' is supported as a fallback — mailpit is not a real relay and
 // resend→resend failover is not meaningful.
-const fallbackDriver = oneOf(
-  'EMAIL_FALLBACK_DRIVER',
-  ['', 'smtp'] as const,
-  { default: '' },
-);
+const fallbackDriver = oneOf('EMAIL_FALLBACK_DRIVER', ['', 'smtp'] as const, {
+  default: '',
+});
 
 const fromEmail =
   email('EMAIL_FROM', { requiredIn: ['staging', 'production'] }) ||

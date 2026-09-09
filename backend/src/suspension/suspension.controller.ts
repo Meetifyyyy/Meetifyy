@@ -48,10 +48,7 @@ export class SuspensionController {
     @Body() dto: SubmitSuspensionAppealDto,
   ) {
     return this.suspension.submitAppeal(req.user.id, dto.message, {
-      ip:
-        clientIp(req) ||
-        req.ip ||
-        'unknown',
+      ip: clientIp(req) || req.ip || 'unknown',
       userAgent: (req.headers['user-agent'] as string) ?? null,
     });
   }

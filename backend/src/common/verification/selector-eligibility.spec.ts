@@ -24,7 +24,10 @@ describe('selector eligibility', () => {
     const moduleRef = await Test.createTestingModule({
       providers: [
         VerificationAccessService,
-        { provide: PrismaService, useValue: { user: { findMany: jest.fn(), findUnique: jest.fn() } } },
+        {
+          provide: PrismaService,
+          useValue: { user: { findMany: jest.fn(), findUnique: jest.fn() } },
+        },
         { provide: DomainEventService, useValue: { publish: jest.fn() } },
       ],
     }).compile();
