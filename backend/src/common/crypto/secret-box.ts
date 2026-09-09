@@ -1,5 +1,6 @@
 import * as crypto from 'crypto';
 import { config } from '../../config';
+import { IS_PRODUCTION, IS_STAGING } from '../../config/env';
 
 /**
  * Authenticated encryption for secrets the database has to hold but must never
@@ -32,9 +33,19 @@ function key(): Buffer {
   const material =
     config.auth.sessionSecret ||
     config.auth.supabase.serviceRoleKey ||
-    config.auth.supabase.jwtSecret;
+    config.auth.supabase.jwtSecret ||
+    // Development and test only, mirroring UserOtpService: a well-known key is
+    // acceptable where there is nothing of value to protect, and hard-failing
+    // instead means a fresh clone without a service-role key cannot sign in at
+    // all — and that CI cannot run a test that touches session issuance. It was
+    // written to throw unconditionally, and CI is precisely the environment
+    // with none of the three configured.
+    (IS_PRODUCTION || IS_STAGING ? '' : 'meetifyy-development-session-key');
 
   if (!material) {
+    // Reachable only in a deployed environment, where the service-role key is
+    // required anyway. Refusing is right there: sealing session tokens under a
+    // key an attacker could guess is worse than not starting.
     throw new Error(
       'No secret material configured for encryption. Set SESSION_SECRET.',
     );

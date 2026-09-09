@@ -7,6 +7,18 @@ import { sealSecret, openSecret } from './secret-box';
  * open rather than yielding attacker-chosen bytes.
  */
 describe('secret-box', () => {
+  /**
+   * There is a key here because the test environment falls back to a
+   * well-known development one, not because this file sets it.
+   *
+   * Worth stating, because these passed locally for the wrong reason: the
+   * command that ran them happened to export SESSION_SECRET, while CI exports
+   * none of the three sources and every test threw. Setting the variable from
+   * inside the spec would not have helped either — `config` reads the
+   * environment once at module load, long before any hook runs. The fix was in
+   * the module: refuse to invent a key in a deployed environment, and use the
+   * development one everywhere else.
+   */
   const secret = 'provider-refresh-token-value';
 
   it('round-trips', () => {
