@@ -142,6 +142,7 @@ export default function Step1Identity() {
               value={month}
               onChange={setMonth}
               placeholder="Month"
+              placement="top"
               isInvalid={attempted && !!dobError}
               options={Array.from({ length: 12 }, (_, i) => i + 1).map((m) => ({
                 value: m,
