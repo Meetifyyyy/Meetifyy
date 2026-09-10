@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { AlertCircle, ArrowRight } from '@shared/components/icons';
 import { useSignup } from '../../context/SignupContext';
@@ -142,6 +142,7 @@ export default function Step1Identity() {
               value={month}
               onChange={setMonth}
               placeholder="Month"
+              placement="top"
               isInvalid={attempted && !!dobError}
               options={Array.from({ length: 12 }, (_, i) => i + 1).map((m) => ({
                 value: m,

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { ChevronDown, Check } from '@shared/components/icons';
 import styles from '../SignupFlow.module.css';
 
@@ -169,9 +169,16 @@ export default function CustomSelect({
         setIsUpward(false);
       } else {
         const rect = containerRef.current.getBoundingClientRect();
-        const spaceBelow = window.innerHeight - rect.bottom;
-        const spaceAbove = rect.top;
-        if (spaceBelow < 240 && spaceAbove > 160) {
+        const panel = containerRef.current.closest('[class*="panel"]') || containerRef.current.closest('form');
+        const panelRect = panel?.getBoundingClientRect();
+        const availableBelow = panelRect
+          ? Math.min(window.innerHeight - rect.bottom, panelRect.bottom - rect.bottom)
+          : window.innerHeight - rect.bottom;
+        const availableAbove = panelRect
+          ? Math.min(rect.top, rect.top - panelRect.top)
+          : rect.top;
+
+        if (availableBelow < 240 && availableAbove > 160) {
           setIsUpward(true);
         } else {
           setIsUpward(false);
