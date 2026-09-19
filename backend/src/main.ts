@@ -21,6 +21,64 @@ Sentry.init({
   // dramatically. Both are tunable per environment.
   tracesSampleRate: config.app.observability.sentryTracesSampleRate,
   profilesSampleRate: config.app.observability.sentryProfilesSampleRate,
+
+  /**
+   * What the SDK is allowed to collect. Spelled out in full, and it has to be.
+   *
+   * THE BUG THIS CLOSES: Sentry attaches request cookies to spans and events,
+   * filtering them by NAME against a built-in list of sensitive-looking
+   * substrings (`auth`, `token`, `session`, `sid`, `csrf`, `sb-`, …). Our
+   * session cookies are `mf_access` and `mf_refresh`, which match none of them.
+   * `mf_sid` and `mf_csrf` were filtered — by coincidence, because they happen
+   * to contain "sid" and "csrf" — while the two that actually are credentials
+   * went out in the clear, on every sampled trace, as
+   * `http.request.header.cookie.mf_access`. The `Authorization` header was
+   * always filtered ("auth"), which is what made this easy to miss: the header
+   * path looked clean while the cookie path was not.
+   *
+   * A live access token in a trace is a session anyone with Sentry access can
+   * assume. Cookies are switched off outright rather than renamed to please a
+   * deny-list, because the deny-list is not ours and the next cookie we add
+   * would face the same coin toss.
+   *
+   * EVERY FIELD IS SET DELIBERATELY. Supplying `dataCollection` at all switches
+   * the SDK's baseline from the conservative `sendDefaultPii: false` mapping to
+   * its permissive DEFAULTS, where anything omitted here is turned ON — request
+   * BODIES included, which is where passwords live. Omitting a field is not
+   * "leave it as it was"; it is "turn it on".
+   */
+  dataCollection: {
+    cookies: false,
+    userInfo: false,
+    // `true` still filters Sentry's own sensitive-key list, which is what keeps
+    // `Authorization` out. The deny terms restore the IP-bearing headers that
+    // the non-PII baseline dropped.
+    httpHeaders: {
+      request: { deny: ['forwarded', '-ip', 'remote-', 'via', '-user'] },
+      response: { deny: ['forwarded', '-ip', 'remote-', 'via', '-user'] },
+    },
+    // Empty array = no bodies. A login body is a password.
+    httpBodies: [],
+    queryParams: { deny: ['forwarded', '-ip', 'remote-', 'via', '-user'] },
+    genAI: { inputs: false, outputs: false },
+    databaseQueryData: false,
+    /**
+     * Off. `localVariablesIntegration()` is in the SDK's default set, so with
+     * this on, every local in a throwing frame is attached to the event — and
+     * `refreshProviderSession` holds the provider refresh token in one. That is
+     * the same class of exposure as the cookie leak above, reached by a
+     * narrower path: it needs an exception on that particular frame.
+     *
+     * The cost is real — variable values are genuinely useful on a production
+     * crash — so this is a judgement, not an obvious win. It goes off because a
+     * session token in a bug report is not recoverable, and a stack trace
+     * without locals still names the file, the function and the line.
+     *
+     * Turn it back on by deleting this line if the debugging cost bites;
+     * `frameContextLines` and the stack itself are unaffected either way.
+     */
+    stackFrameVariables: false,
+  },
 });
 
 async function bootstrap() {
