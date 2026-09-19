@@ -203,7 +203,34 @@ describe('JwtGuard — session binding', () => {
       await expect(guard.canActivate(ctx)).resolves.toBe(true);
     });
 
-    it('leaves a bearer caller alone — it cannot be forged cross-site', async () => {
+    it('refuses a bearer caller on a route that has not opted into one', async () => {
+      // A bearer token names no session, so the revocation check above has
+      // nothing to consult for it — which is exactly how lifting a token out of
+      // a cookie jar and replaying it in an `Authorization` header used to
+      // bypass "sign out this device", "sign out everywhere" and the revocation
+      // a password change performs, for the token's full hour.
+      const ctx: any = {
+        switchToHttp: () => ({
+          getRequest: () => ({
+            cookies: {},
+            headers: { authorization: 'Bearer tok' },
+            method: 'POST',
+          }),
+        }),
+        getHandler: () => ({}),
+        getClass: () => ({}),
+      };
+      await expect(guard.canActivate(ctx)).rejects.toBeInstanceOf(
+        UnauthorizedException,
+      );
+    });
+
+    it('accepts a bearer caller on a route marked @AllowBearerToken', async () => {
+      // The signup handover: `verifyOtp` has minted a provider session and no
+      // cookie exists yet, because creating one is what the next call does.
+      guard.reflector = {
+        getAllAndOverride: (key: string) => key === 'allowBearerToken',
+      };
       const ctx: any = {
         switchToHttp: () => ({
           getRequest: () => ({

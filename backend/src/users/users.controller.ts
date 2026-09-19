@@ -15,6 +15,7 @@ import { UsersService } from './users.service';
 import { AccountDeletionService } from '../account-deletion/account-deletion.service';
 import { JwtGuard } from '../common/guards/jwt.guard';
 import { CacheControl } from '../common/decorators/cache-control.decorator';
+import { AllowBearerToken } from '../common/decorators/allow-bearer-token.decorator';
 import { VerifiedOnly } from '../common/decorators/verified-only.decorator';
 import { clampPageParam } from '../common/pagination.util';
 import { clientIp } from '../common/rate-limit/client-ip.util';
@@ -167,8 +168,21 @@ export class UsersController {
     return this.usersService.getUserById(id, req.user?.id);
   }
 
+  /**
+   * `@AllowBearerToken` for the signup handover, and for nothing else.
+   *
+   * The last step of signup writes the gathered profile in the moment between
+   * `verifyOtp` minting a provider session and `POST /api/auth/session/adopt`
+   * turning it into cookies. There is no cookie to authenticate with yet — the
+   * session row this is on its way to creating does not exist — so the bearer
+   * token is the only credential, and there is correspondingly nothing for the
+   * revocation check to consult.
+   *
+   * Every other route is cookie-only; see the decorator for why.
+   */
   @Patch('me')
   @UseGuards(JwtGuard)
+  @AllowBearerToken()
   async updateProfile(@Req() req: AuthenticatedRequest, @Body() data: any) {
     const currentUserId = req.user?.id;
     // user_metadata is arbitrary JSON from the identity provider, so its

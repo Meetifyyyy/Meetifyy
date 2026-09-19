@@ -733,8 +733,9 @@ export class RealtimeGateway
      * cookie the browser attaches to the handshake is the credential — and it
      * is the better one, because a script on the origin cannot lift it.
      *
-     * Both paths land on the same `validateToken` below; neither is trusted
-     * more than the other.
+     * Both paths land on the same `validateToken` below, and — unlike before —
+     * both then have to name a live session. See the revocation check further
+     * down for why that exemption could not stay.
      */
     const token =
       client.handshake.auth?.token || cookieToken(client.handshake.headers);
@@ -804,21 +805,30 @@ export class RealtimeGateway
      * new messages, typing and presence in real time. Signing a device out has
      * to mean it stops seeing things, not just that it stops being able to ask.
      *
-     * Only enforced for cookie handshakes, which carry a session id. A
-     * handshake token has no session behind it and is left as it was.
+     * Enforced for EVERY handshake, including one that supplied its own token.
+     *
+     * It used to be skipped whenever `handshake.auth.token` was set, on the
+     * reasoning that such a connection has no session behind it. That is true,
+     * and it is the problem rather than the justification: supplying a token in
+     * the handshake was all it took to opt out of revocation, so a signed-out
+     * or revoked device could keep a live socket — receiving messages, typing
+     * and presence in real time — for as long as its access token remained
+     * cryptographically valid. Signing a device out has to mean it stops seeing
+     * things.
+     *
+     * The app has not sent a handshake token since the session became a cookie;
+     * the gateway simply went on honouring one.
      */
     const handshakeSessionId = cookieValue(
       client.handshake.headers,
       USER_SESSION_ID_COOKIE,
     );
-    if (!client.handshake.auth?.token) {
-      if (!handshakeSessionId) {
-        this.logger.warn(
-          'Client connection rejected: no session id on a cookie handshake',
-        );
-        client.disconnect();
-        return;
-      }
+    if (!handshakeSessionId) {
+      this.logger.warn('Client connection rejected: no session id');
+      client.disconnect();
+      return;
+    }
+    {
       const session = await this.prisma.userSession
         .findUnique({
           where: { id: handshakeSessionId },

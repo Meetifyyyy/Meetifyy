@@ -18,8 +18,17 @@ describe('RealtimeGateway — Authentication', () => {
   let blocksService: any;
   let verificationAccess: any;
   let jwtGuard: any;
+  /**
+   * Who the session row belongs to.
+   *
+   * Every handshake now has to name a live session owned by the caller, so a
+   * test that authenticates as a particular user has to say so here too —
+   * exactly as a real browser does by carrying that user's `mf_sid`.
+   */
+  let sessionOwner: string;
 
   beforeEach(() => {
+    sessionOwner = 'any';
     supabaseService = {
       isConfigured: true,
       client: {
@@ -45,6 +54,16 @@ describe('RealtimeGateway — Authentication', () => {
       // rather than the token, because the token predates any state change.
       user: {
         findUnique: jest.fn().mockResolvedValue({ accountStatus: 'ACTIVE' }),
+      },
+      // EVERY handshake now has to name a live session belonging to the caller,
+      // including one that supplied its own token — supplying a handshake token
+      // used to be enough to opt out of revocation entirely.
+      userSession: {
+        findUnique: jest.fn(async () => ({
+          revoked: false,
+          expiresAt: new Date(Date.now() + 86_400_000),
+          userId: sessionOwner,
+        })),
       },
     };
     redisService = {
@@ -118,12 +137,16 @@ describe('RealtimeGateway — Authentication', () => {
     async (accountStatus) => {
       const client: any = {
         id: 'socket-999',
-        handshake: { auth: { token: 'valid.signed.jwt' } },
+        handshake: {
+          auth: { token: 'valid.signed.jwt' },
+          headers: { cookie: 'mf_sid=sess-1' },
+        },
         disconnect: jest.fn(),
         join: jest.fn(),
         emit: jest.fn(),
       };
 
+      sessionOwner = 'deleting-user';
       jwtGuard.validateToken.mockResolvedValue({
         id: 'deleting-user',
         email: 'gone@meetifyy.com',
@@ -147,11 +170,15 @@ describe('RealtimeGateway — Authentication', () => {
   it('accepts connection if token verification succeeds with valid signature', async () => {
     const client: any = {
       id: 'socket-123',
-      handshake: { auth: { token: 'valid.signed.jwt' } },
+      handshake: {
+        auth: { token: 'valid.signed.jwt' },
+        headers: { cookie: 'mf_sid=sess-1' },
+      },
       disconnect: jest.fn(),
       join: jest.fn(),
     };
 
+    sessionOwner = 'user-uuid-456';
     jwtGuard.validateToken.mockResolvedValue({
       id: 'user-uuid-456',
       email: 'user@meetifyy.com',
@@ -206,6 +233,7 @@ describe('RealtimeGateway — Authentication', () => {
       jwtGuard,
     );
 
+    sessionOwner = 'unconsented-user';
     jwtGuard.validateToken.mockResolvedValue({
       id: 'unconsented-user',
       email: 'someone@example.edu',
@@ -213,7 +241,10 @@ describe('RealtimeGateway — Authentication', () => {
 
     const client: any = {
       id: 'socket-legal',
-      handshake: { auth: { token: 'valid.token.signature' }, headers: {} },
+      handshake: {
+        auth: { token: 'valid.token.signature' },
+        headers: { cookie: 'mf_sid=sess-1' },
+      },
       emit: jest.fn(),
       disconnect: jest.fn(),
       join: jest.fn(),

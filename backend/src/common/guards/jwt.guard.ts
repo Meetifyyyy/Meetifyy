@@ -20,6 +20,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { ALLOW_SUSPENDED_KEY } from '../decorators/allow-suspended.decorator';
 import { ALLOW_PENDING_DELETION_KEY } from '../decorators/allow-pending-deletion.decorator';
 import { ALLOW_PENDING_LEGAL_ACK_KEY } from '../decorators/allow-pending-legal-ack.decorator';
+import { ALLOW_BEARER_TOKEN_KEY } from '../decorators/allow-bearer-token.decorator';
 import { LegalConsentService } from '../legal/legal-consent.service';
 import { LEGAL_ACKNOWLEDGEMENT_REQUIRED_CODE } from '../legal/legal.constants';
 import { config } from '../../config';
@@ -377,6 +378,37 @@ export class JwtGuard implements CanActivate {
     }
 
     /**
+     * A bearer token is refused unless the route asks for one.
+     *
+     * The cookie path can be revoked; the header path cannot. A Supabase access
+     * token is valid for its full hour on signature alone and names no session,
+     * so the check below — the one that makes "sign out this device", "sign out
+     * everywhere" and a password change actually stop a session — has nothing to
+     * consult for a bearer caller and used to be skipped entirely for them.
+     *
+     * That made the control optional in the most direct way possible: a token
+     * lifted out of a browser's cookie jar and replayed in an `Authorization`
+     * header bypassed every revocation the account had performed, for up to an
+     * hour. The fix is not to check harder on that path, because there is
+     * nothing to check — it is to stop accepting it where a cookie is the
+     * credential.
+     *
+     * See `AllowBearerToken` for the one flow that still needs it.
+     */
+    const usedCookieToken = Boolean(
+      typeof cookieToken === 'string' && cookieToken.trim(),
+    );
+    if (!usedCookieToken) {
+      const bearerAllowed = this.reflector.getAllAndOverride<boolean>(
+        ALLOW_BEARER_TOKEN_KEY,
+        [context.getHandler(), context.getClass()],
+      );
+      if (!bearerAllowed) {
+        throw new UnauthorizedException('Session has been signed out');
+      }
+    }
+
+    /**
      * CSRF, for cookie-authenticated mutations only.
      *
      * Moving the session into a cookie introduced this: a bearer token cannot
@@ -391,9 +423,7 @@ export class JwtGuard implements CanActivate {
      * is the readable `mf_csrf` cookie echoed in a header, which a cross-site
      * page cannot read and therefore cannot echo.
      */
-    const usedCookie = Boolean(
-      typeof cookieToken === 'string' && cookieToken.trim(),
-    );
+    const usedCookie = usedCookieToken;
     const method = (request.method || '').toUpperCase();
     if (usedCookie && !JwtGuard.SAFE_METHODS.has(method)) {
       const header = request.headers['x-csrf-token'];
