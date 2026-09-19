@@ -55,27 +55,16 @@
 
 /* ── Layout Modes ─────────────────────────────────────────────── */
 
-/* 1. Text-Only: 3:2 card ratio, compact, balanced */
+/* 1. Text-Only: dynamic height, compact, balanced */
 .layoutTextOnly {
-  aspect-ratio: 3 / 2;
   justify-content: flex-start;
   gap: 6px;
 }
 
-.layoutTextOnly .metaRow {
-  margin-left: calc(38px + 0.75rem);
-  margin-top: auto;
-}
-
-/* 6. Poll-Only: 4:3 card ratio, balanced */
+/* 6. Poll-Only: dynamic height, balanced */
 .layoutPollOnly {
-  aspect-ratio: 4 / 3;
   justify-content: flex-start;
   gap: 8px;
-}
-
-.layoutPollOnly .metaRow {
-  margin-top: auto;
 }
 
 /* 7. Image + Poll: Overall card target ~1:1 */
@@ -155,7 +144,7 @@
   word-break: break-word;
   color: inherit;
   opacity: 0.95;
-  margin: 2px 0 0 calc(38px + 0.75rem);
+  margin-top: 2px;
 }
 
 /* ── Media Grids ──────────────────────────────────────────────── */

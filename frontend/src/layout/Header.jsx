@@ -5,15 +5,13 @@ import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 import { useProfile } from '@shared/hooks/useProfile';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@shared/context/AuthContext';
-import { useJoinedCommunities } from '@shared/hooks/useCommunities';
 import { Bookmark, Moon, Sun, MenuSquare, X } from '@shared/components/icons';
-
+import CommunitiesBox from './CommunitiesBox';
 
 import Avatar from '@shared/components/avatar/Avatar';
 import GlobalSearch from '@features/search/components/GlobalSearch';
 import { useTheme } from '@shared/context/ThemeContext';
 import NotificationBell from '@features/notifications/components/NotificationBell';
-import { isImageUrl } from '@shared/utils/avatar';
 import {
   Cog6ToothIcon as SettingsIcon,
   MagnifyingGlassIcon,
@@ -21,41 +19,7 @@ import {
 import styles from './Header.module.css';
 import wordmark from '@assets/images/meetifyy_wordmark.svg';
 import { useQueryClient } from '@tanstack/react-query';
-import { getMediaUrl } from '@shared/api/apiClient';
 import dashboardStyles from './DashboardLayout.module.css';
-
-const DrawerCommunityItem = ({ comm, navigate, onClose }) => {
-  const location = useLocation();
-  const [imgError, setImgError] = useState(false);
-  const isImage = isImageUrl(comm.avatar);
-  const avatarSrc = isImage ? getMediaUrl(comm.avatar) : '';
-
-  return (
-    <a
-      href="#"
-      className={styles.communityItem}
-      onClick={(e) => { 
-        e.preventDefault(); 
-        navigate(`/communities/${comm.id}`, { state: { from: location.pathname } }); 
-        onClose();
-      }}
-    >
-      <div 
-        className={styles.communityAvatar}
-        style={{ background: (!isImage || imgError) ? (comm.color || 'var(--color-primary)') : 'transparent' }}
-      >
-        {isImage && !imgError ? (
-          <img src={avatarSrc} alt={comm.name} width="100%" height="100%" style={{ objectFit: 'cover', display: 'block' }} onError={() => setImgError(true)} />
-        ) : (
-          <span style={{ color: '#FFFFFF', fontWeight: 700 }}>
-            {comm.name ? comm.name.charAt(0).toUpperCase() : 'C'}
-          </span>
-        )}
-      </div>
-      <span className={styles.communityItemName}>{comm.name}</span>
-    </a>
-  );
-};
 
 export default function Header({ variant = 'dashboard', wide = false }) {
   const { loading, logout, currentUser } = useAuth();
@@ -147,9 +111,6 @@ export default function Header({ variant = 'dashboard', wide = false }) {
     ?? ownProfile?.followingCount
     ?? currentUser?.followingList?.length
     ?? 0;
-
-  // Shared with <Sidebar>; see useJoinedCommunities.
-  const joinedCommunityObjects = useJoinedCommunities();
 
   return (
     <header className={`${styles.header} ${activeTab === 'messages' ? styles.headerMessages : ''} ${!isHomePage ? styles.hideOnMobile : ''}`}>
@@ -263,36 +224,7 @@ export default function Header({ variant = 'dashboard', wide = false }) {
           </div>
 
           {/* Communities Box */}
-          <div className={styles.communitiesBox}>
-            <div className={styles.communitiesHeader}>
-              <span className={styles.communitiesTitle}>Communities</span>
-            </div>
-            
-            <div className={styles.communitiesList}>
-              {joinedCommunityObjects.length > 0 ? (
-                joinedCommunityObjects.map(comm => (
-                  <DrawerCommunityItem 
-                    key={comm.id} 
-                    comm={comm} 
-                    navigate={navigate} 
-                    onClose={() => setDrawerOpen(false)} 
-                  />
-                ))
-              ) : (
-                <div className={styles.emptyCommunities}>
-                  No communities joined yet
-                </div>
-              )}
-              
-              <a
-                href="#"
-                className={styles.exploreMore}
-                onClick={(e) => { e.preventDefault(); navigate('/communities'); setDrawerOpen(false); }}
-              >
-                <span>Explore communities</span>
-              </a>
-            </div>
-          </div>
+          <CommunitiesBox onItemClick={closeDrawer} className={styles.drawerCommunitiesBox} />
         </div>
 
         {/* Sticky Drawer Bottom: Settings and Theme Toggle */}

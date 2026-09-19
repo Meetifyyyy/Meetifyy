@@ -85,10 +85,9 @@ describe('the Settings tree', () => {
     }
   });
 
-  it('describes every root entry, since the root is only categories', () => {
+  it('defines label and icon for every root entry', () => {
     for (const entry of SETTINGS_TREE) {
       expect(entry.label).toBeTruthy();
-      expect(entry.description).toBeTruthy();
       expect(entry.icon).toBeTruthy();
     }
   });

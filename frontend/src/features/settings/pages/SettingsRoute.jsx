@@ -66,7 +66,6 @@ export const SETTINGS_TREE = [
   {
     slug: 'account',
     label: 'Account',
-    description: 'Profile, academic details and verification',
     icon: User,
     items: [
       { panel: 'profile', label: 'Edit Profile', icon: Pencil },
@@ -83,14 +82,12 @@ export const SETTINGS_TREE = [
   {
     slug: 'interests',
     label: 'Interests & Topics',
-    description: 'Topics that shape your feed and who you meet',
     icon: Sparkles,
     panel: 'interests',
   },
   {
     slug: 'privacy-security',
     label: 'Privacy & Security',
-    description: 'Blocked accounts, your password, and your data',
     icon: LockKeyhole,
     items: [
       { panel: 'blocked-contacts', label: 'Blocked Contacts', icon: Ban },
@@ -112,21 +109,18 @@ export const SETTINGS_TREE = [
   {
     slug: 'privacy',
     label: 'Visibility',
-    description: 'Who can see your profile, your status and your reads',
     icon: Eye,
     panel: 'privacy',
   },
   {
     slug: 'notifications',
     label: 'Notifications',
-    description: 'Email and push alerts',
     icon: Bell,
     panel: 'notifications',
   },
   {
     slug: 'help',
     label: 'Help & Support',
-    description: 'Answers, and a way to reach the team',
     icon: HelpCircle,
     panel: 'help',
   },
@@ -708,7 +702,7 @@ export default function SettingsRoute() {
    * cannot drift apart. `to` is only for highlighting the active panel in the
    * desktop split, where the list stays on screen beside the detail.
    */
-  const settingsRow = ({ key, icon: Icon, label, description, onClick, active, danger, chevron = true }) => (
+  const settingsRow = ({ key, icon: Icon, label, onClick, active, danger, chevron = true }) => (
     <button
       key={key}
       className={`${styles.row} ${active ? styles.rowActive : ''} ${danger ? styles.rowDanger : ''}`}
@@ -719,7 +713,6 @@ export default function SettingsRoute() {
       </span>
       <span className={styles.rowText}>
         <span className={styles.rowLabel}>{label}</span>
-        {description && <span className={styles.rowDesc}>{description}</span>}
       </span>
       {chevron && (
         <span className={styles.rowChev}><ChevronRight size={18} strokeWidth={2.25} /></span>
@@ -751,7 +744,6 @@ export default function SettingsRoute() {
               key: entry.slug,
               icon: entry.icon,
               label: entry.label,
-              description: entry.description,
               // A leaf opens its panel; a category opens its list.
               onClick: () => openPanel(entry.slug),
               // A leaf is "open" when its panel is showing; a category when

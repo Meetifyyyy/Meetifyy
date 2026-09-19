@@ -1,21 +1,16 @@
-import { useState } from 'react';
 import { useAuth } from '@shared/context/AuthContext';
-
 import { useLocation } from 'react-router-dom';
 import { useSmartNavigation } from '@shared/hooks/useSmartNavigation';
-import { isImageUrl } from '@shared/utils/avatar';
-import { getMediaUrl } from '@shared/api/apiClient';
 import NavIcon from './NavIcon';
 import { CampusOutline, CampusSolid } from './CampusIcon';
 import { CrewOutline, CrewSolid } from './CrewIcon';
 import { MessagesOutline, MessagesSolid } from './MessageIcon';
+import CommunitiesBox from './CommunitiesBox';
 import styles from './Sidebar.module.css';
 import {
   HomeIcon as HomeOutline,
-  UserGroupIcon as CommunitiesOutline,
   UserIcon as ProfileOutline,
   Cog6ToothIcon as SettingsOutline,
-  ChevronDownIcon,
   BellIcon as BellOutline,
 } from '@heroicons/react/24/outline';
 import {
@@ -24,51 +19,15 @@ import {
   Cog6ToothIcon as SettingsSolid,
   BellIcon as BellSolid,
 } from '@heroicons/react/24/solid';
-
-const SidebarCommunityItem = ({ comm, navigate }) => {
-  const location = useLocation();
-  const [imgError, setImgError] = useState(false);
-  const isImage = isImageUrl(comm.avatar);
-  const avatarSrc = isImage ? getMediaUrl(comm.avatar) : '';
-
-  return (
-    <a
-      href="#"
-      className={styles.communityItem}
-      onClick={(e) => { e.preventDefault(); navigate(`/communities/${comm.id}`, { state: { from: location.pathname } }); }}
-    >
-      <div 
-        className={styles.communityAvatar}
-        style={{ background: (!isImage || imgError) ? (comm.color || 'var(--color-primary)') : 'var(--color-bg-white)' }}
-      >
-        {isImage && !imgError ? (
-          <img src={avatarSrc} alt={comm.name} width="100%" height="100%" style={{ objectFit: 'cover', display: 'block' }} onError={() => setImgError(true)} />
-        ) : (
-          <span style={{ color: '#FFFFFF', fontWeight: 700 }}>
-            {comm.avatar || (comm.name ? comm.name.charAt(0).toUpperCase() : '')}
-          </span>
-        )}
-      </div>
-      <span>{comm.name}</span>
-    </a>
-  );
-};
-
 import { useUnreadCounts } from '@features/messages/hooks/useUnreadCounts';
 
-import { useJoinedCommunities } from '@shared/hooks/useCommunities';
-
-export default function Sidebar({ onCommunityClick }) {
+export default function Sidebar() {
   const { currentUser } = useAuth();
   const { total: unreadMessagesCount } = useUnreadCounts();
   const { smartNavigate: navigate } = useSmartNavigation();
   const location = useLocation();
-  const [isCommunitiesMenuOpen, setIsCommunitiesMenuOpen] = useState(false);
 
   const username = currentUser?.username || '';
-  
-  // Shared with <Header>; see useJoinedCommunities.
-  const joinedCommunityObjects = useJoinedCommunities();
 
   return (
     <aside className={styles.sidebar}>
@@ -196,38 +155,7 @@ export default function Sidebar({ onCommunityClick }) {
       </div>
 
       {/* Communities Boxed Menu */}
-      <div className={styles.communitiesBox}>
-        <div 
-          className={styles.communitiesHeader} 
-          onClick={() => setIsCommunitiesMenuOpen(!isCommunitiesMenuOpen)}
-        >
-          <span>COMMUNITIES</span>
-          <ChevronDownIcon className={`${styles.chevronIcon} ${isCommunitiesMenuOpen ? styles.rotated : ''}`} />
-        </div>
-        
-        <div className={`${styles.communitiesListContainer} ${isCommunitiesMenuOpen ? styles.open : ''}`}>
-          <div className={styles.communitiesList}>
-            {joinedCommunityObjects.length > 0 ? (
-              joinedCommunityObjects.map(comm => (
-                <SidebarCommunityItem key={comm.id} comm={comm} navigate={navigate} />
-              ))
-            ) : (
-              <div className={styles.emptyCommunities}>
-                No communities joined yet
-              </div>
-            )}
-            
-            <a
-              href="#"
-              className={styles.exploreMore}
-              onClick={(e) => { e.preventDefault(); navigate('/communities'); }}
-            >
-              <CommunitiesOutline className={styles.exploreIcon} />
-              <span>Explore more...</span>
-            </a>
-          </div>
-        </div>
-      </div>
+      <CommunitiesBox />
     </aside>
   );
 }
