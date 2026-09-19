@@ -196,6 +196,7 @@ export class DmController {
       emitMessageNew(this.domainEventService, message, {
         recipientIds: unblockedParticipantIds,
         unmutedRecipientIds,
+        senderId: userId,
       }).forEach((p) => {
         void p.catch(() => {});
       });

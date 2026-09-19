@@ -121,9 +121,13 @@ export class MessagesController {
         ]);
 
         // Emit to others; muted recipients get the message without the alert.
+        // `senderId` syncs it back to the sender's own devices too — without
+        // it, a message sent over HTTP reaches everyone except the person who
+        // sent it. See message-alert.util.ts.
         void emitMessageNew(this.domainEventService, message, {
           recipientIds: unblockedParticipantIds,
           unmutedRecipientIds,
+          senderId: userId,
         });
         void this.domainEventService.emit(
           'conversation:updated',
@@ -256,6 +260,7 @@ export class MessagesController {
     void emitMessageNew(this.domainEventService, message, {
       recipientIds: unblockedParticipantIds,
       unmutedRecipientIds,
+      senderId: userId,
     });
     void this.domainEventService.emit(
       'conversation:updated',
