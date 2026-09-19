@@ -4,7 +4,7 @@ import { isKnownAppRoute, normalisePathname } from '@config/seo';
 import { createBrowserRouter, RouterProvider, Navigate, Outlet, ScrollRestoration, useLocation } from 'react-router-dom';
 import { QueryErrorResetBoundary } from '@tanstack/react-query';
 import { SmartBackTracker } from './shared/hooks/useSmartBack';
-import { useAuth } from './shared/context/AuthContext';
+import { useAuth, AUTH_STATUS } from './shared/context/AuthContext';
 import DashboardLayoutWrapper from './layout/DashboardLayoutWrapper';
 import ErrorBoundary, { RouteErrorBoundary } from './shared/components/ErrorBoundary';
 import PageMetadata from './shared/seo/PageMetadata';
@@ -160,9 +160,12 @@ const PUBLIC_VIEW_ROUTES = [
 ];
 
 function ProtectedRoute({ children }) {
-  const { isLoggedIn, loading } = useAuth();
+  const { isLoggedIn, authStatus } = useAuth();
   const location = useLocation();
-  if (loading) return null;
+  // Nothing is decided until initialization has finished. Rendering null keeps
+  // the launch shell — which is still covering the page — over a tree that has
+  // no answer to route on yet.
+  if (authStatus === AUTH_STATUS.INITIALIZING) return null;
   if (!isLoggedIn) {
     // A url that matches no route is not a page to sign in for, it is a page
     // that does not exist. Sending it to '/' made every dead link answer 200
@@ -220,9 +223,13 @@ function ProtectedRoute({ children }) {
 }
 
 function PublicRoute({ children }) {
-  const { isLoggedIn, loading } = useAuth();
+  const { isLoggedIn, authStatus } = useAuth();
   const location = useLocation();
-  if (loading) return null;
+  // The landing page lives behind this gate, and this line is what stops it
+  // being rendered to somebody who turns out to be signed in. It must key on
+  // "still deciding", not on "not signed in" — those were the same value once,
+  // and that is exactly how the landing page came to flash on every refresh.
+  if (authStatus === AUTH_STATUS.INITIALIZING) return null;
   if (isLoggedIn) {
     // The last signup step runs after the OTP has been verified, so the user is
     // authenticated while still inside the flow. Redirecting them here would
@@ -245,8 +252,8 @@ function PublicRoute({ children }) {
  * half-known session made them flash the signed-out variant first.
  */
 function StaticRoute({ children }) {
-  const { loading } = useAuth();
-  if (loading) return null;
+  const { authStatus } = useAuth();
+  if (authStatus === AUTH_STATUS.INITIALIZING) return null;
   return children;
 }
 

@@ -332,44 +332,88 @@
     }, true);
   </script>
   <script>
-    // Removed as soon as React has painted its first frame. The MutationObserver
-    // is the trigger rather than `load`, so the shell lifts when there is
-    // genuinely something behind it. The timeout is a floor, not the mechanism:
-    // if the bundle fails outright the user must still reach the error UI rather
-    // than stare at a logo.
+    /**
+     * When the launch shell lifts.
+     *
+     * It used to lift on React's first paint: a MutationObserver watched #root
+     * and dismissed the moment anything was appended. React appends its first
+     * frame long before the app knows whether anybody is signed in, so the
+     * shell came down over an app that was still deciding — and the route
+     * gates, asked to render something against an unknown session, rendered the
+     * public landing page. A few hundred milliseconds later the session
+     * resolved and the app replaced it. That is the flash of landing page on
+     * refresh.
+     *
+     * The rule now is: the shell stays until the app SAYS it is ready.
+     * `window.__meetifyyBoot.ready()` is called once, from React, when
+     * authentication has been determined one way or the other. React still has
+     * to have painted — both conditions, not either.
+     *
+     * MIN_VISIBLE_MS exists for the opposite failure. A warm cache and a fast
+     * session probe can finish in well under 200ms, and a logo that appears and
+     * vanishes inside a couple of frames reads as a flicker in its own right
+     * rather than as a loading screen. Holding it to a floor makes the handoff
+     * deliberate. 450ms is about the shortest span that still registers as "it
+     * was loading" rather than "something flashed"; it is a floor and never an
+     * addition, so any boot that genuinely takes longer pays nothing for it.
+     *
+     * The 8s backstop is unchanged and ignores every flag: a boot that never
+     * reports ready — a failed bundle, a hung request — must still reach the
+     * error UI rather than leave someone staring at a logo.
+     */
     (function () {
+      var MIN_VISIBLE_MS = 450;
+      var shownAt = Date.now();
       var shell = document.getElementById('launch-shell');
+
+      // Declared whether or not the shell exists, so the app can always call it.
+      window.__meetifyyBoot = {
+        appReady: false,
+        ready: function () {
+          window.__meetifyyBoot.appReady = true;
+          if (shell) dismiss();
+        }
+      };
+
       if (!shell) return;
+
       var done = false;
+      var root = document.getElementById('root');
+      var observer = new MutationObserver(function () { dismiss(); });
+
       function dismiss(force) {
         if (done) return;
-        // Held while the version gate is deciding, or while a forced update is
-        // in flight. Lifting now would show the old app for a moment and then
-        // reload out from under it — the "mix of old and new" this exists to
-        // prevent. The gate always releases (it fails open on any error and has
-        // its own timeout), so this normally waits a few milliseconds at most.
-        //
-        // `force` is the 8s backstop below, which ignores the flag: a gate that
-        // somehow never released must not leave the user staring at a logo.
-        if (
-          !force &&
-          window.__meetifyyVersionGate &&
-          window.__meetifyyVersionGate.pending
-        ) {
-          setTimeout(dismiss, 100);
-          return;
+
+        if (!force) {
+          // Held while the version gate is deciding, or while a forced update
+          // is in flight. Lifting now would show the old app for a moment and
+          // then reload out from under it — the "mix of old and new" this
+          // exists to prevent. The gate always releases (it fails open on any
+          // error and has its own timeout).
+          if (window.__meetifyyVersionGate && window.__meetifyyVersionGate.pending) {
+            setTimeout(dismiss, 100);
+            return;
+          }
+          // Nothing behind the shell yet.
+          if (!root || root.childElementCount === 0) return;
+          // The app has not finished working out who is signed in.
+          if (!window.__meetifyyBoot.appReady) return;
+
+          var elapsed = Date.now() - shownAt;
+          if (elapsed < MIN_VISIBLE_MS) {
+            setTimeout(dismiss, MIN_VISIBLE_MS - elapsed);
+            return;
+          }
         }
+
         done = true;
         observer.disconnect();
         shell.style.opacity = '0';
         setTimeout(function () { shell.remove(); }, 300);
       }
-      var root = document.getElementById('root');
-      var observer = new MutationObserver(function () {
-        if (root.childElementCount > 0) dismiss();
-      });
+
       observer.observe(root, { childList: true });
-      if (root.childElementCount > 0) dismiss();
+      dismiss();
       setTimeout(function () { dismiss(true); }, 8000);
     })();
   </script>
