@@ -67,13 +67,7 @@
   gap: 8px;
 }
 
-/* 7. Image + Poll: Overall card target ~1:1 */
-.layoutImagePoll .mediaSingle {
-  aspect-ratio: 16 / 9;
-  max-height: 145px;
-}
-
-/* 8. Multiple Images + Poll: Overall card target ~1:1 to 4:3 */
+/* 7. Multiple Images + Poll: Compact grid target ~16:9 */
 .layoutMultiImagePoll .mediaTwo,
 .layoutMultiImagePoll .mediaThree,
 .layoutMultiImagePoll .mediaFour {
@@ -167,10 +161,10 @@
   background: rgba(255, 255, 255, 0.03);
 }
 
-/* 2. Single Image: 4:5 ratio */
+/* 2. Single Media: dynamic aspect ratio, compact max-height cap */
 .mediaSingle {
-  aspect-ratio: 4 / 5;
-  max-height: 380px;
+  width: 100%;
+  max-height: 360px;
 }
 
 /* 3. Two Images: 4:3 ratio, side-by-side 50%/50% */
@@ -241,6 +235,50 @@
   pointer-events: none;
 }
 
+/* Video Play Overlay */
+.videoPlayOverlay {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.65);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(4px);
+  pointer-events: none;
+}
+
+/* ── Poll Badge (Top Right of Card) ──────────────────────────── */
+
+.pollBadgeTop {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: rgba(99, 102, 241, 0.12);
+  color: var(--color-primary, #6366f1);
+  flex-shrink: 0;
+  margin-left: auto;
+  align-self: center;
+  transition: transform 0.15s ease;
+}
+
+[data-theme='dark'] .pollBadgeTop {
+  background: rgba(99, 102, 241, 0.2);
+  color: #818cf8;
+}
+
+.pollBadgeIcon {
+  color: inherit;
+}
+
 /* ── Poll Widget ──────────────────────────────────────────────── */
 
 .pollPreviewWidget {
@@ -263,8 +301,8 @@
 .pollHeader {
   display: flex;
   align-items: center;
-  gap: 5px;
-  font-size: 0.8rem;
+  gap: 6px;
+  font-size: 0.76rem;
   font-weight: 600;
   opacity: 0.9;
 }

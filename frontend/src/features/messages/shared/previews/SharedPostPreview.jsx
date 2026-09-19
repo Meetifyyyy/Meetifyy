@@ -2,11 +2,12 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Avatar from '@shared/components/avatar/Avatar';
 import PostPreviewSkeleton from '@shared/components/skeletons/PostPreviewSkeleton';
-import { BarChart2, FileX } from '@shared/components/icons';
+import { BarChart2, FileX, Play } from '@shared/components/icons';
 import styles from './SharedPostPreview.module.css';
 import { usePostLookup } from '@shared/hooks/usePostLookup';
 import { useUsersMap } from '@shared/hooks/useUsersMap';
 import { getMediaUrl } from '@shared/api/apiClient';
+
 
 export function SharedPostPreview({ post, isLoading = false, isMe = false }) {
   const navigate = useNavigate();
@@ -14,6 +15,7 @@ export function SharedPostPreview({ post, isLoading = false, isMe = false }) {
   const usersMap = useUsersMap();
   const getUserById = (id) => usersMap[id] || null;
   const [failedImages, setFailedImages] = useState({});
+  const [naturalAspects, setNaturalAspects] = useState({});
 
   if (isLoading) {
     return <PostPreviewSkeleton />;
@@ -39,7 +41,7 @@ export function SharedPostPreview({ post, isLoading = false, isMe = false }) {
   const authorAvatar = liveAuthor?.avatar || post.authorAvatar;
   const contentText = livePost?.text || post.text || '';
 
-  // Extract media items reliably
+  // Extract media items reliably with aspect ratio & type preservation
   const resolveMediaList = () => {
     let list = [];
     const rawMedia = (Array.isArray(livePost?.media) && livePost.media.length > 0) ? livePost.media : post?.media;
@@ -47,24 +49,65 @@ export function SharedPostPreview({ post, isLoading = false, isMe = false }) {
       list = rawMedia.map(m => {
         if (typeof m === 'string') return { url: getMediaUrl(m), type: 'image' };
         const rawUrl = m.url || (m.objectKey ? `/api/media/${m.objectKey}` : null) || (m.storageKey ? `/api/media/${m.storageKey}` : null) || (m.path ? `/api/media/${m.path}` : null);
-        return { ...m, url: getMediaUrl(rawUrl) };
+        const width = Number(m.width || m.raw?.width || m.originalWidth) || null;
+        const height = Number(m.height || m.raw?.height || m.originalHeight) || null;
+        const aspectRatio = Number(m.aspectRatio || m.raw?.aspectRatio) || (width && height ? width / height : null);
+        const isVideo = m.type === 'video' || m.isVideo || (typeof rawUrl === 'string' && (rawUrl.endsWith('.mp4') || rawUrl.endsWith('.webm')));
+        return {
+          ...m,
+          url: getMediaUrl(rawUrl),
+          width,
+          height,
+          aspectRatio,
+          isVideo,
+          type: isVideo ? 'video' : (m.type || 'image'),
+        };
       }).filter(m => m.url);
     } else if (Array.isArray(livePost?.images) && livePost.images.length > 0) {
-      list = livePost.images.map(img => ({
-        url: getMediaUrl(typeof img === 'string' ? img : (img.url || (img.objectKey ? `/api/media/${img.objectKey}` : null) || (img.storageKey ? `/api/media/${img.storageKey}` : null))),
-        type: 'image'
-      })).filter(m => m.url);
+      list = livePost.images.map(img => {
+        const rawUrl = typeof img === 'string' ? img : (img.url || (img.objectKey ? `/api/media/${img.objectKey}` : null) || (img.storageKey ? `/api/media/${img.storageKey}` : null));
+        const width = Number(img?.width) || null;
+        const height = Number(img?.height) || null;
+        const aspectRatio = Number(img?.aspectRatio) || (width && height ? width / height : null);
+        return {
+          url: getMediaUrl(rawUrl),
+          type: 'image',
+          width,
+          height,
+          aspectRatio,
+        };
+      }).filter(m => m.url);
     } else if (Array.isArray(post?.images) && post.images.length > 0) {
-      list = post.images.map(img => ({
-        url: getMediaUrl(typeof img === 'string' ? img : (img.url || (img.objectKey ? `/api/media/${img.objectKey}` : null) || (img.storageKey ? `/api/media/${img.storageKey}` : null))),
-        type: 'image'
-      })).filter(m => m.url);
+      list = post.images.map(img => {
+        const rawUrl = typeof img === 'string' ? img : (img.url || (img.objectKey ? `/api/media/${img.objectKey}` : null) || (img.storageKey ? `/api/media/${img.storageKey}` : null));
+        const width = Number(img?.width) || null;
+        const height = Number(img?.height) || null;
+        const aspectRatio = Number(img?.aspectRatio) || (width && height ? width / height : null);
+        return {
+          url: getMediaUrl(rawUrl),
+          type: 'image',
+          width,
+          height,
+          aspectRatio,
+        };
+      }).filter(m => m.url);
     } else {
       const singleUrl = post?.image || post?.mediaUrl || post?.mediaKey || livePost?.image || livePost?.mediaUrl || livePost?.mediaKey || (typeof rawMedia === 'string' ? rawMedia : (rawMedia?.url || rawMedia?.objectKey || rawMedia?.storageKey || rawMedia?.path));
       if (singleUrl) {
         const rawUrl = typeof singleUrl === 'string' ? singleUrl : (singleUrl.url || (singleUrl.objectKey ? `/api/media/${singleUrl.objectKey}` : null) || (singleUrl.storageKey ? `/api/media/${singleUrl.storageKey}` : null));
         if (rawUrl) {
-          list = [{ url: getMediaUrl(rawUrl), type: post?.mediaType || livePost?.mediaType || 'image' }];
+          const width = Number(post?.width || livePost?.width || rawMedia?.width) || null;
+          const height = Number(post?.height || livePost?.height || rawMedia?.height) || null;
+          const aspectRatio = Number(post?.aspectRatio || livePost?.aspectRatio || rawMedia?.aspectRatio) || (width && height ? width / height : null);
+          const isVideo = post?.mediaType === 'video' || livePost?.mediaType === 'video' || (typeof rawUrl === 'string' && (rawUrl.endsWith('.mp4') || rawUrl.endsWith('.webm')));
+          list = [{
+            url: getMediaUrl(rawUrl),
+            type: isVideo ? 'video' : (post?.mediaType || livePost?.mediaType || 'image'),
+            width,
+            height,
+            aspectRatio,
+            isVideo,
+          }];
         }
       }
     }
@@ -161,20 +204,42 @@ export function SharedPostPreview({ post, isLoading = false, isMe = false }) {
     layoutClass = styles.layoutPollOnly;
   }
 
-  // Render media layout
+  // Render media layout with preserved aspect ratio
   const renderMedia = () => {
     if (!hasMedia) return null;
 
     if (mediaCount === 1) {
+      const item = mediaList[0];
+      const rawAspect = item.aspectRatio || naturalAspects[0] || null;
+      // Clamp aspect ratio between 0.65 (portrait) and 2.2 (wide landscape)
+      const clampedAspect = rawAspect ? Math.max(0.65, Math.min(2.2, rawAspect)) : null;
+      const isVideo = item.type === 'video' || item.isVideo;
+
       return (
-        <div className={styles.mediaSingle}>
+        <div
+          className={styles.mediaSingle}
+          style={clampedAspect ? { aspectRatio: `${clampedAspect}` } : { aspectRatio: '16 / 9' }}
+          data-aspect-ratio={clampedAspect || '16 / 9'}
+        >
           <img
-            src={mediaList[0].url}
+            src={item.url}
             alt=""
             className={styles.mediaCoverImg}
             loading="lazy"
+            onLoad={(e) => {
+              const nw = e.target.naturalWidth;
+              const nh = e.target.naturalHeight;
+              if (nw && nh && !naturalAspects[0]) {
+                setNaturalAspects(prev => ({ ...prev, 0: nw / nh }));
+              }
+            }}
             onError={() => setFailedImages(prev => ({ ...prev, 0: true }))}
           />
+          {isVideo && (
+            <div className={styles.videoPlayOverlay} aria-label="Video">
+              <Play size={16} fill="currentColor" />
+            </div>
+          )}
         </div>
       );
     }
@@ -191,6 +256,11 @@ export function SharedPostPreview({ post, isLoading = false, isMe = false }) {
                 loading="lazy"
                 onError={() => setFailedImages(prev => ({ ...prev, [idx]: true }))}
               />
+              {(item.type === 'video' || item.isVideo) && (
+                <div className={styles.videoPlayOverlay} aria-label="Video">
+                  <Play size={14} fill="currentColor" />
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -208,6 +278,11 @@ export function SharedPostPreview({ post, isLoading = false, isMe = false }) {
               loading="lazy"
               onError={() => setFailedImages(prev => ({ ...prev, 0: true }))}
             />
+            {(mediaList[0].type === 'video' || mediaList[0].isVideo) && (
+              <div className={styles.videoPlayOverlay} aria-label="Video">
+                <Play size={14} fill="currentColor" />
+              </div>
+            )}
           </div>
           <div className={styles.mediaThreeRight}>
             {mediaList.slice(1, 3).map((item, idx) => (
@@ -219,6 +294,11 @@ export function SharedPostPreview({ post, isLoading = false, isMe = false }) {
                   loading="lazy"
                   onError={() => setFailedImages(prev => ({ ...prev, [idx + 1]: true }))}
                 />
+                {(item.type === 'video' || item.isVideo) && (
+                  <div className={styles.videoPlayOverlay} aria-label="Video">
+                    <Play size={14} fill="currentColor" />
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -239,6 +319,11 @@ export function SharedPostPreview({ post, isLoading = false, isMe = false }) {
               loading="lazy"
               onError={() => setFailedImages(prev => ({ ...prev, [idx]: true }))}
             />
+            {(item.type === 'video' || item.isVideo) && (
+              <div className={styles.videoPlayOverlay} aria-label="Video">
+                <Play size={14} fill="currentColor" />
+              </div>
+            )}
             {idx === 3 && overflowCount > 0 && (
               <div className={styles.moreOverlay}>
                 <span>+{overflowCount}</span>
@@ -249,6 +334,8 @@ export function SharedPostPreview({ post, isLoading = false, isMe = false }) {
       </div>
     );
   };
+
+  const pollQuestionText = pollData ? (typeof pollData.question === 'string' ? pollData.question : getOptionText(pollData.question) || 'Poll') : '';
 
   return (
     <div
@@ -265,6 +352,11 @@ export function SharedPostPreview({ post, isLoading = false, isMe = false }) {
             <span className={styles.authorUsername}>@{authorUsername.replace(/^@/, '')}</span>
           )}
         </div>
+        {hasPoll && (
+          <div className={styles.pollBadgeTop} title="Poll" aria-label="Poll">
+            <BarChart2 size={15} className={styles.pollBadgeIcon} />
+          </div>
+        )}
       </div>
 
       {contentText && (
@@ -275,12 +367,13 @@ export function SharedPostPreview({ post, isLoading = false, isMe = false }) {
 
       {renderMedia()}
 
-      {pollData && (
+      {pollData && !hasMedia && (
+        /* Poll-only: compact poll preview with option bars */
         <div className={styles.pollPreviewWidget}>
           <div className={styles.pollHeader}>
             <BarChart2 size={13} className={styles.pollIcon} />
             <span className={styles.pollQuestion}>
-              {typeof pollData.question === 'string' ? pollData.question : getOptionText(pollData.question) || 'Poll'}
+              {pollQuestionText}
             </span>
           </div>
           <div className={styles.pollOptionsList}>

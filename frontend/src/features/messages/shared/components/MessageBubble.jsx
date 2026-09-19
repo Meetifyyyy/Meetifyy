@@ -12,6 +12,7 @@ import { SharedPostPreview } from '../previews/SharedPostPreview';
 import { SharedProfilePreview } from '../previews/SharedProfilePreview';
 import { SharedCommunityPreview } from '../previews/SharedCommunityPreview';
 import ReplyPreviewContent from './ReplyPreviewContent';
+import { PostReplyPreview, isPostReply } from './reply';
 import { SharedActivityPreview } from '../previews/SharedActivityPreview';
 import VoiceMessagePlayer from './VoiceMessagePlayer';
 import styles from './ChatMessageList.module.css';
@@ -770,6 +771,7 @@ const MessageBubble = memo(function MessageBubble({
   const postData = msg.payload?.post || msg.payload?.inviteData?.post || msg.inviteData?.post;
   const profileData = msg.payload?.profile || msg.payload?.inviteData?.profile || msg.inviteData?.profile;
   const communityData = msg.payload?.community || msg.payload?.inviteData?.community || msg.inviteData?.community;
+  const hasPostReply = isPostReply(msg.replyTo);
   
   let rawText = msg.text || msg.payload?.text || msg.content || '';
   if (rawText && typeof rawText === 'object') {
@@ -963,7 +965,7 @@ const MessageBubble = memo(function MessageBubble({
     innerContent = (
       <div className={`${styles.msgMainRow} ${isMe ? styles.msgMainRowMe : styles.msgMainRowThem}`}>
         <div className={`${styles.msgBubble} ${isMe ? styles.msgBubbleMe : styles.msgBubbleThem}`}>
-          {msg.replyTo && (
+          {msg.replyTo && !hasPostReply && (
             <div
               className={`${styles.msgBubbleReplyRef} ${onJumpToMessage && msg.replyTo.id ? styles.msgBubbleReplyRefClickable : ''}`}
               role={onJumpToMessage && msg.replyTo.id ? 'button' : undefined}
@@ -1127,6 +1129,15 @@ const MessageBubble = memo(function MessageBubble({
             <span className={styles.msgSenderName} onClick={handleSenderProfileClick} style={{ cursor: 'pointer' }} title={`View ${senderName}`}>
               {senderName}
             </span>
+          )}
+
+          {hasPostReply && (
+            <PostReplyPreview
+              replyTo={msg.replyTo}
+              isMe={isMe}
+              currentUser={currentUser}
+              onJumpToMessage={onJumpToMessage}
+            />
           )}
           
           {innerContent}

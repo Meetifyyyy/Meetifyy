@@ -12,7 +12,7 @@ import {
   ArrowRight02Icon,
   ArrowTurnForwardIcon,
   ArrowUp01Icon,
-  BarChartIcon,
+  Chart01Icon,
   Bookmark02Icon,
   Calendar03Icon,
   CalendarAdd01Icon,
@@ -289,7 +289,7 @@ const GLYPHS = {
   // -- Content
   Heart: FavouriteIcon,
   Bookmark: Bookmark02Icon,
-  BarChart2: BarChartIcon,
+  BarChart2: Chart01Icon,
   Trash2: Delete02Icon,
   Pencil: Edit02Icon,
   Eye: ViewIcon,
