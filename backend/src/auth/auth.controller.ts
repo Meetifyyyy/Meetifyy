@@ -315,12 +315,42 @@ export class AuthController {
       issued.sessionId,
     );
 
+    /**
+     * The full profile travels with the login response.
+     *
+     * It used to carry only id/email/displayName, so the client had to make a
+     * SECOND request to find out who it had just signed in as — and it treated
+     * a failure of that request as a failed login, which it is not. The
+     * session was already created and the cookies already set; a slow or
+     * dropped follow-up call left people looking at an error on a sign-in that
+     * had completely succeeded.
+     *
+     * One response now answers both questions. It is the same payload
+     * `GET /api/auth/session` returns, from the same method, so a client that
+     * signs in and a client that restores a session are looking at the same
+     * shape.
+     *
+     * Enrichment must never fail the sign-in. The credentials were correct and
+     * the session exists by this point; if the profile read fails, the caller
+     * gets the minimal user and the client fills in the rest on its next sync.
+     */
+    let profile: any = null;
+    try {
+      profile = await this.authService.syncProfile({
+        id: result.user.id,
+        email: result.user.email,
+      } as any);
+    } catch {
+      // Non-fatal by design — see above.
+    }
+
     return {
-      user: {
+      user: profile ?? {
         id: result.user.id,
         email: result.user.email,
         displayName: result.user.displayName,
       },
+      meta: profile?.meta ?? {},
       csrfToken,
       sessionId: issued.sessionId,
     };

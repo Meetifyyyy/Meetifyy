@@ -75,6 +75,19 @@ function withTimeout(promise, ms) {
   });
 }
 
+/**
+ * What the user is told when authentication cannot run at all.
+ *
+ * The thrown message from here reaches the sign-in form's error banner
+ * verbatim, and it used to read "Supabase is not configured." — the name of an
+ * internal dependency, in front of someone trying to sign in, describing a
+ * situation they cannot act on. The condition is a build or deployment fault,
+ * so the honest user-facing statement is that the service is unavailable; the
+ * detail belongs in the console, where whoever can fix it is looking.
+ */
+const AUTH_UNAVAILABLE =
+  'Sign-in is temporarily unavailable. Please try again shortly.';
+
 const AuthContext = createContext(null);
 
 /**
@@ -290,6 +303,40 @@ export function AuthProvider({ children }) {
   }, []);
 
   /**
+   * Saved posts and activities, which ride along on any session payload.
+   *
+   * Extracted because sign-in and session-restore both receive it and must do
+   * the same thing with it. Every failure is swallowed on purpose: the caller's
+   * question is "is there a session?", and letting a store hydration throw into
+   * its catch would answer "no" for a session that is perfectly valid. A
+   * sign-out caused by a saved-posts list is not a trade worth making.
+   */
+  const hydrateSessionMeta = useCallback((res) => {
+    try {
+      const meta = res?.meta;
+      if (meta?.postBookmarkIds) {
+        useSavedPostsStore.getState().hydrateFromServer(meta.postBookmarkIds);
+      } else if (!bookmarksHydratedRef.current) {
+        // Older payloads do not carry the ids. Fetched separately rather than
+        // awaited, so nothing is held on a list the first screen does not need.
+        postsApi
+          .getBookmarks(50)
+          .then((response) => {
+            const ids = (response?.posts || response?.data || []).map((p) => p.id);
+            useSavedPostsStore.getState().hydrateFromServer(ids);
+          })
+          .catch((e) => console.error('Failed to hydrate bookmarks', e));
+      }
+      if (meta?.activityBookmarkIds) {
+        useSavedActivitiesStore.getState().hydrateFromServer(meta.activityBookmarkIds);
+      }
+      bookmarksHydratedRef.current = true;
+    } catch (e) {
+      console.error('Failed to hydrate saved items', e);
+    }
+  }, []);
+
+  /**
    * Asks the server, once, whether this browser is still signed in.
    *
    * The session's durable half is an HttpOnly cookie, so on a fresh load there
@@ -339,38 +386,7 @@ export function AuthProvider({ children }) {
 
       lastSyncAtRef.current = Date.now();
 
-      /**
-       * Bookmarks ride along on the same payload, and their own failure is
-       * fenced off from this one.
-       *
-       * Deliberately inside its own try: this function's answer is "is there a
-       * session?", and letting a store hydration or a follow-up fetch throw
-       * into the outer catch would answer "no" for a session that is perfectly
-       * valid. That is a sign-out caused by a saved-posts list.
-       */
-      try {
-        const meta = res?.meta;
-        if (meta?.postBookmarkIds) {
-          useSavedPostsStore.getState().hydrateFromServer(meta.postBookmarkIds);
-        } else if (!bookmarksHydratedRef.current) {
-          // Older payloads do not carry the ids. Fetched separately rather than
-          // awaited, so the boot is never held on a list nothing on the first
-          // screen depends on.
-          postsApi
-            .getBookmarks(50)
-            .then((response) => {
-              const ids = (response?.posts || response?.data || []).map((p) => p.id);
-              useSavedPostsStore.getState().hydrateFromServer(ids);
-            })
-            .catch((e) => console.error('Failed to hydrate bookmarks', e));
-        }
-        if (meta?.activityBookmarkIds) {
-          useSavedActivitiesStore.getState().hydrateFromServer(meta.activityBookmarkIds);
-        }
-        bookmarksHydratedRef.current = true;
-      } catch (e) {
-        console.error('Failed to hydrate saved items', e);
-      }
+      hydrateSessionMeta(res);
 
       return { outcome: 'signed-in', user };
     } catch (err) {
@@ -395,7 +411,7 @@ export function AuthProvider({ children }) {
       console.warn('Could not determine the session; keeping what this browser holds', err);
       return { outcome: 'unknown' };
     }
-  }, []);
+  }, [hydrateSessionMeta]);
 
   /**
    * The boot sequence. Runs once, and is the only thing that may leave
@@ -526,7 +542,10 @@ export function AuthProvider({ children }) {
 
   const login = useCallback(async (usernameOrEmail, password) => {
     isLoggingOutRef.current = false;
-    if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
+    if (!isSupabaseConfigured) {
+      console.error('Auth provider is not configured for this build.');
+      throw new Error(AUTH_UNAVAILABLE);
+    }
 
     // Single server-side login call. The backend resolves username→email
     // internally (the email is never exposed to the client), authenticates via
@@ -569,29 +588,50 @@ export function AuthProvider({ children }) {
      * revokes every session the account has. And "signed in" was derived from
      * an object that lives in memory, so it was gone on the next reload.
      *
-     * The credential is the cookie set on this response. Confirming it is one
-     * GET, which also returns the full profile — so the app reaches its first
-     * authenticated render already knowing who it is showing.
+     * The credential is the cookie set on this response.
      */
-    const restored = await restoreSession();
-    const user = restored?.outcome === 'signed-in' ? restored.user : null;
-    if (!user) {
-      // The cookies did not come back, or did not authenticate. Almost always a
-      // cookie-attribute mismatch between the API's host and the app's, which
-      // is silent in the network tab and used to present as "logged in, then
-      // immediately logged out".
-      throw new Error("Signed in, but this browser did not keep the session. Please try again.");
+
+    /**
+     * The RESPONSE confirms the sign-in. Nothing else has to.
+     *
+     * This used to sign in and then immediately ask the server who it had just
+     * signed in as, treating any failure of that second call as a failed
+     * login. It is not one: by this point the credentials have been accepted,
+     * the session row exists and the cookies are set. A slow phone, a dropped
+     * connection or a rate-limited moment in between produced an error on a
+     * sign-in that had entirely succeeded — and the message named browser
+     * session handling, which is not the user's problem to read about.
+     *
+     * The server returns the full profile alongside the session now, so one
+     * round trip answers both questions and there is no gap between them to
+     * lose. The probe is a fallback for an API that predates that, not the
+     * normal path.
+     */
+    let user = isValidUser(body?.user) ? body.user : null;
+    if (user) {
+      hydrateSessionMeta(body);
+    } else {
+      const restored = await restoreSession();
+      user = restored?.outcome === 'signed-in' ? restored.user : null;
     }
+
+    if (!user) {
+      throw new Error('Something went wrong. Please try again.');
+    }
+
     adoptUser(user);
     return true;
-  }, [adoptUser, restoreSession]);
+  }, [adoptUser, restoreSession, hydrateSessionMeta]);
 
   const initiateSignup = useCallback(async (userData) => {
     // Checked here even though this step no longer talks to Supabase itself.
     // The very next step does — `verifySignupOtp` is what mints the browser's
     // session — so creating an account that can never be verified in this
     // build would be worse than refusing at the start.
-    if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
+    if (!isSupabaseConfigured) {
+      console.error('Auth provider is not configured for this build.');
+      throw new Error(AUTH_UNAVAILABLE);
+    }
 
     if (!userData.email || !userData.email.trim()) {
       throw new Error('College email is required to sign up. Please check your details.');
@@ -706,7 +746,10 @@ export function AuthProvider({ children }) {
   }, []);
 
   const verifySignupOtp = useCallback(async (email, token, signupData = {}) => {
-    if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
+    if (!isSupabaseConfigured) {
+      console.error('Auth provider is not configured for this build.');
+      throw new Error(AUTH_UNAVAILABLE);
+    }
 
     const { data, error } = await supabase.auth.verifyOtp({
       email,
@@ -1041,7 +1084,10 @@ export function AuthProvider({ children }) {
   }, []);
 
   const changePassword = useCallback(async (currentPassword, newPassword) => {
-    if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
+    if (!isSupabaseConfigured) {
+      console.error('Auth provider is not configured for this build.');
+      throw new Error(AUTH_UNAVAILABLE);
+    }
 
     // No email precondition here any more. It was required back when this
     // verified the current password with `signInWithPassword`, which needed an

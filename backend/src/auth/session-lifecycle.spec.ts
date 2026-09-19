@@ -117,6 +117,35 @@ describe('AuthController — session lifecycle', () => {
       expect(set.mf_sid).toBe('s1');
     });
 
+    it('returns the full profile, so the client needs no second request', async () => {
+      // The client used to sign in and then ask who it had just signed in as,
+      // treating a failure of that second call as a failed login. One response
+      // answers both questions and leaves no window to lose.
+      const body: any = await controller.login(
+        { identifier: 'a', password: 'p' } as any,
+        req() as any,
+        res,
+      );
+      expect(body.user).toEqual({ id: 'u1', username: 'a' });
+      expect(authService.syncProfile).toHaveBeenCalled();
+    });
+
+    it('still signs the user in when the profile read fails', async () => {
+      // The credentials were accepted and the session exists by then, so an
+      // enrichment failure must not become a failed sign-in.
+      authService.syncProfile.mockRejectedValueOnce(new Error('db blip'));
+
+      const body: any = await controller.login(
+        { identifier: 'a', password: 'p' } as any,
+        req() as any,
+        res,
+      );
+
+      expect(body.user.id).toBe('u1');
+      expect(body.csrfToken).toEqual(expect.any(String));
+      expect(cookiesSet().mf_access).toBe('provider-access');
+    });
+
     it('hands back the CSRF token so a page that cannot read the cookie can still echo it', async () => {
       const body: any = await controller.login(
         { identifier: 'a', password: 'p' } as any,
