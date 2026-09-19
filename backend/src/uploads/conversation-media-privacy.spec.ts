@@ -80,7 +80,7 @@ describe('conversation media privacy', () => {
    * it has to be matched against the original's key or every thumbnail 404s
    * while the full images load.
    */
-  it('resolves a thumbnail against its original', async () => {
+  it('resolves a thumbnail against its original, whatever the original is', async () => {
     prisma.media.findUnique.mockResolvedValue({ id: 'm1', ownerId: 'sender' });
     prisma.message.findFirst.mockResolvedValue({ id: 'msg1' });
 
@@ -89,8 +89,36 @@ describe('conversation media privacy', () => {
       true,
     );
 
+    // Matched on the id, not on the id plus the thumbnail's own extension.
+    // The trailing dot keeps the match from running past the id into a
+    // different key.
     const where = prisma.message.findFirst.mock.calls[0][0].where;
-    expect(where.payload.string_contains).toBe(KEY);
+    expect(where.payload.string_contains).toBe(
+      'chat/deadbeefdeadbeefdeadbeefdeadbeef.',
+    );
+  });
+
+  /**
+   * A thumbnail is ALWAYS a .webp, whatever it was derived from.
+   *
+   * Carrying the thumbnail's extension across to the original produced
+   * `chat/<id>.webp` for a video whose original is `chat/<id>.mp4` — a key that
+   * has never existed. Every video in every conversation lost its poster frame
+   * while the video itself played, and the old check looked correct because it
+   * was correct for images, which are the case anyone tests first.
+   */
+  it('resolves a VIDEO thumbnail, whose original is not a .webp', async () => {
+    prisma.media.findUnique.mockResolvedValue({ id: 'm1', ownerId: 'sender' });
+    prisma.message.findFirst.mockResolvedValue({ id: 'msg1' });
+
+    const thumb = 'chat/deadbeefdeadbeefdeadbeefdeadbeef_thumb.webp';
+    await service.canViewConversationMedia(thumb, 'recipient');
+
+    const { string_contains: needle } =
+      prisma.message.findFirst.mock.calls[0][0].where.payload;
+
+    // The message payload references the .mp4; the needle has to match it.
+    expect('chat/deadbeefdeadbeefdeadbeefdeadbeef.mp4').toContain(needle);
   });
 
   /** The actual vulnerability: a stranger holding the URL. */

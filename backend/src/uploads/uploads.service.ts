@@ -299,10 +299,21 @@ export class StorageService {
      * everyone except the person who sent them.
      *
      * A thumbnail is derived from its original and has no message of its own,
-     * so `chat/<id>_thumb.webp` is matched against `chat/<id>.webp`. Without
-     * that, thumbnails would 404 while the full images loaded.
+     * so `chat/<id>_thumb.webp` has to be matched against whatever the original
+     * is. Without that, thumbnails would 404 while the full images loaded.
+     *
+     * Matched on the id, NOT on the id plus the thumbnail's own extension. A
+     * thumbnail is always a `.webp` whatever it was derived from, so for a
+     * video — original `chat/<id>.mp4`, thumbnail `chat/<id>_thumb.webp` —
+     * carrying the extension across produced `chat/<id>.webp`, a key that has
+     * never existed. Every video in every conversation lost its poster frame
+     * while the video itself played, and the check looked right because it was
+     * correct for images, which are the case anyone tests first.
+     *
+     * The trailing dot is kept so the match cannot run past the id into a
+     * different key.
      */
-    const baseKey = key.replace(/_thumb(\.[A-Za-z0-9]+)$/i, '$1');
+    const baseKey = key.replace(/_thumb\.[A-Za-z0-9]+$/i, '.');
 
     const participating = await this.prisma.message.findFirst({
       where: {
@@ -373,6 +384,30 @@ export class StorageService {
     // R2 is the only storage backend; legacy Supabase-provider rows were
     // migrated, so every key resolves against the active bucket.
     return this.getPublicUrl(key);
+  }
+
+  /**
+   * A time-limited signed URL for a conversation attachment whose viewer has
+   * already been authorized.
+   *
+   * Deliberately performs no check of its own, and is named so that is obvious.
+   * The only caller is the media route, immediately after
+   * `canViewConversationMedia` has said yes — putting the check in here too
+   * would mean running the same conversation query twice on every image in a
+   * thread.
+   *
+   * Refuses the always-private folders outright regardless, because those are
+   * never served through the media route at any authorization level.
+   */
+  async getSignedUrlForViewer(
+    key: string,
+    expiresIn = 900,
+  ): Promise<string | null> {
+    if (!key || !this.isSafeStorageKey(key)) return null;
+    if (this.isAlwaysPrivateKey(key)) return null;
+    if (!(await this.exists(key))) return null;
+    const signed = await this.getSignedUrls([key], expiresIn);
+    return signed[key] || null;
   }
 
   /**

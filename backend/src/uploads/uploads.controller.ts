@@ -66,6 +66,15 @@ const MEDIA_URL_MAX_ENTRIES = 5_000;
  */
 const MEDIA_MISS_TTL_MS = 3 * 1000;
 
+/**
+ * How long a conversation attachment's signed URL lives.
+ *
+ * Short, because it is handed to a browser and will be in a history entry and
+ * possibly a referrer. Long enough that a video can be scrubbed and a gallery
+ * paged through without the link dying mid-playback.
+ */
+const CONVERSATION_MEDIA_URL_TTL_SECONDS = 15 * 60;
+
 @Controller('api/media')
 export class UploadsController {
   constructor(private readonly storageService: StorageService) {}
@@ -468,6 +477,36 @@ export class UploadsController {
         viewerId,
       );
       if (!allowed) return this.sendMediaMiss(res, 404);
+
+      /**
+       * Served by a short-lived SIGNED url, never the public one.
+       *
+       * Everything below this point resolves a key to its public address and
+       * redirects there, which is right for an avatar and wrong for a
+       * conversation attachment twice over. The public host does not serve the
+       * private bucket, so the redirect pointed at nothing — that is what made
+       * every chat image and video 404 after passing the check immediately
+       * above, which read as a permissions bug and is not one. And where the
+       * object IS on the public host, redirecting to it hands out a permanent,
+       * unauthenticated, unrevokable URL for a private message attachment,
+       * which is the exposure this whole path exists to close.
+       *
+       * A signed URL expires, so the credential the browser ends up holding
+       * stops working on its own.
+       */
+      const signed = await this.storageService
+        .getSignedUrlForViewer(key)
+        .catch(() => null);
+      if (!signed) return this.sendMediaMiss(res, 404);
+
+      // Cacheable only for as long as it is valid, and privately: this URL is
+      // scoped to one viewer's authorized request and must not be held by a
+      // shared cache on the way back.
+      res.setHeader(
+        'Cache-Control',
+        `private, max-age=${CONVERSATION_MEDIA_URL_TTL_SECONDS}`,
+      );
+      return res.redirect(signed);
     }
 
     const cwd = process.cwd();

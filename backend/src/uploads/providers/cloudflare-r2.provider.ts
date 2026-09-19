@@ -154,13 +154,110 @@ export class CloudflareR2Provider implements StorageProvider {
     'voice/',
   ];
 
+  /**
+   * The bucket a key is WRITTEN to.
+   *
+   * Falls back to the main bucket when no private one is configured, which
+   * keeps existing deployments working exactly as before.
+   */
   private bucketFor(key: string): string {
     const isPrivate = CloudflareR2Provider.PRIVATE_PREFIXES.some((prefix) =>
       key?.startsWith(prefix),
     );
-    // Falls back to the main bucket when no private one is configured, which
-    // keeps existing deployments working exactly as before.
     return isPrivate ? this.verificationBucketName : this.bucketName;
+  }
+
+  /** True when this key's prefix is routed away from the main bucket. */
+  private isPrivatePrefix(key: string): boolean {
+    return CloudflareR2Provider.PRIVATE_PREFIXES.some((prefix) =>
+      key?.startsWith(prefix),
+    );
+  }
+
+  /**
+   * The bucket a key is actually READ from, which is not always the one it
+   * would be written to today.
+   *
+   * Adding `chat/`, `messages/` and `voice/` to the private prefixes changed
+   * where conversation attachments are stored, but said nothing about the ones
+   * already stored. Every existing attachment is in the main bucket, so every
+   * read — `exists`, the signed URL, the metadata lookup — went to the private
+   * bucket, missed, and reported the object as gone. `/api/media/chat/...`
+   * answered 404 for every attachment in the product, after passing its
+   * authorization check, which is what made it look like a permissions bug.
+   *
+   * So reads try the key's own bucket first and fall back to the main one.
+   * Writes are unaffected: new objects go to the private bucket, and the
+   * fallback is what keeps the ones written before that change readable until
+   * they are migrated.
+   *
+   * Returns null when the object is in neither, which callers treat as a miss.
+   */
+  private async resolveReadBucket(key: string): Promise<string | null> {
+    const cached = this.readBucketCache.get(key);
+    if (cached && cached.expiresAt > Date.now()) return cached.bucket;
+
+    const primary = this.bucketFor(key);
+    const candidates =
+      this.isPrivatePrefix(key) && primary !== this.bucketName
+        ? [primary, this.bucketName]
+        : [primary];
+
+    let found: string | null = null;
+    for (const bucket of candidates) {
+      if (await this.headIn(key, bucket)) {
+        found = bucket;
+        break;
+      }
+    }
+
+    this.rememberReadBucket(key, found);
+    return found;
+  }
+
+  /** One HeadObject, against one named bucket. */
+  private async headIn(key: string, bucket: string): Promise<boolean> {
+    if (!this.s3) return false;
+    try {
+      await this.s3.send(new HeadObjectCommand({ Bucket: bucket, Key: key }));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Where a key was last found, so a rendered conversation does not pay two
+   * HeadObject calls per attachment. A miss is cached far more briefly than a
+   * hit: a thumbnail is produced asynchronously, so "not there" is routinely a
+   * statement about right now rather than about the object.
+   */
+  private readonly readBucketCache = new Map<
+    string,
+    { bucket: string | null; expiresAt: number }
+  >();
+  private static readonly READ_BUCKET_HIT_TTL_MS = 10 * 60 * 1000;
+  private static readonly READ_BUCKET_MISS_TTL_MS = 3 * 1000;
+  private static readonly READ_BUCKET_MAX_ENTRIES = 5_000;
+
+  private rememberReadBucket(key: string, bucket: string | null): void {
+    const cache = this.readBucketCache;
+    if (cache.size >= CloudflareR2Provider.READ_BUCKET_MAX_ENTRIES) {
+      const now = Date.now();
+      for (const [k, v] of cache) if (v.expiresAt <= now) cache.delete(k);
+      if (cache.size >= CloudflareR2Provider.READ_BUCKET_MAX_ENTRIES) {
+        const oldest = cache.keys().next().value;
+        if (oldest) cache.delete(oldest);
+      }
+    }
+    cache.set(key, {
+      bucket,
+      expiresAt:
+        Date.now() +
+        (bucket
+          ? CloudflareR2Provider.READ_BUCKET_HIT_TTL_MS
+          : CloudflareR2Provider.READ_BUCKET_MISS_TTL_MS),
+    });
   }
 
   async createSignedDownloadUrl(
@@ -168,10 +265,8 @@ export class CloudflareR2Provider implements StorageProvider {
     expiresIn = config.storage.r2.signedUrlTtlSeconds,
   ): Promise<string> {
     if (!this.isConfigured || !this.s3) return `/mock-download/${key}`;
-    const command = new GetObjectCommand({
-      Bucket: this.bucketFor(key),
-      Key: key,
-    });
+    const bucket = (await this.resolveReadBucket(key)) ?? this.bucketFor(key);
+    const command = new GetObjectCommand({ Bucket: bucket, Key: key });
     return getSignedUrl(this.s3, command, { expiresIn });
   }
 
@@ -192,10 +287,9 @@ export class CloudflareR2Provider implements StorageProvider {
     await Promise.all(
       keys.map(async (key) => {
         try {
-          const command = new GetObjectCommand({
-            Bucket: this.bucketFor(key),
-            Key: key,
-          });
+          const bucket =
+            (await this.resolveReadBucket(key)) ?? this.bucketFor(key);
+          const command = new GetObjectCommand({ Bucket: bucket, Key: key });
           const url = await getSignedUrl(this.s3!, command, { expiresIn });
           result[key] = url;
         } catch {
@@ -209,6 +303,19 @@ export class CloudflareR2Provider implements StorageProvider {
 
   getPublicUrl(key: string): string {
     if (!this.isConfigured) return `/mock-public/${key}`;
+
+    /**
+     * A private-prefixed key has no public URL, and must not be given one.
+     *
+     * This returned the main bucket's public host for EVERY key, including the
+     * ones routed to a bucket that host does not serve — so a conversation
+     * attachment was advertised at an address where it does not exist, and an
+     * identity document at an address where, in the fallback single-bucket
+     * configuration, it does. The API path is the only correct answer for these:
+     * it is the route that checks who is asking.
+     */
+    if (this.isPrivatePrefix(key)) return `/api/media/${key}`;
+
     // The public host is a configuration value; when it is absent the key is
     // returned as an API-relative media path rather than a guessed bucket host.
     return this.publicUrl ? `${this.publicUrl}/${key}` : `/api/media/${key}`;
@@ -224,9 +331,15 @@ export class CloudflareR2Provider implements StorageProvider {
 
     if (!this.isConfigured || !this.s3) return true;
     try {
+      // The bucket it is actually IN, not the one it would be written to. A
+      // legacy conversation attachment lives in the main bucket, and deleting
+      // from the private one would report success while leaving the object —
+      // and its public URL — in place.
+      const bucket = (await this.resolveReadBucket(key)) ?? this.bucketFor(key);
       await this.s3.send(
-        new DeleteObjectCommand({ Bucket: this.bucketFor(key), Key: key }),
+        new DeleteObjectCommand({ Bucket: bucket, Key: key }),
       );
+      this.readBucketCache.delete(key);
       return true;
     } catch (e) {
       this.logger.error(`Failed to delete object ${key}`, e);
@@ -297,15 +410,9 @@ export class CloudflareR2Provider implements StorageProvider {
     // that had written it and 404'd on every other one.
     if (!this.isConfigured || !this.s3)
       return fs.existsSync(this.getLocalFilePath(key));
-    try {
-      await this.s3.send(
-        new HeadObjectCommand({ Bucket: this.bucketFor(key), Key: key }),
-      );
-      return true;
-    } catch (e: any) {
-      if (e.name === 'NotFound') return false;
-      return false;
-    }
+    // Resolved rather than assumed: a conversation attachment written before
+    // those prefixes moved to the private bucket is still in the main one.
+    return (await this.resolveReadBucket(key)) !== null;
   }
 
   async getMetadata(key: string): Promise<any> {
@@ -321,8 +428,9 @@ export class CloudflareR2Provider implements StorageProvider {
 
     if (!this.isConfigured || !this.s3) return null;
     try {
+      const bucket = (await this.resolveReadBucket(key)) ?? this.bucketFor(key);
       const head = await this.s3.send(
-        new HeadObjectCommand({ Bucket: this.bucketFor(key), Key: key }),
+        new HeadObjectCommand({ Bucket: bucket, Key: key }),
       );
       return head;
     } catch {
