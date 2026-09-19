@@ -120,8 +120,22 @@ export const RATE_LIMIT_POLICIES = {
    * Short-window companion to global.ip, so a ten-second flood is caught
    * without waiting out a full minute-long window.
    */
+  /**
+   * Sized for a SHARED address, because that is the normal case here.
+   *
+   * 25 in ten seconds was sized for one browser, and not even for that: a
+   * single page load fans out to the feed, communities, notifications, presence
+   * and instant-match at once, and React's development double-invoke doubles
+   * it. It rejected ordinary boots on a developer's own machine — including the
+   * session probe, which presented as being signed out.
+   *
+   * On a campus network the whole institution shares one NAT address, so this
+   * bucket is not "a user", it is "everyone at the college at once". The limit
+   * exists to stop a runaway client, and 100 still does that while leaving room
+   * for a hall of residence opening the app between lectures.
+   */
   'global.ip.burst': {
-    points: 25,
+    points: 100,
     duration: 10,
     dimension: 'ip',
     onRedisFailure: 'open',
@@ -413,12 +427,45 @@ export const RATE_LIMIT_POLICIES = {
    * refresh cookie must not be a free oracle for probing whether a stolen or
    * revoked token still works. Generous, because every open tab refreshes.
    */
+  /**
+   * Handing the server custody of a browser-minted Supabase session.
+   *
+   * Reached once, at the end of signup, by a caller who has already proved a
+   * verified access token to JwtGuard — so this is not a guessing surface. The
+   * budget is here because the route writes a session row and a device entry,
+   * and nothing that creates rows should be callable in a loop.
+   */
+  'auth.session.adopt': {
+    points: 10,
+    duration: 3600,
+    dimension: 'user',
+    onRedisFailure: 'closed',
+    sensitive: true,
+    message: 'Too many attempts. Please try again later.',
+  },
+
   'auth.session.refresh': {
     points: 60,
     duration: 300,
     blockDuration: 900,
     dimension: 'ip',
-    onRedisFailure: 'closed',
+    /**
+     * OPEN, unlike every other auth policy here, and deliberately.
+     *
+     * This endpoint had no callers when it was written, so failing closed cost
+     * nothing. It has them now — every open tab renews through it as its access
+     * cookie expires — which turned a Redis outage into an application-wide
+     * sign-out: the limiter refuses, nobody can renew, and sessions drop one by
+     * one as their tokens age out.
+     *
+     * Failing open gives up a bound on replaying this route. That bound was
+     * worth little: the caller must already hold a valid refresh cookie, so it
+     * is not an oracle for guessing anything, and a replayed token is caught by
+     * rotation's own replay detection, which burns the family. Trading a weak
+     * limit for not signing everybody out when a cache blips is the right way
+     * round.
+     */
+    onRedisFailure: 'open',
     sensitive: true,
     message: 'Too many attempts. Please try again later.',
   },
