@@ -713,7 +713,8 @@
 /* Reply Reference Bubble */
 .msgBubbleReplyRef {
   border-left: 4px solid currentColor;
-  padding: 8px 11px;
+  /* Horizontal padding unchanged; vertical padding gives thumbnails room. */
+  padding: 7px 11px;
   margin-bottom: 8px;
   font-size: 0.83rem;
   opacity: 0.95;
@@ -722,12 +723,10 @@
   /* Keeps a one-word quote from collapsing into a sliver next to its accent bar,
      while staying inside the bubble on narrow screens. */
   min-width: min(150px, 100%);
+  /* overflow:hidden still clips the container but we no longer put
+     text-overflow on it — each variant manages its own ellipsis. */
   overflow: hidden;
-  text-overflow: ellipsis;
   max-width: 100%;
-  /* Same reasoning as .msgText — see the note there. The min-width above
-     already keeps this quote from collapsing, but it shares a fit-content
-     bubble, so it uses the same wrapping rule rather than a different one. */
   word-break: normal;
   overflow-wrap: break-word;
 }
@@ -743,7 +742,8 @@
 .msgBubbleReplyRefHeader {
   font-weight: 600;
   font-size: 0.77rem;
-  margin-bottom: 4px;
+  /* Slightly tighter below the name — the variant row has its own top spacing. */
+  margin-bottom: 5px;
   letter-spacing: 0.01em;
   /* A long display name must not stretch the bubble. */
   overflow: hidden;

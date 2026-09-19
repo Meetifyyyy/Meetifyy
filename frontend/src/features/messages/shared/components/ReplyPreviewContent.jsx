@@ -1,7 +1,20 @@
 import { useEffect, useState } from 'react';
 import {
-  Image as ImageIcon, Video, Mic, FileText, Link2, User, Users,
-  FileImage, Calendar, Ban, AlertCircle, MessageSquare, Sticker,
+  Image as ImageIcon,
+  Video,
+  Mic,
+  FileText,
+  Link2,
+  User,
+  Users,
+  FileImage,
+  Calendar,
+  Ban,
+  AlertCircle,
+  MessageSquare,
+  Sticker,
+  Play,
+  BarChart2,
 } from '@shared/components/icons';
 import { getMediaUrl } from '@shared/api/apiClient';
 import Avatar from '@shared/components/avatar/Avatar';
@@ -11,106 +24,397 @@ import { useConversations } from '@shared/hooks/useMessages';
 import { resolveReplyPreview } from '../utils/replyPreview';
 
 /**
- * The body of a reply quote: optional thumbnail, optional type icon, and a line
- * of text that is never empty.
+ * The body of a reply quote: a compact, type-specific variant that
+ * communicates clearly what kind of content is being replied to.
  *
- * Rendered by both the composer bar and the message bubble so a quote looks the
- * same before and after sending. All type decisions come from
- * resolveReplyPreview(); this file only draws the result.
- */
-
-const ICONS = {
-  image: ImageIcon,
-  gif: FileImage,
-  sticker: Sticker,
-  video: Video,
-  voice: Mic,
-  file: FileText,
-  link: Link2,
-  profile: User,
-  community: Users,
-  post: MessageSquare,
-  activity: Calendar,
-  event: Calendar,
-  group_invite: Users,
-  ban: Ban,
-  alert: AlertCircle,
-};
-
-/**
+ * Rendered by both the composer bar (ChatInputArea) and the message bubble
+ * (MessageBubble) so a quote looks identical before and after sending. All
+ * type decisions come from resolveReplyPreview(); this file only draws the
+ * result.
+ *
  * @param {{ message: object|null, className?: string, textClassName?: string,
  *           thumbClassName?: string, iconSize?: number }} props
  *   `message` is a full message OR a server `replyTo` snapshot.
+ *   The legacy className/textClassName/thumbClassName/iconSize props are
+ *   accepted but ignored — the variants handle their own layout.
  */
 export default function ReplyPreviewContent({
   message,
-  className = '',
-  textClassName = '',
-  thumbClassName = '',
-  iconSize = 15,
+  // kept for backward-compat with call sites that still pass these
+  className: _className,
+  textClassName: _textClassName,
+  thumbClassName: _thumbClassName,
+  iconSize: _iconSize,
 }) {
   const preview = resolveReplyPreview(message);
-  const Icon = preview.icon ? ICONS[preview.icon] : null;
+  return <ReplyPreviewVariant preview={preview} />;
+}
 
-  // People and communities use the app's own avatar shapes rather than a generic
-  // line icon, so a quoted profile or community reads the same here as it does
-  // everywhere else in the product (round person / group treatment, same
-  // fallback behaviour).
-  const isPerson = preview.kind === 'profile';
-  const isGroupLike = preview.kind === 'community' || preview.kind === 'group_invite';
+// ---------------------------------------------------------------------------
+// Shared micro-components used across variants
+// ---------------------------------------------------------------------------
 
-  // Only resolve a thumbnail through the media layer; an unusable key returns
-  // null there, in which case the icon alone carries the meaning.
-  const thumbSrc = preview.thumbnailKey ? getMediaUrl(preview.thumbnailKey) : null;
-
+/** Icon + text label pill shown above the body text in every variant. */
+function TypeBadge({ icon: Icon, label }) {
+  if (!Icon && !label) return null;
   return (
-    <div
-      className={className}
-      style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}
-    >
-      {isPerson || isGroupLike ? (
-        <ReplyEntityAvatar
-          kind={preview.kind}
-          entityId={preview.entityId}
-          fallbackAvatar={preview.avatarKey}
-          fallbackColor={preview.entityColor}
-          name={preview.text}
-          isGroup={isGroupLike}
-          className={thumbClassName}
-        />
-      ) : thumbSrc ? (
-        <img
-          src={thumbSrc}
-          alt=""
-          aria-hidden="true"
-          className={thumbClassName}
-          style={{ width: 34, height: 34, borderRadius: 6, objectFit: 'cover', flexShrink: 0 }}
-          // A dead thumbnail must not leave a broken-image glyph in the quote;
-          // hiding it falls back to the icon + label, which still describes the
-          // message.
-          onError={(e) => { e.currentTarget.style.display = 'none'; }}
-        />
-      ) : Icon ? (
-        <Icon size={iconSize} style={{ flexShrink: 0, opacity: 0.85 }} aria-hidden="true" />
-      ) : null}
+    <span style={{
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: 3,
+      fontSize: '0.67rem',
+      fontWeight: 700,
+      letterSpacing: '0.04em',
+      textTransform: 'uppercase',
+      opacity: 0.65,
+      lineHeight: 1,
+      marginBottom: 2,
+      flexShrink: 0,
+    }}>
+      {Icon && <Icon size={9} aria-hidden="true" />}
+      {label}
+    </span>
+  );
+}
 
-      <span
-        className={textClassName}
+/** A 36×36 thumbnail square with optional video play-badge overlay. */
+function Thumb({ src, isVideo = false, onError }) {
+  if (!src) return null;
+  return (
+    <div style={{ position: 'relative', flexShrink: 0 }}>
+      <img
+        src={src}
+        alt=""
+        aria-hidden="true"
         style={{
-          minWidth: 0,
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
-          lineHeight: 1.35,
-          fontStyle: preview.isUnavailable ? 'italic' : undefined,
-          opacity: preview.isUnavailable ? 0.75 : undefined,
+          width: 36,
+          height: 36,
+          borderRadius: 6,
+          objectFit: 'cover',
+          display: 'block',
         }}
-      >
-        {preview.text}
-      </span>
+        loading="lazy"
+        onError={onError}
+      />
+      {isVideo && (
+        <span style={{
+          position: 'absolute',
+          inset: 0,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: 'rgba(0,0,0,0.42)',
+          borderRadius: 6,
+        }} aria-hidden="true">
+          <Play size={10} fill="white" />
+        </span>
+      )}
     </div>
   );
 }
+
+/** A 36×36 icon box used when there's no thumbnail. */
+function IconBox({ icon: Icon }) {
+  if (!Icon) return null;
+  return (
+    <span style={{
+      width: 36,
+      height: 36,
+      borderRadius: 6,
+      background: 'rgba(99,102,241,0.12)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      flexShrink: 0,
+      color: 'var(--color-primary, #6366f1)',
+    }} aria-hidden="true">
+      <Icon size={16} />
+    </span>
+  );
+}
+
+/** Two-column row wrapper used by all variants. */
+function VariantRow({ children, muted = false }) {
+  return (
+    <div style={{
+      display: 'flex',
+      alignItems: 'center',
+      gap: 8,
+      minWidth: 0,
+      opacity: muted ? 0.7 : 1,
+    }}>
+      {children}
+    </div>
+  );
+}
+
+/** The right column: badge on top, text below. */
+function VariantBody({ badge, text, mono = false, italic = false }) {
+  return (
+    <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 0 }}>
+      {badge}
+      {text && (
+        <span style={{
+          fontSize: '0.8rem',
+          lineHeight: 1.35,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+          fontStyle: italic ? 'italic' : undefined,
+          fontFamily: mono ? 'var(--font-family-mono, monospace)' : undefined,
+        }}>
+          {text}
+        </span>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Per-kind variants (pure — no hooks)
+// ---------------------------------------------------------------------------
+
+function TextVariant({ preview }) {
+  return (
+    <VariantRow>
+      <VariantBody
+        badge={null}
+        text={preview.text}
+      />
+    </VariantRow>
+  );
+}
+
+function LinkVariant({ preview }) {
+  return (
+    <VariantRow>
+      <IconBox icon={Link2} />
+      <VariantBody
+        badge={<TypeBadge icon={Link2} label="Link" />}
+        text={preview.text}
+        mono
+      />
+    </VariantRow>
+  );
+}
+
+function MediaVariant({ preview, kind }) {
+  const [thumbFailed, setThumbFailed] = useState(false);
+  const thumbSrc = (!thumbFailed && preview.thumbnailKey)
+    ? getMediaUrl(preview.thumbnailKey)
+    : null;
+
+  const ICONS_MAP = { image: ImageIcon, gif: FileImage, sticker: Sticker, video: Video };
+  const LABELS = { image: 'Photo', gif: 'GIF', sticker: 'Sticker', video: 'Video' };
+  const Icon = ICONS_MAP[kind] || ImageIcon;
+  const label = LABELS[kind] || 'Media';
+  const isVideo = kind === 'video';
+  const displayText = (preview.text && preview.text !== label) ? preview.text : null;
+
+  return (
+    <VariantRow>
+      {thumbSrc
+        ? <Thumb src={thumbSrc} isVideo={isVideo} onError={() => setThumbFailed(true)} />
+        : <IconBox icon={Icon} />
+      }
+      <VariantBody
+        badge={<TypeBadge icon={Icon} label={label} />}
+        text={displayText}
+      />
+    </VariantRow>
+  );
+}
+
+function VoiceVariant({ preview }) {
+  const displayText = (preview.text && preview.text !== 'Voice message') ? preview.text : null;
+  return (
+    <VariantRow>
+      <IconBox icon={Mic} />
+      <VariantBody
+        badge={<TypeBadge icon={Mic} label="Voice message" />}
+        text={displayText}
+      />
+    </VariantRow>
+  );
+}
+
+function FileVariant({ preview }) {
+  const displayText = (preview.text && preview.text !== 'File') ? preview.text : null;
+  return (
+    <VariantRow>
+      <IconBox icon={FileText} />
+      <VariantBody
+        badge={<TypeBadge icon={FileText} label="File" />}
+        text={displayText}
+      />
+    </VariantRow>
+  );
+}
+
+function PostVariant({ preview }) {
+  const [imgFailed, setImgFailed] = useState(false);
+  const avatarSrc = (!imgFailed && preview.avatarKey) ? getMediaUrl(preview.avatarKey) : null;
+
+  return (
+    <VariantRow>
+      {avatarSrc ? (
+        <img
+          src={avatarSrc}
+          alt=""
+          aria-hidden="true"
+          style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }}
+          onError={() => setImgFailed(true)}
+        />
+      ) : (
+        <IconBox icon={MessageSquare} />
+      )}
+      <VariantBody
+        badge={<TypeBadge icon={MessageSquare} label="Post" />}
+        text={preview.text}
+      />
+    </VariantRow>
+  );
+}
+
+function ProfileVariant({ preview }) {
+  return (
+    <VariantRow>
+      <ReplyEntityAvatar
+        kind="profile"
+        entityId={preview.entityId}
+        fallbackAvatar={preview.avatarKey}
+        fallbackColor={preview.entityColor}
+        name={preview.text}
+        isGroup={false}
+      />
+      <VariantBody
+        badge={<TypeBadge icon={User} label="Profile" />}
+        text={preview.text}
+      />
+    </VariantRow>
+  );
+}
+
+function CommunityVariant({ preview }) {
+  return (
+    <VariantRow>
+      <ReplyEntityAvatar
+        kind="community"
+        entityId={preview.entityId}
+        fallbackAvatar={preview.avatarKey}
+        fallbackColor={preview.entityColor}
+        name={preview.text}
+        isGroup={false}
+      />
+      <VariantBody
+        badge={<TypeBadge icon={Users} label="Community" />}
+        text={preview.text}
+      />
+    </VariantRow>
+  );
+}
+
+function GroupInviteVariant({ preview }) {
+  return (
+    <VariantRow>
+      <ReplyEntityAvatar
+        kind="group_invite"
+        entityId={preview.entityId}
+        fallbackAvatar={preview.avatarKey}
+        fallbackColor={preview.entityColor}
+        name={preview.text}
+        isGroup={true}
+      />
+      <VariantBody
+        badge={<TypeBadge icon={Users} label="Group invite" />}
+        text={preview.text}
+      />
+    </VariantRow>
+  );
+}
+
+function ActivityVariant({ preview }) {
+  return (
+    <VariantRow>
+      <IconBox icon={Calendar} />
+      <VariantBody
+        badge={<TypeBadge icon={Calendar} label="Event" />}
+        text={preview.text}
+      />
+    </VariantRow>
+  );
+}
+
+function PollVariant({ preview }) {
+  return (
+    <VariantRow>
+      <IconBox icon={BarChart2} />
+      <VariantBody
+        badge={<TypeBadge icon={BarChart2} label="Poll" />}
+        text={preview.text}
+      />
+    </VariantRow>
+  );
+}
+
+function UnavailableVariant({ preview }) {
+  const Icon = preview.kind === 'deleted' ? Ban : AlertCircle;
+  return (
+    <VariantRow muted>
+      <Icon size={13} style={{ flexShrink: 0 }} aria-hidden="true" />
+      <span style={{ fontSize: '0.8rem', fontStyle: 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        {preview.text}
+      </span>
+    </VariantRow>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Dispatcher
+// ---------------------------------------------------------------------------
+
+function ReplyPreviewVariant({ preview }) {
+  switch (preview.kind) {
+    case 'text':
+      return <TextVariant preview={preview} />;
+    case 'link':
+      return <LinkVariant preview={preview} />;
+    case 'image':
+    case 'gif':
+    case 'sticker':
+      return <MediaVariant preview={preview} kind={preview.kind} />;
+    case 'video':
+      return <MediaVariant preview={preview} kind="video" />;
+    case 'voice':
+      return <VoiceVariant preview={preview} />;
+    case 'file':
+      return <FileVariant preview={preview} />;
+    case 'post':
+      return <PostVariant preview={preview} />;
+    case 'profile':
+      return <ProfileVariant preview={preview} />;
+    case 'community':
+      return <CommunityVariant preview={preview} />;
+    case 'group_invite':
+      return <GroupInviteVariant preview={preview} />;
+    case 'activity':
+    case 'event':
+      return <ActivityVariant preview={preview} />;
+    case 'poll':
+      return <PollVariant preview={preview} />;
+    case 'deleted':
+    case 'unavailable':
+    case 'unknown':
+      return <UnavailableVariant preview={preview} />;
+    default:
+      // Future kinds fall back to the text variant so the quote is never blank.
+      return <TextVariant preview={preview} />;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// ReplyEntityAvatar  (live avatar resolution for entities)
+// ---------------------------------------------------------------------------
 
 /**
  * Avatar for a quoted profile or community, resolved from LIVE app state.
@@ -126,7 +430,7 @@ export default function ReplyPreviewContent({
  * observer to every reply preview on screen, including plain text and media
  * quotes that can never use it.
  */
-function ReplyEntityAvatar({ kind, entityId, fallbackAvatar, fallbackColor, name, isGroup, className }) {
+function ReplyEntityAvatar({ kind, entityId, fallbackAvatar, fallbackColor, name, isGroup }) {
   const usersMap = useUsersMap();
   const { communitiesById } = useCommunities();
   const { conversations } = useConversations();
@@ -184,10 +488,9 @@ function ReplyEntityAvatar({ kind, entityId, fallbackAvatar, fallbackColor, name
       <Avatar
         src={src}
         name={name}
-        size="26px"
+        size="36px"
         isGroup={isGroup}
         disableHover
-        className={className}
         onError={() => setImageFailed(true)}
         // Communities and profiles are forced circular so a community WITH a
         // picture looks the same as the circle the picture-less fallback draws.
@@ -208,11 +511,10 @@ function ReplyEntityAvatar({ kind, entityId, fallbackAvatar, fallbackColor, name
   const initial = (name || '').trim().charAt(0).toUpperCase() || '?';
   return (
     <span
-      className={className}
       aria-hidden="true"
       style={{
-        width: 26,
-        height: 26,
+        width: 36,
+        height: 36,
         // Group invites get the rounded-square shape group avatars use everywhere
         // else in the product. Communities and profiles stay circular, matching
         // .avatarFallback's border-radius: 50%.
@@ -225,7 +527,7 @@ function ReplyEntityAvatar({ kind, entityId, fallbackAvatar, fallbackColor, name
         // to the theme primary exactly as a colourless community would.
         background: liveColor || fallbackColor || 'var(--color-primary, #2563eb)',
         color: '#ffffff',
-        fontSize: 12,
+        fontSize: 14,
         fontWeight: 700,
         lineHeight: 1,
         fontFamily: 'var(--font-family-display, inherit)',
