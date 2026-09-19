@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
+import { useMessageActions } from '@shared/hooks/useMessageActions';
 import { matchesRecipientSearch } from '@shared/lib/conversationTargets';
 import { createPortal } from 'react-dom';
-import { messagesApi } from '@shared/api/apiClient';
 import { useRecipientConversations } from '@shared/hooks/useRecipientConversations';
 import ShareModalAvatar from '@shared/components/avatar/ShareModalAvatar';
 import styles from './ShareActivityModal.module.css';
@@ -25,6 +25,10 @@ export default function ShareActivityModal({ isOpen, onClose, activity }) {
   // recipient list is a different question from the inbox and now has its own
   // server-filtered query.
   const { conversations } = useRecipientConversations(isOpen, searchTerm);
+  // The same path the chat and every other share flow uses: one optimistic
+  // message, written across every key the conversation answers to, merged with
+  // the server's copy and the socket echo by clientId.
+  const { sendDirectMessage } = useMessageActions();
 
 
   const handleSend = async (convId) => {
@@ -32,7 +36,7 @@ export default function ShareActivityModal({ isOpen, onClose, activity }) {
     // Optimistic: mark as sent immediately, revert only if the request fails.
     setSentTo(prev => new Set(prev).add(convId));
     try {
-      await messagesApi.sendDirectMessage(convId, {
+      await sendDirectMessage(convId, {
         text: '',
         inviteData: {
           type: 'activityShare',

@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { showToast } from '../utils/toast';
 import { useConversations } from './useMessages';
 import { processAndUploadImage, uploadFileDirect } from '../utils/mediaPipeline';
-import { purgeConversationFromCaches, matchesConversationId, getConversationAliases } from '../../features/messages/shared/utils/cacheUtils';
+import { purgeConversationFromCaches, matchesConversationId, getConversationAliases, appendMessageToCache } from '../../features/messages/shared/utils/cacheUtils';
 import { idbDeleteConversationMessages } from '../../features/messages/shared/utils/idbMessages';
 import { scheduleConversationWrite } from '../utils/conversationWriteQueue';
 
@@ -26,16 +26,57 @@ export function useMessageActions() {
   const { currentUser } = useAuth();
   const { conversations } = useConversations();
 
-  const updateMessagesCache = (convId, updater) => {
-    queryClient.setQueryData(['messages', convId], (old) => {
-      if (!old) return old;
-      if (old.pages) {
+  /**
+   * Every cache key this conversation answers to.
+   *
+   * A conversation is addressable by several ids — its internal id, its public
+   * id, the other participant's id or username, with or without the `c_`
+   * prefix — and `['messages', <id>]` is keyed on whichever one the open route
+   * happens to use. Writing to the single id a share modal was holding put the
+   * message under a key the chat was not reading, so it was invisible until a
+   * refetch. This is the same alias set the socket handler writes to.
+   */
+  const conversationKeys = (convId) => {
+    const conv = (conversations || []).find((c) => matchesConversationId(c, convId));
+    return [...new Set([String(convId), ...getConversationAliases(conv)])].filter(Boolean);
+  };
+
+  /**
+   * Writes a message into every key the conversation answers to.
+   *
+   * `createIfMissing` matters more than it looks. The previous helper opened
+   * with `if (!old) return old`, so when the conversation's messages had never
+   * been fetched — the normal case when sharing from the feed — BOTH the
+   * optimistic write and the confirmed one were silently dropped, and the
+   * message existed only on the server.
+   *
+   * `appendMessageToCache` is idempotent: it matches on id, clientId and
+   * tempId, so the optimistic copy, the HTTP response and the socket echo all
+   * collapse onto one entry however they interleave.
+   */
+  const writeMessageToCaches = (convId, message, { createIfMissing = false } = {}) => {
+    conversationKeys(convId).forEach((key) => {
+      appendMessageToCache(queryClient, key, message, { createIfMissing });
+    });
+  };
+
+  /** Marks a pending message failed, across the same keys. */
+  const markMessageFailed = (convId, clientId) => {
+    conversationKeys(convId).forEach((key) => {
+      queryClient.setQueryData(['messages', key], (old) => {
+        if (!old?.pages) return old;
         return {
           ...old,
-          pages: old.pages.map((p, idx) => idx === 0 ? { ...p, messages: updater(p.messages || []) } : p)
+          pages: old.pages.map((p) => ({
+            ...p,
+            messages: (p.messages || []).map((m) =>
+              m.clientId === clientId || m.tempId === clientId || m.id === clientId
+                ? { ...m, status: 'failed' }
+                : m,
+            ),
+          })),
         };
-      }
-      return { ...old, messages: updater(old.messages || []) };
+      });
     });
   };
   // API Implementations
@@ -54,9 +95,28 @@ export function useMessageActions() {
       };
     }
 
-    const tempId = options?.tempId || `temp_${Date.now()}`;
+    /**
+     * One id for this send, carried end to end.
+     *
+     * It goes in the request, the server stores it on `clientMessageId` and
+     * echoes it back, and the socket echo carries it too — so the optimistic
+     * copy, the HTTP response and the realtime event all collapse onto one
+     * entry however they interleave. It is also the idempotency key: a retried
+     * send returns the message already stored instead of writing a second one.
+     *
+     * `Date.now()` alone was not unique enough to be either — two sends in the
+     * same millisecond, which a multi-recipient share does routinely, produced
+     * the same id.
+     */
+    const tempId =
+      options?.tempId ||
+      `temp_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+    payload.clientId = tempId;
+
     const optimisticMessage = {
       id: tempId,
+      clientId: tempId,
+      tempId,
       conversationId: convId,
       text: payload.text,
       mediaUrl: payload.mediaUrl,
@@ -74,8 +134,9 @@ export function useMessageActions() {
       createdAt: new Date().toISOString()
     };
 
-    // Optimistically update cache
-    updateMessagesCache(convId, (msgs) => [...msgs, optimisticMessage]);
+    // Seeds the cache when the conversation has never been opened, which is the
+    // normal case for a share sent from the feed.
+    writeMessageToCaches(convId, optimisticMessage, { createIfMissing: true });
 
     try {
       if (options?.fileObj) {
@@ -99,16 +160,20 @@ export function useMessageActions() {
       
       const confirmedMsg = {
         ...res,
+        // Kept so the merge can find the optimistic entry even on an older API
+        // that does not echo the field back.
+        clientId: res.clientId || tempId,
+        tempId: res.tempId || tempId,
         from: 'me',
+        status: res.status || 'sent',
         text: res.text || res.payload?.text || payload.text,
       };
 
-      // Replace optimistic message with confirmed server message
-      updateMessagesCache(convId, (msgs) => msgs.map(m => m.id === tempId ? confirmedMsg : m));
+      // Merges onto the optimistic entry by clientId rather than appending.
+      writeMessageToCaches(convId, confirmedMsg, { createIfMissing: true });
       return confirmedMsg;
     } catch (error) {
-      // Rollback optimistic message on failure
-      updateMessagesCache(convId, (msgs) => msgs.map(m => m.id === tempId ? { ...m, status: 'failed' } : m));
+      markMessageFailed(convId, tempId);
       throw error;
     } finally {
       queryClient.invalidateQueries({ queryKey: ['conversations'] });
@@ -460,7 +525,13 @@ export function useMessageActions() {
 
 
   return {
-    updateMessagesCache,
+    /**
+     * Exported for the same reason it always was, but it is now the
+     * alias-aware writer rather than the single-key one. No caller uses it
+     * today; it stays on the surface so a future one gets the correct
+     * behaviour rather than reinventing the version that dropped writes.
+     */
+    writeMessageToCaches,
     toggleMuteConversation,
     deleteConversation,
     clearChat,

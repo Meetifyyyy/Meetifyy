@@ -13,7 +13,10 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { MentionDto } from '../../../common/dto/mention.dto';
-import { MAX_MESSAGE_TEXT_LENGTH } from '../message-limits';
+import {
+  MAX_MESSAGE_TEXT_LENGTH,
+  MAX_CLIENT_MESSAGE_ID_LENGTH,
+} from '../message-limits';
 
 export class SendMessageDto {
   /**
@@ -81,6 +84,27 @@ export class SendMessageDto {
   @IsObject()
   @IsOptional()
   inviteData?: any;
+
+  /**
+   * The sender's own id for this message, echoed back on the saved one.
+   *
+   * `MessagesService.sendMessage` has always looked for it — it is the
+   * idempotency key, matched against the indexed `clientMessageId` column so a
+   * retried send returns the existing message instead of writing a second one.
+   * It was never declared here, and the pipe runs `forbidNonWhitelisted`, so
+   * every HTTP send that tried to supply one was rejected outright with a 400
+   * and every send that did not had no idempotency at all: a flaky connection
+   * or a double tap wrote the message twice.
+   *
+   * It is also what lets a client match its optimistic copy to the saved one.
+   * Without it the socket echo of a message whose text is empty — every share,
+   * which carries only `inviteData` — could not be matched to the pending copy
+   * and appeared alongside it as a duplicate.
+   */
+  @IsString()
+  @IsOptional()
+  @MaxLength(MAX_CLIENT_MESSAGE_ID_LENGTH)
+  clientId?: string;
 
   @IsBoolean()
   @IsOptional()
