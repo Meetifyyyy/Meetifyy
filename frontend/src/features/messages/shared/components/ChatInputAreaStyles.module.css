@@ -20,9 +20,8 @@
   border: 1px solid var(--color-border, #e4e4e7);
   border-bottom: none;
   border-radius: 14px 14px 0 0;
-  /* Enough vertical room for the 36px thumbnail + badge + text two-row layout. */
-  padding: 0.6rem 1rem;
-  min-height: 60px;
+  /* Roomier, to match the quote shown inside the sent bubble. */
+  padding: 0.75rem 1rem;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -40,11 +39,6 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
-  flex: 1;
-  /* Align the label/text at the start of the available height so it sits
-     naturally alongside the variant content. */
-  justify-content: center;
-  gap: 2px;
 }
 
 .msgReplyPreviewLabel {
@@ -54,14 +48,8 @@
   color: var(--color-primary);
   text-transform: uppercase;
   letter-spacing: 0.03em;
-  /* Stop a long sender name from overflowing the bar. */
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
-/* .msgReplyPreviewText is kept for backward-compat but variants no longer use it.
-   Call sites that still pass textClassName will see a muted, clipped text line. */
 .msgReplyPreviewText {
   font-size: 0.8rem;
   color: var(--color-text-muted);
