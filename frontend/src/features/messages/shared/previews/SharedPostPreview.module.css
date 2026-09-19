@@ -1,68 +1,104 @@
+/* SharedPostPreview.module.css — Social Media Post Preview Card */
+
 .container {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  background: #e8e8ee;
-  border: 1px solid rgba(0, 0, 0, 0.07);
-  border-radius: 14px;
-  padding: 14px 16px;
-  cursor: pointer;
+  gap: 8px;
   width: 100%;
-  min-width: 280px;
-  max-width: 100%;
-  color: var(--color-text-main, #18181b);
+  min-width: 260px;
+  max-width: 330px;
+  border-radius: 16px;
+  padding: 12px 14px;
+  cursor: pointer;
   box-sizing: border-box;
-  box-shadow: none;
+  overflow: hidden;
+  position: relative;
+
+  /* Card Colors: soft light-grey in light mode, charcoal in dark mode */
+  background: #f2f2f5;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  color: var(--color-text-main, #18181b);
+
+  /* Strictly NO shadows or glow */
+  box-shadow: none !important;
+  filter: none !important;
+
   transition: opacity 0.15s ease;
 }
 
 [data-theme='dark'] .container {
-  background: #33343a;
-  border-color: rgba(255, 255, 255, 0.09);
-  color: #ffffff;
+  background: #24252a;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #f4f4f5;
+  box-shadow: none !important;
+  filter: none !important;
 }
 
-.containerThem {
-  background: #e8e8ee;
-  border-color: rgba(0, 0, 0, 0.07);
-}
-
-[data-theme='dark'] .containerThem {
-  background: #33343a;
-  border-color: rgba(255, 255, 255, 0.09);
-}
-
+/* Neutral card surfaces regardless of sender */
+.containerThem,
 .containerMe {
-  background: linear-gradient(135deg, var(--color-primary, #6366f1) 0%, #4f46e5 100%) !important;
-  border-color: transparent !important;
-  color: white !important;
-  box-shadow: none !important;
+  background: #f2f2f5;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  color: var(--color-text-main, #18181b);
 }
 
+[data-theme='dark'] .containerThem,
 [data-theme='dark'] .containerMe {
-  background: linear-gradient(135deg, var(--color-primary, #6366f1) 0%, #4f46e5 100%) !important;
-  border-color: transparent !important;
-  color: white !important;
-  box-shadow: none !important;
+  background: #24252a;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #f4f4f5;
 }
 
 .container:hover {
-  opacity: 0.92;
+  opacity: 0.94;
 }
 
-.containerMe .authorName {
-  color: #ffffff;
+/* ── Layout Modes ─────────────────────────────────────────────── */
+
+/* 1. Text-Only: 3:2 card ratio, compact, balanced */
+.layoutTextOnly {
+  aspect-ratio: 3 / 2;
+  justify-content: flex-start;
+  gap: 6px;
 }
 
-.containerMe .authorUsername,
-.containerMe .timestampText {
-  color: rgba(255, 255, 255, 0.85);
+.layoutTextOnly .metaRow {
+  margin-left: calc(38px + 0.75rem);
+  margin-top: auto;
 }
+
+/* 6. Poll-Only: 4:3 card ratio, balanced */
+.layoutPollOnly {
+  aspect-ratio: 4 / 3;
+  justify-content: flex-start;
+  gap: 8px;
+}
+
+.layoutPollOnly .metaRow {
+  margin-top: auto;
+}
+
+/* 7. Image + Poll: Overall card target ~1:1 */
+.layoutImagePoll .mediaSingle {
+  aspect-ratio: 16 / 9;
+  max-height: 145px;
+}
+
+/* 8. Multiple Images + Poll: Overall card target ~1:1 to 4:3 */
+.layoutMultiImagePoll .mediaTwo,
+.layoutMultiImagePoll .mediaThree,
+.layoutMultiImagePoll .mediaFour {
+  aspect-ratio: 16 / 9;
+  max-height: 155px;
+}
+
+/* ── Author Row ───────────────────────────────────────────────── */
 
 .authorRow {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 0.75rem;
+  width: 100%;
 }
 
 .authorMeta {
@@ -70,140 +106,196 @@
   flex-direction: column;
   justify-content: center;
   min-width: 0;
-  line-height: 1.25;
+  flex: 1;
+  text-align: left;
 }
 
 .authorName {
-  font-size: 0.96rem;
+  font-family: var(--font-family-display, inherit);
   font-weight: 600;
-  color: inherit;
+  font-size: 0.88rem;
+  color: var(--color-text-main, #18181b);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  line-height: 1.25;
+}
+
+[data-theme='dark'] .authorName {
+  color: var(--color-text-main, #f4f4f5);
 }
 
 .authorUsername {
-  font-size: 0.78rem;
-  opacity: 0.7;
+  font-size: 0.74rem;
+  font-weight: 500;
+  color: var(--color-text-muted, #64748b);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  line-height: 1.25;
+  margin-top: 1px;
 }
 
-.twoLineContent {
-  font-size: 0.94rem;
-  line-height: 1.45;
+[data-theme='dark'] .authorUsername {
+  color: #94a3b8;
+}
+
+
+
+/* ── Post Text (Max 3 Lines Clamped) ──────────────────────────── */
+
+.threeLineContent {
+  font-size: 0.88rem;
+  line-height: 1.42;
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 100%;
-  opacity: 0.95;
-  margin: 3px 0;
   word-break: break-word;
+  color: inherit;
+  opacity: 0.95;
+  margin: 2px 0 0 calc(38px + 0.75rem);
 }
 
-.silverBox {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 0.84rem;
-  font-weight: 600;
-  padding: 6px 12px;
-  border-radius: 8px;
-  background: linear-gradient(135deg, #e2e8f0 0%, #cbd5e1 100%);
-  color: #1e293b;
-  width: fit-content;
-  max-width: 100%;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
-  letter-spacing: 0.01em;
-}
+/* ── Media Grids ──────────────────────────────────────────────── */
 
-.metaRow {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  margin-top: 4px;
-}
-
-.timestampText {
-  font-size: 0.8rem;
-  opacity: 0.75;
-  letter-spacing: 0.01em;
-}
-
-.unavailable {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 0.86rem;
-  opacity: 0.75;
-  padding: 12px 14px;
-  border: 1px dashed rgba(255, 255, 255, 0.2);
+.mediaSingle,
+.mediaTwo,
+.mediaThree,
+.mediaFour {
+  width: 100%;
   border-radius: 12px;
+  overflow: hidden;
+  position: relative;
+  background: rgba(0, 0, 0, 0.04);
 }
 
-.mediaPreviewContainer {
+[data-theme='dark'] .mediaSingle,
+[data-theme='dark'] .mediaTwo,
+[data-theme='dark'] .mediaThree,
+[data-theme='dark'] .mediaFour {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+/* 2. Single Image: 4:5 ratio */
+.mediaSingle {
+  aspect-ratio: 4 / 5;
+  max-height: 380px;
+}
+
+/* 3. Two Images: 4:3 ratio, side-by-side 50%/50% */
+.mediaTwo {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3px;
+  aspect-ratio: 4 / 3;
+}
+
+/* 4. Three Images: 4:3 ratio, 1 large (50%) + 2 stacked on right */
+.mediaThree {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3px;
+  aspect-ratio: 4 / 3;
+}
+
+.mediaThreeLeft {
+  height: 100%;
+  overflow: hidden;
+}
+
+.mediaThreeRight {
+  display: grid;
+  grid-template-rows: 1fr 1fr;
+  gap: 3px;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* 5. Four+ Images: 1:1 ratio, 2x2 grid */
+.mediaFour {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 3px;
+  aspect-ratio: 1 / 1;
+}
+
+.mediaGridItem {
   position: relative;
   width: 100%;
-  aspect-ratio: 16 / 9;
-  border-radius: 10px;
+  height: 100%;
   overflow: hidden;
-  margin-top: 4px;
-  background: rgba(0, 0, 0, 0.2);
 }
 
-.mediaPreviewImg {
+.mediaCoverImg {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  object-position: center;
   display: block;
 }
 
-.mediaBadge {
+/* +N Overlay on 4th image */
+.moreOverlay {
   position: absolute;
-  bottom: 8px;
-  right: 8px;
-  background: rgba(0, 0, 0, 0.7);
-  color: #fff;
-  font-size: 0.75rem;
-  font-weight: 600;
-  padding: 3px 8px;
-  border-radius: 12px;
-  backdrop-filter: blur(4px);
+  inset: 0;
+  background: rgba(0, 0, 0, 0.58);
+  backdrop-filter: blur(3px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  font-size: 1.15rem;
+  font-weight: 700;
+  pointer-events: none;
 }
+
+/* ── Poll Widget ──────────────────────────────────────────────── */
 
 .pollPreviewWidget {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 5px;
   width: 100%;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.03);
+  border: 1px solid rgba(0, 0, 0, 0.06);
   border-radius: 10px;
-  padding: 10px 12px;
-  margin-top: 4px;
+  padding: 8px 10px;
+  box-sizing: border-box;
 }
 
-:global([data-theme='light']) .pollPreviewWidget {
-  background: rgba(0, 0, 0, 0.03);
-  border-color: rgba(0, 0, 0, 0.1);
+[data-theme='dark'] .pollPreviewWidget {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.08);
 }
 
 .pollHeader {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 0.82rem;
+  gap: 5px;
+  font-size: 0.8rem;
   font-weight: 600;
   opacity: 0.9;
+}
+
+.pollIcon {
+  flex-shrink: 0;
+  color: var(--color-primary, #6366f1);
+}
+
+.pollQuestion {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 0.8rem;
 }
 
 .pollOptionsList {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 4px;
 }
 
 .pollOptionItem {
@@ -212,15 +304,15 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 6px 10px;
+  padding: 5px 8px;
   border-radius: 6px;
-  background: rgba(255, 255, 255, 0.06);
-  font-size: 0.8rem;
+  background: rgba(0, 0, 0, 0.04);
+  font-size: 0.76rem;
   overflow: hidden;
 }
 
-:global([data-theme='light']) .pollOptionItem {
-  background: rgba(0, 0, 0, 0.05);
+[data-theme='dark'] .pollOptionItem {
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .pollOptionFill {
@@ -228,7 +320,7 @@
   top: 0;
   left: 0;
   bottom: 0;
-  background: rgba(99, 102, 241, 0.25);
+  background: rgba(99, 102, 241, 0.22);
   border-radius: 6px;
   transition: width 0.3s ease;
 }
@@ -239,17 +331,50 @@
   font-weight: 500;
   flex: 1;
   min-width: 0;
-  overflow-wrap: anywhere;
-  word-break: break-word;
-  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.3;
 }
 
 .pollOptionVotes {
   position: relative;
   z-index: 1;
-  font-size: 0.75rem;
+  font-size: 0.72rem;
   opacity: 0.75;
-  margin-left: 8px;
+  margin-left: 6px;
   flex-shrink: 0;
-  align-self: center;
+  font-weight: 600;
+}
+
+/* ── Meta / Footer ────────────────────────────────────────────── */
+
+.metaRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 2px;
+}
+
+.timestampText {
+  font-size: 0.64rem;
+  opacity: 0.55;
+  letter-spacing: 0.01em;
+}
+
+/* ── Unavailable State ────────────────────────────────────────── */
+
+.unavailable {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.84rem;
+  opacity: 0.75;
+  padding: 12px 14px;
+  border: 1px dashed rgba(0, 0, 0, 0.15);
+  border-radius: 12px;
+}
+
+[data-theme='dark'] .unavailable {
+  border-color: rgba(255, 255, 255, 0.15);
 }

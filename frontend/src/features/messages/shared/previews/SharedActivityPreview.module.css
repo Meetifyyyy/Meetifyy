@@ -1,6 +1,6 @@
 .activityShareCardNew {
-  background: #e8e8ee;
-  border-radius: 20px;
+  background: #f2f2f5;
+  border-radius: 16px;
   width: 270px;
   min-width: 270px;
   max-width: 270px;
@@ -11,8 +11,9 @@
   margin-top: 6px;
   cursor: pointer;
   color: var(--color-text-main, #18181b);
-  box-shadow: none;
-  border: 1px solid rgba(0, 0, 0, 0.07);
+  box-shadow: none !important;
+  filter: none !important;
+  border: 1px solid rgba(0, 0, 0, 0.08);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -20,47 +21,30 @@
 }
 
 [data-theme='dark'] .activityShareCardNew {
-  background: #33343a;
-  border-color: rgba(255, 255, 255, 0.09);
-  color: #ffffff;
+  background: #24252a;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #f4f4f5;
+  box-shadow: none !important;
+  filter: none !important;
 }
 
-.activityShareCardThem {
-  background: #e8e8ee;
-  border-color: rgba(0, 0, 0, 0.07);
-}
-
-[data-theme='dark'] .activityShareCardThem {
-  background: #33343a;
-  border-color: rgba(255, 255, 255, 0.09);
-}
-
+.activityShareCardThem,
 .activityShareCardMe {
-  background: linear-gradient(135deg, var(--color-primary, #6366f1) 0%, #4f46e5 100%) !important;
-  border-color: transparent !important;
-  color: white !important;
-  box-shadow: none !important;
+  background: #f2f2f5;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  color: var(--color-text-main, #18181b);
 }
 
+[data-theme='dark'] .activityShareCardThem,
 [data-theme='dark'] .activityShareCardMe {
-  background: linear-gradient(135deg, var(--color-primary, #6366f1) 0%, #4f46e5 100%) !important;
-  border-color: transparent !important;
-  color: white !important;
-  box-shadow: none !important;
+  background: #24252a;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #f4f4f5;
 }
 
 .activityShareCardNew:hover {
   opacity: 0.94;
-  box-shadow: none;
-}
-
-.activityShareCardMe .activityShareTitleNew {
-  color: #ffffff;
-}
-
-.activityShareCardMe .activityShareMetaRowNew,
-.activityShareCardMe .activityShareLocationNew {
-  color: rgba(255, 255, 255, 0.85);
+  box-shadow: none !important;
 }
 
 .activityShareCoverWrapper {
@@ -68,16 +52,20 @@
   height: 230px;
   margin: 8px 8px 0 8px;
   flex-shrink: 0;
-  border-radius: 14px;
+  border-radius: 12px;
   overflow: hidden;
-  background: var(--color-bg-muted, #f4f4f5);
+  background: rgba(0, 0, 0, 0.04);
+}
+
+[data-theme='dark'] .activityShareCoverWrapper {
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .activityShareCover {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  border-radius: 14px;
+  border-radius: 12px;
   display: block;
 }
 
@@ -104,8 +92,9 @@
 }
 
 .activityShareTitleNew {
-  font-weight: 800;
-  font-size: 0.92rem;
+  font-family: var(--font-family-display, inherit);
+  font-weight: 700;
+  font-size: 0.9rem;
   color: var(--color-text-main, #18181b);
   line-height: 1.25;
   margin-bottom: 2px;
@@ -114,20 +103,26 @@
   -webkit-box-orient: vertical;
   overflow: hidden;
   word-break: break-word;
-  overflow-wrap: anywhere;
-  word-break: break-all;
   min-width: 0;
   max-width: 100%;
 }
 
+[data-theme='dark'] .activityShareTitleNew {
+  color: var(--color-text-main, #f4f4f5);
+}
+
 .activityShareMetaRowNew {
-  font-size: 0.75rem;
+  font-size: 0.74rem;
   color: var(--color-text-muted, #71717a);
   font-weight: 500;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   min-width: 0;
+}
+
+[data-theme='dark'] .activityShareMetaRowNew {
+  color: #94a3b8;
 }
 
 .activityShareLocationNew {
@@ -139,6 +134,10 @@
   margin-top: 2px;
   min-width: 0;
   overflow: hidden;
+}
+
+[data-theme='dark'] .activityShareLocationNew {
+  color: #94a3b8;
 }
 
 .locIcon {

@@ -11,10 +11,9 @@ import { getMediaUrl } from '@shared/api/apiClient';
 export function SharedPostPreview({ post, isLoading = false, isMe = false }) {
   const navigate = useNavigate();
   const getPostById = usePostLookup();
-  // getUserById was defined as exactly `users[id] || null` over this same map.
   const usersMap = useUsersMap();
   const getUserById = (id) => usersMap[id] || null;
-  const [imgError, setImgError] = useState(false);
+  const [failedImages, setFailedImages] = useState({});
 
   if (isLoading) {
     return <PostPreviewSkeleton />;
@@ -34,7 +33,7 @@ export function SharedPostPreview({ post, isLoading = false, isMe = false }) {
 
   const authorId = livePost?.authorId;
   const liveAuthor = authorId ? getUserById(authorId) : null;
-  
+
   const authorName = liveAuthor?.displayName || liveAuthor?.username || post.authorName || 'Someone';
   const authorUsername = liveAuthor?.username || post.authorUsername || post.username || null;
   const authorAvatar = liveAuthor?.avatar || post.authorAvatar;
@@ -72,8 +71,8 @@ export function SharedPostPreview({ post, isLoading = false, isMe = false }) {
     return list;
   };
 
-  const mediaList = resolveMediaList();
-  const primaryMedia = mediaList.length > 0 ? mediaList[0] : null;
+  const rawMediaList = resolveMediaList();
+  const mediaList = rawMediaList.filter((_, idx) => !failedImages[idx]);
 
   // Extract poll data reliably
   const getOptionText = (o) => {
@@ -145,15 +144,121 @@ export function SharedPostPreview({ post, isLoading = false, isMe = false }) {
     navigate(`/post/${post.id}`, { state: { from: 'chat' } });
   };
 
+  const hasMedia = mediaList.length > 0;
+  const hasPoll = Boolean(pollData);
+  const mediaCount = mediaList.length;
+
+  // Determine layout class
+  let layoutClass = styles.layoutTextOnly;
+  if (hasMedia && hasPoll) {
+    layoutClass = mediaCount === 1 ? styles.layoutImagePoll : styles.layoutMultiImagePoll;
+  } else if (hasMedia) {
+    if (mediaCount === 1) layoutClass = styles.layoutSingleImage;
+    else if (mediaCount === 2) layoutClass = styles.layoutTwoImages;
+    else if (mediaCount === 3) layoutClass = styles.layoutThreeImages;
+    else layoutClass = styles.layoutFourImages;
+  } else if (hasPoll) {
+    layoutClass = styles.layoutPollOnly;
+  }
+
+  // Render media layout
+  const renderMedia = () => {
+    if (!hasMedia) return null;
+
+    if (mediaCount === 1) {
+      return (
+        <div className={styles.mediaSingle}>
+          <img
+            src={mediaList[0].url}
+            alt=""
+            className={styles.mediaCoverImg}
+            loading="lazy"
+            onError={() => setFailedImages(prev => ({ ...prev, 0: true }))}
+          />
+        </div>
+      );
+    }
+
+    if (mediaCount === 2) {
+      return (
+        <div className={styles.mediaTwo}>
+          {mediaList.slice(0, 2).map((item, idx) => (
+            <div key={idx} className={styles.mediaGridItem}>
+              <img
+                src={item.url}
+                alt=""
+                className={styles.mediaCoverImg}
+                loading="lazy"
+                onError={() => setFailedImages(prev => ({ ...prev, [idx]: true }))}
+              />
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    if (mediaCount === 3) {
+      return (
+        <div className={styles.mediaThree}>
+          <div className={styles.mediaThreeLeft}>
+            <img
+              src={mediaList[0].url}
+              alt=""
+              className={styles.mediaCoverImg}
+              loading="lazy"
+              onError={() => setFailedImages(prev => ({ ...prev, 0: true }))}
+            />
+          </div>
+          <div className={styles.mediaThreeRight}>
+            {mediaList.slice(1, 3).map((item, idx) => (
+              <div key={idx + 1} className={styles.mediaGridItem}>
+                <img
+                  src={item.url}
+                  alt=""
+                  className={styles.mediaCoverImg}
+                  loading="lazy"
+                  onError={() => setFailedImages(prev => ({ ...prev, [idx + 1]: true }))}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    // 4+ images: 2x2 grid with +N on 4th image
+    const overflowCount = mediaCount - 4;
+    return (
+      <div className={styles.mediaFour}>
+        {mediaList.slice(0, 4).map((item, idx) => (
+          <div key={idx} className={styles.mediaGridItem}>
+            <img
+              src={item.url}
+              alt=""
+              className={styles.mediaCoverImg}
+              loading="lazy"
+              onError={() => setFailedImages(prev => ({ ...prev, [idx]: true }))}
+            />
+            {idx === 3 && overflowCount > 0 && (
+              <div className={styles.moreOverlay}>
+                <span>+{overflowCount}</span>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    );
+  };
+
   return (
-    <div 
-      className={`${styles.container} ${isMe ? styles.containerMe : styles.containerThem}`} 
+    <div
+      className={`${styles.container} ${layoutClass} ${isMe ? styles.containerMe : styles.containerThem}`}
       onClick={handleCardClick}
       role="article"
       aria-label={`Post by ${authorName}`}
     >
       <div className={styles.authorRow}>
-        <Avatar src={authorAvatar} name={authorName} size="32px" />
+        <Avatar src={authorAvatar} name={authorName} size="38px" />
         <div className={styles.authorMeta}>
           <span className={styles.authorName}>{authorName}</span>
           {authorUsername && (
@@ -163,31 +268,20 @@ export function SharedPostPreview({ post, isLoading = false, isMe = false }) {
       </div>
 
       {contentText && (
-        <div className={styles.twoLineContent} title={contentText}>
+        <div className={styles.threeLineContent} title={contentText}>
           {contentText}
         </div>
       )}
 
-      {primaryMedia && !imgError && (
-        <div className={styles.mediaPreviewContainer}>
-          <img 
-            src={primaryMedia.url} 
-            alt="" 
-            className={styles.mediaPreviewImg} 
-            loading="lazy" 
-            onError={() => setImgError(true)}
-          />
-          {mediaList.length > 1 && (
-            <span className={styles.mediaBadge}>+{mediaList.length - 1} more</span>
-          )}
-        </div>
-      )}
+      {renderMedia()}
 
       {pollData && (
         <div className={styles.pollPreviewWidget}>
           <div className={styles.pollHeader}>
-            <BarChart2 size={15} />
-            <span>Poll: {typeof pollData.question === 'string' ? pollData.question : getOptionText(pollData.question) || 'Question'}</span>
+            <BarChart2 size={13} className={styles.pollIcon} />
+            <span className={styles.pollQuestion}>
+              {typeof pollData.question === 'string' ? pollData.question : getOptionText(pollData.question) || 'Poll'}
+            </span>
           </div>
           <div className={styles.pollOptionsList}>
             {pollData.options.slice(0, 4).map((opt, idx) => {

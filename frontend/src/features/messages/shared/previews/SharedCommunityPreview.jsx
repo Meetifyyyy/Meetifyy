@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom';
 import { isImageUrl } from '@shared/utils/avatar';
 import { getMediaUrl } from '@shared/api/apiClient';
+import { ChevronRight } from '@shared/components/icons';
 import styles from './SharedCommunityPreview.module.css';
 
 function formatCount(n) {
@@ -65,6 +66,7 @@ export function SharedCommunityPreview({ community, isMe = false }) {
         <div className={styles.name}>{community.name}</div>
         <div className={styles.membersCount}>{formatCount(membersCount)} {membersCount === 1 ? 'Member' : 'Members'}</div>
       </div>
+      <ChevronRight size={16} className={styles.chevron} />
     </div>
   );
 }

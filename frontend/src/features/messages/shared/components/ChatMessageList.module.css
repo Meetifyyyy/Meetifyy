@@ -106,7 +106,7 @@
   width: fit-content;
   max-width: 100%;
   padding: 0.6rem 0.9rem;
-  border-radius: 14px;
+  border-radius: 18px;
   line-height: 1.4;
   position: relative;
   min-width: 0;
@@ -119,16 +119,12 @@
   /* Solid rather than the near-transparent subtle token: against the chat
      background the old value read as a faint wash instead of a bubble. */
   background: #e8e8ee;
-  border: 1px solid rgba(0, 0, 0, 0.07);
   border-bottom-left-radius: 4px;
   color: var(--color-text-main, #18181b);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
 }
 
 [data-theme='dark'] .msgBubbleThem {
   background: #33343a;
-  border-color: rgba(255, 255, 255, 0.09);
-  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.28);
 }
 
 .msgBubbleMe {
@@ -137,7 +133,6 @@
   color: white;
   border-bottom-right-radius: 4px;
   --link-color: white;
-  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.18);
 }
 
 .msgBubbleTransparent {
@@ -309,6 +304,7 @@
     opacity: 0;
     transform: translateY(-2px);
   }
+
   to {
     opacity: 0.85;
     transform: translateY(0);
@@ -365,7 +361,7 @@
 @media (hover: hover) and (pointer: fine) {
 
   .msgResendIconButton:hover {
-  transform: scale(1.08);
+    transform: scale(1.08);
   }
 }
 
@@ -495,6 +491,7 @@
     min-width: 120px;
     min-height: 120px;
   }
+
   .msgMediaWrapperStandalone {
     width: min(65cqw, 265px, calc(265px * var(--aspect, 1)));
     max-width: min(65cqw, 265px);
@@ -512,6 +509,7 @@
     min-width: 100px;
     min-height: 100px;
   }
+
   .msgMediaWrapperStandalone {
     width: min(65cqw, 230px, calc(240px * var(--aspect, 1)));
     max-width: min(65cqw, 230px);
@@ -563,29 +561,26 @@
   left: 0;
   width: 100%;
   height: 100%;
-  background-image: linear-gradient(
-    90deg,
-    rgba(255, 255, 255, 0) 0%,
-    rgba(255, 255, 255, 0.35) 50%,
-    rgba(255, 255, 255, 0) 100%
-  );
+  background-image: linear-gradient(90deg,
+      rgba(255, 255, 255, 0) 0%,
+      rgba(255, 255, 255, 0.35) 50%,
+      rgba(255, 255, 255, 0) 100%);
   animation: mediaShimmer 1.5s infinite linear;
   will-change: transform;
 }
 
 [data-theme='dark'] .msgMediaSkeleton::after {
-  background-image: linear-gradient(
-    90deg,
-    rgba(255, 255, 255, 0) 0%,
-    rgba(255, 255, 255, 0.12) 50%,
-    rgba(255, 255, 255, 0) 100%
-  );
+  background-image: linear-gradient(90deg,
+      rgba(255, 255, 255, 0) 0%,
+      rgba(255, 255, 255, 0.12) 50%,
+      rgba(255, 255, 255, 0) 100%);
 }
 
 @keyframes mediaShimmer {
   0% {
     transform: translateX(-100%);
   }
+
   100% {
     transform: translateX(100%);
   }
@@ -603,6 +598,7 @@
     opacity: 0.25;
     transform: scale(0.95);
   }
+
   100% {
     opacity: 0.5;
     transform: scale(1.05);
@@ -761,63 +757,40 @@
   flex-direction: column;
   gap: 12px;
   padding: 14px 16px;
-  background: #e8e8ee;
-  border: 1px solid rgba(0, 0, 0, 0.07);
-  border-radius: 18px;
+  background: #f2f2f5;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 16px;
   min-width: 260px;
   max-width: 320px;
-  box-shadow: none;
+  box-shadow: none !important;
+  filter: none !important;
   transition: opacity 0.15s ease;
   box-sizing: border-box;
 }
 
 [data-theme='dark'] .groupInviteCard {
-  background: #33343a;
-  border-color: rgba(255, 255, 255, 0.09);
-  box-shadow: none;
+  background: #24252a;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: none !important;
+  filter: none !important;
 }
 
-.groupInviteCardThem {
-  background: #e8e8ee;
-  border-color: rgba(0, 0, 0, 0.07);
-}
-
-[data-theme='dark'] .groupInviteCardThem {
-  background: #33343a;
-  border-color: rgba(255, 255, 255, 0.09);
-}
-
+.groupInviteCardThem,
 .groupInviteCardMe {
-  background: linear-gradient(135deg, var(--color-primary, #6366f1) 0%, #4f46e5 100%) !important;
-  border-color: transparent !important;
-  color: white !important;
-  box-shadow: none !important;
+  background: #f2f2f5;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  color: var(--color-text-main, #18181b);
 }
 
+[data-theme='dark'] .groupInviteCardThem,
 [data-theme='dark'] .groupInviteCardMe {
-  background: linear-gradient(135deg, var(--color-primary, #6366f1) 0%, #4f46e5 100%) !important;
-  border-color: transparent !important;
-  color: white !important;
-  box-shadow: none !important;
-}
-
-.groupInviteCardMe .groupInviteInfo h4 {
-  color: #ffffff;
-}
-
-.groupInviteCardMe .groupInviteInfo p {
-  color: rgba(255, 255, 255, 0.85);
-}
-
-.groupInviteCardMe .groupInviteBtn {
-  background: white;
-  color: var(--color-primary, #6366f1);
-  box-shadow: none;
+  background: #24252a;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #f4f4f5;
 }
 
 .groupInviteCard:hover {
   opacity: 0.94;
-  box-shadow: none;
 }
 
 .groupInviteHeader {
@@ -843,7 +816,11 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 2px solid var(--color-bg-card, #ffffff);
+  border: 2px solid #f2f2f5;
+}
+
+[data-theme='dark'] .groupInviteBadge {
+  border-color: #24252a;
 }
 
 .groupInviteInfo {
@@ -855,7 +832,8 @@
 }
 
 .groupInviteInfo h4 {
-  font-size: 0.95rem;
+  font-family: var(--font-family-display, inherit);
+  font-size: 0.92rem;
   font-weight: 600;
   color: var(--color-text-main, #18181b);
   margin: 0;
@@ -864,10 +842,18 @@
   text-overflow: ellipsis;
 }
 
+[data-theme='dark'] .groupInviteInfo h4 {
+  color: var(--color-text-main, #f4f4f5);
+}
+
 .groupInviteInfo p {
-  font-size: 0.76rem;
+  font-size: 0.74rem;
   color: var(--color-text-muted, #71717a);
   margin: 0;
+}
+
+[data-theme='dark'] .groupInviteInfo p {
+  color: #94a3b8;
 }
 
 .groupInviteNote {
@@ -877,8 +863,8 @@
   color: var(--color-text-muted, #71717a);
 }
 
-.groupInviteCardMe .groupInviteNote {
-  color: rgba(255, 255, 255, 0.85);
+[data-theme='dark'] .groupInviteNote {
+  color: #a1a1aa;
 }
 
 .groupInviteActions {
@@ -896,18 +882,17 @@
   background: linear-gradient(135deg, var(--color-primary, #6366f1) 0%, #4f46e5 100%);
   color: white;
   border: none;
-  border-radius: 12px;
-  padding: 9px 16px;
+  border-radius: 10px;
+  padding: 8px 16px;
   font-size: 0.82rem;
   font-weight: 600;
   cursor: pointer;
-  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.25);
-  transition: opacity 0.18s ease, box-shadow 0.18s ease;
+  box-shadow: none !important;
+  transition: opacity 0.15s ease;
 }
 
 .groupInviteBtn:hover {
-  opacity: 0.95;
-  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.35);
+  opacity: 0.92;
 }
 
 .groupInviteBtn:active {
@@ -1053,13 +1038,31 @@
   animation: typingBounce 1.3s ease-in-out infinite;
 }
 
-.typingDot:nth-child(1) { animation-delay: 0s; }
-.typingDot:nth-child(2) { animation-delay: 0.18s; }
-.typingDot:nth-child(3) { animation-delay: 0.36s; }
+.typingDot:nth-child(1) {
+  animation-delay: 0s;
+}
+
+.typingDot:nth-child(2) {
+  animation-delay: 0.18s;
+}
+
+.typingDot:nth-child(3) {
+  animation-delay: 0.36s;
+}
 
 @keyframes typingBounce {
-  0%, 60%, 100% { transform: translateY(0); opacity: 0.5; }
-  30%            { transform: translateY(-4px); opacity: 1; }
+
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.5;
+  }
+
+  30% {
+    transform: translateY(-4px);
+    opacity: 1;
+  }
 }
 
 .systemMessageContainer {
@@ -1121,6 +1124,7 @@
   text-decoration: underline;
   color: #a5b4fc;
 }
+
 /* --- Optimistic media upload overlay (progress / retry / cancel) --- */
 .msgUploadOverlay {
   position: absolute;
@@ -1135,6 +1139,7 @@
   z-index: 4;
   pointer-events: auto;
 }
+
 .msgUploadRing {
   width: 46px;
   height: 46px;
@@ -1145,24 +1150,28 @@
   background:
     conic-gradient(#ffffff var(--upload-pct, 0%), rgba(255, 255, 255, 0.25) 0);
   -webkit-mask: radial-gradient(circle 15px at center, transparent 98%, #000 100%);
-          mask: radial-gradient(circle 15px at center, transparent 98%, #000 100%);
+  mask: radial-gradient(circle 15px at center, transparent 98%, #000 100%);
   transition: background 0.15s linear;
 }
+
 .msgUploadPct {
   position: absolute;
   font-size: 0.66rem;
   font-weight: 700;
   color: #fff;
 }
+
 .msgUploadFailedText {
   color: #fff;
   font-size: 0.8rem;
   font-weight: 600;
 }
+
 .msgUploadActions {
   display: flex;
   gap: 8px;
 }
+
 .msgUploadBtn {
   background: var(--color-primary, #3b82f6);
   color: #fff;
@@ -1173,6 +1182,7 @@
   font-weight: 600;
   cursor: pointer;
 }
+
 .msgUploadBtnGhost {
   background: rgba(255, 255, 255, 0.18);
   color: #fff;
@@ -1208,7 +1218,9 @@
 }
 
 @keyframes topSpinnerRotate {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .topLoadingText {
@@ -1258,7 +1270,7 @@
 @media (hover: hover) and (pointer: fine) {
 
   .newMessagesBtn:hover {
-  transform: translateY(-2px);
+    transform: translateY(-2px);
   }
 }
 
@@ -1342,16 +1354,27 @@
  * The row's own children are lifted above the overlay. Without this the tint
  * would wash over the bubble rather than sitting behind it.
  */
-.msgJumpHighlight > * {
+.msgJumpHighlight>* {
   position: relative;
   z-index: 1;
 }
 
 @keyframes msgJumpPulse {
-  0%   { background-color: rgba(99, 102, 241, 0.00); }
-  12%  { background-color: rgba(99, 102, 241, 0.26); }
-  60%  { background-color: rgba(99, 102, 241, 0.18); }
-  100% { background-color: rgba(99, 102, 241, 0.00); }
+  0% {
+    background-color: rgba(99, 102, 241, 0.00);
+  }
+
+  12% {
+    background-color: rgba(99, 102, 241, 0.26);
+  }
+
+  60% {
+    background-color: rgba(99, 102, 241, 0.18);
+  }
+
+  100% {
+    background-color: rgba(99, 102, 241, 0.00);
+  }
 }
 
 /*
@@ -1368,10 +1391,21 @@
 }
 
 @keyframes msgJumpPulseDark {
-  0%   { background-color: rgba(129, 140, 248, 0.00); }
-  12%  { background-color: rgba(129, 140, 248, 0.42); }
-  60%  { background-color: rgba(129, 140, 248, 0.30); }
-  100% { background-color: rgba(129, 140, 248, 0.00); }
+  0% {
+    background-color: rgba(129, 140, 248, 0.00);
+  }
+
+  12% {
+    background-color: rgba(129, 140, 248, 0.42);
+  }
+
+  60% {
+    background-color: rgba(129, 140, 248, 0.30);
+  }
+
+  100% {
+    background-color: rgba(129, 140, 248, 0.00);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
