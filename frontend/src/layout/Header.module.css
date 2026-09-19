@@ -588,28 +588,38 @@
   }
 }
 
-/* ── Mobile Navigation Drawer (Reworked from Scratch) ─────────────── */
+/* ── Mobile navigation drawer ─────────────────────────────────────────────
+   Every size here comes from the type scale, the radius scale or a 4px
+   spacing step. That is most of what this rework is: the panel previously
+   carried seven font sizes, none of them from `--font-size-*`, four radii and
+   spacing in 2/3/6/10/14px increments, so nothing lined up with anything and
+   the whole thing read as assembled rather than designed.
+
+   The other half is hit targets. Rows were 30-36px tall, which is below the
+   44px every touch guideline asks for and small enough that the community
+   list was genuinely fiddly to tap on a phone. */
 .mobileDrawer {
   position: fixed;
   top: 0;
   left: 0;
   bottom: 0;
-  width: min(268px, 78vw);
+  width: min(300px, 84vw);
   background: var(--color-bg-white);
   border-right: 1px solid var(--color-border-light);
-  border-top-right-radius: 16px;
-  border-bottom-right-radius: 16px;
-  box-shadow: 8px 0 28px -6px rgba(0, 0, 0, 0.12), 2px 0 8px -2px rgba(0, 0, 0, 0.04);
+  /* Square. It had 16px rounded right corners, which on a panel pinned to
+     three edges of the screen reads as a card that failed to centre itself —
+     the corners cut into the content and reveal the page behind them. A
+     full-height surface meets the screen edge flush. */
+  box-shadow: var(--shadow-lg);
   z-index: 1000;
   transform: translateX(-100%);
-  transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1),
-              visibility 0.28s linear;
+  transition: transform 0.3s cubic-bezier(0.32, 0.72, 0, 1),
+              visibility 0.3s linear;
   display: flex;
   flex-direction: column;
   visibility: hidden;
   will-change: transform;
   padding-top: env(safe-area-inset-top, 0px);
-  padding-bottom: env(safe-area-inset-bottom, 0px);
   overscroll-behavior: contain;
   touch-action: pan-y;
 }
@@ -621,20 +631,24 @@
 
 .drawerOverlay {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(15, 23, 42, 0.45);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  inset: 0;
+  background: rgba(15, 23, 42, 0.32);
+  /* Half the previous blur. At 8px the feed behind turned to soup, which made
+     the drawer feel like a modal takeover rather than a panel over a page you
+     are still in. */
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
   z-index: 999;
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
-  transition: opacity 0.28s cubic-bezier(0.16, 1, 0.3, 1),
-              visibility 0.28s linear;
+  transition: opacity 0.3s cubic-bezier(0.32, 0.72, 0, 1),
+              visibility 0.3s linear;
   -webkit-tap-highlight-color: transparent;
+}
+
+:global([data-theme="dark"]) .drawerOverlay {
+  background: rgba(0, 0, 0, 0.5);
 }
 
 .drawerOverlayOpen {
@@ -649,34 +663,30 @@
   }
 }
 
-/* ── Drawer Header ────────────────────────────────────────── */
+/* ── Header ───────────────────────────────────────────────────────────── */
 .drawerHeader {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 54px;
-  padding: 0 14px;
-  border-bottom: 1px solid var(--color-border-light);
-  background: var(--color-bg-white);
+  height: 56px;
+  padding: 0 8px 0 20px;
   flex-shrink: 0;
+  /* No bottom border. The profile card below already establishes the top of
+     the content, and a rule between them was a second horizontal line inside
+     the first 120px of a 300px-wide panel. */
 }
 
 .drawerWordmark {
-  height: 15px;
+  height: 16px;
   width: auto;
-  max-width: 100%;
   object-fit: contain;
   display: block;
   cursor: pointer;
   transition: opacity 0.15s ease;
 }
 
-.drawerWordmark:hover {
-  opacity: 0.85;
-}
-
 .drawerWordmark:active {
-  transform: scale(0.97);
+  opacity: 0.7;
 }
 
 :global([data-theme="dark"]) .drawerWordmark {
@@ -686,17 +696,16 @@
 .closeDrawerBtn {
   background: transparent;
   border: none;
-  color: var(--color-text-muted);
+  color: var(--color-text-light);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
+  /* 44px, like every other target in here. It was 32. */
+  width: 44px;
+  height: 44px;
   padding: 0;
-  margin: 0;
-  width: 32px;
-  height: 32px;
-  margin-right: -4px;
-  border-radius: 50%;
+  border-radius: var(--radius-full);
   transition: color 0.15s ease, background-color 0.15s ease;
   -webkit-tap-highlight-color: transparent;
 }
@@ -706,12 +715,20 @@
   background: var(--color-bg-soft);
 }
 
-/* ── Drawer Content Scroll Area ────────────────────────────── */
+.closeDrawerBtn:active {
+  background: var(--color-border-light);
+}
+
+.closeDrawerBtn:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
+}
+
+/* ── Scroll area ──────────────────────────────────────────────────────── */
 .drawerContent {
-  padding: 14px;
+  padding: 4px 12px 16px;
   display: flex;
   flex-direction: column;
-  gap: 0;
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
@@ -726,33 +743,46 @@
   display: none;
 }
 
-/* ── Profile Section ───────────────────────────────────────── */
+/* ── Profile ──────────────────────────────────────────────────────────────
+   One surface holding the identity and the two counts, rather than a bare
+   row followed by a sentence fragment ("5 Followers  2 Following") and a
+   divider. Giving it a fill is what lets the divider go: the card's own edge
+   separates it from the communities list, so the panel needs one less line. */
 .drawerProfile {
   display: flex;
   flex-direction: column;
-  padding: 0;
-  margin: 0;
-  background: transparent;
-  border: none;
+  padding: 12px;
+  background: var(--color-bg-soft);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
   cursor: pointer;
-  transition: opacity 0.15s ease;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
   -webkit-tap-highlight-color: transparent;
 }
 
 .drawerProfile:hover {
-  opacity: 0.85;
+  border-color: var(--color-border);
+}
+
+.drawerProfile:active {
+  background: var(--color-border-light);
+}
+
+.drawerProfile:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
 }
 
 .drawerProfileHeader {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
 }
 
 .drawerAvatarWrap {
-  width: 42px;
-  height: 42px;
-  border-radius: 50%;
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-full);
   flex-shrink: 0;
   position: relative;
 }
@@ -762,152 +792,139 @@
   flex-direction: column;
   min-width: 0;
   flex: 1;
+  gap: 2px;
 }
 
 .drawerProfileName {
-  font-size: 0.95rem;
-  font-weight: 700;
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
   color: var(--color-text-main);
-  letter-spacing: -0.01em;
+  letter-spacing: var(--tracking-tight);
+  line-height: var(--leading-tight);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  line-height: 1.25;
 }
 
 .drawerProfileUsername {
-  font-size: 0.8rem;
-  font-weight: 400;
-  color: var(--color-text-muted);
-  margin-top: 1px;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-regular);
+  color: var(--color-text-light);
+  line-height: var(--leading-tight);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  line-height: 1.2;
 }
 
+/* Two equal columns split by a hairline, so each count is a target with an
+   obvious edge instead of two words a thumb has to find in running text. */
 .drawerProfileStats {
   display: flex;
-  align-items: baseline;
-  gap: 14px;
-  margin-top: 10px;
-  padding: 0;
+  align-items: stretch;
+  /* No rule above the counts and none between them. The card's own fill is
+     already the boundary, and three horizontal lines inside a 300px panel was
+     the thing making it feel busy. Spacing carries the grouping instead. */
+  margin-top: 14px;
 }
 
 .statItem {
   display: flex;
-  align-items: baseline;
-  gap: 4px;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 1px;
+  flex: 1;
+  min-width: 0;
   background: transparent;
   border: none;
-  padding: 0;
+  border-radius: var(--radius-sm);
+  padding: 4px 8px;
   cursor: pointer;
-  transition: opacity 0.15s ease;
+  transition: background-color 0.15s ease;
   -webkit-tap-highlight-color: transparent;
 }
 
 .statItem:hover {
-  opacity: 0.75;
+  background: var(--color-bg-white);
+}
+
+.statItem:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
 }
 
 .statNumber {
-  font-size: 0.9rem;
-  font-weight: 700;
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
   color: var(--color-text-main);
-  line-height: 1;
+  line-height: var(--leading-tight);
+  font-variant-numeric: tabular-nums;
 }
 
 .statLabel {
-  font-size: 0.82rem;
-  font-weight: 400;
-  color: var(--color-text-muted);
-  line-height: 1;
-  text-transform: none;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-regular);
+  color: var(--color-text-light);
+  line-height: var(--leading-tight);
 }
 
-/* ── Divider ───────────────────────────────────────────────── */
-.drawerDivider {
-  height: 1px;
-  background: var(--color-border-light);
-  margin: 12px 0;
-  flex-shrink: 0;
-}
-
-/* ── Communities Section ───────────────────────────────────── */
+/* ── Communities ──────────────────────────────────────────────────────── */
 .communitiesBox {
   display: flex;
   flex-direction: column;
-  gap: 0;
-  background: transparent;
-  border: none;
-  padding: 0;
-  margin: 0;
+  margin-top: 24px;
   -webkit-tap-highlight-color: transparent;
 }
 
+/* A section label, not a row. The icon it used to carry sat in a 22px slot
+   beside an all-caps word — decoration standing in for hierarchy, and the
+   same slot component was reused at three different sizes elsewhere. Type
+   alone does the job. */
 .communitiesHeader {
   display: flex;
   align-items: center;
-  gap: 10px;
-  height: 26px;
-  background: transparent;
-  border: none;
+  gap: 8px;
+  padding: 0 8px;
+  margin-bottom: 8px;
   user-select: none;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.communitiesIconSlot {
-  width: 22px;
-  height: 22px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.communitiesHeaderIcon {
-  width: 17px;
-  height: 17px;
-  color: var(--color-text-muted);
 }
 
 .communitiesTitle {
-  font-size: 0.72rem;
-  font-weight: 700;
-  color: var(--color-text-muted);
-  letter-spacing: 0.05em;
+  font-size: var(--font-size-2xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-light);
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  line-height: 1;
+  line-height: var(--leading-tight);
 }
 
+/* No indent and no left rule. The list was inset 20px behind a 1.5px border,
+   which drew it as a file tree hanging off the heading. It is a list of
+   places you can go, so it sits at the same margin as everything else. */
 .communitiesList {
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  padding: 2px 0 2px 10px;
-  margin: 4px 0 0 10px;
-  border-left: 1.5px solid var(--color-border-light);
+  gap: 2px;
 }
 
 .emptyCommunities {
-  padding: 4px 0;
-  font-size: 0.8rem;
-  color: var(--color-text-muted);
-  font-weight: 400;
+  padding: 8px;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-light);
+  font-weight: var(--font-weight-regular);
 }
 
 .communityItem {
   display: flex;
   align-items: center;
-  gap: 8px;
-  height: 32px;
-  padding: 0 6px;
-  margin: 0 -4px;
-  border-radius: 6px;
+  gap: 12px;
+  min-height: 44px;
+  padding: 0 8px;
+  border-radius: var(--radius-sm);
   text-decoration: none;
   color: var(--color-text-main);
-  font-size: 0.85rem;
-  font-weight: 500;
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-medium);
   transition: background-color 0.15s ease;
   background: transparent;
   border: none;
@@ -919,14 +936,23 @@
   background: var(--color-bg-soft);
 }
 
+.communityItem:active {
+  background: var(--color-border-light);
+}
+
+.communityItem:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
+}
+
 .communityAvatar {
   composes: ui-avatar from global;
-  width: 20px;
-  height: 20px;
-  border-radius: 5px;
-  color: white;
-  font-size: 0.7rem;
-  font-weight: 700;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  color: #fff;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
   flex-shrink: 0;
   display: flex;
   align-items: center;
@@ -935,7 +961,7 @@
 }
 
 .communityAvatar img {
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
 }
 
 .communityItemName {
@@ -943,48 +969,87 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  line-height: 1.25;
+  line-height: var(--leading-snug);
 }
 
-/* Explore Communities Navigation Item */
+/* The same row as a community, not a blue link.
+   It was `--color-primary` at 0.78rem with opacity 0.82 sitting directly
+   under 0.85rem/500 rows — a different size, weight, colour and opacity for
+   an item that does the same kind of thing, which is the single loudest
+   "assembled from parts" signal in the panel. The icon in a bordered square
+   matches a community avatar's footprint, so the column of glyphs lines up. */
+/* Lighter than a community row, and tinted, because it is not one: the rows
+   above are places you are already in, this is the way to find more. Smaller
+   type and the primary colour say "utility action" where the list says
+   "destination".
+   
+   The distinction is carried by size and colour ONLY. It previously differed
+   in four ways at once — size, weight, colour and an opacity of 0.82 — which
+   is what made it look like it had been styled separately rather than
+   deliberately.
+   
+   min-height stays 44px. The TYPE shrinks; the tappable area does not, because
+   this sits directly under a list of similar rows and a smaller target among
+   them is the one people miss. */
 .exploreMore {
   display: flex;
   align-items: center;
-  gap: 8px;
-  height: 30px;
-  padding: 0 6px;
-  margin: 0 -4px;
-  border-radius: 6px;
+  /* Compact, so it tucks under the last community instead of floating clear of
+     it. At 44px — a full row's height for 12px of text — the surrounding air
+     was doing the opposite of what the row needs to say: it read as a separate
+     element parked below the section rather than as the tail of it.
+
+     Flush with the COMMUNITIES label and the avatar column. Indenting it to
+     the community NAMES instead put the one unindented thing in the panel a
+     step right of everything else, which hung worse. One left edge for the
+     whole section. */
+  position: relative;
+  min-height: 30px;
+  margin-top: 2px;
+  padding: 0 8px;
+  border-radius: var(--radius-sm);
   color: var(--color-primary);
-  opacity: 0.82;
-  font-size: 0.78rem;
-  font-weight: 400;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
   text-decoration: none;
-  transition: background-color 0.15s ease, opacity 0.15s ease;
+  transition: background-color 0.15s ease, color 0.15s ease;
   -webkit-tap-highlight-color: transparent;
 }
 
-.exploreMore .communitiesIconSlot {
-  width: 20px;
-  height: 20px;
+/* The row is 30px to the eye and 44px to a thumb.
+   Shrinking a target that sits directly beneath a list of similar rows is how
+   people end up opening the wrong one, so the hit area is extended downwards —
+   into the empty space below, never upwards into the community above it, which
+   would steal taps from that row. */
+.exploreMore::after {
+  content: '';
+  position: absolute;
+  inset: 0 0 -14px;
 }
 
 .exploreMore:hover {
-  background: var(--color-bg-soft);
-  opacity: 1;
+  background: rgba(var(--color-primary-rgb), 0.08);
+  color: var(--color-primary-hover);
   text-decoration: none;
 }
 
-.exploreIcon {
-  width: 15px;
-  height: 15px;
-  flex-shrink: 0;
+.exploreMore:active {
+  background: rgba(var(--color-primary-rgb), 0.14);
 }
 
-/* ── Docked Drawer Bottom: Settings & Theme ─────────────── */
+.exploreMore:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
+}
+
+/* A plain glyph in the same 28px of horizontal space a community avatar
+   occupies, so every row in the list shares one vertical axis. The dashed
+   bordered square it had before read as an empty placeholder waiting to be
+   filled, which is the opposite of what the row does. */
+/* ── Docked bottom ────────────────────────────────────────────────────── */
 .drawerBottom {
   margin-top: auto;
-  padding: 10px 14px calc(10px + env(safe-area-inset-bottom, 0px)) 14px;
+  padding: 8px 12px calc(12px + env(safe-area-inset-bottom, 0px));
   border-top: 1px solid var(--color-border-light);
   display: flex;
   align-items: center;
@@ -994,68 +1059,78 @@
 }
 
 .drawerSettingsBtn {
-  height: 36px;
+  min-height: 44px;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   background: transparent;
   border: none;
-  border-radius: 6px;
-  padding: 0 4px;
-  margin-left: -4px;
+  border-radius: var(--radius-sm);
+  padding: 0 8px;
   font-family: var(--font-family-sans);
-  font-size: 0.9rem;
-  font-weight: 600;
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-medium);
   color: var(--color-text-main);
   cursor: pointer;
   flex: 1;
-  transition: color 0.15s ease, background-color 0.15s ease;
+  transition: background-color 0.15s ease;
   -webkit-tap-highlight-color: transparent;
 }
 
 .drawerSettingsBtn:hover {
   background: var(--color-bg-soft);
-  color: var(--color-primary);
+}
+
+.drawerSettingsBtn:active {
+  background: var(--color-border-light);
+}
+
+.drawerSettingsBtn:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
 }
 
 .settingsIcon {
-  width: 17px;
-  height: 17px;
-  color: var(--color-text-muted);
+  width: 20px;
+  height: 20px;
+  /* 28px of horizontal space, so the glyph sits on the same axis as the
+     avatars in the list above rather than 8px to the left of them. */
+  margin: 0 4px;
+  color: var(--color-text-light);
   flex-shrink: 0;
   transition: color 0.15s ease;
 }
 
 .drawerSettingsBtn:hover .settingsIcon {
-  color: var(--color-primary);
+  color: var(--color-text-main);
 }
 
 .drawerThemeToggleBtn {
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
-  background: var(--color-bg-soft);
-  border: 1px solid var(--color-border-light);
-  color: var(--color-icon-base);
+  width: 40px;
+  height: 40px;
+  /* Circular and outlined, so the one icon-only control in the bottom bar
+     reads as a button rather than as a glyph floating beside the Settings
+     row. 40px keeps the ring clear of the 44px row's edges while the hit
+     area stays generous. */
+  border-radius: var(--radius-full);
+  background: transparent;
+  border: 1px solid var(--color-border);
+  color: var(--color-text-light);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: all 0.2s ease;
   flex-shrink: 0;
   -webkit-tap-highlight-color: transparent;
 }
 
 .drawerThemeToggleBtn:hover {
-  background: var(--color-bg-white);
-  border-color: var(--color-primary);
-  color: var(--color-primary);
-  box-shadow: var(--shadow-sm);
-  transform: rotate(15deg);
-}
-
-.drawerThemeToggleBtn:active {
-  transform: scale(0.92);
+  background: var(--color-bg-soft);
+  border-color: var(--color-border-dark);
+  color: var(--color-text-main);
+  /* No rotation. A control that tilts 15 degrees when a cursor nears it is a
+     trick, and it read as one next to a settings row that does nothing of the
+     kind. The icon already has a swap animation that means something. */
 }
 
 @media (max-width: 480px) {

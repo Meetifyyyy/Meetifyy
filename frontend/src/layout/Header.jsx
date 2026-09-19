@@ -6,7 +6,7 @@ import { useProfile } from '@shared/hooks/useProfile';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@shared/context/AuthContext';
 import { useJoinedCommunities } from '@shared/hooks/useCommunities';
-import { Bookmark, Moon, Sun, MenuSquare, X, Compass } from '@shared/components/icons';
+import { Bookmark, Moon, Sun, MenuSquare, X } from '@shared/components/icons';
 
 
 import Avatar from '@shared/components/avatar/Avatar';
@@ -15,7 +15,6 @@ import { useTheme } from '@shared/context/ThemeContext';
 import NotificationBell from '@features/notifications/components/NotificationBell';
 import { isImageUrl } from '@shared/utils/avatar';
 import {
-  UserGroupIcon as CommunitiesOutline,
   Cog6ToothIcon as SettingsIcon,
   MagnifyingGlassIcon,
 } from '@heroicons/react/24/outline';
@@ -263,14 +262,9 @@ export default function Header({ variant = 'dashboard', wide = false }) {
             </div>
           </div>
 
-          <div className={styles.drawerDivider} />
-
           {/* Communities Box */}
           <div className={styles.communitiesBox}>
             <div className={styles.communitiesHeader}>
-              <div className={styles.communitiesIconSlot}>
-                <CommunitiesOutline className={styles.communitiesHeaderIcon} />
-              </div>
               <span className={styles.communitiesTitle}>Communities</span>
             </div>
             
@@ -295,9 +289,6 @@ export default function Header({ variant = 'dashboard', wide = false }) {
                 className={styles.exploreMore}
                 onClick={(e) => { e.preventDefault(); navigate('/communities'); setDrawerOpen(false); }}
               >
-                <div className={styles.communitiesIconSlot}>
-                  <Compass size={16} className={styles.exploreIcon} />
-                </div>
                 <span>Explore communities</span>
               </a>
             </div>
@@ -310,9 +301,7 @@ export default function Header({ variant = 'dashboard', wide = false }) {
             className={styles.drawerSettingsBtn}
             onClick={() => { navigate('/settings'); setDrawerOpen(false); }}
           >
-            <div className={styles.communitiesIconSlot}>
-              <SettingsIcon className={styles.settingsIcon} />
-            </div>
+            <SettingsIcon className={styles.settingsIcon} aria-hidden="true" />
             <span>Settings</span>
           </button>
           
