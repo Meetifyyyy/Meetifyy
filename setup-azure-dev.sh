@@ -95,6 +95,23 @@ SENTRY_DSN=$(get_env SENTRY_DSN)
 SUPER_ADMIN_EMAIL=$(get_env SUPER_ADMIN_EMAIL)
 SUPER_ADMIN_PASSWORD=$(get_env SUPER_ADMIN_PASSWORD)
 
+# Session cookies (COOKIE_DOMAIN / COOKIE_SECURE / COOKIE_SAME_SITE below) are
+# set explicitly because every default is wrong for this deployment, and wrong
+# in a way nothing reports.
+#
+# With COOKIE_DOMAIN unset the session cookies are host-only on
+# dev-api.meetifyy.app. They still authenticate API calls, so the deployment
+# looks healthy — but the page on dev.meetifyy.app cannot read mf_csrf, which
+# is the token it has to echo on every mutation and the hint it uses to decide
+# whether a session is worth restoring. The visible symptom was that signing in
+# worked and then every refresh showed the landing page.
+#
+# COOKIE_SECURE defaults to false outside production, which leaves a session
+# credential willing to ride a plaintext request on an HTTPS-only deployment.
+#
+# These three now mirror setup-azure-prod.sh exactly. They are the only cookie
+# settings that are the same across the two environments, and deliberately so:
+# cookie scope is a property of the domain layout, which is identical here.
 echo "==> 6. Creating Initial DEV Container App ($APP_NAME)..."
 az containerapp create \
   --name "$APP_NAME" \
@@ -119,6 +136,9 @@ az containerapp create \
     BACKEND_URL="https://dev-api.meetifyy.app" \
     CORS_ORIGINS="https://dev.meetifyy.app,https://meetifyy.app" \
     CORS_ORIGIN_PATTERNS="https://*.meetifyy.app" \
+    COOKIE_DOMAIN=".meetifyy.app" \
+    COOKIE_SECURE="true" \
+    COOKIE_SAME_SITE="strict" \
     EMAIL_DRIVER=resend \
     EMAIL_FROM="noreply@meetifyy.app" \
     STORAGE_PROVIDER=r2 \
