@@ -66,6 +66,7 @@ import {
   MoreVerticalIcon,
   Megaphone01Icon,
   Menu01Icon,
+  MenuSquareIcon,
   Mic01Icon,
   Notification03Icon,
   NotificationOff03Icon,
@@ -113,6 +114,7 @@ import {
   FavouriteIcon,
   BiscuitIcon,
   FingerPrintIcon,
+  SidebarLeftIcon,
 } from '@hugeicons/core-free-icons';
 
 /**
@@ -182,6 +184,9 @@ const GLYPHS = {
 
   // -- Chrome
   Menu: Menu01Icon,
+  MenuSquare: MenuSquareIcon,
+  Sidebar: SidebarLeftIcon,
+  SidebarLeft: SidebarLeftIcon,
   MoreVertical: MoreVerticalIcon,
   MoreHorizontal: MoreHorizontalIcon,
   Search: Search01Icon,
@@ -338,6 +343,9 @@ export const RefreshCw = /*#__PURE__*/ icon(GLYPHS.RefreshCw, 'RefreshCw');
 export const WifiOff = /*#__PURE__*/ icon(GLYPHS.WifiOff, 'WifiOff');
 export const Sparkles = /*#__PURE__*/ icon(GLYPHS.Sparkles, 'Sparkles');
 export const Menu = /*#__PURE__*/ icon(GLYPHS.Menu, 'Menu');
+export const MenuSquare = /*#__PURE__*/ icon(GLYPHS.MenuSquare, 'MenuSquare');
+export const Sidebar = /*#__PURE__*/ icon(GLYPHS.Sidebar, 'Sidebar');
+export const SidebarLeft = Sidebar;
 export const MoreVertical = /*#__PURE__*/ icon(GLYPHS.MoreVertical, 'MoreVertical');
 export const MoreHorizontal = /*#__PURE__*/ icon(GLYPHS.MoreHorizontal, 'MoreHorizontal');
 export const Search = /*#__PURE__*/ icon(GLYPHS.Search, 'Search');
