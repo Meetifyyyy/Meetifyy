@@ -296,7 +296,7 @@ export default function Header({ variant = 'dashboard', wide = false }) {
                 onClick={(e) => { e.preventDefault(); navigate('/communities'); setDrawerOpen(false); }}
               >
                 <div className={styles.communitiesIconSlot}>
-                  <Compass size={18} className={styles.exploreIcon} />
+                  <Compass size={16} className={styles.exploreIcon} />
                 </div>
                 <span>Explore communities</span>
               </a>
