@@ -123,6 +123,15 @@ export default function SearchResultsRoute() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    if (shouldAutoFocus) {
+      const focusTimer = setTimeout(() => {
+        searchInputRef.current?.focus();
+      }, 50);
+      return () => clearTimeout(focusTimer);
+    }
+  }, [shouldAutoFocus]);
+
   const [recentSearches, setRecentSearches] = useState(() => {
     try {
       const saved = localStorage.getItem('meetifyy_recent_searches');

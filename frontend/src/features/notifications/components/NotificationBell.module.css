@@ -2,25 +2,37 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 0.5rem;
+  width: 42px;
+  height: 42px;
   border-radius: 50%;
+  background: var(--color-bg-white);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-sm);
   color: var(--color-text-main);
-  transition: background-color 0.2s, color 0.2s;
+  transition: all 0.2s ease;
   position: relative;
   text-decoration: none;
+  flex-shrink: 0;
 }
 
 .bellWrapper:hover {
-  background-color: var(--color-surface-hover);
+  background-color: var(--color-bg-soft);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.bellWrapper:active {
+  transform: scale(0.95);
 }
 
 .active {
   color: var(--color-primary);
+  border-color: var(--color-primary);
 }
 
 .iconContainer svg {
   /* The bells used to carry width/height="24" on the element itself; Heroicons
-     do not, so the size lives here now. The 27px override below still applies.
+     do not, so the size lives here now.
 
      Do NOT give <NavIcon>'s own .navIcon class a `display` here. It sets
      `inline-grid` so its outline and solid layers share one grid cell; any
@@ -41,27 +53,39 @@
 .badge {
   position: absolute;
   top: -4px;
-  right: -6px;
+  right: -5px;
   background-color: #ef4444; /* red */
   color: white;
   font-size: 0.65rem;
   font-weight: 700;
   padding: 2px 5px;
   border-radius: 10px;
-  border: 2px solid var(--color-background);
+  border: 2px solid var(--color-bg-white);
   line-height: 1;
   min-width: 18px;
   text-align: center;
+  z-index: 2;
 }
 
 @media (max-width: 768px) {
   .bellWrapper {
-    padding: 0.35rem 0.25rem;
+    width: 38px;
+    height: 38px;
+    padding: 0;
+  }
+
+  .bellWrapper:active {
+    transform: scale(0.94);
   }
 
   .iconContainer svg {
-    width: 27px;
-    height: 27px;
+    width: 22px;
+    height: 22px;
+  }
+
+  .badge {
+    top: -3px;
+    right: -4px;
   }
 }
 

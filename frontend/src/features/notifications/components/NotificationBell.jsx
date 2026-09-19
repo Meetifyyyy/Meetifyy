@@ -25,7 +25,7 @@ export default function NotificationBell() {
             and a different solid from the sidebar's -- switched instantly. */}
         <NavIcon
           active={isActive}
-          outline={<BellOutline />}
+          outline={<BellOutline strokeWidth={1.75} />}
           solid={<BellSolid />}
         />
         
