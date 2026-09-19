@@ -37,9 +37,18 @@ vi.mock('@shared/utils/mediaPipeline', () => ({
   processAndUploadVideo: async () => ({}),
 }));
 vi.mock('@shared/api/apiClient', () => ({
-  // Added with the cookie migration: AuthContext reads this to decide
-  // whether a cookie session is worth recovering.
-  readCsrfCookie: () => '', uploadsApi: {} }));
+  // Added with the cookie migration: AuthContext reads these to decide whether
+  // a cookie session is worth recovering, and to carry the CSRF token the
+  // server returns in the body of every session-issuing response.
+  readCsrfCookie: () => '',
+  mayHaveCookieSession: () => false,
+  rememberCsrfToken: () => {},
+  forgetCsrfToken: () => {},
+  authApi: {
+    currentSession: async () => ({ user: null }),
+    adoptSession: async () => ({}),
+    logoutSession: async () => ({}),
+  }, uploadsApi: {} }));
 vi.mock('@shared/utils/toast', () => ({ showToast: () => {} }));
 
 const { default: PostComposer } = await import('../PostComposer');

@@ -22,9 +22,18 @@ vi.mock('@shared/context/AuthContext', () => ({ useAuth: () => ({ currentUser: {
 vi.mock('@shared/hooks/useUsersMap', () => ({ useUsersMap: () => ({}) }));
 vi.mock('@shared/hooks/useCrew', () => ({ useCrewActivities: () => [] }));
 vi.mock('@shared/api/apiClient', () => ({
-  // Added with the cookie migration: AuthContext reads this to decide
-  // whether a cookie session is worth recovering.
+  // Added with the cookie migration: AuthContext reads these to decide whether
+  // a cookie session is worth recovering, and to carry the CSRF token the
+  // server returns in the body of every session-issuing response.
   readCsrfCookie: () => '',
+  mayHaveCookieSession: () => false,
+  rememberCsrfToken: () => {},
+  forgetCsrfToken: () => {},
+  authApi: {
+    currentSession: async () => ({ user: null }),
+    adoptSession: async () => ({}),
+    logoutSession: async () => ({}),
+  },
   usersApi: {}, activitiesApi: {}, getMediaUrl: (x) => x,
 }));
 vi.mock('@tanstack/react-query', () => ({ useQuery: () => ({ data: [], isLoading: false }) }));

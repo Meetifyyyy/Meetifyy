@@ -4,6 +4,15 @@ import { render, act, cleanup } from '@testing-library/react';
 
 const updateProfileMock = vi.fn();
 
+// `vi.hoisted` because the mock factories below are hoisted above ordinary
+// module scope, and one of them answers the session probe with this profile.
+const EXISTING = vi.hoisted(() => ({
+  id: 'u1',
+  username: 'sarthak',
+  displayName: 'Sarthak Saini',
+  avatar: 'https://cdn.example/old.svg',
+}));
+
 vi.mock('@shared/lib/supabase', () => ({
   supabase: {
     auth: {
@@ -13,16 +22,31 @@ vi.mock('@shared/lib/supabase', () => ({
       updateUser: async () => ({}),
     },
   },
-  isSupabaseConfigured: false,
+  isSupabaseConfigured: true,
+  isRecoveryTab: () => false,
+  clearRecoveryTab: () => {},
 }));
 vi.mock('@config', () => ({
   config: { supabase: { url: 'https://example.supabase.co', anonKey: 'k' } },
   IS_DEV_BUILD: false,
 }));
 vi.mock('@shared/api/apiClient', () => ({
-  // Added with the cookie migration: AuthContext reads this to decide
-  // whether a cookie session is worth recovering.
+  // Added with the cookie migration: AuthContext reads these to decide whether
+  // a cookie session is worth recovering, and to carry the CSRF token the
+  // server returns in the body of every session-issuing response.
   readCsrfCookie: () => '',
+  // A signed-in boot: the provider asks the server once, and the server
+  // answers with the profile. Anything else and the provider would — correctly
+  // — start this test signed out and clear the cached profile it is about to
+  // assert on.
+  mayHaveCookieSession: () => true,
+  rememberCsrfToken: () => {},
+  forgetCsrfToken: () => {},
+  authApi: {
+    currentSession: async () => ({ user: EXISTING }),
+    adoptSession: async () => ({}),
+    logoutSession: async () => ({}),
+  },
   getBackendUrl: () => 'https://api.example',
   apiClient: { post: async () => ({}), get: async () => ({}) },
   usersApi: { updateProfile: (...a) => updateProfileMock(...a) },
@@ -42,12 +66,7 @@ vi.mock('@tanstack/react-query', async (io) => {
 
 const { AuthProvider, useAuth } = await import('@shared/context/AuthContext');
 
-const EXISTING = {
-  id: 'u1',
-  username: 'sarthak',
-  displayName: 'Sarthak Saini',
-  avatar: 'https://cdn.example/old.svg',
-};
+
 
 /**
  * A failed profile save must not leave the browser showing a change the server

@@ -34,9 +34,18 @@ vi.mock('@shared/context/AuthContext', () => ({
   isSupabaseConfigured: true,
 }));
 vi.mock('@shared/api/apiClient', () => ({
-  // Added with the cookie migration: AuthContext reads this to decide
-  // whether a cookie session is worth recovering.
-  readCsrfCookie: () => '', getBackendUrl: () => 'http://api.test' }));
+  // Added with the cookie migration: AuthContext reads these to decide whether
+  // a cookie session is worth recovering, and to carry the CSRF token the
+  // server returns in the body of every session-issuing response.
+  readCsrfCookie: () => '',
+  mayHaveCookieSession: () => false,
+  rememberCsrfToken: () => {},
+  forgetCsrfToken: () => {},
+  authApi: {
+    currentSession: async () => ({ user: null }),
+    adoptSession: async () => ({}),
+    logoutSession: async () => ({}),
+  }, getBackendUrl: () => 'http://api.test' }));
 
 const { default: ResetPasswordPage } = await import('@features/auth/pages/ResetPasswordPage');
 

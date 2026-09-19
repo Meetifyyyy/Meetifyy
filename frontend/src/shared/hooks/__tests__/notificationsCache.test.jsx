@@ -22,9 +22,18 @@ const api = {
 };
 
 vi.mock('@shared/api/apiClient', () => ({
-  // Added with the cookie migration: AuthContext reads this to decide
-  // whether a cookie session is worth recovering.
-  readCsrfCookie: () => '', notificationsApi: api }));
+  // Added with the cookie migration: AuthContext reads these to decide whether
+  // a cookie session is worth recovering, and to carry the CSRF token the
+  // server returns in the body of every session-issuing response.
+  readCsrfCookie: () => '',
+  mayHaveCookieSession: () => false,
+  rememberCsrfToken: () => {},
+  forgetCsrfToken: () => {},
+  authApi: {
+    currentSession: async () => ({ user: null }),
+    adoptSession: async () => ({}),
+    logoutSession: async () => ({}),
+  }, notificationsApi: api }));
 vi.mock('../../context/AuthContext', () => ({ useAuth: () => ({ currentUser: { id: 'u1' } }) }));
 
 const { useNotifications, useUnreadNotificationCount } = await import('../useNotifications');

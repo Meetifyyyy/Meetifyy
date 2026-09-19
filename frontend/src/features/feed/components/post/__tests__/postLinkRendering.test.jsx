@@ -10,9 +10,18 @@ if (!window.matchMedia) window.matchMedia = () => ({ matches: false, addEventLis
 
 vi.mock('@shared/lib/supabase', () => ({ supabase: { auth: { getSession: () => Promise.resolve({ data: { session: null } }), onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }), signOut: () => Promise.resolve({}) } }, isSupabaseConfigured: false }));
 vi.mock('@shared/api/apiClient', () => ({
-  // Added with the cookie migration: AuthContext reads this to decide
-  // whether a cookie session is worth recovering.
-  readCsrfCookie: () => '', getMediaUrl: (u) => u, postsApi: {}, communitiesApi: { getAll: async () => [], getCampusCommunities: async () => [] } }));
+  // Added with the cookie migration: AuthContext reads these to decide whether
+  // a cookie session is worth recovering, and to carry the CSRF token the
+  // server returns in the body of every session-issuing response.
+  readCsrfCookie: () => '',
+  mayHaveCookieSession: () => false,
+  rememberCsrfToken: () => {},
+  forgetCsrfToken: () => {},
+  authApi: {
+    currentSession: async () => ({ user: null }),
+    adoptSession: async () => ({}),
+    logoutSession: async () => ({}),
+  }, getMediaUrl: (u) => u, postsApi: {}, communitiesApi: { getAll: async () => [], getCampusCommunities: async () => [] } }));
 vi.mock('@shared/context/AuthContext', () => ({ useAuth: () => ({ currentUser: { id: 'me' }, isLoggedIn: true, loading: false }) }));
 vi.mock('@shared/lib/idb', () => ({ idbGet: async () => null, idbSet: async () => {}, idbDelete: async () => {} }));
 

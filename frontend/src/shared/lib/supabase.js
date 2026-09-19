@@ -164,7 +164,23 @@ function createAuthClient() {
       apikey: supabaseAnonKey,
     },
     storageKey: `sb-${projectRef}-auth-token`,
-    autoRefreshToken: true,
+    /**
+     * Off, because there is no longer anything here worth refreshing.
+     *
+     * The app's session is a set of HttpOnly cookies the server renews through
+     * `/api/auth/session/refresh`, and the server is the only holder of the
+     * provider refresh token. The one provider session this client still sees
+     * is the short-lived one `verifyOtp` mints at the end of signup, which is
+     * handed to the server and signed out within the same second.
+     *
+     * Leaving it on was actively harmful: the background ticker would spend a
+     * refresh token the server also held, and Supabase retires a token the
+     * moment it is used. Whichever side refreshed first invalidated the other,
+     * and presenting the retired one trips the provider's reuse detection,
+     * which revokes the entire family — every device, immediately, for no
+     * reason the user could see.
+     */
+    autoRefreshToken: false,
     // Still "persist" — but into memory. The flag has to stay on or the client
     // keeps no session at all between calls within the tab, and every
     // `getSession()` would come back empty.

@@ -45,6 +45,13 @@ let _initSessionPromise = null;
  * Readable on purpose — it is not a credential on its own, and the whole
  * double-submit scheme depends on the page being able to echo it back. The
  * session cookies beside it are HttpOnly and this cannot reach them.
+ *
+ * Only ever a FALLBACK now. `document.cookie` shows a page the cookies of its
+ * own document, and the API is routinely on a different hostname — so unless
+ * the cookie is explicitly scoped to the registrable domain, this returns an
+ * empty string on a perfectly healthy session. Every response that issues the
+ * cookies also hands the token back in its body, which `rememberCsrfToken`
+ * stores, and that is what the header is built from.
  */
 export function readCsrfCookie() {
   try {
@@ -53,6 +60,90 @@ export function readCsrfCookie() {
     return match ? decodeURIComponent(match[1]) : '';
   } catch (_) {
     return '';
+  }
+}
+
+/**
+ * The CSRF token this tab holds, taken from the response that issued it.
+ *
+ * Kept in memory and nowhere else. It is scoped to the cookies the browser is
+ * already carrying, dies with the tab, and is re-learned on the next boot from
+ * `GET /api/auth/session` — so there is nothing to persist and nothing for a
+ * later reader to find.
+ */
+let _csrfToken = '';
+
+/**
+ * Records the token a session-issuing response returned.
+ *
+ * Called from login, from session adoption, from a cookie refresh and from the
+ * boot probe — every response that writes `mf_csrf` also names it in its body,
+ * precisely so the page does not have to be able to read the cookie.
+ */
+export function rememberCsrfToken(token) {
+  if (typeof token === 'string' && token) _csrfToken = token;
+}
+
+/** Dropped on sign-out with everything else the session owned. */
+export function forgetCsrfToken() {
+  _csrfToken = '';
+}
+
+/** What goes in `x-csrf-token`: what we were told, or what we can read. */
+function csrfHeaderValue() {
+  return _csrfToken || readCsrfCookie();
+}
+
+/** Methods the server never asks for a CSRF header on. */
+const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+
+/**
+ * Drops everything in this tab that belonged to the session.
+ *
+ * Called when the server has told us the session is over. The cookies are the
+ * server's to clear — it does that on the logout and refresh routes — so what
+ * is left here is the local shadow: the cached profile, the CSRF token, and the
+ * per-user lists that must not survive into whoever signs in next on this
+ * machine.
+ */
+function clearLocalAuthState() {
+  _cachedToken = '';
+  _hasSession = false;
+  forgetCsrfToken();
+  try {
+    localStorage.removeItem('loggedIn');
+    localStorage.removeItem('currentUser');
+    localStorage.removeItem('meetifyy_recent_searches');
+    localStorage.removeItem('meetify_muted_communities');
+    localStorage.removeItem('read_invitations');
+    localStorage.removeItem('meetify_following_list');
+    localStorage.removeItem('meetify_followers_list');
+  } catch (_) {
+    // Storage disabled. Nothing was written, so nothing needs removing.
+  }
+}
+
+/**
+ * Whether this browser looks like it is carrying a session worth restoring.
+ *
+ * A hint, never a decision — the server authorizes, and a wrong answer here
+ * costs at most one round trip. It exists so a first-time visitor and a
+ * signed-out one do not spend a request being told 401 on every page load.
+ *
+ * Deliberately NOT `readCsrfCookie()` on its own, which is what it used to be.
+ * That cookie is invisible to the page whenever the API is host-only on
+ * another hostname, so on those deployments the answer was always "no session"
+ * and a valid cookie session was never restored — the app showed the landing
+ * page to signed-in users on every single reload. `loggedIn` is a local marker
+ * this app writes when a session is established and clears when one ends; it
+ * proves nothing, which is fine, because it is only deciding whether to ask.
+ */
+export function mayHaveCookieSession() {
+  if (readCsrfCookie()) return true;
+  try {
+    return localStorage.getItem('loggedIn') === 'true';
+  } catch (_) {
+    return false;
   }
 }
 
@@ -333,39 +424,26 @@ export const deriveThumbnailKey = (rawSrc) => {
   return `${folder}/${name}_thumb.webp`;
 };
 
-// Synchronous token read — O(1), no async overhead with localStorage fallback on boot
+/**
+ * The bearer token, when this tab happens to hold one.
+ *
+ * Normally it holds none: the credential is an HttpOnly cookie. The one window
+ * where a token exists in JavaScript is between `verifyOtp` confirming a signup
+ * code and `POST /api/auth/session/adopt` converting that provider session into
+ * cookies — and the header is what authenticates the adoption call itself.
+ *
+ * The localStorage sweep that used to live here is gone. It walked every `sb-*`
+ * key looking for an access token and adopted the first one it found, which
+ * re-introduced exactly what memory-only session storage was added to remove:
+ * a credential read off disk, with no check that it belonged to the person
+ * currently using the browser. On a shared machine it was a path for one
+ * account's leftover token to authenticate the next account's session. It also
+ * walked around the recovery guard, since an empty cache is precisely the state
+ * that reached it.
+ */
 function getToken() {
-  if (_cachedToken) return _cachedToken;
-
-  // The fallback below reads the session straight out of storage, which would
-  // walk right around the recovery guard on the cache: a recovery session is in
-  // localStorage like any other, and an empty `_cachedToken` is exactly the
-  // state that sends us here.
   if (isRecoveryTab()) return '';
-
-  try {
-    if (typeof localStorage !== 'undefined') {
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key && (key.startsWith('sb-') || key.includes('auth-token'))) {
-          const raw = localStorage.getItem(key);
-          if (raw) {
-            const parsed = JSON.parse(raw);
-            const token = parsed?.access_token || parsed?.currentSession?.access_token;
-            if (token) {
-              _cachedToken = token;
-              _hasSession = true;
-              return token;
-            }
-          }
-        }
-      }
-    }
-  } catch (e) {
-    // Ignore storage parse exceptions
-  }
-
-  return '';
+  return _cachedToken;
 }
 
 // ── In-flight request deduplication ─────────────────────────────────────────
@@ -383,32 +461,78 @@ function getStoredEtag(url) {
 function storeEtag(url, etag) {
   try { if (etag) sessionStorage.setItem(ETAG_PREFIX + url, etag); } catch {}
 }
+function dropEtag(url) {
+  try { sessionStorage.removeItem(ETAG_PREFIX + url); } catch {}
+}
 
 let _refreshPromise = null;
 
-async function refreshSessionIfNeeded() {
+/**
+ * Renews the session cookies, once, no matter how many callers ask.
+ *
+ * This replaces `supabase.auth.refreshSession()`, which was the wrong thing in
+ * two separate ways.
+ *
+ * It refreshed the PROVIDER session held in this tab's memory, and did nothing
+ * at all to the cookies — so the credential the server actually authenticates
+ * with was never renewed. The access cookie expired on its own, every request
+ * after that came back 401, and the app signed the user out with a perfectly
+ * good session sitting in the database. Nothing in the app called
+ * `/api/auth/session/refresh`; the endpoint existed and had no callers.
+ *
+ * And it spent a refresh token the SERVER also holds. Supabase retires a
+ * refresh token the instant it is used, so a refresh here quietly invalidated
+ * the copy sealed into the session row — and presenting a retired token trips
+ * the provider's reuse detection, which revokes the whole family and signs the
+ * account out everywhere. Custody of that token now belongs to the server
+ * alone, and this asks the server to use it.
+ *
+ * Single-flight because the alternative is a stampede: a route mount fires a
+ * dozen requests at once, they all 401 together, and a dozen simultaneous
+ * rotations of the same token is indistinguishable from a replay. Everyone
+ * waits on the first one.
+ */
+function refreshCookieSession() {
   if (_refreshPromise) return _refreshPromise;
 
   _refreshPromise = (async () => {
     try {
-      if (!supabase) return null;
-      // Same guard as getToken: refreshing a recovery session yields another
-      // recovery session, and caching it here would reintroduce exactly what
-      // cacheSessionToken exists to prevent.
-      if (isRecoveryTab()) return null;
-      const { data, error } = await supabase.auth.refreshSession();
-      if (error || !data?.session) {
-        const { data: sData } = await supabase.auth.getSession();
-        if (sData?.session) {
-          cacheSessionToken(sData.session);
-          return sData.session;
-        }
-        return null;
-      }
-      cacheSessionToken(data.session);
-      return data.session;
+      // A recovery tab holds a one-time credential for the reset page and no
+      // session of its own. Rotating anything on its behalf is meaningless.
+      if (isRecoveryTab()) return false;
+
+      const url = `${getBackendUrl().replace(/\/+$/, '')}/api/auth/session/refresh`;
+      const res = await fetch(url, {
+        method: 'POST',
+        credentials: 'include',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+      /**
+       * Three outcomes, not two — and the difference is who gets signed out.
+       *
+       * Only 401 is the server saying the session is over. Everything else is
+       * the server failing to answer: a 429 because the rate limiter lost Redis
+       * and fails closed, a 502 mid-deploy, a gateway timeout. Treating those
+       * as "expired" ends a perfectly good session, and ends it for EVERYONE at
+       * once, because a Redis outage hits every refresh simultaneously and
+       * every tab renews on roughly the same hourly cadence.
+       *
+       * That failure mode is new. Nothing called this endpoint before, so its
+       * `onRedisFailure: 'closed'` policy was inert; making the client actually
+       * use it is what turned a cache outage into a mass sign-out, and this is
+       * what takes it back out.
+       */
+      if (res.status === 401) return 'expired';
+      if (!res.ok) return 'unavailable';
+
+      const body = await res.json().catch(() => null);
+      rememberCsrfToken(body?.csrfToken);
+      return 'renewed';
     } catch {
-      return null;
+      // Offline, blocked, timed out. Says nothing about the session.
+      return 'unavailable';
     } finally {
       _refreshPromise = null;
     }
@@ -470,17 +594,37 @@ const PUBLIC_PATHS = [
   '/api/auth/request-college',
 ];
 
+/**
+ * Paths that authenticate with the bearer token rather than the cookie.
+ *
+ * Only the handover at the end of signup. `verifyOtp` answers with a provider
+ * session and no cookies exist yet, so these two calls are the one place where
+ * waiting for the token to be in hand still decides whether the request works.
+ */
+const BEARER_PATHS = ['/api/auth/session/adopt', '/api/users/me'];
+
+function isBearerPath(path) {
+  const clean = path.startsWith('/') ? path : `/${path}`;
+  return BEARER_PATHS.some((p) => clean === p || clean.startsWith(`${p}?`));
+}
+
 function isPublicPath(path) {
   const clean = path.startsWith('/') ? path : `/${path}`;
   return PUBLIC_PATHS.some(p => clean === p || clean.startsWith(`${p}?`) || clean.startsWith(`${p}/`));
 }
 
 async function request(method, path, body, signal, timeoutMs) {
-  // If session seeding is in-flight on initial page load / reload, wait for it
-  // — unless the path is public, where there is nothing to wait for. A visitor
-  // arriving on a shared post has no session by definition, so blocking their
-  // first request on one only delays the page.
-  if (!_cachedToken && _initSessionPromise && !isPublicPath(path)) {
+  // Session seeding used to be awaited here, because the credential lived in
+  // the provider client and a request issued before it had loaded would have
+  // gone out unauthenticated. The credential is a cookie now: the browser
+  // attaches it with no help from this code and with nothing to wait for, so
+  // every request that is not part of signup's brief bearer window is blocked
+  // on a promise that can no longer change its outcome.
+  //
+  // Still awaited for the paths that genuinely need the bearer token — the
+  // session-adoption call at the end of signup and the profile write beside it
+  // — because for those the header IS the credential.
+  if (!_cachedToken && _initSessionPromise && isBearerPath(path)) {
     await _initSessionPromise;
   }
 
@@ -526,10 +670,21 @@ async function request(method, path, body, signal, timeoutMs) {
   // worthless without the HttpOnly cookie beside it; echoing it in a header is
   // what proves the request came from our own page rather than from a form on
   // someone else's site that the browser happened to attach cookies to.
-  if (method !== 'GET') {
-    const csrf = readCsrfCookie();
+  if (!SAFE_METHODS.has(method)) {
+    const csrf = csrfHeaderValue();
     if (csrf) headers['x-csrf-token'] = csrf;
   }
+  /**
+   * Whether a 401 from this path means anything about the session.
+   *
+   * It does not for the routes below, which are reachable signed out by
+   * design — a shared post, the legal documents, the help centre. A 401 there
+   * is about the resource, and treating it as a dead session would sign a
+   * perfectly valid user out for opening somebody's post link. Rides along on
+   * the options object like `timeoutMs`; `fetch` ignores what it does not know.
+   */
+  options.publicPath = isPublicPath(path);
+
   if (signal) options.signal = signal;
   // Per-call deadline, for the few mutations whose UI holds a visible spinner
   // and where the 30s default is far longer than the user will wait before
@@ -610,40 +765,97 @@ async function _doFetch(cleanUrl, options, isRetry = false) {
     if (timeoutId) clearTimeout(timeoutId);
   }
 
-  // Store ETag from successful GET responses for future If-None-Match requests
+  /**
+   * Remember the ETag, but only where a conditional request can actually pay.
+   *
+   * `If-None-Match` is worth sending only when the browser's own HTTP cache
+   * still holds the body — this store keeps tokens, not bodies, so a 304 it
+   * provokes on its own is a wasted round trip and nothing more. A response
+   * marked `no-store` is never held by that cache, so a conditional request for
+   * one is guaranteed to come back 304 with an empty body, every time.
+   *
+   * The session probe and every other auth route are `no-store`, which is how
+   * an optimisation came to sit in front of the boot path and answer it with an
+   * unparseable response.
+   */
   if (options.method === 'GET' && res.ok) {
     const etag = res.headers.get('ETag');
-    if (etag) storeEtag(cleanUrl, etag);
+    const cacheable = !/no-store/i.test(res.headers.get('Cache-Control') || '');
+    if (etag && cacheable) storeEtag(cleanUrl, etag);
+    else if (!cacheable) dropEtag(cleanUrl);
   }
 
-  if (res.status === 401 && !isRetry) {
-    // Attempt automatic session refresh before declaring unauthorized
-    const session = await refreshSessionIfNeeded();
-    if (session?.access_token) {
-      const retryHeaders = {
-        ...options.headers,
-        Authorization: `Bearer ${session.access_token}`
-      };
+  /**
+   * "Not Modified" — which this client has no way to honour.
+   *
+   * The ETag store keeps tokens and not bodies, so there is nothing here to
+   * serve a 304 from. The conditional request is satisfiable only by the
+   * browser's own HTTP cache, and only when that cache still holds the entry;
+   * when it does not, the 304 arrives with an empty body and fell straight
+   * through to the `!res.ok` branch below as `API error 304`.
+   *
+   * That is invisible until the app and the API share an origin — cross-origin,
+   * `ETag` is not an exposed response header, so nothing is ever stored and no
+   * conditional request is ever made. Same-origin (a deployment serving the API
+   * under its own domain, or this client's own proxy failover) it fires on the
+   * SECOND request for any URL in the tab, which for the session probe means
+   * the second page load: the boot would have read a thrown error as "no
+   * session" and signed the user out on reload. Exactly the class of bug this
+   * whole change exists to remove.
+   *
+   * Dropping the token and re-asking unconditionally is the honest recovery:
+   * one extra round trip, on a request that was only ever an optimisation.
+   */
+  if (res.status === 304 && options.headers?.['If-None-Match']) {
+    dropEtag(cleanUrl);
+    const { 'If-None-Match': _dropped, ...headers } = options.headers;
+    return _doFetch(cleanUrl, { ...options, headers }, isRetry);
+  }
+
+  if (res.status === 401 && !isRetry && !options.publicPath) {
+    // The access cookie is short-lived by design, so a 401 here is the ordinary
+    // end of its life far more often than it is a dead session. Ask the server
+    // to rotate — it holds the refresh token — and replay the request once.
+    //
+    // The retry carries no new Authorization header, and that is deliberate:
+    // the credential is the cookie the server just rewrote, and `credentials:
+    // 'include'` is what sends it.
+    const outcome = await refreshCookieSession();
+    if (outcome === 'renewed') {
+      const retryHeaders = { ...options.headers };
+      if (options.method && !SAFE_METHODS.has(options.method)) {
+        const csrf = csrfHeaderValue();
+        if (csrf) retryHeaders['x-csrf-token'] = csrf;
+      }
       return _doFetch(cleanUrl, { ...options, headers: retryHeaders }, true);
     }
 
-    // Only treat as a real session expiry if refresh truly failed AND we had a session
-    if (supabase && _hasSession) {
-      await supabase.auth.signOut().catch(console.error);
-      _cachedToken = '';
-      _hasSession = false;
-      localStorage.removeItem('loggedIn');
-      localStorage.removeItem('currentUser');
-      localStorage.removeItem('meetifyy_recent_searches');
-      localStorage.removeItem('meetify_muted_communities');
-      localStorage.removeItem('read_invitations');
+    /**
+     * The rotation was REFUSED (401), so the session is genuinely over: revoked
+     * from another device, expired, or the provider retired it.
+     *
+     * `unavailable` deliberately does not land here. Nothing was learned about
+     * the session in that case, so the original 401 simply falls through and
+     * surfaces as an ordinary error for this one request, and the user stays
+     * signed in.
+     *
+     * What this does NOT do any more, and why:
+     *
+     *   • It does not call `supabase.auth.signOut()`. That defaults to GLOBAL
+     *     scope, so one stale 401 in one background request signed the account
+     *     out of every device it was open on — including the one the user was
+     *     sitting at, and including devices belonging to a session that was
+     *     perfectly healthy.
+     *
+     *   • It does not assign `window.location.href`. A full document load threw
+     *     away everything unsaved on the page and raced the router, which was
+     *     already re-rendering the signed-out tree from the same state change.
+     *     Announcing it is enough: AuthContext clears the session and the route
+     *     gates render the public app, in the same tab, without a reload.
+     */
+    if (outcome === 'expired') {
+      clearLocalAuthState();
       window.dispatchEvent(new Event('auth:unauthorized'));
-      const onAuthPage = ['/auth', '/login', '/signup', '/forgot-password', '/reset-password'].some(p => window.location.pathname.startsWith(p));
-      if (!onAuthPage && !window.__api_redirecting) {
-        window.__api_redirecting = true;
-        setTimeout(() => { window.__api_redirecting = false; }, 3000);
-        window.location.href = '/login';
-      }
     }
   }
 
@@ -779,6 +991,33 @@ export const authApi = {
    * Call this once after login/signup.
    */
   syncProfile: () => apiClient.post('/api/auth/sync'),
+
+  /**
+   * "Am I signed in?" — the one call a boot makes before deciding anything.
+   *
+   * A GET, so it carries no CSRF requirement and works on every deployment
+   * shape, including the ones where the page cannot read `mf_csrf`. Returns
+   * the caller's profile, or throws 401 when the cookies authenticate nobody.
+   */
+  currentSession: ({ signal } = {}) =>
+    apiClient.get('/api/auth/session', { signal }),
+
+  /**
+   * Hands the server the provider session `verifyOtp` just minted, in exchange
+   * for cookies. The last step of signup, and the point at which the refresh
+   * token stops being reachable from JavaScript.
+   */
+  adoptSession: (refreshToken) =>
+    apiClient.post('/api/auth/session/adopt', { refreshToken }),
+
+  /**
+   * Ends this device's session server-side and clears its cookies.
+   *
+   * Without this, signing out was a purely local act: the row stayed live and
+   * the cookies stayed in the browser, so the next reload signed the person
+   * back in — and on a shared machine, signed the next person in as them.
+   */
+  logoutSession: () => apiClient.post('/api/auth/session/logout'),
 };
 
 export const postsApi = {

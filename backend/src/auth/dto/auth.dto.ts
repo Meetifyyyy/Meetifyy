@@ -271,3 +271,24 @@ export class ChangePasswordDto {
   @Length(8, 200, { message: 'New password must be at least 8 characters' })
   newPassword: string;
 }
+
+/**
+ * Hands the server custody of a Supabase session the browser minted itself.
+ *
+ * The only flow that still mints one client-side is signup: `verifyOtp` is the
+ * call that confirms the emailed code, and it answers with a session. Before
+ * this endpoint existed that session stayed in the tab — which meant a brand
+ * new account had no cookie session at all, and was signed out by its first
+ * reload — and the refresh token stayed in JavaScript, which is exactly what
+ * moving sessions into HttpOnly cookies exists to prevent.
+ *
+ * The access token travels in the Authorization header, where JwtGuard
+ * verifies it like any other. Only the refresh token is in the body, because
+ * handing it over is the whole point of the call.
+ */
+export class AdoptSessionDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(4096)
+  refreshToken: string;
+}

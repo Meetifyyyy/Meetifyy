@@ -1,6 +1,14 @@
 import { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { usersApi, apiClient, postsApi, getBackendUrl, readCsrfCookie } from '@shared/api/apiClient';
-import { followGraphChangedSince } from '../utils/followState';
+import {
+  usersApi,
+  apiClient,
+  authApi,
+  postsApi,
+  getBackendUrl,
+  rememberCsrfToken,
+  forgetCsrfToken,
+  mayHaveCookieSession,
+} from '@shared/api/apiClient';
 import { useSavedPostsStore } from '../stores/savedPostsStore';
 import { useSavedActivitiesStore } from '../stores/savedActivitiesStore';
 import usePostStore from '../stores/postStore';
@@ -69,6 +77,98 @@ function withTimeout(promise, ms) {
 
 const AuthContext = createContext(null);
 
+/**
+ * The three states a boot can be in, and the only three.
+ *
+ * `initializing` is not "loading data" — it is "we do not yet know whether
+ * anybody is signed in". Nothing may route on that question until it is
+ * answered, which is the whole reason this is an explicit value rather than a
+ * boolean that several code paths each felt entitled to clear.
+ *
+ * What it replaces: a `loading` flag that the provider's auth listener set to
+ * false the moment it saw an `INITIAL_SESSION` event. That event fires with a
+ * null session on every reload, because the provider session lives in memory
+ * and memory is empty after a reload — so `loading` went false while the
+ * cookie probe was still in flight, `isLoggedIn` was still false, and the
+ * router did the only thing it could with the answer it was given: it rendered
+ * the landing page. A few hundred milliseconds later the probe came back, the
+ * session appeared, and the app redirected to /home. That is the flash of
+ * landing page on refresh, and it is also why signing in looked like it had
+ * immediately signed the user out again.
+ */
+export const AUTH_STATUS = Object.freeze({
+  INITIALIZING: 'initializing',
+  AUTHENTICATED: 'authenticated',
+  UNAUTHENTICATED: 'unauthenticated',
+});
+
+/** Set while a recovery link owns this tab; the reset page handles it alone. */
+function isRecoveryPending() {
+  try {
+    return sessionStorage.getItem('sb-pwreset-pending') === '1';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Everything a previous user could have left behind in this browser.
+ *
+ * Listed in one place and used by every exit path — sign-out, a session the
+ * server has refused, and a boot that finds a different account than the one
+ * cached here. Leaving any of it is how one person's browser shows another
+ * person's name, saved posts or follow list for the first second after they
+ * sign in.
+ */
+const SESSION_SCOPED_KEYS = [
+  'currentUser',
+  'loggedIn',
+  'meetifyy_recent_searches',
+  'meetify_muted_communities',
+  'read_invitations',
+  'meetify_following_list',
+  'meetify_followers_list',
+  'meetify_show_community_details',
+];
+
+/**
+ * Drops every client-side store that holds one user's data.
+ *
+ * Separate from storage because these live in memory and in IndexedDB: the
+ * saved-posts and saved-activities stores, the post cache, and the service
+ * worker's API cache — which is keyed by URL alone and has no idea who was
+ * signed in when it recorded a response. On a shared machine that cache is how
+ * the next person is served the previous person's feed.
+ */
+function resetClientStateForNewUser() {
+  useSavedPostsStore.getState().clearAll?.();
+  useSavedActivitiesStore.getState().clearAll?.();
+  usePostStore.getState().clearAll?.();
+  idbClearAll().catch((e) => console.error('Failed to clear local cache', e));
+  if (typeof caches !== 'undefined') {
+    caches
+      .keys()
+      .then((names) =>
+        Promise.all(
+          names.filter((n) => n.startsWith('meetifyy-api')).map((n) => caches.delete(n)),
+        ),
+      )
+      .catch(() => {});
+  }
+}
+
+function clearSessionScopedStorage() {
+  try {
+    SESSION_SCOPED_KEYS.forEach((key) => localStorage.removeItem(key));
+  } catch (_) {
+    // Storage disabled: nothing was written, so nothing needs removing.
+  }
+  try {
+    sessionStorage.removeItem('meetifyy_signup_data');
+    sessionStorage.removeItem('meetifyy_api_failover');
+  } catch (_) {}
+}
+
 function isValidUser(u) {
   return (
     u !== null &&
@@ -96,29 +196,33 @@ export function AuthProvider({ children }) {
     return null;
   });
   
-  const [session, setSession] = useState(null);
-  const [loading, setLoading] = useState(true);
   /**
-   * True when the server has confirmed this browser's cookie session.
+   * A thin view of the identity behind the session, for the few call sites that
+   * want it (the realtime socket, the settings screen's fallback address).
    *
-   * Needed because `session` holds the Supabase session, which now lives in
-   * memory and is therefore empty after every reload — the durable half is an
-   * HttpOnly cookie this code cannot read. Deriving "signed in" from `session`
-   * alone meant a refresh looked exactly like a sign-out: the cookie was
-   * valid, the server said so, and the app still showed the landing page.
+   * It is NOT what "signed in" is decided from any more. It used to be — the
+   * provider's session object was the source of truth — and since that object
+   * lives in memory it was empty after every reload, which made a refresh
+   * indistinguishable from a sign-out.
    */
-  const [hasCookieSession, setHasCookieSession] = useState(false);
+  const [session, setSession] = useState(null);
 
-  const isLoggedIn = !!session || hasCookieSession;
+  /**
+   * The one place the app's answer to "is anybody signed in?" comes from.
+   *
+   * Written exactly once per boot, by `initialize` below, and after that only
+   * by an explicit sign-in or sign-out. No provider event moves it, which is
+   * what stops two listeners racing to overwrite a valid session with a stale
+   * one.
+   */
+  const [authStatus, setAuthStatus] = useState(AUTH_STATUS.INITIALIZING);
+
+  const loading = authStatus === AUTH_STATUS.INITIALIZING;
+  const isLoggedIn = authStatus === AUTH_STATUS.AUTHENTICATED;
 
   const lastSyncAtRef = useRef(0);
-  const syncPromiseRef = useRef(null);
   const bookmarksHydratedRef = useRef(false);
-  const syncDebounceRef = useRef(null);
   const isLoggingOutRef = useRef(false);
-  // Counts back-to-back 401s from /api/auth/sync so a token the backend will
-  // never accept can't spin forever (see performSync's catch block).
-  const consecutiveSyncAuthFailuresRef = useRef(0);
   // Read inside updateProfile without making it a dependency: adding currentUser
   // to that callback's deps would change its identity on every profile change
   // and re-render every consumer of the auth context.
@@ -129,330 +233,295 @@ export function AuthProvider({ children }) {
     currentUsernameRef.current = currentUser?.username ?? null;
   }, [currentUser?.id, currentUser?.username]);
 
-  const performSync = useCallback(async (supabaseSession, event) => {
-    if (syncPromiseRef.current) {
-      return syncPromiseRef.current;
-    }
+  /**
+   * Read by the cross-tab listener, which must not be re-bound every time the
+   * status changes — re-binding it mid-sequence is how a tab misses the very
+   * event it exists to hear.
+   */
+  const isLoggedInRef = useRef(false);
+  isLoggedInRef.current = isLoggedIn;
 
-    // Stamped BEFORE the request goes out, so the merge below can tell whether
-    // the answer predates a follow the viewer performed while it was in
-    // flight. See the followingList branch there.
-    const syncStartedAt = Date.now();
 
-    syncPromiseRef.current = (async () => {
-      try {
-        const syncRes = await apiClient.post('/api/auth/sync');
-        const syncedUser = syncRes?.user || syncRes;
-        lastSyncAtRef.current = Date.now();
-        consecutiveSyncAuthFailuresRef.current = 0;
-        if (isValidUser(syncedUser)) {
-          setCurrentUser(prev => {
-            const sbEmail = supabaseSession?.user?.email;
-            const cleanEmail = (syncedUser.email && !syncedUser.email.endsWith('@meetifyy.user'))
-              ? syncedUser.email
-              : (sbEmail || prev?.email || '');
-            const newAvatar = syncedUser.avatar || syncedUser.avatarUrl || prev?.avatar || prev?.avatarUrl;
-            // A sync response carries a snapshot of the follow graph. If the
-            // viewer followed or unfollowed someone after this request was
-            // issued, the snapshot is older than what the client already
-            // knows, and taking it would revert the change — the "it says
-            // Follow again a moment later" report. Keep the local list in that
-            // case; the next sync (or the follow response itself, which is
-            // authoritative) reconciles it.
-            const followListIsStale =
-              followGraphChangedSince(syncStartedAt) && Array.isArray(prev?.followingList);
-            const mergedUser = {
-              ...syncedUser,
-              ...(followListIsStale ? { followingList: prev.followingList } : {}),
-              email: cleanEmail,
-              avatar: newAvatar,
-              avatarUrl: newAvatar,
-              settings: syncedUser.settings || prev?.settings || prev?.preferences,
-              preferences: syncedUser.settings || prev?.preferences || prev?.settings,
-            };
-            try { localStorage.setItem('currentUser', JSON.stringify(mergedUser)); } catch (_) {}
-            return mergedUser;
-          });
-
-          // Hydrate bookmarks only ONCE per session — not on token refresh events.
-          if (!bookmarksHydratedRef.current && event !== 'TOKEN_REFRESHED') {
-            bookmarksHydratedRef.current = true;
-
-            const meta = syncRes?.meta;
-            if (meta?.postBookmarkIds) {
-              useSavedPostsStore.getState().hydrateFromServer(meta.postBookmarkIds);
-            }
-            if (meta?.activityBookmarkIds) {
-              useSavedActivitiesStore.getState().hydrateFromServer(meta.activityBookmarkIds);
-            }
-
-            if (!meta?.postBookmarkIds) {
-              setTimeout(async () => {
-                try {
-                  const response = await postsApi.getBookmarks(50);
-                  const bookmarkedPostIds = (response?.posts || response?.data || []).map(p => p.id);
-                  useSavedPostsStore.getState().hydrateFromServer(bookmarkedPostIds);
-                } catch (bookmarkErr) {
-                  console.error('Failed to hydrate bookmarks', bookmarkErr);
-                }
-              }, 2000);
-            }
-          }
-        }
-        return syncRes;
-      } catch (err) {
-        if (err?.status === 401) {
-          // The backend rejected this token outright. Supabase-js will keep
-          // retrying a refresh it cannot complete, and every retry fires another
-          // auth event that lands back here — so swallowing the 401 span an
-          // endless sync loop (observed at ~2 req/s indefinitely) that never
-          // recovered and never let the user reach the login screen.
-          //
-          // Two consecutive failures, rather than one, so a transient blip
-          // while the backend is warming its token verification doesn't sign
-          // anyone out. Past that the credential is genuinely not accepted, and
-          // the only correct move is to drop it locally so the app falls back
-          // to the login screen.
-          consecutiveSyncAuthFailuresRef.current += 1;
-          if (consecutiveSyncAuthFailuresRef.current >= 2) {
-            consecutiveSyncAuthFailuresRef.current = 0;
-            try { await supabase.auth.signOut({ scope: 'local' }); } catch (_) {}
-          }
-        } else {
-          console.error('Failed to sync profile on auth change', err);
-        }
-      } finally {
-        syncPromiseRef.current = null;
+  /**
+   * Adopts a profile the server has just vouched for.
+   *
+   * One writer for "this is who is signed in", used by the boot probe, by
+   * sign-in and by the end of signup, so the three cannot disagree about what
+   * gets written or in what order.
+   *
+   * `loggedIn` is a local marker, not a credential. It exists so the next boot
+   * knows whether it is worth asking the server at all, and so other tabs hear
+   * about a sign-in or sign-out through the browser's `storage` event.
+   */
+  const adoptUser = useCallback((user) => {
+    if (!isValidUser(user)) return false;
+    setCurrentUser((prev) => {
+      // A different account than the one this browser was holding. Nothing
+      // belonging to the previous person may survive into this session — not
+      // the cached profile, not their saved posts, not their follow lists.
+      if (prev && prev.id !== user.id) {
+        resetClientStateForNewUser();
       }
-    })();
-
-    return syncPromiseRef.current;
+      try {
+        localStorage.setItem('currentUser', JSON.stringify(user));
+        localStorage.setItem('loggedIn', 'true');
+      } catch (_) {}
+      return user;
+    });
+    setSession({ user: { id: user.id, email: user.email || '' } });
+    setAuthStatus(AUTH_STATUS.AUTHENTICATED);
+    return true;
   }, []);
 
   /**
-   * Asks the server whether this browser is still signed in.
+   * Tears down everything this browser holds for the signed-in user.
+   *
+   * Local only — it never talks to the server. Callers that mean "end the
+   * session" call `logout`, which revokes it server-side first and then calls
+   * this.
+   */
+  const clearLocalSession = useCallback(() => {
+    setSession(null);
+    setCurrentUser(null);
+    setAuthStatus(AUTH_STATUS.UNAUTHENTICATED);
+    forgetCsrfToken();
+    clearSessionScopedStorage();
+    resetClientStateForNewUser();
+  }, []);
+
+  /**
+   * Asks the server, once, whether this browser is still signed in.
    *
    * The session's durable half is an HttpOnly cookie, so on a fresh load there
    * is nothing in JavaScript to inspect — the question can only be answered by
-   * making a request and seeing whether the cookie authenticates it. `sync`
-   * returns the caller's own profile and is reachable in the restricted account
-   * states too, which is exactly what a boot needs.
+   * making a request and seeing whether the cookie authenticates it.
    *
-   * Returns the user, or null when the cookie is missing, expired or revoked.
-   * A revoked session lands here as a 401 and signs the app out, which is the
-   * whole point of the session table behind it.
+   * A GET, and that matters. This used to POST `/api/auth/sync`, which sits
+   * behind the double-submit CSRF check — so restoring a session required the
+   * page to read the `mf_csrf` cookie, and a page cannot read a cookie scoped
+   * to a different hostname. On every deployment where the API is host-only on
+   * its own domain, that read came back empty, the probe was skipped entirely,
+   * and a signed-in user was shown the landing page on every reload. A safe
+   * method carries no CSRF requirement and works in all of them.
    */
-  const hydrateFromCookie = useCallback(async () => {
-    // The CSRF cookie is set beside the session cookies and, unlike them, is
-    // readable. Its absence means there is no cookie session to recover, so a
-    // signed-out visitor — every first-time arrival, every logged-out share
-    // link — skips this entirely instead of spending a request to be told 401.
-    // This is a hint, not a decision: the server still authorizes, and a forged
-    // CSRF cookie buys nothing but a wasted round trip.
-    if (!readCsrfCookie()) return null;
-
+  const restoreSession = useCallback(async () => {
     try {
-      const res = await apiClient.post('/api/auth/sync');
-      const user = res?.user || null;
-      if (user) {
-        setHasCookieSession(true);
-        setCurrentUser(user);
-        try {
-          localStorage.setItem('currentUser', JSON.stringify(user));
-          localStorage.setItem('loggedIn', 'true');
-        } catch (_) {}
+      let res;
+      try {
+        res = await authApi.currentSession();
+      } catch (err) {
+        /**
+         * The API does not have this route yet.
+         *
+         * TRANSITIONAL — remove one release after the backend carrying
+         * `GET /api/auth/session` is live everywhere.
+         *
+         * The app and the API deploy independently: Vercel builds the frontend
+         * from a Git push while GitHub Actions builds an image, runs migrations
+         * and rolls the container. The backend is the slower of the two, so for
+         * a few minutes after a merge the new frontend is talking to the old
+         * API — and without this, the boot probe 404s, every reload in that
+         * window settles signed-out, and signing in fails outright with "this
+         * browser did not keep the session".
+         *
+         * `sync` is the route this replaced and does the same work. It is a
+         * POST, so it needs the CSRF header, which is exactly the dependency
+         * the GET was introduced to remove — but by this point the token is
+         * either in memory from the login response or readable from the cookie,
+         * so it is available when this fallback actually runs.
+         */
+        if (err?.status !== 404) throw err;
+        res = await authApi.syncProfile();
       }
-      return user;
-    } catch (_) {
-      // 401, offline, anything: treat as not signed in. The caller clears state.
-      setHasCookieSession(false);
-      return null;
+      rememberCsrfToken(res?.csrfToken);
+      const user = res?.user || null;
+      if (!user) return { outcome: 'signed-out' };
+
+      lastSyncAtRef.current = Date.now();
+
+      /**
+       * Bookmarks ride along on the same payload, and their own failure is
+       * fenced off from this one.
+       *
+       * Deliberately inside its own try: this function's answer is "is there a
+       * session?", and letting a store hydration or a follow-up fetch throw
+       * into the outer catch would answer "no" for a session that is perfectly
+       * valid. That is a sign-out caused by a saved-posts list.
+       */
+      try {
+        const meta = res?.meta;
+        if (meta?.postBookmarkIds) {
+          useSavedPostsStore.getState().hydrateFromServer(meta.postBookmarkIds);
+        } else if (!bookmarksHydratedRef.current) {
+          // Older payloads do not carry the ids. Fetched separately rather than
+          // awaited, so the boot is never held on a list nothing on the first
+          // screen depends on.
+          postsApi
+            .getBookmarks(50)
+            .then((response) => {
+              const ids = (response?.posts || response?.data || []).map((p) => p.id);
+              useSavedPostsStore.getState().hydrateFromServer(ids);
+            })
+            .catch((e) => console.error('Failed to hydrate bookmarks', e));
+        }
+        if (meta?.activityBookmarkIds) {
+          useSavedActivitiesStore.getState().hydrateFromServer(meta.activityBookmarkIds);
+        }
+        bookmarksHydratedRef.current = true;
+      } catch (e) {
+        console.error('Failed to hydrate saved items', e);
+      }
+
+      return { outcome: 'signed-in', user };
+    } catch (err) {
+      /**
+       * "The server refused me" and "I could not ask the server" are not the
+       * same answer, and collapsing them is its own way of signing people out.
+       *
+       * Only a 401 is authoritative. Everything else — a 429 from a shared
+       * campus NAT that has spent its burst budget, a 502 during a deploy, a
+       * request that timed out on a train — says nothing about whether the
+       * session is valid, and answering "signed out" to any of them logs out a
+       * user whose session is perfectly good and whose cookies are still in the
+       * browser.
+       *
+       * This is not ignoring an auth error: a 401 still signs out, immediately
+       * and completely. It is refusing to invent one. And it costs nothing in
+       * safety, because the cookies are the credential and the server
+       * authorizes every request that follows on their own merits — a browser
+       * that is wrong about being signed in finds out on its first real call.
+       */
+      if (err?.status === 401) return { outcome: 'signed-out' };
+      console.warn('Could not determine the session; keeping what this browser holds', err);
+      return { outcome: 'unknown' };
     }
   }, []);
 
+  /**
+   * The boot sequence. Runs once, and is the only thing that may leave
+   * `initializing`.
+   *
+   * It is deliberately linear. The version it replaced ran `getSession()` and
+   * an `onAuthStateChange` subscription concurrently, each of which cleared
+   * `loading` on its own schedule, plus a three-second timer that cleared it
+   * whether or not anything had finished. Three writers, no ordering — so the
+   * router routinely made its decision on the answer that happened to land
+   * first, which on a reload was always "nobody is signed in".
+   */
   useEffect(() => {
-    if (!isSupabaseConfigured) {
-       setLoading(false);
-       return;
-     }
+    let cancelled = false;
 
-    // Safety timeout: Ensure loading is never permanently true on slow/offline mobile devices
-    const authTimeout = setTimeout(() => {
-      setLoading(false);
-    }, 3000);
+    const signedOut = () => {
+      if (cancelled) return;
+      setSession(null);
+      setCurrentUser(null);
+      setAuthStatus(AUTH_STATUS.UNAUTHENTICATED);
+      try { localStorage.removeItem('currentUser'); } catch (_) {}
+      try { localStorage.removeItem('loggedIn'); } catch (_) {}
+    };
 
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      clearTimeout(authTimeout);
-      // ─── Recovery session guard ────────────────────────────────────────
-      // If this tab was opened from a password recovery link, supabase.js
-      // wrote 'sb-pwreset-pending' to sessionStorage BEFORE createClient()
-      // processed the hash. When that flag is present, the current session
-      // is a temporary recovery credential — do NOT set it into global auth
-      // state. Doing so would make isLoggedIn = true for the whole app and
-      // give the recovery session access to all protected routes.
-      // ResetPasswordPage consumes and clears this flag after validation.
-      // ──────────────────────────────────────────────────────────────────
-      let pendingRecovery = false;
-      try { pendingRecovery = sessionStorage.getItem('sb-pwreset-pending') === '1'; } catch {}
+    /**
+     * We could not reach the server, so we do not know.
+     *
+     * Falls back to the profile this browser already holds, if it holds one.
+     * Every request still has to authenticate, so the worst case is an app that
+     * renders a shell and then finds out — which is a far better outcome than
+     * showing the landing page to somebody who is signed in because their
+     * campus network briefly rate-limited the boot.
+     */
+    const settleUnknown = () => {
+      if (cancelled) return;
+      let cached = null;
+      try {
+        const raw = localStorage.getItem('currentUser');
+        cached = raw ? JSON.parse(raw) : null;
+      } catch (_) {}
+      if (isValidUser(cached) && adoptUser(cached)) return;
+      signedOut();
+    };
 
-      if (pendingRecovery) {
-        // The onAuthStateChange PASSWORD_RECOVERY handler (or INITIAL_SESSION
-        // with recovery flag) will resolve the session on the reset page.
-        setLoading(false);
+    const settle = (result) => {
+      if (cancelled) return;
+      if (result?.outcome === 'signed-in' && adoptUser(result.user)) return;
+      if (result?.outcome === 'unknown') return settleUnknown();
+      signedOut();
+    };
+
+    (async () => {
+      // A tab opened from a password-recovery link holds a one-time credential
+      // that belongs to ResetPasswordPage and to nothing else. The app boots
+      // signed out; broadcasting that session here would hand a recovery link
+      // the run of every protected route.
+      if (isRecoveryPending()) return signedOut();
+
+      if (!isSupabaseConfigured) return signedOut();
+
+      // Nothing suggests a session, so do not spend a request being told so.
+      // Every first-time arrival and every shared link lands here.
+      if (!mayHaveCookieSession()) return signedOut();
+
+      settle(await restoreSession());
+    })();
+
+    return () => { cancelled = true; };
+  }, [adoptUser, restoreSession]);
+
+  /**
+   * Tell the launch shell it may lift.
+   *
+   * The shell is the white screen with the logo that the document paints
+   * before any JavaScript runs (see index.html). It used to dismiss itself on
+   * React's first frame, which is well before this point — so the app rendered
+   * its route gates against an undecided session and showed the landing page
+   * for a moment on every authenticated reload.
+   *
+   * Signalling from here is what makes the sequence honest: the shell covers
+   * the whole of `initializing`, and lifts onto whichever app the answer calls
+   * for. It is called for BOTH outcomes — an unauthenticated boot has finished
+   * initializing just as much as an authenticated one has.
+   */
+  useEffect(() => {
+    if (authStatus === AUTH_STATUS.INITIALIZING) return;
+    try {
+      window.__meetifyyBoot?.ready?.();
+    } catch (_) {
+      // The shell is a progressive enhancement; the app renders without it.
+    }
+  }, [authStatus]);
+
+  /**
+   * Another tab signed in, signed out, or switched accounts.
+   *
+   * `storage` fires only in the tabs that did NOT make the change, which is
+   * exactly the set that needs telling. Without it, signing out in one tab left
+   * every other tab authenticated against cookies the server had already
+   * revoked — and signing in as somebody else left them rendering the previous
+   * account's name and data until they happened to be reloaded.
+   */
+  useEffect(() => {
+    const onStorage = (e) => {
+      if (e.key !== 'loggedIn' && e.key !== 'currentUser') return;
+
+      let stored = null;
+      try {
+        const raw = localStorage.getItem('currentUser');
+        stored = raw ? JSON.parse(raw) : null;
+      } catch (_) {}
+
+      const signedOutElsewhere = !stored || localStorage.getItem('loggedIn') !== 'true';
+      if (signedOutElsewhere) {
+        if (isLoggedInRef.current) clearLocalSession();
         return;
       }
-
-      if (!session) {
-        /**
-         * No session in memory does not mean signed out any more.
-         *
-         * Tokens are no longer written to localStorage, so a reload always
-         * starts with an empty client — the durable half of the session is an
-         * HttpOnly cookie this code cannot read. The only way to find out
-         * whether the browser is still signed in is to ask the server, which
-         * `sync` answers using that cookie.
-         *
-         * Without this, moving the session out of localStorage would log
-         * everyone out on every refresh.
-         */
-        hydrateFromCookie()
-          .then((user) => {
-            if (!user) {
-              setCurrentUser(null);
-              try { localStorage.removeItem('currentUser'); } catch (_) {}
-            }
-          })
-          .finally(() => setLoading(false));
-
-        if (!isLoggingOutRef.current) {
-          setSession(session);
-        }
-        return;
+      if (!isValidUser(stored)) return;
+      // A different account now owns this browser, or this tab had none.
+      if (stored.id !== currentUserIdRef.current || !isLoggedInRef.current) {
+        adoptUser(stored);
       }
-      if (!isLoggingOutRef.current) {
-        setSession(session);
-      }
-      setLoading(false);
-    }).catch(() => {
-      clearTimeout(authTimeout);
-      setLoading(false);
-    });
-
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, supabaseSession) => {
-        if (event === 'SIGNED_OUT') {
-          // No guard for the password-change revocation here, deliberately.
-          // `signOut({ scope: 'others' })` does not touch this device's stored
-          // session and never emits SIGNED_OUT locally (auth-js removes the
-          // local session only when the scope is NOT 'others'), so a flag
-          // suppressing that event was guarding against something that cannot
-          // happen — and would have swallowed a real sign-out if it ever stuck.
-          isLoggingOutRef.current = false;
-          setSession(null);
-          setCurrentUser(null);
-          localStorage.removeItem('currentUser');
-          localStorage.removeItem('meetifyy_recent_searches');
-          localStorage.removeItem('meetify_muted_communities');
-          localStorage.removeItem('read_invitations');
-          localStorage.removeItem('meetify_following_list');
-          localStorage.removeItem('meetify_followers_list');
-          useSavedPostsStore.getState().clearAll?.();
-          useSavedActivitiesStore.getState().clearAll?.();
-          usePostStore.getState().clearAll?.();
-          idbClearAll().catch(e => console.error('Failed to clear IDB on sign out', e));
-          setLoading(false);
-          return;
-        }
-
-        if (event === 'PASSWORD_RECOVERY') {
-          // ─── SECURITY: Do NOT call setSession() here. ─────────────────────
-          // A PASSWORD_RECOVERY session is a temporary one-time credential
-          // scoped exclusively to the /reset-password page. Broadcasting it
-          // into global auth state (isLoggedIn = true) would silently
-          // authenticate the user into the full app — a critical security bug.
-          //
-          // ResetPasswordPage reads this session independently via
-          // supabase.auth.getSession() and its own onAuthStateChange listener.
-          // ──────────────────────────────────────────────────────────────────
-          setLoading(false);
-          return;
-        }
-
-        // USER_UPDATED fires after supabase.auth.updateUser() — e.g. password change
-        // from ResetPasswordPage. At this point the recovery session is about to be
-        // signed out by that page. Don't set it into global state.
-        if (event === 'USER_UPDATED') {
-          setLoading(false);
-          return;
-        }
-
-        if (isLoggingOutRef.current) {
-          setSession(null);
-          setCurrentUser(null);
-          setLoading(false);
-          return;
-        }
-
-        // ─── INITIAL_SESSION recovery guard ──────────────────────────────────
-        // If PASSWORD_RECOVERY fired before this listener attached, Supabase
-        // replays it as INITIAL_SESSION. The recovery flag (written in supabase.js)
-        // confirms this is a recovery link tab. Skip ALL auth state updates so
-        // ResetPasswordPage handles this session exclusively.
-        if (event === 'INITIAL_SESSION') {
-          let pendingRecovery = false;
-          try { pendingRecovery = sessionStorage.getItem('sb-pwreset-pending') === '1'; } catch {}
-          if (pendingRecovery) {
-            setLoading(false);
-            return;
-          }
-        }
-
-        setSession(supabaseSession);
-
-        if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') {
-          const sbUser = supabaseSession?.user;
-          if (sbUser) {
-            const optProfile = {
-              id: sbUser.id,
-              email: sbUser.email || '',
-              username: sbUser.user_metadata?.username || '',
-              displayName: sbUser.user_metadata?.displayName || sbUser.email?.split('@')[0] || '',
-              role: 'Student',
-            };
-            setCurrentUser(prev => {
-              const isFallbackHandle = (str) => !str || typeof str !== 'string' || str.startsWith('user_');
-              if (prev && prev.id === sbUser.id && !isFallbackHandle(prev.username) && !isFallbackHandle(prev.displayName)) {
-                return prev;
-              }
-              const validOptUsername = sbUser.user_metadata?.username || (!isFallbackHandle(prev?.username) ? prev.username : '');
-              const validOptDisplayName = sbUser.user_metadata?.displayName || (!isFallbackHandle(prev?.displayName) ? prev.displayName : (sbUser.email?.split('@')[0] || ''));
-              return {
-                ...optProfile,
-                username: validOptUsername,
-                displayName: validOptDisplayName,
-              };
-            });
-          }
-
-          if (supabaseSession?.user) {
-            const now = Date.now();
-            if (now - lastSyncAtRef.current >= 5000) {
-              if (syncDebounceRef.current) clearTimeout(syncDebounceRef.current);
-              syncDebounceRef.current = setTimeout(() => {
-                performSync(supabaseSession, event);
-              }, 200);
-            }
-          }
-        }
-        
-        setLoading(false);
-      }
-    );
-    
-    return () => subscription.unsubscribe();
-  }, [performSync, hydrateFromCookie]);
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, [adoptUser, clearLocalSession]);
 
 
   const login = useCallback(async (usernameOrEmail, password) => {
@@ -461,8 +530,8 @@ export function AuthProvider({ children }) {
 
     // Single server-side login call. The backend resolves username→email
     // internally (the email is never exposed to the client), authenticates via
-    // Supabase, rate-limits brute force, and fires the login-notification email
-    // asynchronously. We only receive the session tokens.
+    // Supabase, rate-limits brute force, records the device, and fires the
+    // login-notification email asynchronously.
     const BASE_URL = getBackendUrl();
     const res = await fetch(`${BASE_URL}/api/auth/login`, {
       method: 'POST',
@@ -480,26 +549,42 @@ export function AuthProvider({ children }) {
       throw new Error(errBody?.message || 'Invalid username/email or password.');
     }
 
-    const { session } = await res.json();
-    const accessToken = session?.access_token;
-    const refreshToken = session?.refresh_token;
-    if (!accessToken || !refreshToken) {
-      throw new Error('Login failed. Please try again.');
-    }
+    const body = await res.json().catch(() => null);
+    rememberCsrfToken(body?.csrfToken);
 
-    // Install the session into the Supabase client — it takes over persistence
-    // and refresh, and fires SIGNED_IN, which drives profile sync in
-    // onAuthStateChange.
-    const { error } = await supabase.auth.setSession({
-      access_token: accessToken,
-      refresh_token: refreshToken,
-    });
-    if (error) {
-      throw new Error(error.message || 'Login failed. Please try again.');
+    /**
+     * No token is installed into the provider client, and that is the fix.
+     *
+     * This used to take `access_token` and `refresh_token` out of the response
+     * and call `supabase.auth.setSession(...)`, which made the provider client
+     * the owner of the session: it persisted the pair, started its own refresh
+     * ticker, and announced SIGNED_IN, which a second listener elsewhere turned
+     * into a profile sync. Three problems came out of that, and all three are
+     * gone now that the response carries no tokens at all.
+     *
+     * The refresh token was in JavaScript, which is the exposure HttpOnly
+     * cookies exist to close. The same rotating token was held by this tab AND
+     * by the server, so whichever refreshed first retired the other's copy and
+     * a later use of the retired one trips Supabase's reuse detection, which
+     * revokes every session the account has. And "signed in" was derived from
+     * an object that lives in memory, so it was gone on the next reload.
+     *
+     * The credential is the cookie set on this response. Confirming it is one
+     * GET, which also returns the full profile — so the app reaches its first
+     * authenticated render already knowing who it is showing.
+     */
+    const restored = await restoreSession();
+    const user = restored?.outcome === 'signed-in' ? restored.user : null;
+    if (!user) {
+      // The cookies did not come back, or did not authenticate. Almost always a
+      // cookie-attribute mismatch between the API's host and the app's, which
+      // is silent in the network tab and used to present as "logged in, then
+      // immediately logged out".
+      throw new Error("Signed in, but this browser did not keep the session. Please try again.");
     }
-
+    adoptUser(user);
     return true;
-  }, []);
+  }, [adoptUser, restoreSession]);
 
   const initiateSignup = useCallback(async (userData) => {
     // Checked here even though this step no longer talks to Supabase itself.
@@ -651,9 +736,6 @@ export function AuthProvider({ children }) {
         displayName: displayName,
         role: 'Student',
       };
-      
-      localStorage.setItem('currentUser', JSON.stringify(profile));
-      setCurrentUser(profile);
 
       // Clear stale signup session data — the OTP is now used and should not be replayable
       sessionStorage.removeItem('meetifyy_signup_data');
@@ -661,6 +743,9 @@ export function AuthProvider({ children }) {
       // Immediately persist gathered profile details to backend database.
       // The backend syncProfile gate will allow this because email_confirmed_at
       // is now set (Supabase marks it on successful OTP verification).
+      //
+      // This still travels on the bearer token: the cookies do not exist yet,
+      // and creating them is the next step.
       try {
         const { password, ...safeData } = payloadObj;
         const response = await usersApi.updateProfile({
@@ -669,18 +754,44 @@ export function AuthProvider({ children }) {
           username,
         });
         const syncedUser = response?.user || response;
-        if (syncedUser) {
-          profile = { ...profile, ...syncedUser };
-          localStorage.setItem('currentUser', JSON.stringify(profile));
-          setCurrentUser(profile);
-        }
+        if (syncedUser) profile = { ...profile, ...syncedUser };
       } catch (err) {
         console.error('Failed to sync profile immediately on OTP verification', err);
       }
+
+      /**
+       * Hand the provider session to the server, and stop holding it here.
+       *
+       * Signup is the only flow left that mints a session in the browser —
+       * `verifyOtp` is what confirms the emailed code, and it answers with one.
+       * Before this call existed, that session simply stayed in the tab: a new
+       * account had no cookies, no row in its own device list, nothing that
+       * "sign out this device" could act on, and was signed out by its first
+       * reload. Its refresh token also stayed in JavaScript for as long as the
+       * tab was open.
+       *
+       * Adopting it converts it into the same cookie session every other signed
+       * -in browser has. The local sign-out immediately afterwards is scoped to
+       * this device only — the account's provider session must survive, because
+       * the server is now the one using it.
+       */
+      try {
+        const adopted = await authApi.adoptSession(data.session.refresh_token);
+        rememberCsrfToken(adopted?.csrfToken);
+        if (adopted?.user) profile = { ...profile, ...adopted.user };
+      } catch (err) {
+        // The account exists and is verified, so this is not a signup failure.
+        // The session is simply not durable yet; the next sign-in creates one.
+        console.error('Failed to establish a session after verification', err);
+      } finally {
+        try { await supabase.auth.signOut({ scope: 'local' }); } catch (_) {}
+      }
+
+      adoptUser(profile);
     }
-    
+
     return true;
-  }, []);
+  }, [adoptUser]);
 
   /**
    * Finishes account setup: marks the profile complete and sends the welcome
@@ -1013,55 +1124,66 @@ export function AuthProvider({ children }) {
     return true;
   }, [currentUser]);
 
+  /**
+   * Ends the session — on the server first, then here.
+   *
+   * The server call is the part that was missing, and its absence was not a
+   * cosmetic gap. Signing out cleared React state and some `localStorage` keys
+   * and stopped there: the session row stayed live, and the HttpOnly cookies
+   * stayed in the browser, because only the server can clear a cookie it set
+   * with those attributes. The next reload found those cookies, asked the
+   * server who they belonged to, and was told — correctly — that they belonged
+   * to the person who had just signed out. On a shared machine that is the next
+   * person inheriting an account, and no amount of clearing on this side could
+   * have prevented it.
+   *
+   * Local teardown happens whether or not the call succeeds. A user who has
+   * asked to be signed out is signed out of this browser regardless; if the
+   * request failed, the cookies that remain are the ones the next boot will
+   * discover are revoked.
+   *
+   * `signOut({ scope: 'local' })`, never the default global scope. The provider
+   * session belongs to the server now, and other devices have their own rows in
+   * the session table — ending one device's session here must not end theirs.
+   */
   const logout = useCallback(async () => {
     isLoggingOutRef.current = true;
-    setSession(null);
-    setCurrentUser(null);
-    localStorage.removeItem('currentUser');
-    localStorage.removeItem('meetifyy_recent_searches');
-    localStorage.removeItem('meetify_muted_communities');
-    localStorage.removeItem('read_invitations');
-    localStorage.removeItem('meetify_show_community_details');
-    localStorage.removeItem('meetify_following_list');
-    localStorage.removeItem('meetify_followers_list');
-    sessionStorage.removeItem('meetifyy_signup_data');
-    useSavedPostsStore.getState().clearAll?.();
-    useSavedActivitiesStore.getState().clearAll?.();
-    usePostStore.getState().clearAll?.();
-    idbClearAll().catch(e => console.error('Failed to clear IDB on logout', e));
-    // The React Query cache is memory-only and dies with the page, but the
-    // service worker's API cache is not: it is keyed by URL with no regard for
-    // who was authenticated when the body was stored. On a shared device the
-    // next person to sign in could be served the previous user's cached
-    // response offline. Everything the worker holds is re-fetchable, so the
-    // safe thing is simply to drop all of it.
-    if (typeof caches !== 'undefined') {
-      caches.keys()
-        .then((names) => Promise.all(names.filter((n) => n.startsWith('meetifyy-api')).map((n) => caches.delete(n))))
-        .catch(() => {});
+    try {
+      await authApi.logoutSession();
+    } catch (e) {
+      console.error('Server sign-out failed; clearing this browser anyway', e);
     }
-    // Anything the API-origin failover learned belongs to the previous session.
-    try { sessionStorage.removeItem('meetifyy_api_failover'); } catch {}
+
+    clearLocalSession();
 
     if (isSupabaseConfigured) {
       try {
-        await supabase.auth.signOut();
+        await supabase.auth.signOut({ scope: 'local' });
       } catch (e) {
         console.error('Supabase signOut error', e);
       }
     }
-  }, []);
+    isLoggingOutRef.current = false;
+  }, [clearLocalSession]);
 
-  // Listen to global auth:unauthorized events dispatched from the apiClient
+  /**
+   * The API client has established that the session is over.
+   *
+   * Local teardown only. It used to call `logout()`, which now posts to the
+   * server — and posting a sign-out with credentials the server has already
+   * refused is a guaranteed second failure, on the way to doing exactly what
+   * this does. The server has already cleared what it could on the response
+   * that produced the 401.
+   */
   useEffect(() => {
     const handleUnauthorized = () => {
-      logout();
+      if (isLoggedInRef.current) clearLocalSession();
     };
     window.addEventListener('auth:unauthorized', handleUnauthorized);
     return () => {
       window.removeEventListener('auth:unauthorized', handleUnauthorized);
     };
-  }, [logout]);
+  }, [clearLocalSession]);
 
   const username = currentUser?.username || '';
   const initial = username ? username.charAt(0).toUpperCase() : '?';
@@ -1085,6 +1207,16 @@ export function AuthProvider({ children }) {
   const value = useMemo(() => ({
     isLoggedIn,
     session,
+    /**
+     * `initializing` | `authenticated` | `unauthenticated`.
+     *
+     * Read this, not `loading`, when the question is "may I route yet?".
+     * `loading` is kept as the derived boolean it always was so existing
+     * consumers keep working, but it cannot express the difference between
+     * "still deciding" and "decided: nobody", and that difference is the whole
+     * bug it was part of.
+     */
+    authStatus,
     loading,
     currentUser,
     username,
@@ -1103,7 +1235,7 @@ export function AuthProvider({ children }) {
     logout,
     isSupabaseConfigured,
   }), [
-    isLoggedIn, session, loading, currentUser, username, displayName, initial,
+    isLoggedIn, session, authStatus, loading, currentUser, username, displayName, initial,
     collegeName, login, initiateSignup, resendSignupOtp, verifySignupOtp,
     completeSignup, updateProfile, updateSettings, updateCurrentUser,
     changePassword, logout,
@@ -1125,6 +1257,7 @@ export function AuthProvider({ children }) {
 const NO_AUTH = Object.freeze({
   isLoggedIn: false,
   session: null,
+  authStatus: AUTH_STATUS.UNAUTHENTICATED,
   loading: false,
   currentUser: null,
   username: '',

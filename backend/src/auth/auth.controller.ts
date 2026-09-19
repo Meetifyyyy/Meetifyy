@@ -15,12 +15,14 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Request } from 'express';
+import { timingSafeEqual } from 'crypto';
 import { UAParser } from 'ua-parser-js';
 import { AuthService } from './auth.service';
 import { EmailService } from '../email/email.service';
 import { JwtGuard } from '../common/guards/jwt.guard';
 import { AllowSuspended } from '../common/decorators/allow-suspended.decorator';
 import { AllowPendingDeletion } from '../common/decorators/allow-pending-deletion.decorator';
+import { AllowBearerToken } from '../common/decorators/allow-bearer-token.decorator';
 import { AuthRateLimitGuard } from '../common/guards/auth-ratelimit.guard';
 import {
   LoginRateLimitGuard,
@@ -35,9 +37,11 @@ import { UserSessionService } from './session/user-session.service';
 import {
   issueUserSessionCookies,
   clearUserSessionCookies,
+  USER_CSRF_COOKIE,
   USER_REFRESH_COOKIE,
   USER_SESSION_ID_COOKIE,
 } from './session/user-session-cookies';
+import { config } from '../config';
 import { UserSessionRevokedReason } from '@prisma/client';
 import type { AuthenticatedUser } from '../common/types/authenticated-request';
 import {
@@ -54,6 +58,7 @@ import {
   SignUpDto,
   ResendSignupOtpDto,
   ChangePasswordDto,
+  AdoptSessionDto,
 } from './dto/auth.dto';
 
 @Controller('api/auth')
@@ -88,6 +93,32 @@ export class AuthController {
   }
 
   /**
+   * How long the access cookie should live, from the token it carries.
+   *
+   * A cookie that outlives its token is the only shape that actually hurts:
+   * the browser keeps sending a credential the server will refuse, and every
+   * request pays a refresh round-trip to find that out. Reading `exp` off the
+   * token keeps the two in step. The token has already been verified by
+   * JwtGuard by the time this runs, so decoding it here reads a value we have
+   * already checked the signature of.
+   */
+  private accessCookieMaxAge(token: string): number {
+    try {
+      const [, payload] = token.split('.');
+      const claims = JSON.parse(
+        Buffer.from(payload, 'base64url').toString('utf8'),
+      );
+      const remaining = Number(claims?.exp) * 1000 - Date.now();
+      if (Number.isFinite(remaining) && remaining > 0) return remaining;
+    } catch {
+      // Unreadable payload on an already-verified token should not be
+      // possible; fall through to the configured default rather than issue a
+      // session-length cookie.
+    }
+    return config.auth.cookie.accessMaxAgeMs;
+  }
+
+  /**
    * The client's own profile, and the route that tells it which screen to show.
    *
    * Reachable in BOTH restricted states, and that is load-bearing rather than a
@@ -114,6 +145,96 @@ export class AuthController {
       message: 'Profile synchronized successfully',
       user: syncedUser,
       meta: syncedUser.meta || {},
+    };
+  }
+
+  /**
+   * "Am I signed in?", answered by the cookie and nothing else.
+   *
+   * The boot probe, and deliberately a GET. `sync` does the same work but is a
+   * POST, so JwtGuard requires the double-submit CSRF header on it — and the
+   * client can only produce that header if it can read `mf_csrf` with
+   * `document.cookie`, which it cannot when the API is on a different host from
+   * the app and the cookie is host-only. Restoring a session must not depend on
+   * a cookie attribute: a safe method carries no CSRF requirement, so this
+   * answers from the session cookies alone, in every deployment shape.
+   *
+   * `csrfToken` rides the body for the same reason the login response carries
+   * it — the page may be unable to read the cookie, and echoing the token in a
+   * header is what makes every later mutation possible. Handing it back here is
+   * no weaker than the cookie: a cross-site page can read neither, and the
+   * cookie stays the server's comparison anchor.
+   *
+   * Reachable in the restricted states for exactly the reason `sync` is: the
+   * gates that explain them mount off this payload.
+   */
+  @Get('session')
+  @UseGuards(JwtGuard)
+  @AllowSuspended()
+  @AllowPendingDeletion()
+  async currentSession(
+    @CurrentUser() user: AuthenticatedUser,
+    @Req() req: Request,
+  ) {
+    const syncedUser = await this.authService.syncProfile(user);
+    const csrf = req.cookies?.[USER_CSRF_COOKIE];
+    return {
+      user: syncedUser,
+      meta: syncedUser.meta || {},
+      sessionId: this.currentSessionId(req),
+      csrfToken: typeof csrf === 'string' ? csrf : null,
+    };
+  }
+
+  /**
+   * Takes custody of a session the browser minted against Supabase directly.
+   *
+   * Signup is the one flow that still does: `verifyOtp` is what confirms the
+   * emailed code, and it answers with a session. Without this call that session
+   * stayed in the tab — so a brand new account had no cookie session, no row in
+   * the device list, nothing to revoke, and was signed out by its first reload
+   * — and its refresh token stayed reachable from JavaScript, which is the
+   * exposure HttpOnly cookies exist to remove.
+   *
+   * The access token is verified by JwtGuard from the Authorization header like
+   * any other. The refresh token is in the body because handing it over is the
+   * point: the server seals it into the session row, and the client drops its
+   * copy immediately afterwards.
+   */
+  @Post('session/adopt')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtGuard, RateLimitPolicyGuard)
+  @RateLimit('auth.session.adopt')
+  // The bearer token IS the credential here — that is the whole call. There are
+  // no cookies yet, and creating them is what this route does.
+  @AllowBearerToken()
+  async adoptSession(
+    @Body() body: AdoptSessionDto,
+    @CurrentUser() user: AuthenticatedUser,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: any,
+  ) {
+    const issued = await this.sessions.issue(
+      user.id,
+      this.deviceOf(req),
+      body.refreshToken,
+    );
+
+    const { csrfToken } = issueUserSessionCookies(
+      res,
+      user.token,
+      issued.refreshToken,
+      this.accessCookieMaxAge(user.token),
+      issued.expiresAt.getTime() - Date.now(),
+      issued.sessionId,
+    );
+
+    const syncedUser = await this.authService.syncProfile(user);
+    return {
+      user: syncedUser,
+      meta: syncedUser.meta || {},
+      csrfToken,
+      sessionId: issued.sessionId,
     };
   }
 
@@ -156,10 +277,29 @@ export class AuthController {
     /**
      * Record the device and set HttpOnly cookies.
      *
-     * The body still carries the session, because existing clients read it from
-     * there and this must not sign everyone out on deploy. The cookies are what
-     * new clients use, and they are what makes the session revocable: the row
-     * created here is the thing "sign out this device" acts on.
+     * The row created here is what makes the session revocable — it is the
+     * thing "sign out this device" acts on — and the cookies are the only
+     * credential the browser receives.
+     *
+     * NOTHING from `result.session` is returned any more, and that is the
+     * point of this route rather than a detail of it.
+     *
+     * The response used to carry both Supabase tokens so the page could install
+     * them into its own auth client. That left the provider's REFRESH token —
+     * the long-lived half, the one that can mint access tokens for a month —
+     * sitting in JavaScript, which is precisely the exposure HttpOnly cookies
+     * were introduced to remove. It also put the same rotating token in two
+     * hands at once: Supabase retires a refresh token the moment it is used, so
+     * whichever of the browser and this server refreshed first silently killed
+     * the other's copy, and a later use of the retired one trips Supabase's
+     * reuse detection and revokes the whole family. That is a logout the user
+     * did nothing to cause, and it is why a session could evaporate moments
+     * after signing in.
+     *
+     * The server is now the only holder. `csrfToken` is here because the page
+     * has to echo it on every mutation and cannot always read the cookie (a
+     * host-only cookie on a different API hostname is invisible to
+     * `document.cookie`); it is not a credential on its own.
      */
     const issued = await this.sessions.issue(
       result.user.id,
@@ -175,7 +315,15 @@ export class AuthController {
       issued.sessionId,
     );
 
-    return { ...result, csrfToken, sessionId: issued.sessionId };
+    return {
+      user: {
+        id: result.user.id,
+        email: result.user.email,
+        displayName: result.user.displayName,
+      },
+      csrfToken,
+      sessionId: issued.sessionId,
+    };
   }
 
   /**
@@ -238,25 +386,55 @@ export class AuthController {
     return { csrfToken, sessionId: rotated.session.sessionId };
   }
 
-  /** Ends this device's session server-side, then clears its cookies. */
+  /**
+   * Ends this device's session server-side, then clears its cookies.
+   *
+   * Deliberately NOT behind JwtGuard. Signing out has to work from the state
+   * the user is actually in, and the state people sign out from most often is
+   * one where something has already gone wrong: an access cookie past its
+   * fifteen minutes, a token the provider no longer recognises. Behind the
+   * guard every one of those answered 401 — so the row stayed live, the
+   * cookies stayed in the browser, and the next reload signed the person
+   * straight back into the account they had just left. On a shared machine
+   * that is not a bug in a button, it is the next person inheriting a session.
+   *
+   * Authority comes from the refresh cookie instead, which is a credential:
+   * holding it is what proves the caller owns the session being ended, and it
+   * reaches this path because the cookie's own path (`/api/auth/session`) is a
+   * prefix of it. No user id is needed, and none is trusted from the request.
+   *
+   * The double-submit check stays, so a page on another site cannot sign
+   * somebody out for a laugh. If the CSRF cookie is already gone there is
+   * nothing left to protect and the cookies are simply cleared.
+   */
   @Post('session/logout')
   @HttpCode(HttpStatus.OK)
-  @UseGuards(JwtGuard)
-  @AllowSuspended()
-  @AllowPendingDeletion()
   async logoutSession(
-    @CurrentUser() user: AuthenticatedUser,
     @Req() req: Request,
     @Res({ passthrough: true }) res: any,
   ) {
-    const sessionId = this.currentSessionId(req);
-    if (sessionId) {
-      await this.sessions.revokeOwnedByUser(
-        user.id,
-        sessionId,
+    const csrfCookie = req.cookies?.[USER_CSRF_COOKIE];
+    if (typeof csrfCookie === 'string' && csrfCookie) {
+      const header = req.headers['x-csrf-token'];
+      if (
+        typeof header !== 'string' ||
+        header.length !== csrfCookie.length ||
+        !timingSafeEqual(Buffer.from(header), Buffer.from(csrfCookie))
+      ) {
+        throw new ForbiddenException('CSRF validation failed');
+      }
+    }
+
+    const refreshToken = req.cookies?.[USER_REFRESH_COOKIE];
+    if (typeof refreshToken === 'string' && refreshToken) {
+      await this.sessions.revokeByRefreshHash(
+        this.sessions.hashRefreshToken(refreshToken),
         UserSessionRevokedReason.USER_LOGOUT,
       );
     }
+
+    // Always, even when there was nothing to revoke. A browser left holding
+    // cookies it cannot use is the state this route exists to end.
     clearUserSessionCookies(res);
     return { success: true };
   }

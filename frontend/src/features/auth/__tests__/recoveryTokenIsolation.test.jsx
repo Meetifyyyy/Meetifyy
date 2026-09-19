@@ -122,10 +122,6 @@ describe('recovery-token isolation in the API client', () => {
   });
 
   it('does not read the recovery session back out of localStorage', async () => {
-    // The cache falls back to scanning storage when it holds no token, and an
-    // empty cache is exactly the state the guard above produces. A recovery
-    // session sits in localStorage like any other, so without the same guard
-    // there the fallback walks straight around it.
     recoveryTab = true;
     localStorage.setItem(
       'sb-proj-auth-token',
@@ -135,15 +131,23 @@ describe('recovery-token isolation in the API client', () => {
     expect(await authHeaderOf()).toBeFalsy();
   });
 
-  it('still reads a normal session out of localStorage', async () => {
-    // The fallback exists for a reason — a cold boot before the listener has
-    // fired — and the guard must not disable it for everybody.
+  it('never adopts a token found in localStorage, recovery or not', async () => {
+    // The cache used to fall back to scanning `sb-*` keys whenever it held no
+    // token of its own, which is a cold boot — so on a shared machine the first
+    // request of a new session could be authenticated with whatever the
+    // previous person had left on disk. It also walked straight around the
+    // recovery guard, since an empty cache is exactly the state that guard
+    // produces.
+    //
+    // There is nothing legitimate left for it to find: sessions are HttpOnly
+    // cookies, the provider client keeps its own copy in memory, and anything
+    // still under an `sb-` key is a leftover from before that change.
     localStorage.setItem(
       'sb-proj-auth-token',
       JSON.stringify({ access_token: 'normal-token' }),
     );
     const { authHeaderOf } = await loadClient();
-    expect(await authHeaderOf()).toBe('Bearer normal-token');
+    expect(await authHeaderOf()).toBeFalsy();
   });
 
   it('stops withholding once the recovery session is signed out', async () => {

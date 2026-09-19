@@ -4,9 +4,18 @@ import { describe, it, expect, vi } from 'vitest';
 // under test, so its heavy leaves are stubbed rather than rendered.
 vi.mock('@shared/context/AuthContext', () => ({ useAuth: () => ({}) }));
 vi.mock('@shared/api/apiClient', () => ({
-  // Added with the cookie migration: AuthContext reads this to decide
-  // whether a cookie session is worth recovering.
-  readCsrfCookie: () => '', apiClient: {} }));
+  // Added with the cookie migration: AuthContext reads these to decide whether
+  // a cookie session is worth recovering, and to carry the CSRF token the
+  // server returns in the body of every session-issuing response.
+  readCsrfCookie: () => '',
+  mayHaveCookieSession: () => false,
+  rememberCsrfToken: () => {},
+  forgetCsrfToken: () => {},
+  authApi: {
+    currentSession: async () => ({ user: null }),
+    adoptSession: async () => ({}),
+    logoutSession: async () => ({}),
+  }, apiClient: {} }));
 vi.mock('@shared/lib/supabase', () => ({ supabase: {}, isSupabaseConfigured: false }));
 
 const { SETTINGS_TREE, SETTINGS_CATEGORIES, SETTINGS_PANELS, PANEL_PARENT } =
