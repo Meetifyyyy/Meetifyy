@@ -6,7 +6,7 @@ import { useProfile } from '@shared/hooks/useProfile';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@shared/context/AuthContext';
 import { useJoinedCommunities } from '@shared/hooks/useCommunities';
-import { Bookmark, Moon, Sun } from '@shared/components/icons';
+import { Bookmark, Moon, Sun, MenuSquare, X, Compass } from '@shared/components/icons';
 
 
 import Avatar from '@shared/components/avatar/Avatar';
@@ -16,9 +16,8 @@ import NotificationBell from '@features/notifications/components/NotificationBel
 import { isImageUrl } from '@shared/utils/avatar';
 import {
   UserGroupIcon as CommunitiesOutline,
-  ChevronDownIcon,
-  ChevronUpIcon,
   Cog6ToothIcon as SettingsIcon,
+  MagnifyingGlassIcon,
 } from '@heroicons/react/24/outline';
 import styles from './Header.module.css';
 import wordmark from '@assets/images/meetifyy_wordmark.svg';
@@ -54,7 +53,7 @@ const DrawerCommunityItem = ({ comm, navigate, onClose }) => {
           </span>
         )}
       </div>
-      <span>{comm.name}</span>
+      <span className={styles.communityItemName}>{comm.name}</span>
     </a>
   );
 };
@@ -66,7 +65,6 @@ export default function Header({ variant = 'dashboard', wide = false }) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const closeDrawer = useCallback(() => setDrawerOpen(false), []);
-  const [isCommunitiesMenuOpen, setIsCommunitiesMenuOpen] = useState(false);
 
   // Freeze the page while the drawer is open. Without this, scrolling over
   // the drawer scrolled the feed behind it — and closing the drawer left the
@@ -156,18 +154,24 @@ export default function Header({ variant = 'dashboard', wide = false }) {
 
   return (
     <header className={`${styles.header} ${activeTab === 'messages' ? styles.headerMessages : ''} ${!isHomePage ? styles.hideOnMobile : ''}`}>
-      {/* Mobile Header Left: Hamburger */}
+      {/* Mobile Header Left: Sidebar / Menu Button */}
       <button 
         className={styles.hamburgerBtn}
         onClick={() => setDrawerOpen(true)}
-        aria-label="Open menu"
+        aria-label="Open sidebar"
       >
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <line x1="3.5" y1="5.5" x2="20.5" y2="5.5" />
-          <line x1="3.5" y1="12" x2="16.5" y2="12" />
-          <line x1="3.5" y1="18.5" x2="11.5" y2="18.5" />
-        </svg>
+        <MenuSquare className={styles.headerIcon} size={22} strokeWidth={1.5} />
       </button>
+
+      {/* Mobile Header Center: Brand Wordmark */}
+      <div className={styles.mobileCenterBrand}>
+        <img 
+          src={wordmark} 
+          alt="Meetifyy" 
+          className={styles.mobileBrandWordmark} 
+          onClick={() => navigate('/home')} 
+        />
+      </div>
 
       {/* Desktop/Default Left: Brand */}
       <div className={styles.navLeft}>
@@ -195,7 +199,6 @@ export default function Header({ variant = 'dashboard', wide = false }) {
       <div
         className={`${styles.mobileDrawer} ${drawerOpen ? styles.drawerOpen : ''}`}
         data-scroll-lock-ignore
-        aria-hidden={!drawerOpen}
         inert={!drawerOpen ? '' : undefined}
       >
         <div className={styles.drawerHeader}>
@@ -205,17 +208,22 @@ export default function Header({ variant = 'dashboard', wide = false }) {
             className={styles.drawerWordmark} 
             onClick={() => { navigate('/home'); setDrawerOpen(false); }} 
           />
-          <button className={styles.closeDrawerBtn} onClick={closeDrawer}>✕</button>
+          <button className={styles.closeDrawerBtn} onClick={closeDrawer} aria-label="Close menu">
+            <X size={18} strokeWidth={2} />
+          </button>
         </div>
         
         <div className={styles.drawerContent}>
-          {/* User Profile Info */}
+          {/* User Profile Card */}
           <div 
             className={styles.drawerProfile} 
             onClick={() => { navigate(`/profile/${username}`, { state: { from: location.pathname } }); setDrawerOpen(false); }}
+            role="button"
+            tabIndex={0}
+            aria-label="View profile"
           >
             <div className={styles.drawerProfileHeader}>
-              <div style={{ width: 48, height: 48, flexShrink: 0 }}>
+              <div className={styles.drawerAvatarWrap}>
                 <Avatar
                   src={currentUser?.avatar || currentUser?.avatarUrl}
                   name={currentUser?.displayName}
@@ -230,58 +238,69 @@ export default function Header({ variant = 'dashboard', wide = false }) {
             </div>
             
             <div className={styles.drawerProfileStats}>
-              <div className={styles.statItem} onClick={(e) => { e.stopPropagation(); navigate(`/profile/${username}?tab=followers`, { state: { from: location.pathname } }); setDrawerOpen(false); }}>
+              <div 
+                className={styles.statItem} 
+                onClick={(e) => { 
+                  e.stopPropagation(); 
+                  navigate(`/profile/${username}?tab=followers`, { state: { from: location.pathname } }); 
+                  setDrawerOpen(false); 
+                }}
+              >
                 <span className={styles.statNumber}>{followersCount.toLocaleString()}</span>
                 <span className={styles.statLabel}>Followers</span>
               </div>
-              <div className={styles.statItem} onClick={(e) => { e.stopPropagation(); navigate(`/profile/${username}?tab=following`, { state: { from: location.pathname } }); setDrawerOpen(false); }}>
+              <div 
+                className={styles.statItem} 
+                onClick={(e) => { 
+                  e.stopPropagation(); 
+                  navigate(`/profile/${username}?tab=following`, { state: { from: location.pathname } }); 
+                  setDrawerOpen(false); 
+                }}
+              >
                 <span className={styles.statNumber}>{followingCount.toLocaleString()}</span>
                 <span className={styles.statLabel}>Following</span>
               </div>
             </div>
           </div>
 
-          {/* Communities Box (same behavior as left sidebar on desktop) */}
+          <div className={styles.drawerDivider} />
+
+          {/* Communities Box */}
           <div className={styles.communitiesBox}>
-            <div 
-              className={styles.communitiesHeader} 
-              onClick={() => setIsCommunitiesMenuOpen(!isCommunitiesMenuOpen)}
-            >
-              <span>COMMUNITIES</span>
-              {isCommunitiesMenuOpen ? (
-                <ChevronUpIcon className={styles.chevronIcon} />
-              ) : (
-                <ChevronDownIcon className={styles.chevronIcon} />
-              )}
+            <div className={styles.communitiesHeader}>
+              <div className={styles.communitiesIconSlot}>
+                <CommunitiesOutline className={styles.communitiesHeaderIcon} />
+              </div>
+              <span className={styles.communitiesTitle}>Communities</span>
             </div>
             
-            {isCommunitiesMenuOpen && (
-              <div className={styles.communitiesList}>
-                {joinedCommunityObjects.length > 0 ? (
-                  joinedCommunityObjects.map(comm => (
-                    <DrawerCommunityItem 
-                      key={comm.id} 
-                      comm={comm} 
-                      navigate={navigate} 
-                      onClose={() => setDrawerOpen(false)} 
-                    />
-                  ))
-                ) : (
-                  <div className={styles.emptyCommunities}>
-                    No communities joined yet
-                  </div>
-                )}
-                
-                <a
-                  href="#"
-                  className={styles.exploreMore}
-                  onClick={(e) => { e.preventDefault(); navigate('/communities'); setDrawerOpen(false); }}
-                >
-                  <CommunitiesOutline className={styles.exploreIcon} />
-                  <span>Explore more...</span>
-                </a>
-              </div>
-            )}
+            <div className={styles.communitiesList}>
+              {joinedCommunityObjects.length > 0 ? (
+                joinedCommunityObjects.map(comm => (
+                  <DrawerCommunityItem 
+                    key={comm.id} 
+                    comm={comm} 
+                    navigate={navigate} 
+                    onClose={() => setDrawerOpen(false)} 
+                  />
+                ))
+              ) : (
+                <div className={styles.emptyCommunities}>
+                  No communities joined yet
+                </div>
+              )}
+              
+              <a
+                href="#"
+                className={styles.exploreMore}
+                onClick={(e) => { e.preventDefault(); navigate('/communities'); setDrawerOpen(false); }}
+              >
+                <div className={styles.communitiesIconSlot}>
+                  <Compass size={18} className={styles.exploreIcon} />
+                </div>
+                <span>Explore communities</span>
+              </a>
+            </div>
           </div>
         </div>
 
@@ -291,7 +310,9 @@ export default function Header({ variant = 'dashboard', wide = false }) {
             className={styles.drawerSettingsBtn}
             onClick={() => { navigate('/settings'); setDrawerOpen(false); }}
           >
-            <SettingsIcon className={styles.settingsIcon} />
+            <div className={styles.communitiesIconSlot}>
+              <SettingsIcon className={styles.settingsIcon} />
+            </div>
             <span>Settings</span>
           </button>
           
@@ -315,13 +336,11 @@ export default function Header({ variant = 'dashboard', wide = false }) {
           </button>
         </div>
       </div>
-      {drawerOpen && (
-        <div
-          className={styles.drawerOverlay}
-          onClick={() => setDrawerOpen(false)}
-          aria-hidden="true"
-        />
-      )}
+      <div
+        className={`${styles.drawerOverlay} ${drawerOpen ? styles.drawerOverlayOpen : ''}`}
+        onClick={() => setDrawerOpen(false)}
+        aria-hidden="true"
+      />
         </>,
         document.body,
       )}
@@ -341,6 +360,16 @@ export default function Header({ variant = 'dashboard', wide = false }) {
 
       {variant === 'dashboard' ? (
         <nav className={styles.nav}>
+          {/* Mobile Search Button */}
+          <button
+            type="button"
+            className={styles.mobileSearchBtn}
+            onClick={() => navigate('/search', { state: { autoFocus: true } })}
+            aria-label="Search"
+          >
+            <MagnifyingGlassIcon className={styles.headerIcon} strokeWidth={1.75} />
+          </button>
+
           <div style={{ position: 'relative' }}>
             <NotificationBell />
           </div>
