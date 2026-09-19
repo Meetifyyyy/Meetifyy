@@ -2,7 +2,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import React from 'react';
 
 /**
  * A message sent from a share flow has to behave like one sent from the chat.
