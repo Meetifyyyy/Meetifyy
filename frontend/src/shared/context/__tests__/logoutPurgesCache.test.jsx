@@ -41,6 +41,10 @@ vi.mock('@shared/lib/supabase', () => ({
   clearRecoveryTab: () => {},
 }));
 vi.mock('@config', () => ({
+  // `false` because these exercise the WEB client. The constant gates which
+  // API origin apiClient assembles, and a mock that omits it fails the import
+  // outright rather than defaulting — which is how these tests found it.
+  IS_MOBILE_BUILD: false,
   config: { supabase: { url: 'https://example.supabase.co', anonKey: 'k' } },
   IS_DEV_BUILD: false,
 }));

@@ -1,54 +1,64 @@
 /**
- * The mobile entry point.
+ * The native app's entry point.
  *
- * Deliberately thin, and deliberately not the web app in a different file. What
- * it proves at this phase is narrow and worth being precise about: that a
- * second client can be built from `core/` over `platform/capacitor/`, that it
- * owns its own runtime, and that the bundle it produces contains no service
- * worker. The mobile UI itself is the next phase; this is the shell it will
- * mount into.
+ * It mounts THE WEBSITE. Same `App`, same providers, same routes, same screens
+ * — the native build is the existing app running in a WebView, not a second app
+ * that resembles it. Everything that makes the site work on a phone is already
+ * there: it is responsive, it has a bottom nav below 768px, it uses safe-area
+ * insets. None of that needed rebuilding and none of it was.
  *
- * WHAT IS NOT HERE, AND IS NOT AN OVERSIGHT
- *   • No service-worker registration. `vite.mobile.config.js` does not load
- *     vite-plugin-pwa at all, so there is nothing to register — and because the
- *     code is absent rather than skipped by an `if`, it cannot fail open the way
- *     the web gate once did. CI greps `dist-mobile/` to keep it that way.
- *   • No launch-time version gate. A bundled app has no deployment to be stale
- *     against; updates come through the store.
- *   • No Vercel analytics. Web-only by construction, and already host-gated
- *     there.
- *   • No router and no screens yet. Phase 5.
+ * WHAT ACTUALLY DIFFERS, AND WHY EACH ONE HAS TO
  *
- * ITS OWN RUNTIME, WHICH IS THE RULE
- * The QueryClient below is created here, not imported. Neither it nor anything
- * else on this page is shared with the web client: `core/` exports factories
- * precisely so that each client builds its own, and a singleton crossing the
- * two would make "redesign one without touching the other" untrue at the first
- * cache invalidation.
+ *   1. The opening screen. `/` on the website is a landing page — a marketing
+ *      surface for someone who has not heard of Meetifyy. Someone opening the
+ *      installed app has heard of it and installed it, so they get a front door
+ *      instead. One route, overridden by prop.
+ *
+ *   2. No service worker. Not skipped by a runtime check — `vite.mobile.config.js`
+ *      never loads the PWA plugin, so the code is absent. A caching worker in a
+ *      WebView can serve its copy of the DEPLOYED SITE instead of the reviewed
+ *      bundle, and iOS has no service worker support at all.
+ *
+ *   3. No launch-time version gate. It compares the running build against the
+ *      deployed one; a bundled app has no deployment to be stale against, and
+ *      updates come through the store.
+ *
+ *   4. No Vercel analytics. It reports to a web project and is already gated to
+ *      production hosts there.
+ *
+ * The API origin differs too, but that is not decided here — see
+ * `shared/api/apiClient.js`, which picks its platform from `config.client`.
+ * Without it every request inside the WebView would go to `localhost:4000`.
  */
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { Toaster } from 'sonner';
 
-import { apiClient, getBackendUrl } from './api';
+import App from '../App.jsx';
+import AppOpenScreen from './AppOpenScreen';
+import { AuthProvider } from '../shared/context/AuthContext';
+import { CookieConsentProvider } from '../shared/context/CookieConsentContext';
+import { ThemeProvider } from '../shared/context/ThemeContext';
+import { MediaViewerProvider } from '../shared/context/MediaViewerContext';
+import { UsersMapProvider } from '../shared/hooks/useUsersMap';
+import MediaViewerHost from '../shared/components/MediaViewer/MediaViewerHost';
 
 import '../styles/variables.css';
 import '../styles/global.css';
 import '../styles/typography.css';
 
 /**
- * This client's cache, with mobile's own defaults rather than the web's.
+ * The same cache settings as the website, with one deliberate change.
  *
- * `refetchOnWindowFocus` is off because it does not mean anything useful in a
- * WebView: there is no tab to focus, and the event that actually matters —
- * the user returning to the app — arrives through `AppLifecycle.onResume`,
- * which Phase 6 wires up. Leaving the web default on would be a setting that
- * looks active and never fires.
+ * `refetchOnWindowFocus` is off: there is no tab to focus in a WebView, so what
+ * fires on the web when someone returns to the tab would simply never fire
+ * here. Leaving it on would be a setting that looks active and does nothing.
+ * The event that matters on a device — reopening the app — arrives from
+ * `AppLifecycle.onResume` once the Capacitor plugins are installed.
  *
- * The retry policy is shared with the web client in spirit and duplicated in
- * fact, because it is four lines and extracting it would mean the two clients
- * could no longer diverge on mobile-data behaviour — which they probably
- * should.
+ * The rest is copied rather than shared, so the two clients can diverge on
+ * mobile-data behaviour without one of them changing the other.
  */
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -68,37 +78,42 @@ const queryClient = new QueryClient({
   },
 });
 
-/**
- * A placeholder screen, and an honest one.
- *
- * It reports what this build actually is and which API it resolved, because
- * that second fact is the one worth seeing on a device first: if the origin
- * reads `localhost` here, blocker B1 is back.
- */
-function MobileShell() {
-  return (
-    <div style={{ padding: '2rem', fontFamily: 'system-ui, sans-serif' }}>
-      <h1 style={{ fontSize: '1.25rem', margin: '0 0 0.5rem' }}>Meetifyy — mobile shell</h1>
-      <p style={{ margin: '0 0 1.5rem', opacity: 0.7 }}>
-        Build target: mobile. The mobile UI lands in the next phase.
-      </p>
-      <dl style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '0.25rem 1rem', fontSize: '0.9rem' }}>
-        <dt style={{ opacity: 0.6 }}>API origin</dt>
-        <dd style={{ margin: 0 }}><code>{getBackendUrl() || '(none)'}</code></dd>
-        <dt style={{ opacity: 0.6 }}>API client</dt>
-        <dd style={{ margin: 0 }}><code>{apiClient ? 'constructed' : 'missing'}</code></dd>
-      </dl>
-    </div>
-  );
+// Enables CSS :active on touch devices — the same one-liner the website uses.
+if (typeof document !== 'undefined') {
+  document.addEventListener('touchstart', () => {}, { passive: true });
 }
 
-const shell = document.getElementById('launch-shell');
-if (shell) shell.remove();
-
 createRoot(document.getElementById('root')).render(
-  <StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <MobileShell />
-    </QueryClientProvider>
-  </StrictMode>,
+  <QueryClientProvider client={queryClient}>
+    <StrictMode>
+      <ThemeProvider>
+        <CookieConsentProvider>
+          <AuthProvider>
+            <MediaViewerProvider>
+              <UsersMapProvider>
+                <Toaster
+                  position="top-center"
+                  duration={4500}
+                  gap={10}
+                  visibleToasts={4}
+                  toastOptions={{
+                    style: {
+                      background: 'transparent',
+                      border: 'none',
+                      boxShadow: 'none',
+                      padding: 0,
+                      width: '380px',
+                      maxWidth: 'calc(100vw - 24px)',
+                    },
+                  }}
+                />
+                <App homeElement={<AppOpenScreen />} />
+                <MediaViewerHost />
+              </UsersMapProvider>
+            </MediaViewerProvider>
+          </AuthProvider>
+        </CookieConsentProvider>
+      </ThemeProvider>
+    </StrictMode>
+  </QueryClientProvider>,
 );

@@ -101,6 +101,19 @@ export function assertEnvValid() {
  * Reading them off an intermediate object (`raw.DEV`) would make them ordinary
  * runtime property accesses and defeat that elimination.
  */
+/**
+ * Which client this bundle is, as a foldable constant.
+ *
+ * Written as a direct `import.meta.env.*` comparison for the same reason
+ * `IS_DEV_BUILD` below is: Vite replaces exactly that token with a literal at
+ * build time, which is what lets Rollup fold the branch and drop the other
+ * client's code entirely. Reading the same flag off `config` makes it an
+ * ordinary runtime property access and nothing is eliminated — the web bundle
+ * then carries the native API origin, and the native bundle carries the
+ * marketing landing page. Both of those happened before this was a constant.
+ */
+export const IS_MOBILE_BUILD = import.meta.env.VITE_CLIENT === 'mobile';
+
 export const MODE = import.meta.env.MODE;
 export const IS_DEV_BUILD = import.meta.env.DEV;
 export const IS_PROD_BUILD = import.meta.env.PROD;

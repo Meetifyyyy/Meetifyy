@@ -16,10 +16,14 @@
 #   6. Production build (nest build)
 #   7. Unit tests (jest)
 #
-# The `mobile` job builds the native bundle from the same `src/` and proves two
-# things about the output: that no service worker reached it, and that no
-# localhost API origin was baked in. Both are failures that would otherwise only
-# appear on a device.
+# The `mobile` job builds the native bundle from the same `src/` — the app IS
+# the website, wrapped — and proves two things about the output: that no service
+# worker reached it, and that the marketing landing page did not. Both are
+# failures that would otherwise surface only on a device, or not at all.
+#
+# The API origin is guarded by a unit test rather than by grepping the bundle:
+# an earlier version of that step searched for `localhost:NNNN` and failed on a
+# default constant inside @supabase/auth-js.
 #
 # No live database is needed for any of these — schema validation runs offline
 # against the committed files only, using the placeholder URLs set below.
@@ -197,6 +201,19 @@ jobs:
       - name: Production build
         run: npm run build
 
+      # The mirror of the mobile job's check. The landing page is the website's
+      # front door for someone who has never heard of Meetifyy, and a gating
+      # mistake that removed it from the web build would be just as silent as
+      # one that added it to the app.
+      - name: Landing page IS in the web bundle
+        run: |
+          set -e
+          if ! ls dist/assets/LandingPage-*.js >/dev/null 2>&1; then
+            echo "::error::the landing page is missing from the web bundle"
+            exit 1
+          fi
+          echo "landing page present in dist/"
+
   # ── Mobile build target ─────────────────────────────────────────────────────
   #
   # Runs on every change to the frontend, because the mobile bundle is built
@@ -275,6 +292,25 @@ jobs:
       # what createCapacitorApiOrigin RETURNS, which a test can state exactly:
       # see src/platform/capacitor/__tests__/apiOrigin.test.js, run by the
       # frontend job.
+
+      # The app replaces the website's `/` with its own opening screen, so the
+      # marketing landing page must not be in the native bundle.
+      #
+      # This is a guard against a specific, silent regression. The exclusion
+      # depends on gating the lazy import with the folding constant
+      # IS_MOBILE_BUILD; writing that branch against `config.client` instead
+      # looks identical, still works, and quietly ships the landing page to the
+      # app and the native API origin to the website. That is exactly what
+      # happened the first time it was written.
+      - name: Landing page is not in the mobile bundle
+        run: |
+          set -e
+          if ls dist-mobile/assets/LandingPage-*.js >/dev/null 2>&1; then
+            echo "::error::the marketing landing page reached the native bundle — check that IS_MOBILE_BUILD (not config.client) gates its import in src/App.jsx"
+            ls dist-mobile/assets/LandingPage-*.js
+            exit 1
+          fi
+          echo "no landing page in dist-mobile/"
 
       - name: Report bundle size
         run: |

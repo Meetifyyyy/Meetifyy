@@ -8,7 +8,7 @@
  * value is declared here and supplied by the active `.env.<mode>` file (locally)
  * or the deployment's environment variables (Vercel/preview/production).
  */
-import { IS_DEV_BUILD, IS_PROD_BUILD, MODE, assertEnvValid, bool, csv, int, str, url } from './env';
+import { IS_DEV_BUILD, IS_MOBILE_BUILD, IS_PROD_BUILD, MODE, assertEnvValid, bool, csv, int, str, url } from './env';
 import { isProductionAppEnv } from './deploymentEnv';
 
 // APP_ENV distinguishes staging from production, which both build with
@@ -41,6 +41,15 @@ const authPaths = {
 
 export const config = {
   env: appEnv,
+  /**
+   * Informational only.
+   *
+   * Anything that GATES a lazy import or a branch which must not ship to the
+   * other client has to use the `IS_MOBILE_BUILD` constant instead — reading it
+   * through this object defeats the constant folding. Same rule, and same
+   * reason, as `features.enableDevRoutes` below.
+   */
+  client: IS_MOBILE_BUILD ? 'mobile' : 'web',
   isProduction: isProductionDeployment,
   isDevBuild: IS_DEV_BUILD,
   isProdBuild: IS_PROD_BUILD,
@@ -165,6 +174,6 @@ assertEnvValid();
  * the production bundle — so use this constant for anything that gates a lazy
  * import or a whole dev-only block.
  */
-export { IS_DEV_BUILD, IS_PROD_BUILD, MODE } from './env';
+export { IS_DEV_BUILD, IS_MOBILE_BUILD, IS_PROD_BUILD, MODE } from './env';
 
 export default config;

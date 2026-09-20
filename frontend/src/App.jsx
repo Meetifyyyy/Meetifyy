@@ -1,5 +1,5 @@
 import { lazy, Suspense, useMemo } from 'react';
-import { IS_DEV_BUILD } from '@config';
+import { IS_DEV_BUILD, IS_MOBILE_BUILD } from '@config';
 import { isKnownAppRoute, normalisePathname } from '@config/seo';
 import { createBrowserRouter, RouterProvider, Navigate, Outlet, ScrollRestoration, useLocation } from 'react-router-dom';
 import { QueryErrorResetBoundary } from '@tanstack/react-query';
@@ -71,7 +71,17 @@ function lazyRoute(componentImport) {
   return lazy(componentImport);
 }
 
-const LandingPage = lazyRoute(() => import('./features/auth/pages/LandingPage'));
+/**
+ * The website's landing page — and not part of the native bundle.
+ *
+ * Gated on the folding constant rather than simply being unused there: the app
+ * passes its own `homeElement`, but a `?? <LandingPage />` fallback still
+ * references this binding, so without the gate Rollup keeps the dynamic import
+ * and the native build carries 40 kB of marketing page it can never route to.
+ */
+const LandingPage = IS_MOBILE_BUILD
+  ? null
+  : lazyRoute(() => import('./features/auth/pages/LandingPage'));
 const AuthShell = lazyRoute(() => import('./features/auth/shared/ui/AuthShell'));
 const FeedRoute = lazyRoute(() => import('./features/feed/pages/FeedRoute'));
 const CommunitiesRoute = lazyRoute(() => import('./features/communities/pages/CommunitiesRoute'));
@@ -289,7 +299,19 @@ function NotFound() {
  * Each route element is wrapped individually in <RouteErrorBoundary> so a crash
  * on one page never unmounts the surrounding shell (header, sidebar, bottom nav).
  */
-export default function App() {
+/**
+ * @param {object} props
+ * @param {React.ReactNode} [props.homeElement]
+ *   What `/` renders for a signed-out visitor. Defaults to the landing page,
+ *   which is what the website wants.
+ *
+ *   The native build passes its own opening screen instead. A landing page is a
+ *   marketing surface — it explains Meetifyy to a stranger and asks them to
+ *   sign up — and someone opening the installed app has already done both.
+ *   This is the ONLY route the app overrides; every other screen is this same
+ *   table, unchanged.
+ */
+export default function App({ homeElement }) {
   // NOTE: This router is created inside the App component using useMemo so that
   // nested route elements and hooks (like ProtectedRoute, SocketManager) can
   // safely consume context from AuthProvider, which wraps App in main.jsx.
@@ -315,7 +337,7 @@ export default function App() {
           path: '/',
           element: (
             <PublicRoute>
-              {withBoundary(<LandingPage />, null)}
+              {withBoundary(homeElement ?? (LandingPage ? <LandingPage /> : null), null)}
             </PublicRoute>
           ),
         },
@@ -483,7 +505,7 @@ export default function App() {
   future: {
     v7_startTransition: true,
   }
-}), []);
+}), [homeElement]);
 
   return <RouterProvider router={router} />;
 }

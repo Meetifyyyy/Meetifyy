@@ -16,6 +16,10 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
  * cleared rather than quietly kept.
  */
 vi.mock('@config', () => ({
+  // `false` because these exercise the WEB client. The constant gates which
+  // API origin apiClient assembles, and a mock that omits it fails the import
+  // outright rather than defaulting — which is how these tests found it.
+  IS_MOBILE_BUILD: false,
   config: {
     supabase: { url: 'https://proj.supabase.co', anonKey: 'anon-key' },
     api: { baseUrl: 'http://api.test', proxyPrefix: '/api-proxy' },

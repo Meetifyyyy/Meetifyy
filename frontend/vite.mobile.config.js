@@ -110,6 +110,22 @@ function dropWebOnlyPublicAssets() {
 
 export default defineConfig({
   /**
+   * Marks this bundle as the mobile client.
+   *
+   * `shared/api/apiClient.js` reads it (through `config.client`) to choose the
+   * native API origin instead of the browser one — without which every request
+   * inside the WebView resolves to `localhost:4000`, because the web
+   * implementation derives the backend host from `window.location`.
+   *
+   * Set here rather than in an env file so it cannot be forgotten: a mobile
+   * build that did not carry it would look completely normal and fail only on
+   * a device.
+   */
+  define: {
+    'import.meta.env.VITE_CLIENT': JSON.stringify('mobile'),
+  },
+
+  /**
    * Absolute, and set explicitly rather than left to Vite's default.
    *
    * It is already '/' by default, but the choice is load-bearing enough to be
@@ -136,7 +152,15 @@ export default defineConfig({
       onwarn: sharedOnWarn,
       output: {
         manualChunks: {
-          'vendor-react': ['react', 'react-dom', '@tanstack/react-query'],
+          // Mirrors the web config, minus `vendor-framer`. framer-motion is
+          // imported by twelve files and nine of them are the landing page,
+          // which the app replaces with its own opening screen — so the chunk
+          // would be near-empty here. Omitting it does not by itself exclude
+          // the library; not importing it does.
+          'vendor-react': ['react', 'react-dom', 'react-router-dom', '@tanstack/react-query', '@tanstack/react-virtual'],
+          'vendor-emoji': ['emoji-mart', '@emoji-mart/react'],
+          'vendor-icons': ['@hugeicons/react', '@hugeicons/core-free-icons', '@heroicons/react'],
+          'vendor-zustand': ['zustand', 'immer'],
         },
       },
     },
@@ -144,7 +168,10 @@ export default defineConfig({
   },
 
   optimizeDeps: {
-    include: ['react', 'react-dom', '@tanstack/react-query'],
+    include: [
+      'react', 'react-dom', 'react-router-dom', '@tanstack/react-query',
+      'zustand', 'immer', 'socket.io-client',
+    ],
   },
 
   clearScreen: false,

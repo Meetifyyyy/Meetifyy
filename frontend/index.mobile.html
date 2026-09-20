@@ -67,6 +67,76 @@
   </div>
 
   <div id="root"></div>
+
+  <script>
+    /**
+     * When the launch shell lifts.
+     *
+     * The app calls `window.__meetifyyBoot.ready()` once authentication has
+     * been decided — see AuthContext. Without this object the call is a no-op
+     * (it is written with optional chaining), so the shell would simply stay up
+     * forever with the app running underneath it. That is exactly what happened
+     * the first time this file was written without it.
+     *
+     * Both conditions, not either: React must have painted AND the app must
+     * have worked out who is signed in. Lifting on first paint alone shows the
+     * signed-out screen for a moment to someone who is signed in, because the
+     * route gates are being asked a question the app cannot answer yet.
+     *
+     * MIN_VISIBLE_MS is for the opposite failure. A warm start can finish in
+     * under 200ms, and a logo that appears and vanishes inside a few frames
+     * reads as a flicker rather than as loading. It is a floor, never an
+     * addition — a slower boot pays nothing for it.
+     *
+     * The backstop ignores every condition: a boot that never reports ready — a
+     * failed bundle, a hung request — must still reveal whatever is behind the
+     * shell rather than leave someone looking at a logo.
+     *
+     * Simpler than the website's version by exactly one thing: there is no
+     * launch-time version gate to wait for, because a bundled app has no
+     * deployment to be stale against.
+     */
+    (function () {
+      var MIN_VISIBLE_MS = 450;
+      var shownAt = Date.now();
+      var shell = document.getElementById('launch-shell');
+
+      window.__meetifyyBoot = {
+        appReady: false,
+        ready: function () {
+          window.__meetifyyBoot.appReady = true;
+          if (shell) dismiss();
+        }
+      };
+
+      if (!shell) return;
+
+      var done = false;
+      var root = document.getElementById('root');
+      var observer = new MutationObserver(function () { dismiss(); });
+
+      function dismiss(force) {
+        if (done) return;
+        if (!force) {
+          if (!root || root.childElementCount === 0) return;
+          if (!window.__meetifyyBoot.appReady) return;
+          var elapsed = Date.now() - shownAt;
+          if (elapsed < MIN_VISIBLE_MS) {
+            setTimeout(dismiss, MIN_VISIBLE_MS - elapsed);
+            return;
+          }
+        }
+        done = true;
+        observer.disconnect();
+        shell.style.opacity = '0';
+        setTimeout(function () { shell.remove(); }, 300);
+      }
+
+      observer.observe(root, { childList: true });
+      dismiss();
+      setTimeout(function () { dismiss(true); }, 8000);
+    })();
+  </script>
   <script type="module" src="/src/mobile/main.jsx"></script>
 </body>
 </html>

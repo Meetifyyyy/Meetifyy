@@ -1,20 +1,18 @@
 /**
- * The web client's composition root for the API layer.
+ * The composition root for the API layer — for the website AND for the app.
  *
- * This file assembles, and does almost nothing else. The transport lives in
- * `core/api/transport.js`, the endpoint definitions in `core/api/endpoints.js`,
- * the media and route rules beside them; the browser's answers to "where is the
- * API", "where do I put a string", "where does the token come from" and "what
- * does this error code mean" live in `platform/web/`. Here the two halves meet,
- * and this is the only file allowed to know both.
+ * One file, both targets, because the app IS the website: the native build
+ * bundles the same React tree and runs it in a WebView. What differs between
+ * them is not the code, it is a handful of answers about the device it is
+ * running on, and this is where those are chosen.
  *
- * A mobile client will have its own version of this file — the same core
- * modules, `platform/capacitor/` in place of `platform/web/` — and none of the
- * core modules will notice the difference. That is the whole point of the
- * arrangement, and the reason this file is short.
+ * Today that is one answer — where the API lives — chosen from
+ * `IS_MOBILE_BUILD`, which Vite replaces with a literal so the unused
+ * implementation never reaches the bundle. If the on-device spike shows more
+ * has to differ (secure token storage, say), those choices are added here and
+ * the 107 modules importing from this file still do not change.
  *
- * Everything below is re-exported under the name it has always had, so the 107
- * modules that import from here are unaffected by any of it.
+ * Everything below is re-exported under the name it has always had.
  */
 import { supabase, isRecoveryTab, clearRecoveryTab } from '@shared/lib/supabase';
 import { applyAccountStatusCorrection } from '@shared/lib/accountStatusCorrection';
@@ -22,7 +20,7 @@ import {
   announceLegalConsentChange,
   LEGAL_ACK_REQUIRED_CODE,
 } from '@shared/lib/legalConsent';
-import { config } from '@config';
+import { config, IS_MOBILE_BUILD } from '@config';
 import { createTransport } from '@core/api/transport';
 import { createEndpoints } from '@core/api/endpoints';
 import { createEtagCache } from '@core/api/etagCache';
@@ -33,6 +31,7 @@ import {
   normalizeDicebearUrl as _normalizeDicebearUrl,
 } from '@core/api/media';
 import { createWebApiOrigin } from '@platform/web/apiOrigin';
+import { createCapacitorApiOrigin } from '@platform/capacitor/apiOrigin';
 import { createWebSessionSource } from '@platform/web/sessionSource';
 import {
   createWebCookieReader,
@@ -43,7 +42,26 @@ import {
 
 // ── The browser's answers ────────────────────────────────────────────────────
 
-const apiOrigin = createWebApiOrigin({ config });
+/**
+ * Where the API is — and this single line is what lets the SAME app run on the
+ * web and inside a native shell.
+ *
+ * The web implementation works out the backend host from `window.location`, so
+ * that a page served from a laptop or a phone on the same Wi-Fi talks to a
+ * backend on that host. Inside a Capacitor WebView that reasoning is wrong:
+ * the page origin is `https://localhost` on Android and `capacitor://localhost`
+ * on iOS, so it would resolve the API to `https://localhost:4000` and every
+ * request would fail in a way that reads as "the backend is down".
+ *
+ * `IS_MOBILE_BUILD` and not `config.client`: Vite replaces the former with a
+ * literal, so Rollup folds this branch and the other implementation never
+ * reaches the bundle. Reading it off `config` is an ordinary property access
+ * and eliminates nothing — the first version of this line did exactly that, and
+ * shipped the native origin to the website.
+ */
+const apiOrigin = IS_MOBILE_BUILD
+  ? createCapacitorApiOrigin({ config })
+  : createWebApiOrigin({ config });
 const sessionStore = createWebSessionStore();
 const localStore = createWebLocalStore();
 const cookies = createWebCookieReader();
