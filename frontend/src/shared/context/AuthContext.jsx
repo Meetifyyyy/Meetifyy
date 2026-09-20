@@ -3,15 +3,12 @@ import {
   usersApi,
   apiClient,
   authApi,
-  postsApi,
   getBackendUrl,
   rememberCsrfToken,
   forgetCsrfToken,
   mayHaveCookieSession,
 } from '@shared/api/apiClient';
-import { useSavedPostsStore } from '../stores/savedPostsStore';
 import { useSavedActivitiesStore } from '../stores/savedActivitiesStore';
-import usePostStore from '../stores/postStore';
 import { getCollegeName } from '@shared/utils/user';
 import { idbClearAll } from '@shared/lib/idb';
 import { useQueryClient } from '@tanstack/react-query';
@@ -148,15 +145,29 @@ const SESSION_SCOPED_KEYS = [
  * Drops every client-side store that holds one user's data.
  *
  * Separate from storage because these live in memory and in IndexedDB: the
- * saved-posts and saved-activities stores, the post cache, and the service
- * worker's API cache — which is keyed by URL alone and has no idea who was
- * signed in when it recorded a response. On a shared machine that cache is how
- * the next person is served the previous person's feed.
+ * saved-activities store, the post cache, and the service worker's API cache —
+ * which is keyed by URL alone and has no idea who was signed in when it
+ * recorded a response. On a shared machine that cache is how the next person is
+ * served the previous person's feed.
  */
-function resetClientStateForNewUser() {
-  useSavedPostsStore.getState().clearAll?.();
+function resetClientStateForNewUser(queryClient) {
+  /**
+   * The server-data cache, and the reason this parameter exists.
+   *
+   * Everything else in this function was already being cleared; the React Query
+   * cache was not, and it is the largest thing in the browser holding one
+   * person's data. Defaults are `staleTime: 30s` and `gcTime: 15min`, so on a
+   * shared machine the next person to sign in could be rendered the previous
+   * person's feed, messages, notifications and profile from memory, for as long
+   * as it took each query to refetch. Nothing in the UI distinguishes a cached
+   * answer from a fresh one.
+   *
+   * `clear()` rather than `invalidateQueries()`: invalidation marks data stale
+   * but keeps it, and keeping it is the problem.
+   */
+  queryClient?.clear();
+
   useSavedActivitiesStore.getState().clearAll?.();
-  usePostStore.getState().clearAll?.();
   idbClearAll().catch((e) => console.error('Failed to clear local cache', e));
   if (typeof caches !== 'undefined') {
     caches
@@ -195,6 +206,20 @@ export function AuthProvider({ children }) {
   // query cache is available here. This is what lets a profile-image change
   // propagate from one place instead of every call site remembering to do it.
   const queryClient = useQueryClient();
+
+  /**
+   * Held in a ref so the teardown callbacks below can reach the cache without
+   * taking a dependency on its identity.
+   *
+   * `useQueryClient()` returns a stable instance in practice, but depending on
+   * that is needless: putting it in a `useCallback` dep array makes every
+   * consumer of `clearLocalSession` and `adoptUser` re-subscribe whenever the
+   * identity changes, and anything that mistakenly returns a fresh object —
+   * a test double, a future provider change — turns that into a render loop
+   * rather than a wasted allocation.
+   */
+  const queryClientRef = useRef(queryClient);
+  queryClientRef.current = queryClient;
 
   const [currentUser, setCurrentUser] = useState(() => {
     try {
@@ -273,7 +298,7 @@ export function AuthProvider({ children }) {
       // belonging to the previous person may survive into this session — not
       // the cached profile, not their saved posts, not their follow lists.
       if (prev && prev.id !== user.id) {
-        resetClientStateForNewUser();
+        resetClientStateForNewUser(queryClientRef.current);
       }
       try {
         localStorage.setItem('currentUser', JSON.stringify(user));
@@ -299,34 +324,29 @@ export function AuthProvider({ children }) {
     setAuthStatus(AUTH_STATUS.UNAUTHENTICATED);
     forgetCsrfToken();
     clearSessionScopedStorage();
-    resetClientStateForNewUser();
+    resetClientStateForNewUser(queryClientRef.current);
   }, []);
 
   /**
-   * Saved posts and activities, which ride along on any session payload.
+   * Saved activities, which ride along on any session payload.
    *
    * Extracted because sign-in and session-restore both receive it and must do
    * the same thing with it. Every failure is swallowed on purpose: the caller's
    * question is "is there a session?", and letting a store hydration throw into
    * its catch would answer "no" for a session that is perfectly valid. A
-   * sign-out caused by a saved-posts list is not a trade worth making.
+   * sign-out caused by a saved-activities list is not a trade worth making.
+   *
+   * Saved POSTS used to be hydrated here too, into a store that nothing read.
+   * Whether a post is saved comes from the post itself, through
+   * `toggleRegistry` in PostActions, and the Saved page reads its own
+   * `['bookmarks']` query — so the store was written on every session restore
+   * and consulted never. The `else` branch was worse than wasted: on any
+   * payload without `postBookmarkIds` it issued a `getBookmarks(50)` request on
+   * every cold start to fill it.
    */
   const hydrateSessionMeta = useCallback((res) => {
     try {
       const meta = res?.meta;
-      if (meta?.postBookmarkIds) {
-        useSavedPostsStore.getState().hydrateFromServer(meta.postBookmarkIds);
-      } else if (!bookmarksHydratedRef.current) {
-        // Older payloads do not carry the ids. Fetched separately rather than
-        // awaited, so nothing is held on a list the first screen does not need.
-        postsApi
-          .getBookmarks(50)
-          .then((response) => {
-            const ids = (response?.posts || response?.data || []).map((p) => p.id);
-            useSavedPostsStore.getState().hydrateFromServer(ids);
-          })
-          .catch((e) => console.error('Failed to hydrate bookmarks', e));
-      }
       if (meta?.activityBookmarkIds) {
         useSavedActivitiesStore.getState().hydrateFromServer(meta.activityBookmarkIds);
       }

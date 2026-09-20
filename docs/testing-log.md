@@ -27,6 +27,63 @@ legitimately change per commit.
 
 ---
 
+## Phase 3d.2 — CI enforcement, dead stores, logout purge — **DONE**
+
+### Tested
+- S1 ✅ **131/131 files, 1417/1417 tests** (+1 file, +4)
+- S2 ✅ lint clean · typecheck ✅ · boundaries ✅ · perf ✅ 3/3 no errors
+- S4 n/a (behaviour change), proven by a guard test instead
+
+### CI now enforces the boundaries
+Two **blocking** steps added to the `frontend` job, before the existing
+non-blocking lint:
+- `npx eslint src/core src/platform --max-warnings 0`
+- `npm run typecheck`
+
+The full lint stays `continue-on-error` because of an unrelated warning backlog
+— which is exactly why the boundary rules needed their own step, or they would
+be reported and ignored. Both simulated locally before committing.
+
+### Two dead stores deleted
+`postStore.js` and `savedPostsStore.js` held server-derived bookmark ids,
+persisted them to `localStorage`, and were **read by nothing**: zero hook
+subscriptions outside the store files. Post save-state comes from the post
+object via `toggleRegistry`; the Saved page uses its own `['bookmarks']` query.
+
+Worse than dead weight: `hydrateSessionMeta` fired a **`getBookmarks(50)`
+request on session restore** to fill one of them.
+
+`savedActivitiesStore` is genuinely used (4 components) and is left alone.
+
+### Correction to what I claimed in 3d
+I described these stores as a privacy leak. **That was wrong** — `clearAll()` on
+logout does propagate through zustand's persist middleware, so the persisted
+copy was already being cleared. The real defect was that they were dead and
+costing a network request.
+
+### The actual privacy gap, found while checking that
+**The React Query cache was never cleared on sign-out.** `queryClient` was
+obtained in `AuthProvider` and used only for `propagateUserMedia`. With
+`staleTime: 30s` / `gcTime: 15min`, the next person to sign in on a shared
+machine could be rendered the previous person's feed, messages, notifications
+and profile from memory until each query refetched.
+
+Fixed in `resetClientStateForNewUser`, which covers both sign-out and
+account-switch. **Guard test proven**: with the fix disabled, 3 of its 4 cases
+fail; the 4th is the negative case and correctly still passes.
+
+### Bug I introduced and the test caught
+First version put `queryClient` in the `useCallback` dep arrays. A test double
+returning a fresh object per call turned that into an infinite re-render.
+Real `useQueryClient` is stable, but depending on that identity is needless —
+now held in a ref with `[]` deps.
+
+### Measured — this phase paid for itself
+Entry chunk **534,688 → 533,395 (−1,293)**; precache **−10.63 KiB**.
+Cumulative since 3a: **+894 bytes (+0.17%)**, down from +2,187.
+
+---
+
 ## Phase 3d — close the open items from 3a–3c — **DONE**
 
 Every leftover recorded below that was a genuine gap rather than a stated

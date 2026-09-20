@@ -153,6 +153,30 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # BLOCKING, unlike the full lint below, and deliberately narrow.
+      #
+      # src/core/ and src/platform/ are the code a second client will run, and
+      # what makes them reusable is not where they sit but what they are
+      # forbidden to touch: no DOM, no import.meta.env, no imports back into the
+      # app, no Capacitor outside platform/capacitor/. Those rules are errors in
+      # eslint.config.js, but the full lint runs with continue-on-error because
+      # of an unrelated warning backlog — so without a separate step they would
+      # be reported and ignored.
+      #
+      # `--max-warnings 0` because these two directories are new and have no
+      # backlog to grandfather. Keeping them at zero is cheap now and expensive
+      # later.
+      - name: Architecture boundaries (core/ and platform/)
+        run: npx eslint src/core src/platform --max-warnings 0
+
+      # The two TypeScript contract files — platform/contracts.ts and
+      # core/navigation/intents.ts. They are contracts between implementations
+      # that never import each other, so nothing at runtime can catch a mismatch
+      # between them, which is the whole reason they are typed. A script nothing
+      # runs is a script that rots.
+      - name: Typecheck contracts
+        run: npm run typecheck
+
       # Non-blocking for the same reason as the backend: the current tree is
       # error-free but carries unused-variable warnings.
       - name: ESLint
