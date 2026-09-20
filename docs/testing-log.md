@@ -27,6 +27,61 @@ legitimately change per commit.
 
 ---
 
+## Phase 3d — close the open items from 3a–3c — **DONE**
+
+Every leftover recorded below that was a genuine gap rather than a stated
+deferral. The transport is now free of client imports and browser globals.
+
+### Tested
+- S1 ✅ **130/130 files, 1413/1413 tests** (+2 files, +16)
+- S2 ✅ eslint clean · S3 ✅ build · typecheck ✅ exit 0
+- Auth/API suites run explicitly: **24 files, 204 tests** — these are the ones
+  that exercise the rewired 401/refresh/ETag/session paths
+- **perf suite: 3/3 with no unhandled error** (was 3/3 + 1 error)
+
+### Closed
+| Was open | Now |
+|---|---|
+| Transport coupled to Supabase | `platform/web/sessionSource.js` — the subscription, the seed and all three recovery guards in one place |
+| Transport coupled to legal-consent + account-status | `TransportHooks.onApiErrorCode`; the transport reports a code, the app decides what it means |
+| `platform/web/keyValue.js` not written | `platform/web/storage.js` — sync stores, cookie reader, DOM-event hooks |
+| ETag store direct `sessionStorage` | `core/api/etagCache.js` over an injected `SyncKeyValueStore` |
+| Async/sync contract mismatch | Resolved in the contract: `SyncKeyValueStore` added, with the reason written down (a bridge call per GET is latency on every screen) |
+| Perf mock missing `listQueue` | Fixed; the profile was being taken while a hook threw |
+
+### Verified outcome
+`grep` for browser globals in `apiClient.js` code: **none**. All 7 client
+imports are used only in the composition-root block at the top of the file. The
+one exception is `API_PROXY_PREFIX`, a config constant re-exported for the
+socket store — config reading is the composition root's job.
+
+### Behaviour changes, deliberate
+- **ETags are now cleared on logout.** They were not before. Stale validators
+  belonging to a previous user surviving into the next session on a shared
+  device is the same class of problem as T2. Safe direction: the worst case is
+  a re-fetch instead of a 304.
+- `window.__api_redirecting` removed — written once, read nowhere.
+
+### Bug I introduced and caught mid-phase
+Replacing `applyAccountStatusCorrection` with the hook left the legal-consent
+block still inline, so `announceLegalConsentChange` would have fired **twice**
+per gated 403. Caught by re-grepping for the coupling after the edit.
+
+### Measured
+Entry chunk **533,787 → 534,688 (+901)**. Cumulative since 3a: **+2,187 bytes
+(+0.41%)**.
+
+### Still open, deliberately
+- The transport is decoupled but still **lives in `shared/`**. Making it
+  literally portable means splitting this file into `core/api/transport.js`
+  (factory) + `shared/api/apiClient.js` (root). Near-mechanical now; it was not
+  before.
+- Contract tests against a real backend
+- Per-namespace endpoint split to restore tree-shaking (worth it for the mobile
+  bundle, not for web)
+
+---
+
 ## Phase 3c — route policy, media URLs, ApiOrigin seam — **DONE**
 
 Moved `PUBLIC_PATHS`/`BEARER_PATHS`/`SAFE_METHODS` and the media-URL helpers

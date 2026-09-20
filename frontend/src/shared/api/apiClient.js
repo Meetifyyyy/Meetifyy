@@ -1,11 +1,23 @@
 /**
- * apiClient.js
+ * The web client's HTTP transport, and the composition root for the API layer.
  *
- * Central HTTP client for all backend API calls.
- * Automatically attaches the auth token from localStorage.
+ * Two jobs, and it is worth being explicit about which is which.
  *
- * Token caching: we keep a module-level reference updated via onAuthStateChange
- * so every API call is a synchronous read — no async getSession() per request.
+ * The first is the transport itself: the request path, the 401
+ * refresh-and-retry, the in-flight deduplication, the ETag conditional
+ * requests, the origin failover. That logic is client-agnostic, and everything
+ * it needs from the outside now arrives through an argument rather than an
+ * import.
+ *
+ * The second is assembly. This file is where the portable pieces in `core/api/`
+ * meet the browser-specific ones in `platform/web/`, and it is the only file
+ * allowed to know both. A mobile client will have its own version of this
+ * second job with `platform/capacitor/`, and the core modules will not notice.
+ *
+ * The header used to say the token comes from localStorage. It has not for some
+ * time: the durable session is a set of HttpOnly cookies the page cannot read,
+ * and the only token in JavaScript is the short-lived one held between
+ * `verifyOtp` and `POST /api/auth/session/adopt` during signup.
  */
 import { supabase, isRecoveryTab, clearRecoveryTab } from '@shared/lib/supabase';
 import { applyAccountStatusCorrection } from '@shared/lib/accountStatusCorrection';
@@ -22,6 +34,14 @@ import {
   normalizeDicebearUrl as _normalizeDicebearUrl,
 } from '@core/api/media';
 import { createWebApiOrigin } from '@platform/web/apiOrigin';
+import {
+  createWebCookieReader,
+  createWebLocalStore,
+  createWebSessionStore,
+  createWebTransportHooks,
+} from '@platform/web/storage';
+import { createEtagCache } from '@core/api/etagCache';
+import { createWebSessionSource } from '@platform/web/sessionSource';
 
 /**
  * This module is the web client's composition root for the API layer.
@@ -37,31 +57,40 @@ import { createWebApiOrigin } from '@platform/web/apiOrigin';
  * modules are factories precisely so that a second client builds its own.
  */
 const _apiOrigin = createWebApiOrigin({ config });
-
-// ── Token cache ──────────────────────────────────────────────────────────────
-// Seeded on module load; refreshed instantly on every auth state change.
-let _cachedToken = '';
-let _hasSession = false;
-let _initSessionPromise = null;
+const _sessionStore = createWebSessionStore();
+const _localStore = createWebLocalStore();
+const _cookies = createWebCookieReader();
+const _etags = createEtagCache({ store: _sessionStore });
 
 /**
- * A password-recovery session must never become the token this client attaches.
+ * Where the access token comes from, and whether it may be sent.
  *
- * `AuthContext` already keeps a recovery session out of React state, so the app
- * never renders as signed in on the reset page. This cache had no such guard:
- * it has its own auth listener and cached whatever token came past, so while a
- * tab sat on /reset-password the recovery credential WAS the Authorization
- * header on every API call the client made.
- *
- * A recovery token is an ordinary session JWT — the backend cannot tell it from
- * a login, which is exactly why it must not be handed to it. The isolation has
- * to be enforced here, on the way out.
- *
- * Scoped to the tab, not to the event: `PASSWORD_RECOVERY` fires once, but the
- * session it establishes lives on through `INITIAL_SESSION` replays and token
- * refreshes, and each of those would otherwise cache it. `isRecoveryTab()` stays
- * true until the recovery session is signed out.
+ * The Supabase subscription and the password-recovery guard that used to run at
+ * this file's module scope now live behind this. See platform/web/sessionSource.js
+ * for why the recovery guard belongs in one place rather than at three call
+ * sites.
  */
+const _session = createWebSessionSource({ supabase, isRecoveryTab, clearRecoveryTab });
+
+/**
+ * What the transport reports, and what this app does about it.
+ *
+ * The transport knows that a response carried a machine-readable code; it
+ * deliberately does not know which codes mean what. Both reactions below are
+ * app policy — reconciling an account status this tab has not heard about,
+ * and raising the mandatory-acknowledgement gate — and both used to sit
+ * inline in the response path.
+ */
+const _hooks = createWebTransportHooks({
+  onApiErrorCode: (errorCode) => {
+    applyAccountStatusCorrection(errorCode);
+    if (errorCode === LEGAL_ACK_REQUIRED_CODE) {
+      announceLegalConsentChange('required');
+    }
+  },
+});
+
+
 /**
  * The CSRF token the server set alongside the session cookies.
  *
@@ -77,13 +106,7 @@ let _initSessionPromise = null;
  * stores, and that is what the header is built from.
  */
 export function readCsrfCookie() {
-  try {
-    if (typeof document === 'undefined') return '';
-    const match = document.cookie.match(/(?:^|;\s*)mf_csrf=([^;]+)/);
-    return match ? decodeURIComponent(match[1]) : '';
-  } catch (_) {
-    return '';
-  }
+  return _cookies.readCsrf();
 }
 
 /**
@@ -128,20 +151,18 @@ function csrfHeaderValue() {
  * machine.
  */
 function clearLocalAuthState() {
-  _cachedToken = '';
-  _hasSession = false;
+  _session.forget();
   forgetCsrfToken();
-  try {
-    localStorage.removeItem('loggedIn');
-    localStorage.removeItem('currentUser');
-    localStorage.removeItem('meetifyy_recent_searches');
-    localStorage.removeItem('meetify_muted_communities');
-    localStorage.removeItem('read_invitations');
-    localStorage.removeItem('meetify_following_list');
-    localStorage.removeItem('meetify_followers_list');
-  } catch (_) {
-    // Storage disabled. Nothing was written, so nothing needs removing.
-  }
+  [
+    'loggedIn',
+    'currentUser',
+    'meetifyy_recent_searches',
+    'meetify_muted_communities',
+    'read_invitations',
+    'meetify_following_list',
+    'meetify_followers_list',
+  ].forEach((key) => _localStore.remove(key));
+  _etags.clear();
 }
 
 /**
@@ -161,40 +182,9 @@ function clearLocalAuthState() {
  */
 export function mayHaveCookieSession() {
   if (readCsrfCookie()) return true;
-  try {
-    return localStorage.getItem('loggedIn') === 'true';
-  } catch (_) {
-    return false;
-  }
+  return _localStore.get('loggedIn') === 'true';
 }
 
-function cacheSessionToken(session) {
-  if (isRecoveryTab()) {
-    _cachedToken = '';
-    _hasSession = false;
-    return;
-  }
-  _cachedToken = session?.access_token ?? '';
-  _hasSession = !!session;
-}
-
-if (supabase) {
-  // Seed immediately from stored session — keep reference so initial requests can await it
-  _initSessionPromise = supabase.auth.getSession().then(({ data: { session } }) => {
-    cacheSessionToken(session);
-    return session;
-  }).catch(() => null);
-
-  // Keep in sync with all future auth events (login, logout, token refresh)
-  supabase.auth.onAuthStateChange((event, session) => {
-    // The reset page signs the recovery session out when it finishes (or when
-    // the link turns out to be expired). That is the point the tab stops being
-    // a recovery tab — withholding tokens past it would break every request a
-    // user makes after signing back in without reloading.
-    if (event === 'SIGNED_OUT') clearRecoveryTab();
-    cacheSessionToken(session);
-  });
-}
 
 // ── API origin failover ──────────────────────────────────────────────────────
 // The app and the API are typically served from different hostnames. Campus and
@@ -210,9 +200,7 @@ if (supabase) {
 export const API_PROXY_PREFIX = config.api.proxyPrefix;
 const FAILOVER_FLAG = 'meetifyy_api_failover';
 
-let _useProxyOrigin = (() => {
-  try { return sessionStorage.getItem(FAILOVER_FLAG) === '1'; } catch { return false; }
-})();
+let _useProxyOrigin = _sessionStore.get(FAILOVER_FLAG) === '1';
 
 export const isApiFailoverActive = () => _useProxyOrigin;
 
@@ -245,10 +233,10 @@ function activateFailover() {
       const res = await fetch(`${sameOriginProxyBase()}/health`, { cache: 'no-store' });
       if (!res.ok) return false;
       _useProxyOrigin = true;
-      try { sessionStorage.setItem(FAILOVER_FLAG, '1'); } catch {}
+      _sessionStore.set(FAILOVER_FLAG, '1');
       // Realtime has to move with it; the socket store reads this event rather
       // than polling the flag.
-      window.dispatchEvent(new Event('api:origin-changed'));
+      _hooks.onOriginChanged?.();
       return true;
     } catch {
       return false;
@@ -318,8 +306,7 @@ export const getMediaUrl = _getMediaUrl;
  * that reached it.
  */
 function getToken() {
-  if (isRecoveryTab()) return '';
-  return _cachedToken;
+  return _session.getToken();
 }
 
 // ── In-flight request deduplication ─────────────────────────────────────────
@@ -330,16 +317,9 @@ const _inflight = new Map();
 // ── ETag store ───────────────────────────────────────────────────────────────
 // Stores the last ETag per URL in sessionStorage so If-None-Match can be sent,
 // enabling 304 Not Modified responses when data hasn't changed.
-const ETAG_PREFIX = '__etag__';
-function getStoredEtag(url) {
-  try { return sessionStorage.getItem(ETAG_PREFIX + url) || ''; } catch { return ''; }
-}
-function storeEtag(url, etag) {
-  try { if (etag) sessionStorage.setItem(ETAG_PREFIX + url, etag); } catch {}
-}
-function dropEtag(url) {
-  try { sessionStorage.removeItem(ETAG_PREFIX + url); } catch {}
-}
+const getStoredEtag = (url) => _etags.get(url);
+const storeEtag = (url, etag) => _etags.set(url, etag);
+const dropEtag = (url) => _etags.drop(url);
 
 let _refreshPromise = null;
 
@@ -375,7 +355,7 @@ function refreshCookieSession() {
     try {
       // A recovery tab holds a one-time credential for the reset page and no
       // session of its own. Rotating anything on its behalf is meaningless.
-      if (isRecoveryTab()) return false;
+      if (_session.isRecoveryCredential()) return false;
 
       const url = `${getBackendUrl().replace(/\/+$/, '')}/api/auth/session/refresh`;
       const res = await fetch(url, {
@@ -428,8 +408,8 @@ async function request(method, path, body, signal, timeoutMs) {
   // Still awaited for the paths that genuinely need the bearer token — the
   // session-adoption call at the end of signup and the profile write beside it
   // — because for those the header IS the credential.
-  if (!_cachedToken && _initSessionPromise && isBearerPath(path)) {
-    await _initSessionPromise;
+  if (!_session.getToken() && _session.whenReady() && isBearerPath(path)) {
+    await _session.whenReady();
   }
 
   const token = getToken(); // synchronous
@@ -659,7 +639,7 @@ async function _doFetch(cleanUrl, options, isRetry = false) {
      */
     if (outcome === 'expired') {
       clearLocalAuthState();
-      window.dispatchEvent(new Event('auth:unauthorized'));
+      _hooks.onUnauthorized?.();
     }
   }
 
@@ -713,17 +693,14 @@ async function _doFetch(cleanUrl, options, isRetry = false) {
     // the correction from the response and writing it to the cached profile
     // makes the right full-screen explanation appear in that tab too, without
     // waiting for a reload or a re-sync.
+    // A policy update going live while this tab was open is handled by the same
+    // hook: every background request comes back gated, and announcing it is
+    // what makes the consent flow appear in the tab that hit the wall rather
+    // than only in one that happens to boot afterwards. Which codes mean what
+    // is the app's business, not the transport's — see `_hooks` at the top of
+    // this file.
     if (res.status === 403) {
-      applyAccountStatusCorrection(errorCode);
-
-      // A policy update went live while this tab was open. Every background
-      // request now comes back gated, and without this the user would see a
-      // stream of generic 403 toasts with no way to resolve them. Announcing it
-      // is what makes the consent flow appear in the tab that hit the wall,
-      // rather than only in one that happens to boot afterwards.
-      if (errorCode === LEGAL_ACK_REQUIRED_CODE) {
-        announceLegalConsentChange('required');
-      }
+      _hooks.onApiErrorCode?.(errorCode);
     }
 
     throw err;
@@ -764,10 +741,6 @@ async function _doFetch(cleanUrl, options, isRetry = false) {
     parseError.responseSnippet = sanitizedText.slice(0, 200);
     throw parseError;
   }
-}
-
-if (typeof window !== 'undefined') {
-  window.__api_redirecting = false;
 }
 
 /**

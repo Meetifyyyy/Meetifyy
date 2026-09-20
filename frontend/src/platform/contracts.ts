@@ -50,6 +50,82 @@ export interface KeyValueStore {
 }
 
 /**
+ * Key/value storage that answers without awaiting.
+ *
+ * WHY THIS EXISTS ALONGSIDE THE ASYNC ONE
+ * `KeyValueStore` is async because the native stores are, and that is right for
+ * anything that can wait. It is wrong for the request hot path: the ETag for a
+ * URL is read while a GET is being assembled, so an async store would put a
+ * bridge round-trip in front of every single request on a device — latency
+ * added to every screen, to save a few kilobytes of memory.
+ *
+ * So the hot path takes this instead. The web implementation is
+ * `sessionStorage`, which is synchronous anyway. A native implementation is an
+ * in-memory Map, hydrated once at startup from the async store and written
+ * through in the background — the read stays instant and the data still
+ * survives a restart.
+ *
+ * Never used for credentials: see SecureStorage.
+ */
+export interface SyncKeyValueStore {
+  get(key: string): string | null;
+  set(key: string, value: string): void;
+  remove(key: string): void;
+  /** Every key this store owns, for the logout purge. */
+  clear(): void;
+}
+
+/**
+ * What the transport tells the app when something happens to a request.
+ *
+ * These replace `window.dispatchEvent` calls that the transport used to make
+ * directly. A DOM event is a perfectly good way for the web app to hear about
+ * this; it is simply not available to a native client, and the transport should
+ * not be the thing that decides which mechanism is used.
+ *
+ * Every hook is optional, and a client that supplies none still gets a working
+ * transport — these are notifications, not control flow.
+ */
+export interface TransportHooks {
+  /**
+   * A machine-readable error code came back from the API.
+   *
+   * The web app uses this to reconcile an account status the server knows about
+   * and the tab does not, and to raise the legal-acknowledgement gate. The
+   * transport deliberately does not know which codes mean what: it reports, the
+   * app decides.
+   */
+  onApiErrorCode?(code: string): void;
+  /** The session is over and the app should stop acting signed in. */
+  onUnauthorized?(): void;
+  /** The API moved to the fallback origin; anything holding a socket must follow. */
+  onOriginChanged?(): void;
+}
+
+/**
+ * Where the current access token comes from, and whether it may be used.
+ *
+ * The web app's answer involves Supabase's auth client and a per-tab
+ * password-recovery latch; a native client's will not. What the transport needs
+ * is narrower than either: a token, and permission to send it.
+ */
+export interface SessionSource {
+  /** The bearer token, or '' when this client is holding none. */
+  getToken(): string;
+  /**
+   * True when the credential in hand is a password-recovery session rather than
+   * a login.
+   *
+   * It must never be sent to the API. A recovery token is an ordinary session
+   * JWT — the backend cannot tell it from a login, which is exactly why the
+   * client has to.
+   */
+  isRecoveryCredential(): boolean;
+  /** Resolves once an initial session has been loaded, if the client loads one. */
+  whenReady(): Promise<unknown> | null;
+}
+
+/**
  * Storage for credentials, and for nothing else.
  *
  * Consumer: the native refresh-token store (Phase 5).

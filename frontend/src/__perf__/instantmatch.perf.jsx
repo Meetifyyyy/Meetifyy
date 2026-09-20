@@ -33,6 +33,13 @@ vi.mock('@features/instant-match/utils/matchSocketClient', () => ({
     cancelQueue: async () => { emitted.push(['queue:cancel']); return { ok: true, data: {} }; },
     respondToMatch: async (id, a) => { emitted.push(['match:respond', id, a]); return { ok: true, data: {} }; },
     sync: async () => { emitted.push(['queue:sync']); return { ok: true, data: {} }; },
+    // `useSearchingNow` calls this on mount. Its absence did not fail the perf
+    // run — the rejection happened inside a passive effect, so vitest reported
+    // "3 passed" alongside an unhandled `default.listQueue is not a function`.
+    // A profile taken while a hook was throwing is not a profile of the screen.
+    // `people` is the shape the hook reads; an empty list is the honest default
+    // for a render benchmark.
+    listQueue: async () => { emitted.push(['queue:list']); return { ok: true, data: { people: [] } }; },
     chatState: async () => { emitted.push(['chat_state']); return { ok: true, data: {} }; },
     leaveChat: async () => ({ ok: true, data: {} }),
     acquire: () => () => {},
