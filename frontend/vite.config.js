@@ -5,7 +5,7 @@ import path from 'path';
 import fs from 'fs';
 import crypto from 'node:crypto';
 import { visualizer } from 'rollup-plugin-visualizer';
-import { postcssHoverMedia } from './scripts/postcss-hover-media.js';
+import { sharedAliases, sharedCss, sharedOnWarn } from './vite.shared.js';
 import { isProductionAppEnv } from './src/config/deploymentEnv.js';
 
 /**
@@ -300,21 +300,10 @@ export default defineConfig(({ mode }) => {
     })] : [tombstoneServiceWorkerPlugin()]),
     visualizer({ open: false, filename: 'stats.html', gzipSize: true, brotliSize: true })
   ],
-  css: {
-    postcss: {
-      plugins: [
-        postcssHoverMedia({ mediaQuery: '(hover: hover) and (pointer: fine)' })
-      ]
-    }
-  },
+  css: sharedCss,
   build: {
     rollupOptions: {
-      onwarn(warning, warn) {
-        if (warning.message?.includes('externalized for browser compatibility') || warning.code === 'MODULE_LEVEL_DIRECTIVE') {
-          return;
-        }
-        warn(warning);
-      },
+      onwarn: sharedOnWarn,
       output: {
         manualChunks: {
           'vendor-react': ['react', 'react-dom', 'react-router-dom', '@tanstack/react-query', '@tanstack/react-virtual'],
@@ -358,23 +347,7 @@ export default defineConfig(({ mode }) => {
      * them. Its bare `@` is dropped in the same change so the two lists cannot
      * drift into disagreeing about what an import path means.
      */
-    alias: {
-      // Portable layers first, because they are the ones whose direction
-      // matters: client code may import these, and neither may import client
-      // code back. That rule is enforced in eslint.config.js, not here — an
-      // alias grants access, it cannot withhold it.
-      '@core':      path.resolve(__dirname, 'src/core'),
-      '@platform':  path.resolve(__dirname, 'src/platform'),
-
-      '@config':    path.resolve(__dirname, 'src/config'),
-      '@stores':    path.resolve(__dirname, 'src/shared/stores'),
-      '@shared':    path.resolve(__dirname, 'src/shared'),
-      '@layout':    path.resolve(__dirname, 'src/layout'),
-      '@features':  path.resolve(__dirname, 'src/features'),
-      '@styles':    path.resolve(__dirname, 'src/styles'),
-      '@constants': path.resolve(__dirname, 'src/constants'),
-      '@assets':    path.resolve(__dirname, 'src/assets'),
-    },
+    alias: sharedAliases(__dirname),
   },
   optimizeDeps: {
     include: [

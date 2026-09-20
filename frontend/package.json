@@ -6,7 +6,9 @@
   "scripts": {
     "build": "node scripts/generate-robots.mjs && node scripts/generate-sitemap.mjs && node scripts/generate-version.mjs && vite build && node scripts/prerender-seo.mjs",
     "build:dev": "node scripts/generate-robots.mjs && node scripts/generate-sitemap.mjs && node scripts/generate-version.mjs && vite build --mode development && node scripts/prerender-seo.mjs",
+    "build:mobile": "vite build --config vite.mobile.config.js",
     "dev": "vite",
+    "dev:mobile": "vite --config vite.mobile.config.js",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "og:asset": "node scripts/generate-og-image.mjs",

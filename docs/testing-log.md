@@ -27,6 +27,64 @@ legitimately change per commit.
 
 ---
 
+## Phase 4a — two build targets — **DONE**
+
+A second client now builds from `core/` over `platform/capacitor/`, with its own
+runtime and its own entry. Native projects (`cap add`) are **not** here — that
+belongs with the on-device spike.
+
+### Tested
+- S1 ✅ **133/133 files, 1440/1440 tests** (+1 file, +9)
+- S2 ✅ lint · boundaries ✅ · typecheck ✅
+- **S4 ✅ web `dist/assets` byte-identical — 153 files**, before and after
+- `npm run build:mobile` ✅
+
+### The payoff, measured
+`dist-mobile` is **1.82 MB** against the web bundle's 4.6 MB, because it pulls
+in none of the landing page, framer-motion, emoji or icon sets — and because
+`dropWebOnlyPublicAssets` removes the 15 iOS PWA splash screens (**1.14 MB**),
+`robots.txt`, `version.json` and the OG image, which `publicDir` had copied in
+wholesale.
+
+### B4 closed structurally
+`vite.mobile.config.js` never loads vite-plugin-pwa, so there is no worker to
+register. CI proves the absence: no `sw.js`, no `workbox`, no
+`serviceWorker.register` in `dist-mobile/`. **Guards proven to fire** by
+planting a fake `sw.js` and a fake localhost string and watching each trip.
+
+### B1 closed, and guarded by a test rather than a grep
+`platform/capacitor/apiOrigin.js` returns the configured origin and probes
+nothing. 9 tests install a **real WebView-shaped `window`** (`https://localhost`
+and `capacitor://localhost`) with `preferLocalBackend: true` — the exact
+conditions that break the web implementation — and assert the answer is
+unaffected.
+
+### Three of my own mistakes, caught here
+1. **My plan said `base: './'` for mobile. Wrong.** Relative asset paths break a
+   client-side router: from `/messages/abc`, `./assets/x.js` resolves to
+   `/messages/assets/x.js`. Capacitor serves `webDir` at the origin root, so `/`
+   is correct.
+2. **My plan said "path-filtered CI". The repo already refuses that, for a good
+   reason** documented in `ci.yml`: a skipped required check reports as
+   *pending*, not passed, so a path filter would deadlock every PR that misses
+   those paths. Not added. The `mobile` job is wired into `validate`'s `needs`
+   instead, as that header instructs.
+3. **My first CI localhost guard failed on the real bundle** — it matched
+   `http://localhost:9999`, a default constant inside `@supabase/auth-js`. A
+   guard that fires on a vendor string gets disabled, so it was replaced with
+   the unit test above. My own mobile shell also tripped the SW grep by merely
+   naming `serviceWorker`; that diagnostic is gone and the patterns are narrow.
+
+### Left for Phase 4b / 5
+- `cap init` + `cap add android ios` — needs the device toolchain; yours
+- `platform/capacitor/` storage re-exports the web implementations, which is
+  correct today (a WebView has DOM storage) and becomes `@capacitor/preferences`
+  in Phase 6
+- Mobile session source still the web one — the spike decides cookie vs bearer
+- No mobile UI yet (Phase 5); `src/mobile/main.jsx` renders a placeholder shell
+
+---
+
 ## Phase 3e — transport into core/ — **DONE**
 
 `shared/api/apiClient.js` is now **155 lines of assembly**, down from 1,639 at

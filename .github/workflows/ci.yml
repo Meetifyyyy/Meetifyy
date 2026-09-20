@@ -16,6 +16,11 @@
 #   6. Production build (nest build)
 #   7. Unit tests (jest)
 #
+# The `mobile` job builds the native bundle from the same `src/` and proves two
+# things about the output: that no service worker reached it, and that no
+# localhost API origin was baked in. Both are failures that would otherwise only
+# appear on a device.
+#
 # No live database is needed for any of these — schema validation runs offline
 # against the committed files only, using the placeholder URLs set below.
 # ─────────────────────────────────────────────────────────────────────────────
@@ -192,6 +197,90 @@ jobs:
       - name: Production build
         run: npm run build
 
+  # ── Mobile build target ─────────────────────────────────────────────────────
+  #
+  # Runs on every change to the frontend, because the mobile bundle is built
+  # from the same `src/` as the web one: a change to `core/` or `platform/`
+  # reaches both, and a change to a web-only file still has to leave this build
+  # working. Path filtering across the two targets belongs with Phase 5, when
+  # `src/mobile/` holds a UI that can be changed on its own — filtering now
+  # would only mean a job that skips itself while there is nothing to skip.
+  mobile:
+    name: mobile
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: frontend
+
+    env:
+      # A native build has no same-origin API to fall back to, so
+      # createCapacitorApiOrigin refuses to construct without this. The value is
+      # only ever inlined into a bundle CI throws away.
+      VITE_API_URL: https://api.invalid
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build mobile bundle
+        run: npm run build:mobile
+
+      # BLOCKING, and the reason this job exists.
+      #
+      # A caching service worker inside a WebView can serve its copy of the
+      # DEPLOYED SITE instead of the bundle the store reviewed, and iOS has no
+      # service worker support at all. The mobile Vite config does not load
+      # vite-plugin-pwa, so the code is absent rather than skipped by a runtime
+      # check — this proves the absence rather than trusting it.
+      #
+      # The patterns are deliberately narrow. An earlier version grepped for the
+      # bare string `serviceWorker`, which matched a diagnostic line in the
+      # mobile shell that only NAMED the API. A guard its own placeholder trips
+      # is a guard nobody will trust.
+      - name: No service worker in the mobile bundle
+        run: |
+          set -e
+          if [ -f dist-mobile/sw.js ]; then
+            echo "::error::dist-mobile/sw.js exists — a service worker must never ship in the native bundle"
+            exit 1
+          fi
+          if grep -rlq "workbox" dist-mobile/; then
+            echo "::error::workbox found in dist-mobile/ — vite-plugin-pwa has leaked into the mobile target"
+            grep -rl "workbox" dist-mobile/
+            exit 1
+          fi
+          if grep -rlqE "serviceWorker\.register|serviceWorker\[.register" dist-mobile/; then
+            echo "::error::service-worker registration found in dist-mobile/"
+            grep -rlE "serviceWorker\.register|serviceWorker\[.register" dist-mobile/
+            exit 1
+          fi
+          echo "no service worker in dist-mobile/"
+
+      # Blocker B1 — the API origin — is guarded by a unit test rather than by
+      # grepping the bundle. The first version of this step searched for
+      # `localhost:NNNN` and failed on `http://localhost:9999`, a default
+      # constant inside @supabase/auth-js. A check that fires on a vendor string
+      # teaches people to ignore it, and the property worth asserting is about
+      # what createCapacitorApiOrigin RETURNS, which a test can state exactly:
+      # see src/platform/capacitor/__tests__/apiOrigin.test.js, run by the
+      # frontend job.
+
+      - name: Report bundle size
+        run: |
+          bytes=$(find dist-mobile -type f -printf '%s\n' | paste -sd+ | bc)
+          echo "dist-mobile: $bytes bytes ($((bytes / 1024)) KiB)"
+
   admin-frontend:
     name: admin-frontend
     runs-on: ubuntu-latest
@@ -231,7 +320,7 @@ jobs:
   validate:
     name: validate
     runs-on: ubuntu-latest
-    needs: [backend, frontend, admin-frontend]
+    needs: [backend, frontend, mobile, admin-frontend]
     # Runs even when a dependency fails, so the required check reports a real
     # failure instead of being skipped — a skipped required check reads as
     # pending forever.
@@ -242,9 +331,11 @@ jobs:
         run: |
           echo "backend:        ${{ needs.backend.result }}"
           echo "frontend:       ${{ needs.frontend.result }}"
+          echo "mobile:         ${{ needs.mobile.result }}"
           echo "admin-frontend: ${{ needs['admin-frontend'].result }}"
           if [ "${{ needs.backend.result }}" != "success" ] \
             || [ "${{ needs.frontend.result }}" != "success" ] \
+            || [ "${{ needs.mobile.result }}" != "success" ] \
             || [ "${{ needs['admin-frontend'].result }}" != "success" ]; then
             echo "::error::One or more app checks did not succeed."
             exit 1

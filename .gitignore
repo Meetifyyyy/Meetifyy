@@ -16,6 +16,10 @@ node_modules/
 # 2. Build & Production Outputs
 # ------------------------------------------------------------------------------
 dist/
+# The mobile build target's output. `dist/` above is a literal directory name,
+# so a sibling with a different name needs its own entry.
+dist-mobile/
+**/dist-mobile/
 build/
 out/
 output/

@@ -24,6 +24,11 @@ export default [
   {
     ignores: [
       'dist/**',
+      // The mobile build target's output. Same reason as dist/: it is generated,
+      // minified and not source. It needs its own entry because the rule above
+      // is a literal path rather than a glob over dist*, and linting a minified
+      // bundle produces ~80 errors that say nothing about the code that made it.
+      'dist-mobile/**',
       'dev-dist/**',
       'node_modules/**',
       'public/**',

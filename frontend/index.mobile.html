@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+
+  <!--
+    viewport-fit=cover, which the web entry deliberately does NOT carry.
+
+    `env(safe-area-inset-*)` is used across global.css and several component
+    stylesheets, and without this it resolves to 0 — so every one of those rules
+    is inert on a notched device. Adding it to index.html instead would activate
+    all of them at once for every already-installed PWA user, which is a live
+    layout change to the website and belongs in its own ticket with a visual
+    check. Here it is simply correct from the start.
+  -->
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
+
+  <meta name="theme-color" content="#2563EB" />
+  <title>Meetifyy</title>
+
+  <!--
+    WHAT IS DELIBERATELY ABSENT, and why, because each omission is a decision:
+
+    • The launch-time version gate. It fetches /version.json and compares it
+      against the build stamped into this document, to decide whether the tab is
+      running a stale deployment. A bundled app has no deployment to be stale
+      against — the file ships inside the binary, so the comparison can only
+      ever say "current". Updates arrive through the store.
+
+    • Every service-worker reference. The mobile Vite config does not load
+      vite-plugin-pwa at all, so there is no worker to register; this is the
+      second half of that, and the reason the guard is structural rather than a
+      runtime `if`. A caching worker inside a WebView could serve its copy of
+      the DEPLOYED SITE instead of the reviewed app, and iOS has no service
+      worker support to begin with.
+
+    • The dev-host guard. It forwards a generated *.vercel.app URL to the dev
+      hostname. There is no such URL here.
+
+    • The CSP meta tag. The web one exists for the dev server and is stripped
+      from production builds; it is far too permissive to ship natively
+      (`unsafe-inline`, `unsafe-eval`, `connect-src http: https: ws: wss:`).
+      A native policy belongs in the native layer, where it can be tight.
+
+    • The SEO block and the fifteen apple-touch-startup-image links. Nothing
+      crawls an app bundle, and the platform draws the splash itself.
+  -->
+
+  <link rel="icon" type="image/png" sizes="192x192" href="/favicon.png" />
+  <link rel="preload" href="/fonts/inter-100_900-normal-13.woff2" as="font" type="font/woff2" crossorigin />
+  <link rel="preload" href="/fonts/changaone-400-normal-15.woff2" as="font" type="font/woff2" crossorigin />
+  <link rel="preload" href="/fonts/changa-400-normal-18.woff2" as="font" type="font/woff2" crossorigin />
+  <link rel="stylesheet" href="/src/styles/fonts.css" />
+</head>
+<body>
+  <!--
+    Launch shell, same idea as the web entry: the platform splash is dismissed
+    the moment the page paints, which is long before React has mounted, so
+    without this there is a flash of empty page in between. Inline and
+    markup-only because it has to be on screen at first paint, which rules out
+    anything that waits on the bundle or a stylesheet.
+  -->
+  <div id="launch-shell" aria-hidden="true"
+       style="position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;background:#FDFDFD;transition:opacity .25s ease;pointer-events:none">
+    <img src="/logo-192.png" alt="" width="120" height="120" style="width:120px;height:120px" />
+  </div>
+
+  <div id="root"></div>
+  <script type="module" src="/src/mobile/main.jsx"></script>
+</body>
+</html>
