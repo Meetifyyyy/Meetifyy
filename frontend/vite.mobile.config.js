@@ -110,6 +110,29 @@ function dropWebOnlyPublicAssets() {
 
 export default defineConfig({
   /**
+   * The mobile bundle served in a desktop browser, for a quick look without
+   * waiting on a Gradle build.
+   *
+   * Its own port, because the web dev server owns 3000 and the two are
+   * genuinely different builds — this one has no landing page, no service
+   * worker and the native API origin. Running both at once is the point: it is
+   * how you see, side by side, that a change did not land on the wrong client.
+   *
+   * `open: false` because this starts alongside three other services and a
+   * fourth browser tab opening by itself is a nuisance. `host: true` so a phone
+   * on the same network can load it without an APK.
+   *
+   * NOT a substitute for the APK. A desktop browser has no Capacitor bridge, so
+   * anything touching a plugin — secure storage, the back button — behaves
+   * differently or throws here by design.
+   */
+  server: {
+    port: Number.parseInt(process.env.VITE_MOBILE_DEV_PORT || '3001', 10),
+    host: true,
+    open: false,
+  },
+
+  /**
    * Marks this bundle as the mobile client.
    *
    * `shared/api/apiClient.js` reads it (through `config.client`) to choose the

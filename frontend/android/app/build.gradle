@@ -1,5 +1,25 @@
 apply plugin: 'com.android.application'
 
+/**
+ * Release signing credentials, when this machine has them.
+ *
+ * Read from local/keystore/release.properties, which is gitignored along with
+ * the keystore it points at. A signing key is the one credential that cannot be
+ * rotated after the fact: Play identifies an app by the key that signed it, so
+ * losing it means never being able to ship an update to the installed base
+ * under the same listing.
+ *
+ * Absent on CI and on a fresh clone, and that has to stay harmless. Without it
+ * Gradle still builds a release APK, unsigned — which Android refuses to
+ * install, and which scripts/build-apk.mjs names -UNSIGNED so the reason is
+ * obvious before the file reaches a phone.
+ */
+def releasePropsFile = rootProject.file('../../local/keystore/release.properties')
+def releaseProps = new Properties()
+if (releasePropsFile.exists()) {
+    releasePropsFile.withInputStream { releaseProps.load(it) }
+}
+
 android {
     namespace = "app.meetifyy"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -16,8 +36,21 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        release {
+            if (releasePropsFile.exists()) {
+                storeFile file(releaseProps['storeFile'])
+                storePassword releaseProps['storePassword']
+                keyAlias releaseProps['keyAlias']
+                keyPassword releaseProps['keyPassword']
+            }
+        }
+    }
     buildTypes {
         release {
+            if (releasePropsFile.exists()) {
+                signingConfig signingConfigs.release
+            }
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
