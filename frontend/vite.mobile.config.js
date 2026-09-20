@@ -109,6 +109,17 @@ function dropWebOnlyPublicAssets() {
 }
 
 export default defineConfig({
+  /**
+   * Absolute, and set explicitly rather than left to Vite's default.
+   *
+   * It is already '/' by default, but the choice is load-bearing enough to be
+   * visible: relative paths would break a client-side router, because from
+   * `/messages/abc` an asset at `./assets/x.js` resolves to
+   * `/messages/assets/x.js`. Capacitor serves `webDir` from the origin root, so
+   * absolute is both correct and what the router needs.
+   */
+  base: '/',
+
   plugins: [react(), emitAsIndexHtml(), dropWebOnlyPublicAssets()],
 
   css: sharedCss,
