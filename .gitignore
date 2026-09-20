@@ -383,3 +383,29 @@ frontend/public/sitemap.xml
 # version gate. Committing it would pin every deployment to whatever SHA
 # happened to be checked in, so the gate would compare against a stale value.
 frontend/public/version.json
+
+# ── Local security tooling output ────────────────────────────────────────────
+# Scanner reports, caches and red-team configs are generated on one machine,
+# name real paths and findings, and in the case of a secret scan quote the
+# credential they found. None of it belongs in a shared repository.
+#
+# The tools themselves are installed OUTSIDE the repo (~/.local/bin,
+# ~/.security-tools) and reports are written to ~/security-reports, so nothing
+# here should ever match in normal use. These patterns exist for the case where
+# a scanner is run with its default output path from inside the working tree —
+# the one way this lands in a commit by accident.
+#
+# Deliberately narrow: named artefacts only, no directory wildcards that could
+# swallow source. Note `*.sarif` is a scanner output format, not a source file.
+.semgrep/
+.semgrep_logs/
+.trivycache/
+.checkov.baseline
+.zap/
+.promptfoo/
+promptfooconfig.yaml
+*.sarif
+gitleaks-report.json
+trivy-report.json
+osv-results.json
+security-reports/
