@@ -49,7 +49,8 @@ API host and is legal here.
 `{ user, meta, csrfToken, sessionId }` — the access token goes **only** into
 the HttpOnly cookie, so a native client has no way to hold a credential.
 
-**Mobile auth is therefore blocked on a backend change.** Two options:
+**Mobile auth is therefore blocked on a backend change.** Two options, written
+up at diff level in **[mobile-auth-decision.md](mobile-auth-decision.md)**:
 
 | | Change | Trade-off |
 |---|---|---|

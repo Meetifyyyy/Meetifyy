@@ -218,6 +218,7 @@ docs/*
 !docs/rate-limiting.md
 !docs/first-year-isolation.md
 !docs/testing-log.md
+!docs/mobile-auth-decision.md
 
 diff_*.txt
 all_files.txt
