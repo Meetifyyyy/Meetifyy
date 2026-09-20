@@ -14,6 +14,7 @@ import {
   USER_ACCESS_COOKIE,
   USER_CSRF_COOKIE,
   USER_SESSION_ID_COOKIE,
+  USER_SESSION_ID_HEADER,
 } from '../../auth/session/user-session-cookies';
 import { timingSafeEqual } from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -398,7 +399,30 @@ export class JwtGuard implements CanActivate {
     const usedCookieToken = Boolean(
       typeof cookieToken === 'string' && cookieToken.trim(),
     );
-    if (!usedCookieToken) {
+
+    /**
+     * A bearer token that NAMES a session is accepted; one that does not is
+     * still refused.
+     *
+     * This is the whole of the change that lets the installed app
+     * authenticate. The objection to bearer tokens above is not that the header
+     * is weaker than the cookie — both are verified identically — it is that a
+     * bare token has no session to look up, so the revocation checks further
+     * down had nothing to consult and were skipped. A caller that sends
+     * `x-session-id` supplies exactly what was missing, and the block below
+     * then runs the SAME liveness and ownership checks it runs for a cookie.
+     *
+     * So this widens what may authenticate without widening what goes
+     * unchecked. The id is not trusted here — nothing is taken on its word;
+     * it is resolved against the session table and matched to the token's own
+     * user before the request proceeds.
+     */
+    const rawHeaderSessionId = request.headers?.[USER_SESSION_ID_HEADER];
+    const headerSessionId =
+      typeof rawHeaderSessionId === 'string' ? rawHeaderSessionId.trim() : '';
+    const sessionBoundBearer = !usedCookieToken && Boolean(headerSessionId);
+
+    if (!usedCookieToken && !sessionBoundBearer) {
       const bearerAllowed = this.reflector.getAllAndOverride<boolean>(
         ALLOW_BEARER_TOKEN_KEY,
         [context.getHandler(), context.getClass()],
@@ -473,8 +497,26 @@ export class JwtGuard implements CanActivate {
      * cookie-authenticated request. A bearer token from a client that predates
      * cookies has no session to check and is left alone.
      */
-    if (usedCookie) {
-      const sessionId = request.cookies?.[USER_SESSION_ID_COOKIE];
+    /**
+     * Cookie callers and native app callers are checked identically here.
+     *
+     * The only path that still skips this is the signup handover marked
+     * `@AllowBearerToken` — a bare token on a route where the session row does
+     * not exist yet, because the call is on its way to creating it. That
+     * exemption is unchanged and deliberately narrow; anything else reaching
+     * this point names a session and gets it verified.
+     *
+     * The id is taken from the COOKIE whenever the credential was a cookie. A
+     * request that authenticated by cookie cannot substitute a header here, so
+     * there is no way to downgrade a cookie session onto an id of the caller's
+     * choosing.
+     */
+    const legacyBearerHandover = !usedCookie && !sessionBoundBearer;
+
+    if (!legacyBearerHandover) {
+      const sessionId = usedCookie
+        ? request.cookies?.[USER_SESSION_ID_COOKIE]
+        : headerSessionId;
 
       // The id must be PRESENT. Treating its absence as "nothing to check" made
       // revocation optional: a stolen cookie jar with `mf_sid` removed skipped

@@ -30,6 +30,28 @@ export const USER_CSRF_COOKIE = 'mf_csrf';
  */
 export const USER_SESSION_ID_COOKIE = 'mf_sid';
 
+/**
+ * The same session id, as a header, for clients that cannot hold cookies.
+ *
+ * The installed app is one: its WebView origin is a different site from the
+ * API, so a browser refuses to store `SameSite=Strict` cookies from the login
+ * response — measured on a device, every `mf_*` cookie rejected with
+ * `SchemefulSameSiteStrict`. The native client therefore holds its credential
+ * in the Keychain/Keystore and sends it as a bearer token.
+ *
+ * This header is what keeps that token REVOCABLE. A bearer token alone names
+ * no session, so the liveness and ownership checks in `JwtGuard` — the ones
+ * behind "sign out this device", "sign out everywhere" and password-change
+ * revocation — have nothing to look up, which is precisely why bearer tokens
+ * are refused on ordinary routes. Sent beside the token, the id restores every
+ * one of those checks, so the native path is as revocable as the cookie path
+ * rather than an exemption from it.
+ *
+ * It is not a credential on its own, for the same reason the cookie is not:
+ * every operation that takes a session id is scoped to the caller's own user.
+ */
+export const USER_SESSION_ID_HEADER = 'x-session-id';
+
 export interface IssuedUserSessionCookies {
   /**
    * The CSRF token just written to `mf_csrf`, returned for the response body.

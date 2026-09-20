@@ -84,6 +84,51 @@ export class AuthController {
     return typeof id === 'string' && id ? id : null;
   }
 
+  /**
+   * Whether this request came from the installed app rather than a website.
+   *
+   * Keyed on `Origin`, which a browser sets itself and a page cannot forge.
+   * That matters more than it might look: this flag decides whether session
+   * tokens are written into the response BODY, where script can read them, and
+   * a spoofable signal — a `X-Client: mobile` header, a user-agent sniff —
+   * would let an XSS on the web app ask for the very tokens the HttpOnly
+   * cookies exist to keep out of its reach, including the long-lived refresh
+   * token that outlives the page.
+   *
+   * The origin is the one part of the request the page does not control, so it
+   * is the only safe thing to key on.
+   */
+  private isNativeAppClient(req: Request): boolean {
+    const origin = req.headers?.origin;
+    if (typeof origin !== 'string' || !origin) return false;
+    return config.app.cors.nativeAppOrigins.includes(origin);
+  }
+
+  /**
+   * The token block the installed app needs, or nothing at all.
+   *
+   * Spread into a response so that a web caller's payload is byte-identical to
+   * what it is today — the native fields are absent, not null, so nothing on
+   * the web can start depending on them by accident.
+   *
+   * The app stores these in Keychain/Keystore and sends the access token as a
+   * bearer, beside `x-session-id`. The session id is what keeps the pair
+   * revocable; see USER_SESSION_ID_HEADER.
+   */
+  private nativeSessionTokens(
+    req: Request,
+    accessToken: string,
+    refreshToken: string,
+    expiresInSeconds: number,
+  ) {
+    if (!this.isNativeAppClient(req)) return {};
+    return {
+      accessToken,
+      refreshToken,
+      expiresIn: expiresInSeconds,
+    };
+  }
+
   /** IP and user agent, for the device row and for rotation. */
   private deviceOf(req: Request) {
     return {
@@ -235,6 +280,12 @@ export class AuthController {
       meta: syncedUser.meta || {},
       csrfToken,
       sessionId: issued.sessionId,
+      ...this.nativeSessionTokens(
+        req,
+        user.token,
+        issued.refreshToken,
+        Math.max(1, Math.round(this.accessCookieMaxAge(user.token) / 1000)),
+      ),
     };
   }
 
@@ -353,16 +404,33 @@ export class AuthController {
       meta: profile?.meta ?? {},
       csrfToken,
       sessionId: issued.sessionId,
+      ...this.nativeSessionTokens(
+        req,
+        result.session.access_token,
+        issued.refreshToken,
+        result.session.expires_in ?? 3600,
+      ),
     };
   }
 
   /**
-   * Rotates the refresh cookie.
+   * Rotates the refresh token.
    *
-   * Reads the token from the cookie, never the body: the whole point is that
-   * the credential is not reachable by script. A rotation that fails clears the
-   * cookies, so a client holding something stale ends up signed out rather than
-   * retrying against a session that will never come back.
+   * On the web this reads the cookie and never the body: the whole point there
+   * is that the credential is not reachable by script. A rotation that fails
+   * clears the cookies, so a client holding something stale ends up signed out
+   * rather than retrying against a session that will never come back.
+   *
+   * The installed app has no cookie to read — a browser refuses to store the
+   * `SameSite=Strict` session cookies in its WebView, which is the whole reason
+   * the native client holds tokens itself — so for that client, and only that
+   * client, the token arrives in the body.
+   *
+   * The body is accepted ONLY when there is no refresh cookie AND the request
+   * came from the native origin, which a page cannot forge. Ordering matters:
+   * checking the cookie first means a web caller can never opt into the body
+   * path, so the rule "on the web the refresh token is not reachable by script"
+   * is preserved exactly as it was.
    */
   @Post('session/refresh')
   @HttpCode(HttpStatus.OK)
@@ -372,7 +440,13 @@ export class AuthController {
     @Req() req: Request,
     @Res({ passthrough: true }) res: any,
   ) {
-    const token = req.cookies?.[USER_REFRESH_COOKIE];
+    const cookieToken = req.cookies?.[USER_REFRESH_COOKIE];
+    const bodyToken =
+      !cookieToken && this.isNativeAppClient(req)
+        ? (req.body as { refreshToken?: unknown })?.refreshToken
+        : undefined;
+
+    const token = cookieToken || bodyToken;
     if (!token || typeof token !== 'string') {
       clearUserSessionCookies(res);
       throw new UnauthorizedException('Session expired');
@@ -413,7 +487,16 @@ export class AuthController {
       rotated.session.sessionId,
     );
 
-    return { csrfToken, sessionId: rotated.session.sessionId };
+    return {
+      csrfToken,
+      sessionId: rotated.session.sessionId,
+      ...this.nativeSessionTokens(
+        req,
+        refreshed.access_token,
+        rotated.session.refreshToken,
+        refreshed.expires_in ?? 3600,
+      ),
+    };
   }
 
   /**

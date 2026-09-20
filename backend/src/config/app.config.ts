@@ -37,11 +37,48 @@ const apiBaseUrl = url('API_BASE_URL') || backendUrl;
 const corsOrigins = csv('CORS_ORIGINS');
 const corsOriginPatterns = csv('CORS_ORIGIN_PATTERNS');
 
+/**
+ * The origin the installed app runs on, and the one exception to the rule
+ * directly above.
+ *
+ * A Capacitor WebView serves the bundled app from a local scheme; with
+ * `androidScheme`/`iosScheme` both set to `https` in `frontend/capacitor.config.json`,
+ * that origin is exactly `https://localhost` on both platforms.
+ *
+ * WHY THIS IS NOT "a preview domain baked into the code"
+ * It is not a deployment detail. It is decided by a file in this repository,
+ * it is byte-identical in every environment, it belongs to no one and it can
+ * never change without a source change landing beside it. Carrying it as an
+ * environment variable would mean the production API rejects the shipped app
+ * unless a human remembers to set it — which is not hypothetical: it is the
+ * exact defect this constant was added to fix, found only because the app was
+ * run against a real backend. A value that must be right in every environment
+ * and is the same in every environment belongs in the code.
+ *
+ * WHAT ALLOWING IT DOES AND DOES NOT MEAN
+ * It permits a page on `https://localhost` to READ this API's responses. It
+ * does not authenticate that page. Session cookies are `SameSite=Strict`, so a
+ * browser will not attach them from a cross-site localhost page at all — the
+ * same rule that blocked the app's own cookies and forced the native client
+ * onto session-bound bearer tokens. Those tokens live in the Keychain/Keystore
+ * of the device, which no web page can read. So an origin being allowed here
+ * is not an origin being trusted.
+ *
+ * Set NATIVE_APP_ORIGINS to override the list, or to an empty value to drop it.
+ */
+const DEFAULT_NATIVE_APP_ORIGINS = ['https://localhost'];
+const nativeAppOrigins =
+  process.env.NATIVE_APP_ORIGINS === undefined
+    ? DEFAULT_NATIVE_APP_ORIGINS
+    : csv('NATIVE_APP_ORIGINS');
+
 // Every browser-facing origin this API serves is trusted by default, so a
 // deployment that sets FRONTEND_URL/ADMIN_URL does not also have to repeat them
 // in CORS_ORIGINS.
 const allowedOrigins = Array.from(
-  new Set([frontendUrl, adminUrl, ...corsOrigins].filter(Boolean)),
+  new Set(
+    [frontendUrl, adminUrl, ...corsOrigins, ...nativeAppOrigins].filter(Boolean),
+  ),
 );
 
 export const appConfigValues = {
@@ -62,6 +99,12 @@ export const appConfigValues = {
   cors: {
     /** Exact origins that are always allowed. */
     origins: allowedOrigins,
+    /**
+     * The subset of `origins` that is the installed app rather than a website.
+     * Read by the auth controller, which returns session tokens in the response
+     * body only to these origins — see `nativeAppOrigins` above.
+     */
+    nativeAppOrigins,
     /** Wildcard patterns (e.g. `https://*.meetifyy.app`) allowed in addition. */
     originPatterns: corsOriginPatterns,
     /**

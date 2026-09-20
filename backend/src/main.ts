@@ -203,7 +203,15 @@ async function bootstrap() {
     },
     credentials: true,
     methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'x-csrf-token'],
+    // `x-session-id` is what makes the installed app's bearer token revocable;
+    // it is an explicit allow-list, so a header missing here is stripped by the
+    // preflight and the guard never sees it. See USER_SESSION_ID_HEADER.
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'x-csrf-token',
+      'x-session-id',
+    ],
     // Emits Access-Control-Max-Age. Every request here carries an
     // Authorization header, so every one of them is preceded by an OPTIONS
     // preflight; with no max-age that preflight is uncacheable and the round
