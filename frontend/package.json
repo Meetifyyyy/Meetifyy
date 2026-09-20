@@ -14,6 +14,7 @@
     "og:asset": "node scripts/generate-og-image.mjs",
     "perf": "vitest run --config src/__perf__/vitest.perf.config.js --silent=false",
     "preview": "vite preview",
+    "preview:mobile": "vite preview --config vite.mobile.config.js --port 4174",
     "pwa:assets": "node scripts/generate-pwa-assets.mjs",
     "robots": "node scripts/generate-robots.mjs",
     "sitemap": "node scripts/generate-sitemap.mjs",
