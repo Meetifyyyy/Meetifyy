@@ -35,6 +35,67 @@ legitimately change per commit.
 
 ---
 
+## Phase 5 — wrap the website — **DONE**
+
+**Course correction.** An earlier attempt built a separate mobile app: its own
+router, screens, bottom nav, login and data hooks. That duplicated a website
+which already exists and is already responsive. Those commits were reverted and
+are not in this branch.
+
+The native build now mounts the real app — same `App`, same providers, same
+routes, same screens.
+
+### What actually differs between the two builds
+
+| | Why it has to |
+|---|---|
+| Opening screen replaces `/` | The website's `/` is a landing page: marketing for someone who has not heard of Meetifyy. Someone opening the installed app has, and has installed it. One route, passed as a prop. |
+| No service worker | A caching worker in a WebView can serve its copy of the *deployed site* instead of the reviewed bundle; iOS has no SW support at all. Absent from the config, not skipped at runtime. |
+| No version gate | A bundled app has no deployment to be stale against. |
+| No Vercel analytics | Reports to a web project; already host-gated there. |
+| Native API origin | The web one derives the host from `window.location`, which reads `localhost` in a WebView. |
+
+### Tested
+- S1 ✅ **133/133 files, 1440/1440 tests**
+- S2 ✅ lint · boundaries ✅ · typecheck ✅ · both builds ✅
+- Loaded at 375×812: launch shell lifts, **0 service workers**, opening screen
+  renders, and **"Sign in" reaches the website's own login screen** — its
+  gradient, wordmark, "Welcome back", password eye. Nothing rebuilt.
+
+### The bug this phase produced, and the trap behind it
+The first version gated the API origin on `config.isMobileClient` — a property
+on a runtime object. Rollup cannot fold that, so **the native origin shipped in
+the web bundle and the 40 kB marketing landing page shipped in the app**.
+Neither breaks anything at runtime, which is what makes it survive.
+
+`config/index.js` already documents this exact trap for `IS_DEV_BUILD`:
+> use this constant for anything that gates a lazy import or a whole dev-only block
+
+Fixed by adding `IS_MOBILE_BUILD` beside it as a direct `import.meta.env`
+comparison, which Vite replaces with a literal. Both bundles verified clean.
+
+### Two new CI guards, both proven to fire
+- `dist-mobile/` must **not** contain `LandingPage-*.js`
+- `dist/` **must** contain it
+
+The failure is silent in both directions: the app carries a page it can never
+route to, the website loses its front door.
+
+### Also fixed
+`index.mobile.html` had the launch shell but not the script that lifts it, so
+the app booted and then sat behind its own logo forever. `AuthContext` calls
+`window.__meetifyyBoot.ready()` with optional chaining, so nothing threw.
+
+Ten `@config` test mocks needed the new export — vitest fails the import
+outright when a mock omits a named export, which is how they surfaced.
+
+### Left
+- `cap init` / `cap add android ios` — needs the device toolchain
+- The on-device spike: cookies vs bearer, back button, deep links, safe areas
+- `@capacitor/app`, push, secure storage — Phase 6
+
+---
+
 ## Phase 4a recheck — **DONE**
 
 Everything from this session re-verified from a clean state rather than trusted.
