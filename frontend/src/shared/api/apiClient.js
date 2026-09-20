@@ -1,23 +1,20 @@
 /**
- * The web client's HTTP transport, and the composition root for the API layer.
+ * The web client's composition root for the API layer.
  *
- * Two jobs, and it is worth being explicit about which is which.
+ * This file assembles, and does almost nothing else. The transport lives in
+ * `core/api/transport.js`, the endpoint definitions in `core/api/endpoints.js`,
+ * the media and route rules beside them; the browser's answers to "where is the
+ * API", "where do I put a string", "where does the token come from" and "what
+ * does this error code mean" live in `platform/web/`. Here the two halves meet,
+ * and this is the only file allowed to know both.
  *
- * The first is the transport itself: the request path, the 401
- * refresh-and-retry, the in-flight deduplication, the ETag conditional
- * requests, the origin failover. That logic is client-agnostic, and everything
- * it needs from the outside now arrives through an argument rather than an
- * import.
+ * A mobile client will have its own version of this file — the same core
+ * modules, `platform/capacitor/` in place of `platform/web/` — and none of the
+ * core modules will notice the difference. That is the whole point of the
+ * arrangement, and the reason this file is short.
  *
- * The second is assembly. This file is where the portable pieces in `core/api/`
- * meet the browser-specific ones in `platform/web/`, and it is the only file
- * allowed to know both. A mobile client will have its own version of this
- * second job with `platform/capacitor/`, and the core modules will not notice.
- *
- * The header used to say the token comes from localStorage. It has not for some
- * time: the durable session is a set of HttpOnly cookies the page cannot read,
- * and the only token in JavaScript is the short-lived one held between
- * `verifyOtp` and `POST /api/auth/session/adopt` during signup.
+ * Everything below is re-exported under the name it has always had, so the 107
+ * modules that import from here are unaffected by any of it.
  */
 import { supabase, isRecoveryTab, clearRecoveryTab } from '@shared/lib/supabase';
 import { applyAccountStatusCorrection } from '@shared/lib/accountStatusCorrection';
@@ -26,7 +23,9 @@ import {
   LEGAL_ACK_REQUIRED_CODE,
 } from '@shared/lib/legalConsent';
 import { config } from '@config';
-import { SAFE_METHODS, isBearerPath, isPublicPath } from '@core/api/paths';
+import { createTransport } from '@core/api/transport';
+import { createEndpoints } from '@core/api/endpoints';
+import { createEtagCache } from '@core/api/etagCache';
 import {
   createMediaUrls,
   deriveThumbnailKey as _deriveThumbnailKey,
@@ -34,54 +33,41 @@ import {
   normalizeDicebearUrl as _normalizeDicebearUrl,
 } from '@core/api/media';
 import { createWebApiOrigin } from '@platform/web/apiOrigin';
+import { createWebSessionSource } from '@platform/web/sessionSource';
 import {
   createWebCookieReader,
   createWebLocalStore,
   createWebSessionStore,
   createWebTransportHooks,
 } from '@platform/web/storage';
-import { createEtagCache } from '@core/api/etagCache';
-import { createWebSessionSource } from '@platform/web/sessionSource';
 
-/**
- * This module is the web client's composition root for the API layer.
- *
- * It is the one place allowed to know both halves: the portable pieces in
- * `core/api/*`, which are handed their dependencies, and the browser-specific
- * ones in `platform/web/*`, which supply them. A mobile client will have its
- * own file doing the same job with `platform/capacitor/*`, and the core modules
- * will not know the difference.
- *
- * Built once, at module scope, because that is where this file already lives in
- * the web app's lifetime — not because a singleton is the design. The core
- * modules are factories precisely so that a second client builds its own.
- */
-const _apiOrigin = createWebApiOrigin({ config });
-const _sessionStore = createWebSessionStore();
-const _localStore = createWebLocalStore();
-const _cookies = createWebCookieReader();
-const _etags = createEtagCache({ store: _sessionStore });
+// ── The browser's answers ────────────────────────────────────────────────────
+
+const apiOrigin = createWebApiOrigin({ config });
+const sessionStore = createWebSessionStore();
+const localStore = createWebLocalStore();
+const cookies = createWebCookieReader();
+const etags = createEtagCache({ store: sessionStore });
 
 /**
  * Where the access token comes from, and whether it may be sent.
  *
  * The Supabase subscription and the password-recovery guard that used to run at
- * this file's module scope now live behind this. See platform/web/sessionSource.js
- * for why the recovery guard belongs in one place rather than at three call
- * sites.
+ * this file's module scope live behind this now. See
+ * platform/web/sessionSource.js for why the recovery guard belongs in one place
+ * rather than at the three call sites that each had to remember it.
  */
-const _session = createWebSessionSource({ supabase, isRecoveryTab, clearRecoveryTab });
+const session = createWebSessionSource({ supabase, isRecoveryTab, clearRecoveryTab });
 
 /**
  * What the transport reports, and what this app does about it.
  *
- * The transport knows that a response carried a machine-readable code; it
- * deliberately does not know which codes mean what. Both reactions below are
- * app policy — reconciling an account status this tab has not heard about,
- * and raising the mandatory-acknowledgement gate — and both used to sit
- * inline in the response path.
+ * The transport knows a response carried a machine-readable code; it
+ * deliberately does not know which codes mean what. Both reactions here are app
+ * policy — reconciling an account status this tab has not heard about, and
+ * raising the mandatory-acknowledgement gate.
  */
-const _hooks = createWebTransportHooks({
+const hooks = createWebTransportHooks({
   onApiErrorCode: (errorCode) => {
     applyAccountStatusCorrection(errorCode);
     if (errorCode === LEGAL_ACK_REQUIRED_CODE) {
@@ -90,706 +76,80 @@ const _hooks = createWebTransportHooks({
   },
 });
 
+// ── The transport ────────────────────────────────────────────────────────────
+
+const transport = createTransport({
+  apiOrigin,
+  session,
+  cookies,
+  localStore,
+  sessionStore,
+  etags,
+  hooks,
+});
+
+export const apiClient = transport.apiClient;
+export const getBackendUrl = transport.getBackendUrl;
+export const getAccessToken = transport.getAccessToken;
+export const isApiFailoverActive = transport.isApiFailoverActive;
+export const readCsrfCookie = transport.readCsrfCookie;
+export const rememberCsrfToken = transport.rememberCsrfToken;
+export const forgetCsrfToken = transport.forgetCsrfToken;
+export const mayHaveCookieSession = transport.mayHaveCookieSession;
 
 /**
- * The CSRF token the server set alongside the session cookies.
+ * The same-origin proxy prefix, read here because configuration is this file's
+ * business rather than the transport's.
  *
- * Readable on purpose — it is not a credential on its own, and the whole
- * double-submit scheme depends on the page being able to echo it back. The
- * session cookies beside it are HttpOnly and this cannot reach them.
- *
- * Only ever a FALLBACK now. `document.cookie` shows a page the cookies of its
- * own document, and the API is routinely on a different hostname — so unless
- * the cookie is explicitly scoped to the registrable domain, this returns an
- * empty string on a perfectly healthy session. Every response that issues the
- * cookies also hands the token back in its body, which `rememberCsrfToken`
- * stores, and that is what the header is built from.
+ * The socket store imports it to move realtime onto the proxy when the API has
+ * failed over — an HTTP rewrite will not complete a WebSocket upgrade, so that
+ * connection stays on long polling. Degraded, but live.
  */
-export function readCsrfCookie() {
-  return _cookies.readCsrf();
-}
-
-/**
- * The CSRF token this tab holds, taken from the response that issued it.
- *
- * Kept in memory and nowhere else. It is scoped to the cookies the browser is
- * already carrying, dies with the tab, and is re-learned on the next boot from
- * `GET /api/auth/session` — so there is nothing to persist and nothing for a
- * later reader to find.
- */
-let _csrfToken = '';
-
-/**
- * Records the token a session-issuing response returned.
- *
- * Called from login, from session adoption, from a cookie refresh and from the
- * boot probe — every response that writes `mf_csrf` also names it in its body,
- * precisely so the page does not have to be able to read the cookie.
- */
-export function rememberCsrfToken(token) {
-  if (typeof token === 'string' && token) _csrfToken = token;
-}
-
-/** Dropped on sign-out with everything else the session owned. */
-export function forgetCsrfToken() {
-  _csrfToken = '';
-}
-
-/** What goes in `x-csrf-token`: what we were told, or what we can read. */
-function csrfHeaderValue() {
-  return _csrfToken || readCsrfCookie();
-}
-
-
-/**
- * Drops everything in this tab that belonged to the session.
- *
- * Called when the server has told us the session is over. The cookies are the
- * server's to clear — it does that on the logout and refresh routes — so what
- * is left here is the local shadow: the cached profile, the CSRF token, and the
- * per-user lists that must not survive into whoever signs in next on this
- * machine.
- */
-function clearLocalAuthState() {
-  _session.forget();
-  forgetCsrfToken();
-  [
-    'loggedIn',
-    'currentUser',
-    'meetifyy_recent_searches',
-    'meetify_muted_communities',
-    'read_invitations',
-    'meetify_following_list',
-    'meetify_followers_list',
-  ].forEach((key) => _localStore.remove(key));
-  _etags.clear();
-}
-
-/**
- * Whether this browser looks like it is carrying a session worth restoring.
- *
- * A hint, never a decision — the server authorizes, and a wrong answer here
- * costs at most one round trip. It exists so a first-time visitor and a
- * signed-out one do not spend a request being told 401 on every page load.
- *
- * Deliberately NOT `readCsrfCookie()` on its own, which is what it used to be.
- * That cookie is invisible to the page whenever the API is host-only on
- * another hostname, so on those deployments the answer was always "no session"
- * and a valid cookie session was never restored — the app showed the landing
- * page to signed-in users on every single reload. `loggedIn` is a local marker
- * this app writes when a session is established and clears when one ends; it
- * proves nothing, which is fine, because it is only deciding whether to ask.
- */
-export function mayHaveCookieSession() {
-  if (readCsrfCookie()) return true;
-  return _localStore.get('loggedIn') === 'true';
-}
-
-
-// ── API origin failover ──────────────────────────────────────────────────────
-// The app and the API are typically served from different hostnames. Campus and
-// other filtered networks routinely blocklist a shared PaaS wildcard domain
-// without blocking the app's own domain, which leaves the shell loading and
-// every request failing at the TCP level.
-//
-// The proxy prefix (a host rewrite that forwards to the same backend from the
-// app's own origin) is reachable wherever the app itself is. We do NOT route
-// through it by default — that would put all API traffic through the edge for
-// everyone. It is armed only after a real connection-level failure, and only
-// once the proxy has been confirmed to work, then remembered for the session.
 export const API_PROXY_PREFIX = config.api.proxyPrefix;
-const FAILOVER_FLAG = 'meetifyy_api_failover';
 
-let _useProxyOrigin = _sessionStore.get(FAILOVER_FLAG) === '1';
-
-export const isApiFailoverActive = () => _useProxyOrigin;
-
-function sameOriginProxyBase() {
-  return _apiOrigin.fallbackBaseUrl() || '';
-}
+// ── Media URLs ───────────────────────────────────────────────────────────────
 
 /**
- * True when the same-origin proxy is a meaningful alternative: we are in a
- * browser, on a real deployment, and the API currently lives on a different
- * host. On localhost the API is already reachable or genuinely down, and there
- * is no proxy to fall back to.
- */
-function canFailOver() {
-  return _apiOrigin.canFailOver();
-}
-
-/**
- * Confirms the proxy can actually reach the backend before committing the
- * session to it — otherwise a network that blocks everything would flip the
- * flag and make every later request take two failed round-trips instead of one.
- */
-let _failoverProbe = null;
-function activateFailover() {
-  if (_useProxyOrigin) return Promise.resolve(true);
-  if (_failoverProbe) return _failoverProbe;
-
-  _failoverProbe = (async () => {
-    try {
-      const res = await fetch(`${sameOriginProxyBase()}/health`, { cache: 'no-store' });
-      if (!res.ok) return false;
-      _useProxyOrigin = true;
-      _sessionStore.set(FAILOVER_FLAG, '1');
-      // Realtime has to move with it; the socket store reads this event rather
-      // than polling the flag.
-      _hooks.onOriginChanged?.();
-      return true;
-    } catch {
-      return false;
-    } finally {
-      _failoverProbe = null;
-    }
-  })();
-
-  return _failoverProbe;
-}
-
-/**
- * Where the API is.
- *
- * The browser-specific reasoning — is this page on a private network, may an
- * http origin be upgraded, is there a same-origin proxy — moved to
- * `platform/web/apiOrigin.js` so that a client running somewhere other than a
- * browser tab can answer the same questions differently. Inside a Capacitor
- * WebView the page hostname is `localhost`, which the old inline version read
- * as "on the local network"; a native implementation returns the configured
- * origin and probes nothing.
- *
- * The failover state machine stays here: it is transport behaviour, not a
- * property of the platform.
- */
-const directBackendUrl = () => _apiOrigin.baseUrl();
-
-export const getBackendUrl = () => (_useProxyOrigin ? sameOriginProxyBase() : directBackendUrl());
-
-/**
- * Media URL resolution lives in `core/api/media.js`.
- *
- * Three of these are pure and are re-exported unchanged. `getMediaUrl` is built
+ * Three of these are pure and pass straight through. `getMediaUrl` is built
  * over the same platform seam as the API origin, because "can this client reach
- * a private address" is the same question in both places — and it was wrong in
- * both places inside a WebView, where every LAN-origin image would have been
- * rewritten to `capacitor://localhost:4000`.
- *
- * Re-exported under their original names so the modules importing them from
- * here are untouched.
+ * a private address" is the same question in both places — and it was answered
+ * wrongly in both inside a WebView, where every LAN-origin image would have
+ * been rewritten to `capacitor://localhost:4000`.
  */
 export const getPastelBgColor = _getPastelBgColor;
 export const normalizeDicebearUrl = _normalizeDicebearUrl;
 export const deriveThumbnailKey = _deriveThumbnailKey;
 
-const { getMediaUrl: _getMediaUrl } = createMediaUrls({
-  apiOrigin: _apiOrigin,
-  getBackendUrl: (...args) => getBackendUrl(...args),
+export const { getMediaUrl } = createMediaUrls({
+  apiOrigin,
+  getBackendUrl: (...args) => transport.getBackendUrl(...args),
 });
-export const getMediaUrl = _getMediaUrl;
 
-/**
- * The bearer token, when this tab happens to hold one.
- *
- * Normally it holds none: the credential is an HttpOnly cookie. The one window
- * where a token exists in JavaScript is between `verifyOtp` confirming a signup
- * code and `POST /api/auth/session/adopt` converting that provider session into
- * cookies — and the header is what authenticates the adoption call itself.
- *
- * The localStorage sweep that used to live here is gone. It walked every `sb-*`
- * key looking for an access token and adopted the first one it found, which
- * re-introduced exactly what memory-only session storage was added to remove:
- * a credential read off disk, with no check that it belonged to the person
- * currently using the browser. On a shared machine it was a path for one
- * account's leftover token to authenticate the next account's session. It also
- * walked around the recovery guard, since an empty cache is precisely the state
- * that reached it.
- */
-function getToken() {
-  return _session.getToken();
-}
+// ── Named API helpers ────────────────────────────────────────────────────────
 
-// ── In-flight request deduplication ─────────────────────────────────────────
-// Prevents duplicate network calls when multiple components request the same
-// URL before the first response resolves (common on route mount).
-const _inflight = new Map();
+const endpoints = createEndpoints({
+  apiClient: transport.apiClient,
+  getToken: transport.getToken,
+  getBackendUrl: transport.getBackendUrl,
+});
 
-// ── ETag store ───────────────────────────────────────────────────────────────
-// Stores the last ETag per URL in sessionStorage so If-None-Match can be sent,
-// enabling 304 Not Modified responses when data hasn't changed.
-const getStoredEtag = (url) => _etags.get(url);
-const storeEtag = (url, etag) => _etags.set(url, etag);
-const dropEtag = (url) => _etags.drop(url);
-
-let _refreshPromise = null;
-
-/**
- * Renews the session cookies, once, no matter how many callers ask.
- *
- * This replaces `supabase.auth.refreshSession()`, which was the wrong thing in
- * two separate ways.
- *
- * It refreshed the PROVIDER session held in this tab's memory, and did nothing
- * at all to the cookies — so the credential the server actually authenticates
- * with was never renewed. The access cookie expired on its own, every request
- * after that came back 401, and the app signed the user out with a perfectly
- * good session sitting in the database. Nothing in the app called
- * `/api/auth/session/refresh`; the endpoint existed and had no callers.
- *
- * And it spent a refresh token the SERVER also holds. Supabase retires a
- * refresh token the instant it is used, so a refresh here quietly invalidated
- * the copy sealed into the session row — and presenting a retired token trips
- * the provider's reuse detection, which revokes the whole family and signs the
- * account out everywhere. Custody of that token now belongs to the server
- * alone, and this asks the server to use it.
- *
- * Single-flight because the alternative is a stampede: a route mount fires a
- * dozen requests at once, they all 401 together, and a dozen simultaneous
- * rotations of the same token is indistinguishable from a replay. Everyone
- * waits on the first one.
- */
-function refreshCookieSession() {
-  if (_refreshPromise) return _refreshPromise;
-
-  _refreshPromise = (async () => {
-    try {
-      // A recovery tab holds a one-time credential for the reset page and no
-      // session of its own. Rotating anything on its behalf is meaningless.
-      if (_session.isRecoveryCredential()) return false;
-
-      const url = `${getBackendUrl().replace(/\/+$/, '')}/api/auth/session/refresh`;
-      const res = await fetch(url, {
-        method: 'POST',
-        credentials: 'include',
-        cache: 'no-store',
-        headers: { 'Content-Type': 'application/json' },
-      });
-
-      /**
-       * Three outcomes, not two — and the difference is who gets signed out.
-       *
-       * Only 401 is the server saying the session is over. Everything else is
-       * the server failing to answer: a 429 because the rate limiter lost Redis
-       * and fails closed, a 502 mid-deploy, a gateway timeout. Treating those
-       * as "expired" ends a perfectly good session, and ends it for EVERYONE at
-       * once, because a Redis outage hits every refresh simultaneously and
-       * every tab renews on roughly the same hourly cadence.
-       *
-       * That failure mode is new. Nothing called this endpoint before, so its
-       * `onRedisFailure: 'closed'` policy was inert; making the client actually
-       * use it is what turned a cache outage into a mass sign-out, and this is
-       * what takes it back out.
-       */
-      if (res.status === 401) return 'expired';
-      if (!res.ok) return 'unavailable';
-
-      const body = await res.json().catch(() => null);
-      rememberCsrfToken(body?.csrfToken);
-      return 'renewed';
-    } catch {
-      // Offline, blocked, timed out. Says nothing about the session.
-      return 'unavailable';
-    } finally {
-      _refreshPromise = null;
-    }
-  })();
-
-  return _refreshPromise;
-}
-
-async function request(method, path, body, signal, timeoutMs) {
-  // Session seeding used to be awaited here, because the credential lived in
-  // the provider client and a request issued before it had loaded would have
-  // gone out unauthenticated. The credential is a cookie now: the browser
-  // attaches it with no help from this code and with nothing to wait for, so
-  // every request that is not part of signup's brief bearer window is blocked
-  // on a promise that can no longer change its outcome.
-  //
-  // Still awaited for the paths that genuinely need the bearer token — the
-  // session-adoption call at the end of signup and the profile write beside it
-  // — because for those the header IS the credential.
-  if (!_session.getToken() && _session.whenReady() && isBearerPath(path)) {
-    await _session.whenReady();
-  }
-
-  const token = getToken(); // synchronous
-
-  // No bearer token is no longer fatal.
-  //
-  // Authentication moved to an HttpOnly cookie, which this code cannot see by
-  // design — so "no token in JS" is the normal signed-in state, not an error.
-  // Refusing here would have made every request fail the moment tokens stopped
-  // being kept where scripts can read them. The server decides; a request with
-  // neither credential simply comes back 401.
-
-  const headers = {
-    'Content-Type': 'application/json',
-  };
-
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
-
-  // Send ETag for GET requests — enables 304 Not Modified on unchanged data
-  if (method === 'GET') {
-    const baseUrl = getBackendUrl();
-    const cleanUrl = `${baseUrl.replace(/\/+$/, '')}/${path.replace(/^\/+/, '')}`;
-    const storedEtag = getStoredEtag(cleanUrl);
-    if (storedEtag) headers['If-None-Match'] = storedEtag;
-  }
-
-  // GET: use browser default caching (backend sends Cache-Control).
-  // POST/PATCH/PUT/DELETE: always bypass cache — never stale mutation responses.
-  // `include`, not `same-origin`: the app and the API are different origins in
-  // production, and this is what carries the HttpOnly session cookie. The
-  // backend allows credentials for exactly the configured origins.
-  const options = {
-    method,
-    headers,
-    credentials: 'include',
-    cache: method === 'GET' ? 'default' : 'no-store',
-  };
-
-  // Double-submit CSRF. The cookie ride-along is readable on purpose and is
-  // worthless without the HttpOnly cookie beside it; echoing it in a header is
-  // what proves the request came from our own page rather than from a form on
-  // someone else's site that the browser happened to attach cookies to.
-  if (!SAFE_METHODS.has(method)) {
-    const csrf = csrfHeaderValue();
-    if (csrf) headers['x-csrf-token'] = csrf;
-  }
-  /**
-   * Whether a 401 from this path means anything about the session.
-   *
-   * It does not for the routes below, which are reachable signed out by
-   * design — a shared post, the legal documents, the help centre. A 401 there
-   * is about the resource, and treating it as a dead session would sign a
-   * perfectly valid user out for opening somebody's post link. Rides along on
-   * the options object like `timeoutMs`; `fetch` ignores what it does not know.
-   */
-  options.publicPath = isPublicPath(path);
-
-  if (signal) options.signal = signal;
-  // Per-call deadline, for the few mutations whose UI holds a visible spinner
-  // and where the 30s default is far longer than the user will wait before
-  // deciding the app is broken. Omitted, `_doFetch` applies that default.
-  if (timeoutMs !== undefined) options.timeoutMs = timeoutMs;
-  if (body !== undefined) {
-    if (body instanceof FormData) {
-      delete headers['Content-Type'];
-      options.body = body;
-    } else {
-      options.body = JSON.stringify(body);
-    }
-  }
-
-  // Rebuilt rather than captured, so a retry after failover targets the new
-  // origin instead of the one that just failed.
-  const buildUrl = () => `${getBackendUrl().replace(/\/+$/, '')}/${path.replace(/^\/+/, '')}`;
-  const cleanUrl = buildUrl();
-
-  const send = async () => {
-    try {
-      return await _doFetch(buildUrl(), options);
-    } catch (err) {
-      // A TypeError out of fetch is the unambiguous "could not connect" signal:
-      // DNS failure, connection reset, blocked host. An HTTP error status is a
-      // response and never lands here, so this cannot mask a real 4xx/5xx.
-      const isConnectionFailure = err instanceof TypeError;
-      if (!isConnectionFailure || isApiFailoverActive() || !canFailOver()) throw err;
-      const proxied = await activateFailover();
-      if (!proxied) throw err;
-      return _doFetch(buildUrl(), options);
-    }
-  };
-
-  // In-flight deduplication: GET requests only — share one promise per URL
-  if (method === 'GET') {
-    const inflightKey = cleanUrl;
-    if (_inflight.has(inflightKey)) {
-      return _inflight.get(inflightKey);
-    }
-    const promise = send().finally(() => _inflight.delete(inflightKey));
-    _inflight.set(inflightKey, promise);
-    return promise;
-  }
-
-  return send();
-}
-
-// Requests had no timeout at all: if the API stalled (server down, mid-restart,
-// dead connection) the promise never settled, so every screen sat on its loading
-// state indefinitely with no error and no way to retry.
-const DEFAULT_TIMEOUT_MS = 30_000;
-const UPLOAD_TIMEOUT_MS = 5 * 60_000; // large media needs a far longer window
-
-async function _doFetch(cleanUrl, options, isRetry = false) {
-  const isUpload = typeof FormData !== 'undefined' && options?.body instanceof FormData;
-  const timeoutMs = options?.timeoutMs ?? (isUpload ? UPLOAD_TIMEOUT_MS : DEFAULT_TIMEOUT_MS);
-
-  // A caller-supplied signal means the caller owns cancellation (e.g. the media
-  // pipeline) — don't layer our own abort on top of it.
-  let signal = options?.signal;
-  let timeoutId;
-  if (!signal && timeoutMs > 0 && typeof AbortController !== 'undefined') {
-    const controller = new AbortController();
-    timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-    signal = controller.signal;
-  }
-
-  let res;
-  try {
-    res = await fetch(cleanUrl, { ...options, signal });
-  } catch (err) {
-    if (err?.name === 'AbortError' && !options?.signal) {
-      throw new Error('Request timed out. Please check your connection and try again.');
-    }
-    throw err;
-  } finally {
-    if (timeoutId) clearTimeout(timeoutId);
-  }
-
-  /**
-   * Remember the ETag, but only where a conditional request can actually pay.
-   *
-   * `If-None-Match` is worth sending only when the browser's own HTTP cache
-   * still holds the body — this store keeps tokens, not bodies, so a 304 it
-   * provokes on its own is a wasted round trip and nothing more. A response
-   * marked `no-store` is never held by that cache, so a conditional request for
-   * one is guaranteed to come back 304 with an empty body, every time.
-   *
-   * The session probe and every other auth route are `no-store`, which is how
-   * an optimisation came to sit in front of the boot path and answer it with an
-   * unparseable response.
-   */
-  if (options.method === 'GET' && res.ok) {
-    const etag = res.headers.get('ETag');
-    const cacheable = !/no-store/i.test(res.headers.get('Cache-Control') || '');
-    if (etag && cacheable) storeEtag(cleanUrl, etag);
-    else if (!cacheable) dropEtag(cleanUrl);
-  }
-
-  /**
-   * "Not Modified" — which this client has no way to honour.
-   *
-   * The ETag store keeps tokens and not bodies, so there is nothing here to
-   * serve a 304 from. The conditional request is satisfiable only by the
-   * browser's own HTTP cache, and only when that cache still holds the entry;
-   * when it does not, the 304 arrives with an empty body and fell straight
-   * through to the `!res.ok` branch below as `API error 304`.
-   *
-   * That is invisible until the app and the API share an origin — cross-origin,
-   * `ETag` is not an exposed response header, so nothing is ever stored and no
-   * conditional request is ever made. Same-origin (a deployment serving the API
-   * under its own domain, or this client's own proxy failover) it fires on the
-   * SECOND request for any URL in the tab, which for the session probe means
-   * the second page load: the boot would have read a thrown error as "no
-   * session" and signed the user out on reload. Exactly the class of bug this
-   * whole change exists to remove.
-   *
-   * Dropping the token and re-asking unconditionally is the honest recovery:
-   * one extra round trip, on a request that was only ever an optimisation.
-   */
-  if (res.status === 304 && options.headers?.['If-None-Match']) {
-    dropEtag(cleanUrl);
-    const { 'If-None-Match': _dropped, ...headers } = options.headers;
-    return _doFetch(cleanUrl, { ...options, headers }, isRetry);
-  }
-
-  if (res.status === 401 && !isRetry && !options.publicPath) {
-    // The access cookie is short-lived by design, so a 401 here is the ordinary
-    // end of its life far more often than it is a dead session. Ask the server
-    // to rotate — it holds the refresh token — and replay the request once.
-    //
-    // The retry carries no new Authorization header, and that is deliberate:
-    // the credential is the cookie the server just rewrote, and `credentials:
-    // 'include'` is what sends it.
-    const outcome = await refreshCookieSession();
-    if (outcome === 'renewed') {
-      const retryHeaders = { ...options.headers };
-      if (options.method && !SAFE_METHODS.has(options.method)) {
-        const csrf = csrfHeaderValue();
-        if (csrf) retryHeaders['x-csrf-token'] = csrf;
-      }
-      return _doFetch(cleanUrl, { ...options, headers: retryHeaders }, true);
-    }
-
-    /**
-     * The rotation was REFUSED (401), so the session is genuinely over: revoked
-     * from another device, expired, or the provider retired it.
-     *
-     * `unavailable` deliberately does not land here. Nothing was learned about
-     * the session in that case, so the original 401 simply falls through and
-     * surfaces as an ordinary error for this one request, and the user stays
-     * signed in.
-     *
-     * What this does NOT do any more, and why:
-     *
-     *   • It does not call `supabase.auth.signOut()`. That defaults to GLOBAL
-     *     scope, so one stale 401 in one background request signed the account
-     *     out of every device it was open on — including the one the user was
-     *     sitting at, and including devices belonging to a session that was
-     *     perfectly healthy.
-     *
-     *   • It does not assign `window.location.href`. A full document load threw
-     *     away everything unsaved on the page and raced the router, which was
-     *     already re-rendering the signed-out tree from the same state change.
-     *     Announcing it is enough: AuthContext clears the session and the route
-     *     gates render the public app, in the same tab, without a reload.
-     */
-    if (outcome === 'expired') {
-      clearLocalAuthState();
-      _hooks.onUnauthorized?.();
-    }
-  }
-
-
-
-  if (!res.ok) {
-    let errorMessage = `API error ${res.status}`;
-    let errorCode;
-    let retryAfterFromBody = null;
-    try {
-      const errorBody = await res.json();
-      errorMessage = errorBody?.message || errorMessage;
-      if (typeof errorBody?.retryAfterSeconds === 'number') {
-        retryAfterFromBody = errorBody.retryAfterSeconds;
-      }
-      // Authorization failures carry a machine-readable code (e.g.
-      // COLLEGE_RESTRICTED, PRIVATE) that callers use to pick the right UI
-      // state. The status is attached too so callers can tell "denied" from
-      // "missing" without string-matching the message.
-      errorCode = errorBody?.code;
-    } catch {
-      // Non-JSON error body
-    }
-    const err = new Error(errorMessage);
-    err.status = res.status;
-    if (errorCode) err.code = errorCode;
-
-    // Rate limited. The server sends `code: 'rate_limited'`, a human-readable
-    // message and how long to wait; surface all three rather than letting a
-    // bare "API error 429" reach the UI.
-    //
-    // `retryAfterSeconds` is attached so callers can show a countdown, and so
-    // the React Query retry predicate in main.jsx can decline to retry — a
-    // retried 429 spends another point against the very budget that just
-    // refused, which turns being limited into being limited twice as hard.
-    if (res.status === 429) {
-      err.code = errorCode || 'rate_limited';
-      const headerRetry = Number(res.headers.get('Retry-After'));
-      err.retryAfterSeconds =
-        retryAfterFromBody ??
-        (Number.isFinite(headerRetry) && headerRetry > 0 ? headerRetry : null);
-    }
-
-    // A lifecycle state the SERVER knows about and this tab does not.
-    //
-    // Both gates mount off the cached profile, which is refreshed on sign-in.
-    // So a second tab left open while the account was suspended elsewhere — or
-    // put into its deletion window from the settings screen in the first tab —
-    // holds a stale ACTIVE status, never mounts its gate, and instead shows the
-    // user a stream of generic "403" toasts from every background fetch. Taking
-    // the correction from the response and writing it to the cached profile
-    // makes the right full-screen explanation appear in that tab too, without
-    // waiting for a reload or a re-sync.
-    // A policy update going live while this tab was open is handled by the same
-    // hook: every background request comes back gated, and announcing it is
-    // what makes the consent flow appear in the tab that hit the wall rather
-    // than only in one that happens to boot afterwards. Which codes mean what
-    // is the app's business, not the transport's — see `_hooks` at the top of
-    // this file.
-    if (res.status === 403) {
-      _hooks.onApiErrorCode?.(errorCode);
-    }
-
-    throw err;
-  }
-
-  // 204 No Content
-  if (res.status === 204) return null;
-
-  const text = await res.text();
-  if (!text) return null;
-
-  if (text.trim().startsWith('<')) {
-    throw new Error('API server returned HTML instead of JSON. Please check backend connection and VITE_API_URL setting.');
-  }
-
-  // Globally sanitize dicebear initials avatars from backend responses
-  const sanitizedText = text.replace(/https:\/\/api\.dicebear\.com\/7\.x\/initials\/[^"'\\]+/g, '');
-  try {
-    return JSON.parse(sanitizedText);
-  } catch (err) {
-    /**
-     * A 2xx body that is not JSON and not HTML.
-     *
-     * The guard above only catches markup. A hosting layer that answers with
-     * plain text — Vercel's own 404 is literally `The page could not be
-     * found`, served as text/plain — fell straight through to `JSON.parse`,
-     * and the raw `SyntaxError: Unexpected token 'T', "The page c"... is not
-     * valid JSON` became the error every caller reported. Several of them put
-     * `err.message` directly on screen.
-     *
-     * Converted to one recognisable failure with the body kept on the error
-     * for the console, so callers can show ordinary copy and developers still
-     * get the evidence.
-     */
-    const parseError = new Error('API server returned a malformed response.');
-    parseError.code = 'invalid_response';
-    parseError.status = res.status;
-    parseError.responseSnippet = sanitizedText.slice(0, 200);
-    throw parseError;
-  }
-}
-
-/**
- * Current access token (synchronous). Exposed so raw XHR/fetch flows that bypass
- * `apiClient` (e.g. direct presigned uploads) can authenticate against our own
- * backend endpoints. Never attach this to third-party (R2) presigned URLs.
- */
-export const getAccessToken = () => getToken();
-
-export const apiClient = {
-  get: (path, { signal, timeoutMs } = {}) => request('GET', path, undefined, signal, timeoutMs),
-  post: (path, body, { signal, timeoutMs } = {}) => request('POST', path, body, signal, timeoutMs),
-  patch: (path, body, { signal, timeoutMs } = {}) => request('PATCH', path, body, signal, timeoutMs),
-  put: (path, body, { signal, timeoutMs } = {}) => request('PUT', path, body, signal, timeoutMs),
-  delete: (path, { signal, timeoutMs } = {}) => request('DELETE', path, undefined, signal, timeoutMs),
-};
-
-
-// ──────────────────────────────────────────────
-// Named API helpers
-//
-// The definitions live in `core/api/endpoints.js`, which knows nothing about
-// this file beyond the three things it is handed below. They are re-exported
-// here under their original names so the 107 modules that import them are
-// unaffected — the endpoints became portable, not relocated from the point of
-// view of a caller.
-// ──────────────────────────────────────────────
-
-import { createEndpoints } from '@core/api/endpoints';
-
-const _endpoints = createEndpoints({ apiClient, getToken, getBackendUrl });
-
-export const authApi = _endpoints.authApi;
-export const postsApi = _endpoints.postsApi;
-export const shareApi = _endpoints.shareApi;
-export const linkPreviewApi = _endpoints.linkPreviewApi;
-export const communitiesApi = _endpoints.communitiesApi;
-export const activitiesApi = _endpoints.activitiesApi;
-export const sessionsApi = _endpoints.sessionsApi;
-export const usersApi = _endpoints.usersApi;
-export const dmApi = _endpoints.dmApi;
-export const groupApi = _endpoints.groupApi;
-export const instantMatchApi = _endpoints.instantMatchApi;
-export const messagesApi = _endpoints.messagesApi;
-export const healthApi = _endpoints.healthApi;
-export const uploadsApi = _endpoints.uploadsApi;
-export const campusEventsApi = _endpoints.campusEventsApi;
-export const notificationsApi = _endpoints.notificationsApi;
-export const searchApi = _endpoints.searchApi;
-export const reportsApi = _endpoints.reportsApi;
-export const legalApi = _endpoints.legalApi;
-export const supportApi = _endpoints.supportApi;
+export const authApi = endpoints.authApi;
+export const postsApi = endpoints.postsApi;
+export const shareApi = endpoints.shareApi;
+export const linkPreviewApi = endpoints.linkPreviewApi;
+export const communitiesApi = endpoints.communitiesApi;
+export const activitiesApi = endpoints.activitiesApi;
+export const sessionsApi = endpoints.sessionsApi;
+export const usersApi = endpoints.usersApi;
+export const dmApi = endpoints.dmApi;
+export const groupApi = endpoints.groupApi;
+export const instantMatchApi = endpoints.instantMatchApi;
+export const messagesApi = endpoints.messagesApi;
+export const healthApi = endpoints.healthApi;
+export const uploadsApi = endpoints.uploadsApi;
+export const campusEventsApi = endpoints.campusEventsApi;
+export const notificationsApi = endpoints.notificationsApi;
+export const searchApi = endpoints.searchApi;
+export const reportsApi = endpoints.reportsApi;
+export const legalApi = endpoints.legalApi;
+export const supportApi = endpoints.supportApi;

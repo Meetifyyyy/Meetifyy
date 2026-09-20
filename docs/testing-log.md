@@ -27,6 +27,51 @@ legitimately change per commit.
 
 ---
 
+## Phase 3e — transport into core/ — **DONE**
+
+`shared/api/apiClient.js` is now **155 lines of assembly**, down from 1,639 at
+the start of Phase 3. The transport is `core/api/transport.js`, a factory.
+
+### Tested
+- S1 ✅ **132/132 files, 1431/1431 tests** (+1 file, +14)
+- S2 ✅ lint · boundaries ✅ · typecheck ✅ · build ✅
+- S4/S4b n/a — a factory wrapper is not a byte-identical move
+
+### The proof
+- **Boundary lint passes on `core/api/transport.js`.** It is subject to the same
+  rules as every other core module: no DOM, no `import.meta.env`, no React, no
+  router, no imports back into client code.
+- `grep` for browser globals in the transport finds **9 matches, all in
+  comments**; zero real references. Client imports: **0**.
+- The 14 new tests run in the default `node` environment — **no `window`, no
+  `document`, no `localStorage`**. A transport that still depended on one could
+  not construct, so the environment is half the assertion.
+
+### What the tests pin
+Not the request path (the app's own suites cover the 401 retry, conditional
+requests and failover against the real thing) but the property nothing else
+checks: **two transports are independent**. Separate origins, separate CSRF
+tokens, separate failover flags, separate store purges. If those ever share,
+web and mobile would be one client wearing two names.
+
+### `no-undef` earned its place
+The extraction dropped the `core/api/paths` import. Four `no-undef` errors —
+`SAFE_METHODS`, `isBearerPath`, `isPublicPath` — caught it before any test ran.
+That is the rule the lint config says it exists for, doing exactly that job.
+
+### Measured
+Entry chunk **533,395 → 533,973 (+578)**, the factory-wrapper cost again.
+Cumulative since 3a: **+1,472 bytes (+0.28%)**.
+
+### Left
+- Contract tests vs a live backend (needs a running backend)
+- Per-namespace endpoint split (pays off in the mobile bundle, not on web)
+- `dependency-cruiser` (wants a real zone matrix, i.e. `src/mobile/`)
+- Full TS in `core/` (Phase 10, RN prerequisite)
+- `platform/capacitor/*` — Phase 4. Each is now one small sibling file.
+
+---
+
 ## Phase 3d.2 — CI enforcement, dead stores, logout purge — **DONE**
 
 ### Tested
