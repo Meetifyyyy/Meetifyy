@@ -1,0 +1,41 @@
+{
+  // TypeScript covers exactly two files, and that is deliberate.
+  //
+  // The frontend is ~109k lines of JavaScript and converting it buys nothing
+  // this programme needs. What it does need is that the two CONTRACTS shared
+  // between clients — the platform capability interfaces and the router-
+  // independent Intent — are checked rather than described. Both are consumed
+  // by implementations that never import each other, so nothing at runtime can
+  // catch a mismatch between them.
+  //
+  // `include` is an allowlist, not a directory. Widening it is a decision, not
+  // an accident: adding a third file here should be argued for the same way
+  // these two were. Full `core/` conversion is Phase 10 (RN-readiness), where
+  // it is a prerequisite because Metro and RN tooling assume it.
+  //
+  // Vite compiles `.ts` through esbuild with no configuration, so this file is
+  // only for `tsc --noEmit` in CI and in an editor. It is not part of the build.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "types": [],
+
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": false,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+
+    "noEmit": true,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "allowJs": false
+  },
+  "include": [
+    "src/platform/contracts.ts",
+    "src/core/navigation/intents.ts"
+  ]
+}

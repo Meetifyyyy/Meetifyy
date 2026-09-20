@@ -213,6 +213,7 @@ docs/*
 !docs/operations.md
 !docs/rate-limiting.md
 !docs/first-year-isolation.md
+!docs/testing-log.md
 
 diff_*.txt
 all_files.txt
