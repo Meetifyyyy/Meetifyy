@@ -27,6 +27,52 @@ legitimately change per commit.
 
 ---
 
+## Phase 3c — route policy, media URLs, ApiOrigin seam — **DONE**
+
+Moved `PUBLIC_PATHS`/`BEARER_PATHS`/`SAFE_METHODS` and the media-URL helpers
+into `core/`, and put every `window.location` question behind
+`platform/web/apiOrigin.js`.
+
+### Tested
+- S1 ✅ **128/128 files, 1397/1397 tests** (+2 files, +50)
+- S2 ✅ eslint clean  · S3 ✅ build  · typecheck ✅ exit 0
+- S4 / S4b ❌ neither applies — `getMediaUrl` was restructured, not moved.
+  Verified by behaviour tests instead (50 new assertions).
+- Boundary lint ✅ `core/api/paths.js`, `core/api/media.js` clean
+
+### B1 — second instance found and closed
+`getMediaUrl` contained the **same** `window.location.hostname` reasoning as
+`directBackendUrl`. In a WebView the page hostname is `localhost`, so every
+private-origin media URL would have been rewritten to
+`capacitor://localhost:4000/…` and every such image would have failed. Now a
+platform decision (`ApiOrigin.privateMediaTarget()`), with an explicit
+regression test asserting a native client never produces a localhost URL.
+
+### Test fixed, not worked around
+`src/config/__tests__/publicPostAccess.test.js` asserted by **slicing the source
+text** of `apiClient.js` for `const PUBLIC_PATHS = [`. Moving the list broke it.
+Rewritten to call `isPublicPath()` — which is what it actually cared about, and
+which would also have caught a rename that kept behaviour correct. Negative
+cases added.
+
+### Measured, accepted
+Entry chunk **533,183 → 533,787 (+604)**. Cumulative from Phase 3a: **+1,286
+bytes (+0.24%)**.
+
+### Left / not covered
+- **Transport still coupled to Supabase, legal-consent and account-status
+  correction.** Those live in the 401 path and the module-scope auth listener;
+  not touched.
+- `platform/web/keyValue.js` not written — the ETag store is still direct
+  `sessionStorage`. Note the contract mismatch found here: `KeyValueStore` is
+  async, but the ETag read is in the synchronous request hot path, so a native
+  implementation needs an in-memory cache hydrated at boot rather than a bridge
+  call per request.
+- No `platform/capacitor/apiOrigin.js` yet — that is Phase 4, and it is now a
+  single small file rather than a change to the transport.
+
+---
+
 ## Phase 3b — apiClient split — **DONE**
 
 The 20 endpoint namespaces moved out of `shared/api/apiClient.js` into

@@ -96,6 +96,32 @@ export interface ApiOrigin {
    * fall back to inside a bundled app.
    */
   fallbackBaseUrl(): string | null;
+
+  /**
+   * What to do with a media URL that names a PRIVATE origin.
+   *
+   * Stored media carries the API origin of whichever machine wrote it, so
+   * anything uploaded during local development names a LAN address, a Tailscale
+   * address or a `.local` name. Serving one to a public page is not merely a
+   * dead image — the browser treats it as the site reaching into the viewer's
+   * own network, and Chrome 138+ prompts about exactly that.
+   *
+   * Three honest answers, and the caller cannot work out which without knowing
+   * the platform:
+   *   `{ kind: 'local', base }` — this client is itself on that network, so
+   *       rewrite to `base` and the image resolves.
+   *   `{ kind: 'api' }` — this client is not, so the private origin is
+   *       unreachable and the configured API is the only other option.
+   *   `null` — this client cannot tell (no location at all), so leave the URL
+   *       alone rather than guess.
+   *
+   * A native client returns `{ kind: 'api' }` unconditionally. This is the
+   * second place the old `window.location.hostname` derivation went wrong
+   * inside a WebView: the page origin is `localhost`, which reads as "on the
+   * local network", so every private media URL would have been rewritten to
+   * `capacitor://localhost:4000/...` and every such image would break.
+   */
+  privateMediaTarget(): { kind: 'local'; base: string } | { kind: 'api' } | null;
 }
 
 /** Online/offline, replacing `navigator.onLine`, which is unreliable in a WebView. */

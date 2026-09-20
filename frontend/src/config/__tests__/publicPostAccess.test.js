@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isKnownAppRoute, normalisePathname } from '../seo';
+import { isPublicPath } from '@core/api/paths';
 
 /**
  * The two gates a shared post link has to pass on the client, both of which
@@ -57,14 +58,23 @@ describe('a signed-out visitor can reach a shared post', () => {
 
   it('lets the API client call the share endpoint without a session', () => {
     // `request` refuses to send at all when there is no access token unless the
-    // path is on this list — so a visitor arriving from WhatsApp, who by
-    // definition has no session, got "Unauthorized: Missing access token"
-    // before a single byte reached the network.
-    const apiClient = read('src/shared/api/apiClient.js');
-    const publicPaths = apiClient.slice(
-      apiClient.indexOf('const PUBLIC_PATHS = ['),
-      apiClient.indexOf('function isPublicPath'),
-    );
-    expect(publicPaths).toContain("'/api/share'");
+    // path is public — so a visitor arriving from WhatsApp, who by definition
+    // has no session, got "Unauthorized: Missing access token" before a single
+    // byte reached the network.
+    //
+    // This used to slice the source text of apiClient.js looking for
+    // `const PUBLIC_PATHS = [`. That broke the moment the list moved to
+    // core/api/paths.js — and it would have broken just as silently if someone
+    // had renamed the constant while keeping the behaviour correct, which is
+    // the wrong way round for a regression test. Asking the predicate is both
+    // more direct and immune to where the list happens to live.
+    expect(isPublicPath('/api/share')).toBe(true);
+    expect(isPublicPath('/api/share/post/abc/preview')).toBe(true);
+
+    // The negative half matters as much: if everything were public the gate
+    // would be useless, and this is the assertion that would catch a
+    // too-permissive prefix rule.
+    expect(isPublicPath('/api/posts/feed')).toBe(false);
+    expect(isPublicPath('/api/legal/consent')).toBe(false);
   });
 });

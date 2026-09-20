@@ -14,6 +14,29 @@ import {
   LEGAL_ACK_REQUIRED_CODE,
 } from '@shared/lib/legalConsent';
 import { config } from '@config';
+import { SAFE_METHODS, isBearerPath, isPublicPath } from '@core/api/paths';
+import {
+  createMediaUrls,
+  deriveThumbnailKey as _deriveThumbnailKey,
+  getPastelBgColor as _getPastelBgColor,
+  normalizeDicebearUrl as _normalizeDicebearUrl,
+} from '@core/api/media';
+import { createWebApiOrigin } from '@platform/web/apiOrigin';
+
+/**
+ * This module is the web client's composition root for the API layer.
+ *
+ * It is the one place allowed to know both halves: the portable pieces in
+ * `core/api/*`, which are handed their dependencies, and the browser-specific
+ * ones in `platform/web/*`, which supply them. A mobile client will have its
+ * own file doing the same job with `platform/capacitor/*`, and the core modules
+ * will not know the difference.
+ *
+ * Built once, at module scope, because that is where this file already lives in
+ * the web app's lifetime — not because a singleton is the design. The core
+ * modules are factories precisely so that a second client builds its own.
+ */
+const _apiOrigin = createWebApiOrigin({ config });
 
 // ── Token cache ──────────────────────────────────────────────────────────────
 // Seeded on module load; refreshed instantly on every auth state change.
@@ -94,8 +117,6 @@ function csrfHeaderValue() {
   return _csrfToken || readCsrfCookie();
 }
 
-/** Methods the server never asks for a CSRF header on. */
-const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
 /**
  * Drops everything in this tab that belonged to the session.
@@ -196,8 +217,7 @@ let _useProxyOrigin = (() => {
 export const isApiFailoverActive = () => _useProxyOrigin;
 
 function sameOriginProxyBase() {
-  if (typeof window === 'undefined' || !window.location) return '';
-  return `${window.location.origin}${API_PROXY_PREFIX}`;
+  return _apiOrigin.fallbackBaseUrl() || '';
 }
 
 /**
@@ -207,15 +227,7 @@ function sameOriginProxyBase() {
  * is no proxy to fall back to.
  */
 function canFailOver() {
-  if (typeof window === 'undefined' || !window.location) return false;
-  if (isLocalHost(window.location.hostname)) return false;
-  const direct = directBackendUrl();
-  if (!direct) return false;
-  try {
-    return new URL(direct).host !== window.location.host;
-  } catch {
-    return false;
-  }
+  return _apiOrigin.canFailOver();
 }
 
 /**
@@ -248,181 +260,45 @@ function activateFailover() {
   return _failoverProbe;
 }
 
-const isLocalHost = (host) => host === 'localhost' || host === '127.0.0.1';
-
-const isLocalNetworkHost = (host) =>
-  isLocalHost(host) ||
-  /^(192\.168\.|10\.|100\.|172\.(1[6-9]|2[0-9]|3[0-1])\.|.+\.local$)/.test(host) ||
-  /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host);
-
 /**
- * The API origin, entirely from configuration.
+ * Where the API is.
  *
- * A page served from localhost, Tailscale (100.x.x.x) or a LAN IP talks to a
- * backend on that same host — that is what makes testing from a phone on the
- * same Wi-Fi work. The behaviour and the port are both configurable
- * (VITE_API_PREFER_LOCAL, VITE_API_LOCAL_PORT); everywhere else the configured
- * VITE_API_URL is used verbatim.
+ * The browser-specific reasoning — is this page on a private network, may an
+ * http origin be upgraded, is there a same-origin proxy — moved to
+ * `platform/web/apiOrigin.js` so that a client running somewhere other than a
+ * browser tab can answer the same questions differently. Inside a Capacitor
+ * WebView the page hostname is `localhost`, which the old inline version read
+ * as "on the local network"; a native implementation returns the configured
+ * origin and probes nothing.
+ *
+ * The failover state machine stays here: it is transport behaviour, not a
+ * property of the platform.
  */
-const directBackendUrl = () => {
-  const { baseUrl, localPort, preferLocalBackend } = config.api;
-
-  if (preferLocalBackend && typeof window !== 'undefined' && window.location?.hostname) {
-    const { hostname, protocol } = window.location;
-    if (isLocalNetworkHost(hostname)) {
-      return `${protocol}//${hostname}:${localPort}`;
-    }
-  }
-
-  if (!baseUrl) {
-    // No API origin configured: same-origin (the dev server proxy, or a
-    // deployment that serves the API under its own domain).
-    return '';
-  }
-
-  // A secure page cannot call an insecure origin; upgrade rather than fail.
-  if (
-    typeof window !== 'undefined' &&
-    window.location?.protocol === 'https:' &&
-    baseUrl.startsWith('http://') &&
-    !isLocalHost(new URL(baseUrl).hostname)
-  ) {
-    return baseUrl.replace(/^http:\/\//i, 'https://');
-  }
-
-  return baseUrl;
-};
+const directBackendUrl = () => _apiOrigin.baseUrl();
 
 export const getBackendUrl = () => (_useProxyOrigin ? sameOriginProxyBase() : directBackendUrl());
 
-const PASTEL_BG_COLORS = ['b6e3f4', 'c084fc', 'fde047', '86efac', 'fca5a5', 'fdba74', 'a5f3fc', 'f472b6'];
-
-export const getPastelBgColor = (seed = '') => {
-  let hash = 0;
-  for (let i = 0; i < seed.length; i++) {
-    hash = (hash << 5) - hash + seed.charCodeAt(i);
-    hash |= 0;
-  }
-  return PASTEL_BG_COLORS[Math.abs(hash) % PASTEL_BG_COLORS.length];
-};
-
-export const normalizeDicebearUrl = (url) => {
-  if (!url || typeof url !== 'string') return url;
-  if (!url.includes('api.dicebear.com/')) return url;
-
-  // Preserve existing backgroundColor parameter if already defined on the avatar URL
-  if (url.includes('backgroundColor=')) {
-    return url;
-  }
-
-  const bg = 'b6e3f4';
-  const joinChar = url.includes('?') ? '&' : '?';
-  return `${url}${joinChar}backgroundColor=${bg}`;
-};
-
-export const getMediaUrl = (pathOrUrl) => {
-  if (!pathOrUrl || typeof pathOrUrl !== 'string') return '';
-
-  let finalUrl = pathOrUrl;
-
-  if (finalUrl.includes('api.dicebear.com/')) {
-    finalUrl = normalizeDicebearUrl(finalUrl);
-  }
-
-  /**
-   * Stored media URLs may carry the API origin of whichever machine wrote them,
-   * which for anything created during local development is a private address.
-   * Serving one to a public page is not just a dead image: the browser treats it
-   * as the site reaching into the viewer's own network.
-   *
-   * This used to match one hardcoded shape, `localhost` or `127.0.0.1` on
-   * exactly `localPort`. Anything else a developer's machine produces — a LAN
-   * IP like 192.168.1.5, a Tailscale 100.x address, a `.local` name, or the same
-   * host on a different port — did not match, passed through untouched, and was
-   * handed to an <img> on the deployed site. Chrome 138+ answers that with the
-   * "wants to access other devices on your local network" prompt, which is what
-   * surfaced this; older browsers just made the request silently.
-   *
-   * So the test is now "is this origin private at all", using the same predicate
-   * that decides where the API lives, and there are only two honest outcomes:
-   * rewrite it to an origin this client can actually reach, or drop it. Handing
-   * back a private URL is never one of them.
-   */
-  if (typeof window !== 'undefined' && window.location?.hostname) {
-    const { hostname, protocol } = window.location;
-    let parsed = null;
-    if (/^https?:\/\//i.test(finalUrl)) {
-      try { parsed = new URL(finalUrl); } catch { parsed = null; }
-    }
-
-    if (parsed && isLocalNetworkHost(parsed.hostname)) {
-      const pathAndQuery = `${parsed.pathname}${parsed.search}`;
-
-      if (isLocalNetworkHost(hostname)) {
-        // The page is itself on the local network (a developer's machine, or a
-        // phone on the same Wi-Fi). The backend is on this host, whichever
-        // address the URL was written with.
-        finalUrl = `${protocol}//${hostname}:${config.api.localPort}${pathAndQuery}`;
-      } else {
-        // A public page. The private origin is unreachable from here for
-        // everyone except the machine that wrote it, so the only options are
-        // the configured API or nothing.
-        const backend = getBackendUrl();
-        if (!backend) return '';
-        finalUrl = `${backend}${pathAndQuery}`;
-      }
-    }
-  }
-
-  if (finalUrl.startsWith('http://') || finalUrl.startsWith('https://') || finalUrl.startsWith('data:') || finalUrl.startsWith('blob:')) {
-    return finalUrl;
-  }
-  // Anything reaching here is treated as a media key and turned into
-  // /api/media/<key>. Guard against values that cannot be one: a stray initial
-  // or label produced requests like GET /api/media/H, which the backend
-  // answered with 400 on every render. A real key always carries a path
-  // separator or a file extension.
-  const candidate = finalUrl.replace(/^\/+/, '');
-  const looksLikeMediaKey = candidate.includes('/') || /\.[a-z0-9]{2,5}$/i.test(candidate);
-  if (!looksLikeMediaKey) return '';
-
-  const cleanPath = finalUrl.startsWith('/api/media/')
-    ? finalUrl
-    : `/api/media/${candidate}`;
-  const backendUrl = getBackendUrl();
-  return `${backendUrl.replace(/\/+$/, '')}${cleanPath}`;
-};
-
 /**
- * Derives the object key of an image's lightweight thumbnail variant from the
- * original's key/URL, using the convention `<folder>/<name>.<ext>` ->
- * `<folder>/<name>_thumb.webp`. Returns null for anything that isn't one of our
- * own uploaded R2/media images (external URLs, data/blob URLs, already-a-thumb),
- * so callers can fall back to the original safely.
+ * Media URL resolution lives in `core/api/media.js`.
+ *
+ * Three of these are pure and are re-exported unchanged. `getMediaUrl` is built
+ * over the same platform seam as the API origin, because "can this client reach
+ * a private address" is the same question in both places — and it was wrong in
+ * both places inside a WebView, where every LAN-origin image would have been
+ * rewritten to `capacitor://localhost:4000`.
+ *
+ * Re-exported under their original names so the modules importing them from
+ * here are untouched.
  */
-export const deriveThumbnailKey = (rawSrc) => {
-  if (!rawSrc || typeof rawSrc !== 'string') return null;
-  let key = rawSrc.trim();
-  if (key.startsWith('data:') || key.startsWith('blob:')) return null;
+export const getPastelBgColor = _getPastelBgColor;
+export const normalizeDicebearUrl = _normalizeDicebearUrl;
+export const deriveThumbnailKey = _deriveThumbnailKey;
 
-  // Full external URLs that aren't our media endpoint are not derivable.
-  if ((key.startsWith('http://') || key.startsWith('https://'))) {
-    const m = key.match(/\/api\/media\/(.+)$/);
-    if (!m) return null;
-    key = m[1];
-  } else if (key.includes('/api/media/')) {
-    const m = key.match(/\/api\/media\/(.+)$/);
-    if (m) key = m[1];
-  }
-  key = key.split('?')[0].replace(/^\/+/, '');
-
-  // Only derive for our folder/uuid.ext keys; skip if it's already a thumbnail.
-  if (/_thumb\.[a-z0-9]+$/i.test(key)) return null;
-  const match = key.match(/^([a-z0-9_-]+)\/([A-Za-z0-9._-]+)\.(webp|jpe?g|png|gif|mp4|webm|ogv|mov)$/i);
-  if (!match) return null;
-  const [, folder, name] = match;
-  return `${folder}/${name}_thumb.webp`;
-};
+const { getMediaUrl: _getMediaUrl } = createMediaUrls({
+  apiOrigin: _apiOrigin,
+  getBackendUrl: (...args) => getBackendUrl(...args),
+});
+export const getMediaUrl = _getMediaUrl;
 
 /**
  * The bearer token, when this tab happens to hold one.
@@ -539,78 +415,6 @@ function refreshCookieSession() {
   })();
 
   return _refreshPromise;
-}
-
-const PUBLIC_PATHS = [
-  // Signup and its confirmation-code resend. Both are made before the account
-  // has a session by definition — that is the whole point of the step — and
-  // `/api/auth/signup` also covers `/api/auth/signup/resend` by prefix.
-  '/api/auth/signup',
-  '/api/auth/login',
-  '/api/health',
-  // These are called during signup before the user has a session
-  '/api/auth/check-username',
-  '/api/auth/check-email',
-  // Forgot password. The person asking is by definition signed out, so without
-  // this entry `request` refuses the call before a byte reaches the network and
-  // the reset screen fails for everyone who actually needs it.
-  '/api/auth/request-password-reset',
-  '/api/auth/account-exists',
-  // The help centre and the support-request form. These have to work for a
-  // signed-out visitor — someone locked out of their account is exactly the
-  // person who needs them — so without this entry `request` rejects every call
-  // with "Missing access token" before a single byte reaches the network, and
-  // the public Help & Support page can never load its content.
-  '/api/support',
-  // Public reference data: signup needs the catalog before a session exists,
-  // and colleges are required for the college-selection step of signup.
-  // The backend controller marks both as deliberately unauthenticated.
-  '/api/academics/catalog',
-  '/api/academics/colleges',
-  // The public view of a shared post. A visitor arriving from a link on
-  // WhatsApp has no session by definition, and without this entry `request`
-  // rejects the call before a byte reaches the network — which presented every
-  // valid shared link as "post not found", indistinguishably from a genuinely
-  // private one. The server applies the real gate (see
-  // backend/src/share/share-preview.service.ts); this list only decides whether
-  // the browser is willing to ask.
-  '/api/share',
-  // The published legal documents. The Terms and Privacy pages are linked from
-  // the landing footer and the signup form, so the reader is signed out by
-  // definition — and a user held behind the mandatory-acknowledgement gate has
-  // to be able to read the document they are being asked to accept. Without
-  // this entry `request` rejects both cases with "Missing access token" before
-  // a byte reaches the network, and the page renders its error state.
-  //
-  // Only the two document routes. `/api/legal/consent` is deliberately NOT
-  // here: it is about a specific user and must carry their token.
-  '/api/legal/documents',
-  // "Bring Meetifyy to your campus" on the landing page. The person asking for
-  // their college to be added has, by definition, no account yet — that is the
-  // entire point of the form. The server treats this route as public too (see
-  // AuthController.requestCollege: rate limiting only, no JwtGuard), so
-  // without this entry `request` would refuse the call before a byte reached
-  // the network and the form could never work for its actual audience.
-  '/api/auth/request-college',
-];
-
-/**
- * Paths that authenticate with the bearer token rather than the cookie.
- *
- * Only the handover at the end of signup. `verifyOtp` answers with a provider
- * session and no cookies exist yet, so these two calls are the one place where
- * waiting for the token to be in hand still decides whether the request works.
- */
-const BEARER_PATHS = ['/api/auth/session/adopt', '/api/users/me'];
-
-function isBearerPath(path) {
-  const clean = path.startsWith('/') ? path : `/${path}`;
-  return BEARER_PATHS.some((p) => clean === p || clean.startsWith(`${p}?`));
-}
-
-function isPublicPath(path) {
-  const clean = path.startsWith('/') ? path : `/${path}`;
-  return PUBLIC_PATHS.some(p => clean === p || clean.startsWith(`${p}?`) || clean.startsWith(`${p}/`));
 }
 
 async function request(method, path, body, signal, timeoutMs) {
