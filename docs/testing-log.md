@@ -15,6 +15,7 @@ means not done.
 | S2 | Lint | `cd frontend && npm run lint` | clean |
 | S3 | Build succeeds | `cd frontend && npm run build` | exit 0 |
 | S4 | **Web bundle unchanged** | build before + after, `find dist/assets -type f \| sort \| xargs sha256sum` | 153 files, identical names + sha256 |
+| S4b | *(when S4 cannot apply)* moved-code identity | diff the moved region against `git show <parent>:<file>` after undoing the mechanical edits | byte-identical |
 | S5 | Precache manifest unchanged | read the PWA line in build output | 195 entries, 5564.13 KiB |
 | S6 | No unintended tracked-file churn | `git status --short` | only the files the phase intends |
 
@@ -23,6 +24,49 @@ the build version is a commit SHA stamped into **HTML**, not into JS — so a
 byte-identical `dist/assets` proves the change did not alter the module graph.
 Do **not** compare `dist/*.html`, `public/version.json` or `vercel.json`; all
 legitimately change per commit.
+
+---
+
+## Phase 3b — apiClient split — **DONE**
+
+The 20 endpoint namespaces moved out of `shared/api/apiClient.js` into
+`core/api/endpoints.js` as a factory over an injected transport. The transport
+stays where it is: it is the half that reaches into Supabase, the config object,
+the legal-consent bus and account-status correction.
+
+**S4 does not apply to this phase and that is not a pass.** Splitting a module
+changes the module graph, so 81 of 153 chunk hashes changed. S4b was used
+instead.
+
+### Tested
+- S1 ✅ **126/126 files, 1347/1347 tests** (+1 file, +8)
+- S2 ✅ eslint clean
+- S3 ✅ build exit 0
+- **S4b ✅ endpoint bodies BYTE-IDENTICAL** — 652 lines, verified by undoing the
+  two mechanical edits (drop `export `, indent 2) and diffing against
+  `git show phase3/core-extraction:…/apiClient.js`
+- Public surface ✅ **20 namespaces / 191 methods, identical**
+- S5 ⚠️ 195 entries, **5564.80 KiB (was 5564.13, +0.67)**
+- S6 ✅ only intended files
+- Boundary lint ✅ `core/api/endpoints.js` clean — proof the endpoints were
+  genuinely portable
+- typecheck ✅ exit 0
+
+### Measured regression, accepted
+Entry chunk **532,501 → 533,183 bytes (+682, +0.13%)**. The 20 namespaces were
+individually tree-shakeable module bindings; they now return together from one
+factory, so none can be shaken alone. Recoverable by splitting
+`endpoints.js` into one file per namespace — worth doing when the **mobile**
+bundle needs it (it will construct only what it uses), not for 682 bytes on web.
+
+### Left / not covered
+- Transport still in the legacy zone, still coupled to Supabase / `@config` /
+  legal-consent / account-status. Inverting those is what a second client needs
+  and is **not** done.
+- `platform/web/` adapters (`keyValue`, `csrfCookie`, `apiOrigin`) not written
+- No contract tests against the real backend yet
+- 107 importers unchanged by design — they still import from
+  `@shared/api/apiClient`, which re-exports all 20
 
 ---
 

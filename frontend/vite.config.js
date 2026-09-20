@@ -359,6 +359,13 @@ export default defineConfig(({ mode }) => {
      * drift into disagreeing about what an import path means.
      */
     alias: {
+      // Portable layers first, because they are the ones whose direction
+      // matters: client code may import these, and neither may import client
+      // code back. That rule is enforced in eslint.config.js, not here — an
+      // alias grants access, it cannot withhold it.
+      '@core':      path.resolve(__dirname, 'src/core'),
+      '@platform':  path.resolve(__dirname, 'src/platform'),
+
       '@config':    path.resolve(__dirname, 'src/config'),
       '@stores':    path.resolve(__dirname, 'src/shared/stores'),
       '@shared':    path.resolve(__dirname, 'src/shared'),

@@ -8,6 +8,8 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
+      '@core': path.resolve(root, 'src/core'),
+      '@platform': path.resolve(root, 'src/platform'),
       '@config': path.resolve(root, 'src/config'),
       '@stores': path.resolve(root, 'src/shared/stores'),
       '@shared': path.resolve(root, 'src/shared'),
