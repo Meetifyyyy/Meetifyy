@@ -25,12 +25,21 @@ Nothing below has been verified. Grouped by what unblocks it.
 | D9 | Offline launch | Must not be a blank screen (Apple 4.2 / 2.1). |
 | D10 | `navigator.serviceWorker.getRegistrations()` → `[]` on device | Build-time exclusion proven in a browser, not on iOS/Android. |
 
-### Needs Android Studio / Xcode
+### Needs the phone to authorise USB debugging
+The toolchain is installed and a **debug APK is built** (see *Building the dev
+APK* below). A phone is plugged in, but `adb` reports it as `unauthorized` —
+nothing can be installed until the **"Allow USB debugging?"** prompt on the
+phone is accepted.
+
 | # | Test |
 |---|---|
-| C2 | App launches on Android (`npm run mobile:android`) |
-| C3 | App launches on iOS (`npm run mobile:ios`, macOS only) |
+| C2 | App launches on Android |
 | C4 | Deep link opens the right screen |
+
+### Needs a Mac
+| # | Test |
+|---|---|
+| C3 | App launches on iOS (`npm run mobile:ios`) |
 
 *C1 (`npx cap sync` succeeds) — **✅ done**, see the Phase 6a entry.*
 
@@ -48,7 +57,8 @@ Nothing below has been verified. Grouped by what unblocks it.
 |---|---|
 | Capacitor packages | ✅ installed (core, cli, android, ios — all 8.5.2) |
 | `android/` `ios/` projects | ✅ created, `cap sync` passes |
-| Built and run on a device | **no** — needs Android Studio / Xcode |
+| Debug APK built | ✅ `local/apk/meetifyy-debug.apk` (7.4 MB, gitignored) |
+| Installed and run on a device | **no** — phone shows `unauthorized`, awaiting the on-device prompt |
 | Push notifications | nothing — no plugin, no `PushToken` table, no sender |
 | Native back button | handler written, never wired to `@capacitor/app` |
 | Secure token storage | no implementation; blocked on D2 |
@@ -60,6 +70,47 @@ Nothing below has been verified. Grouped by what unblocks it.
 | Crash reporting | `VITE_SENTRY_DSN` exists, nothing reads it |
 | Web e2e / native e2e | none |
 | Pushed to remote | **no** — all commits local |
+
+---
+
+## Building the dev APK
+
+The toolchain lives **outside the repo**, under `~/.local/android/` (no root, no
+system directories touched):
+
+| Piece | Path | Note |
+|---|---|---|
+| JDK 21 | `~/.local/android/jdk21` | Capacitor 8 compiles at source level 21. JDK 17 fails with `invalid source release: 21`. |
+| Android SDK | `~/.local/android/sdk` | cmdline-tools + platform-tools + `android-36` + `build-tools;36.0.0` |
+
+`frontend/android/local.properties` points Gradle at that SDK and is gitignored.
+Android Studio is **not** installed — the command-line SDK builds the same APK,
+and no IDE is needed for `assembleDebug` + `adb install`.
+
+```bash
+export JAVA_HOME=~/.local/android/jdk21
+export ANDROID_HOME=~/.local/android/sdk
+export PATH="$JAVA_HOME/bin:$PATH"
+cd frontend && npm run build:mobile:dev && npx cap sync android
+cd android && ./gradlew assembleDebug
+cp app/build/outputs/apk/debug/app-debug.apk ../../local/apk/meetifyy-debug.apk
+```
+
+**Use `build:mobile:dev`, not `build:mobile`.** `vite build` defaults to
+production mode, which loads `.env.production` and would bake the **production**
+API origin into a debug APK. `--mode development` loads `.env` only.
+
+Verified in the current APK: `VITE_APP_ENV=development`, the API origin equals
+`.env`'s `VITE_API_URL`, no `localhost:4000`, no service worker, no landing page.
+Only `VITE_`-prefixed keys are inlined — no server secrets.
+
+Install once the phone is authorised:
+
+```bash
+adb install -r local/apk/meetifyy-debug.apk
+```
+
+Logs while it runs: `adb logcat | grep -i -E 'chromium|capacitor|meetifyy'`
 
 ---
 
