@@ -179,3 +179,68 @@ describe('createTransport — takes its answers from the platform', () => {
     expect(clear).toHaveBeenCalledOnce();
   });
 });
+
+/**
+ * The native client's credential is a bearer token plus the session it belongs
+ * to. The API refuses the token without the id — deliberately, because a token
+ * that names no session cannot be revoked — so a transport that sends one
+ * without the other produces an app that cannot authenticate at all.
+ *
+ * These run against `fetch`, because the header is only interesting on the
+ * wire.
+ */
+describe('createTransport — the native session header', () => {
+  const capture = () => {
+    const calls = [];
+    globalThis.fetch = vi.fn(async (url, init) => {
+      calls.push({ url, init });
+      return {
+        ok: true,
+        status: 200,
+        headers: { get: () => null },
+        json: async () => ({}),
+        text: async () => '',
+      };
+    });
+    return calls;
+  };
+
+  it('sends x-session-id beside the bearer token', async () => {
+    const calls = capture();
+    const { t } = build({
+      session: { getToken: () => 'access-1', getSessionId: () => 'session-1' },
+    });
+
+    await t.apiClient.get('/api/notifications/unread-count');
+
+    const { headers } = calls[0].init;
+    expect(headers['Authorization']).toBe('Bearer access-1');
+    expect(headers['x-session-id']).toBe('session-1');
+  });
+
+  /**
+   * Web has no `getSessionId`: its session id is an HttpOnly cookie the browser
+   * attaches itself. The header must simply not appear, rather than appear
+   * empty — an empty one would be a tampered request to the guard.
+   */
+  it('omits the header entirely for a client that has no session id', async () => {
+    const calls = capture();
+    const { t } = build({ session: { getToken: () => 'access-1' } });
+
+    await t.apiClient.get('/api/notifications/unread-count');
+
+    expect(calls[0].init.headers).not.toHaveProperty('x-session-id');
+  });
+
+  it('sends no session id when there is no token to pair it with', async () => {
+    const calls = capture();
+    const { t } = build({
+      session: { getToken: () => '', getSessionId: () => 'session-1' },
+    });
+
+    await t.apiClient.get('/api/notifications/unread-count');
+
+    expect(calls[0].init.headers).not.toHaveProperty('x-session-id');
+    expect(calls[0].init.headers).not.toHaveProperty('Authorization');
+  });
+});

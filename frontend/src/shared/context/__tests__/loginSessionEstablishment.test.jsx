@@ -36,6 +36,10 @@ vi.mock('@shared/api/apiClient', () => ({
   mayHaveCookieSession: () => false,
   rememberCsrfToken: () => {},
   forgetCsrfToken: () => {},
+  // Native-only in real use; the web build's are no-ops. Present here because
+  // AuthContext awaits one of them on the login path.
+  rememberSessionTokens: async () => {},
+  forgetSessionTokens: () => {},
   getBackendUrl: () => 'https://api.example',
   apiClient: { post: async () => ({}), get: async () => ({}) },
   usersApi: {},

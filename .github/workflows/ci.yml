@@ -214,6 +214,22 @@ jobs:
           fi
           echo "landing page present in dist/"
 
+      # The native plugins must not reach the website. This is not theoretical:
+      # `@aparajita/capacitor-secure-storage` calls registerPlugin() at module
+      # scope, which is a side effect Rollup has to preserve, so a static import
+      # survived tree-shaking even though IS_MOBILE_BUILD folded away the only
+      # branch that used it — and the plugin plus @capacitor/core shipped to
+      # production web. Caught by hand once; this is what catches it next time.
+      - name: No Capacitor code in the web bundle
+        run: |
+          set -e
+          if grep -rl -e 'aparajita' -e '@capacitor' dist/assets/ >/dev/null 2>&1; then
+            echo "::error::Capacitor code reached the web bundle"
+            grep -rl -e 'aparajita' -e '@capacitor' dist/assets/ || true
+            exit 1
+          fi
+          echo "no Capacitor code in dist/"
+
   # ── Mobile build target ─────────────────────────────────────────────────────
   #
   # Runs on every change to the frontend, because the mobile bundle is built

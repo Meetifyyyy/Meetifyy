@@ -6,6 +6,8 @@ import {
   getBackendUrl,
   rememberCsrfToken,
   forgetCsrfToken,
+  rememberSessionTokens,
+  forgetSessionTokens,
   mayHaveCookieSession,
 } from '@shared/api/apiClient';
 import { useSavedActivitiesStore } from '../stores/savedActivitiesStore';
@@ -323,6 +325,13 @@ export function AuthProvider({ children }) {
     setCurrentUser(null);
     setAuthStatus(AUTH_STATUS.UNAUTHENTICATED);
     forgetCsrfToken();
+    /**
+     * Destroys the native credential. Not awaited: this runs from a state
+     * setter and its callers are synchronous, and the in-memory tokens are
+     * cleared first inside `forget()`, so nothing can authenticate with them
+     * even while the Keychain write is still in flight.
+     */
+    forgetSessionTokens();
     clearSessionScopedStorage();
     resetClientStateForNewUser(queryClientRef.current);
   }, []);
@@ -590,6 +599,15 @@ export function AuthProvider({ children }) {
 
     const body = await res.json().catch(() => null);
     rememberCsrfToken(body?.csrfToken);
+    /**
+     * The installed app has no cookies to fall back on — a browser refuses to
+     * store the SameSite=Strict session cookies inside the WebView — so for
+     * that client these tokens ARE the session, and they go straight into the
+     * Keychain. Awaited, because a request issued before the write lands would
+     * go out unauthenticated. A no-op on web, whose response carries none of
+     * them.
+     */
+    await rememberSessionTokens(body);
 
     /**
      * No token is installed into the provider client, and that is the fix.
@@ -841,6 +859,7 @@ export function AuthProvider({ children }) {
       try {
         const adopted = await authApi.adoptSession(data.session.refresh_token);
         rememberCsrfToken(adopted?.csrfToken);
+        await rememberSessionTokens(adopted);
         if (adopted?.user) profile = { ...profile, ...adopted.user };
       } catch (err) {
         // The account exists and is verified, so this is not a signup failure.

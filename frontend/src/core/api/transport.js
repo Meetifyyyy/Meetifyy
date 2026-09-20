@@ -284,11 +284,27 @@ export function createTransport({
         if (session.isRecoveryCredential()) return false;
 
         const url = `${getBackendUrl().replace(/\/+$/, '')}/api/auth/session/refresh`;
+
+        /**
+         * The refresh token travels in the BODY for a client that holds one,
+         * and nowhere at all for a client that does not.
+         *
+         * On web `getRefreshToken` is absent: the refresh token is an HttpOnly
+         * cookie scoped to this very path, the browser attaches it, and script
+         * has never been able to read it — which is the entire point of putting
+         * it there. The server keeps that rule by reading the body only when
+         * there is no refresh cookie and the caller is the native origin, so
+         * this cannot become a way for a web page to opt into the body path.
+         */
+        const storedRefresh = session.getRefreshToken?.();
         const res = await fetch(url, {
           method: 'POST',
           credentials: 'include',
           cache: 'no-store',
           headers: { 'Content-Type': 'application/json' },
+          body: storedRefresh
+            ? JSON.stringify({ refreshToken: storedRefresh })
+            : undefined,
         });
 
         /**
@@ -311,6 +327,18 @@ export function createTransport({
 
         const body = await res.json().catch(() => null);
         rememberCsrfToken(body?.csrfToken);
+
+        /**
+         * A rotating credential must be stored before the retry goes out.
+         * The server has already retired the token just presented, so a client
+         * that keeps the old one has nothing usable left — the next refresh
+         * would present a retired token, which is indistinguishable from a
+         * replay and revokes the whole family.
+         *
+         * Absent on web, where there is nothing to store.
+         */
+        if (session.adopt) await session.adopt(body);
+
         return 'renewed';
       } catch {
         // Offline, blocked, timed out. Says nothing about the session.
@@ -354,6 +382,23 @@ export function createTransport({
 
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
+
+      /**
+       * The session the token belongs to.
+       *
+       * Sent only beside a bearer token, and only by a client that holds one —
+       * `getSessionId` is absent on web, where the session id is an HttpOnly
+       * cookie the browser attaches itself and script cannot read.
+       *
+       * This is not decoration. The API refuses a bearer token on ordinary
+       * routes precisely because a bare token names no session, so the checks
+       * behind "sign out this device", "sign out everywhere" and
+       * password-change revocation have nothing to look up. Naming the session
+       * is what makes the native credential revocable, and therefore what makes
+       * it acceptable at all.
+       */
+      const nativeSessionId = session.getSessionId?.();
+      if (nativeSessionId) headers['x-session-id'] = nativeSessionId;
     }
 
     // Send ETag for GET requests — enables 304 Not Modified on unchanged data

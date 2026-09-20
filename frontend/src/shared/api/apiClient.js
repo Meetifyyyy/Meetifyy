@@ -33,6 +33,8 @@ import {
 import { createWebApiOrigin } from '@platform/web/apiOrigin';
 import { createCapacitorApiOrigin } from '@platform/capacitor/apiOrigin';
 import { createWebSessionSource } from '@platform/web/sessionSource';
+import { createCapacitorSessionSource } from '@platform/capacitor/sessionSource';
+import { createCapacitorSecureStorage } from '@platform/capacitor/secureStorage';
 import {
   createWebCookieReader,
   createWebLocalStore,
@@ -75,7 +77,9 @@ const etags = createEtagCache({ store: sessionStore });
  * platform/web/sessionSource.js for why the recovery guard belongs in one place
  * rather than at the three call sites that each had to remember it.
  */
-const session = createWebSessionSource({ supabase, isRecoveryTab, clearRecoveryTab });
+const session = IS_MOBILE_BUILD
+  ? createCapacitorSessionSource({ secureStorage: createCapacitorSecureStorage() })
+  : createWebSessionSource({ supabase, isRecoveryTab, clearRecoveryTab });
 
 /**
  * What the transport reports, and what this app does about it.
@@ -150,6 +154,19 @@ const endpoints = createEndpoints({
   getToken: transport.getToken,
   getBackendUrl: transport.getBackendUrl,
 });
+
+/**
+ * Hands the native client the tokens from a login or a signup handover.
+ *
+ * A no-op on web, and deliberately shaped like `rememberCsrfToken` beside it:
+ * the caller passes the whole response body and does not need to know which
+ * fields matter, or which platform it is on. The web response simply carries
+ * none of them — the server returns tokens only to the native origin.
+ */
+export const rememberSessionTokens = (body) => session.adopt?.(body);
+
+/** The other half: signing out must destroy the stored credential. */
+export const forgetSessionTokens = () => session.forget?.();
 
 export const authApi = endpoints.authApi;
 export const postsApi = endpoints.postsApi;
