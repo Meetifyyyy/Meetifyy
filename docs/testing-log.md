@@ -27,6 +27,69 @@ legitimately change per commit.
 
 ---
 
+## Phase 4a recheck — **DONE**
+
+Everything from this session re-verified from a clean state rather than trusted.
+
+### Rebuilt from scratch
+Both outputs wiped and rebuilt. Web: 153 assets, **byte-identical** to the
+pre-Phase-4 baseline. Mobile: builds, and every asset its `index.html`
+references exists.
+
+### The mobile bundle was actually loaded, not just built
+Served via the new `npm run preview:mobile` and opened in a browser:
+
+| Check | Result |
+|---|---|
+| Renders | ✅ React mounted, launch shell removed |
+| Console errors | ✅ none |
+| Service-worker registrations | ✅ **0**, though the browser supports them |
+| Cache Storage entries | ✅ **0** |
+| API origin shown | ✅ `https://api.invalid` — the configured value |
+
+The last row is the important one: the preview is served from
+**`http://localhost:4174`**, the same condition that breaks the web `ApiOrigin`
+inside a WebView, and the API origin was unaffected. B1 disproven at runtime,
+not only in a unit test.
+
+### Web dev server
+Started and loaded: real app renders, correct title, no console errors. This was
+the one path a `vite build` would not have exercised after the config refactor.
+
+### Alias extraction proven lossless
+The pre-refactor alias map and what `sharedAliases()` produces were compared
+programmatically: **10 vs 10, identical**.
+
+### Mobile bundle excludes every web-only heavyweight
+framer-motion, emoji-mart, hugeicons, heroicons, socket.io, react-router,
+html2canvas, workbox — **all absent**. 1.78 MB total.
+
+### CI validated by execution, not by reading
+YAML parses; every multi-line `run:` block passes `bash -n`; the mobile job's
+steps were then run verbatim and all passed.
+
+### Independence experiment (from the D5 exit criteria)
+Deleted `src/mobile/`, `src/platform/capacitor/`, `index.mobile.html` and
+`vite.mobile.config.js`, then built and tested the web app:
+**build succeeded, 132 files / 1431 tests passed.** That is exactly 1 file and
+9 tests fewer — the deleted Capacitor test and nothing else. Restored after.
+
+### Architecture rules re-swept
+`core/` portability violations: **0**. `@capacitor` imports outside
+`platform/capacitor/`: **0**. Mobile root importing the web root: **0**. Web
+importing mobile: **0**. Singletons in `core/`: **0**.
+
+### Two mistakes found by the recheck itself
+1. **My own audit script produced a false positive** — it reported `window` in
+   `transport.js` because its comment-stripping regex only handled comments at
+   line start, missing a trailing `// ... a far longer window`. ESLint was right
+   and the script was wrong. Fixed before trusting the result.
+2. **`base` was discussed in the mobile config's comments but never set.** It
+   was already `/` by Vite's default, but a default is not a decision and a
+   reader looking for it found nothing. Now explicit.
+
+---
+
 ## Phase 4a — two build targets — **DONE**
 
 A second client now builds from `core/` over `platform/capacitor/`, with its own
