@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Meetifyy</string>
+    <string name="title_activity_main">Meetifyy</string>
+    <string name="package_name">app.meetifyy</string>
+    <string name="custom_url_scheme">app.meetifyy</string>
+</resources>

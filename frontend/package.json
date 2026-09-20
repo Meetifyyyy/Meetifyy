@@ -11,6 +11,9 @@
     "dev:mobile": "vite --config vite.mobile.config.js",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
+    "mobile:android": "npm run mobile:sync && npx cap open android",
+    "mobile:ios": "npm run mobile:sync && npx cap open ios",
+    "mobile:sync": "npm run build:mobile && npx cap sync",
     "og:asset": "node scripts/generate-og-image.mjs",
     "perf": "vitest run --config src/__perf__/vitest.perf.config.js --silent=false",
     "preview": "vite preview",
@@ -23,6 +26,9 @@
     "version:stamp": "node scripts/generate-version.mjs"
   },
   "dependencies": {
+    "@capacitor/android": "^8.5.2",
+    "@capacitor/core": "^8.5.2",
+    "@capacitor/ios": "^8.5.2",
     "@emoji-mart/data": "^1.2.1",
     "@emoji-mart/react": "^1.1.1",
     "@heroicons/react": "^2.2.0",
@@ -53,6 +59,7 @@
     "zustand": "^5.0.14"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.5.2",
     "@eslint/js": "^9.39.5",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/react": "^16.3.0",

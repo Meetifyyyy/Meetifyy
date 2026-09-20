@@ -242,6 +242,40 @@ dev-dist/
 **/dev-dist/
 
 # ------------------------------------------------------------------------------
+# 13b. Capacitor native projects
+# ------------------------------------------------------------------------------
+# The projects themselves ARE committed, deliberately.
+#
+# `npx cap add` can regenerate them, but only in their pristine form. A store
+# release edits them by hand — permission purpose strings in Info.plist, the
+# permissions and deep-link intent filters in AndroidManifest.xml, app icons,
+# splash assets, the signing config — and every one of those is lost if the
+# directory is treated as build output and regenerated. Capacitor's own guidance
+# is to commit them for exactly this reason.
+#
+# What is ignored is what a BUILD produces inside them, which is large, machine-
+# specific, and re-created by Gradle or Xcode on demand.
+frontend/android/build/
+frontend/android/app/build/
+frontend/android/.gradle/
+frontend/android/local.properties
+frontend/android/.idea/
+frontend/android/app/release/
+frontend/android/captures/
+frontend/ios/App/Pods/
+frontend/ios/App/build/
+frontend/ios/App/output/
+frontend/ios/App/App/public/
+frontend/android/app/src/main/assets/public/
+frontend/ios/DerivedData/
+frontend/ios/App/*.xcworkspace/xcuserdata/
+frontend/ios/App/*.xcodeproj/xcuserdata/
+
+# The copied web assets above are `dist-mobile` again under another name —
+# written by `npx cap sync` on every build. Committing them would put two copies
+# of the whole bundle in every diff and guarantee they drift apart.
+
+# ------------------------------------------------------------------------------
 # 14. Keys, Certificates & Service Credentials
 # ------------------------------------------------------------------------------
 # Section 4 keeps .env files out; these are the credential formats that arrive as

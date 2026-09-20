@@ -7,6 +7,62 @@ means not done.
 
 ---
 
+## TO TEST — open items
+
+Nothing below has been verified. Grouped by what unblocks it.
+
+### Needs a real phone (cannot be checked here)
+| # | Test | Why it matters |
+|---|---|---|
+| D1 | What `Origin` header does the WebView send? | If none, native needs **no CORS change at all**. Highest-value single measurement. |
+| D2 | Do the `mf_*` login cookies attach from `capacitor://localhost` / `https://localhost`? | `SameSite=Strict` may not attach. **If it fails, login does not work in the app.** |
+| D3 | Does the cookie survive 7 days idle on iOS (ITP)? | Silent logouts otherwise. |
+| D4 | Android hardware back: one press = one screen? | Google review looks at this. |
+| D5 | iOS swipe-back vs the router's stack | May desync. |
+| D6 | Keyboard + `ChatInputArea` | Composer must stay above the keyboard. |
+| D7 | Safe areas on a notched device | `viewport-fit=cover` is set in the mobile HTML only. |
+| D8 | Cold start time, feed fps on a low-end Android | Budgets are still **provisional**. |
+| D9 | Offline launch | Must not be a blank screen (Apple 4.2 / 2.1). |
+| D10 | `navigator.serviceWorker.getRegistrations()` → `[]` on device | Build-time exclusion proven in a browser, not on iOS/Android. |
+
+### Needs Android Studio / Xcode
+| # | Test |
+|---|---|
+| C2 | App launches on Android (`npm run mobile:android`) |
+| C3 | App launches on iOS (`npm run mobile:ios`, macOS only) |
+| C4 | Deep link opens the right screen |
+
+*C1 (`npx cap sync` succeeds) — **✅ done**, see the Phase 6a entry.*
+
+### Needs a backend change first
+| # | Test |
+|---|---|
+| B1 | Bearer tokens on ordinary routes (guard currently refuses them) |
+| B2 | Contract tests against a live dev API |
+
+---
+
+## WHAT IS LEFT — not tested, not built
+
+| Area | State |
+|---|---|
+| Capacitor packages | ✅ installed (core, cli, android, ios — all 8.5.2) |
+| `android/` `ios/` projects | ✅ created, `cap sync` passes |
+| Built and run on a device | **no** — needs Android Studio / Xcode |
+| Push notifications | nothing — no plugin, no `PushToken` table, no sender |
+| Native back button | handler written, never wired to `@capacitor/app` |
+| Secure token storage | no implementation; blocked on D2 |
+| Route restore after app kill | not built |
+| Age gate (18+) | `User.birthday` is optional and unvalidated |
+| **Reviewer test account** | **hard blocker** — signup needs a verified college email, so Apple cannot create one |
+| Privacy labels / Data Safety | not written |
+| Permission purpose strings | no native project yet |
+| Crash reporting | `VITE_SENTRY_DSN` exists, nothing reads it |
+| Web e2e / native e2e | none |
+| Pushed to remote | **no** — all commits local |
+
+---
+
 ## Standing checks (run on every phase that touches `frontend/`)
 
 | # | Check | Command | Must be |
@@ -32,6 +88,45 @@ the build version is a commit SHA stamped into **HTML**, not into JS — so a
 byte-identical `dist/assets` proves the change did not alter the module graph.
 Do **not** compare `dist/*.html`, `public/version.json` or `vercel.json`; all
 legitimately change per commit.
+
+---
+
+## Phase 6a — Capacitor installed — **DONE**
+
+### Tested
+- **C1 ✅ `npx cap sync` succeeds** — first item off the open board
+- S1 ✅ 133/133 files, 1440/1440 tests · lint ✅ · boundaries ✅ · typecheck ✅
+- Web build ✅ unaffected
+
+### Guards re-checked against the COPIED native assets
+`cap sync` copies `dist-mobile/` into each platform. Verified the guards hold
+there too, not just in `dist-mobile/`:
+
+| | `android/…/assets/public` | `ios/App/App/public` |
+|---|---|---|
+| service worker / workbox | ✅ absent | ✅ absent |
+| landing page | ✅ absent | ✅ absent |
+
+### Native projects are committed, deliberately
+`cap add` can regenerate them, but only pristine. A store release edits them by
+hand — permission purpose strings in `Info.plist`, permissions and deep-link
+intent filters in `AndroidManifest.xml`, icons, splash, signing config — and all
+of that is lost if they are treated as build output.
+
+Ignored instead: Gradle/Xcode build output, `Pods/`, `.gradle/`,
+`local.properties`, and each platform's copied `public/` (that is `dist-mobile`
+again under another name — committing it would put two copies of the bundle in
+every diff and let them drift).
+
+### Caught here
+ESLint started linting the generated native projects: **14 errors**. Added
+`android/**` and `ios/**` to its ignores. My own echo had said "lint clean"
+while errors were printing above it — the echo was unconditional.
+
+### Scripts added
+`mobile:sync` runs `build:mobile && cap sync` as one command — running `cap sync`
+alone copies whatever happens to be in `dist-mobile/`, which silently ships the
+previous bundle to the device.
 
 ---
 

@@ -1,0 +1,14 @@
+{
+  "appId": "app.meetifyy",
+  "appName": "Meetifyy",
+  "webDir": "dist-mobile",
+  "server": {
+    "androidScheme": "https"
+  },
+  "android": {
+    "allowMixedContent": false
+  },
+  "ios": {
+    "contentInset": "never"
+  }
+}

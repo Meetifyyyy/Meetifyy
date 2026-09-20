@@ -29,6 +29,12 @@ export default [
       // is a literal path rather than a glob over dist*, and linting a minified
       // bundle produces ~80 errors that say nothing about the code that made it.
       'dist-mobile/**',
+      // The Capacitor native projects. They are committed (see .gitignore) but
+      // they are generated Java, Swift, Gradle and Xcode scaffolding, plus a
+      // copy of the built web bundle under each platform's `public/`. None of
+      // it is source this config has anything useful to say about.
+      'android/**',
+      'ios/**',
       'dev-dist/**',
       'node_modules/**',
       'public/**',
