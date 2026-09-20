@@ -9,45 +9,99 @@ means not done.
 
 ## TO TEST — open items
 
-Nothing below has been verified. Grouped by what unblocks it.
+**On-device run happened 2026-09-21** on a vivo I2208, Android 14 (API 34),
+arm64, WebView Chrome 153. Results below are measured, not predicted.
 
-### Needs a real phone (cannot be checked here)
+### ✅ Answered on device
+| # | Result |
+|---|---|
+| D1 | The WebView **does** send an Origin: `https://localhost`. It is not null and not absent, so **CORS fully applies**. |
+| D2 | **FAILS.** See *The cookie blocker* below. |
+| D4 | **FAILS.** One back press from `/login` killed the app process. |
+| D7 | Safe areas work: `env(safe-area-inset-*)` supported, `--safe-area-inset-top: 32px`. |
+| D8 | Cold start to first frame **1.65 s** (`ActivityTaskManager: Displayed … +1s648ms`). |
+| D10 | **PASSES.** 0 service worker registrations, no controller, `caches.keys()` empty. |
+| C1 | `npx cap sync` succeeds. |
+| C2 | **App launches and runs.** The real website renders — `/login` is the actual site's login screen, not a rebuild. |
+
+### ❌ The cookie blocker (D2) — highest priority
+
+Login **succeeds** (`201 /api/auth/login`, user object returned). The server
+sets all four cookies. Chrome then **blocks every one of them**:
+
+```
+BLOCKED  mf_access, mf_refresh, mf_sid, mf_csrf
+reasons: ["SchemefulSameSiteStrict"]
+```
+
+Cookie jar after login: **empty**. Every authenticated request that follows
+returns 401 (`/api/posts/feed`, `/api/messages`, `/api/users/*`,
+`/api/notifications/unread-count`, …), `/api/auth/session/refresh` 401s, and
+the app falls back to `/`.
+
+**Why.** The page origin is `https://localhost`; the API is a different site,
+so the request is `sec-fetch-site: cross-site` (measured). The cookies are
+issued `SameSite=Strict`, which a browser will not store in a cross-site
+response. `Domain=.meetifyy.app` is *not* the problem — it domain-matches the
+API host and is legal here.
+
+**There is no bearer-token fallback today.** `POST /api/auth/login` returns
+`{ user, meta, csrfToken, sessionId }` — the access token goes **only** into
+the HttpOnly cookie, so a native client has no way to hold a credential.
+
+**Mobile auth is therefore blocked on a backend change.** Two options:
+
+| | Change | Trade-off |
+|---|---|---|
+| **A (recommended)** | Return access/refresh tokens in the login body for mobile clients; store them in native secure storage; send `Authorization: Bearer`. Requires the JWT guard to accept bearer on ordinary routes (item B1). | Matches the original plan. No change to web behaviour. More backend work. |
+| **B** | Set `COOKIE_SAME_SITE=none`. | Works with zero client changes, but weakens the web app's CSRF posture and relies on third-party cookies, which Chrome is phasing out. Not viable long-term. |
+
+### ❌ Production CORS will reject the app
+
+`allowLocalNetwork` in `backend/src/config/app.config.ts` is **forced off in
+production**. `https://localhost` is allowed on dev *only* because that flag
+defaults on outside production. Measured against dev:
+
+| Origin | Dev result |
+|---|---|
+| `https://localhost` (Capacitor Android) | allowed |
+| `capacitor://localhost` (Capacitor **iOS** default) | **rejected** |
+| `http://localhost:5173` (dev web) | allowed |
+| `https://evil.example.com` | rejected — the allowlist is not a reflector |
+
+Two consequences:
+1. **Production must explicitly allow the app's origin**, or the shipped app
+   gets no CORS at all. This only surfaces at release.
+2. **iOS will fail CORS today.** Cheapest fix is `"iosScheme": "https"` in
+   `capacitor.config.json` so iOS uses `https://localhost` like Android — one
+   origin to allowlist instead of two, and no backend change for iOS.
+
+### Still needs a real phone
 | # | Test | Why it matters |
 |---|---|---|
-| D1 | What `Origin` header does the WebView send? | If none, native needs **no CORS change at all**. Highest-value single measurement. |
-| D2 | Do the `mf_*` login cookies attach from `capacitor://localhost` / `https://localhost`? | `SameSite=Strict` may not attach. **If it fails, login does not work in the app.** |
-| D3 | Does the cookie survive 7 days idle on iOS (ITP)? | Silent logouts otherwise. |
-| D4 | Android hardware back: one press = one screen? | Google review looks at this. |
-| D5 | iOS swipe-back vs the router's stack | May desync. |
-| D6 | Keyboard + `ChatInputArea` | Composer must stay above the keyboard. |
-| D7 | Safe areas on a notched device | `viewport-fit=cover` is set in the mobile HTML only. |
-| D8 | Cold start time, feed fps on a low-end Android | Budgets are still **provisional**. |
-| D9 | Offline launch | Must not be a blank screen (Apple 4.2 / 2.1). |
-| D10 | `navigator.serviceWorker.getRegistrations()` → `[]` on device | Build-time exclusion proven in a browser, not on iOS/Android. |
-
-### Needs the phone to authorise USB debugging
-The toolchain is installed and a **debug APK is built** (see *Building the dev
-APK* below). A phone is plugged in, but `adb` reports it as `unauthorized` —
-nothing can be installed until the **"Allow USB debugging?"** prompt on the
-phone is accepted.
-
-| # | Test |
-|---|---|
-| C2 | App launches on Android |
-| C4 | Deep link opens the right screen |
+| D3 | Does the cookie survive 7 days idle on iOS (ITP)? | Moot until D2 is resolved. |
+| D5 | iOS swipe-back vs the router's stack | Needs a Mac. |
+| D6 | Keyboard + `ChatInputArea` | Partly seen: the keyboard resizes the viewport 801 → 473 CSS px (`adjustResize`), which is the behaviour we want. The composer itself needs a logged-in chat screen — blocked on D2. |
+| D9 | Offline launch | Not yet run. |
 
 ### Needs a Mac
 | # | Test |
 |---|---|
 | C3 | App launches on iOS (`npm run mobile:ios`) |
+| C4 | Deep link opens the right screen |
 
-*C1 (`npx cap sync` succeeds) — **✅ done**, see the Phase 6a entry.*
+### Known benign
+`Error injecting safe area CSS: TypeError: Cannot read properties of null` —
+fires twice at first paint. It is **Capacitor's own** `SystemBars.java` running
+its injection script before `document.documentElement` exists. The value lands
+correctly afterwards (32px, verified). Upstream, not ours; not worth patching
+`node_modules`.
 
-### Needs a backend change first
-| # | Test |
-|---|---|
-| B1 | Bearer tokens on ordinary routes (guard currently refuses them) |
-| B2 | Contract tests against a live dev API |
+### Noted in passing, not changed
+The login form's password input carries `autocomplete="new-password"`. On a
+login form that suppresses password-manager autofill. Left alone deliberately:
+it is web behaviour, and this programme does not change web behaviour as a
+side effect of mobile work.
 
 ---
 
@@ -57,19 +111,47 @@ phone is accepted.
 |---|---|
 | Capacitor packages | ✅ installed (core, cli, android, ios — all 8.5.2) |
 | `android/` `ios/` projects | ✅ created, `cap sync` passes |
-| Debug APK built | ✅ `local/apk/meetifyy-debug.apk` (7.4 MB, gitignored) |
-| Installed and run on a device | **no** — phone shows `unauthorized`, awaiting the on-device prompt |
+| Debug APK | ✅ `local/apk/meetifyy-debug.apk` (7.4 MB, gitignored) |
+| Installed and running on a device | ✅ vivo I2208 / Android 14 |
+| **Login on device** | ❌ **blocked** — cookies rejected, needs a backend change |
+| **Production CORS for the app origin** | ❌ not configured — will fail at release |
+| **iOS CORS origin** | ❌ `capacitor://localhost` rejected; set `iosScheme: https` |
+| Native back button | ❌ handler written, still not wired to `@capacitor/app` — back exits the app |
 | Push notifications | nothing — no plugin, no `PushToken` table, no sender |
-| Native back button | handler written, never wired to `@capacitor/app` |
-| Secure token storage | no implementation; blocked on D2 |
+| Secure token storage | not built; depends on which D2 option is chosen |
 | Route restore after app kill | not built |
 | Age gate (18+) | `User.birthday` is optional and unvalidated |
-| **Reviewer test account** | **hard blocker** — signup needs a verified college email, so Apple cannot create one |
+| **Reviewer test account** | **hard blocker** — signup needs a verified college email |
 | Privacy labels / Data Safety | not written |
-| Permission purpose strings | no native project yet |
 | Crash reporting | `VITE_SENTRY_DSN` exists, nothing reads it |
 | Web e2e / native e2e | none |
 | Pushed to remote | **no** — all commits local |
+
+---
+
+## How the device tests were run
+
+`adb` + the WebView's own DevTools protocol, which is available because this is
+a debug build:
+
+```bash
+adb forward tcp:9222 localabstract:webview_devtools_remote_$(adb shell pidof app.meetifyy)
+curl -s http://127.0.0.1:9222/json      # lists the page + its websocket URL
+```
+
+From there `Network.enable` reports `Set-Cookie` **and Chrome's
+`blockedCookies` with reasons**, which is what produced the D2 answer. That is
+far more informative than a screenshot, and it is the way to re-check D2 once
+the backend changes.
+
+`adb exec-out screencap` returned empty files partway through the session;
+`Page.captureScreenshot` over CDP is the reliable alternative.
+
+Two input gotchas, both of which cost a false negative before they were
+understood: taps are **screen** coordinates (add the 88px status bar to a
+`getBoundingClientRect` value), and the layout **moves when the keyboard
+opens**, so a button position must be measured immediately before tapping or
+the tap lands on the keyboard and types into the focused field.
 
 ---
 
