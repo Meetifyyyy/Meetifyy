@@ -43,6 +43,8 @@ import { ThemeProvider } from '../shared/context/ThemeContext';
 import { MediaViewerProvider } from '../shared/context/MediaViewerContext';
 import { UsersMapProvider } from '../shared/hooks/useUsersMap';
 import MediaViewerHost from '../shared/components/MediaViewer/MediaViewerHost';
+import { createCapacitorBackButton } from '../platform/capacitor/backButton';
+import { installNativeBackButton } from './nativeBackButton';
 
 import '../styles/variables.css';
 import '../styles/global.css';
@@ -82,6 +84,20 @@ const queryClient = new QueryClient({
 if (typeof document !== 'undefined') {
   document.addEventListener('touchstart', () => {}, { passive: true });
 }
+
+/**
+ * Android's back button, claimed before the first render.
+ *
+ * Capacitor only suppresses Android's default — finish the Activity — while a
+ * listener is attached, so this is subscribed once for the life of the process
+ * rather than from an effect. Measured on a device before this existed: one
+ * back press on `/login` killed the app instead of returning to the previous
+ * screen.
+ *
+ * Never unsubscribed, and that is correct: it lives exactly as long as the app
+ * does, and there is no unmount to clean up after.
+ */
+installNativeBackButton(createCapacitorBackButton());
 
 createRoot(document.getElementById('root')).render(
   <QueryClientProvider client={queryClient}>

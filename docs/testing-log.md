@@ -17,7 +17,7 @@ arm64, WebView Chrome 153. Results below are measured, not predicted.
 |---|---|
 | D1 | The WebView **does** send an Origin: `https://localhost`. It is not null and not absent, so **CORS fully applies**. |
 | D2 | **FAILS.** See *The cookie blocker* below. |
-| D4 | **FAILS.** One back press from `/login` killed the app process. |
+| D4 | **FIXED and re-verified.** Was: one back press from `/login` killed the process. Now `/` → `/login` → back → `/` with the process alive, and back at the root exits cleanly to the launcher with no crash. |
 | D7 | Safe areas work: `env(safe-area-inset-*)` supported, `--safe-area-inset-top: 32px`. |
 | D8 | Cold start to first frame **1.65 s** (`ActivityTaskManager: Displayed … +1s648ms`). |
 | D10 | **PASSES.** 0 service worker registrations, no controller, `caches.keys()` empty. |
@@ -115,8 +115,8 @@ side effect of mobile work.
 | Installed and running on a device | ✅ vivo I2208 / Android 14 |
 | **Login on device** | ❌ **blocked** — cookies rejected, needs a backend change |
 | **Production CORS for the app origin** | ❌ not configured — will fail at release |
-| **iOS CORS origin** | ❌ `capacitor://localhost` rejected; set `iosScheme: https` |
-| Native back button | ❌ handler written, still not wired to `@capacitor/app` — back exits the app |
+| **iOS CORS origin** | ✅ `iosScheme: https` set, so iOS will use `https://localhost` like Android. Still unverified — needs a Mac. |
+| Native back button | ✅ wired via `@capacitor/app` 8.1.1, verified on device. (An earlier entry here claimed a handler was “already written” — that was wrong; only the history-stack model existed.) |
 | Push notifications | nothing — no plugin, no `PushToken` table, no sender |
 | Secure token storage | not built; depends on which D2 option is chosen |
 | Route restore after app kill | not built |

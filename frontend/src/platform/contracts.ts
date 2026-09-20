@@ -223,6 +223,38 @@ export interface AppLifecycle {
 }
 
 /**
+ * The OS-level back gesture: Android's hardware/gesture back.
+ *
+ * Consumer: the mobile composition root.
+ *
+ * Android is the only platform that has this. A browser tab has no equivalent
+ * — its back button is the history API, which the router already owns — and
+ * iOS expresses the same intent as an edge swipe that WebKit turns into a
+ * history pop on its own. So this is optional on `PlatformServices`, and a
+ * consumer must treat its absence as "this platform handles back itself"
+ * rather than as a missing feature.
+ *
+ * WHY THIS EXISTS AT ALL
+ * Left unhandled, Android's default is to finish the Activity — measured on a
+ * device: one back press on `/login` killed the process rather than returning
+ * to the previous screen. Play Store review treats that as a defect, and it is
+ * the single most obvious way an app feels un-native.
+ *
+ * `canGoBack` is the WebView's own answer, which includes `pushState` entries,
+ * so it stays correct for a single-page router without the router having to
+ * report anything back.
+ */
+export interface HardwareBackButton {
+  /** Returns an unsubscribe function. */
+  onPress(listener: (info: { canGoBack: boolean }) => void): () => void;
+  /**
+   * Closes the app. Only meaningful where pressing back at the root is
+   * expected to exit — which is Android's convention, and nowhere else's.
+   */
+  exitApp(): Promise<void>;
+}
+
+/**
  * Inbound links, from the OS or from a notification tap.
  *
  * Consumer: `src/mobile/navigation/intentToRoute` (Phase 5).
@@ -293,4 +325,5 @@ export interface PlatformServices {
   secureStorage?: SecureStorage;
   deepLinks?: DeepLinks;
   push?: PushService;
+  backButton?: HardwareBackButton;
 }

@@ -3,7 +3,8 @@
   "appName": "Meetifyy",
   "webDir": "dist-mobile",
   "server": {
-    "androidScheme": "https"
+    "androidScheme": "https",
+    "iosScheme": "https"
   },
   "android": {
     "allowMixedContent": false
