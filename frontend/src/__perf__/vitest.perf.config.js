@@ -16,7 +16,6 @@ export default defineConfig({
       '@styles': path.resolve(root, 'src/styles'),
       '@constants': path.resolve(root, 'src/constants'),
       '@assets': path.resolve(root, 'src/assets'),
-      '@': path.resolve(root, 'src'),
     },
   },
   test: {

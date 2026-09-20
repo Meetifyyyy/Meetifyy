@@ -331,47 +331,42 @@ export default defineConfig(({ mode }) => {
     chunkSizeWarningLimit: 600
   },
   resolve: {
+    /**
+     * One import path per module.
+     *
+     * There used to be a second set of "bridge" aliases here mapping the old
+     * `@/components/*`, `@/pages`, `@/hooks`, `@/utils` layout onto the current
+     * one, plus a bare `@` → `src`. They were scaffolding for a move that has
+     * since finished: nothing under `src/` imports through any of them — the
+     * only `@/` sequences left in the tree are regex literals for an `@` in a
+     * username or an email address.
+     *
+     * They are gone rather than merely unused because an alias nobody imports
+     * through is still an alias somebody CAN import through, and two paths to
+     * one module is what makes an import boundary unenforceable: a rule written
+     * against `src/shared/components` says nothing about `@/components/ui`,
+     * which resolves to the same directory. Removing them is what lets the
+     * boundary lint that follows mean what it says.
+     *
+     * The three `@data*` entries went with them. They pointed at
+     * `src/data`, `src/features/communities/data/communities` and
+     * `src/features/messages/data/messages` — none of which exist.
+     *
+     * `src/__perf__/vitest.perf.config.js` carries its own copy of this list
+     * and never had the bridge entries at all — the other half of the evidence
+     * that they were dead, since the perf suite has been resolving without
+     * them. Its bare `@` is dropped in the same change so the two lists cannot
+     * drift into disagreeing about what an import path means.
+     */
     alias: {
-      // ── canonical new paths ──────────────────────────────────────
-      '@config':   path.resolve(__dirname, 'src/config'),
-      '@stores':   path.resolve(__dirname, 'src/shared/stores'),
-      '@shared':   path.resolve(__dirname, 'src/shared'),
-      '@layout':   path.resolve(__dirname, 'src/layout'),
-      '@features': path.resolve(__dirname, 'src/features'),
-      '@data/communities': path.resolve(__dirname, 'src/features/communities/data/communities'),
-      '@data/messages': path.resolve(__dirname, 'src/features/messages/data/messages'),
-      '@data':     path.resolve(__dirname, 'src/data'),
-      '@styles':   path.resolve(__dirname, 'src/styles'),
+      '@config':    path.resolve(__dirname, 'src/config'),
+      '@stores':    path.resolve(__dirname, 'src/shared/stores'),
+      '@shared':    path.resolve(__dirname, 'src/shared'),
+      '@layout':    path.resolve(__dirname, 'src/layout'),
+      '@features':  path.resolve(__dirname, 'src/features'),
+      '@styles':    path.resolve(__dirname, 'src/styles'),
       '@constants': path.resolve(__dirname, 'src/constants'),
-      '@assets':   path.resolve(__dirname, 'src/assets'),
-
-      // ── bridge aliases (old paths → new locations) ───────────────
-      // shared layer
-      '@/context':            path.resolve(__dirname, 'src/shared/context'),
-      '@/hooks':              path.resolve(__dirname, 'src/shared/hooks'),
-      '@/utils':              path.resolve(__dirname, 'src/shared/utils'),
-
-      // shared components (from common/)
-      '@/components/common':  path.resolve(__dirname, 'src/shared/components'),
-
-      // layout shell
-      '@/components/layout':  path.resolve(__dirname, 'src/layout'),
-
-      // feature component groups
-      '@/components/messages': path.resolve(__dirname, 'src/features/messages/components'),
-      '@/components/chat':     path.resolve(__dirname, 'src/features/messages/components/previews'),
-      '@/components/feed':     path.resolve(__dirname, 'src/features/feed/components'),
-      '@/components/profile':  path.resolve(__dirname, 'src/features/profile/components'),
-      '@/components/communities': path.resolve(__dirname, 'src/features/communities/components'),
-      '@/components/crew':     path.resolve(__dirname, 'src/features/crew/components'),
-      '@/components/search':   path.resolve(__dirname, 'src/features/search/components'),
-      '@/components/ui':       path.resolve(__dirname, 'src/shared/components'),
-
-      // pages → features
-      '@/pages': path.resolve(__dirname, 'src/features'),
-      '@/constants': path.resolve(__dirname, 'src/constants'),
-      '@/assets': path.resolve(__dirname, 'src/assets'),
-      '@': path.resolve(__dirname, 'src'),
+      '@assets':    path.resolve(__dirname, 'src/assets'),
     },
   },
   optimizeDeps: {
