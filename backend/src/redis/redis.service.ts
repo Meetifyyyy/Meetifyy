@@ -32,7 +32,14 @@ export class RedisService implements OnModuleDestroy {
           noDelay: true,
           family: 4,
           connectTimeout: 5000,
-          tls: isTls ? { rejectUnauthorized: false } : undefined,
+          // Verified, not merely encrypted. `rejectUnauthorized: false` here
+          // accepted any certificate, so anything able to sit between this
+          // process and the cache could read and rewrite what crosses it —
+          // sessions, presence and rate-limit counters. Verification is Node's
+          // default; `servername` pins the name the certificate is checked
+          // against to the host we meant to reach. See app.module.ts for the
+          // matching queue connection.
+          tls: isTls ? { servername: url.hostname } : undefined,
           retryStrategy(times: number) {
             if (times > 5) return null;
             return Math.min(times * 1000, 5000);
