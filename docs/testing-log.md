@@ -11,13 +11,21 @@ means not done.
 
 | # | Check | Command | Must be |
 |---|---|---|---|
-| S1 | Unit tests | `cd frontend && npm test` | 124/124 files, 1296/1296 tests |
+| S1 | Unit tests | `cd frontend && npm test` | all green — **currently 133 files / 1440 tests** |
 | S2 | Lint | `cd frontend && npm run lint` | clean |
+| S2b | Architecture boundaries | `npx eslint src/core src/platform --max-warnings 0` | clean — **blocking in CI** |
+| S2c | Contract typecheck | `cd frontend && npm run typecheck` | exit 0 — **blocking in CI** |
 | S3 | Build succeeds | `cd frontend && npm run build` | exit 0 |
 | S4 | **Web bundle unchanged** | build before + after, `find dist/assets -type f \| sort \| xargs sha256sum` | 153 files, identical names + sha256 |
 | S4b | *(when S4 cannot apply)* moved-code identity | diff the moved region against `git show <parent>:<file>` after undoing the mechanical edits | byte-identical |
-| S5 | Precache manifest unchanged | read the PWA line in build output | 195 entries, 5564.13 KiB |
+| S5 | Precache manifest | read the PWA line in build output | 195 entries — **currently 5556.20 KiB** |
 | S6 | No unintended tracked-file churn | `git status --short` | only the files the phase intends |
+| S7 | Mobile target builds | `cd frontend && VITE_API_URL=… npm run build:mobile` | exit 0, no service worker in `dist-mobile/` |
+
+The counts in S1 and S5 are a **moving baseline**, not a fixed target: they rise
+as tests are added and shift as the module graph changes. They are written down
+so a phase can say what it changed them to and why, not so they stay still. The
+per-phase entries below record each move.
 
 S4 is the real one. Asset hashes are deterministic for a given source state —
 the build version is a commit SHA stamped into **HTML**, not into JS — so a
