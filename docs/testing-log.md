@@ -172,6 +172,51 @@ the tap lands on the keyboard and types into the focused field.
 
 ---
 
+## Launch sequence and version gate — 2026-09-21 (later)
+
+### What the recording showed, and the four causes
+Splash + logo → logo fades to **black** → logo again on **white** → pale flash
+→ dark opening screen. The device was in **dark mode**, which is half the story.
+
+| # | Cause | Fix |
+|---|---|---|
+| 1 | Splash released on the WebView's first draw — a BLANK frame | Waits for the launch shell to exist in the DOM, asked of the page |
+| 2 | Every launch colour was `#FDFDFD` on a dark-mode phone | `values-night/colors.xml` → `#121212`, applied to splash, window and WebView |
+| 3 | WebView with no background draws white | Set in `MainActivity`, follows night mode, re-applied on config change |
+| 4 | Theme applied by React, long after first paint | Blocking inline script reads the same `localStorage.theme` before anything paints |
+
+Verified inside the built APK: `launchBackground` resolves `() #fffdfdfd` and
+`(night) #ff121212`; the shell carries `--launch-bg` and `color-scheme`; the
+JS poll string is compiled in (`classes6.dex` — note it is not in `classes.dex`).
+
+### Icons
+Maskable PWA icons were near-full-bleed, so the OS crop cut the mark. Now 0.42
+of the canvas, inside the 80% safe circle, opaque. Added a `monochrome` layer
+for Android 13+ themed icons. `logo-192/512.png` untouched — "any" purpose, and
+`logo-512.png` is the generator's source.
+
+### Version gate
+`GET /api/app/version` — **live on dev**, `cache-control: public, max-age=60`,
+defaults `0.0.0` so it gates nobody. 26 tests on the comparison, 3 on the
+endpoint.
+
+### ❌ Not verified on device
+The phone was disconnected for all of this. Nothing below has been seen on
+hardware:
+
+1. Launch: no black frame, no white flash in dark mode, one continuous logo.
+2. Launch in **light** mode (the `values-night` fallback path).
+3. Sign in → stays signed in → kill → reopen → still signed in.
+4. Launcher icon and themed-icon tint on the home screen.
+5. Version gate: set `MOBILE_MIN_VERSION_ANDROID` above the installed build and
+   confirm the wall appears, then unset it and confirm it clears.
+
+```bash
+adb install -r local/apk/dev/meetifyy-debug-2026-09-21.apk
+```
+
+---
+
 ## Mobile auto-logout and launch flicker — 2026-09-21
 
 ### Auto-logout: four causes, all now fixed
