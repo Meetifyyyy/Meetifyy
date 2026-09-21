@@ -172,6 +172,45 @@ the tap lands on the keyboard and types into the focused field.
 
 ---
 
+## Cold-start sign-out — 2026-09-21 (root cause)
+
+**Symptom:** sign in, close the app, reopen → asked to sign in again. Working
+normally within a session.
+
+**Cause — one line, in the 401 retry.** The retry rebuilt the `Authorization`
+header only `if (retryHeaders['Authorization'])`, i.e. only when the ORIGINAL
+request had already carried one.
+
+On a cold start it never does. The access token is deliberately never written to
+disk — only the refresh token and session id are in the Keychain — so the first
+request after a relaunch goes out with no `Authorization` at all. The 401
+refresh then succeeded and minted a token, and the retry went out **still
+uncredentialed**, 401'd a second time, and because that arrives as `isRetry` it
+fell through as a hard error. A perfectly good stored session was reported dead.
+
+This was a gap in the earlier fix, not a new regression: that one corrected a
+*stale* header and never considered a *missing* one.
+
+**Fix.** Gate on the client, not on the request: `session.holdsOwnCredential?.()`.
+The retry now ADDS the header when there was none. Web is untouched — the marker
+is absent there and its credential is a cookie.
+
+**Verified.** A test that reproduces the cold start exactly, confirmed to fail
+without the fix. And the full sequence against the **deployed dev API**:
+
+| Step | Result |
+|---|---|
+| Sign in → refresh token + session id returned | pass |
+| Cold start: refresh from the body alone mints an access token | pass |
+| `GET /api/auth/session` with the new token | **200** |
+| `GET /api/posts/feed` with the new token | **200** |
+
+The server side was never wrong. 1494 frontend tests, lint and typecheck clean.
+
+**Still unverified on device** — the phone has been disconnected throughout.
+
+---
+
 ## Launch sequence and version gate — 2026-09-21 (later)
 
 ### What the recording showed, and the four causes

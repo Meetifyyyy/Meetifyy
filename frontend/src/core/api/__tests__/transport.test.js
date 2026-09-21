@@ -381,3 +381,88 @@ describe('createTransport — a client that holds its own credential', () => {
     expect(retry.auth).toBe('Bearer fresh');
   });
 });
+
+/**
+ * Cold start: the app is reopened after being closed.
+ *
+ * This is its own describe because the shape differs from every other retry in
+ * a way that hid a bug. On a cold start the access token is EMPTY — it is never
+ * written to disk, by design — so the first request goes out with no
+ * Authorization header at all. Only the refresh token has been restored from
+ * the Keychain.
+ *
+ * The retry therefore has to ADD a header the original request never had. A
+ * retry that only ever *replaces* an existing one leaves the replay
+ * uncredentialed, it 401s a second time, and because that arrives as `isRetry`
+ * it falls through as a hard error — so a perfectly good stored session is
+ * reported dead and the user is asked to sign in again on every launch.
+ */
+describe('createTransport — reopening the app after it was closed', () => {
+  const coldStartSession = () => {
+    let access = '';
+    let refresh = 'stored-refresh';
+    let sid = 'stored-session';
+    return {
+      holdsOwnCredential: () => true,
+      getToken: () => access,
+      getRefreshToken: () => refresh,
+      getSessionId: () => sid,
+      isRecoveryCredential: () => false,
+      whenReady: () => Promise.resolve(true),
+      adopt: async (t) => {
+        if (t?.accessToken) access = t.accessToken;
+        if (t?.refreshToken) refresh = t.refreshToken;
+        if (t?.sessionId) sid = t.sessionId;
+      },
+    };
+  };
+
+  it('restores the session instead of demanding a fresh sign-in', async () => {
+    const session = coldStartSession();
+    const sent = [];
+
+    globalThis.fetch = vi.fn(async (url, init) => {
+      const u = String(url);
+      sent.push({ url: u, auth: init.headers?.['Authorization'] ?? null });
+
+      if (u.includes('/api/auth/session/refresh')) {
+        const body = JSON.parse(init.body);
+        // The refresh token restored from the Keychain is what authenticates.
+        if (body.refreshToken !== 'stored-refresh') {
+          return { ok: false, status: 401, headers: { get: () => null }, json: async () => ({}), text: async () => '' };
+        }
+        await session.adopt({ accessToken: 'minted', refreshToken: 'rotated', sessionId: 'stored-session' });
+        return {
+          ok: true, status: 200, headers: { get: () => null },
+          json: async () => ({ accessToken: 'minted', refreshToken: 'rotated', sessionId: 'stored-session' }),
+          text: async () => '',
+        };
+      }
+
+      // The API refuses anything without a bearer token, as it does in reality.
+      const authed = init.headers?.['Authorization'] === 'Bearer minted';
+      // `text`, not `json`: the transport reads the body with res.text() and
+      // parses it itself, so a stub that only implements json() hands it an
+      // empty body and every assertion about the result sees null.
+      const payload = JSON.stringify({ user: { id: 'u1' } });
+      return {
+        ok: authed,
+        status: authed ? 200 : 401,
+        headers: { get: () => null },
+        json: async () => JSON.parse(payload),
+        text: async () => (authed ? payload : '{}'),
+      };
+    });
+
+    const { t } = build({ session });
+    const body = await t.apiClient.get('/api/auth/session');
+
+    // The session probe must succeed. If it throws, the app signs the user out.
+    expect(body).toEqual({ user: { id: 'u1' } });
+
+    const first = sent[0];
+    const retry = sent[sent.length - 1];
+    expect(first.auth).toBeNull(); // nothing to send yet — this is the cold start
+    expect(retry.auth).toBe('Bearer minted'); // the retry must ADD the header
+  });
+});

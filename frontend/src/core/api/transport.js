@@ -616,17 +616,28 @@ export function createTransport({
         }
 
         /**
-         * A self-custody client must replay with the NEW token.
+         * A self-custody client must replay with whatever the refresh just
+         * minted — ADDING the header when the request had none.
          *
          * The note above is true for a cookie: the server rewrote it, and
          * `credentials: 'include'` sends whatever is current, so reusing the
          * original headers is right. For the installed app the credential is a
-         * header, and the original one is the token that just 401'd — replaying
-         * it produced a second 401, which arrives as `isRetry` and so falls
-         * straight through as a hard error. The refresh had worked; the retry
-         * threw it away.
+         * header, so the retry has to be rebuilt.
+         *
+         * Gated on the CLIENT, not on the original request having carried a
+         * header. That distinction is the whole bug: on a cold start the access
+         * token is empty — it is never written to disk, by design — so the
+         * first request goes out with no Authorization at all, and only the
+         * refresh token has been restored. A version of this that merely
+         * replaced an existing header left the replay uncredentialed, it 401'd
+         * again, and because that arrives as `isRetry` it fell through as a
+         * hard error. The stored session was perfectly good; the app asked for
+         * a fresh sign-in on every single launch.
+         *
+         * Web is untouched: `holdsOwnCredential` is absent there, its session
+         * is a cookie, and adding a bearer header would be wrong.
          */
-        if (retryHeaders['Authorization']) {
+        if (session.holdsOwnCredential?.()) {
           const renewed = session.getToken?.();
           if (renewed) {
             retryHeaders['Authorization'] = `Bearer ${renewed}`;
