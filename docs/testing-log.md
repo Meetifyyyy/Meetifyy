@@ -172,6 +172,48 @@ the tap lands on the keyboard and types into the focused field.
 
 ---
 
+## White system bars, and themed launcher icons — 2026-09-21
+
+**Symptom:** a dark app with a **white status bar and white navigation bar**.
+
+**Cause.** The WebView is inset by the safe areas, so the strips above and below
+it show the WINDOW background, not the page. That background came from
+`@color/launchBackground`, whose `values-night` variant only answers "what is
+the PHONE set to". The app has its own theme toggle — the report came from an
+app-dark / phone-light device, where the qualifier never applied.
+
+**Fix.** The colour is pushed from the web layer, which is the only thing that
+knows the app's theme. It is read from `--color-bg-white`, the same variable the
+app's header and bottom navigation use, so the system bars match the app's own
+bars by construction rather than by two values being kept in step by hand.
+
+Capacitor 8's built-in `SystemBars` can only set icon STYLE — it has no
+background API, because Android 15 expects apps to draw behind the bars. So a
+small native plugin (`SystemUiPlugin.java`, ~70 lines, no dependency) sets the
+status bar, navigation bar and window colours. `SystemBars.setStyle` is still
+called for iOS, which has no `SystemUi`.
+
+Applied on a `MutationObserver` over `data-theme` rather than by hooking
+`ThemeContext`, which is shared with the website and has no system bars to
+colour. On the next frame, not the same tick: `data-theme` is set before styles
+recalculate, so reading the variable immediately returns the outgoing colour and
+the bars end up one change behind.
+
+**Launcher icon.** An adaptive icon cannot be transparent — Android requires a
+background layer. Now `#FFFFFF` light and `#202020` night, so it stops being a
+white tile on a dark home screen. Verified in the APK: `() #ffffffff`,
+`(night) #ff202020`. The `monochrome` layer added earlier takes precedence on
+launchers that support themed icons.
+
+14 tests on the colour helpers, including that luminance is weighted — a channel
+average calls the brand blue "light" and the bar icons come out invisible.
+1508 passing, web bundle carries none of it.
+
+**❌ Not verified on device.** Needs: bars correct in app-dark/phone-light and
+the reverse, on an in-session theme toggle, and after background → foreground.
+
+---
+
 ## Cold-start sign-out — 2026-09-21 (root cause)
 
 **Symptom:** sign in, close the app, reopen → asked to sign in again. Working

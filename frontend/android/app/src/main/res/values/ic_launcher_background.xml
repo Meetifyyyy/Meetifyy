@@ -1,4 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!--
+      The adaptive launcher icon's background layer.
+
+      An adaptive icon CANNOT be transparent: Android requires a background
+      layer and masks the pair to whatever shape the launcher uses. The mark
+      itself is transparent, so this is the colour that ends up behind it.
+
+      Light value is the logo's own background. The values-night variant is the
+      app's dark surface, so the icon stops being a white tile on a dark home
+      screen. A launcher that supports themed icons will use the monochrome
+      layer instead and ignore both.
+    -->
     <color name="ic_launcher_background">#FFFFFF</color>
 </resources>

@@ -46,6 +46,8 @@ import MediaViewerHost from '../shared/components/MediaViewer/MediaViewerHost';
 import { createCapacitorBackButton } from '../platform/capacitor/backButton';
 import { installNativeBackButton } from './nativeBackButton';
 import UpdateGate from './UpdateGate';
+import { createCapacitorSystemBars } from '../platform/capacitor/systemBars';
+import { installSystemBars } from './installSystemBars';
 
 import '../styles/variables.css';
 import '../styles/global.css';
@@ -99,6 +101,20 @@ if (typeof document !== 'undefined') {
  * does, and there is no unmount to clean up after.
  */
 installNativeBackButton(createCapacitorBackButton());
+
+/**
+ * The phone's status bar and navigation bar, painted to match the app.
+ *
+ * Installed here rather than from a component because it is a property of the
+ * process, not of any screen, and it must survive every route change. It reads
+ * `--color-bg-white` — the colour the app's own header and bottom navigation
+ * use — so the system bars and the app's bars are the same colour by
+ * construction rather than by two values being kept in step by hand.
+ *
+ * Runs after the stylesheets above are imported; reading the variable before
+ * them returns nothing and the bars keep the window's default white.
+ */
+installSystemBars(createCapacitorSystemBars());
 
 createRoot(document.getElementById('root')).render(
   <QueryClientProvider client={queryClient}>

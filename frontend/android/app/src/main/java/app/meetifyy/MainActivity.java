@@ -61,6 +61,11 @@ public class MainActivity extends BridgeActivity {
         // Must run BEFORE super.onCreate, or the splash theme is never applied.
         SplashScreen splashScreen = SplashScreen.installSplashScreen(this);
 
+        // Before super.onCreate: the bridge reads the registered plugins while
+        // it is being built, so a plugin registered afterwards is not there
+        // when the web layer first asks for it.
+        registerPlugin(SystemUiPlugin.class);
+
         super.onCreate(savedInstanceState);
 
         splashScreen.setKeepOnScreenCondition(() -> !contentPainted);
