@@ -44,7 +44,7 @@
   -->
   <script>
     (function () {
-      var bg = '#FDFDFD';
+      var bg = '#FFFFFF';
       var theme = 'light';
       try {
         // `theme_preference_set` is written only by toggleTheme, so it means
@@ -61,7 +61,7 @@
         }
       } catch (e) {}
 
-      if (theme === 'dark') bg = '#121212';
+      if (theme === 'dark') bg = '#000000';
 
       document.documentElement.setAttribute('data-theme', theme);
       document.documentElement.style.colorScheme = theme;
@@ -106,101 +106,43 @@
   <link rel="stylesheet" href="/src/styles/fonts.css" />
 </head>
 <body>
-  <!--
-    Launch shell, same idea as the web entry: the platform splash is dismissed
-    the moment the page paints, which is long before React has mounted, so
-    without this there is a flash of empty page in between. Inline and
-    markup-only because it has to be on screen at first paint, which rules out
-    anything that waits on the bundle or a stylesheet.
-  -->
-  <div id="launch-shell" aria-hidden="true"
-       style="position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;background:var(--launch-bg,#FDFDFD);transition:opacity .25s ease;pointer-events:none">
-    <!--
-      The MARK, not the full logo lockup, and at the size the system splash
-      draws it. The splash hands over to this image, so any difference between
-      the two shows up as a flicker at the exact moment the page paints: the
-      lockup that used to be here replaced the mark with mark-plus-wordmark and
-      changed size at the same time.
-
-      `min(38vw, 160px)` rather than a fixed 120px so it holds its proportion on
-      a small phone and does not become a postage stamp on a tablet. The
-      background is the same #FDFDFD as the splash and the activity window.
-    -->
-    <img src="/logo-mark.png" alt=""
-         style="width:min(38vw,160px);height:auto;display:block" />
-  </div>
-
   <div id="root"></div>
 
   <script>
     /**
-     * When the launch shell lifts.
+     * Reports when the app is ready, for the NATIVE splash to stand down.
      *
-     * The app calls `window.__meetifyyBoot.ready()` once authentication has
-     * been decided — see AuthContext. Without this object the call is a no-op
-     * (it is written with optional chaining), so the shell would simply stay up
-     * forever with the app running underneath it. That is exactly what happened
-     * the first time this file was written without it.
+     * THERE IS NO HTML SPLASH HERE, DELIBERATELY.
      *
-     * Both conditions, not either: React must have painted AND the app must
-     * have worked out who is signed in. Lifting on first paint alone shows the
-     * signed-out screen for a moment to someone who is signed in, because the
+     * There used to be: a full-screen div with the mark, which the system
+     * splash handed over to. That was two splash screens, and they did not
+     * match — Android draws the splash icon in a 240dp container while this
+     * one drew the same PNG at `min(38vw,160px)`, inside which the mark is only
+     * 46% of the image. The result was a large logo, then a small logo, then
+     * the app. Making the two agree on a size would have been a fix for the
+     * symptom; there is simply no reason for a second one to exist.
+     *
+     * So the native splash stays up until the app is genuinely ready, and this
+     * is the only thing it waits for. `MainActivity` polls `appReady` — see
+     * `setKeepOnScreenCondition` there. Nothing is rendered by this file.
+     *
+     * `ready()` is called by AuthContext once authentication has been DECIDED,
+     * not merely once React has painted. Lifting on first paint shows the
+     * signed-out screen for a moment to somebody who is signed in, because the
      * route gates are being asked a question the app cannot answer yet.
      *
-     * MIN_VISIBLE_MS is for the opposite failure. A warm start can finish in
-     * under 200ms, and a logo that appears and vanishes inside a few frames
-     * reads as a flicker rather than as loading. It is a floor, never an
-     * addition — a slower boot pays nothing for it.
-     *
-     * The backstop ignores every condition: a boot that never reports ready — a
-     * failed bundle, a hung request — must still reveal whatever is behind the
-     * shell rather than leave someone looking at a logo.
-     *
-     * Simpler than the website's version by exactly one thing: there is no
-     * launch-time version gate to wait for, because a bundled app has no
-     * deployment to be stale against.
+     * The window behind the WebView is painted the same colour as the splash
+     * (see MainActivity), so there is nothing to see between the two even if
+     * the backstop fires.
      */
-    (function () {
-      var MIN_VISIBLE_MS = 450;
-      var shownAt = Date.now();
-      var shell = document.getElementById('launch-shell');
-
-      window.__meetifyyBoot = {
-        appReady: false,
-        ready: function () {
-          window.__meetifyyBoot.appReady = true;
-          if (shell) dismiss();
-        }
-      };
-
-      if (!shell) return;
-
-      var done = false;
-      var root = document.getElementById('root');
-      var observer = new MutationObserver(function () { dismiss(); });
-
-      function dismiss(force) {
-        if (done) return;
-        if (!force) {
-          if (!root || root.childElementCount === 0) return;
-          if (!window.__meetifyyBoot.appReady) return;
-          var elapsed = Date.now() - shownAt;
-          if (elapsed < MIN_VISIBLE_MS) {
-            setTimeout(dismiss, MIN_VISIBLE_MS - elapsed);
-            return;
-          }
-        }
-        done = true;
-        observer.disconnect();
-        shell.style.opacity = '0';
-        setTimeout(function () { shell.remove(); }, 300);
+    window.__meetifyyBoot = {
+      appReady: false,
+      ready: function () {
+        window.__meetifyyBoot.appReady = true;
       }
-
-      observer.observe(root, { childList: true });
-      dismiss();
-      setTimeout(function () { dismiss(true); }, 8000);
-    })();
+    };
   </script>
+
   <script type="module" src="/src/mobile/main.jsx"></script>
 </body>
 </html>

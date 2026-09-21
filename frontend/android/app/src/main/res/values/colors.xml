@@ -1,13 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!--
-      The colour the app window is painted BEFORE anything else exists.
-
-      Deliberately identical to the `#FDFDFD` of the launch shell in
-      index.mobile.html. The startup sequence crosses three separate surfaces —
-      the system splash, the activity window, then the WebView's first paint —
-      and any difference between them reads as a flash. Matching them makes the
-      handover invisible.
-    -->
-    <color name="launchBackground">#FDFDFD</color>
+    <!-- Light mode launch background and theme tokens -->
+    <color name="launchBackground">#FFFFFF</color>
+    <color name="colorWhite">#FFFFFF</color>
+    <color name="colorBlack">#000000</color>
 </resources>

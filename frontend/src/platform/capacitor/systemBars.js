@@ -103,10 +103,39 @@ export function createCapacitorSystemBars({ getComputed } = {}) {
 
       const lightIcons = needsLightIcons(background);
 
+      let theme = 'light';
+      let preferenceSet = false;
       try {
-        await SystemUi.setColors({ background, lightIcons });
-      } catch {
-        // No SystemUi here — iOS, or the web preview.
+        if (typeof document !== 'undefined') {
+          theme = document.documentElement.getAttribute('data-theme') || 'light';
+        }
+        if (typeof localStorage !== 'undefined') {
+          preferenceSet = localStorage.getItem('theme_preference_set') === 'true';
+        }
+      } catch (_) {}
+
+      /**
+       * Retried, because the first attempt runs before the bridge is ready.
+       *
+       * This is installed at module scope and fires on the next frame, which on
+       * a cold start is earlier than Capacitor has finished wiring up its
+       * plugins. The call rejected, the catch swallowed it, and the bars kept
+       * the window colour for the whole session — measured on a device: the app
+       * in light mode with both system bars still #121212, while calling the
+       * same method by hand a moment later worked perfectly.
+       *
+       * Three attempts over ~700ms covers bridge startup without being a poll.
+       * Failing after that is genuinely "this platform has no SystemUi", which
+       * is iOS and the web preview, and is not worth shouting about.
+       */
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          await SystemUi.setColors({ background, lightIcons, theme, preferenceSet });
+          break;
+        } catch {
+          if (attempt === 2) break;
+          await new Promise((r) => setTimeout(r, 150 + attempt * 200));
+        }
       }
 
       try {

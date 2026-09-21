@@ -2,52 +2,52 @@
 <resources>
 
     <!-- Base application theme. -->
-    <style name="AppTheme" parent="Theme.AppCompat.Light.DarkActionBar">
-        <item name="colorPrimary">@color/colorPrimary</item>
-        <item name="colorPrimaryDark">@color/colorPrimaryDark</item>
-        <item name="colorAccent">@color/colorAccent</item>
+    <style name="AppTheme" parent="Theme.AppCompat.DayNight.DarkActionBar">
+        <item name="colorPrimary">#2563EB</item>
+        <item name="colorPrimaryDark">#1D4ED8</item>
+        <item name="colorAccent">#2563EB</item>
     </style>
 
-    <!--
-      The theme the activity wears for its whole life after the splash.
-
-      `android:windowBackground` is the fix for the black screen. A WebView takes
-      a moment to initialise and load the document, and whatever the window is
-      painted with is what fills the screen for that moment. It was unset, so the
-      window came up black between the splash and the page's first paint, which
-      is the "black screen then flicker" that started this.
-
-      `android:background` — what was here before — is not the same attribute. It
-      styles a view, not the window, so it never applied to that gap at all.
-    -->
+    <!-- Base DayNight theme for unconfigured initial launches -->
     <style name="AppTheme.NoActionBar" parent="Theme.AppCompat.DayNight.NoActionBar">
         <item name="windowActionBar">false</item>
         <item name="windowNoTitle">true</item>
         <item name="android:windowBackground">@color/launchBackground</item>
     </style>
 
-    <!--
-      The launch theme, using the real SplashScreen API via
-      androidx.core:core-splashscreen (already a dependency).
+    <!-- Explicit Light Activity theme -->
+    <style name="AppTheme.NoActionBar.Light" parent="Theme.AppCompat.Light.NoActionBar">
+        <item name="windowActionBar">false</item>
+        <item name="windowNoTitle">true</item>
+        <item name="android:windowBackground">@color/colorWhite</item>
+    </style>
 
-      What was here set `android:background` on a `Theme.SplashScreen` parent.
-      Android 12+ ignores that attribute entirely for the splash and reads
-      `windowSplashScreenBackground` / `windowSplashScreenAnimatedIcon`, so the
-      app fell back to the platform default and then to a black window — and the
-      icon it did show on older devices was Capacitor's stock logo, not ours.
+    <!-- Explicit Dark Activity theme -->
+    <style name="AppTheme.NoActionBar.Dark" parent="Theme.AppCompat.NoActionBar">
+        <item name="windowActionBar">false</item>
+        <item name="windowNoTitle">true</item>
+        <item name="android:windowBackground">@color/colorBlack</item>
+    </style>
 
-      `postSplashScreenTheme` is what hands the activity to the theme above when
-      the splash ends. Without it the activity kept wearing the splash theme,
-      which has no window background at all.
-
-      The icon is the adaptive launcher foreground. That is not reuse for its own
-      sake: the splash icon's safe zone is 160dp of a 240dp canvas, which is the
-      same 2/3 proportion as the adaptive icon's 72dp of 108dp, so the asset is
-      already drawn to the right inset and the mark cannot be clipped.
-    -->
+    <!-- Base Launch theme following system DayNight -->
     <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
         <item name="windowSplashScreenBackground">@color/launchBackground</item>
         <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher_foreground</item>
         <item name="postSplashScreenTheme">@style/AppTheme.NoActionBar</item>
     </style>
+
+    <!-- Explicit Light Launch theme -->
+    <style name="AppTheme.NoActionBarLaunch.Light" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/colorWhite</item>
+        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher_foreground</item>
+        <item name="postSplashScreenTheme">@style/AppTheme.NoActionBar.Light</item>
+    </style>
+
+    <!-- Explicit Dark Launch theme -->
+    <style name="AppTheme.NoActionBarLaunch.Dark" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/colorBlack</item>
+        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher_foreground</item>
+        <item name="postSplashScreenTheme">@style/AppTheme.NoActionBar.Dark</item>
+    </style>
+
 </resources>

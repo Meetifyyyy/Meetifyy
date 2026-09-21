@@ -1,57 +1,30 @@
 package app.meetifyy;
 
-import android.content.SharedPreferences;
 import android.content.res.Configuration;
+import android.graphics.drawable.ColorDrawable;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
 import android.webkit.WebView;
 
-import androidx.core.content.ContextCompat;
 import androidx.core.splashscreen.SplashScreen;
 
 import com.getcapacitor.BridgeActivity;
 
 /**
- * Holds the system splash until the web app has actually painted something.
+ * Main Android entry point for Meetifyy.
  *
- * WHAT THE FIRST ATTEMPT GOT WRONG
- * It released the splash from a pre-draw listener on the WebView. That fires on
- * the WebView's first draw, which is its BLANK frame — the page has not
- * rendered yet — so the splash lifted onto an empty WebView. On a dark-mode
- * device that empty frame is black, which is the black screen in the recording,
- * and the launch shell then painted its logo a moment later. The logo appeared,
- * vanished into black, and appeared again.
- *
- * WHAT IT WAITS FOR NOW
- * The launch shell in `index.mobile.html` is the first thing the document
- * paints, so its presence in the DOM is the real "there is something behind the
- * splash" signal. Asking the page directly is the only way to know that; no
- * native view callback can see it.
- *
- * Polling rather than a plugin: a JavaScript interface to receive one boolean
- * would mean a bridge, a registered plugin and a contract to keep, for a signal
- * that is read a handful of times over half a second. The poll is cheap, it is
- * cancelled the moment it succeeds, and it is confined to this file.
- *
- * SPLASH_TIMEOUT_MS is a backstop, not a delay. It only ever runs if the page
- * never paints — a failed bundle, a hung load — so that the user ends up
- * looking at the app's own error state instead of a logo forever.
- *
- * THE BACKGROUND COLOUR IS SET THREE TIMES, ON PURPOSE
- * The splash, the activity window and the WebView are three separate surfaces,
- * and whichever is on top during a handover is what the user sees. They are all
- * `launchBackground`, which has a `values-night` variant, so on a dark-mode
- * phone none of them flashes white. The web layer paints the same value from
- * `localStorage.theme` before its first paint, so the shell agrees with them.
+ * Responsibilities:
+ * 1. Resolves persisted theme preference (light, dark, or system fallback) before
+ *    SplashScreen.installSplashScreen() and super.onCreate().
+ * 2. Applies explicit launch themes and system bar colors immediately upon startup.
+ * 3. Holds the system splash screen until AuthContext and React confirm the app is ready.
+ * 4. Ensures no dark splash -> light app or light splash -> dark app flashes.
  */
 public class MainActivity extends BridgeActivity {
 
-    /** Only reached if the page never paints. */
     private static final long SPLASH_TIMEOUT_MS = 5000;
-
-    /** Fast enough to be invisible, slow enough not to busy-wait the WebView. */
     private static final long POLL_INTERVAL_MS = 32;
 
     private boolean contentPainted = false;
@@ -59,77 +32,106 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
-        // Must run BEFORE super.onCreate, or the splash theme is never applied.
-        SplashScreen splashScreen = SplashScreen.installSplashScreen(this);
+        // 1. Resolve persisted theme preference BEFORE splash screen is initialized
+        final SystemUiHelper.ResolvedTheme resolvedTheme = SystemUiHelper.resolveTheme(this);
+        SystemUiHelper.applyNightModeAndLaunchTheme(this, resolvedTheme.isDark);
 
-        // Before super.onCreate: the bridge reads the registered plugins while
-        // it is being built, so a plugin registered afterwards is not there
-        // when the web layer first asks for it.
+        // 2. Install splash screen using the resolved theme
+        final SplashScreen splashScreen = SplashScreen.installSplashScreen(this);
+
+        // 3. Register custom SystemUi plugin before super.onCreate
         registerPlugin(SystemUiPlugin.class);
 
         super.onCreate(savedInstanceState);
 
-        splashScreen.setKeepOnScreenCondition(() -> !contentPainted);
+        // 4. Apply system bars and decor background immediately
+        SystemUiHelper.applySystemBars(this, resolvedTheme.isDark, null);
+        applyLaunchBackground(resolvedTheme.isDark);
 
-        applyLaunchBackground();
+        final int splashColor = resolvedTheme.isDark ? SystemUiHelper.COLOR_DARK : SystemUiHelper.COLOR_LIGHT;
+        if (getWindow() != null && getWindow().getDecorView() != null) {
+            findAndColorSplashView(getWindow().getDecorView(), splashColor);
+            getWindow().getDecorView().post(() -> {
+                findAndColorSplashView(getWindow().getDecorView(), splashColor);
+            });
+        }
 
-        final long deadline = SystemClock.uptimeMillis() + SPLASH_TIMEOUT_MS;
-        handler.post(new Runnable() {
-            @Override
-            public void run() {
-                if (contentPainted) return;
-
-                if (SystemClock.uptimeMillis() >= deadline) {
-                    contentPainted = true;
-                    return;
-                }
-
-                final WebView webView = getBridge() != null ? getBridge().getWebView() : null;
-                if (webView == null) {
-                    handler.postDelayed(this, POLL_INTERVAL_MS);
-                    return;
-                }
-
-                final Runnable self = this;
-                webView.evaluateJavascript(
-                    "(function(){try{return !!document.getElementById('launch-shell')}catch(e){return false}})()",
-                    value -> {
-                        if ("true".equals(value)) {
-                            contentPainted = true;
-                        } else {
-                            handler.postDelayed(self, POLL_INTERVAL_MS);
-                        }
-                    }
-                );
+        splashScreen.setOnExitAnimationListener(provider -> {
+            if (provider != null && provider.getView() != null) {
+                provider.getView().setBackgroundColor(splashColor);
+                findAndColorSplashView(provider.getView(), splashColor);
             }
+
+            final SystemUiHelper.ResolvedTheme currentTheme = SystemUiHelper.resolveTheme(this);
+            SystemUiHelper.applySystemBars(this, currentTheme.isDark, null);
+            applyLaunchBackground(currentTheme.isDark);
+
+            final long deadline = SystemClock.uptimeMillis() + SPLASH_TIMEOUT_MS;
+            handler.post(new Runnable() {
+                private boolean themeSynced = false;
+
+                @Override
+                public void run() {
+                    if (contentPainted || SystemClock.uptimeMillis() >= deadline) {
+                        if (provider != null) {
+                            provider.remove();
+                        }
+                        return;
+                    }
+
+                    final WebView webView = getBridge() != null ? getBridge().getWebView() : null;
+                    if (webView == null) {
+                        handler.postDelayed(this, POLL_INTERVAL_MS);
+                        return;
+                    }
+
+                    if (!themeSynced && resolvedTheme.preferenceSet) {
+                        themeSynced = true;
+                        final String themeStr = resolvedTheme.isDark ? "dark" : "light";
+                        webView.evaluateJavascript(
+                            "(function(){try{"
+                                + "if(localStorage.getItem('theme_preference_set')!=='true'){"
+                                + "localStorage.setItem('theme_preference_set','true');"
+                                + "localStorage.setItem('theme','" + themeStr + "');"
+                                + "document.documentElement.setAttribute('data-theme','" + themeStr + "');"
+                                + "}"
+                                + "}catch(e){}})()",
+                            null
+                        );
+                    }
+
+                    final Runnable self = this;
+                    webView.evaluateJavascript(
+                        "(function(){try{return !!(window.__meetifyyBoot && window.__meetifyyBoot.appReady)}"
+                            + "catch(e){return false}})()",
+                        value -> {
+                            if ("true".equals(value)) {
+                                contentPainted = true;
+                                if (provider != null) {
+                                    provider.remove();
+                                }
+                            } else {
+                                handler.postDelayed(self, POLL_INTERVAL_MS);
+                            }
+                        }
+                    );
+                }
+            });
         });
     }
 
     /**
-     * Paints the WebView itself, not just the window behind it.
-     *
-     * A WebView with no explicit background draws white, and in dark mode that
-     * is a white rectangle over a dark window for the moment before the page
-     * renders. Setting it here rather than in `capacitor.config.json` is what
-     * allows it to follow the night-mode resource.
+     * Paints the activity window, decor view, and WebView with the resolved theme color.
      */
-    private void applyLaunchBackground() {
-        /*
-         * The colour the APP last asked for wins over the one the PHONE implies.
-         *
-         * `R.color.launchBackground` has a values-night variant, which answers
-         * "what is the phone set to". That is the wrong question whenever
-         * someone has used the in-app theme toggle: an app-dark, phone-light
-         * device got a white window behind a dark app. SystemUiPlugin records
-         * the real colour on every theme change, so from the second launch
-         * onward this is exact.
-         */
-        final int fallback = ContextCompat.getColor(this, R.color.launchBackground);
-        final SharedPreferences prefs =
-            getSharedPreferences(SystemUiPlugin.PREFS, MODE_PRIVATE);
-        final int color = prefs.getInt(SystemUiPlugin.KEY_BACKGROUND, fallback);
+    private void applyLaunchBackground(boolean isDark) {
+        final int color = isDark ? SystemUiHelper.COLOR_DARK : SystemUiHelper.COLOR_LIGHT;
 
-        getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(color));
+        if (getWindow() != null) {
+            getWindow().setBackgroundDrawable(new ColorDrawable(color));
+            if (getWindow().getDecorView() != null) {
+                getWindow().getDecorView().setBackgroundColor(color);
+            }
+        }
 
         final WebView webView = getBridge() != null ? getBridge().getWebView() : null;
         if (webView != null) {
@@ -138,16 +140,46 @@ public class MainActivity extends BridgeActivity {
     }
 
     /**
-     * Follows a theme change made while the app is alive.
-     *
-     * Without this, switching the phone to dark mode leaves the WebView holding
-     * the light colour it was given at launch, which shows on the next cold
-     * frame.
+     * Recursively traverses views to find and color the platform SplashScreenView.
      */
+    private void findAndColorSplashView(android.view.View view, int color) {
+        if (view == null) return;
+        final String name = view.getClass().getName();
+        if (name.contains("SplashScreen") || name.contains("SplashScreenView")) {
+            view.setBackgroundColor(color);
+        }
+        if (view instanceof android.view.ViewGroup) {
+            final android.view.ViewGroup group = (android.view.ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                findAndColorSplashView(group.getChildAt(i), color);
+            }
+        }
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        final SystemUiHelper.ResolvedTheme currentTheme = SystemUiHelper.resolveTheme(this);
+        SystemUiHelper.applySystemBars(this, currentTheme.isDark, null);
+        applyLaunchBackground(currentTheme.isDark);
+    }
+
     @Override
     public void onConfigurationChanged(Configuration newConfig) {
         super.onConfigurationChanged(newConfig);
-        applyLaunchBackground();
+        final SystemUiHelper.ResolvedTheme currentTheme = SystemUiHelper.resolveTheme(this);
+
+        // If the user explicitly chose Light or Dark, device changes must NOT override the app
+        if (currentTheme.preferenceSet) {
+            SystemUiHelper.applySystemBars(this, currentTheme.isDark, null);
+            applyLaunchBackground(currentTheme.isDark);
+        } else {
+            // System mode: follow device configuration change
+            final boolean deviceIsDark =
+                (newConfig.uiMode & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
+            SystemUiHelper.applySystemBars(this, deviceIsDark, null);
+            applyLaunchBackground(deviceIsDark);
+        }
     }
 
     @Override
