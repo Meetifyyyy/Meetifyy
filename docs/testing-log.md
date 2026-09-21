@@ -172,6 +172,71 @@ the tap lands on the keyboard and types into the focused field.
 
 ---
 
+## Mobile auto-logout and launch flicker — 2026-09-21
+
+### Auto-logout: four causes, all now fixed
+
+| # | Cause | Where |
+|---|---|---|
+| 1 | Backend returning no tokens to the app | **not deployed** — now on `development`, dev deploy green, verified live |
+| 2 | Boot gate asked "have I a session?" before the Keychain was read, and the answer is cookie-shaped | `transport.mayHaveCookieSession` + `AuthContext` boot |
+| 3 | `whenReady()` awaited only for signup paths, so the first request **and** the refresh behind it went out empty | `transport.request` |
+| 4 | The 401 retry replayed the **stale** access token, so a successful refresh was thrown away | `transport` retry |
+
+`SessionSource.holdsOwnCredential()` is what the transport keys on. Web must not
+await — its session is a cookie needing no load.
+
+Verified against the **deployed dev API**:
+
+| Check | Result |
+|---|---|
+| Login from the native origin returns access + refresh + session id | pass |
+| `Authorization` + `x-session-id` on `/api/posts/feed` | **200** |
+| Bare bearer | **401** — bypass still closed |
+| Web origin gets tokens in the body | **no** |
+
+### Launch black screen: three native causes
+
+1. `AppTheme.NoActionBarLaunch` set `android:background` on a `Theme.SplashScreen`
+   parent — ignored by Android 12+, which reads `windowSplashScreenBackground` /
+   `windowSplashScreenAnimatedIcon`. The icon older devices showed was
+   **Capacitor's stock logo**, not ours.
+2. `postSplashScreenTheme` was unset, so the activity kept the splash theme.
+3. `AppTheme.NoActionBar` had no `android:windowBackground` → **black window**
+   while the WebView started. That is the black screen.
+
+`MainActivity` now installs the SplashScreen API and holds it until the WebView's
+first frame (pre-draw listener, 4s backstop — a backstop, not a delay). Splash,
+activity window and launch shell are all `#FDFDFD` with the same mark at the same
+size, so the three handovers are invisible.
+
+Verified in the compiled APK: all three splash attributes resolve,
+`AppTheme.NoActionBar` carries `android:windowBackground`, the shell ships
+`logo-mark.png`.
+
+### Opening screen
+No change needed. `PublicRoute` already renders nothing while INITIALIZING and
+redirects an authenticated user to `/home`. It showed the signed-out screen only
+because auth resolved to signed-out. Adding a second gate would have hidden the
+real bug.
+
+### ❌ Still to verify — needs the phone plugged in
+Every fix above is verified in tests, in the compiled APK, or against the live
+dev API. **None of it has been run on the device**, because the phone was
+disconnected partway through. What to check once it is back:
+
+1. Fresh install → sign in → stays signed in.
+2. Kill and reopen → still signed in (this is the fix for causes 2–4).
+3. Background → foreground → still signed in.
+4. Logout → reopen → signed out, opening screen shown.
+5. Launch: no black screen, no flicker.
+
+```bash
+adb install -r local/apk/dev/meetifyy-debug-2026-09-21.apk
+```
+
+---
+
 ## Building the dev APK
 
 The toolchain lives **outside the repo**, under `~/.local/android/` (no root, no
