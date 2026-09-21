@@ -25,10 +25,14 @@ export default function AppOpenScreen() {
       <div>
         <img
           className={styles.logo}
-          src="/logo-192.png"
+          src="/logo-mark.png"
           alt=""
-          width="88"
-          height="88"
+          /*
+           * The same mark the system splash and the launch shell show, so the
+           * logo does not change shape as the app takes over from them. No
+           * width/height attributes: the size is responsive in CSS, and fixed
+           * attributes here would fight it.
+           */
           /*
            * Not lazy and not async: this is the first paint of a cold start,
            * and the native splash is being dismissed underneath it. Anything

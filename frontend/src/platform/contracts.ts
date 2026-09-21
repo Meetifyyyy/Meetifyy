@@ -123,6 +123,36 @@ export interface SessionSource {
   isRecoveryCredential(): boolean;
   /** Resolves once an initial session has been loaded, if the client loads one. */
   whenReady(): Promise<unknown> | null;
+
+  /**
+   * True when this client stores its own credential rather than relying on the
+   * browser to attach one.
+   *
+   * The installed app does: its WebView is never given the session cookies, so
+   * it holds a token in the Keychain and sends it as a header. Web does not.
+   *
+   * The transport uses this to decide whether it must AWAIT `whenReady()`
+   * before a request. Web must not — its session is a cookie that needs no
+   * loading, and awaiting on every request would put the provider's
+   * initialisation in front of the whole app. The app must, or its first
+   * request and the refresh behind it both go out with nothing in hand and a
+   * live session is reported expired.
+   *
+   * Absent on a source that does not hold a credential, so callers use `?.()`.
+   */
+  holdsOwnCredential?(): boolean;
+
+  /** The stored refresh token, for a client that holds one. Absent on web. */
+  getRefreshToken?(): string;
+
+  /** The session id that names the stored token. Absent on web. */
+  getSessionId?(): string;
+
+  /** Takes tokens from a login, handover or refresh. Absent on web. */
+  adopt?(tokens: unknown): Promise<void>;
+
+  /** Destroys the stored credential. Absent on web. */
+  forget?(): Promise<void>;
 }
 
 /**

@@ -244,3 +244,140 @@ describe('createTransport — the native session header', () => {
     expect(calls[0].init.headers).not.toHaveProperty('Authorization');
   });
 });
+
+/**
+ * A client that keeps its own credential — the installed app — must not be
+ * asked whether it has a session before it has had a chance to read one.
+ *
+ * Every test here corresponds to a way the app signed a valid user out on
+ * launch. They are grouped because they are one bug with three surfaces: the
+ * boot gate, the first request, and the retry after a refresh.
+ */
+describe('createTransport — a client that holds its own credential', () => {
+  /** A session source shaped like the Capacitor one: async load, sync getters. */
+  const nativeSession = ({ stored = null, resolveReady } = {}) => {
+    let access = '';
+    let refresh = stored?.refreshToken ?? '';
+    let sid = stored?.sessionId ?? '';
+    let loaded = false;
+    return {
+      holdsOwnCredential: () => true,
+      getToken: () => access,
+      getRefreshToken: () => refresh,
+      getSessionId: () => sid,
+      isRecoveryCredential: () => false,
+      whenReady: () =>
+        (resolveReady ?? Promise.resolve()).then(() => {
+          loaded = true;
+          return true;
+        }),
+      adopt: async (t) => {
+        if (t?.accessToken) access = t.accessToken;
+        if (t?.refreshToken) refresh = t.refreshToken;
+        if (t?.sessionId) sid = t.sessionId;
+      },
+      forget: async () => {
+        access = refresh = sid = '';
+      },
+      get loaded() {
+        return loaded;
+      },
+    };
+  };
+
+  /**
+   * The boot gate asked "do you have a session?" before the Keychain had been
+   * read, got "no" because a WebView is never given cookies, and signed the
+   * user out on every launch.
+   */
+  it('reports a possible session once a stored refresh token is loaded', () => {
+    const session = nativeSession({ stored: { refreshToken: 'r1', sessionId: 's1' } });
+    const { t } = build({ session });
+
+    expect(t.mayHaveCookieSession()).toBe(true);
+  });
+
+  it('reports no session when nothing is stored', () => {
+    const { t } = build({ session: nativeSession() });
+    expect(t.mayHaveCookieSession()).toBe(false);
+  });
+
+  it('exposes the readiness promise so the boot can await the load', async () => {
+    const session = nativeSession({ stored: { refreshToken: 'r1', sessionId: 's1' } });
+    const { t } = build({ session });
+
+    await t.whenSessionReady();
+
+    expect(session.loaded).toBe(true);
+  });
+
+  it('web has nothing to wait for', () => {
+    const { t } = build({ session: { whenReady: () => null } });
+    expect(t.whenSessionReady()).toBeNull();
+  });
+
+  /**
+   * The request path used to await `whenReady()` only for the signup handover
+   * paths. For a self-custody client that meant the very first request, and the
+   * refresh behind it, both went out with nothing in hand.
+   */
+  it('waits for the credential before an ordinary request', async () => {
+    let release;
+    const gate = new Promise((r) => { release = r; });
+    const session = nativeSession({ stored: { refreshToken: 'r1' }, resolveReady: gate });
+
+    const calls = [];
+    globalThis.fetch = vi.fn(async (url, init) => {
+      calls.push({ url, init });
+      return { ok: true, status: 200, headers: { get: () => null }, json: async () => ({}), text: async () => '' };
+    });
+
+    const { t } = build({ session });
+    const inFlight = t.apiClient.get('/api/posts/feed');
+
+    // Nothing may have gone out yet: the credential is still being read.
+    await Promise.resolve();
+    expect(calls).toHaveLength(0);
+
+    release();
+    await inFlight;
+    expect(calls).toHaveLength(1);
+  });
+
+  /**
+   * After a refresh the stored token is new, but the retry replayed the ORIGINAL
+   * headers — the token that had just 401'd. The second 401 arrives as `isRetry`
+   * and falls through as a hard error, so a refresh that worked was thrown away.
+   */
+  it('replays the retry with the refreshed token, not the stale one', async () => {
+    const session = nativeSession({ stored: { refreshToken: 'r1', sessionId: 's1' } });
+    await session.adopt({ accessToken: 'stale', refreshToken: 'r1', sessionId: 's1' });
+
+    const sent = [];
+    globalThis.fetch = vi.fn(async (url, init) => {
+      sent.push({ url: String(url), auth: init.headers?.['Authorization'] });
+
+      if (String(url).includes('/api/auth/session/refresh')) {
+        await session.adopt({ accessToken: 'fresh', refreshToken: 'r2', sessionId: 's1' });
+        return {
+          ok: true, status: 200, headers: { get: () => null },
+          json: async () => ({ accessToken: 'fresh', refreshToken: 'r2', sessionId: 's1' }),
+          text: async () => '',
+        };
+      }
+      // The first attempt 401s; anything carrying the fresh token succeeds.
+      const stale = init.headers?.['Authorization'] === 'Bearer stale';
+      return {
+        ok: !stale, status: stale ? 401 : 200,
+        headers: { get: () => null }, json: async () => ({}), text: async () => '',
+      };
+    });
+
+    const { t } = build({ session });
+    await t.apiClient.get('/api/posts/feed');
+
+    const retry = sent[sent.length - 1];
+    expect(retry.url).toContain('/api/posts/feed');
+    expect(retry.auth).toBe('Bearer fresh');
+  });
+});

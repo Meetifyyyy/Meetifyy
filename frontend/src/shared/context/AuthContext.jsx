@@ -9,6 +9,7 @@ import {
   rememberSessionTokens,
   forgetSessionTokens,
   mayHaveCookieSession,
+  whenSessionReady,
 } from '@shared/api/apiClient';
 import { useSavedActivitiesStore } from '../stores/savedActivitiesStore';
 import { getCollegeName } from '@shared/utils/user';
@@ -500,6 +501,29 @@ export function AuthProvider({ children }) {
       if (isRecoveryPending()) return signedOut();
 
       if (!isSupabaseConfigured) return signedOut();
+
+      /**
+       * Let the client load a credential it keeps itself, before asking whether
+       * it has one.
+       *
+       * On web this resolves immediately to null: the session is a cookie the
+       * browser attaches without help, and there is nothing to read. On the
+       * installed app it is a Keychain read, and skipping it was a real bug —
+       * the gate below ran first, found no cookie because a WebView is never
+       * given one, and signed a returning user out on every single launch
+       * before their stored session had even been looked at.
+       */
+      try {
+        // Optional call: a session source with nothing to load does not export
+        // it. The try/catch is for a credential that cannot be READ — a
+        // Keychain entry whose key is gone after a device restore — which is a
+        // signed-out user, not a crash. It must not also be swallowing a
+        // missing export, which is a wiring bug and should surface as one.
+        await whenSessionReady?.();
+      } catch (_) {
+        /* Unreadable credential: fall through to the gate below. */
+      }
+      if (cancelled) return;
 
       // Nothing suggests a session, so do not spend a request being told so.
       // Every first-time arrival and every shared link lands here.

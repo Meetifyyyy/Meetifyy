@@ -3,20 +3,51 @@
 
     <!-- Base application theme. -->
     <style name="AppTheme" parent="Theme.AppCompat.Light.DarkActionBar">
-        <!-- Customize your theme here. -->
         <item name="colorPrimary">@color/colorPrimary</item>
         <item name="colorPrimaryDark">@color/colorPrimaryDark</item>
         <item name="colorAccent">@color/colorAccent</item>
     </style>
 
+    <!--
+      The theme the activity wears for its whole life after the splash.
+
+      `android:windowBackground` is the fix for the black screen. A WebView takes
+      a moment to initialise and load the document, and whatever the window is
+      painted with is what fills the screen for that moment. It was unset, so the
+      window came up black between the splash and the page's first paint, which
+      is the "black screen then flicker" that started this.
+
+      `android:background` — what was here before — is not the same attribute. It
+      styles a view, not the window, so it never applied to that gap at all.
+    -->
     <style name="AppTheme.NoActionBar" parent="Theme.AppCompat.DayNight.NoActionBar">
         <item name="windowActionBar">false</item>
         <item name="windowNoTitle">true</item>
-        <item name="android:background">@null</item>
+        <item name="android:windowBackground">@color/launchBackground</item>
     </style>
 
+    <!--
+      The launch theme, using the real SplashScreen API via
+      androidx.core:core-splashscreen (already a dependency).
 
+      What was here set `android:background` on a `Theme.SplashScreen` parent.
+      Android 12+ ignores that attribute entirely for the splash and reads
+      `windowSplashScreenBackground` / `windowSplashScreenAnimatedIcon`, so the
+      app fell back to the platform default and then to a black window — and the
+      icon it did show on older devices was Capacitor's stock logo, not ours.
+
+      `postSplashScreenTheme` is what hands the activity to the theme above when
+      the splash ends. Without it the activity kept wearing the splash theme,
+      which has no window background at all.
+
+      The icon is the adaptive launcher foreground. That is not reuse for its own
+      sake: the splash icon's safe zone is 160dp of a 240dp canvas, which is the
+      same 2/3 proportion as the adaptive icon's 72dp of 108dp, so the asset is
+      already drawn to the right inset and the mark cannot be clipped.
+    -->
     <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
-        <item name="android:background">@drawable/splash</item>
+        <item name="windowSplashScreenBackground">@color/launchBackground</item>
+        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher_foreground</item>
+        <item name="postSplashScreenTheme">@style/AppTheme.NoActionBar</item>
     </style>
 </resources>

@@ -115,6 +115,7 @@ export const getBackendUrl = transport.getBackendUrl;
 export const getAccessToken = transport.getAccessToken;
 export const isApiFailoverActive = transport.isApiFailoverActive;
 export const readCsrfCookie = transport.readCsrfCookie;
+export const whenSessionReady = transport.whenSessionReady;
 export const rememberCsrfToken = transport.rememberCsrfToken;
 export const forgetCsrfToken = transport.forgetCsrfToken;
 export const mayHaveCookieSession = transport.mayHaveCookieSession;

@@ -109,6 +109,12 @@ export function createCapacitorSessionSource({ secureStorage }) {
     getRefreshToken: () => refreshToken,
 
     /**
+     * This client keeps its own credential, so the transport must wait for
+     * `whenReady()` before deciding it has none. See the contract.
+     */
+    holdsOwnCredential: () => true,
+
+    /**
      * Always false. A password-recovery session is a web concept: it exists
      * because a recovery link opens a tab holding a provider session that must
      * never be sent to the API. The app has no such tab and no such link

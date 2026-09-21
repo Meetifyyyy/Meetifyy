@@ -16,7 +16,7 @@ arm64, WebView Chrome 153. Results below are measured, not predicted.
 | # | Result |
 |---|---|
 | D1 | The WebView **does** send an Origin: `https://localhost`. It is not null and not absent, so **CORS fully applies**. |
-| D2 | **FAILS.** See *The cookie blocker* below. |
+| D2 | **Cause proven, fix built.** Cookies are rejected (`SchemefulSameSiteStrict`); the app now uses session-bound bearer tokens instead. Server side verified end to end against a local backend; on-device login still needs the backend deployed to dev. |
 | D4 | **FIXED and re-verified.** Was: one back press from `/login` killed the process. Now `/` → `/login` → back → `/` with the process alive, and back at the root exits cleanly to the launcher with no crash. |
 | D7 | Safe areas work: `env(safe-area-inset-*)` supported, `--safe-area-inset-top: 32px`. |
 | D8 | Cold start to first frame **1.65 s** (`ActivityTaskManager: Displayed … +1s648ms`). |
@@ -24,44 +24,58 @@ arm64, WebView Chrome 153. Results below are measured, not predicted.
 | C1 | `npx cap sync` succeeds. |
 | C2 | **App launches and runs.** The real website renders — `/login` is the actual site's login screen, not a rebuild. |
 
-### ❌ The cookie blocker (D2) — highest priority
+### ✅ The cookie blocker (D2) — diagnosed and fixed
 
-Login **succeeds** (`201 /api/auth/login`, user object returned). The server
-sets all four cookies. Chrome then **blocks every one of them**:
+Login **succeeds** (`201 /api/auth/login`). The server sets all four cookies.
+Chrome then **blocks every one of them**:
 
 ```
 BLOCKED  mf_access, mf_refresh, mf_sid, mf_csrf
 reasons: ["SchemefulSameSiteStrict"]
 ```
 
-Cookie jar after login: **empty**. Every authenticated request that follows
-returns 401 (`/api/posts/feed`, `/api/messages`, `/api/users/*`,
-`/api/notifications/unread-count`, …), `/api/auth/session/refresh` 401s, and
-the app falls back to `/`.
+The page origin is `https://localhost`; the API is a different site, so the
+request is `sec-fetch-site: cross-site` (measured) and a browser will not store
+`SameSite=Strict` cookies from it. `Domain=.meetifyy.app` is **not** a factor —
+it domain-matches the API host and is legal here.
 
-**Why.** The page origin is `https://localhost`; the API is a different site,
-so the request is `sec-fetch-site: cross-site` (measured). The cookies are
-issued `SameSite=Strict`, which a browser will not store in a cross-site
-response. `Domain=.meetifyy.app` is *not* the problem — it domain-matches the
-API host and is legal here.
+**Option A is implemented.** The app holds a session-bound bearer token: the
+access token in memory, the refresh token and session id in Keychain/Keystore,
+and `x-session-id` on every request. That header is what keeps the token
+revocable — see [mobile-auth-decision.md](mobile-auth-decision.md) for why a
+bare bearer is refused and always will be.
 
-**There is no bearer-token fallback today.** `POST /api/auth/login` returns
-`{ user, meta, csrfToken, sessionId }` — the access token goes **only** into
-the HttpOnly cookie, so a native client has no way to hold a credential.
+Verified over real HTTP against a locally-run backend and the dev database:
 
-**Mobile auth is therefore blocked on a backend change.** Two options, written
-up at diff level in **[mobile-auth-decision.md](mobile-auth-decision.md)**:
+| Check | Result |
+|---|---|
+| Login from the native origin returns access + refresh + session id | pass |
+| Login from the **web** origin returns none of them | pass (no leak) |
+| `Authorization` + `x-session-id` on an ordinary route | **200** |
+| Bare bearer, no session id | **401** — the old bypass stays closed |
+| Bearer + unknown session id | **401** |
+| Refresh from the body rotates the refresh token | pass |
+| Refresh from the body with a **web** origin | **401** |
+| **Session revoked, then the same token replayed** | **401** — revocation reaches the native client |
 
-| | Change | Trade-off |
-|---|---|---|
-| **A (recommended)** | Return access/refresh tokens in the login body for mobile clients; store them in native secure storage; send `Authorization: Bearer`. Requires the JWT guard to accept bearer on ordinary routes (item B1). | Matches the original plan. No change to web behaviour. More backend work. |
-| **B** | Set `COOKIE_SAME_SITE=none`. | Works with zero client changes, but weakens the web app's CSRF posture and relies on third-party cookies, which Chrome is phasing out. Not viable long-term. |
+**Still to do:** on-device login. The app talks to the deployed dev API, which
+does not yet carry this backend change, so the last mile is blocked until
+`development` is deployed. Everything else about it is verified.
 
-### ❌ Production CORS will reject the app
+### ✅ Production CORS — fixed
 
-`allowLocalNetwork` in `backend/src/config/app.config.ts` is **forced off in
-production**. `https://localhost` is allowed on dev *only* because that flag
-defaults on outside production. Measured against dev:
+`allowLocalNetwork` is **forced off in production**, so `https://localhost` was
+allowed on dev *only* because that flag defaults on outside production. The
+shipped app would have been refused outright, and it would have surfaced for the
+first time at release.
+
+`https://localhost` is now in the allow-list by default rather than by an
+environment variable someone has to remember — the one exception to "nothing is
+baked into the code", and `app.config.ts` says why: it is fixed by
+`capacitor.config.json` in this repo, identical in every environment, and owned
+by nobody. Allowing the origin does not authenticate it.
+
+Originally measured against dev:
 
 | Origin | Dev result |
 |---|---|
@@ -112,14 +126,16 @@ side effect of mobile work.
 |---|---|
 | Capacitor packages | ✅ installed (core, cli, android, ios — all 8.5.2) |
 | `android/` `ios/` projects | ✅ created, `cap sync` passes |
-| Debug APK | ✅ `local/apk/meetifyy-debug.apk` (7.4 MB, gitignored) |
+| Debug APK | ✅ `local/apk/dev/` — `npm run mobile:apk` (debug key, dev API) |
+| Release APK | ✅ `local/apk/release/` — `npm run mobile:apk:release` (Meetifyy key, prod API) |
+| App icon | ✅ Meetifyy mark, `npm run mobile:icons`; verified inside the installed APK |
 | Installed and running on a device | ✅ vivo I2208 / Android 14 |
-| **Login on device** | ❌ **blocked** — cookies rejected, needs a backend change |
-| **Production CORS for the app origin** | ❌ not configured — will fail at release |
+| **Login on device** | ⚠️ code complete, verified server-side; needs `development` deployed to dev for the on-device run |
+| **Production CORS for the app origin** | ✅ allowed by default in `app.config.ts` |
 | **iOS CORS origin** | ✅ `iosScheme: https` set, so iOS will use `https://localhost` like Android. Still unverified — needs a Mac. |
 | Native back button | ✅ wired via `@capacitor/app` 8.1.1, verified on device. (An earlier entry here claimed a handler was “already written” — that was wrong; only the history-stack model existed.) |
 | Push notifications | nothing — no plugin, no `PushToken` table, no sender |
-| Secure token storage | not built; depends on which D2 option is chosen |
+| Secure token storage | ✅ Keychain/Keystore via `@aparajita/capacitor-secure-storage`, 12 tests |
 | Route restore after app kill | not built |
 | Age gate (18+) | `User.birthday` is optional and unvalidated |
 | **Reviewer test account** | **hard blocker** — signup needs a verified college email |

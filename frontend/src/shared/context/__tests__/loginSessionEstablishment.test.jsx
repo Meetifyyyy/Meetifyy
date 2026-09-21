@@ -39,6 +39,8 @@ vi.mock('@shared/api/apiClient', () => ({
   // Native-only in real use; the web build's are no-ops. Present here because
   // AuthContext awaits one of them on the login path.
   rememberSessionTokens: async () => {},
+  // Web's is null: its session is a cookie, so there is nothing to load.
+  whenSessionReady: () => null,
   forgetSessionTokens: () => {},
   getBackendUrl: () => 'https://api.example',
   apiClient: { post: async () => ({}), get: async () => ({}) },

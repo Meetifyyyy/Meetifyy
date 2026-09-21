@@ -63,7 +63,19 @@
   -->
   <div id="launch-shell" aria-hidden="true"
        style="position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;background:#FDFDFD;transition:opacity .25s ease;pointer-events:none">
-    <img src="/logo-192.png" alt="" width="120" height="120" style="width:120px;height:120px" />
+    <!--
+      The MARK, not the full logo lockup, and at the size the system splash
+      draws it. The splash hands over to this image, so any difference between
+      the two shows up as a flicker at the exact moment the page paints: the
+      lockup that used to be here replaced the mark with mark-plus-wordmark and
+      changed size at the same time.
+
+      `min(38vw, 160px)` rather than a fixed 120px so it holds its proportion on
+      a small phone and does not become a postage stamp on a tablet. The
+      background is the same #FDFDFD as the splash and the activity window.
+    -->
+    <img src="/logo-mark.png" alt=""
+         style="width:min(38vw,160px);height:auto;display:block" />
   </div>
 
   <div id="root"></div>

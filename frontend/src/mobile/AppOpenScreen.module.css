@@ -16,7 +16,23 @@
   padding: 2rem 1.5rem calc(2rem + env(safe-area-inset-bottom, 0px));
   text-align: center;
 }
-.logo { width: 88px; height: 88px; margin: 0 auto; display: block; }
+/*
+ * Responsive rather than a fixed 88px, which was sized against one handset and
+ * read as cropped-and-oversized on a narrow screen while looking lost on a wide
+ * one.
+ *
+ * `min(30vw, 132px)` scales with the viewport and stops growing on a tablet,
+ * and `height: auto` keeps the mark's own proportions instead of forcing it
+ * into a square it does not fill. The floor keeps it from collapsing on a very
+ * short screen in landscape.
+ */
+.logo {
+  width: min(30vw, 132px);
+  min-width: 76px;
+  height: auto;
+  margin: 0 auto 0.75rem;
+  display: block;
+}
 .name { font-size: 1.75rem; font-weight: 700; margin: 0; letter-spacing: -0.01em; }
 .line { margin: 0; color: var(--color-text-muted, #6b7280); font-size: 0.95rem; line-height: 1.5; }
 .actions { display: grid; gap: 0.65rem; margin-top: 0.5rem; }

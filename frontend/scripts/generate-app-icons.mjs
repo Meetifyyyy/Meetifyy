@@ -61,8 +61,20 @@ const FOREGROUND = {
  * filling the safe zone exactly leaves the mark touching the mask edge on a
  * circular launcher, which looks like a mistake rather than a choice.
  */
-const SAFE_RATIO = 0.52;
-const LEGACY_RATIO = 0.62;
+const SAFE_RATIO = 0.46;
+const LEGACY_RATIO = 0.58;
+
+/**
+ * The mark on its own, written to `public/` for the web layer to use.
+ *
+ * The launch shell in index.mobile.html shows this while the WebView boots,
+ * immediately after the system splash has shown the SAME mark at roughly the
+ * same size. Using the full logo lockup there instead made the handover
+ * visible: the mark was replaced by mark-plus-wordmark at the moment the page
+ * painted, which reads as a flicker even though nothing was actually wrong.
+ */
+const MARK_PUBLIC_PATH = resolve(frontend, 'public/logo-mark.png');
+const MARK_PUBLIC_SIZE = 512;
 
 /** Finds the mark's bounding box: the ink above the wordmark. */
 async function findMarkBox() {
@@ -194,7 +206,14 @@ async function main() {
     written += 1;
   }
 
+  // Padded to the same proportion as the adaptive foreground, so the shell logo
+  // and the splash icon are the same size on screen and nothing moves between
+  // them.
+  const publicMark = await compose(mark, box, MARK_PUBLIC_SIZE, SAFE_RATIO, clear);
+  writeFileSync(MARK_PUBLIC_PATH, publicMark);
+
   console.log(`wrote ${written} icon files under android/app/src/main/res/`);
+  console.log('wrote public/logo-mark.png for the launch shell');
 }
 
 main().catch((err) => {

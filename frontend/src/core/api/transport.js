@@ -129,6 +129,19 @@ export function createTransport({
    * proves nothing, which is fine, because it is only deciding whether to ask.
    */
   function mayHaveCookieSession() {
+    /**
+     * A client that keeps its own credential answers for itself.
+     *
+     * The other two signals are cookie-shaped, and the installed app has no
+     * cookies at all — a browser refuses to store the SameSite=Strict session
+     * cookies in its WebView. Without this line the boot gate concluded "no
+     * session" on every launch and signed a returning user out before it had
+     * looked in the Keychain.
+     *
+     * Only meaningful once `whenReady()` has resolved, which is why the boot
+     * awaits it first.
+     */
+    if (session.getRefreshToken?.()) return true;
     if (readCsrfCookie()) return true;
     return localStore.get('loggedIn') === 'true';
   }
@@ -362,7 +375,26 @@ export function createTransport({
     // Still awaited for the paths that genuinely need the bearer token — the
     // session-adoption call at the end of signup and the profile write beside it
     // — because for those the header IS the credential.
-    if (!session.getToken() && session.whenReady() && isBearerPath(path)) {
+    /**
+     * Wait for the credential to be in hand before asking.
+     *
+     * Two different clients need this for two different reasons:
+     *
+     *   • Signup's brief bearer window, on web: the handover calls are
+     *     authenticated by the header, so the header IS the credential.
+     *
+     *   • The installed app, always: its credential lives in the Keychain and
+     *     is read asynchronously at boot. Without this the first request went
+     *     out with no token AND the refresh that followed found none either,
+     *     because `whenReady()` had not run — so a perfectly good session was
+     *     reported expired and the user was signed out on every launch.
+     *
+     * Web pays nothing: `holdsOwnCredential` is false there, its session lives
+     * in a cookie the browser attaches on its own, and this stays scoped to the
+     * handful of signup paths it always covered.
+     */
+    const selfCustody = session.holdsOwnCredential?.() === true;
+    if (!session.getToken() && session.whenReady() && (selfCustody || isBearerPath(path))) {
       await session.whenReady();
     }
 
@@ -582,6 +614,27 @@ export function createTransport({
           const csrf = csrfHeaderValue();
           if (csrf) retryHeaders['x-csrf-token'] = csrf;
         }
+
+        /**
+         * A self-custody client must replay with the NEW token.
+         *
+         * The note above is true for a cookie: the server rewrote it, and
+         * `credentials: 'include'` sends whatever is current, so reusing the
+         * original headers is right. For the installed app the credential is a
+         * header, and the original one is the token that just 401'd — replaying
+         * it produced a second 401, which arrives as `isRetry` and so falls
+         * straight through as a hard error. The refresh had worked; the retry
+         * threw it away.
+         */
+        if (retryHeaders['Authorization']) {
+          const renewed = session.getToken?.();
+          if (renewed) {
+            retryHeaders['Authorization'] = `Bearer ${renewed}`;
+            const renewedSessionId = session.getSessionId?.();
+            if (renewedSessionId) retryHeaders['x-session-id'] = renewedSessionId;
+          }
+        }
+
         return _doFetch(cleanUrl, { ...options, headers: retryHeaders }, true);
       }
 
@@ -739,6 +792,13 @@ export function createTransport({
     rememberCsrfToken,
     forgetCsrfToken,
     mayHaveCookieSession,
+    /**
+     * Resolves once this client's stored credential has been loaded, if it has
+     * one to load. The boot awaits it before asking `mayHaveCookieSession()`,
+     * because on the installed app that answer is only meaningful afterwards.
+     * Null on web, where there is nothing to wait for.
+     */
+    whenSessionReady: () => session.whenReady?.() ?? null,
     clearLocalAuthState,
   };
 }
