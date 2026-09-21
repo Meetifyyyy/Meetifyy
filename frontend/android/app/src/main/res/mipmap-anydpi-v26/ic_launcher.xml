@@ -3,13 +3,16 @@
     <background android:drawable="@color/ic_launcher_background"/>
     <foreground android:drawable="@mipmap/ic_launcher_foreground"/>
     <!--
-      Android 13+ themed icons. With a monochrome layer the launcher may tint
-      the icon to the system palette, so on a dark home screen it stops being a
-      white tile among coloured ones.
+      NO monochrome layer, deliberately.
 
-      An adaptive icon CANNOT be transparent: the background layer is required
-      and the OS masks it to a shape. This is the nearest thing to "no white
-      box behind the mark" that the platform allows.
+      One was added here so Android 13+ could tint the icon to the system
+      palette. On the device this ships to it rendered as a featureless grey
+      square: the launcher's themed mode discarded the mark entirely and drew a
+      filled plate. A themed icon needs a drawable authored as a flat
+      silhouette, not a full-colour foreground handed over as one.
+
+      A blank square is worse than an untinted icon, so until there is a real
+      silhouette asset this layer stays out and launchers fall back to the
+      full-colour adaptive icon below.
     -->
-    <monochrome android:drawable="@mipmap/ic_launcher_foreground"/>
 </adaptive-icon>
