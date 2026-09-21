@@ -25,7 +25,7 @@
  * than leaving a file that fails silently on the phone.
  */
 import { execFileSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, readdirSync } from 'node:fs';
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -61,6 +61,19 @@ const gradlew = resolve(android, 'gradlew');
 if (!existsSync(gradlew)) {
   console.error(`No Gradle wrapper at ${gradlew}. Has "npx cap add android" been run?`);
   process.exit(1);
+}
+/**
+ * Make sure the wrapper is executable before running it.
+ *
+ * It is committed 100755 now, but a checkout on a filesystem that does not
+ * carry the bit — or a zip download — still lands it 644, and the failure is an
+ * opaque EACCES from spawnSync rather than anything that names the cause. One
+ * chmod is cheaper than the bug report.
+ */
+try {
+  chmodSync(gradlew, 0o755);
+} catch {
+  // Read-only checkout; the spawn below will report it properly if it matters.
 }
 if (!process.env.JAVA_HOME) {
   console.warn(
