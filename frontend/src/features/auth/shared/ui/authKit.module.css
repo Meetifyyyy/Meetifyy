@@ -16,7 +16,29 @@
   overflow-x: clip;
   background: var(--color-bg-white);
 
-  /* Auth is intentionally always light, regardless of the app's theme. */
+  /*
+   * Auth used to be pinned to light regardless of the app's theme. It is not
+   * any more: these are the LIGHT values, and the block below supplies a
+   * designed dark counterpart.
+   *
+   * Everything downstream reads these tokens rather than raw colours, which is
+   * why one override here themes the whole kit — login, signup, forgot and
+   * reset password all compose from it.
+   *
+   * `--auth-canvas` is separate from `--color-bg-white` because the shell and
+   * the cards are different surfaces. In light they are both white and the
+   * distinction is invisible; in dark the canvas has to sit BEHIND the cards or
+   * the whole screen flattens into one slab and the floating-card composition
+   * this kit is built around stops reading.
+   */
+  --auth-canvas: #ffffff;
+  --auth-subtle: #f8fafc;
+  --auth-shadow: rgba(0, 0, 0, 0.08);
+  --auth-shadow-soft: rgba(0, 0, 0, 0.05);
+  --auth-brand: #5c47fa;
+  --auth-chip: rgba(255, 255, 255, 0.6);
+  --auth-chip-hover: #ffffff;
+
   --color-bg-white: #ffffff;
   --color-bg-alt: #f5f3ff;
   --color-text-main: #0f172a;
@@ -25,6 +47,47 @@
   --color-border: #e7e3fb;
   --color-border-light: #f1effe;
   --color-border-dark: #cec6f9;
+
+  background: var(--auth-canvas);
+}
+
+/*
+ * ── Dark auth ──────────────────────────────────────────────────────────────
+ *
+ * Designed, not inverted. Three things are chosen rather than flipped:
+ *
+ *   • The canvas is darker than the cards. Inverting would have made the card
+ *     lighter than everything around it in one place and darker in another;
+ *     keeping the card raised is what preserves the "floating panel" idea.
+ *   • The violet tint survives. The light kit is not grey — its borders and
+ *     alt surface are tinted toward the brand, and a neutral grey dark mode
+ *     would read as a different product.
+ *   • Shadows get stronger, not weaker. A 5% black shadow is invisible on a
+ *     dark surface, so elevation has to come from a deeper shadow plus the
+ *     lighter card, not from the shadow alone.
+ *
+ * `:global()` on the attribute because CSS Modules would otherwise hash
+ * `data-theme` as if it were local.
+ */
+:global([data-theme='dark']) .shell {
+  --auth-canvas: #121212;
+  --auth-subtle: #1f1e26;
+  --auth-shadow: rgba(0, 0, 0, 0.55);
+  --auth-shadow-soft: rgba(0, 0, 0, 0.35);
+  --auth-brand: #8b7bff;
+  --auth-chip: rgba(255, 255, 255, 0.07);
+  --auth-chip-hover: rgba(255, 255, 255, 0.13);
+
+  --color-bg-white: #1c1b22;
+  --color-bg-alt: #1a1926;
+  --color-text-main: #f4f3f8;
+  --color-text-muted: #b6b3c4;
+  --color-text-light: #8c8899;
+  --color-border: #33303f;
+  --color-border-light: #272531;
+  --color-border-dark: #48435e;
+
+  color: var(--color-text-main);
 }
 
 /* ── Ambient canvas — shared by both the story and the panel ─────────────── */
@@ -105,6 +168,14 @@
   display: block;
 }
 
+/*
+ * Exactly one wordmark is shown. The light one carries the alt text; see
+ * AuthShell for why this is two images rather than a filter.
+ */
+.brandWordmarkDark { display: none; }
+:global([data-theme='dark']) .brandWordmarkLight { display: none; }
+:global([data-theme='dark']) .brandWordmarkDark { display: block; }
+
 .exitLink {
   display: inline-flex;
   align-items: center;
@@ -116,7 +187,9 @@
   text-decoration: none;
   padding: 0.5rem 0.9rem;
   border-radius: var(--radius-full);
-  background: rgba(255, 255, 255, 0.6);
+  /* Tinted from the surface rather than hardcoded white, so the pill stays a
+     lifted chip on a dark canvas instead of a white blob. */
+  background: var(--auth-chip);
   border: 1px solid var(--color-border);
   transition: color 0.16s ease, border-color 0.16s ease, background 0.16s ease;
 }
@@ -124,7 +197,7 @@
 .exitLink:hover {
   color: var(--color-brand-primary);
   border-color: var(--color-border-dark);
-  background: #fff;
+  background: var(--auth-chip-hover);
 }
 
 .exitLinkIcon {

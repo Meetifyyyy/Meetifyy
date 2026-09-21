@@ -1,5 +1,6 @@
 package app.meetifyy;
 
+import android.content.SharedPreferences;
 import android.content.res.Configuration;
 import android.os.Bundle;
 import android.os.Handler;
@@ -113,9 +114,22 @@ public class MainActivity extends BridgeActivity {
      * allows it to follow the night-mode resource.
      */
     private void applyLaunchBackground() {
-        final int color = ContextCompat.getColor(this, R.color.launchBackground);
+        /*
+         * The colour the APP last asked for wins over the one the PHONE implies.
+         *
+         * `R.color.launchBackground` has a values-night variant, which answers
+         * "what is the phone set to". That is the wrong question whenever
+         * someone has used the in-app theme toggle: an app-dark, phone-light
+         * device got a white window behind a dark app. SystemUiPlugin records
+         * the real colour on every theme change, so from the second launch
+         * onward this is exact.
+         */
+        final int fallback = ContextCompat.getColor(this, R.color.launchBackground);
+        final SharedPreferences prefs =
+            getSharedPreferences(SystemUiPlugin.PREFS, MODE_PRIVATE);
+        final int color = prefs.getInt(SystemUiPlugin.KEY_BACKGROUND, fallback);
 
-        getWindow().setBackgroundDrawableResource(R.color.launchBackground);
+        getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(color));
 
         final WebView webView = getBridge() != null ? getBridge().getWebView() : null;
         if (webView != null) {

@@ -1,6 +1,7 @@
 package app.meetifyy;
 
 import android.app.Activity;
+import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.view.View;
 import android.view.Window;
@@ -38,6 +39,22 @@ import com.getcapacitor.annotation.CapacitorPlugin;
  */
 @CapacitorPlugin(name = "SystemUi")
 public class SystemUiPlugin extends Plugin {
+
+    /**
+     * Where the app's chosen surface colour is remembered between launches.
+     *
+     * The system splash is drawn before any JavaScript exists, so it can only
+     * use resource qualifiers — which answer "what is the PHONE set to", not
+     * "what is the APP set to". Those disagree whenever someone uses the in-app
+     * toggle, and the launch then flashed the wrong colour.
+     *
+     * Remembering the last colour the app asked for lets MainActivity paint the
+     * window correctly on the NEXT cold start, before the WebView has loaded
+     * anything. A fresh install has nothing to read and falls back to the
+     * resource, which is the best any app can do on a first launch.
+     */
+    static final String PREFS = "meetifyy.systemui";
+    static final String KEY_BACKGROUND = "lastBackgroundColor";
 
     /**
      * @param call `background` a CSS-style colour string, and `lightIcons`:
@@ -85,6 +102,11 @@ public class SystemUiPlugin extends Plugin {
                 new WindowInsetsControllerCompat(window, decor);
             controller.setAppearanceLightStatusBars(!lightIcons);
             controller.setAppearanceLightNavigationBars(!lightIcons);
+
+            // Remembered for the next cold start; see PREFS above.
+            final SharedPreferences prefs =
+                activity.getSharedPreferences(PREFS, Activity.MODE_PRIVATE);
+            prefs.edit().putInt(KEY_BACKGROUND, color).apply();
 
             call.resolve();
         });

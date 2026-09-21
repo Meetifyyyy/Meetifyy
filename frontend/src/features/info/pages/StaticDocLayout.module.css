@@ -1,9 +1,57 @@
+/*
+ * ── Legal document surface ─────────────────────────────────────────────────
+ *
+ * The legal pages are not the app and not the auth kit: they use a warm stone
+ * palette with an orange accent, and that is deliberate — a document should
+ * read like a document. Dark mode keeps that character rather than borrowing
+ * the app's neutral greys or the auth kit's violet, which would make these
+ * pages look like a different site in one theme and not the other.
+ *
+ * Chosen, not inverted:
+ *   • Surfaces stay warm (#1a1917, not #121212), so the stone family survives.
+ *   • The accent gets LIGHTER (orange-600 to orange-400). Orange-600 on a dark
+ *     surface fails contrast and reads muddy.
+ *   • Body text lands at stone-100 rather than pure white: a wall of prose in
+ *     #fff on near-black is glare, and these are long pages.
+ */
+.pageWrapper {
+  --doc-surface: #ffffff;
+  --doc-surface-alt: #f5f5f4;
+  --doc-surface-translucent: rgba(255, 255, 255, 0.9);
+  --doc-surface-alt-translucent: rgba(245, 245, 244, 0.9);
+  --doc-text: #1c1917;
+  --doc-heading: #0c0a09;
+  --doc-body: #44403c;
+  --doc-muted: #57534e;
+  --doc-faint: #78716c;
+  --doc-border: #e7e5e4;
+  --doc-accent: #ea580c;
+  --doc-accent-strong: #c2410c;
+  --doc-shadow: rgba(0, 0, 0, 0.04);
+}
+
+:global([data-theme='dark']) .pageWrapper {
+  --doc-surface: #1a1917;
+  --doc-surface-alt: #232120;
+  --doc-surface-translucent: rgba(35, 33, 32, 0.9);
+  --doc-surface-alt-translucent: rgba(26, 25, 23, 0.9);
+  --doc-text: #f5f5f4;
+  --doc-heading: #fafaf9;
+  --doc-body: #d6d3d1;
+  --doc-muted: #a8a29e;
+  --doc-faint: #8f8a84;
+  --doc-border: #332f2c;
+  --doc-accent: #fb923c;
+  --doc-accent-strong: #fdba74;
+  --doc-shadow: rgba(0, 0, 0, 0.5);
+}
+
 .pageWrapper {
   min-height: 100dvh;
   display: flex;
   flex-direction: column;
-  background-color: #ffffff;
-  color: #1c1917;
+  background-color: var(--doc-surface);
+  color: var(--doc-text);
 }
 
 .mainContent {
@@ -17,10 +65,10 @@
 .hero {
   margin-bottom: 2.5rem;
   padding: 2.5rem 2rem;
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.9) 0%, rgba(245, 245, 244, 0.9) 100%);
-  border: 1px solid #e7e5e4;
+  background: linear-gradient(135deg, var(--doc-surface-translucent) 0%, var(--doc-surface-alt-translucent) 100%);
+  border: 1px solid var(--doc-border);
   border-radius: 24px;
-  box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.04);
+  box-shadow: 0 10px 30px -10px var(--doc-shadow);
   position: relative;
   overflow: hidden;
 }
@@ -50,7 +98,7 @@
   font-weight: 800;
   line-height: 1.15;
   letter-spacing: -0.01em;
-  color: #0c0a09;
+  color: var(--doc-heading);
   text-transform: uppercase;
   text-align: center;
   margin: 0;
@@ -63,7 +111,7 @@
   font-weight: 400;
   line-height: 1.15;
   letter-spacing: -0.01em;
-  color: #0c0a09;
+  color: var(--doc-heading);
   text-transform: uppercase;
   text-align: left;
   margin: 0 0 0.5rem 0;
@@ -74,7 +122,7 @@
   font-family: 'Inter', sans-serif;
   font-size: clamp(0.95rem, 2.5vw, 1.05rem);
   line-height: 1.6;
-  color: #57534e;
+  color: var(--doc-muted);
   margin: 0;
   text-align: left;
 }
@@ -85,9 +133,9 @@
   gap: 1rem;
   margin-top: 1rem;
   padding-top: 0.75rem;
-  border-top: 1px solid #f5f5f4;
+  border-top: 1px solid var(--doc-surface-alt);
   font-size: 0.8125rem;
-  color: #78716c;
+  color: var(--doc-faint);
   font-family: 'Inter', sans-serif;
 }
 
@@ -109,7 +157,7 @@
   border-radius: 9999px;
   background: rgba(249, 115, 22, 0.08);
   border: 1px solid rgba(249, 115, 22, 0.2);
-  color: #ea580c;
+  color: var(--doc-accent);
   font-size: 0.75rem;
   font-weight: 700;
   letter-spacing: 0.05em;
@@ -122,14 +170,14 @@
   font-weight: 800;
   line-height: 1.15;
   letter-spacing: -0.025em;
-  color: #0c0a09;
+  color: var(--doc-heading);
   margin: 0 0 0.75rem 0;
 }
 
 .subtitle {
   font-size: clamp(0.95rem, 2.5vw, 1.05rem);
   line-height: 1.6;
-  color: #57534e;
+  color: var(--doc-muted);
   margin: 0;
   max-width: 44rem;
 }
@@ -140,9 +188,9 @@
   gap: 1rem;
   margin-top: 1.25rem;
   padding-top: 1rem;
-  border-top: 1px solid #e7e5e4;
+  border-top: 1px solid var(--doc-border);
   font-size: 0.8125rem;
-  color: #78716c;
+  color: var(--doc-faint);
 }
 
 .effectiveBadge {
@@ -162,7 +210,7 @@
   font-size: clamp(0.975rem, 2.2vw, 1.15rem);
   font-weight: 500;
   line-height: 1.75;
-  color: #44403c;
+  color: var(--doc-body);
   max-width: 46rem;
   margin: 0 auto;
   padding: 0;
@@ -194,7 +242,7 @@
   font-family: 'Changa One', sans-serif;
   font-size: clamp(1.4rem, 4vw, 2.2rem);
   font-weight: 400;
-  color: #0c0a09;
+  color: var(--doc-heading);
   margin: 0;
   letter-spacing: -0.01em;
 }
@@ -254,7 +302,7 @@
   font-family: 'Inter', sans-serif;
   font-size: clamp(1rem, 2.5vw, 1.15rem);
   font-weight: 600;
-  color: #ea580c;
+  color: var(--doc-accent);
   line-height: 1.7;
   margin-top: 1.25rem;
 }
@@ -263,7 +311,7 @@
   font-family: 'Changa One', sans-serif;
   font-size: 1.25rem;
   font-weight: 400;
-  color: #1c1917;
+  color: var(--doc-text);
   margin: 0 0 0.4rem 0;
   letter-spacing: -0.01em;
 }
@@ -272,7 +320,7 @@
   font-family: 'Inter', sans-serif;
   font-size: 1rem;
   line-height: 1.7;
-  color: #44403c;
+  color: var(--doc-body);
   margin: 0;
 }
 
@@ -296,14 +344,14 @@
   font-family: 'Inter', sans-serif;
   font-size: clamp(0.925rem, 2vw, 1rem);
   line-height: 1.65;
-  color: #44403c;
+  color: var(--doc-body);
 }
 
 .cleanBulletDot {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background-color: #ea580c;
+  background-color: var(--doc-accent);
   margin-top: 0.55rem;
   flex-shrink: 0;
 }
@@ -313,7 +361,7 @@
   font-family: 'Inter', sans-serif;
   font-size: clamp(0.925rem, 2vw, 1rem);
   line-height: 1.65;
-  color: #44403c;
+  color: var(--doc-body);
 }
 
 .cleanGrid {
@@ -336,8 +384,8 @@
 
 /* Card Styling */
 .card {
-  background: #ffffff;
-  border: 1px solid #e7e5e4;
+  background: var(--doc-surface);
+  border: 1px solid var(--doc-border);
   border-radius: 20px;
   padding: 2rem;
   box-shadow: 0 4px 16px -4px rgba(0, 0, 0, 0.03);
@@ -360,8 +408,8 @@
   width: 2.625rem;
   height: 2.625rem;
   border-radius: 12px;
-  background: linear-gradient(135deg, #1c1917 0%, #292524 100%);
-  color: #ffffff;
+  background: linear-gradient(135deg, var(--doc-text) 0%, #292524 100%);
+  color: var(--doc-surface);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -372,7 +420,7 @@
   font-family: 'Changa One', sans-serif;
   font-size: clamp(1.2rem, 3vw, 1.45rem);
   font-weight: 400;
-  color: #0c0a09;
+  color: var(--doc-heading);
   letter-spacing: -0.01em;
   margin: 0;
 }
@@ -381,7 +429,7 @@
   font-family: 'Inter', sans-serif;
   font-size: 0.95rem;
   line-height: 1.7;
-  color: #44403c;
+  color: var(--doc-body);
   margin: 0;
 }
 
@@ -405,14 +453,14 @@
   font-family: 'Inter', sans-serif;
   font-size: 0.9375rem;
   line-height: 1.6;
-  color: #44403c;
+  color: var(--doc-body);
 }
 
 .bulletDot {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background-color: #ea580c;
+  background-color: var(--doc-accent);
   margin-top: 0.6rem;
   flex-shrink: 0;
 }
@@ -424,7 +472,7 @@
   border-radius: 50%;
   background: rgba(249, 115, 22, 0.08);
   border: 1px solid rgba(249, 115, 22, 0.2);
-  color: #ea580c;
+  color: var(--doc-accent);
   font-size: 0.85rem;
   font-weight: 400;
   display: flex;
@@ -449,7 +497,7 @@
 
 .featureBox {
   background: #fafafa;
-  border: 1px solid #e7e5e4;
+  border: 1px solid var(--doc-border);
   border-radius: 14px;
   padding: 1.25rem;
 }
@@ -458,24 +506,24 @@
   font-family: 'Changa One', sans-serif;
   font-size: 1.1rem;
   font-weight: 400;
-  color: #1c1917;
+  color: var(--doc-text);
   margin: 0 0 0.4rem 0;
 }
 
 .featureBoxText {
   font-family: 'Inter', sans-serif;
   font-size: 0.875rem;
-  color: #57534e;
+  color: var(--doc-muted);
   line-height: 1.55;
   margin: 0;
 }
 
 /* Contact box */
 .contactCard {
-  background: linear-gradient(135deg, #1c1917 0%, #0c0a09 100%);
+  background: linear-gradient(135deg, var(--doc-text) 0%, var(--doc-heading) 100%);
   border-radius: 20px;
   padding: 2.25rem;
-  color: #ffffff;
+  color: var(--doc-surface);
   margin-top: 1rem;
   display: flex;
   flex-direction: column;
@@ -488,7 +536,7 @@
   font-size: 1.5rem;
   font-weight: 400;
   margin: 0;
-  color: #ffffff;
+  color: var(--doc-surface);
 }
 
 .contactCardText {
@@ -503,8 +551,8 @@
   align-items: center;
   gap: 0.6rem;
   padding: 0.75rem 1.35rem;
-  background: #ea580c;
-  color: #ffffff;
+  background: var(--doc-accent);
+  color: var(--doc-surface);
   border-radius: 12px;
   font-size: 0.9375rem;
   font-weight: 600;
@@ -514,7 +562,7 @@
 }
 
 .emailBtn:hover {
-  background: #c2410c;
+  background: var(--doc-accent-strong);
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -559,7 +607,7 @@
   font-family: 'Changa One', sans-serif;
   font-size: clamp(1.4rem, 4vw, 2.2rem);
   font-weight: 400;
-  color: #0c0a09;
+  color: var(--doc-heading);
   margin: 2.25rem 0 0.5rem;
   letter-spacing: -0.01em;
 }
@@ -572,7 +620,7 @@
   font-family: 'Changa One', sans-serif;
   font-size: 1.25rem;
   font-weight: 400;
-  color: #1c1917;
+  color: var(--doc-text);
   margin: 1.5rem 0 0.4rem;
   letter-spacing: -0.01em;
 }
@@ -599,7 +647,7 @@
   padding-left: 1.35rem;
   font-size: clamp(0.925rem, 2vw, 1rem);
   line-height: 1.65;
-  color: #44403c;
+  color: var(--doc-body);
 }
 
 /* The orange dot, which used to be an empty <span> in the JSX. A pseudo-element
@@ -613,11 +661,11 @@
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background-color: #ea580c;
+  background-color: var(--doc-accent);
 }
 
 .docHtml a {
-  color: #ea580c;
+  color: var(--doc-accent);
   font-weight: 500;
   text-decoration: none;
 }
@@ -627,7 +675,7 @@
 }
 
 .docHtml strong {
-  color: #1c1917;
+  color: var(--doc-text);
   font-weight: 600;
 }
 
@@ -641,15 +689,15 @@
 .docHtml th,
 .docHtml td {
   padding: 0.6rem 0.75rem;
-  border: 1px solid #e7e5e4;
+  border: 1px solid var(--doc-border);
   text-align: left;
-  color: #44403c;
+  color: var(--doc-body);
 }
 
 .docHtml th {
   background: #fafaf9;
   font-weight: 600;
-  color: #1c1917;
+  color: var(--doc-text);
 }
 
 /* ── Load / error / empty states for a database-backed document ── */
@@ -658,14 +706,14 @@
   text-align: center;
   font-family: 'Inter', sans-serif;
   font-size: 0.95rem;
-  color: #57534e;
+  color: var(--doc-muted);
 }
 
 .docStateTitle {
   font-family: 'Changa One', sans-serif;
   font-size: 1.35rem;
   font-weight: 400;
-  color: #0c0a09;
+  color: var(--doc-heading);
   margin: 0 0 0.5rem;
 }
 
@@ -675,15 +723,15 @@
   font-family: 'Inter', sans-serif;
   font-size: 0.9rem;
   font-weight: 600;
-  color: #ffffff;
-  background: #ea580c;
+  color: var(--doc-surface);
+  background: var(--doc-accent);
   border: none;
   border-radius: 10px;
   cursor: pointer;
 }
 
 .docRetryBtn:hover {
-  background: #c2410c;
+  background: var(--doc-accent-strong);
 }
 
 .docSkeletonLine {
@@ -691,7 +739,7 @@
   margin: 0 auto 0.85rem;
   max-width: 34rem;
   border-radius: 6px;
-  background: linear-gradient(90deg, #f5f5f4 25%, #ecebe9 37%, #f5f5f4 63%);
+  background: linear-gradient(90deg, var(--doc-surface-alt) 25%, #ecebe9 37%, var(--doc-surface-alt) 63%);
   background-size: 400% 100%;
   animation: docSkeleton 1.4s ease infinite;
 }

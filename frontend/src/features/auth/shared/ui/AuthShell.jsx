@@ -2,6 +2,7 @@ import { createContext, Fragment, memo, useCallback, useContext, useEffect, useL
 import { Link } from 'react-router-dom';
 import { ArrowLeft } from '@shared/components/icons';
 import wordmark from '@assets/images/meetifyy_wordmark.svg';
+import wordmarkDark from '@assets/images/meetifyy_wordmark_dark.svg';
 import proofCards from '@assets/images/auth_proof_cards.webp';
 import s from './authKit.module.css';
 
@@ -117,7 +118,31 @@ function AuthShellMaster({ children, headline: defaultHeadline, subtext: default
 
         <div className={s.topBar}>
           <Link to="/" className={s.brandRow}>
-            <img src={wordmark} alt="Meetifyy" className={s.brandWordmarkImg} />
+            {/*
+              Two images rather than one filtered image, and rather than
+              reading the theme in JS.
+
+              The wordmark is not monochrome: "MEETIF" is near-black and the
+              "YY" is a brand gradient. Any filter strong enough to lighten the
+              first destroys the second, and swapping `src` from a `useTheme()`
+              read would re-render the shell on every theme change to alter one
+              attribute. CSS picks, the browser caches both, and the markup
+              stays declarative.
+
+              Only one is ever visible, and the hidden one is `aria-hidden`, so
+              a screen reader hears the name once.
+            */}
+            <img
+              src={wordmark}
+              alt="Meetifyy"
+              className={`${s.brandWordmarkImg} ${s.brandWordmarkLight}`}
+            />
+            <img
+              src={wordmarkDark}
+              alt=""
+              aria-hidden="true"
+              className={`${s.brandWordmarkImg} ${s.brandWordmarkDark}`}
+            />
           </Link>
           <Link to="/" className={s.exitLink}>
             <ArrowLeft size={15} className={s.exitLinkIcon} />

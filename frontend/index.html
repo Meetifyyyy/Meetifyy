@@ -1,5 +1,6 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="light">
+<!-- data-theme is set by the boot script below, from the device preference. -->
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <!--
@@ -63,6 +64,39 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="apple-mobile-web-app-title" content="Meetifyy" />
   <meta name="theme-color" content="#2563EB" />
+
+  <!--
+    Decide the theme BEFORE the first paint.
+
+    Blocking and inline on purpose. `ThemeContext` applies `data-theme` from
+    React, which is after the browser has already painted, so anything decided
+    there is a visible flash of the wrong theme. The rule it implements is
+    `core/theme/resolveTheme.js`, which is where it is written down and tested;
+    this cannot import that module because it runs before any bundle exists,
+    and THAT is why the rule is a named function with tests rather than a line
+    of code in two HTML files.
+
+    `theme_preference_set` is written only by `toggleTheme`, so it means the
+    user actually chose. `localStorage.theme` alone does not: it is rewritten on
+    every theme change including the ones this causes, so honouring it would
+    follow the device exactly once and then freeze.
+  -->
+  <script>
+    (function () {
+      var theme = 'light';
+      try {
+        var chose = localStorage.getItem('theme_preference_set') === 'true';
+        var saved = localStorage.getItem('theme');
+        if (chose && (saved === 'light' || saved === 'dark')) {
+          theme = saved;
+        } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+          theme = 'dark';
+        }
+      } catch (e) {}
+      document.documentElement.setAttribute('data-theme', theme);
+      document.documentElement.style.colorScheme = theme;
+    })();
+  </script>
 
   <!--
     iOS does not generate a launch image the way Android does. Without an

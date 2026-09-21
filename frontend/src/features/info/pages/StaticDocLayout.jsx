@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import LandingNavbar from '../../auth/landing/components/LandingNavbar';
 import LandingFooter from '../../auth/landing/components/LandingFooter';
 import '../../auth/landing/landing.css';
@@ -16,45 +16,17 @@ export default function StaticDocLayout({
   leftAlign = false,
   children,
 }) {
-  const originalTheme = useRef(null);
-  const hasCapturedTheme = useRef(false);
-
-  useLayoutEffect(() => {
-    const htmlEl = document.documentElement;
-
-    if (!hasCapturedTheme.current) {
-      originalTheme.current = htmlEl.getAttribute('data-theme');
-      hasCapturedTheme.current = true;
-    }
-
-    htmlEl.setAttribute('data-theme', 'light');
-
-    const observer = new MutationObserver((mutations) => {
-      for (const mutation of mutations) {
-        if (mutation.type === 'attributes' && mutation.attributeName === 'data-theme') {
-          if (htmlEl.getAttribute('data-theme') !== 'light') {
-            htmlEl.setAttribute('data-theme', 'light');
-          }
-        }
-      }
-    });
-
-    observer.observe(htmlEl, {
-      attributes: true,
-      attributeFilter: ['data-theme']
-    });
-
-    return () => {
-      observer.disconnect();
-      if (originalTheme.current) {
-        htmlEl.setAttribute('data-theme', originalTheme.current);
-      } else {
-        htmlEl.removeAttribute('data-theme');
-      }
-      hasCapturedTheme.current = false;
-      originalTheme.current = null;
-    };
-  }, []);
+  /*
+   * These pages used to pin `data-theme` to light with a MutationObserver,
+   * the same way the landing page still does, so they rendered white in a dark
+   * app. They have a designed dark palette now — see
+   * StaticDocLayout.module.css — so the pin is gone and they follow the theme
+   * like every other screen.
+   *
+   * The landing page keeps its pin deliberately. It is a marketing surface
+   * with its own art direction and no dark treatment, and it is explicitly out
+   * of scope.
+   */
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'instant' });

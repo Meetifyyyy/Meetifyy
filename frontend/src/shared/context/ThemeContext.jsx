@@ -1,6 +1,8 @@
 import { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { flushSync } from 'react-dom';
 
+import { resolveInitialTheme, shouldFollowSystem } from '@core/theme/resolveTheme';
+
 const ThemeContext = createContext();
 
 /**
@@ -104,12 +106,57 @@ function getThemeOrigin(options) {
 
 export function ThemeProvider({ children }) {
   const [theme, setTheme] = useState(() => {
+    /**
+     * Trust the attribute the boot script already set.
+     *
+     * A blocking inline script in index.html and index.mobile.html resolves the
+     * theme before the first paint, because anything decided here happens after
+     * the browser has already painted and shows as a flash. Re-deriving it
+     * would be a second implementation that can disagree with the first; the
+     * attribute IS the decision, so this reads it.
+     */
     try {
-      const saved = localStorage.getItem('theme');
-      if (saved) return saved;
+      const booted = document.documentElement.getAttribute('data-theme');
+      if (booted === 'light' || booted === 'dark') return booted;
     } catch (_) {}
-    return 'light';
+
+    // No boot script ran — a test, or an entry point that predates it.
+    try {
+      return resolveInitialTheme({
+        stored: localStorage.getItem('theme'),
+        preferenceSet: localStorage.getItem('theme_preference_set') === 'true',
+        prefersDark:
+          typeof window !== 'undefined' &&
+          window.matchMedia?.('(prefers-color-scheme: dark)').matches,
+      });
+    } catch (_) {
+      return 'light';
+    }
   });
+
+  /**
+   * Follow the device while the user has not chosen for themselves.
+   *
+   * Someone who picked light on a dark phone meant it, so `shouldFollowSystem`
+   * stops this the moment `toggleTheme` records a choice. Without the guard the
+   * OS would quietly overrule them at sunset.
+   */
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return undefined;
+
+    const query = window.matchMedia('(prefers-color-scheme: dark)');
+    const onChange = (event) => {
+      let preferenceSet = false;
+      try {
+        preferenceSet = localStorage.getItem('theme_preference_set') === 'true';
+      } catch (_) {}
+      if (!shouldFollowSystem({ preferenceSet })) return;
+      setTheme(event.matches ? 'dark' : 'light');
+    };
+
+    query.addEventListener('change', onChange);
+    return () => query.removeEventListener('change', onChange);
+  }, []);
 
   /**
    * The live theme, for `toggleTheme` to read.
@@ -143,6 +190,17 @@ export function ThemeProvider({ children }) {
   useEffect(() => {
     try {
       document.documentElement.setAttribute('data-theme', theme);
+      /*
+       * Hand `color-scheme` back to CSS.
+       *
+       * The boot script sets it inline so the first frame is right, before any
+       * stylesheet exists. An inline style beats a rule, so leaving it would
+       * pin the browser's own surfaces — form controls, scrollbars, the canvas
+       * — to whatever the DEVICE said, and the landing page (which pins itself
+       * to light) would render light with dark controls on it. The rules in
+       * variables.css follow `data-theme`, which is what everything else obeys.
+       */
+      document.documentElement.style.colorScheme = '';
       localStorage.setItem('theme', theme);
     } catch (_) {}
   }, [theme]);

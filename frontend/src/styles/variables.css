@@ -97,6 +97,21 @@
   --transition-theme: none;
 }
 
+/*
+ * `color-scheme` follows the attribute, never the OS directly.
+ *
+ * It controls what the BROWSER draws: form controls, scrollbars, the canvas
+ * behind the page. The boot script in index.html sets it inline so the very
+ * first frame is right, and ThemeContext clears that inline value once React
+ * is running so these rules take over.
+ *
+ * Why it has to be the attribute: the landing page pins itself to light while
+ * mounted, regardless of the device. With the inline value left in place, a
+ * dark-mode visitor got a light landing page with dark native controls on it.
+ */
+:root[data-theme='light'] { color-scheme: light; }
+:root[data-theme='dark'] { color-scheme: dark; }
+
 [data-theme="dark"] {
   --color-bg-main: #121212;
   --color-bg-white: #202020;
