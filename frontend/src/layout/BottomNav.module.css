@@ -4,7 +4,9 @@
   left: 0;
   right: 0;
   height: calc(60px + env(safe-area-inset-bottom, 0px));
-  background: var(--color-bg-white);
+  /* Chrome, not a card — see --color-nav-surface. Pure black in dark so this
+     bar and the phone's navigation bar beneath it form one strip. */
+  background: var(--color-nav-surface);
   border-top: 1px solid var(--color-border);
   display: none;
   justify-content: space-around;

@@ -10,6 +10,22 @@
   --color-danger-hover: #DC2626;
   --color-danger-rgb: 239, 68, 68;
 
+  /*
+   * The chrome surface: the app's bottom navigation, and the phone's status and
+   * navigation bars on the installed app.
+   *
+   * Deliberately NOT --color-bg-white. That one is the CARD surface (#ffffff /
+   * #202020), and cards and chrome want different things: a card is a raised
+   * sheet, chrome is the frame around the screen. Tying the system bars to the
+   * card colour made them mid-grey on dark, which reads as a third surface
+   * floating between the app and the phone.
+   *
+   * Pure white and pure black, so the app's bottom bar and the phone's bar
+   * directly below it are one continuous strip rather than two nearly-matching
+   * ones — which is more obviously wrong than an honest contrast would be.
+   */
+  --color-nav-surface: #FFFFFF;
+
   --color-bg-main: #F0F5FC;
   --color-bg-white: #FFFFFF;
   --color-bg-white-rgb: 255, 255, 255;
@@ -113,6 +129,7 @@
 :root[data-theme='dark'] { color-scheme: dark; }
 
 [data-theme="dark"] {
+  --color-nav-surface: #000000;
   --color-bg-main: #121212;
   --color-bg-white: #202020;
   --color-bg-white-rgb: 32, 32, 32;

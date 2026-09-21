@@ -57,6 +57,16 @@ describe('needsLightIcons', () => {
   });
 
   /**
+   * The two values --color-nav-surface actually takes. Pure black and pure
+   * white are the extremes, so getting either wrong means the status bar
+   * clock is invisible against its own background.
+   */
+  it('handles the chrome surface at both ends', () => {
+    expect(needsLightIcons('#000000')).toBe(true);
+    expect(needsLightIcons('#FFFFFF')).toBe(false);
+  });
+
+  /**
    * Luminance, not a channel average. Averaging calls a saturated blue light
    * when the eye reads it as dark, and the bar icons come out invisible
    * against it.

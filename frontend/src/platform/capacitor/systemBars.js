@@ -15,10 +15,15 @@ import { registerPlugin, SystemBars, SystemBarsStyle } from '@capacitor/core';
  * whether to draw its clock light or dark.
  *
  * WHY THE COLOUR IS READ FROM CSS RATHER THAN HARD-CODED
- * `--color-bg-white` is what the app's own header and bottom navigation are
- * painted with, so reading it is what guarantees the system bars match the bar
- * sitting directly against them rather than merely being "a dark colour too".
- * Change the palette and this follows without anyone remembering it exists.
+ * `--color-nav-surface` is what the app's own bottom navigation is painted
+ * with, so reading it is what guarantees the phone's navigation bar and the
+ * app's bar directly above it are ONE strip rather than two nearly-matching
+ * ones. Change the palette and this follows without anyone remembering it
+ * exists.
+ *
+ * Not `--color-bg-white`: that is the CARD surface (#ffffff / #202020). Tying
+ * the system bars to it made them mid-grey on dark, which reads as a third
+ * surface floating between the app and the phone.
  */
 
 const SystemUi = registerPlugin('SystemUi');
@@ -81,7 +86,7 @@ export function createCapacitorSystemBars({ getComputed } = {}) {
     getComputed ??
     (() =>
       getComputedStyle(document.documentElement)
-        .getPropertyValue('--color-bg-white')
+        .getPropertyValue('--color-nav-surface')
         .trim());
 
   return {
