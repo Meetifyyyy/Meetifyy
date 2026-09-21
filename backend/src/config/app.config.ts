@@ -81,6 +81,32 @@ const allowedOrigins = Array.from(
   ),
 );
 
+/**
+ * The version floor the installed apps are held to.
+ *
+ * WHY THE SERVER OWNS THIS
+ * An installed app is frozen at the bundle it shipped with — the web assets
+ * live inside the APK/IPA, so a frontend deploy does not reach it. That makes an
+ * old build a permanent client of this API, and the only lever the API has over
+ * it is to refuse. Holding the floor HERE means raising it is an environment
+ * change that takes effect on the next cold start, rather than a release that
+ * old installs will never receive.
+ *
+ * `minimum` is a hard gate: below it the app refuses to run. `latest` is a
+ * nudge the user can dismiss. Keeping them separate is the whole point — a
+ * single number turns every routine release into a forced upgrade, which is how
+ * a force-update gate ends up being switched off by the people it protects.
+ *
+ * Both default to `0.0.0`, which gates nothing. That is deliberate: a version
+ * gate that switches itself on because a variable was forgotten would lock
+ * every user out of an app that is working perfectly well.
+ */
+const mobileRelease = (platform: 'ANDROID' | 'IOS') => ({
+  minimum: str(`MOBILE_MIN_VERSION_${platform}`, { default: '0.0.0' }),
+  latest: str(`MOBILE_LATEST_VERSION_${platform}`, { default: '0.0.0' }),
+  url: str(`MOBILE_STORE_URL_${platform}`, { default: '' }),
+});
+
 export const appConfigValues = {
   env: APP_ENV,
   name: str('APP_NAME', { default: 'Meetifyy' }),
@@ -90,6 +116,15 @@ export const appConfigValues = {
 
   host: str('HOST', { default: '0.0.0.0' }),
   port: int('PORT', { default: '4000', min: 1, max: 65535 }),
+
+  /**
+   * What the installed apps are told about their own version. Served publicly
+   * by `GET /api/app/version`; see `mobileRelease` above.
+   */
+  mobile: {
+    android: mobileRelease('ANDROID'),
+    ios: mobileRelease('IOS'),
+  },
 
   frontendUrl,
   backendUrl,

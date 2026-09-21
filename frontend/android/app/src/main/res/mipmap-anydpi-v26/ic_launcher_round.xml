@@ -2,4 +2,14 @@
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
     <background android:drawable="@color/ic_launcher_background"/>
     <foreground android:drawable="@mipmap/ic_launcher_foreground"/>
+    <!--
+      Android 13+ themed icons. With a monochrome layer the launcher may tint
+      the icon to the system palette, so on a dark home screen it stops being a
+      white tile among coloured ones.
+
+      An adaptive icon CANNOT be transparent: the background layer is required
+      and the OS masks it to a shape. This is the nearest thing to "no white
+      box behind the mark" that the platform allows.
+    -->
+    <monochrome android:drawable="@mipmap/ic_launcher_foreground"/>
 </adaptive-icon>

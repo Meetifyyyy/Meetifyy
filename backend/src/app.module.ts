@@ -19,6 +19,7 @@ import { SupabaseModule } from './supabase/supabase.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { LinkPreviewModule } from './link-preview/link-preview.module';
 import { HealthModule } from './health/health.module';
+import { AppVersionModule } from './app-version/app-version.module';
 import { AuthModule } from './auth/auth.module';
 import { PostsModule } from './posts/posts.module';
 import { ShareModule } from './share/share.module';
@@ -175,6 +176,7 @@ import { randomUUID } from 'node:crypto';
     PrismaModule,
     LinkPreviewModule,
     HealthModule,
+    AppVersionModule,
     AuthModule,
     PostsModule,
     ShareModule,

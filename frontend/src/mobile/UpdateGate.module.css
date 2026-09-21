@@ -1,0 +1,104 @@
+/*
+ * The update wall and the update nudge.
+ *
+ * The wall deliberately looks like the app's own opening screen rather than an
+ * error: it is not a failure, it is a thing the user can fix in two taps. Same
+ * mark, same spacing, same button.
+ */
+.wall {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding: 2rem 1.5rem calc(2rem + env(safe-area-inset-bottom, 0px));
+  text-align: center;
+  background: var(--color-bg, #fdfdfd);
+  color: var(--color-text, #111827);
+}
+
+/* Matches AppOpenScreen: responsive, aspect preserved, never a fixed px. */
+.logo {
+  width: min(30vw, 132px);
+  min-width: 76px;
+  height: auto;
+  display: block;
+}
+
+.title { font-size: 1.5rem; font-weight: 700; margin: 0; letter-spacing: -0.01em; }
+
+.body {
+  margin: 0;
+  max-width: 34ch;
+  color: var(--color-text-muted, #6b7280);
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.primary {
+  margin-top: 0.5rem;
+  min-height: 48px;
+  padding: 0 1.5rem;
+  border: 0;
+  border-radius: 12px;
+  background: var(--color-primary, #2563eb);
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+/*
+ * The nudge sits above the bottom navigation rather than over it — covering the
+ * tab bar to advertise an optional update is not a trade worth making.
+ */
+.banner {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 4.5rem);
+  z-index: 1000;
+  margin: 0 0.75rem;
+  padding: 0.6rem 0.5rem 0.6rem 0.9rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: 12px;
+  background: var(--color-surface-elevated, #111827);
+  color: #fff;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
+  font-size: 0.875rem;
+}
+
+.bannerText { flex: 1; min-width: 0; }
+
+.bannerAction {
+  flex-shrink: 0;
+  min-height: 36px;
+  padding: 0 0.85rem;
+  border: 0;
+  border-radius: 8px;
+  background: var(--color-primary, #2563eb);
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* 40px square: a dismiss that is hard to hit is a dismiss that gets mis-hit. */
+.bannerDismiss {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: inherit;
+  font-size: 1.25rem;
+  line-height: 1;
+  cursor: pointer;
+}

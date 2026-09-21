@@ -76,6 +76,28 @@ const LEGACY_RATIO = 0.58;
 const MARK_PUBLIC_PATH = resolve(frontend, 'public/logo-mark.png');
 const MARK_PUBLIC_SIZE = 512;
 
+/**
+ * The PWA's maskable icons.
+ *
+ * A maskable icon is cropped by the OS to whatever shape it likes, and only the
+ * inner circle of 80% diameter is guaranteed to survive. Anything outside that
+ * is cut. The previous pair were drawn near-full-bleed, so on an Android home
+ * screen the mark came out cropped and looking zoomed in.
+ *
+ * 0.42 puts the mark comfortably inside the safe circle on every mask shape.
+ * That looks small measured against the PNG and correct measured against what
+ * is actually on screen, which is the only measurement that counts.
+ *
+ * The non-maskable `logo-192.png` / `logo-512.png` are deliberately NOT touched:
+ * they are the `purpose: "any"` icons, they are not cropped, and `logo-512.png`
+ * is this script's own source image.
+ */
+const MASKABLE_RATIO = 0.42;
+const MASKABLE = {
+  'public/logo-192-maskable.png': 192,
+  'public/logo-512-maskable.png': 512,
+};
+
 /** Finds the mark's bounding box: the ink above the wordmark. */
 async function findMarkBox() {
   const { data, info } = await sharp(SOURCE)
@@ -212,8 +234,17 @@ async function main() {
   const publicMark = await compose(mark, box, MARK_PUBLIC_SIZE, SAFE_RATIO, clear);
   writeFileSync(MARK_PUBLIC_PATH, publicMark);
 
+  // Opaque, unlike every other output here: a maskable icon has no transparency
+  // to fall back on — the OS fills the whole tile, and a transparent one is
+  // rendered against an arbitrary colour it was never designed for.
+  for (const [rel, size] of Object.entries(MASKABLE)) {
+    const maskable = await compose(mark, box, size, MASKABLE_RATIO, white);
+    writeFileSync(resolve(frontend, rel), maskable);
+  }
+
   console.log(`wrote ${written} icon files under android/app/src/main/res/`);
   console.log('wrote public/logo-mark.png for the launch shell');
+  console.log(`wrote ${Object.keys(MASKABLE).length} maskable PWA icons at ${MASKABLE_RATIO} of canvas`);
 }
 
 main().catch((err) => {

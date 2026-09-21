@@ -17,7 +17,49 @@
         content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
 
   <meta name="theme-color" content="#2563EB" />
+  <!--
+    Without this the WebView assumes a light page and paints a WHITE blank frame
+    before any CSS lands, which is a flash of white on a dark-mode device.
+  -->
+  <meta name="color-scheme" content="light dark" />
   <title>Meetifyy</title>
+
+  <!--
+    Decide the theme BEFORE the first paint.
+
+    This must be a blocking inline script in <head>. `ThemeContext` applies
+    `data-theme` from React, which is hundreds of milliseconds after the WebView
+    has already painted something — so the launch shell, and the first frame of
+    the app behind it, were drawn light and then snapped to dark. On the video
+    that is the pale flash between the logo and the opening screen.
+
+    The same value `ThemeContext` persists (`localStorage.theme`), falling back
+    to the OS preference, so this never disagrees with what React decides a
+    moment later. Wrapped in try/catch because storage can throw, and a theme is
+    not worth failing a boot over.
+
+    `--launch-bg` is consumed by the shell below AND reported to the native
+    layer, which paints the same colour behind the WebView. Three surfaces, one
+    value.
+  -->
+  <script>
+    (function () {
+      var bg = '#FDFDFD';
+      try {
+        var t = localStorage.getItem('theme');
+        if (t !== 'light' && t !== 'dark') {
+          t = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+            ? 'dark'
+            : 'light';
+        }
+        document.documentElement.setAttribute('data-theme', t);
+        if (t === 'dark') bg = '#121212';
+      } catch (e) {}
+      document.documentElement.style.setProperty('--launch-bg', bg);
+      document.documentElement.style.background = bg;
+      window.__meetifyyLaunchBg = bg;
+    })();
+  </script>
 
   <!--
     WHAT IS DELIBERATELY ABSENT, and why, because each omission is a decision:
@@ -62,7 +104,7 @@
     anything that waits on the bundle or a stylesheet.
   -->
   <div id="launch-shell" aria-hidden="true"
-       style="position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;background:#FDFDFD;transition:opacity .25s ease;pointer-events:none">
+       style="position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;background:var(--launch-bg,#FDFDFD);transition:opacity .25s ease;pointer-events:none">
     <!--
       The MARK, not the full logo lockup, and at the size the system splash
       draws it. The splash hands over to this image, so any difference between

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      The dark-mode launch background.
+
+      Matches the app's dark theme background (#121212 in variables.css),
+      exactly as the light value matches the light shell. Without this the
+      splash and the window were #FDFDFD on a dark-mode phone, so launching the
+      app meant a full-screen white flash before a dark app, which is what the
+      recording showed and is worse than the black frame it replaced.
+    -->
+    <color name="launchBackground">#121212</color>
+</resources>

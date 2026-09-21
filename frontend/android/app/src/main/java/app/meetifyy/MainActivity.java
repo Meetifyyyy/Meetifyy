@@ -1,78 +1,139 @@
 package app.meetifyy;
 
+import android.content.res.Configuration;
 import android.os.Bundle;
-import android.view.View;
-import android.view.ViewTreeObserver;
+import android.os.Handler;
+import android.os.Looper;
+import android.os.SystemClock;
 import android.webkit.WebView;
 
+import androidx.core.content.ContextCompat;
 import androidx.core.splashscreen.SplashScreen;
 
 import com.getcapacitor.BridgeActivity;
 
 /**
- * Holds the system splash screen until the WebView has actually drawn.
+ * Holds the system splash until the web app has actually painted something.
  *
- * WHAT THIS FIXES
- * Launching the app showed a black screen, then a flicker, then the web
- * loader, then the app. Three separate causes, two of them in styles.xml (the
- * splash theme used an attribute Android 12+ ignores, and the activity had no
- * window background, so the window was black while the WebView started up).
- * This file is the third: nothing installed the SplashScreen API at all, so the
- * themed splash was dismissed the moment the activity was ready rather than
- * when there was something to show.
+ * WHAT THE FIRST ATTEMPT GOT WRONG
+ * It released the splash from a pre-draw listener on the WebView. That fires on
+ * the WebView's first draw, which is its BLANK frame — the page has not
+ * rendered yet — so the splash lifted onto an empty WebView. On a dark-mode
+ * device that empty frame is black, which is the black screen in the recording,
+ * and the launch shell then painted its logo a moment later. The logo appeared,
+ * vanished into black, and appeared again.
  *
- * WHY A PRE-DRAW LISTENER AND NOT A TIMER
- * The splash has to last exactly as long as the WebView takes, which varies by
- * device and by whether the app is warm. A fixed delay is either too short on a
- * cold start — which is the case that was broken — or padding added to every
- * warm start for nothing. The pre-draw listener fires on the frame the WebView
- * is first ready to paint, which is the real event.
+ * WHAT IT WAITS FOR NOW
+ * The launch shell in `index.mobile.html` is the first thing the document
+ * paints, so its presence in the DOM is the real "there is something behind the
+ * splash" signal. Asking the page directly is the only way to know that; no
+ * native view callback can see it.
  *
- * SPLASH_TIMEOUT_MS is a backstop, not a delay: it only ever runs if that frame
- * never arrives, and it exists so a failed bundle or a hung load ends with the
- * user looking at the app's own error state rather than at a logo forever. On a
- * healthy launch it is cancelled before it fires.
+ * Polling rather than a plugin: a JavaScript interface to receive one boolean
+ * would mean a bridge, a registered plugin and a contract to keep, for a signal
+ * that is read a handful of times over half a second. The poll is cheap, it is
+ * cancelled the moment it succeeds, and it is confined to this file.
  *
- * Nothing here papers over a slow boot. The splash, the activity window and the
- * launch shell in index.mobile.html are all the same colour, so the handover
- * between the three surfaces is invisible and the logo simply stays put.
+ * SPLASH_TIMEOUT_MS is a backstop, not a delay. It only ever runs if the page
+ * never paints — a failed bundle, a hung load — so that the user ends up
+ * looking at the app's own error state instead of a logo forever.
+ *
+ * THE BACKGROUND COLOUR IS SET THREE TIMES, ON PURPOSE
+ * The splash, the activity window and the WebView are three separate surfaces,
+ * and whichever is on top during a handover is what the user sees. They are all
+ * `launchBackground`, which has a `values-night` variant, so on a dark-mode
+ * phone none of them flashes white. The web layer paints the same value from
+ * `localStorage.theme` before its first paint, so the shell agrees with them.
  */
 public class MainActivity extends BridgeActivity {
 
-    /** Only reached if the WebView never reports a frame. */
-    private static final long SPLASH_TIMEOUT_MS = 4000;
+    /** Only reached if the page never paints. */
+    private static final long SPLASH_TIMEOUT_MS = 5000;
 
-    private boolean readyToDraw = false;
+    /** Fast enough to be invisible, slow enough not to busy-wait the WebView. */
+    private static final long POLL_INTERVAL_MS = 32;
+
+    private boolean contentPainted = false;
+    private final Handler handler = new Handler(Looper.getMainLooper());
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
-        // Must run BEFORE super.onCreate, or the splash theme is never applied
-        // and the activity comes up wearing the post-splash theme directly.
+        // Must run BEFORE super.onCreate, or the splash theme is never applied.
         SplashScreen splashScreen = SplashScreen.installSplashScreen(this);
 
         super.onCreate(savedInstanceState);
 
-        splashScreen.setKeepOnScreenCondition(() -> !readyToDraw);
+        splashScreen.setKeepOnScreenCondition(() -> !contentPainted);
 
-        final View content = findViewById(android.R.id.content);
-        content.postDelayed(() -> readyToDraw = true, SPLASH_TIMEOUT_MS);
+        applyLaunchBackground();
+
+        final long deadline = SystemClock.uptimeMillis() + SPLASH_TIMEOUT_MS;
+        handler.post(new Runnable() {
+            @Override
+            public void run() {
+                if (contentPainted) return;
+
+                if (SystemClock.uptimeMillis() >= deadline) {
+                    contentPainted = true;
+                    return;
+                }
+
+                final WebView webView = getBridge() != null ? getBridge().getWebView() : null;
+                if (webView == null) {
+                    handler.postDelayed(this, POLL_INTERVAL_MS);
+                    return;
+                }
+
+                final Runnable self = this;
+                webView.evaluateJavascript(
+                    "(function(){try{return !!document.getElementById('launch-shell')}catch(e){return false}})()",
+                    value -> {
+                        if ("true".equals(value)) {
+                            contentPainted = true;
+                        } else {
+                            handler.postDelayed(self, POLL_INTERVAL_MS);
+                        }
+                    }
+                );
+            }
+        });
+    }
+
+    /**
+     * Paints the WebView itself, not just the window behind it.
+     *
+     * A WebView with no explicit background draws white, and in dark mode that
+     * is a white rectangle over a dark window for the moment before the page
+     * renders. Setting it here rather than in `capacitor.config.json` is what
+     * allows it to follow the night-mode resource.
+     */
+    private void applyLaunchBackground() {
+        final int color = ContextCompat.getColor(this, R.color.launchBackground);
+
+        getWindow().setBackgroundDrawableResource(R.color.launchBackground);
 
         final WebView webView = getBridge() != null ? getBridge().getWebView() : null;
-        final View target = webView != null ? webView : content;
+        if (webView != null) {
+            webView.setBackgroundColor(color);
+        }
+    }
 
-        target
-            .getViewTreeObserver()
-            .addOnPreDrawListener(
-                new ViewTreeObserver.OnPreDrawListener() {
-                    @Override
-                    public boolean onPreDraw() {
-                        // Removed on the first call: this must release the splash
-                        // once, not sit in the draw path for the life of the app.
-                        target.getViewTreeObserver().removeOnPreDrawListener(this);
-                        readyToDraw = true;
-                        return true;
-                    }
-                }
-            );
+    /**
+     * Follows a theme change made while the app is alive.
+     *
+     * Without this, switching the phone to dark mode leaves the WebView holding
+     * the light colour it was given at launch, which shows on the next cold
+     * frame.
+     */
+    @Override
+    public void onConfigurationChanged(Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
+        applyLaunchBackground();
+    }
+
+    @Override
+    public void onDestroy() {
+        handler.removeCallbacksAndMessages(null);
+        super.onDestroy();
     }
 }

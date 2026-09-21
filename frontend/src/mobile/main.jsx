@@ -45,6 +45,7 @@ import { UsersMapProvider } from '../shared/hooks/useUsersMap';
 import MediaViewerHost from '../shared/components/MediaViewer/MediaViewerHost';
 import { createCapacitorBackButton } from '../platform/capacitor/backButton';
 import { installNativeBackButton } from './nativeBackButton';
+import UpdateGate from './UpdateGate';
 
 import '../styles/variables.css';
 import '../styles/global.css';
@@ -123,7 +124,17 @@ createRoot(document.getElementById('root')).render(
                     },
                   }}
                 />
-                <App homeElement={<AppOpenScreen />} />
+                {/*
+                  Inside the providers, not outside: the wall is rendered by the
+                  same tree as the app, so it inherits the theme and does not
+                  need its own copy of anything. Outside `App` so that a blocked
+                  build never mounts the router at all — a wall that renders on
+                  top of a running app is a wall with the app still running
+                  behind it, making requests.
+                */}
+                <UpdateGate>
+                  <App homeElement={<AppOpenScreen />} />
+                </UpdateGate>
                 <MediaViewerHost />
               </UsersMapProvider>
             </MediaViewerProvider>

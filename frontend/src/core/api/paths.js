@@ -63,6 +63,12 @@ export const PUBLIC_PATHS = [
   //
   // Only the two document routes. `/api/legal/consent` is deliberately NOT
   // here: it is about a specific user and must carry their token.
+  /**
+   * The update gate's own check. It must answer for an app that is too old to
+   * authenticate at all — if the reason a build is unsupported is that the auth
+   * contract moved, a gate behind auth can never tell anyone to upgrade.
+   */
+  '/api/app/version',
   '/api/legal/documents',
   // "Bring Meetifyy to your campus" on the landing page. The person asking for
   // their college to be added has, by definition, no account yet — that is the
