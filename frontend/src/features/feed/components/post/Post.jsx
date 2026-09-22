@@ -1,4 +1,4 @@
-import { useState, useEffect, memo, useMemo, useCallback, useRef } from 'react';
+import { useState, memo, useMemo, useCallback, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { resolveCommunityAvatarThumb } from '@shared/utils/avatar';
 import { sanitizeUrl } from '@shared/utils/urlSanitize';
@@ -6,6 +6,8 @@ import Avatar, { getProcessedAvatarUrl } from '@shared/components/avatar/Avatar'
 import { CollegeRepresentativeBadge } from '@shared/components/badges/CollegeRepresentativeBadge';
 import { getCollegeName } from '@shared/utils/user';
 import RichText from '@shared/components/mentions/RichText';
+import Menu, { MenuItem, useMenu } from '@shared/components/ui/Menu';
+import { MoreHorizontal, Trash2, Flag } from '@shared/components/icons';
 import { normalizeBodyText, truncateBodyText, clipMentions, POST_LIMITS } from '@shared/utils/bodyText';
 import { useAuth } from '@shared/context/AuthContext';
 import { useCommunities } from '@shared/hooks/useCommunities';
@@ -127,7 +129,7 @@ function Post({ postData, onClick, onCommentClick, onDeleted, isDetailed = false
   const { currentUser } = useAuth();
   const { communitiesById } = useCommunities();
   const { openViewer } = useMediaViewerActions();
-  const [showMenu, setShowMenu] = useState(false);
+  const menu = useMenu();
   const [isExpanded, setIsExpanded] = useState(false);
   const postCardRef = useRef(null);
 
@@ -150,22 +152,15 @@ function Post({ postData, onClick, onCommentClick, onDeleted, isDetailed = false
    */
   const isDeleting = postData?.[DELETING_FLAG] === true;
 
-  useEffect(() => {
-    if (!showMenu) return;
-    const handleOutsideClick = () => setShowMenu(false);
-    document.addEventListener('click', handleOutsideClick);
-    return () => document.removeEventListener('click', handleOutsideClick);
-  }, [showMenu]);
-
-  useEffect(() => {
-    const handleCloseOthers = (e) => {
-      if (e.detail?.postId !== id) {
-        setShowMenu(false);
-      }
-    };
-    window.addEventListener('close-all-post-menus', handleCloseOthers);
-    return () => window.removeEventListener('close-all-post-menus', handleCloseOthers);
-  }, [id]);
+  /*
+   * The outside-click listener and the `close-all-post-menus` broadcast are
+   * both gone.
+   *
+   * Each card used to own its menu's open state, so two cards could have one
+   * open at once and a window-wide custom event existed to tell the others to
+   * shut. `Menu` closes on any outside pointer-down — including the press that
+   * opens another card's menu — so the coordination has nothing left to do.
+   */
 
   const { authorId, time, text, mentions, poll } = postData || {};
 
@@ -385,73 +380,42 @@ function Post({ postData, onClick, onCommentClick, onDeleted, isDetailed = false
 
         <div className={styles.postMenuWrapper}>
           <button
-            onClick={(e) => {
-              e.stopPropagation();
-              const nextState = !showMenu;
-              setShowMenu(nextState);
-              if (nextState) {
-                window.dispatchEvent(new CustomEvent('close-all-post-menus', { detail: { postId: id } }));
-              }
-            }}
+            {...menu.triggerProps}
             aria-label="Post options"
             className={styles.menuBtn}
           >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="12" cy="12" r="1" />
-              <circle cx="19" cy="12" r="1" />
-              <circle cx="5" cy="12" r="1" />
-            </svg>
+            <MoreHorizontal size={20} />
           </button>
-          {showMenu && (
-            <div className="dropdown open" style={{ right: 0, top: '100%', width: '140px' }} onClick={(e) => e.stopPropagation()}>
-              {canDeletePost && (
-                <button
-                  // Disabled while a delete is in flight so the confirm dialog
-                  // cannot be reopened and a second DELETE issued for the same
-                  // post. The card also renders its own progress state, so this
-                  // is the belt to that braces.
-                  disabled={isDeleting}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (isDeleting) return;
-                    setShowMenu(false);
-                    setShowDeleteConfirm(true);
-                  }}
-                  style={{
-                    color: 'var(--color-danger)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.5rem',
-                    width: '100%',
-                    opacity: isDeleting ? 0.5 : 1,
-                    cursor: isDeleting ? 'not-allowed' : undefined,
-                  }}
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <polyline points="3 6 5 6 21 6" />
-                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                  </svg>
-                  Delete Post
-                </button>
-              )}
-              {!isOwnPost && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setShowMenu(false);
-                    if (!hasReported) {
-                      setShowReportModal(true);
-                    }
-                  }}
-                  style={{ color: hasReported ? 'var(--color-text-muted)' : 'var(--color-text-main)', display: 'flex', alignItems: 'center', gap: '0.5rem', width: '100%' }}
-                  disabled={hasReported}
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path><line x1="4" y1="22" x2="4" y2="15"></line></svg>
-                  {hasReported ? 'Already Reported' : 'Report'}
-                </button>
-              )}
-            </div>
-          )}
+
+          <Menu {...menu.menuProps} size="sm" ariaLabel="Post options">
+            {canDeletePost && (
+              <MenuItem
+                icon={Trash2}
+                tone="danger"
+                /*
+                 * Disabled while a delete is in flight so the confirm dialog
+                 * cannot be reopened and a second DELETE issued for the same
+                 * post. The card also renders its own progress state, so this
+                 * is the belt to that braces.
+                 */
+                disabled={isDeleting}
+                onSelect={() => setShowDeleteConfirm(true)}
+                onClose={menu.close}
+              >
+                Delete post
+              </MenuItem>
+            )}
+            {!isOwnPost && (
+              <MenuItem
+                icon={Flag}
+                disabled={hasReported}
+                onSelect={() => setShowReportModal(true)}
+                onClose={menu.close}
+              >
+                {hasReported ? 'Already reported' : 'Report'}
+              </MenuItem>
+            )}
+          </Menu>
         </div>
       </div>
 

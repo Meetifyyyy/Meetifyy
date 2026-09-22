@@ -23,6 +23,7 @@ import {
   Flag,
   Trash2,
 } from '@shared/components/icons';
+import Menu, { MenuItem, useMenu } from '@shared/components/ui/Menu';
 
 /** Detect video items by explicit type field OR URL extension. */
 function isVideo(item) {
@@ -65,7 +66,7 @@ export default function MediaViewer() {
 
   const [visible, setVisible]               = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
-  const [showMoreMenu, setShowMoreMenu]     = useState(false);
+  const moreMenu = useMenu();
   const [showForwardModal, setShowForwardModal] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
   const [hasReported, setHasReported]       = useState(false);
@@ -165,20 +166,7 @@ export default function MediaViewer() {
     }
   }, [open, savedScrollRef]);
 
-  // ── Close more menu on outside click ───────────────────────────────────────
-  useEffect(() => {
-    if (!showMoreMenu) return;
-    const handle = (e) => {
-      if (e.target.closest(`.${styles.moreMenuWrap}`)) return;
-      setShowMoreMenu(false);
-    };
-    window.addEventListener('click', handle, true);
-    window.addEventListener('pointerdown', handle, true);
-    return () => {
-      window.removeEventListener('click', handle, true);
-      window.removeEventListener('pointerdown', handle, true);
-    };
-  }, [showMoreMenu]);
+  // The outside-click listener is gone — `Menu` owns its own dismissal.
 
   // ── Keyboard navigation ─────────────────────────────────────────────────────
   useEffect(() => {
@@ -506,8 +494,8 @@ export default function MediaViewer() {
 
   const toggleControls = useCallback(() => {
     setControlsVisible(v => !v);
-    setShowMoreMenu(false);
-  }, []);
+    moreMenu.close();
+  }, [moreMenu]);
 
   const handleOverlayClick = (e) => {
     if (e.target === overlayRef.current) handleClose();
@@ -634,60 +622,43 @@ export default function MediaViewer() {
           {/* More menu */}
           <div className={styles.moreMenuWrap}>
             <button
+              {...moreMenu.triggerProps}
               className={styles.iconBtn}
-              onClick={(e) => { e.stopPropagation(); setShowMoreMenu(!showMoreMenu); }}
               aria-label="More options"
-              aria-haspopup="menu"
-              aria-expanded={showMoreMenu}
             >
               <MoreVertical size={18} strokeWidth={1.75} />
             </button>
-            <div
-              className={`${styles.moreMenu} ${showMoreMenu ? styles.open : ''}`}
-              role="menu"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <button
-                className={styles.moreMenuItem}
-                role="menuitem"
-                onClick={() => { handleDownload(); setShowMoreMenu(false); }}
-              >
-                <Download size={15} strokeWidth={1.75} />
+            <Menu {...moreMenu.menuProps} size="md" ariaLabel="Media options">
+              <MenuItem icon={Download} onSelect={handleDownload} onClose={moreMenu.close}>
                 Download
-              </button>
+              </MenuItem>
 
               {meta?.source !== 'Post' && (
-                <button
-                  className={styles.moreMenuItem}
-                  role="menuitem"
-                  onClick={() => { handleShare(); setShowMoreMenu(false); }}
-                >
-                  <Share size={15} strokeWidth={1.75} />
+                <MenuItem icon={Share} onSelect={handleShare} onClose={moreMenu.close}>
                   Share
-                </button>
+                </MenuItem>
               )}
 
-              <button
-                className={styles.moreMenuItem}
-                role="menuitem"
-                onClick={() => { setShowMoreMenu(false); if (!hasReported) setShowReportModal(true); }}
+              <MenuItem
+                icon={Flag}
                 disabled={hasReported}
+                onSelect={() => setShowReportModal(true)}
+                onClose={moreMenu.close}
               >
-                <Flag size={15} strokeWidth={1.75} />
-                {hasReported ? 'Already Reported' : 'Report'}
-              </button>
+                {hasReported ? 'Already reported' : 'Report'}
+              </MenuItem>
 
               {meta?.isOwner && (
-                <button
-                  className={`${styles.moreMenuItem} ${styles.danger}`}
-                  role="menuitem"
-                  onClick={() => { showToast('Deleted'); handleClose(); setShowMoreMenu(false); }}
+                <MenuItem
+                  icon={Trash2}
+                  tone="danger"
+                  onSelect={() => { showToast('Deleted'); handleClose(); }}
+                  onClose={moreMenu.close}
                 >
-                  <Trash2 size={15} strokeWidth={1.75} />
                   Delete
-                </button>
+                </MenuItem>
               )}
-            </div>
+            </Menu>
           </div>
         </div>
       </div>
@@ -698,7 +669,7 @@ export default function MediaViewer() {
       <div
         className={styles.stage}
         ref={stageRef}
-        onClick={() => setShowMoreMenu(false)}
+        onClick={moreMenu.close}
       >
         <div
           className={styles.stageTrack}
@@ -719,7 +690,7 @@ export default function MediaViewer() {
                       src={item.url}
                       mediaRef={isCurrent ? mediaElRef : null}
                       onControlsChange={isCurrent ? setControlsVisible : undefined}
-                      onStageClick={() => setShowMoreMenu(false)}
+                      onStageClick={moreMenu.close}
                       isCurrent={isCurrent}
                     />
                   ) : (

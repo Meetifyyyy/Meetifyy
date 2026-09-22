@@ -1,6 +1,6 @@
 import { useParams, useNavigate } from 'react-router-dom';
 import { useUrlState } from '@shared/hooks/useUrlState';
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
 import { postsApi } from '@shared/api/apiClient';
 import { useAuth } from '@shared/context/AuthContext';
@@ -71,7 +71,8 @@ INTERESTS_BY_CATEGORY.forEach(category => {
 
 
 import CoverImage from '@shared/components/ui/CoverImage';
-import { Bookmark, Lock } from '@shared/components/icons';
+import { Bookmark, Lock, MoreVertical, Settings, Share2, Flag } from '@shared/components/icons';
+import Menu, { MenuItem, useMenu } from '@shared/components/ui/Menu';
 
 
 export default function ProfilePage() {
@@ -99,7 +100,7 @@ export default function ProfilePage() {
     goBack(`/profile/${targetUsername}`);
   }, [goBack, targetUsername]);
 
-  const [menuOpen, setMenuOpen] = useState(false);
+  const profileMenu = useMenu();
   const [shareModalOpen, setShareModalOpen] = useState(false);
   // First-year isolation: the "Messaging Restricted" dialog raised by the
   // locked Message button. Kept isolated from every other profile action so
@@ -114,7 +115,6 @@ export default function ProfilePage() {
   const [cropType, setCropType] = useState(null); // 'avatar' or 'cover'
   const coverFileRef = useRef(null);
   const avatarFileRef = useRef(null);
-  const menuRef = useRef(null);
 
   // Gradient presets for the cover editor
   const GRADIENT_PRESETS = [
@@ -213,14 +213,7 @@ export default function ProfilePage() {
     }
   };
 
-  useEffect(() => {
-    if (!menuOpen) return;
-    const handler = (e) => {
-      if (menuRef.current && !menuRef.current.contains(e.target)) setMenuOpen(false);
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [menuOpen]);
+  // Outside-click listener removed — `Menu` owns its own dismissal.
 
   // Query Profile Data
   const { 
@@ -418,42 +411,29 @@ export default function ProfilePage() {
                   <polyline points="12 19 5 12 12 5" />
                 </svg>
               </button>
-              <div className={s.menuWrap} ref={menuRef}>
-                <button className={s.mobileMenuBtn} aria-label="More options" onClick={() => setMenuOpen(v => !v)}>
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <circle cx="12" cy="12" r="1"></circle>
-                    <circle cx="12" cy="5" r="1"></circle>
-                    <circle cx="12" cy="19" r="1"></circle>
-                  </svg>
+              <div className={s.menuWrap}>
+                <button {...profileMenu.triggerProps} className={s.mobileMenuBtn} aria-label="More options">
+                  <MoreVertical size={20} />
                 </button>
-                {menuOpen && (
-                  <div className={s.dropdownMenu}>
-                    <button className={s.dropdownItem} onClick={() => { setMenuOpen(false); navigate('/settings'); }}>
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-                      Settings
-                    </button>
-                    <button className={s.dropdownItem} onClick={() => { setMenuOpen(false); setShareModalOpen(true); }}>
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
-                      Share Profile
-                    </button>
-                    <button className={s.dropdownItem} onClick={() => { setMenuOpen(false); navigate('/saved'); }}>
-                      <Bookmark size={16} strokeWidth={2} />
-                      Saved
-                    </button>
-                    <button
-                      className={s.dropdownItem}
-                      onClick={() => {
-                        setMenuOpen(false);
-                        if (!hasReported) setShowReportModal(true);
-                      }}
-                      disabled={hasReported}
-                      style={{ color: hasReported ? 'var(--color-text-muted)' : 'var(--color-text-main)' }}
-                    >
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-                      {hasReported ? 'Already Reported' : 'Report'}
-                    </button>
-                  </div>
-                )}
+                <Menu {...profileMenu.menuProps} size="md" ariaLabel="Profile options">
+                  <MenuItem icon={Settings} onSelect={() => navigate('/settings')} onClose={profileMenu.close}>
+                    Settings
+                  </MenuItem>
+                  <MenuItem icon={Share2} onSelect={() => setShareModalOpen(true)} onClose={profileMenu.close}>
+                    Share profile
+                  </MenuItem>
+                  <MenuItem icon={Bookmark} onSelect={() => navigate('/saved')} onClose={profileMenu.close}>
+                    Saved
+                  </MenuItem>
+                  <MenuItem
+                    icon={Flag}
+                    disabled={hasReported}
+                    onSelect={() => setShowReportModal(true)}
+                    onClose={profileMenu.close}
+                  >
+                    {hasReported ? 'Already reported' : 'Report'}
+                  </MenuItem>
+                </Menu>
               </div>
             </div>
             <div className={s.profileInfo}>

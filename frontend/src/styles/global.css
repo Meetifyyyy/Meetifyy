@@ -656,55 +656,12 @@ nav a.active {
   }
 }
 
-/* ---------- Dropdown Menu ---------- */
-.dropdown {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  z-index: 200;
-  background: var(--color-bg-white);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-md);
-  padding: 0.35rem;
-  min-width: 160px;
-  opacity: 0;
-  transform: translateY(-6px) scale(0.96);
-  pointer-events: none;
-  transition: opacity 0.2s ease, transform 0.2s ease;
-}
-
 .page-transition-exit-active {
   opacity: 0;
   transform: translateY(-8px);
   transition: opacity var(--transition-normal), transform var(--transition-normal);
 }
 
-
-.dropdown.open {
-  opacity: 1;
-  transform: translateY(0) scale(1);
-  pointer-events: auto;
-}
-
-.dropdown button {
-  width: 100%;
-  padding: 0.5rem 0.85rem;
-  font-family: var(--font-family-sans);
-  font-size: 0.82rem;
-  font-weight: 500;
-  color: var(--color-text-main);
-  background: none;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  text-align: left;
-  transition: background 0.15s;
-}
-
-.dropdown button:hover {
-  background: var(--color-border-light);
-}
 
 
 @keyframes fadeInSlideUp {

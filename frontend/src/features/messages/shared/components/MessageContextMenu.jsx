@@ -1,6 +1,5 @@
-import { useRef, useLayoutEffect, useState } from 'react';
 import { Reply, Copy, Forward, Trash2, Undo2 } from '@shared/components/icons';
-import styles from './MessageContextMenu.module.css';
+import Menu, { MenuItem, MenuSeparator } from '@shared/components/ui/Menu';
 
 export const MENU_GAP = 12;
 export const MENU_EDGE_MARGIN = 12;
@@ -47,9 +46,6 @@ export default function MessageContextMenu({
   onUnsend,
   onUnsendRequest
 }) {
-  const menuRef = useRef(null);
-  const [coords, setCoords] = useState({ x: -9999, y: -9999, ready: false });
-
   // No early return above this point: useLayoutEffect below must run on every
   // render, or React loses hook order the first time the menu closes.
   const isTemp = (m) => m && m.id && (String(m.id).startsWith('temp-') || String(m.id).startsWith('temp_'));
@@ -130,67 +126,30 @@ export default function MessageContextMenu({
     return true;
   });
 
-  const posX = position?.x;
-  const posY = position?.y;
-
-  useLayoutEffect(() => {
-    if (!menuRef.current || posX == null || posY == null) return;
-    setCoords({
-      ...computeMenuPosition(
-        { x: posX, y: posY },
-        { width: menuRef.current.offsetWidth || 180, height: menuRef.current.offsetHeight || 220 },
-        { width: window.innerWidth, height: window.visualViewport?.height || window.innerHeight }
-      ),
-      ready: true,
-    });
-  }, [posX, posY, visibleActions.length]);
-
-  // Moved below the hook, which is the whole point: same rendered output,
-  // but the hook count no longer changes between renders.
   if (!msg || !position) return null;
 
-
   return (
-    <div 
-      className={styles.contextMenuOverlay} 
-      onPointerDown={(e) => {
-        if (e.target === e.currentTarget) {
-          onClose();
-        }
-      }}
-      onContextMenu={(e) => e.preventDefault()}
-      onWheel={onClose}
+    <Menu
+      open
+      onClose={onClose}
+      point={position}
+      size="md"
+      ariaLabel="Message options"
     >
-      <div 
-        ref={menuRef}
-        className={styles.contextMenu} 
-        style={{ 
-          top: `${coords.y}px`, 
-          left: `${coords.x}px`,
-          opacity: coords.ready ? 1 : 0,
-          visibility: coords.ready ? 'visible' : 'hidden',
-        }}
-        onPointerDown={(e) => e.stopPropagation()}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {visibleActions.map((action) => {
-          if (action.isSeparator) {
-            return <div key={action.id} className={styles.contextMenuDivider} />;
-          }
-
-          const IconComp = action.icon;
-          return (
-            <button
-              key={action.id}
-              className={`${styles.contextMenuItem} ${action.danger ? styles.danger : ''}`}
-              onClick={action.onClick}
-            >
-              <IconComp size={15} className={styles.actionIcon} />
-              <span>{action.label}</span>
-            </button>
-          );
-        })}
-      </div>
-    </div>
+      {visibleActions.map((action) =>
+        action.isSeparator ? (
+          <MenuSeparator key={action.id} />
+        ) : (
+          <MenuItem
+            key={action.id}
+            icon={action.icon}
+            tone={action.danger ? 'danger' : 'default'}
+            onSelect={action.onClick}
+          >
+            {action.label}
+          </MenuItem>
+        ),
+      )}
+    </Menu>
   );
 }

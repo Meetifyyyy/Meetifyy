@@ -5,7 +5,8 @@ import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 import { useProfile } from '@shared/hooks/useProfile';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@shared/context/AuthContext';
-import { Bookmark, Moon, Sun, MenuSquare, X } from '@shared/components/icons';
+import { Bookmark, Moon, Sun, MenuSquare, X, Settings, LogOut } from '@shared/components/icons';
+import Menu, { MenuItem, MenuSeparator, useMenu } from '@shared/components/ui/Menu';
 import CommunitiesBox from './CommunitiesBox';
 
 import Avatar from '@shared/components/avatar/Avatar';
@@ -25,7 +26,7 @@ export default function Header({ variant = 'dashboard', wide = false }) {
   const { loading, logout, currentUser } = useAuth();
   const queryClient = useQueryClient();
   const { theme, toggleTheme } = useTheme();
-  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const menu = useMenu();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const closeDrawer = useCallback(() => setDrawerOpen(false), []);
 
@@ -57,16 +58,12 @@ export default function Header({ variant = 'dashboard', wide = false }) {
   // Declared after `location`: reading it above its own declaration throws.
   useEffect(() => { setDrawerOpen(false); }, [location.pathname]);
   const isHomePage = location.pathname === '/home' || location.pathname === '/';
-  const dropdownRef = useRef(null);
   const avatarRef = useRef(null);
 
-  useEffect(() => {
-    const close = () => {
-      setDropdownOpen(false);
-    };
-    document.addEventListener('click', close);
-    return () => document.removeEventListener('click', close);
-  }, []);
+  /*
+   * The document-wide close listener is gone — `Menu` owns dismissal, and this
+   * one fired on EVERY click in the app whether the menu was open or not.
+   */
 
   const handleLogout = () => {
     queryClient.clear();
@@ -296,15 +293,26 @@ export default function Header({ variant = 'dashboard', wide = false }) {
           </div>
           <div className={`${styles.avatarWrap} ${styles.desktopOnlyAvatar}`}>
             <div
-              ref={avatarRef}
+              /*
+                Two owners for one node: the menu anchors to it, and the theme
+                toggle animates its reveal from it. Spreading `triggerProps`
+                after `ref={avatarRef}` would have silently replaced the second
+                with the first, and the theme transition would have lost its
+                origin — so both are assigned here instead.
+              */
+              ref={(el) => {
+                avatarRef.current = el;
+                menu.triggerRef.current = el;
+              }}
               data-header-avatar="true"
               className={styles.userAvatar}
-              onClick={(e) => { e.stopPropagation(); setDropdownOpen(!dropdownOpen); }}
+              onClick={menu.toggle}
+              aria-haspopup="menu"
+              aria-expanded={menu.open}
               role="button"
               aria-label="User menu"
-              aria-expanded={dropdownOpen}
               tabIndex={0}
-              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); setDropdownOpen(!dropdownOpen); }}}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { menu.toggle(e); } }}
             >
               <Avatar
                 src={currentUser?.avatar || currentUser?.avatarUrl}
@@ -313,10 +321,21 @@ export default function Header({ variant = 'dashboard', wide = false }) {
                 isLoading={loading}
               />
             </div>
-            <div className={`${styles.dropdown} ${dropdownOpen ? styles.dropdownOpen : ''}`} ref={dropdownRef}>
-              <button 
+            <Menu {...menu.menuProps} size="lg" ariaLabel="Account menu">
+              {/*
+                A custom row, not a MenuItem: it carries an avatar and two
+                lines of text. `Menu` takes children rather than an items
+                array precisely so a call site can do this without the shared
+                component growing a variant for it.
+              */}
+              <button
+                type="button"
+                role="menuitem"
                 className={styles.dropdownProfileBtn}
-                onClick={() => { navigate(`/profile/${username}`, { state: { from: location.pathname } }); setDropdownOpen(false); }}
+                onClick={() => {
+                  navigate(`/profile/${username}`, { state: { from: location.pathname } });
+                  menu.close();
+                }}
               >
                 <div style={{ width: 32, height: 32, flexShrink: 0 }}>
                   <Avatar
@@ -332,47 +351,30 @@ export default function Header({ variant = 'dashboard', wide = false }) {
                 </div>
               </button>
 
-              <button 
-                onClick={() => { navigate('/saved'); setDropdownOpen(false); }}
-              >
-                <Bookmark size={18} strokeWidth={2} />
+              <MenuSeparator />
+
+              <MenuItem icon={Bookmark} onSelect={() => navigate('/saved')} onClose={menu.close}>
                 Saved
-              </button>
+              </MenuItem>
 
-              <button 
-                onClick={() => { navigate('/settings'); setDropdownOpen(false); }}
-              >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <circle cx="12" cy="12" r="3"/>
-                  <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
-                </svg>
+              <MenuItem icon={Settings} onSelect={() => navigate('/settings')} onClose={menu.close}>
                 Settings
-              </button>
+              </MenuItem>
 
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setDropdownOpen(false);
-                  toggleTheme({ originElement: avatarRef.current });
-                }}
+              <MenuItem
+                icon={theme === 'light' ? Moon : Sun}
+                onSelect={() => toggleTheme({ originElement: avatarRef.current })}
+                onClose={menu.close}
               >
-                <span key={theme} className={styles.themeToggleIcon}>
-                  {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
-                </span>
-                <span>{theme === 'light' ? 'Dark mode' : 'Light mode'}</span>
-              </button>
+                {theme === 'light' ? 'Dark mode' : 'Light mode'}
+              </MenuItem>
 
-              <div className={styles.divider} />
+              <MenuSeparator />
 
-              <button className={styles.logoutBtn} onClick={handleLogout}>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-                  <polyline points="16 17 21 12 16 7" />
-                  <line x1="21" y1="12" x2="9" y2="12" />
-                </svg>
+              <MenuItem icon={LogOut} tone="danger" onSelect={handleLogout}>
                 Log out
-              </button>
-            </div>
+              </MenuItem>
+            </Menu>
           </div>
         </nav>
       ) : (

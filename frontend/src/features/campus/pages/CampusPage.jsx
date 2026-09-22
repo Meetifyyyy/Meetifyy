@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useLayoutEffect, useRef, useCallback, lazy, Suspense, memo } from 'react';
+import { useState, useMemo, useLayoutEffect, useRef, useCallback, lazy, Suspense, memo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@shared/context/AuthContext';
 import { useIsVerified } from '@shared/hooks/useIsVerified';
@@ -15,6 +15,7 @@ import CampusEventSection from '@features/campus-events/components/CampusEventSe
 import eventStyles from '@features/campus-events/components/CampusEvents.module.css';
 import ConfirmModal from '@shared/components/modals/ConfirmModal';
 import { Plus, Users, CalendarPlus, ChevronRight } from '@shared/components/icons';
+import Menu, { MenuItem, useMenu } from '@shared/components/ui/Menu';
 import { useActivities } from '@shared/hooks/useCrew';
 import CrewCard from '@features/crew/components/cards/CrewCard';
 import CrewCardSkeleton from '@features/crew/components/cards/CrewCardSkeleton';
@@ -285,27 +286,10 @@ export default function CampusPage() {
 
   const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
   const [eventFormState, setEventFormState] = useState(null); // null | { event? }
-  const [isPlusMenuOpen, setIsPlusMenuOpen] = useState(false);
+  const plusMenu = useMenu();
   const [deleteCandidate, setDeleteCandidate] = useState(null);
-  const menuRef = useRef(null);
 
-  useEffect(() => {
-    if (!isPlusMenuOpen) return;
-    const handleClickOutside = (e) => {
-      if (menuRef.current && !menuRef.current.contains(e.target)) {
-        setIsPlusMenuOpen(false);
-      }
-    };
-    const handleKeyDown = (e) => {
-      if (e.key === 'Escape') setIsPlusMenuOpen(false);
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    document.addEventListener('keydown', handleKeyDown);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-      document.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [isPlusMenuOpen]);
+  // Outside-click and Escape both belong to `Menu` now.
 
   const collegeName = authCollegeName;
 
@@ -423,39 +407,29 @@ export default function CampusPage() {
             <CollegeRepresentativeBadge isCampusRep={isCampusRep} collegeName={collegeName} size="inherit" />
           </h1>
 
-          <div className={`${styles.headerActions} ${styles.headerActionsRelative}`} ref={menuRef}>
+          <div className={`${styles.headerActions} ${styles.headerActionsRelative}`}>
             <button
+              {...plusMenu.triggerProps}
               className={styles.headerSquareBtn}
-              onClick={() => setIsPlusMenuOpen(prev => !prev)}
               aria-label="Create menu"
-              aria-expanded={isPlusMenuOpen}
-              aria-haspopup="menu"
             >
               <Plus size={20} />
             </button>
 
-            {isPlusMenuOpen && (
-              <div className={styles.plusDropdownMenu} role="menu">
-                {isCampusRep && (
-                  <button
-                    className={styles.plusMenuItem}
-                    role="menuitem"
-                    onClick={() => { setIsPlusMenuOpen(false); setEventFormState({}); }}
-                  >
-                    <CalendarPlus size={18} className={styles.plusMenuIcon} />
-                    <span>Create event</span>
-                  </button>
-                )}
-                <button
-                  className={styles.plusMenuItem}
-                  role="menuitem"
-                  onClick={() => { setIsPlusMenuOpen(false); setIsGroupModalOpen(true); }}
+            <Menu {...plusMenu.menuProps} size="md" ariaLabel="Create">
+              {isCampusRep && (
+                <MenuItem
+                  icon={CalendarPlus}
+                  onSelect={() => setEventFormState({})}
+                  onClose={plusMenu.close}
                 >
-                  <Users size={18} className={styles.plusMenuIcon} />
-                  <span>Create community</span>
-                </button>
-              </div>
-            )}
+                  Create event
+                </MenuItem>
+              )}
+              <MenuItem icon={Users} onSelect={() => setIsGroupModalOpen(true)} onClose={plusMenu.close}>
+                Create community
+              </MenuItem>
+            </Menu>
           </div>
         </header>
 

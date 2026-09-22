@@ -1,81 +1,42 @@
-import { useRef, useLayoutEffect, useState } from 'react';
 import { Pin, NotificationOff, NotificationOn, LogOut, CheckCheck } from '@shared/components/icons';
-import { computeMenuPosition } from '@features/messages/shared/components/MessageContextMenu';
-import styles from './GroupContextMenu.module.css';
+import Menu, { MenuItem, MenuSeparator } from '@shared/components/ui/Menu';
 
+/**
+ * The long-press / right-click menu on a group-chat row.
+ *
+ * Identical in shape to `DMContextMenu` — placement, backdrop and dismissal all
+ * belong to `Menu`. The two differ only in their last action: a direct message
+ * is deleted, a group is left.
+ */
 export default function GroupContextMenu({ conv, position, onClose, onMarkRead, onMute, onPin, onLeave }) {
-  const menuRef = useRef(null);
-  const [coords, setCoords] = useState({ x: -9999, y: -9999, ready: false });
-
-  // The press point was written straight into `left`/`top`, so a right-click
-  // near the right edge of the window put half the menu off screen. This is the
-  // same clamp-and-flip the message context menu uses: measure the menu, offset
-  // from the press, and flip to the other side when that would overflow.
-  //
-  // Declared before the early return so the hook order never changes between
-  // an open and a closed menu.
-  const posX = position?.x;
-  const posY = position?.y;
-
-  useLayoutEffect(() => {
-    if (!menuRef.current || posX == null || posY == null) return;
-    setCoords({
-      ...computeMenuPosition(
-        { x: posX, y: posY },
-        { width: menuRef.current.offsetWidth || 180, height: menuRef.current.offsetHeight || 200 },
-        { width: window.innerWidth, height: window.visualViewport?.height || window.innerHeight }
-      ),
-      ready: true,
-    });
-  }, [posX, posY, conv?.id, conv?.unread]);
-
   if (!conv) return null;
 
-  // Read both spellings: the server returns `muted`/`pinned`, while some
-  // optimistic writes historically only set the `is*` form. Falling back
-  // keeps the label honest either way.
+  // Both spellings: the server returns `muted`/`pinned`, some optimistic
+  // writes historically set only the `is*` form.
   const isMuted = Boolean(conv.muted ?? conv.isMuted);
   const isPinned = Boolean(conv.pinned ?? conv.isPinned);
 
-  const handle = (fn) => (e) => {
-    e.stopPropagation();
-    fn?.();
-    onClose?.();
-  };
-
   return (
-    <>
-      <div className={styles.backdrop} onClick={onClose} />
-      <div
-        ref={menuRef}
-        className={styles.menu}
-        style={{
-          top: `${coords.y}px`,
-          left: `${coords.x}px`,
-          opacity: coords.ready ? 1 : 0,
-          visibility: coords.ready ? 'visible' : 'hidden',
-        }}
+    <Menu open onClose={onClose} point={position} size="md" ariaLabel="Group options">
+      {conv.unread > 0 && (
+        <MenuItem icon={CheckCheck} onSelect={onMarkRead} onClose={onClose}>
+          Mark as read
+        </MenuItem>
+      )}
+      <MenuItem icon={Pin} onSelect={onPin} onClose={onClose}>
+        {isPinned ? 'Unpin' : 'Pin'}
+      </MenuItem>
+      <MenuItem
+        icon={isMuted ? NotificationOn : NotificationOff}
+        onSelect={onMute}
+        onClose={onClose}
       >
-        {conv.unread > 0 && (
-          <button className={styles.menuItem} onClick={handle(onMarkRead)}>
-            <CheckCheck size={15} />
-            Mark as read
-          </button>
-        )}
-        <button className={styles.menuItem} onClick={handle(onPin)}>
-          <Pin size={15} />
-          {isPinned ? 'Unpin' : 'Pin'}
-        </button>
-        <button className={styles.menuItem} onClick={handle(onMute)}>
-          {isMuted ? <NotificationOn size={15} /> : <NotificationOff size={15} />}
-          {isMuted ? 'Unmute alerts' : 'Mute alerts'}
-        </button>
-        <div className={styles.divider} />
-        <button className={`${styles.menuItem} ${styles.menuItemDanger}`} onClick={handle(onLeave)}>
-          <LogOut size={15} />
-          Leave group
-        </button>
-      </div>
-    </>
+        {isMuted ? 'Unmute alerts' : 'Mute alerts'}
+      </MenuItem>
+      <MenuSeparator />
+      <MenuItem icon={LogOut} tone="danger" onSelect={onLeave} onClose={onClose}>
+        Leave group
+      </MenuItem>
+    </Menu>
   );
 }

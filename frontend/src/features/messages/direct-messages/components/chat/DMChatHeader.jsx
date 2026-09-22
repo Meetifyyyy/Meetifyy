@@ -1,5 +1,5 @@
-import { useDismissibleMenu } from '../../../shared/hooks/useDismissibleMenu';
 import { ArrowLeft, MoreVertical, Search, NotificationOff, NotificationOn, Trash2, ShieldOff, Info, Pin } from '@shared/components/icons';
+import Menu, { MenuItem, useMenu } from '@shared/components/ui/Menu';
 import Avatar from '@shared/components/avatar/Avatar';
 import { useCanSeeOthersPresence } from '@shared/hooks/usePresenceVisibility';
 import styles from '../../../shared/components/chat/ChatHeader.module.css';
@@ -16,9 +16,12 @@ export default function DMChatHeader({
 }) {
   // Outside click, Escape and hardware Back all dismiss this menu — and
   // Back dismisses only the menu, not the chat underneath it.
-  const {
-    open: showMoreMenu, setOpen: setShowMoreMenu, toggle: toggleMoreMenu, anchorRef: moreMenuRef,
-  } = useDismissibleMenu();
+  /*
+   * Outside click, Escape and hardware Back all dismiss this menu, and Back
+   * dismisses only the menu rather than the chat underneath it — all provided
+   * by `Menu`, so the feature-local `useDismissibleMenu` hook is gone.
+   */
+  const moreMenu = useMenu();
   const canSeePresence = useCanSeeOthersPresence();
 
   if (!conversation) return null;
@@ -65,82 +68,71 @@ export default function DMChatHeader({
       </div>
 
       <div className={styles.msgChatActions} onClick={(e) => e.stopPropagation()}>
-        <div style={{ position: 'relative' }} ref={moreMenuRef}>
+        <div style={{ position: 'relative' }}>
           <button 
-            className={`${styles.msgChatActionBtn} ${showMoreMenu ? styles.msgChatActionBtnActive : ''}`} 
+            {...moreMenu.triggerProps}
+            className={`${styles.msgChatActionBtn} ${moreMenu.open ? styles.msgChatActionBtnActive : ''}`}
             title="More Options"
-            onClick={toggleMoreMenu}
           >
             <MoreVertical size={18} />
           </button>
           
-          {showMoreMenu && (
-            <div className={styles.msgMoreDropdown}>
-              {onOpenDetails && (
-                <button 
-                  className={styles.msgDropdownItem} 
-                  onClick={() => { onOpenDetails(); setShowMoreMenu(false); }}
-                >
-                  <Info size={14} />
-                  Contact Info
-                </button>
-              )}
+          <Menu {...moreMenu.menuProps} size="md" ariaLabel="Chat options">
+            {onOpenDetails && (
+              <MenuItem icon={Info} onSelect={onOpenDetails} onClose={moreMenu.close}>
+                Contact info
+              </MenuItem>
+            )}
 
-              {onTogglePin && (
-                <button 
-                  className={styles.msgDropdownItem} 
-                  onClick={() => { onTogglePin(conversation.id, conversation.pinned || conversation.isPinned); setShowMoreMenu(false); }}
-                >
-                  <Pin size={14} />
-                  {conversation.pinned || conversation.isPinned ? 'Unpin Chat' : 'Pin Chat'}
-                </button>
-              )}
+            {onTogglePin && (
+              <MenuItem
+                icon={Pin}
+                onSelect={() => onTogglePin(conversation.id, conversation.pinned || conversation.isPinned)}
+                onClose={moreMenu.close}
+              >
+                {conversation.pinned || conversation.isPinned ? 'Unpin chat' : 'Pin chat'}
+              </MenuItem>
+            )}
 
-              {onToggleSearch && (
-                <button 
-                  className={styles.msgDropdownItem} 
-                  onClick={() => { onToggleSearch(); setShowMoreMenu(false); }}
-                >
-                  <Search size={14} />
-                  Find in chat
-                </button>
-              )}
-              {/* Rendered only when it can act, like every other item here.
-                  It used to render unconditionally with an optional-call
-                  handler, so on a draft it drew a row that did nothing. */}
-              {onToggleMute && (
-                <button 
-                  className={styles.msgDropdownItem} 
-                  onClick={() => { onToggleMute(conversation.id, isMuted); setShowMoreMenu(false); }}
-                >
-                  {isMuted ? <NotificationOn size={14} /> : <NotificationOff size={14} />}
-                  {isMuted ? 'Unmute alerts' : 'Mute alerts'}
-                </button>
-              )}
-              {onClearChat && (
-                <button 
-                  className={styles.msgDropdownItem} 
-                  onClick={() => { onClearChat(conversation.id); setShowMoreMenu(false); }}
-                >
-                  <Trash2 size={14} />
-                  Clear Chat
-                </button>
-              )}
-              {onBlock && (
-                <button 
-                  className={`${styles.msgDropdownItem} ${styles.msgDropdownItemDanger}`} 
-                  onClick={() => {
-                    const targetId = conversation.targetUser?.id || conversation.userId;
-                    if (targetId) onBlock(targetId, blockedByMe);
-                    setShowMoreMenu(false);
-                  }}
-                >
-                  <ShieldOff size={14} />
-                  {blockedByMe ? 'Unblock Contact' : 'Block Contact'}
-                </button>
-              )}
-            </div>
-          )}
+            {onToggleSearch && (
+              <MenuItem icon={Search} onSelect={onToggleSearch} onClose={moreMenu.close}>
+                Find in chat
+              </MenuItem>
+            )}
+
+            {/* Rendered only when it can act, like every other item here. It
+                used to render unconditionally with an optional-call handler,
+                so on a draft it drew a row that did nothing. */}
+            {onToggleMute && (
+              <MenuItem
+                icon={isMuted ? NotificationOn : NotificationOff}
+                onSelect={() => onToggleMute(conversation.id, isMuted)}
+                onClose={moreMenu.close}
+              >
+                {isMuted ? 'Unmute alerts' : 'Mute alerts'}
+              </MenuItem>
+            )}
+
+            {onClearChat && (
+              <MenuItem icon={Trash2} tone="danger" onSelect={() => onClearChat(conversation.id)} onClose={moreMenu.close}>
+                Clear chat
+              </MenuItem>
+            )}
+
+            {onBlock && (
+              <MenuItem
+                icon={ShieldOff}
+                tone="danger"
+                onSelect={() => {
+                  const targetId = conversation.targetUser?.id || conversation.userId;
+                  if (targetId) onBlock(targetId, blockedByMe);
+                }}
+                onClose={moreMenu.close}
+              >
+                {blockedByMe ? 'Unblock contact' : 'Block contact'}
+              </MenuItem>
+            )}
+          </Menu>
         </div>
       </div>
     </div>

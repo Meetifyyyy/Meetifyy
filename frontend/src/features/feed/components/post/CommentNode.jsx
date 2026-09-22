@@ -10,7 +10,7 @@
  * - All other data flow, props, and state management unchanged
  */
 
-import { useState, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useContext, createContext, useSyncExternalStore, memo } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef, useContext, createContext, useSyncExternalStore, memo } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { CollegeRepresentativeBadge } from '@shared/components/badges/CollegeRepresentativeBadge';
@@ -28,7 +28,8 @@ import { useDeleteComment } from '../../hooks/useDeleteComment';
 import { useLikeComment } from '../../hooks/useLikeComment';
 import { toggleRegistry } from '@shared/utils/mutationRegistry';
 import ConfirmModal from '@shared/components/modals/ConfirmModal';
-import { createPortal } from 'react-dom';
+import Menu, { MenuItem } from '@shared/components/ui/Menu';
+import { MoreHorizontal, Trash2, Flag, Loader2 } from '@shared/components/icons';
 
 
 // ─── Shared tree context ─────────────────────────────────────────────────────
@@ -404,11 +405,15 @@ function CommentNodeImpl({
   const [replyContent, setReplyContent] = useState({ text: '', mentions: [] });
   // Derived, not owned — see activeMenuId above.
   const menuRef = useRef(null);
-  const portalMenuRef = useRef(null);
-  // Tracks which menuPos object the clamp effect below has already handled, so
-  // it corrects a position once per open and can never re-enter.
-  const clampedForRef = useRef(null);
-  const [menuPos, setMenuPos] = useState(null);
+  /*
+   * The trigger, for `Menu` to anchor against.
+   *
+   * The measuring, flipping and clamping this component used to do by hand —
+   * an estimated size, a layout effect to correct it, and a guard ref so the
+   * correction could not re-enter — all now live in `useMenuPosition`, which
+   * measures the real menu instead of estimating it.
+   */
+  const menuTriggerRef = useRef(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDeleting, setIsDeleting]     = useState(false);
 
@@ -451,96 +456,28 @@ function CommentNodeImpl({
    * viewport so it can never render off-screen in either direction.
    */
   const openMenu = useCallback(() => {
-    if (showMenu) { setShowMenu(false); return; }
-
-    // First-paint estimate only — the real size is measured and corrected in
-    // the layout effect below. `.dropdown` carries `min-width: 160px`, so an
-    // assumed 120 positioned the menu as if it were narrower than it renders
-    // and pushed it off the right edge on a phone.
-    const MENU_W = 160;
-    const MENU_H = 120;
-    const GAP = 8;
-    const rect = menuRef.current?.getBoundingClientRect();
-    if (rect) {
-      const vh = window.visualViewport?.height || window.innerHeight;
-      const vw = window.visualViewport?.width || window.innerWidth;
-      const spaceBelow = vh - rect.bottom;
-      // Flip only when below is genuinely too tight AND above has more room,
-      // so a menu near the top of a short viewport does not flip into the
-      // header instead.
-      const flip = spaceBelow < MENU_H + GAP && rect.top > spaceBelow;
-
-      const top = flip ? Math.max(GAP, rect.top - MENU_H - GAP) : rect.bottom + GAP;
-      // Right-aligned to the button, then clamped so a deeply indented comment
-      // (whose button sits far right) cannot push it past either edge.
-      const left = Math.min(Math.max(GAP, rect.right - MENU_W), vw - MENU_W - GAP);
-      setMenuPos({ top, left });
-    }
-    setShowMenu(true);
+    setShowMenu(!showMenu);
   }, [showMenu, setShowMenu]);
 
-  /**
-   * Correct the position against the menu's REAL size, once it exists.
+  /*
+   * The clamp effect and the dismiss listeners are gone.
    *
-   * Positioning from an assumed width is guesswork, and it was wrong: the
-   * shared `.dropdown` class sets `min-width: 160px`, which beat the inline
-   * width, so the menu rendered wider than it was placed for and hung off the
-   * right edge of a phone screen. Measuring the mounted element removes the
-   * assumption entirely — whatever the class, the padding or the longest label
-   * turn out to be, it ends up inside the viewport.
+   * Both were compensating for a menu that measured itself once and then did
+   * not track: the clamp corrected an estimated position after paint, and the
+   * listeners closed the menu on any scroll or resize because it would
+   * otherwise be left behind by its own button.
    *
-   * Clamped, not re-anchored, so it stays visually attached to its button.
+   * `Menu` measures the real element before showing it and re-places it on
+   * scroll and resize, so there is nothing to correct and no reason to close.
+   * It owns outside-press and Escape as well.
    *
-   * Measured with offsetWidth/offsetHeight, NOT getBoundingClientRect: the
-   * shared `.dropdown` class opens with a 0.2s `transform: scale()` transition,
-   * and the client rect reports the *transformed* box, so it reported a
-   * different size on every frame of that animation. Each pass then produced a
-   * different clamp, re-rendered, re-measured a still-animating menu and looped
-   * synchronously until React threw "Maximum update depth exceeded" (#185).
-   * The offset box is the untransformed layout size, so it is stable and the
-   * comparison guard below genuinely terminates after one correction.
-   *
-   * `clampedForRef` additionally makes this run at most once per open, so no
-   * later re-render can restart the cycle.
+   * Worth knowing if this is revisited: the old clamp had to use `offsetWidth`
+   * rather than `getBoundingClientRect`, because the rect reports the
+   * TRANSFORMED box and the menu animates its scale — so every frame measured
+   * differently, re-clamped, re-rendered and looped until React threw
+   * "Maximum update depth exceeded". `useMenuPosition` measures the offset box
+   * for exactly that reason.
    */
-  useLayoutEffect(() => {
-    if (!showMenu) { clampedForRef.current = null; return; }
-    if (!menuPos || !portalMenuRef.current) return;
-    if (clampedForRef.current === menuPos) return;
-    clampedForRef.current = menuPos;
-    const GAP = 8;
-    const el = portalMenuRef.current;
-    const w = el.offsetWidth;
-    const h = el.offsetHeight;
-    const vw = window.visualViewport?.width || window.innerWidth;
-    const vh = window.visualViewport?.height || window.innerHeight;
-
-    const left = Math.min(Math.max(GAP, menuPos.left), Math.max(GAP, vw - w - GAP));
-    const top = Math.min(Math.max(GAP, menuPos.top), Math.max(GAP, vh - h - GAP));
-    if (left !== menuPos.left || top !== menuPos.top) setMenuPos({ top, left });
-  }, [showMenu, menuPos]);
-
-  // Dismiss on anything that would leave it stranded: a click elsewhere, or
-  // any scroll/resize, since the position was measured once and does not track.
-  useEffect(() => {
-    if (!showMenu) return undefined;
-    const close = (e) => {
-      if (e && menuRef.current?.contains(e.target)) return;
-      if (e && portalMenuRef.current?.contains(e.target)) return;
-      setShowMenu(false);
-    };
-    const closeNow = () => setShowMenu(false);
-    document.addEventListener('mousedown', close);
-    document.addEventListener('touchstart', close, { passive: true });
-    window.addEventListener('scroll', closeNow, true);
-    window.addEventListener('resize', closeNow);
-    return () => {
-      document.removeEventListener('mousedown', close);
-      document.removeEventListener('touchstart', close);
-      window.removeEventListener('scroll', closeNow, true);
-      window.removeEventListener('resize', closeNow);
-    };
-  }, [showMenu, setShowMenu]);
 
   // Drop the draft whenever the box closes, however it closed — Cancel, a
   // successful submit, or another node taking over. Without this a half-typed
@@ -905,80 +842,44 @@ function CommentNodeImpl({
               {/* Kebab menu */}
               <div className={styles.menuWrapper} data-no-collapse ref={menuRef}>
                 <button
+                  ref={menuTriggerRef}
                   onClick={(e) => { e.stopPropagation(); openMenu(); }}
                   className={styles.menuBtn}
+                  aria-haspopup="menu"
                   aria-expanded={showMenu}
                   aria-label="More options"
                 >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <circle cx="12" cy="12" r="1.5" /><circle cx="19" cy="12" r="1.5" /><circle cx="5" cy="12" r="1.5" />
-                  </svg>
+                  <MoreHorizontal size={16} />
                 </button>
-                {showMenu && menuPos && createPortal(
-                  <div
-                    ref={portalMenuRef}
-                    className="dropdown open"
-                    onClick={(e) => e.stopPropagation()}
-                    style={{
-                      position: 'fixed',
-                      top: menuPos.top,
-                      left: menuPos.left,
-                      // `.dropdown` is written for an absolutely-positioned menu
-                      // anchored to its button and carries `right: 0`. Left as-is,
-                      // a fixed element with BOTH `left` (below) and `right` set
-                      // and `width: auto` stretches to span the whole gap between
-                      // them -- which is why this menu rendered as a full-width
-                      // bar instead of hugging its one "Report" item. Clearing
-                      // `right` and sizing to `max-content` makes it shrink-wrap.
-                      right: 'auto',
-                      width: 'max-content',
-                      maxWidth: 'min(260px, calc(100vw - 16px))',
-                      // Above the comment tree and the post card, but below the
-                      // app's real modals so a confirm dialog still covers it.
-                      zIndex: 4000,
-                    }}
-                  >
-              {canDeleteComment && (
-                        <button
-                          onClick={handleDelete}
-                          disabled={isDeleting}
-                          style={{ color: isDeleting ? 'var(--color-text-muted)' : 'var(--color-danger)', opacity: isDeleting ? 0.6 : 1 }}
-                          className={styles.reportBtn}
-                        >
-                          {isDeleting ? (
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ animation: 'spin 0.8s linear infinite' }}>
-                              <circle cx="12" cy="12" r="10" strokeOpacity="0.3" />
-                              <path d="M12 2a10 10 0 0 1 10 10" />
-                            </svg>
-                          ) : (
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                              <polyline points="3 6 5 6 21 6" />
-                              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                            </svg>
-                          )}
-                          {isDeleting ? 'Deleting…' : 'Delete'}
-                        </button>
-                      )}
-                    {(!currentUser || comment.authorId !== currentUser.id) && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setShowMenu(false);
-                          if (!hasReported) setShowReportModal(true);
-                        }}
-                        style={{ color: hasReported ? 'var(--color-text-muted)' : 'var(--color-text-main)' }}
-                        className={styles.reportBtn}
-                        disabled={hasReported}
-                      >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" /><line x1="4" y1="22" x2="4" y2="15" />
-                        </svg>
-                        {hasReported ? 'Already Reported' : 'Report'}
-                      </button>
-                    )}
-                  </div>,
-                  document.body,
-                )}
+
+                <Menu
+                  open={showMenu}
+                  onClose={() => setShowMenu(false)}
+                  anchorRef={menuTriggerRef}
+                  size="sm"
+                  ariaLabel="Comment options"
+                >
+                  {canDeleteComment && (
+                    <MenuItem
+                      icon={isDeleting ? Loader2 : Trash2}
+                      tone="danger"
+                      disabled={isDeleting}
+                      onSelect={handleDelete}
+                    >
+                      {isDeleting ? 'Deleting…' : 'Delete'}
+                    </MenuItem>
+                  )}
+                  {(!currentUser || comment.authorId !== currentUser.id) && (
+                    <MenuItem
+                      icon={Flag}
+                      disabled={hasReported}
+                      onSelect={() => setShowReportModal(true)}
+                      onClose={() => setShowMenu(false)}
+                    >
+                      {hasReported ? 'Already reported' : 'Report'}
+                    </MenuItem>
+                  )}
+                </Menu>
               </div>
             </div>
 

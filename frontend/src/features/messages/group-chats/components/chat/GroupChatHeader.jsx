@@ -1,5 +1,5 @@
-import { useDismissibleMenu } from '../../../shared/hooks/useDismissibleMenu';
 import { ArrowLeft, MoreVertical, Search, NotificationOff, NotificationOn, LogOut, Info, Trash2, Pin } from '@shared/components/icons';
+import Menu, { MenuItem, useMenu } from '@shared/components/ui/Menu';
 import { useAuth } from '@shared/context/AuthContext';
 import Avatar from '@shared/components/avatar/Avatar';
 import styles from '../../../shared/components/chat/ChatHeader.module.css';
@@ -17,11 +17,13 @@ export default function GroupChatHeader({
   isAdmin,
 }) {
   const { currentUser } = useAuth();
-  // Outside click, Escape and hardware Back all dismiss this menu — and
-  // Back dismisses only the menu, not the chat underneath it.
-  const {
-    open: showMoreMenu, setOpen: setShowMoreMenu, toggle: toggleMoreMenu, anchorRef: moreMenuRef,
-  } = useDismissibleMenu();
+  /*
+   * Outside click, Escape and hardware Back all dismiss this menu, and Back
+   * dismisses only the menu rather than the chat underneath it — all of which
+   * `Menu` now provides, so the feature-local `useDismissibleMenu` hook this
+   * used is no longer needed here.
+   */
+  const moreMenu = useMenu();
 
   if (!conversation) return null;
 
@@ -88,88 +90,77 @@ export default function GroupChatHeader({
       </div>
 
       <div className={styles.msgChatActions} onClick={(e) => e.stopPropagation()}>
-        <div style={{ position: 'relative' }} ref={moreMenuRef}>
+        <div style={{ position: 'relative' }}>
           <button 
-            className={`${styles.msgChatActionBtn} ${showMoreMenu ? styles.msgChatActionBtnActive : ''}`} 
+            {...moreMenu.triggerProps}
+            className={`${styles.msgChatActionBtn} ${moreMenu.open ? styles.msgChatActionBtnActive : ''}`}
             title="More Options"
-            onClick={toggleMoreMenu}
+            aria-label="Group chat options"
           >
             <MoreVertical size={18} />
           </button>
           
-          {showMoreMenu && (
-            <div className={styles.msgMoreDropdown}>
-              {onOpenDetails && (
-                <button 
-                  className={styles.msgDropdownItem} 
-                  onClick={() => { onOpenDetails(); setShowMoreMenu(false); }}
-                >
-                  <Info size={14} />
-                  Group Info
-                </button>
-              )}
+          <Menu {...moreMenu.menuProps} size="md" ariaLabel="Group chat options">
+            {onOpenDetails && (
+              <MenuItem icon={Info} onSelect={onOpenDetails} onClose={moreMenu.close}>
+                Group info
+              </MenuItem>
+            )}
 
-              {onToggleSearch && (
-                <button 
-                  className={styles.msgDropdownItem} 
-                  onClick={() => { onToggleSearch(); setShowMoreMenu(false); }}
-                >
-                  <Search size={14} />
-                  Find in chat
-                </button>
-              )}
+            {onToggleSearch && (
+              <MenuItem icon={Search} onSelect={onToggleSearch} onClose={moreMenu.close}>
+                Find in chat
+              </MenuItem>
+            )}
 
-              <button 
-                className={styles.msgDropdownItem} 
-                onClick={() => { onToggleMute?.(conversation.id, isMuted); setShowMoreMenu(false); }}
+            <MenuItem
+              icon={isMuted ? NotificationOn : NotificationOff}
+              onSelect={() => onToggleMute?.(conversation.id, isMuted)}
+              onClose={moreMenu.close}
+            >
+              {isMuted ? 'Unmute alerts' : 'Mute alerts'}
+            </MenuItem>
+
+            {onTogglePin && (
+              <MenuItem
+                icon={Pin}
+                onSelect={() => onTogglePin(conversation.id, conversation.pinned || conversation.isPinned)}
+                onClose={moreMenu.close}
               >
-                {isMuted ? <NotificationOn size={14} /> : <NotificationOff size={14} />}
-                {isMuted ? 'Unmute alerts' : 'Mute alerts'}
-              </button>
+                {conversation.pinned || conversation.isPinned ? 'Unpin group' : 'Pin group'}
+              </MenuItem>
+            )}
 
-              {onTogglePin && (
-                <button 
-                  className={styles.msgDropdownItem} 
-                  onClick={() => { onTogglePin(conversation.id, conversation.pinned || conversation.isPinned); setShowMoreMenu(false); }}
+            {onClearChat && (
+              <MenuItem
+                icon={Trash2}
+                tone="danger"
+                onSelect={() => onClearChat(conversation.id)}
+                onClose={moreMenu.close}
+              >
+                Clear chat
+              </MenuItem>
+            )}
+
+            {!isClosed && conversation.isMember !== false && (
+              isOwner ? (
+                <MenuItem
+                  icon={LogOut}
+                  tone="danger"
+                  onSelect={() => { if (onEndGroup) onEndGroup(conversation.id); else onOpenDetails?.(); }}
+                  onClose={moreMenu.close}
                 >
-                  <Pin size={14} />
-                  {conversation.pinned || conversation.isPinned ? 'Unpin Group' : 'Pin Group'}
-                </button>
-              )}
-
-              {onClearChat && (
-                <button 
-                  className={styles.msgDropdownItem} 
-                  onClick={() => { onClearChat(conversation.id); setShowMoreMenu(false); }}
-                >
-                  <Trash2 size={14} />
-                  Clear Chat
-                </button>
-              )}
-
-              {!isClosed && (conversation.isMember !== false) && (
-                isOwner ? (
-                  <button 
-                    className={styles.msgDropdownItem} 
-                    onClick={() => { if (onEndGroup) onEndGroup(conversation.id); else if (onOpenDetails) onOpenDetails(); setShowMoreMenu(false); }}
-                  >
-                    <LogOut size={14} />
-                    End Group
-                  </button>
-                ) : (
-                  onLeaveGroup && (
-                    <button 
-                      className={styles.msgDropdownItem} 
-                      onClick={() => { onLeaveGroup(); setShowMoreMenu(false); }}
-                    >
-                      <LogOut size={14} />
-                      Leave Group
-                    </button>
-                  )
+                  End group
+                </MenuItem>
+              ) : (
+                onLeaveGroup && (
+                  <MenuItem icon={LogOut} tone="danger" onSelect={onLeaveGroup} onClose={moreMenu.close}>
+                    Leave group
+                  </MenuItem>
                 )
-              )}
-            </div>
-          )}
+              )
+            )}
+          </Menu>
         </div>
       </div>
     </div>

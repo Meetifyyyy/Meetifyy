@@ -1,5 +1,7 @@
-import { useState, useRef, useEffect, useMemo, useCallback, memo, lazy, Suspense } from 'react';
+import { useState, useMemo, useCallback, memo, lazy, Suspense } from 'react';
 import { isImageUrl } from '@shared/utils/avatar';
+import Menu, { MenuItem, useMenu } from '@shared/components/ui/Menu';
+import { MoreHorizontal, Flag, Share2 } from '@shared/components/icons';
 import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
 import { getProcessedAvatarUrl } from '@shared/components/avatar/Avatar';
 
@@ -132,23 +134,18 @@ function deriveAttendees(activity) {
 
 function CrewCard({ activity, onClick, onMouseEnter }) {
   const { currentUser } = useAuth();
-  const [showMenu, setShowMenu] = useState(false);
+  const menu = useMenu();
   const [showShareModal, setShowShareModal] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
   const [hasReported, setHasReported] = useState(false);
-  const menuRef = useRef(null);
-
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (menuRef.current && !menuRef.current.contains(event.target)) {
-        setShowMenu(false);
-      }
-    };
-    if (showMenu) {
-      document.addEventListener('mousedown', handleClickOutside);
-    }
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [showMenu]);
+  /*
+   * No outside-click listener and no card z-index lift.
+   *
+   * Both existed because the menu rendered inside the card: it needed the card
+   * raised above its neighbours to not be overlapped, and it needed to know
+   * about clicks elsewhere. `Menu` portals to <body>, so it is above every card
+   * by construction and owns its own dismissal.
+   */
 
   const activityId = activity?.id;
 
@@ -198,9 +195,6 @@ function CrewCard({ activity, onClick, onMouseEnter }) {
       className={styles.card} 
       onClick={handleCardClick}
       onMouseEnter={handleMouseEnter}
-      style={{ 
-        zIndex: showMenu ? 100 : 1
-      }}
     >
       
       {/* Left Column: Cover Image & Calendar Badge */}
@@ -246,40 +240,23 @@ function CrewCard({ activity, onClick, onMouseEnter }) {
               </span>
             )}
           </div>
-          <div className={styles.menuContainer} ref={menuRef}>
-            <button className={styles.moreBtn} aria-label="More options" onClick={(e) => { e.stopPropagation(); setShowMenu(!showMenu); }}>
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle><circle cx="5" cy="12" r="1"></circle>
-              </svg>
+          <div className={styles.menuContainer}>
+            <button {...menu.triggerProps} className={styles.moreBtn} aria-label="More options">
+              <MoreHorizontal size={20} />
             </button>
-            {showMenu && (
-              <div className={styles.dropdownMenu}>
-                <button
-                  className={styles.dropdownItem}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setShowMenu(false);
-                    if (!hasReported) setShowReportModal(true);
-                  }}
-                  disabled={hasReported}
-                  style={{ color: hasReported ? 'var(--color-text-muted)' : 'var(--color-text-main)' }}
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path><line x1="4" y1="22" x2="4" y2="15"></line></svg>
-                  {hasReported ? 'Already Reported' : 'Report Activity'}
-                </button>
-
-                <button className={styles.dropdownItem} onClick={(e) => { e.stopPropagation(); setShowShareModal(true); setShowMenu(false); }}>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <circle cx="18" cy="5" r="3"></circle>
-                    <circle cx="6" cy="12" r="3"></circle>
-                    <circle cx="18" cy="19" r="3"></circle>
-                    <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line>
-                    <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
-                  </svg>
-                  Share
-                </button>
-              </div>
-            )}
+            <Menu {...menu.menuProps} size="md" ariaLabel="Activity options">
+              <MenuItem
+                icon={Flag}
+                disabled={hasReported}
+                onSelect={() => setShowReportModal(true)}
+                onClose={menu.close}
+              >
+                {hasReported ? 'Already reported' : 'Report activity'}
+              </MenuItem>
+              <MenuItem icon={Share2} onSelect={() => setShowShareModal(true)} onClose={menu.close}>
+                Share
+              </MenuItem>
+            </Menu>
           </div>
         </div>
 

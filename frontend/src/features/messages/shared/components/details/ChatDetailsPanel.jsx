@@ -6,7 +6,8 @@ import Avatar from '@shared/components/avatar/Avatar';
 import ConfirmModal from '@shared/components/modals/ConfirmModal';
 import styles from './ChatDetailsPanel.module.css';
 import { useAcademicSummary } from '@shared/academics/useAcademicSummary';
-import { Pin, Trash2, ChevronRight, User, Search, Ban, UserPlus, UserCheck, Image as ImageIcon, ArrowLeft, MoreVertical } from '@shared/components/icons';
+import { Pin, Trash2, ChevronRight, User, Search, Ban, UserPlus, UserCheck, UserX, Shield, Flag, Image as ImageIcon, ArrowLeft, MoreVertical } from '@shared/components/icons';
+import Menu, { MenuItem, useMenu } from '@shared/components/ui/Menu';
 import InviteModal from '../modals/InviteModal';
 import ReportModal from '@shared/components/modals/ReportModal/ReportModal';
 import { showToast } from '@shared/utils/toast';
@@ -87,28 +88,15 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [reportUserTarget, setReportUserTarget] = useState(null);
   
-  // Header Menu States
-  const [showMenu, setShowMenu] = useState(false);
-  const menuRef = useRef(null);
+  // Header menu — owns its own dismissal, see `Menu`.
+  const menu = useMenu();
 
   // Member Menu States
   const [activeMemberMenu, setActiveMemberMenu] = useState(null);
   const memberMenuRef = useRef(null);
 
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (menuRef.current && !menuRef.current.contains(event.target)) {
-        setShowMenu(false);
-      }
-      if (memberMenuRef.current && !memberMenuRef.current.contains(event.target)) {
-        setActiveMemberMenu(null);
-      }
-    };
-    if (showMenu || activeMemberMenu) {
-      document.addEventListener('mousedown', handleClickOutside);
-    }
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [showMenu, activeMemberMenu]);
+  // Both menus are <Menu>s now and own their own dismissal, so the shared
+  // outside-click listener this component used to run is gone entirely.
 
   // Group Settings Edit States
   const [editName, setEditName] = useState(conversation.name || '');
@@ -634,27 +622,33 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
         </h2>
         <div className={styles.headerRight}>
           {!isOneOnOne && (
-            <div className={styles.menuContainer} ref={menuRef}>
-              <button 
+            <div className={styles.menuContainer}>
+              <button
                 type="button"
-                className={styles.moreBtn} 
-                onClick={() => setShowMenu(!showMenu)}
+                {...menu.triggerProps}
+                className={styles.moreBtn}
                 title="Options"
+                aria-label="Group options"
               >
                 <MoreVertical size={20} />
               </button>
-              {showMenu && (
-                <div className={styles.dropdownMenu}>
-                  <button type="button" className={styles.dropdownItem} onClick={() => { if (togglePinConversation) togglePinConversation(conversation.id); setShowMenu(false); }}>
-                    <Pin size={15} />
-                    <span>{conversation?.pinned || conversation?.isPinned ? 'Unpin Group' : 'Pin Group'}</span>
-                  </button>
-                  <button type="button" className={styles.dropdownItem} onClick={() => { if (onClearChat) onClearChat(); setShowMenu(false); onBack(); }}>
-                    <Trash2 size={15} />
-                    <span>Clear Chat History</span>
-                  </button>
-                </div>
-              )}
+              <Menu {...menu.menuProps} size="md" ariaLabel="Group options">
+                <MenuItem
+                  icon={Pin}
+                  onSelect={() => togglePinConversation?.(conversation.id)}
+                  onClose={menu.close}
+                >
+                  {conversation?.pinned || conversation?.isPinned ? 'Unpin group' : 'Pin group'}
+                </MenuItem>
+                <MenuItem
+                  icon={Trash2}
+                  tone="danger"
+                  onSelect={() => { onClearChat?.(); onBack(); }}
+                  onClose={menu.close}
+                >
+                  Clear chat history
+                </MenuItem>
+              </Menu>
             </div>
           )}
           {isOneOnOne && <div style={{ width: '40px' }} />}
@@ -891,9 +885,19 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
                         {isUserOwner && <span className={styles.roleTag}>Owner</span>}
                         {isUserAdmin && !isUserOwner && <span className={styles.roleTag} style={{ background: 'rgba(99, 102, 241, 0.1)', color: '#6366f1' }}>Admin</span>}
                         
-                        <div className={styles.menuContainer} ref={activeMemberMenu === uid ? memberMenuRef : null}>
-                          <button 
+                        <div className={styles.menuContainer}>
+                          <button
                             type="button"
+                            /*
+                             * One ref for the whole list, assigned to whichever
+                             * row is open. This menu is inside a `.map()`, so
+                             * `useMenu()` cannot be called per row — hooks
+                             * cannot run in a loop. Only one member menu is
+                             * ever open, so a single shared ref is enough, and
+                             * it is the same trick the old code used for its
+                             * outside-click container.
+                             */
+                            ref={activeMemberMenu === uid ? memberMenuRef : null}
                             className={styles.moreBtn}
                             style={{ marginLeft: '4px' }}
                             onClick={(e) => {
@@ -902,77 +906,65 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
                               setActiveMemberMenu(activeMemberMenu === uid ? null : uid);
                             }}
                             title="Member Actions"
+                            aria-haspopup="menu"
+                            aria-expanded={activeMemberMenu === uid}
                           >
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                              <circle cx="12" cy="12" r="1"></circle>
-                              <circle cx="12" cy="5" r="1"></circle>
-                              <circle cx="12" cy="19" r="1"></circle>
-                            </svg>
+                            <MoreVertical size={18} />
                           </button>
-                          {activeMemberMenu === uid && (
-                            <div className={styles.dropdownMenu} style={{ top: '100%', right: '0', zIndex: 20 }}>
-                              <button 
-                                type="button"
-                                className={styles.dropdownItem}
-                                onClick={() => {
-                                  setActiveMemberMenu(null);
-                                  navigate(`/profile/${userObj.username}`, { state: { from: window.location.pathname } });
-                                }}
+
+                          <Menu
+                            open={activeMemberMenu === uid}
+                            onClose={() => setActiveMemberMenu(null)}
+                            anchorRef={memberMenuRef}
+                            size="md"
+                            ariaLabel="Member actions"
+                          >
+                            <MenuItem
+                              icon={User}
+                              onSelect={() => navigate(`/profile/${userObj.username}`, { state: { from: window.location.pathname } })}
+                              onClose={() => setActiveMemberMenu(null)}
+                            >
+                              View profile
+                            </MenuItem>
+                            {canPromote && (
+                              <MenuItem
+                                icon={Shield}
+                                onSelect={() => promoteToAdmin(conversation.id, uid)}
+                                onClose={() => setActiveMemberMenu(null)}
                               >
-                                View Profile
-                              </button>
-                              {canPromote && (
-                                <button 
-                                  type="button"
-                                  className={styles.dropdownItem}
-                                  onClick={() => {
-                                    promoteToAdmin(conversation.id, uid);
-                                    setActiveMemberMenu(null);
-                                  }}
-                                >
-                                  Promote to Admin
-                                </button>
-                              )}
-                              {canDemote && (
-                                <button 
-                                  type="button"
-                                  className={styles.dropdownItem}
-                                  onClick={() => {
-                                    demoteFromAdmin(conversation.id, uid);
-                                    setActiveMemberMenu(null);
-                                  }}
-                                >
-                                  Demote to Member
-                                </button>
-                              )}
-                              {canRemove && (
-                                <button 
-                                  type="button"
-                                  className={styles.dropdownItem}
-                                  style={{ color: '#ef4444' }}
-                                  onClick={() => {
-                                    handleRemoveMember(uid);
-                                    setActiveMemberMenu(null);
-                                  }}
-                                >
-                                  Remove from Group
-                                </button>
-                              )}
-                              {canReport && (
-                                <button 
-                                  type="button"
-                                  className={styles.dropdownItem}
-                                  style={{ color: '#ef4444' }}
-                                  onClick={() => {
-                                    setReportUserTarget(userObj);
-                                    setActiveMemberMenu(null);
-                                  }}
-                                >
-                                  Report User
-                                </button>
-                              )}
-                            </div>
-                          )}
+                                Promote to admin
+                              </MenuItem>
+                            )}
+                            {canDemote && (
+                              <MenuItem
+                                icon={UserCheck}
+                                onSelect={() => demoteFromAdmin(conversation.id, uid)}
+                                onClose={() => setActiveMemberMenu(null)}
+                              >
+                                Demote to member
+                              </MenuItem>
+                            )}
+                            {canRemove && (
+                              <MenuItem
+                                icon={UserX}
+                                tone="danger"
+                                onSelect={() => handleRemoveMember(uid)}
+                                onClose={() => setActiveMemberMenu(null)}
+                              >
+                                Remove from group
+                              </MenuItem>
+                            )}
+                            {canReport && (
+                              <MenuItem
+                                icon={Flag}
+                                tone="danger"
+                                onSelect={() => setReportUserTarget(userObj)}
+                                onClose={() => setActiveMemberMenu(null)}
+                              >
+                                Report user
+                              </MenuItem>
+                            )}
+                          </Menu>
                         </div>
                       </div>
                     </div>
