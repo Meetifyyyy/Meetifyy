@@ -1,0 +1,185 @@
+/* ============================================================================
+   The shared dropdown / context menu.
+
+   Every colour is a token, so light and dark both work without this file
+   naming either — which is what the implementations it replaces got wrong:
+   several hardcoded a white background and a slate border, so they stayed
+   light-looking in dark mode.
+   ========================================================================= */
+
+.menu {
+  position: fixed;
+  z-index: 10000;
+  display: flex;
+  flex-direction: column;
+  padding: 0.25rem;
+  border-radius: var(--radius-md);
+  background: var(--color-bg-white);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-lg);
+  /*
+   * A menu longer than the screen scrolls inside itself rather than being
+   * clamped to an unreachable position. `overscroll-behavior` stops that scroll
+   * chaining to the page underneath once it hits its end, which on a phone
+   * reads as the whole feed lurching.
+   */
+  max-height: min(70dvh, 26rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /*
+   * A menu is a surface, not a document: dragging one should not select its
+   * labels, and on touch a long-press inside it should not raise the callout.
+   */
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/*
+ * Hidden until measured.
+ *
+ * `useMenuPosition` renders the menu once at -9999 to read its height, because
+ * the height depends on how many items the caller passed. Without this the
+ * first frame is visibly painted in the wrong place and then jumps.
+ */
+.menu:not(.ready) {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* ---- Sizes --------------------------------------------------------------- */
+
+/*
+ * Minimums, not fixed widths — the menu still grows to fit its longest label.
+ * These exist so a short label ("Share", "Delete") does not produce a menu
+ * barely wider than the word, which reads as cramped next to the padding
+ * around it.
+ */
+.sm { min-width: 8.75rem; }
+.md { min-width: 10.5rem; }
+.lg { min-width: 13rem; }
+
+/* ---- Items --------------------------------------------------------------- */
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  width: 100%;
+  padding: 0.45rem 0.65rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-main);
+  font-family: var(--font-family-sans);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.3;
+  text-align: left;
+  cursor: pointer;
+  /*
+   * 38px. Below the 44px touch guideline on purpose: a menu row is a wide
+   * target in a list of targets, not an isolated control floating in content,
+   * so the row's full width does the work the extra height would. At 44 the
+   * two-item comment menu was visibly taller than the comment it belonged to.
+   */
+  min-height: 38px;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.item:hover:not(:disabled),
+.item:focus-visible {
+  background: var(--color-bg-soft);
+}
+
+.item:active:not(:disabled) {
+  background: var(--color-border-light);
+}
+
+.item:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.itemLabel {
+  flex: 1;
+  min-width: 0;
+  /* A long label truncates rather than widening the menu past its container. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/*
+ * The icon inherits the row's colour rather than setting its own.
+ *
+ * That is the whole reason a destructive row's glyph turns red without anyone
+ * passing it a colour — and why these follow the theme, where several of the
+ * old menus drew a fixed grey glyph that vanished on a dark surface.
+ */
+.itemIcon {
+  flex-shrink: 0;
+  color: currentColor;
+}
+
+/* ---- Destructive --------------------------------------------------------- */
+
+.danger {
+  color: var(--color-danger);
+}
+
+.danger:hover:not(:disabled),
+.danger:focus-visible {
+  background: rgba(var(--color-danger-rgb), 0.1);
+}
+
+/* ---- Separator ----------------------------------------------------------- */
+
+.separator {
+  height: 1px;
+  margin: 0.22rem 0.15rem;
+  background: var(--color-border-light);
+}
+
+/* ============================================================================
+   MOTION — installed app only.
+
+   The class is applied from `IS_MOBILE_BUILD`, so the website's menus appear
+   exactly as they always have and none of this reaches its bundle.
+
+   Transform and opacity only, and a transform origin that follows the menu's
+   own corner, so it grows out of the control that opened it rather than
+   inflating from its middle. 140ms because a menu is a response to a tap: long
+   enough to read as motion, short enough that it never delays the choice.
+   ========================================================================= */
+
+@keyframes menuIn {
+  from {
+    opacity: 0;
+    transform: scale(0.94) translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.animated.ready {
+  transform-origin: top right;
+  animation: menuIn 0.14s cubic-bezier(0.22, 1, 0.36, 1);
+  /*
+   * Promoted for the duration of the animation only. Left on permanently it
+   * would hold a compositor layer for every menu in a list of cards.
+   */
+  will-change: transform, opacity;
+}
+
+.animated.ready.start {
+  transform-origin: top left;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animated.ready {
+    animation: none;
+    will-change: auto;
+  }
+}
