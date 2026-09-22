@@ -350,6 +350,23 @@ export default defineConfig(({ mode }) => {
     alias: sharedAliases(__dirname),
   },
   optimizeDeps: {
+    /*
+     * The ONE real entry point.
+     *
+     * Without this Vite's dependency scanner falls back to globbing
+     * every HTML file under the project root — and the root also holds every build
+     * artifact this repo produces. It was scanning `dist-mobile/index.html`,
+     * Capacitor's synced copies in `android/app/src/main/assets/public/` and
+     * `ios/App/App/public/`, Gradle's `intermediates/assets/{debug,release}/`
+     * copies, the bundle-visualiser's `stats.html`, and a Gradle HTML problems
+     * report — nine entries for an app with one.
+     *
+     * Those are OUTPUTS. Scanning them is wasted work on every cold start, and
+     * the copies are stale bundles whose imports have nothing to do with what
+     * the dev server should optimise for. It got steadily worse the more the
+     * APK was built.
+     */
+    entries: ['index.html'],
     include: [
       'react',
       'react-dom',
@@ -361,7 +378,17 @@ export default defineConfig(({ mode }) => {
       'zustand',
       'immer',
       'socket.io-client',
-      '@supabase/supabase-js',
+      /*
+       * `@supabase/auth-js`, not `@supabase/supabase-js`.
+       *
+       * The full client is not a dependency of this project and never gets
+       * installed, so pre-bundling it could not succeed — every dev start
+       * printed "Failed to resolve dependency: @supabase/supabase-js, present
+       * in client 'optimizeDeps.include'". The entry is left over from when
+       * this code called `createClient`; `src/shared/lib/supabase.js` now
+       * constructs an `AuthClient` directly and documents why.
+       */
+      '@supabase/auth-js',
     ],
   },
   clearScreen: false,

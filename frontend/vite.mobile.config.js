@@ -229,7 +229,36 @@ export default defineConfig({
     chunkSizeWarningLimit: 600,
   },
 
+  /*
+   * A dependency cache of its own.
+   *
+   * Vite defaults this to `node_modules/.vite`, and both configs run out of the
+   * same `frontend/node_modules` — so the web and mobile dev servers were
+   * optimising different dependency sets into the SAME `deps` directory. They
+   * start together (`dev:services` runs FRONTEND and MOBILE under one
+   * `concurrently`), each writes a `deps_temp_*` and renames it over `deps`,
+   * and whichever finishes second wins. The loser's browser then requests
+   * pre-bundled chunks that the directory no longer describes and gets
+   * `504 Outdated Optimize Dep` and a forced full reload.
+   *
+   * The two genuinely have different dependency sets — this build has no PWA
+   * plugin, no visualiser and no landing page, and it has the Capacitor plugins
+   * the website does not — so sharing one cache was never going to be right.
+   */
+  cacheDir: 'node_modules/.vite-mobile',
+
   optimizeDeps: {
+    /*
+     * The mobile entry, and only it.
+     *
+     * `build.rollupOptions.input` below names this file too, but that only
+     * applies to a build — the dev server's dependency scanner does not read it
+     * and otherwise globs every `*.html` under the root. That root contains the
+     * APK's own build outputs (`dist-mobile/`, the Capacitor-synced copies in
+     * `android/` and `ios/`, Gradle's intermediates and reports), so the scan
+     * was crawling stale copies of the bundle it is supposed to be producing.
+     */
+    entries: ['index.mobile.html'],
     include: [
       'react', 'react-dom', 'react-router-dom', '@tanstack/react-query',
       'zustand', 'immer', 'socket.io-client',
