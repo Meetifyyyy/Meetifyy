@@ -68,14 +68,26 @@ export function toHexColor(value) {
  * Relative luminance rather than a simple average: the eye is far more
  * sensitive to green than to blue, so averaging calls a saturated blue light
  * when it reads as dark, and the icons come out invisible.
+ *
+ * THE ALPHA IS SKIPPED, NOT READ AS RED
+ * Android's eight-digit form is `#AARRGGBB`, so the first pair after the hash
+ * is opacity. Slicing from index 1 regardless treated that pair as red and
+ * shifted every channel by one: `#00FFFFFF`, a fully transparent white, came
+ * out as r=0 g=255 b=255 and only happened to land on the right answer. It
+ * matters now that a screen can ask for transparent bars — the RGB half of
+ * that colour is the only thing left saying whether the clock should be drawn
+ * light or dark, so it has to be read from the right place.
  */
 export function needsLightIcons(hex) {
   const normalized = toHexColor(hex);
   if (!normalized) return false;
 
-  const r = Number.parseInt(normalized.slice(1, 3), 16);
-  const g = Number.parseInt(normalized.slice(3, 5), 16);
-  const b = Number.parseInt(normalized.slice(5, 7), 16);
+  // 9 = '#' + 8 digits, i.e. the #AARRGGBB form; start past the alpha pair.
+  const rgb = normalized.length === 9 ? normalized.slice(3) : normalized.slice(1);
+
+  const r = Number.parseInt(rgb.slice(0, 2), 16);
+  const g = Number.parseInt(rgb.slice(2, 4), 16);
+  const b = Number.parseInt(rgb.slice(4, 6), 16);
   const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
 
   return luminance < 0.5;

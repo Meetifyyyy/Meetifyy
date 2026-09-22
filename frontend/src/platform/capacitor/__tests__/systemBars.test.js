@@ -77,6 +77,26 @@ describe('needsLightIcons', () => {
     expect(needsLightIcons('#0000ff')).toBe(true); // blue reads dark
   });
 
+  /**
+   * Android's eight-digit form is #AARRGGBB, so the first pair is opacity.
+   * Reading it as red shifts every channel by one, which is how a fully
+   * transparent white used to be measured as cyan.
+   */
+  it('skips the alpha pair in the eight-digit form', () => {
+    expect(needsLightIcons('#FF202020')).toBe(true);
+    expect(needsLightIcons('#FFFFFFFF')).toBe(false);
+  });
+
+  /**
+   * The values the open screen sets while it runs edge to edge. The bar is
+   * see-through, so the RGB half is all that is left to say whether the clock
+   * should be drawn light or dark.
+   */
+  it('reads the theme out of a fully transparent bar colour', () => {
+    expect(needsLightIcons('#00FFFFFF')).toBe(false); // light theme, dark icons
+    expect(needsLightIcons('#00000000')).toBe(true); // dark theme, light icons
+  });
+
   it('never claims light icons for a colour it cannot read', () => {
     expect(needsLightIcons('nonsense')).toBe(false);
   });
