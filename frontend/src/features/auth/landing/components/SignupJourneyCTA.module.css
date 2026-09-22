@@ -3,8 +3,12 @@
   padding: 8rem 0 4rem 0;
   text-align: center;
   overflow: hidden;
-  background: #000000;
+  background: #ffffff;
   border-bottom: none;
+}
+
+[data-theme="dark"] .section {
+  background: #000000;
 }
 
 .gridOverlay {
@@ -114,13 +118,17 @@
 .title {
   font-size: 2.25rem;
   font-weight: 400;
-  color: #fff;
+  color: #0f172a;
   margin-bottom: 2rem;
   line-height: 1.05;
   letter-spacing: -0.025em;
   max-width: 56rem;
   margin-left: auto;
   margin-right: auto;
+}
+
+[data-theme="dark"] .title {
+  color: #fff;
 }
 
 @media (min-width: 640px) {
@@ -147,14 +155,20 @@
   align-items: center;
   margin: 0 0.5rem;
   padding: 0.25rem 0.75rem;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(92, 71, 250, 0.06);
+  border: 1px solid rgba(92, 71, 250, 0.18);
   border-radius: 1rem;
-  box-shadow: 0 20px 50px rgba(92, 71, 250, 0.3);
+  box-shadow: 0 20px 50px rgba(92, 71, 250, 0.12);
   rotate: -6deg;
   transform: translateY(-0.375rem);
   vertical-align: middle;
   user-select: none;
+}
+
+[data-theme="dark"] .badgeWrapper {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.1);
+  box-shadow: 0 20px 50px rgba(92, 71, 250, 0.3);
 }
 
 .sparklesIcon {
@@ -173,9 +187,13 @@
 .titleGradient {
   color: transparent;
   background-clip: text;
-  background-image: linear-gradient(to right, #fff, #fff, rgba(255, 255, 255, 0.4));
+  background-image: linear-gradient(to right, #0f172a, #1e293b, rgba(15, 23, 42, 0.65));
   position: relative;
   display: inline-block;
+}
+
+[data-theme="dark"] .titleGradient {
+  background-image: linear-gradient(to right, #fff, #fff, rgba(255, 255, 255, 0.4));
 }
 
 .underlineSvg {
@@ -188,11 +206,15 @@
 }
 
 .subtitle {
-  color: #94a3b8;
+  color: #64748b;
   font-size: 1rem;
   line-height: 1.625;
   max-width: 42rem;
   margin: 0 auto 4rem;
+}
+
+[data-theme="dark"] .subtitle {
+  color: #94a3b8;
 }
 
 @media (min-width: 640px) {
@@ -384,18 +406,26 @@
   position: relative;
   width: 100%;
   height: 260px;
-  background-image: linear-gradient(to bottom, #0f0e16, transparent);
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
-  border-left: 1px solid rgba(255, 255, 255, 0.1);
-  border-right: 1px solid rgba(255, 255, 255, 0.1);
+  background-image: linear-gradient(to bottom, #f8fafc, transparent);
+  border-top: 1px solid rgba(15, 23, 42, 0.08);
+  border-left: 1px solid rgba(15, 23, 42, 0.08);
+  border-right: 1px solid rgba(15, 23, 42, 0.08);
   border-top-left-radius: 40px;
   border-top-right-radius: 40px;
   overflow: hidden;
   display: flex;
   justify-content: center;
   align-items: flex-end;
-  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.08);
   padding: 0 1.5rem;
+}
+
+[data-theme="dark"] .emergingCardsInner {
+  background-image: linear-gradient(to bottom, #0f0e16, transparent);
+  border-top-color: rgba(255, 255, 255, 0.1);
+  border-left-color: rgba(255, 255, 255, 0.1);
+  border-right-color: rgba(255, 255, 255, 0.1);
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
 }
 
 .emergingCard {
@@ -522,8 +552,14 @@
   padding: 0.375rem;
   padding-left: 1.5rem;
   padding-right: 0.375rem;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.08);
   transition: all 0.3s;
+}
+
+[data-theme="dark"] .form {
+  background: #1a1a2e;
+  border-color: rgba(255, 255, 255, 0.12);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
 }
 
 .form:focus-within {
@@ -539,6 +575,10 @@
   color: #0f172a;
   font-size: 0.875rem;
   padding: 0.75rem 0;
+}
+
+[data-theme="dark"] .input {
+  color: #f8fafc;
 }
 
 .input::placeholder {
@@ -613,6 +653,10 @@
   user-select: none;
 }
 
+[data-theme="dark"] .disclaimer {
+  color: #94a3b8;
+}
+
 /* Modal Styling - Light Theme & Bottom Sheet */
 .modalBackdrop {
   position: fixed;
@@ -649,6 +693,13 @@
   touch-action: pan-y;
 }
 
+[data-theme="dark"] .modalCard {
+  background: #111118;
+  border-color: rgba(255, 255, 255, 0.1);
+  color: #f8fafc;
+  box-shadow: 0 -12px 48px rgba(0, 0, 0, 0.6);
+}
+
 .modalHeader {
   display: flex;
   align-items: flex-start;
@@ -667,6 +718,10 @@
   gap: 0.35rem;
 }
 
+[data-theme="dark"] .modalTitle {
+  color: #f8fafc;
+}
+
 .titleWordmark {
   height: 0.7em;
   margin: 0.1em 0.25rem 0;
@@ -676,6 +731,10 @@
   font-size: 0.8rem;
   color: #64748b;
   line-height: 1.4;
+}
+
+[data-theme="dark"] .modalSubtitle {
+  color: #94a3b8;
 }
 
 .closeBtn {
@@ -698,6 +757,17 @@
   color: #0f172a;
 }
 
+[data-theme="dark"] .closeBtn {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.12);
+  color: #94a3b8;
+}
+
+[data-theme="dark"] .closeBtn:hover {
+  background: rgba(255, 255, 255, 0.14);
+  color: #f8fafc;
+}
+
 .modalForm {
   display: flex;
   flex-direction: column;
@@ -715,6 +785,10 @@
   font-weight: 600;
   color: #334155;
   letter-spacing: 0.01em;
+}
+
+[data-theme="dark"] .fieldLabel {
+  color: #cbd5e1;
 }
 
 .fieldInput {
@@ -737,6 +811,18 @@
 
 .fieldInput::placeholder {
   color: #94a3b8;
+}
+
+[data-theme="dark"] .fieldInput {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.12);
+  color: #f8fafc;
+}
+
+[data-theme="dark"] .fieldInput:focus {
+  border-color: #7965fb;
+  background: rgba(255, 255, 255, 0.09);
+  box-shadow: 0 0 0 3px rgba(121, 101, 251, 0.2);
 }
 
 .modalSubmitBtn {
@@ -795,11 +881,21 @@
   margin-bottom: 1rem;
 }
 
+[data-theme="dark"] .successIcon {
+  background: rgba(16, 185, 129, 0.12);
+  border-color: rgba(16, 185, 129, 0.3);
+  color: #34d399;
+}
+
 .successTitle {
   font-size: 1.15rem;
   font-weight: 700;
   color: #0f172a;
   margin-bottom: 0.5rem;
+}
+
+[data-theme="dark"] .successTitle {
+  color: #f8fafc;
 }
 
 .successText {
@@ -810,6 +906,10 @@
   max-width: 380px;
 }
 
+[data-theme="dark"] .successText {
+  color: #94a3b8;
+}
+
 .errorBox {
   background: #fef2f2;
   border: 1px solid #fecaca;
@@ -817,6 +917,12 @@
   padding: 0.6rem 0.8rem;
   border-radius: 8px;
   font-size: 0.78rem;
+}
+
+[data-theme="dark"] .errorBox {
+  background: rgba(220, 38, 38, 0.1);
+  border-color: rgba(220, 38, 38, 0.25);
+  color: #fca5a5;
 }
 
 @media (min-width: 640px) {

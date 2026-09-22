@@ -94,35 +94,59 @@
 
 /* --- Thin Scrollbar --- */
 html.landing-scroll-active,
-body.landing-scroll-active,
-html {
+body.landing-scroll-active {
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.3) #09090b;
+}
+
+/* Light mode scrollbar */
+html.landing-scroll-active,
+body.landing-scroll-active {
+  scrollbar-color: rgba(0, 0, 0, 0.2) rgba(0, 0, 0, 0.05);
 }
 
 html.landing-scroll-active::-webkit-scrollbar,
-body.landing-scroll-active::-webkit-scrollbar,
-html::-webkit-scrollbar {
+body.landing-scroll-active::-webkit-scrollbar {
   width: 8px;
 }
 
 html.landing-scroll-active::-webkit-scrollbar-track,
-body.landing-scroll-active::-webkit-scrollbar-track,
-html::-webkit-scrollbar-track {
-  background: #09090b;
+body.landing-scroll-active::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.04);
 }
 
 html.landing-scroll-active::-webkit-scrollbar-thumb,
-body.landing-scroll-active::-webkit-scrollbar-thumb,
-html::-webkit-scrollbar-thumb {
-  background-color: rgba(255, 255, 255, 0.25);
+body.landing-scroll-active::-webkit-scrollbar-thumb {
+  background-color: rgba(0, 0, 0, 0.18);
   border-radius: 9999px;
 }
 
 html.landing-scroll-active::-webkit-scrollbar-thumb:hover,
-body.landing-scroll-active::-webkit-scrollbar-thumb:hover,
-html::-webkit-scrollbar-thumb:hover {
-  background-color: rgba(255, 255, 255, 0.45);
+body.landing-scroll-active::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(0, 0, 0, 0.32);
+}
+
+/* Dark mode scrollbar */
+[data-theme="dark"] html.landing-scroll-active,
+[data-theme="dark"] body.landing-scroll-active,
+html[data-theme="dark"].landing-scroll-active,
+body[data-theme="dark"].landing-scroll-active {
+  scrollbar-color: rgba(255, 255, 255, 0.2) rgba(255, 255, 255, 0.04);
+}
+
+html[data-theme="dark"].landing-scroll-active::-webkit-scrollbar-track,
+body[data-theme="dark"].landing-scroll-active::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+html[data-theme="dark"].landing-scroll-active::-webkit-scrollbar-thumb,
+body[data-theme="dark"].landing-scroll-active::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.18);
+  border-radius: 9999px;
+}
+
+html[data-theme="dark"].landing-scroll-active::-webkit-scrollbar-thumb:hover,
+body[data-theme="dark"].landing-scroll-active::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(255, 255, 255, 0.35);
 }
 
 /* --- Document scrolling for landing page --- */
@@ -140,3 +164,4 @@ body.landing-modal-open {
   overflow: hidden !important;
   touch-action: none !important;
 }
+
