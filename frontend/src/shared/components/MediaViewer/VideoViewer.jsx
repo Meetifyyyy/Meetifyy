@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { useSignedMediaSrc } from '@shared/hooks/useSignedMediaSrc';
 import styles from './MediaViewer.module.css';
 import {
   Play,
@@ -62,7 +63,34 @@ function SeekRipple({ direction, visible }) {
 }
 
 // ─── Main component ───────────────────────────────────────────────────────────
-export default function VideoViewer({ src, mediaRef, onControlsChange, onStageClick, isCurrent = true }) {
+export default function VideoViewer({ src: rawSrc, mediaRef, onControlsChange, onStageClick, isCurrent = true }) {
+  /*
+   * The viewer is handed whatever the opener had — usually an unsigned
+   * `/api/media/<key>` URL. For a conversation attachment that URL 404s inside
+   * the app, which is what produced "Couldn't play this video" on every chat
+   * video. See useSignedMediaSrc for why a <video> tag cannot authorize itself.
+   */
+  const { src, failed: srcFailed, pending: srcPending, refresh: refreshSrc } = useSignedMediaSrc(rawSrc);
+
+  /*
+   * The element the viewer's drag-to-dismiss gesture should move.
+   *
+   * `MediaViewer` translates whatever `mediaRef` points at, and that was always
+   * the <video>. During an error the <video> is hidden, so a swipe dragged an
+   * invisible element: the overlay faded and the viewer closed, but nothing
+   * floated away with the finger — the gesture simply looked broken.
+   *
+   * Pointing the ref at the error card instead makes the card the thing that
+   * follows the drag, which is the same gesture the user is used to, applied to
+   * whatever is actually on screen.
+   */
+  const errorCardRef = useRef(null);
+
+  /*
+   * `canShowFrame` as a ref, because the gesture callbacks below are defined
+   * before it is computed and must not be rebuilt on every state change.
+   */
+  const canShowFrameRef = useRef(false);
   const wrapRef       = useRef(null);
   const videoRef      = useRef(null);
   const progressRef   = useRef(null);
@@ -214,6 +242,22 @@ export default function VideoViewer({ src, mediaRef, onControlsChange, onStageCl
   // ─── Reset state when src changes ────────────────────────────────────────
   useEffect(() => {
     if (!src) {
+      /*
+       * An empty src is two different situations and they must not look alike.
+       *
+       * While the URL is still being signed this is simply "not ready" — and
+       * flipping to the error state here, then back to loading a frame later
+       * when the signature arrives, is exactly the flicker this component had:
+       * error card, then spinner, then video, on every single open.
+       *
+       * Only once signing has actually finished and produced nothing is there
+       * anything to report.
+       */
+      if (srcPending) {
+        setIsLoading(true);
+        setError(false);
+        return;
+      }
       setIsLoading(false);
       setError(true);
       return;
@@ -230,12 +274,15 @@ export default function VideoViewer({ src, mediaRef, onControlsChange, onStageCl
     setShowSpeedMenu(false);
     setCtrlVisible(true);
     stopProgressLoop();
-  }, [src, stopProgressLoop, updateProgressDOM]);
+  }, [src, srcPending, stopProgressLoop, updateProgressDOM]);
 
   // ─── Autoplay with unmuted/muted fallback ────────────────────────────────
   useEffect(() => {
     const v = videoRef.current;
     if (!v) return;
+    // Nothing to play yet. Calling play() on a source-less element rejects,
+    // and the handler below would turn that rejection into a visible error.
+    if (!src) return;
 
     let active = true;
 
@@ -697,6 +744,27 @@ export default function VideoViewer({ src, mediaRef, onControlsChange, onStageCl
     const now = Date.now();
     const prev = lastTapRef.current;
 
+    /*
+     * With nothing to play, no tap gesture means anything.
+     *
+     * This guard has to sit ABOVE the double-tap branch, not inside the
+     * single-tap timeout where it started: the double-tap path returns early,
+     * so a double tap on the error card was still running `seekBy(±10)` and
+     * painting the seek ripple over it — a 10-second skip on a video that had
+     * never loaded.
+     *
+     * Keeping the chrome up is the only thing a tap should do here, and it is
+     * what stops the close button disappearing behind an error card.
+     */
+    if (!canShowFrameRef.current) {
+      lastTapRef.current = { time: 0, x: 0, y: 0, zone: null };
+      clearTimeout(clickTimerRef.current);
+      clickTimerRef.current = null;
+      clearTimeout(hideTimerRef.current);
+      setCtrlVisible(true);
+      return;
+    }
+
     const isDoubleTap =
       now - prev.time < DOUBLE_TAP_MS &&
       Math.hypot(touch.clientX - prev.x, touch.clientY - prev.y) < 50;
@@ -754,6 +822,13 @@ export default function VideoViewer({ src, mediaRef, onControlsChange, onStageCl
     e.stopPropagation();
     onStageClick?.();
 
+    // Same rule as the touch path: nothing to play, so only keep chrome up.
+    if (!canShowFrameRef.current) {
+      setCtrlVisible(true);
+      clearTimeout(hideTimerRef.current);
+      return;
+    }
+
     const zone = getTapZone(e.clientX);
     clearTimeout(clickTimerRef.current);
 
@@ -796,7 +871,50 @@ export default function VideoViewer({ src, mediaRef, onControlsChange, onStageCl
 
   // ─── Volume display helpers ───────────────────────────────────────────────
   const effectiveVolume = muted ? 0 : volume;
-  const showSpinner = (isLoading || (isBuffering && playing)) && !error;
+  /*
+   * A source the server refused to sign is an error, not a perpetual spinner —
+   * but only once it has actually refused. While `srcPending` is true there is
+   * no verdict yet, so neither state may show the error card.
+   */
+  const hasError = (error || srcFailed) && !srcPending;
+  // The spinner covers the signing round trip too, otherwise the viewer opens
+  // on an empty black frame until the URL lands.
+  /*
+   * Only true when the element genuinely has something decoded to paint.
+   * Everything else — signing, loading, errored, no source — must hide it so
+   * the browser's own placeholder never reaches the screen.
+   */
+  const canShowFrame = Boolean(src) && !hasError && !srcPending && !isLoading;
+
+  /*
+   * Re-aim the viewer's gesture target whenever the visible element changes.
+   *
+   * The <video>'s ref callback claims `mediaRef` on mount, so this has to run
+   * after it and re-point at the card while an error is showing — and hand it
+   * back when the video returns.
+   */
+  useEffect(() => {
+    canShowFrameRef.current = canShowFrame;
+  }, [canShowFrame]);
+
+  /*
+   * Deliberately has NO dependency array.
+   *
+   * It must re-assert the gesture target after every render, because that is
+   * how often the ref callbacks above run. A dependency list would let an
+   * unrelated re-render leave `mediaRef` pointing at the wrong element until
+   * one of the listed values happened to change. This is a ref write with no
+   * state and no subscription, so running it each commit costs nothing.
+   */
+  useEffect(() => {
+    if (!isCurrent || !mediaRef) return;
+    mediaRef.current = hasError ? errorCardRef.current : videoRef.current;
+  });
+
+  const showSpinner =
+    (isLoading || srcPending || (isBuffering && playing)) &&
+    !hasError &&
+    (Boolean(src) || srcPending);
   const hasDuration = duration > 0 && isFinite(duration);
 
   // ─── Render ───────────────────────────────────────────────────────────────
@@ -814,17 +932,68 @@ export default function VideoViewer({ src, mediaRef, onControlsChange, onStageCl
     >
       {/* ── Video element ── */}
       <video
+        /*
+         * This callback owns `videoRef` only — it must NOT claim `mediaRef`.
+         *
+         * An inline ref callback is invoked on every render (detached with
+         * null, then reattached). It used to assign `mediaRef.current = el`
+         * there, which silently undid the error-state assignment below on any
+         * unrelated re-render — a controls toggle was enough. The drag gesture
+         * then moved the hidden <video> again, so the error card sat still
+         * while only the backdrop faded: a dismiss that looked like a fade
+         * rather than a swipe.
+         */
         ref={(el) => {
           videoRef.current = el;
-          if (isCurrent && mediaRef) mediaRef.current = el;
         }}
-        src={src}
+        /*
+         * Omitted, never empty.
+         *
+         * `src=""` is not "no source" to a browser — it is an INVALID source:
+         * the element errors immediately and Chrome paints its own broken-media
+         * placeholder, which on Android is a large play triangle. That is the
+         * "native play/pause controls flashing" and the giant blurred play icon
+         * behind the error card; both were the WebView's default UI showing
+         * through for the frames before a real URL arrived.
+         *
+         * `undefined` removes the attribute, so the element simply has nothing
+         * to load and stays quiet. The element itself is never keyed or
+         * conditionally rendered, so it is not recreated when the URL resolves
+         * or on a retry — it keeps its identity and just gets a source.
+         */
+        src={src || undefined}
         className={styles.viewerVideo}
         playsInline
         autoPlay={isCurrent}
         preload="auto"
         aria-label="Video player"
-        style={{ opacity: isLoading ? 0 : 1, transition: 'opacity 0.3s ease' }}
+        /*
+         * Hidden unless it has an actual frame to show.
+         *
+         * A <video> with no decodable source is not blank — Chrome paints its
+         * own poster placeholder, which on Android is the large play triangle.
+         * Removing the `src` attribute does not clear that: per spec the media
+         * element keeps its state until it is explicitly reset, so the
+         * placeholder simply stays.
+         *
+         * It used to be gated on `isLoading` alone. That left it visible during
+         * the error state and, worse, for the whole of a retry: clearing the
+         * error unmounted the opaque overlay a frame before `isLoading` went
+         * back to true, so the placeholder was uncovered and then faded out
+         * over 300ms. That is the flash of a giant play button on every
+         * "Try again".
+         *
+         * `visibility` as well as opacity, because an opacity-0 element is
+         * still painted and the transition made that a visible fade rather than
+         * an instant hide. The transition is deliberately one-way: fading IN
+         * when the video is ready is pleasant, fading OUT just prolongs the
+         * thing being hidden.
+         */
+        style={
+          canShowFrame
+            ? { opacity: 1, visibility: 'visible', transition: 'opacity 0.2s ease' }
+            : { opacity: 0, visibility: 'hidden', transition: 'none' }
+        }
         onDragStart={(e) => e.preventDefault()}
       />
 
@@ -836,27 +1005,71 @@ export default function VideoViewer({ src, mediaRef, onControlsChange, onStageCl
       )}
 
       {/* ── Error state ───────────────────────────────────────────────────── */}
-      {error && (
+      {hasError && (
+        /*
+         * `data-controls` marks this as interactive UI rather than the video
+         * surface, which is what every gesture handler on the stage tests for
+         * before acting.
+         *
+         * Without it a tap on "Try again" was ALSO read as a tap on the video:
+         * `handleTouchStart`/`handleTouchEnd` run on touch, before the button's
+         * own click handler and unaffected by its `stopPropagation`, so the
+         * gesture toggled playback and flashed the centre play/pause icon over
+         * the error text. The retry worked; the stray icon on top of it was a
+         * second, unrelated gesture firing on the same tap.
+         */
         <div className={styles.videoError} role="alert">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="52" height="52">
-            <circle cx="12" cy="12" r="10" />
-            <line x1="12" y1="8" x2="12" y2="12" strokeWidth="2" />
-            <circle cx="12" cy="16" r="0.75" fill="currentColor" stroke="none" />
-          </svg>
-          <span>Couldn't play this video</span>
-          <button
+          {/*
+            `data-controls` sits on the CARD, not on the layer around it.
+
+            Every gesture handler on the stage tests for that attribute before
+            acting, so putting it on the full-bleed layer made the whole screen
+            inert: swipe-to-dismiss lost its animation and tapping empty space
+            stopped toggling the header. On the card alone it does the one job
+            it is for — a tap on "Try again" is a button press, not a tap on the
+            video surface — while the backdrop stays live.
+          */}
+          {/*
+            The drag target. `MediaViewer` translates whatever `mediaRef` points
+            at, so pointing it at the card rather than the full-bleed layer
+            means the box itself follows the finger — the same thing a video
+            element does — and the `will-change` on this class applies to the
+            element actually being moved.
+          */}
+          <div className={styles.videoErrorCard} data-controls ref={errorCardRef}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="44" height="44">
+              <circle cx="12" cy="12" r="10" />
+              <line x1="12" y1="8" x2="12" y2="12" strokeWidth="2" />
+              <circle cx="12" cy="16" r="0.75" fill="currentColor" stroke="none" />
+            </svg>
+            <span>Couldn't play this video</span>
+            <button
             className={styles.videoRetryBtn}
             onClick={(e) => {
               e.stopPropagation();
-              const v = videoRef.current;
-              if (!v) return;
+              /*
+               * Re-sign, do not just re-load.
+               *
+               * `v.load()` re-requests the SAME url, and the usual reason a
+               * media url stops working is that its signature expired — so the
+               * retry was guaranteed to fail again while still tearing the
+               * element's pipeline down and back up, which is what made the
+               * frame flicker. `refreshSrc()` drops the cached entry and asks
+               * for a fresh signature; the new url arrives as a prop change and
+               * the element loads it once, normally.
+               *
+               * No `v.load()` here at all: assigning a new `src` already starts
+               * a load, and doing both runs two overlapping load cycles on one
+               * element.
+               */
               setError(false);
               setIsLoading(true);
-              v.load();
+              refreshSrc();
             }}
           >
             Try again
-          </button>
+            </button>
+          </div>
         </div>
       )}
 
@@ -864,8 +1077,15 @@ export default function VideoViewer({ src, mediaRef, onControlsChange, onStageCl
       <SeekRipple direction="left"  visible={ripple === 'left'}  />
       <SeekRipple direction="right" visible={ripple === 'right'} />
 
-      {/* ── Center play/pause flash ──────────────────────────────────────── */}
-      {tapFeedback && (
+      {/*
+        ── Center play/pause flash ────────────────────────────────────────
+        Also gated on `canShowFrame`: this is feedback for a playback gesture,
+        so it is meaningless when there is nothing playing, and belongs nowhere
+        near the error card. Defence in depth behind the `data-controls` fix
+        above — any future gesture path that slips through still cannot draw a
+        play icon over an error.
+      */}
+      {tapFeedback && canShowFrame && (
         <div key={tapFeedback + Date.now()} className={styles.tapFeedback} aria-hidden="true">
           {tapFeedback === 'play' ? (
             <svg viewBox="0 0 24 24" fill="currentColor" width="44" height="44">
@@ -880,7 +1100,9 @@ export default function VideoViewer({ src, mediaRef, onControlsChange, onStageCl
       )}
 
       {/* ── Center replay button on video end ── */}
-      {ended && (
+      {/* Same gate: a replay affordance over a video that never played is a
+          second stray control on the error card. */}
+      {ended && canShowFrame && (
         <button
           className={styles.centerReplayBtn}
           onClick={(e) => {
@@ -894,8 +1116,18 @@ export default function VideoViewer({ src, mediaRef, onControlsChange, onStageCl
         </button>
       )}
 
-      {/* ── Controls overlay ─────────────────────────────────────────────── */}
-      {!error && (
+      {/*
+        ── Controls overlay ───────────────────────────────────────────────
+        Gated on `canShowFrame`, not just on `!hasError`.
+
+        The src-change reset calls `setCtrlVisible(true)` so the controls are up
+        when a video opens. On a retry that reset runs again while there is
+        still nothing to play, so the overlay — including its large centre
+        play button — was drawn over a blank element for the length of the
+        signing round trip, then removed. Controls belong to a video that
+        exists; until one does, the spinner is the whole UI.
+      */}
+      {canShowFrame && (
         <div
           data-controls
           className={`${styles.videoControlsOverlay} ${ctrlVisible ? styles.controlsOverlayVisible : ''}`}

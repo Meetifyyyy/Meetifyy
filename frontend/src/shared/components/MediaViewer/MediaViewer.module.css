@@ -545,13 +545,36 @@
 
 /* ── Broken / Error State ───────────────────────────────────────────────────
    Stage is always dark */
+/*
+ * The image viewer's failure state, given the same card as the video one.
+ *
+ * It was loose centred text at 55% white directly on the backdrop, which read
+ * as debris on the screen rather than as a message, and looked nothing like
+ * the video error a swipe away in the same viewer. Two surfaces for the same
+ * idea in one component is the kind of difference people notice without being
+ * able to name.
+ */
 .brokenWrap {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 1rem;
-  color: rgba(255, 255, 255, 0.55);
+  gap: 0.85rem;
+  width: min(20rem, calc(100vw - 3rem));
+  padding: 1.75rem 1.5rem;
+  border-radius: 20px;
+  background: rgba(24, 24, 27, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 20px 50px -12px rgba(0, 0, 0, 0.7);
+  color: rgba(255, 255, 255, 0.92);
   font-family: var(--font-family-sans);
+  font-size: 0.95rem;
+  font-weight: 500;
+  text-align: center;
+}
+
+.brokenWrap svg {
+  opacity: 0.45;
+  color: rgba(255, 255, 255, 0.7);
 }
 
 .brokenWrap svg {
@@ -628,22 +651,99 @@
 }
 
 /* ── Error State ── */
+/*
+ * Covers what it is reporting on.
+ *
+ * This was a transparent overlay, so the failed video's poster stayed visible
+ * underneath — and a poster that failed to decode is drawn by the WebView as
+ * its placeholder glyph stretched to fill the screen. The result was the error
+ * text sitting on top of an enormous blurred play triangle, at 55% white, which
+ * was close to unreadable.
+ *
+ * An opaque scrim plus a contained card fixes both halves: nothing shows
+ * through, and the message is a panel rather than loose text floating over
+ * whatever happened to be behind it.
+ */
+/*
+ * ── The failed-media card ──────────────────────────────────────────────────
+ *
+ * A POSITIONING LAYER ONLY. It has no background and does not take pointer
+ * events; the card inside it does both.
+ *
+ * It used to be a full-bleed opaque panel, which was there to hide the
+ * browser's own broken-video placeholder showing through underneath. The
+ * element is hidden outright now (see `canShowFrame` in VideoViewer), so the
+ * shield has no job left — and it was costing three things:
+ *
+ *   • the whole screen became one flat slab, so the viewer read as "covered"
+ *     rather than as a message about one item;
+ *   • marked `data-controls`, it swallowed every gesture on the stage, so
+ *     swipe-to-dismiss lost its float-away animation and fell back to a hard
+ *     close;
+ *   • tapping empty space no longer reached the stage, so the header would not
+ *     toggle back.
+ *
+ * Transparent and pointer-transparent, all three come back for free: the
+ * gestures land on the stage exactly as they do over a playing video, and only
+ * the card itself is interactive.
+ */
 .videoError {
   position: absolute;
   inset: 0;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 0.85rem;
-  color: rgba(255, 255, 255, 0.55);
-  font-family: var(--font-family-sans);
-  font-size: 0.88rem;
-  pointer-events: auto;
+  padding: 2rem 1.5rem;
+  pointer-events: none;
   z-index: 3;
 }
 
-.videoError svg {
+/*
+ * The card. This is the part that is opaque, and it is deliberately only as
+ * large as its content — the failure belongs to one item, not to the screen.
+ */
+.videoErrorCard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.85rem;
+  width: min(20rem, 100%);
+  padding: 1.75rem 1.5rem;
+  border-radius: 20px;
+  background: rgba(24, 24, 27, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 20px 50px -12px rgba(0, 0, 0, 0.7);
+  color: rgba(255, 255, 255, 0.92);
+  font-family: var(--font-family-sans);
+  font-size: 0.95rem;
+  font-weight: 500;
+  text-align: center;
+  /* The card is interactive even though the layer around it is not. */
+  pointer-events: auto;
+  /*
+   * No backdrop-filter.
+   *
+   * This card is dragged by the dismiss gesture, and a backdrop blur is
+   * re-rasterised on every frame it moves — the same cost that made the auth
+   * panel janky, here applied to something the finger is actively tracking.
+   * It also bought nothing: the card sits at 92% opacity over a near-black
+   * backdrop, so there was no visible blur to lose.
+   *
+   * `will-change` because this element IS the drag target, so it earns its own
+   * compositor layer for the duration.
+   */
+  will-change: transform;
+}
+
+/* The icon carries the "something is wrong" weight, so it stays quieter. */
+.videoErrorCard > span {
+  max-width: 22rem;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.86);
+}
+
+/* Muted against the now-opaque backdrop rather than competing with the text. */
+.videoErrorCard svg {
   opacity: 0.45;
   color: rgba(255, 255, 255, 0.7);
 }

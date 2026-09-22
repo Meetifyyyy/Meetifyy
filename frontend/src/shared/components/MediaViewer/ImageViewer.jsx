@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { useSignedMediaSrc } from '@shared/hooks/useSignedMediaSrc';
 import styles from './MediaViewer.module.css';
 
 // ─────────────────────────────────────────────
@@ -63,7 +64,13 @@ function applyTransform(imgEl, tx, ty, scale, animated = false) {
 // Component
 // ─────────────────────────────────────────────
 
-export default function ImageViewer({ src, mediaRef, onToggleControls, preloadNext, preloadPrev, isCurrent = true }) {
+export default function ImageViewer({ src: rawSrc, mediaRef, onToggleControls, preloadNext, preloadPrev, isCurrent = true }) {
+  /*
+   * Same reason as VideoViewer: a conversation attachment's `/api/media/` URL
+   * cannot be authorized by an <img> tag inside the app, so it is signed first.
+   * Non-conversation media passes through untouched.
+   */
+  const { src } = useSignedMediaSrc(rawSrc);
   const wrapRef = useRef(null);
   const imgRef = useRef(null);
 
@@ -635,7 +642,7 @@ export default function ImageViewer({ src, mediaRef, onToggleControls, preloadNe
           </div>
         ) : (typeof src === 'string' && (/\.(mp4|webm|mov|mkv|avi|flv)/i.test(src) || src.startsWith('data:video/'))) ? (
           <video
-            src={src}
+            src={src || undefined}
             controls
             autoPlay
             playsInline
@@ -654,7 +661,7 @@ export default function ImageViewer({ src, mediaRef, onToggleControls, preloadNe
                 measureImg();
               }
             }}
-            src={src}
+            src={src || undefined}
             alt="Media"
             loading="eager"
             decoding="async"
