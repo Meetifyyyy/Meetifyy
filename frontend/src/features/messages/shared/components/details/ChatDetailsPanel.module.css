@@ -937,6 +937,14 @@
     background: var(--color-bg-white);
   }
 
+  :global([data-theme="dark"]) .container {
+    background: #000000 !important;
+  }
+
+  :global([data-theme="dark"]) .header {
+    background: #000000 !important;
+  }
+
   .scrollBody {
     padding-bottom: calc(6rem + env(safe-area-inset-bottom, 0px)) !important;
   }

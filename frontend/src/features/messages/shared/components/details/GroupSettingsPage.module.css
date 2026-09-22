@@ -116,3 +116,9 @@ input:checked + .slider:before {
   transform: translateX(20px);
   background-color: #fff;
 }
+
+@media (max-width: 768px) {
+  :global([data-theme="dark"]) .settingRow {
+    background: #000000;
+  }
+}

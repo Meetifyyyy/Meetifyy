@@ -251,6 +251,10 @@
     background: var(--color-bg-white) !important;
     flex-shrink: 0 !important;
   }
+
+  :global([data-theme="dark"]) .msgChatHeader {
+    background: #000000 !important;
+  }
 }
 
 .activityCalendarBadge {

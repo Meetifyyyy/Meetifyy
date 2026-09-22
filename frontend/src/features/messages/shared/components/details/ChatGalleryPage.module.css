@@ -29,3 +29,9 @@
 .galleryGridItem:hover video {
   filter: brightness(0.75);
 }
+
+@media (max-width: 768px) {
+  :global([data-theme="dark"]) .galleryGrid {
+    background: #000000;
+  }
+}

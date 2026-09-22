@@ -675,6 +675,10 @@
   background: rgba(0, 0, 0, 0.5);
 }
 
+:global([data-theme="dark"]) .mobileDrawer {
+  background: #000000;
+}
+
 .drawerOverlayOpen {
   opacity: 1;
   visibility: visible;

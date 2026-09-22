@@ -286,5 +286,9 @@
   .sidebar {
     display: none !important;
   }
+
+  :global([data-theme="dark"]) .sidebarCard {
+    background: #000000;
+  }
 }
 
