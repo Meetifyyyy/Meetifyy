@@ -18,21 +18,12 @@ export default function DMList({
   isLoading,
   onStartChat,
 }) {
-  const [activeFilter, setActiveFilter] = useState('All');
   const [searchVal, setSearchVal] = useState('');
   const [contextMenu, setContextMenu] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  const totalUnread = useMemo(() => {
-    return (conversations || []).reduce((sum, c) => sum + (c.unread || 0), 0);
-  }, [conversations]);
-
   const filteredConvs = useMemo(() => {
     return (conversations || [])
-      .filter(c => {
-        if (activeFilter === 'Unread') return c.unread > 0;
-        return true;
-      })
       .filter(c => {
         if (!searchVal.trim()) return true;
         const term = searchVal.toLowerCase();
@@ -43,7 +34,7 @@ export default function DMList({
         if (!a.pinned && b.pinned) return 1;
         return (b.timestamp || 0) - (a.timestamp || 0);
       });
-  }, [conversations, activeFilter, searchVal]);
+  }, [conversations, searchVal]);
 
   const handleContextMenu = (e, convId) => {
     e.preventDefault();
@@ -76,21 +67,6 @@ export default function DMList({
             <MessageSquarePlus size={20} />
           </button>
         </div>
-
-        <div className={styles.filterRow}>
-          {['All', 'Unread'].map(filter => {
-            const showCount = filter === 'Unread' && totalUnread > 0;
-            return (
-              <button 
-                key={filter} 
-                className={`${styles.filterChip} ${activeFilter === filter ? styles.activeFilter : ''}`} 
-                onClick={() => setActiveFilter(filter)}
-              >
-                {filter}{showCount ? ` (${totalUnread > 99 ? '99+' : totalUnread})` : ''}
-              </button>
-            );
-          })}
-        </div>
       </div>
 
       <div className={styles.msgConvScroll}>
@@ -103,7 +79,6 @@ export default function DMList({
         ) : filteredConvs.length === 0 ? (
           <ConversationEmptyState
             searchVal={searchVal}
-            activeFilter={activeFilter === 'Unread' ? 'Unread' : 'DMs'}
             onClearSearch={() => setSearchVal('')}
             onNewMessage={() => setIsModalOpen(true)}
           />

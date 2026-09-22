@@ -156,7 +156,6 @@ export default function MessagesLayout() {
     navigate(targetPath, { state: location.state });
   };
 
-  const [activeFilter, setActiveFilter] = useState('All');
   const [searchVal, setSearchVal] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [contextMenu, setContextMenu] = useState(null);
@@ -290,19 +289,9 @@ export default function MessagesLayout() {
     return sendMessageOptimistically(convId, text, replyTo, mentions, mediaUrl, mediaType, explicitLinkPreview, explicitInviteData, options);
   };
 
-  const totalUnread = useMemo(() => {
-    return (conversations || []).reduce((sum, c) => sum + (c.unread || 0), 0);
-  }, [conversations]);
-
   const filteredConvs = useMemo(() => {
     return (conversations || [])
       .filter(c => !c.isDraft && !String(c.id).startsWith('draft_'))
-      .filter(c => {
-        if (activeFilter === 'Unread') return (c.unread || 0) > 0 || (c.unreadCount || 0) > 0;
-        if (activeFilter === 'DMs') return c.type !== 'GROUP' && !c.isGroup && !String(c.id).startsWith('c_');
-        if (activeFilter === 'Groups') return c.type === 'GROUP' || c.isGroup || String(c.id).startsWith('c_');
-        return true;
-      })
       .filter(c => {
         if (!searchVal.trim()) return true;
         const term = searchVal.toLowerCase();
@@ -325,7 +314,7 @@ export default function MessagesLayout() {
         const timeB = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
         return timeB - timeA;
       });
-  }, [conversations, activeFilter, searchVal]);
+  }, [conversations, searchVal]);
 
   const handleContextMenu = (e, convId) => {
     e.preventDefault();
@@ -396,20 +385,6 @@ export default function MessagesLayout() {
               </button>
             </div>
 
-            <div className={sidebarStyles.filterRow}>
-              {['All', 'Unread', 'DMs', 'Groups'].map(filter => {
-                const showCount = filter === 'Unread' && totalUnread > 0;
-                return (
-                  <button 
-                    key={filter} 
-                    className={`${sidebarStyles.filterChip} ${activeFilter === filter ? sidebarStyles.activeFilter : ''}`} 
-                    onClick={() => setActiveFilter(filter)}
-                  >
-                    {filter}{showCount ? ` (${totalUnread > 99 ? '99+' : totalUnread})` : ''}
-                  </button>
-                );
-              })}
-            </div>
           </div>
 
           <div className={sidebarStyles.msgConvScroll}>
@@ -422,7 +397,6 @@ export default function MessagesLayout() {
             ) : filteredConvs.length === 0 ? (
               <ConversationEmptyState
                 searchVal={searchVal}
-                activeFilter={activeFilter}
                 onClearSearch={() => setSearchVal('')}
                 onNewMessage={() => setIsModalOpen(true)}
               />
