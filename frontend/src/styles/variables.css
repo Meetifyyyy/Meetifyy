@@ -14,17 +14,30 @@
    * The chrome surface: the app's bottom navigation, and the phone's status and
    * navigation bars on the installed app.
    *
-   * Deliberately NOT --color-bg-white. That one is the CARD surface (#ffffff /
-   * #202020), and cards and chrome want different things: a card is a raised
-   * sheet, chrome is the frame around the screen. Tying the system bars to the
-   * card colour made them mid-grey on dark, which reads as a third surface
-   * floating between the app and the phone.
+   * ONE value drives all of them, which is the whole point — `installSystemBars`
+   * reads this property and pushes it to the native layer, so the app's bottom
+   * bar and the phone's navigation bar directly below it cannot disagree. They
+   * are the same colour by construction rather than by two values being kept in
+   * step by hand.
    *
-   * Pure white and pure black, so the app's bottom bar and the phone's bar
-   * directly below it are one continuous strip rather than two nearly-matching
-   * ones — which is more obviously wrong than an honest contrast would be.
+   * Light stays pure white; dark is pure black, matching
+   * `--color-surface-screen`. See the dark block below.
    */
   --color-nav-surface: #FFFFFF;
+
+  /*
+   * Full-bleed SCREEN surfaces: the left sidebar, settings, the messages
+   * layout, the chat area, and the chat details/gallery panel.
+   *
+   * These are the surfaces that occupy a whole phone screen rather than
+   * sitting on one as a card, and that distinction is the whole reason this
+   * token exists separately from --color-bg-white. On a phone in dark mode
+   * they go pure black (see the media query at the end of this file); a card
+   * stays #202020, because a card still has to read as raised against
+   * something. Everywhere else — light mode, and the desktop site at any
+   * theme — this simply IS the card colour, so nothing changes.
+   */
+  --color-surface-screen: var(--color-bg-white);
 
   --color-bg-main: #F0F5FC;
   --color-bg-white: #FFFFFF;
@@ -40,7 +53,21 @@
   --color-text-muted: #334155;
   --color-text-light: #475569;
   --color-text-inverse: #FFFFFF;
-  --color-icon-base: #475569;
+  /*
+   * Inactive icons — the notification bell, like, comment, share, the overflow
+   * menu, the bottom navigation.
+   *
+   * Pure black here and pure white on dark. These were a slate grey (#475569 /
+   * #D4D4D4), which left every inactive icon reading as half-disabled against
+   * full-contrast text beside it. Changing the token rather than the icons is
+   * what keeps this consistent: everything that draws an inactive icon already
+   * reads this property, so nothing needs a per-icon override.
+   *
+   * ACTIVE and semantic icons are untouched — a selected tab, a liked heart, a
+   * brand mark and a status colour all set their own colour and never consult
+   * this.
+   */
+  --color-icon-base: #000000;
 
   --color-border: #E2E8F0;
   --color-border-light: #F1F5F9;
@@ -129,6 +156,15 @@
 :root[data-theme='dark'] { color-scheme: dark; }
 
 [data-theme="dark"] {
+  /*
+   * Pure black, matching the screen surfaces around it.
+   *
+   * `--color-surface-screen` takes every full-bleed phone surface to #000000 in
+   * dark mode, so the navigation sitting under them has to be the same value or
+   * it reads as a lighter strip pasted across the bottom of an otherwise black
+   * screen. The phone's own navigation bar is painted from this property too,
+   * so all three — content, app nav, system nav — end up one surface.
+   */
   --color-nav-surface: #000000;
   --color-bg-main: #121212;
   --color-bg-white: #202020;
@@ -144,7 +180,7 @@
   --color-text-muted: #B3B3B3;
   --color-text-light: #8A8A8A;
   --color-text-inverse: #121212;
-  --color-icon-base: #D4D4D4;
+  --color-icon-base: #FFFFFF;
 
   --color-border: #404040;
   --color-border-light: #333333;
@@ -164,4 +200,27 @@
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.5), 0 1px 3px rgba(0, 0, 0, 0.3);
   --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.6), 0 2px 6px rgba(0, 0, 0, 0.4);
   --shadow-premium: 0 16px 40px rgba(0, 0, 0, 0.6), 0 4px 8px rgba(0, 0, 0, 0.4);
+}
+
+/* ============================================================================
+   PHONE-SIZED DARK MODE
+
+   The screen-filling surfaces go pure black on a phone, on the website and in
+   the installed app alike — this is a viewport rule, not a platform one, so
+   the same breakpoint the rest of the app uses for mobile drives it.
+
+   Why only on a phone: on a desktop those surfaces are panels sitting side by
+   side on a page, and they need to read as distinct from the page behind them.
+   On a phone each one IS the page, so the raised-card colour has nothing to be
+   raised against and just looks like a washed-out black.
+
+   Scoped to one custom property on purpose. Cards, menus, inputs and every
+   other surface keep reading --color-bg-white and are untouched, and no
+   component needs a rule of its own.
+   ========================================================================= */
+
+@media (max-width: 768px) {
+  [data-theme='dark'] {
+    --color-surface-screen: #000000;
+  }
 }

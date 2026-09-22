@@ -127,7 +127,7 @@ export default function BottomNav({ hidden }) {
             <Avatar
               src={currentUser.avatar}
               name={currentUser?.displayName}
-              size="22px"
+              size="28px"
               className={isProfileActive ? styles.activeAvatarBorder : ''}
             />
           ) : (

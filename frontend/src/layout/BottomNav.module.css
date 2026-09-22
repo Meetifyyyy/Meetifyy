@@ -4,8 +4,9 @@
   left: 0;
   right: 0;
   height: calc(60px + env(safe-area-inset-bottom, 0px));
-  /* Chrome, not a card — see --color-nav-surface. Pure black in dark so this
-     bar and the phone's navigation bar beneath it form one strip. */
+  /* Chrome — see --color-nav-surface. The phone's own navigation bar is
+     painted from that same property by `installSystemBars`, so this bar and
+     the system area beneath it are one continuous surface by construction. */
   background: var(--color-nav-surface);
   border-top: 1px solid var(--color-border);
   display: none;
@@ -38,10 +39,19 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 0.25rem;
+  /* No gap: the label below the icon is hidden, so there is nothing to space. */
   background: none;
   border: none;
-  color: var(--color-text-muted);
+  /*
+   * The inactive icon colour, not the muted TEXT colour.
+   *
+   * These read `--color-text-muted`, which is shared with secondary copy like
+   * timestamps — so the only way to make inactive icons full contrast through
+   * that token would have been to make all secondary text full contrast too,
+   * flattening the type hierarchy everywhere. `--color-icon-base` exists for
+   * exactly this and is what the header bell and the post actions already use.
+   */
+  color: var(--color-icon-base);
   font-family: var(--font-family-sans);
   font-size: 0.68rem;
   font-weight: 500;
@@ -59,8 +69,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
+  width: 28px;
+  height: 28px;
   flex-shrink: 0;
 }
 
@@ -70,9 +80,33 @@
 .bottomNavItem > svg,
 .iconWrapper > svg,
 .navIcon > svg {
-  width: 22px;
-  height: 22px;
+  width: 28px;
+  height: 28px;
   flex-shrink: 0;
+}
+
+/*
+ * Icon-only navigation.
+ *
+ * The labels are still in the markup rather than deleted: each one is the
+ * button's accessible name, and a row of five unlabelled icon buttons is
+ * unusable with a screen reader. Clipped instead of `display: none`, which
+ * would take them out of the accessibility tree along with the layout.
+ *
+ * `:not(.unreadBadge)` is belt-and-braces — the badge is nested inside
+ * `.iconWrapper` and is not a direct child — so a later refactor that hoists it
+ * cannot accidentally hide the unread count.
+ */
+.bottomNavItem > span:not(.unreadBadge) {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .bottomNavItem:hover {
