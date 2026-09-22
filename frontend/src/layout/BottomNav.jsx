@@ -57,7 +57,7 @@ export default function BottomNav({ hidden }) {
           <NavIcon
             className={styles.navIcon}
             active={isHomeActive}
-            outline={<HomeOutline />}
+            outline={<HomeOutline strokeWidth={1.75} />}
             solid={<HomeSolid />}
           />
         </div>
@@ -73,8 +73,8 @@ export default function BottomNav({ hidden }) {
           <NavIcon
             className={styles.navIcon}
             active={isCampusActive}
-            outline={<CampusOutline />}
-            solid={<CampusSolid />}
+            outline={<CampusOutline size={26} />}
+            solid={<CampusSolid size={26} />}
           />
         </div>
         <span>Campus</span>
@@ -110,8 +110,8 @@ export default function BottomNav({ hidden }) {
           <NavIcon
             className={styles.navIcon}
             active={isCrewActive}
-            outline={<CrewOutline />}
-            solid={<CrewSolid />}
+            outline={<CrewOutline size={26} />}
+            solid={<CrewSolid size={26} />}
           />
         </div>
         <span>Crew</span>
@@ -127,15 +127,15 @@ export default function BottomNav({ hidden }) {
             <Avatar
               src={currentUser.avatar}
               name={currentUser?.displayName}
-              size="28px"
-              className={isProfileActive ? styles.activeAvatarBorder : ''}
+              size="26px"
+              className={`${styles.bottomNavAvatar} ${isProfileActive ? styles.activeAvatarBorder : ''}`.trim()}
             />
           ) : (
             // Deliberately NOT run through <NavIcon>: the Profile tab usually
             // shows the user's avatar, and cross-fading a fill under a photo
             // that is only sometimes there would make this one tab behave
             // differently from itself. Left exactly as it was.
-            isProfileActive ? <ProfileSolid /> : <ProfileOutline />
+            isProfileActive ? <ProfileSolid /> : <ProfileOutline strokeWidth={1.75} />
           )}
         </div>
         <span>Profile</span>
