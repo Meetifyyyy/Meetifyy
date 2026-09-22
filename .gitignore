@@ -449,3 +449,13 @@ gitleaks-report.json
 trivy-report.json
 osv-results.json
 security-reports/
+
+# ── Personal developer helper ────────────────────────────────────────────────
+# `./build apk` builds the Android APK and installs it on a connected phone.
+# Not committed: it encodes THIS machine's JDK and Android SDK locations, the
+# same way frontend/android/local.properties (also ignored) does.
+#
+# Anchored with a leading slash so it matches the FILE at the repo root only.
+# The `build/` and `**/build/` rules above are directory patterns and do not
+# cover it.
+/build

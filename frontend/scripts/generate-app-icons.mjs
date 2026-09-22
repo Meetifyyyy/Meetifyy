@@ -33,8 +33,8 @@ import sharp from 'sharp';
 const here = dirname(fileURLToPath(import.meta.url));
 const frontend = resolve(here, '..');
 
-/** The transparent mark. Never `public/logo-512.png` — see the note above. */
-const SOURCE = resolve(frontend, 'src/assets/images/meetify_logo.webp');
+/** The transparent mark. Always public/logo.png — the transparent brand mark. */
+const SOURCE = resolve(frontend, 'public/logo.png');
 const RES = resolve(frontend, 'android/app/src/main/res');
 
 /** Legacy icon sizes, in px, by density bucket. */
@@ -44,6 +44,21 @@ const LEGACY = {
   'mipmap-xhdpi': 96,
   'mipmap-xxhdpi': 144,
   'mipmap-xxxhdpi': 192,
+};
+
+/** Splash drawables by density / orientation. */
+const SPLASH_DRAWABLES = {
+  'drawable': { width: 480, height: 320, ratio: 0.35 },
+  'drawable-port-hdpi': { width: 480, height: 800, ratio: 0.35 },
+  'drawable-port-mdpi': { width: 320, height: 480, ratio: 0.35 },
+  'drawable-port-xhdpi': { width: 720, height: 1280, ratio: 0.35 },
+  'drawable-port-xxhdpi': { width: 960, height: 1600, ratio: 0.35 },
+  'drawable-port-xxxhdpi': { width: 1280, height: 1920, ratio: 0.35 },
+  'drawable-land-hdpi': { width: 800, height: 480, ratio: 0.35 },
+  'drawable-land-mdpi': { width: 480, height: 320, ratio: 0.35 },
+  'drawable-land-xhdpi': { width: 1280, height: 720, ratio: 0.35 },
+  'drawable-land-xxhdpi': { width: 1600, height: 960, ratio: 0.35 },
+  'drawable-land-xxxhdpi': { width: 1920, height: 1280, ratio: 0.35 },
 };
 
 /** Adaptive foreground is 108dp, so each bucket is 2.25x its legacy size. */
@@ -126,6 +141,27 @@ async function toCircle(buffer, size) {
     .toBuffer();
 }
 
+/** A centred mark on `background`, scaled to `ratio` of the shorter dimension of a rectangle. */
+async function composeRect(mark, box, width, height, ratio, background) {
+  const minDim = Math.min(width, height);
+  const scale = (minDim * ratio) / Math.max(box.width, box.height);
+  const w = Math.round(box.width * scale);
+  const h = Math.round(box.height * scale);
+  const resized = await sharp(mark).resize(w, h).png().toBuffer();
+
+  return sharp({
+    create: {
+      width,
+      height,
+      channels: 4,
+      background,
+    },
+  })
+    .composite([{ input: resized, gravity: 'center' }])
+    .png()
+    .toBuffer();
+}
+
 async function main() {
   if (!existsSync(SOURCE)) {
     console.error(`Source logo not found: ${SOURCE}`);
@@ -173,7 +209,15 @@ async function main() {
     writeFileSync(resolve(frontend, rel), maskable);
   }
 
-  console.log(`wrote ${written} icon files under android/app/src/main/res/`);
+  for (const [bucket, config] of Object.entries(SPLASH_DRAWABLES)) {
+    const dir = resolve(RES, bucket);
+    mkdirSync(dir, { recursive: true });
+    const splash = await composeRect(mark, box, config.width, config.height, config.ratio, clear);
+    writeFileSync(resolve(dir, 'splash.png'), splash);
+    written += 1;
+  }
+
+  console.log(`wrote ${written} icon and splash files under android/app/src/main/res/`);
   console.log('wrote public/logo-mark.png for the launch shell');
   console.log(`wrote ${Object.keys(MASKABLE).length} maskable PWA icons at ${MASKABLE_RATIO} of canvas`);
 }

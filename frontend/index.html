@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <!-- data-theme is set by the boot script below, from the device preference. -->
-<html lang="en">
+<html lang="en" style="scrollbar-gutter: stable;">
 <head>
   <meta charset="UTF-8" />
   <!--
@@ -93,10 +93,81 @@
           theme = 'dark';
         }
       } catch (e) {}
+      var bg = theme === 'dark' ? '#000000' : '#FFFFFF';
       document.documentElement.setAttribute('data-theme', theme);
       document.documentElement.style.colorScheme = theme;
+      document.documentElement.style.setProperty('--launch-bg', bg);
+      document.documentElement.style.background = bg;
+      document.documentElement.style.scrollbarGutter = 'stable';
     })();
   </script>
+  <style>
+    html {
+      overflow-x: clip;
+      scrollbar-gutter: stable;
+    }
+    @supports not (scrollbar-gutter: stable) {
+      @media (min-width: 769px) {
+        html {
+          overflow-y: scroll;
+        }
+      }
+    }
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+    html, body {
+      scrollbar-width: thin;
+    }
+    @media (pointer: coarse) {
+      html, body {
+        scrollbar-width: none !important;
+      }
+      ::-webkit-scrollbar {
+        width: 0 !important;
+        height: 0 !important;
+        display: none !important;
+      }
+    }
+    :root {
+      --launch-bg: #FFFFFF;
+    }
+    [data-theme="dark"] {
+      --launch-bg: #000000;
+    }
+    @media (prefers-color-scheme: dark) {
+      html:not([data-theme="light"]) {
+        --launch-bg: #000000;
+      }
+    }
+    #launch-shell {
+      position: fixed;
+      inset: 0;
+      z-index: 2147483647;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--launch-bg, #FFFFFF);
+      transition: opacity 0.25s ease;
+      pointer-events: none;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    .launch-logo {
+      width: clamp(120px, 18vw, 160px);
+      height: clamp(120px, 18vw, 160px);
+      object-fit: contain;
+      display: block;
+      background: transparent !important;
+      border: none !important;
+      outline: none !important;
+      box-shadow: none !important;
+      border-radius: 0 !important;
+      user-select: none;
+      -webkit-user-drag: none;
+    }
+  </style>
 
   <!--
     iOS does not generate a launch image the way Android does. Without an
@@ -190,15 +261,14 @@
   <!--
     Launch shell. The platform splash is dismissed the moment the page paints,
     which happens long before React has mounted — so without this there is a
-    flash of empty page between the splash and the first screen. Painted in the
-    same white as `background_color` and carrying the same mark, it makes that
-    handoff invisible, then fades itself out.
+    flash of empty page between the splash and the first screen.
+    Pure white in light mode (#FFFFFF), pure black in dark mode (#000000).
 
     Inline and markup-only on purpose: it has to be on screen at first paint,
     which rules out anything that waits on the bundle or a stylesheet.
   -->
-  <div id="launch-shell" aria-hidden="true" style="position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;background:#FDFDFD;transition:opacity .25s ease;pointer-events:none">
-    <img src="/logo-192.png?v=3" alt="" width="120" height="120" style="width:120px;height:120px" />
+  <div id="launch-shell" aria-hidden="true" style="position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;background:var(--launch-bg,#FFFFFF);transition:opacity .25s ease;pointer-events:none">
+    <img class="launch-logo" src="/logo.png" alt="Meetifyy" width="160" height="160" style="width:clamp(120px,18vw,160px);height:clamp(120px,18vw,160px);object-fit:contain;display:block;background:transparent;border:0;outline:none" />
   </div>
 
   <div id="root"></div>
