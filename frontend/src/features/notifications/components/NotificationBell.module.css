@@ -8,7 +8,7 @@
   background: var(--color-bg-white);
   border: 1px solid var(--color-border);
   box-shadow: var(--shadow-sm);
-  color: var(--color-text-main);
+  color: var(--color-icon-base);
   transition: all 0.2s ease;
   position: relative;
   text-decoration: none;
@@ -41,6 +41,7 @@
      flips. */
   width: 24px;
   height: 24px;
+  color: inherit;
 }
 
 .iconContainer {

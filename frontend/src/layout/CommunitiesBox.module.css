@@ -27,13 +27,13 @@
   font-family: var(--font-family-sans);
   font-size: 0.9rem;
   font-weight: 600;
-  color: var(--color-text-muted);
+  color: var(--color-icon-base);
   transition: color 0.2s;
   user-select: none;
 }
 
 .communitiesHeader:hover {
-  color: var(--color-text-main);
+  color: var(--color-icon-base);
 }
 
 .chevronIcon {
@@ -74,7 +74,7 @@
   padding: 0.5rem;
   border-radius: var(--radius-md);
   text-decoration: none;
-  color: var(--color-text-main);
+  color: var(--color-icon-base);
   font-size: 0.85rem;
   font-weight: 600;
   transition: background 0.2s;
@@ -91,6 +91,7 @@
 
 .communityItem:hover {
   background: var(--color-bg-soft);
+  color: var(--color-icon-base);
 }
 
 .communityItem:active {

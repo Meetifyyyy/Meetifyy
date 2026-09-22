@@ -80,7 +80,7 @@
   font-family: var(--font-family-sans);
   font-size: 0.9rem;
   font-weight: 600;
-  color: var(--color-text-muted);
+  color: var(--color-icon-base);
   position: relative;
   transition: all 0.2s ease;
   border-radius: var(--radius-md);
@@ -88,15 +88,19 @@
 
 .sidebarLink:hover {
   background: var(--color-bg-soft);
-  color: var(--color-text-main);
+  color: var(--color-icon-base);
 }
 
 .sidebarLink svg {
-  color: var(--color-text-muted);
+  color: var(--color-icon-base);
   transition: color 0.2s ease;
   width: 22px;
   height: 22px;
   flex-shrink: 0;
+}
+
+.sidebarLink:hover svg {
+  color: var(--color-icon-base);
 }
 
 /* The <NavIcon> stack that holds a link's outline and solid layers. It takes
@@ -106,7 +110,8 @@
   flex-shrink: 0;
 }
 
-.sidebarLink.active {
+.sidebarLink.active,
+.sidebarLink.active:hover {
   color: var(--color-primary);
   background: transparent;
 }
@@ -122,7 +127,8 @@
   border-radius: 0 4px 4px 0;
 }
 
-.sidebarLink.active svg {
+.sidebarLink.active svg,
+.sidebarLink.active:hover svg {
   color: var(--color-primary);
 }
 
