@@ -734,12 +734,7 @@ export default function ChatMessageList({
         <div className={styles.msgInitialLoadingCenter}>
           <div
             className="spinner"
-            style={{
-              width: '24px',
-              height: '24px',
-              borderWidth: '3px',
-              borderTopColor: 'var(--color-primary)',
-            }}
+            aria-label="Loading messages"
           />
         </div>
       )}

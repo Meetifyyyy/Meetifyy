@@ -494,7 +494,7 @@ export default function SearchResultsRoute() {
               {hasNextPage && (
                 <div ref={loadMoreRef} className={styles.loadMoreRow}>
                   {isFetchingNextPage ? (
-                    <Loader2 size={18} className={styles.updatingSpinner} aria-label="Loading more results" />
+                    <div className="spinner" aria-label="Loading more results" />
                   ) : (
                     <button className={styles.loadMoreBtn} onClick={() => fetchNextPage()}>
                       Load more

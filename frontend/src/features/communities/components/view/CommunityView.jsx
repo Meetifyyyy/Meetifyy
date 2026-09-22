@@ -1401,7 +1401,7 @@ export default function CommunityView({ communityId, onBack, onPostClick, onComm
                     ))}
                     {hasMorePosts && (
                       <div ref={loadMorePostsRef} style={{ padding: '1.5rem', display: 'flex', justifyContent: 'center' }}>
-                        <div className="spinner" style={{ width: '24px', height: '24px', borderWidth: '3px' }} />
+                        <div className="spinner" aria-label="Loading posts" />
                       </div>
                     )}
                   </>

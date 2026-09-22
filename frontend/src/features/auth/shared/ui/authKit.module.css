@@ -1087,14 +1087,6 @@
   margin-top: 1rem;
 }
 
-.spinner {
-  width: 26px;
-  height: 26px;
-  border: 2.5px solid var(--color-border);
-  border-top-color: var(--color-brand-primary);
-  border-radius: 50%;
-  animation: kitSpin 0.75s linear infinite;
-}
 
 /* ── Signup layout helpers ──────────────────────────────────────────────── */
 .stepWrapper {

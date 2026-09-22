@@ -311,7 +311,7 @@ export default function SavedPage() {
 
       {((showPosts && hasNextPostsPage) || (showActivities && hasNextActivitiesPage)) && (
         <div ref={loadMoreRef} style={{ padding: '1.5rem', display: 'flex', justifyContent: 'center' }}>
-          <div className="spinner" style={{ width: '24px', height: '24px', borderWidth: '3px' }} />
+          <div className="spinner" aria-label="Loading saved posts" />
         </div>
       )}
     </main>

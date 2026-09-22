@@ -194,18 +194,6 @@
   font-size: 0.8125rem;
 }
 
-.spinner {
-  width: 20px;
-  height: 20px;
-  border: 2.5px solid var(--color-border, rgba(0, 0, 0, 0.15));
-  border-top-color: var(--color-primary, #6366f1);
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
 
 @keyframes fadeIn {
   from { opacity: 0; }

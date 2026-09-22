@@ -543,7 +543,7 @@ export default function FindYourCrewPage() {
 
                   {activeFeed?.isFetchingNextPage && (
                     <div className={styles.paginationSpinnerWrapper}>
-                      <div className="spinner" style={{ width: '24px', height: '24px', borderWidth: '2.5px', borderColor: 'var(--color-primary)', borderTopColor: 'transparent' }} />
+                      <div className="spinner" aria-label="Loading more activities" />
                     </div>
                   )}
                 </section>

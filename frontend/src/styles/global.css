@@ -932,22 +932,72 @@ button,
 }
 
 /* ── Global spinner ──────────────────────────────────────────────────────── */
+@-webkit-keyframes spin {
+  0% {
+    -webkit-transform: rotate(0deg);
+  }
+  100% {
+    -webkit-transform: rotate(360deg);
+  }
+}
+
 @keyframes spin {
-  to {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
     transform: rotate(360deg);
   }
 }
 
 .spinner {
+  --spinner-size: 32px;
+  --spinner-border-width: 2px;
+  --spinner-track-color: rgba(127, 127, 127, 0.2);
+  --spinner-color: var(--color-primary, #2563eb);
+
   display: inline-block;
-  width: 20px;
-  height: 20px;
-  border: 2.5px solid rgba(255, 255, 255, 0.35);
-  border-top-color: currentColor;
+  width: var(--spinner-size);
+  height: var(--spinner-size);
+  aspect-ratio: 1 / 1;
+  box-sizing: border-box;
+  border-width: var(--spinner-border-width);
+  border-style: solid;
+  border-color: var(--spinner-track-color);
+  border-top-color: var(--spinner-color);
   border-radius: 50%;
-  will-change: transform;
-  animation: spin 0.65s linear infinite;
   flex-shrink: 0;
+  will-change: transform;
+  -webkit-animation: spin 0.75s linear infinite;
+  animation: spin 0.75s linear infinite;
+}
+
+/* Button spinners retain compact dimensions and high-contrast styling */
+button .spinner,
+[type="button"] .spinner,
+[type="submit"] .spinner {
+  --spinner-size: 16px;
+  --spinner-track-color: rgba(255, 255, 255, 0.35);
+  --spinner-color: currentColor;
+}
+
+/* Screen size optimizations across viewports */
+@media (max-width: 768px) {
+  .spinner {
+    --spinner-size: 28px;
+  }
+}
+
+@media (max-width: 480px) {
+  .spinner {
+    --spinner-size: 26px;
+  }
+}
+
+@media (max-width: 360px) {
+  .spinner {
+    --spinner-size: 22px;
+  }
 }
 
 /* === Circular Expanding View Transition Theme Transition === */

@@ -203,16 +203,6 @@
 .emptyTitle { margin: 0.3rem 0 0; font-size: 0.86rem; font-weight: 600; color: rgba(255, 255, 255, 0.7); }
 .emptyDesc { margin: 0; font-size: 0.76rem; }
 
-.spinner {
-  width: 22px;
-  height: 22px;
-  border: 2.5px solid rgba(255, 255, 255, 0.15);
-  border-top-color: #818cf8;
-  border-radius: 50%;
-  animation: discSpin 0.8s linear infinite;
-}
-@keyframes discSpin { to { transform: rotate(360deg); } }
-
 .sendError {
   padding: 0.35rem 0.9rem;
   font-size: 0.74rem;

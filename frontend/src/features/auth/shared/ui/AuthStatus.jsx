@@ -14,7 +14,11 @@ export default function AuthStatus({ icon: Icon, tone = 'success', title, descri
   return (
     <div className={s.statusPanel}>
       <span className={`${s.statusIconWrap} ${toneClass}`}>
-        {Icon ? <Icon size={28} strokeWidth={1.75} /> : <span className={s.spinner} />}
+        {Icon ? (
+          <Icon size={28} strokeWidth={1.75} />
+        ) : (
+          <span className="spinner" aria-hidden="true" />
+        )}
       </span>
       <h1 className={s.statusTitle}>{title}</h1>
       {description ? <p className={s.statusDesc}>{description}</p> : null}

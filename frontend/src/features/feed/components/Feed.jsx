@@ -160,7 +160,7 @@ function Feed({ onPostClick, onCommentClick }) {
 
         {!isLoading && !isError && hasNextPage && (
           <div ref={loadMoreRef} style={{ padding: '1.5rem', display: 'flex', justifyContent: 'center' }}>
-            <div className="spinner" style={{ width: '24px', height: '24px', borderWidth: '3px' }} />
+            <div className="spinner" aria-label="Loading more posts" />
           </div>
         )}
       </div>

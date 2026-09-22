@@ -1008,21 +1008,6 @@
   font-weight: 900;
 }
 
-.statusSendingSpinner {
-  display: inline-block;
-  width: 10px;
-  height: 10px;
-  border: 1.5px solid rgba(255, 255, 255, 0.4);
-  border-top-color: #ffffff;
-  border-radius: 50%;
-  animation: statusSpin 0.6s linear infinite;
-}
-
-@keyframes statusSpin {
-  to {
-    transform: rotate(360deg);
-  }
-}
 
 .typingBubbleInline {
   display: inline-flex;
@@ -1209,7 +1194,7 @@
 .topLoadingSpinner {
   width: 16px;
   height: 16px;
-  border: 2.5px solid transparent;
+  border: 2px solid transparent;
   border-top-color: var(--color-primary, #6366f1);
   border-right-color: var(--color-primary, #6366f1);
   border-radius: 50%;

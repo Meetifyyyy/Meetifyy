@@ -162,7 +162,7 @@ export const ActivityDiscussion = memo(function ActivityDiscussion({
 
         {isLoading ? (
           <div className={styles.stateMsg}>
-            <span className={styles.spinner} />
+            <span className="spinner" aria-hidden="true" />
           </div>
         ) : isError ? (
           <div className={styles.stateMsg}>Couldn't load the discussion.</div>

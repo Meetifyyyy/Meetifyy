@@ -294,7 +294,7 @@ export default function UserListModal({ type, profileUsername, onClose }) {
               <div ref={observerTargetRef} className={styles.loadMoreTrigger}>
                 {isFetchingNextPage && (
                   <div className={styles.spinnerWrap}>
-                    <div className={styles.spinner} />
+                    <div className="spinner" aria-hidden="true" />
                     <span className={styles.spinnerText}>Loading more...</span>
                   </div>
                 )}
