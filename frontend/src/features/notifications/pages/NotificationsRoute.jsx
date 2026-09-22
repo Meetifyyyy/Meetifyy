@@ -509,8 +509,7 @@ export default function NotificationsRoute() {
         <div className={styles.list}>
           {(activeTab === 'invitations' ? inviteFeed.isLoading : isLoading) ? (
             <div className={styles.loadingState} role="status" aria-live="polite">
-              <span className={styles.spinner} aria-hidden="true" />
-              <span>Loading notifications…</span>
+              <div className="spinner" aria-label="Loading notifications" />
             </div>
           ) : error ? (
             <ErrorState onRetry={retry} />
@@ -564,7 +563,14 @@ export default function NotificationsRoute() {
           )}
           {activeTab !== 'invitations' && isFetchingNextPage && !isLoading && (
             <div role="status" aria-live="polite" aria-label="Loading more notifications">
-              <span className={`${styles.spinner} ${styles.spinnerInline}`} aria-hidden="true" />
+              <span
+                className="spinner"
+                style={{
+                  display: 'block',
+                  margin: '1rem auto',
+                }}
+                aria-hidden="true"
+              />
             </div>
           )}
           {activeTab !== 'invitations' && hasNextPage && (
