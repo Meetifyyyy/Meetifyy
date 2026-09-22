@@ -70,7 +70,21 @@
  * `data-theme` as if it were local.
  */
 :global([data-theme='dark']) .shell {
-  --auth-canvas: #121212;
+  /*
+   * Pure black, not #121212.
+   *
+   * It is the same colour as `--color-nav-surface` on dark, which is what the
+   * native layer paints the phone's status and navigation bars with, and the
+   * same colour the app's front door uses. At #121212 the installed app showed
+   * a black bar, an almost-black page and then a black bar again — three
+   * surfaces where there should be one, and the seam was most obvious at the
+   * top of the very first screen after the front door.
+   *
+   * The cards above it do not change, so the "floating panel" idea this kit is
+   * built around still reads; if anything it reads harder, because the gap
+   * between the canvas and the card is now wider than it was.
+   */
+  --auth-canvas: #000000;
   --auth-subtle: #1f1e26;
   --auth-shadow: rgba(0, 0, 0, 0.55);
   --auth-shadow-soft: rgba(0, 0, 0, 0.35);
@@ -97,6 +111,25 @@
   z-index: 0;
   overflow: hidden;
   pointer-events: none;
+
+  /*
+   * Its own compositor layer, permanently.
+   *
+   * Nothing in here ever animates or changes, but it sits directly behind a
+   * panel whose height transitions — and without promotion the browser folds
+   * both into one layer, so every frame of that transition re-rasterises the
+   * gradients and the masked dot grid underneath it. Promoted, the ambient is
+   * rasterised once and merely composited from then on, which is what makes
+   * the panel's cost independent of what is behind it.
+   *
+   * `will-change` is normally something to use sparingly and remove afterwards.
+   * The exception is a layer that is genuinely static for the life of the
+   * screen, which is exactly this one: there is no "afterwards" to remove it
+   * for, and the trade is one viewport-sized texture against a repaint per
+   * frame.
+   */
+  will-change: transform;
+  contain: strict;
 }
 
 .ambient::before {
@@ -110,34 +143,122 @@
   -webkit-mask-image: radial-gradient(60% 55% at 32% 20%, #000 0%, transparent 72%);
 }
 
+/*
+ * ── The ambient blobs: gradients, NOT blurred elements ─────────────────────
+ *
+ * These used to carry `filter: blur(64px)` on top of their radial-gradient
+ * backgrounds. Measured on the test device (I2208) across four round trips of
+ * login -> signup -> back, that cost 19% janky frames with a 73ms 90th
+ * percentile and `Slow issue draw commands: 140` — a raster bottleneck, not a
+ * script one. A 64px blur on a 620px box makes the compositor rasterise a
+ * ~750px surface through a large multi-pass kernel, three times over, on every
+ * frame that dirties this region; the panel resizing above them dirties it on
+ * every frame of its transition.
+ *
+ * The blur was also redundant. A `radial-gradient` to `transparent` is already
+ * a soft edge — the filter was mostly widening a falloff that the gradient can
+ * describe directly. So the falloff is now written as explicit stops and the
+ * elements are larger to cover the same area, which looks the same and costs a
+ * gradient fill instead of a blur pass.
+ *
+ * `closest-side` so the ramp is measured against the box rather than its
+ * corner, which is what keeps the stop percentages meaning what they say.
+ */
 .blob {
   position: absolute;
   border-radius: 50%;
-  filter: blur(64px);
 }
 
 .blobA {
-  width: 620px;
-  height: 620px;
-  top: -18%;
-  left: -14%;
-  background: radial-gradient(circle, rgba(92, 71, 250, 0.4), transparent 68%);
+  width: 760px;
+  height: 760px;
+  top: -24%;
+  left: -20%;
+  background: radial-gradient(
+    circle closest-side,
+    rgba(92, 71, 250, 0.34) 0%,
+    rgba(92, 71, 250, 0.21) 32%,
+    rgba(92, 71, 250, 0.08) 60%,
+    rgba(92, 71, 250, 0) 100%
+  );
 }
 
 .blobB {
-  width: 480px;
-  height: 480px;
-  bottom: -16%;
-  right: -10%;
-  background: radial-gradient(circle, rgba(255, 107, 53, 0.28), transparent 68%);
+  width: 620px;
+  height: 620px;
+  bottom: -22%;
+  right: -16%;
+  background: radial-gradient(
+    circle closest-side,
+    rgba(255, 107, 53, 0.24) 0%,
+    rgba(255, 107, 53, 0.14) 34%,
+    rgba(255, 107, 53, 0.05) 62%,
+    rgba(255, 107, 53, 0) 100%
+  );
 }
 
 .blobC {
-  width: 360px;
-  height: 360px;
-  top: 34%;
-  left: 40%;
-  background: radial-gradient(circle, rgba(121, 101, 251, 0.22), transparent 70%);
+  width: 480px;
+  height: 480px;
+  top: 30%;
+  left: 36%;
+  background: radial-gradient(
+    circle closest-side,
+    rgba(121, 101, 251, 0.19) 0%,
+    rgba(121, 101, 251, 0.11) 36%,
+    rgba(121, 101, 251, 0.04) 64%,
+    rgba(121, 101, 251, 0) 100%
+  );
+}
+
+/*
+ * ── Ambient on black ───────────────────────────────────────────────────────
+ *
+ * The same three blobs, dimmed by two thirds.
+ *
+ * Their alphas were picked against the old #121212 canvas, where a 0.4 violet
+ * and a 0.28 orange read as a tint. On pure black the same values read as
+ * coloured light: the screen came out violet at the top and orange along the
+ * bottom, which is not a dark background with atmosphere, it is a purple
+ * screen. Dimming rather than deleting keeps the composition — the canvas is
+ * black, and the brand is still faintly present behind the card.
+ *
+ * The dot texture is inverted as well as dimmed: a near-black dot on black is
+ * nothing at all, so on this theme the grain has to be lighter than what it
+ * sits on rather than darker.
+ */
+:global([data-theme='dark']) .blobA {
+  background: radial-gradient(
+    circle closest-side,
+    rgba(92, 71, 250, 0.15) 0%,
+    rgba(92, 71, 250, 0.09) 34%,
+    rgba(92, 71, 250, 0.03) 62%,
+    rgba(92, 71, 250, 0) 100%
+  );
+}
+
+:global([data-theme='dark']) .blobB {
+  background: radial-gradient(
+    circle closest-side,
+    rgba(255, 107, 53, 0.08) 0%,
+    rgba(255, 107, 53, 0.05) 34%,
+    rgba(255, 107, 53, 0.02) 62%,
+    rgba(255, 107, 53, 0) 100%
+  );
+}
+
+:global([data-theme='dark']) .blobC {
+  background: radial-gradient(
+    circle closest-side,
+    rgba(121, 101, 251, 0.07) 0%,
+    rgba(121, 101, 251, 0.04) 36%,
+    rgba(121, 101, 251, 0.015) 64%,
+    rgba(121, 101, 251, 0) 100%
+  );
+}
+
+:global([data-theme='dark']) .ambient::before {
+  background-image: radial-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px);
 }
 
 /* ── Top bar ───────────────────────────────────────────────────────────── */
@@ -267,7 +388,13 @@
   width: min(100%, 440px);
   height: auto;
   margin-top: 0.75rem;
+  /*
+   * A drop-shadow filter re-rasterises the whole image through a blur kernel.
+   * This one is decorative and sits on the ambient side of the screen, so it is
+   * promoted alongside it rather than re-rendered whenever the panel moves.
+   */
   filter: drop-shadow(0 24px 40px rgba(15, 23, 42, 0.16));
+  will-change: transform;
 }
 
 /* ── Panel (the actual form card) ──────────────────────────────────────── */
@@ -286,19 +413,113 @@
   border: 1.5px solid var(--color-border);
   box-shadow: none;
   overflow: hidden;
-  transition: height 0.65s cubic-bezier(0.16, 1, 0.3, 1);
+  /*
+   * Longer and gentler than it was (0.65s on a cubic-bezier(0.16, 1, 0.3, 1)).
+   *
+   * That curve is an expo-out: almost all of the distance is covered in the
+   * first third and the rest is a long crawl, which reads as a snap followed by
+   * a drift rather than as one movement. This one accelerates and decelerates
+   * on a similar slope, so the panel travels at a speed the eye can follow the
+   * whole way — which is what actually makes it feel smooth, more than the
+   * extra 150ms does.
+   */
+  transition: height 0.8s cubic-bezier(0.32, 0.72, 0, 1);
+
+  /*
+   * Bounds what the height animation is allowed to invalidate.
+   *
+   * `height` is a layout property, so every frame of this transition dirties
+   * layout — that part is inherent to the effect and is not worth trading the
+   * design away for. What `contain` fixes is the SCOPE: without it the browser
+   * has to consider that a change in the panel's height could move anything
+   * after it in the document, so each of those frames re-lays-out the page
+   * around the panel as well. `layout` promises the panel's insides cannot
+   * affect anything outside it, and `paint` promises nothing inside can draw
+   * beyond it — which `overflow: hidden` above already guarantees. The
+   * transition then costs one contained subtree per frame instead of the
+   * document, which is the difference on a low-end phone.
+   */
+  contain: layout paint;
+}
+
+/*
+ * The per-route wrapper inside the panel. See AuthShell for why the key lives
+ * here and not on the measured element.
+ *
+ * Transform and opacity only, so the incoming page composites rather than
+ * laying out — it fades in over the panel while the panel's own height is
+ * still travelling, and the two together are what stop a new screen from
+ * appearing abruptly at full size.
+ *
+ * Still shorter than the 0.8s height transition, and deliberately so: the
+ * words should have settled before the box has, or the panel looks like it is
+ * chasing its own contents. The small delay lets the box commit to its new
+ * size first, which is what stops the text sliding while the edge beneath it
+ * is still moving.
+ */
+.panelSwap {
+  animation: kitPanelSwapIn 0.46s cubic-bezier(0.32, 0.72, 0, 1) 0.06s both;
+}
+
+@keyframes kitPanelSwapIn {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 8px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+/*
+ * The panel resizing and the content fading are the two things on this screen
+ * that move without being asked to, so they are the two this turns off. The
+ * height still changes — it has to, the content is a different size — it just
+ * arrives immediately instead of travelling.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .panel {
+    transition: none;
+  }
+
+  .panelInitial,
+  .panelSwap {
+    animation: none;
+  }
 }
 
 .panelInitial {
-  animation: kitPanelExpand 0.68s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  /* Matched to the height transition above, so the two read as one movement. */
+  animation: kitPanelExpand 0.8s cubic-bezier(0.32, 0.72, 0, 1) forwards;
   /* Only worth compositing while the entrance animation runs — dropped
      automatically once this class is removed after mount. */
   will-change: transform, opacity;
 }
 
-/* Holds the padding + content; measured (never itself height-constrained) to
-   drive the smooth height transition on the outer .panel above. */
+/*
+ * Holds the padding + content, and is what the ResizeObserver measures to drive
+ * the panel's height.
+ *
+ * ABSOLUTE, so the panel's animating height cannot re-lay-out the form.
+ *
+ * In normal flow this element is a child of a box whose `height` is changing 60
+ * times a second, so the browser re-ran layout for the whole form — every
+ * label, input, button and error slot — on each of those frames. That is the
+ * `Slow UI thread: 100` half of the device measurement. Taken out of flow it
+ * has only the panel's width to depend on, so a height frame costs the panel's
+ * own box and nothing inside it.
+ *
+ * Its natural height is unchanged and still measurable, which is the property
+ * the whole mechanism relies on. `AuthShell` writes the measured value back as
+ * the panel's height before the first paint, so the panel is never 0-high on
+ * screen despite having no in-flow children.
+ */
 .panelInner {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
   padding: 2.1rem 2.25rem;
 }
 
@@ -358,7 +579,10 @@
 .fieldLabel {
   display: block;
   font-size: 0.78rem;
-  font-weight: 700;
+  /* Medium, not bold. The house rule in styles/typography.css is that labels
+     are medium and never bold; these were 700, which made every label and
+     inline link on the auth screens compete with the heading above it. */
+  font-weight: 500;
   letter-spacing: 0.01em;
   color: var(--color-text-muted);
   margin: 0 0 0.4rem 0.1rem;
@@ -608,7 +832,10 @@
 /* ── Secondary links / footer ───────────────────────────────────────────── */
 .link {
   color: var(--color-brand-primary);
-  font-weight: 700;
+  /* Medium, not bold. The house rule in styles/typography.css is that labels
+     are medium and never bold; these were 700, which made every label and
+     inline link on the auth screens compete with the heading above it. */
+  font-weight: 500;
   text-decoration: none;
   transition: color 0.16s ease;
 }
@@ -727,7 +954,10 @@
 .progressLabel {
   flex-shrink: 0;
   font-size: 0.76rem;
-  font-weight: 700;
+  /* Medium, not bold. The house rule in styles/typography.css is that labels
+     are medium and never bold; these were 700, which made every label and
+     inline link on the auth screens compete with the heading above it. */
+  font-weight: 500;
   letter-spacing: 0.02em;
   color: var(--color-text-light);
 }
@@ -881,7 +1111,10 @@
 
 .selectLabel {
   font-size: 0.78rem;
-  font-weight: 700;
+  /* Medium, not bold. The house rule in styles/typography.css is that labels
+     are medium and never bold; these were 700, which made every label and
+     inline link on the auth screens compete with the heading above it. */
+  font-weight: 500;
   letter-spacing: 0.01em;
   color: var(--color-text-muted);
   margin-left: 0.1rem;
@@ -985,7 +1218,10 @@
 
 .presetLabel {
   font-size: 0.78rem;
-  font-weight: 700;
+  /* Medium, not bold. The house rule in styles/typography.css is that labels
+     are medium and never bold; these were 700, which made every label and
+     inline link on the auth screens compete with the heading above it. */
+  font-weight: 500;
   letter-spacing: 0.02em;
   text-transform: uppercase;
   color: var(--color-text-light);
@@ -1562,7 +1798,10 @@
   background: none;
   border: none;
   color: var(--color-brand-primary);
-  font-weight: 700;
+  /* Medium, not bold. The house rule in styles/typography.css is that labels
+     are medium and never bold; these were 700, which made every label and
+     inline link on the auth screens compete with the heading above it. */
+  font-weight: 500;
   font-size: 0.9rem;
   cursor: pointer;
 }

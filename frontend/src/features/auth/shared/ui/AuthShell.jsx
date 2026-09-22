@@ -1,5 +1,5 @@
 import { createContext, Fragment, memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { ArrowLeft } from '@shared/components/icons';
 import wordmark from '@assets/images/meetifyy_wordmark.svg';
 import wordmarkDark from '@assets/images/meetifyy_wordmark_dark.svg';
@@ -10,7 +10,6 @@ const DEFAULT_HEADLINE = "Your campus,\n*finally connected.*";
 const DEFAULT_SUBTEXT = 'Meetifyy is where verified students meet, plan, and belong.';
 
 const AuthShellContext = createContext(null);
-let globalLastPanelHeight = null;
 
 /**
  * The shared canvas for every auth screen: a full-bleed brand
@@ -62,50 +61,119 @@ const StoryColumn = memo(function StoryColumn({ headline = DEFAULT_HEADLINE, sub
 });
 
 function AuthShellMaster({ children, headline: defaultHeadline, subtext: defaultSubtext }) {
+  /*
+   * The path, not the full location: a query string or a hash changing (the
+   * reset link carries both) must not restart the content fade, because the
+   * page behind it has not changed.
+   */
+  const routeKey = useLocation().pathname;
   const panelInnerRef = useRef(null);
-  const [panelHeight, setPanelHeight] = useState(globalLastPanelHeight);
+  /*
+   * Starts as null, not as the last mount's height.
+   *
+   * This used to be seeded from a module-level `globalLastPanelHeight` so a
+   * remount would not open from zero. What it actually did was open every
+   * screen at the PREVIOUS screen's height and then correct it a frame later —
+   * a jump, on the first frame, every time. The layout effect below measures
+   * before the first paint, so there is nothing to seed: null simply means
+   * "not measured yet", and the panel is sized correctly by the time anyone
+   * sees it.
+   */
+  const [panelHeight, setPanelHeight] = useState(null);
   const [isInitialMount, setIsInitialMount] = useState(true);
   const [story, setStory] = useState({ headline: defaultHeadline, subtext: defaultSubtext });
 
   const setStoryCallback = useCallback((next) => setStory(next), []);
   const contextValue = useMemo(() => ({ setStory: setStoryCallback }), [setStoryCallback]);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- re-measures panel height on every render after DOM commits to track dynamic form size
+  /**
+   * ── Measured ONCE, then only when the height really changes ───────────────
+   *
+   * WHAT THIS REPLACED, AND WHY IT WAS SLOW
+   * There used to be a `useLayoutEffect` with NO dependency array here that
+   * called `getBoundingClientRect()` and then `setPanelHeight()`
+   * unconditionally, so it ran after every single commit. Three things followed
+   * from that, and together they are the whole of the lag:
+   *
+   *   1. A render loop. Setting state from inside a dependency-less layout
+   *      effect schedules another render, whose layout effect measures and sets
+   *      state again. React only bails out when the value is `Object.is`-equal,
+   *      and `getBoundingClientRect().height` is a float that moves by
+   *      fractions of a pixel — so it often did not bail out, and each pass
+   *      cost a synchronous layout of the whole panel.
+   *   2. A forced layout on every keystroke. Typing in a field is a state
+   *      change, so the effect read geometry once per character, before the
+   *      browser could batch anything. That is the most expensive thing a form
+   *      can do on a low-end phone.
+   *   3. It defeated the ResizeObserver's own threshold below, because the
+   *      unconditional path had no threshold at all.
+   *
+   * WHAT IT DOES NOW
+   * One synchronous measurement before the first paint, so the panel opens at
+   * the right size instead of starting from zero; after that the
+   * ResizeObserver is the only thing that can change the height, which is the
+   * correct tool — it already fires for every content change that matters: a
+   * signup step switching, a validation message appearing, a route swapping the
+   * panel's children.
+   *
+   * The observer reads `borderBoxSize` off the entry rather than calling
+   * `getBoundingClientRect()` on the element again. The size is already in the
+   * entry, and re-measuring from inside an observation callback forces another
+   * layout in the middle of the same frame — which is what produces
+   * "ResizeObserver loop completed with undelivered notifications".
+   *
+   * `lastHeightRef`, not the state value, is what the threshold compares
+   * against: state is a snapshot from the last render, so comparing against it
+   * lets a run of sub-threshold changes accumulate into one visible jump.
+   */
+  const lastHeightRef = useRef(null);
+
+  const commitHeight = useCallback((h) => {
+    if (!Number.isFinite(h) || h <= 0) return;
+    /*
+     * 1px, not the 3px this used to use. Three was wide enough that a change
+     * just under it was held back and then released along with the next one,
+     * which read as a jolt; a pixel is below what anyone can see and still
+     * excludes sub-pixel jitter from focus moving between inputs.
+     */
+    if (lastHeightRef.current !== null && Math.abs(h - lastHeightRef.current) < 1) return;
+    lastHeightRef.current = h;
+    setPanelHeight(h);
+  }, []);
+
   useLayoutEffect(() => {
     const el = panelInnerRef.current;
-    if (el) {
-      // We also use getBoundingClientRect here for consistency
-      const h = el.getBoundingClientRect().height;
-      globalLastPanelHeight = h;
-      setPanelHeight(h);
-    }
-  });
+    if (el) commitHeight(el.getBoundingClientRect().height);
+  }, [commitHeight]);
 
   useEffect(() => {
     const el = panelInnerRef.current;
-    if (!el) return;
-    const observer = new ResizeObserver(() => {
-      // Use getBoundingClientRect().height instead of scrollHeight to ignore temporary
-      // scrollHeight expansions caused by mobile virtual keyboard carets.
-      // We also enforce a >3px threshold to ignore sub-pixel rounding jitter when
-      // moving focus between inputs on mobile.
-      const h = el.getBoundingClientRect().height;
-      if (globalLastPanelHeight === null || Math.abs(h - globalLastPanelHeight) > 3) {
-        globalLastPanelHeight = h;
-        setPanelHeight(h);
-      }
-    });
-    observer.observe(el);
+
+    let observer;
+    if (el && typeof ResizeObserver !== 'undefined') {
+      observer = new ResizeObserver((entries) => {
+        const entry = entries[0];
+        if (!entry) return;
+        /*
+         * The BORDER box, because `.panelInner` carries the panel's padding and
+         * the height has to include it. `contentRect` is short by exactly that
+         * padding, and the panel would clip its own content by ~67px.
+         */
+        const box = entry.borderBoxSize && entry.borderBoxSize[0];
+        commitHeight(box ? box.blockSize : el.getBoundingClientRect().height);
+      });
+      observer.observe(el);
+    }
 
     const timer = setTimeout(() => {
       setIsInitialMount(false);
     }, 720);
 
     return () => {
-      observer.disconnect();
+      if (observer) observer.disconnect();
       clearTimeout(timer);
     };
-  }, []);
+  }, [commitHeight]);
 
   return (
     <AuthShellContext.Provider value={contextValue}>
@@ -155,8 +223,20 @@ function AuthShellMaster({ children, headline: defaultHeadline, subtext: default
 
           <div className={s.panelWrap}>
             <div className={`${s.panel} ${isInitialMount ? s.panelInitial : ''}`} style={panelHeight != null ? { height: panelHeight } : undefined}>
+              {/*
+                The measured element and the swapped element are deliberately
+                NOT the same node. `panelInnerRef` has to stay put for the
+                ResizeObserver to keep observing it across navigations; keying
+                it by route would tear it down and re-observe on every move,
+                and the first measurement after that arrives too late to
+                animate from. So the key lives on a plain wrapper inside it,
+                which gives React a new node per route and lets the incoming
+                page fade in while the panel around it resizes.
+              */}
               <div ref={panelInnerRef} className={s.panelInner}>
-                {children}
+                <div key={routeKey} className={s.panelSwap}>
+                  {children}
+                </div>
               </div>
             </div>
           </div>
