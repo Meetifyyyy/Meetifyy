@@ -48,6 +48,9 @@ public class MainActivity extends BridgeActivity {
         SystemUiHelper.applySystemBars(this, resolvedTheme.isDark, null);
         applyLaunchBackground(resolvedTheme.isDark);
 
+        // 5. Remove the WebView's own scrollbars.
+        hideWebViewScrollbars();
+
         final int splashColor = resolvedTheme.isDark ? SystemUiHelper.COLOR_DARK : SystemUiHelper.COLOR_LIGHT;
         if (getWindow() != null && getWindow().getDecorView() != null) {
             findAndColorSplashView(getWindow().getDecorView(), splashColor);
@@ -65,6 +68,10 @@ public class MainActivity extends BridgeActivity {
             final SystemUiHelper.ResolvedTheme currentTheme = SystemUiHelper.resolveTheme(this);
             SystemUiHelper.applySystemBars(this, currentTheme.isDark, null);
             applyLaunchBackground(currentTheme.isDark);
+            // Again here: the first call runs moments after super.onCreate, and if
+            // the bridge was not up yet it was a no-op. By the splash exit the
+            // WebView certainly exists, and setting these twice costs nothing.
+            hideWebViewScrollbars();
 
             final long deadline = SystemClock.uptimeMillis() + SPLASH_TIMEOUT_MS;
             handler.post(new Runnable() {
@@ -118,6 +125,35 @@ public class MainActivity extends BridgeActivity {
                 }
             });
         });
+    }
+
+    /**
+     * Turns off the WebView's NATIVE scrollbars.
+     *
+     * WHY CSS CANNOT DO THIS
+     * `scrollbar-width: none` and `::-webkit-scrollbar { display: none }` — both
+     * of which the app already sets in `src/mobile/mobile.css` — control the
+     * scrollbars the RENDERER draws for a CSS scroll container. The bar that
+     * remained is a different thing: Android's `View` class draws its own
+     * scrollbars for the WebView itself, outside the page entirely, and no
+     * amount of page CSS reaches it. It is a View property, so it has to be
+     * turned off on the View.
+     *
+     * Both axes, and `SCROLLBARS_OUTSIDE_OVERLAY` as a belt-and-braces: with
+     * the flags off there is nothing to draw, and the style keeps any bar that
+     * some OEM WebView decides to draw anyway from insetting the content.
+     *
+     * Scrolling itself is untouched — this hides the indicator, exactly as the
+     * CSS half does, and the page scrolls as before.
+     */
+    private void hideWebViewScrollbars() {
+        final WebView webView = getBridge() != null ? getBridge().getWebView() : null;
+        if (webView == null) return;
+
+        webView.setVerticalScrollBarEnabled(false);
+        webView.setHorizontalScrollBarEnabled(false);
+        webView.setScrollBarStyle(WebView.SCROLLBARS_OUTSIDE_OVERLAY);
+        webView.setOverScrollMode(WebView.OVER_SCROLL_NEVER);
     }
 
     /**

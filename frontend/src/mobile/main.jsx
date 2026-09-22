@@ -52,6 +52,11 @@ import { installSystemBars } from './installSystemBars';
 import '../styles/variables.css';
 import '../styles/global.css';
 import '../styles/typography.css';
+/*
+ * Last, and app-only. Everything above is shared with the website; this is the
+ * file that is allowed to make decisions the website must not inherit.
+ */
+import './mobile.css';
 
 /**
  * The same cache settings as the website, with one deliberate change.

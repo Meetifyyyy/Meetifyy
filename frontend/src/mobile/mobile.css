@@ -1,0 +1,103 @@
+/* ============================================================================
+   Styles that apply ONLY to the installed app.
+
+   Imported from `src/mobile/main.jsx`, which is the entry point the website
+   never loads — so nothing in here can reach the web build. That is the whole
+   reason this file exists rather than the rules living in global.css: the
+   website and the app share every other stylesheet, and a change made for a
+   phone would otherwise silently become a change to the site.
+   ========================================================================= */
+
+/* ----------------------------------------------------------------------------
+   No scrollbars, anywhere.
+
+   A native app does not draw scrollbars over its own content; the platform
+   shows a transient indicator and gets out of the way. The WebView does not
+   know it is an app, so it draws the desktop-style track it would draw in a
+   browser tab — visible on the feed, inside modals, down the side of the legal
+   pages.
+
+   Scrolling itself is untouched. This hides the indicator; wheel, touch,
+   keyboard and programmatic scrolling all behave exactly as before, and the
+   scrollable elements keep their overflow.
+
+   THREE DECLARATIONS BECAUSE THERE ARE THREE ENGINES TO SATISFY
+     - `scrollbar-width` is the standard property, and what Android's modern
+       Chromium WebView reads.
+     - `-ms-overflow-style` is for the old Edge/IE engine. Harmless here, and
+       kept so this file is a complete answer rather than one that works on the
+       devices that happened to be tested.
+     - `::-webkit-scrollbar` is the legacy WebKit pseudo-element, which is what
+       actually does the work on an iOS WKWebView and on older Android System
+       WebView builds that predate `scrollbar-width`.
+
+   WHY `!important`
+   `StaticDocLayout` imports the landing page's stylesheet for its navbar and
+   footer, and that stylesheet sets `scrollbar-width: thin` on `html` along with
+   its own `::-webkit-scrollbar` rules. It is pulled in by a lazily loaded route,
+   so it is injected AFTER this file and wins on source order no matter where
+   this import sits in `main.jsx`. Raising specificity would not help either,
+   since its rules are on `html` directly. This is the case `!important` is for:
+   a platform-wide decision overriding a component that cannot know it is
+   running inside an app.
+---------------------------------------------------------------------------- */
+
+html,
+body,
+* {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+
+html::-webkit-scrollbar,
+body::-webkit-scrollbar,
+*::-webkit-scrollbar {
+  width: 0 !important;
+  height: 0 !important;
+  display: none !important;
+}
+
+/* ----------------------------------------------------------------------------
+   No long-press text selection.
+
+   In a browser, holding a finger on text selects a word and raises the
+   copy/share callout. In an app that gesture belongs to the app — holding a
+   message or a profile should do whatever the app decides, not hand the user a
+   text cursor and two blue handles over the UI.
+
+   `-webkit-touch-callout` is the separate half of this and is not optional:
+   `user-select: none` alone stops the selection, but WebKit-derived engines
+   will still raise the callout menu on a long press, so the gesture ends in a
+   popover over content that is not selected.
+
+   WHAT STAYS SELECTABLE, AND WHY THAT IS NOT A COMPROMISE
+   Form fields are exempt. Blanket-disabling selection breaks text editing
+   outright on a phone: without it a user cannot place the caret mid-word,
+   cannot drag to correct a typo, and cannot select-all to replace a wrong
+   entry — and password managers and autofill operate on the same mechanism.
+   `input` and `textarea` are their own editing context; turning selection back
+   on there restores normal typing without bringing the long-press-anywhere
+   behaviour back with it.
+
+   `[contenteditable]` is listed for the same reason: any rich-text surface the
+   app grows later is an editor, and an editor with selection disabled is not
+   an editor.
+---------------------------------------------------------------------------- */
+
+html,
+body,
+* {
+  -webkit-user-select: none !important;
+  user-select: none !important;
+  -webkit-touch-callout: none !important;
+}
+
+input,
+textarea,
+select,
+[contenteditable='true'],
+[contenteditable='true'] * {
+  -webkit-user-select: text !important;
+  user-select: text !important;
+  -webkit-touch-callout: default !important;
+}
