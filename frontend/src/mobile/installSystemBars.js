@@ -37,8 +37,22 @@ export function installSystemBars(systemBars) {
 
   apply();
 
+  /**
+   * `data-bars` alongside `data-theme`.
+   *
+   * A screen can ask for transparent system bars by setting `data-bars` on
+   * <html>; the stylesheet redefines `--color-nav-surface` while it is there,
+   * and `apply()` re-reads that variable. Without this attribute in the filter
+   * the variable would change and nothing would push it, so the bars would go
+   * transparent only on the next theme change — which on most devices is never.
+   *
+   * The screen removing the attribute is what paints them back.
+   */
   const observer = new MutationObserver(apply);
-  observer.observe(root, { attributes: true, attributeFilter: ['data-theme'] });
+  observer.observe(root, {
+    attributes: true,
+    attributeFilter: ['data-theme', 'data-bars'],
+  });
 
   /**
    * Android can reset the bars when the app returns to the foreground, and a
