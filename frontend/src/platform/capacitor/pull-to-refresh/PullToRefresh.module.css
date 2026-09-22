@@ -1,0 +1,140 @@
+/* ============================================================================
+   Pull-to-refresh — installed app only.
+
+   Colours come from the app's own tokens rather than literals, so this follows
+   light and dark with the rest of the product and needs no theme branch of its
+   own.
+   ========================================================================= */
+
+.root {
+  position: relative;
+  width: 100%;
+  /*
+   * `clip`, not `hidden`.
+   *
+   * The indicator starts above the top edge and has to be clipped away, but
+   * `overflow: hidden` on one axis silently promotes the other to `auto` and
+   * would turn this wrapper into a second scroll container — nested inside the
+   * window scroller the whole app relies on. `global.css` documents the same
+   * trap for html and #root. `clip` hides without scrolling.
+   */
+  overflow: clip;
+}
+
+/* ---- The indicator ------------------------------------------------------ */
+
+/*
+ * Parked just above the content and pushed down by the same distance the
+ * content moves, so it appears to be pulled into view rather than faded in.
+ *
+ * NO BACKGROUND AND NO SHADOW. It was a 38px white pill, which on a dark feed
+ * read as a foreign chip sitting on top of the content rather than as part of
+ * it. The ring alone is legible against both themes because it is a saturated
+ * brand gradient over a muted track, and losing the pill let it grow without
+ * taking over the screen.
+ */
+.indicator {
+  position: absolute;
+  top: -54px;
+  left: 50%;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  pointer-events: none;
+  will-change: transform;
+}
+
+.dial {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /*
+   * Only the rotation is set inline, frame by frame, from the drag distance.
+   * Nothing here transitions: a transition on the angle would make the ring
+   * lag the finger, which is the one thing that breaks the illusion that the
+   * gesture is moving it.
+   */
+}
+
+/*
+ * Armed. The ring is already complete by this point, so the signal is a single
+ * confident pulse rather than a colour swap — there is no second colour to
+ * move to when the stroke is a brand gradient.
+ */
+.dialReady {
+  animation: ptrArm 0.34s cubic-bezier(0.34, 1.4, 0.5, 1);
+}
+
+@keyframes ptrArm {
+  0%   { transform: scale(1); }
+  45%  { transform: scale(1.14); }
+  100% { transform: scale(1); }
+}
+
+/*
+ * Refreshing: the ring spins while its arc lengthens and shortens.
+ *
+ * Two animations on two elements rather than one, because they need different
+ * timings — a constant spin with a slower breathing dash is what stops it
+ * looking like a plain rotating semicircle. This is the same construction a
+ * native indeterminate spinner uses.
+ */
+.dialSpinning {
+  animation: ptrSpin 0.9s linear infinite;
+}
+
+.dialSpinning .arc {
+  animation: ptrBreathe 1.5s ease-in-out infinite;
+}
+
+.track {
+  stroke: var(--color-border);
+}
+
+.arc {
+  /* Draws from twelve o'clock rather than from three. */
+  transform: rotate(-90deg);
+  transform-origin: 50% 50%;
+}
+
+@keyframes ptrSpin {
+  to { transform: rotate(360deg); }
+}
+
+/* 94.2 is the circumference; the offsets leave between a third and a sliver. */
+@keyframes ptrBreathe {
+  0%   { stroke-dashoffset: 86; }
+  50%  { stroke-dashoffset: 30; }
+  100% { stroke-dashoffset: 86; }
+}
+
+/* ---- The content --------------------------------------------------------- */
+
+.content {
+  width: 100%;
+}
+
+/* ============================================================================
+   REDUCED MOTION
+
+   The content still follows the finger — that is the gesture itself, not
+   decoration, and removing it would leave a control with no feedback. What
+   goes is the part that moves on its own: the spinner stops rotating and shows
+   a static armed ring instead.
+   ========================================================================= */
+
+@media (prefers-reduced-motion: reduce) {
+  .dialSpinning,
+  .dialSpinning .arc,
+  .dialReady {
+    animation: none;
+  }
+
+  /* Still legible as "working" without anything moving. */
+  .dialSpinning .arc {
+    stroke-dashoffset: 30;
+  }
+}

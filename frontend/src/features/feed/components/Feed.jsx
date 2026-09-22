@@ -6,7 +6,7 @@ import { EmptyState, ErrorState } from '@shared/components/ui/StateViews';
 import VirtualFeedList from './VirtualFeedList';
 import PostComposer from './composer/PostComposer';
 import PostSkeleton from './skeletons/PostSkeleton';
-import PullToRefresh from './PullToRefresh';
+import PullToRefresh from '@shared/components/PullToRefresh';
 import styles from './Feed.module.css';
 import { useAuth } from '@shared/context/AuthContext';
 import { addCreatedPostToCaches } from '../utils/postCache';

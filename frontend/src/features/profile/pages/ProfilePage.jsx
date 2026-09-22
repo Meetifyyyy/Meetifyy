@@ -7,6 +7,7 @@ import { useAuth } from '@shared/context/AuthContext';
 import { CollegeRepresentativeBadge } from '@shared/components/badges/CollegeRepresentativeBadge';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useProfile, PROFILE_KEYS } from '@shared/hooks/useProfile';
+import PullToRefresh from '@shared/components/PullToRefresh';
 
 import { showToast } from '@shared/utils/toast';
 import { useOpenDirectMessage } from '@shared/hooks/useOpenDirectMessage';
@@ -265,6 +266,36 @@ export default function ProfilePage() {
   // name alone rather than the full course • branch • year line.
   const academicSummary = useAcademicSummary(effectiveUser, { branch: false, year: false });
 
+  /*
+   * Declared above the skeleton early-return below, so it runs on every
+   * render — React Hooks must be called in the same order each time.
+   *
+   * The profile document and its posts. Both are server-backed and both go
+   * stale for the same reasons — a new post, a changed follower count — so a
+   * pull refreshes the pair rather than whichever one happens to be visible.
+   *
+   * `invalidateQueries`, NOT `resetQueries`.
+   *
+   * Reset DISCARDS the cached data, which makes the screen fall back to its
+   * loading state. On this screen that meant the skeleton early-return fired,
+   * which unmounted the <PullToRefresh> wrapper itself — so the content the
+   * user had just pulled down was destroyed mid-gesture and replaced by a
+   * skeleton sitting at offset zero. That is the snap: not the spinner moving,
+   * but the page underneath it being thrown away and rebuilt.
+   *
+   * Invalidate keeps the current data on screen and refetches behind it, which
+   * is what a pull-to-refresh is supposed to look like anyway — the list stays
+   * put and updates in place.
+   */
+  const handleRefresh = useCallback(
+    () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: PROFILE_KEYS.byUsername(targetUsername) }),
+        queryClient.invalidateQueries({ queryKey: ['user-posts', targetUsername] }),
+      ]),
+    [queryClient, targetUsername],
+  );
+
   // Show skeleton on first load OR while fetching incomplete/different user data
   const isDataIncomplete = profileUser && !profileUser.stats;
   const isDifferentUser = profileUser && targetUsername && profileUser.username?.toLowerCase() !== targetUsername.toLowerCase();
@@ -272,6 +303,7 @@ export default function ProfilePage() {
   if (showingSkeleton) {
     return <ProfilePageSkeleton />;
   }
+
 
   if (profileError || !profileUser) {
     return (
@@ -348,6 +380,14 @@ export default function ProfilePage() {
 
   return (
     <>
+      {/*
+        Wraps the <main> only — NOT the fragment around it.
+
+        The modals and the avatar picker are siblings of this element, and a
+        pull translates whatever is inside it. Wrapping the fragment would have
+        dragged an open modal down the screen with the gesture.
+      */}
+      <PullToRefresh onRefresh={handleRefresh}>
       <main className={`centre animate-in ${s.profileMain}`}>
         {/* ── Center column ── */}
         <div className={s.centerColumn}>
@@ -566,6 +606,7 @@ export default function ProfilePage() {
           </div>
         </div>
       </main>
+      </PullToRefresh>
 
       {/* ── Right sidebar ── */}
       <RightPanel className="animate-in">

@@ -9,6 +9,7 @@ import { showToast } from '@shared/utils/toast';
 import { timeAgo } from '@shared/utils/time';
 import { ErrorState } from '@shared/components/ui/StateViews';
 import PageHeader from '@layout/PageHeader';
+import PullToRefresh from '@shared/components/PullToRefresh';
 
 import NotificationList from '../components/NotificationList';
 import InvitationList from '../components/InvitationList';
@@ -465,9 +466,36 @@ export default function NotificationsRoute() {
     }
   ], [unreadInvCount]);
 
+  /*
+   * Both lists, because the header's two tabs are backed by two queries and a
+   * pull is a request to refresh THIS SCREEN, not whichever tab is on top.
+   *
+   * `invalidateQueries`, NOT `resetQueries`.
+   *
+   * Reset DISCARDS the cached data, which makes the screen fall back to its
+   * loading state. On this screen that meant the skeleton early-return fired,
+   * which unmounted the <PullToRefresh> wrapper itself — so the content the
+   * user had just pulled down was destroyed mid-gesture and replaced by a
+   * skeleton sitting at offset zero. That is the snap: not the spinner moving,
+   * but the page underneath it being thrown away and rebuilt.
+   *
+   * Invalidate keeps the current data on screen and refetches behind it, which
+   * is what a pull-to-refresh is supposed to look like anyway — the list stays
+   * put and updates in place.
+   */
+  const handleRefresh = useCallback(
+    () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['notifications'] }),
+        queryClient.invalidateQueries({ queryKey: ['activity-pending-invitations'] }),
+      ]),
+    [queryClient],
+  );
+
   return (
-    <main className="centre centre-wide animate-in">
-      <div className={styles.page} ref={pageRef}>
+    <PullToRefresh onRefresh={handleRefresh}>
+      <main className="centre centre-wide animate-in">
+        <div className={styles.page} ref={pageRef}>
         <div className={styles.headerArea}>
           <PageHeader
             title="Notifications"
@@ -564,7 +592,8 @@ export default function NotificationsRoute() {
             </div>
           )}
         </div>
-      </div>
-    </main>
+        </div>
+      </main>
+    </PullToRefresh>
   );
 }
