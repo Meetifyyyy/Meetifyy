@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useLayoutEffect } from 'react';
 import LandingNavbar from '../../auth/landing/components/LandingNavbar';
 import LandingFooter from '../../auth/landing/components/LandingFooter';
 import '../../auth/landing/landing.css';
@@ -28,7 +28,22 @@ export default function StaticDocLayout({
    * of scope.
    */
 
-  useEffect(() => {
+  /*
+   * A LAYOUT effect, not a passive one.
+   *
+   * These lines hand the document's scrolling from the app shell (which pins
+   * html/body/#root to the viewport and scrolls inside) to the page itself,
+   * and hand it back on the way out. As a `useEffect` that swap ran AFTER the
+   * browser had already painted, so every entry and every exit showed one frame
+   * of the new page inside the old scroll container — the flicker when leaving a
+   * legal page for Sign In and the one when pressing back onto it again.
+   *
+   * `useLayoutEffect` runs after the DOM is updated and before paint, so the
+   * container is already correct in the first frame anyone sees. The work is a
+   * handful of style writes on three elements, which is well within the budget
+   * for blocking a frame.
+   */
+  useLayoutEffect(() => {
     window.scrollTo({ top: 0, behavior: 'instant' });
 
     const htmlEl = document.documentElement;

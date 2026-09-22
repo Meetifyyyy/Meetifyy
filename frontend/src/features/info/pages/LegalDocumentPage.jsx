@@ -11,6 +11,23 @@ import {
 } from '@shared/utils/legalHtmlLinks';
 
 /**
+ * The last published version of each document, kept for the life of the tab.
+ *
+ * WHY THIS EXISTS
+ * Every mount used to start at `loadState: 'loading'` with no document, so
+ * going back to a legal page — open the Terms from signup, take the navbar to
+ * Sign In, press back — tore the finished page down to a skeleton and rebuilt
+ * it a round trip later. On a phone that is a white flash between two states of
+ * the same screen, and it happened on every back press.
+ *
+ * Module scope rather than component state because the point is to survive the
+ * unmount; four legal documents that change a few times a year is not a cache
+ * worth evicting, and `load()` still refetches on every mount, so a stale copy
+ * is only ever on screen for as long as the refresh takes.
+ */
+const documentCache = new Map();
+
+/**
  * A public legal page, rendered from the currently published version in the
  * database.
  *
@@ -33,8 +50,12 @@ export default function LegalDocumentPage({
   fallbackTitle,
   children,
 }) {
-  const [doc, setDoc] = useState(null);
-  const [loadState, setLoadState] = useState('loading'); // loading | ready | error
+  // Seeded from the cache, so a return visit paints the finished page on its
+  // first frame instead of a skeleton.
+  const [doc, setDoc] = useState(() => documentCache.get(documentType) ?? null);
+  const [loadState, setLoadState] = useState(() =>
+    documentCache.has(documentType) ? 'ready' : 'loading',
+  ); // loading | ready | error
   const loadIdRef = useRef(0);
   const contentRef = useRef(null);
   const navigate = useNavigate();
@@ -71,15 +92,25 @@ export default function LegalDocumentPage({
    */
   const load = useCallback(async () => {
     const id = ++loadIdRef.current;
-    setLoadState('loading');
+    /*
+     * Only fall back to the skeleton when there is nothing to show.
+     *
+     * With a cached copy on screen this is a background refresh, and flipping
+     * to `loading` would replace a complete document with a skeleton for the
+     * length of a round trip — which is the flicker this cache exists to
+     * remove, just moved one line later.
+     */
+    if (!documentCache.has(documentType)) setLoadState('loading');
     try {
       const res = await legalApi.getDocument(documentType);
       if (id !== loadIdRef.current) return;
+      documentCache.set(documentType, res);
       setDoc(res);
       setLoadState('ready');
     } catch {
       if (id !== loadIdRef.current) return;
-      setLoadState('error');
+      // A failed refresh must not throw away a good document already on screen.
+      if (!documentCache.has(documentType)) setLoadState('error');
     }
   }, [documentType]);
 

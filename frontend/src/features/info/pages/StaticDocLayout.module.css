@@ -195,7 +195,13 @@
 
 .effectiveBadge {
   font-weight: 600;
-  color: #292524;
+  /*
+   * The token. #292524 is stone-800 — all but black — so the two dates in the
+   * meta row were the least readable text on the dark page, which is the
+   * opposite of the intent: they are emphasised against the muted label beside
+   * them, so they have to be the LIGHTER of the pair on this theme.
+   */
+  color: var(--doc-text);
 }
 
 .bodyContainer {
@@ -290,7 +296,8 @@
   font-family: 'Inter', sans-serif;
   font-size: clamp(0.95rem, 2vw, 1.075rem);
   line-height: 1.8;
-  color: #374151;
+  /* The token, for the same reason as `.docHtml p` below. */
+  color: var(--doc-body);
   margin: 0;
 }
 
@@ -393,7 +400,7 @@
 }
 
 .card:hover {
-  border-color: #d6d3d1;
+  border-color: var(--doc-border-strong, var(--doc-faint));
   box-shadow: 0 8px 24px -6px rgba(0, 0, 0, 0.06);
 }
 
@@ -496,7 +503,7 @@
 }
 
 .featureBox {
-  background: #fafafa;
+  background: var(--doc-surface-alt);
   border: 1px solid var(--doc-border);
   border-radius: 14px;
   padding: 1.25rem;
@@ -541,7 +548,8 @@
 
 .contactCardText {
   font-size: 0.9375rem;
-  color: #a8a29e;
+  /* Sits on the inverted contact card, so it tracks the muted token. */
+  color: var(--doc-muted);
   margin: 0;
   line-height: 1.6;
 }
@@ -628,7 +636,17 @@
 .docHtml p {
   font-size: clamp(0.95rem, 2vw, 1.075rem);
   line-height: 1.8;
-  color: #374151;
+  /*
+   * The token, not the #374151 that used to be hardcoded here.
+   *
+   * Every paragraph of every legal document goes through this rule, and that
+   * literal is a light-mode grey — so on the dark theme the entire body of the
+   * Terms, the Privacy Policy, the Cookie Policy and the Community Guidelines
+   * rendered as dark grey on a near-black surface. The headings, the list items
+   * and the links beside it were all reading their colour from the palette
+   * already; this one was the paragraph text, which is most of the page.
+   */
+  color: var(--doc-body);
   margin: 0 0 1rem;
 }
 
@@ -695,7 +713,8 @@
 }
 
 .docHtml th {
-  background: #fafaf9;
+  /* Same fix: a near-white literal, on a surface that is not white in dark. */
+  background: var(--doc-surface-alt);
   font-weight: 600;
   color: var(--doc-text);
 }
