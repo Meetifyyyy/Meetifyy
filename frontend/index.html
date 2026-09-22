@@ -481,6 +481,45 @@
 
       if (!shell) return;
 
+      // ── Scroll lock ─────────────────────────────────────────────────────────
+      // Prevent all forms of scrolling while the launch shell is on screen.
+      // Matches the strategy used by useScrollLock in the React layer:
+      // overflow:hidden then overflow:clip on <html> keeps it a non-scroll-
+      // container so position:sticky elements are not affected.
+      var _htmlOverflow = document.documentElement.style.overflow;
+      var _bodyOverflow = document.body.style.overflow;
+      document.documentElement.style.overflow = 'hidden';
+      document.documentElement.style.overflow = 'clip';
+      document.body.style.overflow = 'hidden';
+      document.body.style.overflow = 'clip';
+
+      // Block mouse-wheel scrolling.
+      function _blockWheel(e) { e.preventDefault(); }
+      // Block touch scrolling on the underlying page (multi-touch exempted so
+      // pinch-zoom is preserved, matching handleTouchMove in useScrollLock).
+      function _blockTouch(e) {
+        if (e.touches && e.touches.length > 1) return;
+        if (e.cancelable) e.preventDefault();
+      }
+      // Block keyboard scrolling keys (arrows, space, page up/down, home, end).
+      var _scrollKeys = { 32:1, 33:1, 34:1, 35:1, 36:1, 37:1, 38:1, 39:1, 40:1 };
+      function _blockKeys(e) {
+        if (_scrollKeys[e.keyCode]) e.preventDefault();
+      }
+
+      document.addEventListener('wheel',     _blockWheel, { passive: false });
+      document.addEventListener('touchmove', _blockTouch, { passive: false });
+      document.addEventListener('keydown',   _blockKeys,  { passive: false });
+
+      function _releaseScrollLock() {
+        document.documentElement.style.overflow = _htmlOverflow;
+        document.body.style.overflow            = _bodyOverflow;
+        document.removeEventListener('wheel',     _blockWheel, { passive: false });
+        document.removeEventListener('touchmove', _blockTouch, { passive: false });
+        document.removeEventListener('keydown',   _blockKeys,  { passive: false });
+      }
+      // ── End scroll lock ──────────────────────────────────────────────────────
+
       var done = false;
       var root = document.getElementById('root');
       var observer = new MutationObserver(function () { dismiss(); });
@@ -512,6 +551,9 @@
 
         done = true;
         observer.disconnect();
+        // Restore scrolling immediately — before the fade — so the page is
+        // interactive the instant the shell starts to lift.
+        _releaseScrollLock();
         shell.style.opacity = '0';
         setTimeout(function () { shell.remove(); }, 300);
       }
