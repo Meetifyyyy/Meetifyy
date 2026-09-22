@@ -263,8 +263,64 @@ function ImageWithSkeleton({ src, alt, className, onClick, isStandalone = false,
 function VideoPlayerWithOverlay({ src, poster = null, duration = null, width = null, height = null, isInline = false, hasText = false, onOpenMediaModal }) {
   const videoRef = useRef(null);
   const [videoError, setVideoError] = useState(false);
-  const resolvedSrc = src ? getMediaUrl(src) : '';
-  const resolvedPoster = poster ? getMediaUrl(poster) : '';
+
+  /*
+   * Signed through the cache, exactly like the image path beside it.
+   *
+   * This read `getMediaUrl(src)` and nothing else, which produces the unsigned
+   * `/api/media/chat/<key>.mp4` URL. That route authorizes conversation media
+   * from the session, and a <video> tag can no more send a bearer token than an
+   * <img> can — so in the installed app every chat video was a 404 and the
+   * player showed "Couldn't play this video". The website hid it because the
+   * browser attaches the session cookie to the same request.
+   *
+   * `mediaCache.getUrl` takes a key or an already-resolved /api/media/ URL, so
+   * passing `src` straight through is safe whichever form the caller used.
+   */
+  const [resolvedSrc, setResolvedSrc] = useState('');
+  const [resolvedPoster, setResolvedPoster] = useState('');
+
+  useEffect(() => {
+    let alive = true;
+    setVideoError(false);
+
+    if (!src) {
+      setResolvedSrc('');
+      return undefined;
+    }
+    if (src.startsWith('blob:') || src.startsWith('data:')) {
+      setResolvedSrc(src);
+      return undefined;
+    }
+
+    mediaCache
+      .getUrl(src)
+      .then((url) => {
+        if (!alive) return;
+        // Null means the server would not sign it — surfacing the player's own
+        // error state is better than pointing the tag at a URL known to 404.
+        if (url) setResolvedSrc(url);
+        else setVideoError(true);
+      })
+      .catch(() => { if (alive) setVideoError(true); });
+
+    return () => { alive = false; };
+  }, [src]);
+
+  useEffect(() => {
+    let alive = true;
+    if (!poster) {
+      setResolvedPoster('');
+      return undefined;
+    }
+    if (poster.startsWith('blob:') || poster.startsWith('data:')) {
+      setResolvedPoster(poster);
+      return undefined;
+    }
+    // A missing poster is cosmetic, so this one stays silent on failure.
+    mediaCache.getUrl(poster).then((url) => { if (alive && url) setResolvedPoster(url); }).catch(() => {});
+    return () => { alive = false; };
+  }, [poster]);
   const aspect = (width && height) ? (width / height) : (16 / 9);
   const durationLabel = (Number.isFinite(duration) && duration > 0)
     ? `${Math.floor(duration / 60)}:${String(Math.round(duration % 60)).padStart(2, '0')}`

@@ -1,6 +1,9 @@
 import { apiClient, getMediaUrl } from '../api/apiClient';
 import { config } from '@config';
 
+/** Keeps step with `StorageService.CONVERSATION_FOLDERS` in the API. */
+const CONVERSATION_FOLDERS = new Set(['chat', 'messages', 'voice']);
+
 class MediaCacheManager {
   constructor() {
     this.cache = new Map(); // key -> { url, expiresAt }
@@ -12,6 +15,26 @@ class MediaCacheManager {
     this.PERSIST_KEY = 'meetifyy_media_urls_v1';
     this.STABLE_TTL = 7 * 24 * 60 * 60 * 1000; // 7d — safe for immutable public assets
     this._hydrateFromStorage();
+  }
+
+  /**
+   * True for a key the viewer must be a conversation participant to see.
+   *
+   * Mirrors `StorageService.CONVERSATION_FOLDERS` on the API. These keys are
+   * the ONLY ones that cannot be rendered as a plain `/api/media/<key>` URL,
+   * because that route authorizes them from the session and an <img> or
+   * <video> tag cannot present one: the website gets away with it because the
+   * browser attaches the session cookie by itself, but the installed app holds
+   * a bearer token instead (the API and the WebView are different sites, so the
+   * SameSite=Strict session cookie is never stored) and a media tag has nowhere
+   * to put it. In the app that URL is always a 404.
+   *
+   * So for these, a signed URL is not an optimisation — it is the only form
+   * that works, and the code below must never fall back to the unsigned one.
+   */
+  _isConversationScopedKey(key) {
+    if (!key || typeof key !== 'string') return false;
+    return CONVERSATION_FOLDERS.has(key.split('/')[0]);
   }
 
   // A signed/expiring URL carries auth query params; a public immutable R2 URL
@@ -100,6 +123,23 @@ class MediaCacheManager {
 
     // For derived thumbnail variants not yet confirmed in cache, return null so callers use the original full URL
     if (/_thumb\.[a-z0-9]+$/i.test(key)) {
+      return null;
+    }
+
+    /**
+     * Conversation media has no synchronous answer.
+     *
+     * This used to return `getMediaUrl(rawKey)` for everything, and callers
+     * paint whatever it returns immediately — so a chat image's first frame was
+     * an unsigned `/api/media/chat/...` URL. On the website that request
+     * succeeds on the cookie and nobody notices. In the app it 404s, the <img>
+     * fires `onError`, and the component latches its broken state before the
+     * signed URL from `getUrl()` has even arrived.
+     *
+     * Returning null instead means "wait for the real one", which is the honest
+     * answer and the one every caller already handles.
+     */
+    if (this._isConversationScopedKey(key)) {
       return null;
     }
 
@@ -200,6 +240,16 @@ class MediaCacheManager {
           // For derived thumbnail keys with no server URL, resolve to null so callers fallback to full image
           if (/_thumb\.[a-z0-9]+$/i.test(key)) {
             resolve(null);
+          } else if (this._isConversationScopedKey(key)) {
+            /*
+             * The server declined to sign this one, which for a conversation key
+             * means the viewer is not a participant (or the object is gone).
+             * `getMediaUrl` would hand back the unsigned `/api/media/` URL — a
+             * request that 404s in the app and, on the web, asks the server the
+             * same question it has just answered no to. Null is the truthful
+             * result and lets the caller show its own empty state.
+             */
+            resolve(null);
           } else {
             // Use absolute backend URL so avatars work on Vercel (frontend-only deployments)
             resolve(getMediaUrl(key));
@@ -212,6 +262,10 @@ class MediaCacheManager {
       console.warn('Bulk signed URL fetch fallback triggered:', error?.message || error);
       resolversToProcess.forEach(({ resolve, key }) => {
         if (/_thumb\.[a-z0-9]+$/i.test(key)) {
+          resolve(null);
+        } else if (this._isConversationScopedKey(key)) {
+          // Same reasoning as the success path: there is no unsigned URL worth
+          // falling back to for conversation media. A retry can sign it later.
           resolve(null);
         } else {
           resolve(getMediaUrl(key));

@@ -496,17 +496,37 @@ export class StorageService {
         continue;
       }
 
-      // Public media or unregistered non-thumbnail keys return public URL instantly (0ms network overhead)
-      if (!item || item.visibility === 'public') {
+      /**
+       * Conversation media is tested FIRST, before any public-URL shortcut.
+       *
+       * This branch used to sit last, after `!item || visibility === 'public'`.
+       * Chat attachments whose Media row is missing, or is still flagged
+       * `public`, therefore never reached it: they fell into the shortcut and
+       * came back as `getPublicUrl(key)`, which for an object with no public
+       * host is the RELATIVE path `/api/media/<key>`.
+       *
+       * That is not a URL a media tag can use. The website survived it because
+       * the path resolves same-origin and the browser attaches the session
+       * cookie, so `/api/media` authorized the request itself. The installed
+       * app has neither — its WebView origin is `https://localhost`, so the
+       * relative path 404s there, and the absolute form 404s too because an
+       * <img> or <video> cannot present the bearer token the app authenticates
+       * with. Every chat image and video was blank in the app and fine on the
+       * web, from this ordering alone.
+       *
+       * Participation, not ownership, and not the visibility flag: a recipient
+       * is not the owner, and the flag describes the object rather than who may
+       * see it. This is the same test `GET /api/media/*` applies, so the two
+       * paths now agree instead of one of them quietly handing out a public
+       * address for a private message attachment.
+       */
+      if (this.isConversationScopedKey(key)) {
+        conversationKeysToCheck.push(key);
+      } else if (!item || item.visibility === 'public') {
+        // Public media or unregistered non-thumbnail keys return public URL instantly (0ms network overhead)
         result[key] = this.getPublicUrl(key);
       } else if (item.ownerId === userId) {
         keysToSign.push(key);
-      } else if (this.isConversationScopedKey(key)) {
-        // A chat attachment's recipient is not its owner, so ownership alone
-        // would sign for the sender and leave everyone they sent it to with a
-        // blank image. Participation is the right test, and it is the same one
-        // the media route applies.
-        conversationKeysToCheck.push(key);
       }
     }
 
