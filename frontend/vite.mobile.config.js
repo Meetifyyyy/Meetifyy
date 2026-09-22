@@ -108,6 +108,45 @@ function dropWebOnlyPublicAssets() {
   };
 }
 
+/**
+ * Serves `index.mobile.html` for the dev server on port 3001.
+ *
+ * In build mode, `rollupOptions.input` points at `index.mobile.html` and
+ * `emitAsIndexHtml()` renames it to `index.html` in `dist-mobile/`.
+ * In dev mode, Vite's SPA fallback serves the root `index.html` (the website)
+ * by default. This middleware rewrites dev HTML requests so the dev server on
+ * 3001 serves the mobile entry point (`src/mobile/main.jsx`) instead of
+ * mounting the web client without `homeElement`.
+ */
+function serveMobileIndexHtml() {
+  return {
+    name: 'meetifyy-mobile-dev-entry',
+    apply: 'serve',
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        const url = req.url || '/';
+        const [pathname] = url.split('?');
+        const isHtmlReq =
+          req.headers.accept?.includes('text/html') ||
+          pathname === '/' ||
+          pathname === '/index.html';
+
+        if (req.method === 'GET' && isHtmlReq) {
+          if (
+            pathname === '/' ||
+            pathname === '/index.html' ||
+            !pathname.slice(pathname.lastIndexOf('/')).includes('.')
+          ) {
+            const query = url.includes('?') ? url.slice(url.indexOf('?')) : '';
+            req.url = '/index.mobile.html' + query;
+          }
+        }
+        next();
+      });
+    },
+  };
+}
+
 export default defineConfig({
   /**
    * The mobile bundle served in a desktop browser, for a quick look without
@@ -159,7 +198,7 @@ export default defineConfig({
    */
   base: '/',
 
-  plugins: [react(), emitAsIndexHtml(), dropWebOnlyPublicAssets()],
+  plugins: [react(), emitAsIndexHtml(), dropWebOnlyPublicAssets(), serveMobileIndexHtml()],
 
   css: sharedCss,
 

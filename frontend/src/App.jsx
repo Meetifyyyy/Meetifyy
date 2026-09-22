@@ -121,6 +121,7 @@ const HelpSupportPage = lazyRoute(() => import('./features/info/help/HelpSupport
  * @param {JSX.Element} [fallback] - Custom skeleton. Defaults to full-page shell for public routes.
  */
 function withBoundary(element, fallback = null, boundaryProps = {}) {
+  if (!element) return null;
   // element.type is the lazy component reference — unique per route.
   // Keying the boundary on it ensures React mounts a fresh boundary
   // instance for every distinct page, so a stale hasError never bleeds
