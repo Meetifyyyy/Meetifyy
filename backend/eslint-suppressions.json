@@ -2402,19 +2402,19 @@
   },
   "src/realtime/realtime.gateway.ts": {
     "@typescript-eslint/no-explicit-any": {
-      "count": 53
+      "count": 45
     },
     "@typescript-eslint/no-unsafe-argument": {
-      "count": 46
+      "count": 45
     },
     "@typescript-eslint/no-unsafe-assignment": {
-      "count": 88
+      "count": 82
     },
     "@typescript-eslint/no-unsafe-call": {
       "count": 2
     },
     "@typescript-eslint/no-unsafe-member-access": {
-      "count": 122
+      "count": 115
     }
   },
   "src/redis/redis.service.ts": {

@@ -16,6 +16,7 @@ import { MentionDto } from '../../../common/dto/mention.dto';
 import {
   MAX_MESSAGE_TEXT_LENGTH,
   MAX_CLIENT_MESSAGE_ID_LENGTH,
+  MAX_REFERENCE_ID_LENGTH,
 } from '../message-limits';
 
 export class SendMessageDto {
@@ -105,6 +106,26 @@ export class SendMessageDto {
   @IsOptional()
   @MaxLength(MAX_CLIENT_MESSAGE_ID_LENGTH)
   clientId?: string;
+
+  /**
+   * Accepted and ignored. The client builds one payload and sends it over the
+   * socket and, when the socket ack is slow, to this route as a fallback; the
+   * socket needs both fields, and `forbidNonWhitelisted` turned every fallback
+   * send into a 400 ("property tempId should not exist"). The route's `:id` is
+   * the conversation, and `clientId` is the idempotency key, so neither value
+   * is read. Declared rather than stripped client-side so installed apps are
+   * fixed too.
+   */
+  @IsString()
+  @IsOptional()
+  @MaxLength(MAX_CLIENT_MESSAGE_ID_LENGTH)
+  tempId?: string;
+
+  /** Accepted and ignored: see `tempId`. The route parameter is authoritative. */
+  @IsString()
+  @IsOptional()
+  @MaxLength(MAX_REFERENCE_ID_LENGTH)
+  conversationId?: string;
 
   @IsBoolean()
   @IsOptional()

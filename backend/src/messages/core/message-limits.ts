@@ -184,3 +184,10 @@ export async function assertNewConversationWithinRateLimit(
 
   if (!decision.allowed) throw rateLimitException(decision);
 }
+
+/**
+ * Longest conversation or message reference a client may send: an internal
+ * UUID (36) or a public id (12) fits with room to spare. Anything longer is
+ * not an id and is refused before it reaches a query.
+ */
+export const MAX_REFERENCE_ID_LENGTH = 128;
