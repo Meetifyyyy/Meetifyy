@@ -109,7 +109,7 @@ export class UsersService {
     // the New Message modal's recipient map, so a row that reached the client
     // here would be selectable there.
     const batchYear = await this.viewerBatchYear(currentUserId);
-    const where: any = await this.blocksService.injectBlockFilter(
+    const where = await this.blocksService.injectBlockFilter(
       currentUserId,
       this.studentYearPolicy.injectUserFilter(
         {
@@ -225,7 +225,7 @@ export class UsersService {
       ? this.studentYearPolicy.getUserBatchYear(targetUser)
       : null;
 
-    const where: any = this.studentYearPolicy.injectUserFilter(
+    const where = this.studentYearPolicy.injectUserFilter(
       {
         collegeId,
         accountStatus: 'ACTIVE',
@@ -1879,34 +1879,35 @@ export class UsersService {
     }
 
     const viewerBatch = await this.viewerBatchYear(userId);
-    const whereClause: any = await this.blocksService.injectBlockFilter(
+    const baseWhere: Prisma.UserWhereInput = {
+      id: { not: userId },
+      accountStatus: 'ACTIVE',
+      // Verified accounts only, decided in the query rather than after it.
+      //
+      // This list is the recipient picker for every Invite flow, and the send
+      // it feeds is already refused for an ineligible recipient by
+      // `assertUsersEligible`. Offering one was therefore presenting a choice
+      // that could only end in an error, and it disclosed the existence and
+      // handle of an account the viewer is not allowed to reach.
+      //
+      // It has to be here rather than in a `.filter()` afterwards for two
+      // reasons: `take: limit` is applied by the database, so post-filtering
+      // silently shrinks pages and eventually returns an empty one while more
+      // eligible users exist further down; and the unfiltered rows would
+      // already have been written to the Redis entry below.
+      ...this.verificationAccess.eligibleUserWhere(),
+      ...(cleanQuery
+        ? {
+            OR: [
+              { displayName: { contains: cleanQuery, mode: 'insensitive' } },
+              { username: { contains: cleanQuery, mode: 'insensitive' } },
+            ],
+          }
+        : {}),
+    };
+    const whereClause = await this.blocksService.injectBlockFilter(
       userId,
-      {
-        id: { not: userId },
-        accountStatus: 'ACTIVE',
-        // Verified accounts only, decided in the query rather than after it.
-        //
-        // This list is the recipient picker for every Invite flow, and the send
-        // it feeds is already refused for an ineligible recipient by
-        // `assertUsersEligible`. Offering one was therefore presenting a choice
-        // that could only end in an error, and it disclosed the existence and
-        // handle of an account the viewer is not allowed to reach.
-        //
-        // It has to be here rather than in a `.filter()` afterwards for two
-        // reasons: `take: limit` is applied by the database, so post-filtering
-        // silently shrinks pages and eventually returns an empty one while more
-        // eligible users exist further down; and the unfiltered rows would
-        // already have been written to the Redis entry below.
-        ...this.verificationAccess.eligibleUserWhere(),
-        ...(cleanQuery
-          ? {
-              OR: [
-                { displayName: { contains: cleanQuery, mode: 'insensitive' } },
-                { username: { contains: cleanQuery, mode: 'insensitive' } },
-              ],
-            }
-          : {}),
-      },
+      baseWhere,
       'id',
     );
 

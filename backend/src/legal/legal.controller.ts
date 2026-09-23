@@ -21,6 +21,7 @@ import { AllowPendingLegalAck } from '../common/decorators/allow-pending-legal-a
 import { CacheControl } from '../common/decorators/cache-control.decorator';
 import { clientIp } from '../common/rate-limit/client-ip.util';
 import type { AuthenticatedUser } from '../common/types/authenticated-request';
+import type { Request } from 'express';
 
 /**
  * The public legal pages and the user's own consent record.
@@ -89,14 +90,14 @@ export class LegalController {
   acknowledge(
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: AcknowledgeLegalDto,
-    @Req() req: any,
+    @Req() req: Request,
   ) {
     return this.legal.acknowledge(user.id, dto.versionIds, {
       // `req.ip` via `clientIp`, never the raw header: this value goes into a
       // consent record that may have to be produced as evidence, and a
       // caller-controlled address would make every row worthless.
       ip: clientIp(req) || null,
-      userAgent: (req.headers?.['user-agent'] as string) || null,
+      userAgent: req.headers['user-agent'] || null,
     });
   }
 

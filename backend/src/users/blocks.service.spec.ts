@@ -1,3 +1,4 @@
+import type { Prisma } from '@prisma/client';
 import { NotFoundException } from '@nestjs/common';
 import { BlocksService } from './blocks.service';
 
@@ -87,11 +88,11 @@ describe('BlocksService', () => {
   describe('injectBlockFilter', () => {
     it('composes with an existing constraint on the same field instead of replacing it', async () => {
       const service = makeService([{ blockerId: 'a7', blockedId: 'b7' }]);
-      const where = await service.injectBlockFilter(
-        'a7',
-        { id: { not: 'a7' }, accountStatus: 'ACTIVE' },
-        'id',
-      );
+      const input: Prisma.UserWhereInput = {
+        id: { not: 'a7' },
+        accountStatus: 'ACTIVE',
+      };
+      const where = await service.injectBlockFilter('a7', input, 'id');
 
       // The self-exclusion must survive: assigning onto `id` would have dropped it.
       expect(where.id).toEqual({ not: 'a7' });

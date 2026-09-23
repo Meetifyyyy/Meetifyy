@@ -23,6 +23,9 @@
     // A catch binding is `unknown`: anything can be thrown. Narrow it, or use
     // errorMessage() from common/utils/error.util.
     "useUnknownInCatchVariables": true,
+    // Map/Set iterators return `undefined` when done, not `any`. Without it
+    // `map.keys().next().value` is `any`, which the cache-eviction code relied on.
+    "strictBuiltinIteratorReturn": true,
     "noFallthroughCasesInSwitch": true,
     "jsx": "react"
   },
