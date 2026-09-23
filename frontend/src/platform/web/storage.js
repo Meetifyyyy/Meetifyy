@@ -70,7 +70,7 @@ export const createWebLocalStore = () => createSyncStore(safeWindow()?.localStor
 /**
  * Reads the readable half of the session cookie pair.
  *
- * `mf_csrf` is not HttpOnly on purpose — the double-submit check depends on the
+ * `<prefix>_csrf` is not HttpOnly on purpose — the double-submit check depends on the
  * page being able to echo it back — and the HttpOnly cookies beside it are
  * unreachable from here, which is the point.
  *
@@ -83,12 +83,16 @@ export const createWebLocalStore = () => createSyncStore(safeWindow()?.localStor
  *
  * A native client has no equivalent and supplies a reader that returns ''.
  */
-export function createWebCookieReader() {
+export function createWebCookieReader({ cookiePrefix = 'mf' } = {}) {
+  // Matches the server's COOKIE_NAME_PREFIX. Development and production share
+  // `.meetifyy.app`, so the dev page can see production's `mf_csrf` as well as
+  // its own `mf_dev_csrf`, and must read only the one its API issued.
+  const pattern = new RegExp(`(?:^|;\\s*)${cookiePrefix}_csrf=([^;]+)`);
   return {
     readCsrf() {
       try {
         if (typeof document === 'undefined') return '';
-        const match = document.cookie.match(/(?:^|;\s*)mf_csrf=([^;]+)/);
+        const match = document.cookie.match(pattern);
         return match ? decodeURIComponent(match[1]) : '';
       } catch {
         return '';

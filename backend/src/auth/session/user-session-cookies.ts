@@ -6,11 +6,13 @@ import { config } from '../../config';
  * The user session cookies.
  *
  * `mf_` rather than the admin prefix so the two never collide on a shared
- * domain, and so a browser holding both keeps them apart.
+ * domain, and so a browser holding both keeps them apart. Outside production
+ * the prefix carries the environment (`mf_dev_…`), for the same reason between
+ * development and production — see `namePrefix` in auth.config.
  */
-export const USER_ACCESS_COOKIE = 'mf_access';
-export const USER_REFRESH_COOKIE = 'mf_refresh';
-export const USER_CSRF_COOKIE = 'mf_csrf';
+export const USER_ACCESS_COOKIE = `${config.auth.cookie.namePrefix}_access`;
+export const USER_REFRESH_COOKIE = `${config.auth.cookie.namePrefix}_refresh`;
+export const USER_CSRF_COOKIE = `${config.auth.cookie.namePrefix}_csrf`;
 
 /**
  * The current session's id.
@@ -28,7 +30,7 @@ export const USER_CSRF_COOKIE = 'mf_csrf';
  * own user, so naming a session id grants nothing — but it is HttpOnly anyway,
  * because nothing in the page needs to read it.
  */
-export const USER_SESSION_ID_COOKIE = 'mf_sid';
+export const USER_SESSION_ID_COOKIE = `${config.auth.cookie.namePrefix}_sid`;
 
 /**
  * The same session id, as a header, for clients that cannot hold cookies.

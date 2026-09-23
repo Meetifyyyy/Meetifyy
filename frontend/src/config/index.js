@@ -25,6 +25,19 @@ const appEnv = str('VITE_APP_ENV', { fallback: MODE });
 // used; it now lives in one place so the three cannot drift apart again.
 const isProductionDeployment = isProductionAppEnv(str('VITE_APP_ENV'));
 
+// The session cookie name prefix, mirroring the backend's COOKIE_NAME_PREFIX
+// (auth.config.ts): `mf` for production, the environment otherwise. Dev and
+// production share `.meetifyy.app`, so this is what keeps each page reading its
+// own API's cookie rather than the other environment's.
+const explicitAppEnv = str('VITE_APP_ENV');
+const sessionCookiePrefix = str('VITE_SESSION_COOKIE_PREFIX', {
+  fallback: isProductionDeployment
+    ? 'mf'
+    : explicitAppEnv && explicitAppEnv !== 'development'
+      ? `mf_${explicitAppEnv}`
+      : 'mf_dev',
+});
+
 const siteUrl = url('VITE_SITE_URL');
 const apiUrl = url('VITE_API_URL', { requiredInProd: true });
 
@@ -75,6 +88,8 @@ export const config = {
     baseUrl: apiUrl,
     /** Same-origin proxy path used when the direct API origin is unreachable. */
     proxyPrefix: str('VITE_API_PROXY_PREFIX', { fallback: '/_api' }),
+    /** Prefix of the session cookie names this deployment's API issues. */
+    sessionCookiePrefix,
     /**
      * Port the backend listens on when running alongside the frontend on a
      * developer machine or LAN device.

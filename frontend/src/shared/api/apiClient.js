@@ -66,7 +66,7 @@ const apiOrigin = IS_MOBILE_BUILD
   : createWebApiOrigin({ config });
 const sessionStore = createWebSessionStore();
 const localStore = createWebLocalStore();
-const cookies = createWebCookieReader();
+const cookies = createWebCookieReader({ cookiePrefix: config.api.sessionCookiePrefix });
 const etags = createEtagCache({ store: sessionStore });
 
 /**

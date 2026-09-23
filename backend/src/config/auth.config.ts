@@ -1,6 +1,8 @@
 import {
   ALL_ENVIRONMENTS,
+  APP_ENV,
   IS_PRODUCTION,
+  IS_TEST,
   bool,
   invariant,
   oneOf,
@@ -38,6 +40,37 @@ invariant(
 invariant(
   !IS_PRODUCTION || secure,
   'Invalid COOKIE_SECURE: must be true in production',
+);
+
+/**
+ * The prefix every session cookie name is built from.
+ *
+ * Development and production both scope their cookies to `.meetifyy.app`, and
+ * a browser sends a parent-domain cookie to every subdomain. With one set of
+ * names the two environments overwrote each other: signing in to one signed
+ * the same browser out of the other, and each API received the other's
+ * credentials. Distinct names keep the two cookie jars apart; the domain alone
+ * cannot, since no dev host lives outside `.meetifyy.app`.
+ *
+ * Production keeps the historical `mf`, so no production session is dropped.
+ * Tests use it too: they run in no browser and share nothing.
+ */
+const defaultCookiePrefix =
+  IS_PRODUCTION || IS_TEST
+    ? 'mf'
+    : APP_ENV === 'development'
+      ? 'mf_dev'
+      : `mf_${APP_ENV}`;
+const cookieNamePrefix = str('COOKIE_NAME_PREFIX', {
+  default: defaultCookiePrefix,
+});
+invariant(
+  /^[a-z][a-z0-9_]*$/.test(cookieNamePrefix),
+  `Invalid COOKIE_NAME_PREFIX: "${cookieNamePrefix}" must be lowercase letters, digits and underscores`,
+);
+invariant(
+  IS_PRODUCTION || IS_TEST || cookieNamePrefix !== 'mf',
+  'Invalid COOKIE_NAME_PREFIX: "mf" is reserved for production — a non-production deployment using it shares session cookies with production',
 );
 
 const authPaths = {
@@ -109,6 +142,8 @@ export const authConfigValues = {
   cookie: {
     /** Empty means "host-only" — correct for localhost and single-domain deploys. */
     domain: str('COOKIE_DOMAIN') || undefined,
+    /** See `cookieNamePrefix`. The four session cookie names derive from it. */
+    namePrefix: cookieNamePrefix,
     secure,
     sameSite,
     path: '/',
