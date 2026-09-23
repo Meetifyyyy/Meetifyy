@@ -10,10 +10,9 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@shared/context/AuthContext';
 import { showToast } from '@shared/utils/toast';
 import { apiClient } from '@shared/api/apiClient';
-import { useSmartBack } from '@shared/hooks/useSmartBack';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 import { useScrollLock } from '@shared/hooks/useScrollLock';
-import { useSmartNavigation } from '@shared/hooks/useSmartNavigation';
+import { useSettingsBack } from './useSettingsBack';
 import { validateDOB } from '@shared/utils/dateValidation';
 import { validatePasswordChange } from '@features/auth/shared/passwordRules';
 import { INTERESTS_BY_CATEGORY } from '@shared/constants/interestsData';
@@ -329,9 +328,6 @@ export default function SettingsRoute() {
   const { panel: panelParam } = useParams();
   const isLargeScreen = useIsLargeScreen();
 
-  const goBack = useSmartBack();
-  const { smartNavigate } = useSmartNavigation();
-
   // One route param serves both levels: /settings/:panel is a category slug or a
   // settings panel. Keeping it as one segment means the existing route, every
   // saved link and the SEO route table need no change, and a panel URL stays
@@ -350,26 +346,14 @@ export default function SettingsRoute() {
 
   const openPanel = (next) => navigate(`/settings/${next}`);
 
-  /**
-   * Closing is a move UP the tree, not a plain history pop.
-   *
-   * Panels can be reached from more than one place — Blocked Contacts from the
-   * Privacy panel as well as from its category — so popping one entry could
-   * land on a sibling rather than on the list above. `smartNavigate` pops when
-   * the entry behind us really is the destination and replaces otherwise, so
-   * closing always shows the parent exactly once whichever way it was opened.
-   */
-  const closePanel = () => {
-    const parent = activePanel ? PANEL_PARENT[activePanel] : null;
-    smartNavigate(parent ? `/settings/${parent}` : '/settings');
-  };
-
-  /** Leaving a category goes to the root; leaving a panel goes to its category. */
-  const goUp = () => {
-    if (activePanel) return closePanel();
-    if (activeCategory) return smartNavigate('/settings');
-    return goBack('/home');
-  };
+  // Back and close. See useSettingsBack for why a phone pops history instead
+  // of navigating up the tree — navigating up is what used to loop.
+  const { goUp, closePanel } = useSettingsBack({
+    activePanel,
+    activeCategory,
+    parentOf: (panel) => PANEL_PARENT[panel] || null,
+    isLargeScreen,
+  });
 
   // Account & Profile state
   const [displayName, setDisplayName] = useState(currentUser?.displayName || '');
