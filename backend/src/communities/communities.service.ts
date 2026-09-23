@@ -14,6 +14,7 @@ import { PresenceService } from '../presence/presence.service';
 import { BlocksService } from '../users/blocks.service';
 import { DefaultAssetsService } from '../uploads/default-assets.service';
 import { sampleRandom } from '../common/utils/sample-random.util';
+import { errorMessage } from '../common/utils/error.util';
 import Redis from 'ioredis';
 import { roleCan, moderatorPermissions } from './moderator-permissions';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -1956,7 +1957,7 @@ export class CommunitiesService implements OnModuleInit {
         await redis.del(`community-posts:${communityId}`);
       } catch (err) {
         this.logger.warn(
-          `Failed clearing Redis post keys for community ${communityId}: ${err?.message}`,
+          `Failed clearing Redis post keys for community ${communityId}: ${errorMessage(err)}`,
         );
       }
     }

@@ -504,7 +504,10 @@ export class NotificationsService implements OnModuleInit {
 
       return populatedNotif;
     } catch (err) {
-      if (err.code === 'P2002') {
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002'
+      ) {
         this.logger.debug(`Ignored duplicate notification: ${err.message}`);
         return null;
       }

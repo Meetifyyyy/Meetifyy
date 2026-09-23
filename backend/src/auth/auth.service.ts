@@ -22,6 +22,7 @@ import { DomainValidatorService } from '../common/services/domain-validator.serv
 import { RedisService } from '../redis/redis.service';
 import { LruCache } from '../common/utils/lru-cache.util';
 import { validateBirthday } from '../common/utils/birthday-validation.util';
+import { errorMessage } from '../common/utils/error.util';
 import {
   checkEmailFormat,
   EmailFormat,
@@ -571,7 +572,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
           }
         } catch (healErr) {
           this.logger.warn(
-            `Auto-heal failed for userId=${row.id}: ${healErr.message}`,
+            `Auto-heal failed for userId=${row.id}: ${errorMessage(healErr)}`,
           );
         }
       }

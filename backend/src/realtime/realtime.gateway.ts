@@ -54,6 +54,7 @@ import { config } from '../config';
 import { normalizeIp } from '../common/rate-limit/client-ip.util';
 import type { RateLimitPolicyName } from '../config/rate-limit.config';
 import { detach } from '../common/utils/detach.util';
+import { errorMessage } from '../common/utils/error.util';
 
 /**
  * The client address behind a socket.
@@ -1383,7 +1384,9 @@ export class RealtimeGateway
         activity,
       );
     } catch (err) {
-      this.logger.warn(`activity room access check failed: ${err?.message}`);
+      this.logger.warn(
+        `activity room access check failed: ${errorMessage(err)}`,
+      );
       // Fail closed.
       return {
         allowed: false,

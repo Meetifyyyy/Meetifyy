@@ -73,7 +73,7 @@ describe('VerificationGuard', () => {
   function setMetadata(value: boolean) {
     jest
       .spyOn(reflector, 'getAllAndOverride')
-      .mockImplementation((key: string) => {
+      .mockImplementation((key: unknown) => {
         if (key === IS_VERIFIED_ONLY_KEY) return value;
         return undefined;
       });

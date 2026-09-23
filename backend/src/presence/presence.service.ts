@@ -3,6 +3,7 @@ import { RedisService } from '../redis/redis.service';
 import Redis from 'ioredis';
 import { PrismaService } from '../prisma/prisma.service';
 import { detach } from '../common/utils/detach.util';
+import { errorMessage } from '../common/utils/error.util';
 
 export interface UserPresence {
   lastSeen: string;
@@ -376,7 +377,7 @@ export class PresenceService {
       this.logger.log(`Removed presence for deleted user=${userId}`);
     } catch (err) {
       this.logger.warn(
-        `Failed to remove presence for user=${userId}: ${err?.message || err}`,
+        `Failed to remove presence for user=${userId}: ${errorMessage(err)}`,
       );
     }
   }

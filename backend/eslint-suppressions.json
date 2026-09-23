@@ -34,9 +34,6 @@
     "@typescript-eslint/no-explicit-any": {
       "count": 6
     },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 1
-    },
     "@typescript-eslint/no-unsafe-member-access": {
       "count": 3
     },
@@ -81,7 +78,7 @@
       "count": 8
     },
     "@typescript-eslint/no-unsafe-member-access": {
-      "count": 30
+      "count": 29
     },
     "@typescript-eslint/no-unsafe-return": {
       "count": 4
@@ -104,7 +101,7 @@
       "count": 5
     },
     "@typescript-eslint/no-unsafe-member-access": {
-      "count": 11
+      "count": 10
     },
     "@typescript-eslint/no-unsafe-return": {
       "count": 2
@@ -756,7 +753,7 @@
       "count": 1
     },
     "@typescript-eslint/no-unsafe-member-access": {
-      "count": 11
+      "count": 10
     },
     "@typescript-eslint/no-unsafe-return": {
       "count": 5
@@ -1712,7 +1709,7 @@
       "count": 37
     },
     "@typescript-eslint/no-unsafe-member-access": {
-      "count": 164
+      "count": 163
     },
     "@typescript-eslint/no-unsafe-return": {
       "count": 15
@@ -2443,11 +2440,6 @@
       "count": 8
     }
   },
-  "src/notifications/notifications.processor.ts": {
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 2
-    }
-  },
   "src/notifications/notifications.reconciliation.spec.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 1
@@ -2482,7 +2474,7 @@
       "count": 2
     },
     "@typescript-eslint/no-unsafe-member-access": {
-      "count": 22
+      "count": 20
     },
     "@typescript-eslint/no-unsafe-return": {
       "count": 8
@@ -2712,7 +2704,7 @@
       "count": 6
     },
     "@typescript-eslint/no-unsafe-assignment": {
-      "count": 85
+      "count": 77
     },
     "@typescript-eslint/no-unsafe-call": {
       "count": 12
@@ -2727,9 +2719,6 @@
   "src/presence/presence.service.ts": {
     "@typescript-eslint/no-unsafe-assignment": {
       "count": 5
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 1
     }
   },
   "src/prisma/prisma.service.ts": {
@@ -2786,7 +2775,7 @@
       "count": 2
     },
     "@typescript-eslint/no-unsafe-member-access": {
-      "count": 123
+      "count": 122
     }
   },
   "src/redis/redis.service.ts": {
@@ -2832,7 +2821,7 @@
       "count": 6
     },
     "@typescript-eslint/no-unsafe-assignment": {
-      "count": 5
+      "count": 3
     },
     "@typescript-eslint/no-unsafe-call": {
       "count": 1

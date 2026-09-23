@@ -243,7 +243,7 @@ describe('RateLimitService', () => {
       const lines: string[] = [];
       jest
         .spyOn((svc as any).logger, 'warn')
-        .mockImplementation((m: string) => lines.push(m));
+        .mockImplementation((m: unknown) => lines.push(String(m)));
 
       // One user hits the wall repeatedly.
       for (let i = 0; i < 22; i++) await svc.consume('auth.probe.ip', 'heavy');
@@ -272,7 +272,7 @@ describe('RateLimitService', () => {
       const lines: string[] = [];
       jest
         .spyOn((svc as any).logger, 'warn')
-        .mockImplementation((m: string) => lines.push(m));
+        .mockImplementation((m: unknown) => lines.push(String(m)));
 
       const email = 'student@example.edu';
       for (let i = 0; i < 6; i++) {

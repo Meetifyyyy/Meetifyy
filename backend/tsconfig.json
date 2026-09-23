@@ -19,6 +19,10 @@
     "forceConsistentCasingInFileNames": true,
     "noImplicitAny": true,
     "strictBindCallApply": true,
+    "strictFunctionTypes": true,
+    // A catch binding is `unknown`: anything can be thrown. Narrow it, or use
+    // errorMessage() from common/utils/error.util.
+    "useUnknownInCatchVariables": true,
     "noFallthroughCasesInSwitch": true,
     "jsx": "react"
   },
