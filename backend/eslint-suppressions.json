@@ -1051,26 +1051,6 @@
       "count": 8
     }
   },
-  "src/common/guards/jwt.guard.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 12
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 6
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 25
-    },
-    "@typescript-eslint/no-unsafe-call": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 38
-    },
-    "@typescript-eslint/no-unsafe-return": {
-      "count": 5
-    }
-  },
   "src/common/guards/login-ratelimit.guard.spec.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 2
@@ -2647,7 +2627,7 @@
       "count": 46
     },
     "@typescript-eslint/no-unsafe-assignment": {
-      "count": 89
+      "count": 88
     },
     "@typescript-eslint/no-unsafe-call": {
       "count": 2
