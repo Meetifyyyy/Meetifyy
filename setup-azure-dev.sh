@@ -134,8 +134,7 @@ az containerapp create \
     APP_NAME=Meetifyy \
     FRONTEND_URL="https://dev.meetifyy.app" \
     BACKEND_URL="https://dev-api.meetifyy.app" \
-    CORS_ORIGINS="https://dev.meetifyy.app,https://meetifyy.app" \
-    CORS_ORIGIN_PATTERNS="https://*.meetifyy.app" \
+    CORS_ORIGINS="https://dev.meetifyy.app,https://dev-admin.meetifyy.app" \
     COOKIE_DOMAIN=".meetifyy.app" \
     COOKIE_SECURE="true" \
     COOKIE_SAME_SITE="strict" \

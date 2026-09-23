@@ -140,7 +140,11 @@ export const appConfigValues = {
      * body only to these origins — see `nativeAppOrigins` above.
      */
     nativeAppOrigins,
-    /** Wildcard patterns (e.g. `https://*.meetifyy.app`) allowed in addition. */
+    /**
+     * Wildcard patterns allowed in addition. Never one spanning the shared
+     * cookie domain (`https://*.meetifyy.app`): it admits the other
+     * environment's hosts too, and the isolation guard refuses it.
+     */
     originPatterns: corsOriginPatterns,
     /**
      * Whether localhost / private-LAN origins are trusted. Defaults to on

@@ -14,7 +14,10 @@ describe('production container app configuration', () => {
     BACKEND_URL: 'https://api.meetifyy.app',
     ADMIN_URL: 'https://admin.meetifyy.app',
     CORS_ORIGINS: 'https://meetifyy.app,https://www.meetifyy.app',
-    CORS_ORIGIN_PATTERNS: 'https://*.meetifyy.app',
+    // Not provisioned, and pinned empty rather than omitted: env.ts fills an
+    // unset variable from the dotenv files on disk, and a developer's real
+    // .env.production would otherwise decide this test's outcome.
+    CORS_ORIGIN_PATTERNS: '',
     COOKIE_DOMAIN: '.meetifyy.app',
     COOKIE_SECURE: 'true',
     COOKIE_SAME_SITE: 'strict',
@@ -57,6 +60,30 @@ describe('production container app configuration', () => {
     const cfg = boot()();
     expect(cfg.storage.provider).toBe('r2');
     expect(cfg.storage.r2.bucketName).toBe('meetifyy-prod');
+  });
+
+  /**
+   * The installed app runs on `https://localhost` (capacitor.config.json). The
+   * production API has never been configured with NATIVE_APP_ORIGINS, so this
+   * pins that the built-in default is what lets the app in — no variable to
+   * set at release — while the LAN allowance that also covers localhost stays
+   * off, and the isolation guard accepts the result.
+   */
+  it('accepts the installed app with no extra variable, and nothing else local', () => {
+    const cfg = boot()();
+    expect(PROD_ENV.NATIVE_APP_ORIGINS).toBeUndefined();
+    expect(cfg.app.cors.nativeAppOrigins).toEqual(['https://localhost']);
+    expect(cfg.app.cors.origins).toEqual(
+      expect.arrayContaining([
+        'https://meetifyy.app',
+        'https://www.meetifyy.app',
+        'https://admin.meetifyy.app',
+        'https://localhost',
+      ]),
+    );
+    expect(cfg.app.cors.origins).toHaveLength(4);
+    expect(cfg.app.cors.originPatterns).toEqual([]);
+    expect(cfg.app.cors.allowLocalNetwork).toBe(false);
   });
 
   it('refuses to boot if a deployment still asks for the supabase provider', () => {
