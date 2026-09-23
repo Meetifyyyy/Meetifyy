@@ -1,5 +1,10 @@
+import type { CallHandler, ExecutionContext } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
 import { of } from 'rxjs';
 import { AuditInterceptor } from './audit.interceptor';
+import type { PrismaService } from '../../prisma/prisma.service';
+
+type AuditRow = Prisma.AuditLogUncheckedCreateInput;
 
 /**
  * Verification reviews are the most consequential admin action in the product,
@@ -8,25 +13,27 @@ import { AuditInterceptor } from './audit.interceptor';
  * `req.admin` was never set and this interceptor skipped every request.
  */
 describe('AuditInterceptor — verification reviews', () => {
-  let prisma: any;
+  let create: jest.Mock<Promise<object>, [{ data: AuditRow }]>;
   let interceptor: AuditInterceptor;
 
   const run = async (
-    req: any,
-    response: any = { request: { id: 'req-1' } },
-  ) => {
-    const ctx: any = {
+    req: Record<string, unknown>,
+    response: unknown = { request: { id: 'req-1' } },
+  ): Promise<AuditRow | undefined> => {
+    const ctx = {
       switchToHttp: () => ({ getRequest: () => req }),
-    };
+    } as unknown as ExecutionContext;
+    const next: CallHandler = { handle: () => of(response) };
     await new Promise<void>((resolve) =>
-      interceptor
-        .intercept(ctx, { handle: () => of(response) } as any)
-        .subscribe({ complete: () => resolve() }),
+      interceptor.intercept(ctx, next).subscribe({ complete: () => resolve() }),
     );
-    return prisma.auditLog.create.mock.calls[0]?.[0]?.data;
+    return create.mock.calls[0]?.[0]?.data;
   };
 
-  const reviewRequest = (status: string, extra: any = {}) => ({
+  const reviewRequest = (
+    status: string,
+    extra: Record<string, unknown> = {},
+  ) => ({
     method: 'PATCH',
     originalUrl: '/admin/verification/requests/req-1/status',
     admin: { id: 'super-admin-7' },
@@ -37,8 +44,12 @@ describe('AuditInterceptor — verification reviews', () => {
   });
 
   beforeEach(() => {
-    prisma = { auditLog: { create: jest.fn(() => Promise.resolve({})) } };
-    interceptor = new AuditInterceptor(prisma);
+    create = jest
+      .fn<Promise<object>, [{ data: AuditRow }]>()
+      .mockResolvedValue({});
+    interceptor = new AuditInterceptor({
+      auditLog: { create },
+    } as unknown as PrismaService);
   });
 
   it('records an approval against the admin who made it', async () => {
@@ -56,12 +67,12 @@ describe('AuditInterceptor — verification reviews', () => {
     // The generic `/status` rule would have flattened both into
     // VERIFICATION_STATUS_CHANGE, losing which way the decision went.
     const data = await run(reviewRequest('REJECTED'));
-    expect(data.action).toBe('VERIFICATION_REJECT');
+    expect(data?.action).toBe('VERIFICATION_REJECT');
   });
 
   it('records a resubmission request distinctly', async () => {
     const data = await run(reviewRequest('RESUBMISSION_REQUIRED'));
-    expect(data.action).toBe('VERIFICATION_REQUEST_RESUBMISSION');
+    expect(data?.action).toBe('VERIFICATION_REQUEST_RESUBMISSION');
   });
 
   it('does not copy the reviewer note into the audit row', async () => {
@@ -70,18 +81,36 @@ describe('AuditInterceptor — verification reviews', () => {
     const data = await run(
       reviewRequest('REJECTED', { adminNotes: 'DOB on ID reads 1998-04-11' }),
     );
-    expect(data.newValue).toEqual({ status: 'REJECTED' });
+    expect(data?.newValue).toEqual({ status: 'REJECTED' });
     expect(JSON.stringify(data)).not.toContain('1998-04-11');
   });
 
   it('writes nothing when no admin is attached', async () => {
     const { admin, ...anonymous } = reviewRequest('VERIFIED');
     await run(anonymous);
-    expect(prisma.auditLog.create).not.toHaveBeenCalled();
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it('still writes the row when x-request-id is repeated', async () => {
+    // A repeated header arrives as an array, which the string column refuses,
+    // and the swallowed insert failure used to lose the whole row.
+    const data = await run({
+      ...reviewRequest('VERIFIED'),
+      headers: { 'x-request-id': ['a', 'b'] },
+    });
+    expect(data).toMatchObject({
+      action: 'VERIFICATION_APPROVE',
+      requestId: null,
+    });
+  });
+
+  it('records no fields from a body that is not an object', async () => {
+    const data = await run({ ...reviewRequest('VERIFIED'), body: 'status=x' });
+    expect(data?.newValue).toEqual({});
   });
 
   it('ignores reads', async () => {
     await run({ ...reviewRequest('VERIFIED'), method: 'GET' });
-    expect(prisma.auditLog.create).not.toHaveBeenCalled();
+    expect(create).not.toHaveBeenCalled();
   });
 });

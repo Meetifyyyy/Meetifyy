@@ -465,40 +465,6 @@
       "count": 2
     }
   },
-  "src/admin/common/audit.interceptor.spec.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 6
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 3
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 5
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 6
-    },
-    "@typescript-eslint/no-unsafe-return": {
-      "count": 2
-    }
-  },
-  "src/admin/common/audit.interceptor.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 2
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 14
-    },
-    "@typescript-eslint/no-unsafe-call": {
-      "count": 26
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 49
-    }
-  },
   "src/admin/dashboard/admin-dashboard.charts.spec.ts": {
     "@typescript-eslint/no-unsafe-member-access": {
       "count": 1
