@@ -5,6 +5,7 @@ import {
   UnauthorizedException,
   ForbiddenException,
   ConflictException,
+  InternalServerErrorException,
   BadRequestException,
   Logger,
   Optional,
@@ -30,7 +31,7 @@ import {
 } from '../common/validation/email-format.util';
 import type { AuthenticatedUser } from '../common/types/authenticated-request';
 import { randomInt } from 'crypto';
-import { NotificationType, Prisma } from '@prisma/client';
+import { NotificationType } from '@prisma/client';
 import { StudentYearPolicyService } from '../common/student-year/student-year-policy.service';
 import { LegalConsentService } from '../common/legal/legal-consent.service';
 
@@ -117,7 +118,7 @@ export function clearAuthSyncCache(userId?: string) {
  * it next to the query is what makes a column rename show up as a type error
  * rather than as `undefined` at runtime.
  */
-interface ProfileSettings {
+export interface ProfileSettings {
   id: string;
   userId: string;
   emailNotifs: boolean | null;
@@ -237,35 +238,8 @@ function buildExistingProfile(
   };
 }
 
-/** Relations loaded with an account's row when `syncProfile` first creates it. */
-const NEW_ACCOUNT_INCLUDE = {
-  settings: true,
-  college: { select: { id: true, name: true } },
-  following: {
-    select: {
-      following: { select: { username: true } },
-    },
-  },
-} satisfies Prisma.UserInclude;
-
-type NewAccountRow = Prisma.UserGetPayload<{
-  include: typeof NEW_ACCOUNT_INCLUDE;
-}>;
-
-/**
- * What `syncProfile` returns. Two shapes, and callers must not assume one:
- * an existing account gets the curated profile (with `meta` and
- * `isFirstYearStudent`); the call that creates an account returns the new row
- * with its relations. See security-and-correctness finding A7.
- */
-export type SyncedProfile =
-  | ReturnType<typeof buildExistingProfile>
-  | (NewAccountRow & { followingList: string[] });
-
-/** `meta` from a synced profile; only the existing-account shape carries it. */
-export function profileMeta(profile: SyncedProfile) {
-  return 'meta' in profile ? profile.meta : {};
-}
+/** What `syncProfile` returns, for a new account and an existing one alike. */
+export type SyncedProfile = ReturnType<typeof buildExistingProfile>;
 
 /** The fields of an AuthenticatedUser that `syncProfile` reads. */
 export type SyncIdentity = Pick<AuthenticatedUser, 'id'> &
@@ -395,6 +369,15 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async _doSyncProfile(user: SyncIdentity): Promise<SyncedProfile> {
+    const existing = await this.queryProfileRow(user.id);
+    if (existing) return this.existingAccountProfile(existing, user);
+    return this.createAccountProfile(user);
+  }
+
+  /** The one-query profile row for a user, or undefined if none exists. */
+  private async queryProfileRow(
+    userId: string,
+  ): Promise<ProfileRow | undefined> {
     const rows = await this.prisma.$queryRaw<ProfileRow[]>`
       SELECT 
         u."id",
@@ -476,233 +459,248 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
       FROM "User" u
       LEFT JOIN "College" c ON u."collegeId" = c."id"
       LEFT JOIN "UserSettings" s ON s."userId" = u."id"
-      WHERE u."id" = ${user.id}
+      WHERE u."id" = ${userId}
       LIMIT 1;
     `;
+    return rows?.[0];
+  }
 
-    if (rows && rows.length > 0) {
-      const row = rows[0];
+  /**
+   * The profile of an account that has a row, after the per-sign-in checks
+   * and repairs. Every sync response is built here, including the first one
+   * after an account is created.
+   */
+  private async existingAccountProfile(
+    row: ProfileRow,
+    user: SyncIdentity,
+  ): Promise<SyncedProfile> {
+    // A permanently deleted account is gone and stays gone. An account
+    // inside its 30-day window is NOT: `deletedAt` is stamped the moment
+    // deletion is requested (that is what hides it from everyone else), so
+    // the plain `row.deletedAt` test used to lock the owner out of the only
+    // screen that can undo it. Sign-in is deliberately allowed for
+    // PENDING_DELETION; `JwtGuard` then refuses every route except the
+    // recovery flow, so the session that comes back can do nothing else.
+    const eligibility = resolveSignInEligibility(row);
+    if (!eligibility.allowed) {
+      if (eligibility.reason === 'BANNED') {
+        // A ban is terminal and not appealable through the app.
+        throw new ForbiddenException('Account has been banned');
+      }
+      throw new UnauthorizedException('Account has been deleted');
+    }
+    // A suspension deliberately does NOT block sign-in. The account needs a
+    // working session to be told what happened and to request a review; every
+    // route other than that flow is refused by JwtGuard, so letting the
+    // session exist does not let a suspended user use the product.
+    // `accountStatus` travels in the payload below, which is what the client
+    // keys the suspension screen off.
 
-      // A permanently deleted account is gone and stays gone. An account
-      // inside its 30-day window is NOT: `deletedAt` is stamped the moment
-      // deletion is requested (that is what hides it from everyone else), so
-      // the plain `row.deletedAt` test used to lock the owner out of the only
-      // screen that can undo it. Sign-in is deliberately allowed for
-      // PENDING_DELETION; `JwtGuard` then refuses every route except the
-      // recovery flow, so the session that comes back can do nothing else.
-      const eligibility = resolveSignInEligibility(row);
-      if (!eligibility.allowed) {
-        if (eligibility.reason === 'BANNED') {
-          // A ban is terminal and not appealable through the app.
-          throw new ForbiddenException('Account has been banned');
+    // Perform domain lookup for college auto-linking, but DO NOT block existing accounts
+    // if their domain was later deactivated/removed from admin portal.
+    const domainCheck = await this.domainValidatorService.validateDomain(
+      row.email ?? '',
+    );
+    if (!domainCheck.isValid) {
+      this.logger.log(
+        `Existing user ${row.id} (${row.email}) logged in with unapproved/removed domain`,
+      );
+    }
+
+    const settings: ProfileSettings | null = row.settings_id
+      ? {
+          id: row.settings_id,
+          userId: row.id,
+          emailNotifs: row.emailNotifs,
+          pushNotifs: row.pushNotifs,
+          privateProfile: row.privateProfile,
+          showOnlineStatus: row.showOnlineStatus,
+          showLastSeen: row.showLastSeen,
+          whoCanSeeOnline: row.whoCanSeeOnline,
+          whoCanSeeLastSeen: row.whoCanSeeLastSeen,
+          readReceipts: row.readReceipts,
         }
-        throw new UnauthorizedException('Account has been deleted');
-      }
-      // A suspension deliberately does NOT block sign-in. The account needs a
-      // working session to be told what happened and to request a review; every
-      // route other than that flow is refused by JwtGuard, so letting the
-      // session exist does not let a suspended user use the product.
-      // `accountStatus` travels in the payload below, which is what the client
-      // keys the suspension screen off.
+      : null;
 
-      // Perform domain lookup for college auto-linking, but DO NOT block existing accounts
-      // if their domain was later deactivated/removed from admin portal.
-      const domainCheck = await this.domainValidatorService.validateDomain(
-        row.email ?? '',
-      );
-      if (!domainCheck.isValid) {
-        this.logger.log(
-          `Existing user ${row.id} (${row.email}) logged in with unapproved/removed domain`,
+    let college = row.college_id
+      ? { id: row.college_id, name: row.college_name }
+      : null;
+
+    // If user has no collegeId assigned or domain mapping changed, auto-link to active matching college
+    if (
+      domainCheck.isValid &&
+      domainCheck.info?.collegeId &&
+      row.college_id !== domainCheck.info.collegeId
+    ) {
+      row.college_id = domainCheck.info.collegeId;
+      row.college_name = domainCheck.info.collegeName;
+      college = {
+        id: domainCheck.info.collegeId,
+        name: domainCheck.info.collegeName,
+      };
+      this.prisma.user
+        .update({
+          where: { id: row.id },
+          data: { collegeId: domainCheck.info.collegeId },
+        })
+        .catch((err) =>
+          this.logger.error(
+            `Failed to auto-link user collegeId: ${errorMessage(err)}`,
+          ),
         );
-      }
+    }
 
-      const settings: ProfileSettings | null = row.settings_id
-        ? {
-            id: row.settings_id,
-            userId: row.id,
-            emailNotifs: row.emailNotifs,
-            pushNotifs: row.pushNotifs,
-            privateProfile: row.privateProfile,
-            showOnlineStatus: row.showOnlineStatus,
-            showLastSeen: row.showLastSeen,
-            whoCanSeeOnline: row.whoCanSeeOnline,
-            whoCanSeeLastSeen: row.whoCanSeeLastSeen,
-            readReceipts: row.readReceipts,
-          }
-        : null;
+    // Auto-heal `batchYear` from the verified institutional address.
+    //
+    // Sign-in is the right place for this: the column is only ever a cache
+    // of `extractBatchYearFromEmail(email)`, and this is the one path that
+    // runs for every account, holds the address, and is already touching the
+    // row. It covers accounts created before the backfill, accounts whose
+    // address an admin corrected, and any row the backfill's SQL and the
+    // TypeScript parser would disagree about -- the parser wins, because it
+    // is what every runtime check uses.
+    //
+    // Fire-and-forget, and only when the value actually differs, so the
+    // normal login pays nothing. Even if the write never lands, enforcement
+    // is unaffected: `getUserBatchYear` re-parses the address whenever the
+    // column is absent or implausible.
+    const derivedBatchYear = this.studentYearPolicy.deriveBatchYearForStorage(
+      row.email ?? row.collegeEmail,
+    );
+    if (derivedBatchYear !== (row.batchYear ?? null)) {
+      row.batchYear = derivedBatchYear;
+      this.prisma.user
+        .update({
+          where: { id: row.id },
+          data: { batchYear: derivedBatchYear },
+        })
+        .then(() => this.studentYearPolicy.invalidate(row.id))
+        .catch((err) =>
+          this.logger.error(`Failed to heal batchYear: ${errorMessage(err)}`),
+        );
+    }
 
-      let college = row.college_id
-        ? { id: row.college_id, name: row.college_name }
-        : null;
+    // Auto-heal legacy / fallback usernames or displayNames starting with user_
+    const isRandomUsername =
+      typeof row.username === 'string' && row.username.startsWith('user_');
+    const isRandomDisplayName =
+      typeof row.displayName === 'string' &&
+      row.displayName.startsWith('user_');
 
-      // If user has no collegeId assigned or domain mapping changed, auto-link to active matching college
-      if (
-        domainCheck.isValid &&
-        domainCheck.info?.collegeId &&
-        row.college_id !== domainCheck.info.collegeId
-      ) {
-        row.college_id = domainCheck.info.collegeId;
-        row.college_name = domainCheck.info.collegeName;
-        college = {
-          id: domainCheck.info.collegeId,
-          name: domainCheck.info.collegeName,
-        };
-        this.prisma.user
-          .update({
-            where: { id: row.id },
-            data: { collegeId: domainCheck.info.collegeId },
-          })
-          .catch((err) =>
-            this.logger.error(
-              `Failed to auto-link user collegeId: ${errorMessage(err)}`,
-            ),
-          );
-      }
+    if (isRandomUsername || isRandomDisplayName) {
+      try {
+        let meta = user.user_metadata || {};
+        const {
+          data: { user: adminUser },
+        } = await this.supabaseService.client.auth.admin
+          .getUserById(user.id)
+          .catch(() => ({ data: { user: null } }));
+        if (adminUser?.user_metadata) {
+          meta = { ...adminUser.user_metadata, ...meta };
+        }
 
-      // Auto-heal `batchYear` from the verified institutional address.
-      //
-      // Sign-in is the right place for this: the column is only ever a cache
-      // of `extractBatchYearFromEmail(email)`, and this is the one path that
-      // runs for every account, holds the address, and is already touching the
-      // row. It covers accounts created before the backfill, accounts whose
-      // address an admin corrected, and any row the backfill's SQL and the
-      // TypeScript parser would disagree about -- the parser wins, because it
-      // is what every runtime check uses.
-      //
-      // Fire-and-forget, and only when the value actually differs, so the
-      // normal login pays nothing. Even if the write never lands, enforcement
-      // is unaffected: `getUserBatchYear` re-parses the address whenever the
-      // column is absent or implausible.
-      const derivedBatchYear = this.studentYearPolicy.deriveBatchYearForStorage(
-        row.email ?? row.collegeEmail,
-      );
-      if (derivedBatchYear !== (row.batchYear ?? null)) {
-        row.batchYear = derivedBatchYear;
-        this.prisma.user
-          .update({
-            where: { id: row.id },
-            data: { batchYear: derivedBatchYear },
-          })
-          .then(() => this.studentYearPolicy.invalidate(row.id))
-          .catch((err) =>
-            this.logger.error(`Failed to heal batchYear: ${errorMessage(err)}`),
-          );
-      }
+        let healUsername = row.username;
+        let healDisplayName = row.displayName;
 
-      // Auto-heal legacy / fallback usernames or displayNames starting with user_
-      const isRandomUsername =
-        typeof row.username === 'string' && row.username.startsWith('user_');
-      const isRandomDisplayName =
-        typeof row.displayName === 'string' &&
-        row.displayName.startsWith('user_');
+        if (isRandomUsername) {
+          const candidate =
+            metaString(meta.username) ||
+            (row.email && !row.email.endsWith('@meetifyy.user')
+              ? row.email.split('@')[0]
+              : null) ||
+            (row.collegeEmail ? row.collegeEmail.split('@')[0] : null) ||
+            (user.email && !user.email.endsWith('@meetifyy.user')
+              ? user.email.split('@')[0]
+              : null);
 
-      if (isRandomUsername || isRandomDisplayName) {
-        try {
-          let meta = user.user_metadata || {};
-          const {
-            data: { user: adminUser },
-          } = await this.supabaseService.client.auth.admin
-            .getUserById(user.id)
-            .catch(() => ({ data: { user: null } }));
-          if (adminUser?.user_metadata) {
-            meta = { ...adminUser.user_metadata, ...meta };
-          }
-
-          let healUsername = row.username;
-          let healDisplayName = row.displayName;
-
-          if (isRandomUsername) {
-            const candidate =
-              metaString(meta.username) ||
-              (row.email && !row.email.endsWith('@meetifyy.user')
-                ? row.email.split('@')[0]
-                : null) ||
-              (row.collegeEmail ? row.collegeEmail.split('@')[0] : null) ||
-              (user.email && !user.email.endsWith('@meetifyy.user')
-                ? user.email.split('@')[0]
-                : null);
-
-            if (candidate) {
-              let clean = candidate
-                .trim()
-                .toLowerCase()
-                .replace(/[^a-z0-9_.]/g, '_');
-              if (clean.length >= 3) {
-                clean = clean.slice(0, 30);
-                const existing = await this.prisma.user.findUnique({
-                  where: { username: clean },
-                });
-                if (!existing || existing.id === row.id) {
-                  healUsername = clean;
-                }
+          if (candidate) {
+            let clean = candidate
+              .trim()
+              .toLowerCase()
+              .replace(/[^a-z0-9_.]/g, '_');
+            if (clean.length >= 3) {
+              clean = clean.slice(0, 30);
+              const existing = await this.prisma.user.findUnique({
+                where: { username: clean },
+              });
+              if (!existing || existing.id === row.id) {
+                healUsername = clean;
               }
             }
           }
+        }
 
-          if (isRandomDisplayName || healDisplayName === row.username) {
-            const rawTargetName =
-              metaString(meta.displayName) ||
-              (metaString(meta.firstName)
-                ? `${metaString(meta.firstName)} ${metaString(meta.lastName) ?? ''}`.trim()
-                : null) ||
-              (healUsername && !healUsername.startsWith('user_')
-                ? healUsername
-                : null) ||
-              (row.email && !row.email.endsWith('@meetifyy.user')
-                ? row.email.split('@')[0]
-                : null);
+        if (isRandomDisplayName || healDisplayName === row.username) {
+          const rawTargetName =
+            metaString(meta.displayName) ||
+            (metaString(meta.firstName)
+              ? `${metaString(meta.firstName)} ${metaString(meta.lastName) ?? ''}`.trim()
+              : null) ||
+            (healUsername && !healUsername.startsWith('user_')
+              ? healUsername
+              : null) ||
+            (row.email && !row.email.endsWith('@meetifyy.user')
+              ? row.email.split('@')[0]
+              : null);
 
-            if (rawTargetName && !rawTargetName.startsWith('user_')) {
-              healDisplayName = rawTargetName
-                .replace(/[._]/g, ' ')
-                .split(' ')
-                .map((w: string) => w.charAt(0).toUpperCase() + w.slice(1))
-                .join(' ')
-                .slice(0, 30);
-            }
+          if (rawTargetName && !rawTargetName.startsWith('user_')) {
+            healDisplayName = rawTargetName
+              .replace(/[._]/g, ' ')
+              .split(' ')
+              .map((w: string) => w.charAt(0).toUpperCase() + w.slice(1))
+              .join(' ')
+              .slice(0, 30);
           }
+        }
 
-          if (
-            healUsername !== row.username ||
-            healDisplayName !== row.displayName
-          ) {
-            await this.prisma.user.update({
-              where: { id: row.id },
-              data: {
-                ...(healUsername !== null ? { username: healUsername } : {}),
-                ...(healDisplayName !== null
-                  ? { displayName: healDisplayName }
-                  : {}),
-              },
-            });
-            row.username = healUsername;
-            row.displayName = healDisplayName;
-            this.syncCache.delete(row.id);
-            this.logger.log(
-              `Auto-healed user handle for userId=${row.id}: username="${healUsername}", displayName="${healDisplayName}"`,
-            );
-          }
-        } catch (healErr) {
-          this.logger.warn(
-            `Auto-heal failed for userId=${row.id}: ${errorMessage(healErr)}`,
+        if (
+          healUsername !== row.username ||
+          healDisplayName !== row.displayName
+        ) {
+          await this.prisma.user.update({
+            where: { id: row.id },
+            data: {
+              ...(healUsername !== null ? { username: healUsername } : {}),
+              ...(healDisplayName !== null
+                ? { displayName: healDisplayName }
+                : {}),
+            },
+          });
+          row.username = healUsername;
+          row.displayName = healDisplayName;
+          this.syncCache.delete(row.id);
+          this.logger.log(
+            `Auto-healed user handle for userId=${row.id}: username="${healUsername}", displayName="${healDisplayName}"`,
           );
         }
+      } catch (healErr) {
+        this.logger.warn(
+          `Auto-heal failed for userId=${row.id}: ${errorMessage(healErr)}`,
+        );
       }
-
-      const result = buildExistingProfile(
-        row,
-        college,
-        settings,
-        this.studentYearPolicy.isFirstYearStudent({
-          batchYear: row.batchYear,
-          email: row.email,
-          collegeEmail: row.collegeEmail,
-        }),
-      );
-      this.syncCache.set(user.id, { data: result, timestamp: Date.now() });
-      return result;
     }
 
+    const result = buildExistingProfile(
+      row,
+      college,
+      settings,
+      this.studentYearPolicy.isFirstYearStudent({
+        batchYear: row.batchYear,
+        email: row.email,
+        collegeEmail: row.collegeEmail,
+      }),
+    );
+    this.syncCache.set(user.id, { data: result, timestamp: Date.now() });
+    return result;
+  }
+
+  /**
+   * Creates the row for a verified account that has none yet, then answers
+   * with the same profile every later sync returns.
+   */
+  private async createAccountProfile(
+    user: SyncIdentity,
+  ): Promise<SyncedProfile> {
     // ─── SECURITY GATE ────────────────────────────────────────────────────────
     // Only create a new Prisma user record when the email has been verified via
     // OTP. This blocks the password-reset-creates-account exploit: a reset link
@@ -842,7 +840,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     }
     validateBirthday(userBirthday);
 
-    let userRecord: NewAccountRow | null;
+    let userRecord: { id: string; username: string } | null;
     try {
       userRecord = await this.prisma.user.upsert({
         where: { id: user.id },
@@ -877,12 +875,12 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
             create: {},
           },
         },
-        include: NEW_ACCOUNT_INCLUDE,
+        select: { id: true, username: true },
       });
     } catch (err) {
       userRecord = await this.prisma.user.findUnique({
         where: { id: user.id },
-        include: NEW_ACCOUNT_INCLUDE,
+        select: { id: true, username: true },
       });
       if (!userRecord) {
         throw err;
@@ -900,11 +898,18 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     void this.legalConsent.recordSignupConsent(userRecord.id);
 
     this.logger.log(`User login ${userRecord.username}`);
-    const followingList =
-      userRecord.following?.map((f) => f.following.username) || [];
-    const result = { ...userRecord, followingList };
-    this.syncCache.set(user.id, { data: result, timestamp: Date.now() });
-    return result;
+
+    // Read back through the same query and builder an existing account uses.
+    // This call used to return the Prisma row itself: every column (purge
+    // bookkeeping included) and none of `meta` or `isFirstYearStudent`, so a
+    // new first-year student was drawn as unrestricted until the next sync.
+    const created = await this.queryProfileRow(userRecord.id);
+    if (!created) {
+      throw new InternalServerErrorException(
+        'The account was created but could not be read back.',
+      );
+    }
+    return this.existingAccountProfile(created, user);
   }
 
   /**

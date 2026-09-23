@@ -17,7 +17,7 @@ import {
 import type { Request, Response } from 'express';
 import { timingSafeEqual } from 'crypto';
 import { UAParser } from 'ua-parser-js';
-import { AuthService, profileMeta } from './auth.service';
+import { AuthService } from './auth.service';
 import { EmailService } from '../email/email.service';
 import { JwtGuard } from '../common/guards/jwt.guard';
 import { AllowSuspended } from '../common/decorators/allow-suspended.decorator';
@@ -191,7 +191,7 @@ export class AuthController {
     return {
       message: 'Profile synchronized successfully',
       user: syncedUser,
-      meta: profileMeta(syncedUser),
+      meta: syncedUser.meta,
     };
   }
 
@@ -227,7 +227,7 @@ export class AuthController {
     const csrf = readCookie(req, USER_CSRF_COOKIE);
     return {
       user: syncedUser,
-      meta: profileMeta(syncedUser),
+      meta: syncedUser.meta,
       sessionId: this.currentSessionId(req),
       csrfToken: csrf ?? null,
     };
@@ -283,7 +283,7 @@ export class AuthController {
 
     return {
       user: syncedUser,
-      meta: profileMeta(syncedUser),
+      meta: syncedUser.meta,
       csrfToken,
       sessionId: issued.sessionId,
       ...this.nativeSessionTokens(
@@ -411,7 +411,7 @@ export class AuthController {
      */
     return {
       user: profile,
-      meta: profileMeta(profile),
+      meta: profile.meta,
       csrfToken,
       sessionId: issued.sessionId,
       ...this.nativeSessionTokens(
