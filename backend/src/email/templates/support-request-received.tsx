@@ -25,30 +25,37 @@ export interface SupportRequestReceivedEmailProps {
   helpCentreUrl?: string;
 }
 
-export const SupportRequestReceivedEmail: React.FC<SupportRequestReceivedEmailProps> = ({
+export const SupportRequestReceivedEmail: React.FC<
+  SupportRequestReceivedEmailProps
+> = ({
   name,
   ticketNumber,
   categoryLabel,
   subject,
   description,
   attachments = [],
-  helpCentreUrl = SITE_CONFIG.supportUrl || `${SITE_CONFIG.frontendUrl}/help-and-support`,
+  helpCentreUrl = SITE_CONFIG.supportUrl ||
+    `${SITE_CONFIG.frontendUrl}/help-and-support`,
 }) => {
   const greeting = name?.trim() ? `Hello ${name.trim()},` : 'Hello,';
 
   return (
-    <BaseLayout previewText={`We received your support request #${ticketNumber}`}>
+    <BaseLayout
+      previewText={`We received your support request #${ticketNumber}`}
+    >
       <Heading style={heading}>Support Request Received</Heading>
 
       <Text style={text}>{greeting}</Text>
       <Text style={text}>
-        We have received your support request and our team will review it as soon as possible.
+        We have received your support request and our team will review it as
+        soon as possible.
       </Text>
 
       <SupportIdPill ticketNumber={ticketNumber} />
 
       <Text style={text}>
-        Please keep this ID for your reference when contacting us about this request.
+        Please keep this ID for your reference when contacting us about this
+        request.
       </Text>
 
       <SupportSummaryCard

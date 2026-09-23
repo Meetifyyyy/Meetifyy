@@ -33,17 +33,15 @@ describe('JwtGuard — native app session binding', () => {
   >;
   let bearerAllowedOnRoute: boolean;
 
-  const context = (
-    {
-      cookies = {},
-      headers = {},
-      method = 'GET',
-    }: {
-      cookies?: Record<string, string>;
-      headers?: Record<string, string>;
-      method?: string;
-    } = {},
-  ) => ({
+  const context = ({
+    cookies = {},
+    headers = {},
+    method = 'GET',
+  }: {
+    cookies?: Record<string, string>;
+    headers?: Record<string, string>;
+    method?: string;
+  } = {}) => ({
     switchToHttp: () => ({
       getRequest: () => ({ cookies, headers, method }),
     }),
@@ -95,7 +93,7 @@ describe('JwtGuard — native app session binding', () => {
     const reflector = new Reflector();
     jest
       .spyOn(reflector, 'getAllAndOverride')
-      .mockImplementation(() => bearerAllowedOnRoute as any);
+      .mockImplementation(() => bearerAllowedOnRoute);
 
     guard = new JwtGuard({} as any, prisma as any, reflector, {
       isSatisfied: async () => true,
@@ -141,7 +139,9 @@ describe('JwtGuard — native app session binding', () => {
      */
     it('still refuses a bare bearer token on an ordinary route', async () => {
       await expect(
-        guard.canActivate(context({ headers: { authorization: 'Bearer tok' } })),
+        guard.canActivate(
+          context({ headers: { authorization: 'Bearer tok' } }),
+        ),
       ).rejects.toThrow(UnauthorizedException);
     });
 
@@ -169,9 +169,9 @@ describe('JwtGuard — native app session binding', () => {
     });
 
     it('refuses a bearer naming a session that does not exist', async () => {
-      await expect(guard.canActivate(nativeRequest('no-such-id'))).rejects.toThrow(
-        UnauthorizedException,
-      );
+      await expect(
+        guard.canActivate(nativeRequest('no-such-id')),
+      ).rejects.toThrow(UnauthorizedException);
     });
 
     it('refuses an empty session id rather than treating it as absent', async () => {
@@ -208,7 +208,11 @@ describe('JwtGuard — native app session binding', () => {
       await expect(
         guard.canActivate(
           context({
-            cookies: { mf_access: 'tok', mf_sid: 'live-own', mf_csrf: 'secret' },
+            cookies: {
+              mf_access: 'tok',
+              mf_sid: 'live-own',
+              mf_csrf: 'secret',
+            },
             method: 'POST',
           }),
         ),
@@ -225,7 +229,9 @@ describe('JwtGuard — native app session binding', () => {
     it('accepts a bare bearer on a route that opted in', async () => {
       bearerAllowedOnRoute = true;
       await expect(
-        guard.canActivate(context({ headers: { authorization: 'Bearer tok' } })),
+        guard.canActivate(
+          context({ headers: { authorization: 'Bearer tok' } }),
+        ),
       ).resolves.toBe(true);
     });
   });

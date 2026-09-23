@@ -13,7 +13,8 @@ export interface SupportReplyEmailProps {
 export const SupportReplyEmail: React.FC<SupportReplyEmailProps> = ({
   ticketNumber,
   replyHtml,
-  helpCentreUrl = SITE_CONFIG.supportUrl || `${SITE_CONFIG.frontendUrl}/help-and-support`,
+  helpCentreUrl = SITE_CONFIG.supportUrl ||
+    `${SITE_CONFIG.frontendUrl}/help-and-support`,
 }) => {
   return (
     <BaseLayout previewText={`Update on your support request #${ticketNumber}`}>

@@ -15,28 +15,38 @@ export const WelcomeEmail = ({
 }: WelcomeEmailProps) => {
   return (
     <BaseLayout previewText="Welcome to Meetifyy, your adventure starts here!">
-      <Heading style={heading}>
-        Welcome to Meetifyy!
-      </Heading>
+      <Heading style={heading}>Welcome to Meetifyy!</Heading>
 
       <Text style={text}>Hi {name}!</Text>
       <Text style={text}>
-        We are thrilled to have you join our community. Meetifyy helps you discover activities, join groups, and build real connections with people around you.
+        We are thrilled to have you join our community. Meetifyy helps you
+        discover activities, join groups, and build real connections with people
+        around you.
       </Text>
 
       <Section style={stepsBox}>
         <div style={stepsHeader}>
           <Text style={stepsTitle}>What you can do next</Text>
         </div>
-        <table role="presentation" border={0} cellPadding={0} cellSpacing={0} style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <table
+          role="presentation"
+          border={0}
+          cellPadding={0}
+          cellSpacing={0}
+          style={{ width: '100%', borderCollapse: 'collapse' }}
+        >
           <tbody>
             <tr style={rowBorder}>
               <td style={stepBullet}>✨</td>
-              <td style={stepText}>Complete your profile setup and add your interests</td>
+              <td style={stepText}>
+                Complete your profile setup and add your interests
+              </td>
             </tr>
             <tr style={rowBorder}>
               <td style={stepBullet}>📍</td>
-              <td style={stepText}>Explore activities happening near your campus</td>
+              <td style={stepText}>
+                Explore activities happening near your campus
+              </td>
             </tr>
             <tr style={rowBorder}>
               <td style={stepBullet}>👥</td>
@@ -44,18 +54,19 @@ export const WelcomeEmail = ({
             </tr>
             <tr>
               <td style={stepBulletLast}>🤝</td>
-              <td style={stepTextLast}>Connect with classmates and make lasting friendships</td>
+              <td style={stepTextLast}>
+                Connect with classmates and make lasting friendships
+              </td>
             </tr>
           </tbody>
         </table>
       </Section>
 
-      <ButtonCTA href={`${frontendUrl}/home`}>
-        Explore Meetifyy
-      </ButtonCTA>
+      <ButtonCTA href={`${frontendUrl}/home`}>Explore Meetifyy</ButtonCTA>
 
       <Text style={text}>
-        Thanks,<br />
+        Thanks,
+        <br />
         <strong>The Meetifyy Team</strong>
       </Text>
     </BaseLayout>

@@ -94,29 +94,53 @@ async function main() {
     if (k) referenced.add(k);
   };
 
-  const [users, communities, conversations, activities, events, colleges, attached] =
-    await Promise.all([
-      prisma.user.findMany({ select: { avatar: true, cover: true } }),
-      prisma.community.findMany({ select: { avatarKey: true, coverKey: true } }).catch(() => []),
-      prisma.conversation.findMany({ select: { avatarKey: true } }),
-      prisma.crewActivity.findMany({ select: { coverImage: true } }).catch(() => []),
-      prisma.campusEvent.findMany({ select: { posterUrl: true } }).catch(() => []),
-      prisma.college.findMany({ select: { logoKey: true, bannerKey: true } }).catch(() => []),
-      // Media attached to a post or a message is live regardless of folder.
-      prisma.media.findMany({
-        where: {
-          OR: [{ postId: { not: null } }, { messageAttachments: { some: {} } }],
-        },
-        select: { objectKey: true },
-      }),
-    ]);
+  const [
+    users,
+    communities,
+    conversations,
+    activities,
+    events,
+    colleges,
+    attached,
+  ] = await Promise.all([
+    prisma.user.findMany({ select: { avatar: true, cover: true } }),
+    prisma.community
+      .findMany({ select: { avatarKey: true, coverKey: true } })
+      .catch(() => []),
+    prisma.conversation.findMany({ select: { avatarKey: true } }),
+    prisma.crewActivity
+      .findMany({ select: { coverImage: true } })
+      .catch(() => []),
+    prisma.campusEvent
+      .findMany({ select: { posterUrl: true } })
+      .catch(() => []),
+    prisma.college
+      .findMany({ select: { logoKey: true, bannerKey: true } })
+      .catch(() => []),
+    // Media attached to a post or a message is live regardless of folder.
+    prisma.media.findMany({
+      where: {
+        OR: [{ postId: { not: null } }, { messageAttachments: { some: {} } }],
+      },
+      select: { objectKey: true },
+    }),
+  ]);
 
-  users.forEach((u) => { add(u.avatar); add(u.cover); });
-  communities.forEach((c) => { add(c.avatarKey); add(c.coverKey); });
+  users.forEach((u) => {
+    add(u.avatar);
+    add(u.cover);
+  });
+  communities.forEach((c) => {
+    add(c.avatarKey);
+    add(c.coverKey);
+  });
   conversations.forEach((c) => add(c.avatarKey));
   activities.forEach((a) => add(a.coverImage));
   events.forEach((e) => add(e.posterUrl));
-  colleges.forEach((c) => { add(c.logoKey); add(c.bannerKey); });
+  colleges.forEach((c) => {
+    add(c.logoKey);
+    add(c.bannerKey);
+  });
   attached.forEach((m) => add(m.objectKey));
 
   // A thumbnail inherits its base image's liveness — nothing stores a thumb key.
@@ -163,7 +187,9 @@ async function main() {
   console.log(`bucket objects            : ${objects.length}`);
   console.log(`in replaceable-media folders: ${inScope.length}`);
   console.log(`referenced by the app     : ${inScope.length - orphans.length}`);
-  console.log(`ORPHANED                  : ${orphans.length} (${bytes.toLocaleString()} bytes)`);
+  console.log(
+    `ORPHANED                  : ${orphans.length} (${bytes.toLocaleString()} bytes)`,
+  );
   if (tooRecent.length > 0) {
     console.log(
       `held back (< ${MIN_AGE_HOURS}h old, may be mid-upload): ${tooRecent.length}`,
@@ -180,7 +206,9 @@ async function main() {
     .forEach(([f, n]) => console.log(`    ${f.padEnd(18)} ${n}`));
 
   if (!APPLY) {
-    console.log('\nDry run. Re-run with --apply to delete the orphans listed above.');
+    console.log(
+      '\nDry run. Re-run with --apply to delete the orphans listed above.',
+    );
     await prisma.$disconnect();
     return;
   }

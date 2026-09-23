@@ -32,11 +32,15 @@ describe('message:new fan-out', () => {
   it('delivers to the sender when a senderId is given', () => {
     const { domainEventService, sent } = build();
 
-    emitMessageNew(domainEventService, { id: 'm1' }, {
-      recipientIds: ['bob'],
-      unmutedRecipientIds: ['bob'],
-      senderId: 'alice',
-    });
+    emitMessageNew(
+      domainEventService,
+      { id: 'm1' },
+      {
+        recipientIds: ['bob'],
+        unmutedRecipientIds: ['bob'],
+        senderId: 'alice',
+      },
+    );
 
     expect(targetsOf(sent, 'alice')).toHaveLength(1);
     expect(targetsOf(sent, 'bob')).toHaveLength(1);
@@ -45,11 +49,15 @@ describe('message:new fan-out', () => {
   it('never alerts the sender — they already know', () => {
     const { domainEventService, sent } = build();
 
-    emitMessageNew(domainEventService, { id: 'm1' }, {
-      recipientIds: ['bob'],
-      unmutedRecipientIds: ['bob'],
-      senderId: 'alice',
-    });
+    emitMessageNew(
+      domainEventService,
+      { id: 'm1' },
+      {
+        recipientIds: ['bob'],
+        unmutedRecipientIds: ['bob'],
+        senderId: 'alice',
+      },
+    );
 
     expect(targetsOf(sent, 'alice')[0].payload.alert).toBe(false);
     expect(targetsOf(sent, 'bob')[0].payload.alert).toBe(true);
@@ -60,11 +68,15 @@ describe('message:new fan-out', () => {
     // messages would silently lose history.
     const { domainEventService, sent } = build();
 
-    emitMessageNew(domainEventService, { id: 'm1' }, {
-      recipientIds: ['bob', 'carol'],
-      unmutedRecipientIds: ['bob'],
-      senderId: 'alice',
-    });
+    emitMessageNew(
+      domainEventService,
+      { id: 'm1' },
+      {
+        recipientIds: ['bob', 'carol'],
+        unmutedRecipientIds: ['bob'],
+        senderId: 'alice',
+      },
+    );
 
     expect(targetsOf(sent, 'carol')).toHaveLength(1);
     expect(targetsOf(sent, 'carol')[0].payload.alert).toBe(false);
@@ -75,10 +87,14 @@ describe('message:new fan-out', () => {
     // silent if a future call site forgets the option again.
     const { domainEventService, sent } = build();
 
-    emitMessageNew(domainEventService, { id: 'm1' }, {
-      recipientIds: ['bob'],
-      unmutedRecipientIds: ['bob'],
-    });
+    emitMessageNew(
+      domainEventService,
+      { id: 'm1' },
+      {
+        recipientIds: ['bob'],
+        unmutedRecipientIds: ['bob'],
+      },
+    );
 
     expect(targetsOf(sent, 'alice')).toHaveLength(0);
   });

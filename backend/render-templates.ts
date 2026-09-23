@@ -74,12 +74,16 @@ async function generate() {
   console.log(`  privacy  : ${SITE_CONFIG.privacyUrl}`);
   console.log(`  terms    : ${SITE_CONFIG.termsUrl}`);
 
-  const leaked = files.filter(([, html]) => /dev\.meetifyy\.app|kiejkkygqrhbrohdlpkp/.test(html));
+  const leaked = files.filter(([, html]) =>
+    /dev\.meetifyy\.app|kiejkkygqrhbrohdlpkp/.test(html),
+  );
   if (APP_ENV === 'production' && leaked.length > 0) {
     throw new Error(
       `Production render contains development URLs in: ${leaked
         .map(([n]) => n)
-        .join(', ')}. Check FRONTEND_URL and WORDMARK_URL for APP_ENV=production.`,
+        .join(
+          ', ',
+        )}. Check FRONTEND_URL and WORDMARK_URL for APP_ENV=production.`,
     );
   }
 }

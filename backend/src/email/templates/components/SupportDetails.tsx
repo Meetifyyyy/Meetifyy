@@ -21,9 +21,17 @@ export function formatFileSize(bytes?: number): string | null {
 }
 
 /** Compact, elegant Support ID display pill. */
-export const SupportIdPill: React.FC<{ ticketNumber: string }> = ({ ticketNumber }) => (
+export const SupportIdPill: React.FC<{ ticketNumber: string }> = ({
+  ticketNumber,
+}) => (
   <Section style={idCardStyle}>
-    <table role="presentation" border={0} cellPadding={0} cellSpacing={0} style={{ margin: '0 auto' }}>
+    <table
+      role="presentation"
+      border={0}
+      cellPadding={0}
+      cellSpacing={0}
+      style={{ margin: '0 auto' }}
+    >
       <tbody>
         <tr>
           <td style={idLabelCell}>Your Support ID:</td>
@@ -53,7 +61,13 @@ export const SupportSummaryCard: React.FC<{
         <Text style={summaryTitle}>Support Request Summary</Text>
       </div>
 
-      <table role="presentation" border={0} cellPadding={0} cellSpacing={0} style={{ width: '100%', borderCollapse: 'collapse' }}>
+      <table
+        role="presentation"
+        border={0}
+        cellPadding={0}
+        cellSpacing={0}
+        style={{ width: '100%', borderCollapse: 'collapse' }}
+      >
         <tbody>
           {rows.map((row) => (
             <tr key={row.label} style={rowBorder}>
@@ -83,24 +97,37 @@ export const SupportAttachmentsSection: React.FC<{
     <Section style={attachmentsBox}>
       <div style={attachmentsHeader}>
         <Text style={attachmentsTitle}>
-          {attachments.length === 1 ? 'Attachment' : `Attachments (${attachments.length})`}
+          {attachments.length === 1
+            ? 'Attachment'
+            : `Attachments (${attachments.length})`}
         </Text>
       </div>
       <div style={attachmentsBody}>
-        <table role="presentation" border={0} cellPadding={0} cellSpacing={0} style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <table
+          role="presentation"
+          border={0}
+          cellPadding={0}
+          cellSpacing={0}
+          style={{ width: '100%', borderCollapse: 'collapse' }}
+        >
           <tbody>
             {attachments.map((item, index) => {
               const formattedSize = formatFileSize(item.size);
               const isLast = index === attachments.length - 1;
 
               return (
-                <tr key={`${item.filename}-${index}`} style={isLast ? undefined : attachmentRowBorder}>
+                <tr
+                  key={`${item.filename}-${index}`}
+                  style={isLast ? undefined : attachmentRowBorder}
+                >
                   <td style={attachmentIconCell}>
                     <span style={attachmentIconBadge}>📎</span>
                   </td>
                   <td style={attachmentInfoCell}>
                     <div style={attachmentNameText}>{item.filename}</div>
-                    {formattedSize && <div style={attachmentSizeText}>{formattedSize}</div>}
+                    {formattedSize && (
+                      <div style={attachmentSizeText}>{formattedSize}</div>
+                    )}
                   </td>
                   <td style={attachmentActionCell}>
                     {item.url ? (
@@ -131,7 +158,8 @@ export const SupportFooterNotice: React.FC<{
     <Text style={footerNoticeText}>
       {isAutomatedConfirmation ? (
         <>
-          This is an automated confirmation email. Please do not reply directly to this email.
+          This is an automated confirmation email. Please do not reply directly
+          to this email.
           <br />
           For further assistance, please contact us through our{' '}
           <Link href={helpCentreUrl} style={footerNoticeLink}>
@@ -141,7 +169,8 @@ export const SupportFooterNotice: React.FC<{
         </>
       ) : (
         <>
-          Please do not reply directly to this email. If you need further assistance, please contact us through our{' '}
+          Please do not reply directly to this email. If you need further
+          assistance, please contact us through our{' '}
           <Link href={helpCentreUrl} style={footerNoticeLink}>
             Help and Support page
           </Link>
@@ -200,7 +229,8 @@ const idValueCell = {
   color: '#2563eb',
   fontSize: '16px',
   fontWeight: '700',
-  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+  fontFamily:
+    'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
   letterSpacing: '0.04em',
   verticalAlign: 'middle' as const,
 };

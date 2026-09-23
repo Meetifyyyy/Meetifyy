@@ -336,9 +336,7 @@ export class CloudflareR2Provider implements StorageProvider {
       // from the private one would report success while leaving the object —
       // and its public URL — in place.
       const bucket = (await this.resolveReadBucket(key)) ?? this.bucketFor(key);
-      await this.s3.send(
-        new DeleteObjectCommand({ Bucket: bucket, Key: key }),
-      );
+      await this.s3.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
       this.readBucketCache.delete(key);
       return true;
     } catch (e) {

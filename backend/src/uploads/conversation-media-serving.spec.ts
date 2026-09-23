@@ -70,7 +70,7 @@ describe('serving an authorized conversation attachment', () => {
   };
 
   const serve = (controller: any, res: any, viewerId: string | null) =>
-    (controller as any).handleGetMedia(KEY, 'chat', res, viewerId);
+    controller.handleGetMedia(KEY, 'chat', res, viewerId);
 
   it('redirects to a signed url, not the public one', async () => {
     const { controller, storage } = build();

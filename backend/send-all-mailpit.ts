@@ -62,7 +62,8 @@ async function sendAll() {
       subject: 'Reset your Meetifyy password',
       component: createElement(ResetPasswordEmail, {
         name: 'Sarthak Saini',
-        resetLink: 'https://dev.meetifyy.app/reset-password?token=sample-token-123',
+        resetLink:
+          'https://dev.meetifyy.app/reset-password?token=sample-token-123',
       }),
     },
     {
@@ -108,7 +109,9 @@ async function sendAll() {
     },
   ];
 
-  console.log(`Sending ${emails.length} email templates to Mailpit (127.0.0.1:1025)...`);
+  console.log(
+    `Sending ${emails.length} email templates to Mailpit (127.0.0.1:1025)...`,
+  );
 
   for (const item of emails) {
     const html = await render(item.component);

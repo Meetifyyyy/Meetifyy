@@ -120,12 +120,14 @@ describe('conversation media: the URL a key is advertised at', () => {
     return provider;
   };
 
-  it.each(['chat/a.webp', 'messages/a.webp', 'voice/a.ogg', 'verification/a.webp'])(
-    'gives %s the authorizing API path, never the public host',
-    (key) => {
-      expect(build().getPublicUrl(key)).toBe(`/api/media/${key}`);
-    },
-  );
+  it.each([
+    'chat/a.webp',
+    'messages/a.webp',
+    'voice/a.ogg',
+    'verification/a.webp',
+  ])('gives %s the authorizing API path, never the public host', (key) => {
+    expect(build().getPublicUrl(key)).toBe(`/api/media/${key}`);
+  });
 
   it.each(['posts/a.webp', 'avatars/a.webp'])(
     'still gives %s the public host',

@@ -14,13 +14,12 @@ export const AdminOtpEmail = ({
 }: AdminOtpEmailProps) => {
   return (
     <BaseLayout previewText="Super Admin Login Attempt">
-      <Heading style={heading}>
-        Admin Access Code
-      </Heading>
+      <Heading style={heading}>Admin Access Code</Heading>
 
       <Text style={text}>Hi {name},</Text>
       <Text style={text}>
-        A login attempt was made to the Super Admin panel. Use the following code to access the system:
+        A login attempt was made to the Super Admin panel. Use the following
+        code to access the system:
       </Text>
 
       <Section style={otpCard}>
@@ -33,12 +32,15 @@ export const AdminOtpEmail = ({
       <Section style={securityNoticeBox}>
         <Text style={securityNoticeTitle}>Security Notice</Text>
         <Text style={securityNoticeText}>
-          This code is highly sensitive. Do not share this code with anyone. If you did not initiate this login, your credentials may be compromised. Please investigate immediately.
+          This code is highly sensitive. Do not share this code with anyone. If
+          you did not initiate this login, your credentials may be compromised.
+          Please investigate immediately.
         </Text>
       </Section>
 
       <Text style={text}>
-        Thanks,<br />
+        Thanks,
+        <br />
         <strong>Meetifyy Security System</strong>
       </Text>
     </BaseLayout>

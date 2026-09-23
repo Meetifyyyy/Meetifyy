@@ -14,25 +14,25 @@ export const ResetPasswordEmail = ({
 }: ResetPasswordEmailProps) => {
   return (
     <BaseLayout previewText="Reset your Meetifyy password">
-      <Heading style={heading}>
-        Reset your password
-      </Heading>
+      <Heading style={heading}>Reset your password</Heading>
 
       <Text style={text}>Hi {name},</Text>
       <Text style={text}>
-        We received a request to reset the password for your Meetifyy account. Click the button below to choose a new password:
+        We received a request to reset the password for your Meetifyy account.
+        Click the button below to choose a new password:
       </Text>
 
-      <ButtonCTA href={resetLink}>
-        Reset Password
-      </ButtonCTA>
+      <ButtonCTA href={resetLink}>Reset Password</ButtonCTA>
 
       <Text style={text}>
-        This password reset link is valid for 10 minutes. If you did not request a password reset, you can safely ignore this email. Your password will remain secure and unchanged.
+        This password reset link is valid for 10 minutes. If you did not request
+        a password reset, you can safely ignore this email. Your password will
+        remain secure and unchanged.
       </Text>
 
       <Text style={text}>
-        Thanks,<br />
+        Thanks,
+        <br />
         <strong>The Meetifyy Team</strong>
       </Text>
     </BaseLayout>

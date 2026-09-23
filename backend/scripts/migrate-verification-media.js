@@ -103,7 +103,9 @@ async function main() {
   const toMove = keys.filter((k) => referencedKeys.has(k));
   const toDelete = keys.filter((k) => !referencedKeys.has(k));
 
-  console.log(`Found ${keys.length} object(s) under ${PREFIX} in ${publicBucket}`);
+  console.log(
+    `Found ${keys.length} object(s) under ${PREFIX} in ${publicBucket}`,
+  );
   console.log(`  referenced by a request : ${toMove.length}`);
   console.log(`  unreferenced            : ${toDelete.length}`);
 
@@ -137,7 +139,9 @@ async function main() {
       );
       // Verify the copy landed before removing the only other copy.
       await s3.send(new HeadObjectCommand({ Bucket: privateBucket, Key: key }));
-      await s3.send(new DeleteObjectCommand({ Bucket: publicBucket, Key: key }));
+      await s3.send(
+        new DeleteObjectCommand({ Bucket: publicBucket, Key: key }),
+      );
       moved += 1;
       console.log(`  moved ${key}`);
     }
@@ -169,7 +173,10 @@ async function main() {
   if (publicHost) {
     let stillPublic = 0;
     for (const key of keys) {
-      const res = await fetch(`${publicHost}/${key}`, { method: 'GET', headers: { Range: 'bytes=0-0' } });
+      const res = await fetch(`${publicHost}/${key}`, {
+        method: 'GET',
+        headers: { Range: 'bytes=0-0' },
+      });
       if (res.status < 400) {
         stillPublic += 1;
         console.error(`  STILL PUBLIC: ${key} (${res.status})`);

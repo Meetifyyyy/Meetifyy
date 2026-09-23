@@ -1,4 +1,3 @@
-/* eslint-disable no-console */
 /**
  * Generates realistic monitoring rows so the dashboard can be built and
  * reviewed before real traffic exists.
@@ -30,24 +29,80 @@ const { PrismaClient } = require('@prisma/client');
  * the pool the live app is sharing.
  */
 const prisma = new PrismaClient({
-  datasources: { db: { url: process.env.DIRECT_URL || process.env.DATABASE_URL } },
+  datasources: {
+    db: { url: process.env.DIRECT_URL || process.env.DATABASE_URL },
+  },
 });
 const SEED_MARKER = 'seed-';
 
 /** Endpoints with plausible traffic shares and latency profiles. */
 const ROUTES = [
   { method: 'GET', route: '/api/posts', weight: 22, baseMs: 90, spreadMs: 70 },
-  { method: 'GET', route: '/api/posts/:id', weight: 14, baseMs: 70, spreadMs: 50 },
-  { method: 'POST', route: '/api/posts', weight: 5, baseMs: 220, spreadMs: 140 },
-  { method: 'GET', route: '/api/messages/:id', weight: 16, baseMs: 60, spreadMs: 40 },
-  { method: 'POST', route: '/api/messages', weight: 9, baseMs: 130, spreadMs: 90 },
-  { method: 'GET', route: '/api/communities', weight: 8, baseMs: 110, spreadMs: 80 },
-  { method: 'GET', route: '/api/notifications', weight: 10, baseMs: 75, spreadMs: 45 },
-  { method: 'GET', route: '/api/support/help', weight: 4, baseMs: 140, spreadMs: 90 },
-  { method: 'POST', route: '/api/auth/login', weight: 5, baseMs: 260, spreadMs: 180 },
+  {
+    method: 'GET',
+    route: '/api/posts/:id',
+    weight: 14,
+    baseMs: 70,
+    spreadMs: 50,
+  },
+  {
+    method: 'POST',
+    route: '/api/posts',
+    weight: 5,
+    baseMs: 220,
+    spreadMs: 140,
+  },
+  {
+    method: 'GET',
+    route: '/api/messages/:id',
+    weight: 16,
+    baseMs: 60,
+    spreadMs: 40,
+  },
+  {
+    method: 'POST',
+    route: '/api/messages',
+    weight: 9,
+    baseMs: 130,
+    spreadMs: 90,
+  },
+  {
+    method: 'GET',
+    route: '/api/communities',
+    weight: 8,
+    baseMs: 110,
+    spreadMs: 80,
+  },
+  {
+    method: 'GET',
+    route: '/api/notifications',
+    weight: 10,
+    baseMs: 75,
+    spreadMs: 45,
+  },
+  {
+    method: 'GET',
+    route: '/api/support/help',
+    weight: 4,
+    baseMs: 140,
+    spreadMs: 90,
+  },
+  {
+    method: 'POST',
+    route: '/api/auth/login',
+    weight: 5,
+    baseMs: 260,
+    spreadMs: 180,
+  },
   // The deliberately slow one, so the slow-endpoints table has something real
   // to surface.
-  { method: 'GET', route: '/api/search', weight: 7, baseMs: 850, spreadMs: 600 },
+  {
+    method: 'GET',
+    route: '/api/search',
+    weight: 7,
+    baseMs: 850,
+    spreadMs: 600,
+  },
 ];
 
 const ERROR_MESSAGES = [
@@ -79,7 +134,7 @@ function pickRoute() {
 /** Traffic curve: quiet overnight, busy late afternoon. */
 function trafficMultiplier(date) {
   const hour = date.getUTCHours();
-  return 0.25 + 0.75 * Math.sin(((hour - 3 + 24) % 24) / 24 * Math.PI) ** 2;
+  return 0.25 + 0.75 * Math.sin((((hour - 3 + 24) % 24) / 24) * Math.PI) ** 2;
 }
 
 async function clear() {
@@ -93,7 +148,9 @@ async function clear() {
   const metrics = await prisma.systemMetric.deleteMany({
     where: { createdAt: { lt: new Date(Date.now() - 60 * 1000) } },
   });
-  console.log(`Removed ${requests.count} requests, ${errors.count} errors, ${metrics.count} metrics.`);
+  console.log(
+    `Removed ${requests.count} requests, ${errors.count} errors, ${metrics.count} metrics.`,
+  );
 }
 
 async function seed(hours) {
@@ -122,11 +179,21 @@ async function seed(hours) {
       // Log-normal-ish: most requests near the base, a long right tail, which
       // is what makes p95 differ from the mean the way real traffic does.
       const tail = Math.random() < 0.08 ? randomBetween(2, 6) : 1;
-      const durationMs = Math.max(1, Math.round((spec.baseMs + randomBetween(-spec.spreadMs, spec.spreadMs)) * tail));
+      const durationMs = Math.max(
+        1,
+        Math.round(
+          (spec.baseMs + randomBetween(-spec.spreadMs, spec.spreadMs)) * tail,
+        ),
+      );
 
       const failed = inIncident ? Math.random() < 0.35 : Math.random() < 0.02;
-      const failure = ERROR_MESSAGES[Math.floor(Math.random() * ERROR_MESSAGES.length)];
-      const statusCode = failed ? failure.status : spec.method === 'POST' ? 201 : 200;
+      const failure =
+        ERROR_MESSAGES[Math.floor(Math.random() * ERROR_MESSAGES.length)];
+      const statusCode = failed
+        ? failure.status
+        : spec.method === 'POST'
+          ? 201
+          : 200;
       const requestId = `${SEED_MARKER}${createdAt.getTime()}-${i}`;
 
       requests.push({
@@ -136,7 +203,10 @@ async function seed(hours) {
         statusCode,
         durationMs,
         responseSize: Math.round(randomBetween(200, 24_000)),
-        userId: Math.random() < 0.6 ? `seed-user-${Math.floor(Math.random() * 40)}` : null,
+        userId:
+          Math.random() < 0.6
+            ? `seed-user-${Math.floor(Math.random() * 40)}`
+            : null,
         createdAt,
       });
 
@@ -162,9 +232,15 @@ async function seed(hours) {
     metrics.push({
       memoryRssMb: Math.round(randomBetween(220, 340) + load * 90),
       memoryHeapUsedMb: Math.round(randomBetween(90, 160) + load * 60),
-      cpuPercent: Math.round((randomBetween(6, 25) + load * 35 + (inIncident ? 40 : 0)) * 100) / 100,
-      eventLoopLagMs: Math.round((randomBetween(0.4, 4) + (inIncident ? 45 : 0)) * 100) / 100,
-      dbPoolActive: Math.round(randomBetween(1, 6) + load * 5 + (inIncident ? 6 : 0)),
+      cpuPercent:
+        Math.round(
+          (randomBetween(6, 25) + load * 35 + (inIncident ? 40 : 0)) * 100,
+        ) / 100,
+      eventLoopLagMs:
+        Math.round((randomBetween(0.4, 4) + (inIncident ? 45 : 0)) * 100) / 100,
+      dbPoolActive: Math.round(
+        randomBetween(1, 6) + load * 5 + (inIncident ? 6 : 0),
+      ),
       dbPoolIdle: Math.round(randomBetween(2, 8)),
       dbPoolWaiting: inIncident ? Math.round(randomBetween(1, 5)) : 0,
       socketConnections: Math.round(randomBetween(5, 40) + load * 90),
@@ -175,7 +251,10 @@ async function seed(hours) {
   // Chunked so a large backfill does not build one enormous statement.
   const insert = async (label, rows, delegate) => {
     for (let i = 0; i < rows.length; i += 500) {
-      await delegate.createMany({ data: rows.slice(i, i + 500), skipDuplicates: true });
+      await delegate.createMany({
+        data: rows.slice(i, i + 500),
+        skipDuplicates: true,
+      });
     }
     console.log(`  ${label}: ${rows.length}`);
   };
@@ -185,8 +264,13 @@ async function seed(hours) {
   await insert('error logs', errors, prisma.errorLog);
   await insert('system metrics', metrics, prisma.systemMetric);
 
-  const errorRate = ((errors.length / Math.max(1, requests.length)) * 100).toFixed(1);
-  console.log(`Done. Overall error rate ${errorRate}%, with a burst around ${new Date(incidentStart).toISOString()}.`);
+  const errorRate = (
+    (errors.length / Math.max(1, requests.length)) *
+    100
+  ).toFixed(1);
+  console.log(
+    `Done. Overall error rate ${errorRate}%, with a burst around ${new Date(incidentStart).toISOString()}.`,
+  );
 }
 
 (async () => {

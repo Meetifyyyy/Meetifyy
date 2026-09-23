@@ -77,7 +77,9 @@ const nativeAppOrigins =
 // in CORS_ORIGINS.
 const allowedOrigins = Array.from(
   new Set(
-    [frontendUrl, adminUrl, ...corsOrigins, ...nativeAppOrigins].filter(Boolean),
+    [frontendUrl, adminUrl, ...corsOrigins, ...nativeAppOrigins].filter(
+      Boolean,
+    ),
   ),
 );
 

@@ -8,9 +8,9 @@
  *   npx ts-node --transpile-only prisma/benchmark_join.ts
  */
 
-const BASE    = process.env.API_BASE    ?? 'http://localhost:3001';
-const TOKEN   = process.env.JWT         ?? '';
-const ACT_ID  = process.env.ACTIVITY_ID ?? '';
+const BASE = process.env.API_BASE ?? 'http://localhost:3001';
+const TOKEN = process.env.JWT ?? '';
+const ACT_ID = process.env.ACTIVITY_ID ?? '';
 
 if (!TOKEN || !ACT_ID) {
   console.error('Set JWT and ACTIVITY_ID env vars');
@@ -18,11 +18,14 @@ if (!TOKEN || !ACT_ID) {
 }
 
 const headers = {
-  'Authorization': `Bearer ${TOKEN}`,
-  'Content-Type':  'application/json',
+  Authorization: `Bearer ${TOKEN}`,
+  'Content-Type': 'application/json',
 };
 
-async function hit(method: string, path: string): Promise<{ status: number; ms: number }> {
+async function hit(
+  method: string,
+  path: string,
+): Promise<{ status: number; ms: number }> {
   const t0 = Date.now();
   const res = await fetch(`${BASE}${path}`, { method, headers });
   return { status: res.status, ms: Date.now() - t0 };
@@ -41,7 +44,9 @@ async function run() {
     hit('POST', `/api/activities/${ACT_ID}/join`),
     hit('POST', `/api/activities/${ACT_ID}/join`),
   ]);
-  console.log(`JOIN x3 -> ${r1.status} ${r1.ms}ms | ${r2.status} ${r2.ms}ms | ${r3.status} ${r3.ms}ms`);
+  console.log(
+    `JOIN x3 -> ${r1.status} ${r1.ms}ms | ${r2.status} ${r2.ms}ms | ${r3.status} ${r3.ms}ms`,
+  );
   // All should be 200/201, none should be 400
 
   console.log('\n=== Rapid duplicate leave (idempotency) ===');
@@ -58,7 +63,9 @@ async function run() {
     const l = await hit('POST', `/api/activities/${ACT_ID}/leave`);
     const cycleMs = j.ms + l.ms;
     totalMs += cycleMs;
-    console.log(`  cycle ${i + 1}: join=${j.ms}ms leave=${l.ms}ms total=${cycleMs}ms`);
+    console.log(
+      `  cycle ${i + 1}: join=${j.ms}ms leave=${l.ms}ms total=${cycleMs}ms`,
+    );
   }
   console.log(`\nAvg cycle: ${(totalMs / 10).toFixed(0)}ms`);
 }
