@@ -224,9 +224,21 @@ export class JwtGuard implements CanActivate {
   // rotate rarely), so a rotation self-heals without a redeploy.
   private static jwksKeys = new Map<string, KeyObject>();
   private static jwksLastFetch = 0;
+  private static jwksLastAttempt = 0;
   private static jwksInFlight: Promise<void> | null = null;
   private static warmed = false;
   private static readonly JWKS_MIN_REFRESH_MS = 5 * 60 * 1000;
+  /**
+   * The floor between ANY two JWKS fetches, forced ones included.
+   *
+   * A token naming an unknown `kid` forces a refresh, and `force` used to skip
+   * every throttle, so a stream of tokens with made-up `kid`s was one outbound
+   * fetch to Supabase per request. The rate limiter's `peekUserId` goes through
+   * the same lookup on every request, so it was reachable without signing in.
+   * A real key rotation still heals within this window; until then the remote
+   * fallback verifies tokens signed with the new key.
+   */
+  private static readonly JWKS_MIN_ATTEMPT_GAP_MS = 30 * 1000;
   // Fixed asymmetric allowlist — the ONLY algorithms accepted on the local JWKS
   // path. Symmetric (HS*) and `none` are deliberately excluded here.
   private static readonly ASYMMETRIC_ALGS: jwt.Algorithm[] = [
@@ -263,8 +275,10 @@ export class JwtGuard implements CanActivate {
     )
       return;
     if (this.jwksInFlight) return this.jwksInFlight;
+    if (now - this.jwksLastAttempt < this.JWKS_MIN_ATTEMPT_GAP_MS) return;
     const url = this.jwksUrl();
     if (!url) return;
+    this.jwksLastAttempt = now;
 
     this.jwksInFlight = (async () => {
       try {
