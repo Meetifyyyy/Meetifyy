@@ -1,6 +1,18 @@
 import * as crypto from 'crypto';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
 import { config } from '../../config';
+
+/**
+ * A cookie `cookie-parser` parsed, if it is a string.
+ *
+ * cookie-parser types `req.cookies` as `Record<string, any>`, and a cookie
+ * written as `j:{...}` really is parsed into an object, so a read that skips
+ * this check can hand an object to code expecting a token.
+ */
+export function readCookie(req: Request, name: string): string | undefined {
+  const value: unknown = req.cookies?.[name];
+  return typeof value === 'string' ? value : undefined;
+}
 
 /**
  * The user session cookies.

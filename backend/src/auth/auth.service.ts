@@ -30,6 +30,7 @@ import {
 } from '../common/validation/email-format.util';
 import type { AuthenticatedUser } from '../common/types/authenticated-request';
 import { randomInt } from 'crypto';
+import { NotificationType, Prisma } from '@prisma/client';
 import { StudentYearPolicyService } from '../common/student-year/student-year-policy.service';
 import { LegalConsentService } from '../common/legal/legal-consent.service';
 
@@ -39,10 +40,10 @@ import { LegalConsentService } from '../common/legal/legal-consent.service';
  * Automatically evicts the least-recently-used entry when the cap is reached,
  * preventing unbounded memory growth that the previous plain Map caused.
  */
-const syncCache = new LruCache<string, { data: any; timestamp: number }>(
-  10000,
-  60000,
-);
+const syncCache = new LruCache<
+  string,
+  { data: SyncedProfile; timestamp: number }
+>(10000, 60000);
 
 /** Cross-instance cache-invalidation channel. Mirrors the block cache's. */
 export const AUTH_SYNC_INVALIDATE_CHANNEL = 'meetifyy:auth_sync_invalidate';
@@ -116,6 +117,19 @@ export function clearAuthSyncCache(userId?: string) {
  * it next to the query is what makes a column rename show up as a type error
  * rather than as `undefined` at runtime.
  */
+interface ProfileSettings {
+  id: string;
+  userId: string;
+  emailNotifs: boolean | null;
+  pushNotifs: boolean | null;
+  privateProfile: boolean | null;
+  showOnlineStatus: boolean | null;
+  showLastSeen: boolean | null;
+  whoCanSeeOnline: string | null;
+  whoCanSeeLastSeen: string | null;
+  readReceipts: boolean | null;
+}
+
 interface ProfileRow {
   id: string;
   username: string | null;
@@ -165,6 +179,104 @@ interface ProfileRow {
 }
 
 /**
+ * The profile `syncProfile` returns for an account that already has a row.
+ * Built from the single raw query, so the shape is fixed here rather than by
+ * whatever Prisma would return.
+ */
+function buildExistingProfile(
+  row: ProfileRow,
+  college: { id: string; name: string | null } | null,
+  settings: ProfileSettings | null,
+  isFirstYearStudent: boolean,
+) {
+  return {
+    id: row.id,
+    username: row.username,
+    displayName: row.displayName,
+    email: row.email,
+    bio: row.bio,
+    course: row.course,
+    branch: row.branch,
+    passingYear: row.passingYear,
+    // The viewer's OWN batch, and the first-year flag derived from it.
+    // The client uses these only to decide whether to draw a Message
+    // button in its locked state -- every actual restriction is enforced
+    // by the server. Emitting the derived flag as well as the raw year
+    // means the client never has to know what "first year" means, so the
+    // year rollover needs no client deploy.
+    batchYear: row.batchYear ?? null,
+    isFirstYearStudent,
+    location: row.location,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+    avatar: row.avatar,
+    avatarMediaId: row.avatarMediaId,
+    collegeEmail: row.collegeEmail,
+    collegeId: row.college_id,
+    cover: row.cover,
+    coverMediaId: row.coverMediaId,
+    verificationStatus: row.verificationStatus,
+    birthday: row.birthday,
+    interests: row.interests || [],
+    profileCompleted: row.profileCompleted,
+    accountStatus: row.accountStatus,
+    role: row.role,
+    canPost: row.canPost,
+    canMessage: row.canMessage,
+    canActivity: row.canActivity,
+    isCampusRep: row.isCampusRep,
+    college,
+    settings,
+    followingList: row.followingList || [],
+    followersList: row.followersList || [],
+    meta: {
+      postBookmarkIds: row.postBookmarkIds || [],
+      activityBookmarkIds: row.activityBookmarkIds || [],
+      unreadNotifCount: Number(row.unreadNotifCount || 0),
+    },
+  };
+}
+
+/** Relations loaded with an account's row when `syncProfile` first creates it. */
+const NEW_ACCOUNT_INCLUDE = {
+  settings: true,
+  college: { select: { id: true, name: true } },
+  following: {
+    select: {
+      following: { select: { username: true } },
+    },
+  },
+} satisfies Prisma.UserInclude;
+
+type NewAccountRow = Prisma.UserGetPayload<{
+  include: typeof NEW_ACCOUNT_INCLUDE;
+}>;
+
+/**
+ * What `syncProfile` returns. Two shapes, and callers must not assume one:
+ * an existing account gets the curated profile (with `meta` and
+ * `isFirstYearStudent`); the call that creates an account returns the new row
+ * with its relations. See security-and-correctness finding A7.
+ */
+export type SyncedProfile =
+  | ReturnType<typeof buildExistingProfile>
+  | (NewAccountRow & { followingList: string[] });
+
+/** `meta` from a synced profile; only the existing-account shape carries it. */
+export function profileMeta(profile: SyncedProfile) {
+  return 'meta' in profile ? profile.meta : {};
+}
+
+/** The fields of an AuthenticatedUser that `syncProfile` reads. */
+export type SyncIdentity = Pick<AuthenticatedUser, 'id'> &
+  Partial<
+    Pick<
+      AuthenticatedUser,
+      'email' | 'user_metadata' | 'email_confirmed_at' | 'confirmed_at'
+    >
+  >;
+
+/**
  * `user_metadata` is arbitrary JSON supplied by the identity provider, so a
  * value read from it is only usable once it has actually been checked to be a
  * non-empty string. Several of these flowed straight into the database — and
@@ -180,7 +292,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
   // syncCache is the module-level bounded LruCache — not a per-instance field.
   private syncCache = syncCache;
   /** Coalesces concurrent syncProfile calls for the same user into one DB round-trip. */
-  private syncInflight = new Map<string, Promise<any>>();
+  private syncInflight = new Map<string, Promise<SyncedProfile>>();
 
   clearSyncCache(userId?: string) {
     clearAuthSyncCache(userId);
@@ -260,7 +372,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     @Optional() private readonly redisService?: RedisService,
   ) {}
 
-  async syncProfile(user: AuthenticatedUser) {
+  async syncProfile(user: SyncIdentity): Promise<SyncedProfile> {
     if (!this.supabaseService.isConfigured) {
       throw new UnauthorizedException('Supabase is not configured');
     }
@@ -282,7 +394,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     return promise;
   }
 
-  private async _doSyncProfile(user: AuthenticatedUser) {
+  private async _doSyncProfile(user: SyncIdentity): Promise<SyncedProfile> {
     const rows = await this.prisma.$queryRaw<ProfileRow[]>`
       SELECT 
         u."id",
@@ -404,7 +516,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
         );
       }
 
-      const settings = row.settings_id
+      const settings: ProfileSettings | null = row.settings_id
         ? {
             id: row.settings_id,
             userId: row.id,
@@ -442,7 +554,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
           })
           .catch((err) =>
             this.logger.error(
-              `Failed to auto-link user collegeId: ${err.message}`,
+              `Failed to auto-link user collegeId: ${errorMessage(err)}`,
             ),
           );
       }
@@ -473,7 +585,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
           })
           .then(() => this.studentYearPolicy.invalidate(row.id))
           .catch((err) =>
-            this.logger.error(`Failed to heal batchYear: ${err.message}`),
+            this.logger.error(`Failed to heal batchYear: ${errorMessage(err)}`),
           );
       }
 
@@ -577,56 +689,16 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
         }
       }
 
-      const result = {
-        id: row.id,
-        username: row.username,
-        displayName: row.displayName,
-        email: row.email,
-        bio: row.bio,
-        course: row.course,
-        branch: row.branch,
-        passingYear: row.passingYear,
-        // The viewer's OWN batch, and the first-year flag derived from it.
-        // The client uses these only to decide whether to draw a Message
-        // button in its locked state -- every actual restriction is enforced
-        // by the server. Emitting the derived flag as well as the raw year
-        // means the client never has to know what "first year" means, so the
-        // year rollover needs no client deploy.
-        batchYear: row.batchYear ?? null,
-        isFirstYearStudent: this.studentYearPolicy.isFirstYearStudent({
+      const result = buildExistingProfile(
+        row,
+        college,
+        settings,
+        this.studentYearPolicy.isFirstYearStudent({
           batchYear: row.batchYear,
           email: row.email,
           collegeEmail: row.collegeEmail,
         }),
-        location: row.location,
-        createdAt: row.createdAt,
-        updatedAt: row.updatedAt,
-        avatar: row.avatar,
-        avatarMediaId: row.avatarMediaId,
-        collegeEmail: row.collegeEmail,
-        collegeId: row.college_id,
-        cover: row.cover,
-        coverMediaId: row.coverMediaId,
-        verificationStatus: row.verificationStatus,
-        birthday: row.birthday,
-        interests: row.interests || [],
-        profileCompleted: row.profileCompleted,
-        accountStatus: row.accountStatus,
-        role: row.role,
-        canPost: row.canPost,
-        canMessage: row.canMessage,
-        canActivity: row.canActivity,
-        isCampusRep: row.isCampusRep,
-        college,
-        settings,
-        followingList: row.followingList || [],
-        followersList: row.followersList || [],
-        meta: {
-          postBookmarkIds: row.postBookmarkIds || [],
-          activityBookmarkIds: row.activityBookmarkIds || [],
-          unreadNotifCount: Number(row.unreadNotifCount || 0),
-        },
-      };
+      );
       this.syncCache.set(user.id, { data: result, timestamp: Date.now() });
       return result;
     }
@@ -650,8 +722,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
         const { data } =
           await this.supabaseService.client.auth.admin.getUserById(user.id);
         emailConfirmedAt =
-          (data?.user as any)?.email_confirmed_at ||
-          (data?.user as any)?.confirmed_at;
+          data?.user?.email_confirmed_at || data?.user?.confirmed_at;
       } catch {
         // Admin lookup failed — fall through to the block below (fail safe).
       }
@@ -748,7 +819,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
         })
         .catch((err) =>
           this.logger.error(
-            `Failed to rename conflicting email record: ${err.message}`,
+            `Failed to rename conflicting email record: ${errorMessage(err)}`,
           ),
         );
     }
@@ -771,7 +842,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     }
     validateBirthday(userBirthday);
 
-    let userRecord: any;
+    let userRecord: NewAccountRow | null;
     try {
       userRecord = await this.prisma.user.upsert({
         where: { id: user.id },
@@ -806,28 +877,12 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
             create: {},
           },
         },
-        include: {
-          settings: true,
-          college: { select: { id: true, name: true } },
-          following: {
-            select: {
-              following: { select: { username: true } },
-            },
-          },
-        },
+        include: NEW_ACCOUNT_INCLUDE,
       });
-    } catch (err: any) {
+    } catch (err) {
       userRecord = await this.prisma.user.findUnique({
         where: { id: user.id },
-        include: {
-          settings: true,
-          college: { select: { id: true, name: true } },
-          following: {
-            select: {
-              following: { select: { username: true } },
-            },
-          },
-        },
+        include: NEW_ACCOUNT_INCLUDE,
       });
       if (!userRecord) {
         throw err;
@@ -846,7 +901,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
 
     this.logger.log(`User login ${userRecord.username}`);
     const followingList =
-      userRecord.following?.map((f: any) => f.following.username) || [];
+      userRecord.following?.map((f) => f.following.username) || [];
     const result = { ...userRecord, followingList };
     this.syncCache.set(user.id, { data: result, timestamp: Date.now() });
     return result;
@@ -923,7 +978,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
       user: {
         id: user.id,
         email: user.email || email,
-        displayName: (user.user_metadata as any)?.displayName,
+        displayName: metaString(user.user_metadata?.displayName) ?? undefined,
       },
     };
   }
@@ -1479,7 +1534,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
           recipientId: userId,
           readAt: null,
           deletedAt: null,
-          type: { not: 'MESSAGE' as any },
+          type: { not: NotificationType.MESSAGE },
         },
       })
       .catch(() => 0);
