@@ -56,10 +56,12 @@ Both ship as `Content-Security-Policy-Report-Only` beside the enforced policy. B
 
 | | Why not enforced |
 |---|---|
-| **`script-src` without `unsafe-inline`** | Needs hashes of inline scripts *after* the build, which transforms them (4 → 3, none byte-identical). One is the launch-time version gate that decides whether the app loads at all — a drifted hash is a blank page for every user. It carries `__MEETIFYY_BUILD_VERSION__`, so it cannot be moved to `public/` to avoid hashing. |
+| **`script-src` without `unsafe-inline`** | Allows each inline script by its sha256. **Updated 2026-09-23:** the version gate now reads the build stamp from a `meetifyy-build` meta tag instead of carrying it, so every inline script is byte-identical across builds and the hashes are a function of `index.html`. `scripts/verify-csp-hashes.mjs` fails the build on a missing hash and `cspReportOnly.test.js` requires an exact match. (The Vite plugin that used to patch the hashes never ran — see `docs/operations.md`.) The build no longer transforms the scripts; the "4 → 3, none byte-identical" note is obsolete. |
 | **`connect-src` narrowed to named hosts** | Currently allows `http:`/`https:` outright, so CSP cannot constrain exfiltration. Narrowing depends on the full runtime host set; miss one and uploads or sign-in break in production. |
 
 **To finish:** load the app in a browser, exercise login, upload, chat and realtime, and watch the console for CSP violations. Clean → copy the report-only value over the enforced one and delete the report-only header. Tests already pin that the candidate cannot drift weaker than what is enforced.
+
+**Blocker found 2026-09-23 — Cloudflare JavaScript Detections.** Cloudflare injects an inline script at the edge (`window.__CF$cv$params`, then `/cdn-cgi/challenge-platform/scripts/jsd/main.js` from an iframe). Its body carries a per-request ray id and timestamp, so no hash can ever match it. Cloudflare's documented support is a **nonce in the CSP response header**, which it copies onto what it injects; it does not work with hashes or with a `<meta>` CSP, and JS Detections cannot be switched off under Bot Fight Mode. Enforcing `script-src` as it stands blocks that script. Decide first: a per-request nonce (edge middleware, which ends static caching of the HTML), turning JS Detections off (Super Bot Fight Mode only), or accepting that it is blocked. Verified 2026-09-23: with the report-only value served as the **enforced** policy, `/`, `/login`, `/signup` and `/home` all boot with zero violations — the Cloudflare script is absent locally.
 
 ---
 

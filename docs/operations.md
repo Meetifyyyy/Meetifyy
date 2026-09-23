@@ -180,6 +180,95 @@ the site with its own CDN, so proxying adds a second hop for no gain, and
 certificate issuance needs to reach the origin directly. R2 creates and manages
 the `cdn` record itself — do not add it by hand.
 
+## CORS
+
+### Never a pattern over the shared domain
+
+Development and production share `.meetifyy.app`. Both APIs were provisioned
+with `CORS_ORIGIN_PATTERNS=https://*.meetifyy.app`, and development also listed
+`https://meetifyy.app`. Measured on 2026-09-23: each API answered the other
+environment's frontend and admin with credentialed responses — dev accepted
+`meetifyy.app`, `www.` and `admin.`; production accepted `dev.` and
+`dev-admin.`. Nothing errored; every request simply worked.
+
+List each environment's exact origins. `FRONTEND_URL`, `ADMIN_URL` and the
+installed app's `https://localhost` are added automatically, so:
+
+| | `CORS_ORIGINS` | `CORS_ORIGIN_PATTERNS` |
+|---|---|---|
+| development | `https://dev.meetifyy.app,https://dev-admin.meetifyy.app` | *(unset)* |
+| production | `https://meetifyy.app,https://www.meetifyy.app` | *(unset)* |
+
+`isolation.guard.ts` now refuses to boot when CORS admits a host under
+`COOKIE_DOMAIN` that belongs to another environment, judging a pattern by what
+it can match. It runs in development as well as production. A deployment with
+no `COOKIE_DOMAIN` (a developer machine) is not inspected.
+
+Check a deployed API with a preflight:
+
+```bash
+curl -s -o /dev/null -D - -X OPTIONS https://dev-api.meetifyy.app/api/auth/session -H "Origin: https://meetifyy.app" -H "Access-Control-Request-Method: GET" | grep -i access-control-allow-origin
+```
+
+No output means refused, which is the correct answer for that pair.
+
+### Do not set `NATIVE_APP_ORIGINS` to an empty value
+
+Unset, it defaults to `https://localhost`, the installed app's origin. Empty
+means "no app origins", and every request from the app fails CORS.
+
+## CSP
+
+### Inline scripts must be byte-identical across builds
+
+The report-only `script-src` allows each inline script in `index.html` by its
+sha256, listed in **both** `vercel.json` files. Two things kept that list stale:
+
+- The Vite plugin meant to patch it read `dist/app.html` in `closeBundle`, but
+  that file is written by `prerender-seo.mjs` after `vite build`. It returned
+  silently on every build and never patched anything.
+- The version gate carried the commit SHA in its own text, so its hash changed
+  on every commit.
+
+The stamp now lives in the `meetifyy-build` meta tag. Never put anything that
+varies per build inside an inline script. When you edit one, run
+`npx vitest run src/config/__tests__/cspReportOnly.test.js` in `frontend/`: it
+prints the exact list to paste. `scripts/verify-csp-hashes.mjs` fails the build
+if a built page ships a script the policy does not hash.
+
+Cloudflare's JavaScript Detections script cannot be hashed; see
+`SECURITY-AUDIT.md` before enforcing.
+
+## Auth
+
+### A verified account with no `User` row
+
+`UserSession.userId` is a foreign key to `User`, and `syncProfile` is what
+creates the `User` row for a verified address. Login and session adoption used
+to insert the session first. An account verified at Supabase whose signup
+handover never completed then passed the password check and failed the insert:
+every sign-in was a 500 (`UserSession_userId_fkey`), and signing in by
+username was a 401, because the username lookup reads `User`. Both routes now
+run `syncProfile` before `sessions.issue`, so such an account recovers with one
+email sign-in.
+
+To find any:
+
+```sql
+select a.id, a.created_at from auth.users a
+where a.email_confirmed_at is not null
+  and not exists (select 1 from public."User" u where u.id = a.id::text);
+```
+
+### The signup handover carries its own credential
+
+The two calls after `verifyOtp` (`PATCH /api/users/me`, `POST
+/api/auth/session/adopt`) pass the verified session's access token explicitly.
+They used to take it from the platform session source, which the installed
+app's source never had, so on the APK both went out with no `Authorization`
+header. Keep the credential explicit, and never mark a user signed in unless
+adoption succeeded.
+
 ## Supabase MCP
 
 The MCP exposes `execute_sql` and `apply_migration` against whichever project it

@@ -130,6 +130,11 @@ migration rules do not come into play.
 **CORS:** production must still allowlist `https://localhost` — see the separate
 finding below. That is required for *any* option.
 
+> **Update 2026-09-23:** no longer a release step. `https://localhost` is a
+> built-in default (`DEFAULT_NATIVE_APP_ORIGINS` in `app.config.ts`), applied
+> whenever `NATIVE_APP_ORIGINS` is unset — which it is in every environment.
+> `prod-boot.spec.ts` pins that production's exact variable set allows it.
+
 ### Frontend
 
 | File | Change |
@@ -222,6 +227,14 @@ because that flag defaults on outside production. Measured against dev:
 **The shipped app would get no CORS at all**, and this surfaces for the first
 time at release. Fix: add `https://localhost` to `CORS_ORIGINS` in the
 production environment.
+
+> **Update 2026-09-23 — superseded; do not add it by hand.** The origin is now
+> allowed by default in code (`DEFAULT_NATIVE_APP_ORIGINS`), so production
+> accepts the app as soon as a build containing that code is deployed, with no
+> variable to set. Measured on 2026-09-23: the production API, still on a `main`
+> build without that code, refuses `https://localhost`; the dev API, on the
+> code, accepts it. The one way to break it is setting `NATIVE_APP_ORIGINS` to
+> an **empty** value, which means "no app origins".
 
 Worth stating plainly, because it sits against the comment that says a
 production API must never treat a developer machine as same-trust: allowlisting

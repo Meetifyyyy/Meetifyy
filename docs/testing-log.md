@@ -120,6 +120,11 @@ side effect of mobile work.
 
 ---
 
+### Open since 2026-09-23
+| # | What | How |
+|---|---|---|
+| S1 | Full signup on the APK against dev after `3f58667a`: OTP → avatar → Create Account must land on `/home` and survive an app restart. | Device run; watch `adb logcat` and the dev API log for `session/adopt` 200. |
+
 ## WHAT IS LEFT — not tested, not built
 
 | Area | State |
@@ -171,6 +176,36 @@ opens**, so a button position must be measured immediately before tapping or
 the tap lands on the keyboard and types into the focused field.
 
 ---
+
+## Signup on the APK returns to the opening screen — 2026-09-23 (root cause)
+
+**Symptom.** On the last signup step, Create Account sent the user back to the
+opening screen. Not a crash and not a WebView reload.
+
+**Evidence** (dev API logs and Supabase auth logs, 12:34–12:37 UTC):
+`/verify` 200, then the handover `PATCH /api/users/me` 401 and
+`POST /api/auth/session/adopt` 401 "Missing authorization header", then
+Create Account's `PATCH /api/users/me` 401 → refresh 401. The auth user existed
+with no `User` row; every later login was a 500 on `UserSession_userId_fkey`.
+
+**Cause.** The handover calls took their bearer from the session source. The
+web source picks up the `verifyOtp` session through its provider subscription;
+`platform/capacitor/sessionSource.js` only holds tokens it is handed, so on the
+app both calls carried no credential. The failure was logged and the user marked
+signed in anyway, so the next authenticated request found nothing to refresh
+and cleared the session, and the route gate sent them to `/`.
+
+**Fix** (`51816ac`, `b0755c2`): the handover passes the verified session's
+token explicitly (`bearer` option on the transport; a 401 on such a call does
+not touch the ambient session), a failed handover no longer signs the user in,
+and login and adoption create the profile before the session row.
+
+**Also found:** Step 4 verified each OTP twice (Supabase logged 200 then 403
+`otp_expired`) and flashed a one-frame success state. Fixed in the same commit.
+
+**Verified:** 7 regression tests fail on the old code and pass on the new one.
+Backend and frontend suites green; deployed to dev as `3f58667a`.
+**Not verified:** a signup on a device — see the open item above.
 
 ## White system bars, and themed launcher icons — 2026-09-21
 
