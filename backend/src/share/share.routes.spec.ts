@@ -30,6 +30,17 @@ import { APP_INTERCEPTOR } from '@nestjs/core';
 const SITE = config.app.frontendUrl.replace(/\/+$/, '');
 
 /**
+ * These tests render real images: a story canvas is a 1080x1920 JPEG composed
+ * by sharp, about one second of CPU each on an idle machine. Jest's default
+ * five-second budget measured the machine rather than the code: with the full
+ * suite on every core and the machine short of memory (ESLint alongside it
+ * left ~130 MB free), a render stalled past five seconds and the test failed,
+ * and the timed-out request then reset the next test's connection. Nothing
+ * here asserts speed; the budget only has to catch a render that hangs.
+ */
+jest.setTimeout(30_000);
+
+/**
  * The routes as HTTP, with a real renderer.
  *
  * The unit tests cover the gate and the document; this covers the things only a
