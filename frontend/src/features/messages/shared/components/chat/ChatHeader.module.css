@@ -248,12 +248,8 @@
     left: 0;
     right: 0;
     z-index: 1000 !important;
-    background: var(--color-bg-white) !important;
+    background: var(--color-surface-screen) !important;
     flex-shrink: 0 !important;
-  }
-
-  :global([data-theme="dark"]) .msgChatHeader {
-    background: #000000 !important;
   }
 }
 

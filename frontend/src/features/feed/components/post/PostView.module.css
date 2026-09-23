@@ -5,7 +5,9 @@
   min-height: calc(100dvh - 115px);
   margin-bottom: 1.5rem;
   box-sizing: border-box;
-  background: var(--color-bg-white);
+  /* Screen surface: pure black on a phone in dark mode, the card colour
+     everywhere else. See --color-surface-screen in variables.css. */
+  background: var(--color-surface-screen);
   border-radius: var(--radius-lg);
   border: 1px solid var(--color-border-light);
   flex-shrink: 0;

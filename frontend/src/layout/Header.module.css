@@ -628,7 +628,9 @@
   left: 0;
   bottom: 0;
   width: min(300px, 84vw);
-  background: var(--color-bg-white);
+  /* Screen surface: pure black on a phone in dark mode, the card colour
+     everywhere else. See --color-surface-screen in variables.css. */
+  background: var(--color-surface-screen);
   border-right: 1px solid var(--color-border-light);
   /* Square. It had 16px rounded right corners, which on a panel pinned to
      three edges of the screen reads as a card that failed to centre itself —
@@ -675,9 +677,6 @@
   background: rgba(0, 0, 0, 0.5);
 }
 
-:global([data-theme="dark"]) .mobileDrawer {
-  background: #000000;
-}
 
 .drawerOverlayOpen {
   opacity: 1;
@@ -901,6 +900,13 @@
   box-shadow: none !important;
 }
 
+/* Inside the drawer the box is part of the screen, not a card on top of it.
+   Two classes, so it wins over CommunitiesBox's own background whatever
+   order the two stylesheets load in. */
+.drawerContent .drawerCommunitiesBox {
+  background: var(--color-surface-screen);
+}
+
 /* ── Docked bottom ────────────────────────────────────────────────────── */
 .drawerBottom {
   margin-top: auto;
@@ -909,7 +915,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  background: var(--color-bg-white);
+  background: var(--color-surface-screen);
   flex-shrink: 0;
 }
 

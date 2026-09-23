@@ -21,7 +21,7 @@
   justify-content: space-between;
   width: 100%;
   padding: 1.1rem 1rem;
-  background: var(--color-bg-white);
+  background: var(--color-surface-screen);
   border: none;
   border-bottom: 1px solid var(--color-border-light);
   text-align: left;
@@ -115,10 +115,4 @@ input:checked + .slider {
 input:checked + .slider:before {
   transform: translateX(20px);
   background-color: #fff;
-}
-
-@media (max-width: 768px) {
-  :global([data-theme="dark"]) .settingRow {
-    background: #000000;
-  }
 }
