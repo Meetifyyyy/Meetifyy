@@ -440,37 +440,6 @@
       "count": 11
     }
   },
-  "src/admin/auth/admin-auth.controller.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 5
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 8
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 1
-    }
-  },
-  "src/admin/auth/admin-auth.service.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 5
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 4
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 14
-    },
-    "@typescript-eslint/no-unsafe-call": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 21
-    }
-  },
   "src/admin/colleges/admin-colleges.controller.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 1
@@ -926,23 +895,6 @@
     },
     "@typescript-eslint/no-unsafe-member-access": {
       "count": 16
-    }
-  },
-  "src/common/guards/admin-jwt.guard.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 3
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 8
-    },
-    "@typescript-eslint/no-unsafe-call": {
-      "count": 3
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 13
     }
   },
   "src/common/guards/jwt-suspension.guard.spec.ts": {

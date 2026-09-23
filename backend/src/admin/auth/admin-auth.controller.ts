@@ -19,7 +19,10 @@ import {
   VerifyTotpDto,
 } from './dto/admin-auth.dto';
 import { AdminJwtGuard } from '../../common/guards/admin-jwt.guard';
-import type { AdminRequest } from '../../common/types/authenticated-request';
+import {
+  requestBody,
+  type AdminRequest,
+} from '../../common/types/authenticated-request';
 import {
   clearAdminSessionCookies,
   issueAdminSessionCookies,
@@ -66,7 +69,7 @@ export class AdminAuthController {
   async verifyOtp(
     @Body() dto: VerifyOtpDto,
     @Req() req: AdminRequest,
-    @Res({ passthrough: true }) res: any,
+    @Res({ passthrough: true }) res: Response,
   ) {
     const ip = clientIp(req) || '0.0.0.0';
     const userAgent = req.headers['user-agent'] || 'Unknown';
@@ -91,7 +94,7 @@ export class AdminAuthController {
   async verifyTotp(
     @Body() dto: VerifyTotpDto,
     @Req() req: AdminRequest,
-    @Res({ passthrough: true }) res: any,
+    @Res({ passthrough: true }) res: Response,
   ) {
     const ip = clientIp(req) || '0.0.0.0';
     const userAgent = req.headers['user-agent'] || 'Unknown';
@@ -111,9 +114,14 @@ export class AdminAuthController {
   @RateLimit('admin.refresh.ip')
   async refresh(
     @Req() req: AdminRequest,
-    @Res({ passthrough: true }) res: any,
+    @Res({ passthrough: true }) res: Response,
   ) {
-    const refreshToken = req.cookies?.admin_refresh || req.body?.refreshToken;
+    // The cookie is the normal carrier; the body is accepted for clients that
+    // cannot send it. Only a string is a token.
+    const bodyToken = requestBody(req).refreshToken;
+    const refreshToken =
+      req.cookies?.admin_refresh ||
+      (typeof bodyToken === 'string' ? bodyToken : undefined);
     if (!refreshToken) {
       this.clearAuthCookies(res);
       throw new UnauthorizedException('Refresh token missing');
@@ -167,7 +175,10 @@ export class AdminAuthController {
   @UseGuards(AdminJwtGuard)
   @Post('logout')
   @HttpCode(HttpStatus.OK)
-  async logout(@Req() req: AdminRequest, @Res({ passthrough: true }) res: any) {
+  async logout(
+    @Req() req: AdminRequest,
+    @Res({ passthrough: true }) res: Response,
+  ) {
     if (req.adminSession?.id) {
       await this.authService.logout(req.adminSession.id);
     }
@@ -180,7 +191,7 @@ export class AdminAuthController {
   @HttpCode(HttpStatus.OK)
   async logoutAll(
     @Req() req: AdminRequest,
-    @Res({ passthrough: true }) res: any,
+    @Res({ passthrough: true }) res: Response,
   ) {
     await this.authService.logoutAll(req.admin.id);
     this.clearAuthCookies(res);

@@ -26,6 +26,8 @@ import { LegalConsentService } from '../legal/legal-consent.service';
 import { LEGAL_ACKNOWLEDGEMENT_REQUIRED_CODE } from '../legal/legal.constants';
 import { config } from '../../config';
 import { errorMessage } from '../utils/error.util';
+import { isRecord } from '../utils/type-guards.util';
+import { stringClaim } from '../utils/jwt-claims.util';
 import type {
   AuthenticatedUser,
   GuardRequest,
@@ -906,16 +908,6 @@ export class JwtGuard implements CanActivate {
       return undefined;
     }
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-/** A claim that is a non-empty string, or undefined. */
-function stringClaim(payload: jwt.JwtPayload, key: string): string | undefined {
-  const value: unknown = payload[key];
-  return typeof value === 'string' && value ? value : undefined;
 }
 
 /**
