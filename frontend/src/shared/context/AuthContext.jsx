@@ -17,7 +17,7 @@ import { idbClearAll } from '@shared/lib/idb';
 import { useQueryClient } from '@tanstack/react-query';
 import { propagateUserMedia } from '@shared/utils/propagateUserMedia';
 
-import { supabase, isSupabaseConfigured } from '@shared/lib/supabase';
+import { supabase, isSupabaseConfigured, forgetProviderSession } from '@shared/lib/supabase';
 import { describeNetworkError, logNetworkFailure } from '@shared/utils/networkErrors';
 export { supabase, isSupabaseConfigured };
 
@@ -890,7 +890,9 @@ export function AuthProvider({ children }) {
         // The session is simply not durable yet; the next sign-in creates one.
         console.error('Failed to establish a session after verification', err);
       } finally {
-        try { await supabase.auth.signOut({ scope: 'local' }); } catch (_) {}
+        // Not `signOut()`: every scope of it ends the session at the provider,
+        // including the one just handed to the server. See forgetProviderSession.
+        forgetProviderSession();
       }
 
       adoptUser(profile);
@@ -914,28 +916,27 @@ export function AuthProvider({ children }) {
       const { password, ...safeData } = updatedData;
       const response = await usersApi.updateProfile({ ...safeData, profileCompleted: true });
       const syncedUser = response?.user || response;
+      if (!syncedUser) return false;
 
-      // Mirror the flag into Supabase user_metadata, but don't block navigation
-      // on it — Prisma's profileCompleted (set above) is the source of truth.
-      if (isSupabaseConfigured) {
-        supabase.auth.updateUser({
-          data: { profileCompleted: true }
-        }).catch(err => console.error('Failed to update Supabase profileCompleted metadata', err));
+      // Kept out of the state updater below: an updater has to be pure, and
+      // React may run it twice, which sent the welcome email twice.
+      // `PATCH /me` does not echo the address, so take it from the user this
+      // tab adopted at verification.
+      let known = null;
+      try { known = JSON.parse(localStorage.getItem('currentUser') || 'null'); } catch (_) {}
+      const email = syncedUser.email || known?.email;
+      const name = syncedUser.displayName || known?.displayName || syncedUser.username;
+      if (email && name) {
+        apiClient.post('/api/auth/events/welcome', { email, name })
+          .catch((err) => console.error('Failed to trigger the welcome email', err));
       }
 
-      if (syncedUser) {
-        setCurrentUser(prev => {
-          const updated = { ...prev, ...syncedUser, profileCompleted: true };
-          delete updated.password;
-          localStorage.setItem('currentUser', JSON.stringify(updated));
-          
-          // Trigger welcome email
-          apiClient.post('/api/auth/events/welcome', { email: updated.email, name: updated.displayName })
-            .catch(console.error);
-          
-          return updated;
-        });
-      }
+      setCurrentUser(prev => {
+        const updated = { ...prev, ...syncedUser, profileCompleted: true };
+        delete updated.password;
+        try { localStorage.setItem('currentUser', JSON.stringify(updated)); } catch (_) {}
+        return updated;
+      });
       return true;
     } catch (e) {
       console.error(e);

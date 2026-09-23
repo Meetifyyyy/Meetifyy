@@ -151,9 +151,13 @@ function purgeLegacyPersistedSession() {
   }
 }
 
+const authStorage = createMemoryStorage();
+let authStorageKey = null;
+
 function createAuthClient() {
   const baseUrl = new URL(supabaseUrl);
   const projectRef = baseUrl.hostname.split('.')[0];
+  authStorageKey = `sb-${projectRef}-auth-token`;
 
   purgeLegacyPersistedSession();
 
@@ -163,7 +167,7 @@ function createAuthClient() {
       Authorization: `Bearer ${supabaseAnonKey}`,
       apikey: supabaseAnonKey,
     },
-    storageKey: `sb-${projectRef}-auth-token`,
+    storageKey: authStorageKey,
     /**
      * Off, because there is no longer anything here worth refreshing.
      *
@@ -185,7 +189,7 @@ function createAuthClient() {
     // keeps no session at all between calls within the tab, and every
     // `getSession()` would come back empty.
     persistSession: true,
-    storage: createMemoryStorage(),
+    storage: authStorage,
     detectSessionInUrl: true,
     flowType: 'implicit',
   });
@@ -199,3 +203,23 @@ function createAuthClient() {
 export const supabase = isSupabaseConfigured
   ? { auth: createAuthClient() }
   : null;
+
+/**
+ * Drops this tab's copy of the provider session WITHOUT ending it.
+ *
+ * Signup hands the session `verifyOtp` minted to the server, which keeps its
+ * refresh token and renews the cookie session from it. `signOut()` is the wrong
+ * tool for letting go of it afterwards, whatever the scope: even `'local'`
+ * calls the provider's `/logout`, which deletes that session and its refresh
+ * token server-side — the very one just handed over. The account then worked
+ * until its first refresh and was signed out there.
+ *
+ * The session only ever lived in this in-memory store, so forgetting it is
+ * removing it from there.
+ */
+export function forgetProviderSession() {
+  if (!authStorageKey) return;
+  authStorage.removeItem(authStorageKey);
+  authStorage.removeItem(`${authStorageKey}-code-verifier`);
+  authStorage.removeItem(`${authStorageKey}-user`);
+}
