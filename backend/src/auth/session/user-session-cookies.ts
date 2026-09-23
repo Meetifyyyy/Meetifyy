@@ -82,6 +82,36 @@ function cookieBase() {
  * it is not attached to the hundreds of ordinary API calls that have no use for
  * it — the long-lived credential travels as rarely as possible.
  */
+/**
+ * Expires host-only copies of the session cookies, when the live ones carry a
+ * Domain.
+ *
+ * A cookie is identified by name, domain AND path, so `mf_sid` set host-only on
+ * the API host and `mf_sid` set on `.meetifyy.app` are two cookies, and the
+ * browser sends both. It orders them oldest first and the cookie parser keeps
+ * the first — so a host-only session id left behind by a deployment that ran
+ * without COOKIE_DOMAIN outvoted every session issued after it, for the thirty
+ * days it lived. Every new sign-in created a live row and was refused on its
+ * first request with "Session has been signed out", against someone else's
+ * session id; and `clearUserSessionCookies`, which only ever named the Domain
+ * variant, could never remove the stale one.
+ *
+ * A no-op when no domain is configured: host-only IS the live variant then.
+ */
+function expireHostOnlyDuplicates(res: Response): void {
+  const base = cookieBase();
+  if (!base.domain) return;
+  const hostOnly = { ...base, domain: undefined };
+  res.clearCookie(USER_ACCESS_COOKIE, { ...hostOnly, httpOnly: true });
+  res.clearCookie(USER_REFRESH_COOKIE, {
+    ...hostOnly,
+    httpOnly: true,
+    path: '/api/auth/session',
+  });
+  res.clearCookie(USER_SESSION_ID_COOKIE, { ...hostOnly, httpOnly: true });
+  res.clearCookie(USER_CSRF_COOKIE, { ...hostOnly, httpOnly: false });
+}
+
 export function issueUserSessionCookies(
   res: Response,
   accessToken: string,
@@ -92,6 +122,8 @@ export function issueUserSessionCookies(
 ): IssuedUserSessionCookies {
   const csrfToken = crypto.randomBytes(32).toString('hex');
   const base = cookieBase();
+
+  expireHostOnlyDuplicates(res);
 
   res.cookie(USER_ACCESS_COOKIE, accessToken, {
     ...base,
@@ -135,6 +167,7 @@ export function issueUserSessionCookies(
  */
 export function clearUserSessionCookies(res: Response): void {
   const base = cookieBase();
+  expireHostOnlyDuplicates(res);
   res.clearCookie(USER_ACCESS_COOKIE, { ...base, httpOnly: true });
   res.clearCookie(USER_REFRESH_COOKIE, {
     ...base,
