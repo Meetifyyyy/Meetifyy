@@ -593,9 +593,6 @@
     },
     "@typescript-eslint/no-unsafe-return": {
       "count": 4
-    },
-    "@typescript-eslint/require-await": {
-      "count": 1
     }
   },
   "src/auth/auth-public-proxies.spec.ts": {
@@ -1363,9 +1360,6 @@
     },
     "@typescript-eslint/no-unsafe-return": {
       "count": 15
-    },
-    "@typescript-eslint/require-await": {
-      "count": 2
     }
   },
   "src/email/email-usage.service.spec.ts": {
@@ -1647,9 +1641,6 @@
     },
     "@typescript-eslint/no-unsafe-member-access": {
       "count": 108
-    },
-    "@typescript-eslint/require-await": {
-      "count": 1
     }
   },
   "src/messages/dm/dm-lookup.spec.ts": {
@@ -1701,9 +1692,6 @@
     },
     "@typescript-eslint/no-unsafe-member-access": {
       "count": 29
-    },
-    "@typescript-eslint/require-await": {
-      "count": 1
     }
   },
   "src/messages/group-chats/group-chats.controller.ts": {
@@ -1873,9 +1861,6 @@
     },
     "@typescript-eslint/no-unsafe-return": {
       "count": 5
-    },
-    "@typescript-eslint/require-await": {
-      "count": 2
     }
   },
   "src/messages/messaging-deleted-recipient.spec.ts": {
@@ -1948,9 +1933,6 @@
   },
   "src/messages/sender-sync.spec.ts": {
     "@typescript-eslint/no-explicit-any": {
-      "count": 4
-    },
-    "@typescript-eslint/no-floating-promises": {
       "count": 4
     },
     "@typescript-eslint/no-unsafe-argument": {
@@ -2636,9 +2618,6 @@
     },
     "@typescript-eslint/no-unsafe-member-access": {
       "count": 7
-    },
-    "@typescript-eslint/require-await": {
-      "count": 1
     }
   },
   "src/uploads/media-cleanup.spec.ts": {

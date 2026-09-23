@@ -739,7 +739,7 @@ export class MessagesService
     );
   }
 
-  private async formatMessageResponse(
+  private formatMessageResponse(
     message: any,
     realConvId: string,
     publicIdOrId: string,
@@ -869,15 +869,8 @@ export class MessagesService
       take: 100,
     });
 
-    const formatted = await Promise.all(
-      messages.map((m) =>
-        this.formatMessageResponse(
-          m,
-          m.conversationId,
-          m.conversationId,
-          userId,
-        ),
-      ),
+    const formatted = messages.map((m) =>
+      this.formatMessageResponse(m, m.conversationId, m.conversationId, userId),
     );
 
     return formatted;
@@ -1620,167 +1613,165 @@ export class MessagesService
       ? true
       : await verificationAccess.isUserEligible(userId);
 
-    const result = await Promise.all(
-      (participants as any[]).map(async (p: any) => {
-        const conv = p.conversation;
-        const otherUser = targetUserByConvId.get(conv.id);
-        // Single source for the row title, avatar, composer state and
-        // target-user block, so those four cannot disagree.
-        const targetUnavailable = otherUser
-          ? isUnavailableUser(otherUser)
-          : false;
-        const isGroupConv = conv.type === 'GROUP' || conv.isGroup;
-        const groupAvatar = conv.avatarKey || null;
+    const result = (participants as any[]).map((p: any) => {
+      const conv = p.conversation;
+      const otherUser = targetUserByConvId.get(conv.id);
+      // Single source for the row title, avatar, composer state and
+      // target-user block, so those four cannot disagree.
+      const targetUnavailable = otherUser
+        ? isUnavailableUser(otherUser)
+        : false;
+      const isGroupConv = conv.type === 'GROUP' || conv.isGroup;
+      const groupAvatar = conv.avatarKey || null;
 
-        const userPresence = otherUser ? presenceMap.get(otherUser.id) : null;
-        let canSeeOnline = false;
-        let blockStatus = {
-          isBlocked: false,
-          isBlockedByMe: false,
-          isBlockedByThem: false,
+      const userPresence = otherUser ? presenceMap.get(otherUser.id) : null;
+      let canSeeOnline = false;
+      let blockStatus = {
+        isBlocked: false,
+        isBlockedByMe: false,
+        isBlockedByThem: false,
+      };
+
+      if (otherUser) {
+        // Directional. `blockedSet` is the MUTUAL set, so using it for
+        // `isBlockedByMe` told the person who *was* blocked that they had
+        // blocked someone — offering them an Unblock button for a block they
+        // never made. Each side now gets its own accurate flag.
+        const isBlocked = blockedSet.has(otherUser.id);
+        const blockedByMe = blockedByMeSet.has(otherUser.id);
+        blockStatus = {
+          isBlocked,
+          isBlockedByMe: blockedByMe,
+          isBlockedByThem: isBlocked && !blockedByMe,
         };
+        canSeeOnline =
+          !isBlocked &&
+          !!userPresence?.isOnline &&
+          presenceVisibleSet.has(otherUser.id);
+      }
 
-        if (otherUser) {
-          // Directional. `blockedSet` is the MUTUAL set, so using it for
-          // `isBlockedByMe` told the person who *was* blocked that they had
-          // blocked someone — offering them an Unblock button for a block they
-          // never made. Each side now gets its own accurate flag.
-          const isBlocked = blockedSet.has(otherUser.id);
-          const blockedByMe = blockedByMeSet.has(otherUser.id);
-          blockStatus = {
-            isBlocked,
-            isBlockedByMe: blockedByMe,
-            isBlockedByThem: isBlocked && !blockedByMe,
-          };
-          canSeeOnline =
-            !isBlocked &&
-            !!userPresence?.isOnline &&
-            presenceVisibleSet.has(otherUser.id);
-        }
+      const pubId = conv.publicId || conv.id;
+      const unreadCount = p.unreadCount || 0;
 
-        const pubId = conv.publicId || conv.id;
-        const unreadCount = p.unreadCount || 0;
+      // The last-message preview lives on the Conversation row and is therefore
+      // shared by both participants — but Clear and Delete are per-user. Left
+      // unguarded, a user who cleared the chat still saw the other person's
+      // last message sitting in their list row, quoting content that no longer
+      // exists for them anywhere else. Hide any preview at or before this
+      // user's own cutoff; the next message they actually receive is after it
+      // and shows normally.
+      const cutoff = p.clearedAt as Date | null;
+      const previewCleared = Boolean(
+        cutoff &&
+        conv.lastMessageAt &&
+        new Date(conv.lastMessageAt) <= new Date(cutoff),
+      );
 
-        // The last-message preview lives on the Conversation row and is therefore
-        // shared by both participants — but Clear and Delete are per-user. Left
-        // unguarded, a user who cleared the chat still saw the other person's
-        // last message sitting in their list row, quoting content that no longer
-        // exists for them anywhere else. Hide any preview at or before this
-        // user's own cutoff; the next message they actually receive is after it
-        // and shows normally.
-        const cutoff = p.clearedAt as Date | null;
-        const previewCleared = Boolean(
-          cutoff &&
-          conv.lastMessageAt &&
-          new Date(conv.lastMessageAt) <= new Date(cutoff),
-        );
+      const resolvedLastMsg =
+        conv.lastMessageAt && !previewCleared
+          ? {
+              id: conv.lastMessageId || null,
+              createdAt: conv.lastMessageAt,
+              senderId: conv.lastMessageSenderId || '',
+              senderName: conv.lastMessageSenderId === userId ? 'You' : '',
+              text: conv.lastMessageText || '',
+              type: conv.lastMessageType
+                ? conv.lastMessageType.toLowerCase()
+                : 'chat',
+              mediaUrl: null,
+              mediaType: null,
+            }
+          : null;
 
-        const resolvedLastMsg =
-          conv.lastMessageAt && !previewCleared
-            ? {
-                id: conv.lastMessageId || null,
-                createdAt: conv.lastMessageAt,
-                senderId: conv.lastMessageSenderId || '',
-                senderName: conv.lastMessageSenderId === userId ? 'You' : '',
-                text: conv.lastMessageText || '',
-                type: conv.lastMessageType
-                  ? conv.lastMessageType.toLowerCase()
-                  : 'chat',
-                mediaUrl: null,
-                mediaType: null,
-              }
-            : null;
-
-        return {
-          id: pubId,
-          publicId: pubId,
-          internalId: conv.id,
-          type: conv.type,
-          isMember: p.leftAt == null,
-          ownerId: conv.ownerId || null,
-          isGroup: isGroupConv,
-          name: isGroupConv
-            ? conv.name || 'Group'
-            : conv.name || presentUserName(otherUser) || 'Chat',
-          avatar: isGroupConv
-            ? groupAvatar
-            : conv.avatarKey || presentUserAvatar(otherUser) || null,
-          description: conv.description || null,
-          status: conv.status || 'ACTIVE',
-          isInstantMatch: conv.isInstantMatch || false,
-          expiresAt: conv.expiresAt || null,
-          createdAt: conv.createdAt,
-          updatedAt: conv.updatedAt,
-          whoCanJoin: conv.whoCanJoin || 'ANYONE',
-          visibility: conv.visibility || 'PUBLIC',
-          allowSharing: conv.allowSharing !== false,
-          editGroupPermission: conv.editGroupPermission || 'ADMIN',
-          groupUpdatesActive: p.groupUpdatesActive !== false,
-          pendingRequests: [],
-          admins: [],
-          members: [],
-          memberCount: isGroupConv
-            ? conv._count?.participants || conv.memberCount || 0
-            : 0,
-          pinned: p.isPinned || false,
-          pinnedAt: p.pinnedAt || null,
-          muted: p.isMuted || false,
-          // `blocked` drives the locked-input overlay, which both sides must get:
-          // neither party can send once a block exists in either direction.
-          blocked: blockStatus.isBlocked,
-          isBlockedByMe: blockStatus.isBlockedByMe,
-          isBlockedByThem: blockStatus.isBlockedByThem,
-          unreadCount,
-          unread: unreadCount,
-          lastMessage: resolvedLastMsg,
-          // Whether *this* viewer may send into this thread right now, judged
-          // by the one policy the backend enforces with. The client mirrors it
-          // to disable the composer; it is not the enforcement itself.
-          canSendMessages: isGroupConv
-            ? viewerEligible
-            : !targetUnavailable &&
-              viewerEligible &&
-              (!enforcingVerification ||
-                !otherUser ||
-                verificationAccess.isEligibleStatus(
-                  otherUser.verificationStatus,
-                )) &&
-              // First-year isolation. The query above already excludes a
-              // restricted DM; this covers the narrow window where a batch
-              // resolved between the two steps, and keeps this flag a faithful
-              // mirror of what the send path will do.
-              (!otherUser ||
-                this.studentYearPolicy.areBatchYearsCompatible(
-                  conversationViewerBatch,
-                  this.studentYearPolicy.getUserBatchYear(otherUser),
-                )),
-          targetUserUnavailable: targetUnavailable,
-          targetUser: otherUser
-            ? {
-                id: otherUser.id,
-                username: targetUnavailable
-                  ? DELETED_USER_USERNAME
-                  : otherUser.username,
-                displayName: presentUserName(otherUser),
-                avatar: presentUserAvatar(otherUser),
-                isDeleted: targetUnavailable,
-                profileAvailable: !targetUnavailable,
-                verificationStatus: targetUnavailable
-                  ? 'UNVERIFIED'
-                  : otherUser.verificationStatus,
-                isOnline: targetUnavailable
-                  ? false
-                  : canSeeOnline
-                    ? userPresence?.isOnline || false
-                    : false,
-                lastActive: targetUnavailable
-                  ? null
-                  : userPresence?.lastActive || null,
-              }
-            : null,
-        };
-      }),
-    );
+      return {
+        id: pubId,
+        publicId: pubId,
+        internalId: conv.id,
+        type: conv.type,
+        isMember: p.leftAt == null,
+        ownerId: conv.ownerId || null,
+        isGroup: isGroupConv,
+        name: isGroupConv
+          ? conv.name || 'Group'
+          : conv.name || presentUserName(otherUser) || 'Chat',
+        avatar: isGroupConv
+          ? groupAvatar
+          : conv.avatarKey || presentUserAvatar(otherUser) || null,
+        description: conv.description || null,
+        status: conv.status || 'ACTIVE',
+        isInstantMatch: conv.isInstantMatch || false,
+        expiresAt: conv.expiresAt || null,
+        createdAt: conv.createdAt,
+        updatedAt: conv.updatedAt,
+        whoCanJoin: conv.whoCanJoin || 'ANYONE',
+        visibility: conv.visibility || 'PUBLIC',
+        allowSharing: conv.allowSharing !== false,
+        editGroupPermission: conv.editGroupPermission || 'ADMIN',
+        groupUpdatesActive: p.groupUpdatesActive !== false,
+        pendingRequests: [],
+        admins: [],
+        members: [],
+        memberCount: isGroupConv
+          ? conv._count?.participants || conv.memberCount || 0
+          : 0,
+        pinned: p.isPinned || false,
+        pinnedAt: p.pinnedAt || null,
+        muted: p.isMuted || false,
+        // `blocked` drives the locked-input overlay, which both sides must get:
+        // neither party can send once a block exists in either direction.
+        blocked: blockStatus.isBlocked,
+        isBlockedByMe: blockStatus.isBlockedByMe,
+        isBlockedByThem: blockStatus.isBlockedByThem,
+        unreadCount,
+        unread: unreadCount,
+        lastMessage: resolvedLastMsg,
+        // Whether *this* viewer may send into this thread right now, judged
+        // by the one policy the backend enforces with. The client mirrors it
+        // to disable the composer; it is not the enforcement itself.
+        canSendMessages: isGroupConv
+          ? viewerEligible
+          : !targetUnavailable &&
+            viewerEligible &&
+            (!enforcingVerification ||
+              !otherUser ||
+              verificationAccess.isEligibleStatus(
+                otherUser.verificationStatus,
+              )) &&
+            // First-year isolation. The query above already excludes a
+            // restricted DM; this covers the narrow window where a batch
+            // resolved between the two steps, and keeps this flag a faithful
+            // mirror of what the send path will do.
+            (!otherUser ||
+              this.studentYearPolicy.areBatchYearsCompatible(
+                conversationViewerBatch,
+                this.studentYearPolicy.getUserBatchYear(otherUser),
+              )),
+        targetUserUnavailable: targetUnavailable,
+        targetUser: otherUser
+          ? {
+              id: otherUser.id,
+              username: targetUnavailable
+                ? DELETED_USER_USERNAME
+                : otherUser.username,
+              displayName: presentUserName(otherUser),
+              avatar: presentUserAvatar(otherUser),
+              isDeleted: targetUnavailable,
+              profileAvailable: !targetUnavailable,
+              verificationStatus: targetUnavailable
+                ? 'UNVERIFIED'
+                : otherUser.verificationStatus,
+              isOnline: targetUnavailable
+                ? false
+                : canSeeOnline
+                  ? userPresence?.isOnline || false
+                  : false,
+              lastActive: targetUnavailable
+                ? null
+                : userPresence?.lastActive || null,
+            }
+          : null,
+      };
+    });
 
     if (this.redis) {
       this.redis.setex(cacheKey, 60, JSON.stringify(result)).catch(() => {});

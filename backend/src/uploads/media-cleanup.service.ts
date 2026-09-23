@@ -792,9 +792,23 @@ export class MediaCleanupService {
    * If R2 is temporarily down, retries up to 3 times with exponential backoff.
    * Pending Media rows remain in the DB if all retries fail, ensuring no untracked orphans.
    */
-  async queueMediaDeletion(
+  queueMediaDeletion(keysOrUrls: (string | null | undefined)[]): Promise<void> {
+    // Not `async` (nothing here is awaited), but it keeps the promise contract
+    // `async` gave it: callers `void` it, so a synchronous throw would escape
+    // into the post or community deletion that called it.
+    try {
+      this.scheduleMediaDeletion(keysOrUrls);
+      return Promise.resolve();
+    } catch (err) {
+      return Promise.reject(
+        err instanceof Error ? err : new Error(String(err)),
+      );
+    }
+  }
+
+  private scheduleMediaDeletion(
     keysOrUrls: (string | null | undefined)[],
-  ): Promise<void> {
+  ): void {
     const validKeys = keysOrUrls
       .map((k) => this.extractStorageKey(k))
       .filter((k): k is string => Boolean(k && !this.isProtectedKey(k)));

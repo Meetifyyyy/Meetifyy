@@ -196,17 +196,14 @@ export class CommunitiesService implements OnModuleInit {
    * key either — it was pure TTL — so an in-process map has identical staleness
    * semantics at ~0ms.
    */
-  private async getCachedCollegeId(userId: string): Promise<string | null> {
+  private getCachedCollegeId(userId: string): string | null {
     const hit = CommunitiesService.collegeIdCache.get(userId);
     if (hit && hit.expiresAt > Date.now()) return hit.collegeId;
     if (hit) CommunitiesService.collegeIdCache.delete(userId);
     return null;
   }
 
-  private async setCachedCollegeId(
-    userId: string,
-    collegeId: string,
-  ): Promise<void> {
+  private setCachedCollegeId(userId: string, collegeId: string): void {
     const cache = CommunitiesService.collegeIdCache;
     if (cache.size >= CommunitiesService.COLLEGE_ID_CACHE_MAX) {
       const now = Date.now();
@@ -231,14 +228,14 @@ export class CommunitiesService implements OnModuleInit {
    */
   private async resolveCollegeId(userId: string): Promise<string | null> {
     if (!userId) return null;
-    const cached = await this.getCachedCollegeId(userId);
+    const cached = this.getCachedCollegeId(userId);
     if (cached) return cached;
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: { collegeId: true },
     });
     if (!user?.collegeId) return null;
-    await this.setCachedCollegeId(userId, user.collegeId);
+    this.setCachedCollegeId(userId, user.collegeId);
     return user.collegeId;
   }
 

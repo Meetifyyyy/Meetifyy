@@ -300,174 +300,172 @@ export class DmService extends MessagingCoreService {
       ? true
       : await this.verificationAccess.isUserEligible(userId);
 
-    const results = await Promise.all(
-      participants.map(async (p) => {
-        const conv = p.conversation;
-        const allParticipants = conv.participants || [];
-        const otherParticipantObj = allParticipants.find(
-          (part) => part.userId !== userId,
+    const results = participants.map((p) => {
+      const conv = p.conversation;
+      const allParticipants = conv.participants || [];
+      const otherParticipantObj = allParticipants.find(
+        (part) => part.userId !== userId,
+      );
+      const otherUser = otherParticipantObj?.user;
+
+      const lastMsgInfo = lastMsgMap.get(conv.id);
+
+      // DM Visibility Lifecycle (PENDING vs ACTIVE):
+      // A conversation with 0 messages MUST NOT appear in the conversation list
+      // for ANY user until the first message is sent.
+      //
+      // The old `|| conv.isInstantMatch` exemption is gone: Instant Match
+      // chats now live on their own conversation type and are excluded by the
+      // `type: 'DM'` filter on the query above, so an exemption here could
+      // only ever re-admit one.
+      if (!lastMsgInfo) {
+        return null;
+      }
+
+      // The last message is read from the shared Message table, but Clear and
+      // Delete are per-user watermarks. Without this guard a user who cleared
+      // the chat still saw the other person's last message quoted in their
+      // list row — content they can no longer open anywhere. The row itself
+      // stays (that is what separates Clear from Delete); only the preview goes.
+      const cutoff = (p as any).clearedAt as Date | null;
+      const previewCleared = Boolean(
+        cutoff &&
+        lastMsgInfo?.createdAt &&
+        new Date(lastMsgInfo.createdAt) <= new Date(cutoff),
+      );
+
+      const userPresence = otherUser ? presenceMap.get(otherUser.id) : null;
+      const unreadCount = unreadMap.get(conv.id) || 0;
+
+      let canSeeOnline = false;
+      let blockStatus = {
+        isBlocked: false,
+        isBlockedByMe: false,
+        isBlockedByThem: false,
+      };
+
+      if (otherUser) {
+        canSeeOnline = Boolean(
+          userPresence?.isOnline &&
+          otherUser.settings?.showOnlineStatus !== false,
         );
-        const otherUser = otherParticipantObj?.user;
-
-        const lastMsgInfo = lastMsgMap.get(conv.id);
-
-        // DM Visibility Lifecycle (PENDING vs ACTIVE):
-        // A conversation with 0 messages MUST NOT appear in the conversation list
-        // for ANY user until the first message is sent.
-        //
-        // The old `|| conv.isInstantMatch` exemption is gone: Instant Match
-        // chats now live on their own conversation type and are excluded by the
-        // `type: 'DM'` filter on the query above, so an exemption here could
-        // only ever re-admit one.
-        if (!lastMsgInfo) {
-          return null;
-        }
-
-        // The last message is read from the shared Message table, but Clear and
-        // Delete are per-user watermarks. Without this guard a user who cleared
-        // the chat still saw the other person's last message quoted in their
-        // list row — content they can no longer open anywhere. The row itself
-        // stays (that is what separates Clear from Delete); only the preview goes.
-        const cutoff = (p as any).clearedAt as Date | null;
-        const previewCleared = Boolean(
-          cutoff &&
-          lastMsgInfo?.createdAt &&
-          new Date(lastMsgInfo.createdAt) <= new Date(cutoff),
-        );
-
-        const userPresence = otherUser ? presenceMap.get(otherUser.id) : null;
-        const unreadCount = unreadMap.get(conv.id) || 0;
-
-        let canSeeOnline = false;
-        let blockStatus = {
-          isBlocked: false,
-          isBlockedByMe: false,
-          isBlockedByThem: false,
+        const isBlockedByMe = blockedByMeSet.has(otherUser.id);
+        const isBlockedByThem = blockedByThemSet.has(otherUser.id);
+        blockStatus = {
+          isBlocked: isBlockedByMe || isBlockedByThem,
+          isBlockedByMe,
+          isBlockedByThem,
         };
-
-        if (otherUser) {
-          canSeeOnline = Boolean(
-            userPresence?.isOnline &&
-            otherUser.settings?.showOnlineStatus !== false,
-          );
-          const isBlockedByMe = blockedByMeSet.has(otherUser.id);
-          const isBlockedByThem = blockedByThemSet.has(otherUser.id);
-          blockStatus = {
-            isBlocked: isBlockedByMe || isBlockedByThem,
-            isBlockedByMe,
-            isBlockedByThem,
-          };
-          if (isBlockedByThem) {
-            canSeeOnline = false;
-          }
+        if (isBlockedByThem) {
+          canSeeOnline = false;
         }
+      }
 
-        const pubId = (conv as any).publicId || conv.id;
+      const pubId = (conv as any).publicId || conv.id;
 
-        // One decision, used for the row title, the avatar, the composer and
-        // the target-user block below, so those four can never disagree about
-        // whether this person still exists.
-        const targetUnavailable = otherUser
-          ? isUnavailableUser(otherUser)
-          : false;
+      // One decision, used for the row title, the avatar, the composer and
+      // the target-user block below, so those four can never disagree about
+      // whether this person still exists.
+      const targetUnavailable = otherUser
+        ? isUnavailableUser(otherUser)
+        : false;
 
-        return {
-          id: pubId,
-          publicId: pubId,
-          internalId: conv.id,
-          type: 'DM' as const,
-          isMember: (p as any).leftAt == null,
-          ownerId: conv.ownerId || null,
-          // `conv.name` and `conv.avatarKey` are null on a DM (they are group
-          // fields), so the partner's own values are what actually render —
-          // which is exactly why they have to go through the presenter.
-          name: conv.name || presentUserName(otherUser) || 'Chat',
-          avatar: conv.avatarKey || presentUserAvatar(otherUser) || null,
-          description: conv.description || null,
-          status: conv.status || 'ACTIVE',
-          isInstantMatch: conv.isInstantMatch || false,
-          expiresAt: conv.expiresAt || null,
-          createdAt: conv.createdAt,
-          updatedAt: conv.updatedAt,
-          pinned: p.isPinned || false,
-          pinnedAt: p.pinnedAt || null,
-          muted: p.isMuted || false,
-          // `blocked` is the mutual answer: the thread is closed for writes if
-          // EITHER side blocked. The two directional flags below tell the client
-          // which of the two neutral messages to render — they must never be
-          // collapsed into one, and `isBlockedByThem` must never be hardcoded:
-          // doing so left the blocked user with a working-looking input.
-          blocked: blockStatus.isBlockedByMe || blockStatus.isBlockedByThem,
-          isBlockedByMe: blockStatus.isBlockedByMe,
-          isBlockedByThem: blockStatus.isBlockedByThem,
-          unreadCount,
-          unread: unreadCount,
-          lastMessage:
-            lastMsgInfo && !previewCleared
-              ? {
-                  createdAt: lastMsgInfo.createdAt,
-                  senderId: lastMsgInfo.senderId,
-                  senderName: lastMsgInfo.senderName,
-                  text: lastMsgInfo.text,
-                  type: lastMsgInfo.type,
-                  mediaUrl: lastMsgInfo.mediaUrl,
-                  mediaType: lastMsgInfo.mediaType,
-                }
-              : null,
-          // Mirrors the rule the backend enforces on send: both sides must be
-          // eligible for this viewer to be offered a composer.
-          canSendMessages:
-            !targetUnavailable &&
-            viewerEligible &&
-            (!enforcingVerification ||
-              !otherUser ||
-              this.verificationAccess.isEligibleStatus(
-                (otherUser as any).verificationStatus,
-              )) &&
-            // First-year isolation. Belt-and-braces: the query above already
-            // excludes a restricted partner, so this only fires for a row that
-            // slipped through (a partner whose batch resolved between the two
-            // steps). Mirrors the rule the send path enforces, so the composer
-            // is never offered for a pair the server refuses.
-            (!otherUser ||
-              this.studentYearPolicy.areBatchYearsCompatible(
-                viewerBatch,
-                this.studentYearPolicy.getUserBatchYear(otherUser),
-              )),
-          // Distinct from `canSendMessages` on purpose: the client renders a
-          // different, specific notice for "this user is no longer available"
-          // than for "you are not verified yet".
-          targetUserUnavailable: targetUnavailable,
-          targetUser: otherUser
+      return {
+        id: pubId,
+        publicId: pubId,
+        internalId: conv.id,
+        type: 'DM' as const,
+        isMember: (p as any).leftAt == null,
+        ownerId: conv.ownerId || null,
+        // `conv.name` and `conv.avatarKey` are null on a DM (they are group
+        // fields), so the partner's own values are what actually render —
+        // which is exactly why they have to go through the presenter.
+        name: conv.name || presentUserName(otherUser) || 'Chat',
+        avatar: conv.avatarKey || presentUserAvatar(otherUser) || null,
+        description: conv.description || null,
+        status: conv.status || 'ACTIVE',
+        isInstantMatch: conv.isInstantMatch || false,
+        expiresAt: conv.expiresAt || null,
+        createdAt: conv.createdAt,
+        updatedAt: conv.updatedAt,
+        pinned: p.isPinned || false,
+        pinnedAt: p.pinnedAt || null,
+        muted: p.isMuted || false,
+        // `blocked` is the mutual answer: the thread is closed for writes if
+        // EITHER side blocked. The two directional flags below tell the client
+        // which of the two neutral messages to render — they must never be
+        // collapsed into one, and `isBlockedByThem` must never be hardcoded:
+        // doing so left the blocked user with a working-looking input.
+        blocked: blockStatus.isBlockedByMe || blockStatus.isBlockedByThem,
+        isBlockedByMe: blockStatus.isBlockedByMe,
+        isBlockedByThem: blockStatus.isBlockedByThem,
+        unreadCount,
+        unread: unreadCount,
+        lastMessage:
+          lastMsgInfo && !previewCleared
             ? {
-                id: otherUser.id,
-                username: targetUnavailable
-                  ? DELETED_USER_USERNAME
-                  : otherUser.username,
-                displayName: presentUserName(otherUser),
-                avatar: presentUserAvatar(otherUser),
-                isDeleted: targetUnavailable,
-                // No profile page should resolve for a deleted account, so the
-                // client renders the name as text rather than a link.
-                profileAvailable: !targetUnavailable,
-                verificationStatus: targetUnavailable
-                  ? 'UNVERIFIED'
-                  : (otherUser as any).verificationStatus,
-                // A deleted account is never shown as online, whatever a stale
-                // presence key happens to say.
-                isOnline: targetUnavailable
-                  ? false
-                  : canSeeOnline
-                    ? userPresence?.isOnline || false
-                    : false,
-                lastActive: targetUnavailable
-                  ? null
-                  : userPresence?.lastActive || null,
+                createdAt: lastMsgInfo.createdAt,
+                senderId: lastMsgInfo.senderId,
+                senderName: lastMsgInfo.senderName,
+                text: lastMsgInfo.text,
+                type: lastMsgInfo.type,
+                mediaUrl: lastMsgInfo.mediaUrl,
+                mediaType: lastMsgInfo.mediaType,
               }
             : null,
-        };
-      }),
-    );
+        // Mirrors the rule the backend enforces on send: both sides must be
+        // eligible for this viewer to be offered a composer.
+        canSendMessages:
+          !targetUnavailable &&
+          viewerEligible &&
+          (!enforcingVerification ||
+            !otherUser ||
+            this.verificationAccess.isEligibleStatus(
+              (otherUser as any).verificationStatus,
+            )) &&
+          // First-year isolation. Belt-and-braces: the query above already
+          // excludes a restricted partner, so this only fires for a row that
+          // slipped through (a partner whose batch resolved between the two
+          // steps). Mirrors the rule the send path enforces, so the composer
+          // is never offered for a pair the server refuses.
+          (!otherUser ||
+            this.studentYearPolicy.areBatchYearsCompatible(
+              viewerBatch,
+              this.studentYearPolicy.getUserBatchYear(otherUser),
+            )),
+        // Distinct from `canSendMessages` on purpose: the client renders a
+        // different, specific notice for "this user is no longer available"
+        // than for "you are not verified yet".
+        targetUserUnavailable: targetUnavailable,
+        targetUser: otherUser
+          ? {
+              id: otherUser.id,
+              username: targetUnavailable
+                ? DELETED_USER_USERNAME
+                : otherUser.username,
+              displayName: presentUserName(otherUser),
+              avatar: presentUserAvatar(otherUser),
+              isDeleted: targetUnavailable,
+              // No profile page should resolve for a deleted account, so the
+              // client renders the name as text rather than a link.
+              profileAvailable: !targetUnavailable,
+              verificationStatus: targetUnavailable
+                ? 'UNVERIFIED'
+                : (otherUser as any).verificationStatus,
+              // A deleted account is never shown as online, whatever a stale
+              // presence key happens to say.
+              isOnline: targetUnavailable
+                ? false
+                : canSeeOnline
+                  ? userPresence?.isOnline || false
+                  : false,
+              lastActive: targetUnavailable
+                ? null
+                : userPresence?.lastActive || null,
+            }
+          : null,
+      };
+    });
 
     return results.filter(Boolean);
   }

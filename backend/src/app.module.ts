@@ -196,7 +196,7 @@ import { randomUUID } from 'node:crypto';
     EventEmitterModule.forRoot(),
     BullModule.forRootAsync({
       imports: [ConfigModule],
-      useFactory: async () => {
+      useFactory: () => {
         let connection: any = {};
         const redisUrlString = config.redis.url;
 

@@ -895,12 +895,12 @@ export class MessagingCoreService {
    * services (DM / group / unified) so every read endpoint is equally fast and
    * correctly notifies the other side.
    */
-  async markAsRead(
+  markAsRead(
     conversationId: string,
     userId: string,
   ): Promise<{ success: boolean }> {
     setImmediate(() => void this._persistMarkAsRead(conversationId, userId));
-    return { success: true };
+    return Promise.resolve({ success: true });
   }
 
   protected async _persistMarkAsRead(
