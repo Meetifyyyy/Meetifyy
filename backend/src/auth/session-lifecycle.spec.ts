@@ -108,7 +108,7 @@ describe('AuthController — session lifecycle', () => {
       const serialised = JSON.stringify(body);
       expect(serialised).not.toContain('provider-refresh');
       expect(serialised).not.toContain('provider-access');
-      expect('session' in body).toBe(false);
+      expect((body as { session?: unknown }).session).toBeUndefined();
     });
 
     it('keeps the provider refresh token server-side, sealed into the session', async () => {
