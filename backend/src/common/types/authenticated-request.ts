@@ -74,6 +74,22 @@ export function requestBody(
     : {};
 }
 
+/**
+ * What the realtime gateway attaches to a socket once its handshake is
+ * verified (`socket.data`). Every field is absent until then, so every read
+ * must handle an unauthenticated socket. Stored in `socket.data`, Socket.IO's
+ * typed per-socket store, rather than as ad-hoc properties on the socket:
+ * `data` is what `fetchSockets()` carries across a Redis adapter.
+ */
+export interface SocketIdentity {
+  userId?: string;
+  userName?: string;
+  /** The session the handshake named; revoking it disconnects the socket. */
+  sessionId?: string;
+  /** Internal conversation ids joined at connect, read back on disconnect. */
+  userConvIds?: string[];
+}
+
 /** The `SuperAdmin` row `AdminJwtGuard` loads and attaches. */
 export interface AdminActor {
   id: string;

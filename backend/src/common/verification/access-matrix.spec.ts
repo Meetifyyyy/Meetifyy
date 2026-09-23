@@ -40,7 +40,8 @@ describe('verification access matrix', () => {
         }),
       }),
       switchToWs: () => ({
-        getClient: () => (opts.userId ? { userId: opts.userId } : {}),
+        // The gateway keeps a socket's identity in `socket.data`.
+        getClient: () => ({ data: opts.userId ? { userId: opts.userId } : {} }),
       }),
     }) as unknown as ExecutionContext;
 

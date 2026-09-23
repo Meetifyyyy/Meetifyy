@@ -79,13 +79,11 @@ function build() {
   return { gateway, emitted, findFirst, markAsRead, sendMessage };
 }
 
-/** A connected socket for `userId`, stored both where it is read today and in `data`. */
+/** A connected socket for `userId`: the gateway keeps identity in `socket.data`. */
 function socketFor(userId: string) {
   const emit: Emit = jest.fn<void, [string, unknown]>();
   return {
     id: `sock-${userId}`,
-    userId,
-    userName: userId,
     data: { userId, userName: userId },
     rooms: new Set<string>(),
     emit,

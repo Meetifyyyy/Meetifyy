@@ -8,7 +8,7 @@ import {
   ConnectedSocket,
   OnGatewayInit,
 } from '@nestjs/websockets';
-import { Server, Socket } from 'socket.io';
+import type { AppServer, AppSocket } from './socket-types';
 import { Logger, Optional, OnModuleDestroy } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
 import { SupabaseService } from '../supabase/supabase.service';
@@ -70,7 +70,7 @@ import {
  * guards were rewritten to stop trusting. Read from the right by the same hop
  * count the HTTP side uses.
  */
-function socketIp(client: any): string {
+function socketIp(client: AppSocket): string {
   const forwarded = client?.handshake?.headers?.['x-forwarded-for'];
   const hops = config.rateLimit.trustProxyHops;
 
@@ -115,7 +115,7 @@ export class RealtimeGateway
   private readonly chatLogger = new Logger('CHAT');
 
   @WebSocketServer()
-  server: Server;
+  server: AppServer;
 
   // In-memory alias cache: conversationId (any form) → { id, publicId }
   // Avoids a Prisma round-trip on every emitToConversation call (e.g. typing events)
@@ -648,9 +648,9 @@ export class RealtimeGateway
       const sockets = this.server?.sockets?.sockets;
       if (!sockets || sockets.size === 0) return;
 
-      const bySession = new Map<string, Socket[]>();
+      const bySession = new Map<string, AppSocket[]>();
       for (const socket of sockets.values()) {
-        const id = (socket as any).sessionId;
+        const id = socket.data.sessionId;
         if (typeof id !== 'string' || !id) continue;
         const list = bySession.get(id) || [];
         list.push(socket);
@@ -697,7 +697,7 @@ export class RealtimeGateway
     if (this.cacheEvictionTimer) clearInterval(this.cacheEvictionTimer);
   }
 
-  async handleConnection(client: Socket) {
+  async handleConnection(client: AppSocket) {
     // Connection limiting comes in two tiers, and the ORDER is load-bearing.
     //
     // This one is per-address and runs BEFORE the token is verified, because
@@ -859,7 +859,7 @@ export class RealtimeGateway
         client.disconnect();
         return;
       }
-      (client as any).sessionId = handshakeSessionId;
+      client.data.sessionId = handshakeSessionId;
     }
 
     const lifecycle = await this.prisma.user
@@ -948,8 +948,8 @@ export class RealtimeGateway
       user.email ||
       'Unknown';
 
-    (client as any).userId = userId;
-    (client as any).userName = userName;
+    client.data.userId = userId;
+    client.data.userName = userName;
     void client.join(userId); // Join user's personal room for multiplexed broadcasting
 
     // Automatically join all active conversation rooms for O(1) broadcasting.
@@ -972,10 +972,10 @@ export class RealtimeGateway
         if (p.conversation?.publicId)
           void client.join(`conv_${p.conversation.publicId}`);
       });
-      (client as any).userConvIds = cachedConvIds;
+      client.data.userConvIds = cachedConvIds;
     } catch (err) {
       this.logger.error('Failed to pre-join conversation rooms', err);
-      (client as any).userConvIds = [];
+      client.data.userConvIds = [];
     }
 
     await this.presenceService.setOnline(userId, client.id);
@@ -983,13 +983,13 @@ export class RealtimeGateway
     this.logger.log(`Connected user=${userId} socket=${client.id}`);
   }
 
-  async handleDisconnect(client: Socket) {
-    const userId = (client as any).userId;
+  async handleDisconnect(client: AppSocket) {
+    const userId = client.data.userId;
 
     if (userId) {
       // Use the conv IDs cached at connection time — avoids a DB query on every
       // disconnect (tab close, network drop, mobile background, etc.).
-      const userConvIds: string[] = (client as any).userConvIds || [];
+      const userConvIds: string[] = client.data.userConvIds || [];
 
       userConvIds.forEach((cId) => {
         this.server
@@ -1005,8 +1005,8 @@ export class RealtimeGateway
   }
 
   @SubscribeMessage('presence:heartbeat')
-  async handlePresenceHeartbeat(@ConnectedSocket() client: Socket) {
-    const userId = (client as any).userId;
+  async handlePresenceHeartbeat(@ConnectedSocket() client: AppSocket) {
+    const userId = client.data.userId;
     if (!userId) return { status: 'error', error: 'Unauthenticated' };
     // The client sends one every 25s; 6/min absorbs a reconnect without
     // letting a stuck client spin. Silent — a dropped heartbeat is harmless.
@@ -1017,10 +1017,10 @@ export class RealtimeGateway
 
   @SubscribeMessage('message:send')
   async handleSendMessage(
-    @ConnectedSocket() client: Socket,
+    @ConnectedSocket() client: AppSocket,
     @MessageBody() data: unknown,
   ) {
-    const senderId = (client as any).userId;
+    const senderId = client.data.userId;
     if (!senderId) return { status: 'error', error: 'Unauthenticated' };
     const clientKey = correlationIdOf(data);
     // The same DTO the HTTP route validates with, so the socket is not the one
@@ -1094,10 +1094,10 @@ export class RealtimeGateway
 
   @SubscribeMessage('message:catchup')
   async handleMessageCatchup(
-    @ConnectedSocket() client: Socket,
+    @ConnectedSocket() client: AppSocket,
     @MessageBody() data: { since: string },
   ) {
-    const userId = (client as any).userId;
+    const userId = client.data.userId;
     if (!userId || !data?.since)
       return { status: 'error', error: 'Invalid parameters' };
 
@@ -1142,10 +1142,10 @@ export class RealtimeGateway
   // is a cheap way to make the server do work.
   @SubscribeMessage('post:join')
   async handlePostJoin(
-    @ConnectedSocket() client: Socket,
+    @ConnectedSocket() client: AppSocket,
     @MessageBody() data: { postId?: string },
   ) {
-    const userId = (client as any).userId;
+    const userId = client.data.userId;
     if (!userId || !data?.postId) return;
     const limited = await this.limitEvent(userId, [
       { policy: 'socket.roomjoin.user', identifier: userId },
@@ -1215,7 +1215,7 @@ export class RealtimeGateway
 
   @SubscribeMessage('post:leave')
   handlePostLeave(
-    @ConnectedSocket() client: Socket,
+    @ConnectedSocket() client: AppSocket,
     @MessageBody() data: { postId?: string },
   ) {
     if (!data?.postId) return;
@@ -1227,10 +1227,10 @@ export class RealtimeGateway
   // auto-cleaned on disconnect, so a missed 'activity:leave' can't leak.
   @SubscribeMessage('activity:join')
   async handleActivityJoin(
-    @ConnectedSocket() client: Socket,
+    @ConnectedSocket() client: AppSocket,
     @MessageBody() data: { activityId?: string },
   ) {
-    const userId = (client as any).userId;
+    const userId = client.data.userId;
     if (!userId || !data?.activityId) return;
 
     const limited = await this.limitEvent(userId, [
@@ -1351,7 +1351,7 @@ export class RealtimeGateway
 
     for (const socketId of Array.from(room)) {
       const socket = this.server.sockets.sockets.get(socketId);
-      const userId = socket ? (socket as any).userId : null;
+      const userId = socket ? socket.data.userId : null;
       if (!socket) continue;
       if (!userId) {
         void socket.leave(`activity_${activityId}`);
@@ -1371,7 +1371,7 @@ export class RealtimeGateway
 
   @SubscribeMessage('activity:leave')
   handleActivityLeave(
-    @ConnectedSocket() client: Socket,
+    @ConnectedSocket() client: AppSocket,
     @MessageBody() data: { activityId?: string },
   ) {
     if (!data?.activityId) return;
@@ -1380,11 +1380,11 @@ export class RealtimeGateway
 
   @SubscribeMessage('typing:start')
   async handleTypingStart(
-    @ConnectedSocket() client: Socket,
+    @ConnectedSocket() client: AppSocket,
     @MessageBody() data: unknown,
   ) {
-    const userId = (client as any).userId;
-    const userName = (client as any).userName || 'Someone';
+    const userId = client.data.userId;
+    const userName = client.data.userName || 'Someone';
     const parsed = parseSocketPayload(ConversationRefPayload, data);
     if (!userId || !parsed.ok) return;
     const { conversationId } = parsed.value;
@@ -1406,10 +1406,10 @@ export class RealtimeGateway
 
   @SubscribeMessage('typing:stop')
   async handleTypingStop(
-    @ConnectedSocket() client: Socket,
+    @ConnectedSocket() client: AppSocket,
     @MessageBody() data: unknown,
   ) {
-    const userId = (client as any).userId;
+    const userId = client.data.userId;
     const parsed = parseSocketPayload(ConversationRefPayload, data);
     if (!userId || !parsed.ok) return;
     const { conversationId } = parsed.value;
@@ -1426,7 +1426,7 @@ export class RealtimeGateway
   // Still emitted by older installed app builds; kept as an alias.
   @SubscribeMessage('message:received')
   async handleMessageReceived(
-    @ConnectedSocket() client: Socket,
+    @ConnectedSocket() client: AppSocket,
     @MessageBody() data: unknown,
   ) {
     return this.handleMessageDeliveredInternal(client, data);
@@ -1434,14 +1434,17 @@ export class RealtimeGateway
 
   @SubscribeMessage('message:delivered')
   async handleMessageDelivered(
-    @ConnectedSocket() client: Socket,
+    @ConnectedSocket() client: AppSocket,
     @MessageBody() data: unknown,
   ) {
     return this.handleMessageDeliveredInternal(client, data);
   }
 
-  private async handleMessageDeliveredInternal(client: Socket, data: unknown) {
-    const userId = (client as any).userId;
+  private async handleMessageDeliveredInternal(
+    client: AppSocket,
+    data: unknown,
+  ) {
+    const userId = client.data.userId;
     const parsed = parseSocketPayload(DeliveryReceiptPayload, data);
     if (!userId || !parsed.ok) return;
     const { conversationId, messageId } = parsed.value;
@@ -1459,7 +1462,7 @@ export class RealtimeGateway
 
   @SubscribeMessage('messages:seen')
   async handleMessagesSeen(
-    @ConnectedSocket() client: Socket,
+    @ConnectedSocket() client: AppSocket,
     @MessageBody() data: unknown,
   ) {
     return this.handleSeenInternal(client, data);
@@ -1467,15 +1470,15 @@ export class RealtimeGateway
 
   @SubscribeMessage('conversation:mark_seen')
   async handleMarkSeen(
-    @ConnectedSocket() client: Socket,
+    @ConnectedSocket() client: AppSocket,
     @MessageBody() data: unknown,
   ) {
     return this.handleSeenInternal(client, data);
   }
 
-  private async handleSeenInternal(client: Socket, data: unknown) {
+  private async handleSeenInternal(client: AppSocket, data: unknown) {
     try {
-      const readerId = (client as any).userId;
+      const readerId = client.data.userId;
       const parsed = parseSocketPayload(SeenPayload, data);
       if (!readerId || !parsed.ok) return;
       const { conversationId, lastMessageId } = parsed.value;
@@ -1503,7 +1506,7 @@ export class RealtimeGateway
   }
 
   @SubscribeMessage('ping')
-  handlePing(@ConnectedSocket() _client: Socket) {
+  handlePing(@ConnectedSocket() _client: AppSocket) {
     return { event: 'pong', timestamp: Date.now() };
   }
 
@@ -1650,10 +1653,10 @@ export class RealtimeGateway
   // is what turns a mass disconnect into a thundering herd against Postgres.
   @SubscribeMessage('conversation:join_rooms')
   async handleJoinRooms(
-    @ConnectedSocket() client: Socket,
+    @ConnectedSocket() client: AppSocket,
     @MessageBody() data: { conversationIds: string[] },
   ) {
-    const userId = (client as any).userId;
+    const userId = client.data.userId;
     if (userId) {
       const limited = await this.limitEvent(userId, [
         { policy: 'socket.catchup.user', identifier: userId },
@@ -1715,12 +1718,12 @@ export class RealtimeGateway
 
   @SubscribeMessage('community:join_room')
   async handleJoinCommunityRoom(
-    @ConnectedSocket() client: Socket,
+    @ConnectedSocket() client: AppSocket,
     @MessageBody() data: { communityId: string },
   ) {
     if (!data?.communityId) return;
 
-    const userId = (client as any).userId;
+    const userId = client.data.userId;
     if (userId) {
       const limited = await this.limitEvent(userId, [
         { policy: 'socket.roomjoin.user', identifier: userId },
@@ -1794,7 +1797,7 @@ export class RealtimeGateway
 
   @SubscribeMessage('community:leave_room')
   handleLeaveCommunityRoom(
-    @ConnectedSocket() client: Socket,
+    @ConnectedSocket() client: AppSocket,
     @MessageBody() data: { communityId: string },
   ) {
     if (data?.communityId) {
@@ -1832,10 +1835,10 @@ export class RealtimeGateway
   @SubscribeMessage('queue:join')
   @VerifiedOnly()
   async handleQueueJoin(
-    @ConnectedSocket() client: Socket,
+    @ConnectedSocket() client: AppSocket,
     @MessageBody() data: any,
   ) {
-    const userId = (client as any).userId;
+    const userId = client.data.userId;
     if (!userId)
       return { status: 'error', error: 'Unauthenticated', code: 401 };
 
@@ -1858,8 +1861,8 @@ export class RealtimeGateway
   }
 
   @SubscribeMessage('queue:cancel')
-  async handleQueueCancel(@ConnectedSocket() client: Socket) {
-    const userId = (client as any).userId;
+  async handleQueueCancel(@ConnectedSocket() client: AppSocket) {
+    const userId = client.data.userId;
     if (!userId)
       return { status: 'error', error: 'Unauthenticated', code: 401 };
     try {
@@ -1873,10 +1876,10 @@ export class RealtimeGateway
   @SubscribeMessage('match:respond')
   @VerifiedOnly()
   async handleMatchRespond(
-    @ConnectedSocket() client: Socket,
+    @ConnectedSocket() client: AppSocket,
     @MessageBody() data: any,
   ) {
-    const userId = (client as any).userId;
+    const userId = client.data.userId;
     if (!userId)
       return { status: 'error', error: 'Unauthenticated', code: 401 };
 
@@ -1901,8 +1904,8 @@ export class RealtimeGateway
    */
   @SubscribeMessage('queue:sync')
   @VerifiedOnly()
-  async handleQueueSync(@ConnectedSocket() client: Socket) {
-    const userId = (client as any).userId;
+  async handleQueueSync(@ConnectedSocket() client: AppSocket) {
+    const userId = client.data.userId;
     if (userId) {
       const limited = await this.limitEvent(userId, [
         { policy: 'im.queuesync.user', identifier: userId },
@@ -1930,8 +1933,8 @@ export class RealtimeGateway
    */
   @SubscribeMessage('queue:list')
   @VerifiedOnly()
-  async handleQueueList(@ConnectedSocket() client: Socket) {
-    const userId = (client as any).userId;
+  async handleQueueList(@ConnectedSocket() client: AppSocket) {
+    const userId = client.data.userId;
     if (!userId)
       return { status: 'error', error: 'Unauthenticated', code: 401 };
 
@@ -1958,8 +1961,8 @@ export class RealtimeGateway
    */
   @SubscribeMessage('instant_match:chat_state')
   @VerifiedOnly()
-  async handleInstantMatchChatState(@ConnectedSocket() client: Socket) {
-    const userId = (client as any).userId;
+  async handleInstantMatchChatState(@ConnectedSocket() client: AppSocket) {
+    const userId = client.data.userId;
     if (!userId)
       return { status: 'error', error: 'Unauthenticated', code: 401 };
     try {
@@ -1982,10 +1985,10 @@ export class RealtimeGateway
   @SubscribeMessage('instant_match:leave')
   @VerifiedOnly()
   async handleInstantMatchLeave(
-    @ConnectedSocket() client: Socket,
+    @ConnectedSocket() client: AppSocket,
     @MessageBody() data: any,
   ) {
-    const userId = (client as any).userId;
+    const userId = client.data.userId;
     if (!userId)
       return { status: 'error', error: 'Unauthenticated', code: 401 };
 

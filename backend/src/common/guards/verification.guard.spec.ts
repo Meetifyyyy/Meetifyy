@@ -23,7 +23,7 @@ function buildContext(opts: {
   const mockGetClass = jest.fn();
 
   const httpRequest = { user: userId ? { id: userId } : undefined };
-  const wsClient = userId ? { userId } : {};
+  const wsClient = { data: userId ? { userId } : {} };
 
   return {
     getType: jest.fn(() => type),

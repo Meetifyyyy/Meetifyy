@@ -101,6 +101,7 @@ describe('RealtimeGateway — Authentication', () => {
 
   it('rejects connection if token is missing', async () => {
     const client: any = {
+      data: {},
       handshake: { auth: {} },
       disconnect: jest.fn(),
       join: jest.fn(),
@@ -113,6 +114,7 @@ describe('RealtimeGateway — Authentication', () => {
 
   it('rejects connection if token verification fails (forged/invalid signature)', async () => {
     const client: any = {
+      data: {},
       handshake: { auth: { token: 'header.forgedpayload.invalidsignature' } },
       disconnect: jest.fn(),
       join: jest.fn(),
@@ -136,6 +138,7 @@ describe('RealtimeGateway — Authentication', () => {
     'rejects connection when the account is %s despite a valid token',
     async (accountStatus) => {
       const client: any = {
+        data: {},
         id: 'socket-999',
         handshake: {
           auth: { token: 'valid.signed.jwt' },
@@ -169,6 +172,7 @@ describe('RealtimeGateway — Authentication', () => {
 
   it('accepts connection if token verification succeeds with valid signature', async () => {
     const client: any = {
+      data: {},
       id: 'socket-123',
       handshake: {
         auth: { token: 'valid.signed.jwt' },
@@ -187,8 +191,8 @@ describe('RealtimeGateway — Authentication', () => {
 
     await gateway.handleConnection(client);
     expect(client.disconnect).not.toHaveBeenCalled();
-    expect(client.userId).toBe('user-uuid-456');
-    expect(client.userName).toBe('vuser');
+    expect(client.data.userId).toBe('user-uuid-456');
+    expect(client.data.userName).toBe('vuser');
     expect(client.join).toHaveBeenCalledWith('user-uuid-456');
     expect(presenceService.setOnline).toHaveBeenCalledWith(
       'user-uuid-456',
@@ -199,6 +203,7 @@ describe('RealtimeGateway — Authentication', () => {
   it('rejects connection if Supabase auth is not configured', async () => {
     supabaseService.isConfigured = false;
     const client: any = {
+      data: {},
       handshake: { auth: { token: 'some.token' } },
       disconnect: jest.fn(),
       join: jest.fn(),
@@ -240,6 +245,7 @@ describe('RealtimeGateway — Authentication', () => {
     });
 
     const client: any = {
+      data: {},
       id: 'socket-legal',
       handshake: {
         auth: { token: 'valid.token.signature' },
@@ -281,7 +287,7 @@ describe('RealtimeGateway — room join authorization', () => {
     join: jest.fn(),
     leave: jest.fn(),
     emit: jest.fn(),
-    userId: 'viewer',
+    data: { userId: 'viewer' },
   });
 
   beforeEach(() => {
@@ -476,6 +482,7 @@ describe('RealtimeGateway — cookie handshake', () => {
 
   const client = (headers: any, auth: any = {}) => ({
     id: 'sock-1',
+    data: {},
     handshake: { auth, headers },
     disconnect: jest.fn(),
     join: jest.fn(),
@@ -563,6 +570,7 @@ describe('RealtimeGateway — session binding on the handshake', () => {
   const socket = (cookie: string) => ({
     id: 's1',
     handshake: { auth: {}, headers: { cookie } },
+    data: {},
     disconnect: jest.fn(),
     join: jest.fn(),
     emit: jest.fn(),
