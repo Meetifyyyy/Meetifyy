@@ -130,20 +130,49 @@ describe('AuthController — session lifecycle', () => {
       expect(authService.syncProfile).toHaveBeenCalled();
     });
 
-    it('still signs the user in when the profile read fails', async () => {
-      // The credentials were accepted and the session exists by then, so an
-      // enrichment failure must not become a failed sign-in.
-      authService.syncProfile.mockRejectedValueOnce(new Error('db blip'));
-
-      const body: any = await controller.login(
+    it('provisions the profile before creating the session row that points at it', async () => {
+      // UserSession.userId is a foreign key to User. A verified account with no
+      // User row yet — a signup whose handover never finished — used to pass
+      // the password check and then 500 on the session insert, on every
+      // attempt. syncProfile is what creates that row, so it has to run first.
+      await controller.login(
         { identifier: 'a', password: 'p' } as any,
         req() as any,
         res,
       );
+      expect(authService.syncProfile.mock.invocationCallOrder[0]).toBeLessThan(
+        sessions.issue.mock.invocationCallOrder[0],
+      );
+    });
 
-      expect(body.user.id).toBe('u1');
-      expect(body.csrfToken).toEqual(expect.any(String));
-      expect(cookiesSet().mf_access).toBe('provider-access');
+    it('issues no session and sends no sign-in email when the profile refuses', async () => {
+      // A banned account, for example. Nothing should be created for it, and
+      // nobody should be told a sign-in happened.
+      const emailService = { sendNewLoginEmail: jest.fn() };
+      controller = new AuthController(
+        authService,
+        emailService as any,
+        {
+          consume: jest.fn().mockResolvedValue({ allowed: true }),
+          penalize: jest.fn().mockResolvedValue(undefined),
+        } as any,
+        sessions,
+      );
+      authService.syncProfile.mockRejectedValueOnce(
+        new ForbiddenException('Account has been banned'),
+      );
+
+      await expect(
+        controller.login(
+          { identifier: 'a', password: 'p' } as any,
+          req() as any,
+          res,
+        ),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+
+      expect(sessions.issue).not.toHaveBeenCalled();
+      expect(res.cookie).not.toHaveBeenCalled();
+      expect(emailService.sendNewLoginEmail).not.toHaveBeenCalled();
     });
 
     it('hands back the CSRF token so a page that cannot read the cookie can still echo it', async () => {
@@ -154,6 +183,40 @@ describe('AuthController — session lifecycle', () => {
       );
       expect(body.csrfToken).toEqual(expect.any(String));
       expect(body.csrfToken).toBe(cookiesSet().mf_csrf);
+    });
+  });
+
+  describe('adoptSession', () => {
+    const user = { id: 'u1', email: 'a@b.c', token: 'provider-access' } as any;
+
+    it('provisions the profile before creating the session row that points at it', async () => {
+      // Adoption is a brand-new account's first request, so its User row may
+      // not exist yet; the session insert would fail on the foreign key.
+      await controller.adoptSession(
+        { refreshToken: 'provider-refresh' } as any,
+        user,
+        req() as any,
+        res,
+      );
+      expect(authService.syncProfile.mock.invocationCallOrder[0]).toBeLessThan(
+        sessions.issue.mock.invocationCallOrder[0],
+      );
+    });
+
+    it('issues nothing when the profile cannot be provisioned', async () => {
+      authService.syncProfile.mockRejectedValueOnce(
+        new UnauthorizedException('Email verification required.'),
+      );
+      await expect(
+        controller.adoptSession(
+          { refreshToken: 'provider-refresh' } as any,
+          user,
+          req() as any,
+          res,
+        ),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+      expect(sessions.issue).not.toHaveBeenCalled();
+      expect(res.cookie).not.toHaveBeenCalled();
     });
   });
 

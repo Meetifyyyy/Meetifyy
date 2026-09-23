@@ -259,6 +259,11 @@ export class AuthController {
     @Req() req: Request,
     @Res({ passthrough: true }) res: any,
   ) {
+    // Profile first: the session row is a foreign key to it, and this is the
+    // first request a brand-new account makes, so the row may not exist yet.
+    // `syncProfile` creates it for a verified address. See `login`.
+    const syncedUser = await this.authService.syncProfile(user);
+
     const issued = await this.sessions.issue(
       user.id,
       this.deviceOf(req),
@@ -274,7 +279,6 @@ export class AuthController {
       issued.sessionId,
     );
 
-    const syncedUser = await this.authService.syncProfile(user);
     return {
       user: syncedUser,
       meta: syncedUser.meta || {},
@@ -318,12 +322,28 @@ export class AuthController {
       throw error;
     }
 
-    // Fire-and-forget — do not block login on the notification email.
-    this.sendLoginNotification(
-      result.user.email,
-      result.user.displayName || result.user.email,
-      req,
-    ).catch(() => {});
+    /**
+     * The profile comes BEFORE the session, because the session row points at
+     * it: `UserSession.userId` is a foreign key to `User`.
+     *
+     * The order used to be the other way round, with this read treated as
+     * optional enrichment afterwards. That held only while every account that
+     * could pass the password check already had a `User` row. One that did not
+     * — a verified signup whose handover never completed — passed Supabase,
+     * then failed the session insert on the foreign key, and every sign-in it
+     * ever attempted was a 500. `syncProfile` is the method that creates the
+     * row for a verified account, so running it first is what lets such an
+     * account recover by simply signing in.
+     *
+     * Its refusals propagate. They are a banned or permanently deleted account
+     * (suspended and pending-deletion accounts are deliberately let through by
+     * it), and neither should be handed a session. Anything else that fails it
+     * is a database failure the session insert would have hit as well.
+     */
+    const profile = await this.authService.syncProfile({
+      id: result.user.id,
+      email: result.user.email,
+    } as any);
 
     /**
      * Record the device and set HttpOnly cookies.
@@ -366,41 +386,29 @@ export class AuthController {
       issued.sessionId,
     );
 
+    // Only now has a sign-in actually happened. Sent earlier, it announced
+    // sign-ins that went on to fail. Fire-and-forget — never blocks the
+    // response.
+    this.sendLoginNotification(
+      result.user.email,
+      result.user.displayName || result.user.email,
+      req,
+    ).catch(() => {});
+
     /**
      * The full profile travels with the login response.
      *
      * It used to carry only id/email/displayName, so the client had to make a
      * SECOND request to find out who it had just signed in as — and it treated
-     * a failure of that request as a failed login, which it is not. The
-     * session was already created and the cookies already set; a slow or
-     * dropped follow-up call left people looking at an error on a sign-in that
-     * had completely succeeded.
+     * a failure of that request as a failed login, which it is not.
      *
      * One response now answers both questions. It is the same payload
      * `GET /api/auth/session` returns, from the same method, so a client that
      * signs in and a client that restores a session are looking at the same
      * shape.
-     *
-     * Enrichment must never fail the sign-in. The credentials were correct and
-     * the session exists by this point; if the profile read fails, the caller
-     * gets the minimal user and the client fills in the rest on its next sync.
      */
-    let profile: any = null;
-    try {
-      profile = await this.authService.syncProfile({
-        id: result.user.id,
-        email: result.user.email,
-      } as any);
-    } catch {
-      // Non-fatal by design — see above.
-    }
-
     return {
-      user: profile ?? {
-        id: result.user.id,
-        email: result.user.email,
-        displayName: result.user.displayName,
-      },
+      user: profile,
       meta: profile?.meta ?? {},
       csrfToken,
       sessionId: issued.sessionId,
