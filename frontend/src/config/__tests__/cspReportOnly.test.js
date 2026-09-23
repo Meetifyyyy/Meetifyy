@@ -2,6 +2,11 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import process from 'node:process';
+import {
+  SCRIPT_DIRECTIVES,
+  hashesIn,
+  inlineScriptHashes,
+} from '../../../scripts/csp-hashes.mjs';
 
 /**
  * The tightened CSP ships in report-only first.
@@ -21,6 +26,8 @@ import process from 'node:process';
  * These tests exist so the report-only policy cannot quietly become weaker than
  * the enforced one, which would make the exercise pointless.
  */
+const INDEX_HTML = readFileSync(resolve(process.cwd(), 'index.html'), 'utf8');
+
 const read = (p) => JSON.parse(readFileSync(resolve(process.cwd(), p), 'utf8'));
 
 function policies(config) {
@@ -80,5 +87,31 @@ describe.each([['frontend/vercel.json', 'vercel.json'], ['root vercel.json', '..
         expect(reportOnly).toContain(d);
       }
     });
+
+    /**
+     * Exactly the inline scripts index.html ships — no fewer, no more.
+     *
+     * Fewer is a script the policy would block once enforced; for the version
+     * gate that is a page that never boots. More is a stale hash that keeps
+     * allowing a script that no longer exists, which is how the list drifted
+     * unnoticed: three of its five hashes belonged to older versions of the
+     * scripts. Every page the build serves is derived from index.html, and
+     * scripts/verify-csp-hashes.mjs checks the built output too.
+     */
+    it.each(SCRIPT_DIRECTIVES)('%s hashes exactly the inline scripts in index.html', (name) => {
+      const expected = inlineScriptHashes(INDEX_HTML).sort();
+      expect(expected.length).toBeGreaterThan(0);
+      expect(hashesIn(directive(reportOnly, name)).sort()).toEqual(expected);
+    });
   },
 );
+
+describe('inline scripts', () => {
+  it('carry nothing that changes from one build to the next', () => {
+    // The build stamps __MEETIFYY_BUILD_VERSION__ with the commit. Inside a
+    // script that would change its hash on every deploy; it belongs in the
+    // meetifyy-build meta tag, which the version gate reads.
+    const scripts = [...INDEX_HTML.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)].map((m) => m[1]);
+    for (const text of scripts) expect(text).not.toContain('__MEETIFYY_');
+  });
+});

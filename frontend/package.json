@@ -4,8 +4,8 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "build": "node scripts/generate-robots.mjs && node scripts/generate-sitemap.mjs && node scripts/generate-version.mjs && vite build && node scripts/prerender-seo.mjs",
-    "build:dev": "node scripts/generate-robots.mjs && node scripts/generate-sitemap.mjs && node scripts/generate-version.mjs && vite build --mode development && node scripts/prerender-seo.mjs",
+    "build": "node scripts/generate-robots.mjs && node scripts/generate-sitemap.mjs && node scripts/generate-version.mjs && vite build && node scripts/prerender-seo.mjs && node scripts/verify-csp-hashes.mjs",
+    "build:dev": "node scripts/generate-robots.mjs && node scripts/generate-sitemap.mjs && node scripts/generate-version.mjs && vite build --mode development && node scripts/prerender-seo.mjs && node scripts/verify-csp-hashes.mjs",
     "build:mobile": "vite build --config vite.mobile.config.js",
     "build:mobile:dev": "vite build --config vite.mobile.config.js --mode development",
     "dev": "vite",

@@ -256,6 +256,18 @@
   <meta name="description" content="Meetifyy brings students together around what they actually care about. Join communities, find events on campus, and meet people worth knowing." />
   <meta name="robots" content="noindex, nofollow" />
   <!-- SEO:END -->
+  <!--
+    The build this document belongs to, read by the version gate below.
+
+    It lives here rather than inside the gate's script on purpose. The build
+    stamps a new value on every deploy, and the gate used to carry it in its own
+    text — so the gate's sha256 changed with every commit, and the CSP hash that
+    allows it was stale from the next push onward. With the stamp outside it,
+    every inline script in this file is byte-identical across builds, and the
+    hashes in vercel.json are derived from this file and checked by the build
+    (scripts/csp-hashes.mjs).
+  -->
+  <meta name="meetifyy-build" content="__MEETIFYY_BUILD_VERSION__" />
 </head>
 <body>
   <!--
@@ -287,9 +299,10 @@
      * finished before the old assets were already loading.
      *
      * HOW IT DECIDES
-     * `BUILD` is stamped into this HTML at build time; `/version.json` is
-     * written by the same build and served no-store. Different values mean the
-     * document that booted this page is not the deployed one.
+     * `BUILD` is stamped into this HTML at build time, in the `meetifyy-build`
+     * meta tag (see the note there for why not in this script); `/version.json`
+     * is written by the same build and served no-store. Different values mean
+     * the document that booted this page is not the deployed one.
      *
      * FAILING OPEN
      * An unknown version, a failed fetch or a slow network all proceed
@@ -303,7 +316,8 @@
      * gives up rather than reloading forever.
      */
     (function () {
-      var BUILD = '__MEETIFYY_BUILD_VERSION__';
+      var stamp = document.querySelector('meta[name="meetifyy-build"]');
+      var BUILD = (stamp && stamp.getAttribute('content')) || '';
       var TIMEOUT_MS = 2500;
       var TRIED_KEY = 'meetifyy_version_reload_for';
 

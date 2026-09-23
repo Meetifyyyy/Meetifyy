@@ -20,12 +20,23 @@ const HTML = fs.readFileSync(
 const BUILD = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 
 function extractGate() {
-  const start = HTML.indexOf('    (function () {\n      var BUILD =');
+  const marker = HTML.indexOf('Launch-time version gate.');
+  expect(marker).toBeGreaterThan(-1);
+  const start = HTML.indexOf('(function () {', marker);
   expect(start).toBeGreaterThan(-1);
   const end = HTML.indexOf('})();', start) + '})();'.length;
-  // Stand in for what the build plugin stamps.
-  return HTML.slice(start, end).replace('__MEETIFYY_BUILD_VERSION__', BUILD);
+  const source = HTML.slice(start, end);
+  // The stamp is read from the meta tag, never written into the script: a
+  // script whose text changes every build cannot be allowed by a CSP hash.
+  expect(source).not.toContain('__MEETIFYY_BUILD_VERSION__');
+  return source;
 }
+
+it('reads its build stamp from a meta tag the build stamps', () => {
+  expect(HTML).toContain(
+    '<meta name="meetifyy-build" content="__MEETIFYY_BUILD_VERSION__" />'
+  );
+});
 
 /** Runs the gate against a fake browser and reports what it did. */
 async function runGate({
@@ -58,6 +69,13 @@ async function runGate({
 
   const sandbox = {
     window: win,
+    // What the build leaves in the `meetifyy-build` meta tag.
+    document: {
+      querySelector: (selector) =>
+        selector === 'meta[name="meetifyy-build"]'
+          ? { getAttribute: (name) => (name === 'content' ? buildVersion : null) }
+          : null,
+    },
     setTimeout,
     clearTimeout,
     Promise,
@@ -85,7 +103,7 @@ async function runGate({
     fetch: win.fetch,
   };
 
-  const source = extractGate().replace(BUILD, buildVersion);
+  const source = extractGate();
   const fn = new Function(
     ...Object.keys(sandbox),
     `${source}\n return window.__meetifyyVersionGate;`
