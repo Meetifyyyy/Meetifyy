@@ -766,43 +766,6 @@
       "count": 1
     }
   },
-  "src/common/filters/http-exception.filter.spec.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 5
-    },
-    "@typescript-eslint/no-require-imports": {
-      "count": 3
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 11
-    },
-    "@typescript-eslint/no-unsafe-call": {
-      "count": 3
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 13
-    },
-    "@typescript-eslint/no-unsafe-return": {
-      "count": 4
-    }
-  },
-  "src/common/filters/http-exception.filter.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 14
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 2
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 11
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 16
-    }
-  },
   "src/common/guards/jwt-suspension.guard.spec.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 7

@@ -9,6 +9,8 @@ import {
 import { Response, Request } from 'express';
 import { httpLine, LOG_CAUSE } from '../logging/log-format';
 import type { ErrorLogRecorder } from '../../observability/error-log.recorder';
+import { requestIdOf } from '../rate-limit/rate-limit.response';
+import { isRecord } from '../utils/type-guards.util';
 import {
   clientIp,
   headerValue,
@@ -30,11 +32,15 @@ const SENSITIVE_FIELDS = new Set([
   'token',
 ]);
 
-function redact(obj: any): any {
-  if (!obj || typeof obj !== 'object') return obj;
-  if (Array.isArray(obj)) return obj.map(redact);
+/**
+ * A copy of `value` with every sensitive field replaced, at any depth.
+ * Exported for its spec; the filter is the only caller.
+ */
+export function redact(value: unknown): unknown {
+  if (!value || typeof value !== 'object') return value;
+  if (Array.isArray(value)) return value.map(redact);
 
-  const copy = { ...obj };
+  const copy: Record<string, unknown> = { ...value };
   for (const key of Object.keys(copy)) {
     if (SENSITIVE_FIELDS.has(key.toLowerCase())) {
       copy[key] = '[REDACTED]';
@@ -81,6 +87,23 @@ function appStack(exception: unknown, limit = 3): string {
   return frames.join('\n');
 }
 
+/**
+ * The request as it reaches this filter: guards may have attached a user or an
+ * admin, pino-http an id, and the 4xx path hands its cause to pino-http.
+ */
+type FailedRequest = Request & {
+  user?: { id?: string };
+  admin?: { id?: string };
+  [LOG_CAUSE]?: string;
+};
+
+/** A string field of an exception's response object, if it has one. */
+function stringField(body: unknown, key: string): string | undefined {
+  return isRecord(body) && typeof body[key] === 'string'
+    ? body[key]
+    : undefined;
+}
+
 @Catch()
 export class HttpExceptionFilter implements ExceptionFilter {
   private readonly logger = new Logger('HTTP');
@@ -98,7 +121,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
   catch(exception: unknown, host: ArgumentsHost) {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
-    const request = ctx.getRequest<Request>();
+    const request = ctx.getRequest<FailedRequest>();
 
     const status =
       exception instanceof HttpException
@@ -111,8 +134,15 @@ export class HttpExceptionFilter implements ExceptionFilter {
         : 'Internal server error';
 
     let bodySnippet = '';
-    if (request.body && Object.keys(request.body).length > 0) {
-      bodySnippet = `body=${JSON.stringify(redact(request.body))}`;
+    const body: unknown = request.body;
+    // A text body counts as non-empty too, as it did via Object.keys.
+    const hasBody =
+      (typeof body === 'object' &&
+        body !== null &&
+        Object.keys(body).length > 0) ||
+      (typeof body === 'string' && body.length > 0);
+    if (hasBody) {
+      bodySnippet = `body=${JSON.stringify(redact(body))}`;
     }
 
     const cause =
@@ -131,8 +161,8 @@ export class HttpExceptionFilter implements ExceptionFilter {
           method: request.method,
           url: request.url,
           status,
-          userId: (request as any).user?.id,
-          reqId: (request as any).id,
+          userId: request.user?.id,
+          reqId: requestIdOf(request),
           extra: bodySnippet,
           cause,
         }),
@@ -143,7 +173,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
       // request — this one with the cause but no latency, and pino-http's with
       // the latency but no cause. Handing the cause over lets pino-http emit a
       // single complete line once the response is finished.
-      (request as any)[LOG_CAUSE] = cause;
+      request[LOG_CAUSE] = cause;
     }
 
     // Format safe response structure.
@@ -152,22 +182,15 @@ export class HttpExceptionFilter implements ExceptionFilter {
     // carries one (e.g. the activity access policy's COLLEGE_RESTRICTED /
     // PRIVATE), so clients can pick the right UI state without parsing the
     // human-readable message. Nothing else from the thrown body is echoed.
-    const errorCode =
-      typeof message === 'object' &&
-      message !== null &&
-      typeof (message as any).code === 'string'
-        ? (message as any).code
-        : undefined;
+    const errorCode = stringField(message, 'code');
 
     // Same allowlisting as `code`: a rate-limited response carries how long to
     // wait, and the client shows a countdown from it. Without this it was
     // silently dropped here and only the Retry-After header survived — which
     // the support form's own 429 already relied on and never received.
     const retryAfterSeconds =
-      typeof message === 'object' &&
-      message !== null &&
-      typeof (message as any).retryAfterSeconds === 'number'
-        ? (message as any).retryAfterSeconds
+      isRecord(message) && typeof message.retryAfterSeconds === 'number'
+        ? message.retryAfterSeconds
         : undefined;
 
     const errorResponse = {
@@ -175,9 +198,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
       timestamp: new Date().toISOString(),
       path: request.url,
       message:
-        typeof message === 'object' && 'message' in message
-          ? (message as any).message
-          : message,
+        isRecord(message) && 'message' in message ? message.message : message,
       ...(errorCode ? { code: errorCode } : {}),
       ...(retryAfterSeconds !== undefined ? { retryAfterSeconds } : {}),
     };
@@ -207,9 +228,9 @@ export class HttpExceptionFilter implements ExceptionFilter {
         message: cause,
         name: exception instanceof Error ? exception.name : null,
         stack: appStack(exception, 8) || null,
-        requestId: (request as any).id ? String((request as any).id) : null,
-        userId: (request as any).user?.id ?? null,
-        adminId: (request as any).admin?.id ?? null,
+        requestId: requestIdOf(request) ?? null,
+        userId: request.user?.id ?? null,
+        adminId: request.admin?.id ?? null,
         ip: clientIp(request),
         userAgent: headerValue(request, 'user-agent'),
       });
