@@ -11,14 +11,14 @@
   "scripts": {
     "prebuild": "prisma generate",
     "build": "nest build",
-    "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
+    "format": "prettier --write \"src/**/*.{ts,tsx}\" \"test/**/*.ts\" \"scripts/**/*.{ts,js}\" \"prisma/*.ts\" \"*.ts\"",
     "start": "nest start",
     "_comment_start_dev": "Migrations run before the dev server for the same reason they run before the prod one (see the root `start` script). Without this a new migration is never applied locally: the generated Prisma client queries columns the database does not have, and every request touching that table 500s with a confusing `column does not exist`.",
     "start:dev": "prisma migrate deploy && nest start --watch",
     "start:debug": "nest start --debug --watch",
     "start:prod": "node dist/main",
-    "lint": "eslint \"{src,apps,libs,test}/**/*.ts\"",
-    "lint:fix": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
+    "lint": "node --max-old-space-size=4096 node_modules/eslint/bin/eslint.js \"src/**/*.{ts,tsx}\" \"test/**/*.ts\" scripts prisma render-templates.ts send-all-mailpit.ts",
+    "lint:fix": "node --max-old-space-size=4096 node_modules/eslint/bin/eslint.js \"src/**/*.{ts,tsx}\" \"test/**/*.ts\" scripts prisma render-templates.ts send-all-mailpit.ts --fix",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
@@ -30,9 +30,6 @@
     "render:templates:dev": "APP_ENV=development npm run render:templates",
     "render:templates:prod": "APP_ENV=production NODE_ENV=development npm run render:templates",
     "email:test-all": "ts-node --project tsconfig.render.json --transpile-only send-all-mailpit.ts"
-  },
-  "prisma": {
-    "seed": "ts-node prisma/seed.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1092.0",

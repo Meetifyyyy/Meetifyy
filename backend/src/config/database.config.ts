@@ -1,4 +1,4 @@
-import { ALL_ENVIRONMENTS, IS_PRODUCTION, invariant, int, str } from './env';
+import { ALL_ENVIRONMENTS, invariant, int, str } from './env';
 
 /**
  * Database connection configuration.
@@ -34,13 +34,6 @@ export const databaseConfigValues = {
     min: 0,
     max: 10,
   }),
-  /**
-   * Destructive seeding wipes every table. It is refused in production unless
-   * this is explicitly turned on, so `prisma db seed` can never be the command
-   * that empties the live database.
-   */
-  allowDestructiveSeed:
-    !IS_PRODUCTION || str('ALLOW_DESTRUCTIVE_SEED').toLowerCase() === 'true',
 };
 
 export type DatabaseConfig = typeof databaseConfigValues;
