@@ -8,6 +8,7 @@ import {
   ConnectedSocket,
   OnGatewayInit,
 } from '@nestjs/websockets';
+import type { IncomingHttpHeaders } from 'http';
 import type { AppServer, AppSocket } from './socket-types';
 import { Logger, Optional, OnModuleDestroy } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
@@ -51,6 +52,7 @@ import { normalizeIp } from '../common/rate-limit/client-ip.util';
 import type { RateLimitPolicyName } from '../config/rate-limit.config';
 import { detach } from '../common/utils/detach.util';
 import { errorMessage } from '../common/utils/error.util';
+import { isRecord } from '../common/utils/type-guards.util';
 import {
   ConversationRefPayload,
   DeliveryReceiptPayload,
@@ -86,6 +88,33 @@ function socketIp(client: AppSocket): string {
   return normalizeIp(client?.handshake?.address || client?.conn?.remoteAddress);
 }
 
+/**
+ * A domain event as the gateway routes it. Events arrive from Redis as parsed
+ * JSON, so nothing about their shape is guaranteed: the original object is
+ * kept for forwarding, and every field used for ROUTING is read through
+ * `top`/`inData`, which answer only with a non-empty string.
+ */
+interface RoutableDomainEvent {
+  payload: Record<string, unknown>;
+  type: string;
+  data: Record<string, unknown>;
+  top: (key: string) => string | undefined;
+  inData: (key: string) => string | undefined;
+}
+
+function readDomainEvent(raw: unknown): RoutableDomainEvent | null {
+  if (!isRecord(raw) || typeof raw.type !== 'string') return null;
+  const data = isRecord(raw.data) ? raw.data : {};
+  const str = (v: unknown) => (typeof v === 'string' && v ? v : undefined);
+  return {
+    payload: raw,
+    type: raw.type,
+    data,
+    top: (key) => str(raw[key]),
+    inData: (key) => str(data[key]),
+  };
+}
+
 /** Ack text per policy, so a socket rejection reads like the REST one. */
 const RATE_LIMIT_MESSAGES: Record<string, string> = Object.fromEntries(
   Object.entries(RATE_LIMIT_POLICIES).map(([name, spec]) => [
@@ -116,14 +145,6 @@ export class RealtimeGateway
 
   @WebSocketServer()
   server: AppServer;
-
-  // In-memory alias cache: conversationId (any form) → { id, publicId }
-  // Avoids a Prisma round-trip on every emitToConversation call (e.g. typing events)
-  private convAliasCache = new Map<
-    string,
-    { id: string; publicId: string | null; cachedAt: number }
-  >();
-  private readonly ALIAS_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
   /**
    * Which conversation a user may address by a given id or publicId, cached
@@ -264,10 +285,6 @@ export class RealtimeGateway
     this.cacheEvictionTimer = setInterval(
       () => {
         const now = Date.now();
-        const aliasTTL = this.ALIAS_CACHE_TTL_MS * 2;
-        for (const [key, val] of this.convAliasCache.entries()) {
-          if (now - val.cachedAt > aliasTTL) this.convAliasCache.delete(key);
-        }
         for (const [key, val] of this.participantConvCache.entries()) {
           if (val.expiresAt <= now) this.participantConvCache.delete(key);
         }
@@ -394,7 +411,7 @@ export class RealtimeGateway
       subClient.on('message', (channel, message) => {
         if (channel === 'meetifyy:domain_events') {
           try {
-            const payload = JSON.parse(message);
+            const payload: unknown = JSON.parse(message);
             this.handleDomainEvent(payload);
           } catch (e) {
             this.logger.error('Failed to parse domain event payload', e);
@@ -405,8 +422,8 @@ export class RealtimeGateway
   }
 
   @OnEvent('**')
-  handleLocalDomainEvent(payload: any) {
-    if (payload && payload.type) {
+  handleLocalDomainEvent(payload: unknown) {
+    if (isRecord(payload) && payload.type) {
       // Fallback for single instance or local dev without Redis Pub/Sub
       if (!this.redisService.getSubClient()) {
         this.handleDomainEvent(payload);
@@ -414,19 +431,25 @@ export class RealtimeGateway
     }
   }
 
-  private handleDomainEvent(payload: any) {
+  private handleDomainEvent(event: unknown) {
+    const parsed = readDomainEvent(event);
+    if (!parsed) return;
+    // `payload` is forwarded to clients exactly as published; routing reads
+    // only go through `top`/`inData`, which yield non-empty strings or nothing.
+    const { payload, type, data, top, inData } = parsed;
+
     // Cross-instance cache invalidation. VerificationAccessService caches
     // status in process, and this handler runs on EVERY instance (the event
     // arrives over Redis pub/sub), so an approval or revocation on one node
     // evicts the stale entry on all of them. Without this the cache's TTL
     // would be the real security window instead of a backstop.
-    if (payload.type === 'user:verification_changed') {
-      const changedUserId = payload.data?.userId || payload.targetUserId;
+    if (type === 'user:verification_changed') {
+      const changedUserId = inData('userId') || top('targetUserId');
       if (changedUserId) this.verificationAccess.invalidate(changedUserId);
     }
 
-    if (payload.type === 'user.settings_updated') {
-      const uId = payload.targetUserId || payload.data?.userId;
+    if (type === 'user.settings_updated') {
+      const uId = top('targetUserId') || inData('userId');
       if (uId) {
         // Always force broadcast offline to all group rooms so clients immediately hide the status
         const offlinePayload = {
@@ -461,9 +484,9 @@ export class RealtimeGateway
       }
     }
 
-    if (payload.type === 'group:member_added') {
-      const convId = payload.data?.conversationId || payload.conversationId;
-      const targetUser = payload.data?.userId || payload.userId;
+    if (type === 'group:member_added') {
+      const convId = inData('conversationId') || top('conversationId');
+      const targetUser = inData('userId') || top('userId');
       if (convId && targetUser) {
         const userSockets = this.server.sockets.adapter.rooms.get(targetUser);
         if (userSockets) {
@@ -475,12 +498,10 @@ export class RealtimeGateway
       }
     }
 
-    if (payload.type === 'group:member_removed') {
-      const convId = payload.data?.conversationId || payload.conversationId;
+    if (type === 'group:member_removed') {
+      const convId = inData('conversationId') || top('conversationId');
       const targetUser =
-        payload.data?.targetUserId ||
-        payload.targetUserId ||
-        payload.data?.userId;
+        inData('targetUserId') || top('targetUserId') || inData('userId');
       if (convId && targetUser) {
         const userSockets = this.server.sockets.adapter.rooms.get(targetUser);
         if (userSockets) {
@@ -498,8 +519,8 @@ export class RealtimeGateway
     // the client handlers are idempotent (absolute counts, id-deduped inserts,
     // self-actor guards), so a viewer who is also a per-user target harmlessly
     // applies the same patch twice.
-    const postScopeId = payload.data?.postId || payload.postId;
-    if (postScopeId && RealtimeGateway.POST_ROOM_EVENTS.has(payload.type)) {
+    const postScopeId = inData('postId') || top('postId');
+    if (postScopeId && RealtimeGateway.POST_ROOM_EVENTS.has(type)) {
       this.server.to(`post_${postScopeId}`).emit('domainEvent', payload);
     }
 
@@ -509,8 +530,8 @@ export class RealtimeGateway
     // A visibility change is authorization-relevant: re-run the policy for every
     // socket in the room and evict the ones that just lost access. The event
     // itself carries no activity details.
-    if (payload.type === 'activity.visibilityChanged') {
-      const changedId = payload.data?.activityId || payload.data?.id;
+    if (type === 'activity.visibilityChanged') {
+      const changedId = inData('activityId') || inData('id');
       if (changedId) {
         // Evict first, notify second — the surviving subscribers are exactly the
         // ones still authorized when the event lands.
@@ -525,12 +546,12 @@ export class RealtimeGateway
       return;
     }
 
-    if (payload.type === 'activity_discussion.created') {
-      const activityScopeId = payload.data?.activityId;
+    if (type === 'activity_discussion.created') {
+      const activityScopeId = inData('activityId');
       if (activityScopeId) {
         this.server
           .to(`activity_${activityScopeId}`)
-          .emit('activity_discussion:new', payload.data.message);
+          .emit('activity_discussion:new', data.message);
       }
       return;
     }
@@ -544,11 +565,8 @@ export class RealtimeGateway
     // checkActivityRoomAccess), so this is a safe fan-out, and it is what makes
     // a detail page that is already open react to the activity starting,
     // ending or being cancelled without the viewer refreshing.
-    if (
-      payload.type === 'activity.updated' ||
-      payload.type === 'activity.started'
-    ) {
-      const activityScopeId = payload.data?.activityId || payload.data?.id;
+    if (type === 'activity.updated' || type === 'activity.started') {
+      const activityScopeId = inData('activityId') || inData('id');
       if (activityScopeId) {
         this.server
           .to(`activity_${activityScopeId}`)
@@ -557,11 +575,8 @@ export class RealtimeGateway
       }
     }
 
-    if (
-      payload.type === 'activity.memberJoined' ||
-      payload.type === 'activity.memberLeft'
-    ) {
-      const activityScopeId = payload.data?.activityId || payload.activityId;
+    if (type === 'activity.memberJoined' || type === 'activity.memberLeft') {
+      const activityScopeId = inData('activityId') || top('activityId');
       if (activityScopeId) {
         this.server
           .to(`activity_${activityScopeId}`)
@@ -576,15 +591,15 @@ export class RealtimeGateway
     // who can currently see this person", and a targeted emit would leave the
     // old image on every other client until each of their queries happened to
     // refetch. It is a tiny, infrequent payload, so it goes to everyone.
-    if (payload.type === 'user.updated') {
+    if (type === 'user.updated') {
       this.server.emit('domainEvent', payload);
       return;
     }
 
-    const isLegacyEvent = payload.type?.includes(':');
+    const isLegacyEvent = type.includes(':');
     let targets: string[] = [];
 
-    const commId = payload.communityId || payload.data?.communityId;
+    const commId = top('communityId') || inData('communityId');
     if (commId) {
       // ONE event, to the room, on the generic bus.
       //
@@ -602,37 +617,36 @@ export class RealtimeGateway
       this.server.to(`community_${commId}`).emit('domainEvent', payload);
     }
 
-    if (
-      Array.isArray(payload.targetUserIds) &&
-      payload.targetUserIds.length > 0
-    ) {
-      targets = payload.targetUserIds;
-    } else if (payload.targetUserId) {
-      targets = [payload.targetUserId];
-    } else if (payload.data?.targetUserId) {
-      targets = [payload.data.targetUserId];
-    } else if (payload.conversationId || payload.data?.conversationId) {
-      const convId = payload.conversationId || payload.data?.conversationId;
+    const listedTargets = Array.isArray(payload.targetUserIds)
+      ? payload.targetUserIds.filter(
+          (t): t is string => typeof t === 'string' && t.length > 0,
+        )
+      : [];
+    const convId = top('conversationId') || inData('conversationId');
+    if (listedTargets.length > 0) {
+      targets = listedTargets;
+    } else if (top('targetUserId')) {
+      targets = [top('targetUserId') as string];
+    } else if (inData('targetUserId')) {
+      targets = [inData('targetUserId') as string];
+    } else if (convId) {
       this.server
         .to(`conv_${convId}`)
-        .emit(
-          isLegacyEvent ? payload.type : 'domainEvent',
-          payload.data || payload,
-        );
+        .emit(isLegacyEvent ? type : 'domainEvent', payload.data || payload);
       return;
     }
 
     if (targets.length > 0) {
       for (const targetId of targets) {
         if (isLegacyEvent) {
-          this.server.to(targetId).emit(payload.type, payload.data);
+          this.server.to(targetId).emit(type, payload.data);
         } else {
           this.server.to(targetId).emit('domainEvent', payload);
         }
       }
     } else if (!commId) {
       this.logger.warn(
-        `Domain event '${payload.type}' has no valid targetUserIds/room — dropped safely`,
+        `Domain event '${type}' has no valid targetUserIds/room — dropped safely`,
       );
     }
   }
@@ -746,8 +760,11 @@ export class RealtimeGateway
      * both then have to name a live session. See the revocation check further
      * down for why that exemption could not stay.
      */
+    // `handshake.auth` is whatever the client sent; only a string is a token.
+    const authToken: unknown = client.handshake.auth?.token;
     const token =
-      client.handshake.auth?.token || cookieToken(client.handshake.headers);
+      (typeof authToken === 'string' && authToken) ||
+      cookieToken(client.handshake.headers);
 
     if (!token) {
       this.logger.warn(`Client connection rejected: missing token`);
@@ -765,7 +782,12 @@ export class RealtimeGateway
       client.disconnect();
       return;
     }
-    let user: any = null;
+    // From JwtGuard (an AuthenticatedUser) or, without it, from Supabase.
+    let user: {
+      id: string;
+      email?: string;
+      user_metadata?: Record<string, unknown>;
+    } | null = null;
     try {
       if (this.jwtGuard) {
         user = await this.jwtGuard.validateToken(token);
@@ -942,9 +964,14 @@ export class RealtimeGateway
       // Never block a reconnect because the limiter itself failed.
     }
 
+    // Provider metadata is arbitrary JSON; only a string is a name.
+    const metaName = (key: string): string | undefined => {
+      const value = user.user_metadata?.[key];
+      return typeof value === 'string' && value ? value : undefined;
+    };
     userName =
-      user.user_metadata?.username ||
-      user.user_metadata?.displayName ||
+      metaName('username') ||
+      metaName('displayName') ||
       user.email ||
       'Unknown';
 
@@ -1055,16 +1082,14 @@ export class RealtimeGateway
       // message to a user who blocked the sender. This mirrors the HTTP
       // controller path (MessagesController.sendMessage) exactly so realtime
       // and REST enforce blocks identically.
-      const recipientIds: string[] = (message as any).recipientIds || [];
+      const recipientIds: string[] = message.recipientIds || [];
       // Mute is enforced here, not left to the client. `sendMessage` already
       // resolved every recipient's mute state in the same batched query it
       // used for blocks, so stamping each copy with whether it may raise an
       // alert costs nothing — and means a device with a cold or stale
       // conversation cache still honours the mute. The message itself is
       // delivered either way: mute silences the alert, not the sync.
-      const unmuted = new Set<string>(
-        (message as any).unmutedRecipientIds || [],
-      );
+      const unmuted = new Set<string>(message.unmutedRecipientIds || []);
       for (const rId of recipientIds) {
         if (rId === senderId) continue;
         this.server
@@ -1114,10 +1139,10 @@ export class RealtimeGateway
         data.since,
       );
       return { status: 'ok', messages };
-    } catch (err: any) {
+    } catch (err) {
       return {
         status: 'error',
-        error: err.message || 'Failed to fetch catchup messages',
+        error: errorMessage(err) || 'Failed to fetch catchup messages',
       };
     }
   }
@@ -1510,27 +1535,6 @@ export class RealtimeGateway
     return { event: 'pong', timestamp: Date.now() };
   }
 
-  // --- API for other modules to emit events ---
-
-  emitNotification(userId: string, notification: any) {
-    this.server.to(userId).emit('notification:new', {
-      id: notification.id,
-      type: notification.type,
-      entityType: notification.entityType,
-      entityId: notification.entityId,
-      title: notification.title,
-      body: notification.body,
-      readAt: notification.readAt,
-      createdAt: notification.createdAt,
-      actor: notification.actor || null,
-      metadata: notification.metadata || null,
-    });
-  }
-
-  emitUnreadCount(userId: string, count: number) {
-    this.server.to(userId).emit('notification:count', { count });
-  }
-
   /**
    * The conversation `ref` (internal or public id) names, if `userId` is an
    * active participant of it; otherwise null. One indexed query answers both
@@ -1590,63 +1594,6 @@ export class RealtimeGateway
       .filter((r): r is string => Boolean(r))
       .map((r) => `conv_${r}`);
     this.server.to(rooms).emit(event, payload);
-  }
-
-  /**
-   * Emit an event to all participants of a conversation using O(1) Socket.io rooms.
-   * Resolves both DB ID and Public ID aliases — uses in-memory cache to avoid a
-   * DB query on every typing keystroke or high-frequency event.
-   */
-  async emitToConversation(
-    conversationId: string,
-    event: string,
-    payload: any,
-  ) {
-    if (!conversationId) return;
-    this.server.to(`conv_${conversationId}`).emit(event, payload);
-
-    try {
-      // Check in-memory alias cache first
-      const now = Date.now();
-      const cached = this.convAliasCache.get(conversationId);
-      let conv: { id: string; publicId: string | null } | null = null;
-
-      if (cached && now - cached.cachedAt < this.ALIAS_CACHE_TTL_MS) {
-        conv = { id: cached.id, publicId: cached.publicId };
-      } else {
-        const dbConv = await this.prisma.conversation.findFirst({
-          where: { OR: [{ id: conversationId }, { publicId: conversationId }] },
-          select: { id: true, publicId: true },
-        });
-        if (dbConv) {
-          conv = dbConv;
-          // Cache both directions so either alias hits the cache
-          this.convAliasCache.set(dbConv.id, {
-            id: dbConv.id,
-            publicId: dbConv.publicId,
-            cachedAt: now,
-          });
-          if (dbConv.publicId) {
-            this.convAliasCache.set(dbConv.publicId, {
-              id: dbConv.id,
-              publicId: dbConv.publicId,
-              cachedAt: now,
-            });
-          }
-        }
-      }
-
-      if (conv) {
-        if (conv.id && conv.id !== conversationId) {
-          this.server.to(`conv_${conv.id}`).emit(event, payload);
-        }
-        if (conv.publicId && conv.publicId !== conversationId) {
-          this.server.to(`conv_${conv.publicId}`).emit(event, payload);
-        }
-      }
-    } catch {
-      // Ignore lookup error — primary emit already fired above
-    }
   }
 
   // One of the two database-heavy events that fire on every reconnect, which
@@ -1813,8 +1760,11 @@ export class RealtimeGateway
   // resolve. Payloads are validated here — never trusted from the UI.
 
   private instantMatchAck(err: unknown, fallback: string) {
-    const status = (err as any)?.status;
-    const message = (err as any)?.response?.message ?? (err as any)?.message;
+    // Nest HttpExceptions carry `status` and `response.message`.
+    const e = isRecord(err) ? err : {};
+    const response = isRecord(e.response) ? e.response : {};
+    const status = e.status;
+    const message = response.message ?? e.message;
     // Only surface messages we raised deliberately (4xx); anything else is an
     // internal fault and gets a generic message.
     if (
@@ -1836,7 +1786,7 @@ export class RealtimeGateway
   @VerifiedOnly()
   async handleQueueJoin(
     @ConnectedSocket() client: AppSocket,
-    @MessageBody() data: any,
+    @MessageBody() data: unknown,
   ) {
     const userId = client.data.userId;
     if (!userId)
@@ -1877,7 +1827,7 @@ export class RealtimeGateway
   @VerifiedOnly()
   async handleMatchRespond(
     @ConnectedSocket() client: AppSocket,
-    @MessageBody() data: any,
+    @MessageBody() data: unknown,
   ) {
     const userId = client.data.userId;
     if (!userId)
@@ -1986,7 +1936,7 @@ export class RealtimeGateway
   @VerifiedOnly()
   async handleInstantMatchLeave(
     @ConnectedSocket() client: AppSocket,
-    @MessageBody() data: any,
+    @MessageBody() data: unknown,
   ) {
     const userId = client.data.userId;
     if (!userId)
@@ -1998,8 +1948,9 @@ export class RealtimeGateway
     if (limited) return limited;
 
     try {
+      const rawMatchId = isRecord(data) ? data.matchId : undefined;
       const matchId =
-        typeof data?.matchId === 'string' ? data.matchId.trim() : undefined;
+        typeof rawMatchId === 'string' ? rawMatchId.trim() : undefined;
       const result = await this.instantMatchService.leaveChatSession(
         userId,
         matchId || undefined,
@@ -2088,7 +2039,7 @@ export class RealtimeGateway
  * one lookup it needs rather than pulling in a parser for it.
  */
 function cookieValue(
-  headers: Record<string, any> | undefined,
+  headers: IncomingHttpHeaders | undefined,
   name: string,
 ): string {
   const raw = headers?.cookie;
@@ -2106,6 +2057,6 @@ function cookieValue(
   return '';
 }
 
-function cookieToken(headers: Record<string, any> | undefined): string {
+function cookieToken(headers: IncomingHttpHeaders | undefined): string {
   return cookieValue(headers, USER_ACCESS_COOKIE);
 }
