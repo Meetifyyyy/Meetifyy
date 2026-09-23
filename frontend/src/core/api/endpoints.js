@@ -58,8 +58,8 @@ export function createEndpoints({ apiClient, getToken, getBackendUrl }) {
      * for cookies. The last step of signup, and the point at which the refresh
      * token stops being reachable from JavaScript.
      */
-    adoptSession: (refreshToken) =>
-      apiClient.post('/api/auth/session/adopt', { refreshToken }),
+    adoptSession: (refreshToken, { bearer } = {}) =>
+      apiClient.post('/api/auth/session/adopt', { refreshToken }, { bearer }),
 
     /**
      * Ends this device's session server-side and clears its cookies.
@@ -354,7 +354,8 @@ export function createEndpoints({ apiClient, getToken, getBackendUrl }) {
     follow: (username, { signal } = {}) => apiClient.post(`/api/users/${username}/follow`, undefined, { signal }),
     unfollow: (username, { signal } = {}) => apiClient.post(`/api/users/${username}/unfollow`, undefined, { signal }),
     getById: (id) => apiClient.get(`/api/users/id/${id}`),
-    updateProfile: (data) => apiClient.patch('/api/users/me', data),
+    // `bearer` only for the signup handover; see `request` in transport.js.
+    updateProfile: (data, { bearer } = {}) => apiClient.patch('/api/users/me', data, { bearer }),
     getSettings: () => apiClient.get('/api/users/me/settings'),
     updateSettings: (data) => apiClient.patch('/api/users/me/settings', data),
     blockUser: (targetUserId) => apiClient.post(`/api/users/block/${targetUserId}`),

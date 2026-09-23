@@ -364,7 +364,25 @@ export function createTransport({
     return _refreshPromise;
   }
 
-  async function request(method, path, body, signal, timeoutMs) {
+  /**
+   * @param {string} [bearer]
+   *   A credential for THIS request only, in place of the session source's.
+   *
+   *   It exists for the signup handover. `verifyOtp` answers with a provider
+   *   session, and the two calls that follow must be authenticated with exactly
+   *   that session. Leaving them to the session source to discover made the
+   *   handover depend on each platform noticing the new session on its own: the
+   *   web source happened to, through its provider subscription; the installed
+   *   app's source never could, since it only holds what it is handed. So the
+   *   app sent both calls with no credential, the account was verified but
+   *   never created or signed in, and the next authenticated request sent the
+   *   user back to the opening screen.
+   *
+   *   The caller holds the credential, so the caller passes it. A 401 on such a
+   *   request is about that credential, not the ambient session, so it neither
+   *   triggers a refresh nor tears the ambient session down.
+   */
+  async function request(method, path, body, signal, timeoutMs, bearer) {
     // Session seeding used to be awaited here, because the credential lived in
     // the provider client and a request issued before it had loaded would have
     // gone out unauthenticated. The credential is a cookie now: the browser
@@ -394,11 +412,17 @@ export function createTransport({
      * handful of signup paths it always covered.
      */
     const selfCustody = session.holdsOwnCredential?.() === true;
-    if (!session.getToken() && session.whenReady() && (selfCustody || isBearerPath(path))) {
+    const explicitCredential = typeof bearer === 'string' && bearer !== '';
+    if (
+      !explicitCredential &&
+      !session.getToken() &&
+      session.whenReady() &&
+      (selfCustody || isBearerPath(path))
+    ) {
       await session.whenReady();
     }
 
-    const token = getToken(); // synchronous
+    const token = explicitCredential ? bearer : getToken(); // synchronous
 
     // No bearer token is no longer fatal.
     //
@@ -429,7 +453,9 @@ export function createTransport({
        * is what makes the native credential revocable, and therefore what makes
        * it acceptable at all.
        */
-      const nativeSessionId = session.getSessionId?.();
+      // Never beside an explicit credential: the stored id names the stored
+      // session, which is not the one this token belongs to.
+      const nativeSessionId = explicitCredential ? '' : session.getSessionId?.();
       if (nativeSessionId) headers['x-session-id'] = nativeSessionId;
     }
 
@@ -471,6 +497,9 @@ export function createTransport({
      * the options object like `timeoutMs`; `fetch` ignores what it does not know.
      */
     options.publicPath = isPublicPath(path);
+    // Same reasoning for a request carrying its own credential: its 401 says
+    // nothing about the ambient session. See `bearer` above.
+    options.explicitCredential = explicitCredential;
 
     if (signal) options.signal = signal;
     // Per-call deadline, for the few mutations whose UI holds a visible spinner
@@ -599,7 +628,7 @@ export function createTransport({
       return _doFetch(cleanUrl, { ...options, headers }, isRetry);
     }
 
-    if (res.status === 401 && !isRetry && !options.publicPath) {
+    if (res.status === 401 && !isRetry && !options.publicPath && !options.explicitCredential) {
       // The access cookie is short-lived by design, so a 401 here is the ordinary
       // end of its life far more often than it is a dead session. Ask the server
       // to rotate — it holds the refresh token — and replay the request once.
@@ -787,8 +816,8 @@ export function createTransport({
 
   const apiClient = {
     get: (path, { signal, timeoutMs } = {}) => request('GET', path, undefined, signal, timeoutMs),
-    post: (path, body, { signal, timeoutMs } = {}) => request('POST', path, body, signal, timeoutMs),
-    patch: (path, body, { signal, timeoutMs } = {}) => request('PATCH', path, body, signal, timeoutMs),
+    post: (path, body, { signal, timeoutMs, bearer } = {}) => request('POST', path, body, signal, timeoutMs, bearer),
+    patch: (path, body, { signal, timeoutMs, bearer } = {}) => request('PATCH', path, body, signal, timeoutMs, bearer),
     put: (path, body, { signal, timeoutMs } = {}) => request('PUT', path, body, signal, timeoutMs),
     delete: (path, { signal, timeoutMs } = {}) => request('DELETE', path, undefined, signal, timeoutMs),
   };

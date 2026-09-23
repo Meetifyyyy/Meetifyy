@@ -1,21 +1,23 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Mail, Check, AlertCircle } from '@shared/components/icons';
+import { Mail, AlertCircle } from '@shared/components/icons';
 import { useSignup } from '../../context/SignupContext';
 import { useAuth } from '@shared/context/AuthContext';
 import AnimatedStep from './AnimatedStep';
 import { AuthHeading, AuthButton, styles as s } from '../../shared/ui';
 
 export default function Step4OTP() {
-  const { signupData, nextStep } = useSignup();
+  const { signupData } = useSignup();
   const { verifySignupOtp, resendSignupOtp } = useAuth();
   const [code, setCode] = useState(['', '', '', '', '', '']);
   const [error, setError] = useState(null);
-  const [status, setStatus] = useState('input'); // input -> verifying -> success
+  const [status, setStatus] = useState('input'); // input -> verifying
   const [timer, setTimer] = useState(59);
   const targetTimeRef = useRef(Date.now() + 59000);
 
   const inputsRef = useRef([]);
   const isVerifyingRef = useRef(false);
+  // The code most recently submitted by the auto-submit below. See there.
+  const autoSubmittedCodeRef = useRef('');
 
   // One interval for the component's lifetime, deriving remaining seconds from
   // targetTimeRef on every tick so a resend resumes cleanly without rebuilding
@@ -88,21 +90,45 @@ export default function Step4OTP() {
 
       try {
         await verifySignupOtp(signupData.email, code.join(''), signupData);
-        setStatus('success');
-        setTimeout(() => nextStep(), 400);
+        /*
+         * Nothing to do here on success, and that is deliberate.
+         *
+         * Verification signs the user in, and SignupContext moves a signed-in
+         * user to the last step itself — it has to, for a reload or a back
+         * press. This step used to ALSO show a success badge and schedule its
+         * own `nextStep()`, so one transition had two owners: the badge
+         * painted for a single frame before the context replaced the step, and
+         * the orphaned timer pushed the same step again 400ms later. That was
+         * the flicker. The button keeps its spinner until the step is swapped.
+         *
+         * The latch stays set: the code is spent, and re-submitting it can
+         * only fail.
+         */
       } catch (err) {
+        isVerifyingRef.current = false;
         setStatus('input');
         setError(err.message || 'Incorrect code. Please try again.');
-      } finally {
-        isVerifyingRef.current = false;
       }
     },
-    [isComplete, code, nextStep, signupData, verifySignupOtp],
+    [isComplete, code, signupData, verifySignupOtp],
   );
 
+  /**
+   * Submits a completed code once.
+   *
+   * This used to fire whenever `handleVerify` changed identity with the code
+   * still complete — and the sign-in that verification causes re-renders the
+   * flow, which changes it. The same code was verified a second time the
+   * moment the first succeeded, and the provider refused the spent code.
+   * Keyed on the code itself, a code is submitted automatically once; a new
+   * code after a failure is a new submission, and the button still resubmits.
+   */
   useEffect(() => {
-    if (isComplete) handleVerify();
-  }, [isComplete, handleVerify]);
+    const joined = code.join('');
+    if (!isComplete || autoSubmittedCodeRef.current === joined) return;
+    autoSubmittedCodeRef.current = joined;
+    handleVerify();
+  }, [isComplete, code, handleVerify]);
 
   return (
     <AnimatedStep className={s.stepWrapper}>
@@ -115,69 +141,58 @@ export default function Step4OTP() {
         }
       />
 
-      {status === 'success' ? (
-        <div className={s.statusBlock}>
-          <span className={`${s.statusBadge} ${s.statusBadgeSuccess}`}>
-            <Check size={30} />
-          </span>
-          <p style={{ fontSize: '1.05rem', fontWeight: 600, color: 'var(--color-success)', margin: 0 }}>
-            Email verified successfully!
-          </p>
+      <form onSubmit={handleVerify} noValidate>
+        <div className={s.otpRow}>
+          {code.map((digit, idx) => (
+            <input
+              key={idx}
+              id={`otp-digit-${idx + 1}`}
+              name={`otp-${idx + 1}`}
+              ref={(el) => (inputsRef.current[idx] = el)}
+              autoComplete={idx === 0 ? 'one-time-code' : 'off'}
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              maxLength={1}
+              value={digit}
+              onChange={(e) => handleChange(e, idx)}
+              onKeyDown={(e) => handleKeyDown(e, idx)}
+              onPaste={handlePaste}
+              className={`${s.otpInput} ${error ? s.invalid : ''}`}
+              disabled={status === 'verifying'}
+              aria-label={`Digit ${idx + 1}`}
+            />
+          ))}
         </div>
-      ) : (
-        <form onSubmit={handleVerify} noValidate>
-          <div className={s.otpRow}>
-            {code.map((digit, idx) => (
-              <input
-                key={idx}
-                id={`otp-digit-${idx + 1}`}
-                name={`otp-${idx + 1}`}
-                ref={(el) => (inputsRef.current[idx] = el)}
-                autoComplete={idx === 0 ? 'one-time-code' : 'off'}
-                type="text"
-                inputMode="numeric"
-                pattern="[0-9]*"
-                maxLength={1}
-                value={digit}
-                onChange={(e) => handleChange(e, idx)}
-                onKeyDown={(e) => handleKeyDown(e, idx)}
-                onPaste={handlePaste}
-                className={`${s.otpInput} ${error ? s.invalid : ''}`}
-                disabled={status === 'verifying'}
-                aria-label={`Digit ${idx + 1}`}
-              />
-            ))}
-          </div>
 
-          <div className={s.otpErrorRow}>
-            {error ? (
-              <span className={s.centerMessage}>
-                <AlertCircle size={13} /> {error}
-              </span>
-            ) : null}
-          </div>
+        <div className={s.otpErrorRow}>
+          {error ? (
+            <span className={s.centerMessage}>
+              <AlertCircle size={13} /> {error}
+            </span>
+          ) : null}
+        </div>
 
-          <div className={s.otpMeta}>
-            {timer > 0 ? (
-              <span className={s.otpTimer}>Resend code in {timer}s</span>
-            ) : (
-              <button type="button" className={s.resendBtn} onClick={handleResend} disabled={status === 'verifying'}>
-                Resend verification code
-              </button>
-            )}
+        <div className={s.otpMeta}>
+          {timer > 0 ? (
+            <span className={s.otpTimer}>Resend code in {timer}s</span>
+          ) : (
+            <button type="button" className={s.resendBtn} onClick={handleResend} disabled={status === 'verifying'}>
+              Resend verification code
+            </button>
+          )}
 
-            <AuthButton
-              type="submit"
-              loading={status === 'verifying'}
-              loadingText="Creating account..."
-              disabled={!isComplete}
-              icon={<Mail size={18} />}
-            >
-              Verify Code
-            </AuthButton>
-          </div>
-        </form>
-      )}
+          <AuthButton
+            type="submit"
+            loading={status === 'verifying'}
+            loadingText="Creating account..."
+            disabled={!isComplete}
+            icon={<Mail size={18} />}
+          >
+            Verify Code
+          </AuthButton>
+        </div>
+      </form>
     </AnimatedStep>
   );
 }

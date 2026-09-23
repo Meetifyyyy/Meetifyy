@@ -466,3 +466,74 @@ describe('createTransport — reopening the app after it was closed', () => {
     expect(retry.auth).toBe('Bearer minted'); // the retry must ADD the header
   });
 });
+
+/**
+ * The signup handover carries its own credential.
+ *
+ * `verifyOtp` answers with a provider session, and the two calls after it must
+ * be authenticated with exactly that session. They used to take whatever the
+ * session source held — and the installed app's source holds only what it is
+ * handed, which at that moment was nothing. Both calls went out with no
+ * Authorization header; the account was verified at the provider and never
+ * created, and the next authenticated request sent the user back to the
+ * opening screen.
+ */
+describe('createTransport — a request that carries its own credential', () => {
+  const okResponse = () => ({
+    ok: true, status: 200, headers: { get: () => null },
+    json: async () => ({}), text: async () => '',
+  });
+
+  it('sends the given token even when the session source holds none', async () => {
+    const sent = [];
+    globalThis.fetch = vi.fn(async (url, init) => {
+      sent.push({ url: String(url), headers: init.headers });
+      return okResponse();
+    });
+    const { t } = build({
+      session: { holdsOwnCredential: () => true, getToken: () => '', getSessionId: () => '', whenReady: () => Promise.resolve(false) },
+    });
+
+    await t.apiClient.post('/api/auth/session/adopt', { refreshToken: 'r' }, { bearer: 'handover' });
+
+    expect(sent[0].headers['Authorization']).toBe('Bearer handover');
+  });
+
+  it('never pairs it with a stored session id, which names a different session', async () => {
+    const sent = [];
+    globalThis.fetch = vi.fn(async (url, init) => {
+      sent.push(init.headers);
+      return okResponse();
+    });
+    const { t } = build({
+      session: { holdsOwnCredential: () => true, getToken: () => 'old', getSessionId: () => 'old-sid' },
+    });
+
+    await t.apiClient.patch('/api/users/me', {}, { bearer: 'handover' });
+
+    expect(sent[0]['Authorization']).toBe('Bearer handover');
+    expect(sent[0]['x-session-id']).toBeUndefined();
+  });
+
+  it('does not treat its 401 as the end of the ambient session', async () => {
+    const urls = [];
+    globalThis.fetch = vi.fn(async (url) => {
+      urls.push(String(url));
+      return {
+        ok: false, status: 401, headers: { get: () => null },
+        json: async () => ({ message: 'Invalid token' }), text: async () => '',
+      };
+    });
+    const forget = vi.fn();
+    const onUnauthorized = vi.fn();
+    const { t } = build({ session: { forget }, hooks: { onUnauthorized } });
+
+    await expect(
+      t.apiClient.post('/api/auth/session/adopt', {}, { bearer: 'handover' }),
+    ).rejects.toMatchObject({ status: 401 });
+
+    expect(urls.some((u) => u.includes('/api/auth/session/refresh'))).toBe(false);
+    expect(forget).not.toHaveBeenCalled();
+    expect(onUnauthorized).not.toHaveBeenCalled();
+  });
+});

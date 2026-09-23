@@ -845,6 +845,19 @@ export function AuthProvider({ children }) {
       // Clear stale signup session data — the OTP is now used and should not be replayable
       sessionStorage.removeItem('meetifyy_signup_data');
 
+      /**
+       * The credential for the two handover calls below, passed to each
+       * explicitly.
+       *
+       * They used to rely on the platform's session source to have picked this
+       * session up by itself. The web source did, through its provider
+       * subscription; the installed app's source cannot — it only holds tokens
+       * it is handed — so on the app both calls went out with no credential at
+       * all. The account was verified at the provider and never created here,
+       * and every later sign-in to it failed.
+       */
+      const handoverToken = data.session.access_token;
+
       // Immediately persist gathered profile details to backend database.
       // The backend syncProfile gate will allow this because email_confirmed_at
       // is now set (Supabase marks it on successful OTP verification).
@@ -857,7 +870,7 @@ export function AuthProvider({ children }) {
           ...safeData,
           displayName,
           username,
-        });
+        }, { bearer: handoverToken });
         const syncedUser = response?.user || response;
         if (syncedUser) profile = { ...profile, ...syncedUser };
       } catch (err) {
@@ -880,19 +893,39 @@ export function AuthProvider({ children }) {
        * this device only — the account's provider session must survive, because
        * the server is now the one using it.
        */
+      let adopted = null;
       try {
-        const adopted = await authApi.adoptSession(data.session.refresh_token);
+        adopted = await authApi.adoptSession(data.session.refresh_token, {
+          bearer: handoverToken,
+        });
         rememberCsrfToken(adopted?.csrfToken);
         await rememberSessionTokens(adopted);
         if (adopted?.user) profile = { ...profile, ...adopted.user };
       } catch (err) {
-        // The account exists and is verified, so this is not a signup failure.
-        // The session is simply not durable yet; the next sign-in creates one.
+        adopted = null;
         console.error('Failed to establish a session after verification', err);
       } finally {
         // Not `signOut()`: every scope of it ends the session at the provider,
         // including the one just handed to the server. See forgetProviderSession.
         forgetProviderSession();
+      }
+
+      /**
+       * No session, so not signed in.
+       *
+       * This used to mark the user signed in regardless. With no session behind
+       * it, the next step's first authenticated request came back 401, the
+       * refresh found nothing to renew, and the app tore the "session" down —
+       * which, pressing Create Account on the last step, threw the user back to
+       * the opening screen with no explanation.
+       *
+       * The address IS verified, and signing in provisions the account (the
+       * server creates the profile before the session), so that is the way on.
+       */
+      if (!adopted) {
+        throw new Error(
+          'Your email is verified, but we could not sign you in. Please sign in with your email and password.',
+        );
       }
 
       adoptUser(profile);
