@@ -10,7 +10,10 @@ import { RateLimitService } from './rate-limit.service';
 import {
   applyRateLimitHeaders,
   rateLimitException,
+  requestIdOf,
 } from './rate-limit.response';
+import type { Response } from 'express';
+import { requestBody, type GuardRequest } from '../types/authenticated-request';
 import { clientIp } from './client-ip.util';
 import { normalizeEmail } from '../validation/email-format.util';
 import { RATE_LIMIT_POLICIES_KEY } from './rate-limit.decorator';
@@ -45,7 +48,7 @@ export class RateLimitPolicyGuard implements CanActivate {
     if (!policies?.length) return true;
 
     const http = context.switchToHttp();
-    const request = http.getRequest();
+    const request = http.getRequest<GuardRequest>();
 
     const entries = policies
       .map((policy) => {
@@ -78,10 +81,10 @@ export class RateLimitPolicyGuard implements CanActivate {
     }
 
     const decision = await this.rateLimit.consumeAll(entries);
-    applyRateLimitHeaders(http.getResponse(), decision);
+    applyRateLimitHeaders(http.getResponse<Response>(), decision);
 
     if (!decision.allowed) {
-      throw rateLimitException(decision, request?.id);
+      throw rateLimitException(decision, requestIdOf(request));
     }
 
     return true;
@@ -98,7 +101,7 @@ export class RateLimitPolicyGuard implements CanActivate {
    */
   private identifierFor(
     policy: RateLimitPolicyName,
-    request: any,
+    request: GuardRequest,
   ): string | null {
     const spec = RATE_LIMIT_POLICIES[policy] as RateLimitPolicy;
 
@@ -119,7 +122,8 @@ export class RateLimitPolicyGuard implements CanActivate {
         return clientIp(request);
 
       case 'account': {
-        const raw = request?.body?.email ?? request?.body?.identifier;
+        const body = requestBody(request);
+        const raw = body.email ?? body.identifier;
         if (typeof raw !== 'string') return null;
 
         // The SAME normalisation the services use to resolve the address, not

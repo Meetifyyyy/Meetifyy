@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 
 import { JwtGuard } from './jwt.guard';
+import type { OptionalAuthRequest } from '../types/authenticated-request';
 import { USER_ACCESS_COOKIE } from '../../auth/session/user-session-cookies';
 
 /**
@@ -31,7 +32,7 @@ export class OptionalJwtGuard implements CanActivate {
   constructor(private readonly jwtGuard: JwtGuard) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const request = context.switchToHttp().getRequest();
+    const request = context.switchToHttp().getRequest<OptionalAuthRequest>();
     // The cookie name has to match the one the session actually sets. This read
     // `access_token`, which nothing ever wrote, so a cookie-authenticated
     // caller looked anonymous here and the request they were signed in for was

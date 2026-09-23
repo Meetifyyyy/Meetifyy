@@ -68,6 +68,21 @@ export function retryAfterFor(decision: RateLimitDecision): number {
 }
 
 /**
+ * The request id pino-http assigned, as a string.
+ *
+ * It is `x-request-id` when the caller sent one and a UUID otherwise, so in
+ * practice always a string; a repeated header arrives as an array and is
+ * joined rather than echoed back as an array.
+ */
+export function requestIdOf(request: { id?: unknown }): string | undefined {
+  const { id } = request;
+  if (typeof id === 'string') return id;
+  if (typeof id === 'number') return String(id);
+  if (Array.isArray(id)) return id.join(',');
+  return undefined;
+}
+
+/**
  * The 429 every limited route returns.
  *
  * One shape everywhere, so the client has a single branch to write. It carries

@@ -1,4 +1,8 @@
 import { createParamDecorator, ExecutionContext } from '@nestjs/common';
+import type {
+  AuthenticatedUser,
+  OptionalAuthRequest,
+} from '../types/authenticated-request';
 
 /**
  * The authenticated user, or one property of it.
@@ -11,8 +15,8 @@ import { createParamDecorator, ExecutionContext } from '@nestjs/common';
  * they were reachable.
  */
 export const CurrentUser = createParamDecorator(
-  (data: string | undefined, ctx: ExecutionContext) => {
-    const request = ctx.switchToHttp().getRequest();
+  (data: keyof AuthenticatedUser | undefined, ctx: ExecutionContext) => {
+    const request = ctx.switchToHttp().getRequest<OptionalAuthRequest>();
     const user = request.user;
     if (!data) return user;
     return user ? user[data] : undefined;

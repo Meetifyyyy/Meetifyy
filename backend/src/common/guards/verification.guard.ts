@@ -8,6 +8,7 @@ import { Reflector } from '@nestjs/core';
 import { WsException } from '@nestjs/websockets';
 import { IS_VERIFIED_ONLY_KEY } from '../decorators/verified-only.decorator';
 import { VerificationAccessService } from '../verification/verification-access.service';
+import type { OptionalAuthRequest } from '../types/authenticated-request';
 
 @Injectable()
 export class VerificationGuard implements CanActivate {
@@ -30,9 +31,14 @@ export class VerificationGuard implements CanActivate {
     }
 
     const request =
-      context.getType() === 'http' ? context.switchToHttp().getRequest() : null;
+      context.getType() === 'http'
+        ? context.switchToHttp().getRequest<OptionalAuthRequest>()
+        : null;
+    // The gateway stores the socket's user id on the socket itself.
     const client =
-      context.getType() === 'ws' ? context.switchToWs().getClient() : null;
+      context.getType() === 'ws'
+        ? context.switchToWs().getClient<{ userId?: string }>()
+        : null;
     const userId = request?.user?.id || client?.userId;
 
     if (this.verificationAccess.isEnforcementEnabled() && userId) {

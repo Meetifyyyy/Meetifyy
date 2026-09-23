@@ -891,17 +891,6 @@
       "count": 1
     }
   },
-  "src/common/decorators/current-user.decorator.ts": {
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 2
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 2
-    },
-    "@typescript-eslint/no-unsafe-return": {
-      "count": 2
-    }
-  },
   "src/common/filters/http-exception.filter.spec.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 5
@@ -954,34 +943,6 @@
     },
     "@typescript-eslint/no-unsafe-member-access": {
       "count": 13
-    }
-  },
-  "src/common/guards/auth-ratelimit.guard.ts": {
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 2
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 1
-    }
-  },
-  "src/common/guards/dev-endpoint.guard.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 4
-    },
-    "@typescript-eslint/no-unsafe-call": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 6
-    },
-    "@typescript-eslint/no-unsafe-return": {
-      "count": 1
     }
   },
   "src/common/guards/jwt-suspension.guard.spec.ts": {
@@ -1124,28 +1085,6 @@
       "count": 1
     }
   },
-  "src/common/guards/login-ratelimit.guard.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 2
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 2
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 2
-    }
-  },
-  "src/common/guards/optional-jwt.guard.ts": {
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 3
-    }
-  },
   "src/common/guards/ratelimit.guard.spec.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 4
@@ -1164,48 +1103,6 @@
     },
     "@typescript-eslint/require-await": {
       "count": 1
-    }
-  },
-  "src/common/guards/ratelimit.guard.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 3
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 5
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 4
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 11
-    },
-    "@typescript-eslint/no-unsafe-return": {
-      "count": 1
-    }
-  },
-  "src/common/guards/support-ratelimit.guard.ts": {
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 2
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 3
-    },
-    "@typescript-eslint/no-unsafe-call": {
-      "count": 2
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 4
-    }
-  },
-  "src/common/guards/verification.guard.ts": {
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 3
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 2
     }
   },
   "src/common/interceptors/no-cache.interceptor.ts": {
@@ -1315,25 +1212,6 @@
     },
     "@typescript-eslint/no-unsafe-argument": {
       "count": 5
-    }
-  },
-  "src/common/rate-limit/client-ip.util.ts": {
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 2
-    }
-  },
-  "src/common/rate-limit/rate-limit-policy.guard.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 2
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 4
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 6
     }
   },
   "src/common/rate-limit/rate-limit.service.spec.ts": {
