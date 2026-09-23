@@ -56,7 +56,6 @@ const PRIVATE_PATHS = [
   '/forgot-password',
   '/reset-password',
   '/verify-email',
-  '/onboarding',
   // Authenticated application surfaces. Every one of these 401s without a
   // session, so a crawler that follows a link to one only produces a soft 404.
   '/home',
