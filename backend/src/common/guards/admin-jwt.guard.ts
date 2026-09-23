@@ -12,6 +12,7 @@ import { config } from '../../config';
 import { timingSafeEqual } from 'crypto';
 import type { AdminRequest } from '../types/authenticated-request';
 import { payloadObject, stringClaim } from '../utils/jwt-claims.util';
+import { ADMIN_TOKEN_ALGORITHM } from '../../admin/auth/admin-token.constants';
 
 @Injectable()
 export class AdminJwtGuard implements CanActivate {
@@ -44,7 +45,9 @@ export class AdminJwtGuard implements CanActivate {
 
     let verified: string | jwt.JwtPayload;
     try {
-      verified = jwt.verify(token, secret);
+      verified = jwt.verify(token, secret, {
+        algorithms: [ADMIN_TOKEN_ALGORITHM],
+      });
     } catch {
       throw new UnauthorizedException('Invalid or expired admin session token');
     }
@@ -79,6 +82,13 @@ export class AdminJwtGuard implements CanActivate {
     }
 
     if (!session || session.revoked || session.expiresAt < new Date()) {
+      throw new UnauthorizedException('Admin session revoked or expired');
+    }
+
+    // And it must be THIS admin's session. Both ids come from one signed
+    // token, so they cannot be paired by a caller today; checking it anyway
+    // keeps the guarantee from resting on how tokens happen to be minted.
+    if (session.adminId !== admin.id) {
       throw new UnauthorizedException('Admin session revoked or expired');
     }
 

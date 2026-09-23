@@ -15,6 +15,7 @@ import type { GuardRequest } from '../types/authenticated-request';
 import { clientIp } from '../rate-limit/client-ip.util';
 import { JwtGuard } from './jwt.guard';
 import * as jwt from 'jsonwebtoken';
+import { ADMIN_TOKEN_ALGORITHM } from '../../admin/auth/admin-token.constants';
 import { config } from '../../config';
 
 /**
@@ -139,7 +140,9 @@ export class RateLimitGuard implements CanActivate {
     if (!token) return null;
 
     try {
-      const payload = jwt.verify(token, secret, { algorithms: ['HS256'] });
+      const payload = jwt.verify(token, secret, {
+        algorithms: [ADMIN_TOKEN_ALGORITHM],
+      });
       // A token whose payload is a bare string carries no subject.
       return typeof payload === 'object' && payload.sub
         ? `admin:${payload.sub}`

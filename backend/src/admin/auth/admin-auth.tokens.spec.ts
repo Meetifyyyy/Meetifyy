@@ -4,6 +4,7 @@ jest.mock('../../email/email.service', () => ({ EmailService: jest.fn() }));
 import { ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import type { ExecutionContext } from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
+import * as crypto from 'crypto';
 import * as jwt from 'jsonwebtoken';
 import { config } from '../../config';
 import { AdminJwtGuard } from '../../common/guards/admin-jwt.guard';
@@ -37,6 +38,41 @@ beforeEach(() => {
 });
 
 afterEach(() => jest.restoreAllMocks());
+
+/** A guard whose database knows one live session, owned by `adminId`. */
+function makeGuardForSession(adminId: string) {
+  const prisma = {
+    superAdmin: {
+      findUnique: jest.fn().mockResolvedValue({ ...ADMIN, id: adminId }),
+    },
+    superAdminSession: {
+      findUnique: jest.fn().mockResolvedValue({
+        id: 'sess-1',
+        revoked: false,
+        expiresAt: new Date(Date.now() + 60_000),
+        adminId,
+      }),
+      update: jest.fn().mockResolvedValue(undefined),
+    },
+  };
+  return {
+    guard: new AdminJwtGuard(
+      {} as ConfigService,
+      prisma as unknown as PrismaService,
+    ),
+  };
+}
+
+function guardContext(accessToken: string) {
+  const request = {
+    method: 'GET',
+    headers: {},
+    cookies: { admin_access: accessToken },
+  };
+  return {
+    switchToHttp: () => ({ getRequest: () => request }),
+  } as unknown as ExecutionContext;
+}
 
 describe('AdminJwtGuard', () => {
   const liveSession = {
@@ -105,6 +141,33 @@ describe('AdminJwtGuard', () => {
     );
   });
 
+  it('refuses an access token signed with any algorithm but HS256', async () => {
+    const { guard } = makeGuard();
+    const hs384 = jwt.sign({ sub: ADMIN.id, sessionId: 'sess-1' }, ACCESS, {
+      algorithm: 'HS384',
+    });
+
+    await expect(
+      guard.canActivate(contextFor(request(hs384))),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it('refuses a live session that belongs to a different admin', async () => {
+    const { guard, prisma } = makeGuard();
+    prisma.superAdminSession.findUnique.mockResolvedValue({
+      ...liveSession,
+      adminId: 'someone-else',
+    });
+    const req: Record<string, unknown> = request(
+      jwt.sign({ sub: ADMIN.id, sessionId: 'sess-1' }, ACCESS),
+    );
+
+    await expect(guard.canActivate(contextFor(req))).rejects.toBeInstanceOf(
+      UnauthorizedException,
+    );
+    expect(req.admin).toBeUndefined();
+  });
+
   it('requires a matching CSRF token on a mutation', async () => {
     const { guard } = makeGuard();
     const token = jwt.sign({ sub: ADMIN.id, sessionId: 'sess-1' }, ACCESS);
@@ -169,6 +232,61 @@ describe('AdminAuthService tokens', () => {
     ).rejects.toBeInstanceOf(ForbiddenException);
     expect(prisma.superAdmin.findUnique).toHaveBeenCalledWith({
       where: { id: ADMIN.id },
+    });
+  });
+
+  describe('refresh', () => {
+    const tokenKey = 'raw-refresh-key';
+    const liveSession = (adminId: string) => ({
+      id: 'sess-1',
+      adminId,
+      revoked: false,
+      expiresAt: new Date(Date.now() + 60_000),
+      refreshHash: crypto.createHash('sha256').update(tokenKey).digest('hex'),
+      admin: { ...ADMIN, id: adminId },
+    });
+    const refreshTokenFor = (sub: string) =>
+      jwt.sign({ sub, sessionId: 'sess-1', tokenKey }, REFRESH);
+
+    const makeRefreshService = (session: object) => {
+      const prisma = {
+        superAdminSession: {
+          findUnique: jest.fn().mockResolvedValue(session),
+          update: jest.fn().mockResolvedValue({}),
+          updateMany: jest.fn().mockResolvedValue({}),
+        },
+        securityEvent: { create: jest.fn().mockResolvedValue({}) },
+      };
+      return new AdminAuthService(
+        prisma as unknown as PrismaService,
+        {} as ConfigService,
+        {} as EmailService,
+      );
+    };
+
+    it('issues HS256 tokens that AdminJwtGuard then accepts', async () => {
+      const service = makeRefreshService(liveSession(ADMIN.id));
+      const { accessToken, refreshToken } = await service.refreshTokens(
+        refreshTokenFor(ADMIN.id),
+        'ip',
+        'ua',
+      );
+
+      for (const token of [accessToken, refreshToken]) {
+        expect(jwt.decode(token, { complete: true })?.header.alg).toBe('HS256');
+      }
+      const { guard } = makeGuardForSession(ADMIN.id);
+      await expect(guard.canActivate(guardContext(accessToken))).resolves.toBe(
+        true,
+      );
+    });
+
+    it("refuses a refresh token naming a different admin than the session's", async () => {
+      const service = makeRefreshService(liveSession('someone-else'));
+
+      await expect(
+        service.refreshTokens(refreshTokenFor(ADMIN.id), 'ip', 'ua'),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
     });
   });
 

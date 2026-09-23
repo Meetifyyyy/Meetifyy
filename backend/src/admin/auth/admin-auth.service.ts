@@ -25,6 +25,7 @@ import { config } from '../../config';
 import { verifySync } from 'otplib';
 import { UAParser } from 'ua-parser-js';
 import type { SuperAdmin } from '@prisma/client';
+import { ADMIN_TOKEN_ALGORITHM } from './admin-token.constants';
 import { errorMessage } from '../../common/utils/error.util';
 import { payloadObject, stringClaim } from '../../common/utils/jwt-claims.util';
 
@@ -171,7 +172,9 @@ export class AdminAuthService implements OnModuleInit {
   ): { adminId: string } {
     let verified: string | jwt.JwtPayload;
     try {
-      verified = jwt.verify(token, this.getPendingSecret());
+      verified = jwt.verify(token, this.getPendingSecret(), {
+        algorithms: [ADMIN_TOKEN_ALGORITHM],
+      });
     } catch {
       throw new UnauthorizedException(expiredMessage);
     }
@@ -316,7 +319,7 @@ export class AdminAuthService implements OnModuleInit {
     const pendingToken = jwt.sign(
       { sub: admin.id, email: admin.email, step: 'OTP' },
       this.getPendingSecret(),
-      { expiresIn: '10m' },
+      { expiresIn: '10m', algorithm: ADMIN_TOKEN_ALGORITHM },
     );
 
     return {
@@ -383,7 +386,7 @@ export class AdminAuthService implements OnModuleInit {
       const pendingToken2 = jwt.sign(
         { sub: admin.id, email: admin.email, step: 'TOTP' },
         this.getPendingSecret(),
-        { expiresIn: '5m' },
+        { expiresIn: '5m', algorithm: ADMIN_TOKEN_ALGORITHM },
       );
       return {
         success: true,
@@ -492,14 +495,14 @@ export class AdminAuthService implements OnModuleInit {
         sessionId: session.id,
       },
       this.getAccessSecret(),
-      { expiresIn: '15m' },
+      { expiresIn: '15m', algorithm: ADMIN_TOKEN_ALGORITHM },
     );
 
     // Sign Refresh Token (30 days) containing session ID
     const refreshToken = jwt.sign(
       { sub: admin.id, sessionId: session.id, tokenKey: rawRefreshToken },
       this.getRefreshSecret(),
-      { expiresIn: '30d' },
+      { expiresIn: '30d', algorithm: ADMIN_TOKEN_ALGORITHM },
     );
 
     // Audit Log (non-blocking)
@@ -549,7 +552,9 @@ export class AdminAuthService implements OnModuleInit {
   async refreshTokens(refreshTokenStr: string, ip: string, userAgent: string) {
     let verified: string | jwt.JwtPayload;
     try {
-      verified = jwt.verify(refreshTokenStr, this.getRefreshSecret());
+      verified = jwt.verify(refreshTokenStr, this.getRefreshSecret(), {
+        algorithms: [ADMIN_TOKEN_ALGORITHM],
+      });
     } catch {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
@@ -558,7 +563,8 @@ export class AdminAuthService implements OnModuleInit {
     const payload = payloadObject(verified);
     const sessionId = payload && stringClaim(payload, 'sessionId');
     const tokenKey = payload && stringClaim(payload, 'tokenKey');
-    if (!sessionId || !tokenKey) {
+    const adminId = payload && stringClaim(payload, 'sub');
+    if (!sessionId || !tokenKey || !adminId) {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
 
@@ -568,6 +574,13 @@ export class AdminAuthService implements OnModuleInit {
     });
 
     if (!session || session.revoked || session.expiresAt < new Date()) {
+      throw new UnauthorizedException('Session has been revoked or expired');
+    }
+
+    // The session must belong to the admin the token names. Both come from one
+    // signed token, so they cannot be mixed today; this makes the invariant
+    // explicit, as JwtGuard does for user sessions.
+    if (session.adminId !== adminId) {
       throw new UnauthorizedException('Session has been revoked or expired');
     }
 
@@ -641,7 +654,7 @@ export class AdminAuthService implements OnModuleInit {
         sessionId: session.id,
       },
       this.getAccessSecret(),
-      { expiresIn: '15m' },
+      { expiresIn: '15m', algorithm: ADMIN_TOKEN_ALGORITHM },
     );
 
     const newRefreshToken = jwt.sign(
@@ -651,7 +664,7 @@ export class AdminAuthService implements OnModuleInit {
         tokenKey: newRawRefreshToken,
       },
       this.getRefreshSecret(),
-      { expiresIn: '30d' },
+      { expiresIn: '30d', algorithm: ADMIN_TOKEN_ALGORITHM },
     );
 
     return {
