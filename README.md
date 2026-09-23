@@ -126,6 +126,18 @@ Container Apps environment. See [docs/azure-setup.md](docs/azure-setup.md).
 
 Both deploys are automatic on merge. Nothing is deployed by hand.
 
+### Backend lint
+
+`npm run lint` in `backend/` lints every source file, including the email
+templates and `scripts/`, and it blocks CI. Older violations are recorded in
+`backend/eslint-suppressions.json`. Any violation not in that file fails the
+build, so a new `any` or a new unawaited promise can't be merged.
+
+The file only ever shrinks. After fixing recorded violations, run
+`npm run lint -- --prune-suppressions` and commit the smaller file with the
+fix. Lint fails until you do. Never regenerate it with `--suppress-all` to make
+a new violation pass: fix the code.
+
 ---
 
 ## Database changes — always use migrations

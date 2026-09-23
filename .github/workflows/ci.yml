@@ -114,12 +114,22 @@ jobs:
       - name: TypeScript typecheck
         run: npx tsc --project tsconfig.build.json --noEmit
 
-      # Non-blocking: formatting and parse errors are clean, but ~4.6k
-      # pre-existing `no-unsafe-*` findings remain. Flip to blocking once
-      # that backlog is worked down.
+      # The build config excludes specs and the shell scripts, so on its own
+      # a type error there would surface only as a test failure, or never.
+      - name: TypeScript typecheck (tests and scripts)
+        run: |
+          npx tsc --project tsconfig.json --noEmit --incremental false
+          npx tsc --project tsconfig.tooling.json
+
+      # BLOCKING. The pre-existing backlog is recorded in
+      # eslint-suppressions.json, so only a violation that is not in that file
+      # fails the build: a new `any`, a new floating promise. The file may only
+      # shrink. When a fix removes a recorded violation, ESLint fails until the
+      # ledger is pruned (`npm run lint -- --prune-suppressions`), so it never
+      # keeps room for new violations to hide in. This step was advisory
+      # before, and the backlog grew by about half while it was.
       - name: ESLint
         run: npm run lint
-        continue-on-error: true
 
       # prebuild script runs `prisma generate` again — harmless, ensures the
       # dist output matches the latest generated client.
