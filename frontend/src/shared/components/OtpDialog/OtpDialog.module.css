@@ -207,54 +207,26 @@
 
 .primaryBtn,
 .secondaryBtn {
-  min-height: 44px;
-  padding: 0.7rem 1.15rem;
-  font-size: 0.9rem;
-  font-weight: 600;
-  border-radius: var(--radius-md, 12px);
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.45rem;
-  transition: background 0.15s ease, opacity 0.15s ease;
+  composes: action-btn from global;
 }
 
 .primaryBtn {
-  border: none;
-  color: #ffffff;
-  background: var(--color-primary, #2563eb);
+  composes: action-btn--primary from global;
 }
 
-.primaryBtn:hover:not(:disabled) {
-  background: var(--color-primary-hover, #1d4ed8);
-}
-
-.dangerBtn {
-  background: var(--color-danger, #ef4444);
+/* Applied on top of .primaryBtn, so it restates the hover it overrides. */
+.dangerBtn,
+.dangerBtn:hover:not(:disabled) {
+  background: var(--action-danger-bg);
+  box-shadow: 0 4px 14px rgba(var(--action-danger-rgb), 0.26);
 }
 
 .dangerBtn:hover:not(:disabled) {
-  background: var(--color-danger-hover, #dc2626);
+  background: var(--action-danger-bg-hover);
 }
 
 .secondaryBtn {
-  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
-  color: var(--color-text-main, #0f172a);
-  background: transparent;
-}
-
-.secondaryBtn:hover:not(:disabled) {
-  background: var(--color-bg-soft, #f8fafc);
-}
-
-:global([data-theme="dark"]) .secondaryBtn {
-  border-color: rgba(255, 255, 255, 0.12);
-  color: var(--color-text-main, #f8fafc);
-}
-
-:global([data-theme="dark"]) .secondaryBtn:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.08);
+  composes: action-btn--secondary from global;
 }
 
 :global([data-theme="dark"]) .closeBtn:hover:not(:disabled) {

@@ -1,22 +1,27 @@
 .bottomNav {
   position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: calc(60px + env(safe-area-inset-bottom, 0px));
+  /* Floating pill: inset from the sides and lifted off the bottom edge (and
+     clear of the home indicator). The page reserves this footprint in
+     global.css (.centre padding, .centre--messages height) — change them together. */
+  bottom: calc(var(--bottom-nav-gap) + env(safe-area-inset-bottom, 0px));
+  left: var(--bottom-nav-gap);
+  right: var(--bottom-nav-gap);
+  height: 60px;
+  border-radius: 22px;
   /* Chrome — see --color-nav-surface. The phone's own navigation bar is
      painted from that same property by `installSystemBars`, so this bar and
      the system area beneath it are one continuous surface by construction. */
-  background: var(--color-nav-surface);
+  background: var(--bottom-nav-bg, var(--color-nav-surface));
   border: none;
   display: none;
   justify-content: space-around;
   align-items: center;
   z-index: 100;
-  box-shadow: none;
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-  padding: 0 1rem env(safe-area-inset-bottom, 0px);
+  box-shadow: var(--bottom-nav-shadow);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  backdrop-filter: blur(20px) saturate(180%);
+  box-sizing: border-box;
+  padding: 0 0.5rem;
   /* Stay put when the keyboard opens.
      On Android the keyboard shrinks the LAYOUT viewport, so `bottom: 0` starts
      meaning "the top of the keyboard" and this bar gets lifted up on top of it.
@@ -60,7 +65,7 @@
   cursor: pointer;
   flex: 1;
   height: 100%;
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: color 0.2s ease, opacity 0.12s ease;
   padding: 4px 0;
   border-radius: var(--radius-md);
   -webkit-tap-highlight-color: transparent;
@@ -123,8 +128,16 @@
 }
 
 .bottomNavItem:active {
-  transform: scale(0.92);
-  transition: transform 0.05s ease;
+  /* Opacity, not scale: a scaled press springs back after the tap lands,
+     which reads as the icons shifting once they reach their place. */
+  opacity: 0.6;
+  transition: opacity 0.05s ease;
+}
+
+/* Cross-fade only. NavIcon grows the incoming layer from 0.9, which on a bar
+   this small looks like the icon settling into position after every tap. */
+.navIcon > svg {
+  transform: none !important;
 }
 
 .bottomNavItem.active {
@@ -162,10 +175,6 @@
 @media (max-width: 480px) {
   .bottomNav {
     padding: 0 0.25rem;
-    border: none;
-    box-shadow: none;
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
   }
   .bottomNavItem {
     font-size: 0.6rem;
@@ -206,7 +215,7 @@
   }
 
   :global(html[data-chrome-hidden]) .bottomNav {
-    transform: translateY(calc(100% + env(safe-area-inset-bottom, 0px)));
+    transform: translateY(calc(100% + var(--bottom-nav-gap) + env(safe-area-inset-bottom, 0px) + 24px));
     pointer-events: none;
   }
 }

@@ -431,7 +431,7 @@ nav a.active {
 @media (max-width: 768px) {
   .custom-toast,
   .custom-toast.custom-toast-bottom {
-    bottom: max(1.5rem, calc(4.5rem + env(safe-area-inset-bottom, 0px)));
+    bottom: calc(60px + var(--bottom-nav-gap) + env(safe-area-inset-bottom, 0px) + 12px);
     top: auto;
   }
 
@@ -533,7 +533,8 @@ nav a.active {
        explanation; `.centre--messages` right below still opts into a real
        clipped box via its own `overflow: hidden`. */
     overflow-y: visible !important;
-    padding-bottom: 70px !important;
+    /* Floating BottomNav: 60px bar + its gap + the home indicator + breathing room. */
+    padding-bottom: calc(60px + var(--bottom-nav-gap) + env(safe-area-inset-bottom, 0px) + 12px) !important;
     max-width: none !important;
     margin: 0 !important;
   }
@@ -546,7 +547,7 @@ nav a.active {
        the only thing to reserve is the bottom edge. Whichever of these is
        largest wins:
 
-         60px - kb-layout-shift  the visible part of the BottomNav row. Normally
+         60px + gap - kb-layout-shift  the floating BottomNav and its gap. Normally
                                  the full 60px; on Android the keyboard shrinks
                                  the layout viewport and the nav translates down
                                  out of it by exactly that much, so its claim on
@@ -559,8 +560,8 @@ nav a.active {
        the space kept for it in agreement — reserve too little and the nav sits
        over the content, too much and the leftover strip shows the canvas
        through as a black band. */
-    height: calc(100dvh - max(0px, calc(60px - var(--kb-layout-shift, 0px)), var(--kb-inset, 0px))) !important;
-    max-height: calc(100dvh - max(0px, calc(60px - var(--kb-layout-shift, 0px)), var(--kb-inset, 0px))) !important;
+    height: calc(100dvh - max(0px, calc(60px + var(--bottom-nav-gap) - var(--kb-layout-shift, 0px)), var(--kb-inset, 0px))) !important;
+    max-height: calc(100dvh - max(0px, calc(60px + var(--bottom-nav-gap) - var(--kb-layout-shift, 0px)), var(--kb-inset, 0px))) !important;
   }
 
   .centre--messages.chat-is-open {
@@ -1179,4 +1180,130 @@ em-emoji-picker {
   --em-color-border-over: var(--color-border-dark, #4D4D4D);
   background-color: var(--color-bg-white, #202020);
   border-color: var(--color-border, #404040);
+}
+
+/* ============================================================================
+   Action buttons — confirm / cancel / destructive pairs in dialogs.
+   Modules pull these in with `composes: action-btn action-btn--primary from
+   global` so every confirmation reads the same in both themes.
+   ============================================================================ */
+:root {
+  --action-secondary-bg: rgba(15, 23, 42, 0.06);
+  --action-secondary-bg-hover: rgba(15, 23, 42, 0.1);
+  --action-secondary-bg-active: rgba(15, 23, 42, 0.14);
+  /* #DC2626 keeps white label text above 4.5:1; #EF4444 does not. */
+  --action-danger-bg: #dc2626;
+  --action-danger-bg-hover: #c81e1e;
+  --action-danger-rgb: 220, 38, 38;
+}
+
+[data-theme='dark'] {
+  --action-secondary-bg: rgba(255, 255, 255, 0.08);
+  --action-secondary-bg-hover: rgba(255, 255, 255, 0.12);
+  --action-secondary-bg-active: rgba(255, 255, 255, 0.16);
+}
+
+.action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  min-height: 46px;
+  padding: 0 1.35rem;
+  box-sizing: border-box;
+  border: none;
+  border-radius: var(--radius-full, 9999px);
+  font-family: var(--font-family-sans);
+  font-size: 0.92rem;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    background var(--transition-fast, 0.15s ease),
+    box-shadow var(--transition-fast, 0.15s ease),
+    transform 0.1s ease;
+}
+
+.action-btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.action-btn:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.action-btn--primary {
+  background: var(--color-primary);
+  color: #ffffff;
+  box-shadow: 0 4px 14px rgba(var(--color-primary-rgb), 0.28);
+}
+
+.action-btn--primary:hover:not(:disabled) {
+  background: var(--color-primary-hover);
+  box-shadow: 0 6px 18px rgba(var(--color-primary-rgb), 0.36);
+}
+
+.action-btn--danger {
+  background: var(--action-danger-bg);
+  color: #ffffff;
+  box-shadow: 0 4px 14px rgba(var(--action-danger-rgb), 0.26);
+}
+
+.action-btn--danger:hover:not(:disabled) {
+  background: var(--action-danger-bg-hover);
+  box-shadow: 0 6px 18px rgba(var(--action-danger-rgb), 0.34);
+}
+
+.action-btn--danger:focus-visible {
+  outline-color: var(--action-danger-bg);
+}
+
+.action-btn--secondary {
+  background: var(--action-secondary-bg);
+  color: var(--color-text-main);
+}
+
+.action-btn--secondary:hover:not(:disabled) {
+  background: var(--action-secondary-bg-hover);
+}
+
+.action-btn--secondary:active:not(:disabled) {
+  background: var(--action-secondary-bg-active);
+}
+
+/* ============================================================================
+   Bottom-sheet grab handle — pairs with useSheetDrag. Phones only; the drag
+   area is taller than the visible bar so it is easy to catch with a thumb.
+   ============================================================================ */
+.sheet-handle {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .sheet-handle {
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    height: 22px;
+    margin: -0.75rem 0 0.5rem;
+    touch-action: none;
+    cursor: grab;
+  }
+
+  .sheet-handle::before {
+    content: '';
+    width: 40px;
+    height: 4px;
+    margin-top: 2px;
+    border-radius: 2px;
+    background: var(--color-border-dark, rgba(15, 23, 42, 0.2));
+  }
 }

@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { AlertTriangle, Info } from '@shared/components/icons';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 import { useScrollLock } from '@shared/hooks/useScrollLock';
+import { useSheetDrag } from '@shared/hooks/useSheetDrag';
 import styles from './ConfirmModal.module.css';
 
 export default function ConfirmModal({
@@ -28,6 +29,8 @@ export default function ConfirmModal({
   // Background stays put while this dialog is open. Counted, so a
   // dialog opened on top of another cannot unlock the page when it closes.
   useScrollLock(visible);
+  // Dragging the sheet down is a cancel, the same as the backdrop or Back.
+  const sheetRef = useSheetDrag(onCancel, { enabled: visible });
 
   useEffect(() => {
     if (visible && overlayRef.current) {
@@ -49,7 +52,8 @@ export default function ConfirmModal({
 
   return createPortal(
     <div className={styles.confirmOverlay} ref={overlayRef} onClick={(e) => { if (e.target === overlayRef.current) handleClose(); }}>
-      <div className={styles.confirmModal}>
+      <div ref={sheetRef} className={styles.confirmModal}>
+        <div className="sheet-handle" data-sheet-handle aria-hidden="true" />
         <div className={`${styles.confirmIcon} ${isDestructive ? styles.confirmIconDestructive : styles.confirmIconPrimary}`}>
           {icon || (isDestructive ? (
             <AlertTriangle size={24} strokeWidth={2} />

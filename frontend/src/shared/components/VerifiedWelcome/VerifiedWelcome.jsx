@@ -8,6 +8,8 @@ import {
   Search,
 } from '@shared/components/icons';
 import { resolveVerificationCelebration } from '@shared/lib/verificationCelebration';
+import { useSheetDrag } from '@shared/hooks/useSheetDrag';
+import { useScrollLock } from '@shared/hooks/useScrollLock';
 import styles from './VerifiedWelcome.module.css';
 
 /** Per-account record of the last verification status this browser observed. */
@@ -48,15 +50,20 @@ const BENEFITS = [
  * The status itself comes from the server via the auth sync; nothing here
  * decides whether an account is verified.
  */
-export default function VerifiedWelcome() {
+/**
+ * `preview` renders it open without touching the seen-marker in storage, for
+ * the local Notification Lab; `onPreviewClose` is how that preview closes.
+ */
+export default function VerifiedWelcome({ preview = false, onPreviewClose } = {}) {
   const { currentUser } = useAuth();
-  const [open, setOpen] = useState(false);
+  const [celebrating, setOpen] = useState(false);
+  const open = preview || celebrating;
 
   const userId = currentUser?.id;
   const status = currentUser?.verificationStatus;
 
   useEffect(() => {
-    if (!userId || !status) return;
+    if (preview || !userId || !status) return;
 
     const key = `${STORAGE_PREFIX}${userId}`;
     let previous = null;
@@ -85,9 +92,15 @@ export default function VerifiedWelcome() {
         /* nothing to do; the modal simply will not fire next time */
       }
     }
-  }, [userId, status]);
+  }, [preview, userId, status]);
 
-  const dismiss = useCallback(() => setOpen(false), []);
+  const dismiss = useCallback(() => {
+    if (preview) onPreviewClose?.();
+    else setOpen(false);
+  }, [preview, onPreviewClose]);
+  const sheetRef = useSheetDrag(dismiss, { enabled: open });
+  // The page behind stays put while this is open; only the sheet scrolls.
+  useScrollLock(open);
 
   // Escape closes, matching every other dialog in the app.
   useEffect(() => {
@@ -109,7 +122,8 @@ export default function VerifiedWelcome() {
       aria-modal="true"
       aria-labelledby="verified-welcome-title"
     >
-      <div className={styles.card} onClick={(e) => e.stopPropagation()}>
+      <div ref={sheetRef} className={styles.card} onClick={(e) => e.stopPropagation()}>
+        <div className="sheet-handle" data-sheet-handle aria-hidden="true" />
         <div className={styles.badge} aria-hidden="true">
           <CheckCircle2 size={30} />
         </div>

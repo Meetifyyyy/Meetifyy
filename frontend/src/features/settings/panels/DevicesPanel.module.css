@@ -178,35 +178,19 @@
 
 .cancelBtn,
 .dangerBtn {
-  padding: 8px 16px;
-  border-radius: var(--radius-full, 9999px);
-  font-family: var(--font-family-sans);
-  font-size: 0.8rem;
-  font-weight: 600;
-  cursor: pointer;
-  border: 1px solid transparent;
-  transition: opacity var(--transition-fast), background var(--transition-fast);
+  composes: action-btn from global;
+  /* Inline confirm inside a device row, so a step smaller than a dialog's. */
+  min-height: 38px;
+  padding: 0 1.1rem;
+  font-size: 0.82rem;
 }
 
 .cancelBtn {
-  background: transparent;
-  border-color: var(--color-border);
-  color: var(--color-text-muted);
+  composes: action-btn--secondary from global;
 }
 
 .dangerBtn {
-  background: var(--color-danger);
-  color: #fff;
-}
-
-.dangerBtn:hover:not(:disabled) {
-  opacity: 0.92;
-}
-
-.cancelBtn:disabled,
-.dangerBtn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+  composes: action-btn--danger from global;
 }
 
 .state {

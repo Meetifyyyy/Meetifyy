@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { REPORT_REASONS } from '@shared/api/reports/report-constants';
 import { useReportMutation } from '@shared/api/reports/useReportMutation';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
+import { useSheetDrag } from '@shared/hooks/useSheetDrag';
 import { useScrollLock } from '@shared/hooks/useScrollLock';
 import styles from './ReportModal.module.css';
 import { getProcessedAvatarUrl } from '@shared/components/avatar/Avatar';
@@ -69,6 +70,7 @@ export default function ReportModal({
 
   // Back dismisses the report, not the page it was opened from.
   useOverlayBack(Boolean(isOpen), onClose);
+  const sheetRef = useSheetDrag(onClose, { enabled: Boolean(isOpen) });
   // Background stays put while this dialog is open. Counted, so a
   // dialog opened on top of another cannot unlock the page when it closes.
   useScrollLock(Boolean(isOpen));
@@ -138,7 +140,8 @@ export default function ReportModal({
       aria-modal="true"
       aria-labelledby="report-modal-title"
     >
-      <div className={styles.container} onClick={(e) => e.stopPropagation()}>
+      <div ref={sheetRef} className={styles.container} onClick={(e) => e.stopPropagation()}>
+        <div className="sheet-handle" data-sheet-handle aria-hidden="true" />
         <div className={styles.header}>
           <div className={styles.headerTitleGroup}>
             <svg

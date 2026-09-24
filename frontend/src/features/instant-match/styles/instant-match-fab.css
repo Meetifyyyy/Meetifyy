@@ -3,7 +3,7 @@
 .im-fab-dock {
   position: fixed;
   right: max(18px, env(safe-area-inset-right));
-  bottom: calc(78px + env(safe-area-inset-bottom));
+  bottom: calc(60px + var(--bottom-nav-gap, 12px) + env(safe-area-inset-bottom) + 16px);
   z-index: 880;
   display: flex;
   align-items: center;

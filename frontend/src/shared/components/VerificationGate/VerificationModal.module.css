@@ -16,7 +16,7 @@
 .modal {
   position: relative;
   background: var(--color-bg-white, #ffffff);
-  border: 1px solid var(--color-border, #e2e8f0);
+  border: none;
   border-radius: var(--radius-2xl, 24px);
   width: 100%;
   max-width: 420px;
@@ -38,7 +38,7 @@
   height: 34px;
   border-radius: 50%;
   background: var(--color-bg-soft, #f1f5f9);
-  border: 1px solid var(--color-border-light, #e2e8f0);
+  border: none;
   color: var(--color-text-muted, #64748b);
   display: flex;
   align-items: center;
@@ -227,7 +227,7 @@
   font-size: 0.8125rem;
   font-weight: 500;
   text-decoration: none;
-  border: 1px solid var(--color-border, #e2e8f0);
+  border: none;
   cursor: pointer;
   transition: all 0.2s ease;
   box-sizing: border-box;
