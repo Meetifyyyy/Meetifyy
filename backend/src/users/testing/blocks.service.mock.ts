@@ -1,4 +1,5 @@
 import { BlocksService } from '../blocks.service';
+import type { Stub } from '../../common/testing/stub';
 
 /**
  * Test double for BlocksService.
@@ -22,7 +23,7 @@ export function createBlocksServiceMock(
   const outgoingFor = (userId: string): string[] =>
     blocks.filter((b) => b.blockerId === userId).map((b) => b.blockedId);
 
-  return {
+  const mock = {
     getExcludedUserIds: jest.fn((userId: string) =>
       Promise.resolve(excludedFor(userId)),
     ),
@@ -49,23 +50,30 @@ export function createBlocksServiceMock(
       const set = new Set(excludedFor(userId));
       return Promise.resolve(ids.filter((id) => !set.has(id)));
     }),
-    injectBlockFilter: jest.fn((userId: string, where: any, field = 'id') => {
-      if (!userId) return Promise.resolve(where);
-      const excluded = excludedFor(userId);
-      if (excluded.length === 0) return Promise.resolve(where);
-      const existing = where.AND;
-      const and = Array.isArray(existing)
-        ? [...existing]
-        : existing
-          ? [existing]
-          : [];
-      and.push({ [field]: { notIn: excluded } });
-      return Promise.resolve({ ...where, AND: and });
-    }),
+    injectBlockFilter: jest.fn(
+      <T extends { AND?: unknown }>(
+        userId: string | null | undefined,
+        where: T,
+        field = 'id',
+      ): Promise<T> => {
+        if (!userId) return Promise.resolve(where);
+        const excluded = excludedFor(userId);
+        if (excluded.length === 0) return Promise.resolve(where);
+        const existing = where.AND;
+        const and: unknown[] = Array.isArray(existing)
+          ? [...(existing as unknown[])]
+          : existing
+            ? [existing]
+            : [];
+        and.push({ [field]: { notIn: excluded } });
+        return Promise.resolve({ ...where, AND: and });
+      },
+    ),
     listBlockedContacts: jest.fn(() => Promise.resolve([])),
     removeBlock: jest.fn(() => Promise.resolve({ count: 1 })),
-    invalidateBlockCache: jest.fn(async () => {}),
-  };
+    invalidateBlockCache: jest.fn(() => Promise.resolve()),
+  } satisfies Stub<BlocksService>;
+  return mock as typeof mock & BlocksService;
 }
 
 /** Ready-made Nest provider for the double above. */

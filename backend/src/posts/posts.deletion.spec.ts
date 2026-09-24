@@ -103,7 +103,7 @@ describe('PostsService — deletion lifecycle & data cleanup', () => {
       storageService,
       authorizer,
       // First-year isolation — not what the deletion lifecycle is about.
-      createStudentYearPolicyMock() as any,
+      createStudentYearPolicyMock(),
       mediaCleanupService,
     );
   });

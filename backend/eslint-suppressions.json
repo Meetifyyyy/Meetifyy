@@ -253,10 +253,10 @@
   },
   "src/activities/activity-authorization.service.spec.ts": {
     "@typescript-eslint/no-explicit-any": {
-      "count": 18
+      "count": 17
     },
     "@typescript-eslint/no-unsafe-argument": {
-      "count": 4
+      "count": 3
     },
     "@typescript-eslint/no-unsafe-assignment": {
       "count": 5
@@ -699,14 +699,6 @@
       "count": 1
     }
   },
-  "src/common/legal/testing/legal-consent.mock.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 4
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 1
-    }
-  },
   "src/common/pagination.util.spec.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 2
@@ -795,20 +787,6 @@
     },
     "@typescript-eslint/no-unsafe-member-access": {
       "count": 6
-    }
-  },
-  "src/common/student-year/testing/student-year-policy.mock.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 5
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 7
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 8
-    },
-    "@typescript-eslint/no-unsafe-return": {
-      "count": 2
     }
   },
   "src/common/users/deleted-user.spec.ts": {
@@ -1042,10 +1020,10 @@
   },
   "src/instant-match/instant-match.chat.spec.ts": {
     "@typescript-eslint/no-explicit-any": {
-      "count": 16
+      "count": 14
     },
     "@typescript-eslint/no-unsafe-argument": {
-      "count": 10
+      "count": 8
     },
     "@typescript-eslint/no-unsafe-call": {
       "count": 2
@@ -1076,10 +1054,10 @@
   },
   "src/instant-match/instant-match.service.spec.ts": {
     "@typescript-eslint/no-explicit-any": {
-      "count": 10
+      "count": 8
     },
     "@typescript-eslint/no-unsafe-argument": {
-      "count": 10
+      "count": 8
     },
     "@typescript-eslint/no-unsafe-assignment": {
       "count": 10
@@ -1521,10 +1499,10 @@
   },
   "src/posts/posts.community-authz.spec.ts": {
     "@typescript-eslint/no-explicit-any": {
-      "count": 16
+      "count": 15
     },
     "@typescript-eslint/no-unsafe-argument": {
-      "count": 10
+      "count": 9
     },
     "@typescript-eslint/no-unsafe-assignment": {
       "count": 10
@@ -1561,10 +1539,10 @@
   },
   "src/posts/posts.deletion-notification.spec.ts": {
     "@typescript-eslint/no-explicit-any": {
-      "count": 11
+      "count": 10
     },
     "@typescript-eslint/no-unsafe-argument": {
-      "count": 9
+      "count": 8
     },
     "@typescript-eslint/no-unsafe-assignment": {
       "count": 4
@@ -1592,10 +1570,10 @@
   },
   "src/posts/posts.deletion.spec.ts": {
     "@typescript-eslint/no-explicit-any": {
-      "count": 17
+      "count": 16
     },
     "@typescript-eslint/no-unsafe-argument": {
-      "count": 11
+      "count": 10
     },
     "@typescript-eslint/no-unsafe-assignment": {
       "count": 2
@@ -1609,10 +1587,10 @@
   },
   "src/posts/posts.poll-options.spec.ts": {
     "@typescript-eslint/no-explicit-any": {
-      "count": 10
+      "count": 9
     },
     "@typescript-eslint/no-unsafe-argument": {
-      "count": 10
+      "count": 9
     },
     "@typescript-eslint/no-unsafe-assignment": {
       "count": 2
@@ -1630,23 +1608,6 @@
     },
     "@typescript-eslint/no-unsafe-member-access": {
       "count": 1
-    }
-  },
-  "src/realtime/realtime.gateway.spec.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 88
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 96
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 3
-    },
-    "@typescript-eslint/no-unsafe-call": {
-      "count": 21
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 42
     }
   },
   "src/search/search.service.spec.ts": {
@@ -2099,17 +2060,6 @@
       "count": 14
     },
     "@typescript-eslint/no-unsafe-return": {
-      "count": 1
-    }
-  },
-  "src/users/testing/blocks.service.mock.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 2
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
       "count": 1
     }
   },

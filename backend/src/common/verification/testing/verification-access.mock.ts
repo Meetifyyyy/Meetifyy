@@ -1,5 +1,6 @@
 import { VerificationStatus } from '@prisma/client';
 import { VerificationAccessService } from '../verification-access.service';
+import type { Stub } from '../../testing/stub';
 
 /**
  * Test double for the messaging verification policy.
@@ -13,7 +14,7 @@ export function createVerificationAccessMock(ineligibleUserIds: string[] = []) {
   const ineligible = new Set(ineligibleUserIds);
   const isEligible = (id: string) => !ineligible.has(id);
 
-  return {
+  const mock = {
     isEnforcementEnabled: jest.fn(() => true),
     isEligibleStatus: jest.fn(
       (status: VerificationStatus | null | undefined) =>
@@ -37,10 +38,11 @@ export function createVerificationAccessMock(ineligibleUserIds: string[] = []) {
     eligibleUserWhere: jest.fn(() => ({
       verificationStatus: VerificationStatus.VERIFIED,
     })),
-    assertUsersEligible: jest.fn(async () => {}),
-    assertCanMessageInConversation: jest.fn(async () => {}),
-    announceStatusChange: jest.fn(async () => {}),
-  };
+    assertUsersEligible: jest.fn(() => Promise.resolve()),
+    assertCanMessageInConversation: jest.fn(() => Promise.resolve()),
+    announceStatusChange: jest.fn(() => Promise.resolve()),
+  } satisfies Stub<VerificationAccessService>;
+  return mock as typeof mock & VerificationAccessService;
 }
 
 /** Ready-made Nest provider for the double above. */

@@ -60,7 +60,7 @@ describe('PostsService — community post authorization', () => {
       // Deletion authorizer — unused by the write-path guard under test.
       {} as any,
       // First-year isolation — not what this guard is about.
-      createStudentYearPolicyMock() as any,
+      createStudentYearPolicyMock(),
     );
   };
 

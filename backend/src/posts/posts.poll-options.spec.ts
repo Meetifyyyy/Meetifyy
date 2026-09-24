@@ -44,7 +44,7 @@ describe('PostsService — poll options validation', () => {
       mentionsService,
       {} as any,
       {} as any,
-      createStudentYearPolicyMock() as any,
+      createStudentYearPolicyMock(),
     );
   });
 

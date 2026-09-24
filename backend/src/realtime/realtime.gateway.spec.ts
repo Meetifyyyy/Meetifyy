@@ -2,22 +2,44 @@ import { RealtimeGateway } from './realtime.gateway';
 import { createVerificationAccessMock } from '../common/verification/testing/verification-access.mock';
 import { createStudentYearPolicyMock } from '../common/student-year/testing/student-year-policy.mock';
 import { createLegalConsentMock } from '../common/legal/testing/legal-consent.mock';
-import { allowAllRateLimit } from '../common/rate-limit/testing/rate-limit.mock';
+import type { Stub } from '../common/testing/stub';
+import type { MessagesService } from '../messages/messages.service';
+import type { InstantMatchService } from '../instant-match/instant-match.service';
+import type { InstantMatchRateLimiter } from '../instant-match/instant-match.rate-limiter';
+import type { ActivityAuthorizationService } from '../activities/activity-authorization.service';
+import type { CommunitiesService } from '../communities/communities.service';
+import type { BlocksService } from '../users/blocks.service';
+import { buildGateway, fakeSocket } from './testing/gateway.fixture';
+
+/** A session row as the handshake reads it. */
+type SessionRow = { revoked: boolean; expiresAt: Date; userId: string };
 
 describe('RealtimeGateway — Authentication', () => {
   let gateway: RealtimeGateway;
-  let supabaseService: any;
-  let messagesService: any;
-  let presenceService: any;
-  let instantMatchService: any;
-  let instantMatchLimiter: any;
-  let prisma: any;
-  let redisService: any;
-  let activityPolicy: any;
-  let communitiesService: any;
-  let blocksService: any;
-  let verificationAccess: any;
-  let jwtGuard: any;
+  let supabaseService: {
+    isConfigured: boolean;
+    client: { auth: { getUser: jest.Mock } };
+  };
+  let messagesService: Stub<MessagesService>;
+  let presenceService: {
+    setOnline: jest.Mock;
+    setOffline: jest.Mock;
+    registerSocketValidator: jest.Mock;
+    onStatusChange: jest.Mock;
+  };
+  let instantMatchService: Stub<InstantMatchService>;
+  let instantMatchLimiter: Stub<InstantMatchRateLimiter>;
+  let prisma: {
+    conversationParticipant: { findMany: jest.Mock };
+    user: { findUnique: jest.Mock };
+    userSession: { findUnique: jest.Mock };
+  };
+  let redisService: { getClient: jest.Mock };
+  let activityPolicy: Stub<ActivityAuthorizationService>;
+  let communitiesService: Stub<CommunitiesService>;
+  let blocksService: Stub<BlocksService>;
+  let verificationAccess: ReturnType<typeof createVerificationAccessMock>;
+  let jwtGuard: { validateToken: jest.Mock };
   /**
    * Who the session row belongs to.
    *
@@ -70,7 +92,6 @@ describe('RealtimeGateway — Authentication', () => {
     };
     redisService = {
       getClient: jest.fn(),
-      subscriber: jest.fn(),
     };
     activityPolicy = {};
     communitiesService = {};
@@ -80,34 +101,33 @@ describe('RealtimeGateway — Authentication', () => {
       validateToken: jest.fn(),
     };
 
-    gateway = new RealtimeGateway(
-      supabaseService,
-      messagesService,
-      presenceService,
-      instantMatchService,
+    gateway = buildGateway({
+      supabase: supabaseService,
+      messages: messagesService,
+      presence: presenceService,
+      instantMatch: instantMatchService,
       instantMatchLimiter,
       prisma,
-      redisService,
+      redis: redisService,
       activityPolicy,
-      communitiesService,
-      blocksService,
+      communities: communitiesService,
+      blocks: blocksService,
       verificationAccess,
-      createStudentYearPolicyMock() as any,
-      allowAllRateLimit(),
+      studentYearPolicy: createStudentYearPolicyMock(),
       // The socket applies the same mandatory-acknowledgement gate the REST
       // routes do. Defaults to satisfied, which is this suite's subject.
-      createLegalConsentMock() as any,
+      legalConsent: createLegalConsentMock(),
       jwtGuard,
-    );
+    });
   });
 
   it('rejects connection if token is missing', async () => {
-    const client: any = {
+    const client = fakeSocket({
       data: {},
       handshake: { auth: {} },
       disconnect: jest.fn(),
       join: jest.fn(),
-    };
+    });
 
     await gateway.handleConnection(client);
     expect(client.disconnect).toHaveBeenCalled();
@@ -115,12 +135,12 @@ describe('RealtimeGateway — Authentication', () => {
   });
 
   it('rejects connection if token verification fails (forged/invalid signature)', async () => {
-    const client: any = {
+    const client = fakeSocket({
       data: {},
       handshake: { auth: { token: 'header.forgedpayload.invalidsignature' } },
       disconnect: jest.fn(),
       join: jest.fn(),
-    };
+    });
 
     jwtGuard.validateToken.mockResolvedValue(null);
 
@@ -139,7 +159,7 @@ describe('RealtimeGateway — Authentication', () => {
   it.each(['PENDING_DELETION', 'DELETED'])(
     'rejects connection when the account is %s despite a valid token',
     async (accountStatus) => {
-      const client: any = {
+      const client = fakeSocket({
         data: {},
         id: 'socket-999',
         handshake: {
@@ -149,7 +169,7 @@ describe('RealtimeGateway — Authentication', () => {
         disconnect: jest.fn(),
         join: jest.fn(),
         emit: jest.fn(),
-      };
+      });
 
       sessionOwner = 'deleting-user';
       jwtGuard.validateToken.mockResolvedValue({
@@ -173,7 +193,7 @@ describe('RealtimeGateway — Authentication', () => {
   );
 
   it('accepts connection if token verification succeeds with valid signature', async () => {
-    const client: any = {
+    const client = fakeSocket({
       data: {},
       id: 'socket-123',
       handshake: {
@@ -182,7 +202,7 @@ describe('RealtimeGateway — Authentication', () => {
       },
       disconnect: jest.fn(),
       join: jest.fn(),
-    };
+    });
 
     sessionOwner = 'user-uuid-456';
     jwtGuard.validateToken.mockResolvedValue({
@@ -204,12 +224,12 @@ describe('RealtimeGateway — Authentication', () => {
 
   it('rejects connection if Supabase auth is not configured', async () => {
     supabaseService.isConfigured = false;
-    const client: any = {
+    const client = fakeSocket({
       data: {},
       handshake: { auth: { token: 'some.token' } },
       disconnect: jest.fn(),
       join: jest.fn(),
-    };
+    });
 
     await gateway.handleConnection(client);
     expect(client.disconnect).toHaveBeenCalled();
@@ -222,23 +242,22 @@ describe('RealtimeGateway — Authentication', () => {
    * the parts of Meetifyy that matter most, with the modal sitting on screen.
    */
   it('rejects connection when a required legal update has not been accepted', async () => {
-    const gatedGateway = new RealtimeGateway(
-      supabaseService,
-      messagesService,
-      presenceService,
-      instantMatchService,
+    const gatedGateway = buildGateway({
+      supabase: supabaseService,
+      messages: messagesService,
+      presence: presenceService,
+      instantMatch: instantMatchService,
       instantMatchLimiter,
       prisma,
-      redisService,
+      redis: redisService,
       activityPolicy,
-      communitiesService,
-      blocksService,
+      communities: communitiesService,
+      blocks: blocksService,
       verificationAccess,
-      createStudentYearPolicyMock() as any,
-      allowAllRateLimit(),
-      createLegalConsentMock({ satisfied: false }) as any,
+      studentYearPolicy: createStudentYearPolicyMock(),
+      legalConsent: createLegalConsentMock({ satisfied: false }),
       jwtGuard,
-    );
+    });
 
     sessionOwner = 'unconsented-user';
     jwtGuard.validateToken.mockResolvedValue({
@@ -246,7 +265,7 @@ describe('RealtimeGateway — Authentication', () => {
       email: 'someone@example.edu',
     });
 
-    const client: any = {
+    const client = fakeSocket({
       data: {},
       id: 'socket-legal',
       handshake: {
@@ -256,7 +275,7 @@ describe('RealtimeGateway — Authentication', () => {
       emit: jest.fn(),
       disconnect: jest.fn(),
       join: jest.fn(),
-    };
+    });
 
     await gatedGateway.handleConnection(client);
 
@@ -281,16 +300,23 @@ describe('RealtimeGateway — Authentication', () => {
  */
 describe('RealtimeGateway — room join authorization', () => {
   let gateway: RealtimeGateway;
-  let prisma: any;
-  let blocksService: any;
-  let yearPolicy: any;
+  let prisma: {
+    post: { findFirst: jest.Mock };
+    community: { findFirst: jest.Mock };
+    communityMember: { findFirst: jest.Mock };
+    user: { findUnique: jest.Mock };
+    conversationParticipant: { findMany: jest.Mock };
+  };
+  let blocksService: { getExcludedUserIds: jest.Mock };
+  let yearPolicy: ReturnType<typeof createStudentYearPolicyMock>;
 
-  const socket = () => ({
-    join: jest.fn(),
-    leave: jest.fn(),
-    emit: jest.fn(),
-    data: { userId: 'viewer' },
-  });
+  const socket = () =>
+    fakeSocket({
+      join: jest.fn(),
+      leave: jest.fn(),
+      emit: jest.fn(),
+      data: { userId: 'viewer' },
+    });
 
   beforeEach(() => {
     prisma = {
@@ -301,26 +327,27 @@ describe('RealtimeGateway — room join authorization', () => {
       conversationParticipant: { findMany: jest.fn().mockResolvedValue([]) },
     };
     blocksService = { getExcludedUserIds: jest.fn().mockResolvedValue([]) };
-    yearPolicy = createStudentYearPolicyMock() as any;
+    yearPolicy = createStudentYearPolicyMock();
     yearPolicy.canIdsInteract = jest.fn().mockResolvedValue(true);
 
-    gateway = new RealtimeGateway(
-      { isConfigured: true, client: { auth: { getUser: jest.fn() } } } as any,
-      {} as any,
-      { registerSocketValidator: jest.fn(), onStatusChange: jest.fn() } as any,
-      {} as any,
-      {} as any,
+    gateway = buildGateway({
+      supabase: {
+        isConfigured: true,
+        client: { auth: { getUser: jest.fn() } },
+      },
+      presence: {
+        registerSocketValidator: jest.fn(),
+        onStatusChange: jest.fn(),
+      },
       prisma,
-      { getClient: jest.fn(), subscriber: jest.fn() } as any,
-      {} as any,
-      { countOnlineMembers: jest.fn().mockResolvedValue(0) } as any,
-      blocksService,
-      createVerificationAccessMock() as any,
-      yearPolicy,
-      allowAllRateLimit(),
-      createLegalConsentMock() as any,
-      { validateToken: jest.fn() } as any,
-    );
+      redis: { getClient: jest.fn() },
+      communities: { countOnlineMembers: jest.fn().mockResolvedValue(0) },
+      blocks: blocksService,
+      verificationAccess: createVerificationAccessMock(),
+      studentYearPolicy: yearPolicy,
+      legalConsent: createLegalConsentMock(),
+      jwtGuard: { validateToken: jest.fn() },
+    });
   });
 
   describe('post:join', () => {
@@ -330,7 +357,7 @@ describe('RealtimeGateway — room join authorization', () => {
         community: null,
       });
       const client = socket();
-      await gateway.handlePostJoin(client as any, { postId: 'p1' });
+      await gateway.handlePostJoin(client, { postId: 'p1' });
       expect(client.join).toHaveBeenCalledWith('post_p1');
     });
 
@@ -341,7 +368,7 @@ describe('RealtimeGateway — room join authorization', () => {
       });
       blocksService.getExcludedUserIds.mockResolvedValue(['author']);
       const client = socket();
-      await gateway.handlePostJoin(client as any, { postId: 'p1' });
+      await gateway.handlePostJoin(client, { postId: 'p1' });
       expect(client.join).not.toHaveBeenCalled();
     });
 
@@ -352,28 +379,28 @@ describe('RealtimeGateway — room join authorization', () => {
       });
       yearPolicy.canIdsInteract.mockResolvedValue(false);
       const client = socket();
-      await gateway.handlePostJoin(client as any, { postId: 'p1' });
+      await gateway.handlePostJoin(client, { postId: 'p1' });
       expect(client.join).not.toHaveBeenCalled();
     });
 
     it('refuses a deleted post, and a post in a deleted community', async () => {
       const client = socket();
       prisma.post.findFirst.mockResolvedValue(null);
-      await gateway.handlePostJoin(client as any, { postId: 'gone' });
+      await gateway.handlePostJoin(client, { postId: 'gone' });
       expect(client.join).not.toHaveBeenCalled();
 
       prisma.post.findFirst.mockResolvedValue({
         authorId: 'author',
         community: { deletedAt: new Date() },
       });
-      await gateway.handlePostJoin(client as any, { postId: 'p2' });
+      await gateway.handlePostJoin(client, { postId: 'p2' });
       expect(client.join).not.toHaveBeenCalled();
     });
 
     it('fails closed when the policy lookup throws', async () => {
       prisma.post.findFirst.mockRejectedValue(new Error('db down'));
       const client = socket();
-      await gateway.handlePostJoin(client as any, { postId: 'p1' });
+      await gateway.handlePostJoin(client, { postId: 'p1' });
       expect(client.join).not.toHaveBeenCalled();
     });
   });
@@ -386,7 +413,7 @@ describe('RealtimeGateway — room join authorization', () => {
         ownerId: 'someone',
       });
       const client = socket();
-      await gateway.handleJoinCommunityRoom(client as any, {
+      await gateway.handleJoinCommunityRoom(client, {
         communityId: 'c1',
       });
       expect(client.join).toHaveBeenCalledWith('community_c1');
@@ -400,7 +427,7 @@ describe('RealtimeGateway — room join authorization', () => {
       });
       prisma.communityMember.findFirst.mockResolvedValue(null);
       const client = socket();
-      await gateway.handleJoinCommunityRoom(client as any, {
+      await gateway.handleJoinCommunityRoom(client, {
         communityId: 'c1',
       });
       expect(client.join).not.toHaveBeenCalled();
@@ -414,7 +441,7 @@ describe('RealtimeGateway — room join authorization', () => {
       });
       prisma.communityMember.findFirst.mockResolvedValue({ userId: 'viewer' });
       const client = socket();
-      await gateway.handleJoinCommunityRoom(client as any, {
+      await gateway.handleJoinCommunityRoom(client, {
         communityId: 'c1',
       });
       expect(client.join).toHaveBeenCalledWith('community_c1');
@@ -423,7 +450,7 @@ describe('RealtimeGateway — room join authorization', () => {
     it('refuses a deleted community', async () => {
       prisma.community.findFirst.mockResolvedValue(null);
       const client = socket();
-      await gateway.handleJoinCommunityRoom(client as any, {
+      await gateway.handleJoinCommunityRoom(client, {
         communityId: 'gone',
       });
       expect(client.join).not.toHaveBeenCalled();
@@ -441,21 +468,21 @@ describe('RealtimeGateway — room join authorization', () => {
  */
 describe('RealtimeGateway — cookie handshake', () => {
   let gateway: RealtimeGateway;
-  let jwtGuard: any;
+  let jwtGuard: { validateToken: jest.Mock };
 
   beforeEach(() => {
     jwtGuard = { validateToken: jest.fn() };
-    gateway = new RealtimeGateway(
-      { isConfigured: true, client: { auth: { getUser: jest.fn() } } } as any,
-      {} as any,
-      {
+    gateway = buildGateway({
+      supabase: {
+        isConfigured: true,
+        client: { auth: { getUser: jest.fn() } },
+      },
+      presence: {
         registerSocketValidator: jest.fn(),
         onStatusChange: jest.fn(),
         setOnline: jest.fn(),
-      } as any,
-      {} as any,
-      {} as any,
-      {
+      },
+      prisma: {
         user: {
           findUnique: jest.fn().mockResolvedValue({ accountStatus: 'ACTIVE' }),
         },
@@ -469,27 +496,27 @@ describe('RealtimeGateway — cookie handshake', () => {
             userId: 'u1',
           }),
         },
-      } as any,
-      { getClient: jest.fn(), subscriber: jest.fn() } as any,
-      {} as any,
-      {} as any,
-      {} as any,
-      createVerificationAccessMock() as any,
-      createStudentYearPolicyMock() as any,
-      allowAllRateLimit(),
-      createLegalConsentMock() as any,
+      },
+      redis: { getClient: jest.fn() },
+      verificationAccess: createVerificationAccessMock(),
+      studentYearPolicy: createStudentYearPolicyMock(),
+      legalConsent: createLegalConsentMock(),
       jwtGuard,
-    );
+    });
   });
 
-  const client = (headers: any, auth: any = {}) => ({
-    id: 'sock-1',
-    data: {},
-    handshake: { auth, headers },
-    disconnect: jest.fn(),
-    join: jest.fn(),
-    emit: jest.fn(),
-  });
+  const client = (
+    headers: Record<string, string>,
+    auth: Record<string, string> = {},
+  ) =>
+    fakeSocket({
+      id: 'sock-1',
+      data: {},
+      handshake: { auth, headers },
+      disconnect: jest.fn(),
+      join: jest.fn(),
+      emit: jest.fn(),
+    });
 
   it('authenticates from the mf_access cookie when no handshake token is given', async () => {
     jwtGuard.validateToken.mockResolvedValue({ id: 'u1', email: 'a@b.c' });
@@ -497,7 +524,7 @@ describe('RealtimeGateway — cookie handshake', () => {
       cookie: 'other=1; mf_access=cookie-token; mf_sid=sess-1; mf_csrf=x',
     });
 
-    await gateway.handleConnection(c as any);
+    await gateway.handleConnection(c);
 
     expect(jwtGuard.validateToken).toHaveBeenCalledWith('cookie-token');
     expect(c.disconnect).not.toHaveBeenCalled();
@@ -510,20 +537,20 @@ describe('RealtimeGateway — cookie handshake', () => {
       { token: 'header-token' },
     );
 
-    await gateway.handleConnection(c as any);
+    await gateway.handleConnection(c);
 
     expect(jwtGuard.validateToken).toHaveBeenCalledWith('header-token');
   });
 
   it('rejects when neither is present', async () => {
     const c = client({ cookie: 'unrelated=1' });
-    await gateway.handleConnection(c as any);
+    await gateway.handleConnection(c);
     expect(c.disconnect).toHaveBeenCalled();
   });
 
   it('does not accept a cookie whose name merely contains mf_access', async () => {
     const c = client({ cookie: 'not_mf_access=evil' });
-    await gateway.handleConnection(c as any);
+    await gateway.handleConnection(c);
     expect(c.disconnect).toHaveBeenCalled();
   });
 });
@@ -535,48 +562,45 @@ describe('RealtimeGateway — cookie handshake', () => {
  * receiving messages until the tab closed.
  */
 describe('RealtimeGateway — session binding on the handshake', () => {
-  const build = (sessionRow: any) => {
+  const build = (sessionRow: SessionRow | null) => {
     const jwtGuard = {
       validateToken: jest.fn().mockResolvedValue({ id: 'u1', email: 'a@b.c' }),
     };
-    const gateway = new RealtimeGateway(
-      { isConfigured: true, client: { auth: { getUser: jest.fn() } } } as any,
-      {} as any,
-      {
+    const gateway = buildGateway({
+      supabase: {
+        isConfigured: true,
+        client: { auth: { getUser: jest.fn() } },
+      },
+      presence: {
         registerSocketValidator: jest.fn(),
         onStatusChange: jest.fn(),
         setOnline: jest.fn(),
-      } as any,
-      {} as any,
-      {} as any,
-      {
+      },
+      prisma: {
         user: {
           findUnique: jest.fn().mockResolvedValue({ accountStatus: 'ACTIVE' }),
         },
         conversationParticipant: { findMany: jest.fn().mockResolvedValue([]) },
         userSession: { findUnique: jest.fn().mockResolvedValue(sessionRow) },
-      } as any,
-      { getClient: jest.fn(), subscriber: jest.fn() } as any,
-      {} as any,
-      {} as any,
-      {} as any,
-      createVerificationAccessMock() as any,
-      createStudentYearPolicyMock() as any,
-      allowAllRateLimit(),
-      createLegalConsentMock() as any,
-      jwtGuard as any,
-    );
+      },
+      redis: { getClient: jest.fn() },
+      verificationAccess: createVerificationAccessMock(),
+      studentYearPolicy: createStudentYearPolicyMock(),
+      legalConsent: createLegalConsentMock(),
+      jwtGuard,
+    });
     return gateway;
   };
 
-  const socket = (cookie: string) => ({
-    id: 's1',
-    handshake: { auth: {}, headers: { cookie } },
-    data: {},
-    disconnect: jest.fn(),
-    join: jest.fn(),
-    emit: jest.fn(),
-  });
+  const socket = (cookie: string) =>
+    fakeSocket({
+      id: 's1',
+      handshake: { auth: {}, headers: { cookie } },
+      data: {},
+      disconnect: jest.fn(),
+      join: jest.fn(),
+      emit: jest.fn(),
+    });
 
   const live = {
     revoked: false,
@@ -586,19 +610,19 @@ describe('RealtimeGateway — session binding on the handshake', () => {
 
   it('accepts a live session belonging to the caller', async () => {
     const c = socket('mf_access=tok; mf_sid=sess-1');
-    await build(live).handleConnection(c as any);
+    await build(live).handleConnection(c);
     expect(c.disconnect).not.toHaveBeenCalled();
   });
 
   it('refuses a cookie handshake carrying no session id', async () => {
     const c = socket('mf_access=tok');
-    await build(live).handleConnection(c as any);
+    await build(live).handleConnection(c);
     expect(c.disconnect).toHaveBeenCalled();
   });
 
   it('refuses a revoked session', async () => {
     const c = socket('mf_access=tok; mf_sid=sess-1');
-    await build({ ...live, revoked: true }).handleConnection(c as any);
+    await build({ ...live, revoked: true }).handleConnection(c);
     expect(c.disconnect).toHaveBeenCalled();
   });
 
@@ -607,19 +631,19 @@ describe('RealtimeGateway — session binding on the handshake', () => {
     await build({
       ...live,
       expiresAt: new Date(Date.now() - 1000),
-    }).handleConnection(c as any);
+    }).handleConnection(c);
     expect(c.disconnect).toHaveBeenCalled();
   });
 
   it('refuses a session belonging to somebody else', async () => {
     const c = socket('mf_access=tok; mf_sid=sess-1');
-    await build({ ...live, userId: 'someone-else' }).handleConnection(c as any);
+    await build({ ...live, userId: 'someone-else' }).handleConnection(c);
     expect(c.disconnect).toHaveBeenCalled();
   });
 
   it('fails closed when the session cannot be looked up', async () => {
     const c = socket('mf_access=tok; mf_sid=sess-1');
-    await build(null).handleConnection(c as any);
+    await build(null).handleConnection(c);
     expect(c.disconnect).toHaveBeenCalled();
   });
 });

@@ -1,4 +1,8 @@
-import { LegalConsentService } from '../legal-consent.service';
+import {
+  LegalConsentService,
+  type PublishedLegalVersion,
+} from '../legal-consent.service';
+import type { Stub } from '../../testing/stub';
 
 /**
  * Test double for the mandatory legal-acknowledgement gate.
@@ -12,18 +16,20 @@ import { LegalConsentService } from '../legal-consent.service';
  * that instantiates a controller behind that guard needs the provider below.
  */
 export function createLegalConsentMock(
-  options: { satisfied?: boolean; pending?: any[]; published?: any[] } = {},
+  options: {
+    satisfied?: boolean;
+    pending?: PublishedLegalVersion[];
+    published?: PublishedLegalVersion[];
+  } = {},
 ) {
   const pending = options.pending ?? [];
   const satisfied = options.satisfied ?? pending.length === 0;
   const published = options.published ?? pending;
 
-  return {
+  const mock = {
     getPublishedVersions: jest.fn(() => Promise.resolve(published)),
     getPublishedVersion: jest.fn((type: string) =>
-      Promise.resolve(
-        published.find((v: any) => v.documentType === type) ?? null,
-      ),
+      Promise.resolve(published.find((v) => v.documentType === type) ?? null),
     ),
     getRequiredVersions: jest.fn(() => Promise.resolve(pending)),
     getPendingVersions: jest.fn(() =>
@@ -31,15 +37,16 @@ export function createLegalConsentMock(
     ),
     isSatisfied: jest.fn(() => Promise.resolve(satisfied)),
     markSatisfied: jest.fn(),
-    recordSignupConsent: jest.fn(async () => {}),
+    recordSignupConsent: jest.fn(() => Promise.resolve()),
     invalidatePublished: jest.fn(),
     invalidateUser: jest.fn(),
-  };
+  } satisfies Stub<LegalConsentService>;
+  return mock as typeof mock & LegalConsentService;
 }
 
 /** Ready-made Nest provider for the double above. */
 export const legalConsentMockProvider = (
-  options: { satisfied?: boolean; pending?: any[] } = {},
+  options: { satisfied?: boolean; pending?: PublishedLegalVersion[] } = {},
 ) => ({
   provide: LegalConsentService,
   useValue: createLegalConsentMock(options),

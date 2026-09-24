@@ -18,7 +18,7 @@ describe('ActivityAuthorizationService', () => {
   // isolation of activities has its own coverage in
   // common/student-year/first-year-isolation.spec.ts.
   const policy = new ActivityAuthorizationService(
-    createStudentYearPolicyMock() as any,
+    createStudentYearPolicyMock(),
   );
 
   const GLA = 'college-gla';

@@ -134,7 +134,7 @@ describe('Content removal notifications', () => {
         {} as any,
         {} as any,
         authorizer,
-        createStudentYearPolicyMock() as any,
+        createStudentYearPolicyMock(),
       );
       return { service, created, notifications, authorizer };
     };

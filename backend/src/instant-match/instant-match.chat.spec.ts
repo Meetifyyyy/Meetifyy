@@ -72,8 +72,8 @@ describe('Instant Match chat lifecycle', () => {
       prisma as any,
       messages,
       blocksStubFor(prisma),
-      createVerificationAccessMock() as any,
-      createStudentYearPolicyMock() as any,
+      createVerificationAccessMock(),
+      createStudentYearPolicyMock(),
     );
   });
 

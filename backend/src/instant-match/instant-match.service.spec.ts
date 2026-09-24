@@ -71,8 +71,8 @@ describe('InstantMatchService', () => {
       prisma as any,
       messages as any,
       blocksStubFor(prisma),
-      verificationAccess as any,
-      createStudentYearPolicyMock() as any,
+      verificationAccess,
+      createStudentYearPolicyMock(),
     );
     built.rankingOptions = { deterministic: true };
     return built;

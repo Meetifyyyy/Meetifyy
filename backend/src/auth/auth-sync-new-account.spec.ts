@@ -5,8 +5,6 @@ import type { DomainValidatorService } from '../common/services/domain-validator
 import type { DefaultAssetsService } from '../uploads/default-assets.service';
 import { createStudentYearPolicyMock } from '../common/student-year/testing/student-year-policy.mock';
 import { createLegalConsentMock } from '../common/legal/testing/legal-consent.mock';
-import type { StudentYearPolicyService } from '../common/student-year/student-year-policy.service';
-import type { LegalConsentService } from '../common/legal/legal-consent.service';
 
 /**
  * The first sync of a brand-new account.
@@ -102,8 +100,8 @@ describe('AuthService.syncProfile — a new account', () => {
         }),
       } as unknown as DomainValidatorService,
       { refFor: () => null } as unknown as DefaultAssetsService,
-      createStudentYearPolicyMock() as unknown as StudentYearPolicyService,
-      createLegalConsentMock() as unknown as LegalConsentService,
+      createStudentYearPolicyMock(),
+      createLegalConsentMock(),
     );
   };
 
