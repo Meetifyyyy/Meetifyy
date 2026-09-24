@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect, useMemo } from 'react';
+import { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { ChevronDown, Check } from '@shared/components/icons';
 import styles from '../SignupFlow.module.css';
 
@@ -156,37 +157,101 @@ export default function CustomSelect({
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [isUpward, setIsUpward] = useState(false);
+  // Fixed-position box for the portalled menu, measured from the trigger.
+  const [menuBox, setMenuBox] = useState(null);
+  const listRef = useRef(null);
   const [inputValue, setInputValue] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
   const containerRef = useRef(null);
 
-  const toggleDropdown = () => {
-    if (!isOpen && containerRef.current) {
-      if (placement === 'top') {
-        setIsUpward(true);
-      } else if (placement === 'bottom') {
-        setIsUpward(false);
-      } else {
-        const rect = containerRef.current.getBoundingClientRect();
-        const panel = containerRef.current.closest('[class*="panel"]') || containerRef.current.closest('form');
-        const panelRect = panel?.getBoundingClientRect();
-        const availableBelow = panelRect
-          ? Math.min(window.innerHeight - rect.bottom, panelRect.bottom - rect.bottom)
-          : window.innerHeight - rect.bottom;
-        const availableAbove = panelRect
-          ? Math.min(rect.top, rect.top - panelRect.top)
-          : rect.top;
+  /**
+   * Where the menu goes, in viewport coordinates.
+   *
+   * The menu is portalled to <body> and positioned `fixed`, because inside
+   * the auth card it was clipped: the card has `overflow: hidden` and
+   * `contain: paint`, and on mobile it scrolls. Measured against the viewport
+   * instead, it opens below when there is room, flips above when there is
+   * more room there, and is capped to whichever space it gets, so the whole
+   * list is always reachable by scrolling inside it. `placement` is a
+   * preference, not a promise: a menu that would not fit is flipped anyway.
+   */
+  const positionMenu = useCallback(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const vw = window.innerWidth;
+    const vh = window.visualViewport?.height ?? window.innerHeight;
+    const GAP = 6;
+    const EDGE = 8;
+    const IDEAL = searchable ? 320 : 280;
 
-        if (availableBelow < 240 && availableAbove > 160) {
-          setIsUpward(true);
-        } else {
-          setIsUpward(false);
-        }
-      }
-    }
+    const below = vh - r.bottom - GAP - EDGE;
+    const above = r.top - GAP - EDGE;
+    let up;
+    if (placement === 'top') up = above >= Math.min(IDEAL, 180) || above > below;
+    else if (placement === 'bottom') up = below < Math.min(IDEAL, 180) && above > below;
+    else up = below < Math.min(IDEAL, 240) && above > below;
+
+    // Exactly the trigger's width, so the menu lines up with its field.
+    const width = Math.min(r.width, vw - EDGE * 2);
+    const left = Math.min(Math.max(r.left, EDGE), vw - EDGE - width);
+    const maxHeight = Math.max(120, Math.min(IDEAL, up ? above : below));
+
+    setIsUpward(up);
+    setMenuBox(
+      up
+        ? { left, width, maxHeight, bottom: vh - r.top + GAP }
+        : { left, width, maxHeight, top: r.bottom + GAP },
+    );
+  }, [placement, searchable]);
+
+  const toggleDropdown = () => {
+    if (!isOpen) positionMenu();
     setIsOpen(!isOpen);
   };
+
+  /*
+   * Follow the trigger while open, every frame. Listening for scroll and
+   * resize was not enough: the auth card animates its height and the step
+   * content rises into place, so the trigger moves without either event and
+   * a menu measured at the wrong moment sat on top of its own field. One
+   * rect read per frame, and state only changes when the rect does.
+   */
+  useLayoutEffect(() => {
+    if (!isOpen) return undefined;
+    let raf;
+    let last = '';
+    const follow = () => {
+      const el = containerRef.current;
+      if (el) {
+        const r = el.getBoundingClientRect();
+        const vh = window.visualViewport?.height ?? window.innerHeight;
+        const key = `${Math.round(r.top)}:${Math.round(r.left)}:${Math.round(r.width)}:${window.innerWidth}:${Math.round(vh)}`;
+        if (key !== last) {
+          last = key;
+          positionMenu();
+        }
+      }
+      raf = requestAnimationFrame(follow);
+    };
+    follow();
+    return () => cancelAnimationFrame(raf);
+  }, [isOpen, positionMenu]);
+
+  // Escape closes, as a menu should.
+  useEffect(() => {
+    if (!isOpen) return undefined;
+    const onKey = (e) => {
+      if (e.key === 'Escape') {
+        setIsOpen(false);
+        setInputValue('');
+        setDebouncedQuery('');
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [isOpen]);
 
   // Debounce input value changes
   useEffect(() => {
@@ -206,6 +271,8 @@ export default function CustomSelect({
 
   useEffect(() => {
     const handleClickOutside = (e) => {
+      // The menu lives in a portal, outside the container.
+      if (listRef.current && listRef.current.contains(e.target)) return;
       if (containerRef.current && !containerRef.current.contains(e.target)) {
         setIsOpen(false);
         setInputValue('');
@@ -261,6 +328,8 @@ export default function CustomSelect({
         type="button" 
         className={`${styles.dateSelect} ${isInvalid ? styles.invalid : ''} ${className}`.trim()} 
         onClick={toggleDropdown}
+        aria-haspopup="listbox"
+        aria-expanded={isOpen}
         style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minWidth: 0, width: '100%' }}
       >
         <span 
@@ -281,10 +350,14 @@ export default function CustomSelect({
         <ChevronDown size={16} style={{ transform: isOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', color: 'var(--color-text-muted)', flexShrink: 0 }} />
       </button>
       
-      {isOpen && (
-        <div className={`${styles.customSelectList} ${isUpward ? styles.openUpward : ''}`} style={{ padding: searchable ? 0 : '0.25rem' }}>
+      {isOpen && menuBox && createPortal(
+        <div
+          ref={listRef}
+          className={`${styles.customSelectList} ${styles.customSelectPortal} ${isUpward ? styles.openUpward : ''}`}
+          style={{ padding: searchable ? 0 : '0.25rem', ...menuBox }}
+        >
           {searchable && (
-            <div style={{ padding: '0.5rem', position: 'sticky', top: 0, background: 'white', zIndex: 1, borderBottom: '1px solid var(--color-border)', display: 'flex', alignItems: 'center' }}>
+            <div style={{ padding: '0.5rem', position: 'sticky', top: 0, background: 'var(--color-bg-white)', zIndex: 1, borderBottom: '1px solid var(--color-border)', display: 'flex', alignItems: 'center' }}>
               <input 
                 type="text" 
                 className={styles.customSelectSearch}
@@ -332,7 +405,8 @@ export default function CustomSelect({
               <span>{footerAction.label}</span>
             </div>
           )}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );

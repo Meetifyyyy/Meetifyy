@@ -40,12 +40,14 @@ import { apiClient } from '@shared/api/apiClient';
  * @param {string} opts.field     Body field name, e.g. 'username' or 'email'.
  * @param {boolean} opts.enabled  Skip checking (e.g. while format is invalid).
  * @param {number} [opts.debounceMs=300]
- * @returns {{ status: string|null, code: string, reason: string, cache: Map }}
+ * @returns {{ status: string|null, code: string, reason: string, collegeName: string, cache: Map }}
  */
 export function useAvailabilityCheck(value, { endpoint, field, extraBody, enabled = true, debounceMs = 300 }) {
   const [status, setStatus] = useState(null);
   const [reason, setReason] = useState('');
   const [code, setCode] = useState('');
+  // Extra detail from a positive email check: the college the domain belongs to.
+  const [collegeName, setCollegeName] = useState('');
   // cacheKey -> { status, code, reason }. Only settled answers from the server
   // are cached; a transport failure is never cached, so a retry re-requests.
   const cacheRef = useRef(new Map());
@@ -58,6 +60,7 @@ export function useAvailabilityCheck(value, { endpoint, field, extraBody, enable
       setStatus(null);
       setReason('');
       setCode('');
+      setCollegeName('');
       return;
     }
 
@@ -66,6 +69,7 @@ export function useAvailabilityCheck(value, { endpoint, field, extraBody, enable
       setStatus(cached.status);
       setReason(cached.reason || '');
       setCode(cached.code || '');
+      setCollegeName(cached.collegeName || '');
       return;
     }
 
@@ -76,17 +80,19 @@ export function useAvailabilityCheck(value, { endpoint, field, extraBody, enable
       setStatus('checking');
       setReason('');
       setCode('');
+      setCollegeName('');
       try {
         const payload = { [field]: value, ...(extraBodyStr ? JSON.parse(extraBodyStr) : {}) };
         const res = await apiClient.post(endpoint, payload, { signal: controller.signal });
         if (!active) return;
         const settled = res?.available === true
-          ? { status: 'available', code: '', reason: '' }
+          ? { status: 'available', code: '', reason: '', collegeName: res?.collegeName || '' }
           : { status: 'rejected', code: res?.code || '', reason: res?.reason || '' };
         cacheRef.current.set(cacheKey, settled);
         setStatus(settled.status);
         setReason(settled.reason);
         setCode(settled.code);
+        setCollegeName(settled.collegeName || '');
       } catch (err) {
         // Ignore aborted requests (the value changed under us).
         if (!active || controller.signal.aborted) return;
@@ -99,6 +105,7 @@ export function useAvailabilityCheck(value, { endpoint, field, extraBody, enable
         if (httpStatus >= 400 && httpStatus < 500) {
           setStatus(httpStatus === 429 ? 'error' : 'invalid');
           setCode(err?.code || '');
+          setCollegeName('');
           setReason(httpStatus === 429 ? '' : err?.message || '');
           return;
         }
@@ -106,6 +113,7 @@ export function useAvailabilityCheck(value, { endpoint, field, extraBody, enable
         // Everything else — offline, DNS, timeout, 5xx — is a technical failure.
         setStatus('error');
         setCode('');
+        setCollegeName('');
         setReason('');
       }
     }, debounceMs);
@@ -117,5 +125,5 @@ export function useAvailabilityCheck(value, { endpoint, field, extraBody, enable
     };
   }, [value, cacheKey, enabled, endpoint, field, debounceMs, extraBodyStr]);
 
-  return { status, reason, code, cache: cacheRef.current };
+  return { status, reason, code, collegeName, cache: cacheRef.current };
 }

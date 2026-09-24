@@ -24,7 +24,7 @@ vi.mock('../context/SignupContext', () => ({
   useSignup: () => ({ signupData: { ...signup.data }, nextStep: vi.fn() }),
 }));
 
-const { default: Step4OTP } = await import('../signup/components/Step4OTP');
+const { default: Step5Verify } = await import('../signup/components/Step5Verify');
 
 const typeCode = (container, digits) => {
   const inputs = container.querySelectorAll('input');
@@ -37,23 +37,23 @@ describe('Step 4 — verification code', () => {
 
   it('submits a completed code exactly once, even when it re-renders after success', async () => {
     verifySignupOtp.mockResolvedValue(true);
-    const { container, rerender } = render(<Step4OTP />);
+    const { container, rerender } = render(<Step5Verify />);
 
     await act(async () => { typeCode(container, '123456'); });
     // What signing in does to the flow above this step.
-    await act(async () => { rerender(<Step4OTP />); });
-    await act(async () => { rerender(<Step4OTP />); });
+    await act(async () => { rerender(<Step5Verify />); });
+    await act(async () => { rerender(<Step5Verify />); });
 
     expect(verifySignupOtp).toHaveBeenCalledTimes(1);
   });
 
   it('does not resubmit a code that failed, but does submit a corrected one', async () => {
     verifySignupOtp.mockRejectedValueOnce(new Error('Invalid code')).mockResolvedValue(true);
-    const { container, rerender, findByText } = render(<Step4OTP />);
+    const { container, rerender, findByText } = render(<Step5Verify />);
 
     await act(async () => { typeCode(container, '111111'); });
     await findByText(/Invalid code/);
-    await act(async () => { rerender(<Step4OTP />); });
+    await act(async () => { rerender(<Step5Verify />); });
     expect(verifySignupOtp).toHaveBeenCalledTimes(1);
 
     const inputs = container.querySelectorAll('input');

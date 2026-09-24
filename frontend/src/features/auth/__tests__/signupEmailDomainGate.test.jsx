@@ -58,8 +58,8 @@ vi.mock('@shared/academics/useAcademicCatalog', () => ({
   useAcademicCatalog: () => ({ courses: [], loading: false, error: null }),
 }));
 
-const Step2Academic = (
-  await import('../signup/components/Step2Academic')
+const Step1Intro = (
+  await import('../signup/components/Step1Intro')
 ).default;
 
 /** Types an address and lets the 300ms debounce plus its request settle. */
@@ -89,10 +89,10 @@ afterEach(() => {
   cleanup();
 });
 
-describe('Academic step email gate', () => {
+describe('Signup email gate (step 1)', () => {
   it('allows an address on an approved domain', async () => {
     postMock.mockResolvedValue({ available: true });
-    render(<Step2Academic />);
+    render(<Step1Intro />);
     await typeEmail('student@gla.ac.in');
 
     expect(postMock).toHaveBeenCalledWith(
@@ -109,7 +109,7 @@ describe('Academic step email gate', () => {
       code: 'domain_not_allowed',
       reason: 'Please use your official GLA email.',
     });
-    render(<Step2Academic />);
+    render(<Step1Intro />);
     await typeEmail('student@gmail.com');
 
     expect(screen.getByText(/official GLA email/i)).toBeTruthy();
@@ -127,7 +127,7 @@ describe('Academic step email gate', () => {
     'student@-gla.ac.in',
   ])('treats %s as an invalid address, not a failed check', async (email) => {
     postMock.mockResolvedValue({ available: true });
-    render(<Step2Academic />);
+    render(<Step1Intro />);
     await typeEmail(email);
 
     expect(screen.getByText('Please enter a valid email address.')).toBeTruthy();
@@ -138,7 +138,7 @@ describe('Academic step email gate', () => {
 
   it('blocks, and does not reassure, when the check cannot complete', async () => {
     postMock.mockRejectedValue(Object.assign(new Error('offline'), { name: 'TypeError' }));
-    render(<Step2Academic />);
+    render(<Step1Intro />);
     await typeEmail('student@gla.ac.in');
 
     expect(screen.getByText(/couldn't verify your email right now/i)).toBeTruthy();
@@ -148,7 +148,7 @@ describe('Academic step email gate', () => {
 
   it('blocks when the server refuses the input outright (4xx)', async () => {
     postMock.mockRejectedValue(Object.assign(new Error('Bad Request'), { status: 400 }));
-    render(<Step2Academic />);
+    render(<Step1Intro />);
     await typeEmail('student@gla.ac.in');
 
     expect(screen.getByText('Please enter a valid email address.')).toBeTruthy();
@@ -161,7 +161,7 @@ describe('Academic step email gate', () => {
       code: 'domain_not_allowed',
       reason: 'Please select your college first.',
     });
-    render(<Step2Academic />);
+    render(<Step1Intro />);
     await typeEmail('student@gmail.com');
 
     await act(async () => {
@@ -175,7 +175,7 @@ describe('Academic step email gate', () => {
 
   it('carries no em dash in any message it renders', async () => {
     postMock.mockRejectedValue(new Error('offline'));
-    render(<Step2Academic />);
+    render(<Step1Intro />);
     await typeEmail('student@gla.ac.in');
     expect(document.body.textContent).not.toContain('—');
   });

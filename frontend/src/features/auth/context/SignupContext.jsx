@@ -1,6 +1,7 @@
-import { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useCallback, useContext, useRef, useState, useEffect } from 'react';
 import { useSearchParams, useLocation } from 'react-router-dom';
 import { useAuth } from '@shared/context/AuthContext';
+import { SIGNUP_DEV_BYPASS } from '../signup/dev/signupDevBypass';
 
 const SignupContext = createContext();
 
@@ -24,7 +25,32 @@ const initialData = {
 const SESSION_KEY = 'meetifyy_signup_data';
 const STEP_KEY = 'meetifyy_signup_step';
 const TIMESTAMP_KEY = 'meetifyy_signup_time';
+const COLLEGE_KEY = 'meetifyy_signup_college';
+const PENDING_KEY = 'meetifyy_signup_pending_email';
 const MAX_SESSION_AGE_MS = 30 * 60 * 1000; // 30 minutes TTL
+
+/*
+ * Six steps, in the order the backend needs them:
+ *   1 Say hello   name + college email   (email gate: approved college domain)
+ *   2 Profile     username + birthday
+ *   3 College     course, branch, year   (the college itself comes from the email)
+ *   4 Password    password + consent     → POST /signup, which sends the code
+ *   5 Verify      emailed code           → signed in, profile synced
+ *   6 Photo       optional avatar        → completeSignup
+ * Everything the account needs is collected before step 4 creates it.
+ */
+export const TOTAL_SIGNUP_STEPS = 6;
+
+/**
+ * The first step whose inputs are still missing, given what has been saved.
+ * A reload or a hand-edited `?step=` never lands past it.
+ */
+function firstIncompleteStep(data) {
+  if (!data.firstName || !data.email) return 1;
+  if (!data.username || !data.birthday) return 2;
+  if (!data.course || !data.branch || !Number.isInteger(data.passingYear)) return 3;
+  return TOTAL_SIGNUP_STEPS;
+}
 
 /**
  * Whether a signup is part-way through in this tab.
@@ -64,9 +90,48 @@ export const SignupProvider = ({ children }) => {
 
   const currentStep = isFreshIntent || !urlStep || urlStep === 1
     ? 1
-    : (!isNaN(urlStep) && urlStep >= 1 && urlStep <= 5
+    : (!isNaN(urlStep) && urlStep >= 1 && urlStep <= TOTAL_SIGNUP_STEPS
         ? urlStep
-        : (savedStep && savedStep >= 1 && savedStep <= 5 ? savedStep : 1));
+        : (savedStep && savedStep >= 1 && savedStep <= TOTAL_SIGNUP_STEPS ? savedStep : 1));
+
+  // Shown on the College step; derived from the email, never sent anywhere.
+  // Kept out of `signupData` because that object is posted to sync-profile.
+  const [collegeName, setCollegeNameState] = useState(() => {
+    try { return sessionStorage.getItem(COLLEGE_KEY) || ''; } catch { return ''; }
+  });
+  const setCollegeName = useCallback((name) => {
+    setCollegeNameState(name || '');
+    try {
+      if (name) sessionStorage.setItem(COLLEGE_KEY, name);
+      else sessionStorage.removeItem(COLLEGE_KEY);
+    } catch { /* storage blocked: the label is cosmetic */ }
+  }, []);
+
+  /*
+   * The address a code has already been sent to, if any.
+   *
+   * POST /signup refuses a second signup for an address still waiting on its
+   * code ("A signup is already pending"), so going back from the verify step
+   * and returning with the same address used to dead-end on the password
+   * step, with a valid code sitting in the inbox. Knowing the address lets the
+   * password step skip the second call and go straight back to code entry.
+   *
+   * The password it was created with is held in memory only (a ref, never
+   * storage): if it changed, the pending account still has the old one, so
+   * the password step has to know. After a reload it is simply unknown.
+   */
+  const [pendingEmail, setPendingEmailState] = useState(() => {
+    try { return sessionStorage.getItem(PENDING_KEY) || ''; } catch { return ''; }
+  });
+  const pendingPasswordRef = useRef(null);
+  const markCodeSent = useCallback((email, password) => {
+    setPendingEmailState(email);
+    pendingPasswordRef.current = password;
+    try { sessionStorage.setItem(PENDING_KEY, email); } catch { /* cosmetic */ }
+  }, []);
+
+  // True while the finishing screen runs after the last step.
+  const [finishing, setFinishing] = useState(false);
 
   const [signupData, setSignupData] = useState(() => {
     // If starting on step 1 or fresh entry, always clear any old draft data
@@ -75,6 +140,8 @@ export const SignupProvider = ({ children }) => {
       sessionStorage.removeItem(SESSION_KEY);
       sessionStorage.removeItem(STEP_KEY);
       sessionStorage.removeItem(TIMESTAMP_KEY);
+      sessionStorage.removeItem(COLLEGE_KEY);
+      sessionStorage.removeItem(PENDING_KEY);
       let freshData = { ...initialData };
       if (location.state && location.state.email) {
         freshData.email = location.state.email;
@@ -154,16 +221,20 @@ export const SignupProvider = ({ children }) => {
   // data that's been filled in. Step 1 produces `username`; steps 3–4 need email.
   useEffect(() => {
     if (isLoggedIn) {
-      if (currentStep < 5) {
-        setSearchParams({ step: 5 }, { replace: true });
+      if (currentStep < TOTAL_SIGNUP_STEPS) {
+        setSearchParams({ step: TOTAL_SIGNUP_STEPS }, { replace: true });
       }
       return;
     }
 
-    if (currentStep === 2 && (!signupData.username || !signupData.birthday)) {
-      setSearchParams({ step: 1 }, { replace: true });
-    } else if ((currentStep === 3 || currentStep === 4) && !signupData.email) {
-      setSearchParams({ step: 2 }, { replace: true });
+    // TEMPORARY: local review of the step UI (never true in a production build).
+    if (SIGNUP_DEV_BYPASS) return;
+
+    // Each step needs everything before it. Step 6 is post-auth only, so a
+    // signed-out visitor never gets past step 5.
+    const allowed = Math.min(firstIncompleteStep(signupData), TOTAL_SIGNUP_STEPS - 1);
+    if (currentStep > allowed) {
+      setSearchParams({ step: allowed }, { replace: true });
     }
   }, [currentStep, signupData, isLoggedIn, setSearchParams]);
 
@@ -175,11 +246,13 @@ export const SignupProvider = ({ children }) => {
     sessionStorage.removeItem(SESSION_KEY);
     sessionStorage.removeItem(STEP_KEY);
     sessionStorage.removeItem(TIMESTAMP_KEY);
+    sessionStorage.removeItem(COLLEGE_KEY);
+    sessionStorage.removeItem(PENDING_KEY);
     setSignupData(initialData);
   };
 
   const nextStep = () => {
-    const next = Math.min(currentStep + 1, 5);
+    const next = Math.min(currentStep + 1, TOTAL_SIGNUP_STEPS);
     setSearchParams({ step: next });
     sessionStorage.setItem(STEP_KEY, String(next));
   };
@@ -191,7 +264,7 @@ export const SignupProvider = ({ children }) => {
   };
   
   const goToStep = (step) => {
-    const valid = Math.max(1, Math.min(step, 5));
+    const valid = Math.max(1, Math.min(step, TOTAL_SIGNUP_STEPS));
     setSearchParams({ step: valid });
     sessionStorage.setItem(STEP_KEY, String(valid));
   };
@@ -206,7 +279,14 @@ export const SignupProvider = ({ children }) => {
         nextStep,
         prevStep,
         goToStep,
-        totalSteps: 5,
+        totalSteps: TOTAL_SIGNUP_STEPS,
+        collegeName,
+        setCollegeName,
+        finishing,
+        setFinishing,
+        pendingEmail,
+        pendingPasswordRef,
+        markCodeSent,
       }}
     >
       {children}
