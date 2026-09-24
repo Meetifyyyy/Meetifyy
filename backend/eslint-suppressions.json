@@ -578,23 +578,6 @@
       "count": 4
     }
   },
-  "src/app.module.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 2
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 3
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 13
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 11
-    },
-    "@typescript-eslint/no-unsafe-return": {
-      "count": 4
-    }
-  },
   "src/auth/auth-public-proxies.spec.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 9
@@ -955,20 +938,6 @@
     },
     "@typescript-eslint/require-await": {
       "count": 5
-    }
-  },
-  "src/common/logging/log-format.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 4
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 2
-    },
-    "@typescript-eslint/no-unsafe-return": {
-      "count": 1
     }
   },
   "src/common/pagination.util.spec.ts": {
@@ -2167,26 +2136,6 @@
     },
     "@typescript-eslint/no-unsafe-return": {
       "count": 22
-    }
-  },
-  "src/prisma/prisma.service.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 5
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 6
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-call": {
-      "count": 10
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 27
-    },
-    "@typescript-eslint/no-unsafe-return": {
-      "count": 1
     }
   },
   "src/realtime/realtime.gateway.spec.ts": {

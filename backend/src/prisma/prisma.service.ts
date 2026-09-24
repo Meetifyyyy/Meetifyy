@@ -10,6 +10,7 @@ import { Pool } from 'pg';
 import { config } from '../config';
 import { dbLine } from '../common/logging/log-format';
 import { detach } from '../common/utils/detach.util';
+import { stringField } from '../common/utils/type-guards.util';
 import * as os from 'node:os';
 
 /**
@@ -72,6 +73,7 @@ function summarizeQuery(sql: string): string {
 export class PrismaService
   extends PrismaClient<
     {
+      adapter: PrismaPg;
       log: [
         { emit: 'event'; level: 'query' },
         { emit: 'event'; level: 'error' },
@@ -132,7 +134,7 @@ export class PrismaService
         { emit: 'event', level: 'error' },
         { emit: 'event', level: 'warn' },
       ],
-    } as any);
+    });
     this.pool = pool;
 
     // Sampled at checkout: the instant a connection is handed out is when the
@@ -168,34 +170,33 @@ export class PrismaService
       let retries = 2;
       while (retries >= 0) {
         try {
-          return await next(params);
-        } catch (error: any) {
+          // Passed through untouched: a middleware sees every model's results.
+          return (await next(params)) as unknown;
+        } catch (error: unknown) {
+          const message = stringField(error, 'message') ?? '';
+          const code = stringField(error, 'code');
           if (
             this.isDestroyed ||
-            (error?.message &&
-              error.message.includes(
-                'Cannot use a pool after calling end on the pool',
-              ))
+            message.includes('Cannot use a pool after calling end on the pool')
           ) {
             return;
           }
           const isConnError =
-            error?.code === 'P1001' ||
-            error?.code === 'P1002' ||
-            error?.code === 'P1008' ||
-            error?.code === 'P1017' ||
-            (error?.message &&
-              (error.message.includes("Can't reach database server") ||
-                error.message.includes('Timed out fetching a new connection') ||
-                error.message.includes('Connection pool timeout') ||
-                error.message.includes('EMAXCONNSESSION') ||
-                error.message.includes('max clients reached') ||
-                error.message.includes('ConnectionReset')));
+            code === 'P1001' ||
+            code === 'P1002' ||
+            code === 'P1008' ||
+            code === 'P1017' ||
+            message.includes("Can't reach database server") ||
+            message.includes('Timed out fetching a new connection') ||
+            message.includes('Connection pool timeout') ||
+            message.includes('EMAXCONNSESSION') ||
+            message.includes('max clients reached') ||
+            message.includes('ConnectionReset');
 
           if (isConnError && retries > 0) {
             retries--;
             this.logger.warn(
-              `Database transient connection issue (${error.code || 'network'}). Retrying... (${retries} attempts remaining)`,
+              `Database transient connection issue (${code || 'network'}). Retrying... (${retries} attempts remaining)`,
             );
             await new Promise((res) => setTimeout(res, 200));
             continue;
@@ -252,7 +253,7 @@ export class PrismaService
   async onModuleInit() {
     const logQueries = config.logging.logQueries;
 
-    this.$on('query', (e: any) => {
+    this.$on('query', (e) => {
       // A full Prisma-generated SQL string is several hundred characters of
       // JSONB_BUILD_OBJECT and LATERAL joins. Printing one per query buried
       // every line that mattered — errors included — under a wall of SQL. The
@@ -268,7 +269,7 @@ export class PrismaService
       }
     });
 
-    this.$on('error', (e: any) => {
+    this.$on('error', (e) => {
       // Ignore noisy raw logs for P1001 transient connection drops,
       // as our $use middleware already handles them gracefully with retries.
       if (
@@ -285,7 +286,7 @@ export class PrismaService
       this.logger.error(e.message || e);
     });
 
-    this.$on('warn', (e: any) => {
+    this.$on('warn', (e) => {
       if (this.isDestroyed) return;
       this.logger.warn(e.message || e);
     });
