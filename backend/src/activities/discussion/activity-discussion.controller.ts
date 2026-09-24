@@ -11,6 +11,7 @@ import { ActivityDiscussionService } from './activity-discussion.service';
 import { JwtGuard } from '../../common/guards/jwt.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { VerifiedOnly } from '../../common/decorators/verified-only.decorator';
+import type { AuthenticatedUser } from '../../common/types/authenticated-request';
 
 @Controller('api/activities/:activityId/discussion')
 @UseGuards(JwtGuard)
@@ -19,7 +20,7 @@ export class ActivityDiscussionController {
 
   @Get()
   async getMessages(
-    @CurrentUser() user: any,
+    @CurrentUser() user: AuthenticatedUser,
     @Param('activityId') activityId: string,
     @Query('before') before?: string,
     @Query('limit') limit?: string,
@@ -46,7 +47,7 @@ export class ActivityDiscussionController {
   async sendMessage(
     @Param('activityId') activityId: string,
     @Body('text') text: string,
-    @CurrentUser() user: any,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.discussionService.sendMessage(activityId, user?.id, text);
   }

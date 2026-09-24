@@ -15,6 +15,7 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { VerifiedOnly } from '../common/decorators/verified-only.decorator';
 import { CreateActivityDto } from './dto/activity.dto';
 import { CacheControl } from '../common/decorators/cache-control.decorator';
+import type { AuthenticatedUser } from '../common/types/authenticated-request';
 
 @Controller('api/activities')
 @UseGuards(JwtGuard)
@@ -25,7 +26,7 @@ export class ActivitiesController {
   // @CacheControl removed: browser caching cannot be invalidated and causes
   // stale data when navigating back after joining. Relies on backend Redis cache.
   async getAllActivities(
-    @CurrentUser() user: any,
+    @CurrentUser() user: AuthenticatedUser,
     @Query('limit') limit?: string,
     @Query('cursor') cursor?: string,
     @Query('scope') scope?: string,
@@ -59,20 +60,20 @@ export class ActivitiesController {
   }
 
   @Get('discover')
-  async getCrewDiscover(@CurrentUser() user: any) {
+  async getCrewDiscover(@CurrentUser() user: AuthenticatedUser) {
     return this.activitiesService.getCrewDiscover(user.id);
   }
 
   @Get('me')
   // @CacheControl removed
-  async getMyActivities(@CurrentUser() user: any) {
+  async getMyActivities(@CurrentUser() user: AuthenticatedUser) {
     return this.activitiesService.getMyActivities(user.id);
   }
 
   @Get('bookmarks')
   // @CacheControl removed
   async getSavedActivities(
-    @CurrentUser() user: any,
+    @CurrentUser() user: AuthenticatedUser,
     @Query('limit') limit?: string,
     @Query('cursor') cursor?: string,
   ) {
@@ -85,12 +86,12 @@ export class ActivitiesController {
   }
 
   @Get('bookmarks/ids')
-  async getSavedActivityIds(@CurrentUser() user: any) {
+  async getSavedActivityIds(@CurrentUser() user: AuthenticatedUser) {
     return this.activitiesService.getSavedActivityIds(user.id);
   }
 
   @Get('invitations/me')
-  async getPendingInvitations(@CurrentUser() user: any) {
+  async getPendingInvitations(@CurrentUser() user: AuthenticatedUser) {
     return this.activitiesService.getPendingInvitations(user.id);
   }
 
@@ -98,7 +99,7 @@ export class ActivitiesController {
   @VerifiedOnly()
   async acceptInvitation(
     @Param('invitationId') invitationId: string,
-    @CurrentUser() user: any,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.activitiesService.acceptInvitation(invitationId, user.id);
   }
@@ -107,20 +108,26 @@ export class ActivitiesController {
   @VerifiedOnly()
   async declineInvitation(
     @Param('invitationId') invitationId: string,
-    @CurrentUser() user: any,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.activitiesService.declineInvitation(invitationId, user.id);
   }
 
   @Post(':id/bookmark')
   @VerifiedOnly()
-  async bookmarkActivity(@Param('id') id: string, @CurrentUser() user: any) {
+  async bookmarkActivity(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
     return this.activitiesService.bookmarkActivity(id, user.id);
   }
 
   @Delete(':id/bookmark')
   @VerifiedOnly()
-  async unbookmarkActivity(@Param('id') id: string, @CurrentUser() user: any) {
+  async unbookmarkActivity(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
     return this.activitiesService.unbookmarkActivity(id, user.id);
   }
 
@@ -132,7 +139,7 @@ export class ActivitiesController {
   @CacheControl('no-store')
   async getAttendees(
     @Param('id') id: string,
-    @CurrentUser() user: any,
+    @CurrentUser() user: AuthenticatedUser,
     @Query('limit') limit?: string,
     @Query('cursor') cursor?: string,
   ) {
@@ -147,7 +154,10 @@ export class ActivitiesController {
 
   @Get(':id')
   @CacheControl('no-store')
-  async getActivityById(@Param('id') id: string, @CurrentUser() user: any) {
+  async getActivityById(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
     return this.activitiesService.getActivityById(id, user?.id);
   }
 
@@ -155,7 +165,7 @@ export class ActivitiesController {
   @VerifiedOnly()
   async createActivity(
     @Body() data: CreateActivityDto,
-    @CurrentUser() user: any,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.activitiesService.createActivity(data, user.id);
   }
@@ -169,7 +179,7 @@ export class ActivitiesController {
   async updateVisibility(
     @Param('id') id: string,
     @Body('visibility') visibility: string,
-    @CurrentUser() user: any,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.activitiesService.updateActivityVisibility(
       id,
@@ -180,13 +190,19 @@ export class ActivitiesController {
 
   @Post(':id/join')
   @VerifiedOnly()
-  async joinActivity(@Param('id') id: string, @CurrentUser() user: any) {
+  async joinActivity(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
     return this.activitiesService.joinActivity(id, user.id);
   }
 
   @Post(':id/leave')
   @VerifiedOnly()
-  async leaveActivity(@Param('id') id: string, @CurrentUser() user: any) {
+  async leaveActivity(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
     return this.activitiesService.leaveActivity(id, user.id);
   }
 
@@ -194,20 +210,26 @@ export class ActivitiesController {
   @VerifiedOnly()
   async declineCrewInvitation(
     @Param('id') id: string,
-    @CurrentUser() user: any,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.activitiesService.declineCrewInvitation(id, user.id);
   }
 
   @Post(':id/cancel')
   @VerifiedOnly()
-  async cancelCrewActivity(@Param('id') id: string, @CurrentUser() user: any) {
+  async cancelCrewActivity(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
     return this.activitiesService.cancelCrewActivity(id, user.id);
   }
 
   @Post(':id/end')
   @VerifiedOnly()
-  async endCrewActivity(@Param('id') id: string, @CurrentUser() user: any) {
+  async endCrewActivity(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
     return this.activitiesService.endCrewActivity(id, user.id);
   }
 
@@ -216,7 +238,7 @@ export class ActivitiesController {
   async inviteFriends(
     @Param('id') id: string,
     @Body('userIds') userIds: string[],
-    @CurrentUser() user: any,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.activitiesService.inviteFriends(id, user.id, userIds);
   }
@@ -227,7 +249,7 @@ export class ActivitiesController {
   async revokeInvitation(
     @Param('id') id: string,
     @Param('userId') inviteeId: string,
-    @CurrentUser() user: any,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.activitiesService.revokeInvitation(id, user.id, inviteeId);
   }
@@ -235,7 +257,7 @@ export class ActivitiesController {
   @Get(':id/invitations/status')
   async getInvitationStatuses(
     @Param('id') id: string,
-    @CurrentUser() user: any,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.activitiesService.getInvitationStatuses(id, user.id);
   }

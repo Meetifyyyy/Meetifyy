@@ -22,6 +22,7 @@ import {
 } from './dto/community.dto';
 import { moderatorPermissions } from './moderator-permissions';
 import { clampPageParam } from '../common/pagination.util';
+import type { AuthenticatedUser } from '../common/types/authenticated-request';
 
 @Controller('api/communities')
 @UseGuards(JwtGuard)
@@ -32,7 +33,7 @@ export class CommunitiesController {
 
   @Get()
   async getAllCommunities(
-    @CurrentUser() user: any,
+    @CurrentUser() user: AuthenticatedUser,
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
   ) {
@@ -56,7 +57,7 @@ export class CommunitiesController {
    */
   @Get('recommendations')
   async getCommunityRecommendations(
-    @CurrentUser() user: any,
+    @CurrentUser() user: AuthenticatedUser,
     @Query('limit') limit?: string,
   ) {
     const limitNum = clampPageParam(limit, { def: 10, max: 30, min: 1 });
@@ -68,7 +69,7 @@ export class CommunitiesController {
 
   @Get('campus')
   async getCampusCommunities(
-    @CurrentUser() user: any,
+    @CurrentUser() user: AuthenticatedUser,
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
     @Query('search') search?: string,
@@ -105,7 +106,7 @@ export class CommunitiesController {
   @Get(':id')
   async getCommunityById(
     @Param('id', ParseUUIDPipe) id: string,
-    @CurrentUser() user: any,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
     const t0 = performance.now();
     const result = await this.communitiesService.getCommunityById(id, user?.id);
@@ -119,7 +120,7 @@ export class CommunitiesController {
   @VerifiedOnly()
   async joinCommunity(
     @Param('id', ParseUUIDPipe) id: string,
-    @CurrentUser() user: any,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.communitiesService.joinCommunity(id, user.id);
   }
@@ -127,7 +128,7 @@ export class CommunitiesController {
   @Post(':id/leave')
   async leaveCommunity(
     @Param('id', ParseUUIDPipe) id: string,
-    @CurrentUser() user: any,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.communitiesService.leaveCommunity(id, user.id);
   }
@@ -135,7 +136,7 @@ export class CommunitiesController {
   @Get(':id/requests')
   async getPendingRequests(
     @Param('id', ParseUUIDPipe) id: string,
-    @CurrentUser() user: any,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.communitiesService.getPendingRequests(id, user.id);
   }
@@ -145,7 +146,7 @@ export class CommunitiesController {
   async acceptJoinRequest(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('requestId', ParseUUIDPipe) requestId: string,
-    @CurrentUser() user: any,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.communitiesService.acceptJoinRequest(id, requestId, user.id);
   }
@@ -155,7 +156,7 @@ export class CommunitiesController {
   async declineJoinRequest(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('requestId', ParseUUIDPipe) requestId: string,
-    @CurrentUser() user: any,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.communitiesService.declineJoinRequest(id, requestId, user.id);
   }
@@ -164,7 +165,7 @@ export class CommunitiesController {
   @VerifiedOnly()
   async createCommunity(
     @Body() data: CreateCommunityDto,
-    @CurrentUser() user: any,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.communitiesService.createCommunity(data, user.id);
   }
@@ -174,7 +175,7 @@ export class CommunitiesController {
   async updateCommunity(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() data: UpdateCommunityDto,
-    @CurrentUser() user: any,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.communitiesService.updateCommunity(id, data, user.id);
   }
@@ -183,7 +184,7 @@ export class CommunitiesController {
   @Get(':id/moderator-notice')
   async getModeratorNotice(
     @Param('id', ParseUUIDPipe) id: string,
-    @CurrentUser() user: any,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
     return {
       notice: await this.communitiesService.getModeratorNotice(id, user.id),
@@ -193,7 +194,7 @@ export class CommunitiesController {
   @Post(':id/moderator-notice/ack')
   async acknowledgeModeratorNotice(
     @Param('id', ParseUUIDPipe) id: string,
-    @CurrentUser() user: any,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.communitiesService.acknowledgeModeratorNotice(id, user.id);
   }
@@ -204,7 +205,7 @@ export class CommunitiesController {
     @Param('id', ParseUUIDPipe) id: string,
     @Param('userId', ParseUUIDPipe) memberId: string,
     @Body() data: UpdateMemberRoleDto,
-    @CurrentUser() user: any,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.communitiesService.updateMemberRole(
       id,
@@ -219,7 +220,7 @@ export class CommunitiesController {
   async removeMember(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('userId', ParseUUIDPipe) memberId: string,
-    @CurrentUser() user: any,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.communitiesService.removeMember(id, memberId, user.id);
   }
@@ -228,7 +229,7 @@ export class CommunitiesController {
   @VerifiedOnly()
   async deleteCommunity(
     @Param('id', ParseUUIDPipe) id: string,
-    @CurrentUser() user: any,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.communitiesService.deleteCommunity(id, user.id);
   }

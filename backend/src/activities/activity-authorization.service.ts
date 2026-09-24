@@ -75,7 +75,7 @@ export interface ActivityAuthTarget {
    * selected, which carries a dozen presentation fields this policy has no
    * interest in. Narrowing it would force every call site to remap the row.
    */
-  creator?: ({ batchYear?: number | null } & Record<string, any>) | null;
+  creator?: ({ batchYear?: number | null } & Record<string, unknown>) | null;
   visibility: ActivityVisibility;
   status: CrewActivityStatus;
   shareToCampus?: boolean;
@@ -173,7 +173,10 @@ export class ActivityAuthorizationService {
 
   // ── Relationship helpers ───────────────────────────────────────────────────
 
-  isHost(user: UserAuthContext | null, activity: ActivityAuthTarget): boolean {
+  isHost(
+    user: UserAuthContext | null,
+    activity: Pick<ActivityAuthTarget, 'creatorId'>,
+  ): boolean {
     return Boolean(user && activity.creatorId === user.id);
   }
 
@@ -432,14 +435,14 @@ export class ActivityAuthorizationService {
   /** Edit / cancel / end / invite / inspect invitation state. Host only. */
   canManage(
     user: UserAuthContext | null,
-    activity: ActivityAuthTarget,
+    activity: Pick<ActivityAuthTarget, 'creatorId'>,
   ): boolean {
     return this.isHost(user, activity);
   }
 
   assertCanManage(
     user: UserAuthContext | null,
-    activity: ActivityAuthTarget,
+    activity: Pick<ActivityAuthTarget, 'creatorId'>,
   ): void {
     if (!this.canManage(user, activity)) {
       // Deliberately a 404: a non-host must not learn that the id exists.

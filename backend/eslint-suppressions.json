@@ -186,33 +186,19 @@
       "count": 19
     },
     "@typescript-eslint/no-unsafe-assignment": {
-      "count": 18
+      "count": 13
     },
     "@typescript-eslint/no-unsafe-call": {
       "count": 15
     },
     "@typescript-eslint/no-unsafe-member-access": {
-      "count": 66
+      "count": 65
     },
     "@typescript-eslint/no-unsafe-return": {
       "count": 13
     },
     "@typescript-eslint/require-await": {
       "count": 32
-    }
-  },
-  "src/activities/activities.controller.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 22
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 23
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 23
-    },
-    "@typescript-eslint/no-unsafe-return": {
-      "count": 5
     }
   },
   "src/activities/activities.deleted-member.spec.ts": {
@@ -240,7 +226,7 @@
       "count": 2
     },
     "@typescript-eslint/no-unsafe-assignment": {
-      "count": 11
+      "count": 7
     },
     "@typescript-eslint/no-unsafe-call": {
       "count": 4
@@ -275,26 +261,6 @@
       "count": 12
     }
   },
-  "src/activities/activities.service.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 33
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 21
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 26
-    },
-    "@typescript-eslint/no-unsafe-call": {
-      "count": 6
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 64
-    },
-    "@typescript-eslint/no-unsafe-return": {
-      "count": 14
-    }
-  },
   "src/activities/activities.visibility-scopes.spec.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 4
@@ -303,7 +269,7 @@
       "count": 1
     },
     "@typescript-eslint/no-unsafe-assignment": {
-      "count": 6
+      "count": 5
     },
     "@typescript-eslint/no-unsafe-member-access": {
       "count": 12
@@ -335,11 +301,6 @@
       "count": 1
     }
   },
-  "src/activities/activity-authorization.service.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 1
-    }
-  },
   "src/activities/discussion/activity-discussion-tombstone.spec.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 3
@@ -355,17 +316,6 @@
     },
     "@typescript-eslint/no-unsafe-return": {
       "count": 1
-    }
-  },
-  "src/activities/discussion/activity-discussion.controller.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 2
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 2
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 2
     }
   },
   "src/activities/discussion/activity-discussion.service.ts": {
@@ -1186,17 +1136,8 @@
     }
   },
   "src/communities/communities.controller.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 16
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 16
-    },
     "@typescript-eslint/no-unsafe-assignment": {
       "count": 1
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 17
     },
     "@typescript-eslint/no-unsafe-return": {
       "count": 5
