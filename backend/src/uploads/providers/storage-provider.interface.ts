@@ -66,5 +66,11 @@ export interface StorageProvider {
   /**
    * List files in a folder.
    */
-  list(folder: string): Promise<any[]>;
+  list(folder: string): Promise<StoredObject[]>;
+}
+
+/** An entry in a folder listing: the S3 object shape, of which only these are read. */
+export interface StoredObject {
+  Key?: string;
+  Size?: number;
 }

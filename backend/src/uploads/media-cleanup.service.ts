@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import type { StorageProvider } from './providers/storage-provider.interface';
 import { config } from '../config';
 import { detach } from '../common/utils/detach.util';
+import { errorMessage } from '../common/utils/error.util';
 
 export type ReplaceableEntityType =
   | 'USER_AVATAR'
@@ -482,11 +483,11 @@ export class MediaCleanupService {
             error: 'Storage provider delete returned false',
           });
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
         this.logger.error(
-          `Failed to delete replaced media ${key} from R2: ${err?.message || err}`,
+          `Failed to delete replaced media ${key} from R2: ${errorMessage(err)}`,
         );
-        result.errors.push({ key, error: err?.message || String(err) });
+        result.errors.push({ key, error: errorMessage(err) });
         result.success = false;
         // Do not throw: DB update remains valid and active!
       }
@@ -636,13 +637,13 @@ export class MediaCleanupService {
           this.logger.log(
             `Cleaned up historical unreferenced media: ${key} (owner: ${ownerId})`,
           );
-        } catch (err: any) {
-          result.errors.push({ key, error: err?.message || String(err) });
+        } catch (err: unknown) {
+          result.errors.push({ key, error: errorMessage(err) });
         }
       }
-    } catch (e: any) {
+    } catch (e: unknown) {
       this.logger.warn(
-        `Historical media cleanup failed for owner ${ownerId}: ${e?.message || e}`,
+        `Historical media cleanup failed for owner ${ownerId}: ${errorMessage(e)}`,
       );
     }
 
@@ -672,9 +673,9 @@ export class MediaCleanupService {
       }
       this.logger.log(`Discarded failed new upload from R2: ${key}`);
       return true;
-    } catch (err: any) {
+    } catch (err: unknown) {
       this.logger.warn(
-        `Failed to discard unattached upload ${key}: ${err?.message || err}`,
+        `Failed to discard unattached upload ${key}: ${errorMessage(err)}`,
       );
       return false;
     }
@@ -745,11 +746,11 @@ export class MediaCleanupService {
           error: 'Storage provider delete returned false',
         };
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       this.logger.error(
-        `deletePermanently: failed to delete ${key} from R2: ${err?.message || err}`,
+        `deletePermanently: failed to delete ${key} from R2: ${errorMessage(err)}`,
       );
-      return { success: false, key, error: err?.message || String(err) };
+      return { success: false, key, error: errorMessage(err) };
     }
   }
 

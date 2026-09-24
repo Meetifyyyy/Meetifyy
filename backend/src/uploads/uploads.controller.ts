@@ -28,6 +28,7 @@ import {
   isCoveredImageFolder,
 } from './uploads.constants';
 import type { AuthenticatedRequest } from '../common/types/authenticated-request';
+import { stringField } from '../common/utils/type-guards.util';
 import { bundledDefaultAssetPath } from './default-assets.service';
 import { DEFAULT_AVATAR_SVG } from './default-avatar';
 
@@ -228,13 +229,13 @@ export class UploadsController {
   @UseGuards(JwtGuard)
   async directUpload(
     @Query('key') key: string,
-    @Req() req: Request,
+    @Req() req: AuthenticatedRequest,
     @Res() res: Response,
   ) {
     if (!key) throw new BadRequestException('Key parameter is required');
     if (!this.storageService.isSafeStorageKey(key))
       throw new BadRequestException('Invalid storage key');
-    const userId = (req as any).user?.id;
+    const userId = req.user?.id;
     if (!userId || !(await this.storageService.userOwnsMediaKey(key, userId))) {
       throw new ForbiddenException('You are not allowed to upload to this key');
     }
@@ -298,7 +299,7 @@ export class UploadsController {
 
   /** Cached manifest JSON in memory with its computed ETag and Last-Modified */
   private static cachedManifest: {
-    data: any;
+    data: unknown;
     etag: string;
     lastModified: string;
   } | null = null;
@@ -311,9 +312,10 @@ export class UploadsController {
       const manifestPath = path.join(__dirname, 'preset-media.manifest.json');
       if (fs.existsSync(manifestPath)) {
         const raw = fs.readFileSync(manifestPath, 'utf-8');
-        const data = JSON.parse(raw);
+        const data: unknown = JSON.parse(raw);
         const etag = `"${crypto.createHash('sha256').update(raw).digest('hex').substring(0, 16)}"`;
-        const lastModified = data.lastModified || new Date().toUTCString();
+        const lastModified =
+          stringField(data, 'lastModified') || new Date().toUTCString();
         UploadsController.cachedManifest = { data, etag, lastModified };
         return UploadsController.cachedManifest;
       }

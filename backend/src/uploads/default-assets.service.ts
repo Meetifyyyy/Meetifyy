@@ -4,6 +4,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import type { StorageProvider } from './providers/storage-provider.interface';
 import { PrismaService } from '../prisma/prisma.service';
+import { stringField } from '../common/utils/type-guards.util';
 
 /**
  * The four default images every user and community starts with.
@@ -123,11 +124,10 @@ export class DefaultAssetsService implements OnModuleInit {
       await this.ensureUploaded();
       await this.backfillExisting();
       await this.repointOutdatedDefaults();
-    } catch (err: any) {
-      if (err?.message?.includes('Cannot use a pool after calling end')) return;
-      this.logger.error(
-        `Could not publish default assets: ${(err as Error)?.message}`,
-      );
+    } catch (err: unknown) {
+      const message = stringField(err, 'message');
+      if (message?.includes('Cannot use a pool after calling end')) return;
+      this.logger.error(`Could not publish default assets: ${message}`);
     }
   }
 
@@ -145,11 +145,6 @@ export class DefaultAssetsService implements OnModuleInit {
    * already filled no longer matches.
    */
   private async backfillExisting(): Promise<void> {
-    const isMissing = (field: string) =>
-      ({
-        OR: [{ [field]: null }, { [field]: '' }],
-      }) as any;
-
     const communityAvatar = this.refFor('community-avatar');
     const profileAvatar = this.refFor('profile-avatar');
 
@@ -157,14 +152,14 @@ export class DefaultAssetsService implements OnModuleInit {
 
     if (communityAvatar) {
       const { count } = await this.prisma.community.updateMany({
-        where: isMissing('avatarKey'),
+        where: { OR: [{ avatarKey: null }, { avatarKey: '' }] },
         data: { avatarKey: communityAvatar },
       });
       if (count) results.push(`${count} community avatars`);
     }
     if (profileAvatar) {
       const { count } = await this.prisma.user.updateMany({
-        where: isMissing('avatar'),
+        where: { OR: [{ avatar: null }, { avatar: '' }] },
         data: { avatar: profileAvatar },
       });
       if (count) results.push(`${count} profile avatars`);
@@ -199,37 +194,44 @@ export class DefaultAssetsService implements OnModuleInit {
 
     const move = async (
       name: DefaultAssetName,
-      field: string,
-      updateMany: (args: {
-        where: any;
-        data: any;
-      }) => Promise<{ count: number }>,
+      /** Repoints rows whose ref starts with `stalePrefix` but is not `current`. */
+      repoint: (
+        current: string,
+        stalePrefix: string,
+      ) => Promise<{ count: number }>,
     ): Promise<void> => {
       const current = this.refFor(name);
       if (!current) return;
 
-      const { count } = await updateMany({
-        where: {
-          AND: [
-            {
-              [field]: {
-                startsWith: `/api/media/${this.storageKeyPrefix(name)}`,
-              },
-            },
-            { NOT: { [field]: current } },
-          ],
-        },
-        data: { [field]: current },
-      });
+      const { count } = await repoint(
+        current,
+        `/api/media/${this.storageKeyPrefix(name)}`,
+      );
       if (count) results.push(`${count} ${name}`);
     };
 
     // Avatars only — covers are now null/empty and handled by CSS.
-    await move('profile-avatar', 'avatar', (args) =>
-      this.prisma.user.updateMany(args),
+    await move('profile-avatar', (current, stalePrefix) =>
+      this.prisma.user.updateMany({
+        where: {
+          AND: [
+            { avatar: { startsWith: stalePrefix } },
+            { NOT: { avatar: current } },
+          ],
+        },
+        data: { avatar: current },
+      }),
     );
-    await move('community-avatar', 'avatarKey', (args) =>
-      this.prisma.community.updateMany(args),
+    await move('community-avatar', (current, stalePrefix) =>
+      this.prisma.community.updateMany({
+        where: {
+          AND: [
+            { avatarKey: { startsWith: stalePrefix } },
+            { NOT: { avatarKey: current } },
+          ],
+        },
+        data: { avatarKey: current },
+      }),
     );
 
     if (results.length) {

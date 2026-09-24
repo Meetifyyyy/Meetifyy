@@ -1362,23 +1362,6 @@
       "count": 2
     }
   },
-  "src/instant-match/dto/join-queue.dto.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 6
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 3
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 19
-    },
-    "@typescript-eslint/no-unsafe-call": {
-      "count": 9
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 26
-    }
-  },
   "src/instant-match/instant-match.chat.spec.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 16
@@ -2323,23 +2306,6 @@
       "count": 1
     }
   },
-  "src/uploads/default-assets.service.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 4
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 2
-    },
-    "@typescript-eslint/no-unsafe-call": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-return": {
-      "count": 1
-    }
-  },
   "src/uploads/default-assets.spec.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 24
@@ -2369,17 +2335,6 @@
     },
     "@typescript-eslint/require-await": {
       "count": 4
-    }
-  },
-  "src/uploads/media-cleanup.service.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 5
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 3
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 7
     }
   },
   "src/uploads/media-cleanup.spec.ts": {
@@ -2441,29 +2396,12 @@
   },
   "src/uploads/providers/cloudflare-r2.provider.ts": {
     "@typescript-eslint/no-explicit-any": {
-      "count": 4
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
       "count": 1
     }
   },
   "src/uploads/providers/storage-provider.interface.ts": {
     "@typescript-eslint/no-explicit-any": {
-      "count": 2
-    }
-  },
-  "src/uploads/uploads.controller.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 2
-    },
-    "@typescript-eslint/no-unsafe-argument": {
       "count": 1
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 5
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 2
     }
   },
   "src/uploads/uploads.folders.spec.ts": {
