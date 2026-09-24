@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import { usersApi } from '@shared/api/apiClient';
 import { useDebounce } from '@shared/hooks/useDebounce';
@@ -8,11 +8,58 @@ import { isImageUrl } from '@shared/utils/avatar';
 import DefaultAvatar from '@shared/components/avatar/DefaultAvatar';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 import { useScrollLock } from '@shared/hooks/useScrollLock';
+import { useSheetDrag } from '@shared/hooks/useSheetDrag';
 import styles from './NewMessageModal.module.css';
 import { useUsersMap } from '@shared/hooks/useUsersMap';
 import { getProcessedAvatarUrl } from '@shared/components/avatar/Avatar';
 import { filterCompatibleUsers } from '@shared/lib/studentYearPolicy';
 
+const RECENT_LIMIT = 10;
+const GROUP_NAME_MAX = 120;
+
+const nameOf = (u) => u?.displayName || u?.name || u?.username || '';
+const firstName = (u) => nameOf(u).split(/\s+/)[0];
+
+function UserAvatar({ user, className }) {
+  return (
+    <span className={className}>
+      {isImageUrl(user.avatar) ? (
+        <img
+          src={getProcessedAvatarUrl(user.avatar)}
+          alt=""
+          className={styles.avatarImg}
+          onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.svg'; }}
+        />
+      ) : (
+        <DefaultAvatar />
+      )}
+    </span>
+  );
+}
+
+function SelectMark({ selected }) {
+  return (
+    <span className={`${styles.selectMark} ${selected ? styles.selectMarkOn : ''}`} aria-hidden="true">
+      {selected && (
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round">
+          <polyline points="20 6 9 17 4 12" />
+        </svg>
+      )}
+    </span>
+  );
+}
+
+/**
+ * "New message": pick one person to open a chat, or several to start a group.
+ *
+ * Layout follows the Instagram DM sheet: search on top, a strip of people the
+ * viewer already knows, the full list with round select marks, and a sticky
+ * action bar once anyone is picked. Picking one offers "Chat with …"; picking
+ * more turns it into "Create group", which asks for a name as a second step.
+ *
+ * Phones get a bottom sheet you can drag down to dismiss; desktop gets a
+ * centred panel.
+ */
 export default function NewMessageModal({ onClose, onStartChat, onCreateGroup }) {
   // Rendered only while open, so `true` is the open state.
   useOverlayBack(true, onClose);
@@ -20,33 +67,35 @@ export default function NewMessageModal({ onClose, onStartChat, onCreateGroup })
   // dialog opened on top of another cannot unlock the page when it closes.
   useScrollLock(true);
 
+  // Phones: drag the sheet down to dismiss.
+  const sheetRef = useSheetDrag(onClose);
+
   const { currentUser } = useAuth();
   const users = useUsersMap();
   const [searchQuery, setSearchQuery] = useState('');
   // One request per pause in typing rather than one per keystroke.
   const debouncedQuery = useDebounce(searchQuery.trim(), 250);
-  
-  const [mode, setMode] = useState('single'); // 'single', 'multi_select', 'group_name'
-  const [selectedUserIds, setSelectedUserIds] = useState([]);
+
+  const [step, setStep] = useState('pick'); // 'pick' | 'name'
+  // Objects, not ids, so the action bar and chips can show who is picked
+  // even after a new search has replaced the rows they were picked from.
+  const [selected, setSelected] = useState([]);
   const [groupName, setGroupName] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState('');
+
+  const searchRef = useRef(null);
+  const nameRef = useRef(null);
 
   /**
    * The recipient list, ASKED OF THE SERVER.
    *
-   * This modal used to search `useUsersMap()` and nothing else -- a map built
-   * from the first 20 rows of `GET /users`, 50 campus users and whoever the
-   * viewer already had a thread with. Typing filtered that map in JavaScript,
-   * so anybody outside those few dozen preloaded rows simply could not be
-   * found, however exactly their handle was spelled. The fix is to ask the
-   * database, which matches display name and username across every eligible
-   * account before applying the page limit.
-   *
-   * `/api/users/connections` is the right endpoint rather than a new one: it
-   * is already the recipient picker's source for every Share and Invite
-   * surface, and it applies -- in the QUERY -- the block filter, the
-   * verification filter and first-year isolation. So the rules cannot drift
-   * between this modal and the others, and a restricted account is never in
-   * the payload to begin with.
+   * Typing used to filter a small preloaded map in JavaScript, so anyone
+   * outside those few dozen rows could not be found. `/api/users/connections`
+   * is the recipient picker's source for every Share and Invite surface and
+   * applies -- in the QUERY -- the block filter, the verification filter and
+   * first-year isolation, so the rules cannot drift between pickers and a
+   * restricted account is never in the payload to begin with.
    */
   const { data: searchedUsers = [], isFetching } = useQuery({
     queryKey: ['new-message-recipients', debouncedQuery],
@@ -58,20 +107,18 @@ export default function NewMessageModal({ onClose, onStartChat, onCreateGroup })
     placeholderData: keepPreviousData,
   });
 
-  /**
-   * First-year isolation, and the other picker rules, as a SECOND line.
-   *
-   * Every source below is already filtered server-side -- so in normal
-   * operation nothing restricted reaches here. This pass exists for the one
-   * case the server cannot reach: a `['users']` or campus entry still sitting
-   * in the React Query cache (5 min staleTime) from before the viewer's batch
-   * resolved, or a conversation partner cached from an older build.
-   *
-   * A no-op when the payload does not carry the flag, so it can only ever
-   * remove a row the server would also have removed. It is a cache guard, not
-   * the filter: selecting a restricted recipient is refused by the server on
-   * both `startDM` and the group create.
-   */
+  // Picker rules as a SECOND line, for rows still sitting in the React Query
+  // cache from before the viewer's batch resolved. A no-op when the payload
+  // lacks the flag, so it can only remove a row the server would also remove;
+  // `startDM` and the group create refuse a restricted recipient regardless.
+  const eligible = useCallback(
+    (list) =>
+      filterCompatibleUsers(currentUser, selectableUsers(list)).filter(
+        (u) => String(u.id) !== String(currentUser?.id) && u.username !== currentUser?.username,
+      ),
+    [currentUser],
+  );
+
   const filteredUsers = useMemo(() => {
     const needle = searchQuery.trim().toLowerCase();
     const matchesLocally = (u) =>
@@ -81,8 +128,7 @@ export default function NewMessageModal({ onClose, onStartChat, onCreateGroup })
       u?.username?.toLowerCase().includes(needle);
 
     // Server rows first, so an account the viewer has never spoken to is
-    // reachable, then the locally-known people (open threads, campus list) so
-    // the suggested list keeps the faces it always showed. Deduped by id.
+    // reachable, then the locally-known people. Deduped by id.
     const merged = [];
     const seen = new Set();
     const push = (u) => {
@@ -92,197 +138,265 @@ export default function NewMessageModal({ onClose, onStartChat, onCreateGroup })
       seen.add(key);
       merged.push(u);
     };
-
     (Array.isArray(searchedUsers) ? searchedUsers : []).forEach(push);
-    Object.values(users || {})
-      .filter(matchesLocally)
-      .forEach(push);
+    Object.values(users || {}).filter(matchesLocally).forEach(push);
+    return eligible(merged);
+  }, [searchedUsers, users, searchQuery, eligible]);
 
-    return filterCompatibleUsers(currentUser, selectableUsers(merged)).filter(
-      (u) =>
-        String(u.id) !== String(currentUser?.id) &&
-        u.username !== currentUser?.username,
+  // People the viewer already knows (open threads, campus), for the strip.
+  const recentUsers = useMemo(
+    () => eligible(Object.values(users || {}).filter((u) => u?.id)).slice(0, RECENT_LIMIT),
+    [users, eligible],
+  );
+
+  const selectedIds = useMemo(() => new Set(selected.map((u) => String(u.id))), [selected]);
+
+  const toggle = (user) => {
+    setSelected((prev) =>
+      prev.some((u) => String(u.id) === String(user.id))
+        ? prev.filter((u) => String(u.id) !== String(user.id))
+        : [...prev, user],
     );
-  }, [searchedUsers, users, searchQuery, currentUser]);
+  };
 
-  const handleUserClick = (user) => {
-    if (mode === 'single') {
-      onStartChat(user);
-    } else if (mode === 'multi_select') {
-      setSelectedUserIds((prev) => 
-        prev.includes(user.id) ? prev.filter(id => id !== user.id) : [...prev, user.id]
-      );
+  const goBack = useCallback(() => {
+    setStep('pick');
+    setCreateError('');
+  }, []);
+
+  const handlePrimary = () => {
+    if (selected.length === 1) onStartChat(selected[0]);
+    else if (selected.length > 1) setStep('name');
+  };
+
+  const trimmedName = groupName.trim();
+  const handleCreate = async (e) => {
+    e?.preventDefault();
+    if (!trimmedName || creating) return;
+    setCreating(true);
+    setCreateError('');
+    try {
+      await onCreateGroup(trimmedName, selected.map((u) => u.id));
+    } catch (err) {
+      setCreateError(err?.message || "Couldn't create the group. Try again.");
+    } finally {
+      setCreating(false);
     }
   };
 
-  const handleCreateGroupClick = () => {
-    setMode('multi_select');
-  };
+  // Focus: the search on desktop when it opens (on phones that would throw up
+  // the keyboard over the list), the name field on the name step, and back to
+  // whatever opened the dialog when it closes.
+  useEffect(() => {
+    const opener = document.activeElement;
+    if (window.matchMedia?.('(min-width: 769px)').matches) searchRef.current?.focus();
+    return () => {
+      if (opener && typeof opener.focus === 'function' && document.contains(opener)) opener.focus();
+    };
+  }, []);
 
-  const handleNextClick = () => {
-    if (selectedUserIds.length > 0) {
-      setMode('group_name');
-    }
-  };
+  useEffect(() => {
+    if (step === 'name') nameRef.current?.focus();
+  }, [step]);
 
-  const handleBackClick = () => {
-    if (mode === 'group_name') {
-      setMode('multi_select');
-    } else if (mode === 'multi_select') {
-      setMode('single');
-      setSelectedUserIds([]);
-    }
-  };
+  // Escape steps back from the name step before it closes the dialog.
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key !== 'Escape') return;
+      e.stopPropagation();
+      if (step === 'name') goBack();
+      else onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [step, goBack, onClose]);
 
-  const handleFinalCreateGroup = async () => {
-    if (!groupName.trim()) return;
-    await onCreateGroup(groupName.trim(), selectedUserIds);
-  };
+  const searching = Boolean(searchQuery.trim());
+  const primaryLabel =
+    selected.length === 1 ? `Chat with ${firstName(selected[0])}` : `Create group · ${selected.length}`;
 
   return (
     <div className={styles.overlay} data-scroll-lock-ignore onClick={onClose}>
-      <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
-        <div className={styles.handleBar} />
+      <div
+        ref={sheetRef}
+        className={styles.panel}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="new-message-title"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className={styles.header}>
-          {mode !== 'single' ? (
-            <button onClick={handleBackClick} className={styles.closeBtn}>
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                <path d="M19 12H5M12 19l-7-7 7-7" />
-              </svg>
-            </button>
-          ) : (
-            <button onClick={onClose} className={styles.closeBtn}>
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+          <div className="sheet-handle" data-sheet-handle aria-hidden="true" />
+          <div className={styles.headerRow}>
+            {step === 'name' ? (
+              <button type="button" className={styles.iconBtn} onClick={goBack} aria-label="Back">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M15 18l-6-6 6-6" />
+                </svg>
+              </button>
+            ) : (
+              <span className={styles.iconSpacer} aria-hidden="true" />
+            )}
+            <h2 id="new-message-title" className={styles.title}>
+              {step === 'name' ? 'Name your group' : 'New message'}
+            </h2>
+            <button type="button" className={`${styles.iconBtn} ${styles.closeBtnDesktop}`} onClick={onClose} aria-label="Close">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
                 <line x1="18" y1="6" x2="6" y2="18" />
                 <line x1="6" y1="6" x2="18" y2="18" />
               </svg>
             </button>
-          )}
-          
-          <h3 className={styles.title}>
-            {mode === 'single' && 'New Message'}
-            {mode === 'multi_select' && 'New Group'}
-            {mode === 'group_name' && 'Name Group'}
-          </h3>
-          
-          {mode === 'multi_select' ? (
-            <button className={styles.headerBtn} onClick={handleNextClick} disabled={selectedUserIds.length === 0}>
-              Next
-            </button>
-          ) : (
-            <div style={{ width: 28 }}></div> /* spacer */
-          )}
+          </div>
         </div>
 
-        {mode !== 'group_name' && (
-          <div className={styles.searchContainer}>
-            <div className={styles.searchInputWrapper}>
-              <svg className={styles.searchIcon} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                <circle cx="11" cy="11" r="8" />
-                <line x1="21" y1="21" x2="16.65" y2="16.65" />
+        {step === 'pick' ? (
+          <>
+            <div className={styles.searchBar}>
+              <svg className={styles.searchIcon} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
+                <circle cx="11" cy="11" r="7" />
+                <line x1="20" y1="20" x2="16.65" y2="16.65" />
               </svg>
               <input
-                type="text"
+                ref={searchRef}
+                type="search"
                 className={styles.searchInput}
                 placeholder="Search..."
+                aria-label="Search people"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
+                autoComplete="off"
+                spellCheck={false}
               />
+              {searchQuery && (
+                <button type="button" className={styles.clearBtn} onClick={() => { setSearchQuery(''); searchRef.current?.focus(); }} aria-label="Clear search">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
+                    <line x1="18" y1="6" x2="6" y2="18" />
+                    <line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                </button>
+              )}
             </div>
-          </div>
-        )}
 
-        <div className={styles.body}>
-          {mode === 'group_name' ? (
-            <div className={styles.groupSetup}>
-              <div>
-                <label className={styles.groupSetupLabel}>Group Name</label>
-                <input 
-                  type="text" 
-                  className={styles.groupInput}
-                  placeholder="E.g., Weekend Hike"
-                  value={groupName}
-                  maxLength={120}
-                  onChange={(e) => setGroupName(e.target.value)}
-                  autoFocus
-                />
-              </div>
-              <button 
-                className={styles.createGroupBtn} 
-                disabled={!groupName.trim()}
-                onClick={handleFinalCreateGroup}
+            <div className={styles.scroller}>
+              {!searching && recentUsers.length > 0 && (
+                <section aria-label="Recent">
+                  <h3 className={styles.sectionLabel}>Recent</h3>
+                  <div className={styles.recentStrip}>
+                    {recentUsers.map((user) => {
+                      const on = selectedIds.has(String(user.id));
+                      return (
+                        <button
+                          key={`recent-${user.id}`}
+                          type="button"
+                          className={`${styles.recentItem} ${on ? styles.recentItemOn : ''}`}
+                          onClick={() => toggle(user)}
+                          aria-pressed={on}
+                          aria-label={nameOf(user)}
+                        >
+                          <span className={styles.recentAvatarWrap}>
+                            <UserAvatar user={user} className={styles.recentAvatar} />
+                            {on && <span className={styles.recentCheck}><SelectMark selected /></span>}
+                          </span>
+                          <span className={styles.recentName}>{firstName(user)}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </section>
+              )}
+
+              <section aria-label={searching ? 'Search results' : 'All people'}>
+                <h3 className={styles.sectionLabel}>{searching ? 'Results' : 'All people'}</h3>
+                {filteredUsers.length === 0 ? (
+                  <div className={styles.empty}>
+                    {isFetching ? (
+                      <div className="spinner" aria-label="Searching" />
+                    ) : (
+                      <p>
+                        {searching
+                          ? `No accounts found matching "${searchQuery.trim()}".`
+                          : 'No accounts available to message right now.'}
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <ul className={styles.list}>
+                    {filteredUsers.map((user, i) => {
+                      const on = selectedIds.has(String(user.id));
+                      return (
+                        <li key={user.id || i}>
+                          <button
+                            type="button"
+                            className={`${styles.userItem} ${on ? styles.userItemOn : ''}`}
+                            onClick={() => toggle(user)}
+                            aria-pressed={on}
+                          >
+                            <UserAvatar user={user} className={styles.userAvatar} />
+                            <span className={styles.userInfo}>
+                              <span className={styles.userName}>{nameOf(user)}</span>
+                              <span className={styles.userUsername}>@{user.username}</span>
+                            </span>
+                            <SelectMark selected={on} />
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </section>
+            </div>
+
+            <div className={`${styles.actionBar} ${selected.length ? styles.actionBarShown : ''}`} aria-hidden={!selected.length}>
+              <button
+                type="button"
+                className={styles.primaryBtn}
+                onClick={handlePrimary}
+                disabled={!selected.length}
+                tabIndex={selected.length ? 0 : -1}
               >
-                Create Group
+                {selected.length ? primaryLabel : 'Chat'}
               </button>
             </div>
-          ) : (
-            <>
-              {mode === 'single' && !searchQuery && (
-                <div className={styles.actionRow} onClick={handleCreateGroupClick}>
-                  <div className={styles.actionIcon}>
-                    <svg width="24" height="24" viewBox="0 -960 960 960" fill="currentColor">
-                      <path d="M500-482q29-32 44.5-73t15.5-85q0-44-15.5-85T500-798q60 8 100 53t40 105q0 60-40 105t-100 53Zm220 322v-120q0-36-16-68.5T662-406q51 18 94.5 46.5T800-280v120h-80Zm80-280v-80h-80v-80h80v-80h80v80h80v80h-80v80h-80Zm-480-40q-66 0-113-47t-47-113q0-66 47-113t113-47q66 0 113 47t47 113q0 66-47 113t-113 47ZM0-160v-112q0-34 17.5-62.5T64-378q62-31 126-46.5T320-440q66 0 130 15.5T576-378q29 15 46.5 43.5T640-272v112H0Zm320-400q33 0 56.5-23.5T400-640q0-33-23.5-56.5T320-720q-33 0-56.5 23.5T240-640q0 33 23.5 56.5T320-560ZM80-240h480v-32q0-11-5.5-20T540-306q-54-27-109-40.5T320-360q-56 0-111 13.5T100-306q-9 5-14.5 14T80-272v32Zm240-400Zm0 400Z" />
-                    </svg>
-                  </div>
-                  <div className={styles.actionText}>Create a group</div>
-                </div>
-              )}
+          </>
+        ) : (
+          <form className={styles.nameStep} onSubmit={handleCreate}>
+            <div className={styles.memberStack} aria-label={`${selected.length} members`}>
+              {selected.slice(0, 5).map((user) => (
+                <UserAvatar key={`stack-${user.id}`} user={user} className={styles.stackAvatar} />
+              ))}
+              {selected.length > 5 && <span className={styles.stackMore}>+{selected.length - 5}</span>}
+            </div>
+            <p className={styles.memberNames}>
+              {selected.map(firstName).slice(0, 3).join(', ')}
+              {selected.length > 3 ? ` and ${selected.length - 3} more` : ''}
+            </p>
 
-              <div className={styles.sectionTitle}>
-                {searchQuery ? 'Search Results' : (mode === 'multi_select' ? 'Add new members' : 'Suggested')}
-              </div>
-
-              {filteredUsers.length === 0 ? (
-                <div className={styles.empty}>
-                  {isFetching
-                    ? 'Searching\u2026'
-                    : searchQuery.trim()
-                      ? `No accounts found matching "${searchQuery.trim()}".`
-                      : 'No accounts available to message right now.'}
-                </div>
+            <label className={styles.nameLabel} htmlFor="new-group-name">Group name</label>
+            <input
+              ref={nameRef}
+              id="new-group-name"
+              type="text"
+              className={styles.nameInput}
+              placeholder="E.g., Weekend Hike"
+              value={groupName}
+              maxLength={GROUP_NAME_MAX}
+              onChange={(e) => { setGroupName(e.target.value); setCreateError(''); }}
+              aria-invalid={Boolean(createError)}
+              aria-describedby="new-group-name-hint"
+            />
+            <div id="new-group-name-hint" className={styles.nameHint}>
+              {createError ? (
+                <span className={styles.nameError} role="alert">{createError}</span>
               ) : (
-                filteredUsers.map((user, i) => {
-                  const isSelected = selectedUserIds.includes(user.id);
-                  return (
-                    <div
-                      key={user.id || i}
-                      className={`${styles.userItem} ${isSelected ? styles.selectedItem : ''}`}
-                      onClick={() => handleUserClick(user)}
-                    >
-                      <div className={styles.userAvatar}>
-                        {isImageUrl(user.avatar) ? (
-                          <img
-                            src={getProcessedAvatarUrl(user.avatar)}
-                            alt={user.displayName || user.name || user.username}
-                            className={styles.avatarImg}
-                            onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.svg'; }} 
-                          />
-                        ) : (
-                          <DefaultAvatar />
-                        )}
-                      </div>
-                      <div className={styles.userInfo}>
-                        <div className={styles.userName}>
-                          {user.displayName || user.name || user.username}
-                        </div>
-                        <div className={styles.userUsername}>@{user.username}</div>
-                      </div>
-                      {mode === 'multi_select' && (
-                        <div className={`${styles.checkbox} ${isSelected ? styles.checked : ''}`}>
-                          {isSelected && (
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-                              <polyline points="20 6 9 17 4 12"></polyline>
-                            </svg>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })
+                <span>{groupName.length}/{GROUP_NAME_MAX}</span>
               )}
-            </>
-          )}
-        </div>
+            </div>
+
+            <button type="submit" className={styles.primaryBtn} disabled={!trimmedName || creating}>
+              {creating ? 'Creating…' : 'Create group'}
+            </button>
+          </form>
+        )}
       </div>
     </div>
   );

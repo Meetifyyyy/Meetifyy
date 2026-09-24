@@ -352,6 +352,7 @@ export default function FindYourCrewPage() {
               value: searchQuery,
               onChange: (e) => setSearchQuery(e.target.value),
               placeholder: 'Search activities, sports, hangouts...',
+              borderless: true,
             }}
             actions={
               <button

@@ -1,5 +1,5 @@
 import { Suspense, lazy, useCallback, useRef, useEffect } from 'react';
-import { MessageSquarePlus, Search, X } from '@shared/components/icons';
+import { Plus, Search, Send, X } from '@shared/components/icons';
 import { useMediaViewerActions } from '@shared/context/MediaViewerContext';
 import { useMessageActions } from '@shared/hooks/useMessageActions';
 import { useRecipientConversations } from '@shared/hooks/useRecipientConversations';
@@ -60,8 +60,8 @@ export default function ChatAreaLayout({
 
   header,
   emptyIcon = null,
-  emptyLabel = 'Your Messages',
-  emptyDescription = 'Send private messages or create a group chat with your friends.',
+  emptyLabel = 'Your messages',
+  emptyDescription = 'Send a private message to someone on campus, or start a group chat.',
   inputDisabled = false,
   inputDisabledReason = null,
   extraModals = null,
@@ -144,13 +144,13 @@ export default function ChatAreaLayout({
     return (
       <div className={`${styles.chatArea} ${showChatOnMobile ? styles.chatAreaVisible : ''}`}>
         <div className={styles.emptyState}>
-          <div className={styles.emptyStateIcon}>{emptyIcon || <MessageSquarePlus size={36} />}</div>
+          <div className={styles.emptyStateIcon} aria-hidden="true">{emptyIcon || <Send size={34} strokeWidth={1.6} className={styles.emptyStatePlane} />}</div>
           <h3 className={styles.emptyStateTitle}>{emptyLabel}</h3>
           {emptyDescription && <p className={styles.emptyStateDesc}>{emptyDescription}</p>}
           {onNewMessage && (
             <button type="button" className={styles.emptyStateBtn} onClick={onNewMessage}>
-              <MessageSquarePlus size={18} />
-              <span>New Message</span>
+              <Plus size={18} strokeWidth={2.4} aria-hidden="true" />
+              <span>Start a conversation</span>
             </button>
           )}
         </div>

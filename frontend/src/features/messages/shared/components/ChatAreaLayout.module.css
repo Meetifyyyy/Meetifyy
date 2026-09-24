@@ -149,23 +149,21 @@
 }
 
 .emptyStateIcon {
-  width: 72px;
-  height: 72px;
+  width: 92px;
+  height: 92px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 1.25rem;
   border-radius: 50%;
-  background: rgba(var(--color-primary-rgb, 37, 99, 235), 0.08);
-  color: var(--color-primary);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-bottom: 1rem;
-  border: 1px solid rgba(var(--color-primary-rgb, 37, 99, 235), 0.15);
-  box-shadow: 0 4px 14px rgba(var(--color-primary-rgb, 37, 99, 235), 0.08);
+  /* A thin outlined ring in the text colour, as in the conversation list. */
+  box-shadow: inset 0 0 0 2px var(--color-text-main);
+  color: var(--color-text-main);
+  font-size: 2.2rem;
 }
 
-:global([data-theme="dark"]) .emptyStateIcon {
-  background: rgba(var(--color-primary-rgb, 99, 102, 241), 0.15);
-  border-color: rgba(255, 255, 255, 0.08);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+/* The paper plane, nudged to optical centre. */
+.emptyStatePlane {
+  transform: translate(-2px, 2px) rotate(-8deg);
 }
 
 .emptyStateTitle {
@@ -186,31 +184,8 @@
 }
 
 .emptyStateBtn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  background: var(--color-primary);
-  color: #ffffff;
-  border: none;
-  padding: 0.65rem 1.35rem;
-  border-radius: 100px;
-  font-family: var(--font-family-sans);
-  font-size: 0.88rem;
-  font-weight: 600;
-  cursor: pointer;
-  box-shadow: 0 2px 8px rgba(var(--color-primary-rgb, 37, 99, 235), 0.25);
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.emptyStateBtn:hover {
-  background: var(--color-primary-hover, var(--color-primary));
-  box-shadow: 0 4px 14px rgba(var(--color-primary-rgb, 37, 99, 235), 0.35);
-  transform: translateY(-1px);
-}
-
-.emptyStateBtn:active {
-  transform: translateY(0);
+  composes: action-btn action-btn--primary from global;
+  padding: 0 1.5rem;
 }
 
 /* ── The empty state in a narrow pane ───────────────────────────────────────
@@ -229,9 +204,9 @@
   }
 
   .emptyStateIcon {
-    width: 56px;
-    height: 56px;
-    margin-bottom: 0.75rem;
+    width: 72px;
+    height: 72px;
+    margin-bottom: 0.9rem;
   }
 
   .emptyStateTitle {
@@ -246,7 +221,7 @@
   }
 
   .emptyStateBtn {
-    padding: 0.6rem 1rem;
+    padding: 0 1rem;
     font-size: 0.84rem;
     white-space: nowrap;
     max-width: 100%;

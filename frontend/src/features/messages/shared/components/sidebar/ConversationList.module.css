@@ -94,19 +94,21 @@
 .msgConvSearch {
   display: flex;
   align-items: center;
-  background: var(--color-bg-white);
-  border: 1px solid var(--color-border);
+  /* Borderless filled field, the same treatment as the Crew search. The 1px
+     transparent edge keeps its box the same size as the Crew one. */
+  background: var(--action-secondary-bg, rgba(15, 23, 42, 0.06));
+  border: 1px solid transparent;
   border-radius: 100px;
   padding: 0 0.85rem;
   flex: 1;
   min-width: 0;
   height: 38px;
-  transition: all 0.2s;
+  transition: background 0.2s ease, box-shadow 0.2s ease;
 }
 
 .msgConvSearch:focus-within {
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 2px rgba(var(--color-primary-rgb), 0.15);
+  background: var(--color-bg-white);
+  box-shadow: 0 0 0 1.5px rgba(var(--color-primary-rgb), 0.45);
 }
 
 .searchIcon {
@@ -731,5 +733,130 @@
 
   .convItem {
     padding: 0.85rem 1.25rem;
+  }
+}
+/* ── Inbox empty state ("Your messages") ─────────────────────────────────── */
+.inboxEmpty {
+  flex: 1;
+  width: 100%;
+  min-height: 100%;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2.5rem 1.75rem 3rem;
+  text-align: center;
+}
+
+.inboxEmptyArt {
+  margin-bottom: 1rem;
+}
+
+/* Thin outlined ring around a paper plane, the plane nudged to optical centre. */
+.inboxEmptyRing {
+  width: 72px;
+  height: 72px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1.5px var(--color-text-main);
+  color: var(--color-text-main);
+}
+
+.inboxEmptyRing > svg {
+  transform: translate(-2px, 2px) rotate(-8deg);
+}
+
+.inboxEmptyTitle {
+  margin: 0 0 0.3rem;
+  font-family: var(--font-family-sans);
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--color-text-main);
+}
+
+.inboxEmptyText {
+  max-width: 240px;
+  margin: 0 0 1.1rem;
+  font-family: var(--font-family-sans);
+  font-size: 0.84rem;
+  line-height: 1.45;
+  color: var(--color-text-muted);
+}
+
+.inboxEmptyCta {
+  composes: action-btn action-btn--primary from global;
+  min-height: 38px;
+  padding: 0 1.1rem;
+  gap: 0.35rem;
+  font-size: 0.84rem;
+}
+
+
+.inboxEmptyCompact {
+  display: none;
+  margin: 0;
+  font-family: var(--font-family-sans);
+  font-size: 0.88rem;
+  color: var(--color-text-muted);
+}
+
+/* Same test that shows the chat pane beside the list (ChatAreaLayout's
+   `@container messages`), so the compact line appears exactly when the pane's
+   full invitation is on screen, never when the list stands alone. */
+@container messages (min-width: 769px) {
+  .inboxEmptyFull {
+    display: none;
+  }
+
+  .inboxEmptyCompact {
+    display: block;
+  }
+}
+
+/* ── Phones: the header matches the Crew page's PageHeader exactly ─────────
+   Title, search bar and action button sit at the same place and size on both
+   screens, so switching tabs in the bottom nav does not shift anything. The
+   numbers are Crew's, measured at 375-418px: text starts at 16px, the search
+   and button share an 8px gutter, both 40px tall, 8px apart. Declared last so
+   it wins over the collapsed-layout rules above at equal specificity. */
+@container messages (max-width: 479px) {
+  .msgConvHeader {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .searchRow {
+    padding: 13.7px 8px 12px;
+    gap: 8px;
+  }
+
+  .msgConvSearch {
+    height: 40px;
+    padding: 0 16px;
+    border-radius: 20px;
+  }
+
+  .searchIcon {
+    width: 18px;
+    height: 18px;
+    margin-right: 8px;
+  }
+
+  .msgSearchInput {
+    font-size: 0.88rem;
+  }
+
+  .msgNewBtn {
+    width: 40px !important;
+    height: 40px !important;
+    box-shadow: 0 4px 10px rgba(var(--color-primary-rgb, 37, 99, 235), 0.25) !important;
+  }
+
+  .msgNewBtn > svg {
+    width: 22px;
+    height: 22px;
   }
 }
