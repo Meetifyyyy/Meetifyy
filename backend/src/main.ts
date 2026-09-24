@@ -4,6 +4,7 @@ import { config } from './config';
 import { AppModule } from './app.module';
 import { ValidationPipe, Logger as NestLogger } from '@nestjs/common';
 import helmet from 'helmet';
+import type { NextFunction, Request, Response } from 'express';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { ErrorLogRecorder } from './observability/error-log.recorder';
 import cookieParser from 'cookie-parser';
@@ -98,7 +99,7 @@ async function bootstrap() {
   app.set('trust proxy', config.rateLimit.trustProxyHops);
 
   // Normalize double slashes in incoming request URLs
-  app.use((req: any, _res: any, next: any) => {
+  app.use((req: Request, _res: Response, next: NextFunction) => {
     if (req.url && req.url.startsWith('//')) {
       req.url = req.url.replace(/^\/+/, '/');
     }

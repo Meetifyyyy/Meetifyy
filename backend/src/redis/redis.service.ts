@@ -67,7 +67,7 @@ export class RedisService implements OnModuleDestroy {
 
         const handleRedisError = (label: string) => {
           let hasWarnedMaxClients = false;
-          return (err: any) => {
+          return (err: Error) => {
             const msg = err?.message || String(err);
             if (msg.includes('max number of clients reached')) {
               if (!hasWarnedMaxClients) {

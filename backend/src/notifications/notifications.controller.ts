@@ -36,9 +36,7 @@ export class NotificationsController {
     const limitNum = limit ? parseInt(limit, 10) : 20;
     // Allow-listed rather than passed through: an unvalidated value would reach
     // Prisma as an enum filter and throw on anything unexpected.
-    const parsedType = ALLOWED_NOTIFICATION_FILTERS.includes(type as any)
-      ? (type as NotificationType)
-      : undefined;
+    const parsedType = ALLOWED_NOTIFICATION_FILTERS.find((t) => t === type);
     return this.notificationsService.getNotifications(
       req.user.id,
       limitNum,
