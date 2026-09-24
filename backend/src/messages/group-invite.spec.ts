@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   BadRequestException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { MessagesService } from './messages.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { PresenceService } from '../presence/presence.service';
@@ -181,9 +182,14 @@ describe('group invites', () => {
     it('treats a concurrent-join unique violation as success', async () => {
       prisma.conversation.findFirst.mockResolvedValue(group());
       prisma.conversationParticipant.findUnique.mockResolvedValue(null);
-      prisma.conversationParticipant.upsert.mockRejectedValue({
-        code: 'P2002',
-      });
+      // What Prisma (through the pg adapter) actually throws on a duplicate:
+      // verified against the development database, not assumed.
+      prisma.conversationParticipant.upsert.mockRejectedValue(
+        new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+          code: 'P2002',
+          clientVersion: 'test',
+        }),
+      );
 
       await expect(
         service.joinGroupByInvite(CONV_ID, USER_ID),

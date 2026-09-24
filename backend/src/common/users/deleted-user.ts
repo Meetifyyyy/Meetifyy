@@ -49,9 +49,11 @@ export interface UserIdentityLike {
  * checked too so a row in either terminal state is caught even if a caller
  * selected only one of the two columns.
  */
-export function isUnavailableUser(
-  user: UserIdentityLike | null | undefined,
-): boolean {
+export function isUnavailableUser<
+  // Only the two lifecycle fields decide it, so any row that selected them
+  // qualifies, not just a full identity.
+  T extends Pick<UserIdentityLike, 'deletedAt' | 'accountStatus'>,
+>(user: T | null | undefined): boolean {
   if (!user) return true;
   if (user.deletedAt) return true;
   const status = user.accountStatus;

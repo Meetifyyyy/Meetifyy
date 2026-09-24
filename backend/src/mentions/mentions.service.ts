@@ -6,12 +6,14 @@ import { NotificationFactory } from '../notifications/notification.factory';
 import { MentionDto } from '../common/dto/mention.dto';
 import { StudentYearPolicyService } from '../common/student-year/student-year-policy.service';
 
-export interface SanitizedMention {
+// A type alias rather than an interface: it is stored in a Json column, and only
+// a type alias is assignable to Prisma's JSON input type.
+export type SanitizedMention = {
   userId: string;
   username: string;
   start: number;
   end: number;
-}
+};
 
 export interface MentionActor {
   id: string;
@@ -138,7 +140,7 @@ export class MentionsService {
     entityType: NotificationEntityType;
     entityId: string;
     contextText: string;
-    extraMetadata?: Record<string, any>;
+    extraMetadata?: Record<string, unknown>;
   }): Promise<void> {
     const {
       mentions,

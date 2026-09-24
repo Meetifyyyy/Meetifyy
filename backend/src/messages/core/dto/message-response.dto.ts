@@ -15,7 +15,8 @@ export interface MessageResponseDto {
   text: string;
   mediaUrl?: string | null;
   mediaType?: string | null;
-  mentions?: string[];
+  /** Stored mention objects ({ userId, username, start, end }), read from JSON. */
+  mentions?: unknown[];
   inviteData?: any;
   replyTo?: any;
   status: string;

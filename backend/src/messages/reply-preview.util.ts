@@ -1,3 +1,5 @@
+import { payloadFields, stringOrNull } from './core/message-payload';
+
 /**
  * Builds the snapshot of a quoted message that is sent to clients as `replyTo`.
  *
@@ -60,18 +62,6 @@ type ReplyToRow = {
   sender?: { displayName?: string | null; username?: string | null } | null;
 };
 
-/** The fields of a JSON value, or none: a non-object has nothing to read. */
-function fieldsOf(value: unknown): Record<string, unknown> {
-  return typeof value === 'object' && value !== null
-    ? (value as Record<string, unknown>)
-    : {};
-}
-
-/** A non-empty string, or null. Stored media fields are strings. */
-function stringOrNull(value: unknown): string | null {
-  return typeof value === 'string' && value ? value : null;
-}
-
 /** Pulls a display name out of whichever shared-entity shape is present. */
 function describeShare(payloadValue: unknown): {
   shareType: string | null;
@@ -80,8 +70,8 @@ function describeShare(payloadValue: unknown): {
   shareAvatar: string | null;
   shareColor: string | null;
 } {
-  const payload = fieldsOf(payloadValue);
-  const invite = fieldsOf(payload.inviteData);
+  const payload = payloadFields(payloadValue);
+  const invite = payloadFields(payload.inviteData);
   const candidates: Array<[string, unknown]> = [
     ['profile', payload.profile || invite.profile],
     ['community', payload.community || invite.community],
@@ -92,7 +82,7 @@ function describeShare(payloadValue: unknown): {
 
   for (const [type, candidate] of candidates) {
     if (candidate && typeof candidate === 'object') {
-      const entity = fieldsOf(candidate);
+      const entity = payloadFields(candidate);
       const title =
         entity.name ||
         entity.title ||
@@ -164,7 +154,7 @@ export function buildReplyToSnapshot(
 ): ReplyToSnapshot | null {
   if (!replyTo) return null;
 
-  const payload = fieldsOf(replyTo.payload || {});
+  const payload = payloadFields(replyTo.payload || {});
   const isUnsent = replyTo.state === 'UNSENT';
   const { shareType, shareId, shareTitle, shareAvatar, shareColor } = isUnsent
     ? {

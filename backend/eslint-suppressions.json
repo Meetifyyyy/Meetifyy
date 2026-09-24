@@ -1586,11 +1586,6 @@
       "count": 4
     }
   },
-  "src/mentions/mentions.service.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 1
-    }
-  },
   "src/messages/conversation-deletion.spec.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 5
@@ -1626,23 +1621,6 @@
       "count": 1
     }
   },
-  "src/messages/core/messaging-core.service.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 24
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 13
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 71
-    },
-    "@typescript-eslint/no-unsafe-call": {
-      "count": 2
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 92
-    }
-  },
   "src/messages/dm/dm-lookup.spec.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 3
@@ -1668,13 +1646,13 @@
       "count": 2
     },
     "@typescript-eslint/no-unsafe-argument": {
-      "count": 6
+      "count": 2
     },
     "@typescript-eslint/no-unsafe-assignment": {
-      "count": 16
+      "count": 6
     },
     "@typescript-eslint/no-unsafe-member-access": {
-      "count": 15
+      "count": 2
     }
   },
   "src/messages/dm/dm.service.ts": {
@@ -1699,13 +1677,13 @@
       "count": 4
     },
     "@typescript-eslint/no-unsafe-argument": {
-      "count": 6
+      "count": 3
     },
     "@typescript-eslint/no-unsafe-assignment": {
-      "count": 37
+      "count": 24
     },
     "@typescript-eslint/no-unsafe-member-access": {
-      "count": 34
+      "count": 21
     },
     "@typescript-eslint/no-unsafe-return": {
       "count": 2
@@ -1716,7 +1694,7 @@
       "count": 24
     },
     "@typescript-eslint/no-unsafe-argument": {
-      "count": 6
+      "count": 5
     },
     "@typescript-eslint/no-unsafe-assignment": {
       "count": 61
@@ -1848,7 +1826,7 @@
       "count": 38
     },
     "@typescript-eslint/no-unsafe-argument": {
-      "count": 37
+      "count": 35
     },
     "@typescript-eslint/no-unsafe-assignment": {
       "count": 116
