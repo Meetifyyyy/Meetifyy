@@ -1136,11 +1136,8 @@
     }
   },
   "src/communities/communities.controller.ts": {
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 1
-    },
     "@typescript-eslint/no-unsafe-return": {
-      "count": 5
+      "count": 1
     }
   },
   "src/communities/communities.deletion.spec.ts": {
@@ -1174,7 +1171,7 @@
       "count": 8
     },
     "@typescript-eslint/no-unsafe-assignment": {
-      "count": 19
+      "count": 6
     },
     "@typescript-eslint/no-unsafe-call": {
       "count": 2
@@ -1254,22 +1251,22 @@
   },
   "src/communities/communities.service.ts": {
     "@typescript-eslint/no-explicit-any": {
-      "count": 23
+      "count": 3
     },
     "@typescript-eslint/no-unsafe-argument": {
-      "count": 11
+      "count": 1
     },
     "@typescript-eslint/no-unsafe-assignment": {
-      "count": 65
+      "count": 10
     },
     "@typescript-eslint/no-unsafe-call": {
-      "count": 37
+      "count": 3
     },
     "@typescript-eslint/no-unsafe-member-access": {
-      "count": 163
+      "count": 33
     },
     "@typescript-eslint/no-unsafe-return": {
-      "count": 15
+      "count": 1
     }
   },
   "src/email/email-usage.service.spec.ts": {
