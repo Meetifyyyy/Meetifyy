@@ -34,13 +34,18 @@ export class AdminVerificationService {
    * open both images and expires well before a copied link is useful.
    */
   private async withDocumentUrls<
-    T extends { selfieMedia?: any; idCardMedia?: any },
+    T extends {
+      selfieMedia?: { objectKey: string } | null;
+      idCardMedia?: { objectKey: string } | null;
+    },
   >(
     requests: T[],
   ): Promise<
     (Omit<T, 'selfieMedia' | 'idCardMedia'> & {
-      selfieMedia: (T['selfieMedia'] & { url: string | null }) | null;
-      idCardMedia: (T['idCardMedia'] & { url: string | null }) | null;
+      selfieMedia:
+        (NonNullable<T['selfieMedia']> & { url: string | null }) | null;
+      idCardMedia:
+        (NonNullable<T['idCardMedia']> & { url: string | null }) | null;
     })[]
   > {
     const REVIEW_URL_TTL_SECONDS = 300;

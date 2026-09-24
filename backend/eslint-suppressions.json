@@ -343,28 +343,6 @@
       "count": 2
     }
   },
-  "src/admin/analytics/admin-analytics.service.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 3
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 8
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 9
-    }
-  },
-  "src/admin/audit/admin-audit.service.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 2
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 3
-    }
-  },
   "src/admin/auth/admin-auth-cookies.spec.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 4
@@ -387,12 +365,12 @@
       "count": 1
     },
     "@typescript-eslint/no-unsafe-return": {
-      "count": 2
+      "count": 1
     }
   },
   "src/admin/colleges/admin-colleges.service.ts": {
     "@typescript-eslint/no-explicit-any": {
-      "count": 7
+      "count": 6
     },
     "@typescript-eslint/no-unsafe-assignment": {
       "count": 10
@@ -401,7 +379,7 @@
       "count": 9
     },
     "@typescript-eslint/no-unsafe-return": {
-      "count": 2
+      "count": 1
     }
   },
   "src/admin/dashboard/admin-dashboard.charts.spec.ts": {
@@ -415,17 +393,6 @@
     },
     "@typescript-eslint/no-unsafe-return": {
       "count": 1
-    }
-  },
-  "src/admin/dashboard/admin-dashboard.service.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 2
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 2
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 2
     }
   },
   "src/admin/legal/admin-legal.service.spec.ts": {
@@ -461,13 +428,13 @@
   },
   "src/admin/users/admin-users.service.ts": {
     "@typescript-eslint/no-explicit-any": {
-      "count": 3
+      "count": 1
     },
     "@typescript-eslint/no-unsafe-assignment": {
-      "count": 5
+      "count": 3
     },
     "@typescript-eslint/no-unsafe-member-access": {
-      "count": 5
+      "count": 3
     }
   },
   "src/admin/verification/admin-verification.routing.spec.ts": {
@@ -499,17 +466,6 @@
     },
     "@typescript-eslint/require-await": {
       "count": 1
-    }
-  },
-  "src/admin/verification/admin-verification.service.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 2
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 2
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 4
     }
   },
   "src/auth/auth-public-proxies.spec.ts": {
@@ -1613,13 +1569,13 @@
   },
   "src/moderation/moderation.service.ts": {
     "@typescript-eslint/no-explicit-any": {
-      "count": 4
+      "count": 2
     },
     "@typescript-eslint/no-unsafe-assignment": {
-      "count": 5
+      "count": 3
     },
     "@typescript-eslint/no-unsafe-member-access": {
-      "count": 13
+      "count": 5
     }
   },
   "src/notifications/notifications.deleted-actor.spec.ts": {

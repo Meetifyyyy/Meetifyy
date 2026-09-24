@@ -4,6 +4,7 @@ import {
   BadRequestException,
   ConflictException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { JwtGuard } from '../../common/guards/jwt.guard';
 import { SupabaseService } from '../../supabase/supabase.service';
@@ -276,7 +277,7 @@ export class AdminUsersService {
     const term = (search || '').trim();
     if (!term) return { data: [] };
 
-    const where: any = {
+    const where: Prisma.UserWhereInput = {
       deletedAt: null,
       OR: [
         { username: { contains: term, mode: 'insensitive' } },
@@ -307,7 +308,7 @@ export class AdminUsersService {
    * List all active Campus Representatives, optionally filtered by campus.
    */
   async listCampusReps(collegeId?: string) {
-    const where: any = { isCampusRep: true, deletedAt: null };
+    const where: Prisma.UserWhereInput = { isCampusRep: true, deletedAt: null };
     if (collegeId) where.collegeId = collegeId;
 
     const reps = await this.prisma.user.findMany({

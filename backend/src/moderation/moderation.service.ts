@@ -12,7 +12,7 @@ import { ReportRateLimitService } from './report-ratelimit.service';
 import { SubmitReportDto } from './dto/submit-report.dto';
 import { UpdateReportDto } from './dto/update-report.dto';
 import { BulkActionReportDto } from './dto/bulk-action-report.dto';
-import { ReportStatus, ReportPriority } from '@prisma/client';
+import { Prisma, ReportStatus, ReportPriority } from '@prisma/client';
 import { InjectPinoLogger, PinoLogger } from 'nestjs-pino';
 import * as Sentry from '@sentry/nestjs';
 import { InjectQueue } from '@nestjs/bullmq';
@@ -309,7 +309,7 @@ export class ModerationService {
       throw new NotFoundException(`Report ${id} not found.`);
     }
 
-    const data: any = { ...dto };
+    const data: Prisma.ReportUncheckedUpdateInput = { ...dto };
 
     if (
       dto.status === ReportStatus.RESOLVED ||
@@ -339,7 +339,7 @@ export class ModerationService {
    * Super Admin: Bulk update actions for batch moderation
    */
   async bulkAction(dto: BulkActionReportDto, adminUserId?: string) {
-    const data: any = {};
+    const data: Prisma.ReportUncheckedUpdateManyInput = {};
     if (dto.status) data.status = dto.status;
     if (dto.priority) data.priority = dto.priority;
     if (dto.assignedModeratorId)

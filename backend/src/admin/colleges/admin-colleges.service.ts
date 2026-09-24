@@ -217,7 +217,7 @@ export class AdminCollegesService {
       );
     }
 
-    let created: any;
+    let created;
     try {
       created = await this.prisma.college.create({
         data: {
