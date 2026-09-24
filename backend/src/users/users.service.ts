@@ -1071,12 +1071,27 @@ export class UsersService {
     };
   }
 
+  /**
+   * Name/username filter for the profile's follower/following viewer.
+   *
+   * In SQL, before LIMIT/OFFSET, like every other filter on these lists, so a
+   * search pages through ALL matches rather than only the rows already loaded.
+   * LIKE wildcards in the input are escaped so they match literally.
+   */
+  private followListSearchFilter(search?: string): Prisma.Sql {
+    const term = search?.trim().replace(/^@/, '').slice(0, 64);
+    if (!term) return Prisma.empty;
+    const pattern = `%${term.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+    return Prisma.sql`AND (u."username" ILIKE ${pattern} OR u."displayName" ILIKE ${pattern})`;
+  }
+
   async getFollowers(
     username: string,
     currentUserId?: string,
     limit = 20,
     offset = 0,
     eligibleOnly = false,
+    search?: string,
   ) {
     const cleanUsername = username.trim().toLowerCase();
 
@@ -1159,6 +1174,7 @@ export class UsersService {
       ${eligibilityFilter}
       ${followerPolicyFilter}
       ${activeOnlyFilter}
+      ${this.followListSearchFilter(search)}
       ORDER BY f."createdAt" DESC
       LIMIT ${limit} OFFSET ${offset};
     `;
@@ -1190,6 +1206,7 @@ export class UsersService {
     limit = 20,
     offset = 0,
     eligibleOnly = false,
+    search?: string,
   ) {
     const cleanUsername = username.trim().toLowerCase();
 
@@ -1257,6 +1274,7 @@ export class UsersService {
       ${eligibilityFilter}
       ${followingPolicyFilter}
       ${followingActiveOnlyFilter}
+      ${this.followListSearchFilter(search)}
       ORDER BY f."createdAt" DESC
       LIMIT ${limit} OFFSET ${offset};
     `;

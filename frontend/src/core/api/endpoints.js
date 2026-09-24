@@ -335,14 +335,16 @@ export function createEndpoints({ apiClient, getToken, getBackendUrl }) {
     // `eligibleOnly` is for recipient pickers only. The profile's follower and
     // following viewer must never pass it: hiding accounts there would misreport
     // who follows whom and contradict the counts shown next to the list.
-    getFollowers: (username, limit = 50, offset = 0, eligibleOnly = false) => {
+    getFollowers: (username, limit = 50, offset = 0, eligibleOnly = false, search = '') => {
       const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
       if (eligibleOnly) params.set('eligibleOnly', 'true');
+      if (search) params.set('search', search);
       return apiClient.get(`/api/users/${username}/followers?${params.toString()}`);
     },
-    getFollowing: (username, limit = 50, offset = 0, eligibleOnly = false) => {
+    getFollowing: (username, limit = 50, offset = 0, eligibleOnly = false, search = '') => {
       const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
       if (eligibleOnly) params.set('eligibleOnly', 'true');
+      if (search) params.set('search', search);
       return apiClient.get(`/api/users/${username}/following?${params.toString()}`);
     },
     // `getFollowingUsernames` was here: a `?limit=1000` fetch of the viewer's
