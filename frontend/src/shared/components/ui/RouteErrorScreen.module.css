@@ -200,3 +200,18 @@
     font-size: 0.875rem;
   }
 }
+
+/* ── Mobile, dark mode: pure black ─────────────────────────────────────────
+   Matches the verification page: true black on phones in dark mode, no card
+   edge. The outline button's border lightens so it still reads on black. */
+@media (max-width: 768px) {
+  [data-theme="dark"] .fullPageWrapper {
+    background: #000000;
+    border-color: transparent;
+    box-shadow: none;
+  }
+
+  [data-theme="dark"] .secondaryBtn {
+    border-color: rgba(255, 255, 255, 0.16);
+  }
+}

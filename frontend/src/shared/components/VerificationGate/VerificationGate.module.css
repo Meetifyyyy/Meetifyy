@@ -353,3 +353,20 @@
     max-width: 280px;
   }
 }
+/* ── Mobile, dark mode: pure black ─────────────────────────────────────────
+   The full-screen locked page sits on true black on phones, as the auth pages
+   do. The secondary button gets a faint fill so it still reads on black. */
+@media (max-width: 768px) {
+  [data-theme="dark"] .lockedPageWrapper {
+    background: #000000;
+  }
+
+  [data-theme="dark"] .secondaryActionBtn {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.1);
+  }
+
+  [data-theme="dark"] .secondaryActionBtn:hover {
+    background: rgba(255, 255, 255, 0.12);
+  }
+}
