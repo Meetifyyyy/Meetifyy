@@ -316,8 +316,8 @@ export class DmController {
     const userId = req.user?.id;
     const result = await this.dmService.unsendMessage(messageId, userId);
     if (result.success && result.conversationId) {
-      const pubId = (result as any).publicId || result.conversationId;
-      const participantIds = (result as any).participantIds || [];
+      const pubId = result.publicId || result.conversationId;
+      const participantIds = result.participantIds || [];
       setImmediate(() => {
         void this.domainEventService.emit(
           'message:updated',

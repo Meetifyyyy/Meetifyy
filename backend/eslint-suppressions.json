@@ -1641,32 +1641,18 @@
       "count": 3
     }
   },
-  "src/messages/dm/dm.controller.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 2
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 2
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 5
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 2
-    }
-  },
   "src/messages/group-chats/group-chats.controller.ts": {
     "@typescript-eslint/no-explicit-any": {
-      "count": 4
+      "count": 1
     },
     "@typescript-eslint/no-unsafe-argument": {
-      "count": 3
+      "count": 1
     },
     "@typescript-eslint/no-unsafe-assignment": {
-      "count": 12
+      "count": 7
     },
     "@typescript-eslint/no-unsafe-member-access": {
-      "count": 10
+      "count": 7
     }
   },
   "src/messages/group-chats/group-chats.service.ts": {
@@ -1772,18 +1758,6 @@
   },
   "src/messages/messages.controller.ts": {
     "@typescript-eslint/no-explicit-any": {
-      "count": 6
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 2
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 8
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 6
-    },
-    "@typescript-eslint/no-unsafe-return": {
       "count": 1
     }
   },

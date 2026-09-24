@@ -12,6 +12,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { inviteString } from './core/invite-data';
+import { requestedUserIds } from './core/requested-user-ids';
 import type { AuthenticatedRequest } from '../common/types/authenticated-request';
 import { MessagesService } from './messages.service';
 import { JwtGuard } from '../common/guards/jwt.guard';
@@ -50,8 +51,8 @@ export class MessagesController {
     const userId = req.user?.id;
     const result = await this.messagesService.unsendMessage(messageId, userId);
     if (result.success && result.conversationId) {
-      const pubId = (result as any).publicId || result.conversationId;
-      const participantIds = (result as any).participantIds || [];
+      const pubId = result.publicId || result.conversationId;
+      const participantIds = result.participantIds || [];
       setImmediate(() => {
         void this.domainEventService.emit(
           'message:updated',
@@ -322,24 +323,13 @@ export class MessagesController {
   async startConversation(
     @Req() req: AuthenticatedRequest,
     @Query('userIds') userIdsQuery?: string,
-    @Body('userIds') userIdsBody?: string[],
+    @Body('userIds') userIdsBody?: unknown,
     @Body('name') nameBody?: string,
   ) {
     const userId = req.user?.id;
     let targetUserIds: string[] = [];
     if (userIdsBody) {
-      if (Array.isArray(userIdsBody)) {
-        targetUserIds = userIdsBody
-          .map((item: any) =>
-            typeof item === 'string' ? item : item?.id || item?.userId,
-          )
-          .filter(Boolean);
-      } else if (typeof userIdsBody === 'string') {
-        targetUserIds = [userIdsBody];
-      } else if (typeof userIdsBody === 'object') {
-        const singleId = (userIdsBody as any).id || (userIdsBody as any).userId;
-        if (singleId) targetUserIds = [singleId];
-      }
+      targetUserIds = requestedUserIds(userIdsBody);
     } else if (userIdsQuery) {
       targetUserIds = userIdsQuery.split(',');
     }

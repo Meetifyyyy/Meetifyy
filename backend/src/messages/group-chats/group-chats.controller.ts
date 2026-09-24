@@ -358,7 +358,7 @@ export class GroupChatsController {
         // (string or null); the fallbacks that followed could never run.
         const avatarVal = updated.avatarKey;
 
-        const payload: any = {
+        const payload = {
           conversationId: pubId,
           id: pubId,
           publicId: pubId,
@@ -367,15 +367,16 @@ export class GroupChatsController {
           avatar: avatarVal,
           avatarKey: avatarVal,
           description: updated.description,
+          ...(systemMsg
+            ? {
+                lastMessage: {
+                  text: systemMsg.text,
+                  createdAt: systemMsg.createdAt,
+                  senderId: userId,
+                },
+              }
+            : {}),
         };
-
-        if (systemMsg) {
-          payload.lastMessage = {
-            text: systemMsg.text,
-            createdAt: systemMsg.createdAt,
-            senderId: userId,
-          };
-        }
 
         void this.domainEventService.emit(
           'conversation:updated',
@@ -939,8 +940,8 @@ export class GroupChatsController {
       userId,
     );
     if (result.success && result.conversationId) {
-      const pubId = (result as any).publicId || result.conversationId;
-      const participantIds = (result as any).participantIds || [];
+      const pubId = result.publicId || result.conversationId;
+      const participantIds = result.participantIds || [];
       setImmediate(() => {
         void this.domainEventService.emit(
           'message:updated',
