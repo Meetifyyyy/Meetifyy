@@ -95,6 +95,12 @@ export default function ProfilePage() {
     allowed: ['followers', 'following'],
     push: true,
   });
+  // Switching between the Followers and Following tabs inside the open list
+  // replaces the entry rather than pushing, so Back still closes the list in
+  // one step instead of walking back through every tab the viewer tried.
+  const [, switchModalType] = useUrlState('tab', '', {
+    allowed: ['followers', 'following'],
+  });
 
   const handleCloseUserListModal = useCallback(() => {
     goBack(`/profile/${targetUsername}`);
@@ -599,6 +605,7 @@ export default function ProfilePage() {
           profileUsername={targetUsername}
           profileUser={profileUser}
           onClose={handleCloseUserListModal}
+          onTypeChange={switchModalType}
         />
       )}
 

@@ -218,7 +218,7 @@ describe('UserListModal — unfollowing from the list', () => {
     });
     await settleMutation();
 
-    const cached = queryClient.getQueryData(['following', 'me']);
+    const cached = queryClient.getQueryData(['following', 'me', '']);
     const row = cached.pages.flat().find((u) => u.username === 'ann');
     // The row and the shared follow-state entry have to agree: FollowButton
     // seeds that entry from this value.
@@ -325,7 +325,7 @@ describe('UserListModal — unfollowing from the list', () => {
  * for a few frames every time the modal was reopened.
  *
  * These tests pin the property that removes the flicker at its source: on
- * reopen there is nothing cached to render, so the modal shows its skeleton
+ * reopen there is nothing cached to render, so the modal shows its spinner
  * and the first rows it ever paints are the server's.
  */
 describe('UserListModal — reopening after an unfollow', () => {
@@ -343,10 +343,10 @@ describe('UserListModal — reopening after an unfollow', () => {
   /** Lets the zero-length garbage-collection timer run after an unmount. */
   const flushGc = () => act(async () => { await new Promise((r) => setTimeout(r, 0)); });
 
-  const skeletonVisible = () =>
-    document.querySelectorAll('[class*="skeletonItem"]').length > 0;
+  const loadingVisible = () =>
+    document.querySelectorAll('[class*="loadingState"]').length > 0;
 
-  it('shows the skeleton, not the previous list, while the reopen fetch is in flight', async () => {
+  it('shows the spinner, not the previous list, while the reopen fetch is in flight', async () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
     const first = renderModal({ type: 'following', queryClient });
@@ -373,7 +373,7 @@ describe('UserListModal — reopening after an unfollow', () => {
     // painted here and corrected a moment later.
     expect(screen.queryByText('@ann')).toBeNull();
     expect(screen.queryByText('@bob')).toBeNull();
-    expect(skeletonVisible()).toBe(true);
+    expect(loadingVisible()).toBe(true);
 
     await act(async () => {
       release(ROWS.filter((u) => u.username !== 'ann'));
@@ -408,16 +408,16 @@ describe('UserListModal — reopening after an unfollow', () => {
 
     const first = renderModal({ type: 'following', queryClient });
     await screen.findByText('@ann');
-    expect(queryClient.getQueryData(['following', 'me'])).toBeDefined();
+    expect(queryClient.getQueryData(['following', 'me', ''])).toBeDefined();
 
     first.unmount();
     await flushGc();
 
     // Nothing survives that a later opening could render.
-    expect(queryClient.getQueryData(['following', 'me'])).toBeUndefined();
+    expect(queryClient.getQueryData(['following', 'me', ''])).toBeUndefined();
   });
 
-  it('keeps rows on screen while a NEXT page loads, rather than flashing a skeleton', async () => {
+  it('keeps rows on screen while a NEXT page loads, rather than flashing the spinner', async () => {
     // A full page, so the query believes there is more to fetch.
     const pageOne = Array.from({ length: 20 }, (_, i) => ({
       id: `p${i}`,
@@ -438,11 +438,11 @@ describe('UserListModal — reopening after an unfollow', () => {
 
     await triggerLoadMore();
     expect(getFollowingMock).toHaveBeenCalledTimes(2);
-    expect(getFollowingMock).toHaveBeenLastCalledWith('me', 20, 20);
+    expect(getFollowingMock).toHaveBeenLastCalledWith('me', 20, 20, false, '');
 
     // The loading gate must exclude next-page fetches: replacing the list with
-    // a skeleton mid-scroll would break infinite loading outright.
-    expect(skeletonVisible()).toBe(false);
+    // a spinner over the list mid-scroll would break infinite loading outright.
+    expect(loadingVisible()).toBe(false);
     expect(screen.getByText('@user0')).toBeTruthy();
 
     await act(async () => {

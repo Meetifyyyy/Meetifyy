@@ -26,14 +26,12 @@
   display: flex;
   flex-direction: column;
   box-shadow: 0 20px 50px rgba(0, 0, 0, 0.3);
-  border: 1px solid var(--color-border, rgba(255, 255, 255, 0.1));
   overflow: hidden;
   animation: scaleUp 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 .header {
-  padding: 1.25rem 1.5rem;
-  border-bottom: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
+  padding: 1.1rem 1.25rem 0.5rem 1.5rem;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -44,7 +42,6 @@
   composes: type-card-title from global;
   margin: 0;
   font-size: 1.125rem;
-  text-transform: capitalize;
 }
 
 .closeBtn {
@@ -65,6 +62,128 @@
   color: var(--color-text-main, #111827);
 }
 
+/* ── Tabs ── */
+.tabs {
+  display: flex;
+  padding: 0 1.25rem;
+  border-bottom: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
+  flex-shrink: 0;
+}
+
+.tab {
+  composes: type-button from global;
+  position: relative;
+  flex: 1;
+  padding: 0.8rem 0.5rem;
+  background: transparent;
+  border: none;
+  color: var(--color-text-muted, #6b7280);
+  font-size: 0.92rem;
+  cursor: pointer;
+  transition: color var(--transition-fast, 0.15s ease);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.tab:hover {
+  color: var(--color-text-main, #111827);
+}
+
+.tab::after {
+  content: '';
+  position: absolute;
+  left: 25%;
+  right: 25%;
+  bottom: -1px;
+  height: 3px;
+  border-radius: 3px 3px 0 0;
+  background: var(--color-primary);
+  transform: scaleX(0);
+  transition: transform 0.2s ease;
+}
+
+.tabActive {
+  color: var(--color-text-main, #111827);
+}
+
+.tabActive::after {
+  transform: scaleX(1);
+}
+
+/* ── Search ── */
+.searchWrap {
+  position: relative;
+  margin: 0.85rem 1.25rem 0.25rem;
+  flex-shrink: 0;
+}
+
+.searchIcon {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--color-text-light, #9ca3af);
+  pointer-events: none;
+}
+
+.searchInput {
+  width: 100%;
+  height: 42px;
+  box-sizing: border-box;
+  padding: 0 38px 0 40px;
+  border: none;
+  border-radius: var(--radius-full, 9999px);
+  background: var(--action-secondary-bg, rgba(15, 23, 42, 0.06));
+  color: var(--color-text-main, #111827);
+  font-family: var(--font-family-sans);
+  font-size: 0.94rem;
+  outline: none;
+  transition: background var(--transition-fast, 0.15s ease), box-shadow var(--transition-fast, 0.15s ease);
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.searchInput::-webkit-search-cancel-button {
+  display: none;
+}
+
+.searchInput::placeholder {
+  color: var(--color-text-light, #9ca3af);
+}
+
+.searchInput:hover {
+  background: var(--action-secondary-bg-hover, rgba(15, 23, 42, 0.1));
+}
+
+.searchInput:focus {
+  background: var(--color-bg-white, #ffffff);
+  box-shadow: 0 0 0 1.5px rgba(var(--color-primary-rgb), 0.5);
+}
+
+.searchClear {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 50%;
+  background: var(--action-secondary-bg-hover, rgba(15, 23, 42, 0.1));
+  color: var(--color-text-muted, #6b7280);
+  cursor: pointer;
+}
+
+.loadingState {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 0;
+}
+
 .body {
   padding: 1rem 1.25rem;
   overflow-y: auto;
@@ -73,27 +192,6 @@
   gap: 0.5rem;
   flex: 1;
   scrollbar-width: thin;
-}
-
-.skeletonList {
-  display: flex;
-  flex-direction: column;
-  gap: 0.85rem;
-  padding: 0.5rem 0;
-}
-
-.skeletonItem {
-  display: flex;
-  align-items: center;
-  gap: 0.85rem;
-  padding: 0.5rem 0.75rem;
-}
-
-.skeletonTextGroup {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
 }
 
 .empty {

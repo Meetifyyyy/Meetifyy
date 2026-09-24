@@ -1,18 +1,23 @@
-import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useInfiniteQuery } from '@tanstack/react-query';
+import { useDebounce } from '@shared/hooks/useDebounce';
 import { usersApi } from '@shared/api/apiClient';
 import { useAuth } from '@shared/context/AuthContext';
 import { CollegeRepresentativeBadge } from '@shared/components/badges/CollegeRepresentativeBadge';
 import FollowButton from '../ui/FollowButton';
 import Avatar from '../avatar/Avatar';
 import styles from './UserListModal.module.css';
-import Skeleton from '../skeletons/Skeleton';
 
 const PAGE_SIZE = 20;
 
 /** Stable identity, so the memo below is not busted by a fresh [] each render. */
 const EMPTY_LIST = [];
+
+const TABS = [
+  { id: 'followers', label: 'Followers' },
+  { id: 'following', label: 'Following' },
+];
 
 /**
  * One row of the list.
@@ -54,7 +59,14 @@ const UserRow = memo(function UserRow({ user, isSelf, onOpenProfile }) {
   );
 });
 
-export default function UserListModal({ type, profileUsername, onClose }) {
+/**
+ * Followers and Following in one dialog, as two tabs over a shared search.
+ *
+ * `type` is the active tab and is owned by the caller (the profile keeps it in
+ * the `?tab=` param); `onTypeChange` switches it. The search is sent to the
+ * server so it covers the whole list, not just the pages already loaded.
+ */
+export default function UserListModal({ type, profileUsername, onClose, onTypeChange }) {
   const navigate = useNavigate();
   const { currentUser } = useAuth();
   const observerTargetRef = useRef(null);
@@ -121,13 +133,18 @@ export default function UserListModal({ type, profileUsername, onClose }) {
     [navigate],
   );
 
+  const [searchInput, setSearchInput] = useState('');
+  const search = useDebounce(searchInput.trim(), 250);
+
   const isFollowers = type === 'followers';
   const cleanProfileUsername = profileUsername?.toLowerCase();
   const cleanCurrentUsername = currentUser?.username?.toLowerCase();
-  const queryKey = [isFollowers ? 'followers' : 'following', cleanProfileUsername];
+  const listKind = isFollowers ? 'followers' : 'following';
+  const queryKey = [listKind, cleanProfileUsername, search];
 
   const {
     data,
+    isPlaceholderData,
     isPending,
     isFetching,
     isError,
@@ -138,8 +155,8 @@ export default function UserListModal({ type, profileUsername, onClose }) {
     queryKey,
     queryFn: ({ pageParam = 0 }) =>
       isFollowers
-        ? usersApi.getFollowers(profileUsername, PAGE_SIZE, pageParam)
-        : usersApi.getFollowing(profileUsername, PAGE_SIZE, pageParam),
+        ? usersApi.getFollowers(profileUsername, PAGE_SIZE, pageParam, false, search)
+        : usersApi.getFollowing(profileUsername, PAGE_SIZE, pageParam, false, search),
     getNextPageParam: (lastPage, allPages) => {
       if (!Array.isArray(lastPage) || lastPage.length < PAGE_SIZE) {
         return undefined;
@@ -151,7 +168,7 @@ export default function UserListModal({ type, profileUsername, onClose }) {
     // This list does not outlive the modal.
     //
     // `gcTime: 0` drops the cache entry as soon as the modal unmounts, so
-    // reopening is a genuine cache miss that renders the skeleton and waits
+    // reopening is a genuine cache miss that renders the spinner and waits
     // for the server. Previously the entry survived, and because unfollowing
     // only marks it stale (it must not refetch while open, or the row the
     // viewer just acted on disappears under the cursor), reopening painted the
@@ -172,10 +189,16 @@ export default function UserListModal({ type, profileUsername, onClose }) {
     staleTime: 0,
 
     // A background refetch would replace the list under the reader, and the
-    // loading gate below would flash a skeleton over a list they are part-way
+    // loading gate below would flash the spinner over a list they are part-way
     // through. Nothing here changes without the viewer acting, and acting
     // already updates the rows in place.
     refetchOnWindowFocus: false,
+
+    // While a search is refining the SAME tab, keep the current rows up until
+    // the narrower list arrives instead of flashing the spinner per keystroke.
+    // Never carried across tabs: followers must not stand in for following.
+    placeholderData: (previous, previousQuery) =>
+      previousQuery?.queryKey?.[0] === listKind ? previous : undefined,
   });
 
   /**
@@ -191,14 +214,14 @@ export default function UserListModal({ type, profileUsername, onClose }) {
   );
 
   /**
-   * Show the skeleton whenever there is no server-confirmed list for THIS
+   * Show the spinner whenever there is no server-confirmed list for THIS
    * opening — not merely on a cold start.
    *
    * `isFetchingNextPage` is excluded deliberately: paging in more rows is not
-   * a reason to replace the rows already on screen with a skeleton, and doing
+   * a reason to replace the rows already on screen with a spinner, and doing
    * so would break infinite scroll's appearance entirely.
    */
-  const showSkeleton = isPending || (isFetching && !isFetchingNextPage);
+  const showLoading = isPending || (isFetching && !isFetchingNextPage && !isPlaceholderData);
 
   useEffect(() => {
     const target = observerTargetRef.current;
@@ -228,7 +251,7 @@ export default function UserListModal({ type, profileUsername, onClose }) {
     >
       <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
         <div className={styles.header}>
-          <h3 className={styles.title}>{type}</h3>
+          <h3 className={styles.title}>{profileUsername ? `@${profileUsername}` : 'Connections'}</h3>
           <button onClick={onClose} className={styles.closeBtn} aria-label="Close modal">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
               <line x1="18" y1="6" x2="6" y2="18" />
@@ -237,18 +260,50 @@ export default function UserListModal({ type, profileUsername, onClose }) {
           </button>
         </div>
 
-        <div className={styles.body}>
-          {showSkeleton ? (
-            <div className={styles.skeletonList}>
-              {[1, 2, 3, 4, 5].map((i) => (
-                <div key={i} className={styles.skeletonItem}>
-                  <Skeleton type="circle" width="42px" height="42px" />
-                  <div className={styles.skeletonTextGroup}>
-                    <Skeleton type="text" width="45%" height="0.95rem" />
-                    <Skeleton type="text" width="30%" height="0.8rem" />
-                  </div>
-                </div>
-              ))}
+        <div className={styles.tabs} role="tablist" aria-label="Connections">
+          {TABS.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              aria-selected={type === tab.id}
+              className={`${styles.tab} ${type === tab.id ? styles.tabActive : ''}`}
+              onClick={() => type !== tab.id && onTypeChange?.(tab.id)}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        <div className={styles.searchWrap}>
+          <svg className={styles.searchIcon} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
+            <circle cx="11" cy="11" r="7" />
+            <line x1="20" y1="20" x2="16.65" y2="16.65" />
+          </svg>
+          <input
+            type="search"
+            className={styles.searchInput}
+            placeholder="Search"
+            aria-label={`Search ${listKind}`}
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            autoComplete="off"
+            spellCheck={false}
+          />
+          {searchInput && (
+            <button type="button" className={styles.searchClear} onClick={() => setSearchInput('')} aria-label="Clear search">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          )}
+        </div>
+
+        <div className={styles.body} role="tabpanel">
+          {showLoading ? (
+            <div className={styles.loadingState} role="status" aria-label="Loading">
+              <div className="spinner" aria-hidden="true" />
             </div>
           ) : isError ? (
             <div className={styles.empty}>
@@ -273,9 +328,11 @@ export default function UserListModal({ type, profileUsername, onClose }) {
                 <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
                 <path d="M16 3.13a4 4 0 0 1 0 7.75" />
               </svg>
-              <p className={styles.emptyTitle}>No {type} yet</p>
+              <p className={styles.emptyTitle}>{search ? 'No matches' : `No ${type} yet`}</p>
               <p className={styles.emptySubtitle}>
-                {isFollowers
+                {search
+                  ? `Nobody in ${listKind} matches “${search}”.`
+                  : isFollowers
                   ? "When someone follows this account, they'll show up here."
                   : "When this account follows someone, they'll show up here."}
               </p>
