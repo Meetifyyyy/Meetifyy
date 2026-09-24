@@ -104,3 +104,11 @@
   }
 }
 
+
+/* Borderless at every width; the filled circle alone marks the button. */
+.bellWrapper,
+.bellWrapper:hover,
+.bellWrapper:active,
+.bellWrapper.active {
+  border-color: transparent;
+}

@@ -13,9 +13,9 @@
   display: flex;
   flex-direction: column;
   padding: 0.25rem;
-  border-radius: var(--radius-md);
+  border-radius: calc(var(--radius-md) + 2px);
   background: var(--color-bg-white);
-  border: 1px solid var(--color-border);
+  border: none;
   box-shadow: var(--shadow-lg);
   /*
    * A menu longer than the screen scrolls inside itself rather than being
@@ -71,18 +71,18 @@
   background: transparent;
   color: var(--color-text-main);
   font-family: var(--font-family-sans);
-  font-size: var(--font-size-sm);
+  font-size: var(--font-size-md);
   font-weight: var(--font-weight-medium);
   line-height: 1.3;
   text-align: left;
   cursor: pointer;
   /*
-   * 38px. Below the 44px touch guideline on purpose: a menu row is a wide
+   * 42px. Below the 44px touch guideline on purpose: a menu row is a wide
    * target in a list of targets, not an isolated control floating in content,
    * so the row's full width does the work the extra height would. At 44 the
    * two-item comment menu was visibly taller than the comment it belonged to.
    */
-  min-height: 38px;
+  min-height: 42px;
   transition: background var(--transition-fast), color var(--transition-fast);
 }
 
@@ -182,4 +182,9 @@
     animation: none;
     will-change: auto;
   }
+}
+
+/* Same surface as the Settings card groups: white in light, --color-bg-alt in dark. */
+:global([data-theme='dark']) .menu {
+  background: var(--color-bg-alt);
 }

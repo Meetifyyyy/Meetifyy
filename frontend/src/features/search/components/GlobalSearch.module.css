@@ -13,7 +13,9 @@
   height: 40px;
   box-sizing: border-box;
   overflow: visible;
-  border: 1.2px solid var(--color-primary);
+  /* A quiet neutral hairline at rest; the brand colour appears only on focus.
+     A permanent primary outline competed with every button in the header. */
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-xl);
   background: #FFFFFF !important;
   transition:
@@ -27,10 +29,14 @@
   background: var(--color-bg-white) !important;
 }
 
+.searchBox:hover:not(:focus-within) {
+  border-color: var(--color-border-dark);
+}
+
 .searchBox:focus-within {
   background: #FFFFFF !important;
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px rgba(var(--color-primary-rgb, 37, 99, 235), 0.15),
+  border-color: rgba(var(--color-primary-rgb, 37, 99, 235), 0.55);
+  box-shadow: 0 0 0 3px rgba(var(--color-primary-rgb, 37, 99, 235), 0.12),
               0 2px 8px rgba(15, 23, 42, 0.06);
 }
 
@@ -41,7 +47,7 @@
 .searchBox.searchBoxOpen {
   border-bottom-left-radius: 0;
   border-bottom-right-radius: 0;
-  border-color: var(--color-primary);
+  border-color: rgba(var(--color-primary-rgb, 37, 99, 235), 0.55);
   border-bottom-color: transparent;      /* seamless merge with dropdown border */
   box-shadow: none !important;
   background: #FFFFFF !important;
@@ -117,7 +123,8 @@
   left: 0;
   width: 100%;
   background: #FFFFFF;
-  border: 1.2px solid var(--color-primary);
+  /* Matches the open search box's edge so the two read as one surface. */
+  border: 1px solid rgba(var(--color-primary-rgb, 37, 99, 235), 0.55);
   border-top: none;
   border-radius: 0 0 var(--radius-xl) var(--radius-xl);
   padding: 0;

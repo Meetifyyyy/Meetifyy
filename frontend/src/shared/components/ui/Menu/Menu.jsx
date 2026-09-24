@@ -167,7 +167,7 @@ export function MenuItem({
       className={`${styles.item} ${tone === 'danger' ? styles.danger : ''}`}
       {...rest}
     >
-      {Icon ? <Icon size={15} className={styles.itemIcon} aria-hidden="true" /> : null}
+      {Icon ? <Icon size={18} className={styles.itemIcon} aria-hidden="true" /> : null}
       <span className={styles.itemLabel}>{children}</span>
     </button>
   );

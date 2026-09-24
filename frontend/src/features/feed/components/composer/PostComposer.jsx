@@ -95,9 +95,16 @@ const PostComposer = forwardRef(function PostComposer({ onSubmit }, ref) {
         setIsExpanded(false);
       }
     };
-    document.addEventListener('mousedown', handler);
+    // Only while there is something to close: a collapsed, empty composer
+    // does not need to inspect every tap on the page.
+    if (!isExpanded && !showEmoji) return undefined;
+    // mousedown, NOT pointerdown. On a phone, pointerdown also fires when a
+    // finger lands to start a scroll, so the composer collapsed mid-scroll and
+    // the page jumped under the finger. A touch only produces mousedown for a
+    // real tap, which is the only thing that should close it.
+    document.addEventListener('mousedown', handler, { passive: true });
     return () => document.removeEventListener('mousedown', handler);
-  }, [showEmoji, hasContent]);
+  }, [showEmoji, hasContent, isExpanded]);
 
   const handlePost = async (e) => {
     if (e) {
@@ -387,30 +394,30 @@ const PostComposer = forwardRef(function PostComposer({ onSubmit }, ref) {
               singleLine={false}
             />
           </div>
-          {expandedState && (
-            <button
-              ref={emojiBtnRef}
-              className={`${styles.composerEmojiBtn}${showEmoji ? ` ${styles.active}` : ''}`}
-              title="Emoji"
-              onClick={(e) => {
-                e.stopPropagation();
-                if (showPoll) {
-                  setPollOptions(['', '']);
-                  setPollMulti(false);
-                  setShowPoll(false);
-                  setValue({ text: '', mentions: [] });
-                }
-                setShowEmoji(!showEmoji);
-              }}
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="12" r="10" />
-                <path d="M8 14s1.5 2 4 2 4-2 4-2" />
-                <line x1="9" y1="9" x2="9.01" y2="9" />
-                <line x1="15" y1="9" x2="15.01" y2="9" />
-              </svg>
-            </button>
-          )}
+          <button
+            ref={emojiBtnRef}
+            className={`${styles.composerEmojiBtn}${showEmoji ? ` ${styles.active}` : ''}${expandedState ? '' : ` ${styles.composerEmojiBtnHidden}`}`}
+            tabIndex={expandedState ? 0 : -1}
+            aria-hidden={!expandedState}
+            title="Emoji"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (showPoll) {
+                setPollOptions(['', '']);
+                setPollMulti(false);
+                setShowPoll(false);
+                setValue({ text: '', mentions: [] });
+              }
+              setShowEmoji(!showEmoji);
+            }}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10" />
+              <path d="M8 14s1.5 2 4 2 4-2 4-2" />
+              <line x1="9" y1="9" x2="9.01" y2="9" />
+              <line x1="15" y1="9" x2="15.01" y2="9" />
+            </svg>
+          </button>
         </div>
 
         <div className={`${styles.composerExpandContainer}${expandedState ? ` ${styles.expanded}` : ''}`}>

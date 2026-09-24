@@ -452,8 +452,9 @@ input:checked + .slider::before {
   composes: type-button from global;
   display: block;
   width: calc(100% - (var(--settings-gutter) * 2));
-  margin: 20px var(--settings-gutter) 0;
-  padding: 11px 20px;
+  min-height: 50px;
+  margin: 24px var(--settings-gutter) 0;
+  padding: 13px 24px;
   background: var(--color-primary);
   color: white;
   border: none;
@@ -1046,6 +1047,12 @@ input:checked + .slider::before {
   box-sizing: border-box;
   flex-shrink: 0;
   pointer-events: none; /* Let clicks pass through the invisible wrapper */
+  /* Fades the list out under the button instead of chips showing through it. */
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    var(--bg-gradient-mid, var(--color-bg-white)) 28px
+  );
 }
 
 @media (max-width: 768px) {
@@ -1057,7 +1064,10 @@ input:checked + .slider::before {
   }
   .floatingSaveWrapper {
     position: fixed;
-    bottom: calc(60px + env(safe-area-inset-bottom, 0px)); /* Just above BottomNav */
+    /* BottomNav is hidden on /settings (DashboardLayoutWrapper), so sit on the edge. */
+    bottom: 0;
+    padding-top: 20px;
+    padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
     z-index: 90;
   }
 }
@@ -1066,17 +1076,16 @@ input:checked + .slider::before {
   composes: type-button from global;
   width: 100%;
   max-width: 480px;
-  height: 48px;
+  height: 50px;
   margin: 0;
-  padding: 0 20px;
+  padding: 0 24px;
   background: var(--color-primary);
   color: white;
   border: none;
   pointer-events: auto; /* Re-enable clicks on the button itself */
   border-radius: var(--radius-full);
-  font-size: 0.95rem;
   cursor: pointer;
-  box-shadow: 0 6px 20px rgba(var(--color-primary-rgb), 0.35);
+  box-shadow: 0 4px 14px rgba(var(--color-primary-rgb), 0.22);
   transition: transform var(--transition-fast), background var(--transition-fast), box-shadow var(--transition-fast);
   display: flex;
   align-items: center;
@@ -1085,7 +1094,7 @@ input:checked + .slider::before {
 
 .floatingSaveBtn:hover {
   background: var(--color-primary-hover);
-  box-shadow: 0 8px 24px rgba(var(--color-primary-rgb), 0.45);
+  box-shadow: 0 6px 18px rgba(var(--color-primary-rgb), 0.3);
 }
 
 .floatingSaveBtn:active {
@@ -1309,16 +1318,16 @@ input:checked + .slider::before {
    whose surface matches the fields. Values mirror authKit.module.css.
    ============================================================================ */
 .page {
-  --field-fill: #f1f2f5;
-  --field-fill-hover: #e8e9ee;
-  --field-ring: 0 0 0 3px rgba(92, 71, 250, 0.22);
-  --field-ring-danger: 0 0 0 3px rgba(239, 68, 68, 0.22);
+  --field-fill: #eceef2;
+  --field-fill-hover: #e3e5eb;
+  --field-ring: 0 0 0 1.5px rgba(92, 71, 250, 0.45);
+  --field-ring-danger: 0 0 0 1.5px rgba(239, 68, 68, 0.5);
 }
 
 :global([data-theme='dark']) .page {
-  --field-fill: #2c2a37;
-  --field-fill-hover: #33313f;
-  --field-ring: 0 0 0 3px rgba(139, 123, 255, 0.35);
+  --field-fill: #302e3c;
+  --field-fill-hover: #383647;
+  --field-ring: 0 0 0 1.5px rgba(139, 123, 255, 0.55);
 }
 
 /* Text inputs: was an underline on a transparent background. */
@@ -1350,6 +1359,7 @@ input:checked + .slider::before {
 .input:disabled {
   border-bottom-style: solid;
   border-color: transparent;
+  box-shadow: none;
   opacity: 0.65;
 }
 
@@ -1396,6 +1406,7 @@ input:checked + .slider::before {
 
 .disabledSelect .selectButton {
   background: var(--field-fill);
+  box-shadow: none;
 }
 
 /* ── Portalled menu ─────────────────────────────────────────────────────── */
@@ -1666,4 +1677,53 @@ input:checked + .slider::before {
 :global([data-theme="dark"]) .divider,
 :global([data-theme="dark"]) .nestedDivider {
   border-top-color: rgba(255, 255, 255, 0.08);
+}
+
+/* ── Verification: "in review" card ─────────────────────────────────────── */
+.reviewCard {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  margin-top: 1rem;
+  padding: 16px 18px;
+  border-radius: var(--radius-lg, 16px);
+  background: linear-gradient(135deg, rgba(234, 179, 8, 0.14), rgba(234, 179, 8, 0.05));
+}
+
+:global([data-theme='dark']) .reviewCard {
+  background: linear-gradient(135deg, rgba(234, 179, 8, 0.16), rgba(234, 179, 8, 0.05));
+}
+
+.reviewIcon {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(234, 179, 8, 0.18);
+  color: #b45309;
+}
+
+:global([data-theme='dark']) .reviewIcon {
+  background: rgba(234, 179, 8, 0.2);
+  color: #facc15;
+}
+
+.reviewBody {
+  min-width: 0;
+}
+
+.reviewTitle {
+  margin: 0;
+  font-size: var(--font-size-md);
+  font-weight: 600;
+  color: var(--color-text-main);
+}
+
+.reviewText {
+  margin: 4px 0 0;
+  font-size: var(--font-size-base);
+  line-height: 1.55;
+  color: var(--color-text-muted);
 }

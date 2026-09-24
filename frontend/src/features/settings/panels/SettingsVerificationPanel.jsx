@@ -216,18 +216,18 @@ export default function SettingsVerificationPanel() {
         )}
 
         {isUnderReview && (
-          <div style={{ background: 'rgba(234, 179, 8, 0.1)', border: '1px solid rgba(234, 179, 8, 0.2)', padding: '1rem', borderRadius: '12px', display: 'flex', gap: '0.75rem', alignItems: 'flex-start', marginTop: '1rem' }}>
-            <Clock size={20} color="#eab308" style={{ flexShrink: 0, marginTop: '2px' }} />
-            <div>
-              <p style={{ color: 'var(--color-text)', fontWeight: 500 }}>Verification in review</p>
-              <p style={{ color: 'var(--color-text-light)', fontSize: '0.875rem', marginTop: '0.25rem' }}>
+          <div className={styles.reviewCard} role="status">
+            <div className={styles.reviewIcon} aria-hidden="true">
+              <Clock size={18} strokeWidth={2.2} />
+            </div>
+            <div className={styles.reviewBody}>
+              <p className={styles.reviewTitle}>Verification in review</p>
+              <p className={styles.reviewText}>
                 Your verification request was submitted successfully
                 {latestAttempt?.createdAt ? ` on ${formatStamp(latestAttempt.createdAt)}` : ''}
-                {' '}and your documents are being reviewed.
-              </p>
-              <p style={{ color: 'var(--color-text-light)', fontSize: '0.875rem', marginTop: '0.5rem' }}>
-                You do not need to submit anything again. We will notify you as
-                soon as the review is complete — this usually takes less than 24 hours.
+                {' '}and your documents are being reviewed. You do not need to submit
+                anything again. We will notify you as soon as the review is complete,
+                which usually takes less than 24 hours.
               </p>
             </div>
           </div>

@@ -904,7 +904,9 @@
    Two classes, so it wins over CommunitiesBox's own background whatever
    order the two stylesheets load in. */
 .drawerContent .drawerCommunitiesBox {
-  background: var(--color-surface-screen);
+  /* Same surface as the profile card above it, and borderless like it. */
+  background: var(--color-bg-soft);
+  border-color: transparent;
 }
 
 /* ── Docked bottom ────────────────────────────────────────────────────── */
@@ -920,16 +922,16 @@
 }
 
 .drawerSettingsBtn {
-  min-height: 44px;
+  min-height: 52px;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
   background: transparent;
   border: none;
-  border-radius: var(--radius-sm);
-  padding: 0 8px;
+  border-radius: var(--radius-md);
+  padding: 0 10px;
   font-family: var(--font-family-sans);
-  font-size: var(--font-size-base);
+  font-size: var(--font-size-md);
   font-weight: var(--font-weight-medium);
   color: var(--color-icon-base);
   cursor: pointer;
@@ -952,8 +954,8 @@
 }
 
 .settingsIcon {
-  width: 20px;
-  height: 20px;
+  width: 22px;
+  height: 22px;
   /* 28px of horizontal space, so the glyph sits on the same axis as the
      avatars in the list above rather than 8px to the left of them. */
   margin: 0 4px;
@@ -1080,4 +1082,16 @@
   .themeToggleIcon { animation: none; }
   .drawerThemeToggleBtn { transition: none; }
   .drawerThemeToggleBtn:active { transform: none; }
+}
+
+/* Mobile header buttons are borderless filled circles; the fill alone marks them. */
+@media (max-width: 768px) {
+  .hamburgerBtn,
+  .hamburgerBtn:hover,
+  .mobileSearchBtn,
+  .mobileSearchBtn:hover,
+  .notifIcon,
+  .notifIcon:hover {
+    border-color: transparent;
+  }
 }
