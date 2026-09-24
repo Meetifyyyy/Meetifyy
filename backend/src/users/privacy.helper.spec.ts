@@ -3,6 +3,9 @@ import {
   resolvePresenceVisibilityForViewer,
   checkPresenceVisibilityBatch,
 } from './privacy.helper';
+import { stub } from '../common/testing/stub';
+import type { PrismaService } from '../prisma/prisma.service';
+import type { BlocksService } from './blocks.service';
 
 /**
  * Minimal PrismaService double.
@@ -50,8 +53,8 @@ describe('checkPresenceVisibility', () => {
       'viewer',
       'everyone',
       false,
-      prisma as any,
-      blocks as any,
+      stub<PrismaService>(prisma),
+      stub<BlocksService>(blocks),
     );
     expect(result).toBe(false);
   });
@@ -62,8 +65,8 @@ describe('checkPresenceVisibility', () => {
       'viewer',
       'everyone',
       true,
-      prisma as any,
-      blocks as any,
+      stub<PrismaService>(prisma),
+      stub<BlocksService>(blocks),
     );
     expect(result).toBe(false);
   });
@@ -74,8 +77,8 @@ describe('checkPresenceVisibility', () => {
       'user-1',
       'everyone',
       true,
-      prisma as any,
-      blocks as any,
+      stub<PrismaService>(prisma),
+      stub<BlocksService>(blocks),
     );
     expect(result).toBe(true);
     expect(blocks.isBlocked).not.toHaveBeenCalled();
@@ -88,8 +91,8 @@ describe('checkPresenceVisibility', () => {
       'viewer',
       'everyone',
       true,
-      prisma as any,
-      blocks as any,
+      stub<PrismaService>(prisma),
+      stub<BlocksService>(blocks),
     );
     expect(result).toBe(false);
   });
@@ -105,8 +108,8 @@ describe('checkPresenceVisibility', () => {
       'viewer',
       'everyone',
       true,
-      prisma as any,
-      blocks as any,
+      stub<PrismaService>(prisma),
+      stub<BlocksService>(blocks),
     );
     expect(result).toBe(false);
   });
@@ -122,8 +125,8 @@ describe('checkPresenceVisibility', () => {
       'viewer',
       'nobody',
       true,
-      prisma as any,
-      blocks as any,
+      stub<PrismaService>(prisma),
+      stub<BlocksService>(blocks),
     );
     expect(result).toBe(false);
   });
@@ -139,8 +142,8 @@ describe('checkPresenceVisibility', () => {
       'viewer',
       'everyone',
       true,
-      prisma as any,
-      blocks as any,
+      stub<PrismaService>(prisma),
+      stub<BlocksService>(blocks),
     );
     expect(result).toBe(true);
   });
@@ -163,8 +166,8 @@ describe('checkPresenceVisibility', () => {
         'viewer',
         'following',
         true,
-        prisma as any,
-        blocks as any,
+        stub<PrismaService>(prisma),
+        stub<BlocksService>(blocks),
       );
       expect(result).toBe(true);
     });
@@ -176,8 +179,8 @@ describe('checkPresenceVisibility', () => {
         'viewer',
         'following',
         true,
-        prisma as any,
-        blocks as any,
+        stub<PrismaService>(prisma),
+        stub<BlocksService>(blocks),
       );
       expect(result).toBe(false);
     });
@@ -200,8 +203,8 @@ describe('checkPresenceVisibility', () => {
         'viewer',
         'mutual',
         true,
-        prisma as any,
-        blocks as any,
+        stub<PrismaService>(prisma),
+        stub<BlocksService>(blocks),
       );
       expect(result).toBe(true);
     });
@@ -215,8 +218,8 @@ describe('checkPresenceVisibility', () => {
         'viewer',
         'mutual',
         true,
-        prisma as any,
-        blocks as any,
+        stub<PrismaService>(prisma),
+        stub<BlocksService>(blocks),
       );
       expect(result).toBe(false);
     });
@@ -230,8 +233,8 @@ describe('checkPresenceVisibility', () => {
         'viewer',
         'mutual',
         true,
-        prisma as any,
-        blocks as any,
+        stub<PrismaService>(prisma),
+        stub<BlocksService>(blocks),
       );
       expect(result).toBe(false);
     });
@@ -260,8 +263,8 @@ describe('resolvePresenceVisibilityForViewer', () => {
     const result = await resolvePresenceVisibilityForViewer(
       'viewer',
       [],
-      prisma as any,
-      blocks as any,
+      stub<PrismaService>(prisma),
+      stub<BlocksService>(blocks),
     );
     expect(result.size).toBe(0);
   });
@@ -270,8 +273,8 @@ describe('resolvePresenceVisibilityForViewer', () => {
     const result = await resolvePresenceVisibilityForViewer(
       '',
       [{ userId: 'u1', rule: 'everyone', isEnabled: true }],
-      prisma as any,
-      blocks as any,
+      stub<PrismaService>(prisma),
+      stub<BlocksService>(blocks),
     );
     expect(result.size).toBe(0);
   });
@@ -284,8 +287,8 @@ describe('resolvePresenceVisibilityForViewer', () => {
         { userId: 'blocked-user', rule: 'everyone', isEnabled: true },
         { userId: 'normal-user', rule: 'everyone', isEnabled: true },
       ],
-      prisma as any,
-      blocks as any,
+      stub<PrismaService>(prisma),
+      stub<BlocksService>(blocks),
     );
     expect(result.has('blocked-user')).toBe(false);
     expect(result.has('normal-user')).toBe(true);
@@ -298,8 +301,8 @@ describe('resolvePresenceVisibilityForViewer', () => {
     const result = await resolvePresenceVisibilityForViewer(
       'viewer',
       [{ userId: 'u1', rule: 'everyone', isEnabled: true }],
-      prisma as any,
-      blocks as any,
+      stub<PrismaService>(prisma),
+      stub<BlocksService>(blocks),
     );
     expect(result.size).toBe(0);
   });
@@ -308,8 +311,8 @@ describe('resolvePresenceVisibilityForViewer', () => {
     const result = await resolvePresenceVisibilityForViewer(
       'viewer',
       [{ userId: 'u1', rule: 'everyone', isEnabled: false }],
-      prisma as any,
-      blocks as any,
+      stub<PrismaService>(prisma),
+      stub<BlocksService>(blocks),
     );
     expect(result.has('u1')).toBe(false);
   });
@@ -318,8 +321,8 @@ describe('resolvePresenceVisibilityForViewer', () => {
     const result = await resolvePresenceVisibilityForViewer(
       'viewer',
       [{ userId: 'u1', rule: 'everyone', isEnabled: true }],
-      prisma as any,
-      blocks as any,
+      stub<PrismaService>(prisma),
+      stub<BlocksService>(blocks),
     );
     expect(result.has('u1')).toBe(true);
   });
@@ -328,8 +331,8 @@ describe('resolvePresenceVisibilityForViewer', () => {
     const result = await resolvePresenceVisibilityForViewer(
       'viewer',
       [{ userId: 'viewer', rule: 'nobody', isEnabled: true }],
-      prisma as any,
-      blocks as any,
+      stub<PrismaService>(prisma),
+      stub<BlocksService>(blocks),
     );
     expect(result.has('viewer')).toBe(true);
   });
@@ -338,8 +341,8 @@ describe('resolvePresenceVisibilityForViewer', () => {
     const result = await resolvePresenceVisibilityForViewer(
       'viewer',
       [{ userId: 'u1', rule: 'nobody', isEnabled: true }],
-      prisma as any,
-      blocks as any,
+      stub<PrismaService>(prisma),
+      stub<BlocksService>(blocks),
     );
     expect(result.has('u1')).toBe(false);
   });
@@ -352,8 +355,8 @@ describe('resolvePresenceVisibilityForViewer', () => {
         { userId: 'u1', rule: 'following', isEnabled: true },
         { userId: 'u2', rule: 'following', isEnabled: true },
       ],
-      prisma as any,
-      blocks as any,
+      stub<PrismaService>(prisma),
+      stub<BlocksService>(blocks),
     );
     expect(result.has('u1')).toBe(true);
     expect(result.has('u2')).toBe(false);
@@ -372,8 +375,8 @@ describe('resolvePresenceVisibilityForViewer', () => {
         { userId: 'u1', rule: 'mutual', isEnabled: true },
         { userId: 'u2', rule: 'mutual', isEnabled: true },
       ],
-      prisma as any,
-      blocks as any,
+      stub<PrismaService>(prisma),
+      stub<BlocksService>(blocks),
     );
     expect(result.has('u1')).toBe(true);
     expect(result.has('u2')).toBe(false);
@@ -403,8 +406,8 @@ describe('checkPresenceVisibilityBatch', () => {
       ['v1', 'v2'],
       'everyone',
       false,
-      prisma as any,
-      blocks as any,
+      stub<PrismaService>(prisma),
+      stub<BlocksService>(blocks),
     );
     expect(result).toEqual([]);
   });
@@ -415,8 +418,8 @@ describe('checkPresenceVisibilityBatch', () => {
       ['v1'],
       'everyone',
       true,
-      prisma as any,
-      blocks as any,
+      stub<PrismaService>(prisma),
+      stub<BlocksService>(blocks),
     );
     expect(result).toEqual([]);
   });
@@ -427,8 +430,8 @@ describe('checkPresenceVisibilityBatch', () => {
       ['v1', 'v2'],
       'nobody',
       true,
-      prisma as any,
-      blocks as any,
+      stub<PrismaService>(prisma),
+      stub<BlocksService>(blocks),
     );
     expect(result).toEqual([]);
   });
@@ -439,8 +442,8 @@ describe('checkPresenceVisibilityBatch', () => {
       ['v1', 'v2'],
       'everyone',
       true,
-      prisma as any,
-      blocks as any,
+      stub<PrismaService>(prisma),
+      stub<BlocksService>(blocks),
     );
     expect(result).toEqual(expect.arrayContaining(['v1', 'v2']));
   });
@@ -454,8 +457,8 @@ describe('checkPresenceVisibilityBatch', () => {
       ['v1', 'v2'],
       'everyone',
       true,
-      prisma as any,
-      blocks as any,
+      stub<PrismaService>(prisma),
+      stub<BlocksService>(blocks),
     );
     expect(result).toContain('v1');
     expect(result).not.toContain('v2');
@@ -468,8 +471,8 @@ describe('checkPresenceVisibilityBatch', () => {
       ['v1', 'v2'],
       'everyone',
       true,
-      prisma as any,
-      blocks as any,
+      stub<PrismaService>(prisma),
+      stub<BlocksService>(blocks),
     );
     expect(result).toContain('v1');
     expect(result).not.toContain('v2');
@@ -482,8 +485,8 @@ describe('checkPresenceVisibilityBatch', () => {
       ['v1', 'v2'],
       'following',
       true,
-      prisma as any,
-      blocks as any,
+      stub<PrismaService>(prisma),
+      stub<BlocksService>(blocks),
     );
     expect(result).toContain('v1');
     expect(result).not.toContain('v2');
@@ -500,8 +503,8 @@ describe('checkPresenceVisibilityBatch', () => {
       ['v1', 'v2'],
       'mutual',
       true,
-      prisma as any,
-      blocks as any,
+      stub<PrismaService>(prisma),
+      stub<BlocksService>(blocks),
     );
     expect(result).toContain('v1');
     expect(result).not.toContain('v2');

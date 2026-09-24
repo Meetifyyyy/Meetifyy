@@ -3,7 +3,14 @@ import {
   InstantMatchService,
   setRealtimeGatewayRef,
 } from './instant-match.service';
-import { PrismaFake } from './testing/prisma-fake';
+import {
+  PrismaFake,
+  blocksStubFor,
+  createEmitterMock,
+} from './testing/prisma-fake';
+import { stub } from '../common/testing/stub';
+import type { MessagesService } from '../messages/messages.service';
+import type { MatchSession } from '@prisma/client';
 import { createVerificationAccessMock } from '../common/verification/testing/verification-access.mock';
 import { createStudentYearPolicyMock } from '../common/student-year/testing/student-year-policy.mock';
 
@@ -19,14 +26,17 @@ import { createStudentYearPolicyMock } from '../common/student-year/testing/stud
 describe('Instant Match chat lifecycle', () => {
   let prisma: PrismaFake;
   let service: InstantMatchService;
-  let emitter: any;
-  let messages: any;
+  let emitter: ReturnType<typeof createEmitterMock>;
+  let messages: {
+    createInstantMatchConversation: jest.Mock;
+    registerInstantMatchGuard: jest.Mock;
+  };
 
   const HOUR = 60 * 60 * 1000;
 
   /** An accepted match with a live chat, as `acceptSession` leaves it. */
-  const seedChat = (over: Record<string, any> = {}) => {
-    const row = {
+  const seedChat = (over: Partial<MatchSession> = {}) => {
+    const row: MatchSession = {
       id: 'm1',
       userAId: 'alice',
       userBId: 'bob',
@@ -41,6 +51,9 @@ describe('Instant Match chat lifecycle', () => {
       chatExpiresAt: new Date(Date.now() + 24 * HOUR),
       endedById: null,
       endedAt: null,
+      // Absent from the original fixture; the service only compares it
+      // with user ids, which null and undefined fail alike.
+      declinedById: null,
       matchReason: 'study',
       snapshotA: null,
       snapshotB: null,
@@ -58,19 +71,11 @@ describe('Instant Match chat lifecycle', () => {
       createInstantMatchConversation: jest.fn(),
       registerInstantMatchGuard: jest.fn(),
     };
-    emitter = {
-      emitMatchFound: jest.fn(),
-      emitMatchAccepted: jest.fn(),
-      emitMatchDeclined: jest.fn(),
-      emitSearchResumed: jest.fn(),
-      emitQueueStats: jest.fn(),
-      emitInstantMatchChatEnded: jest.fn(),
-      emitQueueChanged: jest.fn(),
-    };
+    emitter = createEmitterMock();
     setRealtimeGatewayRef(emitter);
     service = new InstantMatchService(
-      prisma as any,
-      messages,
+      prisma.asService(),
+      stub<MessagesService>(messages),
       blocksStubFor(prisma),
       createVerificationAccessMock(),
       createStudentYearPolicyMock(),
@@ -123,10 +128,7 @@ describe('Instant Match chat lifecycle', () => {
       await service.leaveChatSession('alice');
 
       const byUser = new Map(
-        emitter.emitInstantMatchChatEnded.mock.calls.map((c: any[]) => [
-          c[0],
-          c[1],
-        ]),
+        emitter.emitInstantMatchChatEnded.mock.calls.map((c) => [c[0], c[1]]),
       );
       // The distinction the UI turns into two different screens — computing
       // it here means the client never has to get an id comparison right.
@@ -169,7 +171,7 @@ describe('Instant Match chat lifecycle', () => {
         expect(prisma.sessions[0].chatStatus).toBe('ENDED_BY_USER');
         expect(['alice', 'bob']).toContain(prisma.sessions[0].endedById);
         expect(
-          prisma.sessions.filter((s: any) => s.chatStatus === 'ENDED_BY_USER'),
+          prisma.sessions.filter((s) => s.chatStatus === 'ENDED_BY_USER'),
         ).toHaveLength(1);
       });
 
@@ -249,7 +251,7 @@ describe('Instant Match chat lifecycle', () => {
       seedChat({ id: 'm3', userAId: 'erin', userBId: 'frank' });
 
       expect(await service.expireStaleChats()).toBe(2);
-      expect(prisma.sessions.map((s: any) => s.chatStatus)).toEqual([
+      expect(prisma.sessions.map((s) => s.chatStatus)).toEqual([
         'EXPIRED',
         'EXPIRED',
         'ACTIVE',
@@ -315,7 +317,7 @@ describe('Instant Match chat lifecycle', () => {
       seedChat();
       // Two live chats cannot both be "your Instant Match" — the UI models
       // exactly one, and the product rule says exactly one.
-      await expect(service.joinQueue(joinDto('alice') as any)).rejects.toThrow(
+      await expect(service.joinQueue(joinDto('alice'))).rejects.toThrow(
         /already have an Instant Match/i,
       );
       expect(prisma.queue).toHaveLength(0);
@@ -325,7 +327,7 @@ describe('Instant Match chat lifecycle', () => {
       seedChat();
       await service.leaveChatSession('alice');
       await expect(
-        service.joinQueue(joinDto('alice') as any),
+        service.joinQueue(joinDto('alice')),
       ).resolves.toBeUndefined();
       expect(prisma.queue).toHaveLength(1);
     });
@@ -333,7 +335,7 @@ describe('Instant Match chat lifecycle', () => {
     it('lets them search again once the window closes', async () => {
       seedChat({ chatExpiresAt: new Date(Date.now() - 1) });
       await expect(
-        service.joinQueue(joinDto('alice') as any),
+        service.joinQueue(joinDto('alice')),
       ).resolves.toBeUndefined();
       expect(prisma.queue).toHaveLength(1);
     });
@@ -524,27 +526,3 @@ describe('Instant Match chat lifecycle', () => {
     });
   });
 });
-
-/**
- * Stands in for BlocksService, reading the fake Prisma's seeded block rows so
- * the block-aware matching tests still exercise real exclusion behaviour after
- * matching was consolidated onto the shared service.
- */
-function blocksStubFor(prisma: any) {
-  const excluded = (userId: string): string[] =>
-    (prisma.blocks as any[])
-      .filter((b) => b.blockerId === userId || b.blockedId === userId)
-      .map((b) => (b.blockerId === userId ? b.blockedId : b.blockerId));
-
-  return {
-    getExcludedUserIds: (userId: string) => Promise.resolve(excluded(userId)),
-    isBlocked: (a: string, b: string) =>
-      Promise.resolve(excluded(a).includes(b)),
-    filterBlockedUsers: (userId: string, ids: string[]) => {
-      const set = new Set(excluded(userId));
-      return Promise.resolve(ids.filter((id) => !set.has(id)));
-    },
-    injectBlockFilter: (_userId: string, where: any) => Promise.resolve(where),
-    invalidateBlockCache: async () => {},
-  } as any;
-}

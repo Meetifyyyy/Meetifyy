@@ -26,11 +26,45 @@ describe('group invites', () => {
   const USER_ID = 'user-1';
   const OWNER_ID = 'owner-1';
 
-  let service: MessagesService;
-  let prisma: any;
-  let blocks: any;
+  const buildPrisma = () => ({
+    conversation: { findFirst: jest.fn(), findUnique: jest.fn() },
+    conversationParticipant: {
+      findUnique: jest.fn(),
+      findMany: jest.fn(),
+      findFirst: jest.fn(),
+      count: jest.fn().mockResolvedValue(3),
+      upsert: jest
+        .fn<Promise<unknown>, [Prisma.ConversationParticipantUpsertArgs]>()
+        .mockResolvedValue({}),
+    },
+    conversationJoinRequest: {
+      findUnique: jest.fn().mockResolvedValue(null),
+      upsert: jest
+        .fn<Promise<unknown>, [Prisma.ConversationJoinRequestUpsertArgs]>()
+        .mockResolvedValue({}),
+      delete: jest.fn().mockResolvedValue({}),
+    },
+    message: {
+      create: jest.fn(),
+      findFirst: jest.fn(),
+      findMany: jest.fn(),
+    },
+    deletedMessage: { findMany: jest.fn() },
+    block: { findFirst: jest.fn() },
+    $transaction: jest.fn(),
+  });
+  const buildBlocks = () => ({
+    isBlocked: jest.fn().mockResolvedValue(false),
+    getExcludedUserIds: jest.fn().mockResolvedValue([]),
+    getBlockedByUserIds: jest.fn().mockResolvedValue([]),
+    invalidateBlockCache: jest.fn(),
+  });
 
-  const group = (over: any = {}) => ({
+  let service: MessagesService;
+  let prisma: ReturnType<typeof buildPrisma>;
+  let blocks: ReturnType<typeof buildBlocks>;
+
+  const group = (over: Record<string, unknown> = {}) => ({
     id: CONV_ID,
     publicId: 'pub123',
     name: 'Design Crew',
@@ -54,29 +88,7 @@ describe('group invites', () => {
         MessagesService,
         {
           provide: PrismaService,
-          useValue: (prisma = {
-            conversation: { findFirst: jest.fn(), findUnique: jest.fn() },
-            conversationParticipant: {
-              findUnique: jest.fn(),
-              findMany: jest.fn(),
-              findFirst: jest.fn(),
-              count: jest.fn().mockResolvedValue(3),
-              upsert: jest.fn().mockResolvedValue({}),
-            },
-            conversationJoinRequest: {
-              findUnique: jest.fn().mockResolvedValue(null),
-              upsert: jest.fn().mockResolvedValue({}),
-              delete: jest.fn().mockResolvedValue({}),
-            },
-            message: {
-              create: jest.fn(),
-              findFirst: jest.fn(),
-              findMany: jest.fn(),
-            },
-            deletedMessage: { findMany: jest.fn() },
-            block: { findFirst: jest.fn() },
-            $transaction: jest.fn(),
-          }),
+          useValue: (prisma = buildPrisma()),
         },
         {
           provide: PresenceService,
@@ -103,12 +115,7 @@ describe('group invites', () => {
         },
         {
           provide: BlocksService,
-          useValue: (blocks = {
-            isBlocked: jest.fn().mockResolvedValue(false),
-            getExcludedUserIds: jest.fn().mockResolvedValue([]),
-            getBlockedByUserIds: jest.fn().mockResolvedValue([]),
-            invalidateBlockCache: jest.fn(),
-          }),
+          useValue: (blocks = buildBlocks()),
         },
       ],
     }).compile();
@@ -116,9 +123,7 @@ describe('group invites', () => {
     service = module.get<MessagesService>(MessagesService);
     // resolveConversationId hits the DB and caches; the id mapping itself is
     // covered elsewhere, so it is stubbed to keep these tests on the invite.
-    jest
-      .spyOn(service as any, 'resolveConversationId')
-      .mockResolvedValue(CONV_ID);
+    jest.spyOn(service, 'resolveConversationId').mockResolvedValue(CONV_ID);
   });
 
   describe('joinGroupByInvite', () => {
@@ -340,7 +345,10 @@ describe('group invites', () => {
       prisma.conversation.findFirst.mockResolvedValue(group());
       prisma.conversationParticipant.findUnique.mockResolvedValue(null);
 
-      const res: any = await service.getGroupInvitePreview(CONV_ID, USER_ID);
+      const res: Record<string, unknown> = await service.getGroupInvitePreview(
+        CONV_ID,
+        USER_ID,
+      );
 
       expect(res.memberDetails).toBeUndefined();
       expect(res.members).toBeUndefined();

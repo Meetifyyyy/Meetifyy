@@ -19,6 +19,15 @@ jest.mock('../../common/utils/sanitize-html.util', () => ({
 }));
 
 import { AdminLegalService } from './admin-legal.service';
+import { LegalDocumentType, type LegalDocumentVersion } from '@prisma/client';
+import { stub } from '../../common/testing/stub';
+import type { PrismaService } from '../../prisma/prisma.service';
+import type { LegalConsentService } from '../../common/legal/legal-consent.service';
+
+type PublishInput = Parameters<AdminLegalService['publishDraft']>[2];
+type RollbackInput = Parameters<AdminLegalService['rollback']>[2];
+type VersionWhere = Record<string, unknown>;
+type VersionOrder = { versionNumber?: 'asc' | 'desc' };
 
 /**
  * The draft → publish → rollback workflow.
@@ -30,15 +39,17 @@ import { AdminLegalService } from './admin-legal.service';
  * exist.
  */
 describe('AdminLegalService', () => {
-  const TYPE = 'TERMS_OF_SERVICE' as any;
+  const TYPE = LegalDocumentType.TERMS_OF_SERVICE;
   const ADMIN = 'admin-1';
 
-  let rows: any[];
-  let prisma: any;
-  let consent: any;
+  let rows: LegalDocumentVersion[];
+  let prisma: ReturnType<typeof buildPrisma>;
+  let consent: { invalidatePublished: jest.Mock };
   let service: AdminLegalService;
 
-  const version = (over: any = {}) => ({
+  const version = (
+    over: Partial<LegalDocumentVersion> = {},
+  ): LegalDocumentVersion => ({
     id: `v-${over.versionNumber ?? 1}`,
     documentType: TYPE,
     versionNumber: 1,
@@ -61,19 +72,26 @@ describe('AdminLegalService', () => {
 
   /** A Prisma double backed by `rows`, so ordering and filtering are real. */
   const buildPrisma = () => {
-    const matches = (row: any, where: any = {}): boolean => {
+    const matches = (
+      row: LegalDocumentVersion,
+      where: VersionWhere = {},
+    ): boolean => {
+      const fields: Record<string, unknown> = row;
       for (const [key, value] of Object.entries(where)) {
         if (key === 'OR') {
-          if (!(value as any[]).some((clause) => matches(row, clause)))
+          if (!(value as VersionWhere[]).some((clause) => matches(row, clause)))
             return false;
           continue;
         }
         if (key === 'status' && value && typeof value === 'object') {
-          if (row.status === (value as any).not) return false;
+          if (row.status === (value as { not?: unknown }).not) return false;
           continue;
         }
         if (key === 'documentType_versionNumber') {
-          const v = value as any;
+          const v = value as {
+            documentType: LegalDocumentType;
+            versionNumber: number;
+          };
           if (
             row.documentType !== v.documentType ||
             row.versionNumber !== v.versionNumber
@@ -81,7 +99,7 @@ describe('AdminLegalService', () => {
             return false;
           continue;
         }
-        if (row[key] !== value) return false;
+        if (fields[key] !== value) return false;
       }
       return true;
     };
@@ -89,47 +107,83 @@ describe('AdminLegalService', () => {
     const client = {
       $executeRaw: jest.fn(() => Promise.resolve(1)),
       legalDocumentVersion: {
-        findFirst: jest.fn(({ where, orderBy }: any = {}) => {
-          let found = rows.filter((r) => matches(r, where));
-          if (orderBy?.versionNumber === 'desc') {
-            found = [...found].sort(
-              (a, b) => b.versionNumber - a.versionNumber,
+        findFirst: jest.fn(
+          ({
+            where,
+            orderBy,
+          }: { where?: VersionWhere; orderBy?: VersionOrder } = {}) => {
+            let found = rows.filter((r) => matches(r, where));
+            if (orderBy?.versionNumber === 'desc') {
+              found = [...found].sort(
+                (a, b) => b.versionNumber - a.versionNumber,
+              );
+            }
+            return Promise.resolve(found[0] ?? null);
+          },
+        ),
+        findMany: jest.fn(
+          ({
+            where,
+            orderBy,
+          }: { where?: VersionWhere; orderBy?: VersionOrder } = {}) => {
+            let found = rows.filter((r) => matches(r, where));
+            if (orderBy?.versionNumber === 'desc') {
+              found = [...found].sort(
+                (a, b) => b.versionNumber - a.versionNumber,
+              );
+            }
+            return Promise.resolve(
+              found.map((r) => ({ ...r, _count: { acknowledgements: 0 } })),
             );
-          }
-          return Promise.resolve(found[0] ?? null);
-        }),
-        findMany: jest.fn(({ where, orderBy }: any = {}) => {
-          let found = rows.filter((r) => matches(r, where));
-          if (orderBy?.versionNumber === 'desc') {
-            found = [...found].sort(
-              (a, b) => b.versionNumber - a.versionNumber,
-            );
-          }
-          return Promise.resolve(
-            found.map((r) => ({ ...r, _count: { acknowledgements: 0 } })),
-          );
-        }),
-        findUnique: jest.fn(({ where }: any) => {
-          if (where.id)
-            return Promise.resolve(rows.find((r) => r.id === where.id) ?? null);
-          return Promise.resolve(rows.find((r) => matches(r, where)) ?? null);
-        }),
-        create: jest.fn(({ data }: any) => {
-          const row = version({ ...data, id: `v-${data.versionNumber}` });
-          rows.push(row);
-          return Promise.resolve(row);
-        }),
-        update: jest.fn(({ where, data }: any) => {
-          const row = rows.find((r) => r.id === where.id);
-          Object.assign(row, data);
-          return Promise.resolve(row);
-        }),
-        updateMany: jest.fn(({ where, data }: any) => {
-          const found = rows.filter((r) => matches(r, where));
-          found.forEach((r) => Object.assign(r, data));
-          return Promise.resolve({ count: found.length });
-        }),
-        delete: jest.fn(({ where }: any) => {
+          },
+        ),
+        findUnique: jest.fn(
+          ({ where }: { where: VersionWhere & { id?: string } }) => {
+            if (where.id)
+              return Promise.resolve(
+                rows.find((r) => r.id === where.id) ?? null,
+              );
+            return Promise.resolve(rows.find((r) => matches(r, where)) ?? null);
+          },
+        ),
+        create: jest.fn(
+          ({
+            data,
+          }: {
+            data: Partial<LegalDocumentVersion> & { versionNumber: number };
+          }) => {
+            const row = version({ ...data, id: `v-${data.versionNumber}` });
+            rows.push(row);
+            return Promise.resolve(row);
+          },
+        ),
+        update: jest.fn(
+          ({
+            where,
+            data,
+          }: {
+            where: { id: string };
+            data: Partial<LegalDocumentVersion>;
+          }) => {
+            const row = rows.find((r) => r.id === where.id);
+            Object.assign(row!, data);
+            return Promise.resolve(row);
+          },
+        ),
+        updateMany: jest.fn(
+          ({
+            where,
+            data,
+          }: {
+            where: VersionWhere;
+            data: Partial<LegalDocumentVersion>;
+          }) => {
+            const found = rows.filter((r) => matches(r, where));
+            found.forEach((r) => Object.assign(r, data));
+            return Promise.resolve({ count: found.length });
+          },
+        ),
+        delete: jest.fn(({ where }: { where: { id: string } }) => {
           const i = rows.findIndex((r) => r.id === where.id);
           return Promise.resolve(rows.splice(i, 1)[0]);
         }),
@@ -140,7 +194,9 @@ describe('AdminLegalService', () => {
     };
     return {
       ...client,
-      $transaction: jest.fn((fn: any) => Promise.resolve(fn(client))),
+      $transaction: jest.fn((fn: (tx: typeof client) => unknown) =>
+        Promise.resolve(fn(client)),
+      ),
     };
   };
 
@@ -150,10 +206,13 @@ describe('AdminLegalService', () => {
     consent = {
       invalidatePublished: jest.fn(),
     };
-    service = new AdminLegalService(prisma, consent);
+    service = new AdminLegalService(
+      stub<PrismaService>(prisma),
+      stub<LegalConsentService>(consent),
+    );
   });
 
-  const publish = (over: any = {}) =>
+  const publish = (over: Partial<PublishInput> = {}) =>
     service.publishDraft(TYPE, ADMIN, {
       changeSummary: 'Rewrote the messaging section.',
       ...over,
@@ -163,7 +222,7 @@ describe('AdminLegalService', () => {
     it('seeds a new draft from the published text, not a blank page', async () => {
       const draft = await service.startDraft(TYPE, ADMIN);
       expect(draft.status).toBe('DRAFT');
-      expect(rows.find((r) => r.id === draft.id).content).toBe(
+      expect(rows.find((r) => r.id === draft.id)!.content).toBe(
         '<p>Original text.</p>',
       );
     });
@@ -179,7 +238,7 @@ describe('AdminLegalService', () => {
         content: '<p>Work in progress.</p>',
       });
       const again = await service.startDraft(TYPE, ADMIN);
-      expect(rows.find((r) => r.id === again.id).content).toBe(
+      expect(rows.find((r) => r.id === again.id)!.content).toBe(
         '<p>Work in progress.</p>',
       );
     });
@@ -189,7 +248,7 @@ describe('AdminLegalService', () => {
         title: 'Terms of Service',
         content: '<p>Safe.</p><script>alert(1)</script>',
       });
-      expect(rows.find((r) => r.id === draft.id).content).toBe('<p>Safe.</p>');
+      expect(rows.find((r) => r.id === draft.id)!.content).toBe('<p>Safe.</p>');
     });
 
     it('refuses a body that is empty once formatting is removed', async () => {
@@ -207,8 +266,8 @@ describe('AdminLegalService', () => {
         content: '<p>New text.</p>',
       });
       const live = rows.find((r) => r.isCurrent);
-      expect(live.versionNumber).toBe(1);
-      expect(live.content).toBe('<p>Original text.</p>');
+      expect(live!.versionNumber).toBe(1);
+      expect(live!.content).toBe('<p>Original text.</p>');
     });
   });
 
@@ -231,9 +290,9 @@ describe('AdminLegalService', () => {
       await publish();
       const previous = rows.find((r) => r.versionNumber === 1);
       expect(previous).toBeDefined();
-      expect(previous.status).toBe('ARCHIVED');
-      expect(previous.isCurrent).toBe(false);
-      expect(previous.content).toBe('<p>Original text.</p>');
+      expect(previous!.status).toBe('ARCHIVED');
+      expect(previous!.isCurrent).toBe(false);
+      expect(previous!.content).toBe('<p>Original text.</p>');
     });
 
     it('leaves exactly one live version', async () => {
@@ -247,7 +306,9 @@ describe('AdminLegalService', () => {
       });
       // `publishedById` is not in the select (the API returns the joined admin
       // instead), so the stored row is what proves attribution.
-      expect(rows.find((r) => r.id === published.id).publishedById).toBe(ADMIN);
+      expect(rows.find((r) => r.id === published.id)!.publishedById).toBe(
+        ADMIN,
+      );
       expect(published.publishedAt).toBeInstanceOf(Date);
       expect(published.changeSummary).toBe('Added a data clause.');
     });
@@ -292,7 +353,7 @@ describe('AdminLegalService', () => {
       await publish();
     });
 
-    const rollback = (over: any = {}) =>
+    const rollback = (over: Partial<RollbackInput> = {}) =>
       service.rollback(TYPE, ADMIN, {
         targetVersionNumber: 1,
         changeSummary: 'Reverting the messaging change.',
@@ -308,12 +369,12 @@ describe('AdminLegalService', () => {
       const restored = await rollback();
       expect(restored.versionNumber).toBe(3);
       expect(restored.isCurrent).toBe(true);
-      expect(rows.find((r) => r.versionNumber === 1).isCurrent).toBe(false);
+      expect(rows.find((r) => r.versionNumber === 1)!.isCurrent).toBe(false);
     });
 
     it('carries the old text forward verbatim', async () => {
       const restored = await rollback();
-      expect(rows.find((r) => r.id === restored.id).content).toBe(
+      expect(rows.find((r) => r.id === restored.id)!.content).toBe(
         '<p>Original text.</p>',
       );
     });
@@ -326,7 +387,7 @@ describe('AdminLegalService', () => {
     it('destroys no history', async () => {
       await rollback();
       expect(rows.map((r) => r.versionNumber).sort()).toEqual([1, 2, 3]);
-      expect(rows.find((r) => r.versionNumber === 2).content).toBe(
+      expect(rows.find((r) => r.versionNumber === 2)!.content).toBe(
         '<p>Updated text.</p>',
       );
     });
@@ -352,7 +413,7 @@ describe('AdminLegalService', () => {
       });
       const doc = await service.getDocument(TYPE);
       expect(doc.draft).not.toBeNull();
-      expect(doc.history.every((v: any) => v.status !== 'DRAFT')).toBe(true);
+      expect(doc.history.every((v) => v.status !== 'DRAFT')).toBe(true);
     });
 
     it('shows the published version and the draft side by side', async () => {

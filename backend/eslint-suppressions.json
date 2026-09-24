@@ -325,26 +325,6 @@
       "count": 1
     }
   },
-  "src/admin/legal/admin-legal.service.spec.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 21
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 21
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 9
-    },
-    "@typescript-eslint/no-unsafe-call": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 49
-    },
-    "@typescript-eslint/no-unsafe-return": {
-      "count": 4
-    }
-  },
   "src/admin/reports/admin-reports.controller.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 1
@@ -981,23 +961,6 @@
       "count": 1
     }
   },
-  "src/instant-match/instant-match.chat.spec.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 14
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 8
-    },
-    "@typescript-eslint/no-unsafe-call": {
-      "count": 2
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 12
-    },
-    "@typescript-eslint/no-unsafe-return": {
-      "count": 8
-    }
-  },
   "src/instant-match/instant-match.isolation.spec.ts": {
     "@typescript-eslint/no-require-imports": {
       "count": 1
@@ -1013,46 +976,6 @@
     },
     "@typescript-eslint/no-unsafe-return": {
       "count": 1
-    }
-  },
-  "src/instant-match/instant-match.service.spec.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 8
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 8
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 10
-    },
-    "@typescript-eslint/no-unsafe-call": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 23
-    },
-    "@typescript-eslint/no-unsafe-return": {
-      "count": 9
-    }
-  },
-  "src/instant-match/testing/prisma-fake.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 29
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 31
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 5
-    },
-    "@typescript-eslint/no-unsafe-call": {
-      "count": 3
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 15
-    },
-    "@typescript-eslint/no-unsafe-return": {
-      "count": 2
     }
   },
   "src/legal/legal.service.spec.ts": {
@@ -1152,20 +1075,6 @@
     },
     "@typescript-eslint/no-unsafe-member-access": {
       "count": 6
-    },
-    "@typescript-eslint/no-unsafe-return": {
-      "count": 1
-    }
-  },
-  "src/messages/group-invite.spec.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 5
-    },
-    "@typescript-eslint/no-unsafe-call": {
-      "count": 46
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 61
     },
     "@typescript-eslint/no-unsafe-return": {
       "count": 1
@@ -2005,14 +1914,6 @@
     },
     "@typescript-eslint/no-unsafe-return": {
       "count": 1
-    }
-  },
-  "src/users/privacy.helper.spec.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 60
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 60
     }
   },
   "src/users/selector-eligibility.spec.ts": {
