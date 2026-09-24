@@ -84,7 +84,7 @@ export class SendMessageDto {
 
   @IsObject()
   @IsOptional()
-  inviteData?: any;
+  inviteData?: unknown;
 
   /**
    * The sender's own id for this message, echoed back on the saved one.

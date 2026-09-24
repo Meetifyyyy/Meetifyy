@@ -83,13 +83,15 @@ export class CreateHelpArticleDto {
   @ArrayMaxSize(30)
   @IsString({ each: true })
   @MaxLength(60, { each: true })
-  @Transform(({ value }) =>
+  @Transform(({ value }: { value: unknown }) =>
     Array.isArray(value)
       ? // Normalised on the way in so search can match them without having to
         // lower-case a column at query time.
         Array.from(
           new Set(
-            value.map((v) => String(v).trim().toLowerCase()).filter(Boolean),
+            (value as unknown[])
+              .map((v) => String(v).trim().toLowerCase())
+              .filter(Boolean),
           ),
         )
       : value,

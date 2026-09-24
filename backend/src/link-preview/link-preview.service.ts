@@ -5,8 +5,9 @@ import {
   UnprocessableEntityException,
 } from '@nestjs/common';
 import * as cheerio from 'cheerio';
+import { stringField } from '../common/utils/type-guards.util';
 import { lookup } from 'dns/promises';
-import { isIP } from 'net';
+import { isIP, type LookupFunction } from 'net';
 import * as http from 'http';
 import * as https from 'https';
 
@@ -58,7 +59,7 @@ export class LinkPreviewService {
         url: getMeta('url') || url,
         favicon: `https://www.google.com/s2/favicons?domain=${parsedUrl.hostname}&sz=32`,
       };
-    } catch (err: any) {
+    } catch (err: unknown) {
       if (
         err instanceof BadRequestException ||
         err instanceof ForbiddenException ||
@@ -66,11 +67,15 @@ export class LinkPreviewService {
       ) {
         throw err;
       }
-      if (err.name === 'AbortError' || err.message?.includes('timed out')) {
+      const message = stringField(err, 'message');
+      if (
+        stringField(err, 'name') === 'AbortError' ||
+        message?.includes('timed out')
+      ) {
         throw new UnprocessableEntityException('Request timed out');
       }
       throw new UnprocessableEntityException(
-        `Could not fetch preview: ${err.message}`,
+        `Could not fetch preview: ${message}`,
       );
     }
   }
@@ -85,15 +90,7 @@ export class LinkPreviewService {
       const transport = parsedUrl.protocol === 'https:' ? https : http;
       let settled = false;
 
-      const safeLookup = (
-        hostname: string,
-        options: any,
-        callback: (
-          err: Error | null,
-          address: string | any[],
-          family: number,
-        ) => void,
-      ) => {
+      const safeLookup: LookupFunction = (hostname, _options, callback) => {
         lookup(hostname, { all: true })
           .then((entries) => {
             const addrs = Array.isArray(entries) ? entries : [entries];
@@ -110,7 +107,15 @@ export class LinkPreviewService {
             const first = addrs[0];
             callback(null, first.address, first.family);
           })
-          .catch((err) => callback(err, '', 4));
+          // dns.lookup rejects with an Error; anything else is wrapped so the
+          // socket still receives one.
+          .catch((err: unknown) =>
+            callback(
+              err instanceof Error ? err : new Error(String(err)),
+              '',
+              4,
+            ),
+          );
       };
 
       const req = transport.request(

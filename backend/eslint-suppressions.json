@@ -318,17 +318,6 @@
       "count": 1
     }
   },
-  "src/activities/discussion/activity-discussion.service.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 2
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 6
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 6
-    }
-  },
   "src/admin/account-deletion/admin-account-deletion.spec.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 6
@@ -437,11 +426,6 @@
     },
     "@typescript-eslint/no-unsafe-member-access": {
       "count": 2
-    }
-  },
-  "src/admin/help/dto/admin-help.dto.ts": {
-    "@typescript-eslint/no-unsafe-return": {
-      "count": 1
     }
   },
   "src/admin/legal/admin-legal.service.spec.ts": {
@@ -805,23 +789,6 @@
       "count": 1
     }
   },
-  "src/common/interceptors/no-cache.interceptor.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 3
-    },
-    "@typescript-eslint/no-unsafe-call": {
-      "count": 6
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 8
-    },
-    "@typescript-eslint/no-unsafe-return": {
-      "count": 3
-    }
-  },
   "src/common/legal/legal-consent.service.spec.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 8
@@ -914,17 +881,6 @@
       "count": 4
     }
   },
-  "src/common/services/domain-validator.service.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 2
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 4
-    }
-  },
   "src/common/student-year/first-year-isolation.spec.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 20
@@ -997,11 +953,6 @@
     },
     "@typescript-eslint/no-unsafe-member-access": {
       "count": 9
-    }
-  },
-  "src/common/users/deleted-user.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 1
     }
   },
   "src/common/utils/birthday-validation.util.spec.ts": {
@@ -1389,20 +1340,6 @@
       "count": 1
     }
   },
-  "src/link-preview/link-preview.service.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 3
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-call": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 3
-    }
-  },
   "src/messages/conversation-deletion.spec.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 5
@@ -1421,21 +1358,6 @@
     },
     "@typescript-eslint/require-await": {
       "count": 15
-    }
-  },
-  "src/messages/core/dto/conversation-response.dto.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 4
-    }
-  },
-  "src/messages/core/dto/message-response.dto.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 3
-    }
-  },
-  "src/messages/core/dto/send-message.dto.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 1
     }
   },
   "src/messages/dm/dm-lookup.spec.ts": {
@@ -1543,11 +1465,6 @@
       "count": 4
     },
     "@typescript-eslint/require-await": {
-      "count": 1
-    }
-  },
-  "src/messages/message-alert.util.ts": {
-    "@typescript-eslint/no-explicit-any": {
       "count": 1
     }
   },
@@ -1680,11 +1597,6 @@
       "count": 1
     }
   },
-  "src/moderation/dto/submit-report.dto.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 1
-    }
-  },
   "src/moderation/moderation.service.spec.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 1
@@ -1704,15 +1616,10 @@
       "count": 4
     },
     "@typescript-eslint/no-unsafe-assignment": {
-      "count": 7
+      "count": 5
     },
     "@typescript-eslint/no-unsafe-member-access": {
       "count": 13
-    }
-  },
-  "src/moderation/report-target.resolver.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 1
     }
   },
   "src/notifications/notifications.deleted-actor.spec.ts": {
@@ -1818,17 +1725,6 @@
     },
     "@typescript-eslint/no-unsafe-member-access": {
       "count": 7
-    }
-  },
-  "src/observability/slow-request.middleware.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 3
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 3
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 3
     }
   },
   "src/otp/user-otp.service.spec.ts": {
@@ -2033,40 +1929,18 @@
       "count": 1
     }
   },
-  "src/search/search.controller.ts": {
-    "@typescript-eslint/no-unsafe-return": {
-      "count": 2
-    }
-  },
   "src/search/search.service.spec.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 13
     },
     "@typescript-eslint/no-unsafe-assignment": {
-      "count": 15
+      "count": 13
     },
     "@typescript-eslint/no-unsafe-call": {
       "count": 12
     },
     "@typescript-eslint/no-unsafe-member-access": {
       "count": 15
-    }
-  },
-  "src/search/search.service.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 6
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 3
-    },
-    "@typescript-eslint/no-unsafe-call": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 12
-    },
-    "@typescript-eslint/no-unsafe-return": {
-      "count": 5
     }
   },
   "src/share/share-deployment.spec.ts": {

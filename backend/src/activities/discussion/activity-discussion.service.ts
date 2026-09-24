@@ -3,6 +3,7 @@ import {
   BadRequestException,
   NotFoundException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { DomainEventService } from '../../events/domain-event.service';
 import { ActivityAuthorizationService } from '../activity-authorization.service';
@@ -59,7 +60,15 @@ export class ActivityDiscussionService {
     },
   } as const;
 
-  private format(m: any, activityId: string) {
+  private format<
+    M extends {
+      id: string;
+      text: string;
+      createdAt: Date;
+      userId: string;
+      user?: UserIdentityLike | null;
+    },
+  >(m: M, activityId: string) {
     return {
       id: m.id,
       activityId,
@@ -70,9 +79,7 @@ export class ActivityDiscussionService {
       // in the thread — removing it would rewrite the discussion for everyone
       // else — but carries no identity.
       user: (() => {
-        // `m` is `any` throughout this file (pre-existing), so the author is
-        // narrowed once here rather than at each of the four reads below.
-        const author = m.user as UserIdentityLike | null | undefined;
+        const author = m.user;
         const unavailable = isUnavailableUser(author);
         return {
           id: author?.id || m.userId,
@@ -172,7 +179,7 @@ export class ActivityDiscussionService {
     await this.assertCanAccessDiscussion(activityId, userId);
     const take = Math.min(Math.max(limit, 1), MAX_PAGE_SIZE);
 
-    let cursorFilter: any = {};
+    let cursorFilter: Prisma.ActivityDiscussionMessageWhereInput = {};
     if (before) {
       const cursorMsg = await this.prisma.activityDiscussionMessage.findUnique({
         where: { id: before },

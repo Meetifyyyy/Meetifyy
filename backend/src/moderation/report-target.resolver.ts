@@ -96,10 +96,7 @@ export class ReportTargetResolver {
   /**
    * Hydrates preview payload for Super Admin Portal review
    */
-  async resolveAndFetch(
-    targetType: ReportTargetType,
-    targetId: string,
-  ): Promise<any> {
+  async resolveAndFetch(targetType: ReportTargetType, targetId: string) {
     switch (targetType) {
       case ReportTargetType.POST:
         return this.prisma.post.findUnique({

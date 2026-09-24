@@ -19,7 +19,7 @@ import { DomainEventService } from '../events/domain-event.service';
  */
 export function emitMessageNew(
   domainEventService: DomainEventService,
-  message: any,
+  message: object,
   opts: {
     recipientIds: string[];
     unmutedRecipientIds: string[];

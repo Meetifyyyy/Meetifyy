@@ -38,7 +38,7 @@ export interface UserIdentityLike {
   deletedAt?: Date | string | null;
   verificationStatus?: string | null;
   isCampusRep?: boolean | null;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 /**

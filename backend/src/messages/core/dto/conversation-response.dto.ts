@@ -18,9 +18,9 @@ export interface ConversationResponseDto {
   allowSharing?: boolean;
   editGroupPermission?: string;
   groupUpdatesActive?: boolean;
-  pendingRequests?: any[];
+  pendingRequests?: unknown[];
   admins?: string[];
-  members?: any[];
+  members?: unknown[];
   memberCount?: number;
   pinned?: boolean;
   muted?: boolean;
@@ -29,6 +29,6 @@ export interface ConversationResponseDto {
   isBlockedByThem?: boolean;
   unreadCount?: number;
   unread?: number;
-  lastMessage?: any;
-  targetUser?: any;
+  lastMessage?: unknown;
+  targetUser?: unknown;
 }

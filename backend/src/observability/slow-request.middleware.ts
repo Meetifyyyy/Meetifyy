@@ -4,6 +4,8 @@ import { NextFunction, Request, Response } from 'express';
 import { config } from '../config';
 import { SlowRequestRecorder } from './slow-request.recorder';
 import { clientIp as resolveClientIp } from '../common/rate-limit/client-ip.util';
+import { stringField } from '../common/utils/type-guards.util';
+import type { GuardRequest } from '../common/types/authenticated-request';
 
 /**
  * Times every request and hands the slow ones to the recorder.
@@ -16,10 +18,13 @@ import { clientIp as resolveClientIp } from '../common/rate-limit/client-ip.util
  * slower by being recorded.
  */
 @Injectable()
-export class SlowRequestMiddleware implements NestMiddleware {
+export class SlowRequestMiddleware implements NestMiddleware<
+  GuardRequest,
+  Response
+> {
   constructor(private readonly recorder: SlowRequestRecorder) {}
 
-  use(req: Request, res: Response, next: NextFunction): void {
+  use(req: GuardRequest, res: Response, next: NextFunction): void {
     const { enabled, ignoredPrefixes, thresholdMs } =
       config.observability.slowRequests;
 
@@ -48,8 +53,8 @@ export class SlowRequestMiddleware implements NestMiddleware {
         durationMs,
         requestId: headerValue(req, 'x-request-id'),
         // Set by whichever guard authenticated this request, if any.
-        userId: (req as any).user?.id ?? null,
-        adminId: (req as any).admin?.id ?? null,
+        userId: req.user?.id ?? null,
+        adminId: req.admin?.id ?? null,
         ip: clientIp(req),
         userAgent: headerValue(req, 'user-agent'),
         bytesOut: parseBytes(res.getHeader('content-length')),
@@ -70,7 +75,8 @@ export class SlowRequestMiddleware implements NestMiddleware {
  * grouping stays useful.
  */
 export function resolveRoute(req: Request): string {
-  const routePath = (req as any).route?.path;
+  // Express leaves `route` untyped; Nest registers every route with a string path.
+  const routePath = stringField(req.route, 'path');
   const baseUrl = req.baseUrl || '';
   if (routePath) return `${baseUrl}${routePath}`.slice(0, 300) || '/';
 

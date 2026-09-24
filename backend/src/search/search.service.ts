@@ -1,4 +1,5 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
+import { buildPollView, withMediaUrl } from '../posts/post-view';
 import { PrismaService } from '../prisma/prisma.service';
 import { StudentYearPolicyService } from '../common/student-year/student-year-policy.service';
 import { Prisma } from '@prisma/client';
@@ -87,14 +88,9 @@ export class SearchService {
     limit = 15,
     type?: string,
     cursorParam?: string,
-  ) {
+  ): Promise<GlobalSearchResult> {
     const searchQuery = (query || '').trim();
     const cleanQuery = searchQuery.toLowerCase();
-    const isDiscovery = searchQuery.length === 0;
-    const now = new Date();
-    const cursor = decodeCursor(cursorParam);
-    const isPaginating = Boolean(cursor.p || cursor.a);
-
     // `v2` retires every entry written before first-year isolation applied.
     // The key is already scoped by viewer, which is what makes caching a
     // policy-filtered result safe -- a key shared across viewers would hand a
@@ -107,12 +103,50 @@ export class SearchService {
         const cached = await this.redis.get(cacheKey);
         if (cached) {
           this.logger.debug(`Cache hit: "${searchQuery || 'discovery'}"`);
-          return JSON.parse(cached);
+          return JSON.parse(cached) as GlobalSearchResult;
         }
       } catch {
         // Redis unavailable — fall through to DB
       }
     }
+
+    const result = await this.runGlobalSearch(
+      query,
+      currentUserId,
+      limit,
+      type,
+      cursorParam,
+    );
+
+    // 2. Cache write
+    if (this.redis) {
+      try {
+        await this.redis.setex(
+          cacheKey,
+          SEARCH_CACHE_TTL,
+          JSON.stringify(result),
+        );
+      } catch {
+        // Non-fatal
+      }
+    }
+
+    return result;
+  }
+
+  private async runGlobalSearch(
+    query?: string,
+    currentUserId?: string,
+    limit = 15,
+    type?: string,
+    cursorParam?: string,
+  ) {
+    const searchQuery = (query || '').trim();
+    const cleanQuery = searchQuery.toLowerCase();
+    const isDiscovery = searchQuery.length === 0;
+    const now = new Date();
+    const cursor = decodeCursor(cursorParam);
+    const isPaginating = Boolean(cursor.p || cursor.a);
 
     let postCursorDate: Date | undefined;
     let postCursorId: string | undefined;
@@ -520,50 +554,22 @@ export class SearchService {
       const isLiked = likedSet.has(p.id);
       const isBookmarked = bookmarkedSet.has(p.id);
 
-      const media = (p.media || []).map((m: any) => ({
-        ...m,
-        url: m.url || (m.objectKey ? `/api/media/${m.objectKey}` : null),
-      }));
+      const media = (p.media || []).map(withMediaUrl);
 
+      // Counted from `_count` first, as the post detail page counts them.
       const pollOptions = p.pollOptions || [];
-      let poll = null;
-      if (pollOptions.length > 0) {
-        const sortedOptions = [...pollOptions].sort((a: any, b: any) =>
-          (a.id || '').localeCompare(b.id || ''),
-        );
-        const options = sortedOptions.map((opt: any) => ({
-          id: opt.id,
-          text: opt.text,
-          votes: Number(opt._count?.votes || opt.voteCount || 0),
-        }));
-        const totalVotes = options.reduce(
-          (sum: number, o: any) => sum + o.votes,
-          0,
-        );
-
-        const userVotedOptionId =
-          Array.isArray(p.pollVotes) && p.pollVotes.length > 0
-            ? p.pollVotes[0]?.optionId
-            : null;
-        const userVotedIndex = userVotedOptionId
-          ? options.findIndex((o: any) => o.id === userVotedOptionId)
-          : -1;
-        const myVotes = userVotedIndex >= 0 ? [userVotedIndex] : [];
-        const selectedUsers =
-          currentUserId && myVotes.length > 0
-            ? { [currentUserId]: myVotes }
-            : {};
-
-        poll = {
-          question: p.text,
-          options,
-          totalVotes,
-          userVotedOptionId: userVotedOptionId || undefined,
-          votedOptionIndex: userVotedIndex >= 0 ? userVotedIndex : undefined,
-          myVotes,
-          selectedUsers,
-        };
-      }
+      const poll =
+        pollOptions.length > 0
+          ? buildPollView(
+              p.text,
+              pollOptions,
+              (opt) => Number(opt._count?.votes || opt.voteCount || 0),
+              Array.isArray(p.pollVotes) && p.pollVotes.length > 0
+                ? p.pollVotes[0]?.optionId
+                : null,
+              currentUserId,
+            )
+          : null;
 
       return {
         ...p,
@@ -608,12 +614,36 @@ export class SearchService {
       nextCursor,
     };
 
-    // 2. Cache write
+    return result;
+  }
+
+  async getSuggestions(
+    query: string,
+    currentUserId?: string,
+  ): Promise<SuggestionsResult> {
+    const searchQuery = (query || '').trim();
+    // Too short to search: answered without touching the cache, as before.
+    if (searchQuery.length < 2)
+      return this.runSuggestions(query, currentUserId);
+    // `v2` for the same reason as the full-search key above.
+    const cacheKey = `search:suggestions:v2:${searchQuery.toLowerCase()}:${currentUserId ?? 'anon'}`;
+
+    if (this.redis) {
+      try {
+        const cached = await this.redis.get(cacheKey);
+        if (cached) return JSON.parse(cached) as SuggestionsResult;
+      } catch {
+        // Redis unavailable — fall through to DB
+      }
+    }
+
+    const result = await this.runSuggestions(query, currentUserId);
+
     if (this.redis) {
       try {
         await this.redis.setex(
           cacheKey,
-          SEARCH_CACHE_TTL,
+          SUGGESTIONS_CACHE_TTL,
           JSON.stringify(result),
         );
       } catch {
@@ -624,24 +654,13 @@ export class SearchService {
     return result;
   }
 
-  async getSuggestions(query: string, currentUserId?: string) {
+  private async runSuggestions(query: string, currentUserId?: string) {
     const searchQuery = (query || '').trim();
     // Require ≥2 chars: single-char patterns match nearly everything and can't use the
     // pg_trgm indexes (trigrams need 3 chars), so they'd force a full scan for noise.
     // The typeahead dropdown isn't useful for 1 char anyway.
     if (searchQuery.length < 2) {
       return { users: [], communities: [], activities: [], keywords: [] };
-    }
-    // `v2` for the same reason as the full-search key above.
-    const cacheKey = `search:suggestions:v2:${searchQuery.toLowerCase()}:${currentUserId ?? 'anon'}`;
-
-    if (this.redis) {
-      try {
-        const cached = await this.redis.get(cacheKey);
-        if (cached) return JSON.parse(cached);
-      } catch {
-        // Redis unavailable — fall through to DB
-      }
     }
 
     const [excludedUserIds, suggestionViewer] = await Promise.all([
@@ -715,18 +734,6 @@ export class SearchService {
 
     const result = { users, communities, activities, keywords: [] };
 
-    if (this.redis) {
-      try {
-        await this.redis.setex(
-          cacheKey,
-          SUGGESTIONS_CACHE_TTL,
-          JSON.stringify(result),
-        );
-      } catch {
-        // Non-fatal
-      }
-    }
-
     return result;
   }
 
@@ -784,3 +791,9 @@ export class SearchService {
     }
   }
 }
+
+/** A global search response, as served and as cached. */
+type GlobalSearchResult = Awaited<ReturnType<SearchService['runGlobalSearch']>>;
+
+/** A typeahead response, as served and as cached. */
+type SuggestionsResult = Awaited<ReturnType<SearchService['runSuggestions']>>;
