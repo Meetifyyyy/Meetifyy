@@ -9,8 +9,21 @@ import {
   Optional,
 } from '@nestjs/common';
 import { withInviteExpiry } from './core/invite-data';
+import {
+  arrayOrEmpty,
+  payloadFields,
+  stringOrEmpty,
+  stringOrNull,
+} from './core/message-payload';
+import { isJsonValue } from '../common/utils/json.util';
+import { isRecord } from '../common/utils/type-guards.util';
 import { OnEvent } from '@nestjs/event-emitter';
-import { MentionSource, NotificationEntityType } from '@prisma/client';
+import {
+  MentionSource,
+  NotificationEntityType,
+  Prisma,
+  type Conversation,
+} from '@prisma/client';
 import Redis from 'ioredis';
 import { PrismaService } from '../prisma/prisma.service';
 import { PresenceService } from '../presence/presence.service';
@@ -56,6 +69,20 @@ export interface InstantMatchChatGuard {
    *  caller is one of its two participants. */
   canReadChat(userId: string, conversationId: string): Promise<boolean>;
 }
+
+/**
+ * The message row formatMessageResponse reads: the smallest shape its three
+ * callers select (send, idempotent resend, catch-up). Catch-up selects more
+ * sender fields, which still satisfies it.
+ */
+type ResponseMessageRow = Prisma.MessageGetPayload<{
+  include: {
+    sender: {
+      select: { id: true; username: true; displayName: true; avatar: true };
+    };
+    replyTo: { select: typeof REPLY_TO_SELECT };
+  };
+}>;
 
 @Injectable()
 export class MessagesService
@@ -128,8 +155,11 @@ export class MessagesService
    * user whose status changed, plus everyone holding a DM with them.
    */
   @OnEvent('user:verification_changed')
-  async handleVerificationChanged(payload: any) {
-    const targets: string[] = payload?.targetUserIds || [];
+  async handleVerificationChanged(payload: unknown) {
+    const listed = isRecord(payload) ? payload.targetUserIds : undefined;
+    const targets: string[] = Array.isArray(listed)
+      ? listed.filter((t): t is string => typeof t === 'string')
+      : [];
     if (targets.length === 0) return;
     await this.invalidateUserConversationsCache(targets).catch(() => {});
   }
@@ -150,8 +180,13 @@ export class MessagesService
   @OnEvent('user.deletion_requested')
   @OnEvent('user.deletion_cancelled')
   @OnEvent('user.deleted')
-  async handleAccountLifecycleChanged(payload: any) {
-    const userId = payload?.data?.userId || payload?.userId;
+  async handleAccountLifecycleChanged(payload: unknown) {
+    const event = isRecord(payload) ? payload : {};
+    const data = isRecord(event.data) ? event.data : {};
+    const userId =
+      (typeof data.userId === 'string' && data.userId) ||
+      (typeof event.userId === 'string' && event.userId) ||
+      undefined;
     if (!userId) return;
 
     try {
@@ -550,7 +585,7 @@ export class MessagesService
     ).filter((m) => participantIdSet.has(m.userId));
 
     // 1. Idempotency Check
-    const clientMsgId = (payload as any).clientId || (payload as any).tempId;
+    const clientMsgId = payload.clientId || payload.tempId;
     if (clientMsgId) {
       // Idempotency: match on the indexed `clientMessageId` column (index
       // [senderId, clientMessageId]) instead of a JSON payload-path predicate.
@@ -630,14 +665,18 @@ export class MessagesService
             height: asNumberOrNull(payload.height),
             duration: asNumberOrNull(payload.duration),
             mentions: sanitizedMentions,
-            inviteData: initialInviteData,
+            // Client JSON (the DTO checks only that it is an object); proven
+            // to be JSON before it is written, rather than asserted.
+            inviteData: isJsonValue(initialInviteData)
+              ? initialInviteData
+              : null,
             isForwarded: asBoolean(payload.isForwarded),
             forwardedFromMessageId: asStringOrNull(
               payload.forwardedFromMessageId,
             ),
             tempId: clientMsgId || null,
             clientId: clientMsgId || null,
-          } as any,
+          },
         },
         include: {
           sender: {
@@ -726,7 +765,7 @@ export class MessagesService
   }
 
   private formatMessageResponse(
-    message: any,
+    message: ResponseMessageRow,
     realConvId: string,
     publicIdOrId: string,
     senderId: string,
@@ -741,15 +780,17 @@ export class MessagesService
     // has no row in the conversation list to guess from.
     chatType: 'instant' | 'normal' = 'normal',
   ) {
-    const msgPayload = message.payload || {};
-    let replyToObj: any = null;
-    if (message.replyTo) {
-      replyToObj = buildReplyToSnapshot(message.replyTo, senderId);
-    }
+    const msgPayload = payloadFields(message.payload);
+    const replyToObj = message.replyTo
+      ? buildReplyToSnapshot(message.replyTo, senderId)
+      : null;
 
     const pubId = publicIdOrId || realConvId;
     const clientKey =
-      msgPayload.clientId || msgPayload.tempId || clientMsgIdHint || null;
+      stringOrNull(msgPayload.clientId) ||
+      stringOrNull(msgPayload.tempId) ||
+      clientMsgIdHint ||
+      null;
     const isUnsent = message.state === 'UNSENT';
 
     // Recompute group-invite expiry on read so a stored invite that has since
@@ -776,11 +817,15 @@ export class MessagesService
       type: message.type ? message.type.toLowerCase() : 'chat',
       state: message.state || 'SENT',
       isUnsent,
-      payload: isUnsent ? { text: 'This message was unsent' } : msgPayload,
-      text: isUnsent ? 'This message was unsent' : msgPayload.text || '',
-      mediaUrl: isUnsent ? null : msgPayload.mediaUrl || null,
-      mediaType: isUnsent ? null : msgPayload.mediaType || null,
-      mentions: isUnsent ? [] : msgPayload.mentions || [],
+      payload: isUnsent
+        ? { text: 'This message was unsent' }
+        : message.payload || {},
+      text: isUnsent
+        ? 'This message was unsent'
+        : stringOrEmpty(msgPayload.text),
+      mediaUrl: isUnsent ? null : stringOrNull(msgPayload.mediaUrl),
+      mediaType: isUnsent ? null : stringOrNull(msgPayload.mediaType),
+      mentions: isUnsent ? [] : arrayOrEmpty(msgPayload.mentions),
       inviteData: outInviteData,
       replyTo: isUnsent ? null : replyToObj,
       status: 'sent',
@@ -897,10 +942,13 @@ export class MessagesService
     }
 
     let clearedAt: Date | null = null;
-    const whereCondition: any = {
+    const whereCondition: Prisma.MessageWhereInput = {
       conversationId: realConvId,
       deletedAt: null,
     };
+    // Bounds on createdAt from three independent sources (the viewer leaving,
+    // clearing the chat, and the page cursor), merged into one filter.
+    const createdAtFilter: Prisma.DateTimeFilter<'Message'> = {};
 
     const [deletedForUser, currentParticipant, participants] =
       await Promise.all([
@@ -939,7 +987,16 @@ export class MessagesService
             // here" for a thread the conversation list never covered — a deep
             // link, or one scrolled past the first page. Without it the
             // composer stayed enabled until a send came back refused.
-            user: { select: { accountStatus: true, deletedAt: true } },
+            // `settings.readReceipts` is what decides whether their read time
+            // and read status may be shown below. It was never selected, so
+            // that check read `undefined` and always passed.
+            user: {
+              select: {
+                accountStatus: true,
+                deletedAt: true,
+                settings: { select: { readReceipts: true } },
+              },
+            },
           },
         }),
       ]);
@@ -958,7 +1015,7 @@ export class MessagesService
       clearedAt = participant.clearedAt;
       const pLeftAt = participant.leftAt;
       if (pLeftAt) {
-        whereCondition.createdAt = { lte: pLeftAt };
+        createdAtFilter.lte = pLeftAt;
       }
     }
 
@@ -975,13 +1032,10 @@ export class MessagesService
     // directions) and surfaced in the composer, not by hiding rows here.
 
     if (clearedAt) {
-      whereCondition.createdAt = {
-        ...(whereCondition.createdAt || {}),
-        gt: clearedAt,
-      };
+      createdAtFilter.gt = clearedAt;
     }
 
-    const orConditions: any[] = [];
+    const orConditions: Prisma.MessageWhereInput[] = [];
 
     // Pagination logic
     if (beforeCursor) {
@@ -1017,21 +1071,19 @@ export class MessagesService
             ],
           });
         } else {
-          whereCondition.createdAt = {
-            ...(typeof whereCondition.createdAt === 'object'
-              ? whereCondition.createdAt
-              : {}),
-            lt: cursorDate,
-          };
+          createdAtFilter.lt = cursorDate;
         }
       }
     }
 
+    if (Object.keys(createdAtFilter).length > 0) {
+      whereCondition.createdAt = createdAtFilter;
+    }
     if (orConditions.length > 0) {
-      whereCondition.AND = [...(whereCondition.AND || []), ...orConditions];
+      whereCondition.AND = orConditions;
     }
 
-    const messages: any[] = await this.prisma.message.findMany({
+    const messages = await this.prisma.message.findMany({
       where: whereCondition,
       include: {
         sender: {
@@ -1068,8 +1120,11 @@ export class MessagesService
     const otherParticipants = participants.filter(
       (p) => currentUserId && p.userId !== currentUserId,
     );
+    // Someone with read receipts off never counts as having read anything.
     const otherReadTimestamps = otherParticipants
-      .filter((p) => p.lastReadAt != null)
+      .filter(
+        (p) => p.user?.settings?.readReceipts !== false && p.lastReadAt != null,
+      )
       .map((p) => new Date(p.lastReadAt!).getTime());
 
     const isAllRead =
@@ -1079,11 +1134,11 @@ export class MessagesService
 
     const messagesMapped = messages.map((m) => {
       const payload = m.payload || {};
+      const fields = payloadFields(payload);
 
-      let replyToObj: any = null;
-      if (m.replyTo) {
-        replyToObj = buildReplyToSnapshot(m.replyTo, currentUserId);
-      }
+      const replyToObj = m.replyTo
+        ? buildReplyToSnapshot(m.replyTo, currentUserId)
+        : null;
 
       const isRead =
         currentUserId &&
@@ -1093,7 +1148,7 @@ export class MessagesService
       const isUnsent = m.state === 'UNSENT';
 
       const inviteData = withInviteExpiry(
-        isUnsent ? null : payload.inviteData,
+        isUnsent ? null : fields.inviteData,
         m.createdAt,
       );
 
@@ -1114,10 +1169,10 @@ export class MessagesService
           : '',
         type: m.type ? m.type.toLowerCase() : 'chat',
         payload: isUnsent ? { text: 'This message was unsent' } : payload,
-        text: isUnsent ? 'This message was unsent' : payload.text || '',
-        mediaUrl: isUnsent ? null : payload.mediaUrl || null,
-        mediaType: isUnsent ? null : payload.mediaType || null,
-        mentions: isUnsent ? [] : payload.mentions || [],
+        text: isUnsent ? 'This message was unsent' : stringOrEmpty(fields.text),
+        mediaUrl: isUnsent ? null : stringOrNull(fields.mediaUrl),
+        mediaType: isUnsent ? null : stringOrNull(fields.mediaType),
+        mentions: isUnsent ? [] : arrayOrEmpty(fields.mentions),
         inviteData,
         replyTo: isUnsent ? null : replyToObj,
         status: isRead ? 'read' : 'sent',
@@ -1160,7 +1215,7 @@ export class MessagesService
     const targetUserUnavailable =
       !isGroupConversation &&
       otherLiveParticipants.length === 1 &&
-      isUnavailableUser((otherLiveParticipants[0] as any).user);
+      isUnavailableUser(otherLiveParticipants[0].user);
 
     return {
       messages: messagesMapped,
@@ -1169,15 +1224,19 @@ export class MessagesService
       participants: participants.map((p) => ({
         userId: p.userId,
         lastReadAt:
-          (p as any).user?.settings?.readReceipts !== false
-            ? p.lastReadAt
-            : null,
+          p.user?.settings?.readReceipts !== false ? p.lastReadAt : null,
       })),
       nextCursor,
     };
   }
 
-  private presenceCache = new Map<string, { data: any; expiresAt: number }>();
+  private presenceCache = new Map<
+    string,
+    {
+      data: { isOnline: boolean; lastActive: string | null };
+      expiresAt: number;
+    }
+  >();
   /**
    * @param eligibleOnly Restrict to threads that can actually be SENT into by a
    *   recipient picker. Share modals pass true; the inbox never does.
@@ -1210,7 +1269,10 @@ export class MessagesService
     if (this.redis) {
       try {
         const cached = await this.redis.get(cacheKey);
-        if (cached) return JSON.parse(cached);
+        // The value written below: this same list, JSON-serialized. Dates come
+        // back as ISO strings, which is also exactly how the fresh list
+        // reaches the client, so the response is identical either way.
+        if (cached) return JSON.parse(cached) as typeof result;
       } catch {
         // A cache miss and an unreachable Redis are the same thing here: rebuild the list.
       }
@@ -1448,9 +1510,9 @@ export class MessagesService
     const blockedSet = new Set(excludedUserIds);
     const blockedByMeSet = new Set(blockedByMeIds);
 
-    const dmConvIds = (participants as any[])
-      .filter((p: any) => p.conversation.type === 'DM')
-      .map((p: any) => p.conversation.id);
+    const dmConvIds = participants
+      .filter((p) => p.conversation.type === 'DM')
+      .map((p) => p.conversation.id);
     const dmOtherParticipants =
       dmConvIds.length > 0
         ? await this.prisma.conversationParticipant.findMany({
@@ -1495,7 +1557,8 @@ export class MessagesService
           })
         : [];
 
-    const targetUserByConvId = new Map<string, any>();
+    type DmPartner = NonNullable<(typeof dmOtherParticipants)[number]['user']>;
+    const targetUserByConvId = new Map<string, DmPartner>();
     dmOtherParticipants.forEach((op) => {
       if (op.user) targetUserByConvId.set(op.conversationId, op.user);
     });
@@ -1541,7 +1604,7 @@ export class MessagesService
     // replacing the previous per-conversation checkPresenceVisibility N+1.
     const visTargets: { userId: string; rule: string; isEnabled: boolean }[] =
       [];
-    for (const p of participants as any[]) {
+    for (const p of participants) {
       const ou = targetUserByConvId.get(p.conversation.id);
       if (!ou || blockedSet.has(ou.id)) continue;
       if (!presenceMap.get(ou.id)?.isOnline) continue;
@@ -1569,7 +1632,7 @@ export class MessagesService
       ? true
       : await verificationAccess.isUserEligible(userId);
 
-    const result = (participants as any[]).map((p: any) => {
+    const result = participants.map((p) => {
       const conv = p.conversation;
       const otherUser = targetUserByConvId.get(conv.id);
       // Single source for the row title, avatar, composer state and
@@ -1577,7 +1640,8 @@ export class MessagesService
       const targetUnavailable = otherUser
         ? isUnavailableUser(otherUser)
         : false;
-      const isGroupConv = conv.type === 'GROUP' || conv.isGroup;
+      // `|| conv.isGroup` was here: no such column exists, so it never mattered.
+      const isGroupConv = conv.type === 'GROUP';
       const groupAvatar = conv.avatarKey || null;
 
       const userPresence = otherUser ? presenceMap.get(otherUser.id) : null;
@@ -1616,7 +1680,7 @@ export class MessagesService
       // exists for them anywhere else. Hide any preview at or before this
       // user's own cutoff; the next message they actually receive is after it
       // and shows normally.
-      const cutoff = p.clearedAt as Date | null;
+      const cutoff = p.clearedAt;
       const previewCleared = Boolean(
         cutoff &&
         conv.lastMessageAt &&
@@ -1667,9 +1731,9 @@ export class MessagesService
         pendingRequests: [],
         admins: [],
         members: [],
-        memberCount: isGroupConv
-          ? conv._count?.participants || conv.memberCount || 0
-          : 0,
+        // The `memberCount` column was also read here as a fallback, but this
+        // query never selects it, so the count has always been `_count`.
+        memberCount: isGroupConv ? conv._count?.participants || 0 : 0,
         pinned: p.isPinned || false,
         pinnedAt: p.pinnedAt || null,
         muted: p.isMuted || false,
@@ -1790,7 +1854,7 @@ export class MessagesService
         },
       });
       if (existing) {
-        const pubId = (existing as any).publicId || existing.id;
+        const pubId = existing.publicId || existing.id;
         return { id: pubId, publicId: pubId };
       }
     }
@@ -1933,12 +1997,12 @@ export class MessagesService
       throw new NotFoundException('Message not found');
     }
 
-    const payload = (originalMsg.payload as any) || {};
-    const text = payload.text || '';
-    const mediaUrl = payload.mediaUrl || null;
-    const mediaType = payload.mediaType || null;
+    const payload = payloadFields(originalMsg.payload);
+    const text = stringOrEmpty(payload.text);
+    const mediaUrl = stringOrNull(payload.mediaUrl);
+    const mediaType = stringOrNull(payload.mediaType);
 
-    const forwarded: any[] = [];
+    const forwarded: Awaited<ReturnType<MessagesService['sendMessage']>>[] = [];
     const chunkSize = 5;
     for (let i = 0; i < targetConversationIds.length; i += chunkSize) {
       const chunk = targetConversationIds.slice(i, i + chunkSize);
@@ -1953,8 +2017,10 @@ export class MessagesService
 
         return this.sendMessage(userId, realConvId, {
           text,
-          mediaUrl,
-          mediaType,
+          // sendMessage treats null and undefined alike (truthiness and
+          // asStringOrNull); its DTO spells "absent" as undefined.
+          mediaUrl: mediaUrl ?? undefined,
+          mediaType: mediaType ?? undefined,
           replyToId: undefined,
           mentions: [],
           isForwarded: true,
@@ -1963,7 +2029,7 @@ export class MessagesService
       });
 
       const results = await Promise.all(promises);
-      results.forEach((msg: any) => {
+      results.forEach((msg) => {
         if (msg) forwarded.push(msg);
       });
     }
@@ -2019,8 +2085,8 @@ export class MessagesService
       avatarVal = undefined;
     }
 
-    let updated: any;
-    let participantRows: any[];
+    let updated: Conversation;
+    let participantRows: { userId: string }[];
     try {
       [updated, participantRows] = await Promise.all([
         this.prisma.conversation.update({
@@ -2134,7 +2200,7 @@ export class MessagesService
         deletedAt: null,
         joinedAt: new Date(),
         role: 'MEMBER',
-      } as any,
+      },
       create: {
         userId: targetUserId,
         conversationId: realConvId,
@@ -2176,7 +2242,7 @@ export class MessagesService
       },
     });
 
-    if (!target || (target as any).leftAt || target.deletedAt) {
+    if (!target || target.leftAt || target.deletedAt) {
       throw new NotFoundException('Member not found in group');
     }
 
@@ -2197,7 +2263,7 @@ export class MessagesService
           conversationId: realConvId,
         },
       },
-      data: { leftAt: new Date() } as any,
+      data: { leftAt: new Date() },
     });
 
     this.invalidateUserConversationsCache([targetUserId]).catch(() => {});
@@ -2210,13 +2276,13 @@ export class MessagesService
       where: { userId_conversationId: { userId, conversationId: realConvId } },
     });
 
-    if (!participant || (participant as any).leftAt || participant.deletedAt) {
+    if (!participant || participant.leftAt || participant.deletedAt) {
       return { success: true };
     }
 
     await this.prisma.conversationParticipant.update({
       where: { userId_conversationId: { userId, conversationId: realConvId } },
-      data: { leftAt: new Date() } as any,
+      data: { leftAt: new Date() },
     });
 
     this.invalidateUserConversationsCache([userId]).catch(() => {});
@@ -2349,7 +2415,7 @@ export class MessagesService
         conversationId: realConvId,
         leftAt: null,
         deletedAt: null,
-      } as any,
+      },
       select: { userId: true },
     });
     return participants.map((p) => p.userId);
@@ -2365,7 +2431,7 @@ export class MessagesService
         leftAt: null,
         deletedAt: null,
         groupUpdatesActive: true,
-      } as any,
+      },
       select: { userId: true },
     });
     return participants.map((p) => p.userId);
@@ -2504,7 +2570,7 @@ export class MessagesService
           deletedAt: null,
           joinedAt: new Date(),
           role: 'MEMBER',
-        } as any,
+        },
         create: {
           userId: targetUserId,
           conversationId: realConvId,
@@ -2567,7 +2633,7 @@ export class MessagesService
     text: string,
   ) {
     const realConvId = await this.resolveConversationId(conversationId);
-    const message: any = await this.prisma.message.create({
+    const message = await this.prisma.message.create({
       data: {
         conversationId: realConvId,
         senderId,

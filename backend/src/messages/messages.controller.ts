@@ -538,7 +538,7 @@ export class MessagesController {
       const pIds = await this.messagesService.getConversationParticipantIds(
         result.id,
       );
-      const avatarVal = result.avatarKey || result.avatar || null;
+      const avatarVal = result.avatarKey || null;
       void this.domainEventService.emit(
         'conversation:updated',
         {
@@ -557,7 +557,7 @@ export class MessagesController {
 
     return {
       ...result,
-      avatar: result.avatarKey || result.avatar || null,
+      avatar: result.avatarKey || null,
     };
   }
 

@@ -1795,16 +1795,16 @@
       "count": 6
     },
     "@typescript-eslint/no-unsafe-argument": {
-      "count": 7
+      "count": 2
     },
     "@typescript-eslint/no-unsafe-assignment": {
-      "count": 35
+      "count": 8
     },
     "@typescript-eslint/no-unsafe-member-access": {
-      "count": 31
+      "count": 6
     },
     "@typescript-eslint/no-unsafe-return": {
-      "count": 3
+      "count": 1
     }
   },
   "src/messages/messages.service.spec.ts": {
@@ -1823,22 +1823,16 @@
   },
   "src/messages/messages.service.ts": {
     "@typescript-eslint/no-explicit-any": {
-      "count": 38
+      "count": 2
     },
     "@typescript-eslint/no-unsafe-argument": {
-      "count": 35
+      "count": 1
     },
     "@typescript-eslint/no-unsafe-assignment": {
-      "count": 116
-    },
-    "@typescript-eslint/no-unsafe-call": {
-      "count": 4
+      "count": 3
     },
     "@typescript-eslint/no-unsafe-member-access": {
-      "count": 150
-    },
-    "@typescript-eslint/no-unsafe-return": {
-      "count": 5
+      "count": 6
     }
   },
   "src/messages/messaging-deleted-recipient.spec.ts": {
