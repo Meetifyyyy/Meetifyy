@@ -54,9 +54,10 @@ export class CreatePostDto {
   @IsOptional()
   mentions?: MentionDto[];
 
+  /** Only checked to be an object; PostsService reads `options` from it as untrusted. */
   @IsObject()
   @IsOptional()
-  poll?: any;
+  poll?: unknown;
 }
 
 export class CreateCommentDto {
@@ -160,7 +161,7 @@ export class PostsController {
   @Get(':id')
   async getPostById(
     @Req() req: AuthenticatedRequest,
-    @Res({ passthrough: true }) res: any,
+    @Res({ passthrough: true }) res: Response,
     @CurrentUser() user: { id: string },
     @Param('id') id: string,
   ) {
