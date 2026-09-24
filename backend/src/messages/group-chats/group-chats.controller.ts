@@ -354,12 +354,9 @@ export class GroupChatsController {
           }
         }
         const pubId = updated.publicId || updated.id;
-        const avatarVal =
-          updated.avatarKey !== undefined
-            ? updated.avatarKey
-            : updated.avatar !== undefined
-              ? updated.avatar
-              : convBefore?.avatarKey || null;
+        // `updated` is a full Conversation row, so avatarKey is always present
+        // (string or null); the fallbacks that followed could never run.
+        const avatarVal = updated.avatarKey;
 
         const payload: any = {
           conversationId: pubId,
@@ -390,7 +387,7 @@ export class GroupChatsController {
 
     return {
       ...updated,
-      avatar: updated.avatarKey || updated.avatar || null,
+      avatar: updated.avatarKey || null,
     };
   }
 
