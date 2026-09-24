@@ -5,7 +5,6 @@ import Avatar from '@shared/components/avatar/Avatar';
 import { useAuth } from '@shared/context/AuthContext';
 import { useSignup } from '../../context/SignupContext';
 import { styles as s } from '../../shared/ui';
-import { SIGNUP_DEV_BYPASS } from '../dev/signupDevBypass';
 
 const MESSAGES = ['Creating your profile', 'Wait a moment', 'Almost done'];
 const MESSAGE_MS = 1100;
@@ -24,14 +23,9 @@ const SLOW_AFTER_MS = 15000;
  * exactly as before: the account already exists and is usable once the code
  * was verified, and these are its finishing touches (avatar, welcome email).
  *
- * `preview` (dev only, see signup/dev): fakes a 4.5s completion and stays on
- * the done state instead of calling the API or navigating. Ignored outside
- * the local dev bypass, and stripped from production builds with it.
- *
- * @param {{ avatar: string, preview?: boolean }} props
+ * @param {{ avatar: string }} props
  */
-export default function SignupFinishing({ avatar, preview = false }) {
-  const isPreview = SIGNUP_DEV_BYPASS && preview;
+export default function SignupFinishing({ avatar }) {
   const { completeSignup } = useAuth();
   const { clearSignupData } = useSignup();
   const navigate = useNavigate();
@@ -54,8 +48,8 @@ export default function SignupFinishing({ avatar, preview = false }) {
    * dependency it re-ran the effect, whose cleanup marked the first run dead,
    * and the guard below then refused a second run — so nothing ever navigated.
    */
-  const latest = useRef({ completeSignup, clearSignupData, navigate, avatar, isPreview });
-  latest.current = { completeSignup, clearSignupData, navigate, avatar, isPreview };
+  const latest = useRef({ completeSignup, clearSignupData, navigate, avatar });
+  latest.current = { completeSignup, clearSignupData, navigate, avatar };
   const mountedRef = useRef(false);
 
   useEffect(() => {
@@ -72,9 +66,7 @@ export default function SignupFinishing({ avatar, preview = false }) {
     startedRef.current = true;
 
     const minDelay = new Promise((r) => setTimeout(r, MIN_VISIBLE_MS));
-    const work = latest.current.isPreview
-      ? new Promise((r) => setTimeout(r, 4500))
-      : Promise.resolve()
+    const work = Promise.resolve()
       .then(() => latest.current.completeSignup({ avatar: latest.current.avatar }))
       .catch((err) => console.error('Failed to finish signup:', err));
     const slowTimer = setTimeout(() => mountedRef.current && setSlow(true), SLOW_AFTER_MS);
@@ -83,7 +75,6 @@ export default function SignupFinishing({ avatar, preview = false }) {
       clearTimeout(slowTimer);
       if (!mountedRef.current) return;
       setDone(true);
-      if (latest.current.isPreview) return;
       setTimeout(() => {
         if (!mountedRef.current) return;
         latest.current.clearSignupData();
