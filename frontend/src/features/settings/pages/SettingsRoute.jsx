@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import OtpDialog from '@shared/components/OtpDialog';
 import DeletionScheduledNotice from '../components/DeletionScheduledNotice';
 import {
@@ -223,9 +224,71 @@ function CustomSelect({ value, onChange, options = [], disabled, placeholder, se
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const containerRef = useRef(null);
+  const menuRef = useRef(null);
+  const [menuBox, setMenuBox] = useState(null);
+
+  /*
+   * The menu is portalled to <body> and positioned `fixed` against the
+   * viewport. Inside the page it was clipped: `.page` has `overflow: hidden`
+   * and the panel body scrolls. It opens on the preferred side when that side
+   * has room, flips otherwise, is capped to the space it gets (scrolling
+   * inside), and follows the trigger every frame while open, so a scrolling
+   * panel or a resizing viewport cannot leave it behind. Same behaviour as
+   * the signup dropdown.
+   */
+  useLayoutEffect(() => {
+    if (!isOpen) return undefined;
+    let raf;
+    let last = '';
+    const place = () => {
+      const el = containerRef.current;
+      if (el) {
+        const r = el.getBoundingClientRect();
+        const vw = window.innerWidth;
+        const vh = window.visualViewport?.height ?? window.innerHeight;
+        const key = `${Math.round(r.top)}:${Math.round(r.left)}:${Math.round(r.width)}:${vw}:${Math.round(vh)}`;
+        if (key !== last) {
+          last = key;
+          const GAP = 6;
+          const EDGE = 8;
+          const IDEAL = searchable ? 300 : 260;
+          const below = vh - r.bottom - GAP - EDGE;
+          const above = r.top - GAP - EDGE;
+          const fits = Math.min(IDEAL, 180);
+          const up = placement === 'top'
+            ? above >= fits || above > below
+            : below < fits && above > below;
+          // Exactly the trigger's width, so the menu lines up with its field.
+          const width = Math.min(r.width, vw - EDGE * 2);
+          const left = Math.min(Math.max(r.left, EDGE), vw - EDGE - width);
+          const maxHeight = Math.max(120, Math.min(IDEAL, up ? above : below));
+          setMenuBox(up
+            ? { up, left, width, maxHeight, bottom: vh - r.top + GAP }
+            : { up, left, width, maxHeight, top: r.bottom + GAP });
+        }
+      }
+      raf = requestAnimationFrame(place);
+    };
+    place();
+    return () => cancelAnimationFrame(raf);
+  }, [isOpen, placement, searchable]);
+
+  useEffect(() => {
+    if (!isOpen) return undefined;
+    const onKey = (e) => {
+      if (e.key === 'Escape') {
+        setIsOpen(false);
+        setSearchQuery('');
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [isOpen]);
 
   useEffect(() => {
     const handleOutsideClick = (e) => {
+      // The menu lives in a portal, outside the container.
+      if (menuRef.current && menuRef.current.contains(e.target)) return;
       if (containerRef.current && !containerRef.current.contains(e.target)) {
         setIsOpen(false);
         setSearchQuery('');
@@ -269,10 +332,18 @@ function CustomSelect({ value, onChange, options = [], disabled, placeholder, se
         />
       </button>
 
-      {isOpen && (
+      {isOpen && menuBox && createPortal(
         <div
-          className={`${styles.selectDropdown} ${placement === 'top' ? styles.selectDropdownTop : ''}`}
+          ref={menuRef}
+          className={`${styles.selectDropdown} ${styles.selectPortal} ${menuBox.up ? styles.selectDropdownTop : ''}`}
           role="listbox"
+          style={{
+            left: menuBox.left,
+            width: menuBox.width,
+            maxHeight: menuBox.maxHeight,
+            top: menuBox.up ? 'auto' : menuBox.top,
+            bottom: menuBox.up ? menuBox.bottom : 'auto',
+          }}
         >
           {searchable && (
             <div className={styles.selectSearchContainer}>
@@ -312,7 +383,8 @@ function CustomSelect({ value, onChange, options = [], disabled, placeholder, se
               <div className={styles.noResults}>No results found</div>
             )}
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );
