@@ -11,9 +11,10 @@ import s from './authKit.module.css';
  * Props:
  *   label, id, value, onChange, type, ...inputProps
  *   status?    see below (async availability, from useAvailabilityCheck)
- *   error?     string   — validation error (drives invalid styling + message)
+ *   error?     node     — validation error (drives invalid styling + message)
  *   hint?      string   — shown under the field when there's no error
  *   endAdornment? node  — custom right-side control (e.g. a password toggle)
+ *   hideLabel?  bool     — label for screen readers only (placeholder shows it)
  *
  * ## Status vocabulary
  *
@@ -51,10 +52,13 @@ const StatusIcon = ({ status }) => {
 const BLOCKING_STATUSES = new Set(['rejected', 'invalid', 'error']);
 
 const AuthField = forwardRef(function AuthField(
-  { label, id, status, error, hint, endAdornment, className = '', ...inputProps },
+  { label, id, status, error, hint, endAdornment, hideLabel = false, className = '', ...inputProps },
   ref,
 ) {
   const isInvalid = !!error || BLOCKING_STATUSES.has(status);
+  // The message slot is always in the DOM (it reserves the line), so the input
+  // can point at it permanently; an empty slot announces nothing.
+  const messageId = id ? `${id}-message` : undefined;
   const isValid = status === 'available';
   const hasAdornment = !!status || !!endAdornment;
 
@@ -73,11 +77,21 @@ const AuthField = forwardRef(function AuthField(
 
   return (
     <div className={fieldClass}>
-      <label htmlFor={id} className={s.fieldLabel}>
+      {/* hideLabel: visually hidden, still the input's accessible name. The
+          placeholder repeats the label, so the field stays self-describing. */}
+      <label htmlFor={id} className={hideLabel ? s.srOnly : s.fieldLabel}>
         {label}
       </label>
       <div className={s.fieldInner}>
-        <input ref={ref} id={id} className={inputClass} placeholder={label} {...inputProps} />
+        <input
+          ref={ref}
+          id={id}
+          className={inputClass}
+          placeholder={label}
+          aria-invalid={isInvalid || undefined}
+          aria-describedby={messageId}
+          {...inputProps}
+        />
         {endAdornment
           ? endAdornment
           : status
@@ -89,10 +103,11 @@ const AuthField = forwardRef(function AuthField(
             : null}
       </div>
 
-      <div className={s.messageSlot}>
+      <div className={s.messageSlot} id={messageId} aria-live="polite">
         {error ? (
           <div className={`${s.message} ${s.messageError}`}>
-            <AlertCircle size={13} /> {error}
+            <AlertCircle size={14} aria-hidden="true" />
+            <span>{error}</span>
           </div>
         ) : hint ? (
           <div className={`${s.message} ${s.messageHint}`}>{hint}</div>
