@@ -8,6 +8,7 @@ import {
   Logger,
   Optional,
 } from '@nestjs/common';
+import { withInviteExpiry } from './core/invite-data';
 import { OnEvent } from '@nestjs/event-emitter';
 import { MentionSource, NotificationEntityType } from '@prisma/client';
 import Redis from 'ioredis';
@@ -605,22 +606,7 @@ export class MessagesService
     // Normalize group-invite expiry at write time so it is identical on every
     // send path (this MessagesService path + the DM/group core path). A group
     // invite defaults to a 48h TTL; isExpired is recomputed on read below.
-    let initialInviteData = payload.inviteData || null;
-    if (
-      initialInviteData &&
-      (initialInviteData.type === 'group_invite' ||
-        initialInviteData.groupId ||
-        initialInviteData.conversationId)
-    ) {
-      const expiresAt =
-        initialInviteData.expiresAt ||
-        new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
-      initialInviteData = {
-        ...initialInviteData,
-        expiresAt,
-        isExpired: new Date(expiresAt).getTime() <= Date.now(),
-      };
-    }
+    const initialInviteData = withInviteExpiry(payload.inviteData);
 
     // 3. Transactional Write
     const message = await this.prisma.$transaction(async (tx) => {
@@ -768,25 +754,10 @@ export class MessagesService
 
     // Recompute group-invite expiry on read so a stored invite that has since
     // passed its expiresAt reflects isExpired: true without needing a rewrite.
-    let outInviteData = isUnsent ? null : msgPayload.inviteData || null;
-    if (
-      outInviteData &&
-      (outInviteData.type === 'group_invite' ||
-        outInviteData.groupId ||
-        outInviteData.conversationId)
-    ) {
-      const createdAtMs = message.createdAt
-        ? new Date(message.createdAt).getTime()
-        : Date.now();
-      const expiresAt =
-        outInviteData.expiresAt ||
-        new Date(createdAtMs + 48 * 60 * 60 * 1000).toISOString();
-      outInviteData = {
-        ...outInviteData,
-        expiresAt,
-        isExpired: new Date(expiresAt).getTime() <= Date.now(),
-      };
-    }
+    const outInviteData = withInviteExpiry(
+      isUnsent ? null : msgPayload.inviteData,
+      message.createdAt,
+    );
 
     const msgRes = {
       id: message.id,
@@ -1121,25 +1092,10 @@ export class MessagesService
         minOtherLastReadAt + 5000 >= new Date(m.createdAt).getTime();
       const isUnsent = m.state === 'UNSENT';
 
-      let inviteData = isUnsent ? null : payload.inviteData || null;
-      if (
-        inviteData &&
-        (inviteData.type === 'group_invite' ||
-          inviteData.groupId ||
-          inviteData.conversationId)
-      ) {
-        const createdAtMs = m.createdAt
-          ? new Date(m.createdAt).getTime()
-          : Date.now();
-        const expiresAt =
-          inviteData.expiresAt ||
-          new Date(createdAtMs + 48 * 60 * 60 * 1000).toISOString();
-        inviteData = {
-          ...inviteData,
-          expiresAt,
-          isExpired: new Date(expiresAt).getTime() <= Date.now(),
-        };
-      }
+      const inviteData = withInviteExpiry(
+        isUnsent ? null : payload.inviteData,
+        m.createdAt,
+      );
 
       return {
         id: m.id,

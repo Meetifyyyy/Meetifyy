@@ -5,6 +5,7 @@ import {
   BadRequestException,
   Logger,
 } from '@nestjs/common';
+import { inviteString, withInviteExpiry } from './invite-data';
 import { MentionSource, NotificationEntityType } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { BlocksService } from '../../users/blocks.service';
@@ -442,30 +443,16 @@ export class MessagingCoreService {
       validatedReplyToId = replyTarget ? replyTarget.id : null;
     }
 
-    let initialInviteData = payload.inviteData || null;
-    if (
-      initialInviteData &&
-      (initialInviteData.type === 'group_invite' ||
-        initialInviteData.groupId ||
-        initialInviteData.conversationId)
-    ) {
-      const expiresAt =
-        initialInviteData.expiresAt ||
-        new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
-      const isExpired = new Date(expiresAt).getTime() <= Date.now();
-      initialInviteData = {
-        ...initialInviteData,
-        expiresAt,
-        isExpired,
-      };
-    }
+    const initialInviteData = withInviteExpiry(payload.inviteData);
 
     const now = new Date();
     const lastMsgText =
       payload.text ||
-      (initialInviteData?.type === 'postShare' ? 'Shared a post' : null) ||
-      (initialInviteData?.groupName
-        ? `Group invite: ${initialInviteData.groupName}`
+      (inviteString(initialInviteData, 'type') === 'postShare'
+        ? 'Shared a post'
+        : null) ||
+      (inviteString(initialInviteData, 'groupName')
+        ? `Group invite: ${inviteString(initialInviteData, 'groupName')}`
         : null) ||
       (payload.mediaUrl
         ? payload.mediaType === 'image'
@@ -559,22 +546,10 @@ export class MessagingCoreService {
 
     const isUnsent = message.state === 'UNSENT';
     const msgPayload = (message.payload as any) || {};
-    let outputInviteData = isUnsent ? null : msgPayload.inviteData || null;
-    if (
-      outputInviteData &&
-      (outputInviteData.type === 'group_invite' ||
-        outputInviteData.groupId ||
-        outputInviteData.conversationId)
-    ) {
-      const createdAtMs = message.createdAt
-        ? new Date(message.createdAt).getTime()
-        : Date.now();
-      const expiresAt =
-        outputInviteData.expiresAt ||
-        new Date(createdAtMs + 48 * 60 * 60 * 1000).toISOString();
-      const isExpired = new Date(expiresAt).getTime() <= Date.now();
-      outputInviteData = { ...outputInviteData, expiresAt, isExpired };
-    }
+    const outputInviteData = withInviteExpiry(
+      isUnsent ? null : msgPayload.inviteData,
+      message.createdAt,
+    );
 
     let replyToObj: any = null;
     if (message.replyTo) {
@@ -821,22 +796,10 @@ export class MessagingCoreService {
         minOtherLastReadAt + 5000 >= new Date(m.createdAt).getTime();
       const isUnsent = m.state === 'UNSENT';
 
-      let inviteData = isUnsent ? null : payload.inviteData || null;
-      if (
-        inviteData &&
-        (inviteData.type === 'group_invite' ||
-          inviteData.groupId ||
-          inviteData.conversationId)
-      ) {
-        const createdAtMs = m.createdAt
-          ? new Date(m.createdAt).getTime()
-          : Date.now();
-        const expiresAt =
-          inviteData.expiresAt ||
-          new Date(createdAtMs + 48 * 60 * 60 * 1000).toISOString();
-        const isExpired = new Date(expiresAt).getTime() <= Date.now();
-        inviteData = { ...inviteData, expiresAt, isExpired };
-      }
+      const inviteData = withInviteExpiry(
+        isUnsent ? null : payload.inviteData,
+        m.createdAt,
+      );
 
       return {
         id: m.id,

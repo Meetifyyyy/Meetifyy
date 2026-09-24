@@ -11,6 +11,7 @@ import {
   UseGuards,
   BadRequestException,
 } from '@nestjs/common';
+import { inviteString } from '../core/invite-data';
 import type { AuthenticatedRequest } from '../../common/types/authenticated-request';
 import { DmService } from './dm.service';
 import { BlocksService } from '../../users/blocks.service';
@@ -184,10 +185,10 @@ export class DmController {
     const previewText =
       message.text ||
       (message.inviteData
-        ? message.inviteData.type === 'postShare'
+        ? inviteString(message.inviteData, 'type') === 'postShare'
           ? 'Shared a post'
-          : message.inviteData.groupName
-            ? `Group invite: ${message.inviteData.groupName}`
+          : inviteString(message.inviteData, 'groupName')
+            ? `Group invite: ${inviteString(message.inviteData, 'groupName')}`
             : 'Group invite'
         : '');
 

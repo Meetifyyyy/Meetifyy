@@ -1631,16 +1631,16 @@
       "count": 24
     },
     "@typescript-eslint/no-unsafe-argument": {
-      "count": 16
+      "count": 13
     },
     "@typescript-eslint/no-unsafe-assignment": {
-      "count": 85
+      "count": 71
     },
     "@typescript-eslint/no-unsafe-call": {
       "count": 2
     },
     "@typescript-eslint/no-unsafe-member-access": {
-      "count": 108
+      "count": 92
     }
   },
   "src/messages/dm/dm-lookup.spec.ts": {
@@ -1674,7 +1674,7 @@
       "count": 16
     },
     "@typescript-eslint/no-unsafe-member-access": {
-      "count": 18
+      "count": 15
     }
   },
   "src/messages/dm/dm.service.ts": {
@@ -1705,7 +1705,7 @@
       "count": 37
     },
     "@typescript-eslint/no-unsafe-member-access": {
-      "count": 36
+      "count": 34
     },
     "@typescript-eslint/no-unsafe-return": {
       "count": 2
@@ -1823,7 +1823,7 @@
       "count": 35
     },
     "@typescript-eslint/no-unsafe-member-access": {
-      "count": 33
+      "count": 31
     },
     "@typescript-eslint/no-unsafe-return": {
       "count": 3
@@ -1848,16 +1848,16 @@
       "count": 38
     },
     "@typescript-eslint/no-unsafe-argument": {
-      "count": 40
+      "count": 37
     },
     "@typescript-eslint/no-unsafe-assignment": {
-      "count": 131
+      "count": 116
     },
     "@typescript-eslint/no-unsafe-call": {
       "count": 4
     },
     "@typescript-eslint/no-unsafe-member-access": {
-      "count": 164
+      "count": 150
     },
     "@typescript-eslint/no-unsafe-return": {
       "count": 5
@@ -1915,20 +1915,6 @@
     },
     "@typescript-eslint/no-unsafe-return": {
       "count": 3
-    }
-  },
-  "src/messages/reply-preview.util.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 3
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 16
-    },
-    "@typescript-eslint/no-unsafe-call": {
-      "count": 2
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 44
     }
   },
   "src/messages/sender-sync.spec.ts": {

@@ -11,6 +11,7 @@ import {
   Delete,
   BadRequestException,
 } from '@nestjs/common';
+import { inviteString } from './core/invite-data';
 import type { AuthenticatedRequest } from '../common/types/authenticated-request';
 import { MessagesService } from './messages.service';
 import { JwtGuard } from '../common/guards/jwt.guard';
@@ -274,8 +275,8 @@ export class MessagesController {
           text:
             message.text ||
             (message.inviteData
-              ? message.inviteData.groupName
-                ? `Group invite: ${message.inviteData.groupName}`
+              ? inviteString(message.inviteData, 'groupName')
+                ? `Group invite: ${inviteString(message.inviteData, 'groupName')}`
                 : 'Group invite'
               : ''),
           createdAt: message.createdAt,
