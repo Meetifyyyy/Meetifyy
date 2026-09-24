@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { supabase } from '@shared/context/AuthContext';
 import { isRecoveryTab, clearRecoveryTab } from '@shared/lib/supabase';
@@ -14,6 +14,7 @@ import {
   AuthStatus,
   styles as s,
 } from '../shared/ui';
+import { AUTH_STORIES } from '../shared/ui/authStories';
 
 const API_URL = getBackendUrl();
 
@@ -67,6 +68,10 @@ export default function ResetPasswordPage() {
   const isSubmittingRef = useRef(false);
 
   const navigate = useNavigate();
+  // Phones: the header back button. Reset is reached from an email link, so
+  // there is usually no in-app page behind it; login is where "back" goes.
+  // Leaving abandons the recovery session through the unmount effect below.
+  const handleBack = useCallback(() => navigate('/login', { replace: true }), [navigate]);
 
   const showToast = (msg) => {
     setToastMsg(msg);
@@ -368,8 +373,9 @@ export default function ResetPasswordPage() {
   return (
     <>
       <AuthShell
-        headline={'Almost there.\n*Set a fresh password.*'}
-        subtext="Choose something strong you'll remember. Your campus circle is waiting."
+        headline={AUTH_STORIES['/reset-password'].headline}
+        subtext={AUTH_STORIES['/reset-password'].subtext}
+        onBack={handleBack}
       >
         <div className={s.content}>
           {uiState === 'loading' && (
@@ -433,7 +439,7 @@ export default function ResetPasswordPage() {
                   loading={isUpdating}
                   loadingText="Updating..."
                   disabled={!password || !confirmPassword}
-                  style={{ marginTop: '0.2rem' }}
+                  className={s.primaryAction}
                 >
                   Update Password
                 </AuthButton>

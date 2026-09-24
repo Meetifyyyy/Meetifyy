@@ -1,6 +1,6 @@
-import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useState, useCallback } from 'react';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
+import { Link } from 'react-router-dom';
 import Toast from '@shared/components/ui/Toast';
 import { MailCheck, ArrowRight } from '@shared/components/icons';
 import {
@@ -9,9 +9,9 @@ import {
   AuthField,
   AuthButton,
   AuthStatus,
-  BackButton,
   styles as s,
 } from '../shared/ui';
+import { AUTH_STORIES } from '../shared/ui/authStories';
 import { apiClient } from '@shared/api/apiClient';
 
 export default function ForgotPasswordPage() {
@@ -21,7 +21,11 @@ export default function ForgotPasswordPage() {
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [notFound, setNotFound] = useState(false);
+  // Shown under the field, not as a toast: it is about what was typed there.
+  const [formatError, setFormatError] = useState(false);
   const goBack = useSmartBack();
+  // Phones: the header back button. Previous page, or login when opened directly.
+  const handleBack = useCallback(() => goBack('/login'), [goBack]);
 
   const showToast = (msg) => {
     setToastMsg(msg);
@@ -33,7 +37,7 @@ export default function ForgotPasswordPage() {
     const cleanEmail = email.trim().toLowerCase();
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!cleanEmail || !emailRegex.test(cleanEmail)) {
-      showToast('Enter a valid email');
+      setFormatError(true);
       return;
     }
 
@@ -104,13 +108,13 @@ export default function ForgotPasswordPage() {
   return (
     <>
       <AuthShell
-        headline={'Locked out?\n*We’ll get you back in.*'}
-        subtext="Enter the email tied to your account and we'll send a secure reset link."
+        headline={AUTH_STORIES['/forgot-password'].headline}
+        subtext={AUTH_STORIES['/forgot-password'].subtext}
+        onBack={handleBack}
       >
         <div className={s.content}>
           {!isSubmitted ? (
             <>
-              <BackButton onClick={() => goBack('/login')} />
               {/* The old subtitle hedged with "if an account exists", which was
                   the wording that went with never confirming either way. The
                   screen now says when there is no account, so the hedge only
@@ -129,8 +133,15 @@ export default function ForgotPasswordPage() {
                     // Editing the address is the user answering the message, so
                     // it should not sit there contradicting what they now see.
                     if (notFound) setNotFound(false);
+                    if (formatError) setFormatError(false);
                   }}
-                  error={notFound ? 'No account found. Check your email and try again.' : null}
+                  error={
+                    formatError
+                      ? 'Enter a valid email address.'
+                      : notFound
+                        ? 'No account found. Check your email and try again.'
+                        : null
+                  }
                 />
 
                 <AuthButton
@@ -139,7 +150,7 @@ export default function ForgotPasswordPage() {
                   loadingText="Sending..."
                   icon={<ArrowRight size={18} />}
                   disabled={!email.trim()}
-                  style={{ marginTop: '0.2rem' }}
+                  className={s.primaryAction}
                 >
                   Send Reset Link
                 </AuthButton>
