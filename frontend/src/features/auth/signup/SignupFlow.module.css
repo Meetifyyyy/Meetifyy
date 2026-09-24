@@ -152,3 +152,199 @@
   color: var(--color-brand-primary);
 }
 
+
+/* Match the auth kit's inputs on short viewports so a row of selects and
+   text inputs stays one height. */
+@media (max-height: 560px) {
+  .dateSelect {
+    height: 48px;
+    min-height: 48px;
+    max-height: 48px;
+  }
+}
+
+/* ── Borderless filled trigger + portalled, gently elevated menu ──────────
+   The trigger matches the auth kit inputs: a filled surface, no outline;
+   focus lifts it to the card colour with a soft brand ring. The menu is
+   portalled to <body> (see CustomSelect), fixed-positioned against the
+   viewport so the card can never clip it. */
+.dateSelect {
+  border-color: transparent;
+}
+
+.dateSelect:hover {
+  border-color: transparent;
+  background-color: var(--color-bg-alt);
+  filter: brightness(0.985);
+}
+
+.dateSelect:focus,
+.dateSelect:focus-visible {
+  border-color: transparent;
+  background: var(--color-bg-white);
+  box-shadow: 0 0 0 3px rgba(92, 71, 250, 0.22), 0 1px 2px rgba(15, 23, 42, 0.06);
+}
+
+.dateSelect.invalid {
+  border-color: transparent;
+  background: rgba(239, 68, 68, 0.07);
+}
+
+.dateSelect.invalid:focus {
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.2);
+}
+
+.customSelectPortal {
+  position: fixed;
+  z-index: 10050;
+  margin: 0;
+  box-sizing: border-box;
+  border: none;
+  border-radius: 14px;
+  background: var(--color-bg-white);
+  /* Subtle: a tight contact shadow plus one soft ambient layer. */
+  box-shadow:
+    0 0 0 1px rgba(15, 23, 42, 0.05),
+    0 2px 6px rgba(15, 23, 42, 0.06),
+    0 12px 28px -8px rgba(15, 23, 42, 0.16);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  animation: selectMenuIn 0.14s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  transform-origin: top center;
+}
+
+.customSelectPortal.openUpward {
+  top: auto;
+  transform-origin: bottom center;
+  box-shadow:
+    0 0 0 1px rgba(15, 23, 42, 0.05),
+    0 -2px 6px rgba(15, 23, 42, 0.06),
+    0 -12px 28px -8px rgba(15, 23, 42, 0.16);
+}
+
+:global([data-theme='dark']) .customSelectPortal {
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.06),
+    0 12px 28px -8px rgba(0, 0, 0, 0.6);
+}
+
+.customSelectSearch {
+  border-color: transparent;
+  background: var(--color-bg-alt);
+}
+
+.customSelectSearch:focus {
+  border-color: transparent;
+  box-shadow: 0 0 0 3px rgba(92, 71, 250, 0.2);
+}
+
+@keyframes selectMenuIn {
+  from { opacity: 0; transform: scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .customSelectPortal { animation: none; }
+}
+
+/* Same fill token as the auth inputs (defined on the auth shell). */
+.dateSelect {
+  background-color: var(--auth-field, #f1f2f5);
+}
+
+.dateSelect:hover {
+  filter: none;
+  background-color: var(--auth-field-hover, #eaebef);
+}
+
+.customSelectSearch {
+  background: #f1f2f5;
+}
+
+:global([data-theme='dark']) .customSelectSearch {
+  background: #2c2a37;
+}
+
+/* ── Menu surface = input fill ─────────────────────────────────────────────
+   The menu is portalled to <body>, outside the auth shell, so the shell's
+   --auth-field token does not reach it; the same two values are set here.
+   Hover/selected rows go one step deeper so they still read on that fill. */
+.customSelectPortal {
+  background: #f1f2f5;
+  --select-row-hover: #e4e5ea;
+}
+
+:global([data-theme='dark']) .customSelectPortal {
+  background: #2c2a37;
+  --select-row-hover: #383646;
+}
+
+.customSelectPortal .customSelectOption:hover,
+.customSelectPortal .customSelectOption.selected {
+  background: var(--select-row-hover);
+}
+
+/* The sticky search bar and footer sit on the same surface. */
+.customSelectPortal > div:first-child[style*='sticky'],
+.customSelectPortal .customSelectFooter {
+  background: inherit !important;
+}
+
+.customSelectPortal .customSelectSearch {
+  background: var(--select-row-hover);
+}
+
+.customSelectPortal::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Width comes from the trigger (inline); no floor that could make it wider. */
+.customSelectPortal {
+  min-width: 0;
+}
+
+/* Thin focus ring, matching the auth inputs (see authKit.module.css). */
+.dateSelect:focus,
+.dateSelect:focus-visible {
+  box-shadow: 0 0 0 1.5px rgba(92, 71, 250, 0.55);
+}
+
+:global([data-theme='dark']) .dateSelect:focus,
+:global([data-theme='dark']) .dateSelect:focus-visible {
+  box-shadow: 0 0 0 1.5px rgba(139, 123, 255, 0.7);
+}
+
+.dateSelect.invalid:focus {
+  box-shadow: 0 0 0 1.5px rgba(239, 68, 68, 0.6);
+}
+
+.customSelectPortal .customSelectSearch:focus {
+  box-shadow: 0 0 0 1.5px rgba(92, 71, 250, 0.55);
+}
+
+/* Menu surface follows the lighter field fill (see authKit.module.css). */
+.customSelectPortal {
+  background: #f4f5f7;
+  --select-row-hover: #e8e9ee;
+}
+
+:global([data-theme='dark']) .customSelectPortal {
+  background: #35333f;
+  --select-row-hover: #423f4d;
+}
+
+.customSelectSearch {
+  background: #eceef2;
+}
+
+:global([data-theme='dark']) .customSelectSearch {
+  background: #3c3a47;
+}
+
+.dateSelect {
+  background-color: var(--auth-field, #f4f5f7);
+}
+
+.dateSelect:hover {
+  background-color: var(--auth-field-hover, #eceef2);
+}

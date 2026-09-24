@@ -1,5 +1,4 @@
 import { useState, useMemo } from 'react';
-import { Link } from 'react-router-dom';
 import { AlertCircle, ArrowRight } from '@shared/components/icons';
 import { useSignup } from '../../context/SignupContext';
 import AnimatedStep from './AnimatedStep';
@@ -8,12 +7,14 @@ import { validateDOB } from '../../../../shared/utils/dateValidation';
 import { useAvailabilityCheck } from '../hooks/useAvailabilityCheck';
 import { AuthHeading, AuthField, AuthButton, styles as s } from '../../shared/ui';
 
-export default function Step1Identity() {
+/**
+ * Step 2 — username and birthday: the two things that make up the person's
+ * public identity on Meetifyy. The username is checked as they type, so the
+ * answer is usually there before they reach the birthday.
+ */
+export default function Step2Profile() {
   const { signupData, updateData, nextStep } = useSignup();
 
-  const [name, setName] = useState(
-    signupData.firstName ? `${signupData.firstName} ${signupData.lastName || ''}`.trim() : '',
-  );
   const [username, setUsername] = useState(signupData.username || '');
 
   const initialDob = signupData.birthday || '';
@@ -25,21 +26,8 @@ export default function Step1Identity() {
   const [month, setMonth] = useState(initialMonth);
   const [day, setDay] = useState(initialDay);
   const [attempted, setAttempted] = useState(false);
-  // Agreement to the Terms and Privacy Policy, asked here rather than as fine
-  // print beside the final button. It is carried through `signupData` so it
-  // survives stepping back and forth.
-  const [agreedToLegal, setAgreedToLegal] = useState(!!signupData.agreedToLegal);
 
   // ── Validation ────────────────────────────────────────────────────────────
-  const nameError = useMemo(() => {
-    if (!name) return 'Name is required.';
-    if (/\d/.test(name)) return 'Names cannot contain numbers.';
-    if (/[!@#$%^&*(),.?":{}|<>]/.test(name)) return 'Names cannot contain special characters.';
-    if (name.trim().length < 2) return 'Please enter a valid name.';
-    if (name.trim().length > 30) return 'Name cannot exceed 30 characters.';
-    return null;
-  }, [name]);
-
   const usernameFormatError = useMemo(() => {
     if (!username) return 'Username is required.';
     if (username.includes(' ')) return 'Usernames cannot contain spaces.';
@@ -71,21 +59,16 @@ export default function Step1Identity() {
    */
   const isUsernameBlocked =
     !!usernameFormatError || (usernameStatus !== null && usernameStatus !== 'available');
-  const isValid =
-    !nameError && !isUsernameBlocked && !dobError && !isChecking && agreedToLegal;
+  const isValid = !isUsernameBlocked && !dobError && !isChecking;
 
   const handleSubmit = (e) => {
     e.preventDefault();
     setAttempted(true);
     if (isChecking) return;
     if (isValid) {
-      const parts = name.trim().split(' ');
       updateData({
-        firstName: parts[0],
-        lastName: parts.slice(1).join(' '),
         username: normalizedUsername,
         birthday: dobValidation.dobString,
-        agreedToLegal: true,
       });
       nextStep();
     }
@@ -101,28 +84,25 @@ export default function Step1Identity() {
     }
     return null;
   })();
-  // No "continue anyway" hint: an unchecked username is not an available one.
-  const usernameHint = null;
+  // Never "continue anyway": an unchecked username is not an available one.
+  const usernameHint =
+    usernameStatus === 'available' ? `@${normalizedUsername} is available` : 'Lowercase letters, numbers, _ and .';
 
   return (
     <AnimatedStep className={s.stepWrapper}>
-      <AuthHeading title="Tell us about yourself" />
+      <AuthHeading
+        title={signupData.firstName ? `Nice to meet you, ${signupData.firstName}` : 'Your profile'}
+        subtitle="Pick a username and add your birthday. Your username is how other students find you."
+      />
 
       <form onSubmit={handleSubmit} className={s.form} noValidate>
-        <AuthField
-          id="signup-name"
-          label="Full Name"
-          type="text"
-          maxLength={30}
-          value={name}
-          error={attempted ? nameError : null}
-          onChange={(e) => setName(e.target.value.slice(0, 30))}
-        />
-
         <AuthField
           id="signup-username"
           label="Username"
           type="text"
+          autoComplete="username"
+          autoCapitalize="none"
+          spellCheck={false}
           maxLength={30}
           value={username}
           status={usernameStatus}
@@ -136,13 +116,12 @@ export default function Step1Identity() {
         />
 
         <div className={`${s.selectGroup} ${attempted && dobError ? s.isInvalid : ''}`}>
-          <span className={s.selectLabel}>Birthday</span>
-          <div className={s.selectRow}>
+          <span className={s.selectLabel} id="signup-dob-label">Birthday</span>
+          <div className={s.selectRow} role="group" aria-labelledby="signup-dob-label">
             <CustomSelect
               value={month}
               onChange={setMonth}
               placeholder="Month"
-              placement="top"
               isInvalid={attempted && !!dobError}
               options={Array.from({ length: 12 }, (_, i) => i + 1).map((m) => ({
                 value: m,
@@ -189,38 +168,11 @@ export default function Step1Identity() {
           <div className={s.messageSlot}>
             {attempted && dobError ? (
               <div className={`${s.message} ${s.messageError}`} role="alert">
-                <AlertCircle size={13} /> {dobError}
+                <AlertCircle size={14} aria-hidden="true" />
+                <span>{dobError}</span>
               </div>
             ) : null}
           </div>
-        </div>
-
-        <label className={s.consentRow} htmlFor="signup-legal-consent">
-          <input
-            id="signup-legal-consent"
-            type="checkbox"
-            className={s.consentBox}
-            checked={agreedToLegal}
-            onChange={(e) => setAgreedToLegal(e.target.checked)}
-          />
-          <span>
-            I agree to the{' '}
-            <Link to="/terms-and-conditions" target="_blank" rel="noopener noreferrer" className={s.consentLink}>
-              Terms of Service
-            </Link>{' '}
-            and have read the{' '}
-            <Link to="/privacy-policy" target="_blank" rel="noopener noreferrer" className={s.consentLink}>
-              Privacy Policy
-            </Link>
-            .
-          </span>
-        </label>
-        <div className={s.messageSlot}>
-          {attempted && !agreedToLegal ? (
-            <div className={`${s.message} ${s.messageError}`} role="alert">
-              <AlertCircle size={13} /> Please accept the Terms of Service and Privacy Policy to continue.
-            </div>
-          ) : null}
         </div>
 
         <AuthButton
@@ -228,7 +180,7 @@ export default function Step1Identity() {
           loading={isChecking}
           loadingText="Checking..."
           icon={<ArrowRight size={18} />}
-          style={{ marginTop: '0.25rem' }}
+          className={s.primaryAction}
         >
           Continue
         </AuthButton>

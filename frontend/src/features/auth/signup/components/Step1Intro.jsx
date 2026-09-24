@@ -1,12 +1,8 @@
 import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowRight, AlertCircle } from '@shared/components/icons';
+import { ArrowRight } from '@shared/components/icons';
 import { useSignup } from '../../context/SignupContext';
 import AnimatedStep from './AnimatedStep';
-import CustomSelect from './CustomSelect';
-import AcademicSelection from '@shared/academics/AcademicSelection';
-import { useAcademicCatalog } from '@shared/academics/useAcademicCatalog';
-import { validateAcademicSelection, ACADEMIC_ERRORS } from '@shared/academics/academicCatalog';
 import { apiClient } from '@shared/api/apiClient';
 import { checkEmailFormat, EMAIL_FORMAT, normalizeEmail } from '@shared/utils/emailValidation';
 import { useAvailabilityCheck } from '../hooks/useAvailabilityCheck';
@@ -17,21 +13,33 @@ import { AuthHeading, AuthField, AuthButton, styles as s } from '../../shared/ui
 // "request college" link rather than a generic "invalid email" message.
 const DOMAIN_NOT_REGISTERED_REASON = 'Please select your college first.';
 
-export default function Step2Academic() {
+/** Same rules the old identity step used, now asked alongside the email. */
+function validateName(name) {
+  if (!name.trim()) return 'Please tell us your name.';
+  if (/\d/.test(name)) return 'Names cannot contain numbers.';
+  if (/[!@#$%^&*(),.?":{}|<>]/.test(name)) return 'Names cannot contain special characters.';
+  if (name.trim().length < 2) return 'Please enter a valid name.';
+  if (name.trim().length > 30) return 'Name cannot exceed 30 characters.';
+  return null;
+}
+
+/**
+ * Step 1 — name and college email.
+ *
+ * The two things anyone expects to give first, and the email is also the
+ * student check: its domain must belong to an approved college, and the
+ * college is read from it here so the College step never has to ask for it.
+ * The email gate below is unchanged from when it lived on the academic step.
+ */
+export default function Step1Intro() {
   const navigate = useNavigate();
-  const { signupData, updateData, nextStep } = useSignup();
+  const { signupData, updateData, nextStep, setCollegeName } = useSignup();
 
+  const [name, setName] = useState(
+    signupData.firstName ? `${signupData.firstName} ${signupData.lastName || ''}`.trim() : '',
+  );
   const [email, setEmail] = useState(signupData.email || '');
-
-  // One controlled object rather than three loose fields, so course/branch/year
-  // can never drift out of sync with each other.
-  const [academic, setAcademic] = useState(() => ({
-    course: signupData.course || '',
-    branch: signupData.branch || '',
-    passingYear: Number.isInteger(signupData.passingYear ?? signupData.currentYear)
-      ? (signupData.passingYear ?? signupData.currentYear)
-      : null,
-  }));
+  const nameError = useMemo(() => validateName(name), [name]);
   const [attempted, setAttempted] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [hardBlockReason, setHardBlockReason] = useState('');
@@ -58,27 +66,12 @@ export default function Step2Academic() {
     status: emailStatus,
     reason: emailReason,
     code: emailCode,
+    collegeName,
   } = useAvailabilityCheck(normalizedEmail, {
     endpoint: '/api/auth/check-email',
     field: 'email',
     enabled: emailFormat.valid,
   });
-
-  const { courses: academicCourses } = useAcademicCatalog();
-
-  // Per-field messages, derived from the one shared rule set so signup and
-  // settings can never disagree about what is valid.
-  const academicErrors = useMemo(() => ({
-    course: !academic.course ? ACADEMIC_ERRORS.COURSE_REQUIRED : null,
-    branch: !academic.branch ? ACADEMIC_ERRORS.BRANCH_REQUIRED : null,
-    passingYear:
-      !Number.isInteger(academic.passingYear) ? ACADEMIC_ERRORS.YEAR_REQUIRED : null,
-  }), [academic]);
-
-  const academicError = useMemo(
-    () => validateAcademicSelection(academicCourses, academic),
-    [academicCourses, academic],
-  );
 
   const isChecking = emailStatus === 'checking';
 
@@ -158,7 +151,7 @@ export default function Step2Academic() {
     setAttempted(true);
     setHardBlockReason('');
 
-    if (emailFormatError || academicError) return;
+    if (nameError || emailFormatError) return;
     // A settled "no" from the live check is final; do not re-ask.
     if (emailStatus === 'rejected' || emailStatus === 'invalid') return;
 
@@ -210,88 +203,65 @@ export default function Step2Academic() {
     // Persist the exact ids the backend validates against — no display strings,
     // and no `year`/`major` legacy keys. College is resolved server-side from
     // the email domain, so we do not store collegeId here.
+    const parts = name.trim().split(/\s+/);
     updateData({
+      firstName: parts[0],
+      lastName: parts.slice(1).join(' '),
       email: normalizedEmail,
-      course: academic.course,
-      branch: academic.branch,
-      passingYear: academic.passingYear,
     });
+    if (collegeName) setCollegeName(collegeName);
     nextStep();
   };
 
+  const emailOk = emailStatus === 'available' && !emailError;
+
   return (
     <AnimatedStep className={s.stepWrapper}>
-      <AuthHeading title="Academic details" />
+      <AuthHeading
+        title="Let's get you started"
+        subtitle="Use your college email. It's how we know you're a student."
+      />
 
       <form onSubmit={handleSubmit} className={s.form} noValidate>
-        {/* College Email Field */}
+        <AuthField
+          id="signup-name"
+          label="Your name"
+          type="text"
+          autoComplete="name"
+          autoCapitalize="words"
+          maxLength={30}
+          value={name}
+          error={attempted ? nameError : null}
+          onChange={(e) => setName(e.target.value.slice(0, 30))}
+        />
+
         <AuthField
           id="signup-email"
-          label="College Email"
+          label="College email"
           type="email"
+          autoComplete="email"
+          inputMode="email"
           value={email}
           status={isDomainNotRegistered ? 'rejected' : emailStatus}
-          error={emailError}
-          hint={emailHint}
+          error={
+            isDomainNotRegistered ? (
+              <>
+                Your college isn&apos;t on Meetifyy yet.{' '}
+                <button
+                  type="button"
+                  className={s.inlineAction}
+                  onClick={() => navigate('/?request=college#join')}
+                >
+                  Request to add it
+                  <ArrowRight size={12} aria-hidden="true" />
+                </button>
+              </>
+            ) : emailError
+          }
+          hint={emailOk && collegeName ? `${collegeName} · verified college domain` : emailHint}
           onChange={(e) => {
             setEmail(e.target.value);
             if (hardBlockReason) setHardBlockReason('');
-          }}
-        />
-
-        {/* Domain-not-registered inline callout */}
-        {isDomainNotRegistered && (
-          <div
-            className={`${s.message} ${s.messageError}`}
-            role="alert"
-            style={{
-              marginTop: '-1.25rem',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.35rem',
-              flexWrap: 'wrap',
-            }}
-          >
-            <AlertCircle size={13} style={{ flexShrink: 0 }} />
-            <span>Your college isn&apos;t added yet.</span>
-            <button
-              type="button"
-              onClick={() => navigate('/?request=college#join')}
-              style={{
-                background: 'none',
-                border: 'none',
-                padding: 0,
-                color: '#5C47FA',
-                fontWeight: 700,
-                cursor: 'pointer',
-                font: 'inherit',
-                fontSize: 'inherit',
-                lineHeight: 'inherit',
-                whiteSpace: 'nowrap',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '0.2rem',
-              }}
-            >
-              <span style={{ textDecoration: 'underline' }}>Request to add it</span>
-              <ArrowRight size={12} style={{ flexShrink: 0 }} />
-            </button>
-          </div>
-        )}
-
-        {/* Course, Branch, and Current Year Selection */}
-        <AcademicSelection
-          value={academic}
-          onChange={setAcademic}
-          Select={CustomSelect}
-          errors={academicErrors}
-          showErrors={attempted}
-          classes={{
-            selectGroup: s.selectGroup,
-            selectLabel: s.selectLabel,
-            messageSlot: s.messageSlot,
-            message: s.message,
-            messageError: s.messageError,
           }}
         />
 
@@ -301,7 +271,7 @@ export default function Step2Academic() {
           loadingText="Checking..."
           disabled={emailDefinitelyBlocked}
           icon={<ArrowRight size={18} />}
-          style={{ marginTop: '0.5rem' }}
+          className={s.primaryAction}
         >
           Continue
         </AuthButton>

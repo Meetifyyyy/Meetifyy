@@ -1,9 +1,7 @@
 import { useState, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { ArrowRight, Upload, Loader2, Plus } from '@shared/components/icons';
 import Avatar from '@shared/components/avatar/Avatar';
 import { useSignup } from '../../context/SignupContext';
-import { useAuth } from '@shared/context/AuthContext';
 import AnimatedStep from './AnimatedStep';
 import AvatarPickerModal from './AvatarPickerModal';
 import { processAndUploadImage } from '@shared/utils/mediaPipeline';
@@ -17,10 +15,14 @@ import { generateRandomAvatarSet } from '@shared/utils/dicebear';
 import { showToast } from '@shared/utils/toast';
 import { AuthHeading, AuthButton, styles as s } from '../../shared/ui';
 
-export default function Step5Avatar() {
-  const { signupData, updateData, clearSignupData } = useSignup();
-  const { completeSignup } = useAuth();
-  const navigate = useNavigate();
+/**
+ * Step 6 — an optional photo. Required information is all behind us by now,
+ * so this screen says so: a primary action once something is picked, and a
+ * plain "Skip for now" that is always there. Either one hands off to the
+ * finishing screen (SignupFinishing), which completes the account.
+ */
+export default function Step6Photo() {
+  const { signupData, updateData, setFinishing } = useSignup();
 
   const [avatar, setAvatar] = useState(signupData.avatar || '');
   const [isUploading, setIsUploading] = useState(false);
@@ -65,25 +67,13 @@ export default function Step5Avatar() {
     }
   };
 
-  const handleFinish = async () => {
-    const chosenAvatar = getProcessedAvatarUrl(avatar) || '';
-    // This is the end of signup, so it is what marks the profile complete and
-    // sends the welcome email. Both used to happen on the onboarding screen
-    // that followed this step; the step now finishes the account itself.
-    //
-    // Deliberately not awaited, exactly as the avatar save was not: the account
-    // already exists and is usable, and holding the last screen of signup open
-    // on a network round-trip is worse than letting it settle in the background.
-    completeSignup({ avatar: chosenAvatar }).catch((err) =>
-      console.error('Failed to finish signup:', err),
-    );
-    clearSignupData();
-    navigate('/home', { replace: true });
+  const finish = (chosen) => {
+    setFinishing({ avatar: getProcessedAvatarUrl(chosen) || '' });
   };
 
   return (
     <AnimatedStep className={s.stepWrapper}>
-      <AuthHeading title="Add a profile picture" />
+      <AuthHeading title="Add a profile photo" subtitle="Optional. A face or a character helps people recognise you." />
 
       <div className={s.avatarStage}>
         <div className={s.avatarRing}>
@@ -138,14 +128,25 @@ export default function Step5Avatar() {
           </div>
         </div>
 
-        <AuthButton
-          onClick={handleFinish}
-          loading={isUploading}
-          loadingText="Uploading..."
-          icon={<ArrowRight size={18} />}
-        >
-          {avatar ? 'Complete Registration' : 'Skip & Finish Setup'}
-        </AuthButton>
+        <div className={s.photoActions}>
+          <AuthButton
+            onClick={() => finish(avatar)}
+            loading={isUploading}
+            loadingText="Uploading..."
+            disabled={!avatar}
+            icon={<ArrowRight size={18} />}
+          >
+            Finish
+          </AuthButton>
+          <button
+            type="button"
+            className={s.skipBtn}
+            onClick={() => finish('')}
+            disabled={isUploading}
+          >
+            Skip for now
+          </button>
+        </div>
       </div>
 
       {/* Expanded Avatar Picker Modal */}
@@ -154,7 +155,6 @@ export default function Step5Avatar() {
         onClose={handleClosePicker}
         selectedUrl={avatar}
         onSelect={handleSelectAvatar}
-        forceLight={true}
       />
     </AnimatedStep>
   );
