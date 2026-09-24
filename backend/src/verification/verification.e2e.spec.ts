@@ -1,6 +1,7 @@
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
+import type { Server } from 'http';
 import { Prisma, VerificationStatus } from '@prisma/client';
 
 import { VerificationController } from './verification.controller';
@@ -16,6 +17,46 @@ import { DomainEventService } from '../events/domain-event.service';
 import { JwtGuard } from '../common/guards/jwt.guard';
 import { AdminJwtGuard } from '../common/guards/admin-jwt.guard';
 import { APP_GUARD, APP_INTERCEPTOR, Reflector } from '@nestjs/core';
+import type { ExecutionContext } from '@nestjs/common';
+
+/** Rows of the in-memory double, with the columns this flow reads and writes. */
+type DbUser = { id: string; verificationStatus: VerificationStatus };
+type DbMedia = {
+  id: string;
+  ownerId: string;
+  mimeType: string;
+  objectKey: string;
+  visibility?: string;
+};
+type DbRequest = {
+  id: string;
+  userId: string;
+  status: VerificationStatus;
+  attemptNumber: number;
+  selfieMediaId: string | null;
+  idCardMediaId: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  reviewedAt: Date | null;
+  rejectionReason: string | null;
+  reviewerId: string | null;
+};
+type DbAuditLog = {
+  adminId: string;
+  action: string;
+  targetType: string;
+  targetId: string;
+};
+/** What VerificationService writes when it opens an attempt. */
+type RequestCreateData = Pick<
+  DbRequest,
+  'userId' | 'attemptNumber' | 'selfieMediaId' | 'idCardMediaId' | 'status'
+>;
+type IdFilter = { id?: { in?: string[] } };
+
+/** Response bodies, typed by the services that produce them. */
+type StatusBody = Awaited<ReturnType<VerificationService['getStatus']>>;
+type QueueBody = Awaited<ReturnType<AdminVerificationService['listRequests']>>;
 
 /**
  * The whole account-verification journey, driven over HTTP through the real
@@ -40,15 +81,12 @@ describe('account verification — end to end', () => {
   const SELFIE = 'media-selfie';
   const ID_CARD = 'media-idcard';
 
-  let app: INestApplication;
+  let app: INestApplication<Server>;
   let db: {
-    users: Record<
-      string,
-      { id: string; verificationStatus: VerificationStatus }
-    >;
-    media: Record<string, any>;
-    requests: Record<string, any>;
-    auditLogs: any[];
+    users: Record<string, DbUser>;
+    media: Record<string, DbMedia>;
+    requests: Record<string, DbRequest>;
+    auditLogs: DbAuditLog[];
   };
   let deletedObjects: string[];
   /**
@@ -68,16 +106,25 @@ describe('account verification — end to end', () => {
   } | null;
 
   /** Minimal Prisma stand-in covering exactly the queries this flow issues. */
-  let prismaDouble: any;
+  let prismaDouble: ReturnType<typeof buildPrisma>;
   const buildPrisma = () => ({
     user: {
-      findUnique: ({ where }: any) =>
+      findUnique: ({ where }: { where: { id: string } }) =>
         Promise.resolve(db.users[where.id] ?? null),
-      findMany: ({ where }: any) =>
+      findMany: ({ where }: { where: { id: { in: string[] } } }) =>
         Promise.resolve(
           where.id.in.map((id: string) => db.users[id]).filter(Boolean),
         ),
-      updateMany: ({ where, data }: any) => {
+      updateMany: ({
+        where,
+        data,
+      }: {
+        where: {
+          id: string;
+          verificationStatus?: { in?: VerificationStatus[] };
+        };
+        data: Partial<DbUser>;
+      }) => {
         const u = db.users[where.id];
         const allowed = where.verificationStatus?.in;
         if (!u || (allowed && !allowed.includes(u.verificationStatus))) {
@@ -86,27 +133,39 @@ describe('account verification — end to end', () => {
         Object.assign(u, data);
         return Promise.resolve({ count: 1 });
       },
-      update: ({ where, data }: any) => {
+      update: ({
+        where,
+        data,
+      }: {
+        where: { id: string };
+        data: Partial<DbUser>;
+      }) => {
         Object.assign(db.users[where.id], data);
         return Promise.resolve(db.users[where.id]);
       },
     },
     media: {
-      findUnique: ({ where }: any) =>
+      findUnique: ({ where }: { where: { id: string } }) =>
         Promise.resolve(db.media[where.id] ?? null),
-      findMany: ({ where }: any) =>
+      findMany: ({ where }: { where: IdFilter }) =>
         Promise.resolve(
-          Object.values(db.media).filter((m: any) =>
+          Object.values(db.media).filter((m) =>
             where.id?.in ? where.id.in.includes(m.id) : true,
           ),
         ),
-      updateMany: ({ where, data }: any) => {
+      updateMany: ({
+        where,
+        data,
+      }: {
+        where: IdFilter;
+        data: Partial<DbMedia>;
+      }) => {
         (where.id?.in || []).forEach((id: string) => {
           if (db.media[id]) Object.assign(db.media[id], data);
         });
         return Promise.resolve({ count: 1 });
       },
-      deleteMany: ({ where }: any) => {
+      deleteMany: ({ where }: { where: IdFilter }) => {
         (where.id?.in || []).forEach((id: string) => delete db.media[id]);
         return Promise.resolve({ count: 1 });
       },
@@ -116,12 +175,14 @@ describe('account verification — end to end', () => {
       // the submission path depends on that: it reads the previous document ids
       // and then upserts over them, so a shared reference would silently show
       // the *new* ids to the cleanup that runs afterwards.
-      findUnique: async ({ where }: any) => {
+      findUnique: async ({
+        where,
+      }: {
+        where: { id?: string; userId?: string };
+      }) => {
         const row = where.id
           ? db.requests[where.id]
-          : Object.values(db.requests).find(
-              (r: any) => r.userId === where.userId,
-            );
+          : Object.values(db.requests).find((r) => r.userId === where.userId);
         const snapshot = row ? { ...(row as object) } : null;
         if (readBarrier) {
           readBarrier.arrived += 1;
@@ -131,31 +192,41 @@ describe('account verification — end to end', () => {
         }
         return snapshot;
       },
-      findUniqueOrThrow: ({ where }: any) =>
+      findUniqueOrThrow: ({ where }: { where: { id: string } }) =>
         Promise.resolve({
           ...db.requests[where.id],
         }),
-      findFirst: ({ where, orderBy }: any) => {
+      findFirst: ({
+        where,
+        orderBy,
+      }: {
+        where: { userId: string };
+        orderBy?: { attemptNumber?: 'asc' | 'desc' };
+      }) => {
         const rows = Object.values(db.requests).filter(
-          (r: any) => r.userId === where.userId,
+          (r) => r.userId === where.userId,
         );
         if (orderBy?.attemptNumber === 'desc') {
-          rows.sort((a: any, b: any) => b.attemptNumber - a.attemptNumber);
+          rows.sort((a, b) => b.attemptNumber - a.attemptNumber);
         }
         return Promise.resolve(rows[0] ? { ...(rows[0] as object) } : null);
       },
-      findMany: ({ where, orderBy }: any = {}) =>
+      findMany: ({
+        where,
+        orderBy,
+      }: {
+        where?: { userId?: string };
+        orderBy?: { attemptNumber?: 'asc' | 'desc' };
+      } = {}) =>
         Promise.resolve(
           Object.values(db.requests)
-            .filter((r: any) =>
-              where?.userId ? r.userId === where.userId : true,
-            )
-            .sort((a: any, b: any) =>
+            .filter((r) => (where?.userId ? r.userId === where.userId : true))
+            .sort((a, b) =>
               orderBy?.attemptNumber === 'desc'
                 ? b.attemptNumber - a.attemptNumber
                 : 0,
             )
-            .map((r: any) => ({
+            .map((r) => ({
               ...r,
               // The admin queue `include`s both documents.
               selfieMedia: r.selfieMediaId
@@ -168,13 +239,13 @@ describe('account verification — end to end', () => {
             })),
         ),
       count: () => Promise.resolve(Object.keys(db.requests).length),
-      create: ({ data }: any) => {
+      create: ({ data }: { data: RequestCreateData }) => {
         // Stands in for the partial unique index
         // (userId) WHERE status = 'PENDING'. Without modelling it here the
         // double would happily accept a second open request and the duplicate
         // test would pass for the wrong reason.
         const openAlready = Object.values(db.requests).some(
-          (r: any) =>
+          (r) =>
             r.userId === data.userId && r.status === VerificationStatus.PENDING,
         );
         if (openAlready) {
@@ -185,7 +256,7 @@ describe('account verification — end to end', () => {
             ),
           );
         }
-        const row = {
+        const row: DbRequest = {
           id: `req-${Object.keys(db.requests).length + 1}`,
           ...data,
           createdAt: new Date(),
@@ -197,7 +268,13 @@ describe('account verification — end to end', () => {
         db.requests[row.id] = row;
         return Promise.resolve(row);
       },
-      updateMany: ({ where, data }: any) => {
+      updateMany: ({
+        where,
+        data,
+      }: {
+        where: { id: string; status?: VerificationStatus };
+        data: Partial<DbRequest>;
+      }) => {
         const row = db.requests[where.id];
         if (!row || (where.status && row.status !== where.status)) {
           return Promise.resolve({ count: 0 });
@@ -208,7 +285,7 @@ describe('account verification — end to end', () => {
     },
     conversationParticipant: { findMany: () => Promise.resolve([]) },
     auditLog: {
-      create: ({ data }: any) => {
+      create: ({ data }: { data: DbAuditLog }) => {
         db.auditLogs.push(data);
         return Promise.resolve(data);
       },
@@ -217,8 +294,9 @@ describe('account verification — end to end', () => {
     // callback the submission path now runs in. No rollback — the double is a
     // plain object — so tests that depend on rollback assert on the thrown
     // error rather than on the absence of a write.
-    $transaction: (arg: any) =>
-      typeof arg === 'function' ? arg(prismaDouble) : Promise.all(arg),
+    $transaction: (
+      arg: ((tx: unknown) => Promise<unknown>) | Promise<unknown>[],
+    ) => (typeof arg === 'function' ? arg(prismaDouble) : Promise.all(arg)),
   });
 
   beforeEach(async () => {
@@ -265,7 +343,10 @@ describe('account verification — end to end', () => {
             },
           },
         },
-        { provide: DomainEventService, useValue: { emit: async () => {} } },
+        {
+          provide: DomainEventService,
+          useValue: { emit: () => Promise.resolve() },
+        },
         // The real global guard, so `@VerifiedOnly()` is genuinely enforced.
         { provide: APP_GUARD, useClass: VerificationGuard },
         { provide: APP_INTERCEPTOR, useClass: AuditInterceptor },
@@ -274,21 +355,25 @@ describe('account verification — end to end', () => {
       // Authentication is stubbed; authorisation is not.
       .overrideGuard(JwtGuard)
       .useValue({
-        canActivate: (ctx: any) => {
-          ctx.switchToHttp().getRequest().user = { id: USER };
+        canActivate: (ctx: ExecutionContext) => {
+          ctx.switchToHttp().getRequest<{ user?: { id: string } }>().user = {
+            id: USER,
+          };
           return true;
         },
       })
       .overrideGuard(AdminJwtGuard)
       .useValue({
-        canActivate: (ctx: any) => {
-          ctx.switchToHttp().getRequest().admin = { id: ADMIN };
+        canActivate: (ctx: ExecutionContext) => {
+          ctx.switchToHttp().getRequest<{ admin?: { id: string } }>().admin = {
+            id: ADMIN,
+          };
           return true;
         },
       })
       .compile();
 
-    app = moduleRef.createNestApplication();
+    app = moduleRef.createNestApplication<INestApplication<Server>>();
     await app.init();
     moduleRef.get(VerificationAccessService).invalidateAll();
   });
@@ -323,14 +408,14 @@ describe('account verification — end to end', () => {
 
     // 2. PENDING is not eligible.
     const status = await http().get('/api/verification/status').expect(200);
-    expect(status.body.status).toBe(VerificationStatus.PENDING);
+    expect((status.body as StatusBody).status).toBe(VerificationStatus.PENDING);
 
     // 3. The reviewer can see both documents, via signed URLs.
     const queue = await http().get('/admin/verification/requests').expect(200);
-    expect(queue.body.requests[0].selfieMedia.url).toBe(
+    expect((queue.body as QueueBody).requests[0].selfieMedia!.url).toBe(
       'signed://verification/selfie.webp',
     );
-    expect(queue.body.requests[0].idCardMedia.url).toBe(
+    expect((queue.body as QueueBody).requests[0].idCardMedia!.url).toBe(
       'signed://verification/idcard.webp',
     );
 
@@ -396,10 +481,12 @@ describe('account verification — end to end', () => {
 
     // And the history endpoint reports both, newest first.
     const status = await http().get('/api/verification/status').expect(200);
-    expect(status.body.history).toHaveLength(2);
-    expect(status.body.history[0].attemptNumber).toBe(2);
-    expect(status.body.history[1].rejectionReason).toBe('ID photo unreadable');
-    expect(status.body.hasPendingRequest).toBe(true);
+    expect((status.body as StatusBody).history).toHaveLength(2);
+    expect((status.body as StatusBody).history[0].attemptNumber).toBe(2);
+    expect((status.body as StatusBody).history[1].rejectionReason).toBe(
+      'ID photo unreadable',
+    );
+    expect((status.body as StatusBody).hasPendingRequest).toBe(true);
   });
 
   it('refuses a second submission while one is already pending', async () => {

@@ -132,26 +132,6 @@
       "count": 61
     }
   },
-  "src/account-deletion/account-deletion.purge.spec.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 26
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 10
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 16
-    },
-    "@typescript-eslint/no-unsafe-call": {
-      "count": 2
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 86
-    },
-    "@typescript-eslint/no-unsafe-return": {
-      "count": 1
-    }
-  },
   "src/activities/activities.accept-invite.spec.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 11
@@ -164,23 +144,6 @@
     },
     "@typescript-eslint/no-unsafe-member-access": {
       "count": 23
-    }
-  },
-  "src/activities/activities.access.spec.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 19
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 13
-    },
-    "@typescript-eslint/no-unsafe-call": {
-      "count": 15
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 65
-    },
-    "@typescript-eslint/no-unsafe-return": {
-      "count": 3
     }
   },
   "src/activities/activities.deleted-member.spec.ts": {
@@ -2109,26 +2072,6 @@
     },
     "@typescript-eslint/no-unsafe-return": {
       "count": 1
-    }
-  },
-  "src/verification/verification.e2e.spec.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 32
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 7
-    },
-    "@typescript-eslint/no-unsafe-call": {
-      "count": 11
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 86
-    },
-    "@typescript-eslint/no-unsafe-return": {
-      "count": 2
     }
   },
   "src/verification/verification.routing.spec.ts": {

@@ -1,5 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  HttpException,
+  NotFoundException,
+} from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
 import { ActivitiesService } from './activities.service';
 import { ActivityAuthorizationService } from './activity-authorization.service';
 import { ActivityDiscussionService } from './discussion/activity-discussion.service';
@@ -19,6 +24,61 @@ import { studentYearPolicyMockProvider } from '../common/student-year/testing/st
  * through the service methods a real request would hit, so a route that forgets
  * to consult the policy fails here.
  */
+type InvitationRow = {
+  inviteeId: string;
+  status: string;
+  revokedAt: Date | null;
+  expiresAt: Date | null;
+};
+type MemberRow = { userId: string; status: string };
+
+/** The activity row the fake serves; see `baseActivity`. */
+type ActivityRow = {
+  id: string;
+  creatorId: string;
+  collegeId: string;
+  visibility: string;
+  status: string;
+  deletedAt: Date | null;
+  members: MemberRow[];
+  invitations: InvitationRow[];
+  _count: { members: number };
+  [column: string]: unknown;
+};
+
+type ActivityFindManyArgs = { where?: Prisma.CrewActivityWhereInput };
+type MemberFindManyArgs = { where?: Prisma.CrewActivityMemberWhereInput };
+
+type FindUniqueArgs = {
+  where?: { id?: string; creatorId?: string };
+  include?: {
+    invitations?: { where?: { inviteeId?: string } };
+    members?: { where?: { userId?: string } };
+  };
+};
+
+/**
+ * The PrismaService slice these tests drive. Members marked optional are
+ * installed by individual tests; the mocks whose calls are inspected carry
+ * Prisma's own argument types.
+ */
+type PrismaFake = {
+  crewActivity: {
+    findUnique: jest.Mock<Promise<ActivityRow | null>, [FindUniqueArgs]>;
+    findFirst: jest.Mock;
+    update: jest.Mock;
+    findMany?: jest.Mock<Promise<unknown[]>, [ActivityFindManyArgs]>;
+  };
+  crewActivityMember: {
+    findUnique: jest.Mock;
+    findMany: jest.Mock<Promise<unknown[]>, [MemberFindManyArgs]>;
+  };
+  user: { findUnique: jest.Mock };
+  activityInvitation: { count: jest.Mock; findMany: jest.Mock };
+  activityDiscussionMessage: { findMany: jest.Mock; create: jest.Mock };
+  $queryRaw: jest.Mock<Promise<unknown>, [TemplateStringsArray, ...unknown[]]>;
+};
+
 describe('Activity access enforcement (service level)', () => {
   const GLA = 'college-gla';
   const OTHER = 'college-other';
@@ -31,15 +91,15 @@ describe('Activity access enforcement (service level)', () => {
 
   let service: ActivitiesService;
   let discussion: ActivityDiscussionService;
-  let prisma: any;
+  let prisma: PrismaFake;
   /** Users the viewer is blocked with, per test. */
   let blockedIds: string[];
-  let activityRow: any;
+  let activityRow: ActivityRow | null;
 
   const baseActivity = (
     visibility: string,
-    invitations: any[] = [],
-    members: any[] = [],
+    invitations: InvitationRow[] = [],
+    members: MemberRow[] = [],
   ) => ({
     id: 'act-1',
     creatorId: 'host-1',
@@ -70,7 +130,7 @@ describe('Activity access enforcement (service level)', () => {
 
     prisma = {
       crewActivity: {
-        findUnique: jest.fn(({ include, where }: any) => {
+        findUnique: jest.fn(({ include, where }: FindUniqueArgs) => {
           if (!activityRow) return Promise.resolve(null);
           if (where?.creatorId && where.creatorId !== activityRow.creatorId)
             return Promise.resolve(null);
@@ -79,28 +139,26 @@ describe('Activity access enforcement (service level)', () => {
           const inviteeFilter = include?.invitations?.where?.inviteeId;
           if (inviteeFilter !== undefined) {
             row.invitations = row.invitations.filter(
-              (i: any) => i.inviteeId === inviteeFilter,
+              (i) => i.inviteeId === inviteeFilter,
             );
           }
           const memberFilter = include?.members?.where?.userId;
           if (memberFilter !== undefined) {
-            row.members = row.members.filter(
-              (m: any) => m.userId === memberFilter,
-            );
+            row.members = row.members.filter((m) => m.userId === memberFilter);
           }
           return Promise.resolve(row);
         }),
         findFirst: jest.fn(() => Promise.resolve(activityRow)),
-        update: jest.fn(({ data }: any) =>
+        update: jest.fn(({ data }: { data: Record<string, unknown> }) =>
           Promise.resolve({ id: 'act-1', ...data }),
         ),
       },
       crewActivityMember: {
         findUnique: jest.fn(() => Promise.resolve(null)),
-        findMany: jest.fn(() => Promise.resolve([])),
+        findMany: jest.fn((_args: MemberFindManyArgs) => Promise.resolve([])),
       },
       user: {
-        findUnique: jest.fn(({ where }: any) =>
+        findUnique: jest.fn(({ where }: { where: { id: string } }) =>
           Promise.resolve(USERS[where.id] ?? null),
         ),
       },
@@ -110,7 +168,7 @@ describe('Activity access enforcement (service level)', () => {
       },
       activityDiscussionMessage: {
         findMany: jest.fn(() => Promise.resolve([])),
-        create: jest.fn(({ data }: any) =>
+        create: jest.fn(({ data }: { data: { userId: string } }) =>
           Promise.resolve({
             id: 'msg-1',
             ...data,
@@ -124,7 +182,10 @@ describe('Activity access enforcement (service level)', () => {
           }),
         ),
       },
-      $queryRaw: jest.fn(() => Promise.resolve([{ inserted: true }])),
+      $queryRaw: jest.fn<
+        Promise<unknown>,
+        [TemplateStringsArray, ...unknown[]]
+      >(() => Promise.resolve([{ inserted: true }])),
     };
 
     blockedIds = [];
@@ -158,11 +219,11 @@ describe('Activity access enforcement (service level)', () => {
               Promise.resolve(ids.filter((id) => !blockedIds.includes(id))),
             ),
             injectBlockFilter: jest.fn(
-              (_u: string, where: any, field = 'id') => {
+              (_u: string, where: { AND?: unknown }, field = 'id') => {
                 if (blockedIds.length === 0) return Promise.resolve(where);
                 const existing = where.AND;
-                const and = Array.isArray(existing)
-                  ? [...existing]
+                const and: unknown[] = Array.isArray(existing)
+                  ? [...(existing as unknown[])]
                   : existing
                     ? [existing]
                     : [];
@@ -185,12 +246,12 @@ describe('Activity access enforcement (service level)', () => {
     discussion = module.get(ActivityDiscussionService);
   });
 
-  const expectDenied = async (fn: () => Promise<any>, code: string) => {
+  const expectDenied = async (fn: () => Promise<unknown>, code: string) => {
     await expect(fn()).rejects.toBeInstanceOf(ForbiddenException);
     try {
       await fn();
-    } catch (err: any) {
-      const body = err.getResponse();
+    } catch (err: unknown) {
+      const body = (err as HttpException).getResponse() as { code?: string };
       expect(body.code).toBe(code);
       // No restricted detail may ride along on the denial.
       const serialized = JSON.stringify(body);
@@ -245,7 +306,7 @@ describe('Activity access enforcement (service level)', () => {
       );
       const nonAttendee = await service
         .getActivityById('act-1', 'user-other')
-        .catch((e: any) => e);
+        .catch((e: unknown) => e);
 
       prisma.crewActivityMember.findUnique = jest.fn(() =>
         Promise.resolve({
@@ -255,11 +316,15 @@ describe('Activity access enforcement (service level)', () => {
       );
       const attendee = await service
         .getActivityById('act-1', 'user-other')
-        .catch((e: any) => e);
+        .catch((e: unknown) => e);
 
       // Differing answers would make attendance detectable from outside.
-      expect(attendee.message).toBe(nonAttendee.message);
-      expect(attendee.getStatus()).toBe(nonAttendee.getStatus());
+      expect((attendee as HttpException).message).toBe(
+        (nonAttendee as HttpException).message,
+      );
+      expect((attendee as HttpException).getStatus()).toBe(
+        (nonAttendee as HttpException).getStatus(),
+      );
     });
 
     it('leaves the host visible when there is no block', async () => {
@@ -271,7 +336,10 @@ describe('Activity access enforcement (service level)', () => {
         }),
       );
 
-      const res: any = await service.getActivityById('act-1', 'user-other');
+      const res: Record<string, unknown> = await service.getActivityById(
+        'act-1',
+        'user-other',
+      );
 
       expect(res.creatorId).toBe('host-1');
       expect(res.hostUnavailable).toBeUndefined();
@@ -338,8 +406,8 @@ describe('Activity access enforcement (service level)', () => {
       ).rejects.toBeInstanceOf(NotFoundException);
       try {
         await service.getActivityById('act-1', 'user-same');
-      } catch (err: any) {
-        const serialized = JSON.stringify(err.getResponse());
+      } catch (err: unknown) {
+        const serialized = JSON.stringify((err as HttpException).getResponse());
         expect(serialized).not.toContain('Secret rooftop dinner');
         expect(serialized).not.toContain('PRIVATE');
       }
@@ -361,7 +429,10 @@ describe('Activity access enforcement (service level)', () => {
           expiresAt: null,
         },
       ]);
-      const res: any = await service.getActivityById('act-1', 'user-other');
+      const res: Record<string, unknown> = await service.getActivityById(
+        'act-1',
+        'user-other',
+      );
       expect(res.invitations).toBeUndefined();
     });
   });
@@ -518,14 +589,19 @@ describe('Activity access enforcement (service level)', () => {
     it('reports the authoritative attendee count alongside the capped page', async () => {
       activityRow = baseActivity('PUBLIC', [], []);
       activityRow._count = { members: 412 };
-      const res: any = await service.getActivityById('act-1', 'user-same');
+      const res: Record<string, unknown> = await service.getActivityById(
+        'act-1',
+        'user-same',
+      );
       expect(res.memberCount).toBe(412);
       expect(res._count).toBeUndefined();
     });
 
     it('refuses the attendee list to an unauthorized viewer', async () => {
       activityRow = baseActivity('COLLEGE_ONLY');
-      prisma.crewActivityMember.findMany = jest.fn(() => Promise.resolve([]));
+      prisma.crewActivityMember.findMany = jest.fn(
+        (_args: MemberFindManyArgs) => Promise.resolve([]),
+      );
       await expect(
         service.getAttendees('act-1', 'user-other'),
       ).rejects.toBeInstanceOf(ForbiddenException);
@@ -535,20 +611,21 @@ describe('Activity access enforcement (service level)', () => {
     it('pages attendees with a compound cursor', async () => {
       activityRow = baseActivity('PUBLIC');
       const joinedAt = new Date();
-      prisma.crewActivityMember.findMany = jest.fn(() =>
-        Promise.resolve(
-          Array.from({ length: 31 }, (_, i) => ({
-            userId: `u${i}`,
-            status: 'MEMBER',
-            joinedAt,
-            user: {
-              id: `u${i}`,
-              username: `u${i}`,
-              displayName: `U${i}`,
-              avatar: null,
-            },
-          })),
-        ),
+      prisma.crewActivityMember.findMany = jest.fn(
+        (_args: MemberFindManyArgs) =>
+          Promise.resolve(
+            Array.from({ length: 31 }, (_, i) => ({
+              userId: `u${i}`,
+              status: 'MEMBER',
+              joinedAt,
+              user: {
+                id: `u${i}`,
+                username: `u${i}`,
+                displayName: `U${i}`,
+                avatar: null,
+              },
+            })),
+          ),
       );
       const res = await service.getAttendees('act-1', 'user-same', 30);
       expect(res.attendees).toHaveLength(30);
@@ -598,7 +675,9 @@ describe('Activity access enforcement (service level)', () => {
 
   describe('discovery filters reach the database', () => {
     it('applies the policy where-clause to the feed query rather than filtering in memory', async () => {
-      prisma.crewActivity.findMany = jest.fn(() => Promise.resolve([]));
+      prisma.crewActivity.findMany = jest.fn((_args: ActivityFindManyArgs) =>
+        Promise.resolve([]),
+      );
       await service.getAllActivities('user-other', 20, undefined, 'public');
       const where = prisma.crewActivity.findMany.mock.calls[0][0].where;
       expect(JSON.stringify(where)).not.toContain('"PRIVATE"');
@@ -610,7 +689,9 @@ describe('Activity access enforcement (service level)', () => {
       // No blocks and no live invitations → this page is eligible for the cache
       // shared across the viewer's college, so it must not be built from any
       // clause keyed to this individual user.
-      prisma.crewActivity.findMany = jest.fn(() => Promise.resolve([]));
+      prisma.crewActivity.findMany = jest.fn((_args: ActivityFindManyArgs) =>
+        Promise.resolve([]),
+      );
       await service.getAllActivities('user-other', 20, undefined, 'public');
       const where = JSON.stringify(
         prisma.crewActivity.findMany.mock.calls[0][0].where,
@@ -622,7 +703,9 @@ describe('Activity access enforcement (service level)', () => {
 
     it('uses the full personal policy for a viewer holding a live invitation', async () => {
       prisma.activityInvitation.count.mockResolvedValueOnce(1);
-      prisma.crewActivity.findMany = jest.fn(() => Promise.resolve([]));
+      prisma.crewActivity.findMany = jest.fn((_args: ActivityFindManyArgs) =>
+        Promise.resolve([]),
+      );
       await service.getAllActivities('user-other', 20, undefined, 'public');
       const where = JSON.stringify(
         prisma.crewActivity.findMany.mock.calls[0][0].where,
@@ -633,7 +716,9 @@ describe('Activity access enforcement (service level)', () => {
     });
 
     it('restricts the college scope to the viewer’s own college', async () => {
-      prisma.crewActivity.findMany = jest.fn(() => Promise.resolve([]));
+      prisma.crewActivity.findMany = jest.fn((_args: ActivityFindManyArgs) =>
+        Promise.resolve([]),
+      );
       await service.getAllActivities('user-same', 20, undefined, 'college');
       const where = JSON.stringify(
         prisma.crewActivity.findMany.mock.calls[0][0].where,
@@ -649,7 +734,9 @@ describe('Activity access enforcement (service level)', () => {
         id: 'user-nc',
         collegeId: null,
       });
-      prisma.crewActivity.findMany = jest.fn(() => Promise.resolve([]));
+      prisma.crewActivity.findMany = jest.fn((_args: ActivityFindManyArgs) =>
+        Promise.resolve([]),
+      );
       const res = await service.getAllActivities(
         'user-nc',
         20,
@@ -673,7 +760,9 @@ describe('Activity access enforcement (service level)', () => {
           status: 'MEMBER',
         }),
       );
-      prisma.crewActivityMember.findMany = jest.fn(() => Promise.resolve([]));
+      prisma.crewActivityMember.findMany = jest.fn(
+        (_args: MemberFindManyArgs) => Promise.resolve([]),
+      );
     });
 
     it('excludes blocked attendees in the query, not after the fact', async () => {
