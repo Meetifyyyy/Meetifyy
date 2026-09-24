@@ -18,6 +18,22 @@ import {
 } from '../../common/users/deleted-user';
 import { RateLimitService } from '../../common/rate-limit/rate-limit.service';
 import { assertNewConversationWithinRateLimit } from '../core/message-limits';
+import {
+  payloadFields,
+  stringOrEmpty,
+  stringOrNull,
+} from '../core/message-payload';
+
+/** The list row's preview of a conversation's latest message. */
+interface LastMessagePreview {
+  createdAt: Date;
+  senderId: string;
+  senderName: string;
+  type: string;
+  text: string;
+  mediaUrl: string | null;
+  mediaType: string | null;
+}
 
 @Injectable()
 export class DmService extends MessagingCoreService {
@@ -134,7 +150,7 @@ export class DmService extends MessagingCoreService {
             createdAt: true,
             updatedAt: true,
             participants: {
-              where: { leftAt: null, deletedAt: null } as any,
+              where: { leftAt: null, deletedAt: null },
               select: {
                 userId: true,
                 role: true,
@@ -209,17 +225,19 @@ export class DmService extends MessagingCoreService {
           })
         : [];
 
-    const lastMsgMap = new Map<string, any>();
+    const lastMsgMap = new Map<string, LastMessagePreview>();
     recentMessages.forEach((msg) => {
-      const payload = (msg.payload as any) || {};
-      let text = payload.text || '';
+      const payload = payloadFields(msg.payload);
+      const mediaType = stringOrNull(payload.mediaType);
+      const mediaUrl = stringOrNull(payload.mediaUrl);
+      let text = stringOrEmpty(payload.text);
       if (!text) {
-        const mType = (payload.mediaType || msg.type || '').toLowerCase();
+        const mType = (mediaType || msg.type || '').toLowerCase();
         if (mType.includes('image') || mType.includes('photo')) text = 'Photo';
         else if (mType.includes('video')) text = 'Video';
         else if (mType.includes('audio') || mType.includes('voice'))
           text = 'Audio';
-        else if (payload.mediaUrl) text = 'Attachment';
+        else if (mediaUrl) text = 'Attachment';
       }
       lastMsgMap.set(msg.conversationId, {
         createdAt: msg.createdAt,
@@ -227,8 +245,8 @@ export class DmService extends MessagingCoreService {
         senderName: msg.sender ? presentUserName(msg.sender) : 'Member',
         type: msg.type ? msg.type.toLowerCase() : 'chat',
         text,
-        mediaUrl: payload.mediaUrl || null,
-        mediaType: payload.mediaType || null,
+        mediaUrl,
+        mediaType,
       });
     });
 
@@ -237,10 +255,13 @@ export class DmService extends MessagingCoreService {
     // conversation (the previous N+1).
     const unreadMap = new Map<string, number>();
     participants.forEach((part) => {
-      unreadMap.set(part.conversation.id, (part as any).unreadCount || 0);
+      unreadMap.set(part.conversation.id, part.unreadCount || 0);
     });
 
-    const otherUsersMap = new Map<string, any>();
+    const otherUsersMap = new Map<
+      string,
+      (typeof participants)[number]['conversation']['participants'][number]['user']
+    >();
     participants.forEach((p) => {
       const otherP = p.conversation.participants.find(
         (pt) => pt.userId !== userId,
@@ -327,7 +348,7 @@ export class DmService extends MessagingCoreService {
       // the chat still saw the other person's last message quoted in their
       // list row — content they can no longer open anywhere. The row itself
       // stays (that is what separates Clear from Delete); only the preview goes.
-      const cutoff = (p as any).clearedAt as Date | null;
+      const cutoff = p.clearedAt;
       const previewCleared = Boolean(
         cutoff &&
         lastMsgInfo?.createdAt &&
@@ -361,7 +382,7 @@ export class DmService extends MessagingCoreService {
         }
       }
 
-      const pubId = (conv as any).publicId || conv.id;
+      const pubId = conv.publicId || conv.id;
 
       // One decision, used for the row title, the avatar, the composer and
       // the target-user block below, so those four can never disagree about
@@ -375,7 +396,9 @@ export class DmService extends MessagingCoreService {
         publicId: pubId,
         internalId: conv.id,
         type: 'DM' as const,
-        isMember: (p as any).leftAt == null,
+        // Always true: the viewer's own `leftAt` is neither selected nor
+        // filtered on, and a DM has no leave flow that sets it.
+        isMember: true,
         ownerId: conv.ownerId || null,
         // `conv.name` and `conv.avatarKey` are null on a DM (they are group
         // fields), so the partner's own values are what actually render —
@@ -421,7 +444,7 @@ export class DmService extends MessagingCoreService {
           (!enforcingVerification ||
             !otherUser ||
             this.verificationAccess.isEligibleStatus(
-              (otherUser as any).verificationStatus,
+              otherUser.verificationStatus,
             )) &&
           // First-year isolation. Belt-and-braces: the query above already
           // excludes a restricted partner, so this only fires for a row that
@@ -451,7 +474,7 @@ export class DmService extends MessagingCoreService {
               profileAvailable: !targetUnavailable,
               verificationStatus: targetUnavailable
                 ? 'UNVERIFIED'
-                : (otherUser as any).verificationStatus,
+                : otherUser.verificationStatus,
               // A deleted account is never shown as online, whatever a stale
               // presence key happens to say.
               isOnline: targetUnavailable
@@ -574,7 +597,7 @@ export class DmService extends MessagingCoreService {
           })
           .catch(() => {});
 
-        const pubId = (existing as any).publicId || existing.id;
+        const pubId = existing.publicId || existing.id;
         return { id: pubId, publicId: pubId };
       }
 
