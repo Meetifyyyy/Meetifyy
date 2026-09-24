@@ -183,3 +183,50 @@
   cursor: default;
 }
 
+
+/* Same field system as the auth pages and the rest of Settings. */
+.searchInput {
+  height: 44px;
+  border: 1.5px solid transparent;
+  background: #f1f2f5;
+  transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.searchInput:hover:not(:focus) {
+  background: #e8e9ee;
+}
+
+.searchInput:focus {
+  border-color: transparent;
+  background: var(--color-bg-white);
+  box-shadow: 0 0 0 3px rgba(92, 71, 250, 0.22);
+}
+
+:global([data-theme='dark']) .searchInput {
+  background: #2c2a37;
+}
+
+:global([data-theme='dark']) .searchInput:hover:not(:focus) {
+  background: #33313f;
+}
+
+:global([data-theme='dark']) .searchInput:focus {
+  box-shadow: 0 0 0 3px rgba(139, 123, 255, 0.35);
+}
+
+/* One step lighter, matching the auth pages. */
+.searchInput {
+  background: #f4f5f7;
+}
+
+.searchInput:hover:not(:focus) {
+  background: #eceef2;
+}
+
+:global([data-theme='dark']) .searchInput {
+  background: #35333f;
+}
+
+:global([data-theme='dark']) .searchInput:hover:not(:focus) {
+  background: #3c3a47;
+}

@@ -1301,3 +1301,369 @@ input:checked + .slider::before {
   line-height: 1.45;
   color: var(--color-text-muted);
 }
+
+/* ============================================================================
+   Fields and dropdowns — same system as the auth pages.
+   Filled, borderless surfaces (light grey / a step lighter than the card in
+   dark), a soft brand ring on focus, and a portalled, gently elevated menu
+   whose surface matches the fields. Values mirror authKit.module.css.
+   ============================================================================ */
+.page {
+  --field-fill: #f1f2f5;
+  --field-fill-hover: #e8e9ee;
+  --field-ring: 0 0 0 3px rgba(92, 71, 250, 0.22);
+  --field-ring-danger: 0 0 0 3px rgba(239, 68, 68, 0.22);
+}
+
+:global([data-theme='dark']) .page {
+  --field-fill: #2c2a37;
+  --field-fill-hover: #33313f;
+  --field-ring: 0 0 0 3px rgba(139, 123, 255, 0.35);
+}
+
+/* Text inputs: was an underline on a transparent background. */
+.input {
+  height: 48px;
+  padding: 0 16px;
+  box-sizing: border-box;
+  border: 1.5px solid transparent;
+  border-radius: var(--radius-md, 12px);
+  background: var(--field-fill);
+  font-size: 1rem;
+  transition: background var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.input:hover:not(:focus):not(:disabled) {
+  background: var(--field-fill-hover);
+}
+
+.input:focus:not(:disabled) {
+  border-color: transparent;
+  background: var(--color-bg-white);
+  box-shadow: var(--field-ring);
+}
+
+:global([data-theme='dark']) .input:focus:not(:disabled) {
+  background: var(--color-bg-white);
+}
+
+.input:disabled {
+  border-bottom-style: solid;
+  border-color: transparent;
+  opacity: 0.65;
+}
+
+.passwordInputWrapper .input {
+  height: 48px;
+  padding-right: 44px;
+}
+
+.eyeBtn {
+  --pw-toggle-inset: 0.5rem;
+}
+
+/* Birthday day/year and every dropdown trigger share the fill. */
+.dobInput,
+.selectButton,
+:global([data-theme='dark']) .dobInput,
+:global([data-theme='dark']) .selectButton {
+  background: var(--field-fill);
+}
+
+.dobInput:hover,
+.selectButton:hover:not(:disabled),
+:global([data-theme='dark']) .dobInput:hover,
+:global([data-theme='dark']) .selectButton:hover:not(:disabled) {
+  background: var(--field-fill-hover);
+}
+
+.dobInput:focus,
+:global([data-theme='dark']) .dobInput:focus {
+  background: var(--color-bg-white);
+  box-shadow: var(--field-ring);
+}
+
+.selectButtonActive,
+.selectButton:focus-visible {
+  outline: none;
+  box-shadow: var(--field-ring) !important;
+}
+
+.inputInvalid {
+  background: rgba(239, 68, 68, 0.07) !important;
+  box-shadow: var(--field-ring-danger) !important;
+}
+
+.disabledSelect .selectButton {
+  background: var(--field-fill);
+}
+
+/* ── Portalled menu ─────────────────────────────────────────────────────── */
+/* Outside `.page`, so its tokens are set directly. */
+.selectPortal {
+  position: fixed;
+  z-index: 10050;
+  border: none;
+  overflow: hidden;
+  background: #f1f2f5;
+  --menu-row-hover: #e4e5ea;
+  box-shadow:
+    0 0 0 1px rgba(15, 23, 42, 0.05),
+    0 2px 6px rgba(15, 23, 42, 0.06),
+    0 12px 28px -8px rgba(15, 23, 42, 0.16);
+}
+
+.selectPortal.selectDropdownTop {
+  box-shadow:
+    0 0 0 1px rgba(15, 23, 42, 0.05),
+    0 -2px 6px rgba(15, 23, 42, 0.06),
+    0 -12px 28px -8px rgba(15, 23, 42, 0.16);
+}
+
+:global([data-theme='dark']) .selectPortal {
+  background: #2c2a37;
+  --menu-row-hover: #383646;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.06),
+    0 12px 28px -8px rgba(0, 0, 0, 0.6);
+}
+
+/* The options list takes whatever height the placement allowed. */
+.selectPortal .selectDropdownOptions {
+  max-height: none;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.selectPortal .selectOption:hover {
+  background: var(--menu-row-hover);
+}
+
+.selectPortal .selectOptionActive {
+  background: var(--menu-row-hover);
+}
+
+.selectPortal .selectSearchContainer,
+:global([data-theme='dark']) .selectPortal .selectSearchContainer {
+  background: inherit;
+  border-bottom: none;
+}
+
+.selectPortal .selectSearchInput {
+  border-color: transparent;
+  background: var(--menu-row-hover);
+}
+
+.selectPortal .selectSearchInput:focus,
+:global([data-theme='dark']) .selectPortal .selectSearchInput:focus {
+  border-color: transparent;
+  background: var(--menu-row-hover);
+  box-shadow: 0 0 0 3px rgba(92, 71, 250, 0.22);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .selectPortal { animation: none; }
+}
+
+/* Width comes from the trigger (inline); no floor that could make it wider. */
+.selectPortal {
+  min-width: 0;
+}
+
+/* Field fill one step lighter, matching the auth pages. */
+.page {
+  --field-fill: #f4f5f7;
+  --field-fill-hover: #eceef2;
+}
+
+:global([data-theme='dark']) .page {
+  --field-fill: #35333f;
+  --field-fill-hover: #3c3a47;
+}
+
+.selectPortal {
+  background: #f4f5f7;
+  --menu-row-hover: #e8e9ee;
+}
+
+:global([data-theme='dark']) .selectPortal {
+  background: #35333f;
+  --menu-row-hover: #423f4d;
+}
+
+/* ── Phones: tighter page ──────────────────────────────────────────────────
+   One gutter drives every horizontal margin and padding in this file (group
+   margins, row and input padding, the dividers' inset), so narrowing it from
+   16px to 12px tightens the page and the inside of every panel together,
+   without any rule falling out of step. Top padding 14px → 6px. */
+@media (max-width: 768px) {
+  .page {
+    --settings-gutter: 12px;
+  }
+
+  .body {
+    padding-top: 6px;
+  }
+
+  .sectionHeader,
+  .sectionLabel {
+    padding-top: 12px;
+  }
+
+  .group {
+    margin-bottom: 10px;
+  }
+}
+
+/* ── Row dividers: thin, high-contrast against the group ───────────────────
+   1px, black on the dark group surface and white in light mode, as asked.
+   Same inset as before (under the row label, not under the icon). */
+.divider,
+.nestedDivider {
+  height: 1px;
+  background: #ffffff;
+}
+
+:global([data-theme="dark"]) .divider,
+:global([data-theme="dark"]) .nestedDivider {
+  background: #000000;
+}
+
+/* ── Settings list, pass 3 ─────────────────────────────────────────────────
+   Dividers run the full width of the group, edge to edge, so each row is
+   fully separated. The header loses its bottom rule. Row chevrons are gone:
+   the whole row is the tap target and needs no arrow. Phones: the groups sit
+   closer to the screen edges (6px), while rows keep their inner padding. */
+.divider {
+  margin-left: 0;
+}
+
+.nestedDivider {
+  margin: 0;
+}
+
+.topBar {
+  border-bottom: none;
+}
+
+.rowChev {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .group {
+    margin-left: 6px;
+    margin-right: 6px;
+  }
+
+  .sectionHeader,
+  .sectionLabel {
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+}
+
+/* Dividers 2px. At fractional device pixel ratios (1.25, 1.5, 2.75…) a 1px
+   line lands on different sub-pixel offsets row to row and renders as a mix
+   of 1 and 2 device pixels, which is the unevenness; 2px is thick enough to
+   come out the same weight everywhere. flex-shrink 0 so no row can squeeze
+   it thinner. */
+.divider,
+.nestedDivider {
+  height: 2px;
+  min-height: 2px;
+  flex-shrink: 0;
+}
+
+/* ── Pass 4: same tight spacing on large screens, header rule back there,
+   thicker dividers ──────────────────────────────────────────────────────── */
+
+/* Large screens get the phone spacing too: 12px gutter (rows, inputs,
+   labels), groups 6px from their pane's edges, 6px above the first group. */
+.page {
+  --settings-gutter: 12px;
+}
+
+.body {
+  padding-top: 6px;
+}
+
+.group {
+  margin-left: 6px;
+  margin-right: 6px;
+  margin-bottom: 10px;
+}
+
+.sectionHeader,
+.sectionLabel {
+  padding-top: 12px;
+  padding-left: 10px;
+  padding-right: 10px;
+}
+
+/* The header keeps its bottom rule on large screens; phones stay without. */
+.topBar {
+  border-bottom: 1px solid var(--color-border-light);
+}
+
+@media (max-width: 768px) {
+  .topBar {
+    border-bottom: none;
+  }
+}
+
+/* Dividers 3px, everywhere, at one weight. */
+.divider,
+.nestedDivider {
+  height: 3px;
+  min-height: 3px;
+}
+
+/* Dividers take the Settings page's own background (the surface around the
+   groups), so each one reads as a gap cut through the group rather than a
+   drawn line: #202020 behind the groups on large screens in dark mode, true
+   black on phones in dark mode, white in light mode. */
+.divider,
+.nestedDivider,
+:global([data-theme="dark"]) .divider,
+:global([data-theme="dark"]) .nestedDivider {
+  background: var(--color-surface-screen);
+}
+
+/* ── Dividers: 4.5px (3px × 1.5), identical on every row ──────────────────
+   Drawn as a border, not as a filled 3px box. A box's height is painted from
+   wherever its row happens to end, and rows end at fractional pixel offsets,
+   so the same height rasterised to different device-pixel counts row to row:
+   the uneven lines. Border widths are snapped to a whole number of device
+   pixels by the browser, the same way wherever the border sits, so every
+   divider comes out exactly the same weight. Colour unchanged (the page
+   surface behind the groups). */
+.divider,
+.nestedDivider,
+:global([data-theme="dark"]) .divider,
+:global([data-theme="dark"]) .nestedDivider {
+  height: 0;
+  min-height: 0;
+  background: none;
+  border-top: 4.5px solid var(--color-surface-screen);
+}
+
+/* ── Dividers: a simple hairline ───────────────────────────────────────────
+   Replaces the thick page-coloured gaps. One 1px line across the full width
+   of the group, drawn as a border so it renders at the same weight on every
+   row; a soft tint of the text colour, so it reads as a line on the group in
+   both themes. */
+.divider,
+.nestedDivider,
+:global([data-theme="dark"]) .divider,
+:global([data-theme="dark"]) .nestedDivider {
+  height: 0;
+  min-height: 0;
+  background: none;
+  border-top: 1px solid rgba(15, 23, 42, 0.08);
+}
+
+:global([data-theme="dark"]) .divider,
+:global([data-theme="dark"]) .nestedDivider {
+  border-top-color: rgba(255, 255, 255, 0.08);
+}
