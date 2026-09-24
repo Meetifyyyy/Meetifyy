@@ -20,38 +20,42 @@ describe('PostsService — deletion lifecycle & data cleanup', () => {
     rawCalls = [];
     prisma = {
       post: {
-        findUnique: jest.fn(async ({ where }: any) => {
+        findUnique: jest.fn(({ where }: any) => {
           if (where.id === POST_ID) {
-            return {
+            return Promise.resolve({
               id: POST_ID,
               authorId: AUTHOR_ID,
               communityId: COMMUNITY_ID,
               text: 'Hello world',
               deletedAt: null,
-            };
+            });
           }
-          return null;
+          return Promise.resolve(null);
         }),
-        update: jest.fn(async ({ data }: any) => data),
+        update: jest.fn(({ data }: any) => Promise.resolve(data)),
       },
       comment: {
-        findMany: jest.fn(async () => [{ id: 'c1' }, { id: 'c2' }]),
-        updateMany: jest.fn(async ({ data }: any) => data),
+        findMany: jest.fn(() => Promise.resolve([{ id: 'c1' }, { id: 'c2' }])),
+        updateMany: jest.fn(({ data }: any) => Promise.resolve(data)),
       },
-      postLike: { deleteMany: jest.fn(async () => ({ count: 5 })) },
-      postBookmark: { deleteMany: jest.fn(async () => ({ count: 2 })) },
-      postShare: { deleteMany: jest.fn(async () => ({ count: 1 })) },
-      postHashtag: { deleteMany: jest.fn(async () => ({ count: 3 })) },
-      mention: { deleteMany: jest.fn(async () => ({ count: 2 })) },
-      commentLike: { deleteMany: jest.fn(async () => ({ count: 4 })) },
-      pollVote: { deleteMany: jest.fn(async () => ({ count: 10 })) },
-      pollOption: { deleteMany: jest.fn(async () => ({ count: 2 })) },
+      postLike: { deleteMany: jest.fn(() => Promise.resolve({ count: 5 })) },
+      postBookmark: {
+        deleteMany: jest.fn(() => Promise.resolve({ count: 2 })),
+      },
+      postShare: { deleteMany: jest.fn(() => Promise.resolve({ count: 1 })) },
+      postHashtag: { deleteMany: jest.fn(() => Promise.resolve({ count: 3 })) },
+      mention: { deleteMany: jest.fn(() => Promise.resolve({ count: 2 })) },
+      commentLike: { deleteMany: jest.fn(() => Promise.resolve({ count: 4 })) },
+      pollVote: { deleteMany: jest.fn(() => Promise.resolve({ count: 10 })) },
+      pollOption: { deleteMany: jest.fn(() => Promise.resolve({ count: 2 })) },
       media: {
-        findMany: jest.fn(async () => [
-          { objectKey: 'posts/uuid1.jpg' },
-          { objectKey: 'posts/uuid2.webp' },
-        ]),
-        deleteMany: jest.fn(async () => ({ count: 2 })),
+        findMany: jest.fn(() =>
+          Promise.resolve([
+            { objectKey: 'posts/uuid1.jpg' },
+            { objectKey: 'posts/uuid2.webp' },
+          ]),
+        ),
+        deleteMany: jest.fn(() => Promise.resolve({ count: 2 })),
       },
       /**
        * Post deletion is now one statement, so this is where it lands.
@@ -60,22 +64,20 @@ describe('PostsService — deletion lifecycle & data cleanup', () => {
        * below are about what that single statement actually does, and the whole
        * point of the change is that there is exactly one of them.
        */
-      $queryRaw: jest.fn(
-        async (strings: TemplateStringsArray, ...values: any[]) => {
-          rawCalls.push({ sql: strings.join('?'), values });
-          return [
-            { objectKey: 'posts/uuid1.jpg' },
-            { objectKey: 'posts/uuid2.webp' },
-          ];
-        },
-      ),
-      $transaction: jest.fn(async (fn: any) =>
-        typeof fn === 'function' ? fn(prisma) : fn,
+      $queryRaw: jest.fn((strings: TemplateStringsArray, ...values: any[]) => {
+        rawCalls.push({ sql: strings.join('?'), values });
+        return Promise.resolve([
+          { objectKey: 'posts/uuid1.jpg' },
+          { objectKey: 'posts/uuid2.webp' },
+        ]);
+      }),
+      $transaction: jest.fn((fn: any) =>
+        Promise.resolve(typeof fn === 'function' ? fn(prisma) : fn),
       ),
     };
 
     storageService = {
-      delete: jest.fn(async () => true),
+      delete: jest.fn(() => Promise.resolve(true)),
     };
 
     mediaCleanupService = {
@@ -87,7 +89,7 @@ describe('PostsService — deletion lifecycle & data cleanup', () => {
     };
 
     authorizer = {
-      assertCanDelete: jest.fn(async () => 'author'),
+      assertCanDelete: jest.fn(() => Promise.resolve('author')),
     };
 
     service = new PostsService(

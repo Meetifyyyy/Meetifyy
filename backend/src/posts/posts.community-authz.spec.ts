@@ -42,9 +42,11 @@ describe('PostsService — community post authorization', () => {
     user?: any;
   } = {}) => {
     prisma = {
-      community: { findUnique: jest.fn(async () => comm) },
-      communityMember: { findUnique: jest.fn(async () => membership) },
-      user: { findUnique: jest.fn(async () => user) },
+      community: { findUnique: jest.fn(() => Promise.resolve(comm)) },
+      communityMember: {
+        findUnique: jest.fn(() => Promise.resolve(membership)),
+      },
+      user: { findUnique: jest.fn(() => Promise.resolve(user)) },
     };
     service = new PostsService(
       prisma,

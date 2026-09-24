@@ -62,20 +62,22 @@ describe('JwtGuard — session binding', () => {
 
     const prisma = {
       userSession: {
-        findUnique: jest.fn(
-          async ({ where }: any) => sessions[where.id] ?? null,
+        findUnique: jest.fn(({ where }: any) =>
+          Promise.resolve(sessions[where.id] ?? null),
         ),
       },
     };
 
     guard = new JwtGuard({} as any, prisma as any, new Reflector(), {
-      isSatisfied: async () => true,
+      isSatisfied: () => Promise.resolve(true),
     } as any);
 
     // Isolate the session check: token verification and the lifecycle gates
     // have their own specs and would otherwise need a real JWT here.
-    guard.validateToken = jest.fn(async () => ({ id: USER, email: 'a@b.c' }));
-    guard.enforceAccountStatus = jest.fn(async () => undefined);
+    guard.validateToken = jest.fn(() =>
+      Promise.resolve({ id: USER, email: 'a@b.c' }),
+    );
+    guard.enforceAccountStatus = jest.fn(() => Promise.resolve(undefined));
     guard.supabaseService = { isConfigured: true };
     Object.defineProperty(guard, 'supabaseService', {
       value: { isConfigured: true },
@@ -137,16 +139,16 @@ describe('JwtGuard — session binding', () => {
   it('fails closed when the session lookup throws', async () => {
     const prisma = {
       userSession: {
-        findUnique: jest.fn(async () => {
-          throw new Error('db down');
+        findUnique: jest.fn(() => {
+          return Promise.reject(new Error('db down'));
         }),
       },
     };
     const failing = new JwtGuard({} as any, prisma as any, new Reflector(), {
-      isSatisfied: async () => true,
+      isSatisfied: () => Promise.resolve(true),
     } as any) as any;
-    failing.validateToken = jest.fn(async () => ({ id: USER }));
-    failing.enforceAccountStatus = jest.fn(async () => undefined);
+    failing.validateToken = jest.fn(() => Promise.resolve({ id: USER }));
+    failing.enforceAccountStatus = jest.fn(() => Promise.resolve(undefined));
     Object.defineProperty(failing, 'supabaseService', {
       value: { isConfigured: true },
       writable: true,

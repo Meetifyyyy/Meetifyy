@@ -33,7 +33,7 @@ describe('UserOtpService', () => {
 
     prisma = {
       userOtp: {
-        upsert: jest.fn(async ({ where, create, update }: any) => {
+        upsert: jest.fn(({ where, create, update }: any) => {
           const k = key(
             where.userId_purpose.userId,
             where.userId_purpose.purpose,
@@ -53,28 +53,28 @@ describe('UserOtpService', () => {
                 ...create,
               };
           rows.set(k, row);
-          return row;
+          return Promise.resolve(row);
         }),
-        findUnique: jest.fn(async ({ where }: any) => {
+        findUnique: jest.fn(({ where }: any) => {
           if (where.userId_purpose) {
-            return (
+            return Promise.resolve(
               rows.get(
                 key(where.userId_purpose.userId, where.userId_purpose.purpose),
-              ) ?? null
+              ) ?? null,
             );
           }
-          return null;
+          return Promise.resolve(null);
         }),
-        update: jest.fn(async ({ where, data }: any) => {
+        update: jest.fn(({ where, data }: any) => {
           for (const row of rows.values()) {
             if (row.id !== where.id) continue;
             if (data.attempts?.increment)
               row.attempts += data.attempts.increment;
-            return row;
+            return Promise.resolve(row);
           }
-          return null;
+          return Promise.resolve(null);
         }),
-        updateMany: jest.fn(async ({ where, data }: any) => {
+        updateMany: jest.fn(({ where, data }: any) => {
           let count = 0;
           for (const row of rows.values()) {
             if (row.id !== where.id) continue;
@@ -83,9 +83,9 @@ describe('UserOtpService', () => {
             Object.assign(row, data);
             count += 1;
           }
-          return { count };
+          return Promise.resolve({ count });
         }),
-        deleteMany: jest.fn(async ({ where }: any) => {
+        deleteMany: jest.fn(({ where }: any) => {
           let count = 0;
           for (const [k, row] of [...rows.entries()]) {
             if (row.userId !== where.userId) continue;
@@ -93,7 +93,7 @@ describe('UserOtpService', () => {
             rows.delete(k);
             count += 1;
           }
-          return { count };
+          return Promise.resolve({ count });
         }),
       },
     };

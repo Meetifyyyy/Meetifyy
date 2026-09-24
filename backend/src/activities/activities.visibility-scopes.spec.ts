@@ -28,16 +28,18 @@ describe('Activity feed scopes', () => {
     lastWhere = undefined;
     prisma = {
       crewActivity: {
-        findMany: jest.fn(async ({ where }: any) => {
+        findMany: jest.fn(({ where }: any) => {
           lastWhere = where;
-          return [];
+          return Promise.resolve([]);
         }),
       },
-      crewActivityMember: { findMany: jest.fn(async () => []) },
+      crewActivityMember: { findMany: jest.fn(() => Promise.resolve([])) },
       user: {
-        findUnique: jest.fn(async () => ({ id: ME, collegeId: MY_COLLEGE })),
+        findUnique: jest.fn(() =>
+          Promise.resolve({ id: ME, collegeId: MY_COLLEGE }),
+        ),
       },
-      activityInvitation: { count: jest.fn(async () => 0) },
+      activityInvitation: { count: jest.fn(() => Promise.resolve(0)) },
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -50,7 +52,7 @@ describe('Activity feed scopes', () => {
         { provide: NotificationFactory, useValue: {} },
         {
           provide: BlocksService,
-          useValue: { getExcludedUserIds: jest.fn(async () => []) },
+          useValue: { getExcludedUserIds: jest.fn(() => Promise.resolve([])) },
         },
         { provide: DomainEventService, useValue: { emit: jest.fn() } },
         { provide: RedisService, useValue: { getClient: () => null } },
@@ -97,7 +99,9 @@ describe('Activity feed scopes', () => {
   });
 
   it('returns nothing for the college surfaces when the viewer has no college', async () => {
-    prisma.user.findUnique = jest.fn(async () => ({ id: ME, collegeId: null }));
+    prisma.user.findUnique = jest.fn(() =>
+      Promise.resolve({ id: ME, collegeId: null }),
+    );
     const res = await service.getAllActivities(ME, 20, undefined, 'campus');
     expect(res).toEqual({ activities: [], nextCursor: undefined });
     expect(prisma.crewActivity.findMany).not.toHaveBeenCalled();

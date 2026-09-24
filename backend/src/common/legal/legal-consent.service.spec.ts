@@ -41,23 +41,26 @@ describe('LegalConsentService', () => {
     acknowledgements = [];
     prisma = {
       legalDocumentVersion: {
-        findMany: jest.fn(async () => required),
+        findMany: jest.fn(() => Promise.resolve(required)),
       },
       legalAcknowledgement: {
-        findMany: jest.fn(async ({ where }: any) =>
-          acknowledgements.filter(
-            (a) =>
-              a.userId === where.userId &&
-              where.versionId.in.includes(a.versionId),
+        findMany: jest.fn(({ where }: any) =>
+          Promise.resolve(
+            acknowledgements.filter(
+              (a) =>
+                a.userId === where.userId &&
+                where.versionId.in.includes(a.versionId),
+            ),
           ),
         ),
-        count: jest.fn(
-          async ({ where }: any) =>
+        count: jest.fn(({ where }: any) =>
+          Promise.resolve(
             acknowledgements.filter(
               (a) =>
                 a.userId === where.userId &&
                 where.versionId.in.includes(a.versionId),
             ).length,
+          ),
         ),
       },
     };
@@ -190,17 +193,15 @@ describe('LegalConsentService', () => {
      * asked again and nothing recorded what they had accepted.
      */
     beforeEach(() => {
-      prisma.legalAcknowledgement.createMany = jest.fn(
-        async ({ data }: any) => {
-          for (const row of data) {
-            const clash = acknowledgements.some(
-              (a) => a.userId === row.userId && a.versionId === row.versionId,
-            );
-            if (!clash) acknowledgements.push(row);
-          }
-          return { count: data.length };
-        },
-      );
+      prisma.legalAcknowledgement.createMany = jest.fn(({ data }: any) => {
+        for (const row of data) {
+          const clash = acknowledgements.some(
+            (a) => a.userId === row.userId && a.versionId === row.versionId,
+          );
+          if (!clash) acknowledgements.push(row);
+        }
+        return Promise.resolve({ count: data.length });
+      });
     });
 
     it('records the Terms and Privacy versions in force at signup', async () => {
@@ -234,8 +235,8 @@ describe('LegalConsentService', () => {
      */
     it('never throws into the account-creation path', async () => {
       required = [TERMS_V4];
-      prisma.legalAcknowledgement.createMany = jest.fn(async () => {
-        throw new Error('connection reset');
+      prisma.legalAcknowledgement.createMany = jest.fn(() => {
+        return Promise.reject(new Error('connection reset'));
       });
       await expect(
         service.recordSignupConsent('new-user'),

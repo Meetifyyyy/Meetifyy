@@ -52,16 +52,19 @@ describe('Follow state', () => {
       user: { findUnique: jest.fn(), findMany: jest.fn() },
       userSettings: { findUnique: jest.fn().mockResolvedValue(null) },
       follow: {
-        findMany: jest.fn(async ({ where, select }: any) => {
+        findMany: jest.fn(({ where, select }: any) => {
           const followerId = where.followerId;
           const ids: string[] = where.followingId?.in ?? [];
-          return follows
-            .filter(
-              (f) => f.followerId === followerId && ids.includes(f.followingId),
-            )
-            .map((f) =>
-              select?.followingId ? { followingId: f.followingId } : f,
-            );
+          return Promise.resolve(
+            follows
+              .filter(
+                (f) =>
+                  f.followerId === followerId && ids.includes(f.followingId),
+              )
+              .map((f) =>
+                select?.followingId ? { followingId: f.followingId } : f,
+              ),
+          );
         }),
       },
       $queryRaw: jest.fn(),
@@ -84,7 +87,9 @@ describe('Follow state', () => {
         { provide: ConfigService, useValue: { get: jest.fn() } },
         {
           provide: RedisService,
-          useValue: { withLock: jest.fn(async (_k, _t, fn) => fn()) },
+          useValue: {
+            withLock: jest.fn((_k, _t, fn) => Promise.resolve(fn())),
+          },
         },
         { provide: BlocksService, useValue: createBlocksServiceMock(blocks) },
         {

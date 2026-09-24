@@ -9,25 +9,29 @@ describe('PostsService — poll options validation', () => {
 
   beforeEach(() => {
     prisma = {
-      user: { findUnique: jest.fn(async () => ({ id: 'u1' })) },
+      user: { findUnique: jest.fn(() => Promise.resolve({ id: 'u1' })) },
       post: {
-        create: jest.fn(async (args) => ({
-          id: 'p1',
-          text: args.data.text,
-          authorId: args.data.authorId,
-          media: [],
-        })),
+        create: jest.fn((args) =>
+          Promise.resolve({
+            id: 'p1',
+            text: args.data.text,
+            authorId: args.data.authorId,
+            media: [],
+          }),
+        ),
       },
       pollOption: {
-        createMany: jest.fn(async () => ({ count: 2 })),
-        findMany: jest.fn(async () => [
-          { id: 'opt1', text: 'Option 1' },
-          { id: 'opt2', text: 'Option 2' },
-        ]),
+        createMany: jest.fn(() => Promise.resolve({ count: 2 })),
+        findMany: jest.fn(() =>
+          Promise.resolve([
+            { id: 'opt1', text: 'Option 1' },
+            { id: 'opt2', text: 'Option 2' },
+          ]),
+        ),
       },
     };
     mentionsService = {
-      sanitize: jest.fn(async () => []),
+      sanitize: jest.fn(() => Promise.resolve([])),
     };
 
     service = new PostsService(

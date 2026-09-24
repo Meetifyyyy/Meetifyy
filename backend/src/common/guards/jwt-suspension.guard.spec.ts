@@ -48,7 +48,7 @@ describe('JwtGuard — suspension enforcement', () => {
       reflector,
       // The legal gate has its own spec; a service that always reports
       // "satisfied" keeps this one about suspension alone.
-      { isSatisfied: async () => true } as any,
+      { isSatisfied: () => Promise.resolve(true) } as any,
     );
   });
 

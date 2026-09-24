@@ -24,10 +24,10 @@ export function allowAllRateLimit(): RateLimitService {
 
   return {
     mode: 'enforce',
-    consume: jest.fn(async () => allow()),
-    consumeAll: jest.fn(async () => allow()),
-    check: jest.fn(async () => allow()),
-    penalize: jest.fn(async () => undefined),
+    consume: jest.fn(() => Promise.resolve(allow())),
+    consumeAll: jest.fn(() => Promise.resolve(allow())),
+    check: jest.fn(() => Promise.resolve(allow())),
+    penalize: jest.fn(() => Promise.resolve(undefined)),
     hashIdentifier: jest.fn((v: string) => v),
   } as unknown as RateLimitService;
 }

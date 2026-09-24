@@ -14,8 +14,8 @@ import { AdminJwtGuard } from '../../common/guards/admin-jwt.guard';
 describe('AdminVerificationController — routing', () => {
   let app: INestApplication;
   const service = {
-    listRequests: jest.fn(async () => ({ total: 0, requests: [] })),
-    updateStatus: jest.fn(async () => ({ request: {}, user: {} })),
+    listRequests: jest.fn(() => Promise.resolve({ total: 0, requests: [] })),
+    updateStatus: jest.fn(() => Promise.resolve({ request: {}, user: {} })),
   };
 
   beforeAll(async () => {

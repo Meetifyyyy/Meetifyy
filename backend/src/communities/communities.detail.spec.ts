@@ -59,33 +59,39 @@ describe('CommunitiesService — community detail', () => {
     members = strip;
     prisma = {
       community: {
-        findUnique: jest.fn(async () => ({
-          id: ID,
-          name: 'Community',
-          ownerId: 'owner',
-          createdAt: new Date('2026-01-01'),
-          deletedAt: null,
-          isPrivate: false,
-          isCampusCommunity: false,
-          collegeId: null,
-          owner: { id: 'owner', username: 'owner', displayName: 'Owner' },
-          college: null,
-          members,
-          _count: { members: members.length, posts: 0 },
-          ...community,
-        })),
+        findUnique: jest.fn(() =>
+          Promise.resolve({
+            id: ID,
+            name: 'Community',
+            ownerId: 'owner',
+            createdAt: new Date('2026-01-01'),
+            deletedAt: null,
+            isPrivate: false,
+            isCampusCommunity: false,
+            collegeId: null,
+            owner: { id: 'owner', username: 'owner', displayName: 'Owner' },
+            college: null,
+            members,
+            _count: { members: members.length, posts: 0 },
+            ...community,
+          }),
+        ),
       },
       communityMember: {
-        findUnique: jest.fn(async () =>
-          viewerOutsideStrip ? viewerMembership : null,
+        findUnique: jest.fn(() =>
+          Promise.resolve(viewerOutsideStrip ? viewerMembership : null),
         ),
-        findMany: jest.fn(async () =>
-          members.map((m: any) => ({ userId: m.userId })),
+        findMany: jest.fn(() =>
+          Promise.resolve(members.map((m: any) => ({ userId: m.userId }))),
         ),
       },
-      communityJoinRequest: { findUnique: jest.fn(async () => joinRequest) },
+      communityJoinRequest: {
+        findUnique: jest.fn(() => Promise.resolve(joinRequest)),
+      },
       user: {
-        findUnique: jest.fn(async () => ({ collegeId: viewerCollegeId })),
+        findUnique: jest.fn(() =>
+          Promise.resolve({ collegeId: viewerCollegeId }),
+        ),
       },
     };
 
@@ -93,16 +99,16 @@ describe('CommunitiesService — community detail', () => {
       prisma,
       { emit: jest.fn() } as any,
       { getClient: () => null } as any,
-      { getPresenceMany: async () => new Map() } as any,
+      { getPresenceMany: () => Promise.resolve(new Map()) } as any,
       { refFor: () => null } as any,
       {
-        getExcludedUserIds: async () => [],
-        isBlocked: async () => false,
-        filterBlockedUsers: async (_u: any, ids: any) => ids,
-        injectBlockFilter: async (_u: any, w: any) => w,
+        getExcludedUserIds: () => Promise.resolve([]),
+        isBlocked: () => Promise.resolve(false),
+        filterBlockedUsers: (_u: any, ids: any) => Promise.resolve(ids),
+        injectBlockFilter: (_u: any, w: any) => Promise.resolve(w),
         invalidateBlockCache: async () => {},
       } as any,
-      { createNotification: async () => ({}) } as any,
+      { createNotification: () => Promise.resolve({}) } as any,
       { createModeratorPromotion: () => null } as any,
     );
     return service;
@@ -320,7 +326,8 @@ describe('CommunitiesService — community detail', () => {
   it('hides members this viewer has blocked without changing the count', async () => {
     const members = [member('a'), member('b')];
     build({ members });
-    (service as any).blocksService.filterBlockedUsers = async () => ['a'];
+    (service as any).blocksService.filterBlockedUsers = () =>
+      Promise.resolve(['a']);
 
     const result: any = await service.getCommunityById(ID, VIEWER);
 

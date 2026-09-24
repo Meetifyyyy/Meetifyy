@@ -48,7 +48,7 @@ describe('JwtGuard — routes a restricted account may reach', () => {
     JwtGuard.clearAccountStatus(USER_ID);
     prisma = {
       user: {
-        findUnique: jest.fn(async () => ({ accountStatus })),
+        findUnique: jest.fn(() => Promise.resolve({ accountStatus })),
       },
     };
     // (supabaseService, prisma, reflector, legalConsent) — the reflector is
@@ -56,7 +56,7 @@ describe('JwtGuard — routes a restricted account may reach', () => {
     // under test. The legal gate has its own spec; a service reporting
     // "satisfied" keeps these tests about account status alone.
     guard = new JwtGuard({} as any, prisma, new Reflector(), {
-      isSatisfied: async () => true,
+      isSatisfied: () => Promise.resolve(true),
     } as any);
   });
 
@@ -140,8 +140,8 @@ describe('JwtGuard — routes a restricted account may reach', () => {
   it('never blocks a request because the status lookup broke', async () => {
     // A database blip must not lock everyone out of the app; the gate is a
     // restriction, not an authentication step.
-    prisma.user.findUnique = jest.fn(async () => {
-      throw new Error('connection reset');
+    prisma.user.findUnique = jest.fn(() => {
+      return Promise.reject(new Error('connection reset'));
     });
     await expect(enforce(contextWith())).resolves.toBeUndefined();
   });

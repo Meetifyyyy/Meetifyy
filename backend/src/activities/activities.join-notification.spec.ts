@@ -54,32 +54,34 @@ describe('Activity join → host notification', () => {
 
     prisma = {
       crewActivity: {
-        findUnique: jest.fn(async () => activityRow),
-        findFirst: jest.fn(async () => activityRow),
+        findUnique: jest.fn(() => Promise.resolve(activityRow)),
+        findFirst: jest.fn(() => Promise.resolve(activityRow)),
       },
       crewActivityMember: {
-        findUnique: jest.fn(async () => null),
-        findMany: jest.fn(async () => []),
-        deleteMany: jest.fn(async () => ({ count: 1 })),
+        findUnique: jest.fn(() => Promise.resolve(null)),
+        findMany: jest.fn(() => Promise.resolve([])),
+        deleteMany: jest.fn(() => Promise.resolve({ count: 1 })),
       },
       user: {
-        findUnique: jest.fn(async ({ where }: any) => ({
-          id: where.id,
-          collegeId: COLLEGE,
-          username: where.id === JOINER ? 'ananya' : 'host',
-          displayName: where.id === JOINER ? 'Ananya S' : 'Host',
-          avatar: 'avatars/ananya.webp',
-        })),
+        findUnique: jest.fn(({ where }: any) =>
+          Promise.resolve({
+            id: where.id,
+            collegeId: COLLEGE,
+            username: where.id === JOINER ? 'ananya' : 'host',
+            displayName: where.id === JOINER ? 'Ananya S' : 'Host',
+            avatar: 'avatars/ananya.webp',
+          }),
+        ),
       },
       activityInvitation: {
-        count: jest.fn(async () => 0),
-        findMany: jest.fn(async () => []),
+        count: jest.fn(() => Promise.resolve(0)),
+        findMany: jest.fn(() => Promise.resolve([])),
       },
       // xmax = 0 → the row was genuinely INSERTed, i.e. a real join.
-      $queryRaw: jest.fn(async () => [{ inserted: true }]),
+      $queryRaw: jest.fn(() => Promise.resolve([{ inserted: true }])),
     };
 
-    notifications = { createNotification: jest.fn(async () => ({})) };
+    notifications = { createNotification: jest.fn(() => Promise.resolve({})) };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -92,7 +94,7 @@ describe('Activity join → host notification', () => {
         { provide: NotificationsService, useValue: notifications },
         {
           provide: BlocksService,
-          useValue: { getExcludedUserIds: jest.fn(async () => []) },
+          useValue: { getExcludedUserIds: jest.fn(() => Promise.resolve([])) },
         },
         { provide: DomainEventService, useValue: { emit: jest.fn() } },
         { provide: RedisService, useValue: { getClient: () => null } },
@@ -148,7 +150,7 @@ describe('Activity join → host notification', () => {
     expect(notifications.createNotification).not.toHaveBeenCalled();
   });
 
-  it('never reports a join as a pending request', async () => {
+  it('never reports a join as a pending request', () => {
     const dto = factory.createActivityJoin(
       { id: JOINER, username: 'ananya', displayName: 'Ananya S', avatar: null },
       { id: 'act-1', title: 'Sunset badminton', coverImage: null },
@@ -156,6 +158,8 @@ describe('Activity join → host notification', () => {
     );
     expect(dto.body).not.toMatch(/request/i);
     expect(dto.body).toBe('ananya joined your activity.');
+
+    return Promise.resolve();
   });
 
   it('has no request-to-join entry point left on the service', () => {

@@ -18,16 +18,18 @@ function makeService(
 ) {
   const prisma: any = {
     user: {
-      findMany: jest.fn(async ({ where }: any) => {
+      findMany: jest.fn(({ where }: any) => {
         const ids: string[] = where?.id?.in ?? [];
-        return users
-          .filter((u) => ids.includes(u.id))
-          .map((u) => ({
-            id: u.id,
-            batchYear: u.batchYear ?? null,
-            email: u.email ?? null,
-            collegeEmail: null,
-          }));
+        return Promise.resolve(
+          users
+            .filter((u) => ids.includes(u.id))
+            .map((u) => ({
+              id: u.id,
+              batchYear: u.batchYear ?? null,
+              email: u.email ?? null,
+              collegeEmail: null,
+            })),
+        );
       }),
     },
   };

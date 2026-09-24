@@ -14,8 +14,10 @@ describe('emitMessageNew', () => {
     return {
       calls,
       service: {
-        emit: jest.fn(async (type: string, data: any, targets?: string[]) => {
+        emit: jest.fn((type: string, data: any, targets?: string[]) => {
           calls.push({ type, data, targets });
+
+          return Promise.resolve();
         }),
       } as any,
     };

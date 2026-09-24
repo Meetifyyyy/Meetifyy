@@ -14,7 +14,7 @@ function makeService(): RateLimitService {
 /** A JwtGuard stand-in that verifies nothing but a token→id mapping. */
 function makeJwt(map: Record<string, string>) {
   return {
-    peekUserId: async (token: string) => map[token] ?? null,
+    peekUserId: (token: string) => Promise.resolve(map[token] ?? null),
   } as any;
 }
 

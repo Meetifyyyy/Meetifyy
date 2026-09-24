@@ -222,7 +222,7 @@ describe('MediaCleanupService', () => {
       const newAvatar = 'avatars/new-unique-avatar.webp';
 
       // Simulate that user-1 is still using dual-use-image as their cover!
-      mockPrisma.user.findFirst.mockImplementation(async ({ where }: any) => {
+      mockPrisma.user.findFirst.mockImplementation(({ where }: any) => {
         // where has OR: [{ avatar: { contains: ... }, id: { not: 'user-1' } }, { cover: { contains: ... } }]
         // Since cover is checked for all users, it should match user-1's cover
         if (
@@ -230,9 +230,9 @@ describe('MediaCleanupService', () => {
             (cond: any) => cond.cover?.contains === sharedUserImage,
           )
         ) {
-          return { id: 'user-1' };
+          return Promise.resolve({ id: 'user-1' });
         }
-        return null;
+        return Promise.resolve(null);
       });
 
       const res = await service.handleMediaReplacement(
@@ -251,18 +251,16 @@ describe('MediaCleanupService', () => {
       const sharedCommImage = 'community-icons/dual-comm.webp';
       const newCommAvatar = 'community-icons/new-comm-avatar.webp';
 
-      mockPrisma.community.findFirst.mockImplementation(
-        async ({ where }: any) => {
-          if (
-            where.OR?.some(
-              (cond: any) => cond.coverKey?.contains === sharedCommImage,
-            )
-          ) {
-            return { id: 'comm-1' };
-          }
-          return null;
-        },
-      );
+      mockPrisma.community.findFirst.mockImplementation(({ where }: any) => {
+        if (
+          where.OR?.some(
+            (cond: any) => cond.coverKey?.contains === sharedCommImage,
+          )
+        ) {
+          return Promise.resolve({ id: 'comm-1' });
+        }
+        return Promise.resolve(null);
+      });
 
       const res = await service.handleMediaReplacement(
         'COMMUNITY_AVATAR',

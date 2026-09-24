@@ -59,7 +59,7 @@ describe('verification access matrix', () => {
     delete process.env.FEATURE_VERIFICATION_ENABLED;
     prisma = {
       user: { findUnique: jest.fn(), findMany: jest.fn() },
-      conversationParticipant: { findMany: jest.fn(async () => []) },
+      conversationParticipant: { findMany: jest.fn(() => Promise.resolve([])) },
     };
     access = new VerificationAccessService(prisma, { emit: jest.fn() } as any);
     reflector = new Reflector();

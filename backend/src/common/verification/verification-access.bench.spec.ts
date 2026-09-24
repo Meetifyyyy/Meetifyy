@@ -42,7 +42,7 @@ describe('VerificationAccessService — latency profile', () => {
           }));
         }),
       },
-      conversationParticipant: { findMany: jest.fn(async () => []) },
+      conversationParticipant: { findMany: jest.fn(() => Promise.resolve([])) },
     };
     service = new VerificationAccessService(prisma, { emit: jest.fn() } as any);
     service.invalidateAll();

@@ -12,23 +12,29 @@ describe('BlocksService', () => {
   const makeService = (blocks: { blockerId: string; blockedId: string }[]) => {
     const prisma = {
       block: {
-        findMany: jest.fn(async ({ where }: any) => {
+        findMany: jest.fn(({ where }: any) => {
           // getBlockedByUserIds asks for one direction; the mutual read uses OR.
           if (where.OR) {
             const userId = where.OR[0].blockerId;
-            return blocks.filter(
-              (b) => b.blockerId === userId || b.blockedId === userId,
+            return Promise.resolve(
+              blocks.filter(
+                (b) => b.blockerId === userId || b.blockedId === userId,
+              ),
             );
           }
-          return blocks.filter((b) => b.blockerId === where.blockerId);
+          return Promise.resolve(
+            blocks.filter((b) => b.blockerId === where.blockerId),
+          );
         }),
-        deleteMany: jest.fn(async ({ where }: any) => ({
-          count: blocks.filter(
-            (b) =>
-              b.blockerId === where.blockerId &&
-              b.blockedId === where.blockedId,
-          ).length,
-        })),
+        deleteMany: jest.fn(({ where }: any) =>
+          Promise.resolve({
+            count: blocks.filter(
+              (b) =>
+                b.blockerId === where.blockerId &&
+                b.blockedId === where.blockedId,
+            ).length,
+          }),
+        ),
       },
     };
     return new BlocksService(prisma as any);
@@ -207,22 +213,29 @@ describe('BlocksService — getBlockDirection', () => {
   const build = (rows: { blockerId: string; blockedId: string }[]) => {
     const prisma: any = {
       block: {
-        findMany: jest.fn(async ({ where }: any) => {
+        findMany: jest.fn(({ where }: any) => {
           if (where.blockerId && where.blockedId === undefined) {
-            return rows
-              .filter((r) => r.blockerId === where.blockerId)
-              .map((r) => ({ blockedId: r.blockedId }));
+            return Promise.resolve(
+              rows
+                .filter((r) => r.blockerId === where.blockerId)
+                .map((r) => ({ blockedId: r.blockedId })),
+            );
           }
           if (where.OR) {
-            return rows
-              .filter(
-                (r) =>
-                  r.blockerId === where.OR[0].blockerId ||
-                  r.blockedId === where.OR[1].blockedId,
-              )
-              .map((r) => ({ blockerId: r.blockerId, blockedId: r.blockedId }));
+            return Promise.resolve(
+              rows
+                .filter(
+                  (r) =>
+                    r.blockerId === where.OR[0].blockerId ||
+                    r.blockedId === where.OR[1].blockedId,
+                )
+                .map((r) => ({
+                  blockerId: r.blockerId,
+                  blockedId: r.blockedId,
+                })),
+            );
           }
-          return [];
+          return Promise.resolve([]);
         }),
       },
     };

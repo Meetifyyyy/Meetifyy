@@ -21,28 +21,28 @@ describe('UserSessionService', () => {
     rows.clear();
     prisma = {
       userSession: {
-        create: jest.fn(async ({ data, select }) => {
+        create: jest.fn(({ data, select }) => {
           const id = `sess-${rows.size + 1}`;
           rows.set(id, { id, replacedById: null, revoked: false, ...data });
-          return select ? { id } : rows.get(id);
+          return Promise.resolve(select ? { id } : rows.get(id));
         }),
-        findUnique: jest.fn(async ({ where, select }) => {
+        findUnique: jest.fn(({ where, select }) => {
           const found = [...rows.values()].find((r) =>
             where.id ? r.id === where.id : r.refreshHash === where.refreshHash,
           );
-          if (!found) return null;
-          if (!select) return found;
+          if (!found) return Promise.resolve(null);
+          if (!select) return Promise.resolve(found);
           const out: any = {};
           for (const k of Object.keys(select)) out[k] = found[k];
-          return out;
+          return Promise.resolve(out);
         }),
-        findMany: jest.fn(async () => [...rows.values()]),
-        update: jest.fn(async ({ where, data }) => {
+        findMany: jest.fn(() => Promise.resolve([...rows.values()])),
+        update: jest.fn(({ where, data }) => {
           const row = rows.get(where.id);
           if (row) Object.assign(row, data);
-          return row;
+          return Promise.resolve(row);
         }),
-        updateMany: jest.fn(async ({ where, data }) => {
+        updateMany: jest.fn(({ where, data }) => {
           let count = 0;
           for (const row of rows.values()) {
             if (where.id?.not && row.id === where.id.not) continue;
@@ -56,9 +56,9 @@ describe('UserSessionService', () => {
             Object.assign(row, data);
             count++;
           }
-          return { count };
+          return Promise.resolve({ count });
         }),
-        deleteMany: jest.fn(async () => ({ count: 0 })),
+        deleteMany: jest.fn(() => Promise.resolve({ count: 0 })),
       },
     };
     service = new UserSessionService(prisma);

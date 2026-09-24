@@ -18,15 +18,15 @@ describe('default asset backfill', () => {
     const users: any[] = [];
     const prisma = {
       community: {
-        updateMany: jest.fn(async (args: any) => {
+        updateMany: jest.fn((args: any) => {
           communities.push(args);
-          return { count: 1 };
+          return Promise.resolve({ count: 1 });
         }),
       },
       user: {
-        updateMany: jest.fn(async (args: any) => {
+        updateMany: jest.fn((args: any) => {
           users.push(args);
-          return { count: 1 };
+          return Promise.resolve({ count: 1 });
         }),
       },
       media: { upsert: jest.fn() },
@@ -115,15 +115,15 @@ describe('repointing records onto the current defaults', () => {
     const calls: Array<{ model: string; args: any }> = [];
     const prisma = {
       community: {
-        updateMany: jest.fn(async (args: any) => {
+        updateMany: jest.fn((args: any) => {
           calls.push({ model: 'community', args });
-          return { count: 2 };
+          return Promise.resolve({ count: 2 });
         }),
       },
       user: {
-        updateMany: jest.fn(async (args: any) => {
+        updateMany: jest.fn((args: any) => {
           calls.push({ model: 'user', args });
-          return { count: 3 };
+          return Promise.resolve({ count: 3 });
         }),
       },
       media: { upsert: jest.fn() },

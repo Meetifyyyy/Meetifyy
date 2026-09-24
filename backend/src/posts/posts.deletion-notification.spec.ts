@@ -91,34 +91,38 @@ describe('Content removal notifications', () => {
       const created: any[] = [];
       const prisma: any = {
         post: {
-          findUnique: jest.fn(async () => ({
-            id: 'p1',
-            authorId: 'author-1',
-            communityId: 'c1',
-            text: 'hi',
-            deletedAt: null,
-          })),
-          update: jest.fn(async () => ({})),
+          findUnique: jest.fn(() =>
+            Promise.resolve({
+              id: 'p1',
+              authorId: 'author-1',
+              communityId: 'c1',
+              text: 'hi',
+              deletedAt: null,
+            }),
+          ),
+          update: jest.fn(() => Promise.resolve({})),
         },
-        user: { findUnique: jest.fn(async () => actor) },
+        user: { findUnique: jest.fn(() => Promise.resolve(actor)) },
         community: {
-          findUnique: jest.fn(async () => ({ name: 'Chess Club' })),
+          findUnique: jest.fn(() => Promise.resolve({ name: 'Chess Club' })),
         },
         // The row-level cleanup is one raw statement (see deletePostInternal),
         // so that is all the deletion needs from Prisma here. What this suite
         // is actually about is what happens AFTER it: who gets told.
         // Returns no media keys — object-storage cleanup is not this test's
         // subject and is covered in posts.deletion.spec.ts.
-        $queryRaw: jest.fn(async () => []),
+        $queryRaw: jest.fn(() => Promise.resolve([])),
       };
 
       const notifications: any = {
-        createNotification: jest.fn(async (dto: any) => {
+        createNotification: jest.fn((dto: any) => {
           created.push(dto);
+
+          return Promise.resolve();
         }),
       };
       const authorizer: any = {
-        assertCanDelete: jest.fn(async () => authority),
+        assertCanDelete: jest.fn(() => Promise.resolve(authority)),
       };
       const service = new PostsService(
         prisma,

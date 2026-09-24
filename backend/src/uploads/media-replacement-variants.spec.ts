@@ -24,31 +24,33 @@ describe('media replacement — derived variants', () => {
     const referenced = new Set(opts.referenced ?? []);
     prisma = {
       user: {
-        findFirst: async ({ where }: any) => {
+        findFirst: ({ where }: any) => {
           const keys = (where.OR || []).map(
             (c: any) => c.avatar?.contains ?? c.cover?.contains,
           );
-          return keys.some((k: string) => referenced.has(k))
-            ? { id: 'u1' }
-            : null;
+          return Promise.resolve(
+            keys.some((k: string) => referenced.has(k)) ? { id: 'u1' } : null,
+          );
         },
       },
-      community: { findFirst: async () => null },
-      conversation: { findFirst: async () => null },
-      crewActivity: { findFirst: async () => null },
-      campusEvent: { findFirst: async () => null },
-      college: { findFirst: async () => null },
+      community: { findFirst: () => Promise.resolve(null) },
+      conversation: { findFirst: () => Promise.resolve(null) },
+      crewActivity: { findFirst: () => Promise.resolve(null) },
+      campusEvent: { findFirst: () => Promise.resolve(null) },
+      college: { findFirst: () => Promise.resolve(null) },
       media: {
-        findFirst: async () => null,
-        findMany: async () =>
-          (opts.owned ?? []).map((objectKey) => ({ objectKey })),
-        deleteMany: async () => ({ count: 1 }),
+        findFirst: () => Promise.resolve(null),
+        findMany: () =>
+          Promise.resolve(
+            (opts.owned ?? []).map((objectKey) => ({ objectKey })),
+          ),
+        deleteMany: () => Promise.resolve({ count: 1 }),
       },
     };
     storage = {
-      delete: async (key: string) => {
+      delete: (key: string) => {
         deleted.push(key);
-        return true;
+        return Promise.resolve(true);
       },
     };
     service = new MediaCleanupService(prisma, storage);
@@ -149,8 +151,8 @@ describe('media replacement — derived variants', () => {
 
     it('keeps the database update valid when storage deletion fails', async () => {
       buildService();
-      storage.delete = async () => {
-        throw new Error('R2 unavailable');
+      storage.delete = () => {
+        return Promise.reject(new Error('R2 unavailable'));
       };
       const result = await service.handleMediaReplacement(
         'USER_AVATAR',
@@ -225,9 +227,14 @@ describe('replaceEntityMedia — the shared guard', () => {
     handled = [];
     jest
       .spyOn(service, 'handleMediaReplacement')
-      .mockImplementation(async (...args: any[]) => {
+      .mockImplementation((...args: any[]) => {
         handled.push(args);
-        return { success: true, deletedKeys: [], skippedKeys: [], errors: [] };
+        return Promise.resolve({
+          success: true,
+          deletedKeys: [],
+          skippedKeys: [],
+          errors: [],
+        });
       });
   });
 
@@ -287,7 +294,7 @@ describe('replaceEntityMedia — the shared guard', () => {
  */
 describe('verification documents are never collectable', () => {
   const build = (opts: { selfie?: boolean; idCard?: boolean }) => {
-    const none = async () => null;
+    const none = () => Promise.resolve(null);
     const prisma: any = {
       user: { findFirst: none },
       community: { findFirst: none },
@@ -296,19 +303,21 @@ describe('verification documents are never collectable', () => {
       campusEvent: { findFirst: none },
       college: { findFirst: none },
       media: {
-        findFirst: async ({ where }: any) => {
+        findFirst: ({ where }: any) => {
           const wants = (where.OR || []).map((c: any) => Object.keys(c)[0]);
           if (opts.selfie && wants.includes('verificationSelfies'))
-            return { id: 'm1' };
+            return Promise.resolve({ id: 'm1' });
           if (opts.idCard && wants.includes('verificationIdCards'))
-            return { id: 'm1' };
-          return null;
+            return Promise.resolve({ id: 'm1' });
+          return Promise.resolve(null);
         },
-        findMany: async () => [],
-        deleteMany: async () => ({ count: 0 }),
+        findMany: () => Promise.resolve([]),
+        deleteMany: () => Promise.resolve({ count: 0 }),
       },
     };
-    return new MediaCleanupService(prisma, { delete: async () => true } as any);
+    return new MediaCleanupService(prisma, {
+      delete: () => Promise.resolve(true),
+    } as any);
   };
 
   it('protects a document attached as a selfie', async () => {

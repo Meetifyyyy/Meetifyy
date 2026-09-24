@@ -38,20 +38,24 @@ describe('AdminAccountDeletionService — the deletion queue', () => {
     rows = [pendingRow()];
     prisma = {
       user: {
-        count: jest.fn(async () => rows.length),
-        findMany: jest.fn(async () => rows),
-        findUnique: jest.fn(
-          async ({ where }: any) => rows.find((r) => r.id === where.id) ?? null,
+        count: jest.fn(() => Promise.resolve(rows.length)),
+        findMany: jest.fn(() => Promise.resolve(rows)),
+        findUnique: jest.fn(({ where }: any) =>
+          Promise.resolve(rows.find((r) => r.id === where.id) ?? null),
         ),
-        updateMany: jest.fn(async () => ({ count: 1 })),
+        updateMany: jest.fn(() => Promise.resolve({ count: 1 })),
       },
     };
     deletion = {
-      recoverAccount: jest.fn(async () => ({ pendingDeletion: false })),
+      recoverAccount: jest.fn(() =>
+        Promise.resolve({ pendingDeletion: false }),
+      ),
     };
     purge = {
-      purgeUser: jest.fn(async () => ({ purged: true })),
-      runSweep: jest.fn(async () => ({ claimed: 2, purged: 2, failed: 0 })),
+      purgeUser: jest.fn(() => Promise.resolve({ purged: true })),
+      runSweep: jest.fn(() =>
+        Promise.resolve({ claimed: 2, purged: 2, failed: 0 }),
+      ),
     };
     service = new AdminAccountDeletionService(prisma, deletion, purge);
   });

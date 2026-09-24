@@ -37,12 +37,14 @@ describe('DmService — lookupExistingDM', () => {
   beforeEach(async () => {
     prisma = {
       conversation: {
-        findFirst: jest.fn(async () => ({
-          id: 'conv-internal',
-          publicId: 'conv-public',
-        })),
+        findFirst: jest.fn(() =>
+          Promise.resolve({
+            id: 'conv-internal',
+            publicId: 'conv-public',
+          }),
+        ),
       },
-      conversationParticipant: { findMany: jest.fn(async () => []) },
+      conversationParticipant: { findMany: jest.fn(() => Promise.resolve([])) },
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -57,7 +59,7 @@ describe('DmService — lookupExistingDM', () => {
         { provide: DomainEventService, useValue: { emit: jest.fn() } },
         {
           provide: MentionsService,
-          useValue: { sanitize: jest.fn(async () => []) },
+          useValue: { sanitize: jest.fn(() => Promise.resolve([])) },
         },
       ],
     }).compile();

@@ -21,13 +21,15 @@ describe('GET /api/media — verification documents', () => {
     // Conversation attachments are authorized against the viewer; nothing
     // in these suites is one, so this is uniformly false.
     isConversationScopedKey: jest.fn(() => false),
-    canViewConversationMedia: jest.fn(async () => false),
+    canViewConversationMedia: jest.fn(() => Promise.resolve(false)),
     isAlwaysPrivateKey: jest.fn((key: string) =>
       key.startsWith('verification/'),
     ),
-    exists: jest.fn(async () => true),
-    getResolvedPublicUrl: jest.fn(async (key: string) =>
-      key.startsWith('verification/') ? null : `https://cdn.example/${key}`,
+    exists: jest.fn(() => Promise.resolve(true)),
+    getResolvedPublicUrl: jest.fn((key: string) =>
+      Promise.resolve(
+        key.startsWith('verification/') ? null : `https://cdn.example/${key}`,
+      ),
     ),
   };
 
@@ -41,7 +43,7 @@ describe('GET /api/media — verification documents', () => {
         { provide: SupabaseService, useValue: { isConfigured: false } },
         {
           provide: PrismaService,
-          useValue: { user: { findUnique: async () => null } },
+          useValue: { user: { findUnique: () => Promise.resolve(null) } },
         },
         // JwtGuard takes the consent gate as a constructor argument, so the
         // guard cannot be instantiated without it. Defaults to "nothing

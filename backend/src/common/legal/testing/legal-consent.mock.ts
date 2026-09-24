@@ -19,14 +19,17 @@ export function createLegalConsentMock(
   const published = options.published ?? pending;
 
   return {
-    getPublishedVersions: jest.fn(async () => published),
-    getPublishedVersion: jest.fn(
-      async (type: string) =>
+    getPublishedVersions: jest.fn(() => Promise.resolve(published)),
+    getPublishedVersion: jest.fn((type: string) =>
+      Promise.resolve(
         published.find((v: any) => v.documentType === type) ?? null,
+      ),
     ),
-    getRequiredVersions: jest.fn(async () => pending),
-    getPendingVersions: jest.fn(async () => (satisfied ? [] : pending)),
-    isSatisfied: jest.fn(async () => satisfied),
+    getRequiredVersions: jest.fn(() => Promise.resolve(pending)),
+    getPendingVersions: jest.fn(() =>
+      Promise.resolve(satisfied ? [] : pending),
+    ),
+    isSatisfied: jest.fn(() => Promise.resolve(satisfied)),
     markSatisfied: jest.fn(),
     recordSignupConsent: jest.fn(async () => {}),
     invalidatePublished: jest.fn(),

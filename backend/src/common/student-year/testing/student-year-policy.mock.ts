@@ -68,33 +68,42 @@ export function createStudentYearPolicyMock(
     visibleUserSqlPredicate: jest.fn(() => 'TRUE'),
     invalidate: jest.fn(),
     invalidateAll: jest.fn(),
-    getBatchYearMap: jest.fn(async (ids: string[]) => {
+    getBatchYearMap: jest.fn((ids: string[]) => {
       const map = new Map<string, number | null>();
       (ids || []).filter(Boolean).forEach((id) => map.set(id, batchOf(id)));
-      return map;
+      return Promise.resolve(map);
     }),
-    resolveContext: jest.fn(async (id: string) =>
-      id
-        ? { id, batchYear: batchOf(id), isFirstYear: isFirstYear(batchOf(id)) }
-        : null,
-    ),
-    getBatchYearFor: jest.fn(async (id: string) => batchOf(id)),
-    canIdsInteract: jest.fn(async (a: string, b: string) =>
-      compatible(batchOf(a), batchOf(b)),
-    ),
-    getIncompatibleUserIds: jest.fn(async (actorId: string, ids: string[]) =>
-      (ids || []).filter(
-        (id) => id !== actorId && !compatible(batchOf(actorId), batchOf(id)),
+    resolveContext: jest.fn((id: string) =>
+      Promise.resolve(
+        id
+          ? {
+              id,
+              batchYear: batchOf(id),
+              isFirstYear: isFirstYear(batchOf(id)),
+            }
+          : null,
       ),
     ),
-    filterInteractableUserIds: jest.fn(
-      async (actorId: string, ids: string[]) =>
+    getBatchYearFor: jest.fn((id: string) => Promise.resolve(batchOf(id))),
+    canIdsInteract: jest.fn((a: string, b: string) =>
+      Promise.resolve(compatible(batchOf(a), batchOf(b))),
+    ),
+    getIncompatibleUserIds: jest.fn((actorId: string, ids: string[]) =>
+      Promise.resolve(
+        (ids || []).filter(
+          (id) => id !== actorId && !compatible(batchOf(actorId), batchOf(id)),
+        ),
+      ),
+    ),
+    filterInteractableUserIds: jest.fn((actorId: string, ids: string[]) =>
+      Promise.resolve(
         !actorId
           ? ids
           : (ids || []).filter(
               (id) =>
                 id === actorId || compatible(batchOf(actorId), batchOf(id)),
             ),
+      ),
     ),
     assertCanInteract: jest.fn(async () => {}),
   };

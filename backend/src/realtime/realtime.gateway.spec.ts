@@ -59,11 +59,13 @@ describe('RealtimeGateway — Authentication', () => {
       // including one that supplied its own token — supplying a handshake token
       // used to be enough to opt out of revocation entirely.
       userSession: {
-        findUnique: jest.fn(async () => ({
-          revoked: false,
-          expiresAt: new Date(Date.now() + 86_400_000),
-          userId: sessionOwner,
-        })),
+        findUnique: jest.fn(() =>
+          Promise.resolve({
+            revoked: false,
+            expiresAt: new Date(Date.now() + 86_400_000),
+            userId: sessionOwner,
+          }),
+        ),
       },
     };
     redisService = {

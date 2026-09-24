@@ -116,13 +116,17 @@ describe('verification upload content validation', () => {
     uploaded = [];
     service = new StorageService(
       {
-        upload: async (k: string) => {
+        upload: (k: string) => {
           uploaded.push(k);
+
+          return Promise.resolve();
         },
         getPublicUrl: (k: string) => `https://cdn.example/${k}`,
       } as any,
       {
-        media: { create: async ({ data }: any) => ({ id: 'm1', ...data }) },
+        media: {
+          create: ({ data }: any) => Promise.resolve({ id: 'm1', ...data }),
+        },
       } as any,
       { get: () => undefined } as any,
     );

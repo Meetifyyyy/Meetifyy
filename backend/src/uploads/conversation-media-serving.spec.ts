@@ -110,8 +110,8 @@ describe('serving an authorized conversation attachment', () => {
 
   it('refuses an anonymous request', async () => {
     const { controller, storage } = build({
-      canViewConversationMedia: jest.fn(async (_k: string, v: unknown) =>
-        Boolean(v),
+      canViewConversationMedia: jest.fn((_k: string, v: unknown) =>
+        Promise.resolve(Boolean(v)),
       ),
     });
     const res = buildRes();

@@ -537,13 +537,14 @@ function blocksStubFor(prisma: any) {
       .map((b) => (b.blockerId === userId ? b.blockedId : b.blockerId));
 
   return {
-    getExcludedUserIds: async (userId: string) => excluded(userId),
-    isBlocked: async (a: string, b: string) => excluded(a).includes(b),
-    filterBlockedUsers: async (userId: string, ids: string[]) => {
+    getExcludedUserIds: (userId: string) => Promise.resolve(excluded(userId)),
+    isBlocked: (a: string, b: string) =>
+      Promise.resolve(excluded(a).includes(b)),
+    filterBlockedUsers: (userId: string, ids: string[]) => {
       const set = new Set(excluded(userId));
-      return ids.filter((id) => !set.has(id));
+      return Promise.resolve(ids.filter((id) => !set.has(id)));
     },
-    injectBlockFilter: async (_userId: string, where: any) => where,
+    injectBlockFilter: (_userId: string, where: any) => Promise.resolve(where),
     invalidateBlockCache: async () => {},
   } as any;
 }

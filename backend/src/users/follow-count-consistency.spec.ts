@@ -45,9 +45,9 @@ describe('Follower counts and the lists behind them', () => {
     prisma = {
       user: {
         findUnique: jest.fn().mockResolvedValue({ id: 'target-1' }),
-        findFirst: jest.fn(async (args: any) => {
+        findFirst: jest.fn((args: any) => {
           countArgs = args.include?._count?.select;
-          return {
+          return Promise.resolve({
             id: 'target-1',
             username: 'target',
             displayName: 'Target',
@@ -58,7 +58,7 @@ describe('Follower counts and the lists behind them', () => {
             settings: null,
             college: null,
             _count: { followers: 0, following: 0, posts: 0 },
-          };
+          });
         }),
         findMany: jest.fn().mockResolvedValue([]),
       },
@@ -89,7 +89,9 @@ describe('Follower counts and the lists behind them', () => {
         {
           provide: RedisService,
           useValue: {
-            withLock: jest.fn(async (_k: any, _t: any, fn: any) => fn()),
+            withLock: jest.fn((_k: any, _t: any, fn: any) =>
+              Promise.resolve(fn()),
+            ),
           },
         },
         { provide: BlocksService, useValue: createBlocksServiceMock(blocks) },

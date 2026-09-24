@@ -36,10 +36,10 @@ describe('GET /api/media — default profile avatar', () => {
     // Conversation attachments are authorized against the viewer; nothing
     // in these suites is one, so this is uniformly false.
     isConversationScopedKey: jest.fn(() => false),
-    canViewConversationMedia: jest.fn(async () => false),
+    canViewConversationMedia: jest.fn(() => Promise.resolve(false)),
     isAlwaysPrivateKey: jest.fn(() => false),
-    exists: jest.fn(async () => false),
-    getResolvedPublicUrl: jest.fn(async () => null),
+    exists: jest.fn(() => Promise.resolve(false)),
+    getResolvedPublicUrl: jest.fn(() => Promise.resolve(null)),
   };
 
   beforeAll(async () => {
@@ -50,7 +50,7 @@ describe('GET /api/media — default profile avatar', () => {
         { provide: SupabaseService, useValue: { isConfigured: false } },
         {
           provide: PrismaService,
-          useValue: { user: { findUnique: async () => null } },
+          useValue: { user: { findUnique: () => Promise.resolve(null) } },
         },
         // JwtGuard takes the consent gate as a constructor argument, so the
         // guard cannot be instantiated without it. Defaults to "nothing

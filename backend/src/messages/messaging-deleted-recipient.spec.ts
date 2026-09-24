@@ -36,25 +36,27 @@ describe('MessagingCoreService — messaging an unavailable recipient', () => {
 
     prisma = {
       conversation: {
-        findUnique: jest.fn(async () => ({
-          id: CONV,
-          publicId: CONV,
-          name: null,
-          type: 'DM',
-          participants,
-        })),
+        findUnique: jest.fn(() =>
+          Promise.resolve({
+            id: CONV,
+            publicId: CONV,
+            name: null,
+            type: 'DM',
+            participants,
+          }),
+        ),
       },
-      message: { findFirst: jest.fn(async () => null) },
+      message: { findFirst: jest.fn(() => Promise.resolve(null)) },
     };
 
     service = new MessagingCoreService(
       prisma,
-      { getPresenceMany: jest.fn(async () => new Map()) } as any,
+      { getPresenceMany: jest.fn(() => Promise.resolve(new Map())) } as any,
       { emit: jest.fn() } as any,
-      { sanitize: jest.fn(async () => []) } as any,
+      { sanitize: jest.fn(() => Promise.resolve([])) } as any,
       {
-        getExcludedUserIds: jest.fn(async () => []),
-        getBlockedByUserIds: jest.fn(async () => []),
+        getExcludedUserIds: jest.fn(() => Promise.resolve([])),
+        getBlockedByUserIds: jest.fn(() => Promise.resolve([])),
       } as any,
       {
         isEnforcementEnabled: () => false,
@@ -68,13 +70,15 @@ describe('MessagingCoreService — messaging an unavailable recipient', () => {
       } as any,
       // Rate limiting is not what this fixture exercises; always allow.
       {
-        consumeAll: jest.fn(async () => ({ allowed: true })),
-        consume: jest.fn(async () => ({ allowed: true })),
+        consumeAll: jest.fn(() => Promise.resolve({ allowed: true })),
+        consume: jest.fn(() => Promise.resolve({ allowed: true })),
       } as any,
     );
 
     // The conversation id resolves to itself in this fixture.
-    (service as any).resolveConversationId = jest.fn(async () => CONV);
+    (service as any).resolveConversationId = jest.fn(() =>
+      Promise.resolve(CONV),
+    );
   });
 
   it.each(['PENDING_DELETION', 'DELETED'])(

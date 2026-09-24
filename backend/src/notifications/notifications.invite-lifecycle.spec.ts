@@ -83,8 +83,10 @@ describe('NotificationsService - activity invite lifecycle', () => {
           useValue: {
             getExcludedUserIds: jest.fn().mockResolvedValue([]),
             isBlocked: jest.fn().mockResolvedValue(false),
-            filterBlockedUsers: jest.fn(async (_u: any, ids: any) => ids),
-            injectBlockFilter: jest.fn(async (_u: any, w: any) => w),
+            filterBlockedUsers: jest.fn((_u: any, ids: any) =>
+              Promise.resolve(ids),
+            ),
+            injectBlockFilter: jest.fn((_u: any, w: any) => Promise.resolve(w)),
             invalidateBlockCache: jest.fn(),
           },
         },

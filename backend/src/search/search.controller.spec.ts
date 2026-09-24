@@ -17,7 +17,7 @@ describe('SearchController', () => {
         { provide: SupabaseService, useValue: {} },
         {
           provide: PrismaService,
-          useValue: { user: { findUnique: async () => null } },
+          useValue: { user: { findUnique: () => Promise.resolve(null) } },
         },
         // JwtGuard takes the consent gate as a constructor argument, so the
         // guard cannot be instantiated without it. Defaults to "nothing

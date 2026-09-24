@@ -42,10 +42,12 @@ describe('UsersService — directional profile access', () => {
 
     const prisma: any = {
       user: {
-        findUnique: jest.fn(async ({ where }: any) =>
-          where.id === BLOCKED
-            ? targetRow
-            : { ...targetRow, id: BLOCKER, username: 'blocker-user' },
+        findUnique: jest.fn(({ where }: any) =>
+          Promise.resolve(
+            where.id === BLOCKED
+              ? targetRow
+              : { ...targetRow, id: BLOCKER, username: 'blocker-user' },
+          ),
         ),
       },
     };
@@ -55,12 +57,12 @@ describe('UsersService — directional profile access', () => {
     service.blocksService = blocksService;
     service.studentYearPolicy = {
       visibleUserWhere: () => ({}),
-      getBatchYearFor: async () => null,
-      canIdsInteract: async () => true,
+      getBatchYearFor: () => Promise.resolve(null),
+      canIdsInteract: () => Promise.resolve(true),
       canCreateMessage: () => true,
     };
     // Presence is resolved separately and is not the subject here.
-    service.presenceService = { getPresence: async () => null };
+    service.presenceService = { getPresence: () => Promise.resolve(null) };
     return service;
   };
 
@@ -98,7 +100,9 @@ describe('UsersService — directional profile access', () => {
         .catch((e: any) => e);
 
       const missingService = buildService(blocks);
-      missingService.prisma.user.findUnique = jest.fn(async () => null);
+      missingService.prisma.user.findUnique = jest.fn(() =>
+        Promise.resolve(null),
+      );
       const missingAttempt = await missingService
         .getUserById('no-such-user', BLOCKED)
         .catch((e: any) => e);

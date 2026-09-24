@@ -30,7 +30,9 @@ describe('AdminVerificationService', () => {
   };
 
   const mockStorage = {
-    getReviewerSignedUrl: jest.fn(async (key: string) => `signed://${key}`),
+    getReviewerSignedUrl: jest.fn((key: string) =>
+      Promise.resolve(`signed://${key}`),
+    ),
   };
 
   /** Puts a request in `from` and lets the claim succeed. */

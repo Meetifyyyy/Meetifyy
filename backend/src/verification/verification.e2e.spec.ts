@@ -71,38 +71,44 @@ describe('account verification — end to end', () => {
   let prismaDouble: any;
   const buildPrisma = () => ({
     user: {
-      findUnique: async ({ where }: any) => db.users[where.id] ?? null,
-      findMany: async ({ where }: any) =>
-        where.id.in.map((id: string) => db.users[id]).filter(Boolean),
-      updateMany: async ({ where, data }: any) => {
+      findUnique: ({ where }: any) =>
+        Promise.resolve(db.users[where.id] ?? null),
+      findMany: ({ where }: any) =>
+        Promise.resolve(
+          where.id.in.map((id: string) => db.users[id]).filter(Boolean),
+        ),
+      updateMany: ({ where, data }: any) => {
         const u = db.users[where.id];
         const allowed = where.verificationStatus?.in;
         if (!u || (allowed && !allowed.includes(u.verificationStatus))) {
-          return { count: 0 };
+          return Promise.resolve({ count: 0 });
         }
         Object.assign(u, data);
-        return { count: 1 };
+        return Promise.resolve({ count: 1 });
       },
-      update: async ({ where, data }: any) => {
+      update: ({ where, data }: any) => {
         Object.assign(db.users[where.id], data);
-        return db.users[where.id];
+        return Promise.resolve(db.users[where.id]);
       },
     },
     media: {
-      findUnique: async ({ where }: any) => db.media[where.id] ?? null,
-      findMany: async ({ where }: any) =>
-        Object.values(db.media).filter((m: any) =>
-          where.id?.in ? where.id.in.includes(m.id) : true,
+      findUnique: ({ where }: any) =>
+        Promise.resolve(db.media[where.id] ?? null),
+      findMany: ({ where }: any) =>
+        Promise.resolve(
+          Object.values(db.media).filter((m: any) =>
+            where.id?.in ? where.id.in.includes(m.id) : true,
+          ),
         ),
-      updateMany: async ({ where, data }: any) => {
+      updateMany: ({ where, data }: any) => {
         (where.id?.in || []).forEach((id: string) => {
           if (db.media[id]) Object.assign(db.media[id], data);
         });
-        return { count: 1 };
+        return Promise.resolve({ count: 1 });
       },
-      deleteMany: async ({ where }: any) => {
+      deleteMany: ({ where }: any) => {
         (where.id?.in || []).forEach((id: string) => delete db.media[id]);
-        return { count: 1 };
+        return Promise.resolve({ count: 1 });
       },
     },
     verificationRequest: {
@@ -125,41 +131,44 @@ describe('account verification — end to end', () => {
         }
         return snapshot;
       },
-      findUniqueOrThrow: async ({ where }: any) => ({
-        ...db.requests[where.id],
-      }),
-      findFirst: async ({ where, orderBy }: any) => {
+      findUniqueOrThrow: ({ where }: any) =>
+        Promise.resolve({
+          ...db.requests[where.id],
+        }),
+      findFirst: ({ where, orderBy }: any) => {
         const rows = Object.values(db.requests).filter(
           (r: any) => r.userId === where.userId,
         );
         if (orderBy?.attemptNumber === 'desc') {
           rows.sort((a: any, b: any) => b.attemptNumber - a.attemptNumber);
         }
-        return rows[0] ? { ...(rows[0] as object) } : null;
+        return Promise.resolve(rows[0] ? { ...(rows[0] as object) } : null);
       },
-      findMany: async ({ where, orderBy }: any = {}) =>
-        Object.values(db.requests)
-          .filter((r: any) =>
-            where?.userId ? r.userId === where.userId : true,
-          )
-          .sort((a: any, b: any) =>
-            orderBy?.attemptNumber === 'desc'
-              ? b.attemptNumber - a.attemptNumber
-              : 0,
-          )
-          .map((r: any) => ({
-            ...r,
-            // The admin queue `include`s both documents.
-            selfieMedia: r.selfieMediaId
-              ? (db.media[r.selfieMediaId] ?? null)
-              : null,
-            idCardMedia: r.idCardMediaId
-              ? (db.media[r.idCardMediaId] ?? null)
-              : null,
-            user: db.users[r.userId] ?? null,
-          })),
-      count: async () => Object.keys(db.requests).length,
-      create: async ({ data }: any) => {
+      findMany: ({ where, orderBy }: any = {}) =>
+        Promise.resolve(
+          Object.values(db.requests)
+            .filter((r: any) =>
+              where?.userId ? r.userId === where.userId : true,
+            )
+            .sort((a: any, b: any) =>
+              orderBy?.attemptNumber === 'desc'
+                ? b.attemptNumber - a.attemptNumber
+                : 0,
+            )
+            .map((r: any) => ({
+              ...r,
+              // The admin queue `include`s both documents.
+              selfieMedia: r.selfieMediaId
+                ? (db.media[r.selfieMediaId] ?? null)
+                : null,
+              idCardMedia: r.idCardMediaId
+                ? (db.media[r.idCardMediaId] ?? null)
+                : null,
+              user: db.users[r.userId] ?? null,
+            })),
+        ),
+      count: () => Promise.resolve(Object.keys(db.requests).length),
+      create: ({ data }: any) => {
         // Stands in for the partial unique index
         // (userId) WHERE status = 'PENDING'. Without modelling it here the
         // double would happily accept a second open request and the duplicate
@@ -169,9 +178,11 @@ describe('account verification — end to end', () => {
             r.userId === data.userId && r.status === VerificationStatus.PENDING,
         );
         if (openAlready) {
-          throw new Prisma.PrismaClientKnownRequestError(
-            'Unique constraint failed',
-            { code: 'P2002', clientVersion: 'test' },
+          return Promise.reject(
+            new Prisma.PrismaClientKnownRequestError(
+              'Unique constraint failed',
+              { code: 'P2002', clientVersion: 'test' },
+            ),
           );
         }
         const row = {
@@ -184,22 +195,22 @@ describe('account verification — end to end', () => {
           reviewerId: null,
         };
         db.requests[row.id] = row;
-        return row;
+        return Promise.resolve(row);
       },
-      updateMany: async ({ where, data }: any) => {
+      updateMany: ({ where, data }: any) => {
         const row = db.requests[where.id];
         if (!row || (where.status && row.status !== where.status)) {
-          return { count: 0 };
+          return Promise.resolve({ count: 0 });
         }
         Object.assign(row, data, { updatedAt: new Date() });
-        return { count: 1 };
+        return Promise.resolve({ count: 1 });
       },
     },
-    conversationParticipant: { findMany: async () => [] },
+    conversationParticipant: { findMany: () => Promise.resolve([]) },
     auditLog: {
-      create: async ({ data }: any) => {
+      create: ({ data }: any) => {
         db.auditLogs.push(data);
-        return data;
+        return Promise.resolve(data);
       },
     },
     // Both forms: the array form the admin path uses, and the interactive
@@ -246,10 +257,11 @@ describe('account verification — end to end', () => {
         {
           provide: StorageService,
           useValue: {
-            getReviewerSignedUrl: async (key: string) => `signed://${key}`,
-            delete: async (key: string) => {
+            getReviewerSignedUrl: (key: string) =>
+              Promise.resolve(`signed://${key}`),
+            delete: (key: string) => {
               deletedObjects.push(key);
-              return true;
+              return Promise.resolve(true);
             },
           },
         },

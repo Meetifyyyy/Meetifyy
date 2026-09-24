@@ -26,30 +26,34 @@ describe('MessagesService — deleting a conversation', () => {
   beforeEach(async () => {
     prisma = {
       conversation: {
-        findFirst: jest.fn(async () => ({
-          id: 'conv-internal',
-          publicId: 'conv-public',
-        })),
-        findUnique: jest.fn(async () => ({
-          id: 'conv-internal',
-          publicId: 'conv-public',
-        })),
+        findFirst: jest.fn(() =>
+          Promise.resolve({
+            id: 'conv-internal',
+            publicId: 'conv-public',
+          }),
+        ),
+        findUnique: jest.fn(() =>
+          Promise.resolve({
+            id: 'conv-internal',
+            publicId: 'conv-public',
+          }),
+        ),
       },
       conversationParticipant: {
-        update: jest.fn(async ({ data }: any) => ({ ...data })),
-        updateMany: jest.fn(async () => ({ count: 1 })),
+        update: jest.fn(({ data }: any) => Promise.resolve({ ...data })),
+        updateMany: jest.fn(() => Promise.resolve({ count: 1 })),
         findUnique: jest.fn(),
-        findMany: jest.fn(async () => []),
+        findMany: jest.fn(() => Promise.resolve([])),
       },
       message: {
         create: jest.fn(),
         findFirst: jest.fn(),
-        findMany: jest.fn(async () => []),
+        findMany: jest.fn(() => Promise.resolve([])),
       },
       block: { findFirst: jest.fn() },
-      deletedMessage: { findMany: jest.fn(async () => []) },
-      $transaction: jest.fn(async (ops: any) =>
-        Array.isArray(ops) ? ops : ops(prisma),
+      deletedMessage: { findMany: jest.fn(() => Promise.resolve([])) },
+      $transaction: jest.fn((ops: any) =>
+        Promise.resolve(Array.isArray(ops) ? ops : ops(prisma)),
       ),
     };
 
@@ -156,30 +160,34 @@ describe('MessagingCoreService — per-user conversation actions', () => {
   beforeEach(async () => {
     prisma = {
       conversation: {
-        findFirst: jest.fn(async () => ({
-          id: 'conv-internal',
-          publicId: 'conv-public',
-        })),
-        findUnique: jest.fn(async () => ({
-          id: 'conv-internal',
-          publicId: 'conv-public',
-        })),
+        findFirst: jest.fn(() =>
+          Promise.resolve({
+            id: 'conv-internal',
+            publicId: 'conv-public',
+          }),
+        ),
+        findUnique: jest.fn(() =>
+          Promise.resolve({
+            id: 'conv-internal',
+            publicId: 'conv-public',
+          }),
+        ),
       },
       conversationParticipant: {
         update: jest.fn(),
-        updateMany: jest.fn(async () => ({ count: 1 })),
+        updateMany: jest.fn(() => Promise.resolve({ count: 1 })),
         findUnique: jest.fn(),
-        findMany: jest.fn(async () => []),
+        findMany: jest.fn(() => Promise.resolve([])),
       },
       message: {
         create: jest.fn(),
         findFirst: jest.fn(),
-        findMany: jest.fn(async () => []),
+        findMany: jest.fn(() => Promise.resolve([])),
       },
       block: { findFirst: jest.fn() },
-      deletedMessage: { findMany: jest.fn(async () => []) },
-      $transaction: jest.fn(async (ops: any) =>
-        Array.isArray(ops) ? ops : ops(prisma),
+      deletedMessage: { findMany: jest.fn(() => Promise.resolve([])) },
+      $transaction: jest.fn((ops: any) =>
+        Promise.resolve(Array.isArray(ops) ? ops : ops(prisma)),
       ),
     };
 

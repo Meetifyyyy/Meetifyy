@@ -25,13 +25,13 @@ describe('conversation media: which bucket a read goes to', () => {
     provider.isConfigured = true;
     provider.readBucketCache = new Map();
     provider.s3 = {
-      send: async (cmd: any) => {
+      send: (cmd: any) => {
         const { Bucket, Key } = cmd.input;
         heads.push({ Bucket, Key });
-        if ((objects[Bucket] || []).includes(Key)) return {};
-        const err: any = new Error('NotFound');
+        if ((objects[Bucket] || []).includes(Key)) return Promise.resolve({});
+        const err = new Error('NotFound');
         err.name = 'NotFound';
-        throw err;
+        return Promise.reject(err);
       },
     };
     return { provider, heads };
@@ -88,12 +88,12 @@ describe('conversation media: which bucket a read goes to', () => {
     const { provider } = build({ [MAIN]: [key], [PRIVATE]: [] });
     const deletes: string[] = [];
     const head = provider.s3.send;
-    provider.s3.send = async (cmd: any) => {
+    provider.s3.send = (cmd: any) => {
       if (cmd.constructor.name === 'DeleteObjectCommand') {
         deletes.push(cmd.input.Bucket);
-        return {};
+        return Promise.resolve({});
       }
-      return head(cmd);
+      return Promise.resolve(head(cmd));
     };
     provider.getLocalFilePath = () => '/nonexistent/path';
 

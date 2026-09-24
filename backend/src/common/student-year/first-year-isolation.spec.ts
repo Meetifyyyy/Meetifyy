@@ -66,11 +66,13 @@ const PEOPLE = {
 function fakePrismaForPolicy() {
   return {
     user: {
-      findMany: jest.fn(async ({ where }: any) => {
+      findMany: jest.fn(({ where }: any) => {
         const ids: string[] = where?.id?.in ?? [];
-        return Object.values(PEOPLE)
-          .filter((u) => ids.includes(u.id))
-          .map((u) => ({ ...u, collegeEmail: null }));
+        return Promise.resolve(
+          Object.values(PEOPLE)
+            .filter((u) => ids.includes(u.id))
+            .map((u) => ({ ...u, collegeEmail: null })),
+        );
       }),
     },
   };
@@ -173,18 +175,22 @@ describe('recipient selectors', () => {
     // resolve as batch-unknown and the assertions below would all describe the
     // non-first-year branch. Everything else is a list query and returns
     // nothing — these tests are about the `where`, not the rows.
-    findMany = jest.fn(async (args: any) => {
+    findMany = jest.fn((args: any) => {
       const ids = args?.where?.id?.in;
       if (Array.isArray(ids)) {
-        return Object.values(PEOPLE)
-          .filter((u) => ids.includes(u.id))
-          .map((u) => ({ ...u, collegeEmail: null }));
+        return Promise.resolve(
+          Object.values(PEOPLE)
+            .filter((u) => ids.includes(u.id))
+            .map((u) => ({ ...u, collegeEmail: null })),
+        );
       }
-      return [];
+      return Promise.resolve([]);
     });
-    userFindUnique = jest.fn(async ({ where }: any) => {
+    userFindUnique = jest.fn(({ where }: any) => {
       const found = Object.values(PEOPLE).find((u) => u.id === where.id);
-      return found ? { ...found, collegeId: 'gla', collegeEmail: null } : null;
+      return Promise.resolve(
+        found ? { ...found, collegeId: 'gla', collegeEmail: null } : null,
+      );
     });
 
     const moduleRef = await Test.createTestingModule({
@@ -202,7 +208,7 @@ describe('recipient selectors', () => {
           // exactly what the service built.
           provide: BlocksService,
           useValue: {
-            injectBlockFilter: jest.fn(async (_id, where) => where),
+            injectBlockFilter: jest.fn((_id, where) => Promise.resolve(where)),
             getExcludedUserIds: jest.fn().mockResolvedValue([]),
           },
         },
@@ -314,12 +320,14 @@ describe('recipient selectors', () => {
 
   it('filters @mention candidates, which are a way to reach someone', async () => {
     await buildUsersService();
-    (service as any).prisma.follow = { findMany: jest.fn(async () => []) };
+    (service as any).prisma.follow = {
+      findMany: jest.fn(() => Promise.resolve([])),
+    };
     (service as any).prisma.communityMember = {
-      findMany: jest.fn(async () => []),
+      findMany: jest.fn(() => Promise.resolve([])),
     };
     (service as any).prisma.conversationParticipant = {
-      findMany: jest.fn(async () => []),
+      findMany: jest.fn(() => Promise.resolve([])),
     };
     await service.getMentionSuggestions(PEOPLE.fresher.id, 'shr');
     expect(policyClauseOf()).toEqual({ batchYear: FIRST_YEAR });

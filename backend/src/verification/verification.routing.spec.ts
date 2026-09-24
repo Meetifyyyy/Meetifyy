@@ -18,8 +18,10 @@ import { JwtGuard } from '../common/guards/jwt.guard';
 describe('VerificationController — routing', () => {
   let app: INestApplication;
   const service = {
-    submitVerification: jest.fn(async () => ({ id: 'req-1' })),
-    getStatus: jest.fn(async () => ({ status: 'UNVERIFIED', request: null })),
+    submitVerification: jest.fn(() => Promise.resolve({ id: 'req-1' })),
+    getStatus: jest.fn(() =>
+      Promise.resolve({ status: 'UNVERIFIED', request: null }),
+    ),
   };
 
   beforeAll(async () => {

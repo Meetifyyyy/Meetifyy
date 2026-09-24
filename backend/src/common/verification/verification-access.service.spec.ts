@@ -11,11 +11,11 @@ describe('VerificationAccessService', () => {
   const seed = (
     rows: { id: string; verificationStatus: VerificationStatus }[],
   ) => {
-    prisma.user.findMany.mockImplementation(async ({ where }: any) =>
-      rows.filter((r) => where.id.in.includes(r.id)),
+    prisma.user.findMany.mockImplementation(({ where }: any) =>
+      Promise.resolve(rows.filter((r) => where.id.in.includes(r.id))),
     );
-    prisma.user.findUnique.mockImplementation(
-      async ({ where }: any) => rows.find((r) => r.id === where.id) || null,
+    prisma.user.findUnique.mockImplementation(({ where }: any) =>
+      Promise.resolve(rows.find((r) => r.id === where.id) || null),
     );
   };
 
@@ -23,7 +23,7 @@ describe('VerificationAccessService', () => {
     delete process.env.FEATURE_VERIFICATION_ENABLED;
     prisma = {
       user: { findMany: jest.fn(), findUnique: jest.fn() },
-      conversationParticipant: { findMany: jest.fn(async () => []) },
+      conversationParticipant: { findMany: jest.fn(() => Promise.resolve([])) },
     };
     domainEvents = { emit: jest.fn(async () => {}) };
     service = new VerificationAccessService(prisma, domainEvents);
@@ -157,7 +157,7 @@ describe('VerificationAccessService — status cache', () => {
     delete process.env.FEATURE_VERIFICATION_ENABLED;
     prisma = {
       user: { findMany: jest.fn(), findUnique: jest.fn() },
-      conversationParticipant: { findMany: jest.fn(async () => []) },
+      conversationParticipant: { findMany: jest.fn(() => Promise.resolve([])) },
     };
     service = new VerificationAccessService(prisma, { emit: jest.fn() } as any);
     service.invalidateAll();

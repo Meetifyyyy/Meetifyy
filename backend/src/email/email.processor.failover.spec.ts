@@ -31,24 +31,24 @@ async function runSend(opts: {
   const { driver, fallbackDriver, primaryFails, fallbackFails, log, recorded } =
     opts;
 
-  const sendViaSmtp = async (tag: string) => {
+  const sendViaSmtp = (tag: string) => {
     if (
       (tag === 'primary' && primaryFails) ||
       (tag === 'fallback' && fallbackFails)
     ) {
-      throw new Error(`smtp ${tag} failed`);
+      return Promise.reject(new Error(`smtp ${tag} failed`));
     }
     recorded.push({ messageId: `smtp-${tag}` });
-    return { ok: true };
+    return Promise.resolve({ ok: true });
   };
-  const sendViaResend = async () => {
+  const sendViaResend = () => {
     if (primaryFails)
-      throw (
+      return Promise.reject(
         opts.primaryError ??
-        new ResendRejection('quota', 'daily_quota_exceeded', 429)
+          new ResendRejection('quota', 'daily_quota_exceeded', 429),
       );
     recorded.push({ messageId: 'resend-1' });
-    return { ok: true };
+    return Promise.resolve({ ok: true });
   };
 
   try {

@@ -30,9 +30,9 @@ describe('CommunitiesService — discovery recommendations', () => {
     findManyArgs = [];
     prisma = {
       community: {
-        findMany: jest.fn(async (args: any) => {
+        findMany: jest.fn((args: any) => {
           findManyArgs.push(args);
-          return rows;
+          return Promise.resolve(rows);
         }),
       },
     };
@@ -44,13 +44,13 @@ describe('CommunitiesService — discovery recommendations', () => {
       {} as any,
       { refFor: () => null } as any,
       {
-        getExcludedUserIds: async () => [],
-        isBlocked: async () => false,
-        filterBlockedUsers: async (_u: any, ids: any) => ids,
-        injectBlockFilter: async (_u: any, w: any) => w,
+        getExcludedUserIds: () => Promise.resolve([]),
+        isBlocked: () => Promise.resolve(false),
+        filterBlockedUsers: (_u: any, ids: any) => Promise.resolve(ids),
+        injectBlockFilter: (_u: any, w: any) => Promise.resolve(w),
         invalidateBlockCache: async () => {},
       } as any,
-      { createNotification: async () => ({}) } as any,
+      { createNotification: () => Promise.resolve({}) } as any,
       { createModeratorPromotion: () => null } as any,
     );
   };

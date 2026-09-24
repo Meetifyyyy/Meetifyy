@@ -32,7 +32,7 @@ describe('UsersService — blocking', () => {
     };
 
     mockPrisma = {
-      $transaction: jest.fn(async (fn: any) => fn(tx)),
+      $transaction: jest.fn((fn: any) => Promise.resolve(fn(tx))),
       block: { deleteMany: jest.fn(), findMany: jest.fn() },
     };
 
@@ -41,7 +41,9 @@ describe('UsersService — blocking', () => {
     blocksMock = blocksServiceMockProvider();
     // getBlockedContacts now reads through BlocksService, so the double serves
     // the rows the pagination/deleted-account assertions below rely on.
-    blocksMock.useValue.listBlockedContacts = jest.fn(async () => blockRows);
+    blocksMock.useValue.listBlockedContacts = jest.fn(() =>
+      Promise.resolve(blockRows),
+    );
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -276,12 +278,16 @@ describe('UsersService — blocking', () => {
     };
 
     beforeEach(() => {
-      mockPrisma.user = { findUnique: jest.fn(async () => ({ id: 'target' })) };
-      mockPrisma.$queryRaw = jest.fn(async () => []);
+      mockPrisma.user = {
+        findUnique: jest.fn(() => Promise.resolve({ id: 'target' })),
+      };
+      mockPrisma.$queryRaw = jest.fn(() => Promise.resolve([]));
     });
 
     it('excludes blocked users from a follower list at the database level', async () => {
-      blocksMock.useValue.getExcludedUserIds = jest.fn(async () => ['bob']);
+      blocksMock.useValue.getExcludedUserIds = jest.fn(() =>
+        Promise.resolve(['bob']),
+      );
 
       await service.getFollowers('someone', 'alice');
 
@@ -290,7 +296,9 @@ describe('UsersService — blocking', () => {
     });
 
     it('excludes blocked users from a following list at the database level', async () => {
-      blocksMock.useValue.getExcludedUserIds = jest.fn(async () => ['bob']);
+      blocksMock.useValue.getExcludedUserIds = jest.fn(() =>
+        Promise.resolve(['bob']),
+      );
 
       await service.getFollowing('someone', 'alice');
 
@@ -299,7 +307,9 @@ describe('UsersService — blocking', () => {
     });
 
     it('emits no NOT IN clause when the viewer has blocked nobody', async () => {
-      blocksMock.useValue.getExcludedUserIds = jest.fn(async () => []);
+      blocksMock.useValue.getExcludedUserIds = jest.fn(() =>
+        Promise.resolve([]),
+      );
 
       await service.getFollowers('someone', 'alice');
 
@@ -308,7 +318,9 @@ describe('UsersService — blocking', () => {
     });
 
     it('skips the block lookup entirely for an anonymous viewer', async () => {
-      blocksMock.useValue.getExcludedUserIds = jest.fn(async () => ['bob']);
+      blocksMock.useValue.getExcludedUserIds = jest.fn(() =>
+        Promise.resolve(['bob']),
+      );
 
       await service.getFollowers('someone', undefined);
 

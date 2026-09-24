@@ -51,44 +51,49 @@ describe('Crew discovery', () => {
 
     prisma = {
       crewActivity: {
-        findMany: jest.fn(async ({ take, select }: any) => {
+        findMany: jest.fn(({ take, select }: any) => {
           const rows = pool.slice(0, take ?? pool.length);
           // The hydration query asks for CARD_SELECT (which includes members);
           // the ranking query does not. Both just echo the pool here.
-          return select?.members
-            ? rows.map((r) => ({ ...r, members: [] }))
-            : rows;
+          return Promise.resolve(
+            select?.members ? rows.map((r) => ({ ...r, members: [] })) : rows,
+          );
         }),
       },
       crewActivityMember: {
-        findMany: jest.fn(async ({ where }: any) => {
-          if (where?.userId && where.userId.in) return friendMemberships;
+        findMany: jest.fn(({ where }: any) => {
+          if (where?.userId && where.userId.in)
+            return Promise.resolve(friendMemberships);
           if (
             where?.userId === ME &&
             where?.status === 'MEMBER' &&
             !where.activityId
           )
-            return [];
-          return [];
+            return Promise.resolve([]);
+          return Promise.resolve([]);
         }),
       },
       user: {
-        findUnique: jest.fn(async () => ({
-          id: ME,
-          collegeId: GLA,
-          interests: [],
-          college: { name: 'GLA' },
-        })),
-      },
-      follow: {
-        findMany: jest.fn(async ({ where }: any) =>
-          where.followerId === ME
-            ? follows.filter((f) => f.followerId === ME)
-            : follows.filter((f) => f.followingId === ME),
+        findUnique: jest.fn(() =>
+          Promise.resolve({
+            id: ME,
+            collegeId: GLA,
+            interests: [],
+            college: { name: 'GLA' },
+          }),
         ),
       },
-      conversationParticipant: { findMany: jest.fn(async () => []) },
-      activityInvitation: { count: jest.fn(async () => 0) },
+      follow: {
+        findMany: jest.fn(({ where }: any) =>
+          Promise.resolve(
+            where.followerId === ME
+              ? follows.filter((f) => f.followerId === ME)
+              : follows.filter((f) => f.followingId === ME),
+          ),
+        ),
+      },
+      conversationParticipant: { findMany: jest.fn(() => Promise.resolve([])) },
+      activityInvitation: { count: jest.fn(() => Promise.resolve(0)) },
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -101,7 +106,9 @@ describe('Crew discovery', () => {
         { provide: NotificationFactory, useValue: {} },
         {
           provide: BlocksService,
-          useValue: { getExcludedUserIds: jest.fn(async () => blockedIds) },
+          useValue: {
+            getExcludedUserIds: jest.fn(() => Promise.resolve(blockedIds)),
+          },
         },
         { provide: DomainEventService, useValue: { emit: jest.fn() } },
         { provide: RedisService, useValue: { getClient: () => null } },

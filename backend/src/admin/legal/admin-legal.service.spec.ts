@@ -87,57 +87,60 @@ describe('AdminLegalService', () => {
     };
 
     const client = {
-      $executeRaw: jest.fn(async () => 1),
+      $executeRaw: jest.fn(() => Promise.resolve(1)),
       legalDocumentVersion: {
-        findFirst: jest.fn(async ({ where, orderBy }: any = {}) => {
+        findFirst: jest.fn(({ where, orderBy }: any = {}) => {
           let found = rows.filter((r) => matches(r, where));
           if (orderBy?.versionNumber === 'desc') {
             found = [...found].sort(
               (a, b) => b.versionNumber - a.versionNumber,
             );
           }
-          return found[0] ?? null;
+          return Promise.resolve(found[0] ?? null);
         }),
-        findMany: jest.fn(async ({ where, orderBy }: any = {}) => {
+        findMany: jest.fn(({ where, orderBy }: any = {}) => {
           let found = rows.filter((r) => matches(r, where));
           if (orderBy?.versionNumber === 'desc') {
             found = [...found].sort(
               (a, b) => b.versionNumber - a.versionNumber,
             );
           }
-          return found.map((r) => ({ ...r, _count: { acknowledgements: 0 } }));
+          return Promise.resolve(
+            found.map((r) => ({ ...r, _count: { acknowledgements: 0 } })),
+          );
         }),
-        findUnique: jest.fn(async ({ where }: any) => {
-          if (where.id) return rows.find((r) => r.id === where.id) ?? null;
-          return rows.find((r) => matches(r, where)) ?? null;
+        findUnique: jest.fn(({ where }: any) => {
+          if (where.id)
+            return Promise.resolve(rows.find((r) => r.id === where.id) ?? null);
+          return Promise.resolve(rows.find((r) => matches(r, where)) ?? null);
         }),
-        create: jest.fn(async ({ data }: any) => {
+        create: jest.fn(({ data }: any) => {
           const row = version({ ...data, id: `v-${data.versionNumber}` });
           rows.push(row);
-          return row;
+          return Promise.resolve(row);
         }),
-        update: jest.fn(async ({ where, data }: any) => {
+        update: jest.fn(({ where, data }: any) => {
           const row = rows.find((r) => r.id === where.id);
           Object.assign(row, data);
-          return row;
+          return Promise.resolve(row);
         }),
-        updateMany: jest.fn(async ({ where, data }: any) => {
+        updateMany: jest.fn(({ where, data }: any) => {
           const found = rows.filter((r) => matches(r, where));
           found.forEach((r) => Object.assign(r, data));
-          return { count: found.length };
+          return Promise.resolve({ count: found.length });
         }),
-        delete: jest.fn(async ({ where }: any) => {
+        delete: jest.fn(({ where }: any) => {
           const i = rows.findIndex((r) => r.id === where.id);
-          return rows.splice(i, 1)[0];
+          return Promise.resolve(rows.splice(i, 1)[0]);
         }),
-        groupBy: jest.fn(async () => []),
+        groupBy: jest.fn(() => Promise.resolve([])),
       },
-      legalAcknowledgement: { count: jest.fn(async () => 0) },
-      user: { count: jest.fn(async () => 100) },
+      legalAcknowledgement: { count: jest.fn(() => Promise.resolve(0)) },
+      user: { count: jest.fn(() => Promise.resolve(100)) },
     };
     return {
       ...client,
-      $transaction: jest.fn(async (fn: any) => fn(client)),
+      $transaction: jest.fn((fn: any) => Promise.resolve(fn(client))),
     };
   };
 

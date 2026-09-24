@@ -60,13 +60,13 @@ describe('AccountDeletionService — 30-day recovery window', () => {
 
     prisma = {
       user: {
-        findUnique: jest.fn(async ({ where }: any) =>
-          where.id === USER_ID ? { ...row } : null,
+        findUnique: jest.fn(({ where }: any) =>
+          Promise.resolve(where.id === USER_ID ? { ...row } : null),
         ),
-        updateMany: jest.fn(async ({ where, data }: any) => {
-          if (!matches(where)) return { count: 0 };
+        updateMany: jest.fn(({ where, data }: any) => {
+          if (!matches(where)) return Promise.resolve({ count: 0 });
           Object.assign(row, data);
-          return { count: 1 };
+          return Promise.resolve({ count: 1 });
         }),
       },
     };
@@ -75,15 +75,17 @@ describe('AccountDeletionService — 30-day recovery window', () => {
     domainEventService = { emit: jest.fn() };
 
     otpService = {
-      issue: jest.fn(async () => ({
-        code: '123456',
-        expiresAt: new Date(Date.now() + 600_000),
-      })),
+      issue: jest.fn(() =>
+        Promise.resolve({
+          code: '123456',
+          expiresAt: new Date(Date.now() + 600_000),
+        }),
+      ),
       verify: jest.fn(async () => {}),
       invalidate: jest.fn(async () => {}),
       invalidateAll: jest.fn(async () => {}),
       // No live challenge by default, so `issue` is the normal path.
-      getChallengeState: jest.fn(async () => null),
+      getChallengeState: jest.fn(() => Promise.resolve(null)),
     };
     emailService = {
       sendAccountDeletionOtpEmail: jest.fn(async () => {}),

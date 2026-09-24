@@ -68,30 +68,36 @@ describe('CommunitiesService — moderator promotion notice', () => {
     updates = [];
     prisma = {
       community: {
-        findUnique: jest.fn(async () => ({
-          id: COMMUNITY,
-          ownerId: OWNER,
-          name: 'Chess Club',
-          avatarKey: null,
-        })),
+        findUnique: jest.fn(() =>
+          Promise.resolve({
+            id: COMMUNITY,
+            ownerId: OWNER,
+            name: 'Chess Club',
+            avatarKey: null,
+          }),
+        ),
       },
       communityMember: {
-        findUnique: jest.fn(async ({ where }: any) =>
-          where.userId_communityId.userId === OWNER
-            ? { role: 'OWNER' }
-            : member,
+        findUnique: jest.fn(({ where }: any) =>
+          Promise.resolve(
+            where.userId_communityId.userId === OWNER
+              ? { role: 'OWNER' }
+              : member,
+          ),
         ),
-        update: jest.fn(async ({ data }: any) => {
+        update: jest.fn(({ data }: any) => {
           updates.push(data);
-          return { ...member, ...data };
+          return Promise.resolve({ ...member, ...data });
         }),
       },
       user: {
-        findUnique: jest.fn(async () => ({
-          id: OWNER,
-          username: 'own',
-          displayName: 'Owner',
-        })),
+        findUnique: jest.fn(() =>
+          Promise.resolve({
+            id: OWNER,
+            username: 'own',
+            displayName: 'Owner',
+          }),
+        ),
       },
     };
     service = new CommunitiesService(
@@ -102,8 +108,10 @@ describe('CommunitiesService — moderator promotion notice', () => {
       {} as any,
       {} as any,
       {
-        createNotification: jest.fn(async (dto: any) => {
+        createNotification: jest.fn((dto: any) => {
           created.push(dto);
+
+          return Promise.resolve();
         }),
       } as any,
       new NotificationFactory(),
@@ -189,11 +197,9 @@ describe('CommunitiesService — moderator promotion notice', () => {
       // The role change has committed; a notification failure must not read to
       // the owner as a promotion that did not take.
       setup({ role: 'MEMBER', userId: MEMBER });
-      (service as any).notificationsService.createNotification = jest.fn(
-        async () => {
-          throw new Error('queue down');
-        },
-      );
+      (service as any).notificationsService.createNotification = jest.fn(() => {
+        return Promise.reject(new Error('queue down'));
+      });
       await expect(
         service.updateMemberRole(COMMUNITY, MEMBER, 'MODERATOR', OWNER),
       ).resolves.toBeDefined();

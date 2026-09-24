@@ -19,11 +19,11 @@ describe('VerificationUploadCollectorService', () => {
     delete process.env.VERIFICATION_ABANDONED_UPLOAD_HOURS;
     prisma = {
       media: {
-        findMany: jest.fn(async (): Promise<any[]> => []),
-        deleteMany: jest.fn(async () => ({ count: 0 })),
+        findMany: jest.fn((): Promise<any[]> => Promise.resolve([])),
+        deleteMany: jest.fn(() => Promise.resolve({ count: 0 })),
       },
     };
-    storage = { delete: jest.fn(async () => true) };
+    storage = { delete: jest.fn(() => Promise.resolve(true)) };
     service = new VerificationUploadCollectorService(prisma, storage);
   });
 

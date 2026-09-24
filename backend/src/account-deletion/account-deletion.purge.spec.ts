@@ -26,9 +26,9 @@ describe('AccountDeletionPurgeService — permanent deletion', () => {
   let calls: Record<string, any[][]>;
 
   const record = (model: string, op: string) =>
-    jest.fn(async (...args: any[]) => {
+    jest.fn((...args: any[]) => {
       (calls[`${model}.${op}`] ??= []).push(args);
-      return { count: 1 };
+      return Promise.resolve({ count: 1 });
     });
 
   beforeEach(() => {
@@ -99,30 +99,30 @@ describe('AccountDeletionPurgeService — permanent deletion', () => {
     };
 
     const emptyModel = (extra: any = {}) => ({
-      findMany: jest.fn(async () => []),
-      findFirst: jest.fn(async () => null),
-      deleteMany: jest.fn(async () => ({ count: 0 })),
-      updateMany: jest.fn(async () => ({ count: 0 })),
-      update: jest.fn(async () => ({})),
+      findMany: jest.fn(() => Promise.resolve([])),
+      findFirst: jest.fn(() => Promise.resolve(null)),
+      deleteMany: jest.fn(() => Promise.resolve({ count: 0 })),
+      updateMany: jest.fn(() => Promise.resolve({ count: 0 })),
+      update: jest.fn(() => Promise.resolve({})),
       ...extra,
     });
 
     const tx: any = {
       user: {
-        update: jest.fn(async ({ data }: any) => {
+        update: jest.fn(({ data }: any) => {
           (calls['user.update'] ??= []).push([{ data }]);
           Object.assign(row, data);
-          return row;
+          return Promise.resolve(row);
         }),
       },
       post: {
-        findMany: jest.fn(async ({ where }: any) =>
-          where.authorId === USER_ID ? posts : [],
+        findMany: jest.fn(({ where }: any) =>
+          Promise.resolve(where.authorId === USER_ID ? posts : []),
         ),
         deleteMany: record('post', 'deleteMany'),
       },
       crewActivity: {
-        findMany: jest.fn(async () => activities),
+        findMany: jest.fn(() => Promise.resolve(activities)),
         deleteMany: record('crewActivity', 'deleteMany'),
       },
       community: emptyModel(),
@@ -132,10 +132,12 @@ describe('AccountDeletionPurgeService — permanent deletion', () => {
         updateMany: record('comment', 'updateMany'),
       },
       media: {
-        findMany: jest.fn(async ({ where }: any) =>
-          where.postId
-            ? [{ objectKey: 'posts/p1.jpg' }]
-            : [{ id: 'm9', objectKey: 'uploads/stray.jpg' }],
+        findMany: jest.fn(({ where }: any) =>
+          Promise.resolve(
+            where.postId
+              ? [{ objectKey: 'posts/p1.jpg' }]
+              : [{ id: 'm9', objectKey: 'uploads/stray.jpg' }],
+          ),
         ),
         deleteMany: record('media', 'deleteMany'),
       },
@@ -186,24 +188,24 @@ describe('AccountDeletionPurgeService — permanent deletion', () => {
 
     prisma = {
       user: {
-        findUnique: jest.fn(async ({ where }: any) =>
-          where.id === USER_ID ? { ...row } : null,
+        findUnique: jest.fn(({ where }: any) =>
+          Promise.resolve(where.id === USER_ID ? { ...row } : null),
         ),
-        findMany: jest.fn(async ({ where }: any) =>
-          matches(where) ? [{ id: USER_ID }] : [],
+        findMany: jest.fn(({ where }: any) =>
+          Promise.resolve(matches(where) ? [{ id: USER_ID }] : []),
         ),
-        updateMany: jest.fn(async ({ where, data }: any) => {
-          if (!matches(where)) return { count: 0 };
+        updateMany: jest.fn(({ where, data }: any) => {
+          if (!matches(where)) return Promise.resolve({ count: 0 });
           const resolved = { ...data };
           if (data.purgeAttempts?.increment) {
             resolved.purgeAttempts =
               row.purgeAttempts + data.purgeAttempts.increment;
           }
           Object.assign(row, resolved);
-          return { count: 1 };
+          return Promise.resolve({ count: 1 });
         }),
       },
-      $transaction: jest.fn(async (fn: any, _opts?: any) => fn(tx)),
+      $transaction: jest.fn((fn: any, _opts?: any) => Promise.resolve(fn(tx))),
     };
 
     mediaCleanupService = {
@@ -225,10 +227,12 @@ describe('AccountDeletionPurgeService — permanent deletion', () => {
       { removePresence: jest.fn(async () => {}) } as any,
       domainEventService,
       {
-        issue: jest.fn(async () => ({
-          code: '123456',
-          expiresAt: new Date(Date.now() + 600_000),
-        })),
+        issue: jest.fn(() =>
+          Promise.resolve({
+            code: '123456',
+            expiresAt: new Date(Date.now() + 600_000),
+          }),
+        ),
         verify: jest.fn(async () => {}),
         invalidate: jest.fn(async () => {}),
         invalidateAll: jest.fn(async () => {}),
@@ -444,8 +448,8 @@ describe('AccountDeletionPurgeService — permanent deletion', () => {
     });
 
     it('records the error and releases the claim when a purge fails', async () => {
-      prisma.$transaction = jest.fn(async () => {
-        throw new Error('R2 unavailable');
+      prisma.$transaction = jest.fn(() => {
+        return Promise.reject(new Error('R2 unavailable'));
       });
       const result = await purge.runSweep();
       expect(result).toEqual({ claimed: 1, purged: 0, failed: 1 });
@@ -457,8 +461,8 @@ describe('AccountDeletionPurgeService — permanent deletion', () => {
 
     it('retries a released row on the next sweep and succeeds', async () => {
       const realTransaction = prisma.$transaction;
-      prisma.$transaction = jest.fn(async () => {
-        throw new Error('transient');
+      prisma.$transaction = jest.fn(() => {
+        return Promise.reject(new Error('transient'));
       });
       await purge.runSweep();
       prisma.$transaction = realTransaction;

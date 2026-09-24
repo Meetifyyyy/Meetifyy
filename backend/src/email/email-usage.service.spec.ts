@@ -22,19 +22,21 @@ class FakeRedis {
         ops.push(() => this.expires.set(k, s));
         return chain;
       },
-      exec: async () => {
-        if (this.failMode === 'throw') throw new Error('redis down');
+      exec: () => {
+        if (this.failMode === 'throw')
+          return Promise.reject(new Error('redis down'));
         ops.forEach((op) => op());
-        return [];
+        return Promise.resolve([]);
       },
     };
     return chain;
   }
 
-  async get(key: string) {
-    if (this.failMode === 'throw') throw new Error('redis down');
+  get(key: string) {
+    if (this.failMode === 'throw')
+      return Promise.reject(new Error('redis down'));
     const v = this.store.get(key);
-    return v === undefined ? null : String(v);
+    return Promise.resolve(v === undefined ? null : String(v));
   }
 }
 

@@ -31,29 +31,35 @@ describe('messaging — both participants must be verified', () => {
   const buildWith = async (statuses: Record<string, VerificationStatus>) => {
     prisma = {
       conversation: {
-        findUnique: jest.fn(async () => ({
-          id: 'conv-internal',
-          publicId: 'conv-public',
-          name: null,
-          type: 'DM',
-          participants: [
-            { userId: ME, isMuted: false },
-            { userId: THEM, isMuted: false },
-          ],
-        })),
-        findFirst: jest.fn(async () => null),
-      },
-      conversationParticipant: { findMany: jest.fn(async () => []) },
-      user: {
-        findMany: jest.fn(async ({ where }: any) =>
-          where.id.in
-            .filter((id: string) => statuses[id])
-            .map((id: string) => ({ id, verificationStatus: statuses[id] })),
+        findUnique: jest.fn(() =>
+          Promise.resolve({
+            id: 'conv-internal',
+            publicId: 'conv-public',
+            name: null,
+            type: 'DM',
+            participants: [
+              { userId: ME, isMuted: false },
+              { userId: THEM, isMuted: false },
+            ],
+          }),
         ),
-        findUnique: jest.fn(async ({ where }: any) =>
-          statuses[where.id]
-            ? { id: where.id, verificationStatus: statuses[where.id] }
-            : null,
+        findFirst: jest.fn(() => Promise.resolve(null)),
+      },
+      conversationParticipant: { findMany: jest.fn(() => Promise.resolve([])) },
+      user: {
+        findMany: jest.fn(({ where }: any) =>
+          Promise.resolve(
+            where.id.in
+              .filter((id: string) => statuses[id])
+              .map((id: string) => ({ id, verificationStatus: statuses[id] })),
+          ),
+        ),
+        findUnique: jest.fn(({ where }: any) =>
+          Promise.resolve(
+            statuses[where.id]
+              ? { id: where.id, verificationStatus: statuses[where.id] }
+              : null,
+          ),
         ),
       },
       message: { create: jest.fn() },
@@ -71,7 +77,7 @@ describe('messaging — both participants must be verified', () => {
         { provide: DomainEventService, useValue: { emit: jest.fn() } },
         {
           provide: MentionsService,
-          useValue: { sanitize: jest.fn(async () => []) },
+          useValue: { sanitize: jest.fn(() => Promise.resolve([])) },
         },
       ],
     }).compile();
@@ -141,37 +147,47 @@ describe('conversation history carries the send verdict', () => {
   const buildService = async (statuses: Record<string, VerificationStatus>) => {
     const prisma: any = {
       conversation: {
-        findUnique: jest.fn(async () => ({
-          id: 'conv-internal',
-          type: 'DM',
-          participants: [{ userId: ME }, { userId: THEM }],
-        })),
-        findFirst: jest.fn(async () => null),
+        findUnique: jest.fn(() =>
+          Promise.resolve({
+            id: 'conv-internal',
+            type: 'DM',
+            participants: [{ userId: ME }, { userId: THEM }],
+          }),
+        ),
+        findFirst: jest.fn(() => Promise.resolve(null)),
       },
       conversationParticipant: {
-        findFirst: jest.fn(async () => ({
-          userId: ME,
-          lastReadAt: null,
-          clearedAt: null,
-          leftAt: null,
-        })),
-        findMany: jest.fn(async () => [
-          { userId: ME, lastReadAt: null, clearedAt: null, leftAt: null },
-          { userId: THEM, lastReadAt: null, clearedAt: null, leftAt: null },
-        ]),
-      },
-      deletedMessage: { findMany: jest.fn(async () => []) },
-      message: { findMany: jest.fn(async () => []) },
-      user: {
-        findMany: jest.fn(async ({ where }: any) =>
-          where.id.in
-            .filter((id: string) => statuses[id])
-            .map((id: string) => ({ id, verificationStatus: statuses[id] })),
+        findFirst: jest.fn(() =>
+          Promise.resolve({
+            userId: ME,
+            lastReadAt: null,
+            clearedAt: null,
+            leftAt: null,
+          }),
         ),
-        findUnique: jest.fn(async ({ where }: any) =>
-          statuses[where.id]
-            ? { id: where.id, verificationStatus: statuses[where.id] }
-            : null,
+        findMany: jest.fn(() =>
+          Promise.resolve([
+            { userId: ME, lastReadAt: null, clearedAt: null, leftAt: null },
+            { userId: THEM, lastReadAt: null, clearedAt: null, leftAt: null },
+          ]),
+        ),
+      },
+      deletedMessage: { findMany: jest.fn(() => Promise.resolve([])) },
+      message: { findMany: jest.fn(() => Promise.resolve([])) },
+      user: {
+        findMany: jest.fn(({ where }: any) =>
+          Promise.resolve(
+            where.id.in
+              .filter((id: string) => statuses[id])
+              .map((id: string) => ({ id, verificationStatus: statuses[id] })),
+          ),
+        ),
+        findUnique: jest.fn(({ where }: any) =>
+          Promise.resolve(
+            statuses[where.id]
+              ? { id: where.id, verificationStatus: statuses[where.id] }
+              : null,
+          ),
         ),
       },
     };
@@ -188,7 +204,7 @@ describe('conversation history carries the send verdict', () => {
         { provide: DomainEventService, useValue: { emit: jest.fn() } },
         {
           provide: MentionsService,
-          useValue: { sanitize: jest.fn(async () => []) },
+          useValue: { sanitize: jest.fn(() => Promise.resolve([])) },
         },
       ],
     }).compile();

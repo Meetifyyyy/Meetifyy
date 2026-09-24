@@ -29,18 +29,20 @@ describe('UsersService — directory ordering', () => {
   beforeEach(() => {
     prisma = {
       user: {
-        findUnique: jest.fn(async ({ where }: any) =>
-          where.id === ME
-            ? { ...row(ME, 'My Own Name'), collegeId: 'college-1' }
-            : null,
+        findUnique: jest.fn(({ where }: any) =>
+          Promise.resolve(
+            where.id === ME
+              ? { ...row(ME, 'My Own Name'), collegeId: 'college-1' }
+              : null,
+          ),
         ),
-        findMany: jest.fn(async (args: any) => {
+        findMany: jest.fn((args: any) => {
           lastArgs = args;
-          return [
+          return Promise.resolve([
             row('u-b', 'Bella'),
             row('u-a', 'Aarav'),
             row('u-c', 'Chetan'),
-          ];
+          ]);
         }),
       },
     };
@@ -50,13 +52,13 @@ describe('UsersService — directory ordering', () => {
     service.blocksService = createBlocksServiceMock([]);
     service.studentYearPolicy = {
       injectUserFilter: (where: any) => where,
-      getBatchYearFor: async () => null,
+      getBatchYearFor: () => Promise.resolve(null),
       getUserBatchYear: () => null,
       isEnforcementEnabled: () => false,
       visibleUserWhere: () => ({}),
     };
-    service.getFollowingSet = async () => new Set();
-    service.viewerBatchYear = async () => null;
+    service.getFollowingSet = () => Promise.resolve(new Set());
+    service.viewerBatchYear = () => Promise.resolve(null);
   });
 
   it('orders by display name, with id as the tie-break', async () => {
@@ -86,11 +88,13 @@ describe('UsersService — directory ordering', () => {
 
   describe('the keyset cursor', () => {
     it('is built from the name it ordered by, not the timestamp', async () => {
-      prisma.user.findMany = jest.fn(async (args: any) => {
+      prisma.user.findMany = jest.fn((args: any) => {
         lastArgs = args;
         // One more than the limit, so `hasMore` is true and a cursor is emitted.
-        return Array.from({ length: 21 }, (_, i) =>
-          row(`u-${i}`, `Name ${String(i).padStart(2, '0')}`),
+        return Promise.resolve(
+          Array.from({ length: 21 }, (_, i) =>
+            row(`u-${i}`, `Name ${String(i).padStart(2, '0')}`),
+          ),
         );
       });
 

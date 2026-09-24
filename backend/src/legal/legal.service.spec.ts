@@ -39,32 +39,37 @@ describe('LegalService — acknowledgement', () => {
     acks = [];
     prisma = {
       legalDocumentVersion: {
-        findMany: jest.fn(async ({ where }: any) => {
+        findMany: jest.fn(({ where }: any) => {
           if (where?.id?.in) {
-            return required.filter((v) => where.id.in.includes(v.id));
+            return Promise.resolve(
+              required.filter((v) => where.id.in.includes(v.id)),
+            );
           }
-          return required;
+          return Promise.resolve(required);
         }),
-        findFirst: jest.fn(async () => required[0] ?? null),
+        findFirst: jest.fn(() => Promise.resolve(required[0] ?? null)),
       },
       legalAcknowledgement: {
-        findMany: jest.fn(async ({ where }: any) =>
-          acks.filter(
-            (a) =>
-              a.userId === where.userId &&
-              where.versionId.in.includes(a.versionId),
+        findMany: jest.fn(({ where }: any) =>
+          Promise.resolve(
+            acks.filter(
+              (a) =>
+                a.userId === where.userId &&
+                where.versionId.in.includes(a.versionId),
+            ),
           ),
         ),
-        count: jest.fn(
-          async ({ where }: any) =>
+        count: jest.fn(({ where }: any) =>
+          Promise.resolve(
             acks.filter(
               (a) =>
                 a.userId === where.userId &&
                 where.versionId.in.includes(a.versionId),
             ).length,
+          ),
         ),
         // Mirrors `skipDuplicates` on the (userId, versionId) unique index.
-        createMany: jest.fn(async ({ data }: any) => {
+        createMany: jest.fn(({ data }: any) => {
           let created = 0;
           for (const row of data) {
             const clash = acks.some(
@@ -75,7 +80,7 @@ describe('LegalService — acknowledgement', () => {
               created += 1;
             }
           }
-          return { count: created };
+          return Promise.resolve({ count: created });
         }),
       },
     };

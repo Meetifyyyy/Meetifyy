@@ -59,8 +59,8 @@ describe('NotificationsService - Event Driven Reconciliation', () => {
           useValue: {
             getExcludedUserIds: jest.fn().mockResolvedValue([]),
             isBlocked: jest.fn().mockResolvedValue(false),
-            filterBlockedUsers: jest.fn(async (_u, ids) => ids),
-            injectBlockFilter: jest.fn(async (_u, w) => w),
+            filterBlockedUsers: jest.fn((_u, ids) => Promise.resolve(ids)),
+            injectBlockFilter: jest.fn((_u, w) => Promise.resolve(w)),
             invalidateBlockCache: jest.fn(),
           },
         },

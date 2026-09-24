@@ -47,7 +47,7 @@ describe('UsersService — selector eligibility', () => {
           // Passes the where through untouched, so what the assertions see is
           // exactly what getConnections built.
           useValue: {
-            injectBlockFilter: jest.fn(async (_id, where) => where),
+            injectBlockFilter: jest.fn((_id, where) => Promise.resolve(where)),
             getExcludedUserIds: jest.fn().mockResolvedValue([]),
           },
         },
@@ -147,7 +147,7 @@ describe('UsersService — connections cache', () => {
         {
           provide: BlocksService,
           useValue: {
-            injectBlockFilter: jest.fn(async (_id, where) => where),
+            injectBlockFilter: jest.fn((_id, where) => Promise.resolve(where)),
             getExcludedUserIds: jest.fn().mockResolvedValue([]),
           },
         },

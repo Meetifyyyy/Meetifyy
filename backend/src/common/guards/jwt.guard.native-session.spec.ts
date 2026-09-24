@@ -84,8 +84,8 @@ describe('JwtGuard — native app session binding', () => {
 
     const prisma = {
       userSession: {
-        findUnique: jest.fn(
-          async ({ where }: any) => sessions[where.id] ?? null,
+        findUnique: jest.fn(({ where }: any) =>
+          Promise.resolve(sessions[where.id] ?? null),
         ),
       },
     };
@@ -96,11 +96,13 @@ describe('JwtGuard — native app session binding', () => {
       .mockImplementation(() => bearerAllowedOnRoute);
 
     guard = new JwtGuard({} as any, prisma as any, reflector, {
-      isSatisfied: async () => true,
+      isSatisfied: () => Promise.resolve(true),
     } as any);
 
-    guard.validateToken = jest.fn(async () => ({ id: USER, email: 'a@b.c' }));
-    guard.enforceAccountStatus = jest.fn(async () => undefined);
+    guard.validateToken = jest.fn(() =>
+      Promise.resolve({ id: USER, email: 'a@b.c' }),
+    );
+    guard.enforceAccountStatus = jest.fn(() => Promise.resolve(undefined));
     Object.defineProperty(guard, 'supabaseService', {
       value: { isConfigured: true },
       writable: true,

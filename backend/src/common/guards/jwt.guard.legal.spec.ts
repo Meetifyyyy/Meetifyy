@@ -37,7 +37,7 @@ describe('JwtGuard — mandatory legal acknowledgement', () => {
   beforeEach(() => {
     satisfied = true;
     guard = new JwtGuard({} as any, {} as any, new Reflector(), {
-      isSatisfied: async () => satisfied,
+      isSatisfied: () => Promise.resolve(satisfied),
     } as any);
   });
 

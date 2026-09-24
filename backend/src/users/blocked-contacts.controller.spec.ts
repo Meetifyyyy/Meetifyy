@@ -27,12 +27,16 @@ describe('Blocked contacts endpoints', () => {
 
   beforeEach(async () => {
     usersService = {
-      getBlockedContacts: jest.fn(async () => ({
-        contacts: [],
-        hasMore: false,
-        nextOffset: null,
-      })),
-      unblockUser: jest.fn(async () => ({ success: true, blocked: false })),
+      getBlockedContacts: jest.fn(() =>
+        Promise.resolve({
+          contacts: [],
+          hasMore: false,
+          nextOffset: null,
+        }),
+      ),
+      unblockUser: jest.fn(() =>
+        Promise.resolve({ success: true, blocked: false }),
+      ),
     };
 
     const module: TestingModule = await Test.createTestingModule({

@@ -34,14 +34,16 @@ describe('CommunitiesService — member roles', () => {
   ) => {
     updates = [];
     prisma = {
-      community: { findUnique: jest.fn(async () => ({ ownerId })) },
+      community: { findUnique: jest.fn(() => Promise.resolve({ ownerId })) },
       communityMember: {
-        findUnique: jest.fn(async ({ where }: any) =>
-          where.userId_communityId.userId === OWNER ? requester : target,
+        findUnique: jest.fn(({ where }: any) =>
+          Promise.resolve(
+            where.userId_communityId.userId === OWNER ? requester : target,
+          ),
         ),
-        update: jest.fn(async (args: any) => {
+        update: jest.fn((args: any) => {
           updates.push(args);
-          return { ...target, ...args.data };
+          return Promise.resolve({ ...target, ...args.data });
         }),
       },
     };
@@ -52,14 +54,14 @@ describe('CommunitiesService — member roles', () => {
       {} as any,
       { refFor: () => null } as any,
       {
-        getExcludedUserIds: async () => [],
-        isBlocked: async () => false,
-        filterBlockedUsers: async (_u: any, ids: any) => ids,
-        injectBlockFilter: async (_u: any, w: any) => w,
+        getExcludedUserIds: () => Promise.resolve([]),
+        isBlocked: () => Promise.resolve(false),
+        filterBlockedUsers: (_u: any, ids: any) => Promise.resolve(ids),
+        injectBlockFilter: (_u: any, w: any) => Promise.resolve(w),
         invalidateBlockCache: async () => {},
       } as any,
       // Promotion notifications are covered in communities.moderator-promotion.spec.ts.
-      { createNotification: async () => ({}) } as any,
+      { createNotification: () => Promise.resolve({}) } as any,
       { createModeratorPromotion: () => null } as any,
     );
   };
