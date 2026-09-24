@@ -13,6 +13,7 @@ import {
 import { CampusEventsService } from './campus-events.service';
 import { JwtGuard } from '../common/guards/jwt.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import type { AuthenticatedUser } from '../common/types/authenticated-request';
 import { VerifiedOnly } from '../common/decorators/verified-only.decorator';
 import {
   CreateCampusEventDto,
@@ -32,7 +33,7 @@ export class CampusEventsController {
   @Get()
   @VerifiedOnly()
   async list(
-    @CurrentUser() user: any,
+    @CurrentUser() user: AuthenticatedUser,
     @Query('scope') scope?: string,
     @Query('limit') limit?: string,
     @Query('cursor') cursor?: string,
@@ -57,7 +58,7 @@ export class CampusEventsController {
   @Get('mine')
   @VerifiedOnly()
   async listMine(
-    @CurrentUser() user: any,
+    @CurrentUser() user: AuthenticatedUser,
     @Query('limit') limit?: string,
     @Query('cursor') cursor?: string,
   ) {
@@ -69,13 +70,19 @@ export class CampusEventsController {
 
   @Get(':id')
   @VerifiedOnly()
-  async getById(@Param('id') id: string, @CurrentUser() user: any) {
+  async getById(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
     return this.service.getById(id, user?.id);
   }
 
   @Post()
   @VerifiedOnly()
-  async create(@Body() dto: CreateCampusEventDto, @CurrentUser() user: any) {
+  async create(
+    @Body() dto: CreateCampusEventDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
     return this.service.create(user.id, dto);
   }
 
@@ -84,20 +91,26 @@ export class CampusEventsController {
   async update(
     @Param('id') id: string,
     @Body() dto: UpdateCampusEventDto,
-    @CurrentUser() user: any,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.service.update(user.id, id, dto);
   }
 
   @Post(':id/publish')
   @VerifiedOnly()
-  async publish(@Param('id') id: string, @CurrentUser() user: any) {
+  async publish(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
     return this.service.publish(user.id, id);
   }
 
   @Delete(':id')
   @VerifiedOnly()
-  async remove(@Param('id') id: string, @CurrentUser() user: any) {
+  async remove(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
     return this.service.remove(user.id, id);
   }
 }
