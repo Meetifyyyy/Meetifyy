@@ -1,7 +1,6 @@
 import { createContext, useCallback, useContext, useRef, useState, useEffect } from 'react';
 import { useSearchParams, useLocation } from 'react-router-dom';
 import { useAuth } from '@shared/context/AuthContext';
-import { SIGNUP_DEV_BYPASS } from '../signup/dev/signupDevBypass';
 
 const SignupContext = createContext();
 
@@ -226,9 +225,6 @@ export const SignupProvider = ({ children }) => {
       }
       return;
     }
-
-    // TEMPORARY: local review of the step UI (never true in a production build).
-    if (SIGNUP_DEV_BYPASS) return;
 
     // Each step needs everything before it. Step 6 is post-auth only, so a
     // signed-out visitor never gets past step 5.

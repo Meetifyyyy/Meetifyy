@@ -11,8 +11,6 @@ import Step4Password from './components/Step4Password';
 import Step5Verify from './components/Step5Verify';
 import Step6Photo from './components/Step6Photo';
 import SignupFinishing from './components/SignupFinishing';
-import { SIGNUP_DEV_BYPASS } from './dev/signupDevBypass';
-import SignupDevSwitcher from './dev/SignupDevSwitcher';
 
 const STEPS = [Step1Intro, Step2Profile, Step3College, Step4Password, Step5Verify, Step6Photo];
 const OUT_MS = 180;
@@ -98,7 +96,7 @@ const StepRenderer = () => {
         data-slide={dir}
       >
         {shown === 'finish' && finishing ? (
-          <SignupFinishing avatar={finishing.avatar} preview={finishing.preview} />
+          <SignupFinishing avatar={finishing.avatar} />
         ) : Step ? (
           <Step />
         ) : null}
@@ -113,8 +111,6 @@ const StepRenderer = () => {
           </Link>
         </div>
       ) : null}
-      {/* TEMPORARY: local-only step switcher, removed from production builds. */}
-      {SIGNUP_DEV_BYPASS ? <SignupDevSwitcher /> : null}
     </AuthShell>
   );
 };
