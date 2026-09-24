@@ -3,12 +3,13 @@ import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { config } from '../config';
 import { SUPPORT_EMAIL_JOBS } from './support-email.builder';
+import type { EmailJobData } from './email-jobs';
 
 @Injectable()
 export class EmailService {
   private readonly logger = new Logger(EmailService.name);
 
-  constructor(@InjectQueue('email') private emailQueue: Queue) {}
+  constructor(@InjectQueue('email') private emailQueue: Queue<EmailJobData>) {}
 
   async sendWelcomeEmail(email: string, name: string) {
     this.logger.log(`Queuing welcome email for ${email}`);

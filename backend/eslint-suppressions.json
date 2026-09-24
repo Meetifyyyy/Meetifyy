@@ -1393,23 +1393,6 @@
       "count": 2
     }
   },
-  "src/email/email.processor.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 7
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 41
-    },
-    "@typescript-eslint/no-unsafe-call": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 32
-    }
-  },
   "src/events/domain-event.service.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 2
