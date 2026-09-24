@@ -2541,9 +2541,6 @@
     "@typescript-eslint/no-explicit-any": {
       "count": 5
     },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 1
-    },
     "@typescript-eslint/no-unsafe-assignment": {
       "count": 3
     },
@@ -2554,7 +2551,7 @@
       "count": 31
     },
     "@typescript-eslint/no-unsafe-return": {
-      "count": 5
+      "count": 3
     },
     "@typescript-eslint/require-await": {
       "count": 2
@@ -2615,27 +2612,27 @@
       "count": 2
     },
     "@typescript-eslint/no-unsafe-return": {
-      "count": 3
+      "count": 1
     }
   },
   "src/users/users.service.ts": {
     "@typescript-eslint/no-explicit-any": {
-      "count": 15
+      "count": 5
     },
     "@typescript-eslint/no-unsafe-argument": {
-      "count": 8
+      "count": 3
     },
     "@typescript-eslint/no-unsafe-assignment": {
-      "count": 75
+      "count": 29
     },
     "@typescript-eslint/no-unsafe-call": {
       "count": 2
     },
     "@typescript-eslint/no-unsafe-member-access": {
-      "count": 116
+      "count": 60
     },
     "@typescript-eslint/no-unsafe-return": {
-      "count": 5
+      "count": 1
     }
   },
   "src/verification/verification-upload-collector.spec.ts": {

@@ -6,7 +6,7 @@ import {
   Optional,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { Prisma, VerificationStatus } from '@prisma/client';
+import { Prisma, UserRole, VerificationStatus } from '@prisma/client';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationFactory } from '../notifications/notification.factory';
 import { DomainEventService } from '../events/domain-event.service';
@@ -34,6 +34,75 @@ import {
   isReservedUsername,
   RESERVED_USERNAME_MESSAGE,
 } from '../common/users/reserved-usernames';
+
+/** The follow CTE's single row (see followUser). */
+interface FollowCteRow {
+  targetId: string;
+  targetUsername: string;
+  targetDisplayName: string;
+  targetAvatar: string | null;
+  followerUsername: string;
+  followerDisplayName: string;
+  followerAvatar: string | null;
+  isBlocked: boolean;
+  newlyFollowed: boolean;
+  targetFollowers: number;
+  targetFollowing: number;
+  currentFollowing: number;
+}
+
+/** The unfollow CTE's single row (see unfollowUser). */
+interface UnfollowCteRow {
+  targetId: string;
+  targetUsername: string;
+  unfollowed: boolean;
+  targetFollowers: number;
+  targetFollowing: number;
+  currentFollowing: number;
+}
+
+/** One row of the followers / following lists. */
+interface FollowListRow {
+  id: string;
+  username: string;
+  displayName: string;
+  avatar: string | null;
+  bio: string | null;
+  role: UserRole;
+  isFollowing: boolean;
+}
+
+/** One candidate of the follow recommendations query. */
+interface RecommendationRow {
+  id: string;
+  username: string;
+  displayName: string;
+  avatar: string | null;
+  bio: string | null;
+  isCampusRep: boolean;
+  collegeId: string | null;
+  collegeName: string | null;
+  verificationStatus: VerificationStatus;
+  mutualCount: number;
+  followerCount: number;
+  sameCollege: boolean;
+}
+
+/** Columns of the share/invite "people" picker (see getConnections). */
+const CONNECTION_SELECT = {
+  id: true,
+  username: true,
+  displayName: true,
+  isCampusRep: true,
+  collegeId: true,
+  college: { select: { id: true, name: true } },
+  avatar: true,
+} satisfies Prisma.UserSelect;
+
+/** A getConnections entry, as served and as cached for 20 s. */
+type ConnectionUser = Prisma.UserGetPayload<{
+  select: typeof CONNECTION_SELECT;
+}> & { isFirstYearStudent: boolean };
 
 @Injectable()
 export class UsersService {
@@ -312,7 +381,7 @@ export class UsersService {
       limit?: number;
       cursor?: string;
     } = {},
-  ): Promise<{ users: any[]; nextCursor?: string }> {
+  ) {
     if (!userId) return { users: [], nextCursor: undefined };
     const me = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -325,7 +394,7 @@ export class UsersService {
     const search = (opts.search || '').trim();
 
     // Decode keyset cursor.
-    let cursorWhere: any = undefined;
+    let cursorWhere: Prisma.UserWhereInput | undefined = undefined;
     /**
      * Keyset pagination on the name, because that is what the list is ordered
      * by now. It used to page on `createdAt`, which was correct for a
@@ -355,7 +424,7 @@ export class UsersService {
     }
 
     const yearFilter = opts.passingYear ?? opts.currentYear;
-    const where: any = {
+    const where: Prisma.UserWhereInput = {
       collegeId: me.collegeId,
       id: { not: userId },
       accountStatus: 'ACTIVE',
@@ -555,11 +624,7 @@ export class UsersService {
           )
         : false;
 
-    const {
-      settings: _settings,
-      batchYear: _batchYear,
-      ...publicUser
-    } = user as any;
+    const { settings: _settings, batchYear: _batchYear, ...publicUser } = user;
     return {
       ...publicUser,
       isOnline,
@@ -854,7 +919,7 @@ export class UsersService {
 
     // Single atomic CTE query combining: user lookup + block check + follow insert + count calculation
     // Reduces database network round-trips from 4 down to 1!
-    const rows: any[] = await this.prisma.$queryRaw`
+    const rows = await this.prisma.$queryRaw<FollowCteRow[]>`
       WITH target_user AS (
         SELECT "id", "username", "displayName", "avatar"
         FROM "User" u
@@ -1003,7 +1068,7 @@ export class UsersService {
 
     // Single atomic CTE query combining: user lookup + follow delete + count calculation
     // Reduces database network round-trips from 3 down to 1!
-    const rows: any[] = await this.prisma.$queryRaw`
+    const rows = await this.prisma.$queryRaw<UnfollowCteRow[]>`
       WITH target_user AS (
         SELECT "id", "username"
         FROM "User"
@@ -1138,7 +1203,7 @@ export class UsersService {
     // the two disagreed in the opposite direction to the policy filter above.
     const activeOnlyFilter = Prisma.sql`AND u."deletedAt" IS NULL AND u."accountStatus"::text = 'ACTIVE'`;
 
-    const rows: any[] = await this.prisma.$queryRaw`
+    const rows = await this.prisma.$queryRaw<FollowListRow[]>`
       SELECT 
         u."id",
         u."username",
@@ -1236,7 +1301,7 @@ export class UsersService {
     // and the counts beside this list already treated them that way.
     const followingActiveOnlyFilter = Prisma.sql`AND u."deletedAt" IS NULL AND u."accountStatus"::text = 'ACTIVE'`;
 
-    const rows: any[] = await this.prisma.$queryRaw`
+    const rows = await this.prisma.$queryRaw<FollowListRow[]>`
       SELECT 
         u."id",
         u."username",
@@ -1843,7 +1908,11 @@ export class UsersService {
     if (keys.length > 0) await redis.del(...keys).catch(() => {});
   }
 
-  async getConnections(userId: string, query?: string, limit: number = 50) {
+  async getConnections(
+    userId: string,
+    query?: string,
+    limit: number = 50,
+  ): Promise<ConnectionUser[]> {
     const cleanQuery = (query || '').trim().toLowerCase();
 
     // Short-lived Redis cache: the invite/share "people" list is opened
@@ -1872,7 +1941,7 @@ export class UsersService {
     if (redis) {
       try {
         const cached = await redis.get(cacheKey);
-        if (cached) return JSON.parse(cached);
+        if (cached) return JSON.parse(cached) as ConnectionUser[];
       } catch {
         // A cache miss and an unreachable Redis are the same thing here: fall through to the query.
       }
@@ -1927,15 +1996,7 @@ export class UsersService {
     const users = await this.prisma.user.findMany({
       where: policyWhereClause,
       take: limit,
-      select: {
-        id: true,
-        username: true,
-        displayName: true,
-        isCampusRep: true,
-        collegeId: true,
-        college: { select: { id: true, name: true } },
-        avatar: true,
-      },
+      select: CONNECTION_SELECT,
       orderBy: { createdAt: 'desc' },
     });
 
@@ -2022,7 +2083,7 @@ export class UsersService {
     // `take: MENTION_CANDIDATE_POOL` is applied.
     const mentionViewerBatch = await this.viewerBatchYear(userId);
 
-    const whereClause: any = this.studentYearPolicy.injectUserFilter(
+    const whereClause = this.studentYearPolicy.injectUserFilter(
       {
         id: { notIn: Array.from(excludeSet) },
         accountStatus: 'ACTIVE',
@@ -2310,7 +2371,7 @@ export class UsersService {
       `AND ${this.studentYearPolicy.visibleUserSqlPredicate('u', recommendationBatch)}`,
     );
 
-    const rows: any[] = await this.prisma.$queryRaw`
+    const rows = await this.prisma.$queryRaw<RecommendationRow[]>`
       WITH me AS (
         SELECT "id", "collegeId" FROM "User" WHERE "id" = ${userId} LIMIT 1
       ),
