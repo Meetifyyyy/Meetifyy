@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { BlocksService } from '../users/blocks.service';
+import { stringField } from '../common/utils/type-guards.util';
 import { NotificationsService } from './notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { DomainEventService } from '../events/domain-event.service';
@@ -94,7 +95,7 @@ describe('invite notification reconciliation on read', () => {
 
   const statusOf = async () => {
     const res = await service.getNotifications('user-1', 20);
-    return res.data[0].metadata.lifecycleStatus;
+    return stringField(res.data[0].metadata, 'lifecycleStatus');
   };
 
   it('reports Accepted when the notification copy is stale at Pending', async () => {

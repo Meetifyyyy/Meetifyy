@@ -1,4 +1,4 @@
-import { isJsonValue } from './json.util';
+import { isJsonObject, isJsonValue } from './json.util';
 
 describe('isJsonValue', () => {
   it('accepts what a parsed request body can contain', () => {
@@ -32,5 +32,18 @@ describe('isJsonValue', () => {
 
   it('ignores undefined properties, which JSON drops anyway', () => {
     expect(isJsonValue({ a: undefined, b: 1 })).toBe(true);
+  });
+});
+
+describe('isJsonObject', () => {
+  it('accepts an object read from a Json column', () => {
+    expect(isJsonObject({ a: 1 })).toBe(true);
+    expect(isJsonObject({})).toBe(true);
+  });
+
+  it('rejects arrays, scalars, null and undefined', () => {
+    for (const value of [[], [1], 'a', 1, true, null, undefined]) {
+      expect(isJsonObject(value)).toBe(false);
+    }
   });
 });

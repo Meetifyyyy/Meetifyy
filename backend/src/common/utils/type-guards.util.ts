@@ -8,3 +8,10 @@
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
+
+/** A string field of an object, or undefined when it is absent or not a string. */
+export function stringField(value: unknown, key: string): string | undefined {
+  if (!isRecord(value)) return undefined;
+  const field = value[key];
+  return typeof field === 'string' ? field : undefined;
+}

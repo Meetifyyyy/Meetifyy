@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { MentionSource, NotificationEntityType } from '@prisma/client';
+import { MentionSource, NotificationEntityType, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationFactory } from '../notifications/notification.factory';
@@ -140,7 +140,7 @@ export class MentionsService {
     entityType: NotificationEntityType;
     entityId: string;
     contextText: string;
-    extraMetadata?: Record<string, unknown>;
+    extraMetadata?: Prisma.InputJsonObject;
   }): Promise<void> {
     const {
       mentions,

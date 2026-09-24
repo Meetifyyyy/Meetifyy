@@ -28,3 +28,14 @@ export function isJsonValue(
       return false;
   }
 }
+
+/**
+ * Whether a value read from a Json column is an object (not an array, not a
+ * scalar, not null). Its fields can then be read, and it can be spread into a
+ * new value and written back.
+ */
+export function isJsonObject(
+  value: Prisma.JsonValue | undefined,
+): value is Prisma.JsonObject {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}

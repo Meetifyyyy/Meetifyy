@@ -1395,10 +1395,10 @@
   },
   "src/events/domain-event.service.ts": {
     "@typescript-eslint/no-explicit-any": {
-      "count": 2
+      "count": 1
     },
     "@typescript-eslint/no-unsafe-assignment": {
-      "count": 2
+      "count": 1
     },
     "@typescript-eslint/no-unsafe-member-access": {
       "count": 7
@@ -1886,11 +1886,6 @@
       "count": 1
     }
   },
-  "src/notifications/notification.factory.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 2
-    }
-  },
   "src/notifications/notifications.controller.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 1
@@ -1947,10 +1942,10 @@
       "count": 3
     },
     "@typescript-eslint/no-unsafe-member-access": {
-      "count": 7
+      "count": 6
     },
     "@typescript-eslint/no-unsafe-return": {
-      "count": 4
+      "count": 3
     },
     "@typescript-eslint/require-await": {
       "count": 8
@@ -1974,26 +1969,6 @@
     },
     "@typescript-eslint/require-await": {
       "count": 2
-    }
-  },
-  "src/notifications/notifications.service.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 16
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 2
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 35
-    },
-    "@typescript-eslint/no-unsafe-call": {
-      "count": 2
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 20
-    },
-    "@typescript-eslint/no-unsafe-return": {
-      "count": 8
     }
   },
   "src/notifications/notifications.visibility.spec.ts": {

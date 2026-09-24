@@ -5,7 +5,7 @@ import { RedisService } from '../redis/redis.service';
 export interface DomainEventPayload {
   type: string; // e.g., 'follow.created'
   timestamp: string; // ISO string
-  data: any; // Arbitrary payload
+  data: unknown; // Arbitrary payload
   targetUserIds?: string[]; // Optional array of user IDs to strictly target (for private events)
 }
 

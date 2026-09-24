@@ -1,5 +1,9 @@
 import { Injectable } from '@nestjs/common';
-import { NotificationType, NotificationEntityType } from '@prisma/client';
+import {
+  NotificationType,
+  NotificationEntityType,
+  Prisma,
+} from '@prisma/client';
 
 /**
  * The notification factory only ever reads a handful of fields off the records
@@ -51,7 +55,7 @@ export interface CreateNotificationDto {
   entityId?: string;
   title: string;
   body: string;
-  metadata: any;
+  metadata: Prisma.InputJsonObject;
   expiresAt?: Date;
   /** Pre-populated actor data — skips the actor DB re-fetch in createNotification */
   prePopulatedActor?: {
@@ -294,7 +298,7 @@ export class NotificationFactory {
     entityType: NotificationEntityType,
     entityId: string,
     contextText: string,
-    extraMetadata?: Record<string, any>,
+    extraMetadata?: Prisma.InputJsonObject,
   ): CreateNotificationDto {
     const actorName = actor?.displayName || actor?.username || 'Someone';
     const actorUsername = actor?.username || '';
