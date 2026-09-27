@@ -1,6 +1,18 @@
-import { NotificationFactory } from '../notifications/notification.factory';
+import {
+  NotificationFactory,
+  type CreateNotificationDto,
+} from '../notifications/notification.factory';
 import { PostsService } from './posts.service';
 import { createStudentYearPolicyMock } from '../common/student-year/testing/student-year-policy.mock';
+import { stub } from '../common/testing/stub';
+import type { PrismaService } from '../prisma/prisma.service';
+import type { NotificationsService } from '../notifications/notifications.service';
+import type { BlocksService } from '../users/blocks.service';
+import type { DomainEventService } from '../events/domain-event.service';
+import type { RedisService } from '../redis/redis.service';
+import type { MentionsService } from '../mentions/mentions.service';
+import type { StorageService } from '../uploads/uploads.service';
+import type { ContentDeletionAuthorizer } from './content-deletion.authorizer';
 
 /**
  * The author of removed content gets told — and the notification is fired at
@@ -88,8 +100,8 @@ describe('Content removal notifications', () => {
     }: {
       authority: 'author' | 'owner' | 'moderator';
     }) => {
-      const created: any[] = [];
-      const prisma: any = {
+      const created: (CreateNotificationDto | null)[] = [];
+      const prisma = stub<PrismaService>({
         post: {
           findUnique: jest.fn(() =>
             Promise.resolve({
@@ -112,28 +124,28 @@ describe('Content removal notifications', () => {
         // Returns no media keys — object-storage cleanup is not this test's
         // subject and is covered in posts.deletion.spec.ts.
         $queryRaw: jest.fn(() => Promise.resolve([])),
-      };
+      });
 
-      const notifications: any = {
-        createNotification: jest.fn((dto: any) => {
+      const notifications = {
+        createNotification: jest.fn((dto: CreateNotificationDto | null) => {
           created.push(dto);
 
           return Promise.resolve();
         }),
       };
-      const authorizer: any = {
+      const authorizer = {
         assertCanDelete: jest.fn(() => Promise.resolve(authority)),
       };
       const service = new PostsService(
         prisma,
-        notifications,
+        stub<NotificationsService>(notifications),
         factory,
-        {} as any,
-        { emit: jest.fn() } as any,
-        {} as any,
-        {} as any,
-        {} as any,
-        authorizer,
+        stub<BlocksService>(),
+        stub<DomainEventService>({ emit: jest.fn() }),
+        stub<RedisService>(),
+        stub<MentionsService>(),
+        stub<StorageService>(),
+        stub<ContentDeletionAuthorizer>(authorizer),
         createStudentYearPolicyMock(),
       );
       return { service, created, notifications, authorizer };
