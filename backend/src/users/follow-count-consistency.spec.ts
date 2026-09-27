@@ -13,7 +13,17 @@ import { PresenceService } from '../presence/presence.service';
 import { AcademicsService } from '../academics/academics.service';
 import { VerificationAccessService } from '../common/verification/verification-access.service';
 import { createBlocksServiceMock } from './testing/blocks.service.mock';
-import { studentYearPolicyMockProvider } from '../common/student-year/testing/student-year-policy.mock';
+import {
+  studentYearPolicyMockProvider,
+  type createStudentYearPolicyMock,
+} from '../common/student-year/testing/student-year-policy.mock';
+
+/** The profile query's `_count.select`, as far as these assertions read it. */
+type CountSelect = {
+  followers: { where: { follower: { id: { notIn: string[] } } } };
+  following: { where: { following: { id: { notIn: string[] } } } };
+  posts: { where: unknown };
+};
 
 jest.mock('../auth/auth.service', () => ({ clearAuthSyncCache: jest.fn() }));
 
@@ -33,33 +43,34 @@ jest.mock('../auth/auth.service', () => ({ clearAuthSyncCache: jest.fn() }));
  */
 describe('Follower counts and the lists behind them', () => {
   let service: UsersService;
-  let prisma: any;
   /** The `where` the profile query asked Postgres to count through. */
-  let countArgs: any;
+  let countArgs: CountSelect | undefined;
 
   const VIEWER = 'viewer-1';
 
   const makeModule = async (
     blocks: { blockerId: string; blockedId: string }[] = [],
   ) => {
-    prisma = {
+    const prisma = {
       user: {
         findUnique: jest.fn().mockResolvedValue({ id: 'target-1' }),
-        findFirst: jest.fn((args: any) => {
-          countArgs = args.include?._count?.select;
-          return Promise.resolve({
-            id: 'target-1',
-            username: 'target',
-            displayName: 'Target',
-            deletedAt: null,
-            accountStatus: 'ACTIVE',
-            verificationStatus: 'VERIFIED',
-            createdAt: new Date(),
-            settings: null,
-            college: null,
-            _count: { followers: 0, following: 0, posts: 0 },
-          });
-        }),
+        findFirst: jest.fn(
+          (args: { include?: { _count?: { select?: CountSelect } } }) => {
+            countArgs = args.include?._count?.select;
+            return Promise.resolve({
+              id: 'target-1',
+              username: 'target',
+              displayName: 'Target',
+              deletedAt: null,
+              accountStatus: 'ACTIVE',
+              verificationStatus: 'VERIFIED',
+              createdAt: new Date(),
+              settings: null,
+              college: null,
+              _count: { followers: 0, following: 0, posts: 0 },
+            });
+          },
+        ),
         findMany: jest.fn().mockResolvedValue([]),
       },
       userSettings: { findUnique: jest.fn().mockResolvedValue(null) },
@@ -89,7 +100,7 @@ describe('Follower counts and the lists behind them', () => {
         {
           provide: RedisService,
           useValue: {
-            withLock: jest.fn((_k: any, _t: any, fn: any) =>
+            withLock: jest.fn((_k: string, _t: number, fn: () => unknown) =>
               Promise.resolve(fn()),
             ),
           },
@@ -129,11 +140,11 @@ describe('Follower counts and the lists behind them', () => {
   it('counts only accounts that are alive and active', async () => {
     await service.getProfileByUsername('target', VIEWER);
 
-    expect(countArgs.followers.where.follower).toMatchObject({
+    expect(countArgs!.followers.where.follower).toMatchObject({
       deletedAt: null,
       accountStatus: 'ACTIVE',
     });
-    expect(countArgs.following.where.following).toMatchObject({
+    expect(countArgs!.following.where.following).toMatchObject({
       deletedAt: null,
       accountStatus: 'ACTIVE',
     });
@@ -144,8 +155,10 @@ describe('Follower counts and the lists behind them', () => {
 
     await service.getProfileByUsername('target', VIEWER);
 
-    expect(countArgs.followers.where.follower.id.notIn).toContain('blocked-1');
-    expect(countArgs.following.where.following.id.notIn).toContain('blocked-1');
+    expect(countArgs!.followers.where.follower.id.notIn).toContain('blocked-1');
+    expect(countArgs!.following.where.following.id.notIn).toContain(
+      'blocked-1',
+    );
   });
 
   /**
@@ -157,19 +170,21 @@ describe('Follower counts and the lists behind them', () => {
 
     // The policy double returns a marker `where`; what matters is that the
     // count query carries whatever the policy produced, on both sides.
-    const policy = service['studentYearPolicy'] as any;
+    const policy = service['studentYearPolicy'] as ReturnType<
+      typeof createStudentYearPolicyMock
+    >;
     expect(policy.visibleUserWhere).toHaveBeenCalled();
-    const produced = policy.visibleUserWhere.mock.results[0].value;
+    const produced = policy.visibleUserWhere.mock.results[0].value as object;
     for (const key of Object.keys(produced)) {
-      expect(countArgs.followers.where.follower).toHaveProperty(key);
-      expect(countArgs.following.where.following).toHaveProperty(key);
+      expect(countArgs!.followers.where.follower).toHaveProperty(key);
+      expect(countArgs!.following.where.following).toHaveProperty(key);
     }
   });
 
   it('leaves the post count alone — it is not a per-viewer social edge', async () => {
     await service.getProfileByUsername('target', VIEWER);
 
-    expect(countArgs.posts.where).toEqual({
+    expect(countArgs!.posts.where).toEqual({
       deletedAt: null,
       communityId: null,
     });

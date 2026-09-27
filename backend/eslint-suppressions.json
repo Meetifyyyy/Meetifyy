@@ -115,23 +115,6 @@
       "count": 2
     }
   },
-  "src/admin/account-deletion/admin-account-deletion.spec.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 6
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 3
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 2
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 11
-    },
-    "@typescript-eslint/no-unsafe-return": {
-      "count": 1
-    }
-  },
   "src/admin/analytics/admin-analytics.module.spec.ts": {
     "@typescript-eslint/no-unsafe-assignment": {
       "count": 2
@@ -854,23 +837,6 @@
     },
     "@typescript-eslint/no-unsafe-member-access": {
       "count": 6
-    }
-  },
-  "src/users/follow-count-consistency.spec.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 7
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 4
-    },
-    "@typescript-eslint/no-unsafe-call": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 10
     }
   },
   "src/users/follow-stress.spec.ts": {

@@ -1,5 +1,9 @@
 import { AdminAccountDeletionService } from './admin-account-deletion.service';
 import { PURGE_MAX_ATTEMPTS } from '../../account-deletion/account-deletion.constants';
+import { stub } from '../../common/testing/stub';
+import type { PrismaService } from '../../prisma/prisma.service';
+import type { AccountDeletionService } from '../../account-deletion/account-deletion.service';
+import type { AccountDeletionPurgeService } from '../../account-deletion/account-deletion.purge.service';
 
 /**
  * The admin queue. The behaviour worth pinning down is which actions it offers:
@@ -10,13 +14,28 @@ import { PURGE_MAX_ATTEMPTS } from '../../account-deletion/account-deletion.cons
 describe('AdminAccountDeletionService — the deletion queue', () => {
   const DAY = 24 * 60 * 60 * 1000;
 
-  let service: AdminAccountDeletionService;
-  let prisma: any;
-  let deletion: any;
-  let purge: any;
-  let rows: any[];
+  /** A user row as the deletion queue selects it. */
+  type QueueRow = ReturnType<typeof basePendingRow>;
+  /** The queue queries, as far as these assertions read them. */
+  type UserQuery = {
+    where: { id?: string; OR?: unknown; AND?: unknown[] };
+    data?: { purgeAttempts?: number };
+  };
 
-  const pendingRow = (over: any = {}) => ({
+  let service: AdminAccountDeletionService;
+  let prisma: {
+    user: {
+      count: jest.Mock;
+      findMany: jest.Mock<Promise<QueueRow[]>, [UserQuery]>;
+      findUnique: jest.Mock;
+      updateMany: jest.Mock<Promise<{ count: number }>, [UserQuery]>;
+    };
+  };
+  let deletion: { recoverAccount: jest.Mock };
+  let purge: { purgeUser: jest.Mock; runSweep: jest.Mock };
+  let rows: QueueRow[];
+
+  const basePendingRow = () => ({
     id: 'u1',
     username: 'sam',
     email: 'sam@example.edu',
@@ -25,12 +44,16 @@ describe('AdminAccountDeletionService — the deletion queue', () => {
     // A minute into a freshly opened window, which is the common real case.
     // Partial days round UP, so this reads as 30 days remaining — the same
     // number the account owner is being shown, which is the point.
-    scheduledPurgeAt: new Date(Date.now() + 30 * DAY - 60_000),
-    purgeStartedAt: null,
-    purgeCompletedAt: null,
+    scheduledPurgeAt: new Date(Date.now() + 30 * DAY - 60_000) as Date | null,
+    purgeStartedAt: null as Date | null,
+    purgeCompletedAt: null as Date | null,
     purgeAttempts: 0,
-    purgeLastError: null,
+    purgeLastError: null as string | null,
     college: { id: 'c1', name: 'Example University' },
+  });
+
+  const pendingRow = (over: Partial<QueueRow> = {}): QueueRow => ({
+    ...basePendingRow(),
     ...over,
   });
 
@@ -39,11 +62,13 @@ describe('AdminAccountDeletionService — the deletion queue', () => {
     prisma = {
       user: {
         count: jest.fn(() => Promise.resolve(rows.length)),
-        findMany: jest.fn(() => Promise.resolve(rows)),
-        findUnique: jest.fn(({ where }: any) =>
+        findMany: jest.fn((_query: UserQuery) => Promise.resolve(rows)),
+        findUnique: jest.fn(({ where }: UserQuery) =>
           Promise.resolve(rows.find((r) => r.id === where.id) ?? null),
         ),
-        updateMany: jest.fn(() => Promise.resolve({ count: 1 })),
+        updateMany: jest.fn((_query: UserQuery) =>
+          Promise.resolve({ count: 1 }),
+        ),
       },
     };
     deletion = {
@@ -57,7 +82,11 @@ describe('AdminAccountDeletionService — the deletion queue', () => {
         Promise.resolve({ claimed: 2, purged: 2, failed: 0 }),
       ),
     };
-    service = new AdminAccountDeletionService(prisma, deletion, purge);
+    service = new AdminAccountDeletionService(
+      stub<PrismaService>(prisma),
+      stub<AccountDeletionService>(deletion),
+      stub<AccountDeletionPurgeService>(purge),
+    );
   });
 
   it('lists pending requests with the deadline and the time left', async () => {
@@ -169,7 +198,7 @@ describe('AdminAccountDeletionService — the deletion queue', () => {
     rows = [pendingRow({ scheduledPurgeAt: new Date(Date.now() - DAY) })];
     await service.purgeNow('u1');
     const [{ data }] = prisma.user.updateMany.mock.calls[0];
-    expect(data.purgeAttempts).toBe(0);
+    expect(data!.purgeAttempts).toBe(0);
     expect(purge.purgeUser).toHaveBeenCalledWith('u1');
   });
 
