@@ -15,17 +15,18 @@ describe('conversation media: which bucket a read goes to', () => {
   const MAIN = 'meetifyy-media';
   const PRIVATE = 'meetifyy-verification';
 
+  /** The part of an AWS SDK command the fake S3 client reads. */
+  type SentCommand = {
+    input: { Bucket: string; Key: string };
+    constructor: { name: string };
+  };
+  type FakeS3 = { send: (cmd: SentCommand) => Promise<unknown> };
+
   /** Builds a provider whose S3 client only "has" the given keys per bucket. */
   const build = (objects: Record<string, string[]>) => {
     const heads: Array<{ Bucket: string; Key: string }> = [];
-    const provider: any = Object.create(CloudflareR2Provider.prototype);
-    provider.bucketName = MAIN;
-    provider.verificationBucketName = PRIVATE;
-    provider.publicUrl = 'https://pub-test.r2.dev';
-    provider.isConfigured = true;
-    provider.readBucketCache = new Map();
-    provider.s3 = {
-      send: (cmd: any) => {
+    const s3: FakeS3 = {
+      send: (cmd: SentCommand) => {
         const { Bucket, Key } = cmd.input;
         heads.push({ Bucket, Key });
         if ((objects[Bucket] || []).includes(Key)) return Promise.resolve({});
@@ -34,7 +35,18 @@ describe('conversation media: which bucket a read goes to', () => {
         return Promise.reject(err);
       },
     };
-    return { provider, heads };
+    const provider = Object.create(
+      CloudflareR2Provider.prototype,
+    ) as CloudflareR2Provider;
+    Object.assign(provider, {
+      bucketName: MAIN,
+      verificationBucketName: PRIVATE,
+      publicUrl: 'https://pub-test.r2.dev',
+      isConfigured: true,
+      readBucketCache: new Map(),
+      s3,
+    });
+    return { provider, heads, s3 };
   };
 
   it('finds an attachment written before the move, in the main bucket', async () => {
@@ -85,17 +97,17 @@ describe('conversation media: which bucket a read goes to', () => {
     // Deleting from the bucket it would be WRITTEN to reported success while
     // leaving the object — and its public URL — exactly where it was.
     const key = 'chat/legacy.mp4';
-    const { provider } = build({ [MAIN]: [key], [PRIVATE]: [] });
+    const { provider, s3 } = build({ [MAIN]: [key], [PRIVATE]: [] });
     const deletes: string[] = [];
-    const head = provider.s3.send;
-    provider.s3.send = (cmd: any) => {
+    const head = s3.send;
+    s3.send = (cmd: SentCommand) => {
       if (cmd.constructor.name === 'DeleteObjectCommand') {
         deletes.push(cmd.input.Bucket);
         return Promise.resolve({});
       }
       return Promise.resolve(head(cmd));
     };
-    provider.getLocalFilePath = () => '/nonexistent/path';
+    Object.assign(provider, { getLocalFilePath: () => '/nonexistent/path' });
 
     await provider.delete(key);
     expect(deletes).toEqual([MAIN]);
@@ -112,11 +124,15 @@ describe('conversation media: which bucket a read goes to', () => {
  */
 describe('conversation media: the URL a key is advertised at', () => {
   const build = () => {
-    const provider: any = Object.create(CloudflareR2Provider.prototype);
-    provider.bucketName = 'meetifyy-media';
-    provider.verificationBucketName = 'meetifyy-verification';
-    provider.publicUrl = 'https://pub-test.r2.dev';
-    provider.isConfigured = true;
+    const provider = Object.create(
+      CloudflareR2Provider.prototype,
+    ) as CloudflareR2Provider;
+    Object.assign(provider, {
+      bucketName: 'meetifyy-media',
+      verificationBucketName: 'meetifyy-verification',
+      publicUrl: 'https://pub-test.r2.dev',
+      isConfigured: true,
+    });
     return provider;
   };
 

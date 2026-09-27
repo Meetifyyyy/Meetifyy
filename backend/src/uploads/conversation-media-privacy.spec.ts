@@ -1,4 +1,8 @@
 import { StorageService } from './uploads.service';
+import type { ConfigService } from '@nestjs/config';
+import { stub } from '../common/testing/stub';
+import type { PrismaService } from '../prisma/prisma.service';
+import type { StorageProvider } from './providers/storage-provider.interface';
 
 /**
  * Chat attachments belong to the conversation, not to whoever holds the URL.
@@ -15,18 +19,45 @@ import { StorageService } from './uploads.service';
  * request could not be authorized at any price.
  */
 describe('conversation media privacy', () => {
-  let prisma: any;
+  /** The participation lookup, as far as these tests read it. */
+  type MessageLookup = {
+    where: {
+      payload: { path: string[]; string_contains: string };
+      attachmentMediaId?: unknown;
+      conversation: {
+        participants: {
+          some: { userId: string; deletedAt: null; leftAt: null };
+        };
+      };
+    };
+    select: { id: true };
+  };
+
+  const makePrisma = () => ({
+    media: {
+      findUnique: jest.fn<
+        Promise<{ id: string; ownerId: string } | null>,
+        [unknown]
+      >(),
+    },
+    message: {
+      findFirst: jest.fn<Promise<{ id: string } | null>, [MessageLookup]>(),
+    },
+  });
+
+  let prisma: ReturnType<typeof makePrisma>;
   let service: StorageService;
 
   const KEY = 'chat/deadbeefdeadbeefdeadbeefdeadbeef.webp';
 
   beforeEach(() => {
-    prisma = {
-      media: { findUnique: jest.fn() },
-      message: { findFirst: jest.fn() },
-    };
+    prisma = makePrisma();
     // (provider, prisma, config) — only prisma is exercised here.
-    service = new StorageService({} as any, prisma, {} as any);
+    service = new StorageService(
+      stub<StorageProvider>(),
+      stub<PrismaService>(prisma),
+      stub<ConfigService>(),
+    );
   });
 
   describe('which folders are conversation-scoped', () => {
