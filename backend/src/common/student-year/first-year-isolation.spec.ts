@@ -1,9 +1,26 @@
 import { Test } from '@nestjs/testing';
 import { getQueueToken } from '@nestjs/bullmq';
-import { ForbiddenException } from '@nestjs/common';
+import { ForbiddenException, HttpException } from '@nestjs/common';
+import { readFileSync } from 'fs';
+import { join } from 'path';
 import { ActivityVisibility, CrewActivityStatus } from '@prisma/client';
 
-import { StudentYearPolicyService } from './student-year-policy.service';
+import {
+  StudentYearPolicyService,
+  type StudentYearSubject,
+} from './student-year-policy.service';
+import { stub } from '../testing/stub';
+
+/**
+ * The `where` shapes these doubles read: an id list (the policy's batch
+ * lookup) and the list queries' own filters, inspected as plain data.
+ */
+type UserWhereLike = {
+  id?: { in?: string[] } | string;
+  accountStatus?: unknown;
+  AND?: unknown;
+  [field: string]: unknown;
+};
 import { UsersService } from '../../users/users.service';
 import { BlocksService } from '../../users/blocks.service';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -66,8 +83,9 @@ const PEOPLE = {
 function fakePrismaForPolicy() {
   return {
     user: {
-      findMany: jest.fn(({ where }: any) => {
-        const ids: string[] = where?.id?.in ?? [];
+      findMany: jest.fn(({ where }: { where?: UserWhereLike }) => {
+        const ids: string[] =
+          (typeof where?.id === 'object' ? where.id.in : undefined) ?? [];
         return Promise.resolve(
           Object.values(PEOPLE)
             .filter((u) => ids.includes(u.id))
@@ -79,7 +97,9 @@ function fakePrismaForPolicy() {
 }
 
 function makePolicy() {
-  const policy = new StudentYearPolicyService(fakePrismaForPolicy() as any);
+  const policy = new StudentYearPolicyService(
+    stub<PrismaService>(fakePrismaForPolicy()),
+  );
   policy.invalidateAll();
   return policy;
 }
@@ -152,8 +172,8 @@ describe('messaging', () => {
     try {
       await policy.assertCanInteract(PEOPLE.fresher.id, [PEOPLE.second.id]);
       throw new Error('should have thrown');
-    } catch (err: any) {
-      const body = JSON.stringify(err.getResponse());
+    } catch (err: unknown) {
+      const body = JSON.stringify((err as HttpException).getResponse());
       expect(body).not.toContain(PEOPLE.second.id);
       expect(body).not.toContain('2025');
       expect(body).not.toContain('2026');
@@ -165,7 +185,7 @@ describe('messaging', () => {
 
 describe('recipient selectors', () => {
   let service: UsersService;
-  let findMany: jest.Mock;
+  let findMany: jest.Mock<Promise<unknown[]>, [{ where?: UserWhereLike }]>;
   let userFindUnique: jest.Mock;
 
   const buildUsersService = async () => {
@@ -175,8 +195,9 @@ describe('recipient selectors', () => {
     // resolve as batch-unknown and the assertions below would all describe the
     // non-first-year branch. Everything else is a list query and returns
     // nothing — these tests are about the `where`, not the rows.
-    findMany = jest.fn((args: any) => {
-      const ids = args?.where?.id?.in;
+    findMany = jest.fn((args: { where?: UserWhereLike }) => {
+      const id = args?.where?.id;
+      const ids = typeof id === 'object' ? id.in : undefined;
       if (Array.isArray(ids)) {
         return Promise.resolve(
           Object.values(PEOPLE)
@@ -186,7 +207,7 @@ describe('recipient selectors', () => {
       }
       return Promise.resolve([]);
     });
-    userFindUnique = jest.fn(({ where }: any) => {
+    userFindUnique = jest.fn(({ where }: { where: { id: string } }) => {
       const found = Object.values(PEOPLE).find((u) => u.id === where.id);
       return Promise.resolve(
         found ? { ...found, collegeId: 'gla', collegeEmail: null } : null,
@@ -208,7 +229,9 @@ describe('recipient selectors', () => {
           // exactly what the service built.
           provide: BlocksService,
           useValue: {
-            injectBlockFilter: jest.fn((_id, where) => Promise.resolve(where)),
+            injectBlockFilter: jest.fn((_id: string, where: object) =>
+              Promise.resolve(where),
+            ),
             getExcludedUserIds: jest.fn().mockResolvedValue([]),
           },
         },
@@ -240,19 +263,23 @@ describe('recipient selectors', () => {
    */
   const listWhereOf = () => {
     const call = findMany.mock.calls.find(
-      (c: any[]) => c[0]?.where && 'accountStatus' in c[0].where,
+      (c) => c[0]?.where && 'accountStatus' in c[0].where,
     );
     if (!call) throw new Error('no list query was issued');
-    return call[0].where;
+    return call[0].where!;
   };
 
   /** The isolation clause the service ANDed into that `where`. */
   const policyClauseOf = () => {
     const where = listWhereOf();
-    const and = Array.isArray(where.AND) ? where.AND : [];
+    const and = Array.isArray(where.AND)
+      ? (where.AND as Record<string, unknown>[])
+      : [];
     return and.find(
-      (c: any) =>
-        'batchYear' in c || (Array.isArray(c.OR) && 'batchYear' in c.OR[0]),
+      (c) =>
+        'batchYear' in c ||
+        (Array.isArray(c.OR) &&
+          'batchYear' in (c.OR as Record<string, unknown>[])[0]),
     );
   };
 
@@ -320,15 +347,13 @@ describe('recipient selectors', () => {
 
   it('filters @mention candidates, which are a way to reach someone', async () => {
     await buildUsersService();
-    (service as any).prisma.follow = {
-      findMany: jest.fn(() => Promise.resolve([])),
-    };
-    (service as any).prisma.communityMember = {
-      findMany: jest.fn(() => Promise.resolve([])),
-    };
-    (service as any).prisma.conversationParticipant = {
-      findMany: jest.fn(() => Promise.resolve([])),
-    };
+    Object.assign(service['prisma'], {
+      follow: { findMany: jest.fn(() => Promise.resolve([])) },
+      communityMember: { findMany: jest.fn(() => Promise.resolve([])) },
+      conversationParticipant: {
+        findMany: jest.fn(() => Promise.resolve([])),
+      },
+    });
     await service.getMentionSuggestions(PEOPLE.fresher.id, 'shr');
     expect(policyClauseOf()).toEqual({ batchYear: FIRST_YEAR });
   });
@@ -408,8 +433,7 @@ describe('the conversation-list filter must not be built on `every`', () => {
     // "every" repeatedly, and matching those would make the assertion fail for
     // the wrong reason -- which is exactly what happened when it did not.
     const codeOf = (file: string) =>
-      require('fs')
-        .readFileSync(require('path').join(__dirname, '..', '..', file), 'utf8')
+      readFileSync(join(__dirname, '..', '..', file), 'utf8')
         .replace(/\/\*[\s\S]*?\*\//g, '')
         .split('\n')
         .filter((l: string) => !l.trim().startsWith('//'))
@@ -527,7 +551,7 @@ describe('composing with the rules that were already there', () => {
 
     // A senior viewer's isolation clause is itself an OR. Assigning it would
     // drop the search terms and widen the query to the whole user table.
-    const result: any = policy.injectUserFilter(withSearch, 2025);
+    const result = policy.injectUserFilter(withSearch, 2025);
     expect(result.OR).toEqual(withSearch.OR);
     expect(result.AND).toEqual([
       { OR: [{ batchYear: { not: FIRST_YEAR } }, { batchYear: null }] },
@@ -536,13 +560,13 @@ describe('composing with the rules that were already there', () => {
 
   it('appends to an AND the caller had already started', () => {
     const policy = makePolicy();
-    const result: any = policy.injectUserFilter(
+    const result = policy.injectUserFilter(
       { AND: [{ id: { notIn: ['x'] } }] },
       2026,
     );
     expect(result.AND).toHaveLength(2);
-    expect(result.AND[0]).toEqual({ id: { notIn: ['x'] } });
-    expect(result.AND[1]).toEqual({ batchYear: FIRST_YEAR });
+    expect((result.AND as unknown[])[0]).toEqual({ id: { notIn: ['x'] } });
+    expect((result.AND as unknown[])[1]).toEqual({ batchYear: FIRST_YEAR });
   });
 });
 
@@ -589,9 +613,9 @@ describe('activity visibility', () => {
     const policy = buildActivityPolicy();
     // A 403 would confirm both that the id is real and that its host is in the
     // other cohort.
-    expect(() =>
-      policy.assertCanView(viewer(2026), activity(2025) as any),
-    ).toThrow(/not found/i);
+    expect(() => policy.assertCanView(viewer(2026), activity(2025))).toThrow(
+      /not found/i,
+    );
   });
 
   it('never hides a host from themselves', () => {
@@ -603,14 +627,12 @@ describe('activity visibility', () => {
 
   it('refuses the join as well as the view, so the two cannot disagree', () => {
     const policy = buildActivityPolicy();
-    expect(policy.canJoin(viewer(2026), activity(2025) as any).allowed).toBe(
-      false,
-    );
+    expect(policy.canJoin(viewer(2026), activity(2025)).allowed).toBe(false);
   });
 
   it('pushes the rule into the discovery query, on the host', () => {
     const policy = buildActivityPolicy();
-    const where: any = policy.discoveryWhere(viewer(2026));
+    const where = policy.discoveryWhere(viewer(2026));
     expect(JSON.stringify(where.AND)).toContain('"batchYear":2026');
   });
 
@@ -619,13 +641,13 @@ describe('activity visibility', () => {
     // viewer with the same audience tag, so the rule has to be inside it — and
     // the tag has to carry the cohort, which ActivitiesService does.
     const policy = buildActivityPolicy();
-    const where: any = policy.sharedAudienceWhere(viewer(2026));
+    const where = policy.sharedAudienceWhere(viewer(2026));
     expect(JSON.stringify(where.AND)).toContain('"batchYear":2026');
   });
 
   it('pushes it into the personal-list query, so a bookmark is not a back door', () => {
     const policy = buildActivityPolicy();
-    const where: any = policy.accessWhere(viewer(2026));
+    const where = policy.accessWhere(viewer(2026));
     expect(JSON.stringify(where.AND)).toContain('"batchYear":2026');
   });
 
@@ -638,9 +660,7 @@ describe('activity visibility', () => {
       visibility: ActivityVisibility.PUBLIC,
       status: CrewActivityStatus.OPEN,
     };
-    expect(policy.canView(viewer(2026), withoutCreator as any).allowed).toBe(
-      true,
-    );
+    expect(policy.canView(viewer(2026), withoutCreator).allowed).toBe(true);
   });
 
   it('honours an explicitly unresolved host batch, which is different from an absent one', () => {
@@ -782,7 +802,7 @@ describe('unresolved and hostile batches', () => {
       policy.isFirstYearStudent({
         email: 'x_cs25@gla.ac.in',
         passingYear: 2026,
-      } as any),
+      } as StudentYearSubject),
     ).toBe(false);
   });
 
@@ -833,14 +853,17 @@ describe('with the feature disabled', () => {
   it('stops filtering activities as well', () => {
     const policy = new ActivityAuthorizationService(makePolicy());
     expect(
-      policy.canView({ id: 'v', collegeId: 'gla', batchYear: 2026 }, {
-        id: 'a',
-        creatorId: 'host',
-        collegeId: 'gla',
-        visibility: ActivityVisibility.PUBLIC,
-        status: CrewActivityStatus.OPEN,
-        creator: { batchYear: 2025 },
-      } as any).allowed,
+      policy.canView(
+        { id: 'v', collegeId: 'gla', batchYear: 2026 },
+        {
+          id: 'a',
+          creatorId: 'host',
+          collegeId: 'gla',
+          visibility: ActivityVisibility.PUBLIC,
+          status: CrewActivityStatus.OPEN,
+          creator: { batchYear: 2025 },
+        },
+      ).allowed,
     ).toBe(true);
   });
 });

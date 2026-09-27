@@ -692,29 +692,6 @@
       "count": 2
     }
   },
-  "src/common/student-year/first-year-isolation.spec.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 20
-    },
-    "@typescript-eslint/no-require-imports": {
-      "count": 2
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 6
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 10
-    },
-    "@typescript-eslint/no-unsafe-call": {
-      "count": 10
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 35
-    },
-    "@typescript-eslint/no-unsafe-return": {
-      "count": 3
-    }
-  },
   "src/common/student-year/student-year-policy.service.spec.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 4
@@ -849,26 +826,6 @@
     },
     "@typescript-eslint/no-unsafe-member-access": {
       "count": 20
-    }
-  },
-  "src/communities/communities.detail.spec.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 33
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 8
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 6
-    },
-    "@typescript-eslint/no-unsafe-call": {
-      "count": 2
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 30
-    },
-    "@typescript-eslint/no-unsafe-return": {
-      "count": 1
     }
   },
   "src/communities/communities.moderator-promotion.spec.ts": {
