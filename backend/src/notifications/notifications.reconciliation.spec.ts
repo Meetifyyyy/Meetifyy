@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { expect } from '@jest/globals';
 import { BlocksService } from '../users/blocks.service';
 import { NotificationsService } from './notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -12,7 +13,7 @@ describe('NotificationsService - Event Driven Reconciliation', () => {
   let service: NotificationsService;
   let eventEmitter: EventEmitter2;
 
-  const mockPrisma: any = {
+  const mockPrisma = {
     notification: {
       findFirst: jest.fn(),
       update: jest.fn(),

@@ -27,12 +27,25 @@ import { studentYearPolicyMockProvider } from '../common/student-year/testing/st
  * distinguishes the two implementations; asserting on the returned array does
  * not.
  */
+/** The connections query, as far as these assertions read it. */
+type ConnectionsQuery = {
+  take?: number;
+  where: {
+    verificationStatus?: unknown;
+    accountStatus?: unknown;
+    id?: unknown;
+    OR?: unknown;
+  };
+};
+
 describe('UsersService — selector eligibility', () => {
   let service: UsersService;
-  let findMany: jest.Mock;
+  let findMany: jest.Mock<Promise<unknown[]>, [ConnectionsQuery]>;
 
   beforeEach(async () => {
-    findMany = jest.fn().mockResolvedValue([]);
+    findMany = jest
+      .fn<Promise<unknown[]>, [ConnectionsQuery]>()
+      .mockResolvedValue([]);
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -134,7 +147,9 @@ describe('UsersService — selector eligibility', () => {
 describe('UsersService — connections cache', () => {
   it('reads and writes a versioned key', async () => {
     const get = jest.fn().mockResolvedValue(null);
-    const setex = jest.fn().mockResolvedValue('OK');
+    const setex = jest
+      .fn<Promise<string>, [string, number, string]>()
+      .mockResolvedValue('OK');
 
     const moduleRef = await Test.createTestingModule({
       providers: [

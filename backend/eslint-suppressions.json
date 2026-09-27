@@ -329,23 +329,6 @@
       "count": 5
     }
   },
-  "src/common/student-year/student-year-policy.service.spec.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 4
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 2
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 5
-    },
-    "@typescript-eslint/no-unsafe-call": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 6
-    }
-  },
   "src/common/users/deleted-user.spec.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 2
@@ -619,20 +602,6 @@
       "count": 6
     }
   },
-  "src/notifications/notifications.reconciliation.spec.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 3
-    },
-    "@typescript-eslint/no-unsafe-call": {
-      "count": 5
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 9
-    }
-  },
   "src/notifications/notifications.visibility.spec.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 1
@@ -749,17 +718,6 @@
     },
     "@typescript-eslint/no-unsafe-assignment": {
       "count": 1
-    },
-    "@typescript-eslint/no-unsafe-return": {
-      "count": 1
-    }
-  },
-  "src/users/selector-eligibility.spec.ts": {
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 3
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 14
     },
     "@typescript-eslint/no-unsafe-return": {
       "count": 1
