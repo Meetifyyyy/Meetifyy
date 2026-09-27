@@ -849,23 +849,6 @@
       "count": 3
     }
   },
-  "src/share/share.routes.spec.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 4
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 15
-    },
-    "@typescript-eslint/no-unsafe-call": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 2
-    },
-    "@typescript-eslint/no-unsafe-return": {
-      "count": 4
-    }
-  },
   "src/support/support.spec.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 1
@@ -874,23 +857,6 @@
   "src/uploads/default-avatar-endpoint.spec.ts": {
     "@typescript-eslint/no-unsafe-argument": {
       "count": 6
-    }
-  },
-  "src/uploads/preset-media.spec.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 9
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 6
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 8
-    },
-    "@typescript-eslint/no-unsafe-return": {
-      "count": 2
     }
   },
   "src/uploads/providers/cloudflare-r2.provider.ts": {
