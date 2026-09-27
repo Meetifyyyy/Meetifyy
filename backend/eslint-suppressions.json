@@ -396,20 +396,6 @@
       "count": 1
     }
   },
-  "src/auth/session/user-session.service.spec.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 3
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 12
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 8
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 40
-    }
-  },
   "src/auth/sign-in-eligibility.spec.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 1
@@ -1698,23 +1684,6 @@
     },
     "@typescript-eslint/no-unsafe-member-access": {
       "count": 10
-    }
-  },
-  "src/users/follow-state.spec.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 5
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 3
-    },
-    "@typescript-eslint/no-unsafe-call": {
-      "count": 19
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 31
-    },
-    "@typescript-eslint/no-unsafe-return": {
-      "count": 2
     }
   },
   "src/users/follow-stress.spec.ts": {
