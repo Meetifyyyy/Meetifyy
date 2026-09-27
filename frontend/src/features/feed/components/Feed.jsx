@@ -12,6 +12,7 @@ import { useAuth } from '@shared/context/AuthContext';
 import { addCreatedPostToCaches } from '../utils/postCache';
 import VerificationGate from '@shared/components/VerificationGate/VerificationGate';
 import HeaderScrollEdge from '@shared/components/ui/HeaderScrollEdge';
+import HomeCommunities from '@features/communities/components/home/HomeCommunities';
 
 function Feed({ onPostClick, onCommentClick }) {
   const { currentUser } = useAuth();
@@ -128,6 +129,8 @@ function Feed({ onPostClick, onCommentClick }) {
         <VerificationGate message="Verify your account to create posts.">
           <PostComposer onSubmit={handleNewPost} />
         </VerificationGate>
+
+        <HomeCommunities />
 
         {isLoading && (
           <>

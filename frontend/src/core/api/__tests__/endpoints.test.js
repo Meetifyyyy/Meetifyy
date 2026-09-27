@@ -85,7 +85,7 @@ describe('createEndpoints', () => {
     }
   });
 
-  it('exposes 191 methods in total', () => {
+  it('exposes 193 methods in total', () => {
     // A blunt guard, on purpose: this number changed to 191 when the endpoints
     // were lifted out of apiClient.js, and it is what catches a namespace being
     // dropped by a future refactor of this file. Update it deliberately when an
@@ -93,7 +93,7 @@ describe('createEndpoints', () => {
     const { transport } = stubTransport();
     const api = createEndpoints(transport);
     const total = Object.values(api).reduce((n, ns) => n + Object.keys(ns).length, 0);
-    expect(total).toBe(191);
+    expect(total).toBe(193);
   });
 
   it('is a factory, not a singleton — two calls yield independent objects', () => {
@@ -126,6 +126,19 @@ describe('createEndpoints', () => {
     const api = createEndpoints(transport);
     api.communitiesApi.getRecommendations(5);
     expect(calls[0].path).toBe('/api/communities/recommendations?limit=5');
+  });
+
+  it('sends Explore filters only when they are set', () => {
+    const { calls, transport } = stubTransport();
+    const api = createEndpoints(transport);
+    api.communitiesApi.explore();
+    api.communitiesApi.explore({ search: 'chess club', visibility: 'private', offset: 30 });
+    api.communitiesApi.getMine();
+    expect(calls.map((c) => c.path)).toEqual([
+      '/api/communities?limit=30&offset=0',
+      '/api/communities?limit=30&offset=30&search=chess+club&visibility=private',
+      '/api/communities/mine',
+    ]);
   });
 
   it('a second client with a different transport is fully isolated', () => {

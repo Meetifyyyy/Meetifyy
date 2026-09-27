@@ -1,0 +1,100 @@
+/* Same card as the Communities page, entering with a short rise. */
+.page {
+  animation: searchEnter 180ms ease-out both;
+}
+
+@keyframes searchEnter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page {
+    animation: none;
+  }
+}
+
+.box {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 0;
+  background: var(--color-bg-white);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-lg);
+  padding: 0.5rem 1rem 1rem;
+  /* Full height below the 60px app header, like the Communities card. */
+  min-height: calc(100dvh - 60px - 0.5rem); /* ends where Messages does */
+  box-sizing: border-box;
+  margin-bottom: 0.5rem;
+}
+
+/* The global search header is sticky with its own surface; inside the card it
+   only needs to stay put while the list scrolls. */
+.header {
+  top: 60px; /* below the fixed app header */
+  margin: 0 -1rem;
+  padding: 0.5rem 1rem;
+  background: var(--color-bg-white);
+}
+
+.label {
+  margin: 0.25rem 0 0;
+  padding: 0 0.25rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+@media (max-width: 768px) {
+  .page {
+    height: 100%;
+    min-height: 0;
+    background: #ffffff;
+  }
+
+  :global([data-theme='dark']) .page {
+    background: #000000;
+  }
+
+  .box {
+    flex: 1;
+    height: 100%;
+    min-height: 0;
+    border: none;
+    border-radius: 0;
+    background: inherit;
+    padding: 0 0 env(safe-area-inset-bottom, 0px);
+    margin: 0;
+    overflow: hidden;
+  }
+
+  .box .header {
+    background: inherit;
+  }
+
+  .section {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .header {
+    top: 0;
+    margin: 0;
+    padding: 0.5rem;
+    background: var(--color-bg-main, var(--color-bg-white));
+  }
+
+  .label {
+    padding: 0 0.75rem;
+  }
+}

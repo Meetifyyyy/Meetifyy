@@ -193,6 +193,19 @@ export function createEndpoints({ apiClient, getToken, getBackendUrl }) {
 
   const communitiesApi = {
     getAll: () => apiClient.get('/api/communities').then((list) => (Array.isArray(list) ? list.map(normalizeCommunity) : list)),
+    // One page of the discovery list. `visibility` is 'public' | 'private' or
+    // omitted for both; `search` matches name and description server-side.
+    explore: ({ search, visibility, limit = 30, offset = 0 } = {}) => {
+      const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+      if (search) params.set('search', search);
+      if (visibility) params.set('visibility', visibility);
+      return apiClient
+        .get(`/api/communities?${params}`)
+        .then((list) => (Array.isArray(list) ? list.map(normalizeCommunity) : list));
+    },
+    // Every community the viewer belongs to (public, private and campus), with
+    // `lastPostAt` for each.
+    getMine: () => apiClient.get('/api/communities/mine').then((list) => (Array.isArray(list) ? list.map(normalizeCommunity) : list)),
     // Discovery suggestions: communities the viewer has NOT joined, drawn at
     // random from the most popular of the rest. Server-ranked and server-sampled
     // so the panel varies per load without the client fetching a wide list to

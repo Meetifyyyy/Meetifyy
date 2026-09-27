@@ -2325,3 +2325,22 @@
 .mobileDropdownMenu button:hover {
   background: var(--color-bg-soft);
 }
+/* ── Installed app: cover under a transparent status bar ──────────────────
+   `data-collapsing-header` is set while CollapsingHeader is mounted, which is
+   only ever in the app. Its back button replaces the one on the cover, the
+   cover grows by the status bar's height so the same picture shows below the
+   clock, and the menu moves down out from under the clock. */
+@media (max-width: 768px) {
+  :global(html[data-collapsing-header]) .mobileBackBtn {
+    visibility: hidden;
+  }
+
+  :global(html[data-collapsing-header]) .mobileHeader {
+    top: calc(12px + var(--status-bar-inset, 0px));
+  }
+
+  :global(html[data-collapsing-header]) .heroCover {
+    height: calc(clamp(100px, 15cqi, 155px) + var(--status-bar-inset, 0px));
+    max-height: none;
+  }
+}

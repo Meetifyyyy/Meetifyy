@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useToggleMutation } from '@shared/hooks/useToggleMutation';
 import { communitiesApi } from '@shared/api/apiClient';
 import { COMMUNITY_KEYS } from '@shared/hooks/useCommunities';
@@ -7,6 +7,47 @@ import { idbDelete } from '@shared/lib/idb';
 import { isCommunityOwner } from '@shared/utils/community';
 import { showToast } from '@shared/utils/toast';
 import { openVerificationModal } from '@shared/stores/verificationModalStore';
+
+/**
+ * Apply `update` to every community in a cached list, whichever shape the list
+ * has: a plain array, or the `{ pages }` of an infinite query (Explore).
+ */
+export function mapCommunityCache(data, update) {
+  if (!data) return data;
+  if (Array.isArray(data)) return data.map(update);
+  if (Array.isArray(data.pages)) {
+    return { ...data, pages: data.pages.map((page) => (Array.isArray(page) ? page.map(update) : page)) };
+  }
+  return data;
+}
+
+/**
+ * Ask to join a private community.
+ *
+ * Not a toggle, and deliberately not optimistic: the server answers a private
+ * join with a pending request, not a membership, so the join toggle's
+ * optimistic "Joined" would be wrong and then snap back. There is no endpoint
+ * to withdraw a request, so "Requested" is where the button stays.
+ */
+export function useRequestToJoin() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ communityId }) => communitiesApi.join(communityId),
+    onSuccess: (res, { communityId }) => {
+      const joined = res?.status === 'MEMBER' || res?.isJoined === true;
+      queryClient.setQueriesData({ queryKey: COMMUNITY_KEYS.all }, (old) =>
+        mapCommunityCache(old, (c) => (c?.id === communityId
+          ? { ...c, hasPendingRequest: !joined, isJoined: joined || c.isJoined }
+          : c)),
+      );
+      if (joined) queryClient.invalidateQueries({ queryKey: COMMUNITY_KEYS.mine });
+      showToast(joined ? 'You are already a member' : 'Request sent to the moderators', 'success');
+    },
+    onError: (err) => {
+      showToast(err?.response?.data?.message || err?.message || 'Could not send the request', 'error');
+    },
+  });
+}
 
 export function useJoinCommunity() {
   const applyOptimistic = useCallback((queryClient, intent, variables) => {
@@ -19,8 +60,7 @@ export function useJoinCommunity() {
         const newCount = Math.max(0, current + (intent ? 1 : -1));
         return { ...c, isMember: intent, isJoined: intent, memberCount: newCount, membersCount: newCount };
       };
-      if (Array.isArray(oldData)) return oldData.map(update);
-      return oldData;
+      return mapCommunityCache(oldData, update);
     };
 
     // Every cache entry under the ['communities'] prefix, in one pass — the
@@ -115,6 +155,8 @@ export function useJoinCommunity() {
     // the member list this action changed, and it is not a ranked list.
     invalidateKeys: (vars) => [
       { queryKey: ['communities'], refetchType: 'none' },
+      // "Your communities" is not ranked, and a join has to appear in it.
+      COMMUNITY_KEYS.mine,
       ['community', vars.communityId],
       ['conversations'],
     ],

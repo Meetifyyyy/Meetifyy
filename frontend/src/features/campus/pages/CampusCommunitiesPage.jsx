@@ -6,8 +6,8 @@ import sharedStyles from '../components/skeletons/CampusShared.module.css';
 import pageStyles from './CampusCommunitiesPage.module.css';
 const styles = { ...sharedStyles, ...pageStyles };
 import { Plus, Search, ArrowLeft } from '@shared/components/icons';
-import CommunityCard from '@features/communities/components/card/CommunityCard';
-import CommunityGrid from '@features/communities/components/card/CommunityGrid';
+import CommunityRow from '@features/communities/components/directory/CommunityRow';
+import listStyles from '@features/communities/components/directory/CommunityList.module.css';
 import { useCampusCommunities } from '@shared/hooks/useCommunities';
 import { useDebounce } from '@shared/hooks/useDebounce';
 import VerificationGate from '@shared/components/VerificationGate/VerificationGate';
@@ -39,10 +39,6 @@ export default function CampusCommunitiesPage() {
   const debouncedSearch = useDebounce(searchQuery, 300);
   const { campusCommunities: collegeCommunities } = useCampusCommunities(debouncedSearch);
 
-  // Stable across renders. As an inline arrow per card this was a fresh prop on
-  // every render of this page, which defeated CommunityCard's own React.memo
-  // entirely — the grid re-rendered every card on each keystroke in the search
-  // box and on every background refetch.
   const openCommunity = useCallback((id) => {
     navigate(`/communities/${id}`, { state: { from: location.pathname } });
   }, [navigate, location.pathname]);
@@ -98,15 +94,17 @@ export default function CampusCommunitiesPage() {
 
         <div className={styles.campusBody} style={{ flex: 1, display: 'flex', flexDirection: 'column', width: '100%', boxSizing: 'border-box' }}>
           {collegeCommunities.length > 0 ? (
-            <CommunityGrid>
-              {collegeCommunities.map(community => (
-                <CommunityCard
-                  key={community.id}
-                  comm={community}
-                  onSelect={openCommunity}
-                />
-              ))}
-            </CommunityGrid>
+            <section className={listStyles.surface}>
+              <div className={listStyles.list}>
+                {collegeCommunities.map(community => (
+                  <CommunityRow
+                    key={community.id}
+                    community={community}
+                    from={location.pathname}
+                  />
+                ))}
+              </div>
+            </section>
           ) : (
             <div style={{
               display: 'flex',

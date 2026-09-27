@@ -8,6 +8,8 @@ import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { communitiesApi, postsApi, getMediaUrl } from '@shared/api/apiClient';
 import { showToast } from '@shared/utils/toast';
 import { isImageUrl, resolveCommunityAvatar } from '@shared/utils/avatar';
+import CollapsingHeader from '@shared/components/CollapsingHeader/CollapsingHeader';
+import PullToRefresh from '@shared/components/PullToRefresh';
 import { isCommunityMember, isCommunityOwner, resolveCommunityCover } from '@shared/utils/community';
 import { processAndUploadImage } from '@shared/utils/mediaPipeline';
 import {
@@ -63,7 +65,7 @@ function formatCount(n) {
   return n.toLocaleString();
 }
 
-function HeroSection({ comm, onlineNow, joined, joining, onToggleJoin, onCreatePost, userCommunities, onViewMembers, isAdmin, onOpenAdmin, onUpdateCommunity, isMuted, onMuteClick, onTitleClick, onShare }) {
+function HeroSection({ coverRef, comm, onlineNow, joined, joining, onToggleJoin, onCreatePost, userCommunities, onViewMembers, isAdmin, onOpenAdmin, onUpdateCommunity, isMuted, onMuteClick, onTitleClick, onShare }) {
   const users = useUsersMap();
   const { currentUser } = useAuth();
   const coverInputRef = useRef(null);
@@ -145,7 +147,7 @@ function HeroSection({ comm, onlineNow, joined, joining, onToggleJoin, onCreateP
 
   return (
     <div className={styles.heroSection}>
-      <div className={styles.heroCover}>
+      <div className={styles.heroCover} ref={coverRef}>
         {(isUploading || (hasCover && coverLoading)) && (
           <div className={styles.coverSkeleton} />
         )}
@@ -627,7 +629,19 @@ function GuidelinesCard() {
 
 
 export default function CommunityView({ communityId, onBack, onPostClick, onCommentClick }) {
+  const heroCoverRef = useRef(null);
   const queryClient = useQueryClient();
+
+  // Pull-to-refresh (installed app): the community and its posts, together, so
+  // the indicator stays until both have landed.
+  const handleRefresh = useCallback(
+    () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['community', communityId] }),
+        queryClient.invalidateQueries({ queryKey: ['community-posts', communityId] }),
+      ]),
+    [queryClient, communityId],
+  );
   // Declared with the other top-level hooks so every effect below can use
   // it. It used to sit two hundred lines down, which put it in the temporal
   // dead zone for anything above — and a dependency array is evaluated during
@@ -1085,11 +1099,26 @@ export default function CommunityView({ communityId, onBack, onPostClick, onComm
     }
   };
 
+  const memberTotal = typeof comm.memberCount === 'number' ? comm.memberCount : 0;
+
   return (
     <div className={styles.wrapper}>
+      <CollapsingHeader
+        coverRef={heroCoverRef}
+        title={comm.name}
+        subtitle={`${memberTotal} ${memberTotal === 1 ? 'member' : 'members'}`}
+        onBack={onBack}
+      />
+      {/*
+        Wraps the page content only, NOT the modals below it: a pull translates
+        whatever is inside, and an open modal must not be dragged with it (the
+        same split ProfilePage makes). The fixed CollapsingHeader stays outside
+        for the same reason.
+      */}
+      <PullToRefresh onRefresh={handleRefresh} surface="sheet">
       <div className={styles.mobileHeader}>
         <button 
-          className={styles.backBtn}
+          className={`${styles.backBtn} ${styles.mobileBackBtn}`}
           onClick={onBack}
           aria-label="Go back"
         >
@@ -1128,6 +1157,7 @@ export default function CommunityView({ communityId, onBack, onPostClick, onComm
       </div>
 
       <HeroSection
+        coverRef={heroCoverRef}
         comm={comm}
         onlineNow={onlineNow}
         joined={joined}
@@ -1146,6 +1176,7 @@ export default function CommunityView({ communityId, onBack, onPostClick, onComm
         onTitleClick={() => setShowMobileAbout(true)}
         onShare={() => setShowShareModal(true)}
       />
+      </PullToRefresh>
 
       {moderatorNotice && !noticeDismissed && (
         <ModeratorWelcomeModal

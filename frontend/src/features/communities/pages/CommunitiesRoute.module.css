@@ -1,0 +1,177 @@
+/*
+ * Laid out in the app's three-column grid, like Home: sidebar, this column,
+ * and the right panel. The column itself is one card.
+ */
+.box {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-width: 0;
+  background: var(--color-bg-white);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-lg);
+  padding: 0.25rem 1rem 1rem;
+  /* Down to 0.5rem above the window's bottom edge, as Messages is, however short the list:
+     the card starts under the 60px app header. */
+  min-height: calc(100dvh - 60px - 0.5rem); /* ends where Messages does */
+  box-sizing: border-box;
+  margin-bottom: 0.5rem;
+}
+
+@media (max-width: 768px) {
+  .page {
+    min-height: calc(100dvh - var(--status-bar-inset, 0px));
+    padding: 0 !important;
+    background: var(--color-surface-screen, var(--color-bg-white));
+  }
+}
+
+.header {
+  display: flex;
+  flex-direction: column;
+}
+
+.topBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  min-height: 52px;
+}
+
+.title {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--color-text-main);
+}
+
+.topActions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.iconBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: 50%;
+  /* Solid: the theme's strongest ink as the fill, the page colour as the icon. */
+  background: var(--color-text-main);
+  color: var(--color-surface-screen, var(--color-bg-white));
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: opacity var(--transition-fast, 0.15s ease), transform 0.1s ease;
+}
+
+.iconBtn:hover {
+  opacity: 0.88;
+}
+
+.iconBtn:active {
+  transform: scale(0.94);
+}
+
+.iconBtn:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+/* Create is the page's one primary action: solid brand blue. */
+.iconBtnPrimary {
+  background: var(--color-primary);
+  color: #fff;
+}
+
+.tabs {
+  display: flex;
+  margin: 0 -1rem;
+  border-bottom: 1px solid var(--color-border-light);
+}
+
+.tab {
+  position: relative;
+  /* Exactly half each, whatever the label widths, so the two underlines meet. */
+  flex: 1 1 0;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  height: 48px;
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.tab:hover {
+  color: var(--color-text-main);
+}
+
+.tabActive {
+  color: var(--color-text-main);
+}
+
+.tabActive::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 3px;
+  background: var(--color-text-main);
+}
+
+@media (max-width: 768px) {
+  /* Phones: the card becomes the page, edge to edge. */
+  /* The page's own surface — pure white / pure black — edge to edge and at
+     least a screen tall, with the 0.5rem gutter Crew has inside it. */
+  .box {
+    border: none;
+    border-radius: 0;
+    background: var(--color-surface-screen, var(--color-bg-white));
+    padding: 0 0.5rem var(--bottom-nav-clearance, 60px);
+    min-height: calc(100dvh - var(--status-bar-inset, 0px));
+    margin: 0;
+    gap: 0.75rem;
+  }
+
+  /*
+   * Title matches Crew's on phones: 12px from the top of the page (measured
+   * against Crew's rendered title), the Changa title class
+   * (1.8rem, 0.5rem indent) over `type-page-title`'s tight leading. The page
+   * gutter itself is the dashboard's 0.5rem, as on Crew.
+   */
+  .topBar {
+    min-height: 0;
+    padding: 12px 0 0;
+    align-items: flex-start;
+  }
+
+  /* 40px buttons centred on the 35px title line. */
+  .topActions {
+    margin-top: -3px;
+  }
+
+  .title {
+    font-family: "Changa One", cursive;
+    line-height: var(--leading-tight);
+    letter-spacing: var(--tracking-tight);
+    font-weight: normal;
+    font-size: 1.8rem;
+    padding-left: 0.5rem;
+  }
+
+  .tabs {
+    margin: 0;
+  }
+}

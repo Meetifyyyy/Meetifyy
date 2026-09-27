@@ -6,7 +6,7 @@
  * Uses IndexedDB for cross-session persistence so the community list appears instantly
  * on next visit before the network response arrives.
  */
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo } from 'react';
 import { communitiesApi } from '@shared/api/apiClient';
 import { idbGet, idbSet, idbDelete } from '@shared/lib/idb';
@@ -22,6 +22,8 @@ const EMPTY_COMMUNITIES = [];
 export const COMMUNITY_KEYS = {
   all:    ['communities'],
   campus: ['communities', 'campus'],
+  mine:   ['communities', 'mine'],
+  explore: (filters) => ['communities', 'explore', filters],
   // Nested under `all` deliberately: the join mutation updates every entry
   // under the ['communities'] prefix in one pass, so a new list added here is
   // kept in sync by construction rather than by remembering to add it.
@@ -236,62 +238,102 @@ export function useCampusCommunities(search = '', { enabled = true } = {}) {
 }
 
 /**
- * The communities this account belongs to, public and campus together.
+ * The communities this account belongs to — public, private and campus — from
+ * `GET /communities/mine`, most recently joined first.
  *
- * The header and the sidebar each render this list, and each had its own copy
- * of the derivation below — the same de-duplication, the same eight-way
- * membership test, the same optimistic-intent lookup, thirty lines apiece and
- * silently free to drift apart. They are the two components mounted on every
- * route, so the whole pass ran twice on every render of the shell.
+ * This used to be derived by filtering the first page of the public list (the
+ * thirty largest communities) and the campus list for membership, so a member
+ * of anything smaller, or of a private community, never saw it listed. The
+ * server answers the membership question directly now.
  *
- * One definition, called from both. The queries underneath are shared cache
- * entries, so this adds no requests.
+ * An in-flight leave outranks the cached row, so a community disappears from
+ * every list the moment the viewer leaves it rather than after the refetch.
  */
-export function useJoinedCommunities() {
-  const { currentUser } = useAuth();
-  const { communities } = useCommunities();
-  const { campusCommunities } = useCampusCommunities();
+export function useMyCommunities({ enabled = true } = {}) {
+  const { isLoggedIn } = useAuth();
+  const query = useQuery({
+    queryKey: COMMUNITY_KEYS.mine,
+    queryFn: communitiesApi.getMine,
+    enabled: Boolean(isLoggedIn) && enabled,
+    staleTime: 2 * 60 * 1000,
+    gcTime: 15 * 60 * 1000,
+  });
 
-  // The membership test reads only these two fields off the user, but
-  // `currentUser` is replaced wholesale by every auth refresh and presence
-  // update. Depending on the object re-ran the whole derivation each time.
-  const userId = currentUser?.id;
-  const userCommunityNames = currentUser?.communities;
+  const data = query.data;
+  const myCommunities = useMemo(() => {
+    if (!Array.isArray(data)) return EMPTY_COMMUNITIES;
+    return data.filter((c) => toggleRegistry.getLatestIntent(`joinCommunity:${c.id}`, c.isJoined !== false));
+  }, [data]);
 
-  return useMemo(() => {
-    const publicList = Array.isArray(communities)
-      ? communities
-      : Object.values(communities || {});
-    const campusList = Array.isArray(campusCommunities) ? campusCommunities : [];
+  return {
+    myCommunities,
+    isLoading: query.isLoading,
+    isError: query.isError,
+    refetch: query.refetch,
+  };
+}
 
-    const uniqueMap = new Map();
-    for (const c of publicList) {
-      if (c && typeof c === 'object' && c.name && c.id) uniqueMap.set(c.id, c);
+/**
+ * One filtered view of the discovery list, paged by offset.
+ *
+ * Search runs on the server: the list is paged,
+ * so filtering a page on the client would return short pages and miss every
+ * match beyond the first thirty.
+ */
+export const EXPLORE_PAGE_SIZE = 30;
+
+export function useExploreCommunities({ search = '' } = {}) {
+  const { isLoggedIn } = useAuth();
+  const q = search.trim();
+  const query = useInfiniteQuery({
+    queryKey: COMMUNITY_KEYS.explore({ search: q }),
+    queryFn: ({ pageParam = 0 }) =>
+      communitiesApi.explore({
+        search: q || undefined,
+        limit: EXPLORE_PAGE_SIZE,
+        offset: pageParam,
+      }),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, pages) =>
+      Array.isArray(lastPage) && lastPage.length === EXPLORE_PAGE_SIZE
+        ? pages.length * EXPLORE_PAGE_SIZE
+        : undefined,
+    enabled: Boolean(isLoggedIn),
+    staleTime: 60 * 1000,
+    gcTime: 10 * 60 * 1000,
+    // Keeps the current results on screen while a new search is fetched, so
+    // typing does not flash the list empty on every debounce.
+    placeholderData: (prev) => prev,
+  });
+
+  const pages = query.data?.pages;
+  const communities = useMemo(() => {
+    if (!pages) return EMPTY_COMMUNITIES;
+    const seen = new Set();
+    const out = [];
+    for (const page of pages) {
+      if (!Array.isArray(page)) continue;
+      for (const c of page) {
+        if (c?.id && !seen.has(c.id)) {
+          seen.add(c.id);
+          out.push(c);
+        }
+      }
     }
-    for (const c of campusList) {
-      if (c && typeof c === 'object' && c.name && c.id) uniqueMap.set(c.id, c);
-    }
+    return out;
+  }, [pages]);
 
-    const named = userCommunityNames || [];
-
-    return Array.from(uniqueMap.values()).filter((c) => {
-      const rawJoined = Boolean(
-        (c.ownerId && userId && c.ownerId === userId) ||
-        c.userRole === 'OWNER' ||
-        c.userRole === 'MODERATOR' ||
-        c.userRole === 'MEMBER' ||
-        (c.isJoined !== undefined && Boolean(c.isJoined)) ||
-        (c.isMember !== undefined && Boolean(c.isMember)) ||
-        (Array.isArray(c.members) && userId && c.members.some(m => (m.userId || m.id || m.user?.id) === userId)) ||
-        named.includes(c.name) ||
-        named.includes(c.id)
-      );
-
-      // An in-flight join/leave outranks whatever the cached list still says.
-      const entityKey = `joinCommunity:${c.id}`;
-      return toggleRegistry.getLatestIntent(entityKey, rawJoined);
-    });
-  }, [communities, campusCommunities, userId, userCommunityNames]);
+  return {
+    communities,
+    isLoading: query.isLoading,
+    isError: query.isError,
+    isFetching: query.isFetching,
+    isPlaceholderData: query.isPlaceholderData,
+    hasNextPage: Boolean(query.hasNextPage),
+    isFetchingNextPage: query.isFetchingNextPage,
+    fetchNextPage: query.fetchNextPage,
+    refetch: query.refetch,
+  };
 }
 
 /**

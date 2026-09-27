@@ -19,6 +19,10 @@
 }
 
 .communitiesHeader {
+  width: 100%;
+  border: none;
+  background: none;
+  text-align: left;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -96,20 +100,6 @@
 
 .communityItem:active {
   background: var(--color-border-light);
-}
-
-.communityAvatar {
-  composes: ui-avatar from global;
-  width: 28px;
-  height: 28px;
-  color: white;
-  font-size: 0.8rem;
-  font-weight: 700;
-  flex-shrink: 0;
-}
-
-.communityAvatar img {
-  border-radius: 50%;
 }
 
 .emptyCommunities {
