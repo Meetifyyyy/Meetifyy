@@ -1,4 +1,12 @@
 import { MediaCleanupService } from './media-cleanup.service';
+import { stub } from '../common/testing/stub';
+import type { PrismaService } from '../prisma/prisma.service';
+import type { StorageProvider } from './providers/storage-provider.interface';
+
+/** The `where` a column check sends: one `contains` clause per column. */
+type ColumnWhere = {
+  OR?: { avatar?: { contains: string }; cover?: { contains: string } }[];
+};
 
 /**
  * Replacement cleanup has to reason about a *family* of files, not one key.
@@ -12,8 +20,7 @@ import { MediaCleanupService } from './media-cleanup.service';
  * live entity images had no thumbnail as a result.
  */
 describe('media replacement — derived variants', () => {
-  let prisma: any;
-  let storage: any;
+  let storage: Pick<StorageProvider, 'delete'>;
   let service: MediaCleanupService;
   let deleted: string[];
 
@@ -21,39 +28,40 @@ describe('media replacement — derived variants', () => {
     opts: { referenced?: string[]; owned?: string[] } = {},
   ) => {
     deleted = [];
-    const referenced = new Set(opts.referenced ?? []);
-    prisma = {
+    const referenced = new Set<string | undefined>(opts.referenced ?? []);
+    const prisma = stub<PrismaService>({
       user: {
-        findFirst: ({ where }: any) => {
+        findFirst: jest.fn(({ where }: { where: ColumnWhere }) => {
           const keys = (where.OR || []).map(
-            (c: any) => c.avatar?.contains ?? c.cover?.contains,
+            (c) => c.avatar?.contains ?? c.cover?.contains,
           );
           return Promise.resolve(
-            keys.some((k: string) => referenced.has(k)) ? { id: 'u1' } : null,
+            keys.some((k) => referenced.has(k)) ? { id: 'u1' } : null,
           );
-        },
+        }),
       },
-      community: { findFirst: () => Promise.resolve(null) },
-      conversation: { findFirst: () => Promise.resolve(null) },
-      crewActivity: { findFirst: () => Promise.resolve(null) },
-      campusEvent: { findFirst: () => Promise.resolve(null) },
-      college: { findFirst: () => Promise.resolve(null) },
+      community: { findFirst: jest.fn(() => Promise.resolve(null)) },
+      conversation: { findFirst: jest.fn(() => Promise.resolve(null)) },
+      crewActivity: { findFirst: jest.fn(() => Promise.resolve(null)) },
+      campusEvent: { findFirst: jest.fn(() => Promise.resolve(null)) },
+      college: { findFirst: jest.fn(() => Promise.resolve(null)) },
       media: {
-        findFirst: () => Promise.resolve(null),
-        findMany: () =>
+        findFirst: jest.fn(() => Promise.resolve(null)),
+        findMany: jest.fn(() =>
           Promise.resolve(
             (opts.owned ?? []).map((objectKey) => ({ objectKey })),
           ),
-        deleteMany: () => Promise.resolve({ count: 1 }),
+        ),
+        deleteMany: jest.fn(() => Promise.resolve({ count: 1 })),
       },
-    };
+    });
     storage = {
       delete: (key: string) => {
         deleted.push(key);
         return Promise.resolve(true);
       },
     };
-    service = new MediaCleanupService(prisma, storage);
+    service = new MediaCleanupService(prisma, stub<StorageProvider>(storage));
     return service;
   };
 
@@ -220,14 +228,21 @@ describe('media replacement — derived variants', () => {
  */
 describe('replaceEntityMedia — the shared guard', () => {
   let service: MediaCleanupService;
-  let handled: any[];
+  let handled: Parameters<MediaCleanupService['handleMediaReplacement']>[];
+  let replacement: jest.SpyInstance<
+    ReturnType<MediaCleanupService['handleMediaReplacement']>,
+    Parameters<MediaCleanupService['handleMediaReplacement']>
+  >;
 
   beforeEach(() => {
-    service = new MediaCleanupService({} as any, {} as any);
+    service = new MediaCleanupService(
+      stub<PrismaService>(),
+      stub<StorageProvider>(),
+    );
     handled = [];
-    jest
+    replacement = jest
       .spyOn(service, 'handleMediaReplacement')
-      .mockImplementation((...args: any[]) => {
+      .mockImplementation((...args) => {
         handled.push(args);
         return Promise.resolve({
           success: true,
@@ -238,7 +253,11 @@ describe('replaceEntityMedia — the shared guard', () => {
       });
   });
 
-  const call = (over: any = {}) =>
+  const call = (
+    over: Partial<
+      Parameters<MediaCleanupService['replaceEntityMedia']>[0]
+    > = {},
+  ) =>
     service.replaceEntityMedia({
       entityType: 'USER_AVATAR',
       entityId: 'u1',
@@ -276,9 +295,7 @@ describe('replaceEntityMedia — the shared guard', () => {
   });
 
   it('never throws out of a successful save', () => {
-    (service.handleMediaReplacement as jest.Mock).mockRejectedValue(
-      new Error('storage exploded'),
-    );
+    replacement.mockRejectedValue(new Error('storage exploded'));
     // It is called after the database update has already committed, so a
     // failure here must not surface as a failed save.
     expect(() => call()).not.toThrow();
@@ -295,29 +312,30 @@ describe('replaceEntityMedia — the shared guard', () => {
 describe('verification documents are never collectable', () => {
   const build = (opts: { selfie?: boolean; idCard?: boolean }) => {
     const none = () => Promise.resolve(null);
-    const prisma: any = {
-      user: { findFirst: none },
-      community: { findFirst: none },
-      conversation: { findFirst: none },
-      crewActivity: { findFirst: none },
-      campusEvent: { findFirst: none },
-      college: { findFirst: none },
+    const prisma = stub<PrismaService>({
+      user: { findFirst: jest.fn(none) },
+      community: { findFirst: jest.fn(none) },
+      conversation: { findFirst: jest.fn(none) },
+      crewActivity: { findFirst: jest.fn(none) },
+      campusEvent: { findFirst: jest.fn(none) },
+      college: { findFirst: jest.fn(none) },
       media: {
-        findFirst: ({ where }: any) => {
-          const wants = (where.OR || []).map((c: any) => Object.keys(c)[0]);
+        findFirst: jest.fn(({ where }: { where: { OR?: object[] } }) => {
+          const wants = (where.OR || []).map((c) => Object.keys(c)[0]);
           if (opts.selfie && wants.includes('verificationSelfies'))
             return Promise.resolve({ id: 'm1' });
           if (opts.idCard && wants.includes('verificationIdCards'))
             return Promise.resolve({ id: 'm1' });
           return Promise.resolve(null);
-        },
-        findMany: () => Promise.resolve([]),
-        deleteMany: () => Promise.resolve({ count: 0 }),
+        }),
+        findMany: jest.fn(() => Promise.resolve([])),
+        deleteMany: jest.fn(() => Promise.resolve({ count: 0 })),
       },
-    };
-    return new MediaCleanupService(prisma, {
-      delete: () => Promise.resolve(true),
-    } as any);
+    });
+    return new MediaCleanupService(
+      prisma,
+      stub<StorageProvider>({ delete: () => Promise.resolve(true) }),
+    );
   };
 
   it('protects a document attached as a selfie', async () => {
@@ -358,12 +376,18 @@ describe('externally hosted media is never mistaken for a storage key', () => {
   ];
 
   it.each(external)('returns no storage key for %s', (url) => {
-    const service = new MediaCleanupService({} as any, {} as any);
+    const service = new MediaCleanupService(
+      stub<PrismaService>(),
+      stub<StorageProvider>(),
+    );
     expect(service.extractStorageKey(url)).toBeNull();
   });
 
   it('still resolves our own media URLs', () => {
-    const service = new MediaCleanupService({} as any, {} as any);
+    const service = new MediaCleanupService(
+      stub<PrismaService>(),
+      stub<StorageProvider>(),
+    );
     expect(service.extractStorageKey('/api/media/avatars/abc.webp')).toBe(
       'avatars/abc.webp',
     );

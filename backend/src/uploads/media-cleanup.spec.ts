@@ -1,44 +1,53 @@
 import { MediaCleanupService } from './media-cleanup.service';
+import { stub } from '../common/testing/stub';
+import type { PrismaService } from '../prisma/prisma.service';
+import type { StorageProvider } from './providers/storage-provider.interface';
 
 describe('MediaCleanupService', () => {
   let service: MediaCleanupService;
-  let mockPrisma: any;
-  let mockStorageProvider: any;
+  let mockPrisma: ReturnType<typeof makePrisma>;
+  let mockStorageProvider: ReturnType<typeof makeStorage>;
+
+  const makeStorage = () => ({
+    delete: jest.fn().mockResolvedValue(true),
+    list: jest.fn().mockResolvedValue([]),
+  });
+
+  const makePrisma = () => ({
+    user: {
+      findFirst: jest.fn().mockResolvedValue(null),
+      findUnique: jest.fn().mockResolvedValue(null),
+    },
+    community: {
+      findFirst: jest.fn().mockResolvedValue(null),
+    },
+    conversation: {
+      findFirst: jest.fn().mockResolvedValue(null),
+    },
+    crewActivity: {
+      findFirst: jest.fn().mockResolvedValue(null),
+    },
+    campusEvent: {
+      findFirst: jest.fn().mockResolvedValue(null),
+    },
+    college: {
+      findFirst: jest.fn().mockResolvedValue(null),
+    },
+    media: {
+      findFirst: jest.fn().mockResolvedValue(null),
+      findMany: jest.fn().mockResolvedValue([]),
+      deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
+    },
+  });
 
   beforeEach(() => {
-    mockStorageProvider = {
-      delete: jest.fn().mockResolvedValue(true),
-      list: jest.fn().mockResolvedValue([]),
-    };
+    mockStorageProvider = makeStorage();
+    mockPrisma = makePrisma();
 
-    mockPrisma = {
-      user: {
-        findFirst: jest.fn().mockResolvedValue(null),
-        findUnique: jest.fn().mockResolvedValue(null),
-      },
-      community: {
-        findFirst: jest.fn().mockResolvedValue(null),
-      },
-      conversation: {
-        findFirst: jest.fn().mockResolvedValue(null),
-      },
-      crewActivity: {
-        findFirst: jest.fn().mockResolvedValue(null),
-      },
-      campusEvent: {
-        findFirst: jest.fn().mockResolvedValue(null),
-      },
-      college: {
-        findFirst: jest.fn().mockResolvedValue(null),
-      },
-      media: {
-        findFirst: jest.fn().mockResolvedValue(null),
-        findMany: jest.fn().mockResolvedValue([]),
-        deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
-      },
-    };
-
-    service = new MediaCleanupService(mockPrisma, mockStorageProvider);
+    service = new MediaCleanupService(
+      stub<PrismaService>(mockPrisma),
+      stub<StorageProvider>(mockStorageProvider),
+    );
   });
 
   describe('extractStorageKey', () => {
@@ -222,18 +231,22 @@ describe('MediaCleanupService', () => {
       const newAvatar = 'avatars/new-unique-avatar.webp';
 
       // Simulate that user-1 is still using dual-use-image as their cover!
-      mockPrisma.user.findFirst.mockImplementation(({ where }: any) => {
-        // where has OR: [{ avatar: { contains: ... }, id: { not: 'user-1' } }, { cover: { contains: ... } }]
-        // Since cover is checked for all users, it should match user-1's cover
-        if (
-          where.OR?.some(
-            (cond: any) => cond.cover?.contains === sharedUserImage,
-          )
-        ) {
-          return Promise.resolve({ id: 'user-1' });
-        }
-        return Promise.resolve(null);
-      });
+      mockPrisma.user.findFirst.mockImplementation(
+        ({
+          where,
+        }: {
+          where: { OR?: { cover?: { contains?: string } }[] };
+        }) => {
+          // where has OR: [{ avatar: { contains: ... }, id: { not: 'user-1' } }, { cover: { contains: ... } }]
+          // Since cover is checked for all users, it should match user-1's cover
+          if (
+            where.OR?.some((cond) => cond.cover?.contains === sharedUserImage)
+          ) {
+            return Promise.resolve({ id: 'user-1' });
+          }
+          return Promise.resolve(null);
+        },
+      );
 
       const res = await service.handleMediaReplacement(
         'USER_AVATAR',
@@ -251,16 +264,22 @@ describe('MediaCleanupService', () => {
       const sharedCommImage = 'community-icons/dual-comm.webp';
       const newCommAvatar = 'community-icons/new-comm-avatar.webp';
 
-      mockPrisma.community.findFirst.mockImplementation(({ where }: any) => {
-        if (
-          where.OR?.some(
-            (cond: any) => cond.coverKey?.contains === sharedCommImage,
-          )
-        ) {
-          return Promise.resolve({ id: 'comm-1' });
-        }
-        return Promise.resolve(null);
-      });
+      mockPrisma.community.findFirst.mockImplementation(
+        ({
+          where,
+        }: {
+          where: { OR?: { coverKey?: { contains?: string } }[] };
+        }) => {
+          if (
+            where.OR?.some(
+              (cond) => cond.coverKey?.contains === sharedCommImage,
+            )
+          ) {
+            return Promise.resolve({ id: 'comm-1' });
+          }
+          return Promise.resolve(null);
+        },
+      );
 
       const res = await service.handleMediaReplacement(
         'COMMUNITY_AVATAR',
