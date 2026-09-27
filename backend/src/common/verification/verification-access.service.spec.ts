@@ -1,32 +1,45 @@
 import { ForbiddenException } from '@nestjs/common';
 import { VerificationStatus } from '@prisma/client';
 import { VerificationAccessService } from './verification-access.service';
+import { stub } from '../testing/stub';
+import type { PrismaService } from '../../prisma/prisma.service';
+import type { DomainEventService } from '../../events/domain-event.service';
+
+/** The Prisma surface the eligibility checks read. */
+const makePrisma = () => ({
+  user: { findMany: jest.fn(), findUnique: jest.fn() },
+  conversationParticipant: {
+    findMany: jest.fn((): Promise<unknown[]> => Promise.resolve([])),
+  },
+});
 
 describe('VerificationAccessService', () => {
   const originalFlag = process.env.FEATURE_VERIFICATION_ENABLED;
-  let prisma: any;
-  let domainEvents: any;
+  let prisma: ReturnType<typeof makePrisma>;
+  let domainEvents: { emit: jest.Mock };
   let service: VerificationAccessService;
 
   const seed = (
     rows: { id: string; verificationStatus: VerificationStatus }[],
   ) => {
-    prisma.user.findMany.mockImplementation(({ where }: any) =>
-      Promise.resolve(rows.filter((r) => where.id.in.includes(r.id))),
+    prisma.user.findMany.mockImplementation(
+      ({ where }: { where: { id: { in: string[] } } }) =>
+        Promise.resolve(rows.filter((r) => where.id.in.includes(r.id))),
     );
-    prisma.user.findUnique.mockImplementation(({ where }: any) =>
-      Promise.resolve(rows.find((r) => r.id === where.id) || null),
+    prisma.user.findUnique.mockImplementation(
+      ({ where }: { where: { id: string } }) =>
+        Promise.resolve(rows.find((r) => r.id === where.id) || null),
     );
   };
 
   beforeEach(() => {
     delete process.env.FEATURE_VERIFICATION_ENABLED;
-    prisma = {
-      user: { findMany: jest.fn(), findUnique: jest.fn() },
-      conversationParticipant: { findMany: jest.fn(() => Promise.resolve([])) },
-    };
+    prisma = makePrisma();
     domainEvents = { emit: jest.fn(async () => {}) };
-    service = new VerificationAccessService(prisma, domainEvents);
+    service = new VerificationAccessService(
+      stub<PrismaService>(prisma),
+      stub<DomainEventService>(domainEvents),
+    );
     // The status cache is process-level by design, so each case starts clean.
     service.invalidateAll();
   });
@@ -140,7 +153,7 @@ describe('VerificationAccessService', () => {
  * pin the invalidation, not just the hit rate.
  */
 describe('VerificationAccessService — status cache', () => {
-  let prisma: any;
+  let prisma: ReturnType<typeof makePrisma>;
   let service: VerificationAccessService;
 
   const setStatus = (status: VerificationStatus) => {
@@ -155,11 +168,11 @@ describe('VerificationAccessService — status cache', () => {
 
   beforeEach(() => {
     delete process.env.FEATURE_VERIFICATION_ENABLED;
-    prisma = {
-      user: { findMany: jest.fn(), findUnique: jest.fn() },
-      conversationParticipant: { findMany: jest.fn(() => Promise.resolve([])) },
-    };
-    service = new VerificationAccessService(prisma, { emit: jest.fn() } as any);
+    prisma = makePrisma();
+    service = new VerificationAccessService(
+      stub<PrismaService>(prisma),
+      stub<DomainEventService>({ emit: jest.fn() }),
+    );
     service.invalidateAll();
   });
 

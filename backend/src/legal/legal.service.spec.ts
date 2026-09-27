@@ -1,5 +1,20 @@
 import { LegalService } from './legal.service';
 import { LegalConsentService } from '../common/legal/legal-consent.service';
+import { stub } from '../common/testing/stub';
+import type { PrismaService } from '../prisma/prisma.service';
+
+/** An acknowledgement row as the fake stores it. */
+type AckRow = {
+  userId: string;
+  versionId: string;
+  versionNumber?: number;
+  documentType?: string;
+  userAgent?: string;
+  acknowledgedAt?: Date;
+};
+
+/** The per-user acknowledgement lookup. */
+type AckQuery = { where: { userId: string; versionId: { in: string[] } } };
 
 /**
  * Recording consent.
@@ -28,29 +43,31 @@ describe('LegalService — acknowledgement', () => {
     versionNumber: 2,
   };
 
-  let prisma: any;
   let consent: LegalConsentService;
   let service: LegalService;
-  let required: any[];
-  let acks: any[];
+  let required: (typeof TERMS_V4)[];
+  let acks: AckRow[];
 
   beforeEach(() => {
     required = [TERMS_V4];
     acks = [];
-    prisma = {
+    const prisma = stub<PrismaService>({
       legalDocumentVersion: {
-        findMany: jest.fn(({ where }: any) => {
-          if (where?.id?.in) {
-            return Promise.resolve(
-              required.filter((v) => where.id.in.includes(v.id)),
-            );
-          }
-          return Promise.resolve(required);
-        }),
+        findMany: jest.fn(
+          ({ where }: { where?: { id?: { in?: string[] } } }) => {
+            const ids = where?.id?.in;
+            if (ids) {
+              return Promise.resolve(
+                required.filter((v) => ids.includes(v.id)),
+              );
+            }
+            return Promise.resolve(required);
+          },
+        ),
         findFirst: jest.fn(() => Promise.resolve(required[0] ?? null)),
       },
       legalAcknowledgement: {
-        findMany: jest.fn(({ where }: any) =>
+        findMany: jest.fn(({ where }: AckQuery) =>
           Promise.resolve(
             acks.filter(
               (a) =>
@@ -59,7 +76,7 @@ describe('LegalService — acknowledgement', () => {
             ),
           ),
         ),
-        count: jest.fn(({ where }: any) =>
+        count: jest.fn(({ where }: AckQuery) =>
           Promise.resolve(
             acks.filter(
               (a) =>
@@ -69,7 +86,7 @@ describe('LegalService — acknowledgement', () => {
           ),
         ),
         // Mirrors `skipDuplicates` on the (userId, versionId) unique index.
-        createMany: jest.fn(({ data }: any) => {
+        createMany: jest.fn(({ data }: { data: AckRow[] }) => {
           let created = 0;
           for (const row of data) {
             const clash = acks.some(
@@ -83,7 +100,7 @@ describe('LegalService — acknowledgement', () => {
           return Promise.resolve({ count: created });
         }),
       },
-    };
+    });
     consent = new LegalConsentService(prisma);
     service = new LegalService(prisma, consent);
   });
