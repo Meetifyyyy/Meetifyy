@@ -1,12 +1,15 @@
 .searchShell {
+  /* Full height below the 60px app header, not just as tall as the results.
+     Phones get their height from `.centre--sheet` in global.css instead. */
+  min-height: calc(100dvh - 60px - 0.5rem); /* ends where Messages does */
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   width: 100%;
   max-width: 100%;
-  margin: 0 auto;
-  /* Clears the fixed BottomNav from inside the sheet, so the sheet's own
-     background still runs behind the nav (see .centre--sheet in global.css). */
-  padding-bottom: 60px;
+  margin: 0 auto 0.5rem;
+  /* No BottomNav on /search (DashboardLayoutWrapper does not render it), so
+     nothing to clear here; `.resultsList` keeps the home-indicator inset. */
   background: var(--color-bg-white);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-xl);
@@ -71,7 +74,7 @@
 .searchPill:focus-within {
   border-color: var(--color-primary);
   background: #FFFFFF !important;
-  box-shadow: 0 0 0 4px rgba(var(--color-primary-rgb), 0.1);
+  box-shadow: none;
 }
 
 :global([data-theme="dark"]) .searchPill:focus-within {
@@ -536,9 +539,14 @@
 /* ─── Mobile: full-bleed, full-height ────────────────────────────────────── */
 @media (max-width: 768px) {
   .searchShell {
+    flex: 1;
+    height: 100%;
+    min-height: 0;
     border: none;
     border-radius: 0;
     box-shadow: none;
+    margin: 0;
+    overflow: hidden;
   }
 
   .header {
@@ -555,6 +563,13 @@
   .resultsList {
     padding: 0.5rem 0.6rem;
     padding-bottom: calc(0.5rem + env(safe-area-inset-bottom));
+  }
+
+  .body {
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
   }
 
   .resultCard {
@@ -586,12 +601,6 @@
   }
 }
 
-@media (min-width: 1280px) {
-  .searchShell {
-    max-width: 720px;
-    margin: 0 auto;
-  }
-}
 
 /* Large devices already have the live search bar in the header (GlobalSearch) —
    a second search box + back button on this page is redundant, so drop it and

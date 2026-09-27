@@ -8,7 +8,7 @@ import { CollegeRepresentativeBadge } from '@shared/components/badges/CollegeRep
 import { isImageUrl } from '@shared/utils/avatar';
 import { getProcessedAvatarUrl } from '@shared/components/avatar/Avatar';
 import Skeleton from '@shared/components/skeletons/Skeleton';
-import RightPanel, { NotificationsActivity, OnlineFriends, UpcomingEvents } from '@layout/RightPanel';
+import SearchLayout from '../components/SearchLayout';
 import FollowButton from '@shared/components/ui/FollowButton';
 import { useCrewActivities } from '@shared/hooks/useCrew';
 import { useDebouncedState } from '@shared/hooks/useDebounce';
@@ -338,7 +338,7 @@ export default function SearchResultsRoute() {
 
   return (
     <>
-      <main ref={containerRef} className="centre centre--sheet animate-in">
+      <SearchLayout section={activeChip} mainRef={containerRef}>
         <div className={styles.searchShell}>
         {/* Sticky Search Header */}
         <div className={styles.header} role="search">
@@ -506,12 +506,7 @@ export default function SearchResultsRoute() {
           )}
         </div>
       </div>
-      </main>
-      <RightPanel className="animate-in">
-        <OnlineFriends />
-        <NotificationsActivity />
-        <UpcomingEvents />
-      </RightPanel>
+      </SearchLayout>
     </>
   );
 }
