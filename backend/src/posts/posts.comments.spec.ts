@@ -16,11 +16,24 @@ describe('PostsService — comments', () => {
   const POST = 'post-1';
   const AUTHOR = 'user-1';
 
-  let service: PostsService;
-  let prisma: any;
-  let comments: Record<string, any>;
+  /** A comment row as the comment paths read it. */
+  type CommentRow = {
+    id: string;
+    postId: string;
+    parentId: string | null;
+    authorId: string;
+    text: string;
+    isDeleted: boolean;
+    likeCount: number;
+    createdAt: Date;
+    _count?: { replies: number };
+  };
 
-  const comment = (id: string, over: any = {}) => ({
+  let service: PostsService;
+  let prisma: ReturnType<typeof makePrisma>;
+  let comments: Record<string, CommentRow>;
+
+  const comment = (id: string, over: Partial<CommentRow> = {}): CommentRow => ({
     id,
     postId: POST,
     parentId: null,
@@ -32,9 +45,8 @@ describe('PostsService — comments', () => {
     ...over,
   });
 
-  beforeEach(async () => {
-    comments = {};
-    prisma = {
+  const makePrisma = () => {
+    const prisma = {
       post: {
         findUnique: jest.fn(() =>
           Promise.resolve({
@@ -46,25 +58,36 @@ describe('PostsService — comments', () => {
         update: jest.fn(() => Promise.resolve({})),
       },
       comment: {
-        findUnique: jest.fn(({ where }: any) =>
-          Promise.resolve(comments[where.id] ?? null),
+        findUnique: jest.fn(
+          ({ where }: { where: { id: string } }): Promise<CommentRow | null> =>
+            Promise.resolve(comments[where.id] ?? null),
         ),
-        create: jest.fn(({ data }: any) =>
+        create: jest.fn(({ data }: { data: { authorId: string } }) =>
           Promise.resolve({
             ...comment('new'),
             ...data,
             author: { id: data.authorId, username: 'u' },
           }),
         ),
-        update: jest.fn(({ data }: any) => Promise.resolve({ ...data })),
+        update: jest.fn(({ data }: { data: Partial<CommentRow> }) =>
+          Promise.resolve({ ...data }),
+        ),
         findMany: jest.fn(() => Promise.resolve([])),
       },
       commentLike: {
         deleteMany: jest.fn(() => Promise.resolve({ count: 0 })),
         findMany: jest.fn(() => Promise.resolve([])),
       },
-      $transaction: jest.fn((fn: any) => Promise.resolve(fn(prisma))),
+      $transaction: jest.fn((fn: (tx: unknown) => unknown): Promise<unknown> =>
+        Promise.resolve(fn(prisma)),
+      ),
     };
+    return prisma;
+  };
+
+  beforeEach(async () => {
+    comments = {};
+    prisma = makePrisma();
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -98,7 +121,7 @@ describe('PostsService — comments', () => {
           provide: RedisService,
           useValue: {
             getClient: () => null,
-            withLock: (_k: string, _t: number, fn: any) => fn(),
+            withLock: (_k: string, _t: number, fn: () => unknown) => fn(),
           },
         },
         {
@@ -161,8 +184,9 @@ describe('PostsService — comments', () => {
   describe('deleting', () => {
     const withReplies = (n: number) => {
       comments['c1'] = { ...comment('c1'), _count: { replies: n } };
-      prisma.comment.findUnique = jest.fn(() =>
-        Promise.resolve(comments['c1']),
+      prisma.comment.findUnique = jest.fn(
+        (_query: { where: { id: string } }): Promise<CommentRow | null> =>
+          Promise.resolve(comments['c1']),
       );
     };
 
@@ -199,8 +223,8 @@ describe('PostsService — comments', () => {
   });
 
   describe('tombstone pruning', () => {
-    const prune = (rows: any[]) =>
-      (service as any).pruneEmptyTombstones(rows).map((c: any) => c.id);
+    const prune = (rows: CommentRow[]) =>
+      service['pruneEmptyTombstones'](rows).map((c) => c.id);
 
     it('drops a deleted leaf', () => {
       expect(prune([comment('a'), comment('b', { isDeleted: true })])).toEqual([
