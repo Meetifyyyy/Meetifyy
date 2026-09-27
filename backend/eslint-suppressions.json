@@ -352,23 +352,6 @@
       "count": 1
     }
   },
-  "src/auth/auth-public-proxies.spec.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 9
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 12
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 4
-    },
-    "@typescript-eslint/no-unsafe-call": {
-      "count": 11
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 27
-    }
-  },
   "src/auth/auth-ratelimit-wiring.spec.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 3
@@ -1401,23 +1384,6 @@
       "count": 5
     }
   },
-  "src/share/share.controller.spec.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 10
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 15
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 9
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 28
-    },
-    "@typescript-eslint/no-unsafe-return": {
-      "count": 5
-    }
-  },
   "src/share/share.routes.spec.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 4
@@ -1643,23 +1609,6 @@
       "count": 2
     },
     "@typescript-eslint/no-unsafe-member-access": {
-      "count": 3
-    }
-  },
-  "src/users/blocking-directional-profile.spec.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 4
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 17
-    },
-    "@typescript-eslint/no-unsafe-call": {
-      "count": 14
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 27
-    },
-    "@typescript-eslint/no-unsafe-return": {
       "count": 3
     }
   },

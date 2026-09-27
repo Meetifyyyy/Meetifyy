@@ -4,6 +4,17 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
+import { stub } from '../common/testing/stub';
+import type { AuthenticatedUser } from '../common/types/authenticated-request';
+import type { PrismaService } from '../prisma/prisma.service';
+import type {
+  SupabaseAuthClient,
+  SupabaseService,
+} from '../supabase/supabase.service';
+import type { DefaultAssetsService } from '../uploads/default-assets.service';
+import type { DomainValidatorService } from '../common/services/domain-validator.service';
+import type { StudentYearPolicyService } from '../common/student-year/student-year-policy.service';
+import type { LegalConsentService } from '../common/legal/legal-consent.service';
 
 /**
  * The auth calls that used to be made from the browser.
@@ -15,47 +26,73 @@ import { AuthService } from './auth.service';
  * possible, and it introduces one hazard that has to be pinned down: which
  * Supabase key the calls are made with.
  */
+type SignUpCredentials = { email: string; password: string; options?: unknown };
+type ResetOptions = { redirectTo?: string };
+
+const makeAnonAuth = () => ({
+  signUp: jest.fn<Promise<unknown>, [SignUpCredentials]>(),
+  resend: jest
+    .fn<Promise<unknown>, [unknown]>()
+    .mockResolvedValue({ error: null }),
+  resetPasswordForEmail: jest
+    .fn<Promise<unknown>, [string, ResetOptions]>()
+    .mockResolvedValue({ error: null }),
+});
+
+const makeAdminAuth = () => ({
+  signUp: jest.fn<Promise<unknown>, [SignUpCredentials]>(),
+  resend: jest.fn<Promise<unknown>, [unknown]>(),
+  resetPasswordForEmail: jest.fn<Promise<unknown>, [string, ResetOptions]>(),
+  signInWithPassword: jest.fn<Promise<unknown>, [unknown]>(),
+  admin: {
+    signOut: jest.fn<Promise<unknown>, [string, string?]>().mockResolvedValue({
+      error: null,
+    }),
+  },
+});
+
 describe('the public auth proxies', () => {
-  let prisma: any;
-  let supabaseService: any;
-  let anonAuth: any;
-  let adminAuth: any;
+  let prisma: {
+    user: { findFirst: jest.Mock<Promise<{ id: string } | null>, [unknown]> };
+  };
+  let anonAuth: ReturnType<typeof makeAnonAuth>;
+  let adminAuth: ReturnType<typeof makeAdminAuth>;
   let service: AuthService;
 
   const build = ({ anonConfigured = true } = {}) => {
-    anonAuth = {
-      signUp: jest.fn(),
-      resend: jest.fn().mockResolvedValue({ error: null }),
-      resetPasswordForEmail: jest.fn().mockResolvedValue({ error: null }),
-    };
-    adminAuth = {
-      signUp: jest.fn(),
-      resend: jest.fn(),
-      resetPasswordForEmail: jest.fn(),
-      signInWithPassword: jest.fn(),
-      admin: { signOut: jest.fn().mockResolvedValue({ error: null }) },
-    };
+    anonAuth = makeAnonAuth();
+    adminAuth = makeAdminAuth();
 
-    prisma = { user: { findFirst: jest.fn().mockResolvedValue({ id: 'u1' }) } };
-    supabaseService = {
+    prisma = {
+      user: {
+        findFirst: jest
+          .fn<Promise<{ id: string } | null>, [unknown]>()
+          .mockResolvedValue({ id: 'u1' }),
+      },
+    };
+    const supabaseService = stub<SupabaseService>({
       isConfigured: true,
       isAnonConfigured: anonConfigured,
-      client: { auth: adminAuth },
+      client: stub<SupabaseAuthClient>({
+        auth: stub<SupabaseAuthClient['auth']>(adminAuth),
+      }),
       get anonClient() {
         if (!anonConfigured) {
           throw new Error('Supabase anon client is not initialized.');
         }
-        return { auth: anonAuth };
+        return stub<SupabaseAuthClient>({
+          auth: stub<SupabaseAuthClient['auth']>(anonAuth),
+        });
       },
-    };
+    });
 
     service = new AuthService(
-      prisma,
+      stub<PrismaService>(prisma),
       supabaseService,
-      {} as any, // domainValidatorService
-      {} as any, // defaultAssets
-      {} as any, // studentYearPolicy
-      {} as any, // legalConsent
+      stub<DomainValidatorService>(),
+      stub<DefaultAssetsService>(),
+      stub<StudentYearPolicyService>(),
+      stub<LegalConsentService>(),
     );
   };
 
@@ -187,7 +224,7 @@ describe('the public auth proxies', () => {
   });
 
   describe('current-password verification', () => {
-    const caller: any = {
+    const caller: AuthenticatedUser = {
       id: 'u1',
       email: 'student@college.edu',
       user_metadata: {},
