@@ -1,5 +1,8 @@
+import type { RateLimiterRedis } from 'rate-limiter-flexible';
 import { RateLimitService } from './rate-limit.service';
-import { RedisService } from '../../redis/redis.service';
+import type { RedisService } from '../../redis/redis.service';
+import type { RateLimitPolicy } from '../../config/rate-limit.config';
+import { stub } from '../testing/stub';
 
 /**
  * These run against the in-memory fallback path (no Redis client), which is
@@ -7,7 +10,7 @@ import { RedisService } from '../../redis/redis.service';
  * before Redis finished connecting — except that it enforced nothing.
  */
 function serviceWithoutRedis(): RateLimitService {
-  const redis = { getClient: () => null } as unknown as RedisService;
+  const redis = stub<RedisService>({ getClient: () => null });
   return new RateLimitService(redis);
 }
 
@@ -131,16 +134,16 @@ describe('RateLimitService', () => {
     });
 
     it('recovers to the shared store once Redis connects', async () => {
-      let client: any = null;
-      const svc = new RateLimitService({
-        getClient: () => client,
-      } as unknown as RedisService);
+      let client: object | null = null;
+      const svc = new RateLimitService(
+        stub<RedisService>({ getClient: jest.fn(() => client) }),
+      );
 
       await svc.consume('global.user', 'user-1');
 
       // A client appearing later must be picked up; the old guards could not.
       client = { fake: true };
-      const built = (svc as any).limiterFor('global.user', {
+      const built = svc['limiterFor']('global.user', {
         points: 300,
         duration: 60,
         dimension: 'user',
@@ -157,17 +160,15 @@ describe('RateLimitService', () => {
      * request; policies marked `closed` must keep counting instead.
      */
     it('keeps enforcing a sensitive policy when the store throws', async () => {
-      const exploding = {
-        getClient: () => ({}),
-      } as unknown as RedisService;
+      const exploding = stub<RedisService>({ getClient: jest.fn(() => ({})) });
       const svc = new RateLimitService(exploding);
 
       // Force the Redis-backed limiter to fail on every call.
-      (svc as any).limiters.set('auth.login.ip', {
+      svc['limiters'].set('auth.login.ip', {
         redisBacked: true,
-        limiter: {
+        limiter: stub<RateLimiterRedis>({
           consume: () => Promise.reject(new Error('ECONNRESET')),
-        },
+        }),
       });
 
       const id = `store-fail-${Math.random()}`;
@@ -182,13 +183,15 @@ describe('RateLimitService', () => {
     });
 
     it('allows a read policy through when the store throws', async () => {
-      const svc = new RateLimitService({
-        getClient: () => ({}),
-      } as unknown as RedisService);
+      const svc = new RateLimitService(
+        stub<RedisService>({ getClient: jest.fn(() => ({})) }),
+      );
 
-      (svc as any).limiters.set('global.user', {
+      svc['limiters'].set('global.user', {
         redisBacked: true,
-        limiter: { consume: () => Promise.reject(new Error('ECONNRESET')) },
+        limiter: stub<RateLimiterRedis>({
+          consume: () => Promise.reject(new Error('ECONNRESET')),
+        }),
       });
 
       const d = await svc.consume('global.user', 'reader');
@@ -200,9 +203,9 @@ describe('RateLimitService', () => {
   describe('identifier hashing', () => {
     it('never puts a raw address or email in the key', () => {
       const svc = serviceWithoutRedis();
-      const key = (svc as any).buildKey(
+      const key = svc['buildKey'](
         'support.request.email',
-        { dimension: 'account' },
+        stub<RateLimitPolicy>({ dimension: 'account' }),
         'student@example.edu',
       );
 
@@ -222,9 +225,9 @@ describe('RateLimitService', () => {
 
     it('leaves internal ids readable, since they are already in the logs', () => {
       const svc = serviceWithoutRedis();
-      const key = (svc as any).buildKey(
+      const key = svc['buildKey'](
         'global.user',
-        { dimension: 'user' },
+        stub<RateLimitPolicy>({ dimension: 'user' }),
         'user-abc-123',
       );
       expect(key).toContain('user-abc-123');
@@ -242,7 +245,7 @@ describe('RateLimitService', () => {
       const svc = serviceWithoutRedis();
       const lines: string[] = [];
       jest
-        .spyOn((svc as any).logger, 'warn')
+        .spyOn(svc['logger'], 'warn')
         .mockImplementation((m: unknown) => lines.push(String(m)));
 
       // One user hits the wall repeatedly.
@@ -255,7 +258,14 @@ describe('RateLimitService', () => {
 
       const subjects = lines
         .filter((l) => l.includes('ratelimit.rejected'))
-        .map((l) => JSON.parse(l.replace('ratelimit.rejected ', '')).subject);
+        .map(
+          (l) =>
+            (
+              JSON.parse(l.replace('ratelimit.rejected ', '')) as {
+                subject: string;
+              }
+            ).subject,
+        );
 
       // Three distinct subjects, one of them dominating the count.
       const distinct = new Set(subjects);
@@ -271,7 +281,7 @@ describe('RateLimitService', () => {
       const svc = serviceWithoutRedis();
       const lines: string[] = [];
       jest
-        .spyOn((svc as any).logger, 'warn')
+        .spyOn(svc['logger'], 'warn')
         .mockImplementation((m: unknown) => lines.push(String(m)));
 
       const email = 'student@example.edu';
