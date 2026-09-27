@@ -1,5 +1,14 @@
 import { ForbiddenException } from '@nestjs/common';
 import { MessagingCoreService } from './core/messaging-core.service';
+import { stub } from '../common/testing/stub';
+import type { PrismaService } from '../prisma/prisma.service';
+import type { PresenceService } from '../presence/presence.service';
+import type { DomainEventService } from '../events/domain-event.service';
+import type { MentionsService } from '../mentions/mentions.service';
+import type { BlocksService } from '../users/blocks.service';
+import type { VerificationAccessService } from '../common/verification/verification-access.service';
+import type { StudentYearPolicyService } from '../common/student-year/student-year-policy.service';
+import type { RateLimitService } from '../common/rate-limit/rate-limit.service';
 
 /**
  * The server-side half of "you cannot message a deleted user".
@@ -15,9 +24,15 @@ describe('MessagingCoreService — messaging an unavailable recipient', () => {
   const THEM = 'them-1';
   const CONV = 'conv-1';
 
+  /** What a refusal carries, as far as the client reads it. */
+  type ErrorWithResponse = { getResponse?: () => { code?: string } };
+
   let service: MessagingCoreService;
-  let prisma: any;
-  let participants: any[];
+  let prisma: {
+    conversation: { findUnique: jest.Mock };
+    message: { findFirst: jest.Mock; create?: jest.Mock };
+  };
+  let participants: ReturnType<typeof buildParticipant>[];
 
   const buildParticipant = (userId: string, status: string) => ({
     userId,
@@ -50,35 +65,35 @@ describe('MessagingCoreService — messaging an unavailable recipient', () => {
     };
 
     service = new MessagingCoreService(
-      prisma,
-      { getPresenceMany: jest.fn(() => Promise.resolve(new Map())) } as any,
-      { emit: jest.fn() } as any,
-      { sanitize: jest.fn(() => Promise.resolve([])) } as any,
-      {
+      stub<PrismaService>(prisma),
+      stub<PresenceService>({
+        getPresenceMany: jest.fn(() => Promise.resolve(new Map())),
+      }),
+      stub<DomainEventService>({ emit: jest.fn() }),
+      stub<MentionsService>({ sanitize: jest.fn(() => Promise.resolve([])) }),
+      stub<BlocksService>({
         getExcludedUserIds: jest.fn(() => Promise.resolve([])),
         getBlockedByUserIds: jest.fn(() => Promise.resolve([])),
-      } as any,
-      {
+      }),
+      stub<VerificationAccessService>({
         isEnforcementEnabled: () => false,
-        assertCanMessageInConversation: jest.fn(async () => {}),
+        assertCanMessageInConversation: jest.fn(() => Promise.resolve()),
         isEligibleStatus: () => true,
-      } as any,
+      }),
       // First-year isolation is not what this fixture exercises; always allow.
-      {
+      stub<StudentYearPolicyService>({
         isEnforcementEnabled: () => false,
-        assertCanInteract: jest.fn(async () => {}),
-      } as any,
+        assertCanInteract: jest.fn(() => Promise.resolve()),
+      }),
       // Rate limiting is not what this fixture exercises; always allow.
-      {
+      stub<RateLimitService>({
         consumeAll: jest.fn(() => Promise.resolve({ allowed: true })),
         consume: jest.fn(() => Promise.resolve({ allowed: true })),
-      } as any,
+      }),
     );
 
     // The conversation id resolves to itself in this fixture.
-    (service as any).resolveConversationId = jest.fn(() =>
-      Promise.resolve(CONV),
-    );
+    service.resolveConversationId = jest.fn(() => Promise.resolve(CONV));
   });
 
   it.each(['PENDING_DELETION', 'DELETED'])(
@@ -87,7 +102,7 @@ describe('MessagingCoreService — messaging an unavailable recipient', () => {
       participants[1] = buildParticipant(THEM, status);
 
       await expect(
-        service.sendMessage(ME, CONV, { text: 'hello?' } as any),
+        service.sendMessage(ME, CONV, { text: 'hello?' }),
       ).rejects.toThrow(ForbiddenException);
     },
   );
@@ -97,8 +112,8 @@ describe('MessagingCoreService — messaging an unavailable recipient', () => {
     try {
       await service.sendMessage(ME, CONV, { text: 'hi' });
       throw new Error('should have been refused');
-    } catch (err: any) {
-      expect(err.getResponse?.()).toMatchObject({
+    } catch (err: unknown) {
+      expect((err as ErrorWithResponse).getResponse?.()).toMatchObject({
         code: 'RECIPIENT_UNAVAILABLE',
       });
     }
@@ -110,23 +125,25 @@ describe('MessagingCoreService — messaging an unavailable recipient', () => {
       service.sendMessage(ME, CONV, {
         mediaUrl: 'https://cdn/x.jpg',
         mediaType: 'image',
-      } as any),
+      }),
     ).rejects.toThrow(ForbiddenException);
   });
 
   it('refuses before any row is written', async () => {
     participants[1] = buildParticipant(THEM, 'DELETED');
     prisma.message.create = jest.fn();
-    await service.sendMessage(ME, CONV, { text: 'hi' } as any).catch(() => {});
+    await service.sendMessage(ME, CONV, { text: 'hi' }).catch(() => {});
     expect(prisma.message.create).not.toHaveBeenCalled();
   });
 
   it('still allows a direct message to an active recipient', async () => {
     // Proves the gate is the deletion state and not an unconditional refusal.
     await service
-      .sendMessage(ME, CONV, { text: 'hi' } as any)
-      .catch((err: any) => {
-        expect(err?.getResponse?.()?.code).not.toBe('RECIPIENT_UNAVAILABLE');
+      .sendMessage(ME, CONV, { text: 'hi' })
+      .catch((err: unknown) => {
+        expect(
+          (err as ErrorWithResponse | undefined)?.getResponse?.()?.code,
+        ).not.toBe('RECIPIENT_UNAVAILABLE');
       });
   });
 });

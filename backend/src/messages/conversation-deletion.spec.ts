@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { expect } from '@jest/globals';
 import { MessagesService } from './messages.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { PresenceService } from '../presence/presence.service';
@@ -19,9 +20,35 @@ import { allowAllRateLimitProvider } from '../common/rate-limit/testing/rate-lim
  * with no `clearedAt` watermark the history query had nothing to filter against,
  * so every message the user had deleted came back.
  */
+/** A participant-row write, as far as these assertions read it. */
+type ParticipantWrite = {
+  where: unknown;
+  data: { deletedAt?: Date; clearedAt?: Date; [field: string]: unknown };
+};
+
+/** The Prisma surface MessagesService touches for per-user actions. */
+type ConversationPrismaFake = {
+  conversation: { findFirst: jest.Mock; findUnique: jest.Mock };
+  conversationParticipant: {
+    update: jest.Mock;
+    updateMany: jest.Mock<Promise<{ count: number }>, [ParticipantWrite]>;
+    findUnique: jest.Mock;
+    findMany: jest.Mock;
+  };
+  message: {
+    create: jest.Mock;
+    findFirst: jest.Mock;
+    findMany: jest.Mock;
+    deleteMany?: jest.Mock;
+  };
+  block: { findFirst: jest.Mock };
+  deletedMessage: { findMany: jest.Mock };
+  $transaction: jest.Mock;
+};
+
 describe('MessagesService — deleting a conversation', () => {
   let service: MessagesService;
-  let prisma: any;
+  let prisma: ConversationPrismaFake;
 
   beforeEach(async () => {
     prisma = {
@@ -40,8 +67,12 @@ describe('MessagesService — deleting a conversation', () => {
         ),
       },
       conversationParticipant: {
-        update: jest.fn(({ data }: any) => Promise.resolve({ ...data })),
-        updateMany: jest.fn(() => Promise.resolve({ count: 1 })),
+        update: jest.fn(({ data }: { data: object }) =>
+          Promise.resolve({ ...data }),
+        ),
+        updateMany: jest.fn<Promise<{ count: number }>, [ParticipantWrite]>(
+          () => Promise.resolve({ count: 1 }),
+        ),
         findUnique: jest.fn(),
         findMany: jest.fn(() => Promise.resolve([])),
       },
@@ -52,7 +83,7 @@ describe('MessagesService — deleting a conversation', () => {
       },
       block: { findFirst: jest.fn() },
       deletedMessage: { findMany: jest.fn(() => Promise.resolve([])) },
-      $transaction: jest.fn((ops: any) =>
+      $transaction: jest.fn((ops: unknown[] | ((tx: unknown) => unknown)) =>
         Promise.resolve(Array.isArray(ops) ? ops : ops(prisma)),
       ),
     };
@@ -107,7 +138,7 @@ describe('MessagesService — deleting a conversation', () => {
     expect(data.deletedAt).toBeInstanceOf(Date);
     expect(data.clearedAt).toBeInstanceOf(Date);
     // The same instant, so no message can slip between the two.
-    expect(data.clearedAt.getTime()).toBe(data.deletedAt.getTime());
+    expect(data.clearedAt!.getTime()).toBe(data.deletedAt!.getTime());
   });
 
   it("touches only the deleting participant's own row", async () => {
@@ -155,7 +186,7 @@ describe('MessagesService — deleting a conversation', () => {
  */
 describe('MessagingCoreService — per-user conversation actions', () => {
   let service: MessagesService;
-  let prisma: any;
+  let prisma: ConversationPrismaFake;
 
   beforeEach(async () => {
     prisma = {
@@ -175,7 +206,9 @@ describe('MessagingCoreService — per-user conversation actions', () => {
       },
       conversationParticipant: {
         update: jest.fn(),
-        updateMany: jest.fn(() => Promise.resolve({ count: 1 })),
+        updateMany: jest.fn<Promise<{ count: number }>, [ParticipantWrite]>(
+          () => Promise.resolve({ count: 1 }),
+        ),
         findUnique: jest.fn(),
         findMany: jest.fn(() => Promise.resolve([])),
       },
@@ -186,7 +219,7 @@ describe('MessagingCoreService — per-user conversation actions', () => {
       },
       block: { findFirst: jest.fn() },
       deletedMessage: { findMany: jest.fn(() => Promise.resolve([])) },
-      $transaction: jest.fn((ops: any) =>
+      $transaction: jest.fn((ops: unknown[] | ((tx: unknown) => unknown)) =>
         Promise.resolve(Array.isArray(ops) ? ops : ops(prisma)),
       ),
     };
@@ -234,8 +267,10 @@ describe('MessagingCoreService — per-user conversation actions', () => {
     service = module.get(MessagesService);
   });
 
-  const lastCall = () =>
-    prisma.conversationParticipant.updateMany.mock.calls.at(-1)[0];
+  const lastCall = () => {
+    const calls = prisma.conversationParticipant.updateMany.mock.calls;
+    return calls[calls.length - 1][0];
+  };
 
   it('clears history for one user without hiding the conversation', async () => {
     await service.clearChatForUser('conv-public', 'user-1');
