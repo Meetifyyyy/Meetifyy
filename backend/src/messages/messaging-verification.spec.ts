@@ -21,49 +21,54 @@ import { allowAllRateLimitProvider } from '../common/rate-limit/testing/rate-lim
  * These tests exercise the real policy service against the shared messaging
  * base class, so they fail if either the rule or the choke point moves.
  */
+/** `user` lookups answering from a map of verification statuses. */
+const usersWith = (statuses: Record<string, VerificationStatus>) => ({
+  findMany: jest.fn(({ where }: { where: { id: { in: string[] } } }) =>
+    Promise.resolve(
+      where.id.in
+        .filter((id) => statuses[id])
+        .map((id) => ({ id, verificationStatus: statuses[id] })),
+    ),
+  ),
+  findUnique: jest.fn(({ where }: { where: { id: string } }) =>
+    Promise.resolve(
+      statuses[where.id]
+        ? { id: where.id, verificationStatus: statuses[where.id] }
+        : null,
+    ),
+  ),
+});
+
 describe('messaging — both participants must be verified', () => {
   const ME = 'user-me';
   const THEM = 'user-them';
 
   let service: DmService;
-  let prisma: any;
+  let prisma: ReturnType<typeof makePrisma>;
+
+  const makePrisma = (statuses: Record<string, VerificationStatus>) => ({
+    conversation: {
+      findUnique: jest.fn(() =>
+        Promise.resolve({
+          id: 'conv-internal',
+          publicId: 'conv-public',
+          name: null,
+          type: 'DM',
+          participants: [
+            { userId: ME, isMuted: false },
+            { userId: THEM, isMuted: false },
+          ],
+        }),
+      ),
+      findFirst: jest.fn(() => Promise.resolve(null)),
+    },
+    conversationParticipant: { findMany: jest.fn(() => Promise.resolve([])) },
+    user: usersWith(statuses),
+    message: { create: jest.fn() },
+  });
 
   const buildWith = async (statuses: Record<string, VerificationStatus>) => {
-    prisma = {
-      conversation: {
-        findUnique: jest.fn(() =>
-          Promise.resolve({
-            id: 'conv-internal',
-            publicId: 'conv-public',
-            name: null,
-            type: 'DM',
-            participants: [
-              { userId: ME, isMuted: false },
-              { userId: THEM, isMuted: false },
-            ],
-          }),
-        ),
-        findFirst: jest.fn(() => Promise.resolve(null)),
-      },
-      conversationParticipant: { findMany: jest.fn(() => Promise.resolve([])) },
-      user: {
-        findMany: jest.fn(({ where }: any) =>
-          Promise.resolve(
-            where.id.in
-              .filter((id: string) => statuses[id])
-              .map((id: string) => ({ id, verificationStatus: statuses[id] })),
-          ),
-        ),
-        findUnique: jest.fn(({ where }: any) =>
-          Promise.resolve(
-            statuses[where.id]
-              ? { id: where.id, verificationStatus: statuses[where.id] }
-              : null,
-          ),
-        ),
-      },
-      message: { create: jest.fn() },
-    };
+    prisma = makePrisma(statuses);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -145,7 +150,7 @@ describe('conversation history carries the send verdict', () => {
   const THEM = 'user-them';
 
   const buildService = async (statuses: Record<string, VerificationStatus>) => {
-    const prisma: any = {
+    const prisma = {
       conversation: {
         findUnique: jest.fn(() =>
           Promise.resolve({
@@ -174,22 +179,7 @@ describe('conversation history carries the send verdict', () => {
       },
       deletedMessage: { findMany: jest.fn(() => Promise.resolve([])) },
       message: { findMany: jest.fn(() => Promise.resolve([])) },
-      user: {
-        findMany: jest.fn(({ where }: any) =>
-          Promise.resolve(
-            where.id.in
-              .filter((id: string) => statuses[id])
-              .map((id: string) => ({ id, verificationStatus: statuses[id] })),
-          ),
-        ),
-        findUnique: jest.fn(({ where }: any) =>
-          Promise.resolve(
-            statuses[where.id]
-              ? { id: where.id, verificationStatus: statuses[where.id] }
-              : null,
-          ),
-        ),
-      },
+      user: usersWith(statuses),
     };
 
     const module: TestingModule = await Test.createTestingModule({

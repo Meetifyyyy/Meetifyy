@@ -691,23 +691,6 @@
       "count": 1
     }
   },
-  "src/messages/instant-match-conversation.spec.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 7
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 3
-    },
-    "@typescript-eslint/no-unsafe-call": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 19
-    }
-  },
   "src/messages/message-alert.util.spec.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 3
@@ -767,20 +750,6 @@
     },
     "@typescript-eslint/no-unsafe-member-access": {
       "count": 6
-    }
-  },
-  "src/messages/messaging-verification.spec.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 6
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 4
-    },
-    "@typescript-eslint/no-unsafe-call": {
-      "count": 4
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 16
     }
   },
   "src/messages/sender-sync.spec.ts": {

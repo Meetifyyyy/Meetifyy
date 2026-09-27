@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { MessagesService } from './messages.service';
+import type { SendMessageDto } from './core/dto/send-message.dto';
 import { PrismaService } from '../prisma/prisma.service';
 import { PresenceService } from '../presence/presence.service';
 import { DomainEventService } from '../events/domain-event.service';
@@ -23,10 +24,34 @@ import { allowAllRateLimitProvider } from '../common/rate-limit/testing/rate-lim
  * to a session id; this one lookup was not, and it was enough to undo all of
  * it.
  */
+/** The conversation `create` payload, as far as these assertions read it. */
+type ConversationData = {
+  type?: string;
+  isInstantMatch?: boolean;
+  messages?: unknown;
+  lastMessageText?: unknown;
+  participants: { create: unknown[] };
+};
+type ConversationRow = ConversationData & { id: string };
+
+/** The Prisma surface; several lookups are re-pointed per suite. */
+type InstantMatchPrismaFake = {
+  conversation: {
+    findFirst: jest.Mock;
+    findUnique: jest.Mock;
+    create: jest.Mock<Promise<ConversationRow>, [{ data: ConversationData }]>;
+  };
+  conversationParticipant: { findMany: jest.Mock; findFirst: jest.Mock };
+  message: { findMany: jest.Mock; create?: jest.Mock };
+  block: { findFirst: jest.Mock };
+  deletedMessage: { findMany: jest.Mock };
+  $transaction: jest.Mock;
+};
+
 describe('MessagesService — Instant Match conversations', () => {
   let service: MessagesService;
-  let prisma: any;
-  let created: any[];
+  let prisma: InstantMatchPrismaFake;
+  let created: ConversationRow[];
 
   beforeEach(async () => {
     created = [];
@@ -42,7 +67,7 @@ describe('MessagesService — Instant Match conversations', () => {
           }),
         ),
         findUnique: jest.fn(() => Promise.resolve(null)),
-        create: jest.fn(({ data }: any) => {
+        create: jest.fn(({ data }: { data: ConversationData }) => {
           const row = { id: `internal-${created.length + 1}`, ...data };
           created.push(row);
           return Promise.resolve(row);
@@ -64,7 +89,7 @@ describe('MessagesService — Instant Match conversations', () => {
       message: { findMany: jest.fn(() => Promise.resolve([])) },
       block: { findFirst: jest.fn() },
       deletedMessage: { findMany: jest.fn(() => Promise.resolve([])) },
-      $transaction: jest.fn((ops: any) =>
+      $transaction: jest.fn((ops: unknown[] | ((tx: unknown) => unknown)) =>
         Promise.resolve(Array.isArray(ops) ? ops : ops(prisma)),
       ),
     };
@@ -186,10 +211,7 @@ describe('MessagesService — Instant Match conversations', () => {
         canReadChat: jest.fn(() => Promise.resolve(false)),
       });
 
-      const res: any = await service.getConversationHistory(
-        'conv-public',
-        'alice',
-      );
+      const res = await service.getConversationHistory('conv-public', 'alice');
 
       expect(res.messages).toEqual([]);
       expect(res.canSendMessages).toBe(false);
@@ -202,10 +224,7 @@ describe('MessagesService — Instant Match conversations', () => {
     it('refuses when no Instant Match guard is registered at all', async () => {
       service.registerInstantMatchGuard(null);
 
-      const res: any = await service.getConversationHistory(
-        'conv-public',
-        'alice',
-      );
+      const res = await service.getConversationHistory('conv-public', 'alice');
 
       expect(res.messages).toEqual([]);
     });
@@ -248,7 +267,7 @@ describe('MessagesService — Instant Match conversations', () => {
       prisma.message.create = jest.fn();
     });
 
-    const send = (body: any) =>
+    const send = (body: SendMessageDto) =>
       service.sendMessage('alice', 'conv-public', body);
 
     it('refuses a body with no text, no media and no invite', async () => {
