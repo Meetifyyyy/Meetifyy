@@ -1,6 +1,13 @@
 import { ForbiddenException } from '@nestjs/common';
+import type { ExecutionContext, HttpException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { JwtGuard } from './jwt.guard';
+import { stub } from '../testing/stub';
+import { reflectorWith, routeContext } from './testing/jwt-guard.fixture';
+import type { AuthenticatedUser } from '../types/authenticated-request';
+import type { PrismaService } from '../../prisma/prisma.service';
+import type { SupabaseService } from '../../supabase/supabase.service';
+import type { LegalConsentService } from '../legal/legal-consent.service';
 import { ALLOW_PENDING_LEGAL_ACK_KEY } from '../decorators/allow-pending-legal-ack.decorator';
 import { LEGAL_ACKNOWLEDGEMENT_REQUIRED_CODE } from '../legal/legal.constants';
 
@@ -20,25 +27,26 @@ describe('JwtGuard — mandatory legal acknowledgement', () => {
   let satisfied: boolean;
 
   const contextWith = (decorators: string[] = []) => {
-    const reflector = new Reflector();
-    jest
-      .spyOn(reflector, 'getAllAndOverride')
-      .mockImplementation((key: any) => decorators.includes(key));
-    (guard as any).reflector = reflector;
-    return {
-      getHandler: () => () => undefined,
-      getClass: () => class {},
-    } as any;
+    Object.assign(guard, { reflector: reflectorWith(decorators) });
+    return routeContext();
   };
 
-  const enforce = (ctx: any) =>
-    (guard as any).enforceLegalAcknowledgement(ctx, { id: USER_ID });
+  const enforce = (ctx: ExecutionContext) =>
+    guard['enforceLegalAcknowledgement'](
+      ctx,
+      stub<AuthenticatedUser>({ id: USER_ID }),
+    );
 
   beforeEach(() => {
     satisfied = true;
-    guard = new JwtGuard({} as any, {} as any, new Reflector(), {
-      isSatisfied: () => Promise.resolve(satisfied),
-    } as any);
+    guard = new JwtGuard(
+      stub<SupabaseService>(),
+      stub<PrismaService>(),
+      new Reflector(),
+      stub<LegalConsentService>({
+        isSatisfied: () => Promise.resolve(satisfied),
+      }),
+    );
   });
 
   it('lets a user who has accepted everything through any route', async () => {
@@ -57,8 +65,8 @@ describe('JwtGuard — mandatory legal acknowledgement', () => {
     });
 
     it('carries a machine-readable code so the client shows the consent flow', async () => {
-      const err: any = await enforce(contextWith()).catch((e: any) => e);
-      expect(err.getResponse()).toMatchObject({
+      const err = await enforce(contextWith()).catch((e: unknown) => e);
+      expect((err as HttpException).getResponse()).toMatchObject({
         code: LEGAL_ACKNOWLEDGEMENT_REQUIRED_CODE,
       });
     });
@@ -82,7 +90,10 @@ describe('JwtGuard — mandatory legal acknowledgement', () => {
   it('says nothing about a request carrying no user', async () => {
     satisfied = false;
     await expect(
-      (guard as any).enforceLegalAcknowledgement(contextWith(), {}),
+      guard['enforceLegalAcknowledgement'](
+        contextWith(),
+        stub<AuthenticatedUser>({}),
+      ),
     ).resolves.toBeUndefined();
   });
 });

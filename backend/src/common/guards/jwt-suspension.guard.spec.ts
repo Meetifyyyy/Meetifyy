@@ -1,9 +1,16 @@
 import { describe, beforeEach, it, expect, jest } from '@jest/globals';
 import { ForbiddenException } from '@nestjs/common';
+import type { ExecutionContext } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 
 import { JwtGuard, SUSPENDED_ERROR_CODE } from './jwt.guard';
 import { ALLOW_SUSPENDED_KEY } from '../decorators/allow-suspended.decorator';
+import { stub } from '../testing/stub';
+import { routeContext } from './testing/jwt-guard.fixture';
+import type { AuthenticatedUser } from '../types/authenticated-request';
+import type { PrismaService } from '../../prisma/prisma.service';
+import type { SupabaseService } from '../../supabase/supabase.service';
+import type { LegalConsentService } from '../legal/legal-consent.service';
 
 /**
  * The suspension gate.
@@ -17,7 +24,7 @@ import { ALLOW_SUSPENDED_KEY } from '../decorators/allow-suspended.decorator';
 describe('JwtGuard — suspension enforcement', () => {
   const USER_ID = 'user-1';
 
-  let prisma: any;
+  let prisma: { user: { findUnique: jest.Mock<() => Promise<unknown>> } };
   let reflector: Reflector;
   let guard: JwtGuard;
 
@@ -25,30 +32,29 @@ describe('JwtGuard — suspension enforcement', () => {
   const contextFor = (allowSuspended: boolean) => {
     jest
       .spyOn(reflector, 'getAllAndOverride')
-      .mockImplementation((key: any) =>
+      .mockImplementation((key: unknown) =>
         key === ALLOW_SUSPENDED_KEY ? allowSuspended : undefined,
       );
-    return {
-      switchToHttp: () => ({ getRequest: () => ({ headers: {} }) }),
-      getHandler: () => () => undefined,
-      getClass: () => class {},
-    } as any;
+    return routeContext({ headers: {} });
   };
 
-  const enforce = (context: any) =>
-    (guard as any).enforceAccountStatus(context, { id: USER_ID });
+  const enforce = (context: ExecutionContext) =>
+    guard['enforceAccountStatus'](
+      context,
+      stub<AuthenticatedUser>({ id: USER_ID }),
+    );
 
   beforeEach(() => {
     JwtGuard.clearAccountStatus(USER_ID);
-    prisma = { user: { findUnique: jest.fn() } };
+    prisma = { user: { findUnique: jest.fn<() => Promise<unknown>>() } };
     reflector = new Reflector();
     guard = new JwtGuard(
-      { isConfigured: true } as any,
-      prisma,
+      stub<SupabaseService>({ isConfigured: true }),
+      stub<PrismaService>(prisma),
       reflector,
       // The legal gate has its own spec; a service that always reports
       // "satisfied" keeps this one about suspension alone.
-      { isSatisfied: () => Promise.resolve(true) } as any,
+      stub<LegalConsentService>({ isSatisfied: () => Promise.resolve(true) }),
     );
   });
 

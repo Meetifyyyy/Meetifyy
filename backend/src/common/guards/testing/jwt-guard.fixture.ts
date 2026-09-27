@@ -29,6 +29,35 @@ export function httpContext(request: GuardRequest): ExecutionContext {
 }
 
 /**
+ * An `ExecutionContext` for a route handler, for the gates that only read
+ * route metadata. Pass `request` when the gate also reads the request.
+ */
+export function routeContext(request?: object): ExecutionContext {
+  return stub<ExecutionContext>({
+    ...(request
+      ? {
+          switchToHttp: jest.fn(() =>
+            stub<HttpArgumentsHost>({ getRequest: jest.fn(() => request) }),
+          ),
+        }
+      : {}),
+    getHandler: jest.fn(() => () => undefined),
+    getClass: jest.fn(() => class {}),
+  });
+}
+
+/** A reflector that reports exactly `decorators` as present on the route. */
+export function reflectorWith(decorators: string[]): Reflector {
+  const reflector = new Reflector();
+  jest
+    .spyOn(reflector, 'getAllAndOverride')
+    .mockImplementation(
+      (key: unknown) => typeof key === 'string' && decorators.includes(key),
+    );
+  return reflector;
+}
+
+/**
  * A `JwtGuard` isolated to its session check.
  *
  * Token verification and the account-status gates have their own specs and
