@@ -496,23 +496,6 @@
       "count": 1
     }
   },
-  "src/messages/dm/dm-lookup.spec.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 3
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-call": {
-      "count": 4
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 9
-    },
-    "@typescript-eslint/no-unsafe-return": {
-      "count": 3
-    }
-  },
   "src/messages/group-chats/group-chats.controller.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 1
@@ -592,26 +575,6 @@
     },
     "@typescript-eslint/no-unsafe-member-access": {
       "count": 6
-    }
-  },
-  "src/messages/sender-sync.spec.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 4
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 4
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 6
-    },
-    "@typescript-eslint/no-unsafe-call": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 4
-    },
-    "@typescript-eslint/no-unsafe-return": {
-      "count": 1
     }
   },
   "src/moderation/moderation.service.ts": {
@@ -870,17 +833,6 @@
     },
     "@typescript-eslint/no-unsafe-member-access": {
       "count": 3
-    }
-  },
-  "test/account-deletion.e2e-spec.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 7
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 11
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 4
     }
   }
 }

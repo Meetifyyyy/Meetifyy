@@ -1,4 +1,13 @@
 import { emitMessageNew } from './message-alert.util';
+import { stub } from '../common/testing/stub';
+import type { DomainEventService } from '../events/domain-event.service';
+
+/** One emitted event, as recorded by the fake. */
+type SentEvent = {
+  event: string;
+  payload: { alert?: boolean };
+  targets: string[];
+};
 
 /**
  * A message sent over HTTP has to reach the person who sent it.
@@ -16,17 +25,19 @@ import { emitMessageNew } from './message-alert.util';
  */
 describe('message:new fan-out', () => {
   const build = () => {
-    const sent: Array<{ event: string; payload: any; targets: string[] }> = [];
-    const domainEventService: any = {
-      emit: (event: string, payload: any, targets: string[]) => {
-        sent.push({ event, payload, targets });
-        return Promise.resolve();
-      },
-    };
+    const sent: SentEvent[] = [];
+    const domainEventService = stub<DomainEventService>({
+      emit: jest.fn(
+        (event: string, payload: SentEvent['payload'], targets: string[]) => {
+          sent.push({ event, payload, targets });
+          return Promise.resolve();
+        },
+      ),
+    });
     return { domainEventService, sent };
   };
 
-  const targetsOf = (sent: any[], id: string) =>
+  const targetsOf = (sent: SentEvent[], id: string) =>
     sent.filter((e) => e.targets.includes(id));
 
   it('delivers to the sender when a senderId is given', async () => {

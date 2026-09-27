@@ -7,6 +7,12 @@ import { AccountDeletionPurgeService } from '../src/account-deletion/account-del
 import { RECOVERY_WINDOW_MS } from '../src/account-deletion/account-deletion.constants';
 import { JwtGuard } from '../src/common/guards/jwt.guard';
 import { isUnavailableUser } from '../src/common/users/deleted-user';
+import { stub } from '../src/common/testing/stub';
+import type { PrismaService } from '../src/prisma/prisma.service';
+import type { RedisService } from '../src/redis/redis.service';
+import type { PresenceService } from '../src/presence/presence.service';
+import type { DomainEventService } from '../src/events/domain-event.service';
+import type { MediaCleanupService } from '../src/uploads/media-cleanup.service';
 
 /**
  * The whole lifecycle, against a real Postgres.
@@ -78,21 +84,28 @@ describeIfEnabled(
     let subjectCommentId: string;
 
     const stubs = {
-      redis: { getClient: () => null } as any,
-      presence: { removePresence: () => Promise.resolve(undefined) } as any,
-      events: { emit: () => Promise.resolve(undefined) } as any,
+      redis: stub<RedisService>({ getClient: () => null }),
+      presence: stub<PresenceService>({
+        removePresence: () => Promise.resolve(undefined),
+      }),
+      events: stub<DomainEventService>({
+        emit: () => Promise.resolve(undefined),
+      }),
       // No R2 in this test: storage is a separate system with its own suite, and
       // the point here is the database's behaviour. The keys it WOULD delete are
       // captured so the assertions can check the right ones were collected.
-      mediaCleanup: {
+      mediaCleanup: stub<MediaCleanupService>({
         extractStorageKey: (v: string | null) => v ?? null,
         queueMediaDeletion: (keys: string[]) => {
           queuedMediaKeys.push(...keys);
 
           return Promise.resolve();
         },
-      } as any,
+      }),
     };
+
+    /** The real client, standing in for the Nest wrapper around it. */
+    const prismaService = stub<PrismaService>(prisma);
     let queuedMediaKeys: string[] = [];
 
     /**
@@ -126,9 +139,9 @@ describeIfEnabled(
     beforeAll(async () => {
       await prisma.$connect();
 
-      otpService = new UserOtpService(prisma as any, stubs.redis);
+      otpService = new UserOtpService(prismaService, stubs.redis);
       deletion = new AccountDeletionService(
-        prisma as any,
+        prismaService,
         stubs.redis,
         stubs.presence,
         stubs.events,
@@ -146,7 +159,7 @@ describeIfEnabled(
         },
       );
       purge = new AccountDeletionPurgeService(
-        prisma as any,
+        prismaService,
         stubs.redis,
         stubs.presence,
         stubs.events,
