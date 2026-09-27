@@ -20,15 +20,24 @@ describe('Activity feed scopes', () => {
   const ME = 'me';
   const MY_COLLEGE = 'college-a';
 
+  /** One term of the feed query's `AND`. */
+  type ScopeClause = { visibility?: unknown; collegeId?: unknown };
+  type FeedWhere = { AND?: ScopeClause[] };
+
   let service: ActivitiesService;
-  let prisma: any;
-  let lastWhere: any;
+  let prisma: {
+    crewActivity: { findMany: jest.Mock };
+    crewActivityMember: { findMany: jest.Mock };
+    user: { findUnique: jest.Mock };
+    activityInvitation: { count: jest.Mock };
+  };
+  let lastWhere: FeedWhere | undefined;
 
   beforeEach(async () => {
     lastWhere = undefined;
     prisma = {
       crewActivity: {
-        findMany: jest.fn(({ where }: any) => {
+        findMany: jest.fn(({ where }: { where: FeedWhere }) => {
           lastWhere = where;
           return Promise.resolve([]);
         }),
@@ -67,35 +76,37 @@ describe('Activity feed scopes', () => {
   });
 
   /** The scope's own filter clause (the policy filter is the second AND term). */
-  const scopeFilterFor = async (scope: any) => {
+  const scopeFilterFor = async (
+    scope: Parameters<ActivitiesService['getAllActivities']>[3],
+  ) => {
     await service.getAllActivities(ME, 20, undefined, scope);
     return lastWhere?.AND?.[0];
   };
 
   it('restricts the College section to COLLEGE_ONLY activities of my college', async () => {
     const filter = await scopeFilterFor('college');
-    expect(filter.visibility).toBe('COLLEGE_ONLY');
-    expect(filter.collegeId).toBe(MY_COLLEGE);
+    expect(filter!.visibility).toBe('COLLEGE_ONLY');
+    expect(filter!.collegeId).toBe(MY_COLLEGE);
   });
 
   it('applies the identical rule to the Campus surface', async () => {
     const filter = await scopeFilterFor('campus');
-    expect(filter.visibility).toBe('COLLEGE_ONLY');
-    expect(filter.collegeId).toBe(MY_COLLEGE);
+    expect(filter!.visibility).toBe('COLLEGE_ONLY');
+    expect(filter!.collegeId).toBe(MY_COLLEGE);
   });
 
   it('does not pin visibility on the All feed, so "Anyone" activities show there', async () => {
     const filter = await scopeFilterFor('public');
-    expect(filter.visibility).toBeUndefined();
-    expect(filter.collegeId).toBeUndefined();
+    expect(filter!.visibility).toBeUndefined();
+    expect(filter!.collegeId).toBeUndefined();
   });
 
   it('never lets a scope filter stand alone — the policy is AND-composed', async () => {
     await service.getAllActivities(ME, 20, undefined, 'college');
-    expect(Array.isArray(lastWhere.AND)).toBe(true);
-    expect(lastWhere.AND).toHaveLength(2);
+    expect(Array.isArray(lastWhere!.AND)).toBe(true);
+    expect(lastWhere!.AND).toHaveLength(2);
     // PRIVATE is excluded structurally by the policy clause, never by the scope.
-    expect(JSON.stringify(lastWhere.AND[1])).not.toContain('PRIVATE');
+    expect(JSON.stringify(lastWhere!.AND![1])).not.toContain('PRIVATE');
   });
 
   it('returns nothing for the college surfaces when the viewer has no college', async () => {
