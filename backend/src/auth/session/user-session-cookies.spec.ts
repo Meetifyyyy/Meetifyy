@@ -16,22 +16,27 @@ import {
   issueUserSessionCookies,
   USER_SESSION_ID_COOKIE,
 } from './user-session-cookies';
+import type { CookieOptions, Response } from 'express';
+import { expect } from '@jest/globals';
+import { stub } from '../../common/testing/stub';
 
 function fakeResponse() {
-  const calls: Array<{ op: string; name: string; opts: any }> = [];
+  const calls: Array<{ op: string; name: string; opts: CookieOptions }> = [];
   return {
     calls,
-    cookie: (name: string, _v: string, opts: any) =>
+    cookie: jest.fn((name: string, _v: string, opts: CookieOptions) =>
       calls.push({ op: 'set', name, opts }),
-    clearCookie: (name: string, opts: any) =>
+    ),
+    clearCookie: jest.fn((name: string, opts: CookieOptions) =>
       calls.push({ op: 'clear', name, opts }),
+    ),
   };
 }
 
 describe('session cookies with a configured Domain', () => {
   it('expires the host-only session id before issuing the Domain one', () => {
     const res = fakeResponse();
-    issueUserSessionCookies(res as any, 'a', 'r', 1000, 2000, 'sid');
+    issueUserSessionCookies(stub<Response>(res), 'a', 'r', 1000, 2000, 'sid');
 
     const sid = res.calls.filter((c) => c.name === USER_SESSION_ID_COOKIE);
     expect(sid).toEqual([
@@ -48,7 +53,7 @@ describe('session cookies with a configured Domain', () => {
 
   it('clears both the host-only and the Domain variants on sign-out', () => {
     const res = fakeResponse();
-    clearUserSessionCookies(res as any);
+    clearUserSessionCookies(stub<Response>(res));
 
     const domains = res.calls
       .filter((c) => c.name === USER_SESSION_ID_COOKIE)

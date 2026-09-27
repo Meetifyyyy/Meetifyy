@@ -1,4 +1,7 @@
 import { BlocksService } from './blocks.service';
+import { stub } from '../common/testing/stub';
+import type { PrismaService } from '../prisma/prisma.service';
+import type { RedisService } from '../redis/redis.service';
 
 /**
  * The block cache's pub/sub subscription, and the fact that ONE handler is
@@ -18,14 +21,17 @@ import { BlocksService } from './blocks.service';
 describe('BlocksService cross-instance subscription', () => {
   let subscribe: jest.Mock;
   let messageHandlers: ((channel: string, message: string) => void)[];
-  let redisService: any;
-  let prisma: any;
+  let redisService: RedisService | undefined;
+  let prisma: { block: { findMany: jest.Mock } };
   let instances: BlocksService[];
 
   const CHANNEL = 'meetifyy:blocks_invalidate';
 
   const makeInstance = () => {
-    const instance = new BlocksService(prisma, redisService);
+    const instance = new BlocksService(
+      stub<PrismaService>(prisma),
+      redisService,
+    );
     instance.onModuleInit();
     instances.push(instance);
     return instance;
@@ -36,16 +42,21 @@ describe('BlocksService cross-instance subscription', () => {
     subscribe = jest.fn();
     instances = [];
 
-    redisService = {
+    redisService = stub<RedisService>({
       getClient: () => null,
       getPubClient: () => null,
-      getSubClient: () => ({
+      getSubClient: jest.fn(() => ({
         subscribe,
-        on: jest.fn((event: string, handler: any) => {
-          if (event === 'message') messageHandlers.push(handler);
-        }),
-      }),
-    };
+        on: jest.fn(
+          (
+            event: string,
+            handler: (channel: string, message: string) => void,
+          ) => {
+            if (event === 'message') messageHandlers.push(handler);
+          },
+        ),
+      })),
+    });
 
     prisma = {
       block: {
@@ -59,10 +70,10 @@ describe('BlocksService cross-instance subscription', () => {
     // these tests use rather than letting one test's entry answer the next
     // test's read. (This instance is deliberately not initialised — it must
     // not register a handler.)
-    await new BlocksService(prisma, undefined).invalidateBlockCache(
-      'me',
-      'them',
-    );
+    await new BlocksService(
+      stub<PrismaService>(prisma),
+      undefined,
+    ).invalidateBlockCache('me', 'them');
   });
 
   afterEach(() => {

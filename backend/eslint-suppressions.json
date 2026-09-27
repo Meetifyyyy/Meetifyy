@@ -213,23 +213,6 @@
       "count": 1
     }
   },
-  "src/auth/session/user-session-cookies.spec.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 5
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 2
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 4
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-return": {
-      "count": 1
-    }
-  },
   "src/auth/session/user-session-retention.service.spec.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 1
@@ -308,17 +291,6 @@
     },
     "@typescript-eslint/no-unsafe-argument": {
       "count": 5
-    }
-  },
-  "src/common/users/deleted-user.spec.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 2
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 2
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 9
     }
   },
   "src/common/utils/birthday-validation.util.spec.ts": {
@@ -574,23 +546,6 @@
       "count": 1
     }
   },
-  "src/uploads/uploads.folders.spec.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 4
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 3
-    },
-    "@typescript-eslint/no-unsafe-call": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-return": {
-      "count": 5
-    }
-  },
   "src/uploads/uploads.limits.spec.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 4
@@ -621,20 +576,6 @@
     },
     "@typescript-eslint/no-unsafe-member-access": {
       "count": 3
-    }
-  },
-  "src/users/blocks.subscription.spec.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 3
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 4
-    },
-    "@typescript-eslint/no-unsafe-call": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 6
     }
   },
   "src/users/follow-stress.spec.ts": {
