@@ -5,13 +5,13 @@ import { Ticks } from '../decor/Decor';
  * Activity picker. Each tile is its own little poster, coloured by the
  * activity, so the grid reads as a set of options rather than a list of words.
  */
-export default function ActivityStep({ selectedActivity, onSelect }) {
+export default function ActivityStep({ selectedActivity, onSelect, activities = MATCH_ACTIVITIES }) {
   return (
     <fieldset className="im-fieldset">
       <legend className="im-sr-only">Choose an activity</legend>
 
       <div className="im-activity-grid" role="radiogroup" aria-label="Activity">
-        {MATCH_ACTIVITIES.map((activity, i) => {
+        {activities.map((activity, i) => {
           const selected = selectedActivity === activity.id;
           return (
             <button

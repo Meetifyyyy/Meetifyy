@@ -102,16 +102,39 @@ public final class SystemUiHelper {
      * @param customColor optional custom background color override (e.g. from web computed style)
      */
     public static void applySystemBars(Activity activity, boolean isDark, Integer customColor) {
+        final int barColor = (customColor != null)
+            ? customColor
+            : (isDark ? COLOR_DARK : COLOR_LIGHT);
+        applySystemBars(activity, barColor, isDark, barColor, isDark, barColor);
+    }
+
+    /**
+     * Paints each bar separately, so each can continue the page edge it meets.
+     *
+     * @param statusLightIcons true when the status bar's icons must be light
+     * @param navLightIcons    true when the navigation bar's buttons must be light
+     * @param windowColor      the window/decor colour: the theme's chrome, which is
+     *                         what shows for a frame while the WebView lays out
+     */
+    private static int statusBarHeight(Activity activity) {
+        final int id = activity.getResources().getIdentifier("status_bar_height", "dimen", "android");
+        return id > 0 ? activity.getResources().getDimensionPixelSize(id) : 0;
+    }
+
+    public static void applySystemBars(
+        Activity activity,
+        int statusColor,
+        boolean statusLightIcons,
+        int navColor,
+        boolean navLightIcons,
+        int windowColor
+    ) {
         if (activity == null || activity.isFinishing()) return;
 
         final Window window = activity.getWindow();
         if (window == null) return;
         final View decor = window.getDecorView();
         if (decor == null) return;
-
-        final int barColor = (customColor != null)
-            ? customColor
-            : (isDark ? COLOR_DARK : COLOR_LIGHT);
 
         window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
         window.clearFlags(
@@ -126,12 +149,30 @@ public final class SystemUiHelper {
         }
 
         // Apply bar colors for API < 35
-        window.setStatusBarColor(barColor);
-        window.setNavigationBarColor(barColor);
+        window.setStatusBarColor(statusColor);
+        window.setNavigationBarColor(navColor);
 
-        // Decor view & window background
-        window.setBackgroundDrawable(new ColorDrawable(barColor));
-        decor.setBackgroundColor(barColor);
+        // Window background. Edge to edge, this is what the bars actually show
+        // (see SystemBarsBackground), so it carries both bar colours. When the
+        // two bars match it is the plain colour, as before.
+        // Replacing a view's background resets its padding, and the decor's
+        // padding is where the system-bar insets live. Carried across the swap
+        // so the window never lays out without them — a frame without padding
+        // shifted everything centred in the window, the splash icon included,
+        // which is the up-and-down jump seen at launch.
+        final int padLeft = decor.getPaddingLeft();
+        final int padTop = decor.getPaddingTop();
+        final int padRight = decor.getPaddingRight();
+        final int padBottom = decor.getPaddingBottom();
+        if (statusColor == navColor) {
+            window.setBackgroundDrawable(new ColorDrawable(statusColor));
+            decor.setBackgroundColor(statusColor);
+        } else {
+            final SystemBarsBackground bands =
+                new SystemBarsBackground(statusColor, navColor, statusBarHeight(activity));
+            window.setBackgroundDrawable(bands);
+            decor.setBackground(new SystemBarsBackground(statusColor, navColor, statusBarHeight(activity)));
+        }
 
         // Appearance controller for system bar icons and gesture pill
         WindowInsetsControllerCompat controller = WindowCompat.getInsetsController(window, decor);
@@ -140,7 +181,9 @@ public final class SystemUiHelper {
         }
 
         // isAppearanceLight means "dark icons on light background"
-        controller.setAppearanceLightStatusBars(!isDark);
-        controller.setAppearanceLightNavigationBars(!isDark);
+        controller.setAppearanceLightStatusBars(!statusLightIcons);
+        controller.setAppearanceLightNavigationBars(!navLightIcons);
+
+        decor.setPadding(padLeft, padTop, padRight, padBottom);
     }
 }

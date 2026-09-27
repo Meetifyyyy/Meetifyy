@@ -1,0 +1,98 @@
+import { useLayoutEffect } from 'react';
+
+const clamp01 = (n) => (n < 0 ? 0 : n > 1 ? 1 : n);
+
+/**
+ * Drives a header that starts transparent over a cover image and becomes the
+ * themed app header as the page scrolls.
+ *
+ * Progress (0 over the cover, 1 once the cover has scrolled under the header)
+ * is written to `--collapse` on the header element, once per animation frame,
+ * straight from the window's scroll position. Nothing re-renders while
+ * scrolling: every visual step is CSS reading that one variable.
+ *
+ * While mounted the status bar shows the cover behind it. Its icons are light
+ * over the cover and follow the theme once the header is solid. The mobile
+ * system-bar installer observes these root attributes and updates native bars.
+ */
+export function useCollapsingHeader({
+  enabled,
+  headerRef,
+  coverRef,
+  coverBackground = false,
+  collapseRangeMultiplier = 1,
+}) {
+  useLayoutEffect(() => {
+    const header = headerRef.current;
+    if (!enabled || !header) return undefined;
+
+    const root = document.documentElement;
+    const previousIconPreference = root.getAttribute('data-status-bar-icons');
+    const previousCollapse = root.style.getPropertyValue('--profile-collapse');
+    const previousCoverHeight = root.style.getPropertyValue('--profile-cover-height');
+    const previousCoverScale = root.style.getPropertyValue('--profile-cover-scale');
+    const editCoverButton = coverBackground ? header.querySelector('button[aria-label="Edit cover"]') : null;
+    root.setAttribute('data-collapsing-header', '');
+
+    let frame = 0;
+    let lastLight = null;
+
+    const update = () => {
+      frame = 0;
+      const coverHeight = coverRef.current?.offsetHeight || 0;
+      const headerHeight = header.offsetHeight;
+      const range = Math.max(1, coverHeight - headerHeight) * collapseRangeMultiplier;
+      const progress = clamp01(window.scrollY / range);
+      header.style.setProperty('--collapse', progress.toFixed(3));
+      root.style.setProperty('--profile-collapse', progress.toFixed(3));
+      if (coverBackground) {
+        root.style.setProperty('--profile-cover-height', `${coverHeight}px`);
+        root.style.setProperty(
+          '--profile-cover-scale',
+          (coverHeight ? 1 + (headerHeight / coverHeight - 1) * progress : 1).toFixed(4),
+        );
+      }
+      if (editCoverButton) {
+        editCoverButton.style.opacity = (1 - progress).toFixed(3);
+        editCoverButton.style.pointerEvents = progress === 0 ? 'auto' : 'none';
+        editCoverButton.tabIndex = progress === 0 ? 0 : -1;
+      }
+
+      const dark = root.getAttribute('data-theme') === 'dark';
+      const lightIcons = coverBackground || progress < 0.5 || dark;
+      if (lightIcons !== lastLight) {
+        lastLight = lightIcons;
+        root.setAttribute('data-status-bar-icons', lightIcons ? 'light' : 'dark');
+      }
+    };
+    const schedule = () => {
+      if (!frame) frame = requestAnimationFrame(update);
+    };
+
+    update();
+    window.addEventListener('scroll', schedule, { passive: true });
+    window.addEventListener('resize', schedule);
+    // A theme change flips which icons the solid header needs.
+    const themeObserver = new MutationObserver(() => {
+      lastLight = null;
+      schedule();
+    });
+    themeObserver.observe(root, { attributes: true, attributeFilter: ['data-theme'] });
+
+    return () => {
+      if (frame) cancelAnimationFrame(frame);
+      window.removeEventListener('scroll', schedule);
+      window.removeEventListener('resize', schedule);
+      themeObserver.disconnect();
+      root.removeAttribute('data-collapsing-header');
+      if (previousCollapse) root.style.setProperty('--profile-collapse', previousCollapse);
+      else root.style.removeProperty('--profile-collapse');
+      if (previousCoverHeight) root.style.setProperty('--profile-cover-height', previousCoverHeight);
+      else root.style.removeProperty('--profile-cover-height');
+      if (previousCoverScale) root.style.setProperty('--profile-cover-scale', previousCoverScale);
+      else root.style.removeProperty('--profile-cover-scale');
+      if (previousIconPreference === null) root.removeAttribute('data-status-bar-icons');
+      else root.setAttribute('data-status-bar-icons', previousIconPreference);
+    };
+  }, [enabled, headerRef, coverRef, coverBackground, collapseRangeMultiplier]);
+}

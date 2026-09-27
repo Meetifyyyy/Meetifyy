@@ -40,6 +40,7 @@ import path from 'path';
 import fs from 'node:fs';
 import react from '@vitejs/plugin-react';
 import { sharedAliases, sharedCss, sharedOnWarn } from './vite.shared.js';
+import { landscapePhoneMediaPostcss } from './src/mobile/landscapePhoneMedia.js';
 
 /**
  * Renames the built `index.mobile.html` to `index.html`.
@@ -200,7 +201,15 @@ export default defineConfig({
 
   plugins: [react(), emitAsIndexHtml(), dropWebOnlyPublicAssets(), serveMobileIndexHtml()],
 
-  css: sharedCss,
+  // The shared CSS pipeline, plus the rewrite that keeps a phone in landscape
+  // on the mobile layout (see src/mobile/landscapePhoneMedia.js).
+  css: {
+    ...sharedCss,
+    postcss: {
+      ...sharedCss.postcss,
+      plugins: [...sharedCss.postcss.plugins, landscapePhoneMediaPostcss()],
+    },
+  },
 
   resolve: {
     alias: sharedAliases(__dirname),

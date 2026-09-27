@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { isScrollLocked } from '@shared/hooks/useScrollLock';
 
 /**
  * The gesture, the state machine and the locking behind pull-to-refresh.
@@ -172,6 +173,13 @@ export function usePullToRefresh({ onRefresh, disabled = false, getScrollTop } =
     const onTouchStart = (e) => {
       if (disabledRef.current) return;
       if (phaseRef.current === 'refreshing') return;
+      /*
+       * An overlay is open. The page behind it is locked, and a pull would
+       * move it anyway: this gesture is a transform, not a scroll, so the
+       * lock's overflow freeze cannot see it. That is how the New Message
+       * sheet used to drag the whole Messages screen down with it.
+       */
+      if (isScrollLocked()) return;
       if (e.touches.length !== 1) return;
       if (!atTop()) return;
       if (isInsideNestedScroller(e.target, el)) return;
@@ -182,6 +190,13 @@ export function usePullToRefresh({ onRefresh, disabled = false, getScrollTop } =
 
     const onTouchMove = (e) => {
       if (!activeRef.current) return;
+
+      // An overlay opened mid-gesture: let go rather than keep pulling the
+      // page it has just locked.
+      if (isScrollLocked()) {
+        settle();
+        return;
+      }
 
       const delta = e.touches[0].clientY - startYRef.current;
 

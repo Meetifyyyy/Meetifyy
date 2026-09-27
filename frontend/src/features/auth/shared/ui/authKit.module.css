@@ -1989,7 +1989,7 @@
 
 /* ── Safe areas: notches, home indicators, landscape side insets ───────── */
 .topBar {
-  padding-top: calc(0.85rem + env(safe-area-inset-top, 0px));
+  padding-top: calc(0.85rem + max(env(safe-area-inset-top, 0px), var(--status-bar-inset, 0px)));
   padding-left: calc(clamp(1rem, 5vw, 3.25rem) + env(safe-area-inset-left, 0px));
   padding-right: calc(clamp(1rem, 5vw, 3.25rem) + env(safe-area-inset-right, 0px));
 }
@@ -2537,7 +2537,7 @@
    height. Tighten vertical rhythm rather than let the action fall off-screen. */
 @media (max-height: 560px) {
   .topBar {
-    padding-top: calc(0.5rem + env(safe-area-inset-top, 0px));
+    padding-top: calc(0.5rem + max(env(safe-area-inset-top, 0px), var(--status-bar-inset, 0px)));
   }
 
   .stage {
@@ -2615,6 +2615,7 @@
   height: 100vh;
   height: 100dvh;
   min-height: 0;
+  padding-bottom: max(env(safe-area-inset-bottom, 0px), var(--navigation-bar-inset, 0px));
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior-y: contain;
@@ -3710,7 +3711,7 @@
    its height so the centring stays symmetric. */
 @media (max-width: 560px) {
   .shell {
-    --m-head: calc(58px + env(safe-area-inset-top, 0px));
+    --m-head: calc(58px + max(env(safe-area-inset-top, 0px), var(--status-bar-inset, 0px)));
     --m-foot: max(58px, calc(1.5rem + env(safe-area-inset-bottom, 0px)));
   }
 

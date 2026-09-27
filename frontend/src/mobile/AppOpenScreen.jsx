@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import mascot from '../assets/images/mascot.webp';
+import authBg from '../assets/images/auth_bg.webp';
+import { preloadAuthScreens } from '../features/auth/routes/authRoutes';
 import styles from './AppOpenScreen.module.css';
 
 /**
@@ -49,6 +51,7 @@ const EXIT_MS = 170;
 export default function AppOpenScreen() {
   const navigate = useNavigate();
   const [leaving, setLeaving] = useState(false);
+  const [splashExited, setSplashExited] = useState(false);
 
   /**
    * Read once, not subscribed to.
@@ -81,12 +84,54 @@ export default function AppOpenScreen() {
   const isLeavingRef = useRef(false);
   const exitTimerRef = useRef(0);
 
+  const mountedRef = useRef(true);
+
   useEffect(
-    () => () => {
+    () => {
+      // Effects are replayed in React Strict Mode during development. Restore
+      // this flag on every setup so the replay cleanup does not permanently
+      // prevent `leaveTo` from navigating after the first tap.
+      mountedRef.current = true;
+      return () => {
+      mountedRef.current = false;
       if (exitTimerRef.current) clearTimeout(exitTimerRef.current);
+      };
     },
     [],
   );
+
+  /**
+   * Everything Login and Signup need to paint, loaded while this screen is up.
+   *
+   * Leaving used to navigate first and load after: the auth shell's chunk,
+   * then the page's chunk, one after the other, each committing an empty
+   * fallback — blank frames between this screen and the next — and then the
+   * shell's full-screen background decoding on the way in. Now the chunks are
+   * fetched and the background decoded here, and `leaveTo` waits for them, so
+   * the next screen's first frame is complete.
+   */
+  const warmRef = useRef(null);
+  const warmAuth = useCallback(() => {
+    if (!warmRef.current) {
+      const bg = new Image();
+      bg.src = authBg;
+      warmRef.current = Promise.all([
+        preloadAuthScreens(),
+        bg.decode ? bg.decode().catch(() => {}) : Promise.resolve(),
+      ]);
+    }
+    return warmRef.current;
+  }, []);
+
+  useEffect(() => {
+    const idle = window.requestIdleCallback
+      // With a timeout: during start-up the WebView is rarely idle, and without
+      // one the warm-up could still be pending at the tap (measured: ~300ms of
+      // empty canvas between this screen and Login).
+      ? window.requestIdleCallback(() => warmAuth(), { timeout: 600 })
+      : window.requestAnimationFrame(() => warmAuth());
+    return () => (window.cancelIdleCallback ? window.cancelIdleCallback(idle) : window.cancelAnimationFrame(idle));
+  }, [warmAuth]);
 
   /**
    * Runs this one screen edge to edge, with the phone's bars transparent.
@@ -107,10 +152,52 @@ export default function AppOpenScreen() {
    * The native splash is untouched by any of this — it has already finished by
    * the time this component mounts.
    */
-  useEffect(() => {
+  useLayoutEffect(() => {
     const root = document.documentElement;
+    const previousIconPreference = root.getAttribute('data-status-bar-icons');
+    const previousNavigationBar = root.getAttribute('data-navigation-bar');
+    const previousNavigationIcons = root.getAttribute('data-navigation-bar-icons');
+    const navigationIcons = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
     root.setAttribute('data-bars', 'transparent');
-    return () => root.removeAttribute('data-bars');
+    root.setAttribute('data-status-bar-icons', 'dark');
+    root.setAttribute('data-navigation-bar', 'transparent');
+    root.setAttribute('data-navigation-bar-icons', navigationIcons);
+    return () => {
+      root.removeAttribute('data-bars');
+      if (previousNavigationBar === null) root.removeAttribute('data-navigation-bar');
+      else root.setAttribute('data-navigation-bar', previousNavigationBar);
+      if (previousNavigationIcons === null) root.removeAttribute('data-navigation-bar-icons');
+      else root.setAttribute('data-navigation-bar-icons', previousNavigationIcons);
+      if (previousIconPreference === null) root.removeAttribute('data-status-bar-icons');
+      else root.setAttribute('data-status-bar-icons', previousIconPreference);
+    };
+  }, []);
+
+  // On Android, let the native splash fade away before bringing this screen
+  // in. In a browser there is no native splash hand-off to wait for.
+  useLayoutEffect(() => {
+    const nativeSplashAlreadyExited = () => {
+      if (window.__meetifyySplashExited === true) return true;
+      try {
+        return window.sessionStorage.getItem('__meetifyySplashExited') === 'true';
+      } catch {
+        return false;
+      }
+    };
+    const isNative = typeof window.Capacitor?.isNativePlatform === 'function'
+      && window.Capacitor.isNativePlatform();
+    if (!isNative) {
+      setSplashExited(true);
+      return undefined;
+    }
+    if (nativeSplashAlreadyExited()) {
+      setSplashExited(true);
+      return undefined;
+    }
+
+    const showOpeningScreen = () => setSplashExited(true);
+    window.addEventListener('meetifyy:splash-exited', showOpeningScreen, { once: true });
+    return () => window.removeEventListener('meetifyy:splash-exited', showOpeningScreen);
   }, []);
 
   const leaveTo = useCallback(
@@ -118,22 +205,28 @@ export default function AppOpenScreen() {
       if (isLeavingRef.current) return;
       isLeavingRef.current = true;
 
-      if (reduceMotion) {
-        navigate(path);
-        return;
-      }
-
-      setLeaving(true);
-      exitTimerRef.current = setTimeout(() => navigate(path), EXIT_MS);
+      // Navigate once the exit animation has played AND the next screen is
+      // ready to paint — whichever takes longer. A failed load still leaves:
+      // the route's own boundary handles it.
+      const animationDone = reduceMotion
+        ? Promise.resolve()
+        : new Promise((resolve) => {
+          setLeaving(true);
+          exitTimerRef.current = setTimeout(resolve, EXIT_MS);
+        });
+      const go = () => {
+        if (mountedRef.current) navigate(path, { state: { fromOpenScreen: true } });
+      };
+      Promise.all([animationDone, warmAuth()]).then(go, go);
     },
-    [navigate, reduceMotion],
+    [navigate, reduceMotion, warmAuth],
   );
 
   const handleSignup = useCallback(() => leaveTo('/signup'), [leaveTo]);
   const handleLogin = useCallback(() => leaveTo('/login'), [leaveTo]);
 
   return (
-    <div className={`${styles.screen} ${leaving ? styles.leaving : ''}`}>
+    <div className={`${styles.screen} ${splashExited ? styles.visible : ''} ${leaving ? styles.leaving : ''}`}>
       {/* Brand light. No content — nothing here is read or tapped. */}
       <div className={styles.canvas} aria-hidden="true">
         <span className={styles.auraBrand} />

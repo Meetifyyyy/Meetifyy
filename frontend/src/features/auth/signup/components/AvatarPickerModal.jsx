@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '@shared/hooks/useScrollLock';
+import { useSheetDrag } from '@shared/hooks/useSheetDrag';
 import { X, RefreshCw, Check, Upload } from '@shared/components/icons';
 import {
   SUPPORTED_DICEBEAR_STYLES,
@@ -30,6 +31,7 @@ export default function AvatarPickerModal({
   // Background stays put while the picker is open. Counted, so a dialog opened
   // on top of another cannot unlock the page when it closes.
   useScrollLock(Boolean(isOpen));
+  const sheetRef = useSheetDrag(onClose, { enabled: Boolean(isOpen) });
 
   useEffect(() => {
     if (isOpen && !prevOpenRef.current) {
@@ -132,10 +134,11 @@ export default function AvatarPickerModal({
       aria-labelledby="avatar-picker-title"
     >
       <div
+        ref={sheetRef}
         className={`${s.avatarModalCard} ${isClosing ? s.avatarModalCardClosing : ''}`}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className={s.avatarModalHandle} />
+        <div className={s.avatarModalHandle} data-sheet-handle aria-hidden="true" />
 
         {/* Header */}
         <div className={s.avatarModalHeader}>

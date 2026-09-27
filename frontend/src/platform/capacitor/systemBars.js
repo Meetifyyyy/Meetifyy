@@ -1,4 +1,5 @@
-import { registerPlugin, SystemBars, SystemBarsStyle } from '@capacitor/core';
+import { Capacitor, registerPlugin, SystemBars, SystemBarsStyle } from '@capacitor/core';
+import { setStatusBarOverlay } from './statusBarOverlay';
 
 /**
  * Keeps the phone's status bar and navigation bar the same colour as the app.
@@ -93,7 +94,7 @@ export function needsLightIcons(hex) {
   return luminance < 0.5;
 }
 
-export function createCapacitorSystemBars({ getComputed } = {}) {
+export function createCapacitorSystemBars({ getComputed, getEdges } = {}) {
   const read =
     getComputed ??
     (() =>
@@ -101,7 +102,14 @@ export function createCapacitorSystemBars({ getComputed } = {}) {
         .getPropertyValue('--color-nav-surface')
         .trim());
 
+  // The last payload sent, so a re-sample that finds the same page colours
+  // (most of them) costs no bridge call.
+  let lastSent = '';
+
   return {
+    setStatusBarOverlay(enabled, options) {
+      return setStatusBarOverlay(enabled, options);
+    },
     /**
      * Pushes the app's current surface colour to the system bars.
      *
@@ -109,11 +117,30 @@ export function createCapacitorSystemBars({ getComputed } = {}) {
      * does, and a bar that keeps its old colour is a cosmetic problem. Throwing
      * here would take down whatever called it, which is a theme change.
      */
-    async apply() {
+    async apply({ force = false } = {}) {
       const background = toHexColor(read());
       if (!background) return;
 
       const lightIcons = needsLightIcons(background);
+
+      // Each bar continues the page it meets (see src/mobile/pageEdgeColors.js).
+      // `background` stays the theme's chrome colour: it is what is persisted
+      // for the next cold start, and what either bar falls back to when its
+      // edge of the page cannot be read.
+      const edges = (getEdges && getEdges()) || {};
+      const statusBackground = toHexColor(edges.top) || background;
+      const navBackground = toHexColor(edges.bottom) || background;
+
+      // Android 15+ enforces a transparent system status bar for apps that
+      // target API 35+, so setStatusBarColor alone cannot make the pixels
+      // behind its icons opaque. mobile.css paints this exact sampled surface
+      // in the status-bar inset; native icon appearance is still set below.
+      if (typeof document !== 'undefined') {
+        const root = document.documentElement;
+        if (root.style.getPropertyValue('--mobile-status-bar-background') !== statusBackground) {
+          root.style.setProperty('--mobile-status-bar-background', statusBackground);
+        }
+      }
 
       let theme = 'light';
       let preferenceSet = false;
@@ -140,9 +167,22 @@ export function createCapacitorSystemBars({ getComputed } = {}) {
        * Failing after that is genuinely "this platform has no SystemUi", which
        * is iOS and the web preview, and is not worth shouting about.
        */
+      const key = [background, theme, preferenceSet, statusBackground, navBackground].join('|');
+      if (!force && key === lastSent) return;
+      lastSent = key;
+
       for (let attempt = 0; attempt < 3; attempt++) {
         try {
-          await SystemUi.setColors({ background, lightIcons, theme, preferenceSet });
+          await SystemUi.setColors({
+            background,
+            lightIcons,
+            theme,
+            preferenceSet,
+            statusBackground,
+            statusLightIcons: needsLightIcons(statusBackground),
+            navBackground,
+            navLightIcons: needsLightIcons(navBackground),
+          });
           break;
         } catch {
           if (attempt === 2) break;
@@ -150,9 +190,14 @@ export function createCapacitorSystemBars({ getComputed } = {}) {
         }
       }
 
+      // iOS only. On Android `SystemUi` above already sets the icon appearance,
+      // and Capacitor's `setStyle` repaints the bar background itself —
+      // measured on a device, it turned both bars white straight after
+      // SystemUi had painted them the page's colours.
+      if (Capacitor.getPlatform() !== 'ios') return;
       try {
         await SystemBars.setStyle({
-          style: lightIcons ? SystemBarsStyle.Dark : SystemBarsStyle.Light,
+          style: needsLightIcons(statusBackground) ? SystemBarsStyle.Dark : SystemBarsStyle.Light,
         });
       } catch {
         // Not every platform implements it; the colour above is the part that

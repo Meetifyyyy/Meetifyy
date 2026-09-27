@@ -37,6 +37,7 @@ import { getCollegeName } from '@shared/utils/user';
 import RightPanel from '@layout/RightPanel';
 import { INTERESTS_BY_CATEGORY } from '@shared/constants/interestsData';
 import { useAcademicSummary } from '@shared/academics/useAcademicSummary';
+import { IS_MOBILE_BUILD } from '@config';
 
 function balanceTagsIntoTwoRows(tags) {
   if (!tags || tags.length === 0) return [[], []];
@@ -71,6 +72,7 @@ INTERESTS_BY_CATEGORY.forEach(category => {
 
 
 import CoverImage from '@shared/components/ui/CoverImage';
+import CollapsingHeader from '@shared/components/CollapsingHeader/CollapsingHeader';
 import { Bookmark, Lock, MoreVertical, Settings, Share2, Flag } from '@shared/components/icons';
 import Menu, { MenuItem, useMenu } from '@shared/components/ui/Menu';
 
@@ -120,6 +122,8 @@ export default function ProfilePage() {
   const [cropFile, setCropFile] = useState(null);
   const [cropType, setCropType] = useState(null); // 'avatar' or 'cover'
   const coverFileRef = useRef(null);
+  const coverRef = useRef(null);
+  const collapsingHeaderRef = useRef(null);
   const avatarFileRef = useRef(null);
 
   // Gradient presets for the cover editor
@@ -377,6 +381,23 @@ export default function ProfilePage() {
     handlePostClick(post, { focusComment: true });
   };
 
+  const profileCover = (
+    <CoverImage cover={effectiveUser.cover} className={s.coverPhoto}>
+      {isOwnProfile && (
+        <button
+          className={s.editCoverBtn}
+          onClick={() => setShowCoverEditor(true)}
+          title="Edit cover"
+          aria-label="Edit cover"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+          </svg>
+        </button>
+      )}
+    </CoverImage>
+  );
+
   return (
     <>
       {/*
@@ -386,64 +407,87 @@ export default function ProfilePage() {
         pull translates whatever is inside it. Wrapping the fragment would have
         dragged an open modal down the screen with the gesture.
       */}
-      <PullToRefresh onRefresh={handleRefresh}>
+      <CollapsingHeader
+        coverRef={coverRef}
+        title={effectiveUser.displayName || effectiveUser.name || effectiveUser.username}
+        subtitle={effectiveUser.username ? `@${effectiveUser.username}` : null}
+        onBack={() => goBack('/home')}
+        backVariant="profile"
+        coverBackground
+        coverContent={IS_MOBILE_BUILD ? profileCover : null}
+        collapseRangeMultiplier={1.45}
+        headerRef={collapsingHeaderRef}
+        rightAction={IS_MOBILE_BUILD ? (
+          <div className={s.menuWrap}>
+            <button {...profileMenu.triggerProps} className={s.mobileMenuBtn} aria-label="More options">
+              <MoreVertical size={20} />
+            </button>
+            <Menu {...profileMenu.menuProps} size="md" ariaLabel="Profile options">
+              <MenuItem icon={Settings} onSelect={() => navigate('/settings')} onClose={profileMenu.close}>
+                Settings
+              </MenuItem>
+              <MenuItem icon={Share2} onSelect={() => setShareModalOpen(true)} onClose={profileMenu.close}>
+                Share profile
+              </MenuItem>
+              <MenuItem icon={Bookmark} onSelect={() => navigate('/saved')} onClose={profileMenu.close}>
+                Saved
+              </MenuItem>
+              <MenuItem
+                icon={Flag}
+                disabled={hasReported}
+                onSelect={() => setShowReportModal(true)}
+                onClose={profileMenu.close}
+              >
+                {hasReported ? 'Already reported' : 'Report'}
+              </MenuItem>
+            </Menu>
+          </div>
+        ) : null}
+      />
+      <PullToRefresh onRefresh={handleRefresh} surface="sheet" pullTargetRef={collapsingHeaderRef}>
       <main className={`centre animate-in ${s.profileMain}`}>
         {/* ── Center column ── */}
         <div className={s.centerColumn}>
 
           {/* Profile card */}
-          <div className={s.profileCard}>
-            <div className={s.coverWrap}>
-              <CoverImage
-                cover={effectiveUser.cover}
-                className={s.coverPhoto}
-              />
-              {/* Own profile — edit cover button */}
-              {isOwnProfile && (
-                <button
-                  className={s.editCoverBtn}
-                  onClick={() => setShowCoverEditor(true)}
-                  title="Edit cover"
-                  aria-label="Edit cover"
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
-                  </svg>
-                </button>
-              )}
+      <div className={s.profileCard}>
+            <div className={s.coverWrap} ref={coverRef}>
+              {!IS_MOBILE_BUILD && profileCover}
               <button className={s.mobileBackBtn} onClick={() => goBack('/home')} aria-label="Go back">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                   <line x1="19" y1="12" x2="5" y2="12" />
                   <polyline points="12 19 5 12 12 5" />
                 </svg>
               </button>
-              <div className={s.menuWrap}>
-                <button {...profileMenu.triggerProps} className={s.mobileMenuBtn} aria-label="More options">
-                  <MoreVertical size={20} />
-                </button>
-                <Menu {...profileMenu.menuProps} size="md" ariaLabel="Profile options">
-                  <MenuItem icon={Settings} onSelect={() => navigate('/settings')} onClose={profileMenu.close}>
-                    Settings
-                  </MenuItem>
-                  <MenuItem icon={Share2} onSelect={() => setShareModalOpen(true)} onClose={profileMenu.close}>
-                    Share profile
-                  </MenuItem>
-                  <MenuItem icon={Bookmark} onSelect={() => navigate('/saved')} onClose={profileMenu.close}>
-                    Saved
-                  </MenuItem>
-                  <MenuItem
-                    icon={Flag}
-                    disabled={hasReported}
-                    onSelect={() => setShowReportModal(true)}
-                    onClose={profileMenu.close}
-                  >
-                    {hasReported ? 'Already reported' : 'Report'}
-                  </MenuItem>
-                </Menu>
-              </div>
+              {!IS_MOBILE_BUILD && (
+                <div className={s.menuWrap}>
+                  <button {...profileMenu.triggerProps} className={s.mobileMenuBtn} aria-label="More options">
+                    <MoreVertical size={20} />
+                  </button>
+                  <Menu {...profileMenu.menuProps} size="md" ariaLabel="Profile options">
+                    <MenuItem icon={Settings} onSelect={() => navigate('/settings')} onClose={profileMenu.close}>
+                      Settings
+                    </MenuItem>
+                    <MenuItem icon={Share2} onSelect={() => setShareModalOpen(true)} onClose={profileMenu.close}>
+                      Share profile
+                    </MenuItem>
+                    <MenuItem icon={Bookmark} onSelect={() => navigate('/saved')} onClose={profileMenu.close}>
+                      Saved
+                    </MenuItem>
+                    <MenuItem
+                      icon={Flag}
+                      disabled={hasReported}
+                      onSelect={() => setShowReportModal(true)}
+                      onClose={profileMenu.close}
+                    >
+                      {hasReported ? 'Already reported' : 'Report'}
+                    </MenuItem>
+                  </Menu>
+                </div>
+              )}
             </div>
             <div className={s.profileInfo}>
-              <div className={s.avatarWrapper}>
+            <div className={s.avatarWrapper}>
                 <Avatar
                   src={effectiveUser.avatar}
                   name={effectiveUser.displayName || effectiveUser.name || effectiveUser.username}

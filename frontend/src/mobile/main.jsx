@@ -30,6 +30,8 @@
  * `shared/api/apiClient.js`, which picks its platform from `config.client`.
  * Without it every request inside the WebView would go to `localhost:4000`.
  */
+// First: keeps a phone in landscape on the mobile layout (see the module).
+import './installLandscapePhoneMedia';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -48,6 +50,7 @@ import { installNativeBackButton } from './nativeBackButton';
 import UpdateGate from './UpdateGate';
 import { createCapacitorSystemBars } from '../platform/capacitor/systemBars';
 import { installSystemBars } from './installSystemBars';
+import { readPageEdgeColors } from './pageEdgeColors';
 
 import '../styles/variables.css';
 import '../styles/global.css';
@@ -108,18 +111,24 @@ if (typeof document !== 'undefined') {
 installNativeBackButton(createCapacitorBackButton());
 
 /**
- * The phone's status bar and navigation bar, painted to match the app.
+ * The phone's status bar follows each native screen's top-edge colour; the
+ * navigation bar follows its bottom edge.
  *
  * Installed here rather than from a component because it is a property of the
- * process, not of any screen, and it must survive every route change. It reads
- * `--color-bg-white` — the colour the app's own header and bottom navigation
- * use — so the system bars and the app's bars are the same colour by
- * construction rather than by two values being kept in step by hand.
+ * process, not of any screen, and it must survive every route change. Each
+ * bar takes the colour the current page paints at its edge, so both bars
+ * continue the page rather than framing it; the theme's
+ * chrome colour is the fallback and what the next cold start launches with.
  *
  * Runs after the stylesheets above are imported; reading the variable before
  * them returns nothing and the bars keep the window's default white.
  */
-installSystemBars(createCapacitorSystemBars());
+installSystemBars(
+  createCapacitorSystemBars({
+    // Both system bars continue the current page at the edge they meet.
+    getEdges: readPageEdgeColors,
+  }),
+);
 
 createRoot(document.getElementById('root')).render(
   <QueryClientProvider client={queryClient}>

@@ -60,8 +60,8 @@
   --ghost-ink: #ffffff;
 
   /* ---- Safe areas ------------------------------------------------------ */
-  --safe-t: env(safe-area-inset-top, 0px);
-  --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-t: max(env(safe-area-inset-top, 0px), var(--status-bar-inset, 0px));
+  --safe-b: max(env(safe-area-inset-bottom, 0px), var(--navigation-bar-inset, 0px));
   --safe-l: env(safe-area-inset-left, 0px);
   --safe-r: env(safe-area-inset-right, 0px);
 
@@ -76,10 +76,26 @@
   height: 100dvh;
   overflow: hidden;
   background: var(--edge);
+  opacity: 0;
+  transform: translate3d(0, 5px, 0);
+  transition: opacity 300ms ease-out, transform 300ms cubic-bezier(0.22, 1, 0.36, 1);
   user-select: none;
   -webkit-user-select: none;
   overscroll-behavior: none;
   -webkit-tap-highlight-color: transparent;
+}
+
+.visible {
+  opacity: 1;
+  transform: translate3d(0, 0, 0);
+}
+
+.screen:not(.visible) .canvas,
+.screen:not(.visible) .blob,
+.screen:not(.visible) .mascot,
+.screen:not(.visible) .copy,
+.screen:not(.visible) .actions {
+  animation-play-state: paused;
 }
 
 /*
@@ -102,29 +118,12 @@
    This screen runs edge to edge: the phone's bars show the canvas through them
    rather than a painted strip.
 
-   `installSystemBars` pushes `--color-nav-surface` to the native layer, so
-   overriding that variable is the whole mechanism — no native change, and
-   nothing here touches the splash. `AppOpenScreen` sets `data-bars` on <html>
-   while it is mounted and removes it on unmount, and the observer in
-   `installSystemBars` repaints on that attribute the same way it does on a
-   theme change. Every other screen keeps the opaque chrome colour.
-
-   The colour is `#AARRGGBB` with a zero alpha, and the RGB half still carries
-   the theme's colour on purpose: `needsLightIcons` reads it to decide whether
-   the clock is drawn light or dark, and a transparent bar still needs icons
-   that can be seen against whatever is behind it.
-
-   Written as a global rule rather than added to variables.css because it is a
-   property of this one screen, and variables.css is shared with the website.
+   The `data-bars` marker asks the native system UI adapter to let the screen
+   manage its status-bar safe-area inset. The native inset is exposed as `--status-bar-inset`
+   so this screen's content stays clear of the clock; its background continues
+   behind the status bar. The marker is owned by the screen and removed on
+   unmount.
    ========================================================================= */
-
-:global(html[data-bars='transparent']) {
-  --color-nav-surface: #00ffffff;
-}
-
-:global(html[data-theme='dark'][data-bars='transparent']) {
-  --color-nav-surface: #00000000;
-}
 
 /* ============================================================================
    CANVAS
@@ -548,7 +547,12 @@
    one thing here that never stops on its own.
    ========================================================================= */
 
-@media (prefers-reduced-motion: reduce) {
+  @media (prefers-reduced-motion: reduce) {
+  .screen {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
   .canvas,
   .copy,
   .actions,

@@ -57,6 +57,27 @@ body::-webkit-scrollbar,
   display: none !important;
 }
 
+/* Android 15+ enforces a transparent system status bar for this target SDK.
+   Paint an opaque page-matched surface in that inset so WebView content never
+   shows through behind the clock and system icons. */
+html::before {
+  content: '';
+  position: fixed;
+  inset: 0 0 auto;
+  height: max(env(safe-area-inset-top, 0px), var(--status-bar-inset, 0px));
+  background: var(--mobile-status-bar-background, var(--color-nav-surface));
+  pointer-events: none;
+  z-index: 2147483647;
+}
+
+/* App opening and auth screens, plus profile/community covers, draw their own
+   backgrounds underneath the status icons. Keep the inset overlay clear only
+   while one of those mobile screens has explicitly enabled underlay. */
+html[data-bars='transparent']::before,
+html[data-collapsing-header]::before {
+  background: transparent;
+}
+
 /* ----------------------------------------------------------------------------
    No long-press text selection.
 

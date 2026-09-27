@@ -1,8 +1,13 @@
 import { describe, it, expect, vi } from 'vitest';
 
+const platform = { current: 'android' };
+const setStyle = vi.fn(async () => {});
+const setColors = vi.fn(async () => {});
+
 vi.mock('@capacitor/core', () => ({
-  registerPlugin: () => ({ setColors: vi.fn(async () => {}) }),
-  SystemBars: { setStyle: vi.fn(async () => {}) },
+  Capacitor: { getPlatform: () => platform.current },
+  registerPlugin: () => ({ setColors }),
+  SystemBars: { setStyle },
   SystemBarsStyle: { Dark: 'DARK', Light: 'LIGHT', Default: 'DEFAULT' },
 }));
 
@@ -113,5 +118,32 @@ describe('createCapacitorSystemBars', () => {
   it('survives a platform where neither plugin exists', async () => {
     const bars = createCapacitorSystemBars({ getComputed: () => '#202020' });
     await expect(bars.apply()).resolves.toBeUndefined();
+  });
+
+  it('sends each bar its own page-edge colour', async () => {
+    setColors.mockClear();
+    const bars = createCapacitorSystemBars({
+      getComputed: () => '#ffffff',
+      getEdges: () => ({ top: '#d7e6f9', bottom: '#101010' }),
+    });
+    await bars.apply({ force: true });
+    expect(setColors).toHaveBeenCalledWith(expect.objectContaining({
+      background: '#ffffff',
+      statusBackground: '#d7e6f9',
+      statusLightIcons: false,
+      navBackground: '#101010',
+      navLightIcons: true,
+    }));
+  });
+
+  it('leaves the Android bars to SystemUi: Capacitor setStyle repaints them', async () => {
+    setStyle.mockClear();
+    platform.current = 'android';
+    await createCapacitorSystemBars({ getComputed: () => '#ffffff' }).apply({ force: true });
+    expect(setStyle).not.toHaveBeenCalled();
+
+    platform.current = 'ios';
+    await createCapacitorSystemBars({ getComputed: () => '#ffffff' }).apply({ force: true });
+    expect(setStyle).toHaveBeenCalled();
   });
 });

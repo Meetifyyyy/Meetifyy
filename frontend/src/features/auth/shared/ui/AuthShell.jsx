@@ -1,6 +1,7 @@
 import { createContext, Fragment, memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { ArrowLeft, Check } from '@shared/components/icons';
+import { IS_MOBILE_BUILD } from '@config';
 import wordmark from '@assets/images/meetifyy_wordmark.svg';
 import wordmarkDark from '@assets/images/meetifyy_wordmark_dark.svg';
 import proofCards from '@assets/images/auth_proof_cards.webp';
@@ -183,7 +184,10 @@ function AuthShellMaster({
    * sees it.
    */
   const [panelHeight, setPanelHeight] = useState(null);
-  const [isInitialMount, setIsInitialMount] = useState(true);
+  // No entrance animation when the app's opening screen has just faded out
+  // into this one: the panel fading in from nothing, straight after that
+  // fade-out, read on a device as a ~200ms dip to black between the two.
+  const [isInitialMount, setIsInitialMount] = useState(() => !location.state?.fromOpenScreen);
   const [story, setStory] = useState({
     headline: defaultHeadline,
     subtext: defaultSubtext,
@@ -238,14 +242,34 @@ function AuthShellMaster({
     const body = document.body;
     const prevHtmlBg = html.style.background;
     const prevBodyBg = body.style.background;
+    const prevBars = html.getAttribute('data-bars');
+    const prevStatusBarIcons = html.getAttribute('data-status-bar-icons');
+    const prevNavigationBar = html.getAttribute('data-navigation-bar');
+    const prevNavigationBarIcons = html.getAttribute('data-navigation-bar-icons');
 
     html.style.setProperty('--auth-bg', `url(${authBg})`);
     html.classList.add('auth-canvas-active');
     body.classList.add('auth-canvas-active');
+    if (IS_MOBILE_BUILD) {
+      html.setAttribute('data-bars', 'transparent');
+      html.setAttribute('data-status-bar-icons', 'light');
+      html.setAttribute('data-navigation-bar', 'transparent');
+      html.setAttribute('data-navigation-bar-icons', 'light');
+    }
 
     return () => {
       html.classList.remove('auth-canvas-active');
       body.classList.remove('auth-canvas-active');
+      if (IS_MOBILE_BUILD) {
+        if (prevBars === null) html.removeAttribute('data-bars');
+        else html.setAttribute('data-bars', prevBars);
+        if (prevStatusBarIcons === null) html.removeAttribute('data-status-bar-icons');
+        else html.setAttribute('data-status-bar-icons', prevStatusBarIcons);
+        if (prevNavigationBar === null) html.removeAttribute('data-navigation-bar');
+        else html.setAttribute('data-navigation-bar', prevNavigationBar);
+        if (prevNavigationBarIcons === null) html.removeAttribute('data-navigation-bar-icons');
+        else html.setAttribute('data-navigation-bar-icons', prevNavigationBarIcons);
+      }
       html.style.removeProperty('--auth-bg');
       html.style.background = prevHtmlBg;
       body.style.background = prevBodyBg;
@@ -551,4 +575,3 @@ function renderHighlighted(line) {
   if (parts.length === 1) return line;
   return parts.map((part, i) => (i % 2 === 1 ? <em key={i}>{part}</em> : part));
 }
-

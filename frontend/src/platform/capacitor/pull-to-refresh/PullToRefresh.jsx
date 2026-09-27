@@ -1,3 +1,4 @@
+import { useEffect, useLayoutEffect, useState } from 'react';
 import usePullToRefresh from './usePullToRefresh';
 import styles from './PullToRefresh.module.css';
 
@@ -21,7 +22,27 @@ import styles from './PullToRefresh.module.css';
  * Not exported to the web bundle: this file lives under `src/mobile/`, which
  * only `src/mobile/main.jsx` imports.
  */
-export default function PullToRefresh({ onRefresh, children, disabled = false, getScrollTop }) {
+/** Matches the content's spring-back transition, plus a frame of slack. */
+const SPRING_MS = 360;
+
+/**
+ * @param {object} props
+ * @param {'canvas'|'sheet'} [props.surface] what the pull reveals above the
+ *   screen. `canvas` (default) shows the app background, right for screens
+ *   of cards on it. `sheet` paints the gap in the page surface colour, for
+ *   screens that are one opaque surface (Messages, Profile) - otherwise the
+ *   pull opens a band of blue canvas above a white page. Only for
+ *   screens that are opaque ON PHONES (Feed and Notifications are not: both
+ *   sit on the canvas below 768px).
+ */
+export default function PullToRefresh({
+  onRefresh,
+  children,
+  disabled = false,
+  getScrollTop,
+  surface = 'canvas',
+  pullTargetRef,
+}) {
   const { containerRef, distance, phase, isRefreshing, progress } = usePullToRefresh({
     onRefresh,
     disabled,
@@ -29,9 +50,64 @@ export default function PullToRefresh({ onRefresh, children, disabled = false, g
   });
 
   const pulling = phase === 'pulling' || phase === 'ready';
+  const springTransition = pulling ? 'none' : 'transform 0.32s cubic-bezier(0.22, 1, 0.36, 1)';
+
+  // Fixed cover headers travel with the content during a pull, then return to
+  // their viewport position while the content springs back.
+  useLayoutEffect(() => {
+    const target = pullTargetRef?.current;
+    if (!target) return;
+    target.style.setProperty('--pull-to-refresh-transition', springTransition);
+    if (distance > 0) target.style.setProperty('--pull-to-refresh-distance', `${distance}px`);
+    else target.style.removeProperty('--pull-to-refresh-distance');
+  }, [distance, pullTargetRef, springTransition]);
+
+  useLayoutEffect(() => () => {
+    pullTargetRef?.current?.style.removeProperty('--pull-to-refresh-distance');
+    pullTargetRef?.current?.style.removeProperty('--pull-to-refresh-transition');
+  }, [pullTargetRef]);
+
+  /*
+   * Whether the content carries a transform at all.
+   *
+   * It used to carry `translate3d(0, 0, 0)` permanently. Any transform makes
+   * the element the containing block for its `position: fixed` descendants,
+   * so every overlay rendered inside a screen - the New Message sheet, menus,
+   * FABs - was positioned against the page instead of the viewport and moved
+   * whenever the page did. The transform now exists only while the content is
+   * displaced or springing back, and is dropped once it has settled.
+   */
+  const [moving, setMoving] = useState(false);
+  useEffect(() => {
+    if (distance > 0) {
+      setMoving(true);
+      return undefined;
+    }
+    const t = window.setTimeout(() => setMoving(false), SPRING_MS);
+    return () => window.clearTimeout(t);
+  }, [distance]);
+  const displaced = moving || distance > 0;
 
   return (
     <div ref={containerRef} className={styles.root}>
+      {surface === 'sheet' && (
+        /*
+         * Fills the gap the pull opens. Parked above the top edge and moved by
+         * the same distance and transition as the content, so its bottom edge
+         * is always the content's top edge - the page reads as one surface
+         * being pulled, with nothing behind it showing through.
+         */
+        <div
+          className={styles.gap}
+          style={{
+            transform: displaced ? `translate3d(0, ${distance}px, 0)` : 'none',
+            transition: springTransition,
+            // Nothing clips it at rest any more (see .root), so it hides itself.
+            visibility: displaced ? 'visible' : 'hidden',
+          }}
+          aria-hidden="true"
+        />
+      )}
       {/*
         The indicator sits ABOVE the content and is revealed by the content
         moving down, rather than being animated into place itself. That is what
@@ -123,21 +199,18 @@ export default function PullToRefresh({ onRefresh, children, disabled = false, g
         className={styles.content}
         style={{
           /*
-           * Always a transform, never `undefined` at rest.
-           *
-           * Dropping the property makes the computed value `none`, and a
-           * transition into `none` is the one case browsers handle
-           * inconsistently — some interpolate it, some jump. Writing an
-           * explicit zero keeps both ends of the transition the same kind of
-           * value, so the spring back is always interpolated.
+           * An explicit zero while springing back, so both ends of the
+           * transition are the same kind of value (a transition into `none`
+           * is interpolated inconsistently). `none` only once settled - see
+           * `displaced` above.
            */
-          transform: `translate3d(0, ${distance}px, 0)`,
+          transform: displaced ? `translate3d(0, ${distance}px, 0)` : 'none',
           /*
            * No transition WHILE dragging — the finger is the animation, and a
            * transition here would make the content lag behind it. The spring
            * back is the only part that is animated.
            */
-          transition: pulling ? 'none' : 'transform 0.32s cubic-bezier(0.22, 1, 0.36, 1)',
+          transition: springTransition,
           // Promoted only for the moments it actually moves.
           willChange: distance > 0 ? 'transform' : 'auto',
         }}

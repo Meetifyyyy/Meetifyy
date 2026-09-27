@@ -54,7 +54,7 @@
   border-radius: var(--radius-lg);
   overflow: hidden;
   margin-bottom: 0rem;
-  box-shadow: 0 2px 12px rgba(18, 54, 107, 0.04);
+  box-shadow: none;
   width: 100%;
   max-width: 100%;
   min-width: 0;
@@ -560,9 +560,14 @@
 @media (max-width: 768px) {
   .profileMain {
     flex-direction: column !important;
-    padding: 0 0 5rem 0 !important;
+    /* The nav's full footprint, safe-area inset included. This was a flat
+       5rem, which overrode .centre's clearance and left the last post under
+       the nav wherever the inset is more than a few pixels. */
+    padding: 0 0 calc(var(--bottom-nav-clearance) + 12px) 0 !important;
     width: 100% !important;
-    overflow-x: hidden !important;
+    /* `clip`, not `hidden`: `hidden` on one axis promotes the other to `auto`
+       and made this a nested scroll container (see global.css on html). */
+    overflow-x: clip !important;
   }
 
   .centerColumn {
@@ -767,4 +772,41 @@
 
 .secondaryBtnLocked svg {
   flex-shrink: 0;
+}
+
+/* ── Installed app: cover under a transparent status bar ──────────────────
+   `data-collapsing-header` is set while CollapsingHeader is mounted, which is
+   only ever in the app. Its back button replaces the one on the cover, the
+   existing cover element moves into the sticky header, and the menu stays
+   below the status bar. */
+@media (max-width: 768px) {
+  :global(html[data-collapsing-header]) .mobileBackBtn {
+    display: none;
+  }
+
+  :global(html[data-collapsing-header]) .coverWrap {
+    height: calc(100vw / 3 + var(--status-bar-inset, 0px));
+  }
+
+  :global(html[data-collapsing-header]) .coverPhoto {
+    aspect-ratio: auto;
+    height: 100%;
+  }
+
+  :global(html[data-collapsing-header]) .menuWrap {
+    position: absolute;
+    top: calc(12px + var(--status-bar-inset, 0px));
+    right: 12px;
+    z-index: 63;
+    pointer-events: auto;
+  }
+
+  :global(html[data-collapsing-header]) .editCoverBtn {
+    transition: none;
+  }
+
+  :global(html[data-collapsing-header]) .name,
+  :global(html[data-collapsing-header]) .username {
+    opacity: calc(1 - var(--profile-collapse, 0));
+  }
 }

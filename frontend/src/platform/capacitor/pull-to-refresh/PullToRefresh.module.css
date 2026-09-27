@@ -10,15 +10,34 @@
   position: relative;
   width: 100%;
   /*
-   * `clip`, not `hidden`.
-   *
-   * The indicator starts above the top edge and has to be clipped away, but
-   * `overflow: hidden` on one axis silently promotes the other to `auto` and
-   * would turn this wrapper into a second scroll container — nested inside the
-   * window scroller the whole app relies on. `global.css` documents the same
-   * trap for html and #root. `clip` hides without scrolling.
+   * No overflow clipping here. It used to be `overflow: clip`, to hide the
+   * indicator and the gap surface parked above the top edge — but a clip on
+   * this box also cut off the BOTTOM of the page whenever the content was
+   * displaced: during the pull, and for the whole refresh while it rests at
+   * the refresh offset. The last card on a screen was sliced along a straight
+   * line just above the bottom nav. Both parked pieces now hide themselves at
+   * rest instead (the indicator by opacity, the gap by visibility), so there
+   * is nothing left for a clip to do. Horizontal overflow is already clipped
+   * app-wide on html/#root.
    */
-  overflow: clip;
+}
+
+/* ---- The gap surface (surface="sheet") --------------------------------- */
+
+/*
+ * As tall as the furthest the content can travel (MAX_PULL, 120px), sitting
+ * entirely above the top edge until a pull brings it down with the content.
+ */
+.gap {
+  position: absolute;
+  top: -120px;
+  left: 0;
+  right: 0;
+  height: 120px;
+  /* The full-bleed phone surface token, not --color-bg-white: in dark mode
+     sheet screens are #000, and bg-white (#202020) would show as a band. */
+  background: var(--color-surface-screen);
+  pointer-events: none;
 }
 
 /* ---- The indicator ------------------------------------------------------ */
