@@ -23,12 +23,27 @@ describe('Crew discovery', () => {
   const day = 24 * 60 * 60 * 1000;
 
   let service: ActivitiesService;
-  let prisma: any;
-  let pool: any[];
+  let prisma: ReturnType<typeof makePrisma>;
+  let pool: ActivityRow[];
   let follows: { followerId: string; followingId: string }[];
   let friendMemberships: { activityId: string; userId: string }[];
 
-  const act = (id: string, over: Partial<any> = {}) => ({
+  /** A crew activity row, as the discovery queries read it. */
+  type ActivityRow = {
+    id: string;
+    creatorId: string;
+    collegeId: string | null;
+    title: string;
+    description: string;
+    location: string;
+    startDate: Date;
+    maxMembers: number | null;
+    _count: { members: number };
+    deletedAt: Date | null;
+    status: string;
+  };
+
+  const act = (id: string, over: Partial<ActivityRow> = {}): ActivityRow => ({
     id,
     creatorId: `host-${id}`,
     collegeId: null,
@@ -43,26 +58,38 @@ describe('Crew discovery', () => {
     ...over,
   });
 
-  beforeEach(async () => {
-    pool = [];
-    follows = [];
-    friendMemberships = [];
-    blockedIds = [];
-
-    prisma = {
-      crewActivity: {
-        findMany: jest.fn(({ take, select }: any) => {
+  const makePrisma = () => ({
+    crewActivity: {
+      findMany: jest.fn(
+        ({
+          take,
+          select,
+        }: {
+          where?: unknown;
+          take?: number;
+          select?: { members?: unknown };
+        }) => {
           const rows = pool.slice(0, take ?? pool.length);
           // The hydration query asks for CARD_SELECT (which includes members);
           // the ranking query does not. Both just echo the pool here.
           return Promise.resolve(
             select?.members ? rows.map((r) => ({ ...r, members: [] })) : rows,
           );
-        }),
-      },
-      crewActivityMember: {
-        findMany: jest.fn(({ where }: any) => {
-          if (where?.userId && where.userId.in)
+        },
+      ),
+    },
+    crewActivityMember: {
+      findMany: jest.fn(
+        ({
+          where,
+        }: {
+          where?: {
+            userId?: string | { in?: string[] };
+            status?: string;
+            activityId?: unknown;
+          };
+        }) => {
+          if (typeof where?.userId === 'object' && where.userId.in)
             return Promise.resolve(friendMemberships);
           if (
             where?.userId === ME &&
@@ -71,30 +98,39 @@ describe('Crew discovery', () => {
           )
             return Promise.resolve([]);
           return Promise.resolve([]);
+        },
+      ),
+    },
+    user: {
+      findUnique: jest.fn(() =>
+        Promise.resolve({
+          id: ME,
+          collegeId: GLA,
+          interests: [] as string[],
+          college: { name: 'GLA' },
         }),
-      },
-      user: {
-        findUnique: jest.fn(() =>
-          Promise.resolve({
-            id: ME,
-            collegeId: GLA,
-            interests: [],
-            college: { name: 'GLA' },
-          }),
+      ),
+    },
+    follow: {
+      findMany: jest.fn(({ where }: { where: { followerId?: string } }) =>
+        Promise.resolve(
+          where.followerId === ME
+            ? follows.filter((f) => f.followerId === ME)
+            : follows.filter((f) => f.followingId === ME),
         ),
-      },
-      follow: {
-        findMany: jest.fn(({ where }: any) =>
-          Promise.resolve(
-            where.followerId === ME
-              ? follows.filter((f) => f.followerId === ME)
-              : follows.filter((f) => f.followingId === ME),
-          ),
-        ),
-      },
-      conversationParticipant: { findMany: jest.fn(() => Promise.resolve([])) },
-      activityInvitation: { count: jest.fn(() => Promise.resolve(0)) },
-    };
+      ),
+    },
+    conversationParticipant: { findMany: jest.fn(() => Promise.resolve([])) },
+    activityInvitation: { count: jest.fn(() => Promise.resolve(0)) },
+  });
+
+  beforeEach(async () => {
+    pool = [];
+    follows = [];
+    friendMemberships = [];
+    blockedIds = [];
+
+    prisma = makePrisma();
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -123,7 +159,7 @@ describe('Crew discovery', () => {
   });
 
   const order = async () =>
-    (await service.getForYouFeed(ME, 50)).activities.map((a: any) => a.id);
+    (await service.getForYouFeed(ME, 50)).activities.map((a) => a.id);
 
   describe('For You ranking', () => {
     it('ranks an activity hosted by a mutual above an unrelated one', async () => {
@@ -263,7 +299,7 @@ describe('Crew discovery', () => {
     it('never repeats an activity across pages', async () => {
       const p1 = await service.getForYouFeed(ME, 5);
       const p2 = await service.getForYouFeed(ME, 5, p1.nextCursor);
-      const ids = [...p1.activities, ...p2.activities].map((a: any) => a.id);
+      const ids = [...p1.activities, ...p2.activities].map((a) => a.id);
       expect(new Set(ids).size).toBe(ids.length);
     });
 
@@ -278,7 +314,7 @@ describe('Crew discovery', () => {
       pool = Array.from({ length: 9 }, (_, i) =>
         act(`a${i}`, { collegeId: GLA, maxMembers: 2 }),
       );
-      const res: any = await service.getCrewDiscover(ME);
+      const res = await service.getCrewDiscover(ME);
 
       expect(Object.keys(res)).toEqual(
         expect.arrayContaining([
@@ -289,7 +325,7 @@ describe('Crew discovery', () => {
           'collegeId',
         ]),
       );
-      for (const key of ['forYou', 'college', 'oneOnOne']) {
+      for (const key of ['forYou', 'college', 'oneOnOne'] as const) {
         expect(res[key].items.length).toBeLessThanOrEqual(5);
       }
       expect(res.forYou.hasMore).toBe(true);
@@ -299,28 +335,25 @@ describe('Crew discovery', () => {
       pool = Array.from({ length: 6 }, (_, i) =>
         act(`a${i}`, { collegeId: GLA, maxMembers: 2 }),
       );
-      const res: any = await service.getCrewDiscover(ME);
+      const res = await service.getCrewDiscover(ME);
       const ids = [
         ...res.forYou.items,
         ...res.college.items,
         ...res.oneOnOne.items,
-      ].map((a: any) => a.id);
+      ].map((a) => a.id);
       expect(new Set(ids).size).toBe(ids.length);
     });
 
     it('scopes each section correctly and to not-yet-started activities', async () => {
       pool = [act('a', { collegeId: GLA, maxMembers: 2 })];
       await service.getCrewDiscover(ME);
-      const wheres = prisma.crewActivity.findMany.mock.calls.map((c: any) =>
+      const wheres = prisma.crewActivity.findMany.mock.calls.map((c) =>
         JSON.stringify(c[0].where),
       );
       const collegeWhere = wheres.find(
-        (w: string) =>
-          w.includes(`"collegeId":"${GLA}"`) && !w.includes('maxMembers'),
+        (w) => w.includes(`"collegeId":"${GLA}"`) && !w.includes('maxMembers'),
       );
-      const oneOnOneWhere = wheres.find((w: string) =>
-        w.includes('"maxMembers":2'),
-      );
+      const oneOnOneWhere = wheres.find((w) => w.includes('"maxMembers":2'));
       expect(collegeWhere).toBeDefined();
       expect(oneOnOneWhere).toBeDefined();
       for (const w of wheres) {

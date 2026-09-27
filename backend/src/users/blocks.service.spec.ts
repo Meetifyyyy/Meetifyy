@@ -1,6 +1,9 @@
 import type { Prisma } from '@prisma/client';
 import { NotFoundException } from '@nestjs/common';
 import { BlocksService } from './blocks.service';
+import { stub } from '../common/testing/stub';
+import type { PrismaService } from '../prisma/prisma.service';
+import type { RedisService } from '../redis/redis.service';
 
 /**
  * Covers the three helpers every other service is expected to filter through.
@@ -8,11 +11,18 @@ import { BlocksService } from './blocks.service';
  * Each test uses distinct user ids: BlocksService caches per user in a static
  * map, so reusing an id across tests would serve a previous test's answer.
  */
+/** The `where` shapes BlocksService sends to `prisma.block`. */
+type BlockWhere = {
+  OR?: { blockerId?: string; blockedId?: string }[];
+  blockerId?: string;
+  blockedId?: string;
+};
+
 describe('BlocksService', () => {
   const makeService = (blocks: { blockerId: string; blockedId: string }[]) => {
     const prisma = {
       block: {
-        findMany: jest.fn(({ where }: any) => {
+        findMany: jest.fn(({ where }: { where: BlockWhere }) => {
           // getBlockedByUserIds asks for one direction; the mutual read uses OR.
           if (where.OR) {
             const userId = where.OR[0].blockerId;
@@ -26,7 +36,7 @@ describe('BlocksService', () => {
             blocks.filter((b) => b.blockerId === where.blockerId),
           );
         }),
-        deleteMany: jest.fn(({ where }: any) =>
+        deleteMany: jest.fn(({ where }: { where: BlockWhere }) =>
           Promise.resolve({
             count: blocks.filter(
               (b) =>
@@ -37,7 +47,7 @@ describe('BlocksService', () => {
         ),
       },
     };
-    return new BlocksService(prisma as any);
+    return new BlocksService(stub<PrismaService>(prisma));
   };
 
   describe('isBlocked', () => {
@@ -211,9 +221,9 @@ describe('BlocksService — getBlockDirection', () => {
   const B = 'user-b';
 
   const build = (rows: { blockerId: string; blockedId: string }[]) => {
-    const prisma: any = {
+    const prisma = stub<PrismaService>({
       block: {
-        findMany: jest.fn(({ where }: any) => {
+        findMany: jest.fn(({ where }: { where: BlockWhere }) => {
           if (where.blockerId && where.blockedId === undefined) {
             return Promise.resolve(
               rows
@@ -222,12 +232,13 @@ describe('BlocksService — getBlockDirection', () => {
             );
           }
           if (where.OR) {
+            const [mine, theirs] = where.OR;
             return Promise.resolve(
               rows
                 .filter(
                   (r) =>
-                    r.blockerId === where.OR[0].blockerId ||
-                    r.blockedId === where.OR[1].blockedId,
+                    r.blockerId === mine.blockerId ||
+                    r.blockedId === theirs.blockedId,
                 )
                 .map((r) => ({
                   blockerId: r.blockerId,
@@ -238,22 +249,21 @@ describe('BlocksService — getBlockDirection', () => {
           return Promise.resolve([]);
         }),
       },
-    };
-    const redis: any = {
-      getClient: () => ({
-        on: jest.fn(),
-        subscribe: jest.fn(),
-        publish: jest.fn(),
-      }),
-      subscriber: () => ({ on: jest.fn(), subscribe: jest.fn() }),
-    };
-    return new (require('./blocks.service').BlocksService)(prisma, redis);
+    });
+    const redis = stub<RedisService>({
+      getClient: () =>
+        stub<NonNullable<ReturnType<RedisService['getClient']>>>({
+          on: jest.fn(),
+          subscribe: jest.fn(),
+          publish: jest.fn(),
+        }),
+    });
+    return new BlocksService(prisma, redis);
   };
 
   const clearCaches = () => {
-    const S: any = require('./blocks.service').BlocksService;
-    S.cache?.clear?.();
-    S.outgoingCache?.clear?.();
+    BlocksService['cache'].clear();
+    BlocksService['outgoingCache'].clear();
   };
 
   beforeEach(clearCaches);
