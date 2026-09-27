@@ -13,8 +13,23 @@ import { PostsService } from './posts.service';
  * and the presenter guarantees that a query which forgets the filter leaks a
  * post that should not be visible rather than a deleted person's identity.
  */
+/** An author projection, plus the fields the tombstone adds. */
+type PresentedAuthor = {
+  id: string;
+  username: string;
+  displayName: string;
+  avatar: string | null;
+  isCampusRep: boolean;
+  collegeId: string | null;
+  college: { id: string; name: string } | null;
+  accountStatus: string;
+  deletedAt: Date | null;
+  isDeleted?: boolean;
+  profileAvailable?: boolean;
+};
+
 describe('PostsService — posts by an unavailable author', () => {
-  const live = {
+  const live: PresentedAuthor = {
     id: 'u1',
     username: 'sarthak',
     displayName: 'Sarthak Saini',
@@ -26,14 +41,14 @@ describe('PostsService — posts by an unavailable author', () => {
     deletedAt: null,
   };
 
-  const present = (author: any) =>
-    (PostsService as any).presentAuthor({ id: 'p1', text: 'hello', author });
+  const present = (author: PresentedAuthor | null | undefined) =>
+    PostsService['presentAuthor']({ id: 'p1', text: 'hello', author });
 
   describe('the filter', () => {
     it('requires an available author', () => {
       // ANDed into every post read, so the rule lives in one place rather than
       // being repeated at seven call sites and forgotten at the eighth.
-      expect((PostsService as any).AVAILABLE_AUTHOR).toEqual({
+      expect(PostsService['AVAILABLE_AUTHOR']).toEqual({
         author: { deletedAt: null },
       });
     });
@@ -41,7 +56,7 @@ describe('PostsService — posts by an unavailable author', () => {
     it('keys off deletedAt, so recovery restores posts with no extra step', () => {
       // deletedAt is the column the request stamps and recovery clears. A
       // filter on accountStatus alone would need a second reconciliation pass.
-      const filter = (PostsService as any).AVAILABLE_AUTHOR;
+      const filter = PostsService['AVAILABLE_AUTHOR'];
       expect(Object.keys(filter.author)).toEqual(['deletedAt']);
     });
   });
@@ -56,14 +71,14 @@ describe('PostsService — posts by an unavailable author', () => {
       (accountStatus) => {
         const out = present({ ...live, accountStatus, deletedAt: new Date() });
 
-        expect(out.author.displayName).toBe('Deleted User');
-        expect(out.author.avatar).toBeNull();
-        expect(out.author.username).not.toBe('sarthak');
-        expect(out.author.isDeleted).toBe(true);
-        expect(out.author.profileAvailable).toBe(false);
+        expect(out.author!.displayName).toBe('Deleted User');
+        expect(out.author!.avatar).toBeNull();
+        expect(out.author!.username).not.toBe('sarthak');
+        expect(out.author!.isDeleted).toBe(true);
+        expect(out.author!.profileAvailable).toBe(false);
         // No badge on an account that no longer exists.
-        expect(out.author.isCampusRep).toBe(false);
-        expect(out.author.college).toBeNull();
+        expect(out.author!.isCampusRep).toBe(false);
+        expect(out.author!.college).toBeNull();
         // The post's own fields survive — this is identity substitution, not
         // content removal.
         expect(out.text).toBe('hello');

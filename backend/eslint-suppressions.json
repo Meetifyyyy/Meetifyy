@@ -819,26 +819,6 @@
       "count": 7
     }
   },
-  "src/posts/posts.deleted-author.spec.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 4
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 4
-    },
-    "@typescript-eslint/no-unsafe-call": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 14
-    },
-    "@typescript-eslint/no-unsafe-return": {
-      "count": 3
-    }
-  },
   "src/posts/posts.deletion-notification.spec.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 10
@@ -1010,23 +990,6 @@
   "src/uploads/verification-media-endpoint.spec.ts": {
     "@typescript-eslint/no-unsafe-argument": {
       "count": 3
-    }
-  },
-  "src/uploads/verification-media-privacy.spec.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 8
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 10
-    },
-    "@typescript-eslint/no-unsafe-call": {
-      "count": 4
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 4
-    },
-    "@typescript-eslint/no-unsafe-return": {
-      "count": 1
     }
   },
   "src/users/blocked-contacts.controller.spec.ts": {

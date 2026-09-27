@@ -1,4 +1,8 @@
+import type { ConfigService } from '@nestjs/config';
 import { StorageService } from './uploads.service';
+import { stub } from '../common/testing/stub';
+import type { PrismaService } from '../prisma/prisma.service';
+import type { StorageProvider } from './providers/storage-provider.interface';
 
 /**
  * Verification documents — a live selfie and a government/college ID — must
@@ -16,15 +20,17 @@ import { StorageService } from './uploads.service';
  * not depend on any column, and `visibility` is now actually honoured.
  */
 describe('verification media privacy', () => {
-  let prisma: any;
+  let prisma: { media: { findUnique: jest.Mock } };
   let service: StorageService;
 
   beforeEach(() => {
     prisma = { media: { findUnique: jest.fn() } };
     service = new StorageService(
-      { getPublicUrl: (k: string) => `https://cdn.example/${k}` } as any,
-      prisma,
-      { get: () => undefined } as any,
+      stub<StorageProvider>({
+        getPublicUrl: (k: string) => `https://cdn.example/${k}`,
+      }),
+      stub<PrismaService>(prisma),
+      stub<ConfigService>({ get: jest.fn(() => undefined) }),
     );
   });
 
@@ -110,25 +116,27 @@ describe('verification upload content validation', () => {
   let uploaded: string[];
 
   const file = (mimetype: string, buffer: Buffer) =>
-    ({ mimetype, buffer, size: buffer.length }) as any;
+    stub<Express.Multer.File>({ mimetype, buffer, size: buffer.length });
 
   beforeEach(() => {
     uploaded = [];
     service = new StorageService(
-      {
-        upload: (k: string) => {
+      stub<StorageProvider>({
+        upload: jest.fn((k: string) => {
           uploaded.push(k);
 
           return Promise.resolve();
-        },
+        }),
         getPublicUrl: (k: string) => `https://cdn.example/${k}`,
-      } as any,
-      {
+      }),
+      stub<PrismaService>({
         media: {
-          create: ({ data }: any) => Promise.resolve({ id: 'm1', ...data }),
+          create: jest.fn(({ data }: { data: object }) =>
+            Promise.resolve({ id: 'm1', ...data }),
+          ),
         },
-      } as any,
-      { get: () => undefined } as any,
+      }),
+      stub<ConfigService>({ get: jest.fn(() => undefined) }),
     );
   });
 
