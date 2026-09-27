@@ -142,7 +142,7 @@ describe('CommunitiesService — community detail', () => {
         invalidateBlockCache: async () => {},
       }),
       stub<NotificationsService>({
-        createNotification: () => Promise.resolve(null),
+        createNotification: jest.fn(() => Promise.resolve({})),
       }),
       stub<NotificationFactory>({ createModeratorPromotion: () => null }),
     );
