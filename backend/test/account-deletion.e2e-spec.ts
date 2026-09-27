@@ -79,15 +79,17 @@ describeIfEnabled(
 
     const stubs = {
       redis: { getClient: () => null } as any,
-      presence: { removePresence: async () => undefined } as any,
-      events: { emit: async () => undefined } as any,
+      presence: { removePresence: () => Promise.resolve(undefined) } as any,
+      events: { emit: () => Promise.resolve(undefined) } as any,
       // No R2 in this test: storage is a separate system with its own suite, and
       // the point here is the database's behaviour. The keys it WOULD delete are
       // captured so the assertions can check the right ones were collected.
       mediaCleanup: {
         extractStorageKey: (v: string | null) => v ?? null,
-        queueMediaDeletion: async (keys: string[]) => {
+        queueMediaDeletion: (keys: string[]) => {
           queuedMediaKeys.push(...keys);
+
+          return Promise.resolve();
         },
       } as any,
     };
@@ -139,8 +141,8 @@ describeIfEnabled(
         // suite, and the assertion that matters is that a code was minted and the
         // right template was asked for.
         {
-          sendAccountDeletionOtpEmail: async () => undefined,
-          sendAccountRecoveryOtpEmail: async () => undefined,
+          sendAccountDeletionOtpEmail: () => Promise.resolve(undefined),
+          sendAccountRecoveryOtpEmail: () => Promise.resolve(undefined),
         },
       );
       purge = new AccountDeletionPurgeService(
@@ -762,7 +764,7 @@ describeIfEnabled(
         ).not.toBeNull();
       });
 
-      it('queued the subject’s own media, and nothing of the observer’s', async () => {
+      it('queued the subject’s own media, and nothing of the observer’s', () => {
         expect(queuedMediaKeys).toEqual(
           expect.arrayContaining([
             `avatars/${tag('subject')}.jpg`,
@@ -770,6 +772,8 @@ describeIfEnabled(
           ]),
         );
         expect(queuedMediaKeys.join(' ')).not.toContain(tag('observer'));
+
+        return Promise.resolve();
       });
 
       it('refuses recovery after the purge', async () => {
