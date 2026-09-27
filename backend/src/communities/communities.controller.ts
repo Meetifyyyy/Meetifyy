@@ -35,6 +35,8 @@ export class CommunitiesController {
     @CurrentUser() user: any,
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
+    @Query('search') search?: string,
+    @Query('visibility') visibility?: string,
   ) {
     const t0 = performance.now();
     const limitNum = clampPageParam(limit, { def: 30, max: 50, min: 1 });
@@ -43,11 +45,24 @@ export class CommunitiesController {
       user?.id,
       limitNum,
       offsetNum,
+      {
+        search: typeof search === 'string' ? search.slice(0, 100) : undefined,
+        visibility:
+          visibility === 'public' || visibility === 'private'
+            ? visibility
+            : undefined,
+      },
     );
     this.logger.debug(
       `GET /communities [limit=${limitNum} offset=${offsetNum}] ${Math.round(performance.now() - t0)}ms`,
     );
     return result;
+  }
+
+  /** The viewer's own communities. Static path, so declared before `:id`. */
+  @Get('mine')
+  async getMyCommunities(@CurrentUser() user: { id: string }) {
+    return this.communitiesService.getMyCommunities(user.id);
   }
 
   /**

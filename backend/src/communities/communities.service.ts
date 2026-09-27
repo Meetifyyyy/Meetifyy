@@ -20,6 +20,34 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationFactory } from '../notifications/notification.factory';
 import { MediaCleanupService } from '../uploads/media-cleanup.service';
 
+/** Columns of the browse list and "your communities" (see getAllCommunities). */
+const LIST_SELECT = {
+  id: true,
+  name: true,
+  slug: true,
+  description: true,
+  avatarKey: true,
+  coverKey: true,
+  color: true,
+  memberCount: true,
+  ownerId: true,
+  isPrivate: true,
+  isCampusCommunity: true,
+  createdAt: true,
+} satisfies Prisma.CommunitySelect;
+type CommunityListRow = Prisma.CommunityGetPayload<{
+  select: typeof LIST_SELECT;
+}>;
+
+/** Filters accepted by the public list (see getAllCommunities). */
+export interface CommunityListFilters {
+  search?: string;
+  visibility?: 'public' | 'private';
+}
+
+/** Upper bound on "your communities"; far above any real account. */
+const MY_COMMUNITIES_LIMIT = 200;
+
 @Injectable()
 export class CommunitiesService implements OnModuleInit {
   private readonly logger = new Logger('CommunitiesService');
@@ -304,21 +332,58 @@ export class CommunitiesService implements OnModuleInit {
     if (communityId) {
       this.localFallback.delete(`detail:${communityId}`);
     }
-    this.localFallback.delete('all:30:0');
-    this.localFallback.delete('all:20:0');
-    this.localFallback.delete('all:50:0');
+    // List keys carry the visibility filter and page, so drop them by prefix.
+    for (const key of this.localFallback.keys()) {
+      if (key.startsWith('all:')) this.localFallback.delete(key);
+    }
     if (collegeId) {
       this.localFallback.delete(`campus:${collegeId}:30:0`);
       this.localFallback.delete(`campus:${collegeId}:20:0`);
     }
   }
 
-  async getAllCommunities(userId?: string, limit = 30, offset = 0) {
-    const cacheKey = `all:${limit}:${offset}`;
-    let communities = await this.getCachedList(cacheKey);
+  async getAllCommunities(
+    userId?: string,
+    limit = 30,
+    offset = 0,
+    filters: CommunityListFilters = {},
+  ) {
+    const searchTerm = (filters.search || '').trim();
+    const visibility = filters.visibility;
+    const searchWhere = searchTerm
+      ? {
+          OR: [
+            { name: { contains: searchTerm, mode: 'insensitive' as const } },
+            {
+              description: {
+                contains: searchTerm,
+                mode: 'insensitive' as const,
+              },
+            },
+          ],
+        }
+      : {};
+    const visibilityWhere =
+      visibility === 'public'
+        ? { isPrivate: false }
+        : visibility === 'private'
+          ? { isPrivate: true }
+          : {};
+
+    // Only unsearched pages are cached: a search term is unbounded input, and
+    // caching each one would let any client fill Redis with single-use keys.
+    const cacheKey = `all:${visibility || 'any'}:${limit}:${offset}`;
+    let communities: CommunityListRow[] | null = searchTerm
+      ? null
+      : ((await this.getCachedList(cacheKey)) as CommunityListRow[] | null);
     if (!communities) {
       communities = await this.prisma.community.findMany({
-        where: { deletedAt: null, isCampusCommunity: false },
+        where: {
+          deletedAt: null,
+          isCampusCommunity: false,
+          ...visibilityWhere,
+          ...searchWhere,
+        },
         // Projected to what the browse grid, the sidebar's joined list and the
         // post/comment community tags actually read. The unprojected findMany
         // this replaces also returned `deletedAt` (null for every row it can
@@ -326,25 +391,12 @@ export class CommunitiesService implements OnModuleInit {
         // foreign keys — none of which any consumer reads, on a payload that
         // is cached, mirrored into IndexedDB on the client, and fetched on
         // every app boot.
-        select: {
-          id: true,
-          name: true,
-          slug: true,
-          description: true,
-          avatarKey: true,
-          coverKey: true,
-          color: true,
-          memberCount: true,
-          ownerId: true,
-          isPrivate: true,
-          isCampusCommunity: true,
-          createdAt: true,
-        },
+        select: LIST_SELECT,
         orderBy: { memberCount: 'desc' },
         take: limit,
         skip: offset,
       });
-      await this.setCachedList(cacheKey, communities, 60);
+      if (!searchTerm) await this.setCachedList(cacheKey, communities, 60);
     }
 
     if (!userId || communities.length === 0) {
@@ -352,17 +404,36 @@ export class CommunitiesService implements OnModuleInit {
         ...c,
         isJoined: false,
         userRole: null,
+        hasPendingRequest: false,
       }));
     }
 
-    const userMemberships = await this.prisma.communityMember.findMany({
-      where: { userId, communityId: { in: communities.map((c) => c.id) } },
-      select: { communityId: true, role: true },
-    });
+    const ids = communities.map((c) => c.id);
+    const privateIds = communities.filter((c) => c.isPrivate).map((c) => c.id);
+    const [userMemberships, pendingRequests] = await Promise.all([
+      this.prisma.communityMember.findMany({
+        where: { userId, communityId: { in: ids } },
+        select: { communityId: true, role: true },
+      }),
+      // A private community answers a join with a request, not a membership,
+      // so without this the list cannot tell "Request to join" from
+      // "Requested" and a card would offer to send the same request again.
+      privateIds.length > 0
+        ? this.prisma.communityJoinRequest.findMany({
+            where: {
+              userId,
+              status: 'PENDING',
+              communityId: { in: privateIds },
+            },
+            select: { communityId: true },
+          })
+        : Promise.resolve([] as { communityId: string }[]),
+    ]);
 
     const membershipMap = new Map(
       userMemberships.map((m) => [m.communityId, m.role]),
     );
+    const pendingSet = new Set(pendingRequests.map((r) => r.communityId));
 
     return communities.map((c) => {
       const isOwner = Boolean(c.ownerId && c.ownerId === userId);
@@ -371,6 +442,60 @@ export class CommunitiesService implements OnModuleInit {
         ...c,
         isJoined: isMember || isOwner,
         userRole: isOwner ? 'OWNER' : membershipMap.get(c.id) || null,
+        hasPendingRequest: !isMember && !isOwner && pendingSet.has(c.id),
+      };
+    });
+  }
+
+  /**
+   * Every community the viewer belongs to — public, private and campus — with
+   * the time of its most recent post.
+   *
+   * "Your communities" used to be derived on the client by filtering the first
+   * page of `GET /communities` (the thirty largest public communities) for
+   * membership, so a member of a small community, a private one or a campus
+   * one outside that page never saw it listed. Membership is the query here,
+   * not a filter applied afterwards.
+   *
+   * Not cached: it is per-viewer and changes on every join or leave, and it is
+   * two indexed queries.
+   */
+  async getMyCommunities(userId: string) {
+    if (!userId) return [];
+
+    const memberships = await this.prisma.communityMember.findMany({
+      where: { userId, community: { deletedAt: null } },
+      select: {
+        role: true,
+        joinedAt: true,
+        community: { select: LIST_SELECT },
+      },
+      orderBy: { joinedAt: 'desc' },
+      take: MY_COMMUNITIES_LIMIT,
+    });
+    if (memberships.length === 0) return [];
+
+    const lastPosts = await this.prisma.post.groupBy({
+      by: ['communityId'],
+      where: {
+        communityId: { in: memberships.map((m) => m.community.id) },
+        deletedAt: null,
+      },
+      _max: { createdAt: true },
+    });
+    const lastPostAt = new Map(
+      lastPosts.map((p) => [p.communityId, p._max.createdAt]),
+    );
+
+    return memberships.map((m) => {
+      const isOwner = m.community.ownerId === userId;
+      return {
+        ...m.community,
+        isJoined: true,
+        userRole: isOwner ? 'OWNER' : m.role,
+        hasPendingRequest: false,
+        joinedAt: m.joinedAt,
+        lastPostAt: lastPostAt.get(m.community.id) ?? null,
       };
     });
   }
