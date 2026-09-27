@@ -1,3 +1,4 @@
+import { expect } from '@jest/globals';
 import { Test, TestingModule } from '@nestjs/testing';
 import { BlocksService } from '../users/blocks.service';
 import { stringField } from '../common/utils/type-guards.util';
@@ -19,8 +20,14 @@ import { studentYearPolicyMockProvider } from '../common/student-year/testing/st
  */
 describe('invite notification reconciliation on read', () => {
   let service: NotificationsService;
-  let mockPrisma: any;
-  let invitationRows: any[];
+  /** The Prisma surface; the notification page is re-pointed per case. */
+  let mockPrisma: {
+    notification: { findMany: jest.Mock; update: jest.Mock; count: jest.Mock };
+    activityInvitation: { findMany: jest.Mock };
+    user: { findUnique: jest.Mock };
+    block: { findFirst: jest.Mock };
+  };
+  let invitationRows: ReturnType<typeof invitationRow>[];
 
   const future = new Date(Date.now() + 60 * 60 * 1000);
   const past = new Date(Date.now() - 60 * 60 * 1000);
@@ -38,10 +45,13 @@ describe('invite notification reconciliation on read', () => {
     },
   });
 
-  const invitationRow = (status: string, activity: any = {}) => ({
+  const invitationRow = (
+    status: string,
+    activity: { status?: string; startDate?: Date } = {},
+  ) => ({
     activityId: 'act-1',
     status,
-    revokedAt: null,
+    revokedAt: null as Date | null,
     activity: {
       status: 'OPEN',
       startDate: future,
@@ -82,10 +92,12 @@ describe('invite notification reconciliation on read', () => {
           useValue: {
             getExcludedUserIds: jest.fn().mockResolvedValue([]),
             isBlocked: jest.fn().mockResolvedValue(false),
-            filterBlockedUsers: jest.fn((_u: any, ids: any) =>
+            filterBlockedUsers: jest.fn((_u: string, ids: string[]) =>
               Promise.resolve(ids),
             ),
-            injectBlockFilter: jest.fn((_u: any, w: any) => Promise.resolve(w)),
+            injectBlockFilter: jest.fn((_u: string, w: unknown) =>
+              Promise.resolve(w),
+            ),
             invalidateBlockCache: jest.fn(),
           },
         },
