@@ -115,20 +115,6 @@
       "count": 2
     }
   },
-  "src/activities/activities.join-notification.spec.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 6
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 4
-    },
-    "@typescript-eslint/no-unsafe-call": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 14
-    }
-  },
   "src/activities/activities.visibility-scopes.spec.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 4
@@ -1028,17 +1014,6 @@
     },
     "@typescript-eslint/no-unsafe-member-access": {
       "count": 3
-    }
-  },
-  "src/verification/verification.service.spec.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 8
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 7
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 11
     }
   },
   "test/account-deletion.e2e-spec.ts": {
