@@ -1,37 +1,46 @@
 import { ExecutionContext, HttpException } from '@nestjs/common';
+import type { HttpArgumentsHost } from '@nestjs/common/interfaces';
 import { RateLimitGuard } from './ratelimit.guard';
 import { RateLimitService } from '../rate-limit/rate-limit.service';
-import { RedisService } from '../../redis/redis.service';
+import type { RedisService } from '../../redis/redis.service';
+import type { JwtGuard } from './jwt.guard';
+import { stub } from '../testing/stub';
 import * as jwt from 'jsonwebtoken';
 import { config } from '../../config';
 
 function makeService(): RateLimitService {
-  return new RateLimitService({
-    getClient: () => null,
-  } as unknown as RedisService);
+  return new RateLimitService(stub<RedisService>({ getClient: () => null }));
 }
 
 /** A JwtGuard stand-in that verifies nothing but a token→id mapping. */
 function makeJwt(map: Record<string, string>) {
-  return {
+  return stub<JwtGuard>({
     peekUserId: (token: string) => Promise.resolve(map[token] ?? null),
-  } as any;
+  });
 }
 
-function ctx(request: any): ExecutionContext {
-  const response = {
-    headers: {} as Record<string, string>,
-    setHeader(name: string, value: string) {
+/** The response the guard writes its RateLimit headers to. */
+type RecordedResponse = {
+  headers: Record<string, string>;
+  setHeader(name: string, value: string): void;
+};
+
+function ctx(request: object): ExecutionContext {
+  const response: RecordedResponse = {
+    headers: {},
+    setHeader(this: RecordedResponse, name: string, value: string) {
       this.headers[name] = value;
     },
   };
-  return {
-    getType: () => 'http',
-    switchToHttp: () => ({
-      getRequest: () => request,
-      getResponse: () => response,
-    }),
-  } as unknown as ExecutionContext;
+  return stub<ExecutionContext>({
+    getType: jest.fn(() => 'http'),
+    switchToHttp: jest.fn(() =>
+      stub<HttpArgumentsHost>({
+        getRequest: jest.fn(() => request),
+        getResponse: jest.fn(() => response),
+      }),
+    ),
+  });
 }
 
 function authed(token: string, ip = '203.0.113.7') {
@@ -246,7 +255,7 @@ describe('RateLimitGuard', () => {
       }
 
       const context = ctx(authed('tok-a'));
-      const response: any = context.switchToHttp().getResponse();
+      const response = context.switchToHttp().getResponse<RecordedResponse>();
 
       try {
         await guard.canActivate(context);
@@ -255,7 +264,10 @@ describe('RateLimitGuard', () => {
         const err = e as HttpException;
         expect(err.getStatus()).toBe(429);
 
-        const body = err.getResponse() as any;
+        const body = err.getResponse() as {
+          code?: string;
+          retryAfterSeconds?: number;
+        };
         expect(body.code).toBe('rate_limited');
         expect(body.retryAfterSeconds).toBeGreaterThan(0);
 

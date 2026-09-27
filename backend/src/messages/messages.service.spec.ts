@@ -10,37 +10,48 @@ import { verificationAccessMockProvider } from '../common/verification/testing/v
 import { studentYearPolicyMockProvider } from '../common/student-year/testing/student-year-policy.mock';
 import { allowAllRateLimitProvider } from '../common/rate-limit/testing/rate-limit.mock';
 
+/** The history query's `where`, as far as these assertions read it. */
+type HistoryWhere = {
+  NOT?: unknown;
+  conversationId?: unknown;
+  deletedAt?: unknown;
+};
+
+const makePrisma = () => ({
+  conversation: { findFirst: jest.fn(), findUnique: jest.fn() },
+  conversationParticipant: {
+    findUnique: jest.fn(),
+    findMany: jest.fn(),
+    findFirst: jest.fn(),
+  },
+  message: {
+    create: jest.fn(),
+    findFirst: jest.fn(),
+    findMany: jest.fn<Promise<unknown[]>, [{ where: HistoryWhere }]>(),
+  },
+  deletedMessage: { findMany: jest.fn() },
+  block: { findFirst: jest.fn() },
+  $transaction: jest.fn(),
+});
+
 describe('MessagesService', () => {
   let service: MessagesService;
-  let prisma: any;
-  let module_blocks: any;
+  let prisma: ReturnType<typeof makePrisma>;
+  let module_blocks: {
+    getExcludedUserIds: jest.Mock;
+    getBlockedByUserIds: jest.Mock;
+    invalidateBlockCache: jest.Mock;
+  };
 
   beforeEach(async () => {
+    const prismaFake = makePrisma();
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         allowAllRateLimitProvider(),
         verificationAccessMockProvider(),
         studentYearPolicyMockProvider(),
         MessagesService,
-        {
-          provide: PrismaService,
-          useValue: {
-            conversation: { findFirst: jest.fn(), findUnique: jest.fn() },
-            conversationParticipant: {
-              findUnique: jest.fn(),
-              findMany: jest.fn(),
-              findFirst: jest.fn(),
-            },
-            message: {
-              create: jest.fn(),
-              findFirst: jest.fn(),
-              findMany: jest.fn(),
-            },
-            deletedMessage: { findMany: jest.fn() },
-            block: { findFirst: jest.fn() },
-            $transaction: jest.fn(),
-          },
-        },
+        { provide: PrismaService, useValue: prismaFake },
         {
           provide: PresenceService,
           useValue: {
@@ -79,7 +90,7 @@ describe('MessagesService', () => {
     }).compile();
 
     service = module.get<MessagesService>(MessagesService);
-    prisma = module.get(PrismaService);
+    prisma = prismaFake;
   });
 
   it('should be defined', () => {
@@ -88,9 +99,7 @@ describe('MessagesService', () => {
 
   describe('getConversationHistory — block must not hide history', () => {
     beforeEach(() => {
-      jest
-        .spyOn(service as any, 'resolveConversationId')
-        .mockResolvedValue('conv-1');
+      jest.spyOn(service, 'resolveConversationId').mockResolvedValue('conv-1');
       prisma.deletedMessage.findMany.mockResolvedValue([]);
       prisma.conversationParticipant.findFirst.mockResolvedValue({
         userId: 'alice',
