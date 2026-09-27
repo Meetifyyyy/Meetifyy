@@ -11,13 +11,16 @@ import {
 } from './campus-event.util';
 import { config } from '../config';
 
+/** The module mocked above: a plain object whose flag each test flips. */
+const mockedConfig = config as { isProduction: boolean };
+
 // ─── sanitizeRegistrationUrl ─────────────────────────────────────────────────
 
 describe('sanitizeRegistrationUrl', () => {
   describe('empty / null input', () => {
     it.each([null, undefined, '', '   '])(
       'returns null for %p',
-      (input: any) => {
+      (input: string | null | undefined) => {
         expect(sanitizeRegistrationUrl(input)).toBeNull();
       },
     );
@@ -66,40 +69,40 @@ describe('sanitizeRegistrationUrl', () => {
 
   describe('http enforcement (non-localhost)', () => {
     it('throws for plain http on a public host in non-prod', () => {
-      (config as any).isProduction = false;
+      mockedConfig.isProduction = false;
       expect(() =>
         sanitizeRegistrationUrl('http://example.com/register'),
       ).toThrow('Registration URL must use https.');
     });
 
     it('throws for plain http on a public host in prod', () => {
-      (config as any).isProduction = true;
+      mockedConfig.isProduction = true;
       expect(() =>
         sanitizeRegistrationUrl('http://example.com/register'),
       ).toThrow('Registration URL must use https.');
-      (config as any).isProduction = false;
+      mockedConfig.isProduction = false;
     });
   });
 
   describe('localhost http (non-prod only)', () => {
     it('allows http://localhost in development', () => {
-      (config as any).isProduction = false;
+      mockedConfig.isProduction = false;
       expect(() =>
         sanitizeRegistrationUrl('http://localhost:3000/reg'),
       ).not.toThrow();
     });
 
     it('allows http://127.0.0.1 in development', () => {
-      (config as any).isProduction = false;
+      mockedConfig.isProduction = false;
       expect(sanitizeRegistrationUrl('http://127.0.0.1:3000/reg')).toBeTruthy();
     });
 
     it('throws for http://localhost in production', () => {
-      (config as any).isProduction = true;
+      mockedConfig.isProduction = true;
       expect(() =>
         sanitizeRegistrationUrl('http://localhost:3000/reg'),
       ).toThrow('Registration URL must use https.');
-      (config as any).isProduction = false;
+      mockedConfig.isProduction = false;
     });
   });
 

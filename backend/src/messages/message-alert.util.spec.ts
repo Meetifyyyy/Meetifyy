@@ -1,4 +1,9 @@
 import { emitMessageNew } from './message-alert.util';
+import { stub } from '../common/testing/stub';
+import type { DomainEventService } from '../events/domain-event.service';
+
+/** A `message:new` payload, as far as these assertions read it. */
+type MessagePayload = { alert?: boolean; text?: string };
 
 /**
  * Mute must silence the alert without withholding the message.
@@ -10,16 +15,22 @@ import { emitMessageNew } from './message-alert.util';
  */
 describe('emitMessageNew', () => {
   const makeService = () => {
-    const calls: Array<{ type: string; data: any; targets?: string[] }> = [];
+    const calls: Array<{
+      type: string;
+      data: MessagePayload;
+      targets?: string[];
+    }> = [];
     return {
       calls,
-      service: {
-        emit: jest.fn((type: string, data: any, targets?: string[]) => {
-          calls.push({ type, data, targets });
+      service: stub<DomainEventService>({
+        emit: jest.fn(
+          (type: string, data: MessagePayload, targets?: string[]) => {
+            calls.push({ type, data, targets });
 
-          return Promise.resolve();
-        }),
-      } as any,
+            return Promise.resolve();
+          },
+        ),
+      }),
     };
   };
 

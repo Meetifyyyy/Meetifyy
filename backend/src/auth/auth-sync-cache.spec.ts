@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { AuthService } from './auth.service';
+import { AuthService, type SyncIdentity } from './auth.service';
 import {
   AUTH_SYNC_INVALIDATE_CHANNEL,
   clearAuthSyncCache,
@@ -78,7 +78,7 @@ const PROFILE_ROW = {
   unreadNotifCount: 0,
 };
 
-const AUTH_USER: any = { id: USER_ID, email: 'ravi@example.edu' };
+const AUTH_USER: SyncIdentity = { id: USER_ID, email: 'ravi@example.edu' };
 
 describe('Auth sync cache', () => {
   let service: AuthService;
@@ -102,9 +102,14 @@ describe('Auth sync cache', () => {
 
     const subClient = {
       subscribe,
-      on: jest.fn((event: string, handler: any) => {
-        if (event === 'message') messageHandlers.push(handler);
-      }),
+      on: jest.fn(
+        (
+          event: string,
+          handler: (channel: string, message: string) => void,
+        ) => {
+          if (event === 'message') messageHandlers.push(handler);
+        },
+      ),
     };
 
     const redisService = {

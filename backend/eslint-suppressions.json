@@ -213,14 +213,6 @@
       "count": 1
     }
   },
-  "src/auth/auth-sync-cache.spec.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 2
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 13
-    }
-  },
   "src/auth/session/user-session-cookies.spec.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 5
@@ -261,17 +253,6 @@
     },
     "@typescript-eslint/no-unsafe-return": {
       "count": 1
-    }
-  },
-  "src/campus-events/campus-event.util.spec.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 8
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 7
     }
   },
   "src/common/crypto/secret-box.spec.ts": {
@@ -511,20 +492,6 @@
     },
     "@typescript-eslint/no-unsafe-return": {
       "count": 1
-    }
-  },
-  "src/messages/message-alert.util.spec.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 3
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 3
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 5
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 4
     }
   },
   "src/messages/messages.cache-eviction.spec.ts": {
