@@ -1,4 +1,5 @@
-import { INestApplication } from '@nestjs/common';
+import type { Server } from 'http';
+import { INestApplication, ExecutionContext } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { VerificationController } from './verification.controller';
@@ -16,7 +17,7 @@ import { JwtGuard } from '../common/guards/jwt.guard';
  * cannot drift apart again without a test failing.
  */
 describe('VerificationController — routing', () => {
-  let app: INestApplication;
+  let app: INestApplication<Server>;
   const service = {
     submitVerification: jest.fn(() => Promise.resolve({ id: 'req-1' })),
     getStatus: jest.fn(() =>
@@ -33,14 +34,16 @@ describe('VerificationController — routing', () => {
       // is about the path and nothing else.
       .overrideGuard(JwtGuard)
       .useValue({
-        canActivate: (ctx: any) => {
-          ctx.switchToHttp().getRequest().user = { id: 'user-1' };
+        canActivate: (ctx: ExecutionContext) => {
+          ctx.switchToHttp().getRequest<{ user?: { id: string } }>().user = {
+            id: 'user-1',
+          };
           return true;
         },
       })
       .compile();
 
-    app = moduleRef.createNestApplication();
+    app = moduleRef.createNestApplication<INestApplication<Server>>();
     await app.init();
   });
 

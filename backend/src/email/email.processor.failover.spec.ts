@@ -79,7 +79,10 @@ async function runSend(opts: {
 }
 
 describe('email failover', () => {
-  const setup = () => ({ log: [] as string[], recorded: [] as any[] });
+  const setup = () => ({
+    log: [] as string[],
+    recorded: [] as { error?: string; messageId?: string }[],
+  });
 
   it('sends via Resend and never touches the fallback when the primary works', async () => {
     const s = setup();
@@ -127,7 +130,7 @@ describe('email failover', () => {
       'email.failover_failed',
       'email.send_error',
     ]);
-    expect(s.recorded[0].error).toMatch(/quota/);
+    expect(s.recorded[0].error!).toMatch(/quota/);
   });
 
   it('reports the PRIMARY error, not the fallback one, so the cause is not masked', async () => {
@@ -138,8 +141,8 @@ describe('email failover', () => {
       primaryFails: true,
       fallbackFails: true,
       ...s,
-    }).catch((e) => e);
-    expect(err.message).toMatch(/quota/);
+    }).catch((e: unknown) => e);
+    expect((err as Error).message).toMatch(/quota/);
   });
 
   it('does not retry SMTP through the same transporter that just failed', async () => {
@@ -170,12 +173,15 @@ describe('email failover', () => {
       }),
     ).rejects.toThrow(/quota/);
     expect(s.log).toEqual(['email.send_error']);
-    expect(s.recorded[0].error).toMatch(/quota/);
+    expect(s.recorded[0].error!).toMatch(/quota/);
   });
 });
 
 describe('failover is skipped when it would risk a duplicate', () => {
-  const setup = () => ({ log: [] as string[], recorded: [] as any[] });
+  const setup = () => ({
+    log: [] as string[],
+    recorded: [] as { error?: string; messageId?: string }[],
+  });
 
   it('does NOT reach for Brevo after a Resend timeout', async () => {
     // Resend may have accepted and sent it; only the reply was lost. Sending

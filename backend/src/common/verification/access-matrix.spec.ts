@@ -4,6 +4,9 @@ import { WsException } from '@nestjs/websockets';
 import { VerificationStatus } from '@prisma/client';
 import { VerificationGuard } from '../guards/verification.guard';
 import { VerificationAccessService } from './verification-access.service';
+import { stub } from '../testing/stub';
+import type { PrismaService } from '../../prisma/prisma.service';
+import type { DomainEventService } from '../../events/domain-event.service';
 import { IS_VERIFIED_ONLY_KEY } from '../decorators/verified-only.decorator';
 
 /**
@@ -21,7 +24,10 @@ describe('verification access matrix', () => {
     (s) => !ELIGIBLE.includes(s),
   );
 
-  let prisma: any;
+  let prisma: {
+    user: { findUnique: jest.Mock; findMany: jest.Mock };
+    conversationParticipant: { findMany: jest.Mock };
+  };
   let access: VerificationAccessService;
   let guard: VerificationGuard;
   let reflector: Reflector;
@@ -61,7 +67,10 @@ describe('verification access matrix', () => {
       user: { findUnique: jest.fn(), findMany: jest.fn() },
       conversationParticipant: { findMany: jest.fn(() => Promise.resolve([])) },
     };
-    access = new VerificationAccessService(prisma, { emit: jest.fn() } as any);
+    access = new VerificationAccessService(
+      stub<PrismaService>(prisma),
+      stub<DomainEventService>({ emit: jest.fn() }),
+    );
     reflector = new Reflector();
     jest
       .spyOn(reflector, 'getAllAndOverride')

@@ -1,3 +1,7 @@
+import type { ConfigService } from '@nestjs/config';
+import { stub } from '../common/testing/stub';
+import type { PrismaService } from '../prisma/prisma.service';
+import type { StorageProvider } from './providers/storage-provider.interface';
 import { BadRequestException } from '@nestjs/common';
 import { StorageService } from './uploads.service';
 import {
@@ -51,9 +55,9 @@ describe('Upload Size Limits & Validation', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     storageService = new StorageService(
-      mockStorageProvider as any,
-      mockPrisma as any,
-      mockConfig as any,
+      stub<StorageProvider>(mockStorageProvider),
+      stub<PrismaService>(mockPrisma),
+      stub<ConfigService>(mockConfig),
     );
   });
 
@@ -125,8 +129,8 @@ describe('Upload Size Limits & Validation', () => {
             folder,
             oversizedBytes,
           );
-        } catch (err: any) {
-          expect(err.message).toBe(COVERED_IMAGE_SIZE_ERROR_MESSAGE);
+        } catch (err: unknown) {
+          expect((err as Error).message).toBe(COVERED_IMAGE_SIZE_ERROR_MESSAGE);
         }
       },
     );

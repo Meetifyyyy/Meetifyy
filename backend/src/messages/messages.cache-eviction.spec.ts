@@ -12,7 +12,7 @@ describe('MessagesService — conversation-cache eviction on lifecycle change', 
   const USER_ID = 'gone-1';
 
   let service: MessagesService;
-  let prisma: any;
+  let prisma: { conversationParticipant: { findMany: jest.Mock } };
   let evicted: string[];
   let partners: string[];
 
@@ -24,14 +24,22 @@ describe('MessagesService — conversation-cache eviction on lifecycle change', 
       conversationParticipant: {
         // Honours the keyset cursor, so a fake cannot make the paging look
         // correct by returning everything on the first call.
-        findMany: jest.fn(({ where, take }: any) => {
-          const after = where.userId?.gt;
-          const page = partners
-            .filter((id) => (after ? id > after : true))
-            .sort()
-            .slice(0, take);
-          return Promise.resolve(page.map((userId) => ({ userId })));
-        }),
+        findMany: jest.fn(
+          ({
+            where,
+            take,
+          }: {
+            where: { userId?: { gt?: string } };
+            take: number;
+          }) => {
+            const after = where.userId?.gt;
+            const page = partners
+              .filter((id) => (after ? id > after : true))
+              .sort()
+              .slice(0, take);
+            return Promise.resolve(page.map((userId) => ({ userId })));
+          },
+        ),
       },
     };
 

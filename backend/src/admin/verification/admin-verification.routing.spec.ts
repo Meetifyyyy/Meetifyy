@@ -1,4 +1,5 @@
-import { INestApplication } from '@nestjs/common';
+import type { Server } from 'http';
+import { INestApplication, ExecutionContext } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { AdminVerificationController } from './admin-verification.controller';
@@ -12,7 +13,7 @@ import { AdminJwtGuard } from '../../common/guards/admin-jwt.guard';
  * through it. Pinned here against the path the client actually calls.
  */
 describe('AdminVerificationController — routing', () => {
-  let app: INestApplication;
+  let app: INestApplication<Server>;
   const service = {
     listRequests: jest.fn(() => Promise.resolve({ total: 0, requests: [] })),
     updateStatus: jest.fn(() => Promise.resolve({ request: {}, user: {} })),
@@ -25,13 +26,15 @@ describe('AdminVerificationController — routing', () => {
     })
       .overrideGuard(AdminJwtGuard)
       .useValue({
-        canActivate: (ctx: any) => {
-          ctx.switchToHttp().getRequest().admin = { id: 'super-admin-7' };
+        canActivate: (ctx: ExecutionContext) => {
+          ctx.switchToHttp().getRequest<{ admin?: { id: string } }>().admin = {
+            id: 'super-admin-7',
+          };
           return true;
         },
       })
       .compile();
-    app = moduleRef.createNestApplication();
+    app = moduleRef.createNestApplication<INestApplication<Server>>();
     await app.init();
   });
 
