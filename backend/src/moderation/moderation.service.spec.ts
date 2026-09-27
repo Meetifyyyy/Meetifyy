@@ -11,6 +11,13 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ReportTargetResolver } from './report-target.resolver';
 import { ReportRateLimitService } from './report-ratelimit.service';
 import { ReportStatus, ReportPriority, ReportTargetType } from '@prisma/client';
+import type { ReportReason } from '@prisma/client';
+import { expect } from '@jest/globals';
+
+/** A report write, as far as these assertions read it. */
+type ReportWrite = {
+  data: { metadata?: unknown; resolvedAt?: unknown; resolvedBy?: unknown };
+};
 
 // Sentry is a side-effect dependency — silence it in tests.
 jest.mock('@sentry/nestjs', () => ({
@@ -23,11 +30,11 @@ describe('ModerationService', () => {
 
   const mockPrisma = {
     report: {
-      create: jest.fn(),
+      create: jest.fn<Promise<unknown>, [ReportWrite]>(),
       findFirst: jest.fn(),
       findUnique: jest.fn(),
-      update: jest.fn(),
-      updateMany: jest.fn(),
+      update: jest.fn<Promise<unknown>, [ReportWrite]>(),
+      updateMany: jest.fn<Promise<unknown>, [ReportWrite]>(),
       count: jest.fn(),
       findMany: jest.fn(),
       groupBy: jest.fn(),
@@ -83,7 +90,7 @@ describe('ModerationService', () => {
     const validDto = {
       targetType: ReportTargetType.POST,
       targetId: 'post-1',
-      reason: 'SPAM' as any,
+      reason: 'SPAM' as ReportReason,
       description: 'This is spam',
     };
 
@@ -133,7 +140,7 @@ describe('ModerationService', () => {
       });
       const err = await service
         .submitReport(reporterId, validDto)
-        .catch((e) => e);
+        .catch((e: unknown) => e);
       expect(err).toBeInstanceOf(HttpException);
       expect((err as HttpException).getStatus()).toBe(
         HttpStatus.TOO_MANY_REQUESTS,
