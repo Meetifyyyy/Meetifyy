@@ -1,3 +1,4 @@
+import type { Server } from 'http';
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
@@ -14,7 +15,7 @@ import { legalConsentMockProvider } from '../common/legal/testing/legal-consent.
  * the real route, not just the service beneath it.
  */
 describe('GET /api/media — verification documents', () => {
-  let app: INestApplication;
+  let app: INestApplication<Server>;
 
   const storage = {
     isSafeStorageKey: jest.fn(() => true),
@@ -58,7 +59,7 @@ describe('GET /api/media — verification documents', () => {
       .overrideGuard(OptionalJwtGuard)
       .useValue({ canActivate: () => true })
       .compile();
-    app = moduleRef.createNestApplication();
+    app = moduleRef.createNestApplication<INestApplication<Server>>();
     await app.init();
   });
 

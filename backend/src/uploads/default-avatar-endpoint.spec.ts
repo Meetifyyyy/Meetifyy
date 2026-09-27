@@ -1,3 +1,4 @@
+import type { Server } from 'http';
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
@@ -27,7 +28,7 @@ import { DEFAULT_AVATAR_SVG } from './default-avatar';
  * everything else is the blue artwork.
  */
 describe('GET /api/media — default profile avatar', () => {
-  let app: INestApplication;
+  let app: INestApplication<Server>;
 
   // Deliberately hostile: storage claims the object does not exist and refuses
   // to resolve it, which is the production failure this endpoint must survive.
@@ -65,7 +66,7 @@ describe('GET /api/media — default profile avatar', () => {
       .overrideGuard(OptionalJwtGuard)
       .useValue({ canActivate: () => true })
       .compile();
-    app = moduleRef.createNestApplication();
+    app = moduleRef.createNestApplication<INestApplication<Server>>();
     await app.init();
   });
 
@@ -82,7 +83,7 @@ describe('GET /api/media — default profile avatar', () => {
     // The real artwork, byte for byte — not a placeholder standing in for it.
     expect(
       Buffer.compare(
-        res.body,
+        res.body as Buffer,
         fs.readFileSync(defaultAssetFilePath('profile-avatar')),
       ),
     ).toBe(0);

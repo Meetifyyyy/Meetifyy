@@ -6,7 +6,7 @@ import { CreateSupportRequestDto } from './dto/create-support-request.dto';
 import { PUBLIC_SUPPORT_CATEGORIES } from './support.constants';
 
 describe('Support Request Validation & Security', () => {
-  function createDto(overrides: Partial<Record<string, any>> = {}) {
+  function createDto(overrides: Record<string, unknown> = {}) {
     const raw = {
       name: 'Jane Doe',
       email: 'jane@example.com',

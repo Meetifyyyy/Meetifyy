@@ -19,7 +19,7 @@ describe('Follow / Unfollow High Concurrency Stress Test', () => {
 
   const mockTargetUser = { id: 'target-user-id', username: 'sarthak' };
 
-  const mockPrisma: any = {
+  const mockPrisma = {
     user: {
       findUnique: jest.fn().mockResolvedValue(mockTargetUser),
     },
@@ -60,7 +60,7 @@ describe('Follow / Unfollow High Concurrency Stress Test', () => {
 
   const mockRedisService = {
     withLock: jest.fn(
-      async (key: string, ttlMs: number, fn: () => Promise<any>) => fn(),
+      async (key: string, ttlMs: number, fn: () => Promise<unknown>) => fn(),
     ),
   };
 

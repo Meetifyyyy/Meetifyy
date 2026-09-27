@@ -46,13 +46,15 @@ describe('share metadata follows the deployment', () => {
     Object.assign(process.env, env);
 
     const doc =
-      require('./share-document') as typeof import('./share-document');
+      jest.requireActual<typeof import('./share-document')>('./share-document');
 
-    const svc =
-      require('./share-preview.service') as typeof import('./share-preview.service');
+    const svc = jest.requireActual<typeof import('./share-preview.service')>(
+      './share-preview.service',
+    );
 
-    const fixture =
-      require('./testing/share-post.fixture') as typeof import('./testing/share-post.fixture');
+    const fixture = jest.requireActual<
+      typeof import('./testing/share-post.fixture')
+    >('./testing/share-post.fixture');
     return { doc, svc, fixture };
   };
 

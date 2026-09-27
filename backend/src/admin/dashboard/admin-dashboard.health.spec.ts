@@ -13,7 +13,7 @@ import { RedisService } from '../../redis/redis.service';
  * situation a health check exists to detect.
  */
 describe('AdminDashboardService - platform status', () => {
-  const build = async (redisClient: any) => {
+  const build = async (redisClient: { ping: jest.Mock } | null) => {
     const moduleRef = await Test.createTestingModule({
       providers: [
         AdminDashboardService,

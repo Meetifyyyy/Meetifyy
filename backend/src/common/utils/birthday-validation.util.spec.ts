@@ -19,16 +19,19 @@ describe('validateBirthday', () => {
   describe('missing / invalid input', () => {
     it.each([null, undefined, '', '  '])(
       'throws when input is %p',
-      (input: any) => {
-        expect(() => validateBirthday(input)).toThrow(BadRequestException);
-        expect(() => validateBirthday(input)).toThrow(
+      (input: string | null | undefined) => {
+        // Deliberately outside the parameter type: what an untyped caller sends.
+        expect(() => validateBirthday(input as string)).toThrow(
+          BadRequestException,
+        );
+        expect(() => validateBirthday(input as string)).toThrow(
           'Date of birth is required.',
         );
       },
     );
 
     it('throws for a non-string (number)', () => {
-      expect(() => validateBirthday(19900101 as any)).toThrow(
+      expect(() => validateBirthday(19900101 as unknown as string)).toThrow(
         BadRequestException,
       );
     });

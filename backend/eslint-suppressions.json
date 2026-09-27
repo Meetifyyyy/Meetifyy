@@ -107,19 +107,6 @@
       "count": 2
     }
   },
-  "src/academics/academics.service.spec.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 2
-    }
-  },
-  "src/admin/analytics/admin-analytics.module.spec.ts": {
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 2
-    }
-  },
   "src/admin/colleges/admin-colleges.controller.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 1
@@ -145,19 +132,6 @@
       "count": 1
     }
   },
-  "src/admin/dashboard/admin-dashboard.charts.spec.ts": {
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 1
-    }
-  },
-  "src/admin/dashboard/admin-dashboard.health.spec.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-return": {
-      "count": 1
-    }
-  },
   "src/admin/reports/admin-reports.controller.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 1
@@ -175,70 +149,6 @@
     },
     "@typescript-eslint/no-unsafe-member-access": {
       "count": 3
-    }
-  },
-  "src/admin/verification/admin-verification.service.spec.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 1
-    }
-  },
-  "src/auth/auth-ratelimit-wiring.spec.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 3
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 2
-    },
-    "@typescript-eslint/no-unsafe-return": {
-      "count": 1
-    }
-  },
-  "src/auth/session/user-session-retention.service.spec.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 1
-    }
-  },
-  "src/common/crypto/secret-box.spec.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 1
-    }
-  },
-  "src/common/pagination.util.spec.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 2
-    }
-  },
-  "src/common/utils/birthday-validation.util.spec.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 2
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 3
-    }
-  },
-  "src/common/utils/detach.util.spec.ts": {
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 1
-    }
-  },
-  "src/common/utils/sample-random.util.spec.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 1
     }
   },
   "src/communities/communities.controller.ts": {
@@ -264,17 +174,6 @@
     },
     "@typescript-eslint/no-unsafe-return": {
       "count": 1
-    }
-  },
-  "src/email/email-usage.service.spec.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 2
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-return": {
-      "count": 3
     }
   },
   "src/messages/group-chats/group-chats.controller.ts": {
@@ -352,21 +251,6 @@
       "count": 1
     }
   },
-  "src/share/share-deployment.spec.ts": {
-    "@typescript-eslint/no-require-imports": {
-      "count": 3
-    }
-  },
-  "src/support/support.spec.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 1
-    }
-  },
-  "src/uploads/default-avatar-endpoint.spec.ts": {
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 6
-    }
-  },
   "src/uploads/providers/cloudflare-r2.provider.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 1
@@ -383,30 +267,6 @@
     },
     "@typescript-eslint/no-unsafe-member-access": {
       "count": 4
-    }
-  },
-  "src/uploads/verification-media-endpoint.spec.ts": {
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 3
-    }
-  },
-  "src/users/blocked-contacts.controller.spec.ts": {
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 2
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 3
-    }
-  },
-  "src/users/follow-stress.spec.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 2
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-return": {
-      "count": 1
     }
   },
   "src/users/users.controller.ts": {

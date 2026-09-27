@@ -40,7 +40,7 @@ describe('singleQueryValue', () => {
 
   it('finds the first string past non-string entries', () => {
     // ?cursor[][x]=1&cursor=real
-    expect(singleQueryValue([{ x: 1 } as any, 'real'])).toBe('real');
+    expect(singleQueryValue([{ x: 1 }, 'real'])).toBe('real');
   });
 });
 
@@ -67,7 +67,7 @@ describe('parseKeysetCursor', () => {
       undefined,
       true,
     ]) {
-      expect(() => parseKeysetCursor(raw as any)).not.toThrow();
+      expect(() => parseKeysetCursor(raw)).not.toThrow();
     }
   });
 

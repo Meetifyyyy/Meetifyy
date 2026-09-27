@@ -1,10 +1,19 @@
 import { EmailUsageService } from './email-usage.service';
+import { stub } from '../common/testing/stub';
+import type { RedisService } from '../redis/redis.service';
 
 /**
  * The daily counter. Two properties matter: it must key by UTC day so replicas
  * in different regions agree, and it must never let a Redis problem turn a
  * delivered email into a failed job.
  */
+
+/** The slice of an ioredis MULTI chain the counter uses. */
+type MultiChain = {
+  incr(k: string): MultiChain;
+  expire(k: string, s: number): MultiChain;
+  exec(): Promise<unknown[]>;
+};
 
 class FakeRedis {
   store = new Map<string, number>();
@@ -13,7 +22,7 @@ class FakeRedis {
 
   multi() {
     const ops: Array<() => void> = [];
-    const chain: any = {
+    const chain: MultiChain = {
       incr: (k: string) => {
         ops.push(() => this.store.set(k, (this.store.get(k) ?? 0) + 1));
         return chain;
@@ -41,7 +50,9 @@ class FakeRedis {
 }
 
 const makeService = (client: FakeRedis | null) =>
-  new EmailUsageService({ getClient: () => client } as any);
+  new EmailUsageService(
+    stub<RedisService>({ getClient: jest.fn(() => client) }),
+  );
 
 const todayKey = (provider: string) =>
   `email:sent:${provider}:${new Date().toISOString().slice(0, 10)}`;

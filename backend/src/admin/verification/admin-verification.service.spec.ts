@@ -89,7 +89,7 @@ describe('AdminVerificationService', () => {
         take: 5,
         skip: 2,
         orderBy: { createdAt: 'desc' },
-        include: expect.any(Object),
+        include: expect.any(Object) as object,
       });
       expect(result.total).toBe(10);
     });
@@ -133,7 +133,11 @@ describe('AdminVerificationService', () => {
 
     it('rejects a status value outside the enum', async () => {
       await expect(
-        service.updateStatus('req-1', 'SUPERUSER' as any),
+        // Deliberately outside the enum: what a hand-built request could send.
+        service.updateStatus(
+          'req-1',
+          'SUPERUSER' as unknown as VerificationStatus,
+        ),
       ).rejects.toThrow(BadRequestException);
       expect(mockPrisma.verificationRequest.updateMany).not.toHaveBeenCalled();
     });

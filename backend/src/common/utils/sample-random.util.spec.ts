@@ -47,7 +47,8 @@ describe('sampleRandom', () => {
   it('handles the empty and zero cases without throwing', () => {
     expect(sampleRandom([], 3)).toEqual([]);
     expect(sampleRandom(pool, 0)).toEqual([]);
-    expect(sampleRandom(undefined as any, 3)).toEqual([]);
+    // Deliberately outside the type: a caller holding no list at all.
+    expect(sampleRandom(undefined as unknown as string[], 3)).toEqual([]);
   });
 
   it('actually varies between calls', () => {
