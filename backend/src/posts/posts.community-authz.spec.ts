@@ -1,6 +1,16 @@
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { PostsService } from './posts.service';
 import { createStudentYearPolicyMock } from '../common/student-year/testing/student-year-policy.mock';
+import { stub } from '../common/testing/stub';
+import type { PrismaService } from '../prisma/prisma.service';
+import type { NotificationsService } from '../notifications/notifications.service';
+import type { NotificationFactory } from '../notifications/notification.factory';
+import type { BlocksService } from '../users/blocks.service';
+import type { DomainEventService } from '../events/domain-event.service';
+import type { RedisService } from '../redis/redis.service';
+import type { MentionsService } from '../mentions/mentions.service';
+import type { StorageService } from '../uploads/uploads.service';
+import type { ContentDeletionAuthorizer } from './content-deletion.authorizer';
 
 /**
  * Who may write a post into a community.
@@ -19,10 +29,20 @@ import { createStudentYearPolicyMock } from '../common/student-year/testing/stud
 describe('PostsService — community post authorization', () => {
   const COMMUNITY = 'c1';
 
-  let service: PostsService;
-  let prisma: any;
+  /** The community columns the write-path guard reads. */
+  type CommunityRow = {
+    id: string;
+    deletedAt: Date | null;
+    isPrivate: boolean;
+    isCampusCommunity: boolean;
+    collegeId: string | null;
+    ownerId: string;
+  };
 
-  const community = (over: any = {}) => ({
+  let service: PostsService;
+  let prisma: ReturnType<typeof makePrisma>;
+
+  const community = (over: Partial<CommunityRow> = {}): CommunityRow => ({
     id: COMMUNITY,
     deletedAt: null,
     isPrivate: false,
@@ -32,40 +52,46 @@ describe('PostsService — community post authorization', () => {
     ...over,
   });
 
+  const makePrisma = (
+    comm: CommunityRow | null,
+    membership: { role: string } | null,
+    user: { collegeId: string } | null,
+  ) => ({
+    community: { findUnique: jest.fn(() => Promise.resolve(comm)) },
+    communityMember: {
+      findUnique: jest.fn(() => Promise.resolve(membership)),
+    },
+    user: { findUnique: jest.fn(() => Promise.resolve(user)) },
+  });
+
   const setup = ({
     comm = community(),
     membership = null,
     user = { collegeId: 'col-1' },
   }: {
-    comm?: any;
-    membership?: any;
-    user?: any;
+    comm?: CommunityRow | null;
+    membership?: { role: string } | null;
+    user?: { collegeId: string } | null;
   } = {}) => {
-    prisma = {
-      community: { findUnique: jest.fn(() => Promise.resolve(comm)) },
-      communityMember: {
-        findUnique: jest.fn(() => Promise.resolve(membership)),
-      },
-      user: { findUnique: jest.fn(() => Promise.resolve(user)) },
-    };
+    prisma = makePrisma(comm, membership, user);
     service = new PostsService(
-      prisma,
-      {} as any,
-      {} as any,
-      {} as any,
-      {} as any,
-      {} as any,
-      {} as any,
-      {} as any,
+      stub<PrismaService>(prisma),
+      stub<NotificationsService>(),
+      stub<NotificationFactory>(),
+      stub<BlocksService>(),
+      stub<DomainEventService>(),
+      stub<RedisService>(),
+      stub<MentionsService>(),
+      stub<StorageService>(),
       // Deletion authorizer — unused by the write-path guard under test.
-      {} as any,
+      stub<ContentDeletionAuthorizer>(),
       // First-year isolation — not what this guard is about.
       createStudentYearPolicyMock(),
     );
   };
 
   const attempt = (userId: string) =>
-    (service as any).assertCanPostInCommunity(userId, COMMUNITY);
+    service['assertCanPostInCommunity'](userId, COMMUNITY);
 
   describe('a non-member', () => {
     it('is refused', async () => {
@@ -142,7 +168,7 @@ describe('PostsService — community post authorization', () => {
     });
 
     it('is a 404 when it never existed', async () => {
-      setup({ comm: null as any });
+      setup({ comm: null });
       await expect(attempt('member')).rejects.toThrow(NotFoundException);
     });
   });
