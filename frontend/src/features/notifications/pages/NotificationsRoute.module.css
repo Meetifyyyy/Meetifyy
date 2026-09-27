@@ -255,6 +255,8 @@
     box-shadow: none;
     border-radius: 0;
     height: auto;
+    /* Full screen height: there is no BottomNav on this page. */
+    min-height: calc(100dvh - env(safe-area-inset-bottom, 0px));
     max-height: none;
     overflow: visible;
   }

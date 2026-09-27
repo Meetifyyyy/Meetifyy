@@ -160,6 +160,17 @@ function release() {
  */
 const lock = createScrollLockCounter({ engage, release });
 
+/**
+ * True while any overlay holds the lock.
+ *
+ * For gesture handlers that act on the page directly rather than by scrolling
+ * it - pull-to-refresh translates the screen with a transform, which no
+ * overflow value can stop. They ask this and stand down instead.
+ */
+export function isScrollLocked() {
+  return lock.count > 0;
+}
+
 export function useScrollLock(isActive = true) {
   useLayoutEffect(() => {
     if (!isActive || typeof document === 'undefined') return undefined;

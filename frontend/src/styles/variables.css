@@ -24,15 +24,15 @@
    * `--color-surface-screen`. See the dark block below.
    */
   --color-nav-surface: #FFFFFF;
-  /* Floating mobile BottomNav: inset from the screen edges, plus its lift. */
-  --bottom-nav-gap: 12px;
-  /* Frosted glass: translucent fill + backdrop blur, and a faint top highlight
-     (inset) so the edge catches light instead of needing a border. */
-  --bottom-nav-bg: rgba(255, 255, 255, 0.68);
-  --bottom-nav-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.7),
-    0 8px 28px rgba(15, 23, 42, 0.14),
-    0 2px 6px rgba(15, 23, 42, 0.06);
+  /* Full-width mobile BottomNav, attached to the screen edge. */
+  --bottom-nav-gap: 0px;
+  --bottom-nav-height: 60px;
+  /* Everything the attached nav covers, measured from the viewport bottom:
+     bar + home indicator. Pages reserve THIS, never a literal, so a
+     change to the nav or a device with a larger inset cannot clip content. */
+  --bottom-nav-clearance: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom, 0px));
+  /* Match the phone's native navigation area exactly. */
+  --bottom-nav-bg: #FFFFFF;
 
   /*
    * Full-bleed SCREEN surfaces: the left sidebar, settings, the messages
@@ -161,6 +161,12 @@
  * mounted, regardless of the device. With the inline value left in place, a
  * dark-mode visitor got a light landing page with dark native controls on it.
  */
+/* Pages that do not render the BottomNav (see DashboardLayoutWrapper): nothing
+   to clear but the home indicator, so no page pads for a bar that is absent. */
+:root[data-no-bottom-nav] {
+  --bottom-nav-clearance: env(safe-area-inset-bottom, 0px);
+}
+
 :root[data-theme='light'] { color-scheme: light; }
 :root[data-theme='dark'] { color-scheme: dark; }
 
@@ -175,16 +181,8 @@
    * so all three — content, app nav, system nav — end up one surface.
    */
   --color-nav-surface: #000000;
-  /* Lifted off the pure-black page so the floating bar reads as a surface.
-     Only the bar: --color-nav-surface still paints the system area. */
-  /* Near-black rather than black, plus a faint light rim drawn as an inset
-     shadow (not a border): on a pure-black page a black bar and a dark drop
-     shadow both vanish, and the rim is what keeps the pill's outline visible. */
-  --bottom-nav-bg: rgba(20, 20, 22, 0.78);
-  --bottom-nav-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.09),
-    inset 0 1px 0 rgba(255, 255, 255, 0.1),
-    0 10px 30px rgba(0, 0, 0, 0.55);
+  /* Match the phone's native navigation area exactly in dark mode. */
+  --bottom-nav-bg: #000000;
   --color-bg-main: #121212;
   --color-bg-white: #202020;
   --color-bg-white-rgb: 32, 32, 32;

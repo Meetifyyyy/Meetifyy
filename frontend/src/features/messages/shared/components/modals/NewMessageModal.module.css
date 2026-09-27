@@ -13,6 +13,8 @@
   padding: 1rem;
   background: rgba(0, 0, 0, 0.5);
   animation: nmFade 0.2s ease;
+  /* A drag that ends up on the scrim never chains to the page behind it. */
+  overscroll-behavior: contain;
 }
 
 .panel {
@@ -264,7 +266,7 @@
   color: inherit;
   text-align: left;
   cursor: pointer;
-  transition: background var(--transition-fast, 0.15s ease);
+  transition: background var(--transition-fast, 0.15s ease), transform 160ms ease-out;
 }
 
 .userItem:hover {
@@ -277,6 +279,10 @@
 
 .userItemOn:hover {
   background: rgba(var(--color-primary-rgb), 0.12);
+}
+
+.userItem:active {
+  transform: scale(0.985);
 }
 
 .userAvatar {
@@ -393,6 +399,11 @@
   composes: action-btn action-btn--primary from global;
   width: 100%;
   min-height: 48px;
+  box-shadow: none !important;
+}
+
+.primaryBtn:hover:not(:disabled) {
+  box-shadow: none !important;
 }
 
 /* ── Group name step ── */

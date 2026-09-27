@@ -1,4 +1,5 @@
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useLocation } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { postsApi } from '@shared/api/apiClient';
@@ -145,6 +146,7 @@ export default function PostView({ post, onBack, autoFocusComment = false }) {
   );
 
   const [replyContent, setReplyContent] = useState({ text: '', mentions: [] });
+  const [composerOpen, setComposerOpen] = useState(shouldFocusComment);
   const [isPostingComment, setIsPostingComment] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const { currentUser } = useAuth();
@@ -156,11 +158,18 @@ export default function PostView({ post, onBack, autoFocusComment = false }) {
   const hasAutoFocusedRef = useRef(false);
 
   const focusComposer = useCallback(() => {
+    setComposerOpen(true);
     if (composerRef.current) {
       composerRef.current.focus();
       composerRef.current.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' });
     }
   }, []);
+
+  useLayoutEffect(() => {
+    if (!composerOpen) return;
+    composerRef.current?.focus();
+    composerRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' });
+  }, [composerOpen]);
 
   // Seed data from a feed-card click (passed via router state, so it already
   // has author/text/media/poll) lets the query start in a "success" state
@@ -330,7 +339,7 @@ export default function PostView({ post, onBack, autoFocusComment = false }) {
 
       {/* Reply Composer (Top Level) */}
       {hasContent && (
-        <div className={styles.postViewComposer}>
+        <div className={`${styles.postViewComposer} ${composerOpen ? '' : styles.composerClosed}`}>
           <Avatar src={currentUser?.avatar} name={currentUser?.displayName} size="40px" disableHover />
           <form onSubmit={handleMainReplySubmit} className={styles.replyForm}>
             <div style={{ flex: 1, minWidth: 0 }}>
@@ -391,6 +400,16 @@ export default function PostView({ post, onBack, autoFocusComment = false }) {
           </>
         )}
       </div>
+      {hasContent && createPortal(
+        <div className={styles.replyDock}>
+          <button type="button" className={styles.openReplyButton} onClick={focusComposer}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.4 8.4 0 0 1 3.8-.9H13a8.5 8.5 0 0 1 8 8v.5Z" />
+            </svg>
+            Write a reply
+          </button>
+        </div>, document.body,
+      )}
     </div>
   );
 }

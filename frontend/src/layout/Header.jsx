@@ -110,7 +110,7 @@ export default function Header({ variant = 'dashboard', wide = false }) {
     ?? 0;
 
   return (
-    <header className={`${styles.header} ${activeTab === 'messages' ? styles.headerMessages : ''} ${!isHomePage ? styles.hideOnMobile : ''}`}>
+    <header className={`${styles.header} ${isHomePage ? styles.homeHeader : ''} ${activeTab === 'messages' ? styles.headerMessages : ''} ${!isHomePage ? styles.hideOnMobile : ''}`}>
       {/* Mobile Header Left: Sidebar / Menu Button */}
       <button 
         className={styles.hamburgerBtn}

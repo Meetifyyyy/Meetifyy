@@ -148,6 +148,15 @@ html {
   /* overflow-y: hidden removed — window is the scroll container for the feed virtualizer */
 }
 
+/* Android lays the WebView edge to edge, so keep ordinary screen content clear
+   of the status bar. Opening and auth canvases handle this inset within their
+   own full-bleed layouts. */
+@media (max-width: 768px) {
+  :root:not([data-bars='transparent']):not([data-collapsing-header]) #root {
+    padding-top: var(--status-bar-inset, 0px);
+  }
+}
+
 /* Unused global header styling removed to prevent conflicts with Header.module.css */
 header {
   box-sizing: border-box;
@@ -503,6 +512,7 @@ nav a.active {
    distribute and the whole page grows instead of just the message list.
    60px matches Header.module.css's fixed .header height. */
 .centre--messages {
+  background: var(--color-surface-screen, var(--color-bg-white));
   padding: 0 !important;
   max-width: none !important;
   height: calc(100dvh - 60px - 0.5rem) !important;
@@ -533,10 +543,16 @@ nav a.active {
        explanation; `.centre--messages` right below still opts into a real
        clipped box via its own `overflow: hidden`. */
     overflow-y: visible !important;
-    /* Floating BottomNav: 60px bar + its gap + the home indicator + breathing room. */
-    padding-bottom: calc(60px + var(--bottom-nav-gap) + env(safe-area-inset-bottom, 0px) + 12px) !important;
+    /* Attached BottomNav plus a small scrolling buffer. */
+    padding-bottom: calc(var(--bottom-nav-clearance) + 12px) !important;
     max-width: none !important;
     margin: 0 !important;
+  }
+
+  /* No BottomNav on this page (see DashboardLayoutWrapper): the content runs
+     to the bottom edge, keeping only the home-indicator inset. */
+  :root[data-no-bottom-nav] .centre:not(.centre--messages) {
+    padding-bottom: env(safe-area-inset-bottom, 0px) !important;
   }
 
   .centre--messages {
@@ -547,8 +563,8 @@ nav a.active {
        the only thing to reserve is the bottom edge. Whichever of these is
        largest wins:
 
-         60px + gap - kb-layout-shift  the floating BottomNav and its gap. Normally
-                                 the full 60px; on Android the keyboard shrinks
+         clearance - kb-layout-shift  the attached BottomNav and home-area
+                                 inset. Normally the bar height; on Android the keyboard shrinks
                                  the layout viewport and the nav translates down
                                  out of it by exactly that much, so its claim on
                                  this box shrinks to nothing. Floored at 0 so it
@@ -560,13 +576,13 @@ nav a.active {
        the space kept for it in agreement — reserve too little and the nav sits
        over the content, too much and the leftover strip shows the canvas
        through as a black band. */
-    height: calc(100dvh - max(0px, calc(60px + var(--bottom-nav-gap) - var(--kb-layout-shift, 0px)), var(--kb-inset, 0px))) !important;
-    max-height: calc(100dvh - max(0px, calc(60px + var(--bottom-nav-gap) - var(--kb-layout-shift, 0px)), var(--kb-inset, 0px))) !important;
+    height: calc(100dvh - var(--status-bar-inset, 0px) - max(0px, calc(var(--bottom-nav-clearance) - var(--kb-layout-shift, 0px)), var(--kb-inset, 0px))) !important;
+    max-height: calc(100dvh - var(--status-bar-inset, 0px) - max(0px, calc(var(--bottom-nav-clearance) - var(--kb-layout-shift, 0px)), var(--kb-inset, 0px))) !important;
   }
 
   .centre--messages.chat-is-open {
-    height: calc(100dvh - var(--kb-inset, 0px)) !important;
-    max-height: calc(100dvh - var(--kb-inset, 0px)) !important;
+    height: calc(100dvh - var(--status-bar-inset, 0px) - var(--kb-inset, 0px)) !important;
+    max-height: calc(100dvh - var(--status-bar-inset, 0px) - var(--kb-inset, 0px)) !important;
   }
 
   /* The BottomNav is NOT hidden when the keyboard opens — it stays exactly
@@ -613,7 +629,7 @@ nav a.active {
      Overlays opt out by marking themselves, rather than the rule listing the
      pages that have one — a second sheet page with an overlay would otherwise
      reintroduce this silently. */
-  .centre--sheet > *:not([data-sheet-overlay]) {
+  .centre--sheet:not(.centre--search) > *:not([data-sheet-overlay]) {
     min-height: 100dvh;
     box-sizing: border-box;
   }
@@ -652,8 +668,9 @@ nav a.active {
   .centre--search {
     padding-bottom: 0 !important;
     overflow: hidden !important;
-    height: 100dvh !important;
-    max-height: 100dvh !important;
+    min-height: 0 !important;
+    height: calc(100dvh - var(--status-bar-inset, 0px)) !important;
+    max-height: calc(100dvh - var(--status-bar-inset, 0px)) !important;
   }
 }
 
@@ -839,6 +856,25 @@ button,
 
 ::-webkit-scrollbar-thumb:hover {
   background-color: rgba(0, 0, 0, 0.35);
+}
+
+/*
+ * Light mode: the window's scrollbar gutter shows the page background.
+ *
+ * `scrollbar-gutter: stable` reserves the gutter on <html>, so what shows
+ * there is <html>'s own background, not the body's gradient. The boot script
+ * in index.html sets that background inline from the theme at load (black
+ * after a dark start), and it is CSP-hashed, so it is overridden here rather
+ * than edited: the same fixed gradient the body paints, and a clear track.
+ */
+html[data-theme="light"] {
+  background: radial-gradient(circle at center, var(--bg-gradient-center) 0%, var(--bg-gradient-mid) 45%, var(--bg-gradient-edge) 100%) fixed !important;
+  background-color: var(--bg-gradient-mid, #f0f5fc) !important;
+}
+
+html[data-theme="light"]::-webkit-scrollbar-track,
+html[data-theme="light"]::-webkit-scrollbar {
+  background: transparent;
 }
 
 [data-theme="dark"] ::-webkit-scrollbar-track {

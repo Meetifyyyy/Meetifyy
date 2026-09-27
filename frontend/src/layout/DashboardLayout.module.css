@@ -45,4 +45,8 @@
   .noPaddingMobile {
     padding: 0 !important;
   }
+
+  .fixedHeader {
+    padding-top: 56px;
+  }
 }

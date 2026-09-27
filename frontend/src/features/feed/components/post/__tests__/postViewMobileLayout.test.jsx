@@ -40,12 +40,12 @@ describe('post view on mobile', () => {
     // scheme, and the stylesheet's location is not what this test is about.
     const css = readFileSync(resolve('src/styles/global.css'), 'utf8');
 
-    // The rule must still exist: it is what stops the body canvas showing
+    // The rule must still exist (a page may be opted out with `:not(...)`): it is what stops the body canvas showing
     // through under a short sheet page.
-    expect(css).toMatch(/\.centre--sheet\s*>\s*\*[^{]*\{[^}]*min-height:\s*100dvh/);
+    expect(css).toMatch(/\.centre--sheet(?::not\([^)]*\))*\s*>\s*\*[^{]*\{[^}]*min-height:\s*100dvh/);
 
     // And it must exclude overlays. A bare `> *` is the bug.
-    const rule = css.match(/\.centre--sheet\s*>\s*\*[^{]*\{[^}]*min-height:\s*100dvh[^}]*\}/)[0];
+    const rule = css.match(/\.centre--sheet(?::not\([^)]*\))*\s*>\s*\*[^{]*\{[^}]*min-height:\s*100dvh[^}]*\}/)[0];
     expect(rule).toContain(':not([data-sheet-overlay])');
   });
 

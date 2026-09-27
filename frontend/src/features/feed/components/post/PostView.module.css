@@ -17,6 +17,10 @@
   -ms-overflow-style: none;
 }
 
+.replyDock {
+  display: none;
+}
+
 .postViewContainer::-webkit-scrollbar {
   display: none;
 }
@@ -24,7 +28,7 @@
 .postViewTopbar {
   display: flex;
   align-items: center;
-  padding: 1rem 1.5rem;
+  padding: 0.75rem 1.5rem;
   border-bottom: 1px solid var(--color-border-light);
   gap: 1rem;
   background: transparent;
@@ -199,10 +203,7 @@
 
 @media (max-width: 768px) {
   .postViewContainer {
-    /* Clears the fixed BottomNav from inside the sheet, so the sheet's own
-       background still runs behind the nav rather than stopping short of it and
-       letting the body canvas show through (see .centre--sheet in global.css). */
-    padding-bottom: 60px;
+    padding-bottom: calc(88px + max(env(safe-area-inset-bottom, 0px), var(--navigation-bar-inset, 0px)));
     margin-bottom: 0;
     min-height: 100dvh;
     border: none;
@@ -218,6 +219,51 @@
 
   .postViewComposer {
     gap: 0.75rem;
+  }
+
+  .composerClosed {
+    display: none;
+  }
+
+  .replyDock {
+    position: fixed;
+    inset: auto 0 0;
+    z-index: 50;
+    display: flex;
+    justify-content: center;
+    padding: 12px max(16px, env(safe-area-inset-right, 0px)) calc(12px + max(env(safe-area-inset-bottom, 0px), var(--navigation-bar-inset, 0px))) max(16px, env(safe-area-inset-left, 0px));
+    background: var(--color-surface-screen);
+    box-sizing: border-box;
+  }
+
+  .openReplyButton {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    width: 100%;
+    max-width: 560px;
+    min-height: 48px;
+    padding: 12px 20px;
+    border: 1px solid var(--color-border-light);
+    border-radius: 999px;
+    background: var(--color-primary);
+    color: #fff;
+    font-family: var(--font-family-sans);
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.16s ease, transform 0.16s ease;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .openReplyButton:active {
+    opacity: 0.88;
+    transform: scale(0.985);
+  }
+
+  :global(html[data-keyboard-open]) .replyDock {
+    display: none;
   }
 
   .replyForm {

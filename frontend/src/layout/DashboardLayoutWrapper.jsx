@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect } from 'react';
-import { Outlet, useNavigate, useMatches } from 'react-router-dom';
+import { Outlet, useNavigate, useMatches, useLocation } from 'react-router-dom';
 import { useAuth } from '@shared/context/AuthContext';
 import Background from '@shared/components/ui/Background';
 import Header from './Header';
@@ -26,9 +26,11 @@ export default function DashboardLayoutWrapper() {
   const { currentUser } = useAuth();
   const matches = useMatches();
   const navigate = useNavigate();
+  const location = useLocation();
 
   // Determine if wide layout is needed based on route handle
   const isWide = matches.some(match => match.handle?.wide);
+  const isHomePage = location.pathname === '/home' || location.pathname === '/';
   const noPadding = matches.some(match =>
     match.pathname.startsWith('/messages') ||
     match.pathname.startsWith('/campus') ||
@@ -37,7 +39,8 @@ export default function DashboardLayoutWrapper() {
     match.pathname.startsWith('/saved') ||
     match.pathname.startsWith('/settings') ||
     match.pathname.startsWith('/search') ||
-    /^\/communities\/.+/.test(match.pathname)
+    // /communities paints its own full-bleed surface (and gutter) on phones.
+    /^\/communities(\/.+)?$/.test(match.pathname)
   );
   /**
    * Publishes the keyboard geometry (`--kb-layout-shift`, `--kb-inset`) that
@@ -69,6 +72,25 @@ export default function DashboardLayoutWrapper() {
     match.pathname.startsWith('/settings') ||
     match.pathname.startsWith('/communities/')
   );
+
+  // Not rendered at all on these pages, rather than slid off-screen as
+  // `hideBottomNav` does: they take the full viewport height, and the flag on
+  // <html> zeroes `--bottom-nav-clearance` so nothing pads for a bar that is
+  // not there.
+  const removeBottomNav = matches.some(match =>
+    match.pathname.startsWith('/post/') ||
+    match.pathname.startsWith('/notifications') ||
+    match.pathname === '/search' ||
+    match.pathname === '/communities/search' ||
+    (match.pathname.startsWith('/communities/') && match.pathname !== '/communities/search') ||
+    (match.pathname.startsWith('/messages/') && match.pathname.length > '/messages/'.length)
+  );
+  useEffect(() => {
+    const root = document.documentElement;
+    if (removeBottomNav) root.setAttribute('data-no-bottom-nav', '');
+    else root.removeAttribute('data-no-bottom-nav');
+    return () => root.removeAttribute('data-no-bottom-nav');
+  }, [removeBottomNav]);
 
   // Mobile chrome gets out of the way while reading and comes straight back
   // on any upward scroll. Disabled where the page is not the scroll container
@@ -146,11 +168,11 @@ export default function DashboardLayoutWrapper() {
     <InstantMatchProvider>
       <Background />
       <Header variant="dashboard" wide={isWide} />
-      <DashboardLayout wide={isWide} noPaddingMobile={noPadding}>
+      <DashboardLayout wide={isWide} noPaddingMobile={noPadding} fixedHeader={isHomePage}>
         <Sidebar onCommunityClick={handleCommunityClick} />
         <Outlet />
       </DashboardLayout>
-      <BottomNav hidden={hideBottomNav} />
+      {!removeBottomNav && <BottomNav hidden={hideBottomNav} />}
       <VerificationModal />
       {isVerified && (
         <>
@@ -169,4 +191,3 @@ export default function DashboardLayoutWrapper() {
     </InstantMatchProvider>
   );
 }
-

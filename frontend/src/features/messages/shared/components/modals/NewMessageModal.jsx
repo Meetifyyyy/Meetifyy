@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import { usersApi } from '@shared/api/apiClient';
 import { useDebounce } from '@shared/hooks/useDebounce';
@@ -215,7 +216,14 @@ export default function NewMessageModal({ onClose, onStartChat, onCreateGroup })
   const primaryLabel =
     selected.length === 1 ? `Chat with ${firstName(selected[0])}` : `Create group · ${selected.length}`;
 
-  return (
+  /*
+   * Portalled to <body>, like every other overlay the scroll lock expects.
+   * Rendered in place it sat inside the Messages screen's pull-to-refresh
+   * wrapper: a transformed ancestor re-anchored its `position: fixed` to the
+   * page, its z-index lost to the bottom nav's, and a drag inside it pulled
+   * the whole screen down behind it.
+   */
+  return createPortal(
     <div className={styles.overlay} data-scroll-lock-ignore onClick={onClose}>
       <div
         ref={sheetRef}
@@ -398,6 +406,7 @@ export default function NewMessageModal({ onClose, onStartChat, onCreateGroup })
           </form>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

@@ -51,7 +51,7 @@ export default function MessagesRoute() {
      * — it walks up from the touch target and finds a scroller that is not at
      * zero — so this flag only has to handle the case the DOM cannot express.
      */
-    <PullToRefresh onRefresh={handleRefresh} disabled={isChatOpen}>
+    <PullToRefresh onRefresh={handleRefresh} disabled={isChatOpen} surface="sheet">
       <main className={`centre centre-wide centre--messages animate-in ${isChatOpen ? 'chat-is-open' : ''}`}>
         <VerificationGate message="Verify your student ID to send and receive messages." fullPage>
           <MessagesLayout />

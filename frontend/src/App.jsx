@@ -1,4 +1,5 @@
 import { lazy, Suspense, useMemo } from 'react';
+import { AuthShell, LoginPage, SignupPage } from './features/auth/routes/authRoutes';
 import { IS_DEV_BUILD, IS_MOBILE_BUILD } from '@config';
 import { isKnownAppRoute, normalisePathname } from '@config/seo';
 import { createBrowserRouter, RouterProvider, Navigate, Outlet, ScrollRestoration, useLocation } from 'react-router-dom';
@@ -57,7 +58,7 @@ import ProfilePageSkeleton from './features/profile/components/skeletons/Profile
 
 import CampusSkeleton from './features/campus/components/skeletons/CampusSkeleton';
 import CrewSkeleton from './features/crew/components/skeletons/CrewSkeleton';
-import CommunitiesSkeleton from './features/communities/components/skeletons/CommunitiesSkeleton';
+import CommunitiesPageSkeleton from './features/communities/components/directory/CommunitiesPageSkeleton';
 import NotificationsSkeleton from './features/notifications/components/skeletons/NotificationsSkeleton';
 import SearchSkeleton from './features/search/components/skeletons/SearchSkeleton';
 import SettingsSkeleton from './features/settings/components/skeletons/SettingsSkeleton';
@@ -82,9 +83,9 @@ function lazyRoute(componentImport) {
 const LandingPage = IS_MOBILE_BUILD
   ? null
   : lazyRoute(() => import('./features/auth/pages/LandingPage'));
-const AuthShell = lazyRoute(() => import('./features/auth/shared/ui/AuthShell'));
 const FeedRoute = lazyRoute(() => import('./features/feed/pages/FeedRoute'));
 const CommunitiesRoute = lazyRoute(() => import('./features/communities/pages/CommunitiesRoute'));
+const CommunitySearchRoute = lazyRoute(() => import('./features/communities/pages/CommunitySearchRoute'));
 const CommunityDetailRoute = lazyRoute(() => import('./features/communities/pages/CommunityDetailRoute'));
 const PostDetailRoute = lazyRoute(() => import('./features/feed/pages/PostDetailRoute'));
 // The signed-out view of the same route. Lazy for the same reason every other
@@ -93,8 +94,6 @@ const PublicPostPage = lazyRoute(() => import('./features/feed/pages/PublicPostP
 const MessagesRoute = lazyRoute(() => import('./features/messages/pages/MessagesRoute'));
 const ProfilePage = lazyRoute(() => import('./features/profile/pages/ProfilePage'));
 const SearchResultsRoute = lazyRoute(() => import('./features/search/pages/SearchResultsRoute'));
-const LoginPage = lazyRoute(() => import('./features/auth/pages/LoginPage'));
-const SignupPage = lazyRoute(() => import('./features/auth/pages/SignupPage'));
 const ForgotPasswordPage = lazyRoute(() => import('./features/auth/pages/ForgotPasswordPage'));
 const ResetPasswordPage = lazyRoute(() => import('./features/auth/pages/ResetPasswordPage'));
 const SettingsRoute = lazyRoute(() => import('./features/settings/pages/SettingsRoute'));
@@ -469,7 +468,8 @@ export default function App({ homeElement }) {
               children: [
             { path: '/home',                       element: withBoundary(<FeedRoute />, <HomeSkeleton />) },
             { path: '/search',                     element: withBoundary(<SearchResultsRoute />, <SearchSkeleton />) },
-            { path: '/communities',                element: withBoundary(<CommunitiesRoute />, <CommunitiesSkeleton />), handle: { wide: true } },
+            { path: '/communities',                element: withBoundary(<CommunitiesRoute />, <CommunitiesPageSkeleton />) },
+            { path: '/communities/search',         element: withBoundary(<CommunitySearchRoute />, null) },
             { path: '/communities/:id',            element: withBoundary(<CommunityDetailRoute />, null), handle: { wide: true } },
             { path: '/messages/:param1?/:param2?', element: withBoundary(<MessagesRoute />, null), handle: { wide: true } },
             // /inbox was the old prefix for the same screens. It stays routable

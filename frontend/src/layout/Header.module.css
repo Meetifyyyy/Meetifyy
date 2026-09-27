@@ -472,6 +472,13 @@
     justify-content: space-between;
   }
 
+  .homeHeader {
+    position: fixed;
+    top: var(--status-bar-inset, 0px);
+    left: 0;
+    right: 0;
+  }
+
   .hamburgerBtn {
     display: flex;
     align-items: center;
@@ -645,7 +652,9 @@
   flex-direction: column;
   visibility: hidden;
   will-change: transform;
-  padding-top: env(safe-area-inset-top, 0px);
+  /* Android WebView reports the status bar through the native CSS variable,
+     while iOS reports it through env(). Keep the first drawer row below both. */
+  padding-top: max(env(safe-area-inset-top, 0px), var(--status-bar-inset, 0px));
   overscroll-behavior: contain;
   touch-action: pan-y;
 }

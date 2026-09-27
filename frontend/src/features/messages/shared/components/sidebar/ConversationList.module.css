@@ -604,19 +604,20 @@
   height: 48px;
   border-radius: 50%;
   background: rgba(var(--color-primary-rgb, 37, 99, 235), 0.08);
-  color: var(--color-primary);
+  color: var(--color-icon-base);
   display: flex;
   align-items: center;
   justify-content: center;
   margin-bottom: 0.75rem;
-  border: 1px solid rgba(var(--color-primary-rgb, 37, 99, 235), 0.12);
-  box-shadow: 0 2px 8px rgba(var(--color-primary-rgb, 37, 99, 235), 0.06);
+  border: none;
+  box-shadow: none;
 }
 
 :global([data-theme="dark"]) .emptyStateIconWrapper {
   background: rgba(var(--color-primary-rgb, 99, 102, 241), 0.15);
-  border-color: rgba(255, 255, 255, 0.08);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  color: var(--color-icon-base);
+  border: none;
+  box-shadow: none;
 }
 
 .emptyStateTitle {
@@ -669,7 +670,7 @@
   justify-content: center;
   background: var(--color-bg-soft, #f4f4f5);
   color: var(--color-text-main);
-  border: 1px solid var(--color-border);
+  border: none;
   padding: 0.5rem 1.1rem;
   border-radius: 100px;
   font-family: var(--font-family-sans);
@@ -792,6 +793,11 @@
   padding: 0 1.1rem;
   gap: 0.35rem;
   font-size: 0.84rem;
+  box-shadow: none !important;
+}
+
+.inboxEmptyCta:hover:not(:disabled) {
+  box-shadow: none !important;
 }
 
 

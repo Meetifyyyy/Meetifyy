@@ -18,8 +18,8 @@ import { useEffect, useRef } from 'react';
  * - Release speed is smoothed over recent moves, so a flick is judged by the
  *   gesture, not by the jitter of the last event; the slide-off then runs at
  *   roughly that speed instead of a fixed duration.
- * - Pulling up past the resting point gives a little rubber-band resistance
- *   instead of a hard stop.
+ * - Upward movement never carries the sheet past its resting point. That
+ *   keeps the dimmed page behind it from peeking through along the bottom.
  * - Touch events, not pointer events: a pointer drag on a touch screen is
  *   cancelled the moment the browser decides the gesture is a scroll, and only
  *   a non-passive `touchmove` can claim it.
@@ -71,8 +71,10 @@ export function useSheetDrag(onClose, { enabled = true, media = '(max-width: 768
       return backdrop ? backdrop.scrollTop > 0 : false;
     };
 
-    // Downward: 1:1 with the finger. Upward: resisted, and capped.
-    const offsetFor = (dy) => (dy >= 0 ? dy : -Math.min(24, Math.sqrt(-dy) * 2));
+    // The sheet may be dismissed downward, but must never translate above its
+    // resting position: even a small negative offset exposes the page beneath
+    // the bottom edge while the user pulls upward or reverses a drag.
+    const offsetFor = (dy) => Math.max(0, dy);
 
     const paint = (y) => {
       // Position only: the sheet and its backdrop stay fully visible.
