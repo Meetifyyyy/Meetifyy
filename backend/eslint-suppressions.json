@@ -435,20 +435,6 @@
       "count": 3
     }
   },
-  "src/common/guards/jwt.guard.native-session.spec.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 5
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 3
-    },
-    "@typescript-eslint/no-unsafe-call": {
-      "count": 12
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 16
-    }
-  },
   "src/common/guards/jwt.guard.restricted-routes.spec.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 10
@@ -467,26 +453,6 @@
     },
     "@typescript-eslint/no-unsafe-return": {
       "count": 3
-    }
-  },
-  "src/common/guards/jwt.guard.session-binding.spec.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 13
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 6
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-call": {
-      "count": 6
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 15
-    },
-    "@typescript-eslint/no-unsafe-return": {
-      "count": 1
     }
   },
   "src/common/guards/login-ratelimit.guard.spec.ts": {
@@ -1205,23 +1171,6 @@
     },
     "@typescript-eslint/no-unsafe-member-access": {
       "count": 15
-    }
-  },
-  "src/posts/posts.deletion.spec.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 16
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 10
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 2
-    },
-    "@typescript-eslint/no-unsafe-call": {
-      "count": 3
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 12
     }
   },
   "src/posts/posts.poll-options.spec.ts": {

@@ -1,6 +1,12 @@
-import { Reflector } from '@nestjs/core';
 import { UnauthorizedException, ForbiddenException } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { JwtGuard } from './jwt.guard';
+import { stub } from '../testing/stub';
+import {
+  buildSessionGuard,
+  httpContext,
+  type SessionRow,
+} from './testing/jwt-guard.fixture';
 
 /**
  * The session cookie is the mechanism that makes a session revocable, so the
@@ -22,19 +28,11 @@ describe('JwtGuard — session binding', () => {
   const USER = 'user-1';
   const OTHER = 'user-2';
 
-  let guard: any;
-  let sessions: Record<
-    string,
-    { revoked: boolean; expiresAt: Date; userId: string }
-  >;
+  let guard: JwtGuard;
+  let sessions: Record<string, SessionRow>;
 
-  const context = (cookies: Record<string, string>, method = 'GET') => ({
-    switchToHttp: () => ({
-      getRequest: () => ({ cookies, headers: {}, method }),
-    }),
-    getHandler: () => ({}),
-    getClass: () => ({}),
-  });
+  const context = (cookies: Record<string, string>, method = 'GET') =>
+    httpContext({ cookies, headers: {}, method });
 
   beforeEach(() => {
     sessions = {
@@ -60,28 +58,11 @@ describe('JwtGuard — session binding', () => {
       },
     };
 
-    const prisma = {
-      userSession: {
-        findUnique: jest.fn(({ where }: any) =>
-          Promise.resolve(sessions[where.id] ?? null),
-        ),
-      },
-    };
-
-    guard = new JwtGuard({} as any, prisma as any, new Reflector(), {
-      isSatisfied: () => Promise.resolve(true),
-    } as any);
-
     // Isolate the session check: token verification and the lifecycle gates
     // have their own specs and would otherwise need a real JWT here.
-    guard.validateToken = jest.fn(() =>
-      Promise.resolve({ id: USER, email: 'a@b.c' }),
-    );
-    guard.enforceAccountStatus = jest.fn(() => Promise.resolve(undefined));
-    guard.supabaseService = { isConfigured: true };
-    Object.defineProperty(guard, 'supabaseService', {
-      value: { isConfigured: true },
-      writable: true,
+    guard = buildSessionGuard({
+      findSession: (id) => Promise.resolve(sessions[id] ?? null),
+      user: { id: USER, email: 'a@b.c' },
     });
   });
 
@@ -137,21 +118,11 @@ describe('JwtGuard — session binding', () => {
   });
 
   it('fails closed when the session lookup throws', async () => {
-    const prisma = {
-      userSession: {
-        findUnique: jest.fn(() => {
-          return Promise.reject(new Error('db down'));
-        }),
+    const failing = buildSessionGuard({
+      findSession: () => {
+        return Promise.reject(new Error('db down'));
       },
-    };
-    const failing = new JwtGuard({} as any, prisma as any, new Reflector(), {
-      isSatisfied: () => Promise.resolve(true),
-    } as any) as any;
-    failing.validateToken = jest.fn(() => Promise.resolve({ id: USER }));
-    failing.enforceAccountStatus = jest.fn(() => Promise.resolve(undefined));
-    Object.defineProperty(failing, 'supabaseService', {
-      value: { isConfigured: true },
-      writable: true,
+      user: { id: USER },
     });
 
     await expect(
@@ -170,16 +141,10 @@ describe('JwtGuard — session binding', () => {
     });
 
     it('refuses a mismatched CSRF header', async () => {
-      const ctx: any = context(
-        { mf_access: 'tok', mf_sid: 'live-own', mf_csrf: 'secret' },
-        'POST',
-      );
-      ctx.switchToHttp = () => ({
-        getRequest: () => ({
-          cookies: { mf_access: 'tok', mf_sid: 'live-own', mf_csrf: 'secret' },
-          headers: { 'x-csrf-token': 'not-the-secret' },
-          method: 'POST',
-        }),
+      const ctx = httpContext({
+        cookies: { mf_access: 'tok', mf_sid: 'live-own', mf_csrf: 'secret' },
+        headers: { 'x-csrf-token': 'not-the-secret' },
+        method: 'POST',
       });
       await expect(guard.canActivate(ctx)).rejects.toBeInstanceOf(
         ForbiddenException,
@@ -187,21 +152,15 @@ describe('JwtGuard — session binding', () => {
     });
 
     it('accepts a matching CSRF header', async () => {
-      const ctx: any = {
-        switchToHttp: () => ({
-          getRequest: () => ({
-            cookies: {
-              mf_access: 'tok',
-              mf_sid: 'live-own',
-              mf_csrf: 'secret',
-            },
-            headers: { 'x-csrf-token': 'secret' },
-            method: 'POST',
-          }),
-        }),
-        getHandler: () => ({}),
-        getClass: () => ({}),
-      };
+      const ctx = httpContext({
+        cookies: {
+          mf_access: 'tok',
+          mf_sid: 'live-own',
+          mf_csrf: 'secret',
+        },
+        headers: { 'x-csrf-token': 'secret' },
+        method: 'POST',
+      });
       await expect(guard.canActivate(ctx)).resolves.toBe(true);
     });
 
@@ -211,17 +170,11 @@ describe('JwtGuard — session binding', () => {
       // a cookie jar and replaying it in an `Authorization` header used to
       // bypass "sign out this device", "sign out everywhere" and the revocation
       // a password change performs, for the token's full hour.
-      const ctx: any = {
-        switchToHttp: () => ({
-          getRequest: () => ({
-            cookies: {},
-            headers: { authorization: 'Bearer tok' },
-            method: 'POST',
-          }),
-        }),
-        getHandler: () => ({}),
-        getClass: () => ({}),
-      };
+      const ctx = httpContext({
+        cookies: {},
+        headers: { authorization: 'Bearer tok' },
+        method: 'POST',
+      });
       await expect(guard.canActivate(ctx)).rejects.toBeInstanceOf(
         UnauthorizedException,
       );
@@ -230,20 +183,18 @@ describe('JwtGuard — session binding', () => {
     it('accepts a bearer caller on a route marked @AllowBearerToken', async () => {
       // The signup handover: `verifyOtp` has minted a provider session and no
       // cookie exists yet, because creating one is what the next call does.
-      guard.reflector = {
-        getAllAndOverride: (key: string) => key === 'allowBearerToken',
-      };
-      const ctx: any = {
-        switchToHttp: () => ({
-          getRequest: () => ({
-            cookies: {},
-            headers: { authorization: 'Bearer tok' },
-            method: 'POST',
-          }),
+      Object.assign(guard, {
+        reflector: stub<Reflector>({
+          getAllAndOverride: jest.fn(
+            (key: string) => key === 'allowBearerToken',
+          ),
         }),
-        getHandler: () => ({}),
-        getClass: () => ({}),
-      };
+      });
+      const ctx = httpContext({
+        cookies: {},
+        headers: { authorization: 'Bearer tok' },
+        method: 'POST',
+      });
       await expect(guard.canActivate(ctx)).resolves.toBe(true);
     });
   });

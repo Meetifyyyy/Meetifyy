@@ -1,6 +1,11 @@
 import { Reflector } from '@nestjs/core';
 import { UnauthorizedException, ForbiddenException } from '@nestjs/common';
 import { JwtGuard } from './jwt.guard';
+import {
+  buildSessionGuard,
+  httpContext,
+  type SessionRow,
+} from './testing/jwt-guard.fixture';
 
 /**
  * The installed app authenticates with a bearer token, which ordinary routes
@@ -26,11 +31,8 @@ describe('JwtGuard — native app session binding', () => {
   const USER = 'user-1';
   const OTHER = 'user-2';
 
-  let guard: any;
-  let sessions: Record<
-    string,
-    { revoked: boolean; expiresAt: Date; userId: string }
-  >;
+  let guard: JwtGuard;
+  let sessions: Record<string, SessionRow>;
   let bearerAllowedOnRoute: boolean;
 
   const context = ({
@@ -41,13 +43,7 @@ describe('JwtGuard — native app session binding', () => {
     cookies?: Record<string, string>;
     headers?: Record<string, string>;
     method?: string;
-  } = {}) => ({
-    switchToHttp: () => ({
-      getRequest: () => ({ cookies, headers, method }),
-    }),
-    getHandler: () => ({}),
-    getClass: () => ({}),
-  });
+  } = {}) => httpContext({ cookies, headers, method });
 
   /** What the app sends: a bearer token plus the session it belongs to. */
   const nativeRequest = (sessionId: string, method = 'GET') =>
@@ -82,30 +78,15 @@ describe('JwtGuard — native app session binding', () => {
       },
     };
 
-    const prisma = {
-      userSession: {
-        findUnique: jest.fn(({ where }: any) =>
-          Promise.resolve(sessions[where.id] ?? null),
-        ),
-      },
-    };
-
     const reflector = new Reflector();
     jest
       .spyOn(reflector, 'getAllAndOverride')
       .mockImplementation(() => bearerAllowedOnRoute);
 
-    guard = new JwtGuard({} as any, prisma as any, reflector, {
-      isSatisfied: () => Promise.resolve(true),
-    } as any);
-
-    guard.validateToken = jest.fn(() =>
-      Promise.resolve({ id: USER, email: 'a@b.c' }),
-    );
-    guard.enforceAccountStatus = jest.fn(() => Promise.resolve(undefined));
-    Object.defineProperty(guard, 'supabaseService', {
-      value: { isConfigured: true },
-      writable: true,
+    guard = buildSessionGuard({
+      findSession: (id) => Promise.resolve(sessions[id] ?? null),
+      user: { id: USER, email: 'a@b.c' },
+      reflector,
     });
   });
 
