@@ -7,27 +7,33 @@ import { BlocksService } from '../users/blocks.service';
 import { RedisService } from '../redis/redis.service';
 import { studentYearPolicyMockProvider } from '../common/student-year/testing/student-year-policy.mock';
 
+/** A mock that resolves to `value`, typed by it. */
+const resolves = <T>(value: T) =>
+  jest.fn<() => Promise<T>>().mockResolvedValue(value);
+
+const makePrisma = () => ({
+  user: {
+    findMany: resolves([]),
+    findUnique: resolves(null),
+  },
+  community: { findMany: resolves([]) },
+  post: { findMany: resolves([]) },
+  crewActivity: { findMany: resolves([]) },
+  recentSearch: {
+    findMany: resolves([]),
+    upsert: resolves({}),
+    deleteMany: resolves({ count: 1 }),
+  },
+  postLike: { findMany: resolves([]) },
+  postBookmark: { findMany: resolves([]) },
+});
+
 describe('SearchService', () => {
   let service: SearchService;
-  let prismaMock: any;
+  let prismaMock: ReturnType<typeof makePrisma>;
 
   beforeEach(async () => {
-    prismaMock = {
-      user: {
-        findMany: (jest.fn() as any).mockResolvedValue([]),
-        findUnique: (jest.fn() as any).mockResolvedValue(null),
-      },
-      community: { findMany: (jest.fn() as any).mockResolvedValue([]) },
-      post: { findMany: (jest.fn() as any).mockResolvedValue([]) },
-      crewActivity: { findMany: (jest.fn() as any).mockResolvedValue([]) },
-      recentSearch: {
-        findMany: (jest.fn() as any).mockResolvedValue([]),
-        upsert: (jest.fn() as any).mockResolvedValue({}),
-        deleteMany: (jest.fn() as any).mockResolvedValue({ count: 1 }),
-      },
-      postLike: { findMany: (jest.fn() as any).mockResolvedValue([]) },
-      postBookmark: { findMany: (jest.fn() as any).mockResolvedValue([]) },
-    };
+    prismaMock = makePrisma();
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -38,12 +44,12 @@ describe('SearchService', () => {
         {
           provide: BlocksService,
           useValue: {
-            getExcludedUserIds: (jest.fn() as any).mockResolvedValue([]),
+            getExcludedUserIds: resolves([]),
           },
         },
         {
           provide: RedisService,
-          useValue: { getClient: (jest.fn() as any).mockReturnValue(null) },
+          useValue: { getClient: jest.fn<() => null>().mockReturnValue(null) },
         },
       ],
     }).compile();

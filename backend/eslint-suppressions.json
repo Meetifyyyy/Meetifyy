@@ -706,23 +706,6 @@
       "count": 1
     }
   },
-  "src/communities/communities.deletion.spec.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 15
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 9
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 6
-    },
-    "@typescript-eslint/no-unsafe-call": {
-      "count": 2
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 20
-    }
-  },
   "src/communities/communities.moderator-promotion.spec.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 22
@@ -1312,20 +1295,6 @@
     },
     "@typescript-eslint/no-unsafe-member-access": {
       "count": 1
-    }
-  },
-  "src/search/search.service.spec.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 13
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 13
-    },
-    "@typescript-eslint/no-unsafe-call": {
-      "count": 12
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 15
     }
   },
   "src/share/share-deployment.spec.ts": {
