@@ -538,26 +538,6 @@
       "count": 5
     }
   },
-  "src/notifications/notifications.deleted-actor.spec.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 2
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 2
-    },
-    "@typescript-eslint/no-unsafe-call": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 7
-    },
-    "@typescript-eslint/no-unsafe-return": {
-      "count": 1
-    }
-  },
   "src/notifications/notifications.invite-reconcile.spec.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 7
