@@ -1,5 +1,8 @@
 import { clientIp, normalizeIp } from './client-ip.util';
 
+/** What `clientIp` reads from a request. */
+type ClientIpRequest = Parameters<typeof clientIp>[0];
+
 describe('normalizeIp', () => {
   it('returns IPv4 unchanged', () => {
     expect(normalizeIp('203.0.113.7')).toBe('203.0.113.7');
@@ -111,7 +114,7 @@ describe('clientIp', () => {
       socket: { remoteAddress: '10.0.0.1' },
     };
 
-    expect(clientIp(forged as any)).toBe('203.0.113.7');
+    expect(clientIp(forged)).toBe('203.0.113.7');
   });
 
   it('gives an attacker rotating the header the same bucket every time', () => {
@@ -120,7 +123,7 @@ describe('clientIp', () => {
         clientIp({
           ip: '203.0.113.7',
           headers: { 'x-forwarded-for': spoofed },
-        } as any),
+        } as ClientIpRequest),
       ),
     );
 
@@ -128,13 +131,14 @@ describe('clientIp', () => {
   });
 
   it('falls back to the socket address when req.ip is absent', () => {
-    expect(
-      clientIp({ socket: { remoteAddress: '::ffff:198.51.100.4' } } as any),
-    ).toBe('198.51.100.4');
+    expect(clientIp({ socket: { remoteAddress: '::ffff:198.51.100.4' } })).toBe(
+      '198.51.100.4',
+    );
   });
 
   it('never throws on a malformed request object', () => {
-    expect(clientIp({} as any)).toBe('unknown');
-    expect(clientIp(undefined as any)).toBe('unknown');
+    expect(clientIp({})).toBe('unknown');
+    // Deliberately outside the type: a caller that passes nothing at all.
+    expect(clientIp(undefined as unknown as ClientIpRequest)).toBe('unknown');
   });
 });

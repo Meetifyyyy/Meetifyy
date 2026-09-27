@@ -1,6 +1,10 @@
 import { RateLimitPolicyGuard } from './rate-limit-policy.guard';
 import { loginAccountKey } from '../guards/login-ratelimit.guard';
 import { normalizeEmail } from '../validation/email-format.util';
+import type { Reflector } from '@nestjs/core';
+import type { RateLimitService } from './rate-limit.service';
+import type { GuardRequest } from '../types/authenticated-request';
+import { stub } from '../testing/stub';
 
 /**
  * The account-dimension key has to fold exactly the way the service folds it.
@@ -17,10 +21,13 @@ import { normalizeEmail } from '../validation/email-format.util';
  * real person for each — while each landed in a bucket of its own.
  */
 describe('account-dimension rate-limit keys', () => {
-  const guard = new RateLimitPolicyGuard({} as any, {} as any);
+  const guard = new RateLimitPolicyGuard(
+    stub<Reflector>(),
+    stub<RateLimitService>(),
+  );
   // `identifierFor` is the unit under test; it is private by design.
-  const keyFor = (body: any): string | null =>
-    (guard as any).identifierFor('auth.signup.account', { body });
+  const keyFor = (body: Record<string, unknown>): string | null =>
+    guard['identifierFor']('auth.signup.account', stub<GuardRequest>({ body }));
 
   const TARGET = 'victim@example.edu';
 

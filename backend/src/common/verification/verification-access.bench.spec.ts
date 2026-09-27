@@ -1,5 +1,8 @@
 import { VerificationStatus } from '@prisma/client';
 import { VerificationAccessService } from './verification-access.service';
+import { stub } from '../testing/stub';
+import type { PrismaService } from '../../prisma/prisma.service';
+import type { DomainEventService } from '../../events/domain-event.service';
 
 /**
  * Latency characterisation for the verification gate.
@@ -23,9 +26,9 @@ describe('VerificationAccessService — latency profile', () => {
     delete process.env.FEATURE_VERIFICATION_ENABLED;
     queries = 0;
     const delay = () => new Promise((r) => setTimeout(r, DB_LATENCY_MS));
-    const prisma: any = {
+    const prisma = {
       user: {
-        findUnique: jest.fn(async ({ where }: any) => {
+        findUnique: jest.fn(async ({ where }: { where: { id: string } }) => {
           queries++;
           await delay();
           return {
@@ -33,18 +36,23 @@ describe('VerificationAccessService — latency profile', () => {
             verificationStatus: VerificationStatus.VERIFIED,
           };
         }),
-        findMany: jest.fn(async ({ where }: any) => {
-          queries++;
-          await delay();
-          return where.id.in.map((id: string) => ({
-            id,
-            verificationStatus: VerificationStatus.VERIFIED,
-          }));
-        }),
+        findMany: jest.fn(
+          async ({ where }: { where: { id: { in: string[] } } }) => {
+            queries++;
+            await delay();
+            return where.id.in.map((id: string) => ({
+              id,
+              verificationStatus: VerificationStatus.VERIFIED,
+            }));
+          },
+        ),
       },
       conversationParticipant: { findMany: jest.fn(() => Promise.resolve([])) },
     };
-    service = new VerificationAccessService(prisma, { emit: jest.fn() } as any);
+    service = new VerificationAccessService(
+      stub<PrismaService>(prisma),
+      stub<DomainEventService>({ emit: jest.fn() }),
+    );
     service.invalidateAll();
   });
 

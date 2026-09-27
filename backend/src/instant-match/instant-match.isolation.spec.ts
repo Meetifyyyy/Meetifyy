@@ -1,3 +1,5 @@
+import { readFileSync } from 'fs';
+import { join } from 'path';
 import { NotificationFactory } from '../notifications/notification.factory';
 
 /**
@@ -17,11 +19,7 @@ describe('Instant Match isolation from normal Messages', () => {
     // these filters exist at all, and that they name types rather than the
     // legacy isInstantMatch flag.
     const readSource = (path: string) =>
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      require('fs').readFileSync(
-        require('path').join(__dirname, '..', path),
-        'utf8',
-      );
+      readFileSync(join(__dirname, '..', path), 'utf8');
 
     it('excludes Instant Match from the main conversation list', () => {
       const src = readSource('messages/messages.service.ts');

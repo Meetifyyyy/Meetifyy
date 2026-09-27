@@ -221,23 +221,6 @@
       "count": 1
     }
   },
-  "src/auth/sign-in-eligibility.spec.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 7
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-return": {
-      "count": 1
-    }
-  },
   "src/common/crypto/secret-box.spec.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 1
@@ -263,34 +246,6 @@
   "src/common/pagination.util.spec.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 2
-    }
-  },
-  "src/common/rate-limit/account-key-normalisation.spec.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 4
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 2
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-call": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-return": {
-      "count": 1
-    }
-  },
-  "src/common/rate-limit/client-ip.util.spec.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 5
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 5
     }
   },
   "src/common/utils/birthday-validation.util.spec.ts": {
@@ -326,26 +281,6 @@
     },
     "@typescript-eslint/no-unsafe-member-access": {
       "count": 2
-    }
-  },
-  "src/common/verification/verification-access.bench.spec.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 4
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 2
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-call": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 2
-    },
-    "@typescript-eslint/no-unsafe-return": {
-      "count": 1
     }
   },
   "src/communities/communities.controller.ts": {
@@ -393,23 +328,6 @@
     },
     "@typescript-eslint/no-unsafe-member-access": {
       "count": 4
-    },
-    "@typescript-eslint/no-unsafe-return": {
-      "count": 1
-    }
-  },
-  "src/instant-match/instant-match.isolation.spec.ts": {
-    "@typescript-eslint/no-require-imports": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 4
-    },
-    "@typescript-eslint/no-unsafe-call": {
-      "count": 2
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 2
     },
     "@typescript-eslint/no-unsafe-return": {
       "count": 1
