@@ -1,4 +1,7 @@
 import { VerificationUploadCollectorService } from './verification-upload-collector.service';
+import { stub } from '../common/testing/stub';
+import type { PrismaService } from '../prisma/prisma.service';
+import type { StorageService } from '../uploads/uploads.service';
 
 /**
  * Submitted verification documents are retained indefinitely. This collector
@@ -11,20 +14,43 @@ import { VerificationUploadCollectorService } from './verification-upload-collec
  */
 describe('VerificationUploadCollectorService', () => {
   const HOUR = 60 * 60 * 1000;
-  let prisma: any;
-  let storage: any;
+  /** The candidate query, as far as these assertions read it. */
+  type CandidateQuery = {
+    where: {
+      objectKey?: unknown;
+      verificationSelfies?: unknown;
+      verificationIdCards?: unknown;
+      createdAt: { lt: Date };
+    };
+  };
+  type MediaRow = { id: string; objectKey: string };
+
+  let prisma: {
+    media: {
+      findMany: jest.Mock<Promise<MediaRow[]>, [CandidateQuery]>;
+      deleteMany: jest.Mock;
+    };
+  };
+  let storage: { delete: jest.Mock<Promise<boolean>, [string]> };
   let service: VerificationUploadCollectorService;
 
   beforeEach(() => {
     delete process.env.VERIFICATION_ABANDONED_UPLOAD_HOURS;
     prisma = {
       media: {
-        findMany: jest.fn((): Promise<any[]> => Promise.resolve([])),
+        findMany: jest.fn((_query: CandidateQuery): Promise<MediaRow[]> =>
+          Promise.resolve([]),
+        ),
         deleteMany: jest.fn(() => Promise.resolve({ count: 0 })),
       },
     };
-    storage = { delete: jest.fn(() => Promise.resolve(true)) };
-    service = new VerificationUploadCollectorService(prisma, storage);
+    storage = {
+      delete: jest.fn((_key: string) => Promise.resolve(true)),
+    };
+    service = new VerificationUploadCollectorService(
+      stub<PrismaService>(prisma),
+      stub<StorageService>(storage),
+    );
   });
 
   afterAll(() => delete process.env.VERIFICATION_ABANDONED_UPLOAD_HOURS);

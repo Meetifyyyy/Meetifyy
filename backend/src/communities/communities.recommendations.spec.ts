@@ -1,4 +1,13 @@
 import { CommunitiesService } from './communities.service';
+import { stub } from '../common/testing/stub';
+import type { PrismaService } from '../prisma/prisma.service';
+import type { DomainEventService } from '../events/domain-event.service';
+import type { RedisService } from '../redis/redis.service';
+import type { PresenceService } from '../presence/presence.service';
+import type { DefaultAssetsService } from '../uploads/default-assets.service';
+import type { BlocksService } from '../users/blocks.service';
+import type { NotificationsService } from '../notifications/notifications.service';
+import type { NotificationFactory } from '../notifications/notification.factory';
 
 /**
  * "Discover Communities" — the profile sidebar's suggestion panel.
@@ -14,9 +23,20 @@ import { CommunitiesService } from './communities.service';
  * top-N.
  */
 describe('CommunitiesService — discovery recommendations', () => {
+  /** The pool query, as far as these assertions read it. */
+  type PoolQuery = {
+    where: {
+      members?: unknown;
+      deletedAt?: unknown;
+      isCampusCommunity?: unknown;
+    };
+    orderBy?: unknown;
+    take?: number;
+  };
+
   let service: CommunitiesService;
-  let prisma: any;
-  let findManyArgs: any[];
+  let prisma: { community: { findMany: jest.Mock } };
+  let findManyArgs: PoolQuery[];
 
   const makePool = (n: number) =>
     Array.from({ length: n }, (_, i) => ({
@@ -26,11 +46,11 @@ describe('CommunitiesService — discovery recommendations', () => {
       ownerId: 'someone',
     }));
 
-  const setup = (rows: any[]) => {
+  const setup = (rows: ReturnType<typeof makePool>) => {
     findManyArgs = [];
     prisma = {
       community: {
-        findMany: jest.fn((args: any) => {
+        findMany: jest.fn((args: PoolQuery) => {
           findManyArgs.push(args);
           return Promise.resolve(rows);
         }),
@@ -38,20 +58,23 @@ describe('CommunitiesService — discovery recommendations', () => {
     };
 
     service = new CommunitiesService(
-      prisma,
-      { emit: jest.fn() } as any,
-      { getClient: () => null } as any,
-      {} as any,
-      { refFor: () => null } as any,
-      {
+      stub<PrismaService>(prisma),
+      stub<DomainEventService>({ emit: jest.fn() }),
+      stub<RedisService>({ getClient: () => null }),
+      stub<PresenceService>(),
+      stub<DefaultAssetsService>({ refFor: () => null }),
+      stub<BlocksService>({
         getExcludedUserIds: () => Promise.resolve([]),
         isBlocked: () => Promise.resolve(false),
-        filterBlockedUsers: (_u: any, ids: any) => Promise.resolve(ids),
-        injectBlockFilter: (_u: any, w: any) => Promise.resolve(w),
+        filterBlockedUsers: (_u: string, ids: string[]) => Promise.resolve(ids),
+        injectBlockFilter: <T extends object>(_u: string, w: T) =>
+          Promise.resolve(w),
         invalidateBlockCache: async () => {},
-      } as any,
-      { createNotification: () => Promise.resolve({}) } as any,
-      { createModeratorPromotion: () => null } as any,
+      }),
+      stub<NotificationsService>({
+        createNotification: jest.fn(() => Promise.resolve({})),
+      }),
+      stub<NotificationFactory>({ createModeratorPromotion: () => null }),
     );
   };
 

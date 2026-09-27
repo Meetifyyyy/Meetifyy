@@ -547,20 +547,6 @@
       "count": 1
     }
   },
-  "src/communities/communities.recommendations.spec.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 15
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 8
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 6
-    }
-  },
   "src/communities/communities.service.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 3
@@ -1158,26 +1144,6 @@
     },
     "@typescript-eslint/no-unsafe-member-access": {
       "count": 60
-    },
-    "@typescript-eslint/no-unsafe-return": {
-      "count": 1
-    }
-  },
-  "src/verification/verification-upload-collector.spec.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 3
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 2
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 2
-    },
-    "@typescript-eslint/no-unsafe-call": {
-      "count": 7
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 14
     },
     "@typescript-eslint/no-unsafe-return": {
       "count": 1
