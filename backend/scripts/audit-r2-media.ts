@@ -221,8 +221,11 @@ async function runAudit() {
                 );
                 await prisma.media.deleteMany({ where: { objectKey: key } });
                 console.log(`    -> Deleted from R2`);
-              } catch (delErr: any) {
-                console.error(`    -> Deletion failed:`, delErr?.message);
+              } catch (delErr: unknown) {
+                console.error(
+                  `    -> Deletion failed:`,
+                  (delErr as Error | null | undefined)?.message,
+                );
               }
             }
           }

@@ -1111,7 +1111,7 @@ async function existsInR2(key: string): Promise<boolean> {
   try {
     await s3.send(new HeadObjectCommand({ Bucket: R2_BUCKET_NAME, Key: key }));
     return true;
-  } catch (err: any) {
+  } catch {
     return false;
   }
 }
@@ -1120,7 +1120,7 @@ async function fetchWithFallback(
   urls: string[],
   timeoutMs = 15000,
 ): Promise<Buffer> {
-  let lastError: any = null;
+  let lastError: unknown = null;
   for (const url of urls) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -1142,7 +1142,10 @@ async function fetchWithFallback(
       clearTimeout(timeout);
     }
   }
-  throw lastError || new Error('All source URLs failed to fetch');
+  // Only ever a fetch rejection, which is an Error (an abort included).
+  throw (
+    (lastError as Error | null) || new Error('All source URLs failed to fetch')
+  );
 }
 
 async function uploadToR2(
@@ -1220,10 +1223,10 @@ async function processImage(
       tags: item.tags,
       url: finalUrl,
     };
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error(
       `  ✗ Error processing image ${item.id}:`,
-      err?.message || err,
+      (err as Error | null | undefined)?.message || err,
     );
     throw err;
   }
@@ -1289,8 +1292,11 @@ async function processGif(
       tags: item.tags,
       url: finalUrl,
     };
-  } catch (err: any) {
-    console.error(`  ✗ Error processing GIF ${item.id}:`, err?.message || err);
+  } catch (err: unknown) {
+    console.error(
+      `  ✗ Error processing GIF ${item.id}:`,
+      (err as Error | null | undefined)?.message || err,
+    );
     throw err;
   }
 }
@@ -1303,14 +1309,14 @@ async function main() {
   console.log(`Public URL Origin: ${R2_PUBLIC_URL}\n`);
 
   console.log(`Phase 1: Ingesting ${SOURCE_IMAGES.length} Preset Images...`);
-  const uploadedImages: any[] = [];
+  const uploadedImages: Awaited<ReturnType<typeof processImage>>[] = [];
   for (let i = 0; i < SOURCE_IMAGES.length; i++) {
     const res = await processImage(SOURCE_IMAGES[i], i, SOURCE_IMAGES.length);
     uploadedImages.push(res);
   }
 
   console.log(`\nPhase 2: Ingesting ${SOURCE_GIFS.length} Preset GIFs...`);
-  const uploadedGifs: any[] = [];
+  const uploadedGifs: Awaited<ReturnType<typeof processGif>>[] = [];
   for (let i = 0; i < SOURCE_GIFS.length; i++) {
     const res = await processGif(SOURCE_GIFS[i], i, SOURCE_GIFS.length);
     uploadedGifs.push(res);

@@ -7,6 +7,7 @@ import sharp from 'sharp';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as dotenv from 'dotenv';
+import { createRequire } from 'module';
 
 dotenv.config({ path: path.join(__dirname, '../.env') });
 
@@ -42,14 +43,38 @@ const currentPresetMediaPath = path.join(
   __dirname,
   '../../frontend/src/shared/constants/presetMedia.js',
 );
-const { PRESET_IMAGES, PRESET_GIFS } = require(currentPresetMediaPath);
+
+/** One preset entry as the frontend constants file declares it. */
+type PresetSource = {
+  id: string;
+  title: string;
+  theme?: string;
+  category: string;
+  tags: string[];
+  url: string;
+};
+
+// The constants file ships no types, so its shape is stated here. Loaded
+// through Node's own require, exactly as before.
+const nodeRequire = createRequire(__filename);
+const { PRESET_IMAGES, PRESET_GIFS } = nodeRequire(currentPresetMediaPath) as {
+  PRESET_IMAGES: PresetSource[];
+  PRESET_GIFS: PresetSource[];
+};
 
 async function existsInR2(key: string): Promise<boolean> {
   try {
     await s3.send(new HeadObjectCommand({ Bucket: R2_BUCKET_NAME, Key: key }));
     return true;
-  } catch (err: any) {
-    if (err.name === 'NotFound' || err.$metadata?.httpStatusCode === 404)
+  } catch (err: unknown) {
+    const failure = err as {
+      name?: string;
+      $metadata?: { httpStatusCode?: number };
+    };
+    if (
+      failure.name === 'NotFound' ||
+      failure.$metadata?.httpStatusCode === 404
+    )
       return false;
     return false;
   }
@@ -72,8 +97,19 @@ async function main() {
   console.log('  Generating Preset Media Thumbnails & Poster WebPs ');
   console.log('====================================================');
 
-  const enhancedImages: any[] = [];
-  const enhancedGifs: any[] = [];
+  const enhancedImages: (PresetSource & {
+    thumbUrl: string;
+    width: number;
+    height: number;
+    size: number;
+  })[] = [];
+  const enhancedGifs: (PresetSource & {
+    posterUrl: string;
+    width: number;
+    height: number;
+    frames: number;
+    size: number;
+  })[] = [];
 
   // Phase 1: Images
   console.log('\nProcessing 36 Images...');
@@ -247,7 +283,7 @@ export function getDefaultActivityCover(idOrTitle = '') {
   console.log('====================================================\n');
 }
 
-main().catch((err) => {
+main().catch((err: unknown) => {
   console.error('Fatal error during variant generation:', err);
   process.exit(1);
 });
