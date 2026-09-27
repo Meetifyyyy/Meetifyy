@@ -5,6 +5,37 @@ import {
   RECOVERY_WINDOW_MS,
 } from './account-deletion.constants';
 import { JwtGuard } from '../common/guards/jwt.guard';
+import { stub } from '../common/testing/stub';
+import type { PrismaService } from '../prisma/prisma.service';
+import type { RedisService } from '../redis/redis.service';
+import type { PresenceService } from '../presence/presence.service';
+import type { DomainEventService } from '../events/domain-event.service';
+import type { UserOtpService } from '../otp/user-otp.service';
+import type { AccountMailer } from '../otp/account-mailer';
+
+/** The single user row the fake serves. */
+type UserRow = {
+  id: string;
+  email: string;
+  accountStatus: string;
+  deletedAt: Date | null;
+  deletionRequestedAt: Date | null;
+  scheduledPurgeAt: Date | null;
+  purgeStartedAt: Date | null;
+  purgeAttempts: number;
+  purgeLastError: string | null;
+};
+
+/** The `where` shapes the fake honours (anything else is ignored). */
+type UserWhere = {
+  id?: string;
+  accountStatus?: string;
+  deletedAt?: null;
+  purgeStartedAt?: null;
+  scheduledPurgeAt?: { gt?: Date };
+};
+
+type UpdateManyArgs = { where: UserWhere; data: Partial<UserRow> };
 
 /**
  * The reversible half of the lifecycle: request → recover, and the state
@@ -17,12 +48,26 @@ describe('AccountDeletionService — 30-day recovery window', () => {
   const DAY = 24 * 60 * 60 * 1000;
 
   let service: AccountDeletionService;
-  let prisma: any;
-  let presenceService: any;
-  let domainEventService: any;
-  let otpService: any;
-  let emailService: any;
-  let row: any;
+  let prisma: {
+    user: {
+      findUnique: jest.Mock;
+      updateMany: jest.Mock<Promise<{ count: number }>, [UpdateManyArgs]>;
+    };
+  };
+  let presenceService: { removePresence: jest.Mock };
+  let domainEventService: { emit: jest.Mock };
+  let otpService: Record<string, jest.Mock>;
+  let emailService: {
+    sendAccountDeletionOtpEmail: jest.Mock<
+      Promise<void>,
+      Parameters<AccountMailer['sendAccountDeletionOtpEmail']>
+    >;
+    sendAccountRecoveryOtpEmail: jest.Mock<
+      Promise<void>,
+      Parameters<AccountMailer['sendAccountRecoveryOtpEmail']>
+    >;
+  };
+  let row: UserRow;
 
   beforeEach(() => {
     row = {
@@ -38,7 +83,7 @@ describe('AccountDeletionService — 30-day recovery window', () => {
     };
 
     /** Applies a Prisma-style `where` against the single fake row. */
-    const matches = (where: any): boolean => {
+    const matches = (where: UserWhere): boolean => {
       if (where.id && where.id !== row.id) return false;
       if (where.accountStatus && where.accountStatus !== row.accountStatus) {
         return false;
@@ -60,10 +105,10 @@ describe('AccountDeletionService — 30-day recovery window', () => {
 
     prisma = {
       user: {
-        findUnique: jest.fn(({ where }: any) =>
+        findUnique: jest.fn(({ where }: { where: { id: string } }) =>
           Promise.resolve(where.id === USER_ID ? { ...row } : null),
         ),
-        updateMany: jest.fn(({ where, data }: any) => {
+        updateMany: jest.fn(({ where, data }: UpdateManyArgs) => {
           if (!matches(where)) return Promise.resolve({ count: 0 });
           Object.assign(row, data);
           return Promise.resolve({ count: 1 });
@@ -88,16 +133,22 @@ describe('AccountDeletionService — 30-day recovery window', () => {
       getChallengeState: jest.fn(() => Promise.resolve(null)),
     };
     emailService = {
-      sendAccountDeletionOtpEmail: jest.fn(async () => {}),
-      sendAccountRecoveryOtpEmail: jest.fn(async () => {}),
+      sendAccountDeletionOtpEmail: jest.fn<
+        Promise<void>,
+        Parameters<AccountMailer['sendAccountDeletionOtpEmail']>
+      >(async () => {}),
+      sendAccountRecoveryOtpEmail: jest.fn<
+        Promise<void>,
+        Parameters<AccountMailer['sendAccountRecoveryOtpEmail']>
+      >(async () => {}),
     };
 
     service = new AccountDeletionService(
-      prisma,
-      { getClient: () => null } as any,
-      presenceService,
-      domainEventService,
-      otpService,
+      stub<PrismaService>(prisma),
+      stub<RedisService>({ getClient: () => null }),
+      stub<PresenceService>(presenceService),
+      stub<DomainEventService>(domainEventService),
+      stub<UserOtpService>(otpService),
       emailService,
     );
   });
@@ -234,7 +285,7 @@ describe('AccountDeletionService — 30-day recovery window', () => {
     });
 
     it('emails the code and never returns it', async () => {
-      const res: any = await service.requestDeletionOtp(USER_ID);
+      const res = await service.requestDeletionOtp(USER_ID);
       const [, , code] = emailService.sendAccountDeletionOtpEmail.mock.calls[0];
       expect(code).toBe('123456');
       expect(JSON.stringify(res)).not.toContain('123456');

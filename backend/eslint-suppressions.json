@@ -115,23 +115,6 @@
       "count": 2
     }
   },
-  "src/account-deletion/account-deletion.lifecycle.spec.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 11
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 6
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 2
-    },
-    "@typescript-eslint/no-unsafe-call": {
-      "count": 5
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 61
-    }
-  },
   "src/activities/activities.accept-invite.spec.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 11
@@ -1252,26 +1235,6 @@
       "count": 7
     }
   },
-  "src/otp/user-otp.service.spec.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 9
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 6
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 8
-    },
-    "@typescript-eslint/no-unsafe-call": {
-      "count": 5
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 37
-    },
-    "@typescript-eslint/no-unsafe-return": {
-      "count": 4
-    }
-  },
   "src/posts/posts.comments.spec.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 11
@@ -1532,26 +1495,6 @@
     },
     "@typescript-eslint/no-unsafe-return": {
       "count": 5
-    }
-  },
-  "src/uploads/default-assets.spec.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 24
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 12
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 11
-    },
-    "@typescript-eslint/no-unsafe-call": {
-      "count": 8
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 25
-    },
-    "@typescript-eslint/no-unsafe-return": {
-      "count": 1
     }
   },
   "src/uploads/default-avatar-endpoint.spec.ts": {
