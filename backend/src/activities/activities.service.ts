@@ -38,9 +38,18 @@ export interface PresentedMember {
   profileAvailable: false;
 }
 
+/**
+ * A user row that selected both lifecycle columns. `presentMember` decides the
+ * tombstone from them, so they must be present in the row — `null` is fine, a
+ * missing key is not: a select that omitted them made every deleted attendee
+ * look live (the detail page's first page did, until A15).
+ */
+type SelectedLifecycle = UserIdentityLike &
+  Required<Pick<UserIdentityLike, 'accountStatus' | 'deletedAt'>>;
+
 /** A membership row carrying its joined user, as every card select fetches it. */
 export interface MemberRow {
-  user?: UserIdentityLike | null;
+  user?: SelectedLifecycle | null;
   [key: string]: unknown;
 }
 import { NOTIFICATIONS_QUEUE } from '../notifications/notifications.processor';
@@ -761,7 +770,7 @@ export class ActivitiesService implements OnModuleInit {
    * Returns a fresh object rather than mutating, and whitelists the fields it
    * emits, so widening a select later cannot quietly reintroduce a leak.
    */
-  private static presentMember<T extends UserIdentityLike>(
+  private static presentMember<T extends SelectedLifecycle>(
     user: T | null | undefined,
   ): T | PresentedMember | null | undefined {
     if (!user) return user;
@@ -816,17 +825,22 @@ export class ActivitiesService implements OnModuleInit {
 
   /** Convenience for the many `members.map(m => m.user)` shaping sites. */
   private static presentMembers(
-    members: MemberRow[] | null | undefined,
-  ): (UserIdentityLike | PresentedMember)[] {
+    members: (MemberRow | SelectedLifecycle)[] | null | undefined,
+  ): (SelectedLifecycle | PresentedMember)[] {
     return (members ?? [])
       .map((m) =>
         // Call sites pass either membership rows or bare user objects, so both
         // shapes are accepted rather than forcing each one to unwrap first.
         ActivitiesService.presentMember(
-          (m?.user ?? m) as UserIdentityLike | null | undefined,
+          ActivitiesService.isMemberRow(m) ? m.user : m,
         ),
       )
-      .filter((u): u is UserIdentityLike | PresentedMember => Boolean(u));
+      .filter((u): u is SelectedLifecycle | PresentedMember => Boolean(u));
+  }
+
+  /** A bare user carries its own `id`; a membership row carries `user` instead. */
+  private static isMemberRow(m: MemberRow | SelectedLifecycle): m is MemberRow {
+    return 'user' in m;
   }
 
   /**
@@ -1379,6 +1393,9 @@ export class ActivitiesService implements OnModuleInit {
                   isCampusRep: true,
                   collegeId: true,
                   college: { select: { id: true, name: true } },
+                  // Required by `presentMember` below.
+                  accountStatus: true,
+                  deletedAt: true,
                 },
               },
             },

@@ -30,7 +30,11 @@ type InvitationRow = {
   revokedAt: Date | null;
   expiresAt: Date | null;
 };
-type MemberRow = { userId: string; status: string };
+type MemberRow = {
+  userId: string;
+  status: string;
+  user?: Record<string, unknown>;
+};
 
 /** The activity row the fake serves; see `baseActivity`. */
 type ActivityRow = {
@@ -53,7 +57,10 @@ type FindUniqueArgs = {
   where?: { id?: string; creatorId?: string };
   include?: {
     invitations?: { where?: { inviteeId?: string } };
-    members?: { where?: { userId?: string } };
+    members?: {
+      where?: { userId?: string };
+      include?: { user?: { select?: Record<string, unknown> } };
+    };
   };
 };
 
@@ -145,6 +152,20 @@ describe('Activity access enforcement (service level)', () => {
           const memberFilter = include?.members?.where?.userId;
           if (memberFilter !== undefined) {
             row.members = row.members.filter((m) => m.userId === memberFilter);
+          }
+          // Like the database, return only the user columns the query selects.
+          const userSelect = include?.members?.include?.user?.select;
+          if (userSelect) {
+            row.members = row.members.map((m) =>
+              m.user
+                ? {
+                    ...m,
+                    user: Object.fromEntries(
+                      Object.entries(m.user).filter(([k]) => k in userSelect),
+                    ),
+                  }
+                : m,
+            );
           }
           return Promise.resolve(row);
         }),
@@ -260,6 +281,58 @@ describe('Activity access enforcement (service level)', () => {
       expect(serialized).not.toContain('host-1');
     }
   };
+
+  describe('GET /api/activities/:id — attendees embedded in the detail (A15)', () => {
+    const attendee = (id: string, lifecycle: Record<string, unknown>) => ({
+      userId: id,
+      status: 'MEMBER',
+      user: {
+        id,
+        username: `real-${id}`,
+        displayName: `Real Name ${id}`,
+        avatar: `avatars/${id}.jpg`,
+        isCampusRep: true,
+        collegeId: GLA,
+        college: { id: GLA, name: 'GLA' },
+        ...lifecycle,
+      },
+    });
+
+    it.each([
+      ['DELETED', { accountStatus: 'DELETED', deletedAt: new Date() }],
+      [
+        'PENDING_DELETION',
+        { accountStatus: 'PENDING_DELETION', deletedAt: null },
+      ],
+    ])(
+      'shows a %s attendee as the tombstone, not their identity',
+      async (_s, lifecycle) => {
+        activityRow = baseActivity(
+          'PUBLIC',
+          [],
+          [
+            attendee('live', { accountStatus: 'ACTIVE', deletedAt: null }),
+            attendee('gone', lifecycle),
+          ],
+        );
+
+        const detail = (await service.getActivityById(
+          'act-1',
+          'user-same',
+        )) as {
+          members: { userId: string; user: Record<string, unknown> }[];
+        };
+        const shown = Object.fromEntries(
+          detail.members.map((m) => [m.userId, m.user]),
+        );
+
+        expect(shown.live.displayName).toBe('Real Name live');
+        expect(shown.gone.displayName).toBe('Deleted User');
+        expect(shown.gone.avatar).toBeNull();
+        expect(JSON.stringify(shown.gone)).not.toContain('real-gone');
+      },
+    );
+  });
 
   describe('GET /api/activities/:id — blocked host', () => {
     it('404s for a non-attendee who has blocked the host', async () => {
