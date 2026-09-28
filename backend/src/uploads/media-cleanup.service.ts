@@ -58,14 +58,10 @@ export class MediaCleanupService {
     // because the storage-key regex happens to fail on `://`. Naming them makes
     // the intent explicit rather than leaving a data shape this method handles
     // by accident.
-    if (
-      trimmed.includes('images.unsplash.com') ||
-      trimmed.includes('media.giphy.com') ||
-      trimmed.includes('giphy.com') ||
-      trimmed.includes('avatars.githubusercontent.com') ||
-      trimmed.includes('googleusercontent.com') ||
-      trimmed.includes('api.dicebear.com')
-    ) {
+    //
+    // Decided by the URL's hostname. A substring test also matched our own
+    // keys that merely contain one of these names, and so never cleaned them.
+    if (isExternalMediaUrl(trimmed)) {
       return null;
     }
 
@@ -880,4 +876,26 @@ export class MediaCleanupService {
         return [];
     }
   }
+}
+
+/** Third-party media hosts; each matches itself and its subdomains. */
+const EXTERNAL_MEDIA_HOSTS = [
+  'images.unsplash.com',
+  'giphy.com',
+  'avatars.githubusercontent.com',
+  'googleusercontent.com',
+  'api.dicebear.com',
+];
+
+function isExternalMediaUrl(value: string): boolean {
+  if (!/^https?:\/\//i.test(value)) return false;
+  let host: string;
+  try {
+    host = new URL(value).hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+  return EXTERNAL_MEDIA_HOSTS.some(
+    (domain) => host === domain || host.endsWith(`.${domain}`),
+  );
 }

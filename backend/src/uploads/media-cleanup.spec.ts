@@ -105,6 +105,40 @@ describe('MediaCleanupService', () => {
         ),
       ).toBeNull();
     });
+
+    // CodeQL #51-#56: external hosts are recognised by hostname, not by a
+    // substring anywhere in the string.
+    it('recognises an external host by its hostname, subdomains included', () => {
+      for (const url of [
+        'https://lh3.googleusercontent.com/a/abc=s96-c',
+        'https://api.dicebear.com/9.x/avataaars/svg?seed=x',
+        'https://i.giphy.com/abc.gif',
+        'https://giphy.com/embed/abc',
+      ]) {
+        expect(service.extractStorageKey(url)).toBeNull();
+      }
+    });
+
+    it('does not mistake one of our keys for an external URL', () => {
+      expect(
+        service.extractStorageKey('/api/media/avatars/giphy.com-export.webp'),
+      ).toBe('avatars/giphy.com-export.webp');
+      expect(
+        service.extractStorageKey('community-covers/api.dicebear.com.png'),
+      ).toBe('community-covers/api.dicebear.com.png');
+    });
+
+    it('is not fooled by a look-alike host', () => {
+      // Neither is ours, and neither is the named service: not a storage key.
+      expect(
+        service.extractStorageKey(
+          'https://images.unsplash.com.evil.test/x/y.png',
+        ),
+      ).toBeNull();
+      expect(
+        service.extractStorageKey('https://notgiphy.com/media/a.gif'),
+      ).toBeNull();
+    });
   });
 
   describe('isProtectedKey', () => {
