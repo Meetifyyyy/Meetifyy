@@ -542,7 +542,7 @@ export class UsersService {
      * one; a display name can, and splitting on the first would truncate the
      * name at that character and page from the wrong place.
      */
-    if (opts.cursor && opts.cursor.includes('|')) {
+    if (typeof opts.cursor === 'string' && opts.cursor.includes('|')) {
       const separator = opts.cursor.lastIndexOf('|');
       const name = opts.cursor.slice(0, separator);
       const id = opts.cursor.slice(separator + 1);

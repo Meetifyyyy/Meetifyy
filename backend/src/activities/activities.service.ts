@@ -374,7 +374,7 @@ export class ActivitiesService implements OnModuleInit {
   }
 
   private async resolveCursorDate(cursor?: string): Promise<Date | undefined> {
-    if (!cursor) return undefined;
+    if (typeof cursor !== 'string' || !cursor) return undefined;
 
     // 1. Dual tokenized cursor: ISO_DATE|ID
     if (cursor.includes('|')) {
@@ -1174,9 +1174,10 @@ export class ActivitiesService implements OnModuleInit {
    * in it.
    */
   async getForYouFeed(userId: string, limit = 20, cursor?: string) {
-    const parsedOffset = cursor?.startsWith('off:')
-      ? parseInt(cursor.slice(4), 10)
-      : 0;
+    const parsedOffset =
+      typeof cursor === 'string' && cursor.startsWith('off:')
+        ? parseInt(cursor.slice(4), 10)
+        : 0;
     const offset =
       Number.isFinite(parsedOffset) && parsedOffset > 0 ? parsedOffset : 0;
 

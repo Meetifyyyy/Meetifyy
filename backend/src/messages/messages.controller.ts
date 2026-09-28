@@ -208,7 +208,7 @@ export class MessagesController {
     // Capped so a pathological query string cannot become the cache key or a
     // very wide `contains` scan. Longer input is truncated, not rejected: the
     // extra characters could only have narrowed the result further.
-    const searchTerm = (search || '').slice(0, 100);
+    const searchTerm = (typeof search === 'string' ? search : '').slice(0, 100);
     return this.messagesService.getUserConversations(
       userId,
       limitNum,

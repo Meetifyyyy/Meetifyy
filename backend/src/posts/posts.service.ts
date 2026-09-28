@@ -809,7 +809,7 @@ export class PostsService {
     // repeated. Legacy cursors (a bare ISO date, or a bare post id) still parse.
     let cursorDate: Date | undefined = undefined;
     let cursorId: string | undefined = undefined;
-    if (cursor) {
+    if (typeof cursor === 'string' && cursor) {
       const delimiter = cursor.includes('|') ? '|' : '__';
       const [datePart, idPart] = cursor.split(delimiter);
       const parsed = new Date(datePart);
@@ -1059,7 +1059,7 @@ export class PostsService {
     // bare-date / bare-id cursors still parse.
     let cursorDate: Date | undefined = undefined;
     let cursorId: string | undefined = undefined;
-    if (cursor) {
+    if (typeof cursor === 'string' && cursor) {
       const delimiter = cursor.includes('|') ? '|' : '__';
       const [datePart, idPart] = cursor.split(delimiter);
       const parsed = new Date(datePart);
@@ -2014,7 +2014,7 @@ export class PostsService {
     // Compound keyset cursor "<iso>|<commentId>" or legacy "<iso>__<commentId>"
     let cursorDate: Date | undefined = undefined;
     let cursorId: string | undefined = undefined;
-    if (cursor) {
+    if (typeof cursor === 'string' && cursor) {
       const delimiter = cursor.includes('|') ? '|' : '__';
       const [datePart, idPart] = cursor.split(delimiter);
       const parsed = new Date(datePart);
@@ -2258,7 +2258,7 @@ export class PostsService {
     // user's bookmarks, so it's a stable tiebreaker for equal createdAt.
     let cursorDate: Date | undefined = undefined;
     let cursorPostId: string | undefined = undefined;
-    if (cursor) {
+    if (typeof cursor === 'string' && cursor) {
       const delimiter = cursor.includes('|') ? '|' : '__';
       const [datePart, idPart] = cursor.split(delimiter);
       const parsed = new Date(datePart);

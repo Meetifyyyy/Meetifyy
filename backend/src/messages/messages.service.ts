@@ -1046,7 +1046,7 @@ export class MessagesService
     const orConditions: Prisma.MessageWhereInput[] = [];
 
     // Pagination logic
-    if (beforeCursor) {
+    if (typeof beforeCursor === 'string' && beforeCursor) {
       let cursorDate: Date | null = null;
       let cursorId: string | null = null;
 

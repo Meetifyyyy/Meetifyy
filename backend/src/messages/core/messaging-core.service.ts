@@ -699,7 +699,7 @@ export class MessagingCoreService {
 
     const orConditions: Prisma.MessageWhereInput[] = [];
 
-    if (beforeCursor) {
+    if (typeof beforeCursor === 'string' && beforeCursor) {
       let cursorDate: Date | null = null;
       let cursorId: string | null = null;
 
