@@ -11,7 +11,7 @@ export class BulkActionReportDto {
   @IsArray()
   @ArrayNotEmpty()
   @IsString({ each: true })
-  reportIds: string[];
+  reportIds!: string[];
 
   @IsOptional()
   @IsEnum(ReportStatus)

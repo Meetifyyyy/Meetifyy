@@ -16,8 +16,10 @@ export type SupabaseAuthClient = Pick<SupabaseClient, 'auth'>;
 @Injectable()
 export class SupabaseService implements OnModuleInit {
   private readonly logger = new Logger(SupabaseService.name);
-  private supabaseClient: SupabaseAuthClient;
-  private supabaseAnonClient: SupabaseAuthClient;
+  // Either may stay unset: config can be a placeholder, or the anon key absent.
+  // The getters below are what refuse, loudly, when that matters.
+  private supabaseClient: SupabaseAuthClient | undefined;
+  private supabaseAnonClient: SupabaseAuthClient | undefined;
 
   constructor(private configService: ConfigService) {}
 

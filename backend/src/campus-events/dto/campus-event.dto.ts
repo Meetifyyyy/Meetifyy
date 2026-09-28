@@ -10,7 +10,7 @@ import {
 export class CreateCampusEventDto {
   @IsString()
   @MaxLength(50)
-  title: string;
+  title!: string;
 
   @IsString()
   @IsOptional()
@@ -24,21 +24,21 @@ export class CreateCampusEventDto {
   posterUrl?: string;
 
   @IsDateString()
-  eventDate: string;
+  eventDate!: string;
 
   @IsDateString()
-  startTime: string;
+  startTime!: string;
 
   @IsDateString()
-  endTime: string;
+  endTime!: string;
 
   @IsString()
   @MaxLength(50)
-  hostedBy: string;
+  hostedBy!: string;
 
   @IsString()
   @MaxLength(100)
-  venue: string;
+  venue!: string;
 
   // Authoritative validation/sanitization happens server-side (see sanitizeRegistrationUrl).
   @IsString()

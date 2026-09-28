@@ -26,6 +26,10 @@
     // Map/Set iterators return `undefined` when done, not `any`. Without it
     // `map.keys().next().value` is `any`, which the cache-eviction code relied on.
     "strictBuiltinIteratorReturn": true,
+    // A class field is set by its initializer or constructor. DTO fields the
+    // ValidationPipe fills are declared `field!: T` (required) or `field?: T`
+    // (@IsOptional); a field that may genuinely stay unset is `T | undefined`.
+    "strictPropertyInitialization": true,
     "noFallthroughCasesInSwitch": true,
     "jsx": "react"
   },

@@ -25,7 +25,7 @@ const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const SLUG_MESSAGE = 'Use lowercase letters, numbers and hyphens only';
 
 export class CreateHelpCategoryDto {
-  @Transform(trim) @IsString() @MinLength(2) @MaxLength(120) title: string;
+  @Transform(trim) @IsString() @MinLength(2) @MaxLength(120) title!: string;
 
   /** Derived from the title when omitted. */
   @IsOptional()
@@ -59,9 +59,9 @@ export class UpdateHelpCategoryDto extends CreateHelpCategoryDto {
 }
 
 export class CreateHelpArticleDto {
-  @Transform(trim) @IsString() @MaxLength(60) categoryId: string;
+  @Transform(trim) @IsString() @MaxLength(60) categoryId!: string;
 
-  @Transform(trim) @IsString() @MinLength(3) @MaxLength(300) question: string;
+  @Transform(trim) @IsString() @MinLength(3) @MaxLength(300) question!: string;
 
   @IsOptional()
   @Transform(trim)
@@ -76,7 +76,7 @@ export class CreateHelpArticleDto {
   @IsString()
   @MinLength(1, { message: 'Write an answer' })
   @MaxLength(100000)
-  body: string;
+  body!: string;
 
   @IsOptional()
   @IsArray()
@@ -120,7 +120,7 @@ export class UpdateHelpArticleDto extends CreateHelpArticleDto {
 
 export class SetHelpStatusDto {
   @IsEnum(HelpContentStatus, { message: 'Unknown publication status' })
-  status: HelpContentStatus;
+  status!: HelpContentStatus;
 }
 
 export class ListHelpContentDto {
@@ -137,5 +137,5 @@ export class ListHelpContentDto {
 }
 
 export class PreviewArticleDto {
-  @IsString() @MaxLength(100000) body: string;
+  @IsString() @MaxLength(100000) body!: string;
 }

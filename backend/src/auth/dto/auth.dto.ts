@@ -10,7 +10,7 @@ import {
 export class CheckUsernameDto {
   @IsString()
   @IsNotEmpty()
-  username: string;
+  username!: string;
 }
 
 export class CheckEmailDto {
@@ -31,7 +31,7 @@ export class CheckEmailDto {
   @IsString()
   @IsNotEmpty({ message: 'Email address is required' })
   @MaxLength(254, { message: 'Email address is too long' })
-  email: string;
+  email!: string;
 
   @IsOptional()
   @IsString()
@@ -45,7 +45,7 @@ export class CheckEmailDto {
 export class AccountExistsDto {
   @IsEmail({}, { message: 'Please provide a valid email address' })
   @IsNotEmpty({ message: 'Email address is required' })
-  email: string;
+  email!: string;
 }
 
 /**
@@ -61,7 +61,7 @@ export class VerifyPasswordDto {
   @IsString()
   @IsNotEmpty({ message: 'Password is required' })
   @MaxLength(200, { message: 'Password is too long' })
-  password: string;
+  password!: string;
 }
 
 /**
@@ -73,7 +73,7 @@ export class RequestPasswordResetDto {
   @IsEmail({}, { message: 'Please provide a valid email address' })
   @IsNotEmpty({ message: 'Email address is required' })
   @MaxLength(254, { message: 'Email address is too long' })
-  email: string;
+  email!: string;
 }
 
 /**
@@ -89,12 +89,12 @@ export class SignUpDto {
   @IsEmail({}, { message: 'Please provide a valid email address' })
   @IsNotEmpty({ message: 'Email address is required' })
   @MaxLength(254, { message: 'Email address is too long' })
-  email: string;
+  email!: string;
 
   @IsString()
   @IsNotEmpty({ message: 'Password is required' })
   @MaxLength(200, { message: 'Password is too long' })
-  password: string;
+  password!: string;
 
   @IsOptional()
   @IsString()
@@ -127,38 +127,38 @@ export class ResendSignupOtpDto {
   @IsEmail({}, { message: 'Please provide a valid email address' })
   @IsNotEmpty({ message: 'Email address is required' })
   @MaxLength(254, { message: 'Email address is too long' })
-  email: string;
+  email!: string;
 }
 
 export class LoginDto {
   // Username or email — resolved to an email server-side, never echoed back.
   @IsString()
   @IsNotEmpty()
-  identifier: string;
+  identifier!: string;
 
   @IsString()
   @IsNotEmpty()
-  password: string;
+  password!: string;
 }
 
 export class TriggerWelcomeEmailDto {
   @IsEmail()
   @IsNotEmpty()
-  email: string;
+  email!: string;
 
   @IsString()
   @IsNotEmpty()
-  name: string;
+  name!: string;
 }
 
 export class TriggerLoginEmailDto {
   @IsEmail()
   @IsNotEmpty()
-  email: string;
+  email!: string;
 
   @IsString()
   @IsNotEmpty()
-  name: string;
+  name!: string;
 
   @IsOptional()
   @IsString()
@@ -230,28 +230,28 @@ export class CreateCollegeRequestDto {
   @IsString({ message: 'Full name must be a string' })
   @IsNotEmpty({ message: 'Full name is required' })
   @Length(2, 80, { message: 'Full name must be between 2 and 80 characters' })
-  name: string;
+  name!: string;
 
   @IsString({ message: 'College name must be a string' })
   @IsNotEmpty({ message: 'College name is required' })
   @Length(3, 120, {
     message: 'College name must be between 3 and 120 characters',
   })
-  collegeName: string;
+  collegeName!: string;
 
   @IsEmail({}, { message: 'College email must be a valid email address' })
   @IsNotEmpty({ message: 'College email is required' })
   @Length(5, 100, {
     message: 'College email must be between 5 and 100 characters',
   })
-  collegeEmail: string;
+  collegeEmail!: string;
 
   @IsEmail({}, { message: 'Personal email must be a valid email address' })
   @IsNotEmpty({ message: 'Personal email is required' })
   @Length(5, 100, {
     message: 'Personal email must be between 5 and 100 characters',
   })
-  personalEmail: string;
+  personalEmail!: string;
 }
 
 /**
@@ -264,12 +264,12 @@ export class CreateCollegeRequestDto {
 export class ChangePasswordDto {
   @IsString({ message: 'Current password must be a string' })
   @IsNotEmpty({ message: 'Current password is required' })
-  currentPassword: string;
+  currentPassword!: string;
 
   @IsString({ message: 'New password must be a string' })
   @IsNotEmpty({ message: 'New password is required' })
   @Length(8, 200, { message: 'New password must be at least 8 characters' })
-  newPassword: string;
+  newPassword!: string;
 }
 
 /**
@@ -290,5 +290,5 @@ export class AdoptSessionDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(4096)
-  refreshToken: string;
+  refreshToken!: string;
 }

@@ -9,7 +9,7 @@ import {
 export class CreateCommunityDto {
   @IsString()
   @MaxLength(30)
-  name: string;
+  name!: string;
 
   @IsString()
   @IsOptional()
@@ -93,5 +93,5 @@ export class UpdateMemberRoleDto {
   @IsIn(['MODERATOR', 'MEMBER'], {
     message: 'Role must be MODERATOR or MEMBER',
   })
-  role: 'MODERATOR' | 'MEMBER';
+  role!: 'MODERATOR' | 'MEMBER';
 }

@@ -31,7 +31,7 @@ import { MentionDto } from '../common/dto/mention.dto';
 export class CreatePostDto {
   @IsString()
   @MaxLength(5000, { message: 'Max 5,000 characters' })
-  text: string;
+  text!: string;
 
   @IsString()
   @IsOptional()
@@ -63,7 +63,7 @@ export class CreatePostDto {
 export class CreateCommentDto {
   @IsString()
   @MaxLength(500)
-  text: string;
+  text!: string;
 
   @IsString()
   @IsOptional()

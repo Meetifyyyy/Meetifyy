@@ -143,8 +143,9 @@ export class RealtimeGateway
   private readonly logger = new Logger('SOCKET');
   private readonly chatLogger = new Logger('CHAT');
 
+  // Assigned by Nest when the gateway is bound, before any handler runs.
   @WebSocketServer()
-  server: AppServer;
+  server!: AppServer;
 
   /**
    * Which conversation a user may address by a given id or publicId, cached
