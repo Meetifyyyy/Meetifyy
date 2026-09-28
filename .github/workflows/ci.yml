@@ -12,9 +12,10 @@
 #   2. Generate Prisma client (validates schema.prisma syntax)
 #   3. Validate schema.prisma (prisma validate)
 #   4. TypeScript typecheck (tsc --noEmit via tsconfig.build.json)
-#   5. ESLint            — non-blocking (pre-existing type-safety backlog)
-#   6. Production build (nest build)
-#   7. Unit tests (jest)
+#   5. TypeScript typecheck of tests and scripts (tsconfig.json, tsconfig.tooling.json)
+#   6. ESLint            — blocking, at zero warnings, no suppressions
+#   7. Production build (nest build)
+#   8. Unit tests (jest)
 #
 # The `mobile` job builds the native bundle from the same `src/` — the app IS
 # the website, wrapped — and proves two things about the output: that no service
