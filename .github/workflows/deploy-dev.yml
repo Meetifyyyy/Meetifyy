@@ -9,6 +9,7 @@
 #
 # Flow:
 #   push to development
+#   → wait for CI's `validate` check on the same commit; stop unless it passed
 #   → build Docker image (dev-<sha> tag)
 #   → push to ACR
 #   → run `prisma migrate deploy` against DEV Supabase (via Container App Job)
@@ -45,8 +46,31 @@ permissions:
   contents: read
 
 jobs:
+  # Deploy only a commit CI has passed. CI and this workflow start from the
+  # same push; without this job a commit whose tests failed was still built,
+  # migrated and rolled out. See scripts/await-ci.sh.
+  await-ci:
+    name: Wait for CI
+    runs-on: ubuntu-latest
+    permissions:
+      checks: read
+      contents: read
+    timeout-minutes: 35
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts/await-ci.sh
+          sparse-checkout-cone-mode: false
+
+      - name: Wait for the validate check on this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/await-ci.sh "${{ github.sha }}"
+
   deploy-dev:
     name: Build & Deploy → DEV
+    needs: await-ci
     runs-on: ubuntu-latest
     # The `development` GitHub Environment gates access to DEV-only secrets.
     # Production secrets in the `production` environment are not visible here.
