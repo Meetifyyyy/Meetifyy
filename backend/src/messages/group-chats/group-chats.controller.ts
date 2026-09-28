@@ -407,6 +407,8 @@ export class GroupChatsController {
       userId,
       targetUserId,
     );
+    // Already in the group: nothing changed, so nothing to announce.
+    if (result.alreadyMember) return result;
     this.groupChatsService
       .invalidateGroupDetailsCache(conversationId)
       .catch(() => {});

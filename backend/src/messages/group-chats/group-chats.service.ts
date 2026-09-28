@@ -6,6 +6,10 @@ import {
   Optional,
 } from '@nestjs/common';
 import type { Conversation } from '@prisma/client';
+import {
+  assertGroupConversation,
+  isActiveParticipant,
+} from '../core/group-membership';
 import { MessagingCoreService } from '../core/messaging-core.service';
 import {
   isUnavailableUser,
@@ -691,6 +695,7 @@ export class GroupChatsService extends MessagingCoreService {
     targetUserId: string,
   ) {
     const realConvId = await this.resolveConversationId(conversationId);
+    await assertGroupConversation(this.prisma, realConvId);
     const participant = await this.prisma.conversationParticipant.findUnique({
       where: {
         userId_conversationId: {
@@ -699,7 +704,10 @@ export class GroupChatsService extends MessagingCoreService {
         },
       },
     });
-    if (!participant) {
+    // An active member: a row alone is not enough, since removing or leaving
+    // keeps it (with `leftAt` set) — and the upsert below clears `leftAt`, so
+    // a removed member could otherwise add themselves straight back.
+    if (!isActiveParticipant(participant)) {
       throw new ForbiddenException('Not a member of this conversation');
     }
 
@@ -744,6 +752,22 @@ export class GroupChatsService extends MessagingCoreService {
       );
     }
 
+    // Someone already in the group is left exactly as they are. The upsert
+    // resets the role to MEMBER, so "adding" the owner or an admin used to
+    // demote them.
+    const existing = await this.prisma.conversationParticipant.findUnique({
+      where: {
+        userId_conversationId: {
+          userId: targetUserId,
+          conversationId: realConvId,
+        },
+      },
+      select: { leftAt: true, deletedAt: true },
+    });
+    if (isActiveParticipant(existing)) {
+      return { success: true, alreadyMember: true };
+    }
+
     await this.prisma.conversationParticipant.upsert({
       where: {
         userId_conversationId: {
@@ -764,7 +788,7 @@ export class GroupChatsService extends MessagingCoreService {
       },
     });
 
-    return { success: true };
+    return { success: true, alreadyMember: false };
   }
 
   async removeGroupMember(
@@ -773,6 +797,7 @@ export class GroupChatsService extends MessagingCoreService {
     targetUserId: string,
   ) {
     const realConvId = await this.resolveConversationId(conversationId);
+    await assertGroupConversation(this.prisma, realConvId);
 
     const [requester, target] = await Promise.all([
       this.prisma.conversationParticipant.findUnique({
@@ -829,6 +854,7 @@ export class GroupChatsService extends MessagingCoreService {
 
   async leaveGroup(conversationId: string, userId: string) {
     const realConvId = await this.resolveConversationId(conversationId);
+    await assertGroupConversation(this.prisma, realConvId);
     const participant = await this.prisma.conversationParticipant.findUnique({
       where: { userId_conversationId: { userId, conversationId: realConvId } },
     });

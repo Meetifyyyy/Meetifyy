@@ -565,6 +565,8 @@ export class MessagesController {
       userId,
       targetUserId,
     );
+    // Already in the group: nothing changed, so nothing to announce.
+    if (result.alreadyMember) return result;
     const actorHandle = await this.messagesService.getUserHandle(userId);
     const targetHandle = await this.messagesService.getUserHandle(targetUserId);
     await this.broadcastSystemMessage(
