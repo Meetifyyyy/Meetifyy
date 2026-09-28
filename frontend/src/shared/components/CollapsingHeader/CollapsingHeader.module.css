@@ -45,15 +45,10 @@
    * here is what keeps this copy off the page's own cover and the avatar
    * that overlaps it. The height follows the content's spring back.
    */
-  /* + 20px so the soft edge below overlaps the page's own cover (the same
-     pixels) rather than the gap the pull opens above it. */
-  height: max(100%, calc(var(--pull-to-refresh-distance, 0px) + 20px));
+  height: max(100%, var(--pull-to-refresh-distance, 0px));
   transition: height var(--pull-to-refresh-timing, 0s);
   overflow: hidden;
   pointer-events: none;
-  /* A soft lower edge, so the band never reads as a line across the photo. */
-  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 20px), transparent);
-  mask-image: linear-gradient(to bottom, #000 calc(100% - 20px), transparent);
 }
 
 .coverBackground {

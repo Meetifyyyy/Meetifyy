@@ -813,6 +813,9 @@
     position: absolute;
     inset: 0;
     pointer-events: none;
+    /* The blurred copy is scaled past its box; unclipped, its soft fringe
+       spilled onto the card below as a shadow during a pull. */
+    overflow: hidden;
     /* Blurs with the header band while scrolling, and with a pull. */
     /* Floor of 1%: see .coverBlur in CollapsingHeader.module.css. */
     opacity: clamp(0.01, calc(var(--cover-blur, 0) + var(--ptr-offset, 0) / 120), 1);
