@@ -16,7 +16,11 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
-import { StorageProvider, StoredObject } from './storage-provider.interface';
+import {
+  ObjectMetadata,
+  StorageProvider,
+  StoredObject,
+} from './storage-provider.interface';
 import { config } from '../../config';
 import { errorMessage } from '../../common/utils/error.util';
 
@@ -414,7 +418,7 @@ export class CloudflareR2Provider implements StorageProvider {
     return (await this.resolveReadBucket(key)) !== null;
   }
 
-  async getMetadata(key: string): Promise<any> {
+  async getMetadata(key: string): Promise<ObjectMetadata | null> {
     const localPath = this.getLocalFilePath(key);
     if (fs.existsSync(localPath)) {
       try {
@@ -431,7 +435,12 @@ export class CloudflareR2Provider implements StorageProvider {
       const head = await this.s3.send(
         new HeadObjectCommand({ Bucket: bucket, Key: key }),
       );
-      return head;
+      // S3 names these ContentLength / ContentType. Mapped here, once, so no
+      // caller has to know which backend answered.
+      return {
+        contentLength: head.ContentLength,
+        contentType: head.ContentType,
+      };
     } catch {
       return null;
     }

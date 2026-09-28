@@ -143,24 +143,6 @@
       "count": 1
     }
   },
-  "src/uploads/providers/cloudflare-r2.provider.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 1
-    }
-  },
-  "src/uploads/providers/storage-provider.interface.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 1
-    }
-  },
-  "src/uploads/uploads.service.ts": {
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 2
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 4
-    }
-  },
   "src/users/users.controller.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 2
