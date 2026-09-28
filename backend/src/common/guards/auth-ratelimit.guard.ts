@@ -3,7 +3,10 @@ import { RateLimitService } from '../rate-limit/rate-limit.service';
 import {
   applyRateLimitHeaders,
   rateLimitException,
+  requestIdOf,
 } from '../rate-limit/rate-limit.response';
+import type { Response } from 'express';
+import type { GuardRequest } from '../types/authenticated-request';
 import { clientIp } from '../rate-limit/client-ip.util';
 
 /**
@@ -32,7 +35,7 @@ export class AuthRateLimitGuard implements CanActivate {
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const http = context.switchToHttp();
-    const request = http.getRequest();
+    const request = http.getRequest<GuardRequest>();
 
     // Both windows are consumed together. The per-minute budget shapes the
     // signup form; the daily budget is what actually closes enumeration, since
@@ -43,10 +46,10 @@ export class AuthRateLimitGuard implements CanActivate {
       { policy: 'auth.probe.daily', identifier: ip },
     ]);
 
-    applyRateLimitHeaders(http.getResponse(), decision);
+    applyRateLimitHeaders(http.getResponse<Response>(), decision);
 
     if (!decision.allowed) {
-      throw rateLimitException(decision, request?.id);
+      throw rateLimitException(decision, requestIdOf(request));
     }
 
     return true;

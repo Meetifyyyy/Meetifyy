@@ -1,5 +1,7 @@
+import { expect } from '@jest/globals';
 import { Test, TestingModule } from '@nestjs/testing';
 import { BlocksService } from '../users/blocks.service';
+import { stringField } from '../common/utils/type-guards.util';
 import { NotificationsService } from './notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { DomainEventService } from '../events/domain-event.service';
@@ -18,8 +20,14 @@ import { studentYearPolicyMockProvider } from '../common/student-year/testing/st
  */
 describe('invite notification reconciliation on read', () => {
   let service: NotificationsService;
-  let mockPrisma: any;
-  let invitationRows: any[];
+  /** The Prisma surface; the notification page is re-pointed per case. */
+  let mockPrisma: {
+    notification: { findMany: jest.Mock; update: jest.Mock; count: jest.Mock };
+    activityInvitation: { findMany: jest.Mock };
+    user: { findUnique: jest.Mock };
+    block: { findFirst: jest.Mock };
+  };
+  let invitationRows: ReturnType<typeof invitationRow>[];
 
   const future = new Date(Date.now() + 60 * 60 * 1000);
   const past = new Date(Date.now() - 60 * 60 * 1000);
@@ -37,10 +45,13 @@ describe('invite notification reconciliation on read', () => {
     },
   });
 
-  const invitationRow = (status: string, activity: any = {}) => ({
+  const invitationRow = (
+    status: string,
+    activity: { status?: string; startDate?: Date } = {},
+  ) => ({
     activityId: 'act-1',
     status,
-    revokedAt: null,
+    revokedAt: null as Date | null,
     activity: {
       status: 'OPEN',
       startDate: future,
@@ -53,12 +64,12 @@ describe('invite notification reconciliation on read', () => {
     invitationRows = [];
     mockPrisma = {
       notification: {
-        findMany: jest.fn(async () => [notifRow('PENDING')]),
-        update: jest.fn(async () => ({})),
-        count: jest.fn(async () => 0),
+        findMany: jest.fn(() => Promise.resolve([notifRow('PENDING')])),
+        update: jest.fn(() => Promise.resolve({})),
+        count: jest.fn(() => Promise.resolve(0)),
       },
       activityInvitation: {
-        findMany: jest.fn(async () => invitationRows),
+        findMany: jest.fn(() => Promise.resolve(invitationRows)),
       },
       user: { findUnique: jest.fn() },
       block: { findFirst: jest.fn() },
@@ -81,8 +92,12 @@ describe('invite notification reconciliation on read', () => {
           useValue: {
             getExcludedUserIds: jest.fn().mockResolvedValue([]),
             isBlocked: jest.fn().mockResolvedValue(false),
-            filterBlockedUsers: jest.fn(async (_u: any, ids: any) => ids),
-            injectBlockFilter: jest.fn(async (_u: any, w: any) => w),
+            filterBlockedUsers: jest.fn((_u: string, ids: string[]) =>
+              Promise.resolve(ids),
+            ),
+            injectBlockFilter: jest.fn((_u: string, w: unknown) =>
+              Promise.resolve(w),
+            ),
             invalidateBlockCache: jest.fn(),
           },
         },
@@ -94,7 +109,7 @@ describe('invite notification reconciliation on read', () => {
 
   const statusOf = async () => {
     const res = await service.getNotifications('user-1', 20);
-    return res.data[0].metadata.lifecycleStatus;
+    return stringField(res.data[0].metadata, 'lifecycleStatus');
   };
 
   it('reports Accepted when the notification copy is stale at Pending', async () => {
@@ -145,9 +160,9 @@ describe('invite notification reconciliation on read', () => {
   });
 
   it('fills in a legacy row that never had a lifecycle status', async () => {
-    mockPrisma.notification.findMany = jest.fn(async () => [
-      notifRow(undefined),
-    ]);
+    mockPrisma.notification.findMany = jest.fn(() =>
+      Promise.resolve([notifRow(undefined)]),
+    );
     invitationRows = [invitationRow('ACCEPTED')];
     expect(await statusOf()).toBe('ACCEPTED');
   });
@@ -160,9 +175,11 @@ describe('invite notification reconciliation on read', () => {
   });
 
   it('does not query invitations when the page holds no invite notifications', async () => {
-    mockPrisma.notification.findMany = jest.fn(async () => [
-      { id: 'n2', type: 'FOLLOW', recipientId: 'user-1', metadata: {} },
-    ]);
+    mockPrisma.notification.findMany = jest.fn(() =>
+      Promise.resolve([
+        { id: 'n2', type: 'FOLLOW', recipientId: 'user-1', metadata: {} },
+      ]),
+    );
     await service.getNotifications('user-1', 20);
     expect(mockPrisma.activityInvitation.findMany).not.toHaveBeenCalled();
   });

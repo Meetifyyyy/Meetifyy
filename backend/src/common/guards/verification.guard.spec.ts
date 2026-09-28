@@ -7,6 +7,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { VerificationAccessService } from '../verification/verification-access.service';
 import { DomainEventService } from '../../events/domain-event.service';
 import { IS_VERIFIED_ONLY_KEY } from '../decorators/verified-only.decorator';
+import { stub } from '../testing/stub';
 
 /**
  * Builds a minimal ExecutionContext double that simulates either an HTTP or
@@ -15,25 +16,22 @@ import { IS_VERIFIED_ONLY_KEY } from '../decorators/verified-only.decorator';
 function buildContext(opts: {
   type: 'http' | 'ws';
   userId?: string;
-  handlerMetadata?: boolean;
 }): ExecutionContext {
-  const { type, userId, handlerMetadata } = opts;
+  const { type, userId } = opts;
 
   const mockGetHandler = jest.fn();
   const mockGetClass = jest.fn();
 
   const httpRequest = { user: userId ? { id: userId } : undefined };
-  const wsClient = userId ? { userId } : {};
+  const wsClient = { data: userId ? { userId } : {} };
 
-  return {
+  return stub<ExecutionContext>({
     getType: jest.fn(() => type),
     getHandler: mockGetHandler,
     getClass: mockGetClass,
     switchToHttp: jest.fn(() => ({ getRequest: jest.fn(() => httpRequest) })),
     switchToWs: jest.fn(() => ({ getClient: jest.fn(() => wsClient) })),
-    // Metadata on the handler, used by Reflector.getAllAndOverride
-    _handlerMetadata: handlerMetadata,
-  } as unknown as ExecutionContext;
+  });
 }
 
 describe('VerificationGuard', () => {
@@ -73,7 +71,7 @@ describe('VerificationGuard', () => {
   function setMetadata(value: boolean) {
     jest
       .spyOn(reflector, 'getAllAndOverride')
-      .mockImplementation((key: string) => {
+      .mockImplementation((key: unknown) => {
         if (key === IS_VERIFIED_ONLY_KEY) return value;
         return undefined;
       });

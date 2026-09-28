@@ -12,7 +12,7 @@ describe('MessagesService — conversation-cache eviction on lifecycle change', 
   const USER_ID = 'gone-1';
 
   let service: MessagesService;
-  let prisma: any;
+  let prisma: { conversationParticipant: { findMany: jest.Mock } };
   let evicted: string[];
   let partners: string[];
 
@@ -24,14 +24,22 @@ describe('MessagesService — conversation-cache eviction on lifecycle change', 
       conversationParticipant: {
         // Honours the keyset cursor, so a fake cannot make the paging look
         // correct by returning everything on the first call.
-        findMany: jest.fn(async ({ where, take }: any) => {
-          const after = where.userId?.gt;
-          const page = partners
-            .filter((id) => (after ? id > after : true))
-            .sort()
-            .slice(0, take);
-          return page.map((userId) => ({ userId }));
-        }),
+        findMany: jest.fn(
+          ({
+            where,
+            take,
+          }: {
+            where: { userId?: { gt?: string } };
+            take: number;
+          }) => {
+            const after = where.userId?.gt;
+            const page = partners
+              .filter((id) => (after ? id > after : true))
+              .sort()
+              .slice(0, take);
+            return Promise.resolve(page.map((userId) => ({ userId })));
+          },
+        ),
       },
     };
 
@@ -39,8 +47,10 @@ describe('MessagesService — conversation-cache eviction on lifecycle change', 
     Object.assign(service, {
       prisma,
       logger: { log: jest.fn(), warn: jest.fn() },
-      invalidateUserConversationsCache: jest.fn(async (ids: string[]) => {
+      invalidateUserConversationsCache: jest.fn((ids: string[]) => {
         evicted.push(...ids);
+
+        return Promise.resolve();
       }),
     });
   });
@@ -81,8 +91,8 @@ describe('MessagesService — conversation-cache eviction on lifecycle change', 
   });
 
   it('never lets a cache failure escape — Postgres is the source of truth', async () => {
-    prisma.conversationParticipant.findMany = jest.fn(async () => {
-      throw new Error('redis down');
+    prisma.conversationParticipant.findMany = jest.fn(() => {
+      return Promise.reject(new Error('redis down'));
     });
     await expect(
       service.handleAccountLifecycleChanged({ data: { userId: USER_ID } }),

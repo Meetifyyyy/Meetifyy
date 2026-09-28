@@ -24,6 +24,10 @@ import {
 import { config } from '../../config';
 import { verifySync } from 'otplib';
 import { UAParser } from 'ua-parser-js';
+import type { SuperAdmin } from '@prisma/client';
+import { ADMIN_TOKEN_ALGORITHM } from './admin-token.constants';
+import { errorMessage } from '../../common/utils/error.util';
+import { payloadObject, stringClaim } from '../../common/utils/jwt-claims.util';
 
 @Injectable()
 export class AdminAuthService implements OnModuleInit {
@@ -118,8 +122,9 @@ export class AdminAuthService implements OnModuleInit {
         },
       });
       this.logger.log(`Super Admin account synced: ${email}`);
-    } catch (err: any) {
-      if (err?.message?.includes('Cannot use a pool after calling end')) return;
+    } catch (err) {
+      if (errorMessage(err).includes('Cannot use a pool after calling end'))
+        return;
       this.logger.error('Failed to seed Super Admin', err);
     }
   }
@@ -152,6 +157,34 @@ export class AdminAuthService implements OnModuleInit {
       );
     }
     return secret;
+  }
+
+  /**
+   * Verifies the short-lived token that carries a login between steps, and
+   * that it was issued for THIS step: an OTP-step token must not be accepted
+   * where a TOTP-step one is expected, or the second factor could be skipped.
+   * `expiredMessage` keeps each step's existing wording.
+   */
+  private verifyPendingToken(
+    token: string,
+    step: 'OTP' | 'TOTP',
+    expiredMessage: string,
+  ): { adminId: string } {
+    let verified: string | jwt.JwtPayload;
+    try {
+      verified = jwt.verify(token, this.getPendingSecret(), {
+        algorithms: [ADMIN_TOKEN_ALGORITHM],
+      });
+    } catch {
+      throw new UnauthorizedException(expiredMessage);
+    }
+    const payload = payloadObject(verified);
+    if (!payload || payload.step !== step) {
+      throw new UnauthorizedException('Invalid authentication step');
+    }
+    const adminId = stringClaim(payload, 'sub');
+    if (!adminId) throw new UnauthorizedException(expiredMessage);
+    return { adminId };
   }
 
   /**
@@ -286,7 +319,7 @@ export class AdminAuthService implements OnModuleInit {
     const pendingToken = jwt.sign(
       { sub: admin.id, email: admin.email, step: 'OTP' },
       this.getPendingSecret(),
-      { expiresIn: '10m' },
+      { expiresIn: '10m', algorithm: ADMIN_TOKEN_ALGORITHM },
     );
 
     return {
@@ -305,21 +338,14 @@ export class AdminAuthService implements OnModuleInit {
     // 5-attempt lockout) to blunt distributed guessing.
     await this.enforceRateLimit(`verify-otp:ip:${ip}`, 30, 15 * 60);
 
-    let payload: any;
-    try {
-      payload = jwt.verify(dto.pendingToken, this.getPendingSecret());
-    } catch {
-      throw new UnauthorizedException(
-        'Verification session expired or invalid',
-      );
-    }
-
-    if (payload.step !== 'OTP') {
-      throw new UnauthorizedException('Invalid authentication step');
-    }
+    const pending = this.verifyPendingToken(
+      dto.pendingToken,
+      'OTP',
+      'Verification session expired or invalid',
+    );
 
     const admin = await this.prisma.superAdmin.findUnique({
-      where: { id: payload.sub },
+      where: { id: pending.adminId },
     });
 
     if (!admin || !admin.isActive) {
@@ -360,7 +386,7 @@ export class AdminAuthService implements OnModuleInit {
       const pendingToken2 = jwt.sign(
         { sub: admin.id, email: admin.email, step: 'TOTP' },
         this.getPendingSecret(),
-        { expiresIn: '5m' },
+        { expiresIn: '5m', algorithm: ADMIN_TOKEN_ALGORITHM },
       );
       return {
         success: true,
@@ -381,19 +407,14 @@ export class AdminAuthService implements OnModuleInit {
     // 5-minute pending window can't be exhausted by brute force.
     await this.enforceRateLimit(`verify-totp:ip:${ip}`, 15, 15 * 60);
 
-    let payload: any;
-    try {
-      payload = jwt.verify(dto.pendingToken, this.getPendingSecret());
-    } catch {
-      throw new UnauthorizedException('Verification session expired');
-    }
-
-    if (payload.step !== 'TOTP') {
-      throw new UnauthorizedException('Invalid authentication step');
-    }
+    const pending = this.verifyPendingToken(
+      dto.pendingToken,
+      'TOTP',
+      'Verification session expired',
+    );
 
     const admin = await this.prisma.superAdmin.findUnique({
-      where: { id: payload.sub },
+      where: { id: pending.adminId },
     });
 
     if (!admin || !admin.isActive || !admin.totpSecret) {
@@ -431,7 +452,11 @@ export class AdminAuthService implements OnModuleInit {
   /**
    * Create SuperAdminSession & generate Access/Refresh tokens
    */
-  private async createAdminSession(admin: any, ip: string, userAgent: string) {
+  private async createAdminSession(
+    admin: Pick<SuperAdmin, 'id' | 'email' | 'name' | 'totpEnabled'>,
+    ip: string,
+    userAgent: string,
+  ) {
     const parser = new UAParser(userAgent);
     const ua = parser.getResult();
     const browser =
@@ -470,14 +495,14 @@ export class AdminAuthService implements OnModuleInit {
         sessionId: session.id,
       },
       this.getAccessSecret(),
-      { expiresIn: '15m' },
+      { expiresIn: '15m', algorithm: ADMIN_TOKEN_ALGORITHM },
     );
 
     // Sign Refresh Token (30 days) containing session ID
     const refreshToken = jwt.sign(
       { sub: admin.id, sessionId: session.id, tokenKey: rawRefreshToken },
       this.getRefreshSecret(),
-      { expiresIn: '30d' },
+      { expiresIn: '30d', algorithm: ADMIN_TOKEN_ALGORITHM },
     );
 
     // Audit Log (non-blocking)
@@ -525,19 +550,37 @@ export class AdminAuthService implements OnModuleInit {
    * Rotate Refresh Token
    */
   async refreshTokens(refreshTokenStr: string, ip: string, userAgent: string) {
-    let payload: any;
+    let verified: string | jwt.JwtPayload;
     try {
-      payload = jwt.verify(refreshTokenStr, this.getRefreshSecret());
+      verified = jwt.verify(refreshTokenStr, this.getRefreshSecret(), {
+        algorithms: [ADMIN_TOKEN_ALGORITHM],
+      });
     } catch {
+      throw new UnauthorizedException('Invalid or expired refresh token');
+    }
+    // Every refresh token this service signs carries both. Without them the
+    // lookups below would receive `undefined`, and `crypto` would throw a 500.
+    const payload = payloadObject(verified);
+    const sessionId = payload && stringClaim(payload, 'sessionId');
+    const tokenKey = payload && stringClaim(payload, 'tokenKey');
+    const adminId = payload && stringClaim(payload, 'sub');
+    if (!sessionId || !tokenKey || !adminId) {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
 
     const session = await this.prisma.superAdminSession.findUnique({
-      where: { id: payload.sessionId },
+      where: { id: sessionId },
       include: { admin: true },
     });
 
     if (!session || session.revoked || session.expiresAt < new Date()) {
+      throw new UnauthorizedException('Session has been revoked or expired');
+    }
+
+    // The session must belong to the admin the token names. Both come from one
+    // signed token, so they cannot be mixed today; this makes the invariant
+    // explicit, as JwtGuard does for user sessions.
+    if (session.adminId !== adminId) {
       throw new UnauthorizedException('Session has been revoked or expired');
     }
 
@@ -548,11 +591,11 @@ export class AdminAuthService implements OnModuleInit {
     // Verify token key (SHA-256 with timingSafeEqual, fallback to bcrypt for legacy sessions)
     let isMatch = false;
     if (session.refreshHash.startsWith('$2')) {
-      isMatch = await bcrypt.compare(payload.tokenKey, session.refreshHash);
+      isMatch = await bcrypt.compare(tokenKey, session.refreshHash);
     } else {
       const computedHash = crypto
         .createHash('sha256')
-        .update(payload.tokenKey)
+        .update(tokenKey)
         .digest('hex');
       const hashBuf = Buffer.from(computedHash, 'utf8');
       const storedBuf = Buffer.from(session.refreshHash, 'utf8');
@@ -611,7 +654,7 @@ export class AdminAuthService implements OnModuleInit {
         sessionId: session.id,
       },
       this.getAccessSecret(),
-      { expiresIn: '15m' },
+      { expiresIn: '15m', algorithm: ADMIN_TOKEN_ALGORITHM },
     );
 
     const newRefreshToken = jwt.sign(
@@ -621,7 +664,7 @@ export class AdminAuthService implements OnModuleInit {
         tokenKey: newRawRefreshToken,
       },
       this.getRefreshSecret(),
-      { expiresIn: '30d' },
+      { expiresIn: '30d', algorithm: ADMIN_TOKEN_ALGORITHM },
     );
 
     return {

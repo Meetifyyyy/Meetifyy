@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 /**
  * One-off: reclaim media orphaned before replacement cleanup was variant-aware.
  *
@@ -19,15 +18,15 @@
  *
  * Read-only by default. Pass --apply to delete.
  *
- *   node scripts/reclaim-orphaned-media.js
- *   node scripts/reclaim-orphaned-media.js --apply
+ *   npx ts-node scripts/reclaim-orphaned-media.ts
+ *   npx ts-node scripts/reclaim-orphaned-media.ts --apply
  */
-const {
+import {
   S3Client,
   ListObjectsV2Command,
   DeleteObjectCommand,
-} = require('@aws-sdk/client-s3');
-const { PrismaClient } = require('@prisma/client');
+} from '@aws-sdk/client-s3';
+import { PrismaClient } from '@prisma/client';
 
 const APPLY = process.argv.includes('--apply');
 
@@ -55,13 +54,16 @@ const FOLDERS = [
 
 const PROTECTED = /^(defaults|v2-defaults|presets|system|assets|support)\//i;
 
-function env(name, fallback) {
+/** An environment variable, treating an empty value as unset. */
+function env(name: string): string | undefined;
+function env(name: string, fallback: string): string;
+function env(name: string, fallback?: string): string | undefined {
   const v = process.env[name];
   return v === undefined || v === '' ? fallback : v;
 }
 
 /** Every URL form a stored reference might take, reduced to a bare key. */
-function normalize(value) {
+function normalize(value: unknown): string | null {
   if (!value || typeof value !== 'string') return null;
   let k = value.trim().split('?')[0].split('#')[0];
   k = k.replace(/^https?:\/\/[^/]+\/api\/media\//i, '');
@@ -73,54 +75,80 @@ function normalize(value) {
 async function main() {
   const s3 = new S3Client({
     region: env('STORAGE_REGION', 'auto'),
-    endpoint: `https://${env('R2_ACCOUNT_ID')}.r2.cloudflarestorage.com`,
+    endpoint: `https://${String(env('R2_ACCOUNT_ID'))}.r2.cloudflarestorage.com`,
+    // Unset keys are passed through as before; the SDK refuses to sign with
+    // them, which is the error an operator needs to see.
     credentials: {
-      accessKeyId: env('R2_ACCESS_KEY_ID'),
-      secretAccessKey: env('R2_SECRET_ACCESS_KEY'),
+      accessKeyId: env('R2_ACCESS_KEY_ID') as string,
+      secretAccessKey: env('R2_SECRET_ACCESS_KEY') as string,
     },
   });
   const bucket = env('R2_BUCKET_NAME');
 
   const dbUrl =
-    env('DATABASE_URL') +
+    String(env('DATABASE_URL')) +
     (env('DATABASE_URL', '').includes('?') ? '&' : '?') +
     'pgbouncer=true&connection_limit=1';
   const prisma = new PrismaClient({ datasources: { db: { url: dbUrl } } });
 
   // ── Everything the application currently points at ────────────────────────
-  const referenced = new Set();
-  const add = (v) => {
+  const referenced = new Set<string>();
+  const add = (v: unknown) => {
     const k = normalize(v);
     if (k) referenced.add(k);
   };
 
-  const [users, communities, conversations, activities, events, colleges, attached] =
-    await Promise.all([
-      prisma.user.findMany({ select: { avatar: true, cover: true } }),
-      prisma.community.findMany({ select: { avatarKey: true, coverKey: true } }).catch(() => []),
-      prisma.conversation.findMany({ select: { avatarKey: true } }),
-      prisma.crewActivity.findMany({ select: { coverImage: true } }).catch(() => []),
-      prisma.campusEvent.findMany({ select: { posterUrl: true } }).catch(() => []),
-      prisma.college.findMany({ select: { logoKey: true, bannerKey: true } }).catch(() => []),
-      // Media attached to a post or a message is live regardless of folder.
-      prisma.media.findMany({
-        where: {
-          OR: [{ postId: { not: null } }, { messageAttachments: { some: {} } }],
-        },
-        select: { objectKey: true },
-      }),
-    ]);
+  const [
+    users,
+    communities,
+    conversations,
+    activities,
+    events,
+    colleges,
+    attached,
+  ] = await Promise.all([
+    prisma.user.findMany({ select: { avatar: true, cover: true } }),
+    prisma.community
+      .findMany({ select: { avatarKey: true, coverKey: true } })
+      .catch(() => []),
+    prisma.conversation.findMany({ select: { avatarKey: true } }),
+    prisma.crewActivity
+      .findMany({ select: { coverImage: true } })
+      .catch(() => []),
+    prisma.campusEvent
+      .findMany({ select: { posterUrl: true } })
+      .catch(() => []),
+    prisma.college
+      .findMany({ select: { logoKey: true, bannerKey: true } })
+      .catch(() => []),
+    // Media attached to a post or a message is live regardless of folder.
+    prisma.media.findMany({
+      where: {
+        OR: [{ postId: { not: null } }, { messageAttachments: { some: {} } }],
+      },
+      select: { objectKey: true },
+    }),
+  ]);
 
-  users.forEach((u) => { add(u.avatar); add(u.cover); });
-  communities.forEach((c) => { add(c.avatarKey); add(c.coverKey); });
+  users.forEach((u) => {
+    add(u.avatar);
+    add(u.cover);
+  });
+  communities.forEach((c) => {
+    add(c.avatarKey);
+    add(c.coverKey);
+  });
   conversations.forEach((c) => add(c.avatarKey));
   activities.forEach((a) => add(a.coverImage));
   events.forEach((e) => add(e.posterUrl));
-  colleges.forEach((c) => { add(c.logoKey); add(c.bannerKey); });
+  colleges.forEach((c) => {
+    add(c.logoKey);
+    add(c.bannerKey);
+  });
   attached.forEach((m) => add(m.objectKey));
 
   // A thumbnail inherits its base image's liveness — nothing stores a thumb key.
-  const isLive = (key) => {
+  const isLive = (key: string) => {
     if (referenced.has(key)) return true;
     const m = key.match(/^([a-z0-9_-]+)\/([A-Za-z0-9._-]+)_thumb\.[a-z0-9]+$/i);
     if (!m) return false;
@@ -131,17 +159,18 @@ async function main() {
   };
 
   // ── Everything actually in the bucket ─────────────────────────────────────
-  const objects = [];
-  let token;
+  const objects: { key: string; size: number; lastModified: Date }[] = [];
+  let token: string | undefined;
   do {
     const page = await s3.send(
       new ListObjectsV2Command({ Bucket: bucket, ContinuationToken: token }),
     );
+    // A listed object always carries its key and modification time.
     (page.Contents || []).forEach((o) =>
       objects.push({
-        key: o.Key,
+        key: o.Key!,
         size: o.Size || 0,
-        lastModified: o.LastModified,
+        lastModified: o.LastModified!,
       }),
     );
     token = page.NextContinuationToken;
@@ -163,14 +192,16 @@ async function main() {
   console.log(`bucket objects            : ${objects.length}`);
   console.log(`in replaceable-media folders: ${inScope.length}`);
   console.log(`referenced by the app     : ${inScope.length - orphans.length}`);
-  console.log(`ORPHANED                  : ${orphans.length} (${bytes.toLocaleString()} bytes)`);
+  console.log(
+    `ORPHANED                  : ${orphans.length} (${bytes.toLocaleString()} bytes)`,
+  );
   if (tooRecent.length > 0) {
     console.log(
       `held back (< ${MIN_AGE_HOURS}h old, may be mid-upload): ${tooRecent.length}`,
     );
   }
 
-  const byFolder = {};
+  const byFolder: Record<string, number> = {};
   orphans.forEach((o) => {
     const f = o.key.split('/')[0];
     byFolder[f] = (byFolder[f] || 0) + 1;
@@ -180,7 +211,9 @@ async function main() {
     .forEach(([f, n]) => console.log(`    ${f.padEnd(18)} ${n}`));
 
   if (!APPLY) {
-    console.log('\nDry run. Re-run with --apply to delete the orphans listed above.');
+    console.log(
+      '\nDry run. Re-run with --apply to delete the orphans listed above.',
+    );
     await prisma.$disconnect();
     return;
   }
@@ -190,8 +223,8 @@ async function main() {
     try {
       await s3.send(new DeleteObjectCommand({ Bucket: bucket, Key: o.key }));
       removed += 1;
-    } catch (e) {
-      console.error(`  failed to delete ${o.key}: ${e.message}`);
+    } catch (e: unknown) {
+      console.error(`  failed to delete ${o.key}: ${(e as Error).message}`);
     }
   }
   const rows = await prisma.media.deleteMany({
@@ -217,7 +250,7 @@ async function main() {
   await prisma.$disconnect();
 }
 
-main().catch((e) => {
-  console.error('Reclaim failed:', e.message);
+main().catch((e: unknown) => {
+  console.error('Reclaim failed:', (e as Error).message);
   process.exit(1);
 });

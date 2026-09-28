@@ -18,13 +18,20 @@ import { studentYearPolicyMockProvider } from '../common/student-year/testing/st
  * list filter and the count filter must also agree with each other, or the badge
  * shows a number the list can never clear.
  */
+/** The list and count queries, as far as these assertions read them. */
+type NotificationQuery = { where: { type: { notIn: string[] } } };
+
 describe('NotificationsService — what reaches the notifications page', () => {
   let service: NotificationsService;
 
-  const prisma: any = {
+  const prisma = {
     notification: {
-      findMany: jest.fn().mockResolvedValue([]),
-      count: jest.fn().mockResolvedValue(0),
+      findMany: jest
+        .fn<Promise<unknown[]>, [NotificationQuery]>()
+        .mockResolvedValue([]),
+      count: jest
+        .fn<Promise<number>, [NotificationQuery]>()
+        .mockResolvedValue(0),
       findFirst: jest.fn(),
       update: jest.fn(),
       create: jest.fn(),
@@ -54,8 +61,8 @@ describe('NotificationsService — what reaches the notifications page', () => {
           useValue: {
             getExcludedUserIds: jest.fn().mockResolvedValue([]),
             isBlocked: jest.fn().mockResolvedValue(false),
-            filterBlockedUsers: jest.fn(async (_u, ids) => ids),
-            injectBlockFilter: jest.fn(async (_u, w) => w),
+            filterBlockedUsers: jest.fn((_u, ids) => Promise.resolve(ids)),
+            injectBlockFilter: jest.fn((_u, w) => Promise.resolve(w)),
             invalidateBlockCache: jest.fn(),
           },
         },

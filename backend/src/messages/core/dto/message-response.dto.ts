@@ -11,13 +11,14 @@ export interface MessageResponseDto {
   timestamp: Date | string;
   time: string;
   type: string;
-  payload?: any;
+  payload?: unknown;
   text: string;
   mediaUrl?: string | null;
   mediaType?: string | null;
-  mentions?: string[];
-  inviteData?: any;
-  replyTo?: any;
+  /** Stored mention objects ({ userId, username, start, end }), read from JSON. */
+  mentions?: unknown[];
+  inviteData?: unknown;
+  replyTo?: unknown;
   status: string;
   state?: string;
   isUnsent?: boolean;

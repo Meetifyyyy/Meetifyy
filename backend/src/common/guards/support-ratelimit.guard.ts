@@ -3,7 +3,10 @@ import { RateLimitService } from '../rate-limit/rate-limit.service';
 import {
   applyRateLimitHeaders,
   rateLimitException,
+  requestIdOf,
 } from '../rate-limit/rate-limit.response';
+import type { Response } from 'express';
+import { requestBody, type GuardRequest } from '../types/authenticated-request';
 import { clientIp } from '../rate-limit/client-ip.util';
 
 /**
@@ -33,12 +36,11 @@ export class SupportRateLimitGuard implements CanActivate {
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const http = context.switchToHttp();
-    const request = http.getRequest();
+    const request = http.getRequest<GuardRequest>();
 
+    const { email: rawEmail } = requestBody(request);
     const email =
-      typeof request.body?.email === 'string'
-        ? request.body.email.trim().toLowerCase()
-        : null;
+      typeof rawEmail === 'string' ? rawEmail.trim().toLowerCase() : null;
 
     const decision = await this.rateLimit.consumeAll([
       { policy: 'support.request.ip', identifier: clientIp(request) },
@@ -47,10 +49,10 @@ export class SupportRateLimitGuard implements CanActivate {
         : []),
     ]);
 
-    applyRateLimitHeaders(http.getResponse(), decision);
+    applyRateLimitHeaders(http.getResponse<Response>(), decision);
 
     if (!decision.allowed) {
-      throw rateLimitException(decision, request?.id);
+      throw rateLimitException(decision, requestIdOf(request));
     }
 
     return true;

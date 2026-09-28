@@ -1,7 +1,11 @@
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import type { HttpException } from '@nestjs/common';
+import { expect } from '@jest/globals';
+import type { Prisma } from '@prisma/client';
 import {
   ActivityAuthorizationService,
   ActivityAuthTarget,
+  InvitationAuthShape,
   UserAuthContext,
 } from './activity-authorization.service';
 import { createStudentYearPolicyMock } from '../common/student-year/testing/student-year-policy.mock';
@@ -18,7 +22,7 @@ describe('ActivityAuthorizationService', () => {
   // isolation of activities has its own coverage in
   // common/student-year/first-year-isolation.spec.ts.
   const policy = new ActivityAuthorizationService(
-    createStudentYearPolicyMock() as any,
+    createStudentYearPolicyMock(),
   );
 
   const GLA = 'college-gla';
@@ -30,7 +34,7 @@ describe('ActivityAuthorizationService', () => {
   const noCollege: UserAuthContext = { id: 'user-nocollege', collegeId: null };
 
   const activity = (
-    visibility: any,
+    visibility: ActivityAuthTarget['visibility'],
     overrides: Partial<ActivityAuthTarget> = {},
   ): ActivityAuthTarget => ({
     id: 'act-1',
@@ -45,7 +49,10 @@ describe('ActivityAuthorizationService', () => {
     ...overrides,
   });
 
-  const liveInvite = (inviteeId: string, extra: any = {}) => ({
+  const liveInvite = (
+    inviteeId: string,
+    extra: Partial<InvitationAuthShape> = {},
+  ): InvitationAuthShape => ({
     inviteeId,
     status: 'PENDING',
     revokedAt: null,
@@ -306,7 +313,7 @@ describe('ActivityAuthorizationService', () => {
     });
 
     it('never permits joining something the viewer may not view', () => {
-      for (const visibility of ['COLLEGE_ONLY', 'PRIVATE']) {
+      for (const visibility of ['COLLEGE_ONLY', 'PRIVATE'] as const) {
         const act = activity(visibility);
         expect(policy.canView(otherCollege, act).allowed).toBe(false);
         expect(policy.canJoin(otherCollege, act).allowed).toBe(false);
@@ -320,9 +327,12 @@ describe('ActivityAuthorizationService', () => {
       try {
         policy.assertCanView(otherCollege, activity('COLLEGE_ONLY'));
         fail('expected a ForbiddenException');
-      } catch (err: any) {
+      } catch (err: unknown) {
         expect(err).toBeInstanceOf(ForbiddenException);
-        const body = err.getResponse();
+        const body = (err as HttpException).getResponse() as {
+          code?: string;
+          message?: string;
+        };
         expect(body.code).toBe('COLLEGE_RESTRICTED');
         expect(body.message).toMatch(/another college/i);
         expect(JSON.stringify(body)).not.toMatch(/act-1|host-1/);
@@ -333,11 +343,11 @@ describe('ActivityAuthorizationService', () => {
       try {
         policy.assertCanView(sameCollege, activity('PRIVATE'));
         fail('expected a NotFoundException');
-      } catch (err: any) {
+      } catch (err: unknown) {
         // 404, not 403: a "forbidden" would confirm to a stranger holding a
         // copied link that the activity exists at all.
-        expect(err.getStatus()).toBe(404);
-        const serialized = JSON.stringify(err.getResponse());
+        expect((err as HttpException).getStatus()).toBe(404);
+        const serialized = JSON.stringify((err as HttpException).getResponse());
         expect(serialized).not.toContain('PRIVATE');
         expect(serialized).not.toContain('act-1');
       }
@@ -371,27 +381,36 @@ describe('ActivityAuthorizationService', () => {
    * These helpers read the two halves so the assertions below stay about the
    * rule being tested rather than about the wrapper's shape.
    */
-  const visibilityOf = (where: any): any => {
-    const and = where.AND as any[] | undefined;
+  const visibilityOf = (
+    where: Prisma.CrewActivityWhereInput,
+  ): Prisma.CrewActivityWhereInput => {
+    const and = where.AND;
     if (!Array.isArray(and)) return where;
     const inner = and.find((c) => !('creator' in c));
     return inner ?? where;
   };
-  const clausesOf = (where: any): any[] => {
+  const clausesOf = (
+    where: Prisma.CrewActivityWhereInput,
+  ): Prisma.CrewActivityWhereInput[] => {
     const v = visibilityOf(where);
-    return (v.OR as any[]) ?? [v];
+    return v.OR ?? [v];
   };
   /** The host-availability half, which every builder must carry. */
-  const hostFilterOf = (where: any): any =>
-    (where.AND as any[] | undefined)?.find((c) => 'creator' in c);
+  const hostFilterOf = (where: Prisma.CrewActivityWhereInput) =>
+    (where.AND as Prisma.CrewActivityWhereInput[] | undefined)?.find(
+      (c) => 'creator' in c,
+    );
 
   // A host inside their 30-day deletion window is hidden from everyone, so
   // their activities have to be too — enforced in the policy rather than at a
   // dozen call sites, one of which would eventually be missed.
   describe.each([
-    ['discoveryWhere', (u: any) => policy.discoveryWhere(u)],
-    ['sharedAudienceWhere', (u: any) => policy.sharedAudienceWhere(u)],
-    ['accessWhere', (u: any) => policy.accessWhere(u)],
+    ['discoveryWhere', (u: UserAuthContext | null) => policy.discoveryWhere(u)],
+    [
+      'sharedAudienceWhere',
+      (u: UserAuthContext | null) => policy.sharedAudienceWhere(u),
+    ],
+    ['accessWhere', (u: UserAuthContext | null) => policy.accessWhere(u)],
   ])('%s — host availability', (_name, build) => {
     it.each([
       ['a signed-in viewer', () => sameCollege],
@@ -504,7 +523,7 @@ describe('ActivityAuthorizationService', () => {
 
   describe('validInvitationWhere', () => {
     it('excludes revoked rows and non-live statuses at the query layer', () => {
-      const where: any = policy.validInvitationWhere('u1');
+      const where = policy.validInvitationWhere('u1');
       expect(where.inviteeId).toBe('u1');
       expect(where.revokedAt).toBeNull();
       expect(where.status).toEqual({ in: ['PENDING', 'ACCEPTED'] });

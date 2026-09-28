@@ -14,7 +14,6 @@ import { ModerationService } from '../../moderation/moderation.service';
 import { UpdateReportDto } from '../../moderation/dto/update-report.dto';
 import { BulkActionReportDto } from '../../moderation/dto/bulk-action-report.dto';
 import { AdminJwtGuard } from '../../common/guards/admin-jwt.guard';
-import { ReportStatus, ReportPriority } from '@prisma/client';
 
 @UseGuards(AdminJwtGuard)
 @Controller('admin/reports')
@@ -23,9 +22,10 @@ export class AdminReportsController {
 
   @Get()
   async listReports(
-    @Query('status') status?: ReportStatus,
-    @Query('targetType') targetType?: any,
-    @Query('priority') priority?: ReportPriority,
+    // Plain strings, as a query string is: the service validates them.
+    @Query('status') status?: string,
+    @Query('targetType') targetType?: string,
+    @Query('priority') priority?: string,
     @Query('reporterId') reporterId?: string,
     @Query('search') search?: string,
     @Query('page') page?: string,

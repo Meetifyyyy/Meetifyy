@@ -1,19 +1,33 @@
 jest.mock('../email/email.service');
 jest.mock('../common/utils/sanitize-html.util', () => ({
-  sanitizeUserHtml: jest.fn((str) => str),
-  sanitizePlainText: jest.fn((str) => str),
-  htmlToPlainText: jest.fn((str) => str),
+  sanitizeUserHtml: jest.fn((str: string) => str),
+  sanitizePlainText: jest.fn((str: string) => str),
+  htmlToPlainText: jest.fn((str: string) => str),
 }));
 
 import { ForbiddenException } from '@nestjs/common';
+import type { Request, Response } from 'express';
 import { AuthController } from './auth.controller';
+import { stub } from '../common/testing/stub';
+import type { AuthService } from './auth.service';
+import type { EmailService } from '../email/email.service';
+import type { RateLimitService } from '../common/rate-limit/rate-limit.service';
+import type { UserSessionService } from './session/user-session.service';
+import type { AuthenticatedUser } from '../common/types/authenticated-request';
+
+/** The body revokeAllSessions accepts. */
+type RevokeBody = Parameters<AuthController['revokeAllSessions']>[3];
 
 describe('AuthController — Security / Email Notification Spoofing Prevention', () => {
   let controller: AuthController;
-  let authService: any;
-  let emailService: any;
-  let rateLimit: any;
-  let sessions: any;
+  let authService: Record<string, jest.Mock>;
+  let emailService: {
+    sendWelcomeEmail: jest.Mock;
+    sendNewLoginEmail: jest.Mock;
+    sendPasswordChangedEmail: jest.Mock;
+  };
+  let rateLimit: { consume: jest.Mock; check: jest.Mock; penalize: jest.Mock };
+  let sessions: Record<string, jest.Mock>;
 
   beforeEach(() => {
     authService = {};
@@ -44,10 +58,10 @@ describe('AuthController — Security / Email Notification Spoofing Prevention',
       storeProviderRefresh: jest.fn().mockResolvedValue(undefined),
     };
     controller = new AuthController(
-      authService,
-      emailService,
-      rateLimit,
-      sessions,
+      stub<AuthService>(authService),
+      stub<EmailService>(emailService),
+      stub<RateLimitService>(rateLimit),
+      stub<UserSessionService>(sessions),
     );
   });
 
@@ -76,7 +90,7 @@ describe('AuthController — Security / Email Notification Spoofing Prevention',
 
   it('rejects triggering login notification email for another recipient', async () => {
     const user = { id: 'user-1', email: 'attacker@example.com' };
-    const req: any = { headers: {}, socket: {} };
+    const req = stub<Request>({ headers: {}, socket: {} });
     await expect(
       controller.triggerLoginEmail(
         { email: 'victim@company.com', name: 'Victim' },
@@ -89,7 +103,7 @@ describe('AuthController — Security / Email Notification Spoofing Prevention',
 
   it('rejects triggering password-changed email for another recipient', async () => {
     const user = { id: 'user-1', email: 'attacker@example.com' };
-    const req: any = { headers: {}, socket: {} };
+    const req = stub<Request>({ headers: {}, socket: {} });
     await expect(
       controller.triggerPasswordChangedEmail(
         { email: 'victim@company.com', name: 'Victim' },
@@ -111,9 +125,12 @@ describe('AuthController — Security / Email Notification Spoofing Prevention',
  * it may be the one at fault — so nothing is spared.
  */
 describe('AuthController — session revocation scope', () => {
-  let controller: any;
-  let sessions: any;
-  let res: any;
+  let controller: AuthController;
+  let sessions: {
+    revokeAllForUser: jest.Mock;
+    sessionIdForRefreshToken: jest.Mock;
+  };
+  let res: { cookie: jest.Mock; clearCookie: jest.Mock };
 
   /**
    * The session is identified by `mf_sid`, not by the refresh cookie: the
@@ -122,10 +139,11 @@ describe('AuthController — session revocation scope', () => {
    * all. Deriving the current session from it answered "none" every time,
    * which made "sign out other devices" sign the caller out too.
    */
-  const req = (sessionId?: string) => ({
-    cookies: sessionId ? { mf_sid: sessionId } : {},
-    headers: {},
-  });
+  const req = (sessionId?: string) =>
+    stub<Request>({
+      cookies: sessionId ? { mf_sid: sessionId } : {},
+      headers: {},
+    });
 
   beforeEach(() => {
     sessions = {
@@ -134,20 +152,20 @@ describe('AuthController — session revocation scope', () => {
     };
     res = { cookie: jest.fn(), clearCookie: jest.fn() };
     controller = new AuthController(
-      {} as any,
-      {} as any,
-      { consume: jest.fn(), penalize: jest.fn() } as any,
-      sessions,
+      stub<AuthService>(),
+      stub<EmailService>(),
+      stub<RateLimitService>({ consume: jest.fn(), penalize: jest.fn() }),
+      stub<UserSessionService>(sessions),
     );
   });
 
-  const user = { id: 'u1' } as any;
+  const user = stub<AuthenticatedUser>({ id: 'u1' });
 
   it("defaults to sparing the caller's own session", async () => {
     await controller.revokeAllSessions(
       user,
-      req('current-session') as any,
-      res,
+      req('current-session'),
+      stub<Response>(res),
     );
     expect(sessions.revokeAllForUser).toHaveBeenCalledWith(
       'u1',
@@ -161,8 +179,8 @@ describe('AuthController — session revocation scope', () => {
   it("spares the caller's session for scope 'others'", async () => {
     await controller.revokeAllSessions(
       user,
-      req('current-session') as any,
-      res,
+      req('current-session'),
+      stub<Response>(res),
       {
         scope: 'others',
       },
@@ -178,8 +196,8 @@ describe('AuthController — session revocation scope', () => {
   it("spares nothing for scope 'all', and clears this browser's cookies", async () => {
     await controller.revokeAllSessions(
       user,
-      req('current-session') as any,
-      res,
+      req('current-session'),
+      stub<Response>(res),
       {
         scope: 'all',
       },
@@ -197,8 +215,8 @@ describe('AuthController — session revocation scope', () => {
   it("does not even look up the current session for scope 'all'", async () => {
     await controller.revokeAllSessions(
       user,
-      req('current-session') as any,
-      res,
+      req('current-session'),
+      stub<Response>(res),
       {
         scope: 'all',
       },
@@ -209,11 +227,12 @@ describe('AuthController — session revocation scope', () => {
   it('treats an unrecognised scope as "others", never as "all"', async () => {
     await controller.revokeAllSessions(
       user,
-      req('current-session') as any,
-      res,
+      req('current-session'),
+      stub<Response>(res),
       {
-        scope: 'everything' as any,
-      },
+        // Deliberately outside the declared union: the body is client input.
+        scope: 'everything',
+      } as unknown as RevokeBody,
     );
     expect(sessions.revokeAllForUser).toHaveBeenCalledWith(
       'u1',
@@ -225,7 +244,11 @@ describe('AuthController — session revocation scope', () => {
 
   it('still works when there is no refresh cookie to identify', async () => {
     sessions.sessionIdForRefreshToken.mockResolvedValue(null);
-    const result = await controller.revokeAllSessions(user, req() as any, res);
+    const result = await controller.revokeAllSessions(
+      user,
+      req(),
+      stub<Response>(res),
+    );
     expect(sessions.revokeAllForUser).toHaveBeenCalledWith(
       'u1',
       expect.anything(),
@@ -248,15 +271,16 @@ describe('AuthController — session revocation scope', () => {
  * its own and leave a changed password with somebody else's session still live.
  */
 describe('AuthController — change password', () => {
-  let controller: any;
-  let authService: any;
-  let sessions: any;
+  let controller: AuthController;
+  let authService: { changePassword: jest.Mock };
+  let sessions: { revokeAllForUser: jest.Mock };
 
-  const user = { id: 'u1' } as any;
-  const req = (sid = 'this-device') => ({
-    cookies: { mf_sid: sid },
-    headers: {},
-  });
+  const user = stub<AuthenticatedUser>({ id: 'u1' });
+  const req = (sid = 'this-device') =>
+    stub<Request>({
+      cookies: { mf_sid: sid },
+      headers: {},
+    });
 
   beforeEach(() => {
     authService = {
@@ -264,10 +288,10 @@ describe('AuthController — change password', () => {
     };
     sessions = { revokeAllForUser: jest.fn().mockResolvedValue(2) };
     controller = new AuthController(
-      authService,
-      {} as any,
-      { consume: jest.fn(), penalize: jest.fn() } as any,
-      sessions,
+      stub<AuthService>(authService),
+      stub<EmailService>(),
+      stub<RateLimitService>({ consume: jest.fn(), penalize: jest.fn() }),
+      stub<UserSessionService>(sessions),
     );
   });
 
@@ -275,7 +299,7 @@ describe('AuthController — change password', () => {
     const result = await controller.changePassword(
       { currentPassword: 'old-one', newPassword: 'a-new-one' },
       user,
-      req() as any,
+      req(),
     );
 
     expect(authService.changePassword).toHaveBeenCalledWith(
@@ -290,7 +314,7 @@ describe('AuthController — change password', () => {
     await controller.changePassword(
       { currentPassword: 'old-one', newPassword: 'a-new-one' },
       user,
-      req('this-device') as any,
+      req('this-device'),
     );
     expect(sessions.revokeAllForUser).toHaveBeenCalledWith(
       'u1',
@@ -306,7 +330,7 @@ describe('AuthController — change password', () => {
       controller.changePassword(
         { currentPassword: 'wrong', newPassword: 'a-new-one' },
         user,
-        req() as any,
+        req(),
       ),
     ).rejects.toThrow('wrong password');
 

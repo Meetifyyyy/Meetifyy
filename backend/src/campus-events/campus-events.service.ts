@@ -113,6 +113,14 @@ function presentEventCreator<T extends { creator?: unknown }>(event: T): T {
   };
 }
 
+/** A page of a campus event scope, as served and as cached for 30 s. */
+export interface CampusEventPage {
+  events: Array<
+    Prisma.CampusEventGetPayload<{ select: typeof EVENT_LIST_SELECT }>
+  >;
+  nextCursor: string | undefined;
+}
+
 @Injectable()
 export class CampusEventsService {
   private readonly logger = new Logger(CampusEventsService.name);
@@ -263,7 +271,7 @@ export class CampusEventsService {
     if (this.redis) {
       try {
         const cached = await this.redis.get(cacheKey);
-        if (cached) return JSON.parse(cached);
+        if (cached) return JSON.parse(cached) as CampusEventPage;
       } catch {
         /* ignore */
       }
@@ -273,9 +281,12 @@ export class CampusEventsService {
     this.autoExpire(campusId);
 
     const now = new Date();
-    const baseWhere: any = { campusId, deletedAt: null };
-    let where: any;
-    let orderBy: any;
+    const baseWhere: Prisma.CampusEventWhereInput = {
+      campusId,
+      deletedAt: null,
+    };
+    let where: Prisma.CampusEventWhereInput;
+    let orderBy: Prisma.CampusEventOrderByWithRelationInput[];
 
     if (scope === 'upcoming') {
       where = { ...baseWhere, status: 'PUBLISHED', startTime: { gt: now } };
@@ -360,7 +371,7 @@ export class CampusEventsService {
 
     // No `presentEventCreator` here: the list no longer selects `creator`, so
     // there is no identity to substitute. The single-event read still does.
-    const response = { events: pageRows, nextCursor };
+    const response: CampusEventPage = { events: pageRows, nextCursor };
     if (this.redis) {
       this.redis.setex(cacheKey, 30, JSON.stringify(response)).catch(() => {});
       this.registerListCacheKey(campusId, cacheKey);
@@ -404,7 +415,7 @@ export class CampusEventsService {
 
     // Reflect time-derived expiry immediately in the single-item view.
     if (event.status === 'PUBLISHED' && event.endTime < new Date()) {
-      (event as any).status = 'EXPIRED';
+      event.status = 'EXPIRED';
       this.autoExpire(event.campusId);
     }
     return event;
@@ -456,7 +467,7 @@ export class CampusEventsService {
     const initialStatus =
       dto.publish && endTime >= new Date() ? 'PUBLISHED' : 'DRAFT';
 
-    let created: any;
+    let created;
     try {
       created = await this.prisma.campusEvent.create({
         data: {
@@ -538,11 +549,15 @@ export class CampusEventsService {
   async update(userId: string, eventId: string, dto: UpdateCampusEventDto) {
     const { event } = await this.requireOwnedEvent(userId, eventId);
 
-    const data: any = {};
+    const data: Prisma.CampusEventUpdateInput = {};
+    // Kept beside `data` so the failure cleanup below reads a plain value.
+    let posterKey: string | null | undefined;
     if (dto.title !== undefined) data.title = dto.title;
     if (dto.description !== undefined) data.description = dto.description;
-    if (dto.posterUrl !== undefined)
-      data.posterUrl = await this.resolvePosterKey(dto.posterUrl, userId);
+    if (dto.posterUrl !== undefined) {
+      posterKey = await this.resolvePosterKey(dto.posterUrl, userId);
+      data.posterUrl = posterKey;
+    }
     if (dto.hostedBy !== undefined) data.hostedBy = dto.hostedBy;
     if (dto.venue !== undefined) {
       if (!dto.venue.trim())
@@ -571,7 +586,7 @@ export class CampusEventsService {
       data.endTime = endTime;
     }
 
-    let updated: any;
+    let updated;
     try {
       updated = await this.prisma.campusEvent.update({
         where: { id: eventId },
@@ -579,9 +594,9 @@ export class CampusEventsService {
         select: EVENT_SELECT,
       });
     } catch (err) {
-      if (data.posterUrl) {
+      if (posterKey) {
         this.mediaCleanupService
-          ?.discardFailedNewUpload(data.posterUrl, userId)
+          ?.discardFailedNewUpload(posterKey, userId)
           .catch(() => {});
       }
       throw err;
@@ -593,7 +608,7 @@ export class CampusEventsService {
       previous: event.posterUrl,
       next: updated.posterUrl,
       ownerId: userId,
-      submitted: data.posterUrl !== undefined,
+      submitted: posterKey !== undefined,
     });
 
     await this.invalidateCampus(event.campusId);

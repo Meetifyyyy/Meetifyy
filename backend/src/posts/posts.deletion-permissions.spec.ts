@@ -1,5 +1,7 @@
 import { ForbiddenException } from '@nestjs/common';
 import { ContentDeletionAuthorizer } from './content-deletion.authorizer';
+import { stub } from '../common/testing/stub';
+import type { PrismaService } from '../prisma/prisma.service';
 
 /**
  * Who may delete whose posts and comments inside a community.
@@ -18,7 +20,11 @@ describe('Content deletion permissions', () => {
   const COMMUNITY = 'c1';
   const OWNER = 'owner-1';
 
-  let prisma: any;
+  /** The Prisma surface; single lookups are re-pointed per case. */
+  let prisma: {
+    community: { findUnique: jest.Mock; findMany: jest.Mock };
+    communityMember: { findUnique: jest.Mock; findMany: jest.Mock };
+  };
   let authorizer: ContentDeletionAuthorizer;
 
   /** roles: userId -> role row, or absent for "no membership row". */
@@ -33,7 +39,7 @@ describe('Content deletion permissions', () => {
    */
   const setup = (
     roles: Record<string, 'OWNER' | 'MODERATOR' | 'MEMBER'>,
-    commOver: any = {},
+    commOver: { deletedAt?: Date | null } = {},
   ) => {
     const comm = {
       id: COMMUNITY,
@@ -44,31 +50,45 @@ describe('Content deletion permissions', () => {
     };
     prisma = {
       community: {
-        findUnique: jest.fn(async () => comm),
-        findMany: jest.fn(async () =>
-          comm.deletedAt ? [] : [{ id: comm.id, ownerId: comm.ownerId }],
+        findUnique: jest.fn(() => Promise.resolve(comm)),
+        findMany: jest.fn(() =>
+          Promise.resolve(
+            comm.deletedAt ? [] : [{ id: comm.id, ownerId: comm.ownerId }],
+          ),
         ),
       },
       communityMember: {
-        findUnique: jest.fn(async ({ where }: any) => {
-          const role = roles[where.userId_communityId.userId];
-          return role ? { role } : null;
-        }),
-        findMany: jest.fn(async ({ where }: any) => {
-          const wanted: string[] =
-            where.userId?.in ??
-            (where.userId ? [where.userId] : Object.keys(roles));
-          return wanted
-            .filter((uid) => roles[uid])
-            .map((uid) => ({
-              communityId: COMMUNITY,
-              userId: uid,
-              role: roles[uid],
-            }));
-        }),
+        findUnique: jest.fn(
+          ({
+            where,
+          }: {
+            where: { userId_communityId: { userId: string } };
+          }) => {
+            const role = roles[where.userId_communityId.userId];
+            return Promise.resolve(role ? { role } : null);
+          },
+        ),
+        findMany: jest.fn(
+          ({ where }: { where: { userId?: string | { in?: string[] } } }) => {
+            const userId = where.userId;
+            const wanted = ((typeof userId === 'object'
+              ? userId.in
+              : undefined) ??
+              (userId ? [userId] : Object.keys(roles))) as string[];
+            return Promise.resolve(
+              wanted
+                .filter((uid) => roles[uid])
+                .map((uid) => ({
+                  communityId: COMMUNITY,
+                  userId: uid,
+                  role: roles[uid],
+                })),
+            );
+          },
+        ),
       },
     };
-    authorizer = new ContentDeletionAuthorizer(prisma);
+    authorizer = new ContentDeletionAuthorizer(stub<PrismaService>(prisma));
   };
 
   const may = (
@@ -247,10 +267,10 @@ describe('Content deletion permissions', () => {
     });
 
     it('does not look up author roles when the viewer moderates nothing', async () => {
-      prisma.community.findMany = jest.fn(async () => [
-        { id: COMMUNITY, ownerId: OWNER },
-      ]);
-      prisma.communityMember.findMany = jest.fn(async () => []);
+      prisma.community.findMany = jest.fn(() =>
+        Promise.resolve([{ id: COMMUNITY, ownerId: OWNER }]),
+      );
+      prisma.communityMember.findMany = jest.fn(() => Promise.resolve([]));
       await authorizer.canDeleteEach('member', items);
       // One call: the viewer's own memberships. No author-role lookup, because
       // a member's answer never depends on who wrote the content.
@@ -258,13 +278,16 @@ describe('Content deletion permissions', () => {
     });
 
     it('protects an owner who has no membership row', async () => {
-      prisma.community.findMany = jest.fn(async () => [
-        { id: COMMUNITY, ownerId: OWNER },
-      ]);
-      prisma.communityMember.findMany = jest.fn(async ({ where }: any) =>
-        where.userId === 'mod'
-          ? [{ communityId: COMMUNITY, role: 'MODERATOR' }]
-          : [],
+      prisma.community.findMany = jest.fn(() =>
+        Promise.resolve([{ id: COMMUNITY, ownerId: OWNER }]),
+      );
+      prisma.communityMember.findMany = jest.fn(
+        ({ where }: { where: { userId?: unknown } }) =>
+          Promise.resolve(
+            where.userId === 'mod'
+              ? [{ communityId: COMMUNITY, role: 'MODERATOR' }]
+              : [],
+          ),
       );
       const out = await authorizer.canDeleteEach('mod', [
         { authorId: OWNER, communityId: COMMUNITY },

@@ -54,7 +54,7 @@ describe('secret-box', () => {
   it.each([null, undefined, '', 'garbage', 'v1.only.three'])(
     'returns null for malformed input %p',
     (input) => {
-      expect(openSecret(input as any)).toBeNull();
+      expect(openSecret(input)).toBeNull();
     },
   );
 });

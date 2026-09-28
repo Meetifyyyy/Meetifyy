@@ -4,7 +4,10 @@ import { ActivityAuthorizationService } from './activity-authorization.service';
 import { ActivityDiscussionService } from './discussion/activity-discussion.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
-import { NotificationFactory } from '../notifications/notification.factory';
+import {
+  NotificationFactory,
+  type CreateNotificationDto,
+} from '../notifications/notification.factory';
 import { BlocksService } from '../users/blocks.service';
 import { DomainEventService } from '../events/domain-event.service';
 import { RedisService } from '../redis/redis.service';
@@ -23,15 +26,65 @@ describe('Activity join → host notification', () => {
   const HOST = 'host-1';
   const JOINER = 'user-2';
 
+  /** The activity row the join path reads. */
+  type ActivityRow = {
+    id: string;
+    creatorId: string;
+    collegeId: string;
+    visibility: string;
+    status: string;
+    deletedAt: Date | null;
+    startDate: Date;
+    title: string;
+    coverImage: string | null;
+    coverColor: string | null;
+    maxMembers: number | null;
+    participationType: string;
+    members: unknown[];
+    invitations: unknown[];
+    _count: { members: number };
+  };
+
   let service: ActivitiesService;
-  let prisma: any;
-  let notifications: { createNotification: jest.Mock };
+  let prisma: ReturnType<typeof makePrisma>;
+  let notifications: {
+    createNotification: jest.Mock<Promise<unknown>, [CreateNotificationDto]>;
+  };
   let factory: NotificationFactory;
-  let activityRow: any;
+  let activityRow: ActivityRow;
 
   // Lets the assertions run after the setImmediate the join schedules its
   // notification on, without coupling them to a timer.
   const flush = () => new Promise((resolve) => setImmediate(resolve));
+
+  const makePrisma = () => ({
+    crewActivity: {
+      findUnique: jest.fn(() => Promise.resolve(activityRow)),
+      findFirst: jest.fn(() => Promise.resolve(activityRow)),
+    },
+    crewActivityMember: {
+      findUnique: jest.fn(() => Promise.resolve(null)),
+      findMany: jest.fn(() => Promise.resolve([])),
+      deleteMany: jest.fn(() => Promise.resolve({ count: 1 })),
+    },
+    user: {
+      findUnique: jest.fn(({ where }: { where: { id: string } }) =>
+        Promise.resolve({
+          id: where.id,
+          collegeId: COLLEGE,
+          username: where.id === JOINER ? 'ananya' : 'host',
+          displayName: where.id === JOINER ? 'Ananya S' : 'Host',
+          avatar: 'avatars/ananya.webp',
+        }),
+      ),
+    },
+    activityInvitation: {
+      count: jest.fn(() => Promise.resolve(0)),
+      findMany: jest.fn(() => Promise.resolve([])),
+    },
+    // xmax = 0 → the row was genuinely INSERTed, i.e. a real join.
+    $queryRaw: jest.fn(() => Promise.resolve([{ inserted: true }])),
+  });
 
   beforeEach(async () => {
     activityRow = {
@@ -52,34 +105,13 @@ describe('Activity join → host notification', () => {
       _count: { members: 1 },
     };
 
-    prisma = {
-      crewActivity: {
-        findUnique: jest.fn(async () => activityRow),
-        findFirst: jest.fn(async () => activityRow),
-      },
-      crewActivityMember: {
-        findUnique: jest.fn(async () => null),
-        findMany: jest.fn(async () => []),
-        deleteMany: jest.fn(async () => ({ count: 1 })),
-      },
-      user: {
-        findUnique: jest.fn(async ({ where }: any) => ({
-          id: where.id,
-          collegeId: COLLEGE,
-          username: where.id === JOINER ? 'ananya' : 'host',
-          displayName: where.id === JOINER ? 'Ananya S' : 'Host',
-          avatar: 'avatars/ananya.webp',
-        })),
-      },
-      activityInvitation: {
-        count: jest.fn(async () => 0),
-        findMany: jest.fn(async () => []),
-      },
-      // xmax = 0 → the row was genuinely INSERTed, i.e. a real join.
-      $queryRaw: jest.fn(async () => [{ inserted: true }]),
-    };
+    prisma = makePrisma();
 
-    notifications = { createNotification: jest.fn(async () => ({})) };
+    notifications = {
+      createNotification: jest.fn<Promise<unknown>, [CreateNotificationDto]>(
+        () => Promise.resolve({}),
+      ),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -92,7 +124,7 @@ describe('Activity join → host notification', () => {
         { provide: NotificationsService, useValue: notifications },
         {
           provide: BlocksService,
-          useValue: { getExcludedUserIds: jest.fn(async () => []) },
+          useValue: { getExcludedUserIds: jest.fn(() => Promise.resolve([])) },
         },
         { provide: DomainEventService, useValue: { emit: jest.fn() } },
         { provide: RedisService, useValue: { getClient: () => null } },
@@ -148,7 +180,7 @@ describe('Activity join → host notification', () => {
     expect(notifications.createNotification).not.toHaveBeenCalled();
   });
 
-  it('never reports a join as a pending request', async () => {
+  it('never reports a join as a pending request', () => {
     const dto = factory.createActivityJoin(
       { id: JOINER, username: 'ananya', displayName: 'Ananya S', avatar: null },
       { id: 'act-1', title: 'Sunset badminton', coverImage: null },
@@ -156,11 +188,21 @@ describe('Activity join → host notification', () => {
     );
     expect(dto.body).not.toMatch(/request/i);
     expect(dto.body).toBe('ananya joined your activity.');
+
+    return Promise.resolve();
   });
 
+  // Probes for members that must NOT exist, so the service is viewed as a
+  // plain record: its own type cannot name them.
   it('has no request-to-join entry point left on the service', () => {
-    expect((service as any).requestToJoinActivity).toBeUndefined();
-    expect((service as any).acceptJoinRequest).toBeUndefined();
-    expect((service as any).rejectJoinRequest).toBeUndefined();
+    expect(
+      (service as unknown as Record<string, unknown>).requestToJoinActivity,
+    ).toBeUndefined();
+    expect(
+      (service as unknown as Record<string, unknown>).acceptJoinRequest,
+    ).toBeUndefined();
+    expect(
+      (service as unknown as Record<string, unknown>).rejectJoinRequest,
+    ).toBeUndefined();
   });
 });

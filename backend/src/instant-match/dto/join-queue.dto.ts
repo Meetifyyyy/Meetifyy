@@ -26,6 +26,16 @@ export interface JoinQueueDto {
  *  after a match falls through. Persisted on the MatchSession. */
 export type QueueSnapshot = Omit<JoinQueueDto, 'userId'>;
 
+/**
+ * The fields of an object payload, or null for anything else. Arrays count as
+ * objects here, as they always have: their named fields simply read as absent.
+ */
+function fieldsOf(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object'
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
 function isFiniteNumber(v: unknown): v is number {
   return typeof v === 'number' && Number.isFinite(v);
 }
@@ -37,8 +47,12 @@ function isFiniteNumber(v: unknown): v is number {
  * can point the user at the step that needs fixing, rather than failing
  * anonymously deeper down in Prisma.
  */
-export function parseJoinQueuePayload(userId: string, raw: any): JoinQueueDto {
-  if (!raw || typeof raw !== 'object') {
+export function parseJoinQueuePayload(
+  userId: string,
+  payload: unknown,
+): JoinQueueDto {
+  const raw = fieldsOf(payload);
+  if (!raw) {
     throw new BadRequestException('Malformed request');
   }
 
@@ -67,8 +81,7 @@ export function parseJoinQueuePayload(userId: string, raw: any): JoinQueueDto {
 
   // `location` is optional; an absent or malformed block degrades to "no
   // location" rather than rejecting the whole join.
-  const location =
-    raw.location && typeof raw.location === 'object' ? raw.location : {};
+  const location = fieldsOf(raw.location) ?? {};
 
   let area: string | null = null;
   if (typeof location.area === 'string' && location.area.trim()) {
@@ -80,8 +93,8 @@ export function parseJoinQueuePayload(userId: string, raw: any): JoinQueueDto {
   }
 
   let gps: GpsPoint | null = null;
-  const rawGps = location.gps;
-  if (rawGps && typeof rawGps === 'object') {
+  const rawGps = fieldsOf(location.gps);
+  if (rawGps) {
     const { latitude, longitude } = rawGps;
     if (!isFiniteNumber(latitude) || !isFiniteNumber(longitude)) {
       throw new BadRequestException('Invalid coordinates');
@@ -108,21 +121,23 @@ export function parseJoinQueuePayload(userId: string, raw: any): JoinQueueDto {
   };
 }
 
-export function parseMatchRespondPayload(raw: any): {
+export function parseMatchRespondPayload(payload: unknown): {
   matchId: string;
   action: 'accept' | 'decline';
 } {
-  if (!raw || typeof raw !== 'object') {
+  const raw = fieldsOf(payload);
+  if (!raw) {
     throw new BadRequestException('Malformed request');
   }
   const matchId = typeof raw.matchId === 'string' ? raw.matchId.trim() : '';
   if (!matchId) {
     throw new BadRequestException('Missing match id');
   }
-  if (raw.action !== 'accept' && raw.action !== 'decline') {
+  const action = raw.action;
+  if (action !== 'accept' && action !== 'decline') {
     throw new BadRequestException('Invalid action');
   }
-  return { matchId, action: raw.action };
+  return { matchId, action };
 }
 
 export function toQueueSnapshot(dto: JoinQueueDto): QueueSnapshot {
@@ -133,11 +148,14 @@ export function toQueueSnapshot(dto: JoinQueueDto): QueueSnapshot {
 /** Reads a snapshot back off a MatchSession's JSON column, tolerating
  *  rows written before the column existed. */
 export function readQueueSnapshot(value: unknown): QueueSnapshot | null {
-  if (!value || typeof value !== 'object') return null;
-  const v = value as Record<string, unknown>;
+  const v = fieldsOf(value);
+  if (!v) return null;
   if (typeof v.activity !== 'string' || typeof v.timePreference !== 'string')
     return null;
   if (typeof v.campus !== 'string') return null;
+  const gps = fieldsOf(v.gps);
+  const latitude = gps?.latitude;
+  const longitude = gps?.longitude;
   return {
     campus: v.campus,
     activity: v.activity,
@@ -146,14 +164,8 @@ export function readQueueSnapshot(value: unknown): QueueSnapshot | null {
       typeof v.optionalDetail === 'string' ? v.optionalDetail : null,
     area: typeof v.area === 'string' ? v.area : null,
     gps:
-      v.gps &&
-      typeof v.gps === 'object' &&
-      isFiniteNumber((v.gps as any).latitude) &&
-      isFiniteNumber((v.gps as any).longitude)
-        ? {
-            latitude: (v.gps as any).latitude,
-            longitude: (v.gps as any).longitude,
-          }
+      isFiniteNumber(latitude) && isFiniteNumber(longitude)
+        ? { latitude, longitude }
         : null,
   };
 }

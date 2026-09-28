@@ -1,5 +1,6 @@
 import { VerificationStatus } from '@prisma/client';
 import { VerificationAccessService } from '../verification-access.service';
+import type { Stub } from '../../testing/stub';
 
 /**
  * Test double for the messaging verification policy.
@@ -13,32 +14,35 @@ export function createVerificationAccessMock(ineligibleUserIds: string[] = []) {
   const ineligible = new Set(ineligibleUserIds);
   const isEligible = (id: string) => !ineligible.has(id);
 
-  return {
+  const mock = {
     isEnforcementEnabled: jest.fn(() => true),
     isEligibleStatus: jest.fn(
       (status: VerificationStatus | null | undefined) =>
         status === VerificationStatus.VERIFIED,
     ),
-    isUserEligible: jest.fn(async (userId: string) => isEligible(userId)),
-    getEligibilityMap: jest.fn(async (userIds: string[]) => {
+    isUserEligible: jest.fn((userId: string) =>
+      Promise.resolve(isEligible(userId)),
+    ),
+    getEligibilityMap: jest.fn((userIds: string[]) => {
       const map = new Map<string, boolean>();
       (userIds || [])
         .filter(Boolean)
         .forEach((id) => map.set(id, isEligible(id)));
-      return map;
+      return Promise.resolve(map);
     }),
-    getIneligibleUserIds: jest.fn(async (userIds: string[]) =>
-      (userIds || []).filter((id) => id && !isEligible(id)),
+    getIneligibleUserIds: jest.fn((userIds: string[]) =>
+      Promise.resolve((userIds || []).filter((id) => id && !isEligible(id))),
     ),
     // The query-layer form of the same rule, for suites that assert on an
     // emitted `where` rather than on a thrown refusal.
     eligibleUserWhere: jest.fn(() => ({
       verificationStatus: VerificationStatus.VERIFIED,
     })),
-    assertUsersEligible: jest.fn(async () => {}),
-    assertCanMessageInConversation: jest.fn(async () => {}),
-    announceStatusChange: jest.fn(async () => {}),
-  };
+    assertUsersEligible: jest.fn(() => Promise.resolve()),
+    assertCanMessageInConversation: jest.fn(() => Promise.resolve()),
+    announceStatusChange: jest.fn(() => Promise.resolve()),
+  } satisfies Stub<VerificationAccessService>;
+  return mock as typeof mock & VerificationAccessService;
 }
 
 /** Ready-made Nest provider for the double above. */

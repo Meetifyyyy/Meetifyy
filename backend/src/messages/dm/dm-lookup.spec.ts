@@ -23,26 +23,46 @@ describe('DmService — lookupExistingDM', () => {
   const ME = 'user-me';
   const THEM = 'user-them';
 
+  /** One `participants.some` filter in the lookup's `AND`. */
+  type ParticipantFilter = { userId?: string; [column: string]: unknown };
+  /** The DM lookup's `where`, as far as these assertions read it. */
+  type LookupWhere = {
+    type?: string;
+    AND: { participants: { some: ParticipantFilter } }[];
+  };
+  type ConversationRow = { id: string; publicId: string | null };
+
   let service: DmService;
-  let prisma: any;
+  let prisma: {
+    conversation: {
+      findFirst: jest.Mock<
+        Promise<ConversationRow | null>,
+        [{ where: LookupWhere }]
+      >;
+    };
+    conversationParticipant: { findMany: jest.Mock };
+  };
 
   const conversationWhereFor = () =>
     prisma.conversation.findFirst.mock.calls[0][0].where;
   /** The participant filter the query applies to a given user id. */
   const filterFor = (userId: string) =>
     conversationWhereFor()
-      .AND.map((c: any) => c.participants.some)
-      .find((s: any) => s.userId === userId);
+      .AND.map((c) => c.participants.some)
+      .find((s) => s.userId === userId);
 
   beforeEach(async () => {
     prisma = {
       conversation: {
-        findFirst: jest.fn(async () => ({
-          id: 'conv-internal',
-          publicId: 'conv-public',
-        })),
+        findFirst: jest.fn(
+          (_query: { where: LookupWhere }): Promise<ConversationRow | null> =>
+            Promise.resolve({
+              id: 'conv-internal',
+              publicId: 'conv-public',
+            }),
+        ),
       },
-      conversationParticipant: { findMany: jest.fn(async () => []) },
+      conversationParticipant: { findMany: jest.fn(() => Promise.resolve([])) },
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -57,7 +77,7 @@ describe('DmService — lookupExistingDM', () => {
         { provide: DomainEventService, useValue: { emit: jest.fn() } },
         {
           provide: MentionsService,
-          useValue: { sanitize: jest.fn(async () => []) },
+          useValue: { sanitize: jest.fn(() => Promise.resolve([])) },
         },
       ],
     }).compile();

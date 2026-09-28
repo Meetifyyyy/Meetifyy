@@ -5,6 +5,8 @@ import {
   BadRequestException,
   Optional,
 } from '@nestjs/common';
+import { stringField } from '../utils/type-guards.util';
+import { errorStack } from '../utils/error.util';
 import { domainToASCII } from 'node:url';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RedisService } from '../../redis/redis.service';
@@ -177,16 +179,16 @@ export class DomainValidatorService implements OnModuleInit {
         // C-5 fix: Always set a TTL on the HASH so removed domains don't persist
         // indefinitely if refreshDomainCache fails before the next scheduled run.
         pipeline.expire('cache:approved_domains', 300); // 5-minute safety TTL
-        await pipeline.exec().catch((err) => {
+        await pipeline.exec().catch((err: unknown) => {
           this.logger.warn(
-            `Redis sync error for approved domains: ${err.message}`,
+            `Redis sync error for approved domains: ${stringField(err, 'message')}`,
           );
         });
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       this.logger.error(
-        `Failed to refresh domain cache: ${err.message}`,
-        err.stack,
+        `Failed to refresh domain cache: ${stringField(err, 'message')}`,
+        errorStack(err),
       );
     }
   }
@@ -217,8 +219,11 @@ export class DomainValidatorService implements OnModuleInit {
       domain = domainOrEmail.includes('@')
         ? this.extractDomainFromEmail(domainOrEmail)
         : this.normalizeDomain(domainOrEmail);
-    } catch (err: any) {
-      return { isValid: false, reason: err.message || 'Invalid email format' };
+    } catch (err: unknown) {
+      return {
+        isValid: false,
+        reason: stringField(err, 'message') || 'Invalid email format',
+      };
     }
 
     // Refresh memory cache if TTL expired. Do it in the background and keep

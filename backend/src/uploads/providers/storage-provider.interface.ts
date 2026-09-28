@@ -1,3 +1,12 @@
+/**
+ * What storage holds for an object, in one shape whatever the backend. `null`
+ * from getMetadata means the object could not be found or read.
+ */
+export interface ObjectMetadata {
+  contentLength?: number;
+  contentType?: string;
+}
+
 export interface StorageProvider {
   /**
    * Generate a presigned URL for direct client uploads.
@@ -51,7 +60,7 @@ export interface StorageProvider {
   /**
    * Get metadata for a file.
    */
-  getMetadata(key: string): Promise<any>;
+  getMetadata(key: string): Promise<ObjectMetadata | null>;
 
   /**
    * Copy a file.
@@ -66,5 +75,11 @@ export interface StorageProvider {
   /**
    * List files in a folder.
    */
-  list(folder: string): Promise<any[]>;
+  list(folder: string): Promise<StoredObject[]>;
+}
+
+/** An entry in a folder listing: the S3 object shape, of which only these are read. */
+export interface StoredObject {
+  Key?: string;
+  Size?: number;
 }

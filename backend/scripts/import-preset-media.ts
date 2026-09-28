@@ -1,4 +1,8 @@
-import { S3Client, PutObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
+import {
+  S3Client,
+  PutObjectCommand,
+  HeadObjectCommand,
+} from '@aws-sdk/client-s3';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as dotenv from 'dotenv';
@@ -11,7 +15,10 @@ const R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID;
 const R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID;
 const R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY;
 const R2_BUCKET_NAME = process.env.R2_BUCKET_NAME || 'meetifyy-media';
-const R2_PUBLIC_URL = (process.env.R2_PUBLIC_URL || 'https://pub-8cd64731b2bc47deb8a54acbbbfa9c4b.r2.dev').replace(/\/+$/, '');
+const R2_PUBLIC_URL = (
+  process.env.R2_PUBLIC_URL ||
+  'https://pub-8cd64731b2bc47deb8a54acbbbfa9c4b.r2.dev'
+).replace(/\/+$/, '');
 
 if (!R2_ACCOUNT_ID || !R2_ACCESS_KEY_ID || !R2_SECRET_ACCESS_KEY) {
   console.error('Missing Cloudflare R2 credentials in backend/.env');
@@ -46,7 +53,15 @@ const SOURCE_IMAGES: SourceMediaItem[] = [
     title: 'Party Festival Crowd',
     theme: 'Party',
     category: 'Party',
-    tags: ['party', 'celebration', 'festival', 'concert', 'crowd', 'lights', 'nightlife'],
+    tags: [
+      'party',
+      'celebration',
+      'festival',
+      'concert',
+      'crowd',
+      'lights',
+      'nightlife',
+    ],
     sourceUrls: [
       'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=1200&q=80&auto=format',
     ],
@@ -76,7 +91,15 @@ const SOURCE_IMAGES: SourceMediaItem[] = [
     title: 'Social Rooftop Gathering',
     theme: 'Party',
     category: 'Party',
-    tags: ['party', 'rooftop', 'friends', 'drinks', 'social', 'hangout', 'evening'],
+    tags: [
+      'party',
+      'rooftop',
+      'friends',
+      'drinks',
+      'social',
+      'hangout',
+      'evening',
+    ],
     sourceUrls: [
       'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=1200&q=80&auto=format',
     ],
@@ -108,7 +131,15 @@ const SOURCE_IMAGES: SourceMediaItem[] = [
     title: 'Mountain Summit Vista',
     theme: 'Adventure',
     category: 'Adventure',
-    tags: ['adventure', 'mountain', 'summit', 'hiking', 'nature', 'view', 'explore'],
+    tags: [
+      'adventure',
+      'mountain',
+      'summit',
+      'hiking',
+      'nature',
+      'view',
+      'explore',
+    ],
     sourceUrls: [
       'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?w=1200&q=80&auto=format',
     ],
@@ -118,7 +149,15 @@ const SOURCE_IMAGES: SourceMediaItem[] = [
     title: 'Forest Hiking Trail',
     theme: 'Adventure',
     category: 'Adventure',
-    tags: ['adventure', 'trail', 'forest', 'trees', 'hiking', 'outdoors', 'trek'],
+    tags: [
+      'adventure',
+      'trail',
+      'forest',
+      'trees',
+      'hiking',
+      'outdoors',
+      'trek',
+    ],
     sourceUrls: [
       'https://images.unsplash.com/photo-1448375240586-882707db888b?w=1200&q=80&auto=format',
     ],
@@ -128,7 +167,15 @@ const SOURCE_IMAGES: SourceMediaItem[] = [
     title: 'Campfire Under Starlit Sky',
     theme: 'Adventure',
     category: 'Adventure',
-    tags: ['adventure', 'camping', 'campfire', 'bonfire', 'stars', 'night', 'wilderness'],
+    tags: [
+      'adventure',
+      'camping',
+      'campfire',
+      'bonfire',
+      'stars',
+      'night',
+      'wilderness',
+    ],
     sourceUrls: [
       'https://images.unsplash.com/photo-1510312305653-8ed496efae75?w=1200&q=80&auto=format',
     ],
@@ -138,7 +185,15 @@ const SOURCE_IMAGES: SourceMediaItem[] = [
     title: 'Scenic Road Trip Drive',
     theme: 'Adventure',
     category: 'Adventure',
-    tags: ['adventure', 'roadtrip', 'travel', 'drive', 'scenic', 'journey', 'mountains'],
+    tags: [
+      'adventure',
+      'roadtrip',
+      'travel',
+      'drive',
+      'scenic',
+      'journey',
+      'mountains',
+    ],
     sourceUrls: [
       'https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?w=1200&q=80&auto=format',
     ],
@@ -148,7 +203,15 @@ const SOURCE_IMAGES: SourceMediaItem[] = [
     title: 'Mountain Lake Kayak',
     theme: 'Adventure',
     category: 'Adventure',
-    tags: ['adventure', 'kayak', 'lake', 'water', 'paddle', 'nature', 'mountains'],
+    tags: [
+      'adventure',
+      'kayak',
+      'lake',
+      'water',
+      'paddle',
+      'nature',
+      'mountains',
+    ],
     sourceUrls: [
       'https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=1200&q=80&auto=format',
     ],
@@ -158,7 +221,15 @@ const SOURCE_IMAGES: SourceMediaItem[] = [
     title: 'Backpacker Exploring Canyon',
     theme: 'Adventure',
     category: 'Adventure',
-    tags: ['adventure', 'backpacker', 'canyon', 'explore', 'travel', 'hike', 'wild'],
+    tags: [
+      'adventure',
+      'backpacker',
+      'canyon',
+      'explore',
+      'travel',
+      'hike',
+      'wild',
+    ],
     sourceUrls: [
       'https://images.unsplash.com/photo-1476514525535-07fb3b4ae5f1?w=1200&q=80&auto=format',
     ],
@@ -170,7 +241,15 @@ const SOURCE_IMAGES: SourceMediaItem[] = [
     title: 'Quiet Library Bookstacks',
     theme: 'Study',
     category: 'Study',
-    tags: ['study', 'library', 'books', 'reading', 'quiet', 'learning', 'campus'],
+    tags: [
+      'study',
+      'library',
+      'books',
+      'reading',
+      'quiet',
+      'learning',
+      'campus',
+    ],
     sourceUrls: [
       'https://images.unsplash.com/photo-1521587760476-6c12a4b040da?w=1200&q=80&auto=format',
     ],
@@ -190,7 +269,15 @@ const SOURCE_IMAGES: SourceMediaItem[] = [
     title: 'Group Study Collaboration',
     theme: 'Study',
     category: 'Study',
-    tags: ['study', 'group', 'students', 'college', 'collaboration', 'workshop', 'learning'],
+    tags: [
+      'study',
+      'group',
+      'students',
+      'college',
+      'collaboration',
+      'workshop',
+      'learning',
+    ],
     sourceUrls: [
       'https://images.unsplash.com/photo-1522202176988-66273c2fd55f?w=1200&q=80&auto=format',
     ],
@@ -200,7 +287,15 @@ const SOURCE_IMAGES: SourceMediaItem[] = [
     title: 'University Grand Study Hall',
     theme: 'Study',
     category: 'Study',
-    tags: ['study', 'university', 'hall', 'campus', 'academic', 'college', 'exam'],
+    tags: [
+      'study',
+      'university',
+      'hall',
+      'campus',
+      'academic',
+      'college',
+      'exam',
+    ],
     sourceUrls: [
       'https://images.unsplash.com/photo-1541339907198-e08756dedf3f?w=1200&q=80&auto=format',
     ],
@@ -210,7 +305,15 @@ const SOURCE_IMAGES: SourceMediaItem[] = [
     title: 'Open Textbook & Highlighter',
     theme: 'Study',
     category: 'Study',
-    tags: ['study', 'textbook', 'reading', 'highlight', 'revision', 'exam', 'notes'],
+    tags: [
+      'study',
+      'textbook',
+      'reading',
+      'highlight',
+      'revision',
+      'exam',
+      'notes',
+    ],
     sourceUrls: [
       'https://images.unsplash.com/photo-1497633762265-9d179a990aa6?w=1200&q=80&auto=format',
     ],
@@ -252,7 +355,15 @@ const SOURCE_IMAGES: SourceMediaItem[] = [
     title: 'Barista Pour-Over Brew',
     theme: 'Coffee',
     category: 'Coffee',
-    tags: ['coffee', 'barista', 'pourover', 'brew', 'specialty', 'cafe', 'roast'],
+    tags: [
+      'coffee',
+      'barista',
+      'pourover',
+      'brew',
+      'specialty',
+      'cafe',
+      'roast',
+    ],
     sourceUrls: [
       'https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?w=1200&q=80&auto=format',
     ],
@@ -262,7 +373,14 @@ const SOURCE_IMAGES: SourceMediaItem[] = [
     title: 'Morning Coffee with Croissant',
     theme: 'Coffee',
     category: 'Coffee',
-    tags: ['coffee', 'croissant', 'bakery', 'morning', 'breakfast', 'cappuccino'],
+    tags: [
+      'coffee',
+      'croissant',
+      'bakery',
+      'morning',
+      'breakfast',
+      'cappuccino',
+    ],
     sourceUrls: [
       'https://images.unsplash.com/photo-1514432324607-a09d9b4aefdd?w=1200&q=80&auto=format',
     ],
@@ -272,7 +390,15 @@ const SOURCE_IMAGES: SourceMediaItem[] = [
     title: 'Refreshing Iced Coffee',
     theme: 'Coffee',
     category: 'Coffee',
-    tags: ['coffee', 'icedcoffee', 'coldbrew', 'summer', 'glass', 'drink', 'cafe'],
+    tags: [
+      'coffee',
+      'icedcoffee',
+      'coldbrew',
+      'summer',
+      'glass',
+      'drink',
+      'cafe',
+    ],
     sourceUrls: [
       'https://images.unsplash.com/photo-1517701604599-bb29b565090c?w=1200&q=80&auto=format',
     ],
@@ -282,7 +408,15 @@ const SOURCE_IMAGES: SourceMediaItem[] = [
     title: 'Coffee Date & Conversation',
     theme: 'Coffee',
     category: 'Coffee',
-    tags: ['coffee', 'friends', 'meetup', 'date', 'conversation', 'cups', 'together'],
+    tags: [
+      'coffee',
+      'friends',
+      'meetup',
+      'date',
+      'conversation',
+      'cups',
+      'together',
+    ],
     sourceUrls: [
       'https://images.unsplash.com/photo-1517256064527-09c73fc73e38?w=1200&q=80&auto=format',
     ],
@@ -294,7 +428,16 @@ const SOURCE_IMAGES: SourceMediaItem[] = [
     title: 'Sunlit Park Pathway',
     theme: 'Walk',
     category: 'Walk',
-    tags: ['walk', 'park', 'nature', 'trees', 'sunlight', 'path', 'morning', 'fresh'],
+    tags: [
+      'walk',
+      'park',
+      'nature',
+      'trees',
+      'sunlight',
+      'path',
+      'morning',
+      'fresh',
+    ],
     sourceUrls: [
       'https://images.unsplash.com/photo-1519331379826-f10be5486c6f?w=1200&q=80&auto=format',
     ],
@@ -304,7 +447,15 @@ const SOURCE_IMAGES: SourceMediaItem[] = [
     title: 'Golden Hour City Stroll',
     theme: 'Walk',
     category: 'Walk',
-    tags: ['walk', 'city', 'goldenhour', 'sunset', 'stroll', 'urban', 'evening'],
+    tags: [
+      'walk',
+      'city',
+      'goldenhour',
+      'sunset',
+      'stroll',
+      'urban',
+      'evening',
+    ],
     sourceUrls: [
       'https://images.unsplash.com/photo-1513635269975-59663e0ac1ad?w=1200&q=80&auto=format',
     ],
@@ -324,7 +475,16 @@ const SOURCE_IMAGES: SourceMediaItem[] = [
     title: 'Autumn Foliage Trail',
     theme: 'Walk',
     category: 'Walk',
-    tags: ['walk', 'autumn', 'fall', 'foliage', 'leaves', 'forest', 'trail', 'stroll'],
+    tags: [
+      'walk',
+      'autumn',
+      'fall',
+      'foliage',
+      'leaves',
+      'forest',
+      'trail',
+      'stroll',
+    ],
     sourceUrls: [
       'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=1200&q=80&auto=format',
     ],
@@ -334,7 +494,15 @@ const SOURCE_IMAGES: SourceMediaItem[] = [
     title: 'Waterfront Promenade Breeze',
     theme: 'Walk',
     category: 'Walk',
-    tags: ['walk', 'waterfront', 'ocean', 'promenade', 'breeze', 'coastal', 'view'],
+    tags: [
+      'walk',
+      'waterfront',
+      'ocean',
+      'promenade',
+      'breeze',
+      'coastal',
+      'view',
+    ],
     sourceUrls: [
       'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=1200&q=80&auto=format',
     ],
@@ -356,7 +524,15 @@ const SOURCE_IMAGES: SourceMediaItem[] = [
     title: 'Developer Code Editor Screen',
     theme: 'Coding',
     category: 'Coding',
-    tags: ['coding', 'code', 'developer', 'programming', 'software', 'tech', 'editor'],
+    tags: [
+      'coding',
+      'code',
+      'developer',
+      'programming',
+      'software',
+      'tech',
+      'editor',
+    ],
     sourceUrls: [
       'https://images.unsplash.com/photo-1555066931-4365d14bab8c?w=1200&q=80&auto=format',
     ],
@@ -366,7 +542,15 @@ const SOURCE_IMAGES: SourceMediaItem[] = [
     title: 'Multi-Monitor Developer Setup',
     theme: 'Coding',
     category: 'Coding',
-    tags: ['coding', 'workspace', 'monitors', 'desk', 'setup', 'tech', 'engineer'],
+    tags: [
+      'coding',
+      'workspace',
+      'monitors',
+      'desk',
+      'setup',
+      'tech',
+      'engineer',
+    ],
     sourceUrls: [
       'https://images.unsplash.com/photo-1517694712202-14dd9538aa97?w=1200&q=80&auto=format',
     ],
@@ -376,7 +560,15 @@ const SOURCE_IMAGES: SourceMediaItem[] = [
     title: 'Hackathon Team Sprint',
     theme: 'Coding',
     category: 'Coding',
-    tags: ['coding', 'hackathon', 'team', 'sprint', 'collaborate', 'tech', 'builders'],
+    tags: [
+      'coding',
+      'hackathon',
+      'team',
+      'sprint',
+      'collaborate',
+      'tech',
+      'builders',
+    ],
     sourceUrls: [
       'https://images.unsplash.com/photo-1531403009284-440f080d1e12?w=1200&q=80&auto=format',
     ],
@@ -386,7 +578,15 @@ const SOURCE_IMAGES: SourceMediaItem[] = [
     title: 'Dark Mode Terminal & Scripts',
     theme: 'Coding',
     category: 'Coding',
-    tags: ['coding', 'terminal', 'darkmode', 'bash', 'scripts', 'cli', 'devtools'],
+    tags: [
+      'coding',
+      'terminal',
+      'darkmode',
+      'bash',
+      'scripts',
+      'cli',
+      'devtools',
+    ],
     sourceUrls: [
       'https://images.unsplash.com/photo-1618401471353-b98aedd07871?w=1200&q=80&auto=format',
     ],
@@ -396,7 +596,16 @@ const SOURCE_IMAGES: SourceMediaItem[] = [
     title: 'Web Design & Frontend Development',
     theme: 'Coding',
     category: 'Coding',
-    tags: ['coding', 'frontend', 'ui', 'ux', 'web', 'javascript', 'react', 'design'],
+    tags: [
+      'coding',
+      'frontend',
+      'ui',
+      'ux',
+      'web',
+      'javascript',
+      'react',
+      'design',
+    ],
     sourceUrls: [
       'https://images.unsplash.com/photo-1507238691740-187a5b1d37b8?w=1200&q=80&auto=format',
     ],
@@ -406,7 +615,15 @@ const SOURCE_IMAGES: SourceMediaItem[] = [
     title: 'Tech Meetup & Code Workshop',
     theme: 'Coding',
     category: 'Coding',
-    tags: ['coding', 'meetup', 'workshop', 'learning', 'presentation', 'tech', 'community'],
+    tags: [
+      'coding',
+      'meetup',
+      'workshop',
+      'learning',
+      'presentation',
+      'tech',
+      'community',
+    ],
     sourceUrls: [
       'https://images.unsplash.com/photo-1515187029135-18ee286d815b?w=1200&q=80&auto=format',
     ],
@@ -487,7 +704,15 @@ const SOURCE_GIFS: SourceMediaItem[] = [
     title: 'Hiking Up Mountain Trail',
     theme: 'Adventure',
     category: 'Adventure',
-    tags: ['adventure', 'hiking', 'mountain', 'trail', 'trek', 'nature', 'climb'],
+    tags: [
+      'adventure',
+      'hiking',
+      'mountain',
+      'trail',
+      'trek',
+      'nature',
+      'climb',
+    ],
     sourceUrls: ['https://media.giphy.com/media/26u4cqiYI30juCOGY/giphy.gif'],
   },
   {
@@ -495,7 +720,15 @@ const SOURCE_GIFS: SourceMediaItem[] = [
     title: 'Campfire Night Flame',
     theme: 'Adventure',
     category: 'Adventure',
-    tags: ['adventure', 'campfire', 'bonfire', 'camping', 'warmth', 'night', 'flame'],
+    tags: [
+      'adventure',
+      'campfire',
+      'bonfire',
+      'camping',
+      'warmth',
+      'night',
+      'flame',
+    ],
     sourceUrls: ['https://media.giphy.com/media/3oEjI6SIIHBdRxXI40/giphy.gif'],
   },
   {
@@ -503,7 +736,15 @@ const SOURCE_GIFS: SourceMediaItem[] = [
     title: 'Road Trip Window Wind',
     theme: 'Adventure',
     category: 'Adventure',
-    tags: ['adventure', 'roadtrip', 'car', 'travel', 'journey', 'wind', 'drive'],
+    tags: [
+      'adventure',
+      'roadtrip',
+      'car',
+      'travel',
+      'journey',
+      'wind',
+      'drive',
+    ],
     sourceUrls: ['https://media.giphy.com/media/3o7TKMt1VVNkHV2PaE/giphy.gif'],
   },
   {
@@ -543,7 +784,14 @@ const SOURCE_GIFS: SourceMediaItem[] = [
     title: 'Wanderlust Explorer Wave',
     theme: 'Adventure',
     category: 'Adventure',
-    tags: ['adventure', 'travel', 'wanderlust', 'backpacker', 'wave', 'explore'],
+    tags: [
+      'adventure',
+      'travel',
+      'wanderlust',
+      'backpacker',
+      'wave',
+      'explore',
+    ],
     sourceUrls: ['https://media.giphy.com/media/l4pTfx2qLszoacZRS/giphy.gif'],
   },
 
@@ -601,7 +849,14 @@ const SOURCE_GIFS: SourceMediaItem[] = [
     title: 'Organizing Workspace Notes',
     theme: 'Study',
     category: 'Study',
-    tags: ['study', 'organize', 'workspace', 'planner', 'productive', 'stationery'],
+    tags: [
+      'study',
+      'organize',
+      'workspace',
+      'planner',
+      'productive',
+      'stationery',
+    ],
     sourceUrls: ['https://media.giphy.com/media/3o6Zt6KHxJTbXCnSvu/giphy.gif'],
   },
   {
@@ -667,7 +922,15 @@ const SOURCE_GIFS: SourceMediaItem[] = [
     title: 'Cozy Rain & Coffee Vibe',
     theme: 'Coffee',
     category: 'Coffee',
-    tags: ['coffee', 'rain', 'cozy', 'window', 'aesthetic', 'chill', 'peaceful'],
+    tags: [
+      'coffee',
+      'rain',
+      'cozy',
+      'window',
+      'aesthetic',
+      'chill',
+      'peaceful',
+    ],
     sourceUrls: ['https://media.giphy.com/media/26gJA9SSe4E54ljgs/giphy.gif'],
   },
   {
@@ -743,7 +1006,15 @@ const SOURCE_GIFS: SourceMediaItem[] = [
     title: 'Fast Keyboard Typing Code',
     theme: 'Coding',
     category: 'Coding',
-    tags: ['coding', 'typing', 'fast', 'keyboard', 'hacker', 'developer', 'code'],
+    tags: [
+      'coding',
+      'typing',
+      'fast',
+      'keyboard',
+      'hacker',
+      'developer',
+      'code',
+    ],
     sourceUrls: ['https://media.giphy.com/media/13HgwGsXF0aiGY/giphy.gif'],
   },
   {
@@ -759,7 +1030,15 @@ const SOURCE_GIFS: SourceMediaItem[] = [
     title: 'Cat Typing on Laptop',
     theme: 'Coding',
     category: 'Coding',
-    tags: ['coding', 'cat', 'bongo', 'laptop', 'developer', 'cute', 'programmer'],
+    tags: [
+      'coding',
+      'cat',
+      'bongo',
+      'laptop',
+      'developer',
+      'cute',
+      'programmer',
+    ],
     sourceUrls: ['https://media.giphy.com/media/JIX9t2j0ZTN9S/giphy.gif'],
   },
   {
@@ -767,7 +1046,15 @@ const SOURCE_GIFS: SourceMediaItem[] = [
     title: 'Code Works Victory Celebration',
     theme: 'Coding',
     category: 'Coding',
-    tags: ['coding', 'success', 'works', 'celebrate', 'victory', 'deploy', 'fixed'],
+    tags: [
+      'coding',
+      'success',
+      'works',
+      'celebrate',
+      'victory',
+      'deploy',
+      'fixed',
+    ],
     sourceUrls: ['https://media.giphy.com/media/5wWf7H0qoWaNnkZBucU/giphy.gif'],
   },
   {
@@ -775,7 +1062,15 @@ const SOURCE_GIFS: SourceMediaItem[] = [
     title: 'Terminal Code Scrolling',
     theme: 'Coding',
     category: 'Coding',
-    tags: ['coding', 'terminal', 'scrolling', 'cli', 'scripts', 'bash', 'output'],
+    tags: [
+      'coding',
+      'terminal',
+      'scrolling',
+      'cli',
+      'scripts',
+      'bash',
+      'output',
+    ],
     sourceUrls: ['https://media.giphy.com/media/3o7TKTDnUxE0gpnk0U/giphy.gif'],
   },
   {
@@ -783,7 +1078,15 @@ const SOURCE_GIFS: SourceMediaItem[] = [
     title: 'Debugging Puzzled Developer',
     theme: 'Coding',
     category: 'Coding',
-    tags: ['coding', 'debugging', 'thinking', 'puzzle', 'bug', 'software', 'why'],
+    tags: [
+      'coding',
+      'debugging',
+      'thinking',
+      'puzzle',
+      'bug',
+      'software',
+      'why',
+    ],
     sourceUrls: ['https://media.giphy.com/media/xT9IgzoKnwFNmISR8I/giphy.gif'],
   },
   {
@@ -791,7 +1094,15 @@ const SOURCE_GIFS: SourceMediaItem[] = [
     title: 'Deploy Button Rocket Launch',
     theme: 'Coding',
     category: 'Coding',
-    tags: ['coding', 'deploy', 'rocket', 'launch', 'production', 'shipped', 'tech'],
+    tags: [
+      'coding',
+      'deploy',
+      'rocket',
+      'launch',
+      'production',
+      'shipped',
+      'tech',
+    ],
     sourceUrls: ['https://media.giphy.com/media/3oKIPnAiaMCws8nOsE/giphy.gif'],
   },
 ];
@@ -800,13 +1111,16 @@ async function existsInR2(key: string): Promise<boolean> {
   try {
     await s3.send(new HeadObjectCommand({ Bucket: R2_BUCKET_NAME, Key: key }));
     return true;
-  } catch (err: any) {
+  } catch {
     return false;
   }
 }
 
-async function fetchWithFallback(urls: string[], timeoutMs = 15000): Promise<Buffer> {
-  let lastError: any = null;
+async function fetchWithFallback(
+  urls: string[],
+  timeoutMs = 15000,
+): Promise<Buffer> {
+  let lastError: unknown = null;
   for (const url of urls) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -814,8 +1128,9 @@ async function fetchWithFallback(urls: string[], timeoutMs = 15000): Promise<Buf
       const res = await fetch(url, {
         signal: controller.signal,
         headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          'Accept': 'image/*,*/*;q=0.8',
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          Accept: 'image/*,*/*;q=0.8',
         },
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
@@ -827,10 +1142,17 @@ async function fetchWithFallback(urls: string[], timeoutMs = 15000): Promise<Buf
       clearTimeout(timeout);
     }
   }
-  throw lastError || new Error('All source URLs failed to fetch');
+  // Only ever a fetch rejection, which is an Error (an abort included).
+  throw (
+    (lastError as Error | null) || new Error('All source URLs failed to fetch')
+  );
 }
 
-async function uploadToR2(key: string, buffer: Buffer, contentType: string): Promise<string> {
+async function uploadToR2(
+  key: string,
+  buffer: Buffer,
+  contentType: string,
+): Promise<string> {
   const command = new PutObjectCommand({
     Bucket: R2_BUCKET_NAME,
     Key: key,
@@ -842,14 +1164,27 @@ async function uploadToR2(key: string, buffer: Buffer, contentType: string): Pro
   return `${R2_PUBLIC_URL}/${key}`;
 }
 
-async function processImage(item: SourceMediaItem, index: number, total: number): Promise<{ id: string; title: string; theme: string; category: string; tags: string[]; url: string }> {
+async function processImage(
+  item: SourceMediaItem,
+  index: number,
+  total: number,
+): Promise<{
+  id: string;
+  title: string;
+  theme: string;
+  category: string;
+  tags: string[];
+  url: string;
+}> {
   const themeSlug = item.theme.toLowerCase();
   const r2Key = `presets/images/preset-image-${themeSlug}-${item.id}.webp`;
   const finalUrl = `${R2_PUBLIC_URL}/${r2Key}`;
 
   const exists = await existsInR2(r2Key);
   if (exists) {
-    console.log(`[${index + 1}/${total}] Image ${item.id} already exists in R2. Skipping upload.`);
+    console.log(
+      `[${index + 1}/${total}] Image ${item.id} already exists in R2. Skipping upload.`,
+    );
     return {
       id: item.id,
       title: item.title,
@@ -860,7 +1195,9 @@ async function processImage(item: SourceMediaItem, index: number, total: number)
     };
   }
 
-  console.log(`[${index + 1}/${total}] Processing Image: ${item.title} (${item.id})...`);
+  console.log(
+    `[${index + 1}/${total}] Processing Image: ${item.title} (${item.id})...`,
+  );
   try {
     const rawBuffer = await fetchWithFallback(item.sourceUrls);
     const optimizedWebp = await sharp(rawBuffer)
@@ -873,7 +1210,9 @@ async function processImage(item: SourceMediaItem, index: number, total: number)
       .webp({ quality: 82, effort: 4 })
       .toBuffer();
 
-    console.log(`  ✓ Converted to WebP (${rawBuffer.length} bytes -> ${optimizedWebp.length} bytes). Uploading to R2: ${r2Key}...`);
+    console.log(
+      `  ✓ Converted to WebP (${rawBuffer.length} bytes -> ${optimizedWebp.length} bytes). Uploading to R2: ${r2Key}...`,
+    );
     await uploadToR2(r2Key, optimizedWebp, 'image/webp');
     console.log(`  ✓ Uploaded: ${finalUrl}`);
     return {
@@ -884,20 +1223,36 @@ async function processImage(item: SourceMediaItem, index: number, total: number)
       tags: item.tags,
       url: finalUrl,
     };
-  } catch (err: any) {
-    console.error(`  ✗ Error processing image ${item.id}:`, err?.message || err);
+  } catch (err: unknown) {
+    console.error(
+      `  ✗ Error processing image ${item.id}:`,
+      (err as Error | null | undefined)?.message || err,
+    );
     throw err;
   }
 }
 
-async function processGif(item: SourceMediaItem, index: number, total: number): Promise<{ id: string; title: string; theme: string; category: string; tags: string[]; url: string }> {
+async function processGif(
+  item: SourceMediaItem,
+  index: number,
+  total: number,
+): Promise<{
+  id: string;
+  title: string;
+  theme: string;
+  category: string;
+  tags: string[];
+  url: string;
+}> {
   const themeSlug = item.theme.toLowerCase();
   const r2Key = `presets/gifs/preset-gif-${themeSlug}-${item.id}.gif`;
   const finalUrl = `${R2_PUBLIC_URL}/${r2Key}`;
 
   const exists = await existsInR2(r2Key);
   if (exists) {
-    console.log(`[${index + 1}/${total}] GIF ${item.id} already exists in R2. Skipping upload.`);
+    console.log(
+      `[${index + 1}/${total}] GIF ${item.id} already exists in R2. Skipping upload.`,
+    );
     return {
       id: item.id,
       title: item.title,
@@ -908,15 +1263,19 @@ async function processGif(item: SourceMediaItem, index: number, total: number): 
     };
   }
 
-  console.log(`[${index + 1}/${total}] Processing GIF: ${item.title} (${item.id})...`);
+  console.log(
+    `[${index + 1}/${total}] Processing GIF: ${item.title} (${item.id})...`,
+  );
   try {
     const rawBuffer = await fetchWithFallback(item.sourceUrls);
-    
+
     // Validate animated GIF buffer
     try {
       const metadata = await sharp(rawBuffer, { animated: true }).metadata();
       if (metadata.pages && metadata.pages > 1) {
-        console.log(`  ✓ Valid animated GIF (${metadata.pages} frames, ${metadata.width}x${metadata.height})`);
+        console.log(
+          `  ✓ Valid animated GIF (${metadata.pages} frames, ${metadata.width}x${metadata.height})`,
+        );
       }
     } catch (_) {
       console.log(`  ✓ Raw GIF buffer verified (${rawBuffer.length} bytes)`);
@@ -933,8 +1292,11 @@ async function processGif(item: SourceMediaItem, index: number, total: number): 
       tags: item.tags,
       url: finalUrl,
     };
-  } catch (err: any) {
-    console.error(`  ✗ Error processing GIF ${item.id}:`, err?.message || err);
+  } catch (err: unknown) {
+    console.error(
+      `  ✗ Error processing GIF ${item.id}:`,
+      (err as Error | null | undefined)?.message || err,
+    );
     throw err;
   }
 }
@@ -947,21 +1309,23 @@ async function main() {
   console.log(`Public URL Origin: ${R2_PUBLIC_URL}\n`);
 
   console.log(`Phase 1: Ingesting ${SOURCE_IMAGES.length} Preset Images...`);
-  const uploadedImages: any[] = [];
+  const uploadedImages: Awaited<ReturnType<typeof processImage>>[] = [];
   for (let i = 0; i < SOURCE_IMAGES.length; i++) {
     const res = await processImage(SOURCE_IMAGES[i], i, SOURCE_IMAGES.length);
     uploadedImages.push(res);
   }
 
   console.log(`\nPhase 2: Ingesting ${SOURCE_GIFS.length} Preset GIFs...`);
-  const uploadedGifs: any[] = [];
+  const uploadedGifs: Awaited<ReturnType<typeof processGif>>[] = [];
   for (let i = 0; i < SOURCE_GIFS.length; i++) {
     const res = await processGif(SOURCE_GIFS[i], i, SOURCE_GIFS.length);
     uploadedGifs.push(res);
   }
 
-  console.log('\nPhase 3: Generating frontend/src/shared/constants/presetMedia.js...');
-  const defaultCovers = uploadedImages.slice(0, 6).map(img => img.url);
+  console.log(
+    '\nPhase 3: Generating frontend/src/shared/constants/presetMedia.js...',
+  );
+  const defaultCovers = uploadedImages.slice(0, 6).map((img) => img.url);
 
   const fileContent = `/**
  * PRESET MEDIA CONSTANTS
@@ -1000,7 +1364,10 @@ export function getDefaultActivityCover(idOrTitle = '') {
 }
 `;
 
-  const outputPath = path.resolve(__dirname, '../../frontend/src/shared/constants/presetMedia.js');
+  const outputPath = path.resolve(
+    __dirname,
+    '../../frontend/src/shared/constants/presetMedia.js',
+  );
   fs.writeFileSync(outputPath, fileContent, 'utf-8');
   console.log(`  ✓ Successfully wrote preset media data to: ${outputPath}`);
 
@@ -1009,7 +1376,7 @@ export function getDefaultActivityCover(idOrTitle = '') {
   console.log('====================================================\n');
 }
 
-main().catch(err => {
+main().catch((err) => {
   console.error('Fatal error during ingestion:', err);
   process.exit(1);
 });

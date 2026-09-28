@@ -1,13 +1,27 @@
 jest.mock('../email/email.service');
 jest.mock('../common/utils/sanitize-html.util', () => ({
-  sanitizeUserHtml: jest.fn((str) => str),
-  sanitizePlainText: jest.fn((str) => str),
-  htmlToPlainText: jest.fn((str) => str),
+  sanitizeUserHtml: jest.fn((str: string) => str),
+  sanitizePlainText: jest.fn((str: string) => str),
+  htmlToPlainText: jest.fn((str: string) => str),
 }));
 
 import { ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { AuthController } from './auth.controller';
 import { UserSessionRevokedReason } from '@prisma/client';
+import type { AuthService } from './auth.service';
+import type { EmailService } from '../email/email.service';
+import type { RateLimitService } from '../common/rate-limit/rate-limit.service';
+import type { UserSessionService } from './session/user-session.service';
+import type { AuthenticatedUser } from '../common/types/authenticated-request';
+import {
+  cookiesClearedOn,
+  cookiesSetOn,
+  createMockRequest,
+  createMockResponse,
+  type MockRequestInit,
+  type MockResponse,
+} from '../common/testing/express.mock';
+import { stub } from '../common/testing/stub';
 
 /**
  * The session lifecycle, as seen from the routes that own it.
@@ -31,12 +45,30 @@ import { UserSessionRevokedReason } from '@prisma/client';
  */
 describe('AuthController — session lifecycle', () => {
   let controller: AuthController;
-  let authService: any;
-  let sessions: any;
-  let res: any;
+  let authService: { login: jest.Mock; syncProfile: jest.Mock };
+  let sessions: {
+    issue: jest.Mock;
+    hashRefreshToken: jest.Mock;
+    revokeByRefreshHash: jest.Mock;
+  };
+  let res: MockResponse;
 
-  const cookiesSet = () =>
-    Object.fromEntries(res.cookie.mock.calls.map((c: any[]) => [c[0], c[1]]));
+  const cookiesSet = () => cookiesSetOn(res);
+
+  const makeController = (
+    emailService: object = {
+      sendNewLoginEmail: jest.fn().mockResolvedValue(undefined),
+    },
+  ) =>
+    new AuthController(
+      stub<AuthService>(authService),
+      emailService as EmailService,
+      stub<RateLimitService>({
+        consume: jest.fn().mockResolvedValue({ allowed: true }),
+        penalize: jest.fn().mockResolvedValue(undefined),
+      }),
+      stub<UserSessionService>(sessions),
+    );
 
   beforeEach(() => {
     authService = {
@@ -60,44 +92,28 @@ describe('AuthController — session lifecycle', () => {
       hashRefreshToken: jest.fn((t: string) => `hash:${t}`),
       revokeByRefreshHash: jest.fn().mockResolvedValue(undefined),
     };
-    res = { cookie: jest.fn(), clearCookie: jest.fn() };
-    controller = new AuthController(
-      authService,
-      { sendNewLoginEmail: jest.fn().mockResolvedValue(undefined) } as any,
-      {
-        consume: jest.fn().mockResolvedValue({ allowed: true }),
-        penalize: jest.fn().mockResolvedValue(undefined),
-      } as any,
-      sessions,
-    );
+    res = createMockResponse();
+    controller = makeController();
   });
 
-  const req = (extra: any = {}) => ({
-    headers: { 'user-agent': 'jest' },
-    cookies: {},
-    ...extra,
-  });
+  const req = (init: MockRequestInit = {}) => createMockRequest(init);
 
   describe('login', () => {
     it('returns no provider token of any kind to the browser', async () => {
       const body = await controller.login(
-        { identifier: 'a', password: 'p' } as any,
-        req() as any,
+        { identifier: 'a', password: 'p' },
+        req(),
         res,
       );
 
       const serialised = JSON.stringify(body);
       expect(serialised).not.toContain('provider-refresh');
       expect(serialised).not.toContain('provider-access');
-      expect((body as any).session).toBeUndefined();
+      expect((body as { session?: unknown }).session).toBeUndefined();
     });
 
     it('keeps the provider refresh token server-side, sealed into the session', async () => {
-      await controller.login(
-        { identifier: 'a', password: 'p' } as any,
-        req() as any,
-        res,
-      );
+      await controller.login({ identifier: 'a', password: 'p' }, req(), res);
       expect(sessions.issue).toHaveBeenCalledWith(
         'u1',
         expect.anything(),
@@ -106,11 +122,7 @@ describe('AuthController — session lifecycle', () => {
     });
 
     it('sets the access token as an HttpOnly cookie, not a response field', async () => {
-      await controller.login(
-        { identifier: 'a', password: 'p' } as any,
-        req() as any,
-        res,
-      );
+      await controller.login({ identifier: 'a', password: 'p' }, req(), res);
       const set = cookiesSet();
       expect(set.mf_access).toBe('provider-access');
       expect(set.mf_refresh).toBe('our-refresh');
@@ -121,9 +133,9 @@ describe('AuthController — session lifecycle', () => {
       // The client used to sign in and then ask who it had just signed in as,
       // treating a failure of that second call as a failed login. One response
       // answers both questions and leaves no window to lose.
-      const body: any = await controller.login(
-        { identifier: 'a', password: 'p' } as any,
-        req() as any,
+      const body = await controller.login(
+        { identifier: 'a', password: 'p' },
+        req(),
         res,
       );
       expect(body.user).toEqual({ id: 'u1', username: 'a' });
@@ -135,11 +147,7 @@ describe('AuthController — session lifecycle', () => {
       // User row yet — a signup whose handover never finished — used to pass
       // the password check and then 500 on the session insert, on every
       // attempt. syncProfile is what creates that row, so it has to run first.
-      await controller.login(
-        { identifier: 'a', password: 'p' } as any,
-        req() as any,
-        res,
-      );
+      await controller.login({ identifier: 'a', password: 'p' }, req(), res);
       expect(authService.syncProfile.mock.invocationCallOrder[0]).toBeLessThan(
         sessions.issue.mock.invocationCallOrder[0],
       );
@@ -149,25 +157,13 @@ describe('AuthController — session lifecycle', () => {
       // A banned account, for example. Nothing should be created for it, and
       // nobody should be told a sign-in happened.
       const emailService = { sendNewLoginEmail: jest.fn() };
-      controller = new AuthController(
-        authService,
-        emailService as any,
-        {
-          consume: jest.fn().mockResolvedValue({ allowed: true }),
-          penalize: jest.fn().mockResolvedValue(undefined),
-        } as any,
-        sessions,
-      );
+      controller = makeController(emailService);
       authService.syncProfile.mockRejectedValueOnce(
         new ForbiddenException('Account has been banned'),
       );
 
       await expect(
-        controller.login(
-          { identifier: 'a', password: 'p' } as any,
-          req() as any,
-          res,
-        ),
+        controller.login({ identifier: 'a', password: 'p' }, req(), res),
       ).rejects.toBeInstanceOf(ForbiddenException);
 
       expect(sessions.issue).not.toHaveBeenCalled();
@@ -176,9 +172,9 @@ describe('AuthController — session lifecycle', () => {
     });
 
     it('hands back the CSRF token so a page that cannot read the cookie can still echo it', async () => {
-      const body: any = await controller.login(
-        { identifier: 'a', password: 'p' } as any,
-        req() as any,
+      const body = await controller.login(
+        { identifier: 'a', password: 'p' },
+        req(),
         res,
       );
       expect(body.csrfToken).toEqual(expect.any(String));
@@ -187,15 +183,20 @@ describe('AuthController — session lifecycle', () => {
   });
 
   describe('adoptSession', () => {
-    const user = { id: 'u1', email: 'a@b.c', token: 'provider-access' } as any;
+    const user: AuthenticatedUser = {
+      id: 'u1',
+      email: 'a@b.c',
+      user_metadata: {},
+      token: 'provider-access',
+    };
 
     it('provisions the profile before creating the session row that points at it', async () => {
       // Adoption is a brand-new account's first request, so its User row may
       // not exist yet; the session insert would fail on the foreign key.
       await controller.adoptSession(
-        { refreshToken: 'provider-refresh' } as any,
+        { refreshToken: 'provider-refresh' },
         user,
-        req() as any,
+        req(),
         res,
       );
       expect(authService.syncProfile.mock.invocationCallOrder[0]).toBeLessThan(
@@ -209,9 +210,9 @@ describe('AuthController — session lifecycle', () => {
       );
       await expect(
         controller.adoptSession(
-          { refreshToken: 'provider-refresh' } as any,
+          { refreshToken: 'provider-refresh' },
           user,
-          req() as any,
+          req(),
           res,
         ),
       ).rejects.toBeInstanceOf(UnauthorizedException);
@@ -223,7 +224,7 @@ describe('AuthController — session lifecycle', () => {
   describe('logout', () => {
     it('revokes the session named by the refresh cookie', async () => {
       await controller.logoutSession(
-        req({ cookies: { mf_refresh: 'our-refresh' } }) as any,
+        req({ cookies: { mf_refresh: 'our-refresh' } }),
         res,
       );
       expect(sessions.revokeByRefreshHash).toHaveBeenCalledWith(
@@ -234,12 +235,17 @@ describe('AuthController — session lifecycle', () => {
 
     it('clears every session cookie', async () => {
       await controller.logoutSession(
-        req({ cookies: { mf_refresh: 'our-refresh' } }) as any,
+        req({ cookies: { mf_refresh: 'our-refresh' } }),
         res,
       );
-      const cleared = res.clearCookie.mock.calls.map((c: any[]) => c[0]);
+      const cleared = cookiesClearedOn(res);
       expect(cleared).toEqual(
-        expect.arrayContaining(['mf_access', 'mf_refresh', 'mf_sid', 'mf_csrf']),
+        expect.arrayContaining([
+          'mf_access',
+          'mf_refresh',
+          'mf_sid',
+          'mf_csrf',
+        ]),
       );
     });
 
@@ -248,14 +254,14 @@ describe('AuthController — session lifecycle', () => {
       // cookies stayed in the browser. The next reload signed the user back in.
       await expect(
         controller.logoutSession(
-          req({ cookies: { mf_refresh: 'our-refresh' } }) as any,
+          req({ cookies: { mf_refresh: 'our-refresh' } }),
           res,
         ),
       ).resolves.toEqual({ success: true });
     });
 
     it('clears the cookies even when there is no session left to revoke', async () => {
-      await controller.logoutSession(req() as any, res);
+      await controller.logoutSession(req(), res);
       expect(sessions.revokeByRefreshHash).not.toHaveBeenCalled();
       expect(res.clearCookie).toHaveBeenCalled();
     });
@@ -266,7 +272,7 @@ describe('AuthController — session lifecycle', () => {
           req({
             cookies: { mf_refresh: 'our-refresh', mf_csrf: 'secret' },
             headers: { 'x-csrf-token': 'guess' },
-          }) as any,
+          }),
           res,
         ),
       ).rejects.toBeInstanceOf(ForbiddenException);
@@ -279,7 +285,7 @@ describe('AuthController — session lifecycle', () => {
           req({
             cookies: { mf_refresh: 'our-refresh', mf_csrf: 'secret' },
             headers: { 'x-csrf-token': 'secret' },
-          }) as any,
+          }),
           res,
         ),
       ).resolves.toEqual({ success: true });
@@ -288,9 +294,9 @@ describe('AuthController — session lifecycle', () => {
 
   describe('the boot probe', () => {
     it('answers with the profile and the CSRF token, and no credential', async () => {
-      const body: any = await controller.currentSession(
-        { id: 'u1', email: 'a@b.c', token: 't' } as any,
-        req({ cookies: { mf_sid: 's1', mf_csrf: 'secret' } }) as any,
+      const body = await controller.currentSession(
+        { id: 'u1', email: 'a@b.c', user_metadata: {}, token: 't' },
+        req({ cookies: { mf_sid: 's1', mf_csrf: 'secret' } }),
       );
       expect(body.user).toEqual({ id: 'u1', username: 'a' });
       expect(body.sessionId).toBe('s1');

@@ -16,11 +16,24 @@ describe('PostsService — comments', () => {
   const POST = 'post-1';
   const AUTHOR = 'user-1';
 
-  let service: PostsService;
-  let prisma: any;
-  let comments: Record<string, any>;
+  /** A comment row as the comment paths read it. */
+  type CommentRow = {
+    id: string;
+    postId: string;
+    parentId: string | null;
+    authorId: string;
+    text: string;
+    isDeleted: boolean;
+    likeCount: number;
+    createdAt: Date;
+    _count?: { replies: number };
+  };
 
-  const comment = (id: string, over: any = {}) => ({
+  let service: PostsService;
+  let prisma: ReturnType<typeof makePrisma>;
+  let comments: Record<string, CommentRow>;
+
+  const comment = (id: string, over: Partial<CommentRow> = {}): CommentRow => ({
     id,
     postId: POST,
     parentId: null,
@@ -32,35 +45,49 @@ describe('PostsService — comments', () => {
     ...over,
   });
 
-  beforeEach(async () => {
-    comments = {};
-    prisma = {
+  const makePrisma = () => {
+    const prisma = {
       post: {
-        findUnique: jest.fn(async () => ({
-          id: POST,
-          authorId: 'owner',
-          deletedAt: null,
-        })),
-        update: jest.fn(async () => ({})),
+        findUnique: jest.fn(() =>
+          Promise.resolve({
+            id: POST,
+            authorId: 'owner',
+            deletedAt: null,
+          }),
+        ),
+        update: jest.fn(() => Promise.resolve({})),
       },
       comment: {
         findUnique: jest.fn(
-          async ({ where }: any) => comments[where.id] ?? null,
+          ({ where }: { where: { id: string } }): Promise<CommentRow | null> =>
+            Promise.resolve(comments[where.id] ?? null),
         ),
-        create: jest.fn(async ({ data }: any) => ({
-          ...comment('new'),
-          ...data,
-          author: { id: data.authorId, username: 'u' },
-        })),
-        update: jest.fn(async ({ data }: any) => ({ ...data })),
-        findMany: jest.fn(async () => []),
+        create: jest.fn(({ data }: { data: { authorId: string } }) =>
+          Promise.resolve({
+            ...comment('new'),
+            ...data,
+            author: { id: data.authorId, username: 'u' },
+          }),
+        ),
+        update: jest.fn(({ data }: { data: Partial<CommentRow> }) =>
+          Promise.resolve({ ...data }),
+        ),
+        findMany: jest.fn(() => Promise.resolve([])),
       },
       commentLike: {
-        deleteMany: jest.fn(async () => ({ count: 0 })),
-        findMany: jest.fn(async () => []),
+        deleteMany: jest.fn(() => Promise.resolve({ count: 0 })),
+        findMany: jest.fn(() => Promise.resolve([])),
       },
-      $transaction: jest.fn(async (fn: any) => fn(prisma)),
+      $transaction: jest.fn((fn: (tx: unknown) => unknown): Promise<unknown> =>
+        Promise.resolve(fn(prisma)),
+      ),
     };
+    return prisma;
+  };
+
+  beforeEach(async () => {
+    comments = {};
+    prisma = makePrisma();
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -73,11 +100,13 @@ describe('PostsService — comments', () => {
         // about what deletion does to the thread rather than who may do it.
         {
           provide: ContentDeletionAuthorizer,
-          useValue: { assertCanDelete: jest.fn(async () => 'author') },
+          useValue: {
+            assertCanDelete: jest.fn(() => Promise.resolve('author')),
+          },
         },
         {
           provide: NotificationsService,
-          useValue: { createNotification: jest.fn(async () => ({})) },
+          useValue: { createNotification: jest.fn(() => Promise.resolve({})) },
         },
         {
           provide: NotificationFactory,
@@ -85,26 +114,26 @@ describe('PostsService — comments', () => {
         },
         {
           provide: BlocksService,
-          useValue: { getExcludedUserIds: jest.fn(async () => []) },
+          useValue: { getExcludedUserIds: jest.fn(() => Promise.resolve([])) },
         },
         { provide: DomainEventService, useValue: { emit: jest.fn() } },
         {
           provide: RedisService,
           useValue: {
             getClient: () => null,
-            withLock: (_k: string, _t: number, fn: any) => fn(),
+            withLock: (_k: string, _t: number, fn: () => unknown) => fn(),
           },
         },
         {
           provide: MentionsService,
           useValue: {
-            sanitize: jest.fn(async () => []),
+            sanitize: jest.fn(() => Promise.resolve([])),
             persistAndNotify: jest.fn(),
           },
         },
         {
           provide: StorageService,
-          useValue: { exists: jest.fn(async () => true) },
+          useValue: { exists: jest.fn(() => Promise.resolve(true)) },
         },
       ],
     }).compile();
@@ -155,7 +184,10 @@ describe('PostsService — comments', () => {
   describe('deleting', () => {
     const withReplies = (n: number) => {
       comments['c1'] = { ...comment('c1'), _count: { replies: n } };
-      prisma.comment.findUnique = jest.fn(async () => comments['c1']);
+      prisma.comment.findUnique = jest.fn(
+        (_query: { where: { id: string } }): Promise<CommentRow | null> =>
+          Promise.resolve(comments['c1']),
+      );
     };
 
     it('decrements the count for a leaf, matching the increment on add', async () => {
@@ -191,8 +223,8 @@ describe('PostsService — comments', () => {
   });
 
   describe('tombstone pruning', () => {
-    const prune = (rows: any[]) =>
-      (service as any).pruneEmptyTombstones(rows).map((c: any) => c.id);
+    const prune = (rows: CommentRow[]) =>
+      service['pruneEmptyTombstones'](rows).map((c) => c.id);
 
     it('drops a deleted leaf', () => {
       expect(prune([comment('a'), comment('b', { isDeleted: true })])).toEqual([

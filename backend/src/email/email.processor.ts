@@ -1,9 +1,9 @@
 import { OnWorkerEvent, Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger, OnModuleInit } from '@nestjs/common';
 import { EmailDeliveryStatus } from '@prisma/client';
-import { Job } from 'bullmq';
 import { Resend } from 'resend';
 import * as nodemailer from 'nodemailer';
+import type SMTPTransport from 'nodemailer/lib/smtp-transport';
 import { render } from '@react-email/render';
 import { createElement } from 'react';
 
@@ -25,6 +25,7 @@ import {
   SupportEmailBuilder,
   SupportEmailJobName,
 } from './support-email.builder';
+import type { EmailJob } from './email-jobs';
 
 const SUPPORT_JOB_NAMES: string[] = Object.values(SUPPORT_EMAIL_JOBS);
 
@@ -32,7 +33,7 @@ const SUPPORT_JOB_NAMES: string[] = Object.values(SUPPORT_EMAIL_JOBS);
 export class EmailProcessor extends WorkerHost implements OnModuleInit {
   private readonly logger = new Logger(EmailProcessor.name);
   private resend: Resend;
-  private smtpTransporter: nodemailer.Transporter;
+  private smtpTransporter: nodemailer.Transporter<SMTPTransport.SentMessageInfo>;
   private driver: string;
   private fallbackDriver: string;
   private from: string;
@@ -153,7 +154,7 @@ export class EmailProcessor extends WorkerHost implements OnModuleInit {
   }
 
   @OnWorkerEvent('failed')
-  onFailed(job: Job | undefined, error: Error): void {
+  onFailed(job: EmailJob | undefined, error: Error): void {
     // Without this, an email job that exhausts its retries disappears: the
     // throw below is caught by BullMQ and never reaches the app log again.
     this.logger.error(
@@ -168,7 +169,7 @@ export class EmailProcessor extends WorkerHost implements OnModuleInit {
     );
   }
 
-  async process(job: Job<any, any, string>): Promise<any> {
+  async process(job: EmailJob): Promise<unknown> {
     this.logger.log(
       `email.processing ${JSON.stringify({ provider: this.driver, jobId: job.id, type: job.name, to: job.data.email })}`,
     );
@@ -184,9 +185,14 @@ export class EmailProcessor extends WorkerHost implements OnModuleInit {
     let extraLogContext: Record<string, unknown> = {};
 
     if (SUPPORT_JOB_NAMES.includes(job.name)) {
+      const rowId = job.data.ticketId ?? job.data.messageId;
+      if (!rowId) {
+        // EmailService always sets one; without it there is nothing to render.
+        throw new Error(`Support email job ${job.name} has no row id`);
+      }
       const built = await this.supportEmails.build(
         job.name as SupportEmailJobName,
-        job.data.ticketId ?? job.data.messageId,
+        rowId,
       );
 
       // Null means the message must not be sent: the row is gone, the internal
@@ -303,6 +309,10 @@ export class EmailProcessor extends WorkerHost implements OnModuleInit {
     const rawFrom = job.data.from || this.from;
     const from = rawFrom.includes('<') ? rawFrom : `${fromName} <${rawFrom}>`;
     const intendedTo = recipientOverride ?? job.data.email;
+    if (!intendedTo) {
+      // Every template job carries one; a job without it cannot be delivered.
+      throw new Error(`Email job ${job.name} has no recipient`);
+    }
     // Development safety valve: when DEV_EMAIL_REDIRECT is set, mail goes
     // there instead of the real recipient. Always empty in a deployed
     // environment, so production and staging always reach the real address.
@@ -459,7 +469,7 @@ export class EmailProcessor extends WorkerHost implements OnModuleInit {
     deliveryTarget: DeliveryTarget,
     /** Which provider to bill this send to. A failover send is the relay's. */
     usageProvider = 'smtp',
-  ): Promise<any> {
+  ): Promise<unknown> {
     const info = await this.smtpTransporter.sendMail({
       from: mail.from,
       to: mail.to,
@@ -509,8 +519,8 @@ export class EmailProcessor extends WorkerHost implements OnModuleInit {
     },
     context: Record<string, unknown>,
     deliveryTarget: DeliveryTarget,
-    job: Job<any, any, string>,
-  ): Promise<any> {
+    job: EmailJob,
+  ): Promise<unknown> {
     const { data, error } = await this.resend.emails.send({
       from: mail.from,
       to: mail.to,

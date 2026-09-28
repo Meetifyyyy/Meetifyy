@@ -1,3 +1,4 @@
+import type { Server } from 'http';
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
@@ -27,7 +28,7 @@ import { DEFAULT_AVATAR_SVG } from './default-avatar';
  * everything else is the blue artwork.
  */
 describe('GET /api/media — default profile avatar', () => {
-  let app: INestApplication;
+  let app: INestApplication<Server>;
 
   // Deliberately hostile: storage claims the object does not exist and refuses
   // to resolve it, which is the production failure this endpoint must survive.
@@ -36,10 +37,10 @@ describe('GET /api/media — default profile avatar', () => {
     // Conversation attachments are authorized against the viewer; nothing
     // in these suites is one, so this is uniformly false.
     isConversationScopedKey: jest.fn(() => false),
-    canViewConversationMedia: jest.fn(async () => false),
+    canViewConversationMedia: jest.fn(() => Promise.resolve(false)),
     isAlwaysPrivateKey: jest.fn(() => false),
-    exists: jest.fn(async () => false),
-    getResolvedPublicUrl: jest.fn(async () => null),
+    exists: jest.fn(() => Promise.resolve(false)),
+    getResolvedPublicUrl: jest.fn(() => Promise.resolve(null)),
   };
 
   beforeAll(async () => {
@@ -50,7 +51,7 @@ describe('GET /api/media — default profile avatar', () => {
         { provide: SupabaseService, useValue: { isConfigured: false } },
         {
           provide: PrismaService,
-          useValue: { user: { findUnique: async () => null } },
+          useValue: { user: { findUnique: () => Promise.resolve(null) } },
         },
         // JwtGuard takes the consent gate as a constructor argument, so the
         // guard cannot be instantiated without it. Defaults to "nothing
@@ -65,7 +66,7 @@ describe('GET /api/media — default profile avatar', () => {
       .overrideGuard(OptionalJwtGuard)
       .useValue({ canActivate: () => true })
       .compile();
-    app = moduleRef.createNestApplication();
+    app = moduleRef.createNestApplication<INestApplication<Server>>();
     await app.init();
   });
 
@@ -82,7 +83,7 @@ describe('GET /api/media — default profile avatar', () => {
     // The real artwork, byte for byte — not a placeholder standing in for it.
     expect(
       Buffer.compare(
-        res.body,
+        res.body as Buffer,
         fs.readFileSync(defaultAssetFilePath('profile-avatar')),
       ),
     ).toBe(0);

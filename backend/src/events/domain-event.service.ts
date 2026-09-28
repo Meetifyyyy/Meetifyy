@@ -1,11 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { RedisService } from '../redis/redis.service';
+import { isRecord } from '../common/utils/type-guards.util';
 
 export interface DomainEventPayload {
   type: string; // e.g., 'follow.created'
   timestamp: string; // ISO string
-  data: any; // Arbitrary payload
+  data: unknown; // Arbitrary payload
   targetUserIds?: string[]; // Optional array of user IDs to strictly target (for private events)
 }
 
@@ -22,18 +23,24 @@ export class DomainEventService {
   /**
    * Emits an event locally and publishes it to Redis Pub/Sub for horizontal scaling.
    */
-  async emit(type: string, data: any, targetUserIds?: string[]): Promise<void> {
+  async emit(
+    type: string,
+    data: unknown,
+    targetUserIds?: string[],
+  ): Promise<void> {
     let resolvedTargets = targetUserIds;
     if (!resolvedTargets || resolvedTargets.length === 0) {
-      if (data && typeof data === 'object') {
+      if (isRecord(data)) {
         const candidates = [
           data.targetUserId,
           data.followingId,
           data.recipientId,
           data.followerId,
           data.userId,
-          ...(Array.isArray(data.targetUserIds) ? data.targetUserIds : []),
-        ].filter(Boolean);
+          ...(Array.isArray(data.targetUserIds)
+            ? (data.targetUserIds as unknown[])
+            : []),
+        ].filter((id): id is string => typeof id === 'string' && id !== '');
         if (candidates.length > 0) {
           resolvedTargets = [...new Set(candidates)];
         }

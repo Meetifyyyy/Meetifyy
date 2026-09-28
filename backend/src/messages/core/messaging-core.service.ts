@@ -5,7 +5,15 @@ import {
   BadRequestException,
   Logger,
 } from '@nestjs/common';
-import { MentionSource, NotificationEntityType } from '@prisma/client';
+import { inviteString, withInviteExpiry } from './invite-data';
+import {
+  arrayOrEmpty,
+  payloadFields,
+  stringOrEmpty,
+  stringOrNull,
+} from './message-payload';
+import { isJsonValue } from '../../common/utils/json.util';
+import { MentionSource, NotificationEntityType, Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { BlocksService } from '../../users/blocks.service';
 import { PresenceService } from '../../presence/presence.service';
@@ -321,7 +329,7 @@ export class MessagingCoreService {
       conv.id,
       senderId,
       conv.participants.map((p) => p.userId),
-      (conv as any).type === 'GROUP',
+      conv.type === 'GROUP',
     );
 
     // First-year isolation, on the same participant set. This sits below every
@@ -350,7 +358,7 @@ export class MessagingCoreService {
     // conversation too), but nothing new can be added to a thread whose only
     // other participant no longer exists to read it.
     const unavailableOthers = otherParticipants.filter((p) =>
-      isUnavailableUser(p.user as any),
+      isUnavailableUser(p.user),
     );
     const isDirect = otherParticipants.length === 1;
 
@@ -442,30 +450,16 @@ export class MessagingCoreService {
       validatedReplyToId = replyTarget ? replyTarget.id : null;
     }
 
-    let initialInviteData = payload.inviteData || null;
-    if (
-      initialInviteData &&
-      (initialInviteData.type === 'group_invite' ||
-        initialInviteData.groupId ||
-        initialInviteData.conversationId)
-    ) {
-      const expiresAt =
-        initialInviteData.expiresAt ||
-        new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
-      const isExpired = new Date(expiresAt).getTime() <= Date.now();
-      initialInviteData = {
-        ...initialInviteData,
-        expiresAt,
-        isExpired,
-      };
-    }
+    const initialInviteData = withInviteExpiry(payload.inviteData);
 
     const now = new Date();
     const lastMsgText =
       payload.text ||
-      (initialInviteData?.type === 'postShare' ? 'Shared a post' : null) ||
-      (initialInviteData?.groupName
-        ? `Group invite: ${initialInviteData.groupName}`
+      (inviteString(initialInviteData, 'type') === 'postShare'
+        ? 'Shared a post'
+        : null) ||
+      (inviteString(initialInviteData, 'groupName')
+        ? `Group invite: ${inviteString(initialInviteData, 'groupName')}`
         : null) ||
       (payload.mediaUrl
         ? payload.mediaType === 'image'
@@ -497,12 +491,16 @@ export class MessagingCoreService {
             height: asNumberOrNull(payload.height),
             duration: asNumberOrNull(payload.duration),
             mentions: sanitizedMentions,
-            inviteData: initialInviteData,
+            // Client JSON (the DTO checks only that it is an object); proven
+            // to be JSON before it is written, rather than asserted.
+            inviteData: isJsonValue(initialInviteData)
+              ? initialInviteData
+              : null,
             isForwarded: asBoolean(payload.isForwarded),
             forwardedFromMessageId: asStringOrNull(
               payload.forwardedFromMessageId,
             ),
-          } as any,
+          },
         },
         include: {
           sender: {
@@ -558,28 +556,15 @@ export class MessagingCoreService {
     ]);
 
     const isUnsent = message.state === 'UNSENT';
-    const msgPayload = (message.payload as any) || {};
-    let outputInviteData = isUnsent ? null : msgPayload.inviteData || null;
-    if (
-      outputInviteData &&
-      (outputInviteData.type === 'group_invite' ||
-        outputInviteData.groupId ||
-        outputInviteData.conversationId)
-    ) {
-      const createdAtMs = message.createdAt
-        ? new Date(message.createdAt).getTime()
-        : Date.now();
-      const expiresAt =
-        outputInviteData.expiresAt ||
-        new Date(createdAtMs + 48 * 60 * 60 * 1000).toISOString();
-      const isExpired = new Date(expiresAt).getTime() <= Date.now();
-      outputInviteData = { ...outputInviteData, expiresAt, isExpired };
-    }
+    const msgPayload = payloadFields(message.payload);
+    const outputInviteData = withInviteExpiry(
+      isUnsent ? null : msgPayload.inviteData,
+      message.createdAt,
+    );
 
-    let replyToObj: any = null;
-    if (message.replyTo) {
-      replyToObj = buildReplyToSnapshot(message.replyTo, senderId);
-    }
+    const replyToObj = message.replyTo
+      ? buildReplyToSnapshot(message.replyTo, senderId)
+      : null;
 
     const pubId = conv.publicId || conversationId;
 
@@ -622,11 +607,15 @@ export class MessagingCoreService {
       type: message.type ? message.type.toLowerCase() : 'chat',
       state: message.state || 'SENT',
       isUnsent,
-      payload: isUnsent ? { text: 'This message was unsent' } : msgPayload,
-      text: isUnsent ? 'This message was unsent' : msgPayload.text || '',
-      mediaUrl: isUnsent ? null : msgPayload.mediaUrl || null,
-      mediaType: isUnsent ? null : msgPayload.mediaType || null,
-      mentions: isUnsent ? [] : msgPayload.mentions || [],
+      payload: isUnsent
+        ? { text: 'This message was unsent' }
+        : message.payload || {},
+      text: isUnsent
+        ? 'This message was unsent'
+        : stringOrEmpty(msgPayload.text),
+      mediaUrl: isUnsent ? null : stringOrNull(msgPayload.mediaUrl),
+      mediaType: isUnsent ? null : stringOrNull(msgPayload.mediaType),
+      mentions: isUnsent ? [] : arrayOrEmpty(msgPayload.mentions),
       inviteData: outputInviteData,
       replyTo: isUnsent ? null : replyToObj,
       status: 'sent',
@@ -647,10 +636,13 @@ export class MessagingCoreService {
       currentUserId,
     );
     let clearedAt: Date | null = null;
-    const whereCondition: any = {
+    const whereCondition: Prisma.MessageWhereInput = {
       conversationId: realConvId,
       deletedAt: null,
     };
+    // Bounds on createdAt from three independent sources (the viewer leaving,
+    // clearing the chat, and the page cursor), merged into one filter.
+    const createdAtFilter: Prisma.DateTimeFilter<'Message'> = {};
 
     const [deletedForUser, participant, participants] = await Promise.all([
       currentUserId
@@ -683,9 +675,9 @@ export class MessagingCoreService {
 
     if (participant) {
       clearedAt = participant.clearedAt;
-      const pLeftAt = (participant as any).leftAt;
+      const pLeftAt = participant.leftAt;
       if (pLeftAt) {
-        whereCondition.createdAt = { lte: pLeftAt };
+        createdAtFilter.lte = pLeftAt;
       }
     }
 
@@ -702,15 +694,12 @@ export class MessagingCoreService {
     // directions) and surfaced in the composer, not by hiding rows here.
 
     if (clearedAt) {
-      whereCondition.createdAt = {
-        ...(whereCondition.createdAt || {}),
-        gt: clearedAt,
-      };
+      createdAtFilter.gt = clearedAt;
     }
 
-    const orConditions: any[] = [];
+    const orConditions: Prisma.MessageWhereInput[] = [];
 
-    if (beforeCursor) {
+    if (typeof beforeCursor === 'string' && beforeCursor) {
       let cursorDate: Date | null = null;
       let cursorId: string | null = null;
 
@@ -744,21 +733,19 @@ export class MessagingCoreService {
             ],
           });
         } else {
-          whereCondition.createdAt = {
-            ...(typeof whereCondition.createdAt === 'object'
-              ? whereCondition.createdAt
-              : {}),
-            lt: cursorDate,
-          };
+          createdAtFilter.lt = cursorDate;
         }
       }
     }
 
+    if (Object.keys(createdAtFilter).length > 0) {
+      whereCondition.createdAt = createdAtFilter;
+    }
     if (orConditions.length > 0) {
-      whereCondition.AND = [...(whereCondition.AND || []), ...orConditions];
+      whereCondition.AND = orConditions;
     }
 
-    const messages: any[] = await this.prisma.message.findMany({
+    const messages = await this.prisma.message.findMany({
       where: whereCondition,
       include: {
         sender: {
@@ -808,11 +795,11 @@ export class MessagingCoreService {
 
     const messagesMapped = messages.map((m) => {
       const payload = m.payload || {};
+      const fields = payloadFields(payload);
 
-      let replyToObj: any = null;
-      if (m.replyTo) {
-        replyToObj = buildReplyToSnapshot(m.replyTo, currentUserId);
-      }
+      const replyToObj = m.replyTo
+        ? buildReplyToSnapshot(m.replyTo, currentUserId)
+        : null;
 
       const isRead =
         currentUserId &&
@@ -821,22 +808,10 @@ export class MessagingCoreService {
         minOtherLastReadAt + 5000 >= new Date(m.createdAt).getTime();
       const isUnsent = m.state === 'UNSENT';
 
-      let inviteData = isUnsent ? null : payload.inviteData || null;
-      if (
-        inviteData &&
-        (inviteData.type === 'group_invite' ||
-          inviteData.groupId ||
-          inviteData.conversationId)
-      ) {
-        const createdAtMs = m.createdAt
-          ? new Date(m.createdAt).getTime()
-          : Date.now();
-        const expiresAt =
-          inviteData.expiresAt ||
-          new Date(createdAtMs + 48 * 60 * 60 * 1000).toISOString();
-        const isExpired = new Date(expiresAt).getTime() <= Date.now();
-        inviteData = { ...inviteData, expiresAt, isExpired };
-      }
+      const inviteData = withInviteExpiry(
+        isUnsent ? null : fields.inviteData,
+        m.createdAt,
+      );
 
       return {
         id: m.id,
@@ -855,10 +830,10 @@ export class MessagingCoreService {
           : '',
         type: m.type ? m.type.toLowerCase() : 'chat',
         payload: isUnsent ? { text: 'This message was unsent' } : payload,
-        text: isUnsent ? 'This message was unsent' : payload.text || '',
-        mediaUrl: isUnsent ? null : payload.mediaUrl || null,
-        mediaType: isUnsent ? null : payload.mediaType || null,
-        mentions: isUnsent ? [] : payload.mentions || [],
+        text: isUnsent ? 'This message was unsent' : stringOrEmpty(fields.text),
+        mediaUrl: isUnsent ? null : stringOrNull(fields.mediaUrl),
+        mediaType: isUnsent ? null : stringOrNull(fields.mediaType),
+        mentions: isUnsent ? [] : arrayOrEmpty(fields.mentions),
         inviteData,
         replyTo: isUnsent ? null : replyToObj,
         status: isRead ? 'read' : 'sent',
@@ -895,12 +870,12 @@ export class MessagingCoreService {
    * services (DM / group / unified) so every read endpoint is equally fast and
    * correctly notifies the other side.
    */
-  async markAsRead(
+  markAsRead(
     conversationId: string,
     userId: string,
   ): Promise<{ success: boolean }> {
     setImmediate(() => void this._persistMarkAsRead(conversationId, userId));
-    return { success: true };
+    return Promise.resolve({ success: true });
   }
 
   protected async _persistMarkAsRead(
@@ -1139,12 +1114,14 @@ export class MessagingCoreService {
       throw new NotFoundException('Message not found');
     }
 
-    const payload = (originalMsg.payload as any) || {};
-    const text = payload.text || '';
-    const mediaUrl = payload.mediaUrl || null;
-    const mediaType = payload.mediaType || null;
+    const payload = payloadFields(originalMsg.payload);
+    const text = stringOrEmpty(payload.text);
+    const mediaUrl = stringOrNull(payload.mediaUrl);
+    const mediaType = stringOrNull(payload.mediaType);
 
-    const forwarded: any[] = [];
+    const forwarded: Awaited<
+      ReturnType<MessagingCoreService['sendMessage']>
+    >[] = [];
     const chunkSize = 5;
     for (let i = 0; i < targetConversationIds.length; i += chunkSize) {
       const chunk = targetConversationIds.slice(i, i + chunkSize);
@@ -1159,8 +1136,10 @@ export class MessagingCoreService {
 
         return this.sendMessage(userId, realConvId, {
           text,
-          mediaUrl,
-          mediaType,
+          // sendMessage treats null and undefined alike (truthiness and
+          // asStringOrNull); its DTO spells "absent" as undefined.
+          mediaUrl: mediaUrl ?? undefined,
+          mediaType: mediaType ?? undefined,
           replyToId: undefined,
           mentions: [],
           isForwarded: true,
@@ -1315,7 +1294,7 @@ export class MessagingCoreService {
     if (!participant || participant.role !== 'OWNER') {
       throw new ForbiddenException('Only the owner can transfer ownership');
     }
-    if (!target || (target as any).leftAt || target.deletedAt) {
+    if (!target || target.leftAt || target.deletedAt) {
       throw new NotFoundException('Target user is not a member of this group');
     }
     await this.prisma.$transaction([
@@ -1366,7 +1345,7 @@ export class MessagingCoreService {
     if (!participant || participant.role !== 'OWNER') {
       throw new ForbiddenException('Only the owner can promote admins');
     }
-    if (!target || (target as any).leftAt || target.deletedAt) {
+    if (!target || target.leftAt || target.deletedAt) {
       throw new NotFoundException('Target user is not a member of this group');
     }
     await this.prisma.conversationParticipant.update({
@@ -1405,7 +1384,7 @@ export class MessagingCoreService {
     if (!participant || participant.role !== 'OWNER') {
       throw new ForbiddenException('Only the owner can demote admins');
     }
-    if (!target || (target as any).leftAt || target.deletedAt) {
+    if (!target || target.leftAt || target.deletedAt) {
       throw new NotFoundException('Target user is not a member of this group');
     }
     await this.prisma.conversationParticipant.update({
@@ -1441,7 +1420,7 @@ export class MessagingCoreService {
     text: string,
   ) {
     const realConvId = await this.resolveConversationId(conversationId);
-    const message: any = await this.prisma.message.create({
+    const message = await this.prisma.message.create({
       data: {
         conversationId: realConvId,
         senderId,
@@ -1508,7 +1487,7 @@ export class MessagingCoreService {
         conversationId: realConvId,
         leftAt: null,
         deletedAt: null,
-      } as any,
+      },
       select: { userId: true },
     });
     return participants.map((p) => p.userId);
@@ -1524,7 +1503,7 @@ export class MessagingCoreService {
         leftAt: null,
         deletedAt: null,
         groupUpdatesActive: true,
-      } as any,
+      },
       select: { userId: true },
     });
     return participants.map((p) => p.userId);
@@ -1569,10 +1548,10 @@ export class MessagingCoreService {
   // requestGroupJoin and they had already started to drift.
 
   /** Canonical join policy. Older rows carry legacy spellings for APPROVAL. */
-  private normalizeWhoCanJoin(raw: any): 'ANYONE' | 'APPROVAL' {
-    const v = String(raw || 'ANYONE')
-      .toUpperCase()
-      .replace(/[\s-]+/g, '_');
+  private normalizeWhoCanJoin(
+    raw: string | null | undefined,
+  ): 'ANYONE' | 'APPROVAL' {
+    const v = (raw || 'ANYONE').toUpperCase().replace(/[\s-]+/g, '_');
     if (
       v === 'APPROVAL' ||
       v === 'APPROVAL_REQUIRED' ||
@@ -1583,8 +1562,8 @@ export class MessagingCoreService {
     return 'ANYONE';
   }
 
-  private isConversationClosed(status: any): boolean {
-    const s = String(status || '').toUpperCase();
+  private isConversationClosed(status: string | null | undefined): boolean {
+    const s = (status || '').toUpperCase();
     return (
       s === 'CLOSED' || s === 'ENDED' || s === 'CANCELLED' || s === 'EXPIRED'
     );
@@ -1631,7 +1610,7 @@ export class MessagingCoreService {
       throw new NotFoundException('GROUP_NOT_FOUND');
     }
 
-    const conv: any = await this.prisma.conversation.findFirst({
+    const conv = await this.prisma.conversation.findFirst({
       where: { id: realConvId, type: 'GROUP' },
       select: {
         id: true,
@@ -1726,7 +1705,7 @@ export class MessagingCoreService {
       throw new NotFoundException('GROUP_NOT_FOUND');
     }
 
-    const conversation: any = await this.prisma.conversation.findFirst({
+    const conversation = await this.prisma.conversation.findFirst({
       where: { id: realConvId, type: 'GROUP' },
       select: {
         id: true,
@@ -1788,13 +1767,16 @@ export class MessagingCoreService {
             deletedAt: null,
             joinedAt: new Date(),
             role: 'MEMBER',
-          } as any,
+          },
         });
-      } catch (err: any) {
+      } catch (err) {
         // Two concurrent joins can both miss the findUnique above and race into
         // the upsert. The loser sees a unique-constraint violation, which here
         // means the membership exists — exactly the intended end state.
-        if (err?.code !== 'P2002') throw err;
+        const isDuplicate =
+          err instanceof Prisma.PrismaClientKnownRequestError &&
+          err.code === 'P2002';
+        if (!isDuplicate) throw err;
       }
 
       // A stale request row would otherwise keep showing "Requested" to admins.

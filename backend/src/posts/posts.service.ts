@@ -6,7 +6,22 @@ import {
   Logger,
   Optional,
 } from '@nestjs/common';
-import { Prisma, MentionSource, NotificationEntityType } from '@prisma/client';
+import {
+  Prisma,
+  MentionSource,
+  NotificationEntityType,
+  PollOption,
+  Comment,
+} from '@prisma/client';
+import { isRecord } from '../common/utils/type-guards.util';
+import { errorMessage } from '../common/utils/error.util';
+import {
+  buildPollView,
+  withMediaUrl,
+  type MediaLike,
+  type PollOptionLike,
+  type PollView,
+} from './post-view';
 import { PrismaService } from '../prisma/prisma.service';
 import type { UserIdentityLike } from '../common/users/deleted-user';
 import {
@@ -36,6 +51,69 @@ import { StudentYearPolicyService } from '../common/student-year/student-year-po
  * stores something different from what was validated.
  */
 const POLL_OPTION_MAX_LENGTH = 100;
+
+/**
+ * A submitted poll option as text: a string trimmed, a number or boolean
+ * stringified. Anything else (an object or array) is empty, and so dropped
+ * with the blank options; it used to be stored as "[object Object]".
+ */
+function pollOptionText(opt: unknown): string {
+  if (typeof opt === 'string') return opt.trim();
+  if (typeof opt === 'number' || typeof opt === 'boolean') return String(opt);
+  return '';
+}
+
+/** The post fields `formatPost` reads. */
+interface FormattablePost {
+  id: string;
+  text: string;
+  author?: unknown;
+  likeCount?: number | null;
+  commentCount?: number | null;
+  media?: MediaLike[] | null;
+  pollOptions?: PollOptionLike[] | null;
+  /** Neither is a Post column; both are honoured if a caller supplies them. */
+  poll?: PollView | null;
+  userVotedOptionId?: string | null;
+  pollVotes?: Array<{ optionId: string }> | null;
+}
+
+/** One row of the raw-SQL feed query in `getFeed` (see its SELECT list). */
+interface FeedSqlRow {
+  id: string;
+  authorId: string;
+  communityId: string | null;
+  text: string;
+  mentions: Prisma.JsonValue | null;
+  likeCount: number;
+  commentCount: number;
+  createdAt: Date;
+  updatedAt: Date;
+  author: {
+    id: string;
+    username: string;
+    displayName: string | null;
+    avatar: string | null;
+    isCampusRep: boolean;
+    collegeId: string | null;
+    collegeName: string | null;
+    college: { id: string; name: string } | null;
+  };
+  media: Array<{
+    id: string;
+    objectKey: string;
+    width: number | null;
+    height: number | null;
+    mimeType: string;
+    type: string;
+    url?: string | null;
+  }>;
+  pollOptions: Array<{ id: string; text: string; voteCount: number }>;
+  isLiked: boolean;
+  isBookmarked: boolean;
+  userVotedOptionId: string | null;
+  community: Record<string, unknown> | null;
+}
 
 @Injectable()
 export class PostsService {
@@ -73,24 +151,23 @@ export class PostsService {
    * what the UI offers and what the API allows cannot disagree.
    */
   private async attachCanDelete<
-    T extends { authorId?: string; communityId?: string | null },
-  >(posts: T[], userId?: string): Promise<T[]> {
-    if (!posts.length) return posts;
-    const flags = await this.contentDeletionAuthorizer.canDeleteEach(
-      userId,
-      posts.map((p) => ({
-        authorId: (p as any).authorId,
-        communityId: (p as any).communityId ?? null,
-      })),
-    );
-    posts.forEach((p: any, i) => {
-      p.canDelete = flags[i];
-    });
-    return posts;
+    T extends { authorId: string; communityId?: string | null },
+  >(posts: T[], userId?: string): Promise<Array<T & { canDelete: boolean }>> {
+    const flags = posts.length
+      ? await this.contentDeletionAuthorizer.canDeleteEach(
+          userId,
+          posts.map((p) => ({
+            authorId: p.authorId,
+            communityId: p.communityId ?? null,
+          })),
+        )
+      : [];
+    // In place, as before: callers return the same array they passed in.
+    return posts.map((p, i) => Object.assign(p, { canDelete: flags[i] }));
   }
 
-  private formatPost(
-    rawPost: any,
+  private formatPost<T extends FormattablePost>(
+    rawPost: T,
     likedSet: Set<string>,
     bookmarkedSet: Set<string>,
     currentUserId?: string,
@@ -107,50 +184,21 @@ export class PostsService {
     const likeCount = post.likeCount ?? 0;
     const commentCount = post.commentCount ?? 0;
 
-    const media = Array.isArray(post.media)
-      ? post.media.map((m: any) => ({
-          ...m,
-          url: m.url || (m.objectKey ? `/api/media/${m.objectKey}` : null),
-        }))
-      : [];
+    const media = Array.isArray(post.media) ? post.media.map(withMediaUrl) : [];
 
     const pollOptions = post.pollOptions || [];
     let poll = post.poll || null;
     if (!poll && pollOptions.length > 0) {
-      const sortedOptions = [...pollOptions].sort((a: any, b: any) =>
-        (a.id || '').localeCompare(b.id || ''),
-      );
-      const options = sortedOptions.map((opt: any) => ({
-        id: opt.id,
-        text: opt.text,
-        votes: Number(opt.voteCount ?? opt._count?.votes ?? 0),
-      }));
-      const totalVotes = options.reduce(
-        (sum: number, o: any) => sum + o.votes,
-        0,
-      );
-
-      const userVotedOptionId =
+      poll = buildPollView(
+        post.text,
+        pollOptions,
+        (opt) => Number(opt.voteCount ?? opt._count?.votes ?? 0),
         post.userVotedOptionId ||
-        (Array.isArray(post.pollVotes) && post.pollVotes.length > 0
-          ? post.pollVotes[0]?.optionId
-          : null);
-      const userVotedIndex = userVotedOptionId
-        ? options.findIndex((o: any) => o.id === userVotedOptionId)
-        : -1;
-      const myVotes = userVotedIndex >= 0 ? [userVotedIndex] : [];
-      const selectedUsers =
-        currentUserId && myVotes.length > 0 ? { [currentUserId]: myVotes } : {};
-
-      poll = {
-        question: post.text,
-        options,
-        totalVotes,
-        userVotedOptionId: userVotedOptionId || undefined,
-        votedOptionIndex: userVotedIndex >= 0 ? userVotedIndex : undefined,
-        myVotes,
-        selectedUsers,
-      };
+          (Array.isArray(post.pollVotes) && post.pollVotes.length > 0
+            ? post.pollVotes[0]?.optionId
+            : null),
+        currentUserId,
+      );
     }
 
     return {
@@ -175,7 +223,7 @@ export class PostsService {
     text: string,
     mediaKey?: string,
     communityId?: string,
-    poll?: any,
+    poll?: unknown,
     mentions?: MentionDto[],
     mediaKeys?: string[],
   ) {
@@ -183,9 +231,14 @@ export class PostsService {
       await this.assertCanPostInCommunity(authorId, communityId);
     }
 
-    if (poll && Array.isArray(poll.options) && poll.options.length > 0) {
-      for (const opt of poll.options) {
-        const str = typeof opt === 'string' ? opt.trim() : String(opt ?? '');
+    // Only checked to be an object by the DTO; `options` is read as untrusted.
+    const pollInput: unknown[] =
+      isRecord(poll) && Array.isArray(poll.options)
+        ? (poll.options as unknown[])
+        : [];
+    if (pollInput.length > 0) {
+      for (const opt of pollInput) {
+        const str = pollOptionText(opt);
         if (str.length > POLL_OPTION_MAX_LENGTH) {
           throw new BadRequestException(
             `Poll options cannot exceed ${POLL_OPTION_MAX_LENGTH} characters`,
@@ -271,8 +324,7 @@ export class PostsService {
         authorId,
         text,
         communityId,
-        mentions:
-          sanitizedMentions.length > 0 ? (sanitizedMentions as any) : undefined,
+        mentions: sanitizedMentions.length > 0 ? sanitizedMentions : undefined,
         media:
           mediaIdsToConnect.length > 0
             ? {
@@ -319,15 +371,10 @@ export class PostsService {
       );
     }
 
-    let createdPollOptions: any[] = [];
-    if (poll && Array.isArray(poll.options) && poll.options.length > 0) {
-      const sanitizedOptions = poll.options
-        .map((opt: any) =>
-          (typeof opt === 'string' ? opt.trim() : String(opt ?? '')).slice(
-            0,
-            POLL_OPTION_MAX_LENGTH,
-          ),
-        )
+    let createdPollOptions: PollOption[] = [];
+    if (pollInput.length > 0) {
+      const sanitizedOptions = pollInput
+        .map((opt) => pollOptionText(opt).slice(0, POLL_OPTION_MAX_LENGTH))
         .filter(Boolean);
 
       if (sanitizedOptions.length > 0) {
@@ -343,10 +390,7 @@ export class PostsService {
       }
     }
 
-    const formattedMedia = (post.media || []).map((m: any) => ({
-      ...m,
-      url: m.url || (m.objectKey ? `/api/media/${m.objectKey}` : null),
-    }));
+    const formattedMedia = (post.media || []).map(withMediaUrl);
 
     const formattedPost = {
       ...post,
@@ -431,7 +475,7 @@ export class PostsService {
    * so a caller that already holds a transaction can still enlist this in it.
    */
   async deletePostInternal(
-    tx: any,
+    tx: Pick<Prisma.TransactionClient, '$queryRaw'>,
     postId: string,
     now = new Date(),
   ): Promise<string[]> {
@@ -551,9 +595,9 @@ export class PostsService {
         void this.mediaCleanupService.queueMediaDeletion(mediaKeys);
       } else {
         const deleteMediaJobs = mediaKeys.map((key) =>
-          this.storageService.delete(key).catch((err) => {
+          this.storageService.delete(key).catch((err: unknown) => {
             this.logger.warn(
-              `Post media cleanup failed for key=${key} post=${postId}: ${err?.message || err}`,
+              `Post media cleanup failed for key=${key} post=${postId}: ${errorMessage(err)}`,
             );
           }),
         );
@@ -765,7 +809,7 @@ export class PostsService {
     // repeated. Legacy cursors (a bare ISO date, or a bare post id) still parse.
     let cursorDate: Date | undefined = undefined;
     let cursorId: string | undefined = undefined;
-    if (cursor) {
+    if (typeof cursor === 'string' && cursor) {
       const delimiter = cursor.includes('|') ? '|' : '__';
       const [datePart, idPart] = cursor.split(delimiter);
       const parsed = new Date(datePart);
@@ -786,7 +830,7 @@ export class PostsService {
 
     const fetchLimit = limit + 1;
 
-    const rawPosts: any[] = await this.prisma.$queryRaw`
+    const rawPosts = await this.prisma.$queryRaw<FeedSqlRow[]>`
       SELECT 
         p.id,
         p."authorId",
@@ -928,45 +972,19 @@ export class PostsService {
       const likeCount = Number(post.likeCount ?? 0);
       const commentCount = Number(post.commentCount ?? 0);
 
-      const media = (post.media || []).map((m: any) => ({
-        ...m,
-        url: m.url || (m.objectKey ? `/api/media/${m.objectKey}` : null),
-      }));
+      const media = (post.media || []).map(withMediaUrl);
 
       const pollOptions = post.pollOptions || [];
-      let poll = null;
-      if (pollOptions.length > 0) {
-        const sortedOptions = [...pollOptions].sort((a: any, b: any) =>
-          (a.id || '').localeCompare(b.id || ''),
-        );
-        const options = sortedOptions.map((opt: any) => ({
-          id: opt.id,
-          text: opt.text,
-          votes: Number(opt.voteCount || 0),
-        }));
-        const totalVotes = options.reduce(
-          (sum: number, o: any) => sum + o.votes,
-          0,
-        );
-
-        const userVotedOptionId = post.userVotedOptionId || null;
-        const userVotedIndex = userVotedOptionId
-          ? options.findIndex((o: any) => o.id === userVotedOptionId)
-          : -1;
-        const myVotes = userVotedIndex >= 0 ? [userVotedIndex] : [];
-        const selectedUsers =
-          userId && myVotes.length > 0 ? { [userId]: myVotes } : {};
-
-        poll = {
-          question: post.text,
-          options,
-          totalVotes,
-          userVotedOptionId: userVotedOptionId || undefined,
-          votedOptionIndex: userVotedIndex >= 0 ? userVotedIndex : undefined,
-          myVotes,
-          selectedUsers,
-        };
-      }
+      const poll =
+        pollOptions.length > 0
+          ? buildPollView(
+              post.text,
+              pollOptions,
+              (opt) => Number(opt.voteCount || 0),
+              post.userVotedOptionId || null,
+              userId,
+            )
+          : null;
 
       return {
         id: post.id,
@@ -993,7 +1011,7 @@ export class PostsService {
       };
     });
 
-    await this.attachCanDelete(formattedPosts as any[], userId);
+    await this.attachCanDelete(formattedPosts, userId);
 
     return {
       posts: formattedPosts,
@@ -1041,7 +1059,7 @@ export class PostsService {
     // bare-date / bare-id cursors still parse.
     let cursorDate: Date | undefined = undefined;
     let cursorId: string | undefined = undefined;
-    if (cursor) {
+    if (typeof cursor === 'string' && cursor) {
       const delimiter = cursor.includes('|') ? '|' : '__';
       const [datePart, idPart] = cursor.split(delimiter);
       const parsed = new Date(datePart);
@@ -1175,7 +1193,9 @@ export class PostsService {
       // Single round-trip: the INSERT ... ON CONFLICT and the counter increment
       // run as one atomic statement (a CTE), so we pay one backend↔DB round trip
       // instead of two. `inserted` reflects whether a new like row was created.
-      const rows: any[] = await this.prisma.$queryRaw`
+      const rows = await this.prisma.$queryRaw<
+        Array<{ likeCount: number; inserted: number }>
+      >`
         WITH ins AS (
           INSERT INTO "PostLike" ("userId", "postId", "createdAt")
           VALUES (${userId}, ${postId}, NOW())
@@ -1256,7 +1276,9 @@ export class PostsService {
     return this.redisService.withLock(lockKey, 2000, async () => {
       // One atomic round-trip: DELETE the like and decrement the counter only if a
       // row was actually removed (floored at 0), via a single CTE statement.
-      const rows: any[] = await this.prisma.$queryRaw`
+      const rows = await this.prisma.$queryRaw<
+        Array<{ likeCount: number; deleted: number }>
+      >`
         WITH del AS (
           DELETE FROM "PostLike" WHERE "userId" = ${userId} AND "postId" = ${postId}
           RETURNING 1
@@ -1309,7 +1331,7 @@ export class PostsService {
       {
         actorId: userId,
         authorId: comment.authorId,
-        communityId: (comment as any).post?.communityId ?? null,
+        communityId: comment.post?.communityId ?? null,
       },
       'comment',
     );
@@ -1318,7 +1340,7 @@ export class PostsService {
     const originalAuthorId = comment.authorId;
     const originalText = comment.text || '';
 
-    const hasActiveReplies = (comment as any)._count.replies > 0;
+    const hasActiveReplies = comment._count.replies > 0;
 
     await this.prisma.comment.update({
       where: { id: commentId },
@@ -1368,7 +1390,7 @@ export class PostsService {
         contentType: 'comment',
         entityId: commentId,
         postId: comment.postId,
-        communityId: (comment as any).post?.communityId ?? null,
+        communityId: comment.post?.communityId ?? null,
         preview: originalText,
       });
     }
@@ -1394,7 +1416,9 @@ export class PostsService {
     return this.redisService.withLock(lockKey, 2000, async () => {
       // One atomic round-trip: INSERT ... ON CONFLICT + increment via a single CTE
       // (never throws P2002, counter can't be double-incremented).
-      const rows: any[] = await this.prisma.$queryRaw`
+      const rows = await this.prisma.$queryRaw<
+        Array<{ likeCount: number; inserted: number }>
+      >`
         WITH ins AS (
           INSERT INTO "CommentLike" ("userId", "commentId", "createdAt")
           VALUES (${userId}, ${commentId}, NOW())
@@ -1475,7 +1499,9 @@ export class PostsService {
 
     return this.redisService.withLock(lockKey, 2000, async () => {
       // One atomic round-trip: DELETE + floored decrement via a single CTE.
-      const rows: any[] = await this.prisma.$queryRaw`
+      const rows = await this.prisma.$queryRaw<
+        Array<{ likeCount: number; deleted: number }>
+      >`
         WITH del AS (
           DELETE FROM "CommentLike" WHERE "userId" = ${userId} AND "commentId" = ${commentId}
           RETURNING 1
@@ -1515,7 +1541,7 @@ export class PostsService {
     if (!post || post.deletedAt || excludedUserIds.includes(post.authorId))
       throw new NotFoundException('Post not found');
 
-    let parentComment: any = null;
+    let parentComment: Comment | null = null;
     if (parentId) {
       parentComment = await this.prisma.comment.findUnique({
         where: { id: parentId },
@@ -1548,9 +1574,7 @@ export class PostsService {
           text,
           parentId,
           mentions:
-            sanitizedMentions.length > 0
-              ? (sanitizedMentions as any)
-              : undefined,
+            sanitizedMentions.length > 0 ? sanitizedMentions : undefined,
         },
         include: { author: { select: PostsService.COMMENT_AUTHOR_SELECT } },
       });
@@ -1736,7 +1760,9 @@ export class PostsService {
    * tombstone's last live descendant can turn its deleted parent into a leaf in
    * turn.
    */
-  private pruneEmptyTombstones(rawComments: any[]) {
+  private pruneEmptyTombstones<
+    T extends { id: string; parentId: string | null; isDeleted: boolean },
+  >(rawComments: T[]): T[] {
     let survivors = rawComments;
     for (;;) {
       const parentsWithChildren = new Set(
@@ -1750,7 +1776,18 @@ export class PostsService {
     }
   }
 
-  private shapeComments(rawComments: any[], likedCommentIds: Set<string>) {
+  private shapeComments<
+    T extends {
+      id: string;
+      postId: string;
+      parentId: string | null;
+      createdAt: Date;
+      isDeleted: boolean;
+      deletedByUser: boolean;
+      removedByOwner: boolean;
+      author?: UserIdentityLike | null;
+    },
+  >(rawComments: T[], likedCommentIds: Set<string>) {
     return this.pruneEmptyTombstones(rawComments).map((c) => {
       if (c.isDeleted) {
         return {
@@ -1777,7 +1814,7 @@ export class PostsService {
       // identity. Once the account is purged the comment becomes a tombstone
       // via the branch above; this covers the 30 days before that, when the
       // row still holds the real name and avatar.
-      const author = c.author as UserIdentityLike | null | undefined;
+      const author = c.author;
       const authorUnavailable = author ? isUnavailableUser(author) : false;
 
       return {
@@ -1871,7 +1908,7 @@ export class PostsService {
     // Breadth-first descendant gathering. `parentId IN frontier` yields disjoint
     // sets each level (a comment has exactly one parent), so no node is fetched
     // twice; the depth cap is a defensive guard against pathological data.
-    const all: any[] = [...roots];
+    const all = [...roots];
     let frontier = roots.map((r) => r.id);
     let depth = 0;
     while (frontier.length > 0 && depth < 40) {
@@ -1904,31 +1941,34 @@ export class PostsService {
     const likedSet = new Set(commentLikes.map((l) => l.commentId));
 
     const shaped = this.shapeComments(all, likedSet);
-    const flat: any[] = [];
-    const walk = (nodes: any[]) =>
-      nodes.forEach((n) => {
-        flat.push(n);
-        if (n.replies?.length) walk(n.replies);
-      });
-    walk(shaped);
+    // The shaped list is already flat: rows carry `parentId`, not nested
+    // `replies`, so the walk over `replies` that used to be here only ever
+    // visited this list, in this order.
+    const flat = shaped;
 
-    const commentsDeletable =
-      await this.contentDeletionAuthorizer.canDeleteEach(
-        userId,
-        // A comment has no community of its own — moderation rights come from
-        // the post it sits under.
-        flat.map((c: any) => ({
-          authorId: c.authorId,
-          communityId: postCommunityId,
-        })),
-      );
-    flat.forEach((c: any, i: number) => {
-      // A scrubbed placeholder is already gone; offering to remove it again is
-      // meaningless and its authorId is no longer meaningful either.
-      c.canDelete = c.isDeleted ? false : commentsDeletable[i];
-    });
+    // A scrubbed placeholder is already gone, so it is never deletable — and it
+    // carries `authorId: null`, which must not reach the authorizer: for a
+    // moderator it looks authors up with `userId: { in: [...] }`, and Prisma
+    // rejects a null there, failing the whole page. Only live comments are asked.
+    const live = flat.filter(
+      (c): c is Extract<(typeof flat)[number], { authorId: string }> =>
+        !c.isDeleted,
+    );
+    const liveDeletable = await this.contentDeletionAuthorizer.canDeleteEach(
+      userId,
+      // A comment has no community of its own — moderation rights come from
+      // the post it sits under.
+      live.map((c) => ({ authorId: c.authorId, communityId: postCommunityId })),
+    );
+    const deletableById = new Map(live.map((c, i) => [c.id, liveDeletable[i]]));
+    // In place, as before: `comments` below is this same array.
+    const comments = flat.map((c) =>
+      Object.assign(c, {
+        canDelete: c.isDeleted ? false : (deletableById.get(c.id) ?? false),
+      }),
+    );
 
-    return { comments: shaped, nextCursor };
+    return { comments, nextCursor };
   }
 
   /**
@@ -1974,7 +2014,7 @@ export class PostsService {
     // Compound keyset cursor "<iso>|<commentId>" or legacy "<iso>__<commentId>"
     let cursorDate: Date | undefined = undefined;
     let cursorId: string | undefined = undefined;
-    if (cursor) {
+    if (typeof cursor === 'string' && cursor) {
       const delimiter = cursor.includes('|') ? '|' : '__';
       const [datePart, idPart] = cursor.split(delimiter);
       const parsed = new Date(datePart);
@@ -2111,56 +2151,31 @@ export class PostsService {
     const isLiked = !!postLike;
     const isBookmarked = !!postBookmark;
 
-    const formattedMedia = (media || []).map((m: any) => ({
-      ...m,
-      url: m.url || (m.objectKey ? `/api/media/${m.objectKey}` : null),
-    }));
+    const formattedMedia = (media || []).map(withMediaUrl);
 
-    const pollOptions = (post as any).pollOptions || [];
-    let poll = (post as any).poll || null;
-    if (!poll && pollOptions.length > 0) {
-      const sortedOptions = [...pollOptions].sort((a: any, b: any) =>
-        (a.id || '').localeCompare(b.id || ''),
-      );
-      const options = sortedOptions.map((opt: any) => ({
-        id: opt.id,
-        text: opt.text,
-        votes: Number(opt._count?.votes || opt.voteCount || 0),
-      }));
-      const totalVotes = options.reduce(
-        (sum: number, o: any) => sum + o.votes,
-        0,
-      );
-
-      const userVotedOptionId =
-        Array.isArray((post as any).pollVotes) &&
-        (post as any).pollVotes.length > 0
-          ? (post as any).pollVotes[0]?.optionId
-          : null;
-      const userVotedIndex = userVotedOptionId
-        ? options.findIndex((o: any) => o.id === userVotedOptionId)
-        : -1;
-      const myVotes = userVotedIndex >= 0 ? [userVotedIndex] : [];
-      const selectedUsers =
-        userId && myVotes.length > 0 ? { [userId]: myVotes } : {};
-
-      poll = {
-        question: post.text,
-        options,
-        totalVotes,
-        userVotedOptionId: userVotedOptionId || undefined,
-        votedOptionIndex: userVotedIndex >= 0 ? userVotedIndex : undefined,
-        myVotes,
-        selectedUsers,
-      };
-    }
+    // `poll` is not a column, so there is no stored poll to prefer here; it is
+    // built from the options whenever there are any. This path counts votes
+    // from `_count` first, unlike the list paths.
+    const pollOptions = post.pollOptions || [];
+    const poll =
+      pollOptions.length > 0
+        ? buildPollView(
+            post.text,
+            pollOptions,
+            (opt) => Number(opt._count?.votes || opt.voteCount || 0),
+            Array.isArray(post.pollVotes) && post.pollVotes.length > 0
+              ? post.pollVotes[0]?.optionId
+              : null,
+            userId,
+          )
+        : null;
 
     const [canDeleteThis] = await this.contentDeletionAuthorizer.canDeleteEach(
       userId,
       [
         {
-          authorId: (post as any).authorId,
-          communityId: (post as any).communityId ?? null,
+          authorId: post.authorId,
+          communityId: post.communityId ?? null,
         },
       ],
     );
@@ -2243,7 +2258,7 @@ export class PostsService {
     // user's bookmarks, so it's a stable tiebreaker for equal createdAt.
     let cursorDate: Date | undefined = undefined;
     let cursorPostId: string | undefined = undefined;
-    if (cursor) {
+    if (typeof cursor === 'string' && cursor) {
       const delimiter = cursor.includes('|') ? '|' : '__';
       const [datePart, idPart] = cursor.split(delimiter);
       const parsed = new Date(datePart);
@@ -2333,7 +2348,7 @@ export class PostsService {
         if (!b.post || b.post.deletedAt) return null;
         return this.formatPost(b.post, likedSet, bookmarkedSet, userId);
       })
-      .filter(Boolean);
+      .filter((p) => p !== null);
 
     await this.attachCanDelete(formattedPosts, userId);
     return { posts: formattedPosts, nextCursor };
@@ -2369,13 +2384,13 @@ export class PostsService {
     }
 
     // Sort options deterministically to map index reliably
-    const sortedOptions = [...pollOptions].sort((a: any, b: any) =>
+    const sortedOptions = [...pollOptions].sort((a, b) =>
       (a.id || '').localeCompare(b.id || ''),
     );
 
-    let targetOption: any = null;
+    let targetOption: (typeof sortedOptions)[number] | undefined;
     if (dto.optionId) {
-      targetOption = sortedOptions.find((o: any) => o.id === dto.optionId);
+      targetOption = sortedOptions.find((o) => o.id === dto.optionId);
     } else if (Array.isArray(dto.indices) && dto.indices.length > 0) {
       const idx = dto.indices[0];
       targetOption = sortedOptions[idx];
@@ -2386,6 +2401,7 @@ export class PostsService {
     if (!targetOption) {
       throw new BadRequestException('Invalid poll option selected');
     }
+    const chosenOption = targetOption;
 
     const lockKey = `toggle:pollvote:${userId}:${postId}`;
 
@@ -2404,12 +2420,12 @@ export class PostsService {
         this.prisma.pollVote.create({
           data: {
             postId,
-            optionId: targetOption.id,
+            optionId: chosenOption.id,
             userId,
           },
         }),
         this.prisma.pollOption.update({
-          where: { id: targetOption.id },
+          where: { id: chosenOption.id },
           data: { voteCount: { increment: 1 } },
         }),
       ]);
@@ -2419,22 +2435,17 @@ export class PostsService {
         where: { postId },
         include: { _count: { select: { votes: true } } },
       });
-      const updatedSortedOptions = [...updatedOptionsRaw].sort(
-        (a: any, b: any) => (a.id || '').localeCompare(b.id || ''),
+      const updatedSortedOptions = [...updatedOptionsRaw].sort((a, b) =>
+        (a.id || '').localeCompare(b.id || ''),
       );
 
-      const options = updatedSortedOptions.map((opt: any) => ({
+      const options = updatedSortedOptions.map((opt) => ({
         id: opt.id,
         text: opt.text,
         votes: Number(opt.voteCount ?? opt._count?.votes ?? 0),
       }));
-      const totalVotes = options.reduce(
-        (sum: number, o: any) => sum + o.votes,
-        0,
-      );
-      const userVotedIndex = options.findIndex(
-        (o: any) => o.id === targetOption.id,
-      );
+      const totalVotes = options.reduce((sum, o) => sum + o.votes, 0);
+      const userVotedIndex = options.findIndex((o) => o.id === chosenOption.id);
       const myVotes = userVotedIndex >= 0 ? [userVotedIndex] : [];
       const selectedUsers = { [userId]: myVotes };
 
@@ -2442,7 +2453,7 @@ export class PostsService {
         question: post.text,
         options,
         totalVotes,
-        userVotedOptionId: targetOption.id,
+        userVotedOptionId: chosenOption.id,
         votedOptionIndex: userVotedIndex,
         myVotes,
         selectedUsers,

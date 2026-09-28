@@ -11,6 +11,8 @@ import {
   Delete,
   BadRequestException,
 } from '@nestjs/common';
+import { inviteString } from './core/invite-data';
+import { requestedUserIds } from './core/requested-user-ids';
 import type { AuthenticatedRequest } from '../common/types/authenticated-request';
 import { MessagesService } from './messages.service';
 import { JwtGuard } from '../common/guards/jwt.guard';
@@ -20,6 +22,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationFactory } from '../notifications/notification.factory';
 import { SendMessageDto } from './core/dto/send-message.dto';
 import { emitMessageNew } from './message-alert.util';
+import { UpdateGroupSettingsDto } from './dto/update-group-settings.dto';
 
 @Controller('api/messages')
 export class MessagesController {
@@ -49,8 +52,8 @@ export class MessagesController {
     const userId = req.user?.id;
     const result = await this.messagesService.unsendMessage(messageId, userId);
     if (result.success && result.conversationId) {
-      const pubId = (result as any).publicId || result.conversationId;
-      const participantIds = (result as any).participantIds || [];
+      const pubId = result.publicId || result.conversationId;
+      const participantIds = result.participantIds || [];
       setImmediate(() => {
         void this.domainEventService.emit(
           'message:updated',
@@ -205,7 +208,7 @@ export class MessagesController {
     // Capped so a pathological query string cannot become the cache key or a
     // very wide `contains` scan. Longer input is truncated, not rejected: the
     // extra characters could only have narrowed the result further.
-    const searchTerm = (search || '').slice(0, 100);
+    const searchTerm = (typeof search === 'string' ? search : '').slice(0, 100);
     return this.messagesService.getUserConversations(
       userId,
       limitNum,
@@ -274,8 +277,8 @@ export class MessagesController {
           text:
             message.text ||
             (message.inviteData
-              ? message.inviteData.groupName
-                ? `Group invite: ${message.inviteData.groupName}`
+              ? inviteString(message.inviteData, 'groupName')
+                ? `Group invite: ${inviteString(message.inviteData, 'groupName')}`
                 : 'Group invite'
               : ''),
           createdAt: message.createdAt,
@@ -321,24 +324,13 @@ export class MessagesController {
   async startConversation(
     @Req() req: AuthenticatedRequest,
     @Query('userIds') userIdsQuery?: string,
-    @Body('userIds') userIdsBody?: string[],
+    @Body('userIds') userIdsBody?: unknown,
     @Body('name') nameBody?: string,
   ) {
     const userId = req.user?.id;
     let targetUserIds: string[] = [];
     if (userIdsBody) {
-      if (Array.isArray(userIdsBody)) {
-        targetUserIds = userIdsBody
-          .map((item: any) =>
-            typeof item === 'string' ? item : item?.id || item?.userId,
-          )
-          .filter(Boolean);
-      } else if (typeof userIdsBody === 'string') {
-        targetUserIds = [userIdsBody];
-      } else if (typeof userIdsBody === 'object') {
-        const singleId = (userIdsBody as any).id || (userIdsBody as any).userId;
-        if (singleId) targetUserIds = [singleId];
-      }
+      targetUserIds = requestedUserIds(userIdsBody);
     } else if (userIdsQuery) {
       targetUserIds = userIdsQuery.split(',');
     }
@@ -537,7 +529,7 @@ export class MessagesController {
       const pIds = await this.messagesService.getConversationParticipantIds(
         result.id,
       );
-      const avatarVal = result.avatarKey || result.avatar || null;
+      const avatarVal = result.avatarKey || null;
       void this.domainEventService.emit(
         'conversation:updated',
         {
@@ -556,7 +548,7 @@ export class MessagesController {
 
     return {
       ...result,
-      avatar: result.avatarKey || result.avatar || null,
+      avatar: result.avatarKey || null,
     };
   }
 
@@ -573,6 +565,8 @@ export class MessagesController {
       userId,
       targetUserId,
     );
+    // Already in the group: nothing changed, so nothing to announce.
+    if (result.alreadyMember) return result;
     const actorHandle = await this.messagesService.getUserHandle(userId);
     const targetHandle = await this.messagesService.getUserHandle(targetUserId);
     await this.broadcastSystemMessage(
@@ -712,7 +706,7 @@ export class MessagesController {
   async updateSettings(
     @Req() req: AuthenticatedRequest,
     @Param('id') conversationId: string,
-    @Body() body: any,
+    @Body() body: UpdateGroupSettingsDto,
   ) {
     const userId = req.user?.id;
     return this.messagesService.updateGroupSettings(

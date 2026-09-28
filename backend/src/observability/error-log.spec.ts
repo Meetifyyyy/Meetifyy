@@ -1,8 +1,19 @@
-import { ErrorLogRecorder } from './error-log.recorder';
+import { ErrorLogRecorder, type ErrorLogRecord } from './error-log.recorder';
 import { ErrorLogRetentionService } from './error-log-retention.service';
 import { config } from '../config';
+import { stub } from '../common/testing/stub';
+import type { PrismaService } from '../prisma/prisma.service';
 
-const baseRecord = (over: Partial<any> = {}) => ({
+/** A row as the recorder hands it to `createMany`. */
+type ErrorRow = {
+  message: string;
+  stack: string | null;
+  [column: string]: unknown;
+};
+/** The retention sweep's batch query. */
+type SweepQuery = { where: { occurredAt: { lt: Date } }; take?: number };
+
+const baseRecord = (over: Partial<ErrorLogRecord> = {}): ErrorLogRecord => ({
   route: '/api/posts/:id',
   path: '/api/posts/abc',
   method: 'GET',
@@ -20,12 +31,16 @@ const baseRecord = (over: Partial<any> = {}) => ({
 });
 
 describe('ErrorLogRecorder', () => {
-  let createMany: jest.Mock;
+  let createMany: jest.Mock<Promise<{ count: number }>, [{ data: ErrorRow[] }]>;
   let recorder: ErrorLogRecorder;
 
   beforeEach(() => {
-    createMany = jest.fn().mockResolvedValue({ count: 1 });
-    recorder = new ErrorLogRecorder({ errorLog: { createMany } } as any);
+    createMany = jest
+      .fn<Promise<{ count: number }>, [{ data: ErrorRow[] }]>()
+      .mockResolvedValue({ count: 1 });
+    recorder = new ErrorLogRecorder(
+      stub<PrismaService>({ errorLog: { createMany } }),
+    );
   });
 
   afterEach(async () => {
@@ -97,7 +112,7 @@ describe('ErrorLogRecorder', () => {
     recorder.record(baseRecord({ stack: 'y'.repeat(9000) }));
     await recorder.flush();
     expect(
-      createMany.mock.calls[0][0].data[0].stack.length,
+      createMany.mock.calls[0][0].data[0].stack!.length,
     ).toBeLessThanOrEqual(4000);
   });
 
@@ -118,7 +133,7 @@ describe('ErrorLogRetentionService', () => {
   });
 
   it('computes a cutoff that many days back', () => {
-    const service = new ErrorLogRetentionService({} as any);
+    const service = new ErrorLogRetentionService(stub<PrismaService>());
     const days =
       (Date.now() - service.cutoff.getTime()) / (24 * 60 * 60 * 1000);
     expect(days).toBeCloseTo(config.observability.errorLogs.retentionDays, 1);
@@ -126,13 +141,13 @@ describe('ErrorLogRetentionService', () => {
 
   it('deletes only rows older than the cutoff', async () => {
     const findMany = jest
-      .fn()
+      .fn<Promise<{ id: string }[]>, [SweepQuery]>()
       .mockResolvedValueOnce([{ id: 'a' }])
       .mockResolvedValueOnce([]);
     const deleteMany = jest.fn().mockResolvedValue({ count: 1 });
-    const service = new ErrorLogRetentionService({
-      errorLog: { findMany, deleteMany },
-    } as any);
+    const service = new ErrorLogRetentionService(
+      stub<PrismaService>({ errorLog: { findMany, deleteMany } }),
+    );
 
     const removed = await service.sweep();
 
@@ -144,18 +159,22 @@ describe('ErrorLogRetentionService', () => {
   it('sweeps in bounded batches rather than one statement', async () => {
     // A long-neglected table must not be cleared by a delete that holds locks
     // for however long it takes.
-    const findMany = jest.fn().mockResolvedValue([]);
-    const service = new ErrorLogRetentionService({
-      errorLog: { findMany, deleteMany: jest.fn() },
-    } as any);
+    const findMany = jest
+      .fn<Promise<{ id: string }[]>, [SweepQuery]>()
+      .mockResolvedValue([]);
+    const service = new ErrorLogRetentionService(
+      stub<PrismaService>({ errorLog: { findMany, deleteMany: jest.fn() } }),
+    );
     await service.sweep();
     expect(findMany.mock.calls[0][0].take).toBeGreaterThan(0);
   });
 
   it('never throws, because it runs from a timer', async () => {
-    const service = new ErrorLogRetentionService({
-      errorLog: { findMany: jest.fn().mockRejectedValue(new Error('nope')) },
-    } as any);
+    const service = new ErrorLogRetentionService(
+      stub<PrismaService>({
+        errorLog: { findMany: jest.fn().mockRejectedValue(new Error('nope')) },
+      }),
+    );
     await expect(service.sweep()).resolves.toBe(0);
   });
 });

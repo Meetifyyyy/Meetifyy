@@ -456,7 +456,9 @@ export default function ChatMessageList({
   const findMessageEl = useCallback((messageId) => {
     const container = bodyRef.current;
     if (!container || !messageId) return null;
-    const safe = (window.CSS && CSS.escape) ? CSS.escape(String(messageId)) : String(messageId).replace(/"/g, '\\"');
+    // The fallback escapes backslashes as well as quotes: escaping `"` alone
+    // left an id ending in `\` able to escape the closing quote.
+    const safe = (window.CSS && CSS.escape) ? CSS.escape(String(messageId)) : String(messageId).replace(/["\\]/g, '\\$&');
     return container.querySelector(`[data-message-id="${safe}"]`)
         || container.querySelector(`[data-client-id="${safe}"]`);
   }, []);

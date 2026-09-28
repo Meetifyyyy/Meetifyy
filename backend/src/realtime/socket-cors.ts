@@ -1,4 +1,5 @@
 import { config } from '../config';
+import { originMatchesPattern } from '../config/origin-pattern';
 
 /**
  * Origin check for the Socket.IO handshake.
@@ -24,13 +25,8 @@ export function socketCorsOrigin(
       origin,
     );
 
-  const matchesPattern = (allowed: string) => {
-    if (allowed === '*') return true;
-    if (!allowed.includes('*')) return false;
-    const regexPattern =
-      '^' + allowed.replace(/\./g, '\\.').replace(/\*/g, '[^.]*') + '$';
-    return new RegExp(regexPattern, 'i').test(origin);
-  };
+  const matchesPattern = (allowed: string) =>
+    originMatchesPattern(allowed, origin);
 
   const allowed =
     origins.includes(origin) ||

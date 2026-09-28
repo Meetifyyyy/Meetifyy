@@ -214,22 +214,25 @@ export class BlocksService implements OnModuleInit, OnModuleDestroy {
    * on a following-feed, say). Assigning would silently drop their constraint;
    * ANDing composes with it.
    */
-  async injectBlockFilter<T extends Record<string, any>>(
+  async injectBlockFilter<T extends object>(
     currentUserId: string | null | undefined,
     where: T,
     field = 'id',
-  ): Promise<T & { AND?: any[] }> {
+  ): Promise<T> {
     if (!currentUserId) return where;
     const excluded = await this.getExcludedUserIds(currentUserId);
     if (excluded.length === 0) return where;
 
-    const existingAnd = where.AND;
-    const and = Array.isArray(existingAnd)
-      ? [...existingAnd]
+    const existingAnd = (where as { AND?: unknown }).AND;
+    const and: unknown[] = Array.isArray(existingAnd)
+      ? existingAnd.slice()
       : existingAnd
         ? [existingAnd]
         : [];
     and.push({ [field]: { notIn: excluded } });
+    // One more clause on the same model, so the result is still the caller's
+    // own `T` (a Prisma WhereInput everywhere). The compiler cannot check the
+    // clause itself, since its key is the runtime `field`; the specs do.
     return { ...where, AND: and };
   }
 

@@ -1,6 +1,13 @@
 import { BadRequestException, HttpException } from '@nestjs/common';
-import { UserOtpPurpose } from '@prisma/client';
+import { UserOtpPurpose, type UserOtp } from '@prisma/client';
 import { UserOtpService } from './user-otp.service';
+import { stub } from '../common/testing/stub';
+import type { PrismaService } from '../prisma/prisma.service';
+import type { RedisService } from '../redis/redis.service';
+
+/** A stored code. `requestIp` is only present when the service passed one. */
+type OtpRow = Omit<UserOtp, 'requestIp'> & { requestIp?: string | null };
+type UserPurposeKey = { userId: string; purpose: UserOtpPurpose };
 import {
   OTP_MAX_ATTEMPTS,
   OTP_RESEND_COOLDOWN_MS,
@@ -22,8 +29,8 @@ describe('UserOtpService', () => {
   const RECOVERY = UserOtpPurpose.ACCOUNT_RECOVERY;
 
   let service: UserOtpService;
-  let rows: Map<string, any>;
-  let prisma: any;
+  let rows: Map<string, OtpRow>;
+  let prisma: { userOtp: Record<string, jest.Mock> };
 
   const key = (userId: string, purpose: string) => `${userId}:${purpose}`;
 
@@ -33,77 +40,122 @@ describe('UserOtpService', () => {
 
     prisma = {
       userOtp: {
-        upsert: jest.fn(async ({ where, create, update }: any) => {
-          const k = key(
-            where.userId_purpose.userId,
-            where.userId_purpose.purpose,
-          );
-          const existing = rows.get(k);
-          const row = existing
-            ? {
-                ...existing,
-                ...update,
-                attempts: update.attempts ?? existing.attempts,
-              }
-            : {
-                id: `otp-${++seq}`,
-                attempts: 0,
-                consumedAt: null,
-                createdAt: new Date(),
-                ...create,
-              };
-          rows.set(k, row);
-          return row;
-        }),
-        findUnique: jest.fn(async ({ where }: any) => {
-          if (where.userId_purpose) {
-            return (
-              rows.get(
-                key(where.userId_purpose.userId, where.userId_purpose.purpose),
-              ) ?? null
+        upsert: jest.fn(
+          ({
+            where,
+            create,
+            update,
+          }: {
+            where: { userId_purpose: UserPurposeKey };
+            create: Pick<
+              OtpRow,
+              'userId' | 'purpose' | 'codeHash' | 'expiresAt'
+            > &
+              Partial<OtpRow>;
+            update: Partial<OtpRow>;
+          }) => {
+            const k = key(
+              where.userId_purpose.userId,
+              where.userId_purpose.purpose,
             );
-          }
-          return null;
-        }),
-        update: jest.fn(async ({ where, data }: any) => {
-          for (const row of rows.values()) {
-            if (row.id !== where.id) continue;
-            if (data.attempts?.increment)
-              row.attempts += data.attempts.increment;
-            return row;
-          }
-          return null;
-        }),
-        updateMany: jest.fn(async ({ where, data }: any) => {
-          let count = 0;
-          for (const row of rows.values()) {
-            if (row.id !== where.id) continue;
-            // Honours `consumedAt: null` — this is the single-use guarantee.
-            if (where.consumedAt === null && row.consumedAt !== null) continue;
-            Object.assign(row, data);
-            count += 1;
-          }
-          return { count };
-        }),
-        deleteMany: jest.fn(async ({ where }: any) => {
-          let count = 0;
-          for (const [k, row] of [...rows.entries()]) {
-            if (row.userId !== where.userId) continue;
-            if (where.purpose && row.purpose !== where.purpose) continue;
-            rows.delete(k);
-            count += 1;
-          }
-          return { count };
-        }),
+            const existing = rows.get(k);
+            const row: OtpRow = existing
+              ? {
+                  ...existing,
+                  ...update,
+                  attempts: update.attempts ?? existing.attempts,
+                }
+              : {
+                  id: `otp-${++seq}`,
+                  attempts: 0,
+                  consumedAt: null,
+                  createdAt: new Date(),
+                  ...create,
+                };
+            rows.set(k, row);
+            return Promise.resolve(row);
+          },
+        ),
+        findUnique: jest.fn(
+          ({ where }: { where: { userId_purpose?: UserPurposeKey } }) => {
+            if (where.userId_purpose) {
+              return Promise.resolve(
+                rows.get(
+                  key(
+                    where.userId_purpose.userId,
+                    where.userId_purpose.purpose,
+                  ),
+                ) ?? null,
+              );
+            }
+            return Promise.resolve(null);
+          },
+        ),
+        update: jest.fn(
+          ({
+            where,
+            data,
+          }: {
+            where: { id: string };
+            data: { attempts?: { increment?: number } };
+          }) => {
+            for (const row of rows.values()) {
+              if (row.id !== where.id) continue;
+              if (data.attempts?.increment)
+                row.attempts += data.attempts.increment;
+              return Promise.resolve(row);
+            }
+            return Promise.resolve(null);
+          },
+        ),
+        updateMany: jest.fn(
+          ({
+            where,
+            data,
+          }: {
+            where: { id: string; consumedAt?: null };
+            data: Partial<OtpRow>;
+          }) => {
+            let count = 0;
+            for (const row of rows.values()) {
+              if (row.id !== where.id) continue;
+              // Honours `consumedAt: null` — this is the single-use guarantee.
+              if (where.consumedAt === null && row.consumedAt !== null)
+                continue;
+              Object.assign(row, data);
+              count += 1;
+            }
+            return Promise.resolve({ count });
+          },
+        ),
+        deleteMany: jest.fn(
+          ({
+            where,
+          }: {
+            where: { userId: string; purpose?: UserOtpPurpose };
+          }) => {
+            let count = 0;
+            for (const [k, row] of [...rows.entries()]) {
+              if (row.userId !== where.userId) continue;
+              if (where.purpose && row.purpose !== where.purpose) continue;
+              rows.delete(k);
+              count += 1;
+            }
+            return Promise.resolve({ count });
+          },
+        ),
       },
     };
 
     // No Redis: the IP and hourly limits fail open by design, which leaves the
     // database-backed guards (cooldown, attempt ceiling) under test here.
-    service = new UserOtpService(prisma, { getClient: () => null } as any);
+    service = new UserOtpService(
+      stub<PrismaService>(prisma),
+      stub<RedisService>({ getClient: () => null }),
+    );
   });
 
-  const issued = () => rows.get(key(USER, DELETION));
+  const issued = () => rows.get(key(USER, DELETION))!;
   /** Rewinds the stored row so the cooldown no longer applies. */
   const clearCooldown = (userId = USER, purpose: string = DELETION) => {
     const row = rows.get(key(userId, purpose));
@@ -245,15 +297,15 @@ describe('UserOtpService', () => {
       // deletion pending — readable by anyone holding the session.
       const noCode = await service
         .verify(USER, DELETION, '123456')
-        .catch((e) => e.getResponse());
+        .catch((e: HttpException) => e.getResponse());
 
       await service.issue(USER, DELETION);
       const wrongCode = await service
         .verify(USER, DELETION, '000000')
-        .catch((e) => e.getResponse());
+        .catch((e: HttpException) => e.getResponse());
 
-      expect(noCode.code).toBe('OTP_INVALID');
-      expect(wrongCode.code).toBe('OTP_INVALID');
+      expect((noCode as { code: string }).code).toBe('OTP_INVALID');
+      expect((wrongCode as { code: string }).code).toBe('OTP_INVALID');
     });
 
     it('rejects a malformed hash without throwing', async () => {
@@ -275,10 +327,14 @@ describe('UserOtpService', () => {
 
     it('reports the cooldown as a 429 with a retry hint', async () => {
       await service.issue(USER, DELETION);
-      const err: any = await service.issue(USER, DELETION).catch((e) => e);
+      const err = (await service
+        .issue(USER, DELETION)
+        .catch((e: unknown) => e)) as HttpException;
       expect(err.getStatus()).toBe(429);
       expect(err.getResponse()).toMatchObject({ code: 'OTP_COOLDOWN' });
-      expect(err.getResponse().retryAfterSeconds).toBeGreaterThan(0);
+      expect(
+        (err.getResponse() as { retryAfterSeconds: number }).retryAfterSeconds,
+      ).toBeGreaterThan(0);
     });
 
     it('allows a send once the window has passed', async () => {

@@ -142,15 +142,25 @@ export function htmlToPlainText(html: string): string {
         : t,
   });
   return text
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&nbsp;/g, ' ')
+    .replace(ENCODED_ENTITY, (entity) => DECODED_ENTITIES[entity] ?? entity)
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
+
+/**
+ * The entities sanitize-html leaves in its text output, decoded in ONE pass.
+ * Decoding them one after another (`&amp;` first) decoded twice: text the
+ * author typed as "&lt;" is stored as "&amp;lt;" and came out as "<".
+ */
+const DECODED_ENTITIES: Record<string, string> = {
+  '&amp;': '&',
+  '&lt;': '<',
+  '&gt;': '>',
+  '&quot;': '"',
+  '&#39;': "'",
+  '&nbsp;': ' ',
+};
+const ENCODED_ENTITY = /&(?:amp|lt|gt|quot|#39|nbsp);/g;
 
 /**
  * Escapes text for interpolation into an HTML email body. User-submitted

@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import type { StorageProvider } from './providers/storage-provider.interface';
 import { config } from '../config';
 import { detach } from '../common/utils/detach.util';
+import { errorMessage } from '../common/utils/error.util';
 
 export type ReplaceableEntityType =
   | 'USER_AVATAR'
@@ -57,14 +58,10 @@ export class MediaCleanupService {
     // because the storage-key regex happens to fail on `://`. Naming them makes
     // the intent explicit rather than leaving a data shape this method handles
     // by accident.
-    if (
-      trimmed.includes('images.unsplash.com') ||
-      trimmed.includes('media.giphy.com') ||
-      trimmed.includes('giphy.com') ||
-      trimmed.includes('avatars.githubusercontent.com') ||
-      trimmed.includes('googleusercontent.com') ||
-      trimmed.includes('api.dicebear.com')
-    ) {
+    //
+    // Decided by the URL's hostname. A substring test also matched our own
+    // keys that merely contain one of these names, and so never cleaned them.
+    if (isExternalMediaUrl(trimmed)) {
       return null;
     }
 
@@ -482,11 +479,11 @@ export class MediaCleanupService {
             error: 'Storage provider delete returned false',
           });
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
         this.logger.error(
-          `Failed to delete replaced media ${key} from R2: ${err?.message || err}`,
+          `Failed to delete replaced media ${key} from R2: ${errorMessage(err)}`,
         );
-        result.errors.push({ key, error: err?.message || String(err) });
+        result.errors.push({ key, error: errorMessage(err) });
         result.success = false;
         // Do not throw: DB update remains valid and active!
       }
@@ -636,13 +633,13 @@ export class MediaCleanupService {
           this.logger.log(
             `Cleaned up historical unreferenced media: ${key} (owner: ${ownerId})`,
           );
-        } catch (err: any) {
-          result.errors.push({ key, error: err?.message || String(err) });
+        } catch (err: unknown) {
+          result.errors.push({ key, error: errorMessage(err) });
         }
       }
-    } catch (e: any) {
+    } catch (e: unknown) {
       this.logger.warn(
-        `Historical media cleanup failed for owner ${ownerId}: ${e?.message || e}`,
+        `Historical media cleanup failed for owner ${ownerId}: ${errorMessage(e)}`,
       );
     }
 
@@ -672,9 +669,9 @@ export class MediaCleanupService {
       }
       this.logger.log(`Discarded failed new upload from R2: ${key}`);
       return true;
-    } catch (err: any) {
+    } catch (err: unknown) {
       this.logger.warn(
-        `Failed to discard unattached upload ${key}: ${err?.message || err}`,
+        `Failed to discard unattached upload ${key}: ${errorMessage(err)}`,
       );
       return false;
     }
@@ -745,11 +742,11 @@ export class MediaCleanupService {
           error: 'Storage provider delete returned false',
         };
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       this.logger.error(
-        `deletePermanently: failed to delete ${key} from R2: ${err?.message || err}`,
+        `deletePermanently: failed to delete ${key} from R2: ${errorMessage(err)}`,
       );
-      return { success: false, key, error: err?.message || String(err) };
+      return { success: false, key, error: errorMessage(err) };
     }
   }
 
@@ -792,9 +789,23 @@ export class MediaCleanupService {
    * If R2 is temporarily down, retries up to 3 times with exponential backoff.
    * Pending Media rows remain in the DB if all retries fail, ensuring no untracked orphans.
    */
-  async queueMediaDeletion(
+  queueMediaDeletion(keysOrUrls: (string | null | undefined)[]): Promise<void> {
+    // Not `async` (nothing here is awaited), but it keeps the promise contract
+    // `async` gave it: callers `void` it, so a synchronous throw would escape
+    // into the post or community deletion that called it.
+    try {
+      this.scheduleMediaDeletion(keysOrUrls);
+      return Promise.resolve();
+    } catch (err) {
+      return Promise.reject(
+        err instanceof Error ? err : new Error(String(err)),
+      );
+    }
+  }
+
+  private scheduleMediaDeletion(
     keysOrUrls: (string | null | undefined)[],
-  ): Promise<void> {
+  ): void {
     const validKeys = keysOrUrls
       .map((k) => this.extractStorageKey(k))
       .filter((k): k is string => Boolean(k && !this.isProtectedKey(k)));
@@ -865,4 +876,26 @@ export class MediaCleanupService {
         return [];
     }
   }
+}
+
+/** Third-party media hosts; each matches itself and its subdomains. */
+const EXTERNAL_MEDIA_HOSTS = [
+  'images.unsplash.com',
+  'giphy.com',
+  'avatars.githubusercontent.com',
+  'googleusercontent.com',
+  'api.dicebear.com',
+];
+
+function isExternalMediaUrl(value: string): boolean {
+  if (!/^https?:\/\//i.test(value)) return false;
+  let host: string;
+  try {
+    host = new URL(value).hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+  return EXTERNAL_MEDIA_HOSTS.some(
+    (domain) => host === domain || host.endsWith(`.${domain}`),
+  );
 }

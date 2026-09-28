@@ -1,6 +1,10 @@
 import { NotFoundException } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { createBlocksServiceMock } from './testing/blocks.service.mock';
+import { stub } from '../common/testing/stub';
+import type { PrismaService } from '../prisma/prisma.service';
+import type { PresenceService } from '../presence/presence.service';
+import type { StudentYearPolicyService } from '../common/student-year/student-year-policy.service';
 
 /**
  * Blocking a profile is DIRECTIONAL.
@@ -20,7 +24,10 @@ describe('UsersService — directional profile access', () => {
   const BLOCKER = 'user-blocker';
   const BLOCKED = 'user-blocked';
 
-  const buildService = (blocks: { blockerId: string; blockedId: string }[]) => {
+  const buildService = (
+    blocks: { blockerId: string; blockedId: string }[],
+    { targetExists = true }: { targetExists?: boolean } = {},
+  ): UsersService => {
     const blocksService = createBlocksServiceMock(blocks);
 
     const targetRow = {
@@ -40,27 +47,35 @@ describe('UsersService — directional profile access', () => {
       settings: { showOnlineStatus: false, whoCanSeeOnline: 'nobody' },
     };
 
-    const prisma: any = {
+    const prisma = stub<PrismaService>({
       user: {
-        findUnique: jest.fn(async ({ where }: any) =>
-          where.id === BLOCKED
-            ? targetRow
-            : { ...targetRow, id: BLOCKER, username: 'blocker-user' },
+        findUnique: jest.fn(({ where }: { where: { id?: string } }) =>
+          Promise.resolve(
+            !targetExists
+              ? null
+              : where.id === BLOCKED
+                ? targetRow
+                : { ...targetRow, id: BLOCKER, username: 'blocker-user' },
+          ),
         ),
       },
-    };
+    });
 
-    const service = Object.create(UsersService.prototype);
-    service.prisma = prisma;
-    service.blocksService = blocksService;
-    service.studentYearPolicy = {
-      visibleUserWhere: () => ({}),
-      getBatchYearFor: async () => null,
-      canIdsInteract: async () => true,
-      canCreateMessage: () => true,
-    };
-    // Presence is resolved separately and is not the subject here.
-    service.presenceService = { getPresence: async () => null };
+    const service = Object.create(UsersService.prototype) as UsersService;
+    Object.assign(service, {
+      prisma,
+      blocksService,
+      studentYearPolicy: stub<StudentYearPolicyService>({
+        visibleUserWhere: () => ({}),
+        getBatchYearFor: () => Promise.resolve(null),
+        canIdsInteract: () => Promise.resolve(true),
+        canCreateMessage: () => true,
+      }),
+      // Presence is resolved separately and is not the subject here.
+      presenceService: stub<PresenceService>({
+        getPresence: () => Promise.resolve(null),
+      }),
+    });
     return service;
   };
 
@@ -95,18 +110,21 @@ describe('UsersService — directional profile access', () => {
       const service = buildService(blocks);
       const blockedAttempt = await service
         .getUserById(BLOCKER, BLOCKED)
-        .catch((e: any) => e);
+        .catch((e: unknown) => e);
 
-      const missingService = buildService(blocks);
-      missingService.prisma.user.findUnique = jest.fn(async () => null);
+      const missingService = buildService(blocks, { targetExists: false });
       const missingAttempt = await missingService
         .getUserById('no-such-user', BLOCKED)
-        .catch((e: any) => e);
+        .catch((e: unknown) => e);
 
       expect(blockedAttempt).toBeInstanceOf(NotFoundException);
       expect(missingAttempt).toBeInstanceOf(NotFoundException);
-      expect(blockedAttempt.message).toBe(missingAttempt.message);
-      expect(blockedAttempt.getStatus()).toBe(missingAttempt.getStatus());
+      expect((blockedAttempt as NotFoundException).message).toBe(
+        (missingAttempt as NotFoundException).message,
+      );
+      expect((blockedAttempt as NotFoundException).getStatus()).toBe(
+        (missingAttempt as NotFoundException).getStatus(),
+      );
     });
   });
 

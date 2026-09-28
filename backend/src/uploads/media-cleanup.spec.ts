@@ -1,44 +1,53 @@
 import { MediaCleanupService } from './media-cleanup.service';
+import { stub } from '../common/testing/stub';
+import type { PrismaService } from '../prisma/prisma.service';
+import type { StorageProvider } from './providers/storage-provider.interface';
 
 describe('MediaCleanupService', () => {
   let service: MediaCleanupService;
-  let mockPrisma: any;
-  let mockStorageProvider: any;
+  let mockPrisma: ReturnType<typeof makePrisma>;
+  let mockStorageProvider: ReturnType<typeof makeStorage>;
+
+  const makeStorage = () => ({
+    delete: jest.fn().mockResolvedValue(true),
+    list: jest.fn().mockResolvedValue([]),
+  });
+
+  const makePrisma = () => ({
+    user: {
+      findFirst: jest.fn().mockResolvedValue(null),
+      findUnique: jest.fn().mockResolvedValue(null),
+    },
+    community: {
+      findFirst: jest.fn().mockResolvedValue(null),
+    },
+    conversation: {
+      findFirst: jest.fn().mockResolvedValue(null),
+    },
+    crewActivity: {
+      findFirst: jest.fn().mockResolvedValue(null),
+    },
+    campusEvent: {
+      findFirst: jest.fn().mockResolvedValue(null),
+    },
+    college: {
+      findFirst: jest.fn().mockResolvedValue(null),
+    },
+    media: {
+      findFirst: jest.fn().mockResolvedValue(null),
+      findMany: jest.fn().mockResolvedValue([]),
+      deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
+    },
+  });
 
   beforeEach(() => {
-    mockStorageProvider = {
-      delete: jest.fn().mockResolvedValue(true),
-      list: jest.fn().mockResolvedValue([]),
-    };
+    mockStorageProvider = makeStorage();
+    mockPrisma = makePrisma();
 
-    mockPrisma = {
-      user: {
-        findFirst: jest.fn().mockResolvedValue(null),
-        findUnique: jest.fn().mockResolvedValue(null),
-      },
-      community: {
-        findFirst: jest.fn().mockResolvedValue(null),
-      },
-      conversation: {
-        findFirst: jest.fn().mockResolvedValue(null),
-      },
-      crewActivity: {
-        findFirst: jest.fn().mockResolvedValue(null),
-      },
-      campusEvent: {
-        findFirst: jest.fn().mockResolvedValue(null),
-      },
-      college: {
-        findFirst: jest.fn().mockResolvedValue(null),
-      },
-      media: {
-        findFirst: jest.fn().mockResolvedValue(null),
-        findMany: jest.fn().mockResolvedValue([]),
-        deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
-      },
-    };
-
-    service = new MediaCleanupService(mockPrisma, mockStorageProvider);
+    service = new MediaCleanupService(
+      stub<PrismaService>(mockPrisma),
+      stub<StorageProvider>(mockStorageProvider),
+    );
   });
 
   describe('extractStorageKey', () => {
@@ -94,6 +103,40 @@ describe('MediaCleanupService', () => {
         service.extractStorageKey(
           'https://avatars.githubusercontent.com/u/123',
         ),
+      ).toBeNull();
+    });
+
+    // CodeQL #51-#56: external hosts are recognised by hostname, not by a
+    // substring anywhere in the string.
+    it('recognises an external host by its hostname, subdomains included', () => {
+      for (const url of [
+        'https://lh3.googleusercontent.com/a/abc=s96-c',
+        'https://api.dicebear.com/9.x/avataaars/svg?seed=x',
+        'https://i.giphy.com/abc.gif',
+        'https://giphy.com/embed/abc',
+      ]) {
+        expect(service.extractStorageKey(url)).toBeNull();
+      }
+    });
+
+    it('does not mistake one of our keys for an external URL', () => {
+      expect(
+        service.extractStorageKey('/api/media/avatars/giphy.com-export.webp'),
+      ).toBe('avatars/giphy.com-export.webp');
+      expect(
+        service.extractStorageKey('community-covers/api.dicebear.com.png'),
+      ).toBe('community-covers/api.dicebear.com.png');
+    });
+
+    it('is not fooled by a look-alike host', () => {
+      // Neither is ours, and neither is the named service: not a storage key.
+      expect(
+        service.extractStorageKey(
+          'https://images.unsplash.com.evil.test/x/y.png',
+        ),
+      ).toBeNull();
+      expect(
+        service.extractStorageKey('https://notgiphy.com/media/a.gif'),
       ).toBeNull();
     });
   });
@@ -222,18 +265,22 @@ describe('MediaCleanupService', () => {
       const newAvatar = 'avatars/new-unique-avatar.webp';
 
       // Simulate that user-1 is still using dual-use-image as their cover!
-      mockPrisma.user.findFirst.mockImplementation(async ({ where }: any) => {
-        // where has OR: [{ avatar: { contains: ... }, id: { not: 'user-1' } }, { cover: { contains: ... } }]
-        // Since cover is checked for all users, it should match user-1's cover
-        if (
-          where.OR?.some(
-            (cond: any) => cond.cover?.contains === sharedUserImage,
-          )
-        ) {
-          return { id: 'user-1' };
-        }
-        return null;
-      });
+      mockPrisma.user.findFirst.mockImplementation(
+        ({
+          where,
+        }: {
+          where: { OR?: { cover?: { contains?: string } }[] };
+        }) => {
+          // where has OR: [{ avatar: { contains: ... }, id: { not: 'user-1' } }, { cover: { contains: ... } }]
+          // Since cover is checked for all users, it should match user-1's cover
+          if (
+            where.OR?.some((cond) => cond.cover?.contains === sharedUserImage)
+          ) {
+            return Promise.resolve({ id: 'user-1' });
+          }
+          return Promise.resolve(null);
+        },
+      );
 
       const res = await service.handleMediaReplacement(
         'USER_AVATAR',
@@ -252,15 +299,19 @@ describe('MediaCleanupService', () => {
       const newCommAvatar = 'community-icons/new-comm-avatar.webp';
 
       mockPrisma.community.findFirst.mockImplementation(
-        async ({ where }: any) => {
+        ({
+          where,
+        }: {
+          where: { OR?: { coverKey?: { contains?: string } }[] };
+        }) => {
           if (
             where.OR?.some(
-              (cond: any) => cond.coverKey?.contains === sharedCommImage,
+              (cond) => cond.coverKey?.contains === sharedCommImage,
             )
           ) {
-            return { id: 'comm-1' };
+            return Promise.resolve({ id: 'comm-1' });
           }
-          return null;
+          return Promise.resolve(null);
         },
       );
 

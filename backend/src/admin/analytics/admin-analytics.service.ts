@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import {
   HeadBucketCommand,
   ListObjectsV2Command,
@@ -1022,7 +1023,7 @@ export class AdminAnalyticsService {
     // Every clause is anchored to `since`. Without it a filter could reach rows
     // the sweep has not collected yet and the view would claim a longer history
     // than it actually keeps.
-    const where: any = { occurredAt: { gte: since } };
+    const where: Prisma.ErrorLogWhereInput = { occurredAt: { gte: since } };
     if (params.route)
       where.route = { contains: params.route, mode: 'insensitive' };
     if (params.severity === 'UNEXPECTED' || params.severity === 'EXPECTED') {
@@ -1085,7 +1086,7 @@ export class AdminAnalyticsService {
         clientErrorsCaptured:
           config.observability.errorLogs.captureClientErrors,
       },
-      topRoutes: byRoute.map((r: any) => ({
+      topRoutes: byRoute.map((r) => ({
         route: r.route,
         count: r._count._all,
         lastSeen: r._max.occurredAt,
@@ -1107,7 +1108,7 @@ export class AdminAnalyticsService {
         ? params.surface
         : 'all';
 
-    const where: any = { ...surfaceFilter(surface) };
+    const where: Prisma.SlowRequestWhereInput = { ...surfaceFilter(surface) };
     if (params.route) {
       where.route = { contains: params.route, mode: 'insensitive' };
     }

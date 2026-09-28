@@ -4,6 +4,7 @@ import { config } from './config';
 import { AppModule } from './app.module';
 import { ValidationPipe, Logger as NestLogger } from '@nestjs/common';
 import helmet from 'helmet';
+import type { NextFunction, Request, Response } from 'express';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { ErrorLogRecorder } from './observability/error-log.recorder';
 import cookieParser from 'cookie-parser';
@@ -11,6 +12,7 @@ import compression from 'compression';
 import { Logger } from 'nestjs-pino';
 import * as Sentry from '@sentry/nestjs';
 import { nodeProfilingIntegration } from '@sentry/profiling-node';
+import { originMatchesPattern } from './config/origin-pattern';
 
 Sentry.init({
   dsn: config.app.observability.sentryDsn,
@@ -98,7 +100,7 @@ async function bootstrap() {
   app.set('trust proxy', config.rateLimit.trustProxyHops);
 
   // Normalize double slashes in incoming request URLs
-  app.use((req: any, _res: any, next: any) => {
+  app.use((req: Request, _res: Response, next: NextFunction) => {
     if (req.url && req.url.startsWith('//')) {
       req.url = req.url.replace(/^\/+/, '/');
     }
@@ -181,13 +183,8 @@ async function bootstrap() {
       // Wildcard entries (from CORS_ORIGIN_PATTERNS or a starred CORS_ORIGINS
       // entry) let a deployment allow its own preview domains without listing
       // each one.
-      const matchesPattern = (allowed: string) => {
-        if (allowed === '*') return true;
-        if (!allowed.includes('*')) return false;
-        const regexPattern =
-          '^' + allowed.replace(/\./g, '\\.').replace(/\*/g, '[^.]*') + '$';
-        return new RegExp(regexPattern, 'i').test(origin);
-      };
+      const matchesPattern = (allowed: string) =>
+        originMatchesPattern(allowed, origin);
 
       const isAllowed =
         configuredCorsOrigins.includes(origin) ||

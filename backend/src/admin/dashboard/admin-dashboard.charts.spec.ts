@@ -15,11 +15,17 @@ import { RedisService } from '../../redis/redis.service';
  */
 describe('AdminDashboardService - registrations chart', () => {
   let service: AdminDashboardService;
-  let findMany: jest.Mock;
+  let findMany: jest.Mock<
+    Promise<{ createdAt: Date }[]>,
+    [{ where: { deletedAt?: unknown } }]
+  >;
 
   const build = async (createdAt: Date[]) => {
     findMany = jest
-      .fn()
+      .fn<
+        Promise<{ createdAt: Date }[]>,
+        [{ where: { deletedAt?: unknown } }]
+      >()
       .mockResolvedValue(createdAt.map((d) => ({ createdAt: d })));
     const moduleRef = await Test.createTestingModule({
       providers: [

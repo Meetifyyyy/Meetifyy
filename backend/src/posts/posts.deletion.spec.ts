@@ -1,57 +1,89 @@
 import { NotFoundException } from '@nestjs/common';
 import { PostsService } from './posts.service';
 import { createStudentYearPolicyMock } from '../common/student-year/testing/student-year-policy.mock';
+import { stub } from '../common/testing/stub';
+import type { PrismaService } from '../prisma/prisma.service';
+import type { NotificationsService } from '../notifications/notifications.service';
+import type { NotificationFactory } from '../notifications/notification.factory';
+import type { BlocksService } from '../users/blocks.service';
+import type { DomainEventService } from '../events/domain-event.service';
+import type { RedisService } from '../redis/redis.service';
+import type { MentionsService } from '../mentions/mentions.service';
+import type { StorageService } from '../uploads/uploads.service';
+import type { MediaCleanupService } from '../uploads/media-cleanup.service';
+import type { ContentDeletionAuthorizer } from './content-deletion.authorizer';
 
 describe('PostsService — deletion lifecycle & data cleanup', () => {
   const POST_ID = 'post-123';
   const AUTHOR_ID = 'author-456';
   const COMMUNITY_ID = 'comm-789';
 
-  let service: PostsService;
-  let prisma: any;
-  let storageService: any;
-  let mediaCleanupService: any;
-  let domainEventService: any;
-  let authorizer: any;
-  /** Every raw statement the service issued, in order. */
-  let rawCalls: Array<{ sql: string; values: any[] }>;
+  /** The post columns the deletion path reads. */
+  type PostRow = {
+    id: string;
+    authorId: string;
+    communityId?: string;
+    text?: string;
+    deletedAt: Date | null;
+  };
 
-  beforeEach(() => {
-    rawCalls = [];
-    prisma = {
+  let service: PostsService;
+  let prisma: ReturnType<typeof makePrisma>;
+  let storageService: { delete: jest.Mock<Promise<boolean>, []> };
+  let mediaCleanupService: { queueMediaDeletion: jest.Mock };
+  let domainEventService: { emit: jest.Mock };
+  let authorizer: { assertCanDelete: jest.Mock<Promise<string>, []> };
+  /** Every raw statement the service issued, in order. */
+  let rawCalls: Array<{ sql: string; values: unknown[] }>;
+
+  const makePrisma = () => {
+    const prisma = {
       post: {
-        findUnique: jest.fn(async ({ where }: any) => {
-          if (where.id === POST_ID) {
-            return {
-              id: POST_ID,
-              authorId: AUTHOR_ID,
-              communityId: COMMUNITY_ID,
-              text: 'Hello world',
-              deletedAt: null,
-            };
-          }
-          return null;
-        }),
-        update: jest.fn(async ({ data }: any) => data),
+        findUnique: jest.fn(
+          ({
+            where,
+          }: {
+            where: { id: string };
+            select?: unknown;
+          }): Promise<PostRow | null> => {
+            if (where.id === POST_ID) {
+              return Promise.resolve({
+                id: POST_ID,
+                authorId: AUTHOR_ID,
+                communityId: COMMUNITY_ID,
+                text: 'Hello world',
+                deletedAt: null,
+              });
+            }
+            return Promise.resolve(null);
+          },
+        ),
+        update: jest.fn(({ data }: { data: unknown }) => Promise.resolve(data)),
       },
       comment: {
-        findMany: jest.fn(async () => [{ id: 'c1' }, { id: 'c2' }]),
-        updateMany: jest.fn(async ({ data }: any) => data),
+        findMany: jest.fn(() => Promise.resolve([{ id: 'c1' }, { id: 'c2' }])),
+        updateMany: jest.fn(({ data }: { data: unknown }) =>
+          Promise.resolve(data),
+        ),
       },
-      postLike: { deleteMany: jest.fn(async () => ({ count: 5 })) },
-      postBookmark: { deleteMany: jest.fn(async () => ({ count: 2 })) },
-      postShare: { deleteMany: jest.fn(async () => ({ count: 1 })) },
-      postHashtag: { deleteMany: jest.fn(async () => ({ count: 3 })) },
-      mention: { deleteMany: jest.fn(async () => ({ count: 2 })) },
-      commentLike: { deleteMany: jest.fn(async () => ({ count: 4 })) },
-      pollVote: { deleteMany: jest.fn(async () => ({ count: 10 })) },
-      pollOption: { deleteMany: jest.fn(async () => ({ count: 2 })) },
+      postLike: { deleteMany: jest.fn(() => Promise.resolve({ count: 5 })) },
+      postBookmark: {
+        deleteMany: jest.fn(() => Promise.resolve({ count: 2 })),
+      },
+      postShare: { deleteMany: jest.fn(() => Promise.resolve({ count: 1 })) },
+      postHashtag: { deleteMany: jest.fn(() => Promise.resolve({ count: 3 })) },
+      mention: { deleteMany: jest.fn(() => Promise.resolve({ count: 2 })) },
+      commentLike: { deleteMany: jest.fn(() => Promise.resolve({ count: 4 })) },
+      pollVote: { deleteMany: jest.fn(() => Promise.resolve({ count: 10 })) },
+      pollOption: { deleteMany: jest.fn(() => Promise.resolve({ count: 2 })) },
       media: {
-        findMany: jest.fn(async () => [
-          { objectKey: 'posts/uuid1.jpg' },
-          { objectKey: 'posts/uuid2.webp' },
-        ]),
-        deleteMany: jest.fn(async () => ({ count: 2 })),
+        findMany: jest.fn(() =>
+          Promise.resolve([
+            { objectKey: 'posts/uuid1.jpg' },
+            { objectKey: 'posts/uuid2.webp' },
+          ]),
+        ),
+        deleteMany: jest.fn(() => Promise.resolve({ count: 2 })),
       },
       /**
        * Post deletion is now one statement, so this is where it lands.
@@ -61,21 +93,28 @@ describe('PostsService — deletion lifecycle & data cleanup', () => {
        * point of the change is that there is exactly one of them.
        */
       $queryRaw: jest.fn(
-        async (strings: TemplateStringsArray, ...values: any[]) => {
+        (strings: TemplateStringsArray, ...values: unknown[]) => {
           rawCalls.push({ sql: strings.join('?'), values });
-          return [
+          return Promise.resolve([
             { objectKey: 'posts/uuid1.jpg' },
             { objectKey: 'posts/uuid2.webp' },
-          ];
+          ]);
         },
       ),
-      $transaction: jest.fn(async (fn: any) =>
-        typeof fn === 'function' ? fn(prisma) : fn,
+      $transaction: jest.fn(
+        (fn: ((tx: unknown) => unknown) | unknown[]): Promise<unknown> =>
+          Promise.resolve(typeof fn === 'function' ? fn(prisma) : fn),
       ),
     };
+    return prisma;
+  };
+
+  beforeEach(() => {
+    rawCalls = [];
+    prisma = makePrisma();
 
     storageService = {
-      delete: jest.fn(async () => true),
+      delete: jest.fn(() => Promise.resolve(true)),
     };
 
     mediaCleanupService = {
@@ -87,22 +126,22 @@ describe('PostsService — deletion lifecycle & data cleanup', () => {
     };
 
     authorizer = {
-      assertCanDelete: jest.fn(async () => 'author'),
+      assertCanDelete: jest.fn(() => Promise.resolve('author')),
     };
 
     service = new PostsService(
-      prisma,
-      { createNotification: jest.fn() } as any,
-      {} as any,
-      {} as any,
-      domainEventService,
-      {} as any,
-      {} as any,
-      storageService,
-      authorizer,
+      stub<PrismaService>(prisma),
+      stub<NotificationsService>({ createNotification: jest.fn() }),
+      stub<NotificationFactory>(),
+      stub<BlocksService>(),
+      stub<DomainEventService>(domainEventService),
+      stub<RedisService>(),
+      stub<MentionsService>(),
+      stub<StorageService>(storageService),
+      stub<ContentDeletionAuthorizer>(authorizer),
       // First-year isolation — not what the deletion lifecycle is about.
-      createStudentYearPolicyMock() as any,
-      mediaCleanupService,
+      createStudentYearPolicyMock(),
+      stub<MediaCleanupService>(mediaCleanupService),
     );
   });
 

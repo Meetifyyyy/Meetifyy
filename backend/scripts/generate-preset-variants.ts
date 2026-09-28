@@ -1,8 +1,13 @@
-import { S3Client, PutObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
+import {
+  S3Client,
+  PutObjectCommand,
+  HeadObjectCommand,
+} from '@aws-sdk/client-s3';
 import sharp from 'sharp';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as dotenv from 'dotenv';
+import { createRequire } from 'module';
 
 dotenv.config({ path: path.join(__dirname, '../.env') });
 
@@ -10,10 +15,15 @@ const R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID;
 const R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID;
 const R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY;
 const R2_BUCKET_NAME = process.env.R2_BUCKET_NAME || 'meetifyy-media';
-const R2_PUBLIC_URL = (process.env.R2_PUBLIC_URL || 'https://pub-8cd64731b2bc47deb8a54acbbbfa9c4b.r2.dev').replace(/\/+$/, '');
+const R2_PUBLIC_URL = (
+  process.env.R2_PUBLIC_URL ||
+  'https://pub-8cd64731b2bc47deb8a54acbbbfa9c4b.r2.dev'
+).replace(/\/+$/, '');
 
 if (!R2_ACCOUNT_ID || !R2_ACCESS_KEY_ID || !R2_SECRET_ACCESS_KEY) {
-  console.error('Missing required Cloudflare R2 environment variables in backend/.env');
+  console.error(
+    'Missing required Cloudflare R2 environment variables in backend/.env',
+  );
   process.exit(1);
 }
 
@@ -29,15 +39,43 @@ const s3 = new S3Client({
 });
 
 // Import current metadata
-const currentPresetMediaPath = path.join(__dirname, '../../frontend/src/shared/constants/presetMedia.js');
-const { PRESET_IMAGES, PRESET_GIFS } = require(currentPresetMediaPath);
+const currentPresetMediaPath = path.join(
+  __dirname,
+  '../../frontend/src/shared/constants/presetMedia.js',
+);
+
+/** One preset entry as the frontend constants file declares it. */
+type PresetSource = {
+  id: string;
+  title: string;
+  theme?: string;
+  category: string;
+  tags: string[];
+  url: string;
+};
+
+// The constants file ships no types, so its shape is stated here. Loaded
+// through Node's own require, exactly as before.
+const nodeRequire = createRequire(__filename);
+const { PRESET_IMAGES, PRESET_GIFS } = nodeRequire(currentPresetMediaPath) as {
+  PRESET_IMAGES: PresetSource[];
+  PRESET_GIFS: PresetSource[];
+};
 
 async function existsInR2(key: string): Promise<boolean> {
   try {
     await s3.send(new HeadObjectCommand({ Bucket: R2_BUCKET_NAME, Key: key }));
     return true;
-  } catch (err: any) {
-    if (err.name === 'NotFound' || err.$metadata?.httpStatusCode === 404) return false;
+  } catch (err: unknown) {
+    const failure = err as {
+      name?: string;
+      $metadata?: { httpStatusCode?: number };
+    };
+    if (
+      failure.name === 'NotFound' ||
+      failure.$metadata?.httpStatusCode === 404
+    )
+      return false;
     return false;
   }
 }
@@ -59,18 +97,33 @@ async function main() {
   console.log('  Generating Preset Media Thumbnails & Poster WebPs ');
   console.log('====================================================');
 
-  const enhancedImages: any[] = [];
-  const enhancedGifs: any[] = [];
+  const enhancedImages: (PresetSource & {
+    thumbUrl: string;
+    width: number;
+    height: number;
+    size: number;
+  })[] = [];
+  const enhancedGifs: (PresetSource & {
+    posterUrl: string;
+    width: number;
+    height: number;
+    frames: number;
+    size: number;
+  })[] = [];
 
   // Phase 1: Images
   console.log('\nProcessing 36 Images...');
   for (let i = 0; i < PRESET_IMAGES.length; i++) {
     const item = PRESET_IMAGES[i];
-    const themeSlug = (item.theme || 'other').toLowerCase().replace(/\s+/g, '-');
+    const themeSlug = (item.theme || 'other')
+      .toLowerCase()
+      .replace(/\s+/g, '-');
     const thumbKey = `presets/thumbnails/preset-image-${themeSlug}-${item.id}.webp`;
     const thumbUrl = `${R2_PUBLIC_URL}/${thumbKey}`;
 
-    console.log(`[${i + 1}/${PRESET_IMAGES.length}] Image ${item.id} (${item.title})...`);
+    console.log(
+      `[${i + 1}/${PRESET_IMAGES.length}] Image ${item.id} (${item.title})...`,
+    );
 
     const res = await fetch(item.url);
     if (!res.ok) throw new Error(`Failed to fetch image ${item.url}`);
@@ -86,7 +139,9 @@ async function main() {
         .toBuffer();
       thumbSize = thumbBuffer.length;
       await uploadBuffer(thumbKey, thumbBuffer, 'image/webp');
-      console.log(`  ✓ Created & uploaded thumbnail: ${thumbKey} (${thumbSize} bytes)`);
+      console.log(
+        `  ✓ Created & uploaded thumbnail: ${thumbKey} (${thumbSize} bytes)`,
+      );
     } else {
       console.log(`  ✓ Thumbnail exists: ${thumbKey}`);
       thumbSize = Math.round(origBuffer.length * 0.25);
@@ -110,11 +165,15 @@ async function main() {
   console.log('\nProcessing 46 GIFs...');
   for (let i = 0; i < PRESET_GIFS.length; i++) {
     const item = PRESET_GIFS[i];
-    const themeSlug = (item.theme || 'other').toLowerCase().replace(/\s+/g, '-');
+    const themeSlug = (item.theme || 'other')
+      .toLowerCase()
+      .replace(/\s+/g, '-');
     const posterKey = `presets/posters/preset-gif-${themeSlug}-${item.id}.webp`;
     const posterUrl = `${R2_PUBLIC_URL}/${posterKey}`;
 
-    console.log(`[${i + 1}/${PRESET_GIFS.length}] GIF ${item.id} (${item.title})...`);
+    console.log(
+      `[${i + 1}/${PRESET_GIFS.length}] GIF ${item.id} (${item.title})...`,
+    );
 
     const res = await fetch(item.url);
     if (!res.ok) throw new Error(`Failed to fetch GIF ${item.url}`);
@@ -131,7 +190,9 @@ async function main() {
         .toBuffer();
       posterSize = posterBuffer.length;
       await uploadBuffer(posterKey, posterBuffer, 'image/webp');
-      console.log(`  ✓ Created & uploaded poster: ${posterKey} (${posterSize} bytes)`);
+      console.log(
+        `  ✓ Created & uploaded poster: ${posterKey} (${posterSize} bytes)`,
+      );
     } else {
       console.log(`  ✓ Poster exists: ${posterKey}`);
       posterSize = Math.round(origBuffer.length * 0.05);
@@ -195,17 +256,26 @@ export function getDefaultActivityCover(idOrTitle = '') {
 `;
 
   fs.writeFileSync(currentPresetMediaPath, fileContent, 'utf-8');
-  console.log(`  ✓ Wrote updated presetMedia.js (${enhancedImages.length} images, ${enhancedGifs.length} GIFs)`);
+  console.log(
+    `  ✓ Wrote updated presetMedia.js (${enhancedImages.length} images, ${enhancedGifs.length} GIFs)`,
+  );
 
   // Write backend static manifest JSON
-  const backendManifestPath = path.join(__dirname, '../src/uploads/preset-media.manifest.json');
+  const backendManifestPath = path.join(
+    __dirname,
+    '../src/uploads/preset-media.manifest.json',
+  );
   const manifestData = {
     version: '1.0.0',
     lastModified: new Date().toISOString(),
     images: enhancedImages,
     gifs: enhancedGifs,
   };
-  fs.writeFileSync(backendManifestPath, JSON.stringify(manifestData, null, 2), 'utf-8');
+  fs.writeFileSync(
+    backendManifestPath,
+    JSON.stringify(manifestData, null, 2),
+    'utf-8',
+  );
   console.log(`  ✓ Wrote backend manifest to: ${backendManifestPath}`);
 
   console.log('\n====================================================');
@@ -213,7 +283,7 @@ export function getDefaultActivityCover(idOrTitle = '') {
   console.log('====================================================\n');
 }
 
-main().catch((err) => {
+main().catch((err: unknown) => {
   console.error('Fatal error during variant generation:', err);
   process.exit(1);
 });

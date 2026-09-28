@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { MessagesService } from './messages.service';
+import type { SendMessageDto } from './core/dto/send-message.dto';
 import { PrismaService } from '../prisma/prisma.service';
 import { PresenceService } from '../presence/presence.service';
 import { DomainEventService } from '../events/domain-event.service';
@@ -23,10 +24,34 @@ import { allowAllRateLimitProvider } from '../common/rate-limit/testing/rate-lim
  * to a session id; this one lookup was not, and it was enough to undo all of
  * it.
  */
+/** The conversation `create` payload, as far as these assertions read it. */
+type ConversationData = {
+  type?: string;
+  isInstantMatch?: boolean;
+  messages?: unknown;
+  lastMessageText?: unknown;
+  participants: { create: unknown[] };
+};
+type ConversationRow = ConversationData & { id: string };
+
+/** The Prisma surface; several lookups are re-pointed per suite. */
+type InstantMatchPrismaFake = {
+  conversation: {
+    findFirst: jest.Mock;
+    findUnique: jest.Mock;
+    create: jest.Mock<Promise<ConversationRow>, [{ data: ConversationData }]>;
+  };
+  conversationParticipant: { findMany: jest.Mock; findFirst: jest.Mock };
+  message: { findMany: jest.Mock; create?: jest.Mock };
+  block: { findFirst: jest.Mock };
+  deletedMessage: { findMany: jest.Mock };
+  $transaction: jest.Mock;
+};
+
 describe('MessagesService — Instant Match conversations', () => {
   let service: MessagesService;
-  let prisma: any;
-  let created: any[];
+  let prisma: InstantMatchPrismaFake;
+  let created: ConversationRow[];
 
   beforeEach(async () => {
     created = [];
@@ -34,34 +59,38 @@ describe('MessagesService — Instant Match conversations', () => {
       conversation: {
         // Deliberately answers "yes, one exists between this pair" to every
         // query. If creation ever consults it again, these tests fail.
-        findFirst: jest.fn(async () => ({
-          id: 'old-internal',
-          publicId: 'old-public',
-          expiresAt: new Date(Date.now() + 60 * 60 * 1000),
-        })),
-        findUnique: jest.fn(async () => null),
-        create: jest.fn(async ({ data }: any) => {
+        findFirst: jest.fn(() =>
+          Promise.resolve({
+            id: 'old-internal',
+            publicId: 'old-public',
+            expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+          }),
+        ),
+        findUnique: jest.fn(() => Promise.resolve(null)),
+        create: jest.fn(({ data }: { data: ConversationData }) => {
           const row = { id: `internal-${created.length + 1}`, ...data };
           created.push(row);
-          return row;
+          return Promise.resolve(row);
         }),
       },
       conversationParticipant: {
-        findMany: jest.fn(async () => []),
+        findMany: jest.fn(() => Promise.resolve([])),
         // The viewer is a participant; the guard, not membership, is what
         // these tests are about.
-        findFirst: jest.fn(async () => ({
-          userId: 'alice',
-          lastReadAt: null,
-          clearedAt: null,
-          leftAt: null,
-        })),
+        findFirst: jest.fn(() =>
+          Promise.resolve({
+            userId: 'alice',
+            lastReadAt: null,
+            clearedAt: null,
+            leftAt: null,
+          }),
+        ),
       },
-      message: { findMany: jest.fn(async () => []) },
+      message: { findMany: jest.fn(() => Promise.resolve([])) },
       block: { findFirst: jest.fn() },
-      deletedMessage: { findMany: jest.fn(async () => []) },
-      $transaction: jest.fn(async (ops: any) =>
-        Array.isArray(ops) ? ops : ops(prisma),
+      deletedMessage: { findMany: jest.fn(() => Promise.resolve([])) },
+      $transaction: jest.fn((ops: unknown[] | ((tx: unknown) => unknown)) =>
+        Promise.resolve(Array.isArray(ops) ? ops : ops(prisma)),
       ),
     };
 
@@ -160,28 +189,29 @@ describe('MessagesService — Instant Match conversations', () => {
    */
   describe('reading an Instant Match conversation', () => {
     beforeEach(() => {
-      prisma.conversation.findUnique = jest.fn(async () => ({
-        id: 'conv-internal',
-        publicId: 'conv-public',
-        type: 'INSTANT_MATCH',
-        isInstantMatch: true,
-      }));
-      prisma.conversation.findFirst = jest.fn(async () => ({
-        id: 'conv-internal',
-        publicId: 'conv-public',
-      }));
+      prisma.conversation.findUnique = jest.fn(() =>
+        Promise.resolve({
+          id: 'conv-internal',
+          publicId: 'conv-public',
+          type: 'INSTANT_MATCH',
+          isInstantMatch: true,
+        }),
+      );
+      prisma.conversation.findFirst = jest.fn(() =>
+        Promise.resolve({
+          id: 'conv-internal',
+          publicId: 'conv-public',
+        }),
+      );
     });
 
     it('returns nothing once the session behind it is no longer live', async () => {
       service.registerInstantMatchGuard({
         assertCanSendInChat: jest.fn(),
-        canReadChat: jest.fn(async () => false),
+        canReadChat: jest.fn(() => Promise.resolve(false)),
       });
 
-      const res: any = await service.getConversationHistory(
-        'conv-public',
-        'alice',
-      );
+      const res = await service.getConversationHistory('conv-public', 'alice');
 
       expect(res.messages).toEqual([]);
       expect(res.canSendMessages).toBe(false);
@@ -194,10 +224,7 @@ describe('MessagesService — Instant Match conversations', () => {
     it('refuses when no Instant Match guard is registered at all', async () => {
       service.registerInstantMatchGuard(null);
 
-      const res: any = await service.getConversationHistory(
-        'conv-public',
-        'alice',
-      );
+      const res = await service.getConversationHistory('conv-public', 'alice');
 
       expect(res.messages).toEqual([]);
     });
@@ -205,7 +232,7 @@ describe('MessagesService — Instant Match conversations', () => {
     it('reads normally while the session is live', async () => {
       service.registerInstantMatchGuard({
         assertCanSendInChat: jest.fn(),
-        canReadChat: jest.fn(async () => true),
+        canReadChat: jest.fn(() => Promise.resolve(true)),
       });
 
       await service.getConversationHistory('conv-public', 'alice');
@@ -225,20 +252,22 @@ describe('MessagesService — Instant Match conversations', () => {
    */
   describe('sending an empty message', () => {
     beforeEach(() => {
-      prisma.conversation.findUnique = jest.fn(async () => ({
-        id: 'conv-internal',
-        publicId: 'conv-public',
-        type: 'DM',
-        isInstantMatch: false,
-        participants: [
-          { userId: 'alice', isMuted: false },
-          { userId: 'bob', isMuted: false },
-        ],
-      }));
+      prisma.conversation.findUnique = jest.fn(() =>
+        Promise.resolve({
+          id: 'conv-internal',
+          publicId: 'conv-public',
+          type: 'DM',
+          isInstantMatch: false,
+          participants: [
+            { userId: 'alice', isMuted: false },
+            { userId: 'bob', isMuted: false },
+          ],
+        }),
+      );
       prisma.message.create = jest.fn();
     });
 
-    const send = (body: any) =>
+    const send = (body: SendMessageDto) =>
       service.sendMessage('alice', 'conv-public', body);
 
     it('refuses a body with no text, no media and no invite', async () => {

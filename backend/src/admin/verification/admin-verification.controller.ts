@@ -64,7 +64,7 @@ export class AdminVerificationController {
     @Req() req: AdminRequest,
     @Param('id') id: string,
     @Body('status') status: VerificationStatus,
-    @Body('adminNotes') adminNotes?: string,
+    @Body('adminNotes') adminNotes?: unknown,
   ) {
     // `req.admin` is set by AdminJwtGuard and is a real SuperAdmin row, which is
     // what `reviewerId` references. Taken from the verified session, never from

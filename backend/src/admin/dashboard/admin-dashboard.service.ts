@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { config } from '../../config';
 import { RedisService } from '../../redis/redis.service';
+import { stringField } from '../../common/utils/type-guards.util';
 
 @Injectable()
 export class AdminDashboardService {
@@ -83,8 +84,8 @@ export class AdminDashboardService {
         latencyMs: Date.now() - dbStart,
         detail: 'PostgreSQL',
       };
-    } catch (err: any) {
-      checks.database = { status: 'DOWN', detail: err.message };
+    } catch (err: unknown) {
+      checks.database = { status: 'DOWN', detail: stringField(err, 'message') };
     }
 
     // 2. Redis: a real round trip.
@@ -114,10 +115,10 @@ export class AdminDashboardService {
           latencyMs: Date.now() - rStart,
           detail: 'Redis Cache',
         };
-      } catch (err: any) {
+      } catch (err: unknown) {
         checks.redis = {
           status: 'DOWN',
-          detail: err?.message || 'Connection failed',
+          detail: stringField(err, 'message') || 'Connection failed',
         };
       }
     }

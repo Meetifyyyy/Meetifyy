@@ -1,3 +1,5 @@
+import { payloadFields, stringOrNull } from './core/message-payload';
+
 /**
  * Builds the snapshot of a quoted message that is sent to clients as `replyTo`.
  *
@@ -55,29 +57,32 @@ type ReplyToRow = {
   id: string;
   senderId: string;
   state?: string | null;
-  payload?: any;
+  /** The message's `payload` JSON column: any shape, read defensively. */
+  payload?: unknown;
   sender?: { displayName?: string | null; username?: string | null } | null;
 };
 
 /** Pulls a display name out of whichever shared-entity shape is present. */
-function describeShare(payload: any): {
+function describeShare(payloadValue: unknown): {
   shareType: string | null;
   shareId: string | null;
   shareTitle: string | null;
   shareAvatar: string | null;
   shareColor: string | null;
 } {
-  const invite = payload?.inviteData || {};
-  const candidates: Array<[string, any]> = [
-    ['profile', payload?.profile || invite.profile],
-    ['community', payload?.community || invite.community],
-    ['post', payload?.post || invite.post],
-    ['activity', payload?.activity || invite.activity],
-    ['event', payload?.event || invite.event],
+  const payload = payloadFields(payloadValue);
+  const invite = payloadFields(payload.inviteData);
+  const candidates: Array<[string, unknown]> = [
+    ['profile', payload.profile || invite.profile],
+    ['community', payload.community || invite.community],
+    ['post', payload.post || invite.post],
+    ['activity', payload.activity || invite.activity],
+    ['event', payload.event || invite.event],
   ];
 
-  for (const [type, entity] of candidates) {
-    if (entity && typeof entity === 'object') {
+  for (const [type, candidate] of candidates) {
+    if (candidate && typeof candidate === 'object') {
+      const entity = payloadFields(candidate);
       const title =
         entity.name ||
         entity.title ||
@@ -149,7 +154,7 @@ export function buildReplyToSnapshot(
 ): ReplyToSnapshot | null {
   if (!replyTo) return null;
 
-  const payload = replyTo.payload || {};
+  const payload = payloadFields(replyTo.payload || {});
   const isUnsent = replyTo.state === 'UNSENT';
   const { shareType, shareId, shareTitle, shareAvatar, shareColor } = isUnsent
     ? {
@@ -167,9 +172,9 @@ export function buildReplyToSnapshot(
     from: viewerId && replyTo.senderId === viewerId ? 'me' : 'them',
     // An unsent original must not leak its former contents through the quote.
     text: isUnsent ? '' : typeof payload.text === 'string' ? payload.text : '',
-    mediaType: isUnsent ? null : payload.mediaType || null,
-    mediaUrl: isUnsent ? null : payload.mediaUrl || null,
-    thumbnailUrl: isUnsent ? null : payload.thumbnailUrl || null,
+    mediaType: isUnsent ? null : stringOrNull(payload.mediaType),
+    mediaUrl: isUnsent ? null : stringOrNull(payload.mediaUrl),
+    thumbnailUrl: isUnsent ? null : stringOrNull(payload.thumbnailUrl),
     shareType,
     shareId,
     shareTitle,

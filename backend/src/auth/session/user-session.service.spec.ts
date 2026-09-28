@@ -1,4 +1,7 @@
 import { UserSessionRevokedReason } from '@prisma/client';
+import type { UserSession } from '@prisma/client';
+import { stub } from '../../common/testing/stub';
+import type { PrismaService } from '../../prisma/prisma.service';
 import { UserSessionService } from './user-session.service';
 
 /**
@@ -11,56 +14,114 @@ import { UserSessionService } from './user-session.service';
  * rotation, replay detection, and ownership-scoped revocation — because each of
  * them is a security boundary rather than a behaviour.
  */
+/**
+ * A stored session as the fake keeps it: whatever the service wrote, plus the
+ * columns the database would default.
+ */
+type SessionRow = Partial<UserSession> & { id: string };
+
+/** The subset of `where` the service filters sessions by. */
+type SessionWhere = {
+  id?: string | { not?: string };
+  userId?: string;
+  familyId?: string;
+  refreshHash?: string;
+  revoked?: boolean;
+};
+
 describe('UserSessionService', () => {
-  let prisma: any;
   let service: UserSessionService;
 
-  const rows = new Map<string, any>();
+  const rows = new Map<string, SessionRow>();
 
   beforeEach(() => {
     rows.clear();
-    prisma = {
+    const prisma = stub<PrismaService>({
       userSession: {
-        create: jest.fn(async ({ data, select }) => {
-          const id = `sess-${rows.size + 1}`;
-          rows.set(id, { id, replacedById: null, revoked: false, ...data });
-          return select ? { id } : rows.get(id);
-        }),
-        findUnique: jest.fn(async ({ where, select }) => {
-          const found = [...rows.values()].find((r) =>
-            where.id ? r.id === where.id : r.refreshHash === where.refreshHash,
-          );
-          if (!found) return null;
-          if (!select) return found;
-          const out: any = {};
-          for (const k of Object.keys(select)) out[k] = found[k];
-          return out;
-        }),
-        findMany: jest.fn(async () => [...rows.values()]),
-        update: jest.fn(async ({ where, data }) => {
-          const row = rows.get(where.id);
-          if (row) Object.assign(row, data);
-          return row;
-        }),
-        updateMany: jest.fn(async ({ where, data }) => {
-          let count = 0;
-          for (const row of rows.values()) {
-            if (where.id?.not && row.id === where.id.not) continue;
-            if (where.id && typeof where.id === 'string' && row.id !== where.id)
-              continue;
-            if (where.userId && row.userId !== where.userId) continue;
-            if (where.familyId && row.familyId !== where.familyId) continue;
-            if (where.refreshHash && row.refreshHash !== where.refreshHash)
-              continue;
-            if (where.revoked === false && row.revoked) continue;
-            Object.assign(row, data);
-            count++;
-          }
-          return { count };
-        }),
-        deleteMany: jest.fn(async () => ({ count: 0 })),
+        create: jest.fn(
+          ({
+            data,
+            select,
+          }: {
+            data: Partial<UserSession>;
+            select?: object;
+          }) => {
+            const id = `sess-${rows.size + 1}`;
+            rows.set(id, { id, replacedById: null, revoked: false, ...data });
+            return Promise.resolve(select ? { id } : rows.get(id));
+          },
+        ),
+        findUnique: jest.fn(
+          ({
+            where,
+            select,
+          }: {
+            where: { id?: string; refreshHash?: string };
+            select?: Partial<Record<keyof SessionRow, boolean>>;
+          }) => {
+            const found = [...rows.values()].find((r) =>
+              where.id
+                ? r.id === where.id
+                : r.refreshHash === where.refreshHash,
+            );
+            if (!found) return Promise.resolve(null);
+            if (!select) return Promise.resolve(found);
+            const out: Partial<SessionRow> = {};
+            for (const k of Object.keys(select) as (keyof SessionRow)[])
+              Object.assign(out, { [k]: found[k] });
+            return Promise.resolve(out);
+          },
+        ),
+        findMany: jest.fn(() => Promise.resolve([...rows.values()])),
+        update: jest.fn(
+          ({
+            where,
+            data,
+          }: {
+            where: { id: string };
+            data: Partial<UserSession>;
+          }) => {
+            const row = rows.get(where.id);
+            if (row) Object.assign(row, data);
+            return Promise.resolve(row);
+          },
+        ),
+        updateMany: jest.fn(
+          ({
+            where,
+            data,
+          }: {
+            where: SessionWhere;
+            data: Partial<UserSession>;
+          }) => {
+            let count = 0;
+            for (const row of rows.values()) {
+              if (
+                typeof where.id === 'object' &&
+                where.id.not &&
+                row.id === where.id.not
+              )
+                continue;
+              if (
+                where.id &&
+                typeof where.id === 'string' &&
+                row.id !== where.id
+              )
+                continue;
+              if (where.userId && row.userId !== where.userId) continue;
+              if (where.familyId && row.familyId !== where.familyId) continue;
+              if (where.refreshHash && row.refreshHash !== where.refreshHash)
+                continue;
+              if (where.revoked === false && row.revoked) continue;
+              Object.assign(row, data);
+              count++;
+            }
+            return Promise.resolve({ count });
+          },
+        ),
+        deleteMany: jest.fn(() => Promise.resolve({ count: 0 })),
       },
-    };
+    });
     service = new UserSessionService(prisma);
   });
 
@@ -158,7 +219,7 @@ describe('UserSessionService', () => {
     );
 
     expect(revoked).toBe(false);
-    expect(rows.get(victimSessionId).revoked).toBe(false);
+    expect(rows.get(victimSessionId)!.revoked).toBe(false);
   });
 
   it('revokes a session the user does own', async () => {
@@ -172,7 +233,7 @@ describe('UserSessionService', () => {
         UserSessionRevokedReason.USER_REVOKED_DEVICE,
       ),
     ).toBe(true);
-    expect(rows.get(id).revoked).toBe(true);
+    expect(rows.get(id)!.revoked).toBe(true);
   });
 
   it('signs out every device but the one asking', async () => {
@@ -188,7 +249,7 @@ describe('UserSessionService', () => {
     );
 
     expect(count).toBe(2);
-    expect(rows.get(keep).revoked).toBe(false);
+    expect(rows.get(keep)!.revoked).toBe(false);
   });
 
   it('signs out everything when no session is spared', async () => {

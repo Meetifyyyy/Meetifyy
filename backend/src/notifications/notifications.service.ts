@@ -11,13 +11,34 @@ import {
   DomainEventPayload,
 } from '../events/domain-event.service';
 import { CreateNotificationDto } from './notification.factory';
-import { NotificationType, Prisma } from '@prisma/client';
+import {
+  Notification,
+  NotificationPreferences,
+  NotificationType,
+  Prisma,
+} from '@prisma/client';
 import { ConfigService } from '@nestjs/config';
 import { RedisService } from '../redis/redis.service';
 import { BlocksService } from '../users/blocks.service';
 import Redis from 'ioredis';
 import { StudentYearPolicyService } from '../common/student-year/student-year-policy.service';
 import { detach } from '../common/utils/detach.util';
+import { stringField } from '../common/utils/type-guards.util';
+import { isJsonObject } from '../common/utils/json.util';
+import { errorMessage } from '../common/utils/error.util';
+
+/** A notification row with the actor it is shown with, as it is emitted. */
+type PopulatedNotification = Notification & {
+  actor?: {
+    id: string;
+    username: string;
+    displayName: string | null;
+    avatar: string | null;
+  } | null;
+};
+
+type LifecycleStatus =
+  'PENDING' | 'ACCEPTED' | 'DECLINED' | 'CANCELLED' | 'EXPIRED';
 
 @Injectable()
 export class NotificationsService implements OnModuleInit {
@@ -97,13 +118,14 @@ export class NotificationsService implements OnModuleInit {
     // Unfollow: cancel notification when user unfollows
     this.eventEmitter.on('follow.deleted', (payload: DomainEventPayload) =>
       detach('notification listener', async () => {
-        const { followerId, followingId } = payload.data || {};
+        const followerId = stringField(payload.data, 'followerId');
+        const followingId = stringField(payload.data, 'followingId');
         if (!followerId || !followingId) return;
         await this.cancelNotificationByCriteria({
           recipientId: followingId,
           actorId: followerId,
           entityId: followerId,
-          type: 'FOLLOW' as any,
+          type: NotificationType.FOLLOW,
         }).catch((err) =>
           this.logger.warn('Failed to reconcile follow.deleted event', err),
         );
@@ -113,7 +135,8 @@ export class NotificationsService implements OnModuleInit {
     // 2. Post Like / Unlike Reconciliation
     this.eventEmitter.on('post.unliked', (payload: DomainEventPayload) =>
       detach('notification listener', async () => {
-        const { postId, userId } = payload.data || {};
+        const postId = stringField(payload.data, 'postId');
+        const userId = stringField(payload.data, 'userId');
         if (!postId || !userId) return;
         const post = await this.prisma.post.findUnique({
           where: { id: postId },
@@ -124,7 +147,7 @@ export class NotificationsService implements OnModuleInit {
             recipientId: post.authorId,
             actorId: userId,
             entityId: postId,
-            type: 'LIKE' as any,
+            type: NotificationType.LIKE,
           }).catch((err) =>
             this.logger.warn('Failed to reconcile post.unliked event', err),
           );
@@ -135,7 +158,8 @@ export class NotificationsService implements OnModuleInit {
     // 3. Comment Like / Unlike Reconciliation
     this.eventEmitter.on('comment.unliked', (payload: DomainEventPayload) =>
       detach('notification listener', async () => {
-        const { commentId, userId } = payload.data || {};
+        const commentId = stringField(payload.data, 'commentId');
+        const userId = stringField(payload.data, 'userId');
         if (!commentId || !userId) return;
         const comment = await this.prisma.comment.findUnique({
           where: { id: commentId },
@@ -146,7 +170,7 @@ export class NotificationsService implements OnModuleInit {
             recipientId: comment.authorId,
             actorId: userId,
             entityId: commentId,
-            type: 'COMMENT_LIKE' as any,
+            type: NotificationType.COMMENT_LIKE,
           }).catch((err) =>
             this.logger.warn('Failed to reconcile comment.unliked event', err),
           );
@@ -172,12 +196,10 @@ export class NotificationsService implements OnModuleInit {
       return redis.call('INCR', KEYS[1])
     `;
     try {
-      const result = (await (this.redis as any).eval(
-        luaScript,
-        1,
-        redisKey,
-      )) as number | null;
-      return result;
+      // The script returns an integer or nil, which ioredis gives as a
+      // number or null.
+      const result = await this.redis.eval(luaScript, 1, redisKey);
+      return typeof result === 'number' ? result : null;
     } catch (err) {
       this.logger.error('Failed to increment unread count in Redis', err);
       return null;
@@ -201,12 +223,10 @@ export class NotificationsService implements OnModuleInit {
       return redis.call('DECR', KEYS[1])
     `;
     try {
-      const result = (await (this.redis as any).eval(
-        luaScript,
-        1,
-        redisKey,
-      )) as number | null;
-      return result;
+      // The script returns an integer or nil, which ioredis gives as a
+      // number or null.
+      const result = await this.redis.eval(luaScript, 1, redisKey);
+      return typeof result === 'number' ? result : null;
     } catch (err) {
       this.logger.error('Failed to decrement unread count in Redis', err);
       return null;
@@ -243,7 +263,7 @@ export class NotificationsService implements OnModuleInit {
     // conversation deliberately does not appear in.
     if (!dto) return null;
 
-    if ((dto.type as any) === 'MESSAGE') {
+    if (dto.type === NotificationType.MESSAGE) {
       return null; // Message updates are handled via real-time message:new flow, not notifications list
     }
 
@@ -260,7 +280,7 @@ export class NotificationsService implements OnModuleInit {
     // Routed through BlocksService rather than querying Block directly, so
     // notification delivery uses the same block path (and cache) as every
     // other surface.
-    if (dto.actorId && (dto.type as any) !== NotificationType.SYSTEM) {
+    if (dto.actorId && dto.type !== NotificationType.SYSTEM) {
       if (await this.blocksService.isBlocked(dto.recipientId, dto.actorId))
         return null;
 
@@ -304,11 +324,12 @@ export class NotificationsService implements OnModuleInit {
     try {
       // 1. Check Preferences — cached in Redis for 5 minutes (Fix #5)
       const prefsKey = `notif:prefs:${dto.recipientId}`;
-      let prefs: any = null;
+      let prefs: NotificationPreferences | null = null;
       if (this.redis) {
         try {
           const cached = await this.redis.get(prefsKey);
-          if (cached) prefs = JSON.parse(cached);
+          // Written below from this same row; only its boolean flags are read.
+          if (cached) prefs = JSON.parse(cached) as NotificationPreferences;
         } catch {
           /* ignore redis errors */
         }
@@ -335,7 +356,6 @@ export class NotificationsService implements OnModuleInit {
           return null;
         if (dto.type === NotificationType.MENTION && !prefs.mentions)
           return null;
-        if ((dto.type as any) === 'MESSAGE' && !prefs.messages) return null;
         if (dto.type === NotificationType.JOIN_REQUEST && !prefs.activities)
           return null;
         if (dto.type === NotificationType.GROUP_INVITE && !prefs.groups)
@@ -360,12 +380,16 @@ export class NotificationsService implements OnModuleInit {
 
         if (existing) {
           // Check if actor is already part of it to prevent same-actor spam
-          let metadata = existing.metadata as any;
+          const existingMetadata = isJsonObject(existing.metadata)
+            ? existing.metadata
+            : {};
           if (existing.actorId !== dto.actorId) {
             // Aggregate
-            const currentCount = metadata?.aggregatedCount || 1;
-            metadata = {
-              ...metadata,
+            const storedCount = existingMetadata.aggregatedCount;
+            const currentCount =
+              typeof storedCount === 'number' && storedCount ? storedCount : 1;
+            const metadata = {
+              ...existingMetadata,
               aggregatedCount: currentCount + 1,
             };
             const updated = await this.prisma.notification.update({
@@ -466,7 +490,7 @@ export class NotificationsService implements OnModuleInit {
         }
       }
 
-      let populatedNotif: any = notification;
+      let populatedNotif: PopulatedNotification = notification;
       if (notification?.actorId) {
         // Use pre-populated actor if provided by the caller (e.g. BullMQ job) to
         // skip a DB round-trip. Fall back to DB fetch for all other code paths.
@@ -487,16 +511,15 @@ export class NotificationsService implements OnModuleInit {
       void this.domainEventService.emit('notification:new', populatedNotif, [
         dto.recipientId,
       ]);
-      // Must mirror getNotifications()/getUnreadCount()'s type filter — MESSAGE
-      // has its own dedicated unread surface (the chat badge), so counting it
-      // into the bell badge here would show a count the notifications list can
+      // Counted into the bell badge. This must mirror getNotifications() and
+      // getUnreadCount()'s type filter, and it does because MESSAGE returned at
+      // the top of this method: it has its own unread surface (the chat badge),
+      // and counting it here would show a count the notifications list can
       // never clear. JOIN_REQUEST is NOT excluded: activity joins are direct,
       // so it is an ordinary notification that lives in the main list.
-      if ((dto.type as any) !== 'MESSAGE') {
-        const newCount = await this.incrementUnreadCount(dto.recipientId);
-        // Pass newCount to avoid a Redis re-read inside emitUnreadCount
-        await this.emitUnreadCount(dto.recipientId, newCount ?? undefined);
-      }
+      const newCount = await this.incrementUnreadCount(dto.recipientId);
+      // Pass newCount to avoid a Redis re-read inside emitUnreadCount
+      await this.emitUnreadCount(dto.recipientId, newCount ?? undefined);
 
       this.logger.log(
         `Notification delivered type=${dto.type} to=${dto.recipientId}`,
@@ -504,7 +527,10 @@ export class NotificationsService implements OnModuleInit {
 
       return populatedNotif;
     } catch (err) {
-      if (err.code === 'P2002') {
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002'
+      ) {
         this.logger.debug(`Ignored duplicate notification: ${err.message}`);
         return null;
       }
@@ -592,19 +618,19 @@ export class NotificationsService implements OnModuleInit {
    * and a disagreement is written back so the stored copy converges instead of
    * needing a repair migration.
    */
-  private async reconcileInviteNotifications(
-    userId: string,
-    notifications: any[],
-  ) {
-    const invites = notifications.filter(
-      (n) =>
-        n.type === NotificationType.ACTIVITY_INVITE && n.metadata?.activityId,
-    );
-    if (invites.length === 0) return notifications;
-
+  private async reconcileInviteNotifications<
+    T extends Pick<Notification, 'id' | 'type' | 'metadata'>,
+  >(userId: string, notifications: T[]): Promise<T[]> {
+    const inviteActivityId = (n: T) =>
+      n.type === NotificationType.ACTIVITY_INVITE
+        ? stringField(n.metadata, 'activityId')
+        : undefined;
     const activityIds = [
-      ...new Set(invites.map((n) => n.metadata.activityId as string)),
+      ...new Set(
+        notifications.map(inviteActivityId).filter((id): id is string => !!id),
+      ),
     ];
+    if (activityIds.length === 0) return notifications;
 
     const invitations = await this.prisma.activityInvitation.findMany({
       where: { inviteeId: userId, activityId: { in: activityIds } },
@@ -619,15 +645,15 @@ export class NotificationsService implements OnModuleInit {
     });
     const byActivity = new Map(invitations.map((i) => [i.activityId, i]));
 
-    const corrections: Array<{ id: string; metadata: any }> = [];
+    const corrections: Array<{ id: string; metadata: Prisma.JsonObject }> = [];
 
-    const reconciled = notifications.map((notif) => {
-      if (notif.type !== NotificationType.ACTIVITY_INVITE) return notif;
-      const metadata = notif.metadata || {};
-      const invitation = byActivity.get(metadata.activityId);
+    const reconciled = notifications.map((notif): T => {
+      const activityId = inviteActivityId(notif);
       // No invitation row to judge by (hard-deleted): leave the stored copy
       // alone rather than guessing.
-      if (!invitation) return notif;
+      const invitation = activityId ? byActivity.get(activityId) : undefined;
+      if (!invitation || !isJsonObject(notif.metadata)) return notif;
+      const metadata = notif.metadata;
 
       const authoritative = this.resolveInviteLifecycle(invitation);
       if (authoritative === metadata.lifecycleStatus) return notif;
@@ -648,9 +674,9 @@ export class NotificationsService implements OnModuleInit {
               data: { metadata: c.metadata },
             }),
           ),
-        ).catch((err) =>
+        ).catch((err: unknown) =>
           this.logger.warn(
-            `Invite notification repair failed: ${err?.message}`,
+            `Invite notification repair failed: ${errorMessage(err)}`,
           ),
         );
       });
@@ -987,7 +1013,7 @@ export class NotificationsService implements OnModuleInit {
   async updateNotificationLifecycleStatus(params: {
     type: NotificationType;
     entityId: string;
-    status: 'PENDING' | 'ACCEPTED' | 'DECLINED' | 'CANCELLED' | 'EXPIRED';
+    status: LifecycleStatus;
     recipientIds?: string[];
     body?: string;
     onlyIfStatusIn?: Array<
@@ -1013,14 +1039,15 @@ export class NotificationsService implements OnModuleInit {
       },
     });
 
-    const updatedRows: any[] = [];
+    const updatedRows: PopulatedNotification[] = [];
 
     for (const notif of existing) {
-      const metadata = (notif.metadata as any) || {};
-      const current = metadata.lifecycleStatus || 'PENDING';
+      const metadata = isJsonObject(notif.metadata) ? notif.metadata : {};
+      const current = stringField(metadata, 'lifecycleStatus') || 'PENDING';
 
       if (current === status) continue;
-      if (onlyIfStatusIn && !onlyIfStatusIn.includes(current)) continue;
+      if (onlyIfStatusIn && !onlyIfStatusIn.some((s) => s === current))
+        continue;
 
       // Compare-and-swap on `updatedAt`.
       //

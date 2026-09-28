@@ -10,6 +10,9 @@ import { PrismaService } from '../../prisma/prisma.service';
 import * as jwt from 'jsonwebtoken';
 import { config } from '../../config';
 import { timingSafeEqual } from 'crypto';
+import type { AdminRequest } from '../types/authenticated-request';
+import { payloadObject, stringClaim } from '../utils/jwt-claims.util';
+import { ADMIN_TOKEN_ALGORITHM } from '../../admin/auth/admin-token.constants';
 
 @Injectable()
 export class AdminJwtGuard implements CanActivate {
@@ -19,7 +22,8 @@ export class AdminJwtGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const request = context.switchToHttp().getRequest();
+    // `admin` and `adminSession` are attached below, once verified.
+    const request = context.switchToHttp().getRequest<AdminRequest>();
 
     // 1. Extract access token from HttpOnly cookie or Authorization header
     let token = request.cookies?.admin_access;
@@ -39,21 +43,26 @@ export class AdminJwtGuard implements CanActivate {
       );
     }
 
-    let payload: any;
+    let verified: string | jwt.JwtPayload;
     try {
-      payload = jwt.verify(token, secret);
+      verified = jwt.verify(token, secret, {
+        algorithms: [ADMIN_TOKEN_ALGORITHM],
+      });
     } catch {
       throw new UnauthorizedException('Invalid or expired admin session token');
     }
 
-    if (!payload || !payload.sub || !payload.sessionId) {
+    const payload = payloadObject(verified);
+    const adminId = payload && stringClaim(payload, 'sub');
+    const sessionId = payload && stringClaim(payload, 'sessionId');
+    if (!adminId || !sessionId) {
       throw new UnauthorizedException('Malformed token payload');
     }
 
     // 3. Verify Admin & Session Liveness in DB
     const [admin, session] = await Promise.all([
       this.prisma.superAdmin.findUnique({
-        where: { id: payload.sub },
+        where: { id: adminId },
         select: {
           id: true,
           email: true,
@@ -63,7 +72,7 @@ export class AdminJwtGuard implements CanActivate {
         },
       }),
       this.prisma.superAdminSession.findUnique({
-        where: { id: payload.sessionId },
+        where: { id: sessionId },
         select: { id: true, revoked: true, expiresAt: true, adminId: true },
       }),
     ]);
@@ -76,8 +85,15 @@ export class AdminJwtGuard implements CanActivate {
       throw new UnauthorizedException('Admin session revoked or expired');
     }
 
+    // And it must be THIS admin's session. Both ids come from one signed
+    // token, so they cannot be paired by a caller today; checking it anyway
+    // keeps the guarantee from resting on how tokens happen to be minted.
+    if (session.adminId !== admin.id) {
+      throw new UnauthorizedException('Admin session revoked or expired');
+    }
+
     // 4. Validate CSRF token on mutating requests (POST, PUT, PATCH, DELETE)
-    const method = request.method?.toUpperCase();
+    const method = (request.method || '').toUpperCase();
     if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
       const csrfHeader = request.headers['x-csrf-token'];
       const csrfCookie = request.cookies?.admin_csrf;

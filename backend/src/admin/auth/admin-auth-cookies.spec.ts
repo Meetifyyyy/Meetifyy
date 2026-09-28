@@ -2,6 +2,8 @@ import {
   clearAdminSessionCookies,
   issueAdminSessionCookies,
 } from './admin-auth-cookies';
+import type { CookieOptions, Response } from 'express';
+import { stub } from '../../common/testing/stub';
 
 /**
  * The admin portal's "CSRF validation failed" errors.
@@ -22,19 +24,19 @@ import {
  * cookies must stay HttpOnly while the CSRF one does not.
  */
 describe('admin session cookies', () => {
-  let res: any;
-  let cookies: Record<string, { value: string; options: any }>;
+  let res: Response;
+  let cookies: Record<string, { value: string; options: CookieOptions }>;
   let cleared: string[];
 
   beforeEach(() => {
     cookies = {};
     cleared = [];
-    res = {
-      cookie: jest.fn((name: string, value: string, options: any) => {
+    res = stub<Response>({
+      cookie: jest.fn((name: string, value: string, options: CookieOptions) => {
         cookies[name] = { value, options };
       }),
       clearCookie: jest.fn((name: string) => cleared.push(name)),
-    };
+    });
   });
 
   it('returns the very token it wrote to the cookie', () => {
@@ -83,7 +85,7 @@ describe('admin session cookies', () => {
     // A mismatch here means the browser treats them as different cookies and
     // `clearCookie` silently fails to remove one on sign-out.
     issueAdminSessionCookies(res, 'access', 'refresh');
-    const shape = (o: any) => ({
+    const shape = (o: CookieOptions) => ({
       domain: o.domain,
       path: o.path,
       sameSite: o.sameSite,

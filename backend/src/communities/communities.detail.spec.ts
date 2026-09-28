@@ -1,5 +1,23 @@
 import { NotFoundException } from '@nestjs/common';
 import { CommunitiesService } from './communities.service';
+import { stub } from '../common/testing/stub';
+import type { PrismaService } from '../prisma/prisma.service';
+import type { DomainEventService } from '../events/domain-event.service';
+import type { RedisService } from '../redis/redis.service';
+import type { PresenceService } from '../presence/presence.service';
+import type { DefaultAssetsService } from '../uploads/default-assets.service';
+import type { BlocksService } from '../users/blocks.service';
+import type { NotificationsService } from '../notifications/notifications.service';
+import type { NotificationFactory } from '../notifications/notification.factory';
+
+/** A member-strip row as the detail query returns it. */
+type StripRow = {
+  userId: string;
+  communityId: string;
+  role?: string;
+  user: { id: string; username: string };
+  [column: string]: unknown;
+};
 
 /**
  * `getCommunityById` — the community page's payload.
@@ -20,13 +38,18 @@ describe('CommunitiesService — community detail', () => {
   const VIEWER = 'viewer';
 
   let service: CommunitiesService;
-  let prisma: any;
+  let prisma: {
+    community: { findUnique: jest.Mock };
+    communityMember: { findUnique: jest.Mock; findMany: jest.Mock };
+    communityJoinRequest: { findUnique: jest.Mock };
+    user: { findUnique: jest.Mock };
+  };
 
   // The collegeId cache is a static map shared by every instance of the
   // service, with a 10-minute TTL — so without this, one test's viewer college
   // is still cached for the next one.
   beforeEach(() => {
-    (CommunitiesService as any).collegeIdCache.clear();
+    CommunitiesService['collegeIdCache'].clear();
   });
 
   /**
@@ -37,14 +60,21 @@ describe('CommunitiesService — community detail', () => {
    * the one the strip cannot answer.
    */
   const build = ({
-    community = {} as any,
-    members = [] as any[],
-    viewerMembership = null as any,
+    community = {},
+    members = [],
+    viewerMembership = null,
     viewerOutsideStrip = false,
-    joinRequest = null as any,
-    viewerCollegeId = null as string | null,
+    joinRequest = null,
+    viewerCollegeId = null,
+  }: {
+    community?: Record<string, unknown>;
+    members?: StripRow[];
+    viewerMembership?: Record<string, unknown> | null;
+    viewerOutsideStrip?: boolean;
+    joinRequest?: { status: string } | null;
+    viewerCollegeId?: string | null;
   } = {}) => {
-    let strip = [...members];
+    let strip: StripRow[] = [...members];
     if (viewerMembership && !viewerOutsideStrip) {
       strip = [
         ...strip,
@@ -59,51 +89,62 @@ describe('CommunitiesService — community detail', () => {
     members = strip;
     prisma = {
       community: {
-        findUnique: jest.fn(async () => ({
-          id: ID,
-          name: 'Community',
-          ownerId: 'owner',
-          createdAt: new Date('2026-01-01'),
-          deletedAt: null,
-          isPrivate: false,
-          isCampusCommunity: false,
-          collegeId: null,
-          owner: { id: 'owner', username: 'owner', displayName: 'Owner' },
-          college: null,
-          members,
-          _count: { members: members.length, posts: 0 },
-          ...community,
-        })),
+        findUnique: jest.fn(() =>
+          Promise.resolve({
+            id: ID,
+            name: 'Community',
+            ownerId: 'owner',
+            createdAt: new Date('2026-01-01'),
+            deletedAt: null,
+            isPrivate: false,
+            isCampusCommunity: false,
+            collegeId: null,
+            owner: { id: 'owner', username: 'owner', displayName: 'Owner' },
+            college: null,
+            members,
+            _count: { members: members.length, posts: 0 },
+            ...community,
+          }),
+        ),
       },
       communityMember: {
-        findUnique: jest.fn(async () =>
-          viewerOutsideStrip ? viewerMembership : null,
+        findUnique: jest.fn(() =>
+          Promise.resolve(viewerOutsideStrip ? viewerMembership : null),
         ),
-        findMany: jest.fn(async () =>
-          members.map((m: any) => ({ userId: m.userId })),
+        findMany: jest.fn(() =>
+          Promise.resolve(members.map((m) => ({ userId: m.userId }))),
         ),
       },
-      communityJoinRequest: { findUnique: jest.fn(async () => joinRequest) },
+      communityJoinRequest: {
+        findUnique: jest.fn(() => Promise.resolve(joinRequest)),
+      },
       user: {
-        findUnique: jest.fn(async () => ({ collegeId: viewerCollegeId })),
+        findUnique: jest.fn(() =>
+          Promise.resolve({ collegeId: viewerCollegeId }),
+        ),
       },
     };
 
     service = new CommunitiesService(
-      prisma,
-      { emit: jest.fn() } as any,
-      { getClient: () => null } as any,
-      { getPresenceMany: async () => new Map() } as any,
-      { refFor: () => null } as any,
-      {
-        getExcludedUserIds: async () => [],
-        isBlocked: async () => false,
-        filterBlockedUsers: async (_u: any, ids: any) => ids,
-        injectBlockFilter: async (_u: any, w: any) => w,
+      stub<PrismaService>(prisma),
+      stub<DomainEventService>({ emit: jest.fn() }),
+      stub<RedisService>({ getClient: () => null }),
+      stub<PresenceService>({
+        getPresenceMany: () => Promise.resolve(new Map()),
+      }),
+      stub<DefaultAssetsService>({ refFor: () => null }),
+      stub<BlocksService>({
+        getExcludedUserIds: () => Promise.resolve([]),
+        isBlocked: () => Promise.resolve(false),
+        filterBlockedUsers: (_u: string, ids: string[]) => Promise.resolve(ids),
+        injectBlockFilter: <T extends object>(_u: string, w: T) =>
+          Promise.resolve(w),
         invalidateBlockCache: async () => {},
-      } as any,
-      { createNotification: async () => ({}) } as any,
-      { createModeratorPromotion: () => null } as any,
+      }),
+      stub<NotificationsService>({
+        createNotification: jest.fn(() => Promise.resolve({})),
+      }),
+      stub<NotificationFactory>({ createModeratorPromotion: () => null }),
     );
     return service;
   };
@@ -126,7 +167,7 @@ describe('CommunitiesService — community detail', () => {
       viewerOutsideStrip: true,
     });
 
-    const result: any = await service.getCommunityById(ID, VIEWER);
+    const result = await service.getCommunityById(ID, VIEWER);
 
     expect(result.isJoined).toBe(true);
     expect(result.userRole).toBe('MEMBER');
@@ -135,7 +176,7 @@ describe('CommunitiesService — community detail', () => {
   it('reports a non-member as not joined', async () => {
     build({ members: [member('someone')], viewerMembership: null });
 
-    const result: any = await service.getCommunityById(ID, VIEWER);
+    const result = await service.getCommunityById(ID, VIEWER);
 
     expect(result.isJoined).toBe(false);
     expect(result.userRole).toBeNull();
@@ -144,7 +185,7 @@ describe('CommunitiesService — community detail', () => {
   it('treats the owner as joined with the OWNER role', async () => {
     build({ community: { ownerId: VIEWER }, viewerMembership: null });
 
-    const result: any = await service.getCommunityById(ID, VIEWER);
+    const result = await service.getCommunityById(ID, VIEWER);
 
     expect(result.isJoined).toBe(true);
     expect(result.userRole).toBe('OWNER');
@@ -163,7 +204,7 @@ describe('CommunitiesService — community detail', () => {
         viewerMembership: { role: 'MEMBER' },
       });
 
-      const result: any = await service.getCommunityById(ID, VIEWER);
+      const result = await service.getCommunityById(ID, VIEWER);
 
       expect(result.isJoined).toBe(true);
       expect(prisma.communityMember.findUnique).not.toHaveBeenCalled();
@@ -212,12 +253,12 @@ describe('CommunitiesService — community detail', () => {
         },
       });
 
-      const result: any = await service.getCommunityById(ID, VIEWER);
+      const result = await service.getCommunityById(ID, VIEWER);
 
       expect(result.moderatorNotice?.promotedAt).toEqual(
         new Date('2026-02-01'),
       );
-      expect(Array.isArray(result.moderatorNotice.permissions)).toBe(true);
+      expect(Array.isArray(result.moderatorNotice!.permissions)).toBe(true);
     });
 
     it('omits it once acknowledged after the promotion', async () => {
@@ -229,7 +270,7 @@ describe('CommunitiesService — community detail', () => {
         },
       });
 
-      const result: any = await service.getCommunityById(ID, VIEWER);
+      const result = await service.getCommunityById(ID, VIEWER);
 
       expect(result.moderatorNotice).toBeNull();
     });
@@ -243,7 +284,7 @@ describe('CommunitiesService — community detail', () => {
         },
       });
 
-      const result: any = await service.getCommunityById(ID, VIEWER);
+      const result = await service.getCommunityById(ID, VIEWER);
 
       expect(result.moderatorNotice).not.toBeNull();
     });
@@ -251,7 +292,7 @@ describe('CommunitiesService — community detail', () => {
     it('is null for an ordinary member', async () => {
       build({ viewerMembership: { role: 'MEMBER' } });
 
-      const result: any = await service.getCommunityById(ID, VIEWER);
+      const result = await service.getCommunityById(ID, VIEWER);
 
       expect(result.moderatorNotice).toBeNull();
     });
@@ -265,7 +306,7 @@ describe('CommunitiesService — community detail', () => {
         joinRequest: { status: 'PENDING' },
       });
 
-      const result: any = await service.getCommunityById(ID, VIEWER);
+      const result = await service.getCommunityById(ID, VIEWER);
 
       expect(result.hasPendingRequest).toBe(true);
       expect(result.canViewPosts).toBe(false);
@@ -280,7 +321,7 @@ describe('CommunitiesService — community detail', () => {
         joinRequest: { status: 'PENDING' },
       });
 
-      const result: any = await service.getCommunityById(ID, VIEWER);
+      const result = await service.getCommunityById(ID, VIEWER);
 
       expect(result.hasPendingRequest).toBe(false);
       expect(result.canViewPosts).toBe(true);
@@ -298,7 +339,7 @@ describe('CommunitiesService — community detail', () => {
         viewerCollegeId: 'college-b',
       });
 
-      const result: any = await service.getCommunityById(ID, VIEWER);
+      const result = await service.getCommunityById(ID, VIEWER);
 
       expect(result.isEligibleToJoin).toBe(false);
       expect(result.eligibilityMessage).toContain('College A');
@@ -310,7 +351,7 @@ describe('CommunitiesService — community detail', () => {
         viewerCollegeId: 'college-a',
       });
 
-      const result: any = await service.getCommunityById(ID, VIEWER);
+      const result = await service.getCommunityById(ID, VIEWER);
 
       expect(result.isEligibleToJoin).toBe(true);
       expect(result.eligibilityMessage).toBeNull();
@@ -320,11 +361,11 @@ describe('CommunitiesService — community detail', () => {
   it('hides members this viewer has blocked without changing the count', async () => {
     const members = [member('a'), member('b')];
     build({ members });
-    (service as any).blocksService.filterBlockedUsers = async () => ['a'];
+    service['blocksService'].filterBlockedUsers = () => Promise.resolve(['a']);
 
-    const result: any = await service.getCommunityById(ID, VIEWER);
+    const result = await service.getCommunityById(ID, VIEWER);
 
-    expect(result.members.map((m: any) => m.userId)).toEqual(['a']);
+    expect(result.members.map((m) => m.userId)).toEqual(['a']);
     expect(result._count.members).toBe(2);
   });
 

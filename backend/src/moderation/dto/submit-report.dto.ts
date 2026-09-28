@@ -9,13 +9,13 @@ import { ReportTargetType, ReportReason } from '@prisma/client';
 
 export class SubmitReportDto {
   @IsEnum(ReportTargetType)
-  targetType: ReportTargetType;
+  targetType!: ReportTargetType;
 
   @IsString()
-  targetId: string;
+  targetId!: string;
 
   @IsEnum(ReportReason)
-  reason: ReportReason;
+  reason!: ReportReason;
 
   @IsOptional()
   @IsString()
@@ -24,5 +24,5 @@ export class SubmitReportDto {
 
   @IsOptional()
   @IsObject()
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }

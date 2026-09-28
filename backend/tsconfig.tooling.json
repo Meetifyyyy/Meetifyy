@@ -1,0 +1,19 @@
+{
+  "extends": "./tsconfig.json",
+  // Scripts that run from a shell, not from the app. They are not part of the
+  // build (tsconfig.build.json has rootDir: src), but they touch the same
+  // database and buckets, so they are type-checked and linted like the app.
+  // Without a program of their own, ESLint's type-aware rules cannot see them.
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": false,
+    "noEmit": true,
+    "incremental": false
+  },
+  "include": [
+    "scripts/**/*",
+    "prisma/*.ts",
+    "render-templates.ts",
+    "send-all-mailpit.ts"
+  ]
+}

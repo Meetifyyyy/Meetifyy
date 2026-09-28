@@ -7,10 +7,13 @@ import { verificationAccessMockProvider } from '../common/verification/testing/v
 import { studentYearPolicyMockProvider } from '../common/student-year/testing/student-year-policy.mock';
 import { StorageService } from '../uploads/uploads.service';
 
+/** A media lookup by id. */
+type MediaLookup = { where: { id: string } };
+
 describe('VerificationService', () => {
   let service: VerificationService;
 
-  const mockStorage = { delete: jest.fn(async () => true) };
+  const mockStorage = { delete: jest.fn(() => Promise.resolve(true)) };
 
   const mockPrisma = {
     user: {
@@ -20,14 +23,14 @@ describe('VerificationService', () => {
     },
     media: {
       findUnique: jest.fn(),
-      findMany: jest.fn(async (): Promise<any[]> => []),
+      findMany: jest.fn((): Promise<unknown[]> => Promise.resolve([])),
       updateMany: jest.fn(),
       deleteMany: jest.fn(),
     },
     verificationRequest: {
       create: jest.fn(),
       findFirst: jest.fn(),
-      findMany: jest.fn(async (): Promise<any[]> => []),
+      findMany: jest.fn((): Promise<unknown[]> => Promise.resolve([])),
     },
     $transaction: jest.fn(),
   };
@@ -72,8 +75,8 @@ describe('VerificationService', () => {
 
     /** Both documents valid, and the status claim succeeds. */
     const happyPath = () => {
-      mockPrisma.media.findUnique.mockImplementation(async ({ where }: any) =>
-        goodDoc(where.id),
+      mockPrisma.media.findUnique.mockImplementation(({ where }: MediaLookup) =>
+        Promise.resolve(goodDoc(where.id)),
       );
       mockPrisma.user.updateMany.mockResolvedValue({ count: 1 });
       mockPrisma.verificationRequest.findFirst.mockResolvedValue(null);
@@ -91,8 +94,8 @@ describe('VerificationService', () => {
     });
 
     it('should throw BadRequestException if selfie is invalid', async () => {
-      mockPrisma.media.findUnique.mockImplementation(async ({ where }: any) =>
-        where.id === selfieId ? null : goodDoc(where.id),
+      mockPrisma.media.findUnique.mockImplementation(({ where }: MediaLookup) =>
+        Promise.resolve(where.id === selfieId ? null : goodDoc(where.id)),
       );
       await expect(
         service.submitVerification(userId, selfieId, idCardId),
@@ -100,10 +103,12 @@ describe('VerificationService', () => {
     });
 
     it('should throw BadRequestException if selfie belongs to someone else', async () => {
-      mockPrisma.media.findUnique.mockImplementation(async ({ where }: any) =>
-        where.id === selfieId
-          ? { ...goodDoc(where.id), ownerId: 'other-user' }
-          : goodDoc(where.id),
+      mockPrisma.media.findUnique.mockImplementation(({ where }: MediaLookup) =>
+        Promise.resolve(
+          where.id === selfieId
+            ? { ...goodDoc(where.id), ownerId: 'other-user' }
+            : goodDoc(where.id),
+        ),
       );
       await expect(
         service.submitVerification(userId, selfieId, idCardId),
@@ -111,8 +116,8 @@ describe('VerificationService', () => {
     });
 
     it('should throw BadRequestException if id card is invalid', async () => {
-      mockPrisma.media.findUnique.mockImplementation(async ({ where }: any) =>
-        where.id === idCardId ? null : goodDoc(where.id),
+      mockPrisma.media.findUnique.mockImplementation(({ where }: MediaLookup) =>
+        Promise.resolve(where.id === idCardId ? null : goodDoc(where.id)),
       );
       await expect(
         service.submitVerification(userId, selfieId, idCardId),
@@ -122,8 +127,8 @@ describe('VerificationService', () => {
     it('refuses a document that is not an image', async () => {
       // Ownership alone used to be the whole test, so any media the user owned
       // — a video, a voice note — could be submitted as an identity document.
-      mockPrisma.media.findUnique.mockImplementation(
-        async ({ where }: any) => ({
+      mockPrisma.media.findUnique.mockImplementation(({ where }: MediaLookup) =>
+        Promise.resolve({
           ...goodDoc(where.id),
           mimeType: 'video/mp4',
         }),
@@ -136,8 +141,8 @@ describe('VerificationService', () => {
     it('refuses a document stored outside the private verification prefix', async () => {
       // A chat image is publicly resolvable through /api/media; accepting one
       // as an ID card would publish the document.
-      mockPrisma.media.findUnique.mockImplementation(
-        async ({ where }: any) => ({
+      mockPrisma.media.findUnique.mockImplementation(({ where }: MediaLookup) =>
+        Promise.resolve({
           ...goodDoc(where.id),
           objectKey: `chat/${where.id}.jpg`,
         }),
@@ -185,9 +190,11 @@ describe('VerificationService', () => {
       // Both callers validated their documents; the database lets exactly one
       // claim the UNVERIFIED → PENDING transition.
       let claims = 0;
-      mockPrisma.user.updateMany.mockImplementation(async () => ({
-        count: claims++ === 0 ? 1 : 0,
-      }));
+      mockPrisma.user.updateMany.mockImplementation(() =>
+        Promise.resolve({
+          count: claims++ === 0 ? 1 : 0,
+        }),
+      );
       mockPrisma.user.findUnique.mockResolvedValue({
         verificationStatus: VerificationStatus.PENDING,
       });

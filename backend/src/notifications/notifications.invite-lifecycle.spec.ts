@@ -16,12 +16,22 @@ import { studentYearPolicyMockProvider } from '../common/student-year/testing/st
 describe('NotificationsService - activity invite lifecycle', () => {
   let service: NotificationsService;
 
-  const mockPrisma: any = {
+  /** The compare-and-swap write, as far as these tests read it. */
+  type LifecycleWrite = {
+    where: { id?: string; deletedAt?: null; updatedAt?: Date };
+    data: {
+      metadata: { lifecycleStatus?: string; invitationId?: string };
+      deletedAt?: unknown;
+      readAt?: unknown;
+    };
+  };
+
+  const mockPrisma = {
     notification: {
       findMany: jest.fn(),
       update: jest.fn(),
-      updateMany: jest.fn(),
-      findUnique: jest.fn(),
+      updateMany: jest.fn<Promise<{ count: number }>, [LifecycleWrite]>(),
+      findUnique: jest.fn<Promise<unknown>, [{ where: { id: string } }]>(),
       findFirst: jest.fn(),
       create: jest.fn(),
       upsert: jest.fn(),
@@ -33,7 +43,7 @@ describe('NotificationsService - activity invite lifecycle', () => {
 
   const mockDomainEventService = { emit: jest.fn() };
 
-  const row = (overrides: any = {}) => ({
+  const row = (overrides: Record<string, unknown> = {}) => ({
     id: 'notif-1',
     recipientId: 'user-1',
     updatedAt: new Date('2026-01-01T00:00:00.000Z'),
@@ -53,12 +63,12 @@ describe('NotificationsService - activity invite lifecycle', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     // The service compare-and-swaps via updateMany, then re-reads the row.
-    let lastWrite: any = null;
-    mockPrisma.notification.updateMany.mockImplementation(({ data }: any) => {
+    let lastWrite: LifecycleWrite['data'] | null = null;
+    mockPrisma.notification.updateMany.mockImplementation(({ data }) => {
       lastWrite = data;
       return Promise.resolve({ count: 1 });
     });
-    mockPrisma.notification.findUnique.mockImplementation(({ where }: any) =>
+    mockPrisma.notification.findUnique.mockImplementation(({ where }) =>
       Promise.resolve({
         id: where.id,
         recipientId: 'user-1',
@@ -83,8 +93,12 @@ describe('NotificationsService - activity invite lifecycle', () => {
           useValue: {
             getExcludedUserIds: jest.fn().mockResolvedValue([]),
             isBlocked: jest.fn().mockResolvedValue(false),
-            filterBlockedUsers: jest.fn(async (_u: any, ids: any) => ids),
-            injectBlockFilter: jest.fn(async (_u: any, w: any) => w),
+            filterBlockedUsers: jest.fn((_u: string, ids: string[]) =>
+              Promise.resolve(ids),
+            ),
+            injectBlockFilter: jest.fn((_u: string, w: unknown) =>
+              Promise.resolve(w),
+            ),
             invalidateBlockCache: jest.fn(),
           },
         },

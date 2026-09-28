@@ -9,17 +9,17 @@ import { IsInt, IsString, Matches, Min } from 'class-validator';
  */
 export class MentionDto {
   @IsString()
-  userId: string;
+  userId!: string;
 
   @IsString()
   @Matches(/^[a-zA-Z0-9_.]{1,50}$/)
-  username: string;
+  username!: string;
 
   @IsInt()
   @Min(0)
-  start: number;
+  start!: number;
 
   @IsInt()
   @Min(0)
-  end: number;
+  end!: number;
 }

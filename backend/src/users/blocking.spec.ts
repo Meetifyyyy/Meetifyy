@@ -2,7 +2,8 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getQueueToken } from '@nestjs/bullmq';
 import { ConfigService } from '@nestjs/config';
 import { UsersService } from './users.service';
-import { blocksServiceMockProvider } from './testing/blocks.service.mock';
+import { createBlocksServiceMock } from './testing/blocks.service.mock';
+import { BlocksService } from './blocks.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationFactory } from '../notifications/notification.factory';
@@ -14,34 +15,73 @@ import { VerificationAccessService } from '../common/verification/verification-a
 import { NOTIFICATIONS_QUEUE } from '../notifications/notifications.processor';
 import { studentYearPolicyMockProvider } from '../common/student-year/testing/student-year-policy.mock';
 
+/** One row of the blocked-contacts page, exactly as BlocksService returns it. */
+type BlockRow = Awaited<
+  ReturnType<BlocksService['listBlockedContacts']>
+>[number];
+
+/** A Prisma.sql fragment nested in a tagged-template call. */
+const isSqlFragment = (v: unknown): v is { strings: string[] } =>
+  (typeof v === 'object' || typeof v === 'function') &&
+  v !== null &&
+  'strings' in v &&
+  Array.isArray(v.strings);
+
 describe('UsersService — blocking', () => {
   let service: UsersService;
-  let tx: any;
-  let mockPrisma: any;
-  let blocksMock: any;
-  let blockRows: any[] = [];
+  let tx: ReturnType<typeof makeTx>;
+  let mockPrisma: {
+    $transaction: jest.Mock<Promise<unknown>, [(t: typeof tx) => unknown]>;
+    block: { deleteMany: jest.Mock; findMany: jest.Mock };
+    user?: { findUnique: jest.Mock };
+    $queryRaw?: jest.Mock;
+  };
+  let queryRaw: jest.Mock<Promise<unknown[]>, unknown[]>;
+  let blocksMock: {
+    provide: typeof BlocksService;
+    useValue: ReturnType<typeof makeBlocks>;
+  };
+  let blockRows: BlockRow[] = [];
   let domainEvents: jest.Mock;
+
+  const makeTx = () => ({
+    block: { upsert: jest.fn() },
+    follow: {
+      deleteMany: jest.fn<Promise<unknown>, [{ where: { OR: unknown[] } }]>(),
+    },
+    matchSession: {
+      updateMany: jest.fn<
+        Promise<unknown>,
+        [{ where: { OR: unknown[]; NOT?: unknown }; data: unknown }]
+      >(),
+    },
+  });
+
+  // getBlockedContacts now reads through BlocksService, so the double serves
+  // the rows the pagination/deleted-account assertions below rely on.
+  const makeBlocks = () =>
+    Object.assign(createBlocksServiceMock(), {
+      listBlockedContacts: jest.fn(
+        (_blockerId: string, _take: number, _skip: number) =>
+          Promise.resolve(blockRows),
+      ),
+    });
 
   beforeEach(async () => {
     jest.clearAllMocks();
 
-    tx = {
-      block: { upsert: jest.fn() },
-      follow: { deleteMany: jest.fn() },
-      matchSession: { updateMany: jest.fn() },
-    };
+    tx = makeTx();
 
     mockPrisma = {
-      $transaction: jest.fn(async (fn: any) => fn(tx)),
+      $transaction: jest.fn((fn: (t: typeof tx) => unknown) =>
+        Promise.resolve(fn(tx)),
+      ),
       block: { deleteMany: jest.fn(), findMany: jest.fn() },
     };
 
     domainEvents = jest.fn();
 
-    blocksMock = blocksServiceMockProvider();
-    // getBlockedContacts now reads through BlocksService, so the double serves
-    // the rows the pagination/deleted-account assertions below rely on.
-    blocksMock.useValue.listBlockedContacts = jest.fn(async () => blockRows);
+    blocksMock = { provide: BlocksService, useValue: makeBlocks() };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -205,7 +245,7 @@ describe('UsersService — blocking', () => {
   });
 
   describe('getBlockedContacts', () => {
-    const setBlockRows = (rows: any[]) => {
+    const setBlockRows = (rows: BlockRow[]) => {
       blockRows = rows;
     };
 
@@ -263,25 +303,27 @@ describe('UsersService — blocking', () => {
      * decides those.
      */
     const sqlFragments = () => {
-      const call = mockPrisma.$queryRaw.mock.calls[0];
+      const call = queryRaw.mock.calls[0];
       if (!call) return '';
       // Tagged template: (strings, ...values). Nested Prisma.sql fragments
       // arrive as values carrying their own `strings`.
       return call
         .slice(1)
-        .map((v: any) =>
-          v && Array.isArray(v.strings) ? v.strings.join(' ') : '',
-        )
+        .map((v) => (isSqlFragment(v) ? v.strings.join(' ') : ''))
         .join(' ');
     };
 
     beforeEach(() => {
-      mockPrisma.user = { findUnique: jest.fn(async () => ({ id: 'target' })) };
-      mockPrisma.$queryRaw = jest.fn(async () => []);
+      mockPrisma.user = {
+        findUnique: jest.fn(() => Promise.resolve({ id: 'target' })),
+      };
+      mockPrisma.$queryRaw = queryRaw = jest.fn(() => Promise.resolve([]));
     });
 
     it('excludes blocked users from a follower list at the database level', async () => {
-      blocksMock.useValue.getExcludedUserIds = jest.fn(async () => ['bob']);
+      blocksMock.useValue.getExcludedUserIds = jest.fn((_userId: string) =>
+        Promise.resolve(['bob']),
+      );
 
       await service.getFollowers('someone', 'alice');
 
@@ -290,7 +332,9 @@ describe('UsersService — blocking', () => {
     });
 
     it('excludes blocked users from a following list at the database level', async () => {
-      blocksMock.useValue.getExcludedUserIds = jest.fn(async () => ['bob']);
+      blocksMock.useValue.getExcludedUserIds = jest.fn((_userId: string) =>
+        Promise.resolve(['bob']),
+      );
 
       await service.getFollowing('someone', 'alice');
 
@@ -299,7 +343,9 @@ describe('UsersService — blocking', () => {
     });
 
     it('emits no NOT IN clause when the viewer has blocked nobody', async () => {
-      blocksMock.useValue.getExcludedUserIds = jest.fn(async () => []);
+      blocksMock.useValue.getExcludedUserIds = jest.fn((_userId: string) =>
+        Promise.resolve<string[]>([]),
+      );
 
       await service.getFollowers('someone', 'alice');
 
@@ -308,7 +354,9 @@ describe('UsersService — blocking', () => {
     });
 
     it('skips the block lookup entirely for an anonymous viewer', async () => {
-      blocksMock.useValue.getExcludedUserIds = jest.fn(async () => ['bob']);
+      blocksMock.useValue.getExcludedUserIds = jest.fn((_userId: string) =>
+        Promise.resolve(['bob']),
+      );
 
       await service.getFollowers('someone', undefined);
 

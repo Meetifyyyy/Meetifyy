@@ -1,4 +1,8 @@
 import { SharePreviewService } from './share-preview.service';
+import { stub } from '../common/testing/stub';
+import type { PrismaService } from '../prisma/prisma.service';
+import type { StorageService } from '../uploads/uploads.service';
+import type { MediaCleanupService } from '../uploads/media-cleanup.service';
 import {
   pollPost,
   postWithImages,
@@ -23,7 +27,32 @@ import {
 describe('SharePreviewService — what may be shared publicly', () => {
   const POST_ID = '11111111-2222-4333-8444-555555555555';
 
-  const media = (over: any = {}) => ({
+  /** A Media row, as the preview query selects it. */
+  type MediaRow = {
+    objectKey: string;
+    mimeType: string;
+    type: string;
+    width: number;
+    height: number;
+    visibility: string;
+  };
+
+  /** The `findFirst` call, as far as these assertions read it. */
+  type PostQuery = {
+    where: { OR?: unknown[] } & Record<string, unknown>;
+    select: {
+      media: { orderBy: unknown; take: number; where: unknown };
+      pollOptions: { take: number; select: unknown };
+      _count: { select: { media: unknown } };
+      author: { select: unknown };
+      likeCount?: unknown;
+      comments?: unknown;
+      pollVotes?: unknown;
+      bookmarks?: unknown;
+    };
+  };
+
+  const media = (over: Partial<MediaRow> = {}): MediaRow => ({
     objectKey: 'posts/cat.webp',
     mimeType: 'image/webp',
     type: 'IMAGE',
@@ -33,7 +62,7 @@ describe('SharePreviewService — what may be shared publicly', () => {
     ...over,
   });
 
-  const video = (over: any = {}) =>
+  const video = (over: Partial<MediaRow> = {}) =>
     media({
       objectKey: 'posts/clip.mp4',
       mimeType: 'video/mp4',
@@ -43,7 +72,7 @@ describe('SharePreviewService — what may be shared publicly', () => {
       ...over,
     });
 
-  const row = (over: any = {}) => ({
+  const row = (over: Record<string, unknown> = {}) => ({
     id: POST_ID,
     text: 'Badminton at six.',
     createdAt: new Date('2026-01-02T03:04:05.000Z'),
@@ -61,26 +90,29 @@ describe('SharePreviewService — what may be shared publicly', () => {
     ...over,
   });
 
-  const setup = (result: any = row()) => {
-    const findFirst = jest.fn().mockResolvedValue(result);
-    const prisma: any = { post: { findFirst } };
-    const storage: any = {
+  const setup = (result: unknown = row()) => {
+    const findFirst = jest
+      .fn<Promise<unknown>, [PostQuery]>()
+      .mockResolvedValue(result);
+    const prisma = stub<PrismaService>({ post: { findFirst } });
+    const storage = stub<StorageService>({
       getPublicUrl: (key: string) => `https://cdn.example/${key}`,
       isAlwaysPrivateKey: (key: string) => key.startsWith('verification/'),
-    };
-    const mediaCleanup: any = {
+    });
+    const mediaCleanup = stub<MediaCleanupService>({
       variantKeysFor: (key: string) => {
         const match = key.match(/^([a-z-]+)\/(.+)\.(\w+)$/i);
         return match ? [key, `${match[1]}/${match[2]}_thumb.webp`] : [key];
       },
-    };
+    });
     return {
       service: new SharePreviewService(prisma, storage, mediaCleanup),
       findFirst,
     };
   };
 
-  const selectOf = (findFirst: jest.Mock) => findFirst.mock.calls[0][0].select;
+  const selectOf = (findFirst: jest.Mock<Promise<unknown>, [PostQuery]>) =>
+    findFirst.mock.calls[0][0].select;
 
   describe('the query refuses, rather than the code filtering afterwards', () => {
     it('requires the post to be live and the author to be an available, active account', async () => {

@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import * as jwt from 'jsonwebtoken';
-import { createPublicKey, KeyObject } from 'crypto';
+import { createPublicKey, KeyObject, type JsonWebKey } from 'crypto';
 import { SupabaseService } from '../../supabase/supabase.service';
 import {
   USER_ACCESS_COOKIE,
@@ -25,9 +25,16 @@ import { ALLOW_BEARER_TOKEN_KEY } from '../decorators/allow-bearer-token.decorat
 import { LegalConsentService } from '../legal/legal-consent.service';
 import { LEGAL_ACKNOWLEDGEMENT_REQUIRED_CODE } from '../legal/legal.constants';
 import { config } from '../../config';
+import { errorMessage } from '../utils/error.util';
+import { isRecord } from '../utils/type-guards.util';
+import { stringClaim } from '../utils/jwt-claims.util';
+import type {
+  AuthenticatedUser,
+  GuardRequest,
+} from '../types/authenticated-request';
 
 interface CachedTokenUser {
-  userPayload: any;
+  userPayload: AuthenticatedUser;
   expiresAt: number;
 }
 
@@ -217,9 +224,21 @@ export class JwtGuard implements CanActivate {
   // rotate rarely), so a rotation self-heals without a redeploy.
   private static jwksKeys = new Map<string, KeyObject>();
   private static jwksLastFetch = 0;
+  private static jwksLastAttempt = 0;
   private static jwksInFlight: Promise<void> | null = null;
   private static warmed = false;
   private static readonly JWKS_MIN_REFRESH_MS = 5 * 60 * 1000;
+  /**
+   * The floor between ANY two JWKS fetches, forced ones included.
+   *
+   * A token naming an unknown `kid` forces a refresh, and `force` used to skip
+   * every throttle, so a stream of tokens with made-up `kid`s was one outbound
+   * fetch to Supabase per request. The rate limiter's `peekUserId` goes through
+   * the same lookup on every request, so it was reachable without signing in.
+   * A real key rotation still heals within this window; until then the remote
+   * fallback verifies tokens signed with the new key.
+   */
+  private static readonly JWKS_MIN_ATTEMPT_GAP_MS = 30 * 1000;
   // Fixed asymmetric allowlist — the ONLY algorithms accepted on the local JWKS
   // path. Symmetric (HS*) and `none` are deliberately excluded here.
   private static readonly ASYMMETRIC_ALGS: jwt.Algorithm[] = [
@@ -256,20 +275,28 @@ export class JwtGuard implements CanActivate {
     )
       return;
     if (this.jwksInFlight) return this.jwksInFlight;
+    if (now - this.jwksLastAttempt < this.JWKS_MIN_ATTEMPT_GAP_MS) return;
     const url = this.jwksUrl();
     if (!url) return;
+    this.jwksLastAttempt = now;
 
     this.jwksInFlight = (async () => {
       try {
         const res = await fetch(url);
         if (!res.ok) return;
-        const body: any = await res.json();
-        const keys = Array.isArray(body?.keys) ? body.keys : [];
+        const body: unknown = await res.json();
+        const keys: unknown[] =
+          isRecord(body) && Array.isArray(body.keys) ? body.keys : [];
         const next = new Map<string, KeyObject>();
         for (const jwk of keys) {
-          if (!jwk?.kid) continue;
+          // Keys are looked up by the token header's `kid`, which is a string.
+          if (!isRecord(jwk) || typeof jwk.kid !== 'string' || !jwk.kid)
+            continue;
           try {
-            next.set(jwk.kid, createPublicKey({ key: jwk, format: 'jwk' }));
+            next.set(
+              jwk.kid,
+              createPublicKey({ key: jwk as JsonWebKey, format: 'jwk' }),
+            );
           } catch {
             /* skip unusable key */
           }
@@ -307,8 +334,8 @@ export class JwtGuard implements CanActivate {
         }
       }
       if (this.tokenCache.size >= this.MAX_CACHE_SIZE) {
-        const firstKey = this.tokenCache.keys().next().value;
-        if (firstKey) this.tokenCache.delete(firstKey);
+        const oldest = this.tokenCache.keys().next();
+        if (!oldest.done) this.tokenCache.delete(oldest.value);
       }
     }
     this.tokenCache.set(token, entry);
@@ -346,7 +373,7 @@ export class JwtGuard implements CanActivate {
           })
           .catch((e) =>
             this.logger.warn(
-              `[JwtGuard] JWKS warm failed (${(e as Error).message}) — remote auth fallback in use.`,
+              `[JwtGuard] JWKS warm failed (${errorMessage(e)}) — remote auth fallback in use.`,
             ),
           );
       }
@@ -354,7 +381,7 @@ export class JwtGuard implements CanActivate {
   }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const request = context.switchToHttp().getRequest();
+    const request = context.switchToHttp().getRequest<GuardRequest>();
 
     /**
      * Cookie first, Authorization header second.
@@ -565,7 +592,7 @@ export class JwtGuard implements CanActivate {
    */
   private async enforceAccountStatus(
     context: ExecutionContext,
-    userPayload: any,
+    userPayload: AuthenticatedUser,
   ): Promise<void> {
     const userId = userPayload?.id;
     if (!userId) return;
@@ -623,7 +650,7 @@ export class JwtGuard implements CanActivate {
    */
   private async enforceLegalAcknowledgement(
     context: ExecutionContext,
-    userPayload: any,
+    userPayload: AuthenticatedUser,
   ): Promise<void> {
     const userId = userPayload?.id;
     if (!userId) return;
@@ -678,7 +705,7 @@ export class JwtGuard implements CanActivate {
    * Validates the token and returns a normalized user payload, or null if the
    * token is invalid/expired. Never trusts an unverified payload.
    */
-  public async validateToken(token: string): Promise<any> {
+  public async validateToken(token: string): Promise<AuthenticatedUser | null> {
     const now = Date.now();
     const cached = JwtGuard.tokenCache.get(token);
     if (cached && cached.expiresAt > now) {
@@ -692,18 +719,26 @@ export class JwtGuard implements CanActivate {
     const header = this.parseHeader(token);
     const alg = header?.alg;
 
-    const normalize = (payload: any) => {
-      const userId = payload.sub || payload.id || payload.user_id;
+    // Only called with a payload whose signature has been verified.
+    const normalize = (
+      payload: string | jwt.JwtPayload,
+    ): AuthenticatedUser | null => {
+      if (typeof payload === 'string') return null;
+      const userId = subjectOf(payload);
       if (!userId) return null;
-      const normalizedPayload = {
+      const metadata = isRecord(payload.user_metadata)
+        ? payload.user_metadata
+        : isRecord(payload.raw_user_meta_data)
+          ? payload.raw_user_meta_data
+          : {};
+      const normalizedPayload: AuthenticatedUser = {
         id: userId,
-        email: payload.email || `${userId}@meetifyy.user`,
-        user_metadata:
-          payload.user_metadata || payload.raw_user_meta_data || {},
+        email: stringClaim(payload, 'email') || `${userId}@meetifyy.user`,
+        user_metadata: metadata,
         // Not present in Supabase access tokens — auth.service resolves it via
         // the admin API on the new-account path when needed.
-        email_confirmed_at: payload.email_confirmed_at,
-        confirmed_at: payload.confirmed_at,
+        email_confirmed_at: timestampClaim(payload, 'email_confirmed_at'),
+        confirmed_at: timestampClaim(payload, 'confirmed_at'),
         token,
       };
 
@@ -734,7 +769,7 @@ export class JwtGuard implements CanActivate {
         const key = await JwtGuard.getSigningKey(header.kid);
         if (key) {
           const issuer = JwtGuard.expectedIssuer();
-          const payload: any = jwt.verify(token, key, {
+          const payload = jwt.verify(token, key, {
             algorithms: JwtGuard.ASYMMETRIC_ALGS,
             ...(issuer ? { issuer } : {}),
           });
@@ -752,7 +787,7 @@ export class JwtGuard implements CanActivate {
     const secret = config.auth.supabase.jwtSecret;
     if (secret && alg === 'HS256') {
       try {
-        const payload: any = jwt.verify(token, secret, {
+        const payload = jwt.verify(token, secret, {
           algorithms: ['HS256'],
         });
         return normalize(payload);
@@ -772,12 +807,12 @@ export class JwtGuard implements CanActivate {
         return null;
       }
       const user = data.user;
-      const normalizedPayload = {
+      const normalizedPayload: AuthenticatedUser = {
         id: user.id,
         email: user.email || `${user.id}@meetifyy.user`,
         user_metadata: user.user_metadata || {},
-        email_confirmed_at: (user as any).email_confirmed_at,
-        confirmed_at: (user as any).confirmed_at,
+        email_confirmed_at: user.email_confirmed_at,
+        confirmed_at: user.confirmed_at,
         token,
       };
 
@@ -828,11 +863,11 @@ export class JwtGuard implements CanActivate {
         const key = await JwtGuard.getSigningKey(header.kid);
         if (key) {
           const issuer = JwtGuard.expectedIssuer();
-          const payload: any = jwt.verify(token, key, {
+          const payload = jwt.verify(token, key, {
             algorithms: JwtGuard.ASYMMETRIC_ALGS,
             ...(issuer ? { issuer } : {}),
           });
-          return payload?.sub || payload?.id || payload?.user_id || null;
+          return typeof payload === 'string' ? null : subjectOf(payload);
         }
       } catch {
         return null;
@@ -842,10 +877,10 @@ export class JwtGuard implements CanActivate {
     const secret = config.auth.supabase.jwtSecret;
     if (secret && alg === 'HS256') {
       try {
-        const payload: any = jwt.verify(token, secret, {
+        const payload = jwt.verify(token, secret, {
           algorithms: ['HS256'],
         });
-        return payload?.sub || payload?.id || payload?.user_id || null;
+        return typeof payload === 'string' ? null : subjectOf(payload);
       } catch {
         return null;
       }
@@ -859,7 +894,14 @@ export class JwtGuard implements CanActivate {
     try {
       const parts = token.split('.');
       if (parts.length !== 3) return null;
-      return JSON.parse(Buffer.from(parts[0], 'base64url').toString('utf-8'));
+      const header: unknown = JSON.parse(
+        Buffer.from(parts[0], 'base64url').toString('utf-8'),
+      );
+      if (!isRecord(header)) return null;
+      return {
+        alg: typeof header.alg === 'string' ? header.alg : undefined,
+        kid: typeof header.kid === 'string' ? header.kid : undefined,
+      };
     } catch {
       return null;
     }
@@ -870,14 +912,42 @@ export class JwtGuard implements CanActivate {
     try {
       const parts = token.split('.');
       if (parts.length !== 3) return undefined;
-      const decoded = JSON.parse(
+      const decoded: unknown = JSON.parse(
         Buffer.from(parts[1], 'base64url').toString('utf-8'),
       );
-      return typeof decoded?.exp === 'number' ? decoded.exp : undefined;
+      return isRecord(decoded) && typeof decoded.exp === 'number'
+        ? decoded.exp
+        : undefined;
     } catch {
       return undefined;
     }
   }
+}
+
+/**
+ * The user id a verified token names.
+ *
+ * Supabase puts it in `sub`; `id` and `user_id` cover tokens minted by older
+ * paths. Only a string counts: an id that is not a string can never match a
+ * `User.id` row, so accepting one would only defer the failure.
+ */
+function subjectOf(payload: jwt.JwtPayload): string | null {
+  return (
+    stringClaim(payload, 'sub') ??
+    stringClaim(payload, 'id') ??
+    stringClaim(payload, 'user_id') ??
+    null
+  );
+}
+
+/** A confirmation timestamp claim: a string, an explicit null, or absent. */
+function timestampClaim(
+  payload: jwt.JwtPayload,
+  key: string,
+): string | null | undefined {
+  const value: unknown = payload[key];
+  if (value === null) return null;
+  return typeof value === 'string' ? value : undefined;
 }
 
 /**

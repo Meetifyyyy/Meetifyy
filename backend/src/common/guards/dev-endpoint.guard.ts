@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { timingSafeEqual } from 'crypto';
 import { config } from '../../config';
+import type { Request } from 'express';
 
 /**
  * Protects development-only routes.
@@ -34,7 +35,7 @@ export class DevEndpointGuard implements CanActivate {
       throw new ForbiddenException('Dev endpoints are disabled');
     }
 
-    const request = context.switchToHttp().getRequest();
+    const request = context.switchToHttp().getRequest<Request>();
     const token = config.features.devEndpointToken;
 
     if (token) {
@@ -61,12 +62,8 @@ export class DevEndpointGuard implements CanActivate {
 }
 
 /** The address the request actually arrived from; proxy headers are never trusted here. */
-function remoteAddress(request: any): string {
-  return (
-    request.socket?.remoteAddress ||
-    request.raw?.socket?.remoteAddress ||
-    ''
-  ).toString();
+function remoteAddress(request: Request): string {
+  return request.socket?.remoteAddress ?? '';
 }
 
 function isLoopback(address: string): boolean {

@@ -3,11 +3,23 @@ import { ConfigService } from '@nestjs/config';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { config } from '../config';
 
+/**
+ * Supabase is this backend's identity provider and nothing else: every row is
+ * read and written through Prisma. Exposing only `auth` makes a Supabase data
+ * query (`.from()`, `.rpc()`, storage), which would bypass Prisma, the
+ * migrations and the isolation filters, a compile error rather than a review
+ * comment. It also means no generated `Database` type is needed, which is the
+ * only reason `createClient` returned `SupabaseClient<any>`.
+ */
+export type SupabaseAuthClient = Pick<SupabaseClient, 'auth'>;
+
 @Injectable()
 export class SupabaseService implements OnModuleInit {
   private readonly logger = new Logger(SupabaseService.name);
-  private supabaseClient: SupabaseClient;
-  private supabaseAnonClient: SupabaseClient;
+  // Either may stay unset: config can be a placeholder, or the anon key absent.
+  // The getters below are what refuse, loudly, when that matters.
+  private supabaseClient: SupabaseAuthClient | undefined;
+  private supabaseAnonClient: SupabaseAuthClient | undefined;
 
   constructor(private configService: ConfigService) {}
 
@@ -90,7 +102,7 @@ export class SupabaseService implements OnModuleInit {
     }
   }
 
-  get client(): SupabaseClient {
+  get client(): SupabaseAuthClient {
     if (!this.supabaseClient) {
       throw new Error(
         'Supabase client is not initialized due to placeholder config.',
@@ -107,7 +119,7 @@ export class SupabaseService implements OnModuleInit {
    * sends a confirmation email and one that quietly skips verification, and
    * that is not a distinction to leave to a fallback.
    */
-  get anonClient(): SupabaseClient {
+  get anonClient(): SupabaseAuthClient {
     if (!this.supabaseAnonClient) {
       throw new Error(
         'Supabase anon client is not initialized. SUPABASE_ANON_KEY is required for signup, resend and password-reset requests.',

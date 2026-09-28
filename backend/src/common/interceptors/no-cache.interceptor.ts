@@ -8,6 +8,7 @@ import { Reflector } from '@nestjs/core';
 import { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
 import { createHash } from 'crypto';
+import type { Request, Response } from 'express';
 import { CACHE_CONTROL_KEY } from '../decorators/cache-control.decorator';
 
 /**
@@ -35,10 +36,13 @@ import { CACHE_CONTROL_KEY } from '../decorators/cache-control.decorator';
 export class NoCacheInterceptor implements NestInterceptor {
   constructor(private readonly reflector: Reflector) {}
 
-  intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
+  intercept(
+    context: ExecutionContext,
+    next: CallHandler<unknown>,
+  ): Observable<unknown> {
     const ctx = context.switchToHttp();
-    const request = ctx.getRequest();
-    const response = ctx.getResponse();
+    const request = ctx.getRequest<Request>();
+    const response = ctx.getResponse<Response>();
 
     // Read the @CacheControl() value from the route handler or controller.
     // Falls back to 'no-store' so any undecorated route is safe by default.

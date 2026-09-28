@@ -3,7 +3,10 @@ import { RateLimitService } from '../rate-limit/rate-limit.service';
 import {
   applyRateLimitHeaders,
   rateLimitException,
+  requestIdOf,
 } from '../rate-limit/rate-limit.response';
+import type { Response } from 'express';
+import { requestBody, type GuardRequest } from '../types/authenticated-request';
 import { clientIp } from '../rate-limit/client-ip.util';
 import { normalizeEmail } from '../validation/email-format.util';
 
@@ -32,7 +35,7 @@ export class LoginRateLimitGuard implements CanActivate {
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const http = context.switchToHttp();
-    const request = http.getRequest();
+    const request = http.getRequest<GuardRequest>();
 
     // Dimension 1 — per client IP. Spent on every attempt, successful or not:
     // this one exists to bound how fast a single host can work through a list
@@ -53,10 +56,10 @@ export class LoginRateLimitGuard implements CanActivate {
     const decision =
       !byIp.allowed || !byAccount ? byIp : byAccount.allowed ? byIp : byAccount;
 
-    applyRateLimitHeaders(http.getResponse(), decision);
+    applyRateLimitHeaders(http.getResponse<Response>(), decision);
 
     if (!decision.allowed) {
-      throw rateLimitException(decision, request?.id);
+      throw rateLimitException(decision, requestIdOf(request));
     }
 
     return true;
@@ -72,8 +75,10 @@ export class LoginRateLimitGuard implements CanActivate {
  * Counting the typed string is enough: an attacker targeting one account has to
  * type the same thing every time.
  */
-export function loginAccountKey(request: any): string | null {
-  const identifier = request?.body?.identifier;
+export function loginAccountKey(
+  request: { body?: unknown } | null | undefined,
+): string | null {
+  const { identifier } = requestBody(request);
   if (typeof identifier !== 'string') return null;
   // Normalised the same way every other account-keyed budget is, so a caller
   // cannot mint a fresh bucket per attempt by varying invisible characters or

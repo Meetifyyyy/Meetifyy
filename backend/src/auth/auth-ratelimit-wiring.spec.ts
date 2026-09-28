@@ -29,14 +29,18 @@ import { RATE_LIMIT_POLICIES } from '../config/rate-limit.config';
 describe('AuthController — rate-limit wiring on the proxied auth routes', () => {
   const reflector = new Reflector();
 
-  const handler = (method: string): any =>
-    (AuthController.prototype as Record<string, any>)[method];
+  /** A route handler looked up by name, as the decorators saw it. */
+  const handler = (method: string) =>
+    Reflect.get(AuthController.prototype, method) as (
+      ...args: never[]
+    ) => unknown;
 
   const policiesOn = (method: string): string[] =>
     reflector.get(RATE_LIMIT_POLICIES_KEY, handler(method)) ?? [];
 
-  const guardsOn = (method: string): any[] =>
-    Reflect.getMetadata('__guards__', handler(method)) ?? [];
+  const guardsOn = (method: string): unknown[] =>
+    (Reflect.getMetadata('__guards__', handler(method)) as
+      unknown[] | undefined) ?? [];
 
   it.each([
     ['signUp', ['auth.signup.ip', 'auth.signup.account']],

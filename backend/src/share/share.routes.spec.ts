@@ -2,6 +2,7 @@ process.env.APP_ENV = process.env.APP_ENV || 'development';
 
 import { config } from '../config';
 import { INestApplication } from '@nestjs/common';
+import type { Server } from 'http';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { ShareController } from './share.controller';
@@ -30,6 +31,17 @@ import { APP_INTERCEPTOR } from '@nestjs/core';
 const SITE = config.app.frontendUrl.replace(/\/+$/, '');
 
 /**
+ * These tests render real images: a story canvas is a 1080x1920 JPEG composed
+ * by sharp, about one second of CPU each on an idle machine. Jest's default
+ * five-second budget measured the machine rather than the code: with the full
+ * suite on every core and the machine short of memory (ESLint alongside it
+ * left ~130 MB free), a render stalled past five seconds and the test failed,
+ * and the timed-out request then reset the next test's connection. Nothing
+ * here asserts speed; the budget only has to catch a render that hangs.
+ */
+jest.setTimeout(30_000);
+
+/**
  * The routes as HTTP, with a real renderer.
  *
  * The unit tests cover the gate and the document; this covers the things only a
@@ -42,13 +54,16 @@ const SITE = config.app.frontendUrl.replace(/\/+$/, '');
  * Prisma is the only thing mocked. sharp is real, so a card that cannot be
  * composed fails here rather than in production.
  */
+/** The JSON endpoint's body, as far as these assertions read it. */
+type ShareJson = { available: boolean; post: { id: string } };
+
 describe('share routes', () => {
   const POST_ID = '11111111-2222-4333-8444-555555555555';
 
-  let app: INestApplication;
+  let app: INestApplication<Server>;
   let findFirst: jest.Mock;
 
-  const postRow = (over: any = {}) => ({
+  const postRow = (over: Record<string, unknown> = {}) => ({
     id: POST_ID,
     text: 'Anyone up for badminton at the sports complex tomorrow evening?',
     createdAt: new Date('2026-01-02T03:04:05.000Z'),
@@ -67,7 +82,15 @@ describe('share routes', () => {
   });
 
   /** A media row as the database really stores one — note the UPPERCASE type. */
-  const mediaRow = (over: any = {}) => ({
+  type MediaRow = {
+    objectKey: string;
+    mimeType: string;
+    type: string;
+    width: number;
+    height: number;
+    visibility: string;
+  };
+  const mediaRow = (over: Partial<MediaRow> = {}): MediaRow => ({
     objectKey: 'posts/photo.webp',
     mimeType: 'image/webp',
     type: 'IMAGE',
@@ -107,13 +130,13 @@ describe('share routes', () => {
           provide: RedisService,
           useValue: {
             getClient: () => null,
-            withLock: (_k: string, _t: number, fn: any) => fn(),
+            withLock: (_k: string, _t: number, fn: () => unknown) => fn(),
           },
         },
       ],
     }).compile();
 
-    app = moduleRef.createNestApplication();
+    app = moduleRef.createNestApplication<INestApplication<Server>>();
     await app.init();
   });
 
@@ -185,8 +208,8 @@ describe('share routes', () => {
         .get(`/api/share/post/${POST_ID}`)
         .expect(200);
 
-      expect(res.body.available).toBe(true);
-      expect(res.body.post.id).toBe(POST_ID);
+      expect((res.body as ShareJson).available).toBe(true);
+      expect((res.body as ShareJson).post.id).toBe(POST_ID);
     });
   });
 
@@ -260,7 +283,7 @@ describe('share routes', () => {
   describe('the card survives whatever the post is', () => {
     // Each of these once produced a broken or overflowing card. They render
     // through the real compositor here, so a layout that throws is a failure.
-    const shapes: [string, any][] = [
+    const shapes: [string, Record<string, unknown>][] = [
       ['a post with no text at all', { text: '' }],
       ['two thousand characters', { text: 'x'.repeat(2000) }],
       ['one unbroken two-thousand-character word', { text: 'a'.repeat(2000) }],

@@ -1,5 +1,16 @@
 import { CommunitiesService } from './communities.service';
-import { NotificationFactory } from '../notifications/notification.factory';
+import {
+  NotificationFactory,
+  type CreateNotificationDto,
+} from '../notifications/notification.factory';
+import { stub } from '../common/testing/stub';
+import type { PrismaService } from '../prisma/prisma.service';
+import type { DomainEventService } from '../events/domain-event.service';
+import type { RedisService } from '../redis/redis.service';
+import type { PresenceService } from '../presence/presence.service';
+import type { DefaultAssetsService } from '../uploads/default-assets.service';
+import type { BlocksService } from '../users/blocks.service';
+import type { NotificationsService } from '../notifications/notifications.service';
 import {
   moderatorPermissions,
   permissionsForRole,
@@ -13,7 +24,7 @@ describe('Moderator permission registry', () => {
     // confirms a promotion against one list while the services apply another,
     // and the person we misled is the one being handed the power.
     moderatorPermissions().forEach((p) => {
-      expect(roleCan('MODERATOR', p.id as any)).toBe(true);
+      expect(roleCan('MODERATOR', p.id)).toBe(true);
     });
 
     Object.values(COMMUNITY_CAPABILITIES)
@@ -58,57 +69,89 @@ describe('CommunitiesService — moderator promotion notice', () => {
   const OWNER = 'owner-1';
   const MEMBER = 'member-1';
 
-  let prisma: any;
-  let service: CommunitiesService;
-  let created: any[];
-  let updates: any[];
+  /** A membership row as the promotion and notice paths read it. */
+  type MemberRow = {
+    role: string;
+    userId?: string;
+    moderatorPromotedAt?: Date | null;
+    moderatorNoticeAckedAt?: Date | null;
+  } | null;
+  type MemberUpdate = {
+    role?: string;
+    moderatorPromotedAt?: Date | null;
+    moderatorNoticeAckedAt?: Date | null;
+  };
 
-  const setup = (member: any) => {
+  let service: CommunitiesService;
+  let created: (CreateNotificationDto | null)[];
+  let updates: MemberUpdate[];
+  let domainEvents: { emit: jest.Mock<void, [string, unknown?, string[]?]> };
+  let notifications: {
+    createNotification: jest.Mock<
+      Promise<void>,
+      [CreateNotificationDto | null]
+    >;
+  };
+
+  const setup = (member: MemberRow) => {
     created = [];
     updates = [];
-    prisma = {
+    const prisma = stub<PrismaService>({
       community: {
-        findUnique: jest.fn(async () => ({
-          id: COMMUNITY,
-          ownerId: OWNER,
-          name: 'Chess Club',
-          avatarKey: null,
-        })),
+        findUnique: jest.fn(() =>
+          Promise.resolve({
+            id: COMMUNITY,
+            ownerId: OWNER,
+            name: 'Chess Club',
+            avatarKey: null,
+          }),
+        ),
       },
       communityMember: {
-        findUnique: jest.fn(async ({ where }: any) =>
-          where.userId_communityId.userId === OWNER
-            ? { role: 'OWNER' }
-            : member,
+        findUnique: jest.fn(
+          ({ where }: { where: { userId_communityId: { userId: string } } }) =>
+            Promise.resolve(
+              where.userId_communityId.userId === OWNER
+                ? { role: 'OWNER' }
+                : member,
+            ),
         ),
-        update: jest.fn(async ({ data }: any) => {
+        update: jest.fn(({ data }: { data: MemberUpdate }) => {
           updates.push(data);
-          return { ...member, ...data };
+          return Promise.resolve({ ...member, ...data });
         }),
       },
       user: {
-        findUnique: jest.fn(async () => ({
-          id: OWNER,
-          username: 'own',
-          displayName: 'Owner',
-        })),
+        findUnique: jest.fn(() =>
+          Promise.resolve({
+            id: OWNER,
+            username: 'own',
+            displayName: 'Owner',
+          }),
+        ),
       },
+    });
+    domainEvents = { emit: jest.fn<void, [string, unknown?, string[]?]>() };
+    notifications = {
+      createNotification: jest.fn((dto: CreateNotificationDto | null) => {
+        created.push(dto);
+
+        return Promise.resolve();
+      }),
     };
     service = new CommunitiesService(
       prisma,
-      { emit: jest.fn() } as any,
-      { getClient: () => null } as any,
-      {} as any,
-      {} as any,
-      {} as any,
-      {
-        createNotification: jest.fn(async (dto: any) => {
-          created.push(dto);
-        }),
-      } as any,
+      stub<DomainEventService>(domainEvents),
+      stub<RedisService>({ getClient: () => null }),
+      stub<PresenceService>(),
+      stub<DefaultAssetsService>(),
+      stub<BlocksService>(),
+      stub<NotificationsService>(notifications),
       new NotificationFactory(),
     );
-    (service as any).invalidateCommunityCache = jest.fn(async () => {});
+    Object.assign(service, {
+      invalidateCommunityCache: jest.fn(() => Promise.resolve()),
+    });
   };
 
   const settle = () => new Promise((r) => setImmediate(r));
@@ -125,7 +168,7 @@ describe('CommunitiesService — moderator promotion notice', () => {
         recipientId: MEMBER,
         title: "You're now a moderator",
       });
-      expect(created[0].metadata).toMatchObject({
+      expect(created[0]!.metadata).toMatchObject({
         kind: 'moderator_promotion',
         communityId: COMMUNITY,
       });
@@ -138,20 +181,18 @@ describe('CommunitiesService — moderator promotion notice', () => {
       setup({ role: 'MEMBER', userId: MEMBER });
       await service.updateMemberRole(COMMUNITY, MEMBER, 'MODERATOR', OWNER);
 
-      const emit = (service as any).domainEventService.emit;
+      const emit = domainEvents.emit;
       const promoted = emit.mock.calls.find(
-        ([type]: any[]) => type === 'community:moderator_promoted',
+        ([type]) => type === 'community:moderator_promoted',
       );
       expect(promoted).toBeDefined();
-      expect(promoted[1]).toEqual({ communityId: COMMUNITY });
+      expect(promoted![1]).toEqual({ communityId: COMMUNITY });
       // Targeted at the promoted member, not broadcast: the welcome modal is
       // theirs alone. The room still gets community.roleUpdated for the
       // member-list refresh everyone needs.
-      expect(promoted[2]).toEqual([MEMBER]);
+      expect(promoted![2]).toEqual([MEMBER]);
       expect(
-        emit.mock.calls.some(
-          ([type]: any[]) => type === 'community.roleUpdated',
-        ),
+        emit.mock.calls.some(([type]) => type === 'community.roleUpdated'),
       ).toBe(true);
     });
 
@@ -160,10 +201,10 @@ describe('CommunitiesService — moderator promotion notice', () => {
       await service.updateMemberRole(COMMUNITY, MEMBER, 'MODERATOR', OWNER);
       await service.updateMemberRole(COMMUNITY, MEMBER, 'MEMBER', OWNER);
 
-      const emit = (service as any).domainEventService.emit;
+      const emit = domainEvents.emit;
       expect(
         emit.mock.calls.filter(
-          ([type]: any[]) => type === 'community:moderator_promoted',
+          ([type]) => type === 'community:moderator_promoted',
         ),
       ).toHaveLength(0);
     });
@@ -189,11 +230,12 @@ describe('CommunitiesService — moderator promotion notice', () => {
       // The role change has committed; a notification failure must not read to
       // the owner as a promotion that did not take.
       setup({ role: 'MEMBER', userId: MEMBER });
-      (service as any).notificationsService.createNotification = jest.fn(
-        async () => {
-          throw new Error('queue down');
-        },
-      );
+      notifications.createNotification = jest.fn<
+        Promise<void>,
+        [CreateNotificationDto | null]
+      >(() => {
+        return Promise.reject(new Error('queue down'));
+      });
       await expect(
         service.updateMemberRole(COMMUNITY, MEMBER, 'MODERATOR', OWNER),
       ).resolves.toBeDefined();
@@ -202,7 +244,7 @@ describe('CommunitiesService — moderator promotion notice', () => {
   });
 
   describe('the one-time notice', () => {
-    const noticeFor = (member: any) => {
+    const noticeFor = (member: MemberRow) => {
       setup(member);
       return service.getModeratorNotice(COMMUNITY, MEMBER);
     };

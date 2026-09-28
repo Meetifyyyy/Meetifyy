@@ -6,14 +6,14 @@ import {
 import { UsersService } from './users.service';
 import { JwtGuard } from '../common/guards/jwt.guard';
 import type { AuthenticatedRequest } from '../common/types/authenticated-request';
+import { stub } from '../common/testing/stub';
 
 /**
  * A request carrying only what these controllers actually read off it — the
  * JWT subject. Building the full AuthenticatedUser here would assert nothing
  * extra and hide which field the controller depends on.
  */
-const asRequest = (id: string) =>
-  ({ user: { id } }) as unknown as AuthenticatedRequest;
+const asRequest = (id: string) => stub<AuthenticatedRequest>({ user: { id } });
 
 /**
  * The blocked list and the unblock route are the two endpoints that could leak
@@ -23,16 +23,24 @@ const asRequest = (id: string) =>
 describe('Blocked contacts endpoints', () => {
   let blockedContacts: BlockedContactsController;
   let blocks: BlocksController;
-  let usersService: Record<string, jest.Mock>;
+  let usersService: {
+    getBlockedContacts: jest.Mock<Promise<unknown>, [string, number, number]>;
+    unblockUser: jest.Mock;
+  } & Record<string, jest.Mock>;
 
   beforeEach(async () => {
     usersService = {
-      getBlockedContacts: jest.fn(async () => ({
-        contacts: [],
-        hasMore: false,
-        nextOffset: null,
-      })),
-      unblockUser: jest.fn(async () => ({ success: true, blocked: false })),
+      getBlockedContacts: jest.fn(
+        (_userId: string, _limit: number, _offset: number): Promise<unknown> =>
+          Promise.resolve({
+            contacts: [],
+            hasMore: false,
+            nextOffset: null,
+          }),
+      ),
+      unblockUser: jest.fn(() =>
+        Promise.resolve({ success: true, blocked: false }),
+      ),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -91,7 +99,7 @@ describe('Blocked contacts endpoints', () => {
       const guards = Reflect.getMetadata(
         '__guards__',
         BlockedContactsController.prototype.getBlockedContacts,
-      );
+      ) as unknown[] | undefined;
       expect(guards?.[0]).toBe(JwtGuard);
     });
   });
@@ -123,7 +131,7 @@ describe('Blocked contacts endpoints', () => {
       const guards = Reflect.getMetadata(
         '__guards__',
         BlocksController.prototype.unblock,
-      );
+      ) as unknown[] | undefined;
       expect(guards?.[0]).toBe(JwtGuard);
     });
   });

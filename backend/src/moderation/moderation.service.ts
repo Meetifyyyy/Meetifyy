@@ -12,7 +12,13 @@ import { ReportRateLimitService } from './report-ratelimit.service';
 import { SubmitReportDto } from './dto/submit-report.dto';
 import { UpdateReportDto } from './dto/update-report.dto';
 import { BulkActionReportDto } from './dto/bulk-action-report.dto';
-import { ReportStatus, ReportPriority } from '@prisma/client';
+import {
+  Prisma,
+  ReportStatus,
+  ReportPriority,
+  ReportTargetType,
+} from '@prisma/client';
+import { parseEnumFilter } from '../common/utils/enum-filter.util';
 import { InjectPinoLogger, PinoLogger } from 'nestjs-pino';
 import * as Sentry from '@sentry/nestjs';
 import { InjectQueue } from '@nestjs/bullmq';
@@ -164,23 +170,37 @@ export class ModerationService {
    * Super Admin / Moderator: Query paginated reports queue
    */
   async listReports(query: {
-    status?: ReportStatus;
-    targetType?: any;
-    priority?: ReportPriority;
+    status?: string;
+    targetType?: string;
+    priority?: string;
     reporterId?: string;
     search?: string;
     page?: number;
     limit?: number;
   }) {
+    // Validated before any query: unknown enum values are a 400, not a
+    // Prisma validation error (500).
+    const status = parseEnumFilter(ReportStatus, query.status, 'status');
+    const targetType = parseEnumFilter(
+      ReportTargetType,
+      query.targetType,
+      'targetType',
+    );
+    const priority = parseEnumFilter(
+      ReportPriority,
+      query.priority,
+      'priority',
+    );
+
     const page = Math.max(1, query.page || 1);
     const limit = Math.min(100, Math.max(1, query.limit || 20));
     const skip = (page - 1) * limit;
 
-    const where: any = {};
+    const where: Prisma.ReportWhereInput = {};
 
-    if (query.status) where.status = query.status;
-    if (query.targetType) where.targetType = query.targetType;
-    if (query.priority) where.priority = query.priority;
+    if (status) where.status = status;
+    if (targetType) where.targetType = targetType;
+    if (priority) where.priority = priority;
     if (query.reporterId) where.reporterId = query.reporterId;
 
     if (query.search) {
@@ -309,7 +329,7 @@ export class ModerationService {
       throw new NotFoundException(`Report ${id} not found.`);
     }
 
-    const data: any = { ...dto };
+    const data: Prisma.ReportUncheckedUpdateInput = { ...dto };
 
     if (
       dto.status === ReportStatus.RESOLVED ||
@@ -339,7 +359,7 @@ export class ModerationService {
    * Super Admin: Bulk update actions for batch moderation
    */
   async bulkAction(dto: BulkActionReportDto, adminUserId?: string) {
-    const data: any = {};
+    const data: Prisma.ReportUncheckedUpdateManyInput = {};
     if (dto.status) data.status = dto.status;
     if (dto.priority) data.priority = dto.priority;
     if (dto.assignedModeratorId)

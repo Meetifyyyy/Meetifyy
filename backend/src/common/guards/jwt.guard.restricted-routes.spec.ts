@@ -1,6 +1,13 @@
 import { ForbiddenException } from '@nestjs/common';
+import type { ExecutionContext, HttpException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { JwtGuard } from './jwt.guard';
+import { stub } from '../testing/stub';
+import { reflectorWith, routeContext } from './testing/jwt-guard.fixture';
+import type { AuthenticatedUser } from '../types/authenticated-request';
+import type { PrismaService } from '../../prisma/prisma.service';
+import type { SupabaseService } from '../../supabase/supabase.service';
+import type { LegalConsentService } from '../legal/legal-consent.service';
 import { ALLOW_SUSPENDED_KEY } from '../decorators/allow-suspended.decorator';
 import { ALLOW_PENDING_DELETION_KEY } from '../decorators/allow-pending-deletion.decorator';
 
@@ -23,41 +30,40 @@ describe('JwtGuard — routes a restricted account may reach', () => {
   const USER_ID = 'user-1';
 
   let guard: JwtGuard;
-  let prisma: any;
+  let prisma: { user: { findUnique: jest.Mock } };
   let accountStatus: string;
 
   /** Builds a context whose handler carries the given decorators. */
   const contextWith = (decorators: string[] = []) => {
-    const reflector = new Reflector();
-    jest
-      .spyOn(reflector, 'getAllAndOverride')
-      .mockImplementation((key: any) => decorators.includes(key));
-    (guard as any).reflector = reflector;
+    Object.assign(guard, { reflector: reflectorWith(decorators) });
 
-    return {
-      getHandler: () => () => undefined,
-      getClass: () => class {},
-    } as any;
+    return routeContext();
   };
 
-  const enforce = (ctx: any) =>
-    (guard as any).enforceAccountStatus(ctx, { id: USER_ID });
+  const enforce = (ctx: ExecutionContext) =>
+    guard['enforceAccountStatus'](
+      ctx,
+      stub<AuthenticatedUser>({ id: USER_ID }),
+    );
 
   beforeEach(() => {
     accountStatus = 'ACTIVE';
     JwtGuard.clearAccountStatus(USER_ID);
     prisma = {
       user: {
-        findUnique: jest.fn(async () => ({ accountStatus })),
+        findUnique: jest.fn(() => Promise.resolve({ accountStatus })),
       },
     };
     // (supabaseService, prisma, reflector, legalConsent) — the reflector is
     // swapped per test by `contextWith`, which is what selects the decorators
     // under test. The legal gate has its own spec; a service reporting
     // "satisfied" keeps these tests about account status alone.
-    guard = new JwtGuard({} as any, prisma, new Reflector(), {
-      isSatisfied: async () => true,
-    } as any);
+    guard = new JwtGuard(
+      stub<SupabaseService>(),
+      stub<PrismaService>(prisma),
+      new Reflector(),
+      stub<LegalConsentService>({ isSatisfied: () => Promise.resolve(true) }),
+    );
   });
 
   afterEach(() => JwtGuard.clearAccountStatus(USER_ID));
@@ -76,8 +82,8 @@ describe('JwtGuard — routes a restricted account may reach', () => {
     });
 
     it('carries a machine-readable code so the client can show the gate', async () => {
-      const err: any = await enforce(contextWith()).catch((e: any) => e);
-      expect(err.getResponse()).toMatchObject({
+      const err = await enforce(contextWith()).catch((e: unknown) => e);
+      expect((err as HttpException).getResponse()).toMatchObject({
         code: 'ACCOUNT_PENDING_DELETION',
       });
     });
@@ -140,8 +146,8 @@ describe('JwtGuard — routes a restricted account may reach', () => {
   it('never blocks a request because the status lookup broke', async () => {
     // A database blip must not lock everyone out of the app; the gate is a
     // restriction, not an authentication step.
-    prisma.user.findUnique = jest.fn(async () => {
-      throw new Error('connection reset');
+    prisma.user.findUnique = jest.fn(() => {
+      return Promise.reject(new Error('connection reset'));
     });
     await expect(enforce(contextWith())).resolves.toBeUndefined();
   });

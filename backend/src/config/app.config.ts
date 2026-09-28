@@ -6,6 +6,7 @@ import {
   bool,
   csv,
   int,
+  invariant,
   num,
   str,
   url,
@@ -77,7 +78,9 @@ const nativeAppOrigins =
 // in CORS_ORIGINS.
 const allowedOrigins = Array.from(
   new Set(
-    [frontendUrl, adminUrl, ...corsOrigins, ...nativeAppOrigins].filter(Boolean),
+    [frontendUrl, adminUrl, ...corsOrigins, ...nativeAppOrigins].filter(
+      Boolean,
+    ),
   ),
 );
 
@@ -205,5 +208,17 @@ export const appConfigValues = {
     }),
   },
 };
+
+// Security headers may be switched off for local development (CSP blocks LAN
+// devices that are not pre-listed; HSTS pins a browser to https), never in
+// production — the same rule COOKIE_SECURE already enforces.
+invariant(
+  !IS_PRODUCTION || appConfigValues.security.cspEnabled,
+  'Invalid CSP_ENABLED: must be true in production',
+);
+invariant(
+  !IS_PRODUCTION || appConfigValues.security.hstsEnabled,
+  'Invalid HSTS_ENABLED: must be true in production',
+);
 
 export type AppConfig = typeof appConfigValues;

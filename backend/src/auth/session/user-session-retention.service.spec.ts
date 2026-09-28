@@ -1,4 +1,6 @@
 import { UserSessionRetentionService } from './user-session-retention.service';
+import { stub } from '../../common/testing/stub';
+import type { UserSessionService } from './user-session.service';
 
 /**
  * `purgeExpired` was written, tested, and never called. Nothing scheduled it,
@@ -7,7 +9,7 @@ import { UserSessionRetentionService } from './user-session-retention.service';
  */
 describe('UserSessionRetentionService', () => {
   const build = (purgeExpired: jest.Mock) =>
-    new UserSessionRetentionService({ purgeExpired } as any);
+    new UserSessionRetentionService(stub<UserSessionService>({ purgeExpired }));
 
   afterEach(() => jest.useRealTimers());
 

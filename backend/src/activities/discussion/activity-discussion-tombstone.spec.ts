@@ -16,7 +16,18 @@ import { ActivityDiscussionService } from './activity-discussion.service';
 describe('ActivityDiscussionService — deleted author presentation', () => {
   let service: ActivityDiscussionService;
 
-  const message = (user: any) => ({
+  /** An author row as the discussion query selects it. */
+  type AuthorRow = {
+    id: string;
+    username: string;
+    displayName: string;
+    avatar: string | null;
+    isCampusRep: boolean;
+    accountStatus: string;
+    deletedAt: Date | null;
+  };
+
+  const message = (user: AuthorRow | null) => ({
     id: 'm1',
     text: 'see you all at 6',
     createdAt: new Date('2026-09-01T10:00:00Z'),
@@ -24,7 +35,7 @@ describe('ActivityDiscussionService — deleted author presentation', () => {
     user,
   });
 
-  const live = {
+  const live: AuthorRow = {
     id: 'u1',
     username: 'sam',
     displayName: 'Sam Rivera',
@@ -35,7 +46,8 @@ describe('ActivityDiscussionService — deleted author presentation', () => {
   };
 
   /** `format` is private; this is the projection every read path goes through. */
-  const format = (user: any) => (service as any).format(message(user), 'act-1');
+  const format = (user: AuthorRow | null) =>
+    service['format'](message(user), 'act-1');
 
   beforeEach(() => {
     service = Object.create(

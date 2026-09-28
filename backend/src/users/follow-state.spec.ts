@@ -40,32 +40,45 @@ const clearAuthSyncCacheMock = clearAuthSyncCache as jest.Mock;
  */
 describe('Follow state', () => {
   let service: UsersService;
-  let prisma: any;
+  let prisma: ReturnType<typeof makePrisma>;
 
   /** `Follow` rows the fake `prisma.follow.findMany` answers from. */
   let follows: { followerId: string; followingId: string }[] = [];
 
+  const makePrisma = () => ({
+    user: { findUnique: jest.fn(), findMany: jest.fn() },
+    userSettings: { findUnique: jest.fn().mockResolvedValue(null) },
+    follow: {
+      findMany: jest.fn(
+        ({
+          where,
+          select,
+        }: {
+          where: { followerId?: string; followingId?: { in?: string[] } };
+          select?: { followingId?: boolean };
+        }) => {
+          const followerId = where.followerId;
+          const ids: string[] = where.followingId?.in ?? [];
+          return Promise.resolve(
+            follows
+              .filter(
+                (f) =>
+                  f.followerId === followerId && ids.includes(f.followingId),
+              )
+              .map((f) =>
+                select?.followingId ? { followingId: f.followingId } : f,
+              ),
+          );
+        },
+      ),
+    },
+    $queryRaw: jest.fn(),
+  });
+
   const makeModule = async (
     blocks: { blockerId: string; blockedId: string }[] = [],
   ) => {
-    prisma = {
-      user: { findUnique: jest.fn(), findMany: jest.fn() },
-      userSettings: { findUnique: jest.fn().mockResolvedValue(null) },
-      follow: {
-        findMany: jest.fn(async ({ where, select }: any) => {
-          const followerId = where.followerId;
-          const ids: string[] = where.followingId?.in ?? [];
-          return follows
-            .filter(
-              (f) => f.followerId === followerId && ids.includes(f.followingId),
-            )
-            .map((f) =>
-              select?.followingId ? { followingId: f.followingId } : f,
-            );
-        }),
-      },
-      $queryRaw: jest.fn(),
-    };
+    prisma = makePrisma();
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -84,7 +97,11 @@ describe('Follow state', () => {
         { provide: ConfigService, useValue: { get: jest.fn() } },
         {
           provide: RedisService,
-          useValue: { withLock: jest.fn(async (_k, _t, fn) => fn()) },
+          useValue: {
+            withLock: jest.fn((_k: string, _t: number, fn: () => unknown) =>
+              Promise.resolve(fn()),
+            ),
+          },
         },
         { provide: BlocksService, useValue: createBlocksServiceMock(blocks) },
         {
@@ -136,7 +153,7 @@ describe('Follow state', () => {
 
       const result = await service.getAllUsers(4, 0, 'me');
 
-      expect(result.map((u: any) => u.isFollowing)).toEqual([
+      expect(result.map((u) => u.isFollowing)).toEqual([
         false,
         true,
         false,
@@ -169,11 +186,7 @@ describe('Follow state', () => {
         where: { followerId: 'me', followingId: { in: ['u0', 'u1', 'u2'] } },
         select: { followingId: true },
       });
-      expect(result.map((u: any) => u.isFollowing)).toEqual([
-        false,
-        false,
-        true,
-      ]);
+      expect(result.map((u) => u.isFollowing)).toEqual([false, false, true]);
     });
 
     it('reports not-following, and asks nothing, for an anonymous caller', async () => {
@@ -182,7 +195,7 @@ describe('Follow state', () => {
       const result = await service.getAllUsers(2, 0, undefined);
 
       expect(prisma.follow.findMany).not.toHaveBeenCalled();
-      expect(result.every((u: any) => u.isFollowing === false)).toBe(true);
+      expect(result.every((u) => u.isFollowing === false)).toBe(true);
     });
   });
 

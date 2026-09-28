@@ -11,6 +11,7 @@ import {
   UseGuards,
   BadRequestException,
 } from '@nestjs/common';
+import { inviteString } from '../core/invite-data';
 import type { AuthenticatedRequest } from '../../common/types/authenticated-request';
 import { GroupChatsService } from './group-chats.service';
 import { JwtGuard } from '../../common/guards/jwt.guard';
@@ -20,6 +21,7 @@ import { NotificationsService } from '../../notifications/notifications.service'
 import { NotificationFactory } from '../../notifications/notification.factory';
 import { SendMessageDto } from '../core/dto/send-message.dto';
 import { detach } from '../../common/utils/detach.util';
+import { UpdateGroupSettingsDto } from '../dto/update-group-settings.dto';
 
 @Controller('api/group-chats')
 export class GroupChatsController {
@@ -172,8 +174,8 @@ export class GroupChatsController {
           text:
             message.text ||
             (message.inviteData
-              ? message.inviteData.groupName
-                ? `Group invite: ${message.inviteData.groupName}`
+              ? inviteString(message.inviteData, 'groupName')
+                ? `Group invite: ${inviteString(message.inviteData, 'groupName')}`
                 : 'Group invite'
               : ''),
           createdAt: message.createdAt,
@@ -353,14 +355,11 @@ export class GroupChatsController {
           }
         }
         const pubId = updated.publicId || updated.id;
-        const avatarVal =
-          updated.avatarKey !== undefined
-            ? updated.avatarKey
-            : updated.avatar !== undefined
-              ? updated.avatar
-              : convBefore?.avatarKey || null;
+        // `updated` is a full Conversation row, so avatarKey is always present
+        // (string or null); the fallbacks that followed could never run.
+        const avatarVal = updated.avatarKey;
 
-        const payload: any = {
+        const payload = {
           conversationId: pubId,
           id: pubId,
           publicId: pubId,
@@ -369,15 +368,16 @@ export class GroupChatsController {
           avatar: avatarVal,
           avatarKey: avatarVal,
           description: updated.description,
+          ...(systemMsg
+            ? {
+                lastMessage: {
+                  text: systemMsg.text,
+                  createdAt: systemMsg.createdAt,
+                  senderId: userId,
+                },
+              }
+            : {}),
         };
-
-        if (systemMsg) {
-          payload.lastMessage = {
-            text: systemMsg.text,
-            createdAt: systemMsg.createdAt,
-            senderId: userId,
-          };
-        }
 
         void this.domainEventService.emit(
           'conversation:updated',
@@ -389,7 +389,7 @@ export class GroupChatsController {
 
     return {
       ...updated,
-      avatar: updated.avatarKey || updated.avatar || null,
+      avatar: updated.avatarKey || null,
     };
   }
 
@@ -407,6 +407,8 @@ export class GroupChatsController {
       userId,
       targetUserId,
     );
+    // Already in the group: nothing changed, so nothing to announce.
+    if (result.alreadyMember) return result;
     this.groupChatsService
       .invalidateGroupDetailsCache(conversationId)
       .catch(() => {});
@@ -561,7 +563,7 @@ export class GroupChatsController {
   async updateSettings(
     @Req() req: AuthenticatedRequest,
     @Param('id') conversationId: string,
-    @Body() body: any,
+    @Body() body: UpdateGroupSettingsDto,
   ) {
     const userId = req.user?.id;
     const result = await this.groupChatsService.updateGroupSettings(
@@ -941,8 +943,8 @@ export class GroupChatsController {
       userId,
     );
     if (result.success && result.conversationId) {
-      const pubId = (result as any).publicId || result.conversationId;
-      const participantIds = (result as any).participantIds || [];
+      const pubId = result.publicId || result.conversationId;
+      const participantIds = result.participantIds || [];
       setImmediate(() => {
         void this.domainEventService.emit(
           'message:updated',

@@ -39,6 +39,57 @@ export interface OptionalAuthRequest extends Request {
   user?: AuthenticatedUser;
 }
 
+/**
+ * A request as a global or pre-auth guard sees it.
+ *
+ * Global guards run before route guards, so neither `JwtGuard` nor
+ * `AdminJwtGuard` may have run yet: both identities are optional. Nothing has
+ * validated the body at this point either, so it is `unknown` and every read
+ * of it has to narrow first, which the rate-limit guards already do with
+ * `typeof … === 'string'`. Cookies come from `cookie-parser`.
+ */
+export interface GuardRequest extends Request<
+  Record<string, string>,
+  unknown,
+  unknown
+> {
+  user?: AuthenticatedUser;
+  admin?: AdminActor;
+  cookies: Record<string, string | undefined>;
+}
+
+/**
+ * The fields of a not-yet-validated body, or none.
+ *
+ * A guard runs before any pipe, so the body may be absent, a string, an array
+ * or an object. Reading `body?.field` off `any` treated all of those the same
+ * way; this does so explicitly, and every value it returns is still `unknown`.
+ */
+export function requestBody(
+  request: { body?: unknown } | null | undefined,
+): Record<string, unknown> {
+  const body = request?.body;
+  return typeof body === 'object' && body !== null
+    ? (body as Record<string, unknown>)
+    : {};
+}
+
+/**
+ * What the realtime gateway attaches to a socket once its handshake is
+ * verified (`socket.data`). Every field is absent until then, so every read
+ * must handle an unauthenticated socket. Stored in `socket.data`, Socket.IO's
+ * typed per-socket store, rather than as ad-hoc properties on the socket:
+ * `data` is what `fetchSockets()` carries across a Redis adapter.
+ */
+export interface SocketIdentity {
+  userId?: string;
+  userName?: string;
+  /** The session the handshake named; revoking it disconnects the socket. */
+  sessionId?: string;
+  /** Internal conversation ids joined at connect, read back on disconnect. */
+  userConvIds?: string[];
+}
+
 /** The `SuperAdmin` row `AdminJwtGuard` loads and attaches. */
 export interface AdminActor {
   id: string;

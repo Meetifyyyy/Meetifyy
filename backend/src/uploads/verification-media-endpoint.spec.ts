@@ -1,3 +1,4 @@
+import type { Server } from 'http';
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
@@ -14,20 +15,22 @@ import { legalConsentMockProvider } from '../common/legal/testing/legal-consent.
  * the real route, not just the service beneath it.
  */
 describe('GET /api/media — verification documents', () => {
-  let app: INestApplication;
+  let app: INestApplication<Server>;
 
   const storage = {
     isSafeStorageKey: jest.fn(() => true),
     // Conversation attachments are authorized against the viewer; nothing
     // in these suites is one, so this is uniformly false.
     isConversationScopedKey: jest.fn(() => false),
-    canViewConversationMedia: jest.fn(async () => false),
+    canViewConversationMedia: jest.fn(() => Promise.resolve(false)),
     isAlwaysPrivateKey: jest.fn((key: string) =>
       key.startsWith('verification/'),
     ),
-    exists: jest.fn(async () => true),
-    getResolvedPublicUrl: jest.fn(async (key: string) =>
-      key.startsWith('verification/') ? null : `https://cdn.example/${key}`,
+    exists: jest.fn(() => Promise.resolve(true)),
+    getResolvedPublicUrl: jest.fn((key: string) =>
+      Promise.resolve(
+        key.startsWith('verification/') ? null : `https://cdn.example/${key}`,
+      ),
     ),
   };
 
@@ -41,7 +44,7 @@ describe('GET /api/media — verification documents', () => {
         { provide: SupabaseService, useValue: { isConfigured: false } },
         {
           provide: PrismaService,
-          useValue: { user: { findUnique: async () => null } },
+          useValue: { user: { findUnique: () => Promise.resolve(null) } },
         },
         // JwtGuard takes the consent gate as a constructor argument, so the
         // guard cannot be instantiated without it. Defaults to "nothing
@@ -56,7 +59,7 @@ describe('GET /api/media — verification documents', () => {
       .overrideGuard(OptionalJwtGuard)
       .useValue({ canActivate: () => true })
       .compile();
-    app = moduleRef.createNestApplication();
+    app = moduleRef.createNestApplication<INestApplication<Server>>();
     await app.init();
   });
 

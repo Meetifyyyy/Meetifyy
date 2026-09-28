@@ -1,4 +1,5 @@
 import { CommunitiesService } from './communities.service';
+import { stub } from '../common/testing/stub';
 import type { PrismaService } from '../prisma/prisma.service';
 import type { DomainEventService } from '../events/domain-event.service';
 import type { RedisService } from '../redis/redis.service';
@@ -7,11 +8,6 @@ import type { DefaultAssetsService } from '../uploads/default-assets.service';
 import type { BlocksService } from '../users/blocks.service';
 import type { NotificationsService } from '../notifications/notifications.service';
 import type { NotificationFactory } from '../notifications/notification.factory';
-
-/** A partial dependency, typed as the real one for the code under test. */
-function stub<T>(members: unknown = {}): T {
-  return members as T;
-}
 
 /**
  * The two lists the Communities page is built on: the viewer's own

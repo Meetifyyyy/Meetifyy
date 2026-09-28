@@ -52,12 +52,12 @@ export class ListSupportTicketsDto {
 
 export class UpdateTicketStatusDto {
   @IsEnum(SupportStatus, { message: 'Unknown ticket status' })
-  status: SupportStatus;
+  status!: SupportStatus;
 }
 
 export class UpdateTicketPriorityDto {
   @IsEnum(SupportPriority, { message: 'Unknown priority' })
-  priority: SupportPriority;
+  priority!: SupportPriority;
 }
 
 export class AssignTicketDto {
@@ -76,7 +76,7 @@ export class AddInternalNoteDto {
   @IsString()
   @MinLength(1)
   @MaxLength(10000)
-  body: string;
+  body!: string;
 }
 
 export class SendReplyDto {
@@ -84,7 +84,7 @@ export class SendReplyDto {
   @IsString()
   @MinLength(1, { message: 'Write a reply before sending' })
   @MaxLength(50000)
-  body: string;
+  body!: string;
 
   /**
    * Optional status to apply with the reply, so "answer and mark resolved" is
@@ -110,7 +110,7 @@ export class SendReplyDto {
 export class PreviewReplyDto {
   @IsString()
   @MaxLength(50000)
-  body: string;
+  body!: string;
 
   @IsOptional()
   @IsEnum(SupportStatus)
@@ -118,8 +118,8 @@ export class PreviewReplyDto {
 }
 
 export class ReorderItemDto {
-  @IsString() @MaxLength(60) id: string;
-  @IsInt() @Min(0) sortOrder: number;
+  @IsString() @MaxLength(60) id!: string;
+  @IsInt() @Min(0) sortOrder!: number;
 }
 
 export class ReorderDto {
@@ -129,5 +129,5 @@ export class ReorderDto {
   @ArrayMaxSize(500)
   @ValidateNested({ each: true })
   @Type(() => ReorderItemDto)
-  items: ReorderItemDto[];
+  items!: ReorderItemDto[];
 }

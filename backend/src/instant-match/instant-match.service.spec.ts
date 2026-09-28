@@ -1,9 +1,17 @@
+import { expect } from '@jest/globals';
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import {
   InstantMatchService,
   setRealtimeGatewayRef,
 } from './instant-match.service';
-import { PrismaFake } from './testing/prisma-fake';
+import {
+  PrismaFake,
+  blocksStubFor,
+  createEmitterMock,
+} from './testing/prisma-fake';
+import { stub } from '../common/testing/stub';
+import type { MessagesService } from '../messages/messages.service';
+import type { JoinQueueDto } from './dto/join-queue.dto';
 import { createVerificationAccessMock } from '../common/verification/testing/verification-access.mock';
 import { createStudentYearPolicyMock } from '../common/student-year/testing/student-year-policy.mock';
 
@@ -13,6 +21,16 @@ import { createStudentYearPolicyMock } from '../common/student-year/testing/stud
  * conversation created twice, a timed-out match still acceptable, a declined
  * partner silently dropped out of the queue. Each of those has a case here.
  */
+/** A queue snapshot as sessions store it (JSON), matching JoinQueueDto's fields. */
+type SnapshotJson = {
+  campus: string;
+  activity: string;
+  timePreference: string;
+  optionalDetail: string | null;
+  area: string | null;
+  gps: { latitude: number; longitude: number } | null;
+};
+
 describe('InstantMatchService', () => {
   let verificationAccess: ReturnType<typeof createVerificationAccessMock>;
   let prisma: PrismaFake;
@@ -20,18 +38,10 @@ describe('InstantMatchService', () => {
     createInstantMatchConversation: jest.Mock;
     registerInstantMatchGuard: jest.Mock;
   };
-  let emitter: {
-    emitMatchFound: jest.Mock;
-    emitMatchAccepted: jest.Mock;
-    emitMatchDeclined: jest.Mock;
-    emitSearchResumed: jest.Mock;
-    emitQueueStats: jest.Mock;
-    emitInstantMatchChatEnded: jest.Mock;
-    emitQueueChanged: jest.Mock;
-  };
+  let emitter: ReturnType<typeof createEmitterMock>;
   let service: InstantMatchService;
 
-  const snapshot = (overrides: Record<string, any> = {}) => ({
+  const snapshot = (overrides: Partial<SnapshotJson> = {}): SnapshotJson => ({
     campus: 'campus-a',
     activity: 'study',
     timePreference: 'now',
@@ -41,7 +51,10 @@ describe('InstantMatchService', () => {
     ...overrides,
   });
 
-  const joinDto = (userId: string, overrides: Record<string, any> = {}) => ({
+  const joinDto = (
+    userId: string,
+    overrides: Partial<JoinQueueDto> = {},
+  ): JoinQueueDto => ({
     userId,
     ...snapshot(),
     ...overrides,
@@ -68,11 +81,11 @@ describe('InstantMatchService', () => {
    */
   const buildService = () => {
     const built = new InstantMatchService(
-      prisma as any,
-      messages as any,
+      prisma.asService(),
+      stub<MessagesService>(messages),
       blocksStubFor(prisma),
-      verificationAccess as any,
-      createStudentYearPolicyMock() as any,
+      verificationAccess,
+      createStudentYearPolicyMock(),
     );
     built.rankingOptions = { deterministic: true };
     return built;
@@ -89,15 +102,7 @@ describe('InstantMatchService', () => {
       }),
       registerInstantMatchGuard: jest.fn(),
     };
-    emitter = {
-      emitMatchFound: jest.fn(),
-      emitMatchAccepted: jest.fn(),
-      emitMatchDeclined: jest.fn(),
-      emitSearchResumed: jest.fn(),
-      emitQueueStats: jest.fn(),
-      emitInstantMatchChatEnded: jest.fn(),
-      emitQueueChanged: jest.fn(),
-    };
+    emitter = createEmitterMock();
     verificationAccess = createVerificationAccessMock();
     setRealtimeGatewayRef(emitter);
     service = buildService();
@@ -1219,26 +1224,3 @@ describe('InstantMatchService', () => {
     expect(prisma.sessions).toHaveLength(1);
   });
 });
-
-/**
- * Stands in for BlocksService, reading the fake Prisma's seeded block rows so
- * the block-aware matching tests still exercise real exclusion behaviour after
- * matching was consolidated onto the shared service.
- */
-function blocksStubFor(prisma: any) {
-  const excluded = (userId: string): string[] =>
-    (prisma.blocks as any[])
-      .filter((b) => b.blockerId === userId || b.blockedId === userId)
-      .map((b) => (b.blockerId === userId ? b.blockedId : b.blockerId));
-
-  return {
-    getExcludedUserIds: async (userId: string) => excluded(userId),
-    isBlocked: async (a: string, b: string) => excluded(a).includes(b),
-    filterBlockedUsers: async (userId: string, ids: string[]) => {
-      const set = new Set(excluded(userId));
-      return ids.filter((id) => !set.has(id));
-    },
-    injectBlockFilter: async (_userId: string, where: any) => where,
-    invalidateBlockCache: async () => {},
-  } as any;
-}

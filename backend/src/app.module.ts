@@ -4,8 +4,8 @@ import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { LoggerModule } from 'nestjs-pino';
 import {
   httpLine,
-  fromRequest,
-  LOG_CAUSE,
+  requestLogCause,
+  requestUserId,
   prettyFormatters,
   PRETTY_IGNORE,
   PRETTY_MESSAGE_FORMAT,
@@ -40,7 +40,12 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { PresenceModule } from './presence/presence.module';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { BullModule } from '@nestjs/bullmq';
-import Redis from 'ioredis';
+import type { RedisOptions } from 'bullmq';
+import type {
+  SerializedError,
+  SerializedRequest,
+  SerializedResponse,
+} from 'pino';
 import { EmailModule } from './email/email.module';
 import { InstantMatchModule } from './instant-match/instant-match.module';
 import { UploadsModule } from './uploads/uploads.module';
@@ -93,7 +98,7 @@ import { randomUUID } from 'node:crypto';
                 url: req.url,
                 status: res.statusCode,
                 ms: time,
-                userId: fromRequest(req, (r) => r?.user?.id),
+                userId: requestUserId(req),
                 reqId: req.id as string,
                 cause: 'slow request',
               }),
@@ -107,13 +112,13 @@ import { randomUUID } from 'node:crypto';
             // The user was missing from the success line entirely, so a normal
             // request could not be attributed to anyone without cross-checking
             // the request id against some other line that happened to carry it.
-            userId: fromRequest(req, (r) => r?.user?.id),
+            userId: requestUserId(req),
             reqId: req.id as string,
             // HttpExceptionFilter stashes the reason a 4xx was refused here
             // rather than logging its own line. Both used to print: one with
             // the cause and no latency, one with the latency and no cause, for
             // every single rejected request.
-            cause: fromRequest(req, (r) => r?.[LOG_CAUSE]),
+            cause: requestLogCause(req),
           });
         },
         customErrorMessage: (req, res, err) =>
@@ -121,7 +126,7 @@ import { randomUUID } from 'node:crypto';
             method: req.method,
             url: req.url,
             status: res.statusCode,
-            userId: fromRequest(req, (r) => r?.user?.id),
+            userId: requestUserId(req),
             reqId: req.id as string,
             cause: err.message,
           }),
@@ -136,14 +141,17 @@ import { randomUUID } from 'node:crypto';
         },
         serializers: {
           // Never expand a stack here; the filter owns error reporting.
-          err: (err) => ({ type: err.type, message: err.message }),
-          req: (req) => ({
+          err: (err: SerializedError) => ({
+            type: err.type,
+            message: err.message,
+          }),
+          req: (req: SerializedRequest) => ({
             id: req.id,
             method: req.method,
             url: req.url,
-            userId: req.raw?.user?.id,
+            userId: requestUserId(req.raw),
           }),
-          res: (res) => ({ statusCode: res.statusCode }),
+          res: (res: SerializedResponse) => ({ statusCode: res.statusCode }),
         },
         // Pretty output only: builds the aligned `time level [context]`
         // prefix in the main thread, since pino-pretty cannot align it itself
@@ -196,8 +204,8 @@ import { randomUUID } from 'node:crypto';
     EventEmitterModule.forRoot(),
     BullModule.forRootAsync({
       imports: [ConfigModule],
-      useFactory: async () => {
-        let connection: any = {};
+      useFactory: () => {
+        let connection: RedisOptions;
         const redisUrlString = config.redis.url;
 
         if (redisUrlString) {
@@ -247,54 +255,16 @@ import { randomUUID } from 'node:crypto';
           };
         }
 
-        let sharedProducerClient: Redis | null = null;
-        let sharedSubscriberClient: Redis | null = null;
-
         return {
           connection,
           // Namespaces every queue by environment. Without it, a local worker
           // pointed at the deployed Redis silently steals production jobs.
           prefix: config.redis.queuePrefix,
-          createClient: (
-            type: 'client' | 'subscriber' | 'bclient',
-            opts?: any,
-          ) => {
-            const clientOpts = {
-              ...connection,
-              ...(opts || {}),
-              retryStrategy(times: number) {
-                if (times > 5) return null;
-                return Math.min(times * 1000, 5000);
-              },
-              reconnectOnError(err: Error) {
-                if (
-                  err.message &&
-                  err.message.includes('max number of clients reached')
-                ) {
-                  return false;
-                }
-                return true;
-              },
-            };
-
-            if (type === 'client') {
-              if (!sharedProducerClient) {
-                sharedProducerClient = new Redis(clientOpts);
-              }
-              return sharedProducerClient;
-            }
-            if (type === 'subscriber') {
-              if (!sharedSubscriberClient) {
-                sharedSubscriberClient = new Redis(clientOpts);
-              }
-              return sharedSubscriberClient;
-            }
-            return new Redis(clientOpts);
-          },
-          defaultJobOptions: {
-            removeOnComplete: true,
-            removeOnFail: { count: 100 },
-          },
+          // There is no `createClient` here. It is a Bull v3 option that
+          // neither bullmq nor @nestjs/bullmq reads, so the bounded retry it
+          // declared never applied (A13). BullMQ's own default — reconnect
+          // indefinitely — is the right one for a worker: giving up after a
+          // few attempts would leave the process up with its queues dead.
         };
       },
     }),

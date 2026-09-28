@@ -23,13 +23,16 @@ describe('AdminAnalyticsModule wiring', () => {
     // Compiling the full module drags in the controller and its admin guards,
     // which need most of AppModule. The invariant that actually broke is this
     // one, and it is checkable on its own.
-    const imports = Reflect.getMetadata('imports', AdminAnalyticsModule) ?? [];
+    const imports =
+      (Reflect.getMetadata('imports', AdminAnalyticsModule) as
+        unknown[] | undefined) ?? [];
     expect(imports).toContain(EmailUsageModule);
   });
 
   it('declares every constructor dependency it resolves at runtime', () => {
     const params: unknown[] =
-      Reflect.getMetadata('design:paramtypes', AdminAnalyticsService) ?? [];
+      (Reflect.getMetadata('design:paramtypes', AdminAnalyticsService) as
+        unknown[] | undefined) ?? [];
     // The dependency that was missing must be a real, resolvable class rather
     // than `Object` — which is what an unresolvable import degrades to.
     expect(params).toContain(EmailUsageService);

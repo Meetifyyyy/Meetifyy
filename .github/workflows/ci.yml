@@ -12,9 +12,10 @@
 #   2. Generate Prisma client (validates schema.prisma syntax)
 #   3. Validate schema.prisma (prisma validate)
 #   4. TypeScript typecheck (tsc --noEmit via tsconfig.build.json)
-#   5. ESLint            — non-blocking (pre-existing type-safety backlog)
-#   6. Production build (nest build)
-#   7. Unit tests (jest)
+#   5. TypeScript typecheck of tests and scripts (tsconfig.json, tsconfig.tooling.json)
+#   6. ESLint            — blocking, at zero warnings, no suppressions
+#   7. Production build (nest build)
+#   8. Unit tests (jest)
 #
 # The `mobile` job builds the native bundle from the same `src/` — the app IS
 # the website, wrapped — and proves two things about the output: that no service
@@ -114,12 +115,20 @@ jobs:
       - name: TypeScript typecheck
         run: npx tsc --project tsconfig.build.json --noEmit
 
-      # Non-blocking: formatting and parse errors are clean, but ~4.6k
-      # pre-existing `no-unsafe-*` findings remain. Flip to blocking once
-      # that backlog is worked down.
+      # The build config excludes specs and the shell scripts, so on its own
+      # a type error there would surface only as a test failure, or never.
+      - name: TypeScript typecheck (tests and scripts)
+        run: |
+          npx tsc --project tsconfig.json --noEmit --incremental false
+          npx tsc --project tsconfig.tooling.json
+
+      # BLOCKING, at zero: no errors, no warnings, and no suppressions ledger.
+      # The backlog that ledger once recorded (about 8,000 violations) has been
+      # fixed, so any violation — a new `any`, a new floating promise — fails
+      # the build. This step was advisory once, and the backlog grew by about
+      # half while it was.
       - name: ESLint
-        run: npm run lint
-        continue-on-error: true
+        run: npm run lint -- --max-warnings 0
 
       # prebuild script runs `prisma generate` again — harmless, ensures the
       # dist output matches the latest generated client.

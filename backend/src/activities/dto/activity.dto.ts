@@ -12,7 +12,7 @@ import {
 export class CreateActivityDto {
   @IsString()
   @MaxLength(30)
-  title: string;
+  title!: string;
 
   @IsString()
   @IsOptional()

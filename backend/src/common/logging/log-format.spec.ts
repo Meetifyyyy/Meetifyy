@@ -5,6 +5,10 @@ import {
   shortPath,
   formatMs,
   contextPrefix,
+  LOG_CAUSE,
+  prettyFormatters,
+  requestLogCause,
+  requestUserId,
 } from './log-format';
 
 /**
@@ -99,5 +103,39 @@ describe('log-format', () => {
       contextPrefix('HTTP') +
       httpLine({ method: 'GET', url: '/api/x', status: 200, ms: 83 });
     expect(a.indexOf('83ms')).toBe(b.indexOf('83ms'));
+  });
+});
+
+describe('request readers', () => {
+  // customSuccessMessage gets the Express request; serializers get pino-http's
+  // wrapper with the Express request under `.raw`. Both must resolve.
+  const express = { user: { id: 'user-1' }, [LOG_CAUSE]: 'forbidden' };
+
+  it('reads the user id from either request shape', () => {
+    expect(requestUserId(express)).toBe('user-1');
+    expect(requestUserId({ raw: express })).toBe('user-1');
+  });
+
+  it('reads the parked refusal cause from either request shape', () => {
+    expect(requestLogCause(express)).toBe('forbidden');
+    expect(requestLogCause({ raw: express })).toBe('forbidden');
+  });
+
+  it('is undefined for an anonymous request or no request', () => {
+    expect(requestUserId({})).toBeUndefined();
+    expect(requestUserId({ raw: {} })).toBeUndefined();
+    expect(requestUserId(undefined)).toBeUndefined();
+    expect(requestLogCause({ user: { id: 'u' } })).toBeUndefined();
+  });
+});
+
+describe('prettyFormatters.log', () => {
+  it("labels a record with Nest's context, and pino-http's own as HTTP", () => {
+    expect(prettyFormatters.log({ context: 'DB' }).context).toBe(
+      contextPrefix('DB'),
+    );
+    expect(prettyFormatters.log({ msg: 'x' }).context).toBe(
+      contextPrefix('HTTP'),
+    );
   });
 });

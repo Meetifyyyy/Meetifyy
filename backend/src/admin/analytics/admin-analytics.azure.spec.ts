@@ -5,6 +5,7 @@ import {
   type ServiceReport,
 } from './admin-analytics.service';
 import { config } from '../../config';
+import { stub } from '../../common/testing/stub';
 
 /**
  * The Azure panel.
@@ -74,11 +75,13 @@ function build(handler: Handler) {
   const fetchMock = jest.fn((url: unknown) => {
     calls.push(String(url));
     const { status, body } = handler(String(url));
-    return Promise.resolve({
-      ok: status >= 200 && status < 300,
-      status,
-      json: () => Promise.resolve(body),
-    } as unknown as Response);
+    return Promise.resolve(
+      stub<Response>({
+        ok: status >= 200 && status < 300,
+        status,
+        json: () => Promise.resolve(body),
+      }),
+    );
   });
   global.fetch = fetchMock;
 

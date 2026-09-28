@@ -1,5 +1,14 @@
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { CommunitiesService } from './communities.service';
+import { stub } from '../common/testing/stub';
+import type { PrismaService } from '../prisma/prisma.service';
+import type { DomainEventService } from '../events/domain-event.service';
+import type { RedisService } from '../redis/redis.service';
+import type { PresenceService } from '../presence/presence.service';
+import type { DefaultAssetsService } from '../uploads/default-assets.service';
+import type { BlocksService } from '../users/blocks.service';
+import type { NotificationsService } from '../notifications/notifications.service';
+import type { NotificationFactory } from '../notifications/notification.factory';
 
 /**
  * Role management.
@@ -15,57 +24,68 @@ describe('CommunitiesService — member roles', () => {
   const COMMUNITY = 'c1';
   const OWNER = 'owner';
 
-  let service: CommunitiesService;
-  let prisma: any;
-  let updates: any[];
+  /** A membership row, or its absence. */
+  type MemberRow = { role: string } | null;
+  /** A role write, as far as these assertions read it. */
+  type RoleUpdate = {
+    data: { role?: string; moderatorPromotedAt?: Date };
+  };
 
-  const setup = (
-    {
-      requester = { role: 'OWNER' },
-      target = { role: 'MEMBER' },
-      ownerId = OWNER,
-      // `as any` widens the destructured parameter so cases below can pass
-      // `null` for requester/target. Without it TS infers `{ role: string }`
-      // from the defaults and those cases stop compiling. The rule only sees
-      // the assertion's own expression, so it reads as redundant here — it is
-      // not, and auto-fixing it away breaks this suite.
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
-    } = {} as any,
-  ) => {
+  let service: CommunitiesService;
+  let updates: RoleUpdate[];
+
+  const setup = ({
+    requester = { role: 'OWNER' },
+    target = { role: 'MEMBER' },
+    ownerId = OWNER,
+  }: { requester?: MemberRow; target?: MemberRow; ownerId?: string } = {}) => {
     updates = [];
-    prisma = {
-      community: { findUnique: jest.fn(async () => ({ ownerId })) },
+    const prisma = stub<PrismaService>({
+      community: { findUnique: jest.fn(() => Promise.resolve({ ownerId })) },
       communityMember: {
-        findUnique: jest.fn(async ({ where }: any) =>
-          where.userId_communityId.userId === OWNER ? requester : target,
+        findUnique: jest.fn(
+          ({ where }: { where: { userId_communityId: { userId: string } } }) =>
+            Promise.resolve(
+              where.userId_communityId.userId === OWNER ? requester : target,
+            ),
         ),
-        update: jest.fn(async (args: any) => {
+        update: jest.fn((args: RoleUpdate) => {
           updates.push(args);
-          return { ...target, ...args.data };
+          return Promise.resolve({ ...target, ...args.data });
         }),
       },
-    };
+    });
     service = new CommunitiesService(
       prisma,
-      { emit: jest.fn() } as any,
-      { getClient: () => null } as any,
-      {} as any,
-      { refFor: () => null } as any,
-      {
-        getExcludedUserIds: async () => [],
-        isBlocked: async () => false,
-        filterBlockedUsers: async (_u: any, ids: any) => ids,
-        injectBlockFilter: async (_u: any, w: any) => w,
+      stub<DomainEventService>({ emit: jest.fn() }),
+      stub<RedisService>({ getClient: () => null }),
+      stub<PresenceService>(),
+      stub<DefaultAssetsService>({ refFor: () => null }),
+      stub<BlocksService>({
+        getExcludedUserIds: () => Promise.resolve([]),
+        isBlocked: () => Promise.resolve(false),
+        filterBlockedUsers: (_u: string, ids: string[]) => Promise.resolve(ids),
+        injectBlockFilter: <T extends object>(_u: string, w: T) =>
+          Promise.resolve(w),
         invalidateBlockCache: async () => {},
-      } as any,
+      }),
       // Promotion notifications are covered in communities.moderator-promotion.spec.ts.
-      { createNotification: async () => ({}) } as any,
-      { createModeratorPromotion: () => null } as any,
+      stub<NotificationsService>({
+        createNotification: jest.fn(() => Promise.resolve({})),
+      }),
+      stub<NotificationFactory>({ createModeratorPromotion: () => null }),
     );
   };
 
-  const setRole = (role: any, actor = OWNER) =>
-    service.updateMemberRole(COMMUNITY, 'target', role, actor);
+  // Deliberately wider than the parameter: these cases send what a
+  // hand-built request could, which the service must re-check at runtime.
+  const setRole = (role: unknown, actor = OWNER) =>
+    service.updateMemberRole(
+      COMMUNITY,
+      'target',
+      role as 'MODERATOR' | 'MEMBER',
+      actor,
+    );
 
   describe('escalation', () => {
     it('refuses to grant OWNER through this endpoint', async () => {

@@ -22,9 +22,29 @@ export const getPastelBgColor = (seed = '') => {
   return PASTEL_BG_COLORS[Math.abs(hash) % PASTEL_BG_COLORS.length];
 };
 
+/**
+ * Whether a stored avatar reference is a DiceBear URL, decided by its host.
+ *
+ * A substring test (`includes('api.dicebear.com/')`) also matched any URL that
+ * merely mentioned DiceBear, e.g. in a query string. Absolute and
+ * scheme-relative URLs are parsed; a bare `api.dicebear.com/…` reference is
+ * still accepted, as before.
+ */
+export const isDicebearUrl = (url) => {
+  if (!url || typeof url !== 'string') return false;
+  const value = url.trim();
+  if (/^api\.dicebear\.com\//i.test(value)) return true;
+  if (!/^(https?:)?\/\//i.test(value)) return false;
+  try {
+    return new URL(value, 'https://placeholder.invalid').hostname === 'api.dicebear.com';
+  } catch {
+    return false;
+  }
+};
+
 export const normalizeDicebearUrl = (url) => {
   if (!url || typeof url !== 'string') return url;
-  if (!url.includes('api.dicebear.com/')) return url;
+  if (!isDicebearUrl(url)) return url;
 
   // Preserve existing backgroundColor parameter if already defined on the avatar URL
   if (url.includes('backgroundColor=')) {
@@ -92,7 +112,7 @@ export function createMediaUrls({ apiOrigin, getBackendUrl }) {
 
     let finalUrl = pathOrUrl;
 
-    if (finalUrl.includes('api.dicebear.com/')) {
+    if (isDicebearUrl(finalUrl)) {
       finalUrl = normalizeDicebearUrl(finalUrl);
     }
 

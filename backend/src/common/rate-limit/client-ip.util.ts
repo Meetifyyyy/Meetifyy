@@ -69,7 +69,7 @@ function ipv6Prefix64(ip: string): string {
     const tail = halves[1] ? halves[1].split(':') : [];
     const missing = 8 - head.length - tail.length;
     if (missing < 0) return ip; // malformed — key on it verbatim
-    hextets = [...head, ...Array(missing).fill('0'), ...tail];
+    hextets = [...head, ...new Array<string>(missing).fill('0'), ...tail];
   } else {
     hextets = ip.split(':');
   }

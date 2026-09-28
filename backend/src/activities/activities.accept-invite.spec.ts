@@ -18,22 +18,86 @@ import { studentYearPolicyMockProvider } from '../common/student-year/testing/st
  * The ordering matters: the membership must exist before this method resolves,
  * because the client redirects to the activity on the strength of that resolve.
  */
+/** An activity invitation row, as these tests shape it. */
+type InvitationRow = {
+  id: string;
+  activityId: string;
+  inviteeId: string;
+  inviterId: string;
+  status: string;
+  revokedAt: Date | null;
+  expiresAt: Date | null;
+  respondedAt: Date | null;
+  activity: { id: string };
+};
+
 describe('acceptInvitation', () => {
   const ME = 'me';
   const ACT = 'act-1';
   const INV = 'inv-1';
 
   let service: ActivitiesService;
-  let prisma: any;
-  let invitation: any;
-  let membership: any;
+  let prisma: ReturnType<typeof makePrisma>;
+  let invitation: InvitationRow;
+  let membership: { status: string } | null;
   let joinCalls: number;
-  let notifications: any;
+  let notifications: {
+    updateNotificationLifecycleStatus: jest.Mock<Promise<unknown[]>, [unknown]>;
+  };
+  let joinActivity: jest.SpyInstance;
+
+  const makePrisma = () => ({
+    activityInvitation: {
+      findUnique: jest.fn(() => Promise.resolve(invitation)),
+      // The service writes conditionally (updateMany with a status guard) so
+      // a concurrent cancellation cannot be overwritten.
+      updateMany: jest.fn(
+        ({
+          where,
+          data,
+        }: {
+          where?: { status?: string | { in?: string[] } };
+          data: Partial<InvitationRow>;
+        }) => {
+          const status = where?.status;
+          const allowed: unknown[] | null =
+            (typeof status === 'object' ? status.in : undefined) ??
+            (status ? [status] : null);
+          if (allowed && !allowed.includes(invitation.status))
+            return Promise.resolve({ count: 0 });
+          invitation = { ...invitation, ...data };
+          return Promise.resolve({ count: 1 });
+        },
+      ),
+      update: jest.fn(({ data }: { data: Partial<InvitationRow> }) => {
+        invitation = { ...invitation, ...data };
+        return Promise.resolve(invitation);
+      }),
+    },
+    crewActivityMember: {
+      findUnique: jest.fn(() => Promise.resolve(membership)),
+    },
+    // Not started yet, so the invitation is still answerable.
+    crewActivity: {
+      findUnique: jest.fn(() =>
+        Promise.resolve({
+          id: ACT,
+          deletedAt: null,
+          startDate: new Date(Date.now() + 60 * 60 * 1000),
+        }),
+      ),
+    },
+    user: {
+      findUnique: jest.fn(() => Promise.resolve({ id: ME, collegeId: null })),
+    },
+  });
 
   beforeEach(async () => {
     joinCalls = 0;
     notifications = {
-      updateNotificationLifecycleStatus: jest.fn(async () => []),
+      updateNotificationLifecycleStatus: jest.fn<Promise<unknown[]>, [unknown]>(
+        () => Promise.resolve([]),
+      ),
     };
     membership = null;
     invitation = {
@@ -48,37 +112,7 @@ describe('acceptInvitation', () => {
       activity: { id: ACT },
     };
 
-    prisma = {
-      activityInvitation: {
-        findUnique: jest.fn(async () => invitation),
-        // The service writes conditionally (updateMany with a status guard) so
-        // a concurrent cancellation cannot be overwritten.
-        updateMany: jest.fn(async ({ where, data }: any) => {
-          const allowed =
-            where?.status?.in ?? (where?.status ? [where.status] : null);
-          if (allowed && !allowed.includes(invitation.status))
-            return { count: 0 };
-          invitation = { ...invitation, ...data };
-          return { count: 1 };
-        }),
-        update: jest.fn(async ({ data }: any) => {
-          invitation = { ...invitation, ...data };
-          return invitation;
-        }),
-      },
-      crewActivityMember: {
-        findUnique: jest.fn(async () => membership),
-      },
-      // Not started yet, so the invitation is still answerable.
-      crewActivity: {
-        findUnique: jest.fn(async () => ({
-          id: ACT,
-          deletedAt: null,
-          startDate: new Date(Date.now() + 60 * 60 * 1000),
-        })),
-      },
-      user: { findUnique: jest.fn(async () => ({ id: ME, collegeId: null })) },
-    };
+    prisma = makePrisma();
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -90,7 +124,7 @@ describe('acceptInvitation', () => {
         { provide: NotificationFactory, useValue: {} },
         {
           provide: BlocksService,
-          useValue: { getExcludedUserIds: jest.fn(async () => []) },
+          useValue: { getExcludedUserIds: jest.fn(() => Promise.resolve([])) },
         },
         { provide: DomainEventService, useValue: { emit: jest.fn() } },
         { provide: RedisService, useValue: { getClient: () => null } },
@@ -105,11 +139,13 @@ describe('acceptInvitation', () => {
 
     // joinActivity is exercised by its own tests; here we only care that accept
     // calls it, waits for it, and treats its failure as fatal.
-    jest.spyOn(service as any, 'joinActivity').mockImplementation(async () => {
-      joinCalls += 1;
-      membership = { status: 'MEMBER' };
-      return { success: true };
-    });
+    joinActivity = jest
+      .spyOn(service, 'joinActivity')
+      .mockImplementation(() => {
+        joinCalls += 1;
+        membership = { status: 'MEMBER' };
+        return Promise.resolve({ success: true });
+      });
   });
 
   it('joins the activity before recording the answer and returns the activity id', async () => {
@@ -122,9 +158,7 @@ describe('acceptInvitation', () => {
   });
 
   it('does not record acceptance when the join is refused', async () => {
-    (service as any).joinActivity.mockRejectedValueOnce(
-      new Error('Activity is full'),
-    );
+    joinActivity.mockRejectedValueOnce(new Error('Activity is full'));
 
     await expect(service.acceptInvitation(INV, ME)).rejects.toThrow(
       'Activity is full',
@@ -214,11 +248,13 @@ describe('acceptInvitation', () => {
 
   describe('once the activity has started', () => {
     beforeEach(() => {
-      prisma.crewActivity.findUnique = jest.fn(async () => ({
-        id: ACT,
-        deletedAt: null,
-        startDate: new Date(Date.now() - 60 * 1000),
-      }));
+      prisma.crewActivity.findUnique = jest.fn(() =>
+        Promise.resolve({
+          id: ACT,
+          deletedAt: null,
+          startDate: new Date(Date.now() - 60 * 1000),
+        }),
+      );
     });
 
     it('refuses the accept and settles the invitation as expired', async () => {
@@ -258,10 +294,10 @@ describe('acceptInvitation', () => {
   it('does not record acceptance when a cancellation already settled the invite', async () => {
     // The cancellation lands while the join is in flight: the conditional write
     // finds no PENDING row and the cancellation stands.
-    (service as any).joinActivity.mockImplementation(async () => {
+    joinActivity.mockImplementation(() => {
       joinCalls += 1;
       invitation = { ...invitation, status: 'CANCELLED' };
-      return { success: true };
+      return Promise.resolve({ success: true });
     });
 
     await service.acceptInvitation(INV, ME);
@@ -288,17 +324,19 @@ describe('inviteFriends — already-accepted invitees', () => {
   const INVITEE = 'friend';
 
   let service: ActivitiesService;
-  let prisma: any;
-  let existingInvitation: any;
+  let prisma: ReturnType<typeof makePrisma>;
+  let existingInvitation: {
+    inviteeId: string;
+    activityId: string;
+    status: string;
+    respondedAt: Date;
+  } | null;
   let activityMembers: Array<{ userId: string }>;
 
-  beforeEach(async () => {
-    activityMembers = [];
-    existingInvitation = null;
-
-    prisma = {
-      crewActivity: {
-        findUnique: jest.fn(async () => ({
+  const makePrisma = () => ({
+    crewActivity: {
+      findUnique: jest.fn(() =>
+        Promise.resolve({
           id: ACT,
           creatorId: HOST,
           status: 'OPEN',
@@ -309,22 +347,31 @@ describe('inviteFriends — already-accepted invitees', () => {
           startDate: new Date(Date.now() + 60 * 60 * 1000),
           endDate: null,
           members: activityMembers,
-        })),
-      },
-      activityInvitation: {
-        findMany: jest.fn(async () =>
-          existingInvitation ? [existingInvitation] : [],
-        ),
-        createMany: jest.fn(async () => ({ count: 1 })),
-      },
-      user: {
-        findUnique: jest.fn(async () => ({
+        }),
+      ),
+    },
+    activityInvitation: {
+      findMany: jest.fn((): Promise<unknown[]> =>
+        Promise.resolve(existingInvitation ? [existingInvitation] : []),
+      ),
+      createMany: jest.fn(() => Promise.resolve({ count: 1 })),
+    },
+    user: {
+      findUnique: jest.fn(() =>
+        Promise.resolve({
           id: HOST,
           displayName: 'Host',
           username: 'host',
-        })),
-      },
-    };
+        }),
+      ),
+    },
+  });
+
+  beforeEach(async () => {
+    activityMembers = [];
+    existingInvitation = null;
+
+    prisma = makePrisma();
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -339,13 +386,13 @@ describe('inviteFriends — already-accepted invitees', () => {
         { provide: NotificationFactory, useValue: {} },
         {
           provide: BlocksService,
-          useValue: { getExcludedUserIds: jest.fn(async () => []) },
+          useValue: { getExcludedUserIds: jest.fn(() => Promise.resolve([])) },
         },
         { provide: DomainEventService, useValue: { emit: jest.fn() } },
         { provide: RedisService, useValue: { getClient: () => null } },
         {
           provide: getQueueToken(NOTIFICATIONS_QUEUE),
-          useValue: { add: jest.fn(async () => ({})) },
+          useValue: { add: jest.fn(() => Promise.resolve({})) },
         },
       ],
     }).compile();
@@ -383,7 +430,7 @@ describe('inviteFriends — already-accepted invitees', () => {
 
   it('still allows inviting somebody with no prior invitation', async () => {
     prisma.activityInvitation.findMany = jest
-      .fn()
+      .fn<Promise<unknown[]>, []>()
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([{ id: 'inv-new', inviteeId: INVITEE }]);
 

@@ -4,6 +4,8 @@ import {
   BadRequestException,
   ConflictException,
 } from '@nestjs/common';
+import { AccountStatus, Prisma } from '@prisma/client';
+import { parseEnumFilter } from '../../common/utils/enum-filter.util';
 import { PrismaService } from '../../prisma/prisma.service';
 import { JwtGuard } from '../../common/guards/jwt.guard';
 import { SupabaseService } from '../../supabase/supabase.service';
@@ -22,14 +24,22 @@ export class AdminUsersService {
     page?: number;
     limit?: number;
   }) {
+    // Validated before any query: an unknown enum value is a 400, not a
+    // Prisma validation error (500).
+    const accountStatus = parseEnumFilter(
+      AccountStatus,
+      query.accountStatus,
+      'accountStatus',
+    );
+
     const page = Math.max(1, query.page || 1);
     const limit = Math.min(100, Math.max(1, query.limit || 20));
     const skip = (page - 1) * limit;
 
-    const where: any = {};
+    const where: Prisma.UserWhereInput = {};
 
-    if (query.accountStatus) {
-      where.accountStatus = query.accountStatus;
+    if (accountStatus) {
+      where.accountStatus = accountStatus;
     }
 
     if (query.collegeId) {
@@ -276,7 +286,7 @@ export class AdminUsersService {
     const term = (search || '').trim();
     if (!term) return { data: [] };
 
-    const where: any = {
+    const where: Prisma.UserWhereInput = {
       deletedAt: null,
       OR: [
         { username: { contains: term, mode: 'insensitive' } },
@@ -307,7 +317,7 @@ export class AdminUsersService {
    * List all active Campus Representatives, optionally filtered by campus.
    */
   async listCampusReps(collegeId?: string) {
-    const where: any = { isCampusRep: true, deletedAt: null };
+    const where: Prisma.UserWhereInput = { isCampusRep: true, deletedAt: null };
     if (collegeId) where.collegeId = collegeId;
 
     const reps = await this.prisma.user.findMany({

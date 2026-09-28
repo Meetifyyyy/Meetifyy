@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 /**
  * One-off: move existing verification documents out of the public bucket.
  *
@@ -20,22 +19,25 @@
  *
  * Runs read-only by default. Pass --apply to make changes.
  *
- *   node scripts/migrate-verification-media.js            # report only
- *   node scripts/migrate-verification-media.js --apply
+ *   npx ts-node scripts/migrate-verification-media.ts            # report only
+ *   npx ts-node scripts/migrate-verification-media.ts --apply
  */
-const {
+import {
   S3Client,
   ListObjectsV2Command,
   CopyObjectCommand,
   HeadObjectCommand,
   DeleteObjectCommand,
-} = require('@aws-sdk/client-s3');
-const { PrismaClient } = require('@prisma/client');
+} from '@aws-sdk/client-s3';
+import { PrismaClient } from '@prisma/client';
 
 const APPLY = process.argv.includes('--apply');
 const PREFIX = 'verification/';
 
-function env(name, fallback) {
+/** An environment variable, treating an empty value as unset. */
+function env(name: string): string | undefined;
+function env(name: string, fallback: string): string;
+function env(name: string, fallback?: string): string | undefined {
   const v = process.env[name];
   return v === undefined || v === '' ? fallback : v;
 }
@@ -53,22 +55,24 @@ async function main() {
   const s3 = new S3Client({
     region: env('STORAGE_REGION', 'auto'),
     endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
+    // Unset keys are passed through as before; the SDK refuses to sign with
+    // them, which is the error an operator needs to see.
     credentials: {
-      accessKeyId: env('R2_ACCESS_KEY_ID'),
-      secretAccessKey: env('R2_SECRET_ACCESS_KEY'),
+      accessKeyId: env('R2_ACCESS_KEY_ID') as string,
+      secretAccessKey: env('R2_SECRET_ACCESS_KEY') as string,
     },
   });
 
   // The pooler rejects Prisma's prepared statements without this.
   const dbUrl =
-    env('DATABASE_URL') +
+    String(env('DATABASE_URL')) +
     (env('DATABASE_URL', '').includes('?') ? '&' : '?') +
     'pgbouncer=true&connection_limit=1';
   const prisma = new PrismaClient({ datasources: { db: { url: dbUrl } } });
 
   // ── Inventory ─────────────────────────────────────────────────────────────
-  const keys = [];
-  let token;
+  const keys: string[] = [];
+  let token: string | undefined;
   do {
     const page = await s3.send(
       new ListObjectsV2Command({
@@ -77,7 +81,8 @@ async function main() {
         ContinuationToken: token,
       }),
     );
-    (page.Contents || []).forEach((o) => keys.push(o.Key));
+    // A listed object always carries its key.
+    (page.Contents || []).forEach((o) => keys.push(o.Key!));
     token = page.NextContinuationToken;
   } while (token);
 
@@ -103,7 +108,9 @@ async function main() {
   const toMove = keys.filter((k) => referencedKeys.has(k));
   const toDelete = keys.filter((k) => !referencedKeys.has(k));
 
-  console.log(`Found ${keys.length} object(s) under ${PREFIX} in ${publicBucket}`);
+  console.log(
+    `Found ${keys.length} object(s) under ${PREFIX} in ${publicBucket}`,
+  );
   console.log(`  referenced by a request : ${toMove.length}`);
   console.log(`  unreferenced            : ${toDelete.length}`);
 
@@ -137,7 +144,9 @@ async function main() {
       );
       // Verify the copy landed before removing the only other copy.
       await s3.send(new HeadObjectCommand({ Bucket: privateBucket, Key: key }));
-      await s3.send(new DeleteObjectCommand({ Bucket: publicBucket, Key: key }));
+      await s3.send(
+        new DeleteObjectCommand({ Bucket: publicBucket, Key: key }),
+      );
       moved += 1;
       console.log(`  moved ${key}`);
     }
@@ -169,7 +178,10 @@ async function main() {
   if (publicHost) {
     let stillPublic = 0;
     for (const key of keys) {
-      const res = await fetch(`${publicHost}/${key}`, { method: 'GET', headers: { Range: 'bytes=0-0' } });
+      const res = await fetch(`${publicHost}/${key}`, {
+        method: 'GET',
+        headers: { Range: 'bytes=0-0' },
+      });
       if (res.status < 400) {
         stillPublic += 1;
         console.error(`  STILL PUBLIC: ${key} (${res.status})`);
@@ -185,7 +197,7 @@ async function main() {
   await prisma.$disconnect();
 }
 
-main().catch((e) => {
-  console.error('Migration failed:', e.message);
+main().catch((e: unknown) => {
+  console.error('Migration failed:', (e as Error).message);
   process.exit(1);
 });

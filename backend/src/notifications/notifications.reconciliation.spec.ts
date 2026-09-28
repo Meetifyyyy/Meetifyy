@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { expect } from '@jest/globals';
 import { BlocksService } from '../users/blocks.service';
 import { NotificationsService } from './notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -12,7 +13,7 @@ describe('NotificationsService - Event Driven Reconciliation', () => {
   let service: NotificationsService;
   let eventEmitter: EventEmitter2;
 
-  const mockPrisma: any = {
+  const mockPrisma = {
     notification: {
       findFirst: jest.fn(),
       update: jest.fn(),
@@ -59,8 +60,8 @@ describe('NotificationsService - Event Driven Reconciliation', () => {
           useValue: {
             getExcludedUserIds: jest.fn().mockResolvedValue([]),
             isBlocked: jest.fn().mockResolvedValue(false),
-            filterBlockedUsers: jest.fn(async (_u, ids) => ids),
-            injectBlockFilter: jest.fn(async (_u, w) => w),
+            filterBlockedUsers: jest.fn((_u, ids) => Promise.resolve(ids)),
+            injectBlockFilter: jest.fn((_u, w) => Promise.resolve(w)),
             invalidateBlockCache: jest.fn(),
           },
         },

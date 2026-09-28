@@ -1,4 +1,9 @@
-import { StudentYearPolicyService } from '../student-year-policy.service';
+import type { Prisma } from '@prisma/client';
+import {
+  StudentYearPolicyService,
+  type StudentYearSubject,
+} from '../student-year-policy.service';
+import type { Stub } from '../../testing/stub';
 
 /**
  * Test double for the first-year isolation policy.
@@ -23,27 +28,32 @@ export function createStudentYearPolicyMock(
   const compatible = (a: number | null, b: number | null) =>
     isFirstYear(a) === isFirstYear(b);
 
-  return {
+  const mock = {
     isEnforcementEnabled: jest.fn(() => true),
     getCurrentAcademicYear: jest.fn(() => currentYear),
     getUserBatchYear: jest.fn(
-      (user: any) => user?.batchYear ?? batchOf(user?.id) ?? null,
+      (user: StudentYearSubject | null | undefined) =>
+        user?.batchYear ?? batchOf(String(user?.id)) ?? null,
     ),
     deriveBatchYearForStorage: jest.fn(() => null),
     isFirstYearBatch: jest.fn((batch: number | null | undefined) =>
       isFirstYear(batch ?? null),
     ),
-    isFirstYearStudent: jest.fn((user: any) =>
-      isFirstYear(user?.batchYear ?? batchOf(user?.id) ?? null),
+    isFirstYearStudent: jest.fn((user: StudentYearSubject | null | undefined) =>
+      isFirstYear(user?.batchYear ?? batchOf(String(user?.id)) ?? null),
     ),
     areBatchYearsCompatible: jest.fn((a: number | null, b: number | null) =>
       compatible(a, b),
     ),
-    canUsersInteract: jest.fn((a: any, b: any) =>
-      compatible(
-        a?.batchYear ?? batchOf(a?.id) ?? null,
-        b?.batchYear ?? batchOf(b?.id) ?? null,
-      ),
+    canUsersInteract: jest.fn(
+      (
+        a: StudentYearSubject | null | undefined,
+        b: StudentYearSubject | null | undefined,
+      ) =>
+        compatible(
+          a?.batchYear ?? batchOf(String(a?.id)) ?? null,
+          b?.batchYear ?? batchOf(String(b?.id)) ?? null,
+        ),
     ),
     canUserSeeUser: jest.fn(() => true),
     canUserSeeActivity: jest.fn(() => true),
@@ -63,41 +73,53 @@ export function createStudentYearPolicyMock(
     ),
     // Returns the caller's `where` untouched, so a suite that is not about
     // batch years sees exactly the query it was written against.
-    injectUserFilter: jest.fn((where: any) => where),
+    injectUserFilter: jest.fn((where: Prisma.UserWhereInput) => where),
     visibleRelationWhere: jest.fn(() => ({})),
     visibleUserSqlPredicate: jest.fn(() => 'TRUE'),
     invalidate: jest.fn(),
     invalidateAll: jest.fn(),
-    getBatchYearMap: jest.fn(async (ids: string[]) => {
+    getBatchYearMap: jest.fn((ids: string[]) => {
       const map = new Map<string, number | null>();
       (ids || []).filter(Boolean).forEach((id) => map.set(id, batchOf(id)));
-      return map;
+      return Promise.resolve(map);
     }),
-    resolveContext: jest.fn(async (id: string) =>
-      id
-        ? { id, batchYear: batchOf(id), isFirstYear: isFirstYear(batchOf(id)) }
-        : null,
-    ),
-    getBatchYearFor: jest.fn(async (id: string) => batchOf(id)),
-    canIdsInteract: jest.fn(async (a: string, b: string) =>
-      compatible(batchOf(a), batchOf(b)),
-    ),
-    getIncompatibleUserIds: jest.fn(async (actorId: string, ids: string[]) =>
-      (ids || []).filter(
-        (id) => id !== actorId && !compatible(batchOf(actorId), batchOf(id)),
+    resolveContext: jest.fn((id: string) =>
+      Promise.resolve(
+        id
+          ? {
+              id,
+              batchYear: batchOf(id),
+              isFirstYear: isFirstYear(batchOf(id)),
+            }
+          : null,
       ),
     ),
-    filterInteractableUserIds: jest.fn(
-      async (actorId: string, ids: string[]) =>
+    getBatchYearFor: jest.fn((id: string) => Promise.resolve(batchOf(id))),
+    canIdsInteract: jest.fn((a: string, b: string) =>
+      Promise.resolve(compatible(batchOf(a), batchOf(b))),
+    ),
+    getIncompatibleUserIds: jest.fn((actorId: string, ids: string[]) =>
+      Promise.resolve(
+        (ids || []).filter(
+          (id) => id !== actorId && !compatible(batchOf(actorId), batchOf(id)),
+        ),
+      ),
+    ),
+    filterInteractableUserIds: jest.fn((actorId: string, ids: string[]) =>
+      Promise.resolve(
         !actorId
           ? ids
           : (ids || []).filter(
               (id) =>
                 id === actorId || compatible(batchOf(actorId), batchOf(id)),
             ),
+      ),
     ),
-    assertCanInteract: jest.fn(async () => {}),
-  };
+    assertCanInteract: jest.fn(() => Promise.resolve()),
+  } satisfies Stub<StudentYearPolicyService>;
+  // Usable wherever the real service is expected, with its members still
+  // typed as the jest mocks above.
+  return mock as typeof mock & StudentYearPolicyService;
 }
 
 /** Ready-made Nest provider for the double above. */

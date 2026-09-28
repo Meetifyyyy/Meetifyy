@@ -8,6 +8,13 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { DomainValidatorService } from '../../common/services/domain-validator.service';
 import { MediaCleanupService } from '../../uploads/media-cleanup.service';
 import { Optional } from '@nestjs/common';
+import { CollegeStatus, Prisma } from '@prisma/client';
+import { CreateCollegeDto, UpdateCollegeDto } from './dto/college.dto';
+
+/** Whether a query-string value names a CollegeStatus. */
+function isCollegeStatus(value: string): value is CollegeStatus {
+  return (Object.values(CollegeStatus) as string[]).includes(value);
+}
 
 @Injectable()
 export class AdminCollegesService {
@@ -54,13 +61,26 @@ export class AdminCollegesService {
     const limit = Math.min(100, Math.max(1, query.limit || 20));
     const skip = (page - 1) * limit;
 
-    const where: any = {};
+    if (
+      query.status &&
+      query.status !== 'DELETED' &&
+      !isCollegeStatus(query.status)
+    ) {
+      // Handed to Prisma as a CollegeStatus enum, where an unknown value is a
+      // validation error (500). Refuse it as the bad request it is.
+      throw new BadRequestException(
+        `Invalid status '${query.status}'. Expected one of: DELETED, ` +
+          Object.values(CollegeStatus).join(', '),
+      );
+    }
+
+    const where: Prisma.CollegeWhereInput = {};
 
     if (query.status === 'DELETED') {
       where.deletedAt = { not: null };
     } else {
       where.deletedAt = null;
-      if (query.status) {
+      if (query.status && isCollegeStatus(query.status)) {
         where.status = query.status;
       }
     }
@@ -159,18 +179,7 @@ export class AdminCollegesService {
     return college;
   }
 
-  async createCollege(dto: {
-    name: string;
-    shortName?: string;
-    slug?: string;
-    domains: string[];
-    city?: string;
-    state?: string;
-    country?: string;
-    logoKey?: string;
-    bannerKey?: string;
-    isPrivate?: boolean;
-  }) {
+  async createCollege(dto: CreateCollegeDto) {
     const slug = (dto.slug || dto.shortName || dto.name)
       .toLowerCase()
       .trim()
@@ -217,7 +226,7 @@ export class AdminCollegesService {
       );
     }
 
-    let created: any;
+    let created;
     try {
       created = await this.prisma.college.create({
         data: {
@@ -262,30 +271,14 @@ export class AdminCollegesService {
     return created;
   }
 
-  async updateCollege(
-    id: string,
-    dto: {
-      name?: string;
-      shortName?: string;
-      slug?: string;
-      domains?: string[];
-      city?: string;
-      state?: string;
-      country?: string;
-      logoKey?: string;
-      bannerKey?: string;
-      isPrivate?: boolean;
-      isActive?: boolean;
-      status?: any;
-    },
-  ) {
+  async updateCollege(id: string, dto: UpdateCollegeDto) {
     const existing = await this.prisma.college.findUnique({ where: { id } });
     if (!existing || existing.deletedAt) {
       throw new NotFoundException(`College ${id} not found`);
     }
 
     const { domains, ...otherDto } = dto;
-    const data: any = { ...otherDto };
+    const data: Prisma.CollegeUpdateInput = { ...otherDto };
     if (dto.name) data.name = dto.name.trim();
     if (dto.shortName !== undefined)
       data.shortName = dto.shortName?.trim() || null;
@@ -353,7 +346,7 @@ export class AdminCollegesService {
       }
     }
 
-    let updated: any;
+    let updated: Prisma.CollegeGetPayload<{ include: { domains: true } }>;
     try {
       updated = await this.prisma.college.update({
         where: { id },
@@ -397,7 +390,7 @@ export class AdminCollegesService {
     return updated;
   }
 
-  async changeStatus(id: string, status: any) {
+  async changeStatus(id: string, status: CollegeStatus) {
     const college = await this.prisma.college.findUnique({ where: { id } });
     if (!college) {
       throw new NotFoundException(`College ${id} not found`);
@@ -539,7 +532,7 @@ export class AdminCollegesService {
     const limit = Math.min(100, Math.max(1, query.limit || 20));
     const skip = (page - 1) * limit;
 
-    const where: any = {};
+    const where: Prisma.CollegeRequestWhereInput = {};
     if (query.status) where.status = query.status;
 
     const [total, requests] = await Promise.all([

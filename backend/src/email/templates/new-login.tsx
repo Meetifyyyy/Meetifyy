@@ -22,24 +22,30 @@ export const NewLoginEmail = ({
   os = 'macOS Sonoma',
   ip = '192.168.1.1',
 }: NewLoginEmailProps) => {
-  const supportLink = SITE_CONFIG.supportUrl || `${SITE_CONFIG.frontendUrl}/help-and-support`;
+  const supportLink =
+    SITE_CONFIG.supportUrl || `${SITE_CONFIG.frontendUrl}/help-and-support`;
 
   return (
     <BaseLayout previewText="New login to your Meetifyy account detected">
-      <Heading style={heading}>
-        New login detected
-      </Heading>
+      <Heading style={heading}>New login detected</Heading>
 
       <Text style={text}>Hi {name},</Text>
       <Text style={text}>
-        Your Meetifyy account was accessed from a new device. Review the session details below:
+        Your Meetifyy account was accessed from a new device. Review the session
+        details below:
       </Text>
 
       <Section style={detailsBox}>
         <div style={detailsHeader}>
           <Text style={detailsTitle}>Session Details</Text>
         </div>
-        <table role="presentation" border={0} cellPadding={0} cellSpacing={0} style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <table
+          role="presentation"
+          border={0}
+          cellPadding={0}
+          cellSpacing={0}
+          style={{ width: '100%', borderCollapse: 'collapse' }}
+        >
           <tbody>
             <tr style={rowBorder}>
               <td style={detailLabel}>Time</td>
@@ -51,7 +57,9 @@ export const NewLoginEmail = ({
             </tr>
             <tr style={rowBorder}>
               <td style={detailLabel}>Browser</td>
-              <td style={detailValue}>{browser} ({os})</td>
+              <td style={detailValue}>
+                {browser} ({os})
+              </td>
             </tr>
             <tr>
               <td style={detailLabelLast}>IP Address</td>
@@ -72,12 +80,11 @@ export const NewLoginEmail = ({
         </Text>
       </Section>
 
-      <Text style={text}>
-        If this was you, no further action is required.
-      </Text>
+      <Text style={text}>If this was you, no further action is required.</Text>
 
       <Text style={text}>
-        Thanks,<br />
+        Thanks,
+        <br />
         <strong>The Meetifyy Team</strong>
       </Text>
     </BaseLayout>

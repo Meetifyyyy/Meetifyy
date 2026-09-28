@@ -6,7 +6,7 @@ import { detach } from './detach.util';
  * tests worth writing are the ones that let it fail.
  */
 describe('detach', () => {
-  let errors: jest.SpyInstance;
+  let errors: jest.SpyInstance<void, [message: unknown, ...rest: unknown[]]>;
 
   beforeEach(() => {
     errors = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => {});

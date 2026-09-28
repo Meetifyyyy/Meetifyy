@@ -1,5 +1,16 @@
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import { expect } from '@jest/globals';
 import { CommunitiesService } from './communities.service';
+import { stub } from '../common/testing/stub';
+import type { PrismaService } from '../prisma/prisma.service';
+import type { DomainEventService } from '../events/domain-event.service';
+import type { RedisService } from '../redis/redis.service';
+import type { PresenceService } from '../presence/presence.service';
+import type { DefaultAssetsService } from '../uploads/default-assets.service';
+import type { BlocksService } from '../users/blocks.service';
+import type { NotificationsService } from '../notifications/notifications.service';
+import type { NotificationFactory } from '../notifications/notification.factory';
+import type { MediaCleanupService } from '../uploads/media-cleanup.service';
 
 describe('CommunitiesService — deletion lifecycle & data cleanup', () => {
   const COMMUNITY_ID = 'comm-123';
@@ -7,17 +18,17 @@ describe('CommunitiesService — deletion lifecycle & data cleanup', () => {
   const OTHER_USER_ID = 'other-789';
 
   let service: CommunitiesService;
-  let prisma: any;
-  let mediaCleanupService: any;
-  let domainEventService: any;
-  let redisService: any;
+  let prisma: ReturnType<typeof makePrisma>;
+  let mediaCleanupService: { queueMediaDeletion: jest.Mock };
+  let domainEventService: { emit: jest.Mock };
+  let redisService: RedisService;
 
-  beforeEach(() => {
-    prisma = {
+  const makePrisma = () => {
+    const prisma = {
       community: {
-        findUnique: jest.fn(async ({ where }: any) => {
+        findUnique: jest.fn(({ where }: { where: { id: string } }) => {
           if (where.id === COMMUNITY_ID) {
-            return {
+            return Promise.resolve({
               id: COMMUNITY_ID,
               name: 'Design Crew',
               ownerId: OWNER_ID,
@@ -25,51 +36,81 @@ describe('CommunitiesService — deletion lifecycle & data cleanup', () => {
               coverKey: 'community-covers/cover1.jpg',
               collegeId: 'college-1',
               deletedAt: null,
-            };
+            });
           }
-          return null;
+          return Promise.resolve(null);
         }),
-        update: jest.fn(async ({ data }: any) => data),
+        update: jest.fn(({ data }: { data: unknown }) => Promise.resolve(data)),
       },
       communityMember: {
-        findUnique: jest.fn(async ({ where }: any) => {
-          if (where.userId_communityId?.userId === OWNER_ID) {
-            return { role: 'OWNER' };
-          }
-          if (where.userId_communityId?.userId === OTHER_USER_ID) {
-            return { role: 'MEMBER' };
-          }
-          return null;
-        }),
-        deleteMany: jest.fn(async () => ({ count: 5 })),
+        findUnique: jest.fn(
+          ({
+            where,
+          }: {
+            where: { userId_communityId?: { userId: string } };
+          }) => {
+            if (where.userId_communityId?.userId === OWNER_ID) {
+              return Promise.resolve({ role: 'OWNER' });
+            }
+            if (where.userId_communityId?.userId === OTHER_USER_ID) {
+              return Promise.resolve({ role: 'MEMBER' });
+            }
+            return Promise.resolve(null);
+          },
+        ),
+        deleteMany: jest.fn<Promise<{ count: number }>, [unknown]>(() =>
+          Promise.resolve({ count: 5 }),
+        ),
       },
       post: {
-        findMany: jest.fn(async () => [{ id: 'p1' }, { id: 'p2' }]),
-        updateMany: jest.fn(async ({ data }: any) => data),
+        findMany: jest.fn(() => Promise.resolve([{ id: 'p1' }, { id: 'p2' }])),
+        updateMany: jest.fn(({ data }: { data: unknown }) =>
+          Promise.resolve(data),
+        ),
       },
       comment: {
-        findMany: jest.fn(async () => [{ id: 'c1' }]),
-        updateMany: jest.fn(async ({ data }: any) => data),
+        findMany: jest.fn(() => Promise.resolve([{ id: 'c1' }])),
+        updateMany: jest.fn(({ data }: { data: unknown }) =>
+          Promise.resolve(data),
+        ),
       },
-      postLike: { deleteMany: jest.fn(async () => ({ count: 10 })) },
-      postBookmark: { deleteMany: jest.fn(async () => ({ count: 2 })) },
-      postShare: { deleteMany: jest.fn(async () => ({ count: 1 })) },
-      postHashtag: { deleteMany: jest.fn(async () => ({ count: 3 })) },
-      mention: { deleteMany: jest.fn(async () => ({ count: 4 })) },
-      commentLike: { deleteMany: jest.fn(async () => ({ count: 2 })) },
-      pollVote: { deleteMany: jest.fn(async () => ({ count: 5 })) },
-      pollOption: { deleteMany: jest.fn(async () => ({ count: 2 })) },
-      notification: { deleteMany: jest.fn(async () => ({ count: 8 })) },
-      report: { updateMany: jest.fn(async () => ({ count: 1 })) },
-      communityJoinRequest: { deleteMany: jest.fn(async () => ({ count: 3 })) },
+      postLike: { deleteMany: jest.fn(() => Promise.resolve({ count: 10 })) },
+      postBookmark: {
+        deleteMany: jest.fn(() => Promise.resolve({ count: 2 })),
+      },
+      postShare: { deleteMany: jest.fn(() => Promise.resolve({ count: 1 })) },
+      postHashtag: { deleteMany: jest.fn(() => Promise.resolve({ count: 3 })) },
+      mention: { deleteMany: jest.fn(() => Promise.resolve({ count: 4 })) },
+      commentLike: { deleteMany: jest.fn(() => Promise.resolve({ count: 2 })) },
+      pollVote: { deleteMany: jest.fn(() => Promise.resolve({ count: 5 })) },
+      pollOption: { deleteMany: jest.fn(() => Promise.resolve({ count: 2 })) },
+      notification: {
+        deleteMany: jest.fn(() => Promise.resolve({ count: 8 })),
+      },
+      report: { updateMany: jest.fn(() => Promise.resolve({ count: 1 })) },
+      communityJoinRequest: {
+        deleteMany: jest.fn<Promise<{ count: number }>, [unknown]>(() =>
+          Promise.resolve({ count: 3 }),
+        ),
+      },
       media: {
-        findMany: jest.fn(async () => [{ objectKey: 'posts/p1_img.jpg' }]),
-        deleteMany: jest.fn(async () => ({ count: 1 })),
+        findMany: jest.fn(() =>
+          Promise.resolve([{ objectKey: 'posts/p1_img.jpg' }]),
+        ),
+        deleteMany: jest.fn<Promise<{ count: number }>, [unknown]>(() =>
+          Promise.resolve({ count: 1 }),
+        ),
       },
-      $transaction: jest.fn(async (fn: any) =>
-        typeof fn === 'function' ? fn(prisma) : fn,
+      $transaction: jest.fn(
+        (fn: ((tx: unknown) => unknown) | unknown[]): Promise<unknown> =>
+          Promise.resolve(typeof fn === 'function' ? fn(prisma) : fn),
       ),
     };
+    return prisma;
+  };
+
+  beforeEach(() => {
+    prisma = makePrisma();
 
     mediaCleanupService = {
       queueMediaDeletion: jest.fn(),
@@ -79,26 +120,27 @@ describe('CommunitiesService — deletion lifecycle & data cleanup', () => {
       emit: jest.fn(),
     };
 
-    redisService = {
-      getClient: () => ({
-        del: jest.fn(async () => 1),
-        sadd: jest.fn(async () => 1),
-        expire: jest.fn(async () => 1),
-        smembers: jest.fn(async () => []),
-        keys: jest.fn(async () => []),
-      }),
-    };
+    redisService = stub<RedisService>({
+      getClient: () =>
+        stub<NonNullable<ReturnType<RedisService['getClient']>>>({
+          del: jest.fn(() => Promise.resolve(1)),
+          sadd: jest.fn(() => Promise.resolve(1)),
+          expire: jest.fn(() => Promise.resolve(1)),
+          smembers: jest.fn(() => Promise.resolve([])),
+          keys: jest.fn(() => Promise.resolve([])),
+        }),
+    });
 
     service = new CommunitiesService(
-      prisma,
-      domainEventService,
+      stub<PrismaService>(prisma),
+      stub<DomainEventService>(domainEventService),
       redisService,
-      {} as any,
-      {} as any,
-      {} as any,
-      {} as any,
-      {} as any,
-      mediaCleanupService,
+      stub<PresenceService>(),
+      stub<DefaultAssetsService>(),
+      stub<BlocksService>(),
+      stub<NotificationsService>(),
+      stub<NotificationFactory>(),
+      stub<MediaCleanupService>(mediaCleanupService),
     );
   });
 

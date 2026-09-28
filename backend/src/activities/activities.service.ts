@@ -38,16 +38,108 @@ export interface PresentedMember {
   profileAvailable: false;
 }
 
+/**
+ * A user row that selected both lifecycle columns. `presentMember` decides the
+ * tombstone from them, so they must be present in the row — `null` is fine, a
+ * missing key is not: a select that omitted them made every deleted attendee
+ * look live (the detail page's first page did, until A15).
+ */
+type SelectedLifecycle = UserIdentityLike &
+  Required<Pick<UserIdentityLike, 'accountStatus' | 'deletedAt'>>;
+
 /** A membership row carrying its joined user, as every card select fetches it. */
 export interface MemberRow {
-  user?: UserIdentityLike | null;
+  user?: SelectedLifecycle | null;
   [key: string]: unknown;
 }
 import { NOTIFICATIONS_QUEUE } from '../notifications/notifications.processor';
 import { RedisService } from '../redis/redis.service';
 import { MediaCleanupService } from '../uploads/media-cleanup.service';
-import { ActivityVisibility } from '@prisma/client';
+import {
+  ActivityVisibility,
+  CrewActivityMember,
+  NotificationType,
+  Prisma,
+} from '@prisma/client';
 import { detach } from '../common/utils/detach.util';
+import { errorMessage } from '../common/utils/error.util';
+import type { CreateActivityDto } from './dto/activity.dto';
+
+/**
+ * Columns for the public feed page. The card columns plus `deletedAt`; the
+ * member sample carries what `presentMember` needs.
+ */
+const FEED_SELECT = {
+  id: true,
+  creatorId: true,
+  title: true,
+  description: true,
+  location: true,
+  maxMembers: true,
+  createdAt: true,
+  coverImage: true,
+  coverColor: true,
+  coverMediaId: true,
+  deletedAt: true,
+  endDate: true,
+  latitude: true,
+  longitude: true,
+  startDate: true,
+  status: true,
+  updatedAt: true,
+  hostCollege: true,
+  collegeId: true,
+  // Same reason as CARD_SELECT: the College/Campus surfaces label each
+  // card with the college it belongs to.
+  college: { select: { id: true, name: true } },
+  participationType: true,
+  shareToCampus: true,
+  visibility: true,
+  _count: { select: { members: true } },
+  members: {
+    where: { status: 'MEMBER' },
+    take: 5,
+    orderBy: { joinedAt: 'asc' },
+    select: {
+      userId: true,
+      status: true,
+      user: {
+        select: {
+          id: true,
+          username: true,
+          displayName: true,
+          avatar: true,
+          // Required by `presentMember`. A select that omits these
+          // renders a deleted member's real name and photograph in the
+          // card's avatar stack and the attendee list.
+          accountStatus: true,
+          deletedAt: true,
+        },
+      },
+    },
+  },
+} satisfies Prisma.CrewActivitySelect;
+
+type FeedActivityRow = Prisma.CrewActivityGetPayload<{
+  select: typeof FEED_SELECT;
+}>;
+
+/** The shared, viewer-independent page cached before membership is applied. */
+interface FeedBasePage {
+  activities: FeedActivityRow[];
+  nextCursor: string | undefined;
+}
+
+/** A feed page as served (and cached): each card with the viewer's status. */
+interface FeedResponse {
+  activities: Array<
+    FeedActivityRow & {
+      isJoined: boolean;
+      myStatus: CrewActivityMember['status'] | null;
+    }
+  >;
+  nextCursor: string | undefined;
+}
 
 @Injectable()
 export class ActivitiesService implements OnModuleInit {
@@ -282,7 +374,7 @@ export class ActivitiesService implements OnModuleInit {
   }
 
   private async resolveCursorDate(cursor?: string): Promise<Date | undefined> {
-    if (!cursor) return undefined;
+    if (typeof cursor !== 'string' || !cursor) return undefined;
 
     // 1. Dual tokenized cursor: ISO_DATE|ID
     if (cursor.includes('|')) {
@@ -412,7 +504,7 @@ export class ActivitiesService implements OnModuleInit {
           this.logger.log(
             `[STAGE_TIMINGS] GET /api/activities (USER_HIT) - Total: ${(performance.now() - startTime).toFixed(2)}ms | Redis: ${tCache.toFixed(2)}ms`,
           );
-          return JSON.parse(userCached);
+          return JSON.parse(userCached) as FeedResponse;
         }
       } catch {
         tCache = performance.now() - redisStart;
@@ -468,12 +560,11 @@ export class ActivitiesService implements OnModuleInit {
       `activities:feed:base:${scopeTag}:${audienceTag}:${limit}:${d ? d.toISOString() : 'none'}`;
 
     // ── Tier 2: audience-scoped shared feed cache ────────────────────────────
-    let baseFeed: { activities: any[]; nextCursor: string | undefined } | null =
-      null;
+    let baseFeed: FeedBasePage | null = null;
     if (allowBaseCache && this.redis) {
       try {
         const cachedBase = await this.redis.get(baseCacheKeyFor(cursorDate));
-        if (cachedBase) baseFeed = JSON.parse(cachedBase);
+        if (cachedBase) baseFeed = JSON.parse(cachedBase) as FeedBasePage;
       } catch {
         // A cache miss and an unreachable Redis are the same thing here: fall through to the database.
       }
@@ -481,7 +572,7 @@ export class ActivitiesService implements OnModuleInit {
 
     // ── Main DB fetch (skipped on base cache HIT) ─────────────────────────────
     const dbStart = performance.now();
-    let activities: any[];
+    let activities: FeedActivityRow[];
     let nextCursor: string | undefined;
 
     if (baseFeed) {
@@ -494,7 +585,7 @@ export class ActivitiesService implements OnModuleInit {
       });
 
       const now = new Date();
-      const scopeFilter: any = {
+      const scopeFilter: Prisma.CrewActivityWhereInput = {
         deletedAt: null,
         status: 'OPEN',
         startDate: { gt: now },
@@ -527,63 +618,16 @@ export class ActivitiesService implements OnModuleInit {
         ? this.activityAuthorizationService.sharedAudienceWhere(viewer)
         : this.activityAuthorizationService.discoveryWhere(viewer);
 
-      const whereClause: any = { AND: [scopeFilter, policyWhere] };
+      const whereClause: Prisma.CrewActivityWhereInput = {
+        AND: [scopeFilter, policyWhere],
+      };
 
       // Single Prisma query — Prisma resolves `members { user }` with a
       // batched sub-query (not per-row N+1) when `take` is set.
       const fetchedActivities = await this.prisma.crewActivity.findMany({
         where: whereClause,
         take: limit + 1,
-        select: {
-          id: true,
-          creatorId: true,
-          title: true,
-          description: true,
-          location: true,
-          maxMembers: true,
-          createdAt: true,
-          coverImage: true,
-          coverColor: true,
-          coverMediaId: true,
-          deletedAt: true,
-          endDate: true,
-          latitude: true,
-          longitude: true,
-          startDate: true,
-          status: true,
-          updatedAt: true,
-          hostCollege: true,
-          collegeId: true,
-          // Same reason as CARD_SELECT: the College/Campus surfaces label each
-          // card with the college it belongs to.
-          college: { select: { id: true, name: true } },
-          participationType: true,
-          shareToCampus: true,
-          visibility: true,
-          _count: { select: { members: true } },
-          members: {
-            where: { status: 'MEMBER' },
-            take: 5,
-            orderBy: { joinedAt: 'asc' },
-            select: {
-              userId: true,
-              status: true,
-              user: {
-                select: {
-                  id: true,
-                  username: true,
-                  displayName: true,
-                  avatar: true,
-                  // Required by `presentMember`. A select that omits these
-                  // renders a deleted member's real name and photograph in the
-                  // card's avatar stack and the attendee list.
-                  accountStatus: true,
-                  deletedAt: true,
-                },
-              },
-            },
-          },
-        },
+        select: FEED_SELECT,
         orderBy: { createdAt: 'desc' },
       });
 
@@ -609,7 +653,7 @@ export class ActivitiesService implements OnModuleInit {
     const tMainDb = performance.now() - dbStart;
 
     if (activities.length === 0) {
-      const emptyRes = { activities: [], nextCursor: undefined };
+      const emptyRes: FeedResponse = { activities: [], nextCursor: undefined };
       if (this.redis) {
         this.redis
           .setex(userCacheKey, 60, JSON.stringify(emptyRes))
@@ -640,18 +684,13 @@ export class ActivitiesService implements OnModuleInit {
       joinedMemberships.map((m) => [m.activityId, m.status]),
     );
 
-    const response = {
-      activities: activities.map((a) => {
-        const myStatus = membershipMap.get(a.id);
-        return {
-          // Applied BEFORE the response is cached below: a 60-second cache
-          // entry holding a deleted member's real avatar would keep serving it
-          // to every viewer for the rest of that window.
-          ...ActivitiesService.presentCardRow(a),
-          isJoined: myStatus === 'MEMBER',
-          myStatus: myStatus || null,
-        };
-      }),
+    const response: FeedResponse = {
+      // Tombstones are applied BEFORE the response is cached below: a
+      // 60-second cache entry holding a deleted member's real avatar would keep
+      // serving it to every viewer for the rest of that window.
+      activities: activities.map((a) =>
+        ActivitiesService.withJoinState(a, membershipMap),
+      ),
       nextCursor,
     };
 
@@ -731,7 +770,7 @@ export class ActivitiesService implements OnModuleInit {
    * Returns a fresh object rather than mutating, and whitelists the fields it
    * emits, so widening a select later cannot quietly reintroduce a leak.
    */
-  private static presentMember<T extends UserIdentityLike>(
+  private static presentMember<T extends SelectedLifecycle>(
     user: T | null | undefined,
   ): T | PresentedMember | null | undefined {
     if (!user) return user;
@@ -771,19 +810,37 @@ export class ActivitiesService implements OnModuleInit {
     };
   }
 
+  /** A card row as served: tombstones applied, plus the viewer's join state. */
+  private static withJoinState<T extends { id: string; members?: MemberRow[] }>(
+    row: T,
+    membershipMap: Map<string, CrewActivityMember['status']>,
+  ) {
+    const myStatus = membershipMap.get(row.id);
+    return {
+      ...ActivitiesService.presentCardRow(row),
+      isJoined: myStatus === 'MEMBER',
+      myStatus: myStatus || null,
+    };
+  }
+
   /** Convenience for the many `members.map(m => m.user)` shaping sites. */
   private static presentMembers(
-    members: MemberRow[] | null | undefined,
-  ): (UserIdentityLike | PresentedMember)[] {
+    members: (MemberRow | SelectedLifecycle)[] | null | undefined,
+  ): (SelectedLifecycle | PresentedMember)[] {
     return (members ?? [])
       .map((m) =>
         // Call sites pass either membership rows or bare user objects, so both
         // shapes are accepted rather than forcing each one to unwrap first.
         ActivitiesService.presentMember(
-          (m?.user ?? m) as UserIdentityLike | null | undefined,
+          ActivitiesService.isMemberRow(m) ? m.user : m,
         ),
       )
-      .filter((u): u is UserIdentityLike | PresentedMember => Boolean(u));
+      .filter((u): u is SelectedLifecycle | PresentedMember => Boolean(u));
+  }
+
+  /** A bare user carries its own `id`; a membership row carries `user` instead. */
+  private static isMemberRow(m: MemberRow | SelectedLifecycle): m is MemberRow {
+    return 'user' in m;
   }
 
   /**
@@ -836,7 +893,7 @@ export class ActivitiesService implements OnModuleInit {
     if (this.redis) {
       try {
         const cached = await this.redis.get(cacheKey);
-        if (cached) return JSON.parse(cached);
+        if (cached) return JSON.parse(cached) as string[];
       } catch {
         // A cache miss and an unreachable Redis are the same thing here: recompute the ranking.
       }
@@ -1105,15 +1162,8 @@ export class ActivitiesService implements OnModuleInit {
     const byId = new Map(rows.map((r) => [r.id, r]));
     return ids
       .map((id) => byId.get(id))
-      .filter(Boolean)
-      .map((a: any) => {
-        const myStatus = membershipMap.get(a.id);
-        return {
-          ...ActivitiesService.presentCardRow(a),
-          isJoined: myStatus === 'MEMBER',
-          myStatus: myStatus || null,
-        };
-      });
+      .filter((a) => a !== undefined)
+      .map((a) => ActivitiesService.withJoinState(a, membershipMap));
   }
 
   /**
@@ -1124,9 +1174,10 @@ export class ActivitiesService implements OnModuleInit {
    * in it.
    */
   async getForYouFeed(userId: string, limit = 20, cursor?: string) {
-    const parsedOffset = cursor?.startsWith('off:')
-      ? parseInt(cursor.slice(4), 10)
-      : 0;
+    const parsedOffset =
+      typeof cursor === 'string' && cursor.startsWith('off:')
+        ? parseInt(cursor.slice(4), 10)
+        : 0;
     const offset =
       Number.isFinite(parsedOffset) && parsedOffset > 0 ? parsedOffset : 0;
 
@@ -1163,17 +1214,26 @@ export class ActivitiesService implements OnModuleInit {
    * accounts for that, since an activity removed as a duplicate is still
    * reachable from the section's own full list.
    */
-  async getCrewDiscover(userId: string) {
+  async getCrewDiscover(userId: string): Promise<CrewDiscover> {
     const cacheKey = `activities:discover:${userId}`;
     if (this.redis) {
       try {
         const cached = await this.redis.get(cacheKey);
-        if (cached) return JSON.parse(cached);
+        if (cached) return JSON.parse(cached) as CrewDiscover;
       } catch {
         // A cache miss and an unreachable Redis are the same thing here: recompute the list.
       }
     }
 
+    const result = await this.buildCrewDiscover(userId);
+    if (this.redis) {
+      this.redis.setex(cacheKey, 60, JSON.stringify(result)).catch(() => {});
+      this.registerFeedCacheKey(cacheKey);
+    }
+    return result;
+  }
+
+  private async buildCrewDiscover(userId: string) {
     const PREVIEW = ActivitiesService.PREVIEW_SIZE;
     const [user, excludedUserIds, rankedIds] = await Promise.all([
       this.prisma.user.findUnique({
@@ -1268,24 +1328,18 @@ export class ActivitiesService implements OnModuleInit {
     const membershipMap = new Map(
       memberships.map((m) => [m.activityId, m.status]),
     );
-    const decorate = (a: any) => {
-      const myStatus = membershipMap.get(a.id);
-      return {
-        ...ActivitiesService.presentCardRow(a),
-        isJoined: myStatus === 'MEMBER',
-        myStatus: myStatus || null,
-      };
-    };
+    const decorate = <T extends { id: string; members?: MemberRow[] }>(a: T) =>
+      ActivitiesService.withJoinState(a, membershipMap);
 
     // Sections are filled in render order and each one skips what is already on
     // screen above it.
     const shown = new Set<string>();
-    const section = (rows: any[], alreadyDecorated = false) => {
+    const section = <T extends { id: string }>(rows: T[]) => {
       const fresh = rows.filter((a) => !shown.has(a.id));
       const items = fresh.slice(0, PREVIEW);
       items.forEach((a) => shown.add(a.id));
       return {
-        items: items.map((a) => (alreadyDecorated ? a : decorate(a))),
+        items,
         hasMore: rows.length > PREVIEW,
       };
     };
@@ -1297,17 +1351,12 @@ export class ActivitiesService implements OnModuleInit {
       // can drop out during hydration (started, cancelled, restricted) while the
       // ranked list still holds plenty more.
       forYou: {
-        ...section(forYouRows, true),
+        ...section(forYouRows),
         hasMore: rankedIds.length > PREVIEW,
       },
-      college: section(collegeRows),
-      oneOnOne: section(oneOnOneRows),
+      college: section(collegeRows.map(decorate)),
+      oneOnOne: section(oneOnOneRows.map(decorate)),
     };
-
-    if (this.redis) {
-      this.redis.setex(cacheKey, 60, JSON.stringify(result)).catch(() => {});
-      this.registerFeedCacheKey(cacheKey);
-    }
     return result;
   }
 
@@ -1345,6 +1394,9 @@ export class ActivitiesService implements OnModuleInit {
                   isCampusRep: true,
                   collegeId: true,
                   college: { select: { id: true, name: true } },
+                  // Required by `presentMember` below.
+                  accountStatus: true,
+                  deletedAt: true,
                 },
               },
             },
@@ -1438,7 +1490,7 @@ export class ActivitiesService implements OnModuleInit {
     // Authorization target carries the caller's own membership row explicitly,
     // independent of how many attendees the payload happens to embed.
     const authTarget = {
-      ...(activity as any),
+      ...activity,
       members: myMembership ? [myMembership] : [],
     };
 
@@ -1448,7 +1500,7 @@ export class ActivitiesService implements OnModuleInit {
     const joinDecision = user
       ? this.activityAuthorizationService.canJoin(user, {
           ...authTarget,
-          _count: { members: (activity as any)._count?.members ?? 0 },
+          _count: { members: activity._count?.members ?? 0 },
         })
       : {
           allowed: false,
@@ -1463,31 +1515,27 @@ export class ActivitiesService implements OnModuleInit {
     // stays accurate even though this viewer sees fewer rows.
     // Captured before filtering: "is there another page?" is a property of the
     // underlying query, not of how many rows survive this viewer's block list.
-    const loadedMemberPageSize = (activity as any).members?.length ?? 0;
+    const loadedMemberPageSize = activity.members?.length ?? 0;
 
-    if (
-      userId &&
-      activity.creatorId !== userId &&
-      (activity as any).members?.length
-    ) {
+    if (userId && activity.creatorId !== userId && activity.members?.length) {
       const visibleIds = new Set(
         await this.blocksService.filterBlockedUsers(
           userId,
-          (activity as any).members.map((m: any) => m.userId).filter(Boolean),
+          activity.members.map((m) => m.userId).filter(Boolean),
         ),
       );
-      (activity as any).members = (activity as any).members.filter((m: any) =>
+      activity.members = activity.members.filter((m) =>
         visibleIds.has(m.userId),
       );
     }
 
-    const { invitations, _count, ...activityFields } = activity as any;
+    const { invitations: _invitations, _count, ...activityFields } = activity;
     return {
       ...activityFields,
       // Same substitution as `getAttendees`, applied to the first page the
       // detail response embeds — otherwise a deleted attendee renders under
       // their real identity until the client pages past them.
-      members: (activityFields.members ?? []).map((m: any) => ({
+      members: (activityFields.members ?? []).map((m) => ({
         ...m,
         user: ActivitiesService.presentMember(m.user),
       })),
@@ -1571,12 +1619,12 @@ export class ActivitiesService implements OnModuleInit {
     if (!activity || activity.deletedAt)
       throw new NotFoundException('Activity not found');
     this.activityAuthorizationService.assertCanView(user, {
-      ...(activity as any),
+      ...activity,
       members: myMembership ? [myMembership] : [],
     });
 
     // Cursor is `joinedAt|userId` — joinedAt alone is not unique.
-    let cursorFilter: any = {};
+    let cursorFilter: Prisma.CrewActivityMemberWhereInput = {};
     if (cursor) {
       const [joinedAtRaw, cursorUserId] = cursor.split('|');
       const joinedAt = new Date(joinedAtRaw);
@@ -1594,12 +1642,12 @@ export class ActivitiesService implements OnModuleInit {
     // host, who must keep a complete guest list to run the event. Filtering in
     // the query (not after) keeps the keyset page size honest.
     const isHost = activity.creatorId === userId;
-    const baseAttendeeWhere = {
+    const baseAttendeeWhere: Prisma.CrewActivityMemberWhereInput = {
       activityId: cleanId,
       status: 'MEMBER' as const,
       ...cursorFilter,
     };
-    const attendeeWhere: any = isHost
+    const attendeeWhere = isHost
       ? baseAttendeeWhere
       : await this.blocksService.injectBlockFilter(
           userId,
@@ -1666,7 +1714,7 @@ export class ActivitiesService implements OnModuleInit {
       // host's record of who came should not silently change — but is shown as
       // "Deleted User" with the default avatar rather than under their real
       // name and photograph.
-      attendees: page.map((row: any) => ({
+      attendees: page.map((row) => ({
         ...row,
         user: ActivitiesService.presentMember(row.user),
       })),
@@ -1678,7 +1726,7 @@ export class ActivitiesService implements OnModuleInit {
     };
   }
 
-  async createActivity(data: any, creatorId: string) {
+  async createActivity(data: CreateActivityDto, creatorId: string) {
     if (
       !data.title ||
       typeof data.title !== 'string' ||
@@ -1728,13 +1776,13 @@ export class ActivitiesService implements OnModuleInit {
       data.visibility === 'PUBLIC'
     ) {
       visibility = data.visibility;
-    } else if (data.whoCanJoin === 'College' || data.shareToCampus) {
+    } else if (data.shareToCampus) {
       visibility = 'COLLEGE_ONLY';
-    } else if (data.whoCanJoin === 'Private' || data.whoCanJoin === 'No one') {
-      // 'No one' is the retired label for the same mode; still accepted so an
-      // older client build cannot silently create a PUBLIC activity instead.
-      visibility = 'PRIVATE';
     }
+    // The retired `whoCanJoin` field ('College' / 'Private' / 'No one') was read
+    // here too. It is not on CreateActivityDto, and the global ValidationPipe
+    // forbids unlisted fields, so a body carrying it is refused with a 400
+    // before it reaches this method; those branches could never run.
 
     const user = await this.prisma.user.findUnique({
       where: { id: creatorId },
@@ -1750,7 +1798,7 @@ export class ActivitiesService implements OnModuleInit {
       );
     }
 
-    const createData: any = {
+    const createData: Prisma.CrewActivityUncheckedCreateInput = {
       creatorId,
       title: data.title,
       description: data.description,
@@ -1767,7 +1815,10 @@ export class ActivitiesService implements OnModuleInit {
       startDate: data.startDate ? new Date(data.startDate) : null,
       endDate: data.endDate ? new Date(data.endDate) : null,
       location: data.location,
-      maxMembers: data.maxMembers ? parseInt(data.maxMembers, 10) : null,
+      // parseInt, not the number itself: it truncates a fractional count.
+      maxMembers: data.maxMembers
+        ? parseInt(String(data.maxMembers), 10)
+        : null,
       visibility,
       // `shareToCampus` is a presentation flag derived from visibility, never an
       // independent restriction: a PUBLIC ("Anyone") activity must stay
@@ -1779,7 +1830,7 @@ export class ActivitiesService implements OnModuleInit {
       },
     };
 
-    let createdActivity: any;
+    let createdActivity;
     try {
       createdActivity = await this.prisma.crewActivity.create({
         data: createData,
@@ -1859,12 +1910,12 @@ export class ActivitiesService implements OnModuleInit {
     visibility: string,
   ) {
     const allowed = ['PUBLIC', 'COLLEGE_ONLY', 'PRIVATE'] as const;
-    if (!allowed.includes(visibility as any)) {
+    const next = allowed.find((v) => v === visibility);
+    if (!next) {
       throw new BadRequestException(
         'visibility must be one of PUBLIC, COLLEGE_ONLY, PRIVATE',
       );
     }
-    const next = visibility as 'PUBLIC' | 'COLLEGE_ONLY' | 'PRIVATE';
 
     const [activity, host] = await Promise.all([
       this.prisma.crewActivity.findUnique({
@@ -1887,10 +1938,7 @@ export class ActivitiesService implements OnModuleInit {
       throw new NotFoundException('Activity not found');
     }
     // 404 rather than 403: a non-host must not learn the id exists.
-    this.activityAuthorizationService.assertCanManage(
-      { id: hostId },
-      activity as any,
-    );
+    this.activityAuthorizationService.assertCanManage({ id: hostId }, activity);
 
     if (next === 'COLLEGE_ONLY' && !activity.collegeId && !host?.collegeId) {
       throw new BadRequestException(
@@ -1931,7 +1979,7 @@ export class ActivitiesService implements OnModuleInit {
     return { success: true, ...updated };
   }
 
-  async joinActivity(activityId: string, userId: string): Promise<any> {
+  async joinActivity(activityId: string, userId: string) {
     // ── Single targeted read: only the fields we need from the activity + one membership row ──
     // No more `include: { members: true }` (which fetched ALL member rows).
     const [activityRow, user, existingMember] = await Promise.all([
@@ -2080,9 +2128,9 @@ export class ActivitiesService implements OnModuleInit {
     ) {
       setImmediate(() => {
         this.notifyHostOfJoin(activityId, userId, activityRow.creatorId).catch(
-          (err) => {
+          (err: unknown) => {
             this.logger.warn(
-              `Failed to notify host of activity join: ${err?.message}`,
+              `Failed to notify host of activity join: ${errorMessage(err)}`,
             );
           },
         );
@@ -2260,7 +2308,7 @@ export class ActivitiesService implements OnModuleInit {
     if (recipientIds.length === 0) return;
     await this.notificationsService
       .updateNotificationLifecycleStatus({
-        type: 'ACTIVITY_INVITE' as any,
+        type: NotificationType.ACTIVITY_INVITE,
         entityId: activityId,
         recipientIds,
         status,
@@ -2574,7 +2622,7 @@ export class ActivitiesService implements OnModuleInit {
 
     this.activityAuthorizationService.assertCanManage(
       { id: inviterId },
-      activity as any,
+      activity,
     );
 
     if (activity.status !== 'OPEN') {
@@ -2637,7 +2685,13 @@ export class ActivitiesService implements OnModuleInit {
       ),
     );
 
-    const results: any[] = [];
+    const results: Array<{
+      inviteeId: string;
+      status:
+        'MEMBER' | 'ACCEPTED' | 'PENDING' | 'COOLDOWN' | 'BLOCKED' | 'INVITED';
+      message?: string;
+      invitationId?: string;
+    }> = [];
     const inviteesToProcess: string[] = [];
     const fourHoursMs = 4 * 60 * 60 * 1000;
 
@@ -3101,10 +3155,7 @@ export class ActivitiesService implements OnModuleInit {
     if (!activity || activity.deletedAt) {
       throw new NotFoundException('Activity not found');
     }
-    this.activityAuthorizationService.assertCanManage(
-      { id: hostId },
-      activity as any,
-    );
+    this.activityAuthorizationService.assertCanManage({ id: hostId }, activity);
 
     const result = await this.prisma.activityInvitation.updateMany({
       where: { activityId, inviteeId, revokedAt: null },
@@ -3150,10 +3201,7 @@ export class ActivitiesService implements OnModuleInit {
       throw new NotFoundException('Activity not found');
     }
 
-    this.activityAuthorizationService.assertCanManage(
-      { id: hostId },
-      activity as any,
-    );
+    this.activityAuthorizationService.assertCanManage({ id: hostId }, activity);
 
     const memberSet = new Set(activity.members.map((m) => m.userId));
     const fourHoursMs = 4 * 60 * 60 * 1000;
@@ -3197,3 +3245,6 @@ export class ActivitiesService implements OnModuleInit {
     return statuses;
   }
 }
+
+/** The Crew "All" tab payload, as built and as cached. */
+type CrewDiscover = Awaited<ReturnType<ActivitiesService['buildCrewDiscover']>>;

@@ -8,15 +8,34 @@ import { Observable } from 'rxjs';
 import { tap } from 'rxjs/operators';
 import { PrismaService } from '../../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
+import type { Request } from 'express';
 import { clientIp } from '../../common/rate-limit/client-ip.util';
+import {
+  requestBody,
+  type AdminActor,
+} from '../../common/types/authenticated-request';
+import { isRecord } from '../../common/utils/type-guards.util';
+
+/** Present only once AdminJwtGuard has run; public admin routes have none. */
+type AuditedRequest = Request & { admin?: AdminActor };
+
+/** An id worth writing to the log: a string or a number, nothing else. */
+function idOf(value: unknown): string | null {
+  if (typeof value === 'string') return value || null;
+  if (typeof value === 'number') return String(value);
+  return null;
+}
 
 @Injectable()
 export class AuditInterceptor implements NestInterceptor {
   constructor(private readonly prisma: PrismaService) {}
 
-  intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
-    const req = context.switchToHttp().getRequest();
-    const method = req.method?.toUpperCase();
+  intercept(
+    context: ExecutionContext,
+    next: CallHandler<unknown>,
+  ): Observable<unknown> {
+    const req = context.switchToHttp().getRequest<AuditedRequest>();
+    const method = (req.method || '').toUpperCase();
 
     // Only log mutating operations (POST, PUT, PATCH, DELETE) for authenticated admins
     if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
@@ -38,12 +57,17 @@ export class AuditInterceptor implements NestInterceptor {
         const admin = req.admin;
         if (!admin || !admin.id) return;
 
-        const params = req.params || {};
-        const body = req.body || {};
+        // A wildcard segment is an array in Express 5; the ids here never are.
+        const param = (name: string): string | undefined => {
+          const value: unknown = req.params?.[name];
+          return typeof value === 'string' ? value : undefined;
+        };
+        // Only an object body is recorded; a text body has no fields to keep.
+        const body = requestBody(req);
 
         // Infer targetType & targetId
         let targetType = 'SYSTEM';
-        let targetId = params.id || params.key || null;
+        let targetId: string | null = param('id') || param('key') || null;
 
         if (url.includes('/admin/colleges')) targetType = 'COLLEGE';
         else if (url.includes('/admin/users')) targetType = 'USER';
@@ -52,9 +76,9 @@ export class AuditInterceptor implements NestInterceptor {
         else if (url.includes('/admin/content')) targetType = 'CONTENT';
         else if (url.includes('/admin/verification'))
           targetType = 'VERIFICATION';
-        // Checked before the generic '/admin/users' branch would ever see it,
-        // and given its own type so a restore or a forced purge is
-        // distinguishable in the audit log from an ordinary user edit.
+        // Its own prefix (`/admin/account-deletion`, not under `/admin/users`),
+        // and its own type so a restore or a forced purge is distinguishable in
+        // the audit log from an ordinary user edit.
         else if (url.includes('/admin/account-deletion'))
           targetType = 'ACCOUNT_DELETION';
         // Legal documents get their own type rather than falling into SYSTEM:
@@ -62,20 +86,17 @@ export class AuditInterceptor implements NestInterceptor {
         // kind of event, and a compliance review reads this column first.
         else if (url.includes('/admin/legal')) targetType = 'LEGAL_DOCUMENT';
 
-        if (
-          !targetId &&
-          responseData &&
-          (responseData.id || responseData.key)
-        ) {
-          targetId = responseData.id || responseData.key;
+        if (!targetId && isRecord(responseData)) {
+          targetId = idOf(responseData.id) ?? idOf(responseData.key);
         }
 
         // `/admin/legal/documents/TERMS_OF_SERVICE/publish` — the route param
         // is named `type`, so the generic `params.id` lookup above misses it,
         // and the response id is a uuid nobody can read. The document type is
         // what makes the entry legible.
-        if (targetType === 'LEGAL_DOCUMENT' && params.type) {
-          targetId = String(params.type);
+        const documentType = param('type');
+        if (targetType === 'LEGAL_DOCUMENT' && documentType) {
+          targetId = documentType;
         }
 
         // Infer Action Name
@@ -90,7 +111,8 @@ export class AuditInterceptor implements NestInterceptor {
         // otherwise flatten an identity decision into VERIFICATION_STATUS_CHANGE
         // and lose which way it went.
         else if (targetType === 'VERIFICATION' && url.includes('/status')) {
-          const decided = String(body?.status || '').toUpperCase();
+          const decided =
+            typeof body.status === 'string' ? body.status.toUpperCase() : '';
           action =
             decided === 'VERIFIED'
               ? 'VERIFICATION_APPROVE'
@@ -127,7 +149,7 @@ export class AuditInterceptor implements NestInterceptor {
         }
 
         // Sanitize body (strip passwords or tokens if any)
-        const sanitizedBody = { ...body };
+        const sanitizedBody: Record<string, unknown> = { ...body };
         delete sanitizedBody.password;
         delete sanitizedBody.otp;
         delete sanitizedBody.totpCode;
@@ -150,13 +172,18 @@ export class AuditInterceptor implements NestInterceptor {
               adminId: admin.id,
               action,
               targetType,
-              targetId: targetId ? String(targetId) : null,
+              targetId,
               oldValue: Prisma.JsonNull,
-              newValue: sanitizedBody,
+              // Parsed from a JSON request body, so every value is JSON.
+              newValue: sanitizedBody as Prisma.InputJsonObject,
               ip: clientIp(req) || req.ip || '0.0.0.0',
               endpoint: url,
               httpMethod: method,
-              requestId: (req.headers['x-request-id'] as string) || null,
+              // A repeated header arrives as an array, which the column refuses.
+              requestId:
+                typeof req.headers['x-request-id'] === 'string'
+                  ? req.headers['x-request-id'] || null
+                  : null,
             },
           })
           .catch(() => {});

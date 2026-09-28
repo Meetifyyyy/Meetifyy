@@ -14,7 +14,7 @@ import {
   UnauthorizedException,
   NotFoundException,
 } from '@nestjs/common';
-import { Request } from 'express';
+import type { Request, Response } from 'express';
 import { timingSafeEqual } from 'crypto';
 import { UAParser } from 'ua-parser-js';
 import { AuthService } from './auth.service';
@@ -37,6 +37,7 @@ import { UserSessionService } from './session/user-session.service';
 import {
   issueUserSessionCookies,
   clearUserSessionCookies,
+  readCookie,
   USER_CSRF_COOKIE,
   USER_REFRESH_COOKIE,
   USER_SESSION_ID_COOKIE,
@@ -44,6 +45,7 @@ import {
 import { config } from '../config';
 import { UserSessionRevokedReason } from '@prisma/client';
 import type { AuthenticatedUser } from '../common/types/authenticated-request';
+import { isRecord } from '../common/utils/type-guards.util';
 import {
   CheckUsernameDto,
   CheckEmailDto,
@@ -80,8 +82,7 @@ export class AuthController {
    * "none", which made every session look like somebody else's.
    */
   private currentSessionId(req: Request): string | null {
-    const id = req.cookies?.[USER_SESSION_ID_COOKIE];
-    return typeof id === 'string' && id ? id : null;
+    return readCookie(req, USER_SESSION_ID_COOKIE) || null;
   }
 
   /**
@@ -150,10 +151,11 @@ export class AuthController {
   private accessCookieMaxAge(token: string): number {
     try {
       const [, payload] = token.split('.');
-      const claims = JSON.parse(
+      const claims: unknown = JSON.parse(
         Buffer.from(payload, 'base64url').toString('utf8'),
       );
-      const remaining = Number(claims?.exp) * 1000 - Date.now();
+      const exp = isRecord(claims) ? claims.exp : undefined;
+      const remaining = Number(exp) * 1000 - Date.now();
       if (Number.isFinite(remaining) && remaining > 0) return remaining;
     } catch {
       // Unreadable payload on an already-verified token should not be
@@ -189,7 +191,7 @@ export class AuthController {
     return {
       message: 'Profile synchronized successfully',
       user: syncedUser,
-      meta: syncedUser.meta || {},
+      meta: syncedUser.meta,
     };
   }
 
@@ -222,12 +224,12 @@ export class AuthController {
     @Req() req: Request,
   ) {
     const syncedUser = await this.authService.syncProfile(user);
-    const csrf = req.cookies?.[USER_CSRF_COOKIE];
+    const csrf = readCookie(req, USER_CSRF_COOKIE);
     return {
       user: syncedUser,
-      meta: syncedUser.meta || {},
+      meta: syncedUser.meta,
       sessionId: this.currentSessionId(req),
-      csrfToken: typeof csrf === 'string' ? csrf : null,
+      csrfToken: csrf ?? null,
     };
   }
 
@@ -257,7 +259,7 @@ export class AuthController {
     @Body() body: AdoptSessionDto,
     @CurrentUser() user: AuthenticatedUser,
     @Req() req: Request,
-    @Res({ passthrough: true }) res: any,
+    @Res({ passthrough: true }) res: Response,
   ) {
     // Profile first: the session row is a foreign key to it, and this is the
     // first request a brand-new account makes, so the row may not exist yet.
@@ -281,7 +283,7 @@ export class AuthController {
 
     return {
       user: syncedUser,
-      meta: syncedUser.meta || {},
+      meta: syncedUser.meta,
       csrfToken,
       sessionId: issued.sessionId,
       ...this.nativeSessionTokens(
@@ -304,7 +306,7 @@ export class AuthController {
   async login(
     @Body() body: LoginDto,
     @Req() req: Request,
-    @Res({ passthrough: true }) res: any,
+    @Res({ passthrough: true }) res: Response,
   ) {
     let result: Awaited<ReturnType<typeof this.authService.login>>;
     try {
@@ -343,7 +345,7 @@ export class AuthController {
     const profile = await this.authService.syncProfile({
       id: result.user.id,
       email: result.user.email,
-    } as any);
+    });
 
     /**
      * Record the device and set HttpOnly cookies.
@@ -409,7 +411,7 @@ export class AuthController {
      */
     return {
       user: profile,
-      meta: profile?.meta ?? {},
+      meta: profile.meta,
       csrfToken,
       sessionId: issued.sessionId,
       ...this.nativeSessionTokens(
@@ -446,9 +448,9 @@ export class AuthController {
   @RateLimit('auth.session.refresh')
   async refreshSession(
     @Req() req: Request,
-    @Res({ passthrough: true }) res: any,
+    @Res({ passthrough: true }) res: Response,
   ) {
-    const cookieToken = req.cookies?.[USER_REFRESH_COOKIE];
+    const cookieToken = readCookie(req, USER_REFRESH_COOKIE);
     const bodyToken =
       !cookieToken && this.isNativeAppClient(req)
         ? (req.body as { refreshToken?: unknown })?.refreshToken
@@ -532,9 +534,9 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   async logoutSession(
     @Req() req: Request,
-    @Res({ passthrough: true }) res: any,
+    @Res({ passthrough: true }) res: Response,
   ) {
-    const csrfCookie = req.cookies?.[USER_CSRF_COOKIE];
+    const csrfCookie = readCookie(req, USER_CSRF_COOKIE);
     if (typeof csrfCookie === 'string' && csrfCookie) {
       const header = req.headers['x-csrf-token'];
       if (
@@ -546,7 +548,7 @@ export class AuthController {
       }
     }
 
-    const refreshToken = req.cookies?.[USER_REFRESH_COOKIE];
+    const refreshToken = readCookie(req, USER_REFRESH_COOKIE);
     if (typeof refreshToken === 'string' && refreshToken) {
       await this.sessions.revokeByRefreshHash(
         this.sessions.hashRefreshToken(refreshToken),
@@ -617,7 +619,7 @@ export class AuthController {
   async revokeAllSessions(
     @CurrentUser() user: AuthenticatedUser,
     @Req() req: Request,
-    @Res({ passthrough: true }) res: any,
+    @Res({ passthrough: true }) res: Response,
     @Body() body?: { scope?: 'others' | 'all' },
   ) {
     const scope = body?.scope === 'all' ? 'all' : 'others';

@@ -1,4 +1,7 @@
-import { resolveSignInEligibility } from './sign-in-eligibility';
+import {
+  resolveSignInEligibility,
+  type SignInEligibilityInput,
+} from './sign-in-eligibility';
 
 /**
  * Who may obtain a session.
@@ -9,7 +12,9 @@ import { resolveSignInEligibility } from './sign-in-eligibility';
  * next edits this rule.
  */
 describe('resolveSignInEligibility', () => {
-  const row = (over: any = {}) => ({
+  const row = (
+    over: Partial<SignInEligibilityInput> = {},
+  ): SignInEligibilityInput => ({
     accountStatus: 'ACTIVE',
     deletedAt: null,
     ...over,

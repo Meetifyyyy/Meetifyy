@@ -17,16 +17,22 @@
  *   • nonTextTags includes 'script' and 'style' (so their content is removed)
  */
 
+import type { IOptions } from 'sanitize-html';
+
 // Mock BEFORE importing the module under test so the factory runs first.
-const mockSanitizeHtml = jest.fn((html: string) => html ?? '');
-// simpleTransform is a factory that the module uses to build the <a> transformer.
-(mockSanitizeHtml as any).simpleTransform = jest.fn(
-  (tag: string, attribs: Record<string, string>) =>
-    (_: string, actual: Record<string, string>) => ({
-      tagName: tag,
-      attribs: { ...actual, ...attribs },
-    }),
+const mockSanitizeHtml = jest.fn(
+  (html: string, _options?: IOptions) => html ?? '',
 );
+// simpleTransform is a factory that the module uses to build the <a> transformer.
+Object.assign(mockSanitizeHtml, {
+  simpleTransform: jest.fn(
+    (tag: string, attribs: Record<string, string>) =>
+      (_: string, actual: Record<string, string>) => ({
+        tagName: tag,
+        attribs: { ...actual, ...attribs },
+      }),
+  ),
+});
 jest.mock('sanitize-html', () => mockSanitizeHtml);
 
 import {
@@ -52,8 +58,8 @@ describe('sanitize-html utilities (configuration tests)', () => {
     it('calls sanitize-html with the REPLY tag list', () => {
       sanitizeReplyHtml('<p>Hello</p>');
       expect(mockSanitizeHtml).toHaveBeenCalledTimes(1);
-      const opts = (mockSanitizeHtml.mock.calls[0] as any)[1];
-      const tags: string[] = opts.allowedTags;
+      const opts = mockSanitizeHtml.mock.calls[0][1]!;
+      const tags = opts.allowedTags as string[];
       expect(tags).toContain('p');
       expect(tags).toContain('strong');
       expect(tags).toContain('em');
@@ -64,26 +70,26 @@ describe('sanitize-html utilities (configuration tests)', () => {
 
     it('does NOT allow heading tags in reply mode', () => {
       sanitizeReplyHtml('<h2>Heading</h2>');
-      const opts = (mockSanitizeHtml.mock.calls[0] as any)[1];
+      const opts = mockSanitizeHtml.mock.calls[0][1]!;
       expect(opts.allowedTags).not.toContain('h2');
       expect(opts.allowedTags).not.toContain('h3');
     });
 
     it('does NOT allow table tags in reply mode', () => {
       sanitizeReplyHtml('<table><tr><td>x</td></tr></table>');
-      const opts = (mockSanitizeHtml.mock.calls[0] as any)[1];
+      const opts = mockSanitizeHtml.mock.calls[0][1]!;
       expect(opts.allowedTags).not.toContain('table');
     });
 
     it('uses discard mode for disallowed tags', () => {
       sanitizeReplyHtml('<div>x</div>');
-      const opts = (mockSanitizeHtml.mock.calls[0] as any)[1];
+      const opts = mockSanitizeHtml.mock.calls[0][1]!;
       expect(opts.disallowedTagsMode).toBe('discard');
     });
 
     it('excludes javascript: and data: from allowed schemes', () => {
       sanitizeReplyHtml('<a href="javascript:void(0)">x</a>');
-      const opts = (mockSanitizeHtml.mock.calls[0] as any)[1];
+      const opts = mockSanitizeHtml.mock.calls[0][1]!;
       expect(opts.allowedSchemes).not.toContain('javascript');
       expect(opts.allowedSchemes).not.toContain('data');
       expect(opts.allowedSchemes).toContain('https');
@@ -92,16 +98,16 @@ describe('sanitize-html utilities (configuration tests)', () => {
 
     it('includes script and style in nonTextTags (content stripped)', () => {
       sanitizeReplyHtml('<script>alert(1)</script>');
-      const opts = (mockSanitizeHtml.mock.calls[0] as any)[1];
+      const opts = mockSanitizeHtml.mock.calls[0][1]!;
       expect(opts.nonTextTags).toContain('script');
       expect(opts.nonTextTags).toContain('style');
     });
 
     it('includes an <a> transform that injects rel + target', () => {
       sanitizeReplyHtml('<a href="https://example.com">Link</a>');
-      const opts = (mockSanitizeHtml.mock.calls[0] as any)[1];
+      const opts = mockSanitizeHtml.mock.calls[0][1]!;
       expect(opts.transformTags).toHaveProperty('a');
-      expect(typeof opts.transformTags['a']).toBe('function');
+      expect(typeof opts.transformTags!['a']).toBe('function');
     });
 
     /**
@@ -118,18 +124,26 @@ describe('sanitize-html utilities (configuration tests)', () => {
      */
     it('allows the attributes the transform emits, so they survive the filter', () => {
       sanitizeReplyHtml('<a href="https://example.com">Link</a>');
-      const opts = (mockSanitizeHtml.mock.calls[0] as any)[1];
-      expect(opts.allowedAttributes.a).toContain('href');
-      expect(opts.allowedAttributes.a).toContain('target');
-      expect(opts.allowedAttributes.a).toContain('rel');
+      const opts = mockSanitizeHtml.mock.calls[0][1]!;
+      expect((opts.allowedAttributes as Record<string, string[]>).a).toContain(
+        'href',
+      );
+      expect((opts.allowedAttributes as Record<string, string[]>).a).toContain(
+        'target',
+      );
+      expect((opts.allowedAttributes as Record<string, string[]>).a).toContain(
+        'rel',
+      );
     });
 
     it('handles null gracefully (no throw)', () => {
-      expect(() => sanitizeReplyHtml(null as any)).not.toThrow();
+      expect(() => sanitizeReplyHtml(null as unknown as string)).not.toThrow();
     });
 
     it('handles undefined gracefully (no throw)', () => {
-      expect(() => sanitizeReplyHtml(undefined as any)).not.toThrow();
+      expect(() =>
+        sanitizeReplyHtml(undefined as unknown as string),
+      ).not.toThrow();
     });
   });
 
@@ -138,7 +152,7 @@ describe('sanitize-html utilities (configuration tests)', () => {
   describe('sanitizeArticleHtml', () => {
     it('calls sanitize-html with heading tags included', () => {
       sanitizeArticleHtml('<h2>Title</h2>');
-      const opts = (mockSanitizeHtml.mock.calls[0] as any)[1];
+      const opts = mockSanitizeHtml.mock.calls[0][1]!;
       expect(opts.allowedTags).toContain('h2');
       expect(opts.allowedTags).toContain('h3');
       expect(opts.allowedTags).toContain('h4');
@@ -146,7 +160,7 @@ describe('sanitize-html utilities (configuration tests)', () => {
 
     it('includes table tags in article mode', () => {
       sanitizeArticleHtml('<table><tr><td>x</td></tr></table>');
-      const opts = (mockSanitizeHtml.mock.calls[0] as any)[1];
+      const opts = mockSanitizeHtml.mock.calls[0][1]!;
       expect(opts.allowedTags).toContain('table');
       expect(opts.allowedTags).toContain('thead');
       expect(opts.allowedTags).toContain('tbody');
@@ -157,7 +171,7 @@ describe('sanitize-html utilities (configuration tests)', () => {
 
     it('still excludes script and data: in article mode', () => {
       sanitizeArticleHtml('<script>evil()</script>');
-      const opts = (mockSanitizeHtml.mock.calls[0] as any)[1];
+      const opts = mockSanitizeHtml.mock.calls[0][1]!;
       expect(opts.nonTextTags).toContain('script');
       expect(opts.allowedSchemes).not.toContain('data');
     });
@@ -166,33 +180,49 @@ describe('sanitize-html utilities (configuration tests)', () => {
   // ── htmlToPlainText ───────────────────────────────────────────────────────
 
   describe('htmlToPlainText', () => {
+    // The mock returns its input, so these exercise the entity decoding that
+    // follows sanitize-html (CodeQL #49).
+    it('decodes entities exactly once, keeping text typed as an entity', () => {
+      // The author wrote "&lt;b&gt;"; the stored HTML holds it escaped.
+      expect(htmlToPlainText('&amp;lt;b&amp;gt;')).toBe('&lt;b&gt;');
+      expect(htmlToPlainText('&amp;amp;')).toBe('&amp;');
+    });
+
+    it('still decodes the ordinary entities', () => {
+      expect(
+        htmlToPlainText(
+          'a &lt; b &amp;&amp; c &gt; d &quot;q&quot; it&#39;s&nbsp;ok',
+        ),
+      ).toBe('a < b && c > d "q" it\'s ok');
+    });
+
     it('calls sanitize-html with empty allowedTags to strip all markup', () => {
       htmlToPlainText('<p>Hello <strong>world</strong></p>');
       // htmlToPlainText calls sanitize-html; check the options
-      const opts = (mockSanitizeHtml.mock.calls[0] as any)[1];
+      const opts = mockSanitizeHtml.mock.calls[0][1]!;
       expect(opts.allowedTags).toEqual([]);
       expect(opts.allowedAttributes).toEqual({});
     });
 
     it('still removes script content', () => {
       htmlToPlainText('<script>alert(1)</script>Text');
-      const opts = (mockSanitizeHtml.mock.calls[0] as any)[1];
+      const opts = mockSanitizeHtml.mock.calls[0][1]!;
       expect(opts.nonTextTags).toContain('script');
     });
 
     it('provides a textFilter function for block-level newlines', () => {
       htmlToPlainText('<p>a</p><p>b</p>');
-      const opts = (mockSanitizeHtml.mock.calls[0] as any)[1];
+      const opts = mockSanitizeHtml.mock.calls[0][1]!;
       expect(typeof opts.textFilter).toBe('function');
       // The filter should append \n to block-level tags
-      const f = opts.textFilter;
+      const f = opts.textFilter!;
       expect(f('text', 'p')).toBe('text\n');
       expect(f('text', 'br')).toBe('text\n');
       expect(f('text', 'span')).toBe('text'); // inline → no newline
     });
 
     it('handles null gracefully', () => {
-      expect(() => htmlToPlainText(null as any)).not.toThrow();
+      expect(() => htmlToPlainText(null as unknown as string)).not.toThrow();
     });
   });
 
@@ -222,11 +252,11 @@ describe('sanitize-html utilities (configuration tests)', () => {
     });
 
     it('handles null gracefully', () => {
-      expect(escapeHtml(null as any)).toBe('');
+      expect(escapeHtml(null as unknown as string)).toBe('');
     });
 
     it('handles undefined gracefully', () => {
-      expect(escapeHtml(undefined as any)).toBe('');
+      expect(escapeHtml(undefined as unknown as string)).toBe('');
     });
   });
 

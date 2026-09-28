@@ -15,15 +15,25 @@ describe('ActivitiesService — deleted members', () => {
     id: 'u1',
     username: 'sarthak',
     displayName: 'Sarthak Saini',
-    avatar: 'avatars/sarthak.jpg',
+    avatar: 'avatars/sarthak.jpg' as string | null,
     isCampusRep: true,
     accountStatus: 'ACTIVE',
-    deletedAt: null,
+    deletedAt: null as Date | null,
   };
 
-  const present = (user: any) => (ActivitiesService as any).presentMember(user);
-  const presentCard = (row: any) =>
-    (ActivitiesService as any).presentCardRow(row);
+  /** Either the member as given, or the tombstone standing in for them. */
+  type ShownMember = typeof live & {
+    isDeleted?: boolean;
+    profileAvailable?: boolean;
+  };
+
+  const present = (user: typeof live | null | undefined) =>
+    ActivitiesService['presentMember'](user) as ShownMember | null | undefined;
+  /** An embedded membership row, as the card query selects it. */
+  type CardMember = { userId: string; status: string; user: typeof live };
+
+  const presentCard = <T extends { members?: CardMember[] }>(row: T) =>
+    ActivitiesService['presentCardRow'](row);
 
   it('leaves a live member untouched', () => {
     expect(present(live)).toBe(live);
@@ -34,16 +44,16 @@ describe('ActivitiesService — deleted members', () => {
     (accountStatus) => {
       const shown = present({ ...live, accountStatus, deletedAt: new Date() });
 
-      expect(shown.displayName).toBe('Deleted User');
+      expect(shown!.displayName).toBe('Deleted User');
       // Null, so every client's Avatar falls back to the default asset — which
       // is the reported symptom: the real photograph was still rendering.
-      expect(shown.avatar).toBeNull();
-      expect(shown.username).not.toBe('sarthak');
-      expect(shown.isDeleted).toBe(true);
-      expect(shown.profileAvailable).toBe(false);
-      expect(shown.isCampusRep).toBe(false);
+      expect(shown!.avatar).toBeNull();
+      expect(shown!.username).not.toBe('sarthak');
+      expect(shown!.isDeleted).toBe(true);
+      expect(shown!.profileAvailable).toBe(false);
+      expect(shown!.isCampusRep).toBe(false);
       // The id survives so membership rows still key correctly.
-      expect(shown.id).toBe('u1');
+      expect(shown!.id).toBe('u1');
     },
   );
 
@@ -91,7 +101,10 @@ describe('ActivitiesService — deleted members', () => {
     });
 
     it('passes a row with no members straight through', () => {
-      const row = { id: 'act-2', title: 'Chess' };
+      const row: { id: string; title: string; members?: CardMember[] } = {
+        id: 'act-2',
+        title: 'Chess',
+      };
       expect(presentCard(row)).toBe(row);
       expect(presentCard({ ...row, members: [] })).toEqual({
         ...row,

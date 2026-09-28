@@ -1,5 +1,9 @@
 import { BadRequestException } from '@nestjs/common';
+import type { ConfigService } from '@nestjs/config';
 import { StorageService } from './uploads.service';
+import { stub } from '../common/testing/stub';
+import type { PrismaService } from '../prisma/prisma.service';
+import type { StorageProvider } from './providers/storage-provider.interface';
 
 /**
  * The upload folder allowlist.
@@ -13,13 +17,12 @@ import { StorageService } from './uploads.service';
  */
 describe('upload folder allowlist', () => {
   const service = new StorageService(
-    {} as any,
-    {} as any,
-    { get: () => undefined } as any,
+    stub<StorageProvider>(),
+    stub<PrismaService>(),
+    stub<ConfigService>({ get: jest.fn(() => undefined) }),
   );
   // The method is private by design; the allowlist is the unit under test.
-  const normalize = (folder: string) =>
-    (service as any).normalizeFolder(folder);
+  const normalize = (folder: string) => service['normalizeFolder'](folder);
 
   describe('folders the client sends', () => {
     // Every literal passed to processAndUploadImage / uploadFileDirect

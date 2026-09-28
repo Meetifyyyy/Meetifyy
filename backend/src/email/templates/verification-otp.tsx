@@ -18,17 +18,14 @@ export const VerificationOtpEmail = ({
 
   return (
     <BaseLayout previewText="Verify your college email address">
-      <Heading style={heading}>
-        Verify your college email
-      </Heading>
+      <Heading style={heading}>Verify your college email</Heading>
 
       <Text style={text}>{greeting}</Text>
       <Text style={text}>
-        Welcome to Meetifyy! To complete your signup and access your college community, please verify your college email address.
+        Welcome to Meetifyy! To complete your signup and access your college
+        community, please verify your college email address.
       </Text>
-      <Text style={text}>
-        Use the verification code below:
-      </Text>
+      <Text style={text}>Use the verification code below:</Text>
 
       <Section style={otpCard}>
         <div style={boxesWrapper}>
@@ -44,15 +41,18 @@ export const VerificationOtpEmail = ({
       </Text>
 
       <Text style={text}>
-        If you did not create a Meetifyy account, you can safely ignore this email.
+        If you did not create a Meetifyy account, you can safely ignore this
+        email.
       </Text>
 
       <Text style={noticeText}>
-        This is an automated email. Please do not reply directly to this message.
+        This is an automated email. Please do not reply directly to this
+        message.
       </Text>
 
       <Text style={text}>
-        Thanks,<br />
+        Thanks,
+        <br />
         <strong>The Meetifyy Team</strong>
       </Text>
     </BaseLayout>

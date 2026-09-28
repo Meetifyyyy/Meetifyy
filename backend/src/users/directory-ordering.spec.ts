@@ -1,4 +1,7 @@
+import type { Prisma } from '@prisma/client';
 import { UsersService } from './users.service';
+import { stub } from '../common/testing/stub';
+import type { StudentYearPolicyService } from '../common/student-year/student-year-policy.service';
 import { createBlocksServiceMock } from './testing/blocks.service.mock';
 
 /**
@@ -11,9 +14,9 @@ import { createBlocksServiceMock } from './testing/blocks.service.mock';
  */
 describe('UsersService — directory ordering', () => {
   const ME = 'me';
-  let prisma: any;
-  let service: any;
-  let lastArgs: any;
+  let prisma: ReturnType<typeof makePrisma>;
+  let service: UsersService;
+  let lastArgs: Prisma.UserFindManyArgs;
 
   const row = (id: string, displayName: string) => ({
     id,
@@ -26,37 +29,43 @@ describe('UsersService — directory ordering', () => {
     createdAt: new Date('2026-01-01'),
   });
 
-  beforeEach(() => {
-    prisma = {
-      user: {
-        findUnique: jest.fn(async ({ where }: any) =>
+  const makePrisma = () => ({
+    user: {
+      findUnique: jest.fn(({ where }: { where: { id: string } }) =>
+        Promise.resolve(
           where.id === ME
             ? { ...row(ME, 'My Own Name'), collegeId: 'college-1' }
             : null,
         ),
-        findMany: jest.fn(async (args: any) => {
-          lastArgs = args;
-          return [
-            row('u-b', 'Bella'),
-            row('u-a', 'Aarav'),
-            row('u-c', 'Chetan'),
-          ];
-        }),
-      },
-    };
+      ),
+      findMany: jest.fn((args: Prisma.UserFindManyArgs) => {
+        lastArgs = args;
+        return Promise.resolve([
+          row('u-b', 'Bella'),
+          row('u-a', 'Aarav'),
+          row('u-c', 'Chetan'),
+        ]);
+      }),
+    },
+  });
 
-    service = Object.create(UsersService.prototype);
-    service.prisma = prisma;
-    service.blocksService = createBlocksServiceMock([]);
-    service.studentYearPolicy = {
-      injectUserFilter: (where: any) => where,
-      getBatchYearFor: async () => null,
-      getUserBatchYear: () => null,
-      isEnforcementEnabled: () => false,
-      visibleUserWhere: () => ({}),
-    };
-    service.getFollowingSet = async () => new Set();
-    service.viewerBatchYear = async () => null;
+  beforeEach(() => {
+    prisma = makePrisma();
+
+    service = Object.create(UsersService.prototype) as UsersService;
+    Object.assign(service, {
+      prisma,
+      blocksService: createBlocksServiceMock([]),
+      studentYearPolicy: stub<StudentYearPolicyService>({
+        injectUserFilter: jest.fn((where: unknown) => where),
+        getBatchYearFor: () => Promise.resolve(null),
+        getUserBatchYear: () => null,
+        isEnforcementEnabled: () => false,
+        visibleUserWhere: () => ({}),
+      }),
+      getFollowingSet: () => Promise.resolve(new Set()),
+      viewerBatchYear: () => Promise.resolve(null),
+    });
   });
 
   it('orders by display name, with id as the tie-break', async () => {
@@ -75,22 +84,24 @@ describe('UsersService — directory ordering', () => {
    */
   it('excludes the viewer, whose card the page renders itself', async () => {
     const { users } = await service.getDirectory(ME, {});
-    expect(users.some((u: any) => u.id === ME)).toBe(false);
-    expect(lastArgs.where.id).toEqual({ not: ME });
+    expect(users.some((u) => u.id === ME)).toBe(false);
+    expect(lastArgs.where!.id).toEqual({ not: ME });
   });
 
   it('excludes them on later pages too', async () => {
     const { users } = await service.getDirectory(ME, { cursor: 'Bella|u-b' });
-    expect(users.some((u: any) => u.id === ME)).toBe(false);
+    expect(users.some((u) => u.id === ME)).toBe(false);
   });
 
   describe('the keyset cursor', () => {
     it('is built from the name it ordered by, not the timestamp', async () => {
-      prisma.user.findMany = jest.fn(async (args: any) => {
+      prisma.user.findMany = jest.fn((args: Prisma.UserFindManyArgs) => {
         lastArgs = args;
         // One more than the limit, so `hasMore` is true and a cursor is emitted.
-        return Array.from({ length: 21 }, (_, i) =>
-          row(`u-${i}`, `Name ${String(i).padStart(2, '0')}`),
+        return Promise.resolve(
+          Array.from({ length: 21 }, (_, i) =>
+            row(`u-${i}`, `Name ${String(i).padStart(2, '0')}`),
+          ),
         );
       });
 
@@ -100,7 +111,7 @@ describe('UsersService — directory ordering', () => {
 
     it('pages forward from a name, not backward from a date', async () => {
       await service.getDirectory(ME, { cursor: 'Bella|u-b' });
-      expect(lastArgs.where.OR).toEqual([
+      expect(lastArgs.where!.OR).toEqual([
         { displayName: { gt: 'Bella' } },
         { displayName: 'Bella', id: { gt: 'u-b' } },
       ]);
@@ -112,10 +123,10 @@ describe('UsersService — directory ordering', () => {
      */
     it('splits on the last separator, so a name containing one survives', async () => {
       await service.getDirectory(ME, { cursor: 'Bella | B|u-b' });
-      expect(lastArgs.where.OR[0]).toEqual({
+      expect(lastArgs.where!.OR![0]).toEqual({
         displayName: { gt: 'Bella | B' },
       });
-      expect(lastArgs.where.OR[1]).toEqual({
+      expect(lastArgs.where!.OR![1]).toEqual({
         displayName: 'Bella | B',
         id: { gt: 'u-b' },
       });

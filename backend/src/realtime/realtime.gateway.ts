@@ -8,7 +8,8 @@ import {
   ConnectedSocket,
   OnGatewayInit,
 } from '@nestjs/websockets';
-import { Server, Socket } from 'socket.io';
+import type { IncomingHttpHeaders } from 'http';
+import type { AppServer, AppSocket } from './socket-types';
 import { Logger, Optional, OnModuleDestroy } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
 import { SupabaseService } from '../supabase/supabase.service';
@@ -33,14 +34,10 @@ import {
   parseMatchRespondPayload,
 } from '../instant-match/dto/join-queue.dto';
 import { PrismaService } from '../prisma/prisma.service';
-import {
-  checkPresenceVisibility,
-  checkPresenceVisibilityBatch,
-} from '../users/privacy.helper';
+import { checkPresenceVisibilityBatch } from '../users/privacy.helper';
 import { RedisService } from '../redis/redis.service';
 import { CommunitiesService } from '../communities/communities.service';
 import { ActivityAuthorizationService } from '../activities/activity-authorization.service';
-import { MentionDto } from '../common/dto/mention.dto';
 import { JwtGuard } from '../common/guards/jwt.guard';
 import { VerifiedOnly } from '../common/decorators/verified-only.decorator';
 import { VerificationAccessService } from '../common/verification/verification-access.service';
@@ -54,6 +51,22 @@ import { config } from '../config';
 import { normalizeIp } from '../common/rate-limit/client-ip.util';
 import type { RateLimitPolicyName } from '../config/rate-limit.config';
 import { detach } from '../common/utils/detach.util';
+import { errorMessage } from '../common/utils/error.util';
+import { isRecord } from '../common/utils/type-guards.util';
+import {
+  ConversationRefPayload,
+  DeliveryReceiptPayload,
+  SeenPayload,
+  SocketSendMessagePayload,
+  correlationIdOf,
+  parseSocketPayload,
+  CatchupPayload,
+  PostRoomPayload,
+  ActivityRoomPayload,
+  CommunityRoomPayload,
+  JoinRoomsPayload,
+  INVALID_PAYLOAD,
+} from './socket-payloads';
 
 /**
  * The client address behind a socket.
@@ -65,7 +78,7 @@ import { detach } from '../common/utils/detach.util';
  * guards were rewritten to stop trusting. Read from the right by the same hop
  * count the HTTP side uses.
  */
-function socketIp(client: any): string {
+function socketIp(client: AppSocket): string {
   const forwarded = client?.handshake?.headers?.['x-forwarded-for'];
   const hops = config.rateLimit.trustProxyHops;
 
@@ -79,6 +92,33 @@ function socketIp(client: any): string {
   }
 
   return normalizeIp(client?.handshake?.address || client?.conn?.remoteAddress);
+}
+
+/**
+ * A domain event as the gateway routes it. Events arrive from Redis as parsed
+ * JSON, so nothing about their shape is guaranteed: the original object is
+ * kept for forwarding, and every field used for ROUTING is read through
+ * `top`/`inData`, which answer only with a non-empty string.
+ */
+interface RoutableDomainEvent {
+  payload: Record<string, unknown>;
+  type: string;
+  data: Record<string, unknown>;
+  top: (key: string) => string | undefined;
+  inData: (key: string) => string | undefined;
+}
+
+function readDomainEvent(raw: unknown): RoutableDomainEvent | null {
+  if (!isRecord(raw) || typeof raw.type !== 'string') return null;
+  const data = isRecord(raw.data) ? raw.data : {};
+  const str = (v: unknown) => (typeof v === 'string' && v ? v : undefined);
+  return {
+    payload: raw,
+    type: raw.type,
+    data,
+    top: (key) => str(raw[key]),
+    inData: (key) => str(data[key]),
+  };
 }
 
 /** Ack text per policy, so a socket rejection reads like the REST one. */
@@ -109,23 +149,24 @@ export class RealtimeGateway
   private readonly logger = new Logger('SOCKET');
   private readonly chatLogger = new Logger('CHAT');
 
+  // Assigned by Nest when the gateway is bound, before any handler runs.
   @WebSocketServer()
-  server: Server;
+  server!: AppServer;
 
-  // In-memory alias cache: conversationId (any form) → { id, publicId }
-  // Avoids a Prisma round-trip on every emitToConversation call (e.g. typing events)
-  private convAliasCache = new Map<
+  /**
+   * Which conversation a user may address by a given id or publicId, cached
+   * briefly because typing and receipts are high-frequency. A hit is trusted
+   * for 30 s, so a participant who leaves can still send typing or receipts
+   * for up to that long; a miss is kept for 5 s only, so someone just added
+   * to a group is not left waiting.
+   */
+  private readonly participantConvCache = new Map<
     string,
-    { id: string; publicId: string | null; cachedAt: number }
+    { conv: { id: string; publicId: string | null } | null; expiresAt: number }
   >();
-  private readonly ALIAS_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
-
-  // Cache target user presence settings to avoid database queries on getPresence events
-  private userPresenceSettingsCache = new Map<
-    string,
-    { settings: any; cachedAt: number }
-  >();
-  private readonly PRESENCE_SETTINGS_TTL_MS = 60 * 1000; // 60 seconds
+  private static readonly PARTICIPANT_HIT_TTL_MS = 30_000;
+  private static readonly PARTICIPANT_MISS_TTL_MS = 5_000;
+  private static readonly PARTICIPANT_CACHE_MAX = 10_000;
 
   // Sweep interval for proactive in-memory cache eviction
   private sessionSweepTimer?: NodeJS.Timeout;
@@ -251,14 +292,8 @@ export class RealtimeGateway
     this.cacheEvictionTimer = setInterval(
       () => {
         const now = Date.now();
-        const aliasTTL = this.ALIAS_CACHE_TTL_MS * 2;
-        for (const [key, val] of this.convAliasCache.entries()) {
-          if (now - val.cachedAt > aliasTTL) this.convAliasCache.delete(key);
-        }
-        const presenceTTL = this.PRESENCE_SETTINGS_TTL_MS * 2;
-        for (const [key, val] of this.userPresenceSettingsCache.entries()) {
-          if (now - val.cachedAt > presenceTTL)
-            this.userPresenceSettingsCache.delete(key);
+        for (const [key, val] of this.participantConvCache.entries()) {
+          if (val.expiresAt <= now) this.participantConvCache.delete(key);
         }
       },
       10 * 60 * 1000,
@@ -383,7 +418,7 @@ export class RealtimeGateway
       subClient.on('message', (channel, message) => {
         if (channel === 'meetifyy:domain_events') {
           try {
-            const payload = JSON.parse(message);
+            const payload: unknown = JSON.parse(message);
             this.handleDomainEvent(payload);
           } catch (e) {
             this.logger.error('Failed to parse domain event payload', e);
@@ -394,8 +429,8 @@ export class RealtimeGateway
   }
 
   @OnEvent('**')
-  handleLocalDomainEvent(payload: any) {
-    if (payload && payload.type) {
+  handleLocalDomainEvent(payload: unknown) {
+    if (isRecord(payload) && payload.type) {
       // Fallback for single instance or local dev without Redis Pub/Sub
       if (!this.redisService.getSubClient()) {
         this.handleDomainEvent(payload);
@@ -403,22 +438,26 @@ export class RealtimeGateway
     }
   }
 
-  private handleDomainEvent(payload: any) {
+  private handleDomainEvent(event: unknown) {
+    const parsed = readDomainEvent(event);
+    if (!parsed) return;
+    // `payload` is forwarded to clients exactly as published; routing reads
+    // only go through `top`/`inData`, which yield non-empty strings or nothing.
+    const { payload, type, data, top, inData } = parsed;
+
     // Cross-instance cache invalidation. VerificationAccessService caches
     // status in process, and this handler runs on EVERY instance (the event
     // arrives over Redis pub/sub), so an approval or revocation on one node
     // evicts the stale entry on all of them. Without this the cache's TTL
     // would be the real security window instead of a backstop.
-    if (payload.type === 'user:verification_changed') {
-      const changedUserId = payload.data?.userId || payload.targetUserId;
+    if (type === 'user:verification_changed') {
+      const changedUserId = inData('userId') || top('targetUserId');
       if (changedUserId) this.verificationAccess.invalidate(changedUserId);
     }
 
-    if (payload.type === 'user.settings_updated') {
-      const uId = payload.targetUserId || payload.data?.userId;
+    if (type === 'user.settings_updated') {
+      const uId = top('targetUserId') || inData('userId');
       if (uId) {
-        this.userPresenceSettingsCache.delete(uId);
-
         // Always force broadcast offline to all group rooms so clients immediately hide the status
         const offlinePayload = {
           userId: uId,
@@ -452,9 +491,9 @@ export class RealtimeGateway
       }
     }
 
-    if (payload.type === 'group:member_added') {
-      const convId = payload.data?.conversationId || payload.conversationId;
-      const targetUser = payload.data?.userId || payload.userId;
+    if (type === 'group:member_added') {
+      const convId = inData('conversationId') || top('conversationId');
+      const targetUser = inData('userId') || top('userId');
       if (convId && targetUser) {
         const userSockets = this.server.sockets.adapter.rooms.get(targetUser);
         if (userSockets) {
@@ -466,12 +505,10 @@ export class RealtimeGateway
       }
     }
 
-    if (payload.type === 'group:member_removed') {
-      const convId = payload.data?.conversationId || payload.conversationId;
+    if (type === 'group:member_removed') {
+      const convId = inData('conversationId') || top('conversationId');
       const targetUser =
-        payload.data?.targetUserId ||
-        payload.targetUserId ||
-        payload.data?.userId;
+        inData('targetUserId') || top('targetUserId') || inData('userId');
       if (convId && targetUser) {
         const userSockets = this.server.sockets.adapter.rooms.get(targetUser);
         if (userSockets) {
@@ -489,8 +526,8 @@ export class RealtimeGateway
     // the client handlers are idempotent (absolute counts, id-deduped inserts,
     // self-actor guards), so a viewer who is also a per-user target harmlessly
     // applies the same patch twice.
-    const postScopeId = payload.data?.postId || payload.postId;
-    if (postScopeId && RealtimeGateway.POST_ROOM_EVENTS.has(payload.type)) {
+    const postScopeId = inData('postId') || top('postId');
+    if (postScopeId && RealtimeGateway.POST_ROOM_EVENTS.has(type)) {
       this.server.to(`post_${postScopeId}`).emit('domainEvent', payload);
     }
 
@@ -500,8 +537,8 @@ export class RealtimeGateway
     // A visibility change is authorization-relevant: re-run the policy for every
     // socket in the room and evict the ones that just lost access. The event
     // itself carries no activity details.
-    if (payload.type === 'activity.visibilityChanged') {
-      const changedId = payload.data?.activityId || payload.data?.id;
+    if (type === 'activity.visibilityChanged') {
+      const changedId = inData('activityId') || inData('id');
       if (changedId) {
         // Evict first, notify second — the surviving subscribers are exactly the
         // ones still authorized when the event lands.
@@ -516,12 +553,12 @@ export class RealtimeGateway
       return;
     }
 
-    if (payload.type === 'activity_discussion.created') {
-      const activityScopeId = payload.data?.activityId;
+    if (type === 'activity_discussion.created') {
+      const activityScopeId = inData('activityId');
       if (activityScopeId) {
         this.server
           .to(`activity_${activityScopeId}`)
-          .emit('activity_discussion:new', payload.data.message);
+          .emit('activity_discussion:new', data.message);
       }
       return;
     }
@@ -535,11 +572,8 @@ export class RealtimeGateway
     // checkActivityRoomAccess), so this is a safe fan-out, and it is what makes
     // a detail page that is already open react to the activity starting,
     // ending or being cancelled without the viewer refreshing.
-    if (
-      payload.type === 'activity.updated' ||
-      payload.type === 'activity.started'
-    ) {
-      const activityScopeId = payload.data?.activityId || payload.data?.id;
+    if (type === 'activity.updated' || type === 'activity.started') {
+      const activityScopeId = inData('activityId') || inData('id');
       if (activityScopeId) {
         this.server
           .to(`activity_${activityScopeId}`)
@@ -548,11 +582,8 @@ export class RealtimeGateway
       }
     }
 
-    if (
-      payload.type === 'activity.memberJoined' ||
-      payload.type === 'activity.memberLeft'
-    ) {
-      const activityScopeId = payload.data?.activityId || payload.activityId;
+    if (type === 'activity.memberJoined' || type === 'activity.memberLeft') {
+      const activityScopeId = inData('activityId') || top('activityId');
       if (activityScopeId) {
         this.server
           .to(`activity_${activityScopeId}`)
@@ -567,15 +598,15 @@ export class RealtimeGateway
     // who can currently see this person", and a targeted emit would leave the
     // old image on every other client until each of their queries happened to
     // refetch. It is a tiny, infrequent payload, so it goes to everyone.
-    if (payload.type === 'user.updated') {
+    if (type === 'user.updated') {
       this.server.emit('domainEvent', payload);
       return;
     }
 
-    const isLegacyEvent = payload.type?.includes(':');
+    const isLegacyEvent = type.includes(':');
     let targets: string[] = [];
 
-    const commId = payload.communityId || payload.data?.communityId;
+    const commId = top('communityId') || inData('communityId');
     if (commId) {
       // ONE event, to the room, on the generic bus.
       //
@@ -593,37 +624,36 @@ export class RealtimeGateway
       this.server.to(`community_${commId}`).emit('domainEvent', payload);
     }
 
-    if (
-      Array.isArray(payload.targetUserIds) &&
-      payload.targetUserIds.length > 0
-    ) {
-      targets = payload.targetUserIds;
-    } else if (payload.targetUserId) {
-      targets = [payload.targetUserId];
-    } else if (payload.data?.targetUserId) {
-      targets = [payload.data.targetUserId];
-    } else if (payload.conversationId || payload.data?.conversationId) {
-      const convId = payload.conversationId || payload.data?.conversationId;
+    const listedTargets = Array.isArray(payload.targetUserIds)
+      ? payload.targetUserIds.filter(
+          (t): t is string => typeof t === 'string' && t.length > 0,
+        )
+      : [];
+    const convId = top('conversationId') || inData('conversationId');
+    if (listedTargets.length > 0) {
+      targets = listedTargets;
+    } else if (top('targetUserId')) {
+      targets = [top('targetUserId') as string];
+    } else if (inData('targetUserId')) {
+      targets = [inData('targetUserId') as string];
+    } else if (convId) {
       this.server
         .to(`conv_${convId}`)
-        .emit(
-          isLegacyEvent ? payload.type : 'domainEvent',
-          payload.data || payload,
-        );
+        .emit(isLegacyEvent ? type : 'domainEvent', payload.data || payload);
       return;
     }
 
     if (targets.length > 0) {
       for (const targetId of targets) {
         if (isLegacyEvent) {
-          this.server.to(targetId).emit(payload.type, payload.data);
+          this.server.to(targetId).emit(type, payload.data);
         } else {
           this.server.to(targetId).emit('domainEvent', payload);
         }
       }
     } else if (!commId) {
       this.logger.warn(
-        `Domain event '${payload.type}' has no valid targetUserIds/room — dropped safely`,
+        `Domain event '${type}' has no valid targetUserIds/room — dropped safely`,
       );
     }
   }
@@ -639,9 +669,9 @@ export class RealtimeGateway
       const sockets = this.server?.sockets?.sockets;
       if (!sockets || sockets.size === 0) return;
 
-      const bySession = new Map<string, Socket[]>();
+      const bySession = new Map<string, AppSocket[]>();
       for (const socket of sockets.values()) {
-        const id = (socket as any).sessionId;
+        const id = socket.data.sessionId;
         if (typeof id !== 'string' || !id) continue;
         const list = bySession.get(id) || [];
         list.push(socket);
@@ -688,7 +718,7 @@ export class RealtimeGateway
     if (this.cacheEvictionTimer) clearInterval(this.cacheEvictionTimer);
   }
 
-  async handleConnection(client: Socket) {
+  async handleConnection(client: AppSocket) {
     // Connection limiting comes in two tiers, and the ORDER is load-bearing.
     //
     // This one is per-address and runs BEFORE the token is verified, because
@@ -737,8 +767,11 @@ export class RealtimeGateway
      * both then have to name a live session. See the revocation check further
      * down for why that exemption could not stay.
      */
+    // `handshake.auth` is whatever the client sent; only a string is a token.
+    const authToken: unknown = client.handshake.auth?.token;
     const token =
-      client.handshake.auth?.token || cookieToken(client.handshake.headers);
+      (typeof authToken === 'string' && authToken) ||
+      cookieToken(client.handshake.headers);
 
     if (!token) {
       this.logger.warn(`Client connection rejected: missing token`);
@@ -756,7 +789,12 @@ export class RealtimeGateway
       client.disconnect();
       return;
     }
-    let user: any = null;
+    // From JwtGuard (an AuthenticatedUser) or, without it, from Supabase.
+    let user: {
+      id: string;
+      email?: string;
+      user_metadata?: Record<string, unknown>;
+    } | null = null;
     try {
       if (this.jwtGuard) {
         user = await this.jwtGuard.validateToken(token);
@@ -850,7 +888,7 @@ export class RealtimeGateway
         client.disconnect();
         return;
       }
-      (client as any).sessionId = handshakeSessionId;
+      client.data.sessionId = handshakeSessionId;
     }
 
     const lifecycle = await this.prisma.user
@@ -933,14 +971,19 @@ export class RealtimeGateway
       // Never block a reconnect because the limiter itself failed.
     }
 
+    // Provider metadata is arbitrary JSON; only a string is a name.
+    const metaName = (key: string): string | undefined => {
+      const value = user.user_metadata?.[key];
+      return typeof value === 'string' && value ? value : undefined;
+    };
     userName =
-      user.user_metadata?.username ||
-      user.user_metadata?.displayName ||
+      metaName('username') ||
+      metaName('displayName') ||
       user.email ||
       'Unknown';
 
-    (client as any).userId = userId;
-    (client as any).userName = userName;
+    client.data.userId = userId;
+    client.data.userName = userName;
     void client.join(userId); // Join user's personal room for multiplexed broadcasting
 
     // Automatically join all active conversation rooms for O(1) broadcasting.
@@ -963,10 +1006,10 @@ export class RealtimeGateway
         if (p.conversation?.publicId)
           void client.join(`conv_${p.conversation.publicId}`);
       });
-      (client as any).userConvIds = cachedConvIds;
+      client.data.userConvIds = cachedConvIds;
     } catch (err) {
       this.logger.error('Failed to pre-join conversation rooms', err);
-      (client as any).userConvIds = [];
+      client.data.userConvIds = [];
     }
 
     await this.presenceService.setOnline(userId, client.id);
@@ -974,13 +1017,13 @@ export class RealtimeGateway
     this.logger.log(`Connected user=${userId} socket=${client.id}`);
   }
 
-  async handleDisconnect(client: Socket) {
-    const userId = (client as any).userId;
+  async handleDisconnect(client: AppSocket) {
+    const userId = client.data.userId;
 
     if (userId) {
       // Use the conv IDs cached at connection time — avoids a DB query on every
       // disconnect (tab close, network drop, mobile background, etc.).
-      const userConvIds: string[] = (client as any).userConvIds || [];
+      const userConvIds: string[] = client.data.userConvIds || [];
 
       userConvIds.forEach((cId) => {
         this.server
@@ -995,72 +1038,9 @@ export class RealtimeGateway
     );
   }
 
-  @SubscribeMessage('presence:get')
-  async handleGetPresence(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() data: { userId: string },
-  ) {
-    if (!data?.userId) return null;
-    const viewerId = (client as any).userId;
-    const targetUserId = data.userId;
-
-    let targetUser: any;
-    const now = Date.now();
-    const cachedSettings = this.userPresenceSettingsCache.get(targetUserId);
-    if (
-      cachedSettings &&
-      now - cachedSettings.cachedAt < this.PRESENCE_SETTINGS_TTL_MS
-    ) {
-      targetUser = cachedSettings.settings;
-    } else {
-      targetUser = await this.prisma.user.findUnique({
-        where: { id: targetUserId },
-        select: {
-          id: true,
-          settings: {
-            select: {
-              showOnlineStatus: true,
-              whoCanSeeOnline: true,
-            },
-          },
-        },
-      });
-      if (targetUser) {
-        this.userPresenceSettingsCache.set(targetUserId, {
-          settings: targetUser,
-          cachedAt: now,
-        });
-      }
-    }
-
-    const presence = await this.presenceService.getPresence(targetUserId);
-    if (!targetUser) {
-      return {
-        userId: targetUserId,
-        status: presence?.status || 'offline',
-        lastActive: presence?.lastSeen || null,
-      };
-    }
-    const canSeeOnline = await checkPresenceVisibility(
-      targetUserId,
-      viewerId,
-      targetUser.settings?.whoCanSeeOnline || 'everyone',
-      targetUser.settings?.showOnlineStatus !== false,
-      this.prisma,
-      this.blocksService,
-    );
-
-    return {
-      userId: targetUserId,
-      status: canSeeOnline ? presence?.status || 'offline' : 'offline',
-      lastActive: presence?.lastSeen || null,
-      lastSeen: presence?.lastSeen || null,
-    };
-  }
-
   @SubscribeMessage('presence:heartbeat')
-  async handlePresenceHeartbeat(@ConnectedSocket() client: Socket) {
-    const userId = (client as any).userId;
+  async handlePresenceHeartbeat(@ConnectedSocket() client: AppSocket) {
+    const userId = client.data.userId;
     if (!userId) return { status: 'error', error: 'Unauthenticated' };
     // The client sends one every 25s; 6/min absorbs a reconnect without
     // letting a stuck client spin. Silent — a dropped heartbeat is harmless.
@@ -1071,33 +1051,30 @@ export class RealtimeGateway
 
   @SubscribeMessage('message:send')
   async handleSendMessage(
-    @ConnectedSocket() client: Socket,
-    @MessageBody()
-    data: {
-      tempId?: string;
-      clientId?: string;
-      conversationId: string;
-      text?: string;
-      mediaUrl?: string;
-      mediaType?: string;
-      thumbnailUrl?: string;
-      width?: number;
-      height?: number;
-      duration?: number;
-      mentions?: MentionDto[];
-      replyToId?: string;
-      inviteData?: any;
-    },
+    @ConnectedSocket() client: AppSocket,
+    @MessageBody() data: unknown,
   ) {
-    const senderId = (client as any).userId;
+    const senderId = client.data.userId;
     if (!senderId) return { status: 'error', error: 'Unauthenticated' };
+    const clientKey = correlationIdOf(data);
+    // The same DTO the HTTP route validates with, so the socket is not the one
+    // path that accepts a malformed message.
+    const parsed = parseSocketPayload(SocketSendMessagePayload, data);
+    const conversationId = parsed.ok ? parsed.value.conversationId : undefined;
+    if (!parsed.ok || !conversationId) {
+      return {
+        status: 'error',
+        tempId: clientKey,
+        clientId: clientKey,
+        error: 'Invalid message',
+      };
+    }
     try {
       const message = await this.messagesService.sendMessage(
         senderId,
-        data.conversationId,
-        data,
+        conversationId,
+        parsed.value,
       );
-      const clientKey = data.clientId || data.tempId;
       const payload = {
         ...message,
         tempId: clientKey,
@@ -1112,16 +1089,14 @@ export class RealtimeGateway
       // message to a user who blocked the sender. This mirrors the HTTP
       // controller path (MessagesController.sendMessage) exactly so realtime
       // and REST enforce blocks identically.
-      const recipientIds: string[] = (message as any).recipientIds || [];
+      const recipientIds: string[] = message.recipientIds || [];
       // Mute is enforced here, not left to the client. `sendMessage` already
       // resolved every recipient's mute state in the same batched query it
       // used for blocks, so stamping each copy with whether it may raise an
       // alert costs nothing — and means a device with a cold or stale
       // conversation cache still honours the mute. The message itself is
       // delivered either way: mute silences the alert, not the sync.
-      const unmuted = new Set<string>(
-        (message as any).unmutedRecipientIds || [],
-      );
+      const unmuted = new Set<string>(message.unmutedRecipientIds || []);
       for (const rId of recipientIds) {
         if (rId === senderId) continue;
         this.server
@@ -1139,25 +1114,26 @@ export class RealtimeGateway
         clientId: clientKey,
         message: payload,
       };
-    } catch (err: any) {
-      const clientKey = data.clientId || data.tempId;
+    } catch (err) {
       return {
         status: 'error',
         tempId: clientKey,
         clientId: clientKey,
-        error: err.message || 'Failed to send message',
+        error: errorMessage(err) || 'Failed to send message',
       };
     }
   }
 
   @SubscribeMessage('message:catchup')
   async handleMessageCatchup(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() data: { since: string },
+    @ConnectedSocket() client: AppSocket,
+    @MessageBody() data: unknown,
   ) {
-    const userId = (client as any).userId;
-    if (!userId || !data?.since)
+    const userId = client.data.userId;
+    const parsed = parseSocketPayload(CatchupPayload, data);
+    if (!userId || !parsed.ok)
       return { status: 'error', error: 'Invalid parameters' };
+    const { since } = parsed.value;
 
     // The other reconnect-time query. Capped so a mass disconnect cannot turn
     // into a thundering herd against Postgres.
@@ -1169,13 +1145,13 @@ export class RealtimeGateway
     try {
       const messages = await this.messagesService.getCatchupMessages(
         userId,
-        data.since,
+        since,
       );
       return { status: 'ok', messages };
-    } catch (err: any) {
+    } catch (err) {
       return {
         status: 'error',
-        error: err.message || 'Failed to fetch catchup messages',
+        error: errorMessage(err) || 'Failed to fetch catchup messages',
       };
     }
   }
@@ -1200,11 +1176,14 @@ export class RealtimeGateway
   // is a cheap way to make the server do work.
   @SubscribeMessage('post:join')
   async handlePostJoin(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() data: { postId?: string },
+    @ConnectedSocket() client: AppSocket,
+    @MessageBody() data: unknown,
   ) {
-    const userId = (client as any).userId;
-    if (!userId || !data?.postId) return;
+    const parsed = parseSocketPayload(PostRoomPayload, data);
+    if (!parsed.ok) return INVALID_PAYLOAD;
+    const { postId } = parsed.value;
+    const userId = client.data.userId;
+    if (!userId) return;
     const limited = await this.limitEvent(userId, [
       { policy: 'socket.roomjoin.user', identifier: userId },
     ]);
@@ -1219,13 +1198,13 @@ export class RealtimeGateway
     // receive its comments live, including posts the REST route answers with a
     // 404: a blocked author's, or one hidden by first-year isolation. The
     // policy below is the one `getPostById` applies, so the two paths agree.
-    const allowed = await this.checkPostRoomAccess(userId, data.postId);
+    const allowed = await this.checkPostRoomAccess(userId, postId);
     if (!allowed) {
-      void client.leave(`post_${data.postId}`);
+      void client.leave(`post_${postId}`);
       return;
     }
 
-    void client.join(`post_${data.postId}`);
+    void client.join(`post_${postId}`);
   }
 
   /**
@@ -1273,11 +1252,12 @@ export class RealtimeGateway
 
   @SubscribeMessage('post:leave')
   handlePostLeave(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() data: { postId?: string },
+    @ConnectedSocket() client: AppSocket,
+    @MessageBody() data: unknown,
   ) {
-    if (!data?.postId) return;
-    void client.leave(`post_${data.postId}`);
+    const parsed = parseSocketPayload(PostRoomPayload, data);
+    if (!parsed.ok) return INVALID_PAYLOAD;
+    void client.leave(`post_${parsed.value.postId}`);
   }
 
   // A client viewing an activity joins its discussion room so it receives live
@@ -1285,11 +1265,14 @@ export class RealtimeGateway
   // auto-cleaned on disconnect, so a missed 'activity:leave' can't leak.
   @SubscribeMessage('activity:join')
   async handleActivityJoin(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() data: { activityId?: string },
+    @ConnectedSocket() client: AppSocket,
+    @MessageBody() data: unknown,
   ) {
-    const userId = (client as any).userId;
-    if (!userId || !data?.activityId) return;
+    const parsed = parseSocketPayload(ActivityRoomPayload, data);
+    if (!parsed.ok) return INVALID_PAYLOAD;
+    const { activityId } = parsed.value;
+    const userId = client.data.userId;
+    if (!userId) return;
 
     const limited = await this.limitEvent(userId, [
       { policy: 'socket.roomjoin.user', identifier: userId },
@@ -1299,20 +1282,17 @@ export class RealtimeGateway
     // Room membership is an authorization decision, not a client preference:
     // the room carries discussion messages, attendee changes and activity
     // metadata, so a viewer who may not open the activity may not subscribe.
-    const decision = await this.checkActivityRoomAccess(
-      userId,
-      data.activityId,
-    );
+    const decision = await this.checkActivityRoomAccess(userId, activityId);
     if (!decision.allowed) {
       client.emit('activity:access_denied', {
-        activityId: data.activityId,
+        activityId: activityId,
         code: decision.code,
         message: decision.reason,
       });
-      void client.leave(`activity_${data.activityId}`);
+      void client.leave(`activity_${activityId}`);
       return;
     }
-    void client.join(`activity_${data.activityId}`);
+    void client.join(`activity_${activityId}`);
   }
 
   /**
@@ -1383,7 +1363,9 @@ export class RealtimeGateway
         activity,
       );
     } catch (err) {
-      this.logger.warn(`activity room access check failed: ${err?.message}`);
+      this.logger.warn(
+        `activity room access check failed: ${errorMessage(err)}`,
+      );
       // Fail closed.
       return {
         allowed: false,
@@ -1407,7 +1389,7 @@ export class RealtimeGateway
 
     for (const socketId of Array.from(room)) {
       const socket = this.server.sockets.sockets.get(socketId);
-      const userId = socket ? (socket as any).userId : null;
+      const userId = socket ? socket.data.userId : null;
       if (!socket) continue;
       if (!userId) {
         void socket.leave(`activity_${activityId}`);
@@ -1427,36 +1409,35 @@ export class RealtimeGateway
 
   @SubscribeMessage('activity:leave')
   handleActivityLeave(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() data: { activityId?: string },
+    @ConnectedSocket() client: AppSocket,
+    @MessageBody() data: unknown,
   ) {
-    if (!data?.activityId) return;
-    void client.leave(`activity_${data.activityId}`);
+    const parsed = parseSocketPayload(ActivityRoomPayload, data);
+    if (!parsed.ok) return INVALID_PAYLOAD;
+    void client.leave(`activity_${parsed.value.activityId}`);
   }
 
   @SubscribeMessage('typing:start')
   async handleTypingStart(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() data: { conversationId: string },
+    @ConnectedSocket() client: AppSocket,
+    @MessageBody() data: unknown,
   ) {
-    const userId = (client as any).userId;
-    const userName = (client as any).userName || 'Someone';
-    if (!userId || !data?.conversationId) return;
+    const userId = client.data.userId;
+    const userName = client.data.userName || 'Someone';
+    const parsed = parseSocketPayload(ConversationRefPayload, data);
+    if (!userId || !parsed.ok) return;
+    const { conversationId } = parsed.value;
     // Ephemeral: dropped in silence, never acked with an error.
-    if (
-      !this.allowEphemeral(
-        `typing:${userId}:${data.conversationId}`,
-        15,
-        10_000,
-      )
-    )
+    if (!this.allowEphemeral(`typing:${userId}:${conversationId}`, 15, 10_000))
       return;
     // A typing indicator is a message-composer signal. Silently dropping it
     // (rather than throwing) keeps a stale client from spraying error acks
     // while it is refused; the composer it came from is already disabled.
     if (!(await this.verificationAccess.isUserEligible(userId))) return;
-    await this.emitToConversation(data.conversationId, 'typing:start', {
-      conversationId: data.conversationId,
+    const conv = await this.conversationForParticipant(userId, conversationId);
+    if (!conv) return;
+    this.emitToConversationRooms(conv, 'typing:start', {
+      conversationId,
       userId,
       userName,
     });
@@ -1464,289 +1445,193 @@ export class RealtimeGateway
 
   @SubscribeMessage('typing:stop')
   async handleTypingStop(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() data: { conversationId: string },
+    @ConnectedSocket() client: AppSocket,
+    @MessageBody() data: unknown,
   ) {
-    const userId = (client as any).userId;
-    if (!userId || !data?.conversationId) return;
-    if (
-      !this.allowEphemeral(
-        `typing:${userId}:${data.conversationId}`,
-        15,
-        10_000,
-      )
-    )
+    const userId = client.data.userId;
+    const parsed = parseSocketPayload(ConversationRefPayload, data);
+    if (!userId || !parsed.ok) return;
+    const { conversationId } = parsed.value;
+    if (!this.allowEphemeral(`typing:${userId}:${conversationId}`, 15, 10_000))
       return;
-    await this.emitToConversation(data.conversationId, 'typing:stop', {
-      conversationId: data.conversationId,
+    const conv = await this.conversationForParticipant(userId, conversationId);
+    if (!conv) return;
+    this.emitToConversationRooms(conv, 'typing:stop', {
+      conversationId,
       userId,
     });
   }
 
+  // Still emitted by older installed app builds; kept as an alias.
   @SubscribeMessage('message:received')
   async handleMessageReceived(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() data: { conversationId: string; messageId: string },
+    @ConnectedSocket() client: AppSocket,
+    @MessageBody() data: unknown,
   ) {
-    // message:received is an alias for message:delivered — same handler logic
     return this.handleMessageDeliveredInternal(client, data);
   }
 
   @SubscribeMessage('message:delivered')
   async handleMessageDelivered(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() data: { conversationId: string; messageId: string },
+    @ConnectedSocket() client: AppSocket,
+    @MessageBody() data: unknown,
   ) {
     return this.handleMessageDeliveredInternal(client, data);
   }
 
   private async handleMessageDeliveredInternal(
-    client: Socket,
-    data: { conversationId: string; messageId: string },
+    client: AppSocket,
+    data: unknown,
   ) {
-    const userId = (client as any).userId;
-    if (!userId || !data?.conversationId || !data?.messageId) return;
-    const deliveredAt = new Date().toISOString();
-    await this.emitToConversation(data.conversationId, 'message:delivered', {
-      conversationId: data.conversationId,
-      messageId: data.messageId,
+    const userId = client.data.userId;
+    const parsed = parseSocketPayload(DeliveryReceiptPayload, data);
+    if (!userId || !parsed.ok) return;
+    const { conversationId, messageId } = parsed.value;
+    // Only a participant may report delivery into a conversation; anyone else
+    // could otherwise inject receipts into conversations they are not in.
+    const conv = await this.conversationForParticipant(userId, conversationId);
+    if (!conv) return;
+    this.emitToConversationRooms(conv, 'message:delivered', {
+      conversationId,
+      messageId,
       deliveredTo: userId,
-      deliveredAt,
+      deliveredAt: new Date().toISOString(),
     });
-  }
-
-  @SubscribeMessage('presence:get_status')
-  async handlePresenceGetStatus(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() data: { userIds: string[] },
-  ) {
-    if (!data?.userIds || !Array.isArray(data.userIds))
-      return { status: 'error' };
-    const viewerId = (client as any).userId;
-    const presenceMap = await this.presenceService.getPresenceMany(
-      data.userIds,
-    );
-
-    const now = Date.now();
-    const uncachedUserIds = data.userIds.filter((id) => {
-      const cached = this.userPresenceSettingsCache.get(id);
-      return !cached || now - cached.cachedAt >= this.PRESENCE_SETTINGS_TTL_MS;
-    });
-
-    if (uncachedUserIds.length > 0) {
-      const targetUsers = await this.prisma.user.findMany({
-        where: { id: { in: uncachedUserIds } },
-        select: {
-          id: true,
-          settings: {
-            select: {
-              showOnlineStatus: true,
-              whoCanSeeOnline: true,
-            },
-          },
-        },
-      });
-      targetUsers.forEach((u) =>
-        this.userPresenceSettingsCache.set(u.id, {
-          settings: u,
-          cachedAt: now,
-        }),
-      );
-    }
-
-    const userMap = new Map<string, any>();
-    data.userIds.forEach((uId) => {
-      const cached = this.userPresenceSettingsCache.get(uId);
-      if (cached) userMap.set(uId, cached.settings);
-    });
-
-    // Run all visibility checks in parallel instead of sequential awaits.
-    const visibilityResults = await Promise.all(
-      data.userIds.map(async (uId) => {
-        const targetUser = userMap.get(uId);
-        if (!targetUser) return { uId, canSee: true };
-        const canSee = await checkPresenceVisibility(
-          uId,
-          viewerId,
-          targetUser.settings?.whoCanSeeOnline || 'everyone',
-          targetUser.settings?.showOnlineStatus !== false,
-          this.prisma,
-          this.blocksService,
-        );
-        return { uId, canSee };
-      }),
-    );
-
-    const result: Record<string, any> = {};
-    for (const { uId, canSee } of visibilityResults) {
-      const val = presenceMap.get(uId);
-      result[uId] = {
-        status: canSee ? val?.status || 'offline' : 'offline',
-        lastActive: val?.lastSeen || null,
-        lastSeen: val?.lastSeen || null,
-      };
-    }
-
-    return { status: 'ok', presence: result };
   }
 
   @SubscribeMessage('messages:seen')
   async handleMessagesSeen(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() data: { conversationId: string; lastMessageId?: string },
+    @ConnectedSocket() client: AppSocket,
+    @MessageBody() data: unknown,
   ) {
     return this.handleSeenInternal(client, data);
   }
 
   @SubscribeMessage('conversation:mark_seen')
   async handleMarkSeen(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() data: { conversationId: string; lastMessageId?: string },
+    @ConnectedSocket() client: AppSocket,
+    @MessageBody() data: unknown,
   ) {
     return this.handleSeenInternal(client, data);
   }
 
-  private async handleSeenInternal(
-    client: Socket,
-    data: { conversationId: string; lastMessageId?: string },
-  ) {
+  private async handleSeenInternal(client: AppSocket, data: unknown) {
     try {
-      const readerId = (client as any).userId;
-      if (!readerId || !data?.conversationId) return;
+      const readerId = client.data.userId;
+      const parsed = parseSocketPayload(SeenPayload, data);
+      if (!readerId || !parsed.ok) return;
+      const { conversationId, lastMessageId } = parsed.value;
+
+      // A non-participant must neither mark nor announce a read.
+      const conv = await this.conversationForParticipant(
+        readerId,
+        conversationId,
+      );
+      if (!conv) return;
 
       // Single DB write regardless of which event name the client used
-      await this.messagesService.markAsRead(data.conversationId, readerId);
-      const lastReadAt = new Date().toISOString();
-
+      await this.messagesService.markAsRead(conv.id, readerId);
       const payload = {
-        conversationId: data.conversationId,
-        lastMessageId: data.lastMessageId,
+        conversationId,
+        lastMessageId,
         readerId,
-        lastReadAt,
+        lastReadAt: new Date().toISOString(),
       };
-
-      void this.emitToConversation(
-        data.conversationId,
-        'messages:seen',
-        payload,
-      );
-      void this.emitToConversation(
-        data.conversationId,
-        'conversation:seen',
-        payload,
-      );
+      this.emitToConversationRooms(conv, 'messages:seen', payload);
+      this.emitToConversationRooms(conv, 'conversation:seen', payload);
     } catch {
       // Ignore transient pool timeouts or seen processing failures
     }
   }
 
   @SubscribeMessage('ping')
-  handlePing(@ConnectedSocket() _client: Socket) {
+  handlePing(@ConnectedSocket() _client: AppSocket) {
     return { event: 'pong', timestamp: Date.now() };
   }
 
-  // --- API for other modules to emit events ---
+  /**
+   * The conversation `ref` (internal or public id) names, if `userId` is an
+   * active participant of it; otherwise null. One indexed query answers both
+   * "which conversation" and "are you in it", so a client cannot address a
+   * conversation it only knows the id of. Fails closed on a lookup error.
+   */
+  private async conversationForParticipant(
+    userId: string,
+    ref: string,
+  ): Promise<{ id: string; publicId: string | null } | null> {
+    const key = `${userId}:${ref}`;
+    const now = Date.now();
+    const hit = this.participantConvCache.get(key);
+    if (hit && hit.expiresAt > now) return hit.conv;
 
-  emitNotification(userId: string, notification: any) {
-    this.server.to(userId).emit('notification:new', {
-      id: notification.id,
-      type: notification.type,
-      entityType: notification.entityType,
-      entityId: notification.entityId,
-      title: notification.title,
-      body: notification.body,
-      readAt: notification.readAt,
-      createdAt: notification.createdAt,
-      actor: notification.actor || null,
-      metadata: notification.metadata || null,
+    let conv: { id: string; publicId: string | null } | null;
+    try {
+      conv = await this.prisma.conversation.findFirst({
+        where: {
+          OR: [{ id: ref }, { publicId: ref }],
+          participants: { some: { userId, deletedAt: null, leftAt: null } },
+        },
+        select: { id: true, publicId: true },
+      });
+    } catch (err) {
+      this.logger.warn(`participant lookup failed: ${errorMessage(err)}`);
+      return null;
+    }
+
+    if (
+      this.participantConvCache.size >= RealtimeGateway.PARTICIPANT_CACHE_MAX
+    ) {
+      const oldest = this.participantConvCache.keys().next();
+      if (!oldest.done) this.participantConvCache.delete(oldest.value);
+    }
+    this.participantConvCache.set(key, {
+      conv,
+      expiresAt:
+        now +
+        (conv
+          ? RealtimeGateway.PARTICIPANT_HIT_TTL_MS
+          : RealtimeGateway.PARTICIPANT_MISS_TTL_MS),
     });
-  }
-
-  emitUnreadCount(userId: string, count: number) {
-    this.server.to(userId).emit('notification:count', { count });
+    return conv;
   }
 
   /**
-   * Emit an event to all participants of a conversation using O(1) Socket.io rooms.
-   * Resolves both DB ID and Public ID aliases — uses in-memory cache to avoid a
-   * DB query on every typing keystroke or high-frequency event.
+   * Emits to both room names a conversation is joined under. One `to([...])`
+   * call, so a socket in both rooms receives the event once.
    */
-  async emitToConversation(
-    conversationId: string,
+  private emitToConversationRooms(
+    conv: { id: string; publicId: string | null },
     event: string,
-    payload: any,
+    payload: object,
   ) {
-    if (!conversationId) return;
-    this.server.to(`conv_${conversationId}`).emit(event, payload);
-
-    try {
-      // Check in-memory alias cache first
-      const now = Date.now();
-      const cached = this.convAliasCache.get(conversationId);
-      let conv: { id: string; publicId: string | null } | null = null;
-
-      if (cached && now - cached.cachedAt < this.ALIAS_CACHE_TTL_MS) {
-        conv = { id: cached.id, publicId: cached.publicId };
-      } else {
-        const dbConv = await this.prisma.conversation.findFirst({
-          where: { OR: [{ id: conversationId }, { publicId: conversationId }] },
-          select: { id: true, publicId: true },
-        });
-        if (dbConv) {
-          conv = dbConv;
-          // Cache both directions so either alias hits the cache
-          this.convAliasCache.set(dbConv.id, {
-            id: dbConv.id,
-            publicId: dbConv.publicId,
-            cachedAt: now,
-          });
-          if (dbConv.publicId) {
-            this.convAliasCache.set(dbConv.publicId, {
-              id: dbConv.id,
-              publicId: dbConv.publicId,
-              cachedAt: now,
-            });
-          }
-        }
-      }
-
-      if (conv) {
-        if (conv.id && conv.id !== conversationId) {
-          this.server.to(`conv_${conv.id}`).emit(event, payload);
-        }
-        if (conv.publicId && conv.publicId !== conversationId) {
-          this.server.to(`conv_${conv.publicId}`).emit(event, payload);
-        }
-      }
-    } catch {
-      // Ignore lookup error — primary emit already fired above
-    }
+    const rooms = [conv.id, conv.publicId]
+      .filter((r): r is string => Boolean(r))
+      .map((r) => `conv_${r}`);
+    this.server.to(rooms).emit(event, payload);
   }
 
   // One of the two database-heavy events that fire on every reconnect, which
   // is what turns a mass disconnect into a thundering herd against Postgres.
   @SubscribeMessage('conversation:join_rooms')
   async handleJoinRooms(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() data: { conversationIds: string[] },
+    @ConnectedSocket() client: AppSocket,
+    @MessageBody() data: unknown,
   ) {
-    const userId = (client as any).userId;
+    const parsed = parseSocketPayload(JoinRoomsPayload, data);
+    if (!parsed.ok) return INVALID_PAYLOAD;
+    const { conversationIds } = parsed.value;
+    const userId = client.data.userId;
     if (userId) {
       const limited = await this.limitEvent(userId, [
         { policy: 'socket.catchup.user', identifier: userId },
       ]);
       if (limited) return limited;
     }
-    if (
-      !userId ||
-      !data?.conversationIds ||
-      !Array.isArray(data.conversationIds)
-    )
-      return;
+    if (!userId) return;
 
     // Skip DB lookup if client is already joined to all requested rooms
-    const unjoinedIds = data.conversationIds.filter(
-      (id) => id && !client.rooms.has(`conv_${id}`),
+    const unjoinedIds = conversationIds.filter(
+      (id) => !client.rooms.has(`conv_${id}`),
     );
     if (unjoinedIds.length === 0) return;
 
@@ -1792,12 +1677,14 @@ export class RealtimeGateway
 
   @SubscribeMessage('community:join_room')
   async handleJoinCommunityRoom(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() data: { communityId: string },
+    @ConnectedSocket() client: AppSocket,
+    @MessageBody() data: unknown,
   ) {
-    if (!data?.communityId) return;
+    const parsed = parseSocketPayload(CommunityRoomPayload, data);
+    if (!parsed.ok) return INVALID_PAYLOAD;
+    const { communityId } = parsed.value;
 
-    const userId = (client as any).userId;
+    const userId = client.data.userId;
     if (userId) {
       const limited = await this.limitEvent(userId, [
         { policy: 'socket.roomjoin.user', identifier: userId },
@@ -1809,27 +1696,23 @@ export class RealtimeGateway
     // community's are not public information, and this took the id from the
     // client without checking anything at all — so any socket could name a
     // private community and watch its membership change in real time.
-    const allowed = await this.checkCommunityRoomAccess(
-      userId,
-      data.communityId,
-    );
+    const allowed = await this.checkCommunityRoomAccess(userId, communityId);
     if (!allowed) {
-      void client.leave(`community_${data.communityId}`);
+      void client.leave(`community_${communityId}`);
       return;
     }
 
-    void client.join(`community_${data.communityId}`);
+    void client.join(`community_${communityId}`);
 
     // Answer with the count as it stands right now. The community payload the
     // page rendered from can be up to 60s stale (it is Redis-cached), and
     // presence moves far faster than that — so without this the viewer sits
     // on an old number until somebody happens to connect or disconnect.
     try {
-      const online = await this.communitiesService.countOnlineMembers(
-        data.communityId,
-      );
+      const online =
+        await this.communitiesService.countOnlineMembers(communityId);
       client.emit('community:presence', {
-        communityId: data.communityId,
+        communityId: communityId,
         online,
       });
     } catch {
@@ -1871,12 +1754,12 @@ export class RealtimeGateway
 
   @SubscribeMessage('community:leave_room')
   handleLeaveCommunityRoom(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() data: { communityId: string },
+    @ConnectedSocket() client: AppSocket,
+    @MessageBody() data: unknown,
   ) {
-    if (data?.communityId) {
-      void client.leave(`community_${data.communityId}`);
-    }
+    const parsed = parseSocketPayload(CommunityRoomPayload, data);
+    if (!parsed.ok) return INVALID_PAYLOAD;
+    void client.leave(`community_${parsed.value.communityId}`);
   }
 
   // ─── Instant Match Socket Handlers ──────────────────────────────────────────
@@ -1887,8 +1770,11 @@ export class RealtimeGateway
   // resolve. Payloads are validated here — never trusted from the UI.
 
   private instantMatchAck(err: unknown, fallback: string) {
-    const status = (err as any)?.status;
-    const message = (err as any)?.response?.message ?? (err as any)?.message;
+    // Nest HttpExceptions carry `status` and `response.message`.
+    const e = isRecord(err) ? err : {};
+    const response = isRecord(e.response) ? e.response : {};
+    const status = e.status;
+    const message = response.message ?? e.message;
     // Only surface messages we raised deliberately (4xx); anything else is an
     // internal fault and gets a generic message.
     if (
@@ -1909,10 +1795,10 @@ export class RealtimeGateway
   @SubscribeMessage('queue:join')
   @VerifiedOnly()
   async handleQueueJoin(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() data: any,
+    @ConnectedSocket() client: AppSocket,
+    @MessageBody() data: unknown,
   ) {
-    const userId = (client as any).userId;
+    const userId = client.data.userId;
     if (!userId)
       return { status: 'error', error: 'Unauthenticated', code: 401 };
 
@@ -1935,8 +1821,8 @@ export class RealtimeGateway
   }
 
   @SubscribeMessage('queue:cancel')
-  async handleQueueCancel(@ConnectedSocket() client: Socket) {
-    const userId = (client as any).userId;
+  async handleQueueCancel(@ConnectedSocket() client: AppSocket) {
+    const userId = client.data.userId;
     if (!userId)
       return { status: 'error', error: 'Unauthenticated', code: 401 };
     try {
@@ -1950,10 +1836,10 @@ export class RealtimeGateway
   @SubscribeMessage('match:respond')
   @VerifiedOnly()
   async handleMatchRespond(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() data: any,
+    @ConnectedSocket() client: AppSocket,
+    @MessageBody() data: unknown,
   ) {
-    const userId = (client as any).userId;
+    const userId = client.data.userId;
     if (!userId)
       return { status: 'error', error: 'Unauthenticated', code: 401 };
 
@@ -1978,8 +1864,8 @@ export class RealtimeGateway
    */
   @SubscribeMessage('queue:sync')
   @VerifiedOnly()
-  async handleQueueSync(@ConnectedSocket() client: Socket) {
-    const userId = (client as any).userId;
+  async handleQueueSync(@ConnectedSocket() client: AppSocket) {
+    const userId = client.data.userId;
     if (userId) {
       const limited = await this.limitEvent(userId, [
         { policy: 'im.queuesync.user', identifier: userId },
@@ -2007,8 +1893,8 @@ export class RealtimeGateway
    */
   @SubscribeMessage('queue:list')
   @VerifiedOnly()
-  async handleQueueList(@ConnectedSocket() client: Socket) {
-    const userId = (client as any).userId;
+  async handleQueueList(@ConnectedSocket() client: AppSocket) {
+    const userId = client.data.userId;
     if (!userId)
       return { status: 'error', error: 'Unauthenticated', code: 401 };
 
@@ -2035,8 +1921,8 @@ export class RealtimeGateway
    */
   @SubscribeMessage('instant_match:chat_state')
   @VerifiedOnly()
-  async handleInstantMatchChatState(@ConnectedSocket() client: Socket) {
-    const userId = (client as any).userId;
+  async handleInstantMatchChatState(@ConnectedSocket() client: AppSocket) {
+    const userId = client.data.userId;
     if (!userId)
       return { status: 'error', error: 'Unauthenticated', code: 401 };
     try {
@@ -2059,10 +1945,10 @@ export class RealtimeGateway
   @SubscribeMessage('instant_match:leave')
   @VerifiedOnly()
   async handleInstantMatchLeave(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() data: any,
+    @ConnectedSocket() client: AppSocket,
+    @MessageBody() data: unknown,
   ) {
-    const userId = (client as any).userId;
+    const userId = client.data.userId;
     if (!userId)
       return { status: 'error', error: 'Unauthenticated', code: 401 };
 
@@ -2072,8 +1958,9 @@ export class RealtimeGateway
     if (limited) return limited;
 
     try {
+      const rawMatchId = isRecord(data) ? data.matchId : undefined;
       const matchId =
-        typeof data?.matchId === 'string' ? data.matchId.trim() : undefined;
+        typeof rawMatchId === 'string' ? rawMatchId.trim() : undefined;
       const result = await this.instantMatchService.leaveChatSession(
         userId,
         matchId || undefined,
@@ -2162,7 +2049,7 @@ export class RealtimeGateway
  * one lookup it needs rather than pulling in a parser for it.
  */
 function cookieValue(
-  headers: Record<string, any> | undefined,
+  headers: IncomingHttpHeaders | undefined,
   name: string,
 ): string {
   const raw = headers?.cookie;
@@ -2180,6 +2067,6 @@ function cookieValue(
   return '';
 }
 
-function cookieToken(headers: Record<string, any> | undefined): string {
+function cookieToken(headers: IncomingHttpHeaders | undefined): string {
   return cookieValue(headers, USER_ACCESS_COOKIE);
 }

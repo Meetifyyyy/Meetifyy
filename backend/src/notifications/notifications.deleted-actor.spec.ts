@@ -1,3 +1,4 @@
+import { expect } from '@jest/globals';
 import { NotificationsService } from './notifications.service';
 
 /**
@@ -15,7 +16,7 @@ import { NotificationsService } from './notifications.service';
  * been bitten by once, over the MESSAGE type.
  */
 describe('NotificationsService — deleted actors', () => {
-  const filter = (NotificationsService as any).AVAILABLE_ACTOR;
+  const filter = NotificationsService['AVAILABLE_ACTOR'];
 
   it('keeps system notifications, which have no actor at all', () => {
     // Without the null branch, every system notification would vanish.
@@ -32,8 +33,8 @@ describe('NotificationsService — deleted actors', () => {
     // deletedAt is stamped on request and cleared on recovery, so an account
     // that comes back brings its notification history with it — no separate
     // reconciliation pass.
-    const actorClause = filter.OR.find((c: any) => c.actor);
-    expect(Object.keys(actorClause.actor)).toEqual(['deletedAt']);
+    const actorClause = filter.OR!.find((c) => c.actor);
+    expect(Object.keys(actorClause!.actor!)).toEqual(['deletedAt']);
   });
 
   it('is exactly two branches — anything else would silently widen it', () => {

@@ -1,4 +1,20 @@
-import { DefaultAssetsService } from './default-assets.service';
+import {
+  DefaultAssetsService,
+  type DefaultAssetName,
+} from './default-assets.service';
+import { stub } from '../common/testing/stub';
+import type { StorageProvider } from './providers/storage-provider.interface';
+import type { PrismaService } from '../prisma/prisma.service';
+import type { ConfigService } from '@nestjs/config';
+
+/** The arguments of a recorded updateMany. */
+type UpdateArgs = {
+  where: Record<string, unknown>;
+  data: Record<string, string>;
+};
+
+/** The published defaults. The retired cover assets are no longer names. */
+const ASSET_NAMES: DefaultAssetName[] = ['community-avatar', 'profile-avatar'];
 
 /**
  * The backfill's matching predicate.
@@ -14,43 +30,38 @@ import { DefaultAssetsService } from './default-assets.service';
  */
 describe('default asset backfill', () => {
   const buildService = () => {
-    const communities: any[] = [];
-    const users: any[] = [];
+    const communities: UpdateArgs[] = [];
+    const users: UpdateArgs[] = [];
     const prisma = {
       community: {
-        updateMany: jest.fn(async (args: any) => {
+        updateMany: jest.fn((args: UpdateArgs) => {
           communities.push(args);
-          return { count: 1 };
+          return Promise.resolve({ count: 1 });
         }),
       },
       user: {
-        updateMany: jest.fn(async (args: any) => {
+        updateMany: jest.fn((args: UpdateArgs) => {
           users.push(args);
-          return { count: 1 };
+          return Promise.resolve({ count: 1 });
         }),
       },
       media: { upsert: jest.fn() },
     };
     const service = new DefaultAssetsService(
-      {} as any,
-      prisma as any,
-      { get: () => undefined } as any,
+      stub<StorageProvider>(),
+      stub<PrismaService>(prisma),
+      stub<ConfigService>({ get: () => undefined }),
     );
-    // Pretend the four assets published successfully.
-    for (const n of [
-      'community-cover',
-      'profile-cover',
-      'community-avatar',
-      'profile-avatar',
-    ]) {
-      (service as any).keys.set(n, `defaults/${n}-v1.webp`);
+    // Pretend the assets published successfully.
+    for (const n of ASSET_NAMES) {
+      service['keys'].set(n, `defaults/${n}-v1.webp`);
     }
     return { service, prisma, communities, users };
   };
 
   const run = async () => {
     const ctx = buildService();
-    await (ctx.service as any).backfillExisting();
+    await ctx.service['backfillExisting']();
     return ctx;
   };
 
@@ -58,18 +69,18 @@ describe('default asset backfill', () => {
     const { communities } = await run();
     const avatarCall = communities.find((c) => 'avatarKey' in c.data);
 
-    expect(avatarCall.where).toEqual({
+    expect(avatarCall!.where).toEqual({
       OR: [{ avatarKey: null }, { avatarKey: '' }],
     });
     // The shape that silently matched nothing.
-    expect(JSON.stringify(avatarCall.where)).not.toContain('"in"');
+    expect(JSON.stringify(avatarCall!.where)).not.toContain('"in"');
   });
 
   it('treats an empty string as missing too', async () => {
     // Older code wrote '' rather than NULL; both mean "no image chosen".
     const { users } = await run();
     const avatarCall = users.find((c) => 'avatar' in c.data);
-    expect(avatarCall.where.OR).toContainEqual({ avatar: '' });
+    expect(avatarCall!.where.OR).toContainEqual({ avatar: '' });
   });
 
   it('fills avatar fields', async () => {
@@ -93,8 +104,8 @@ describe('default asset backfill', () => {
 
   it('touches nothing when the assets failed to publish', async () => {
     const { service, prisma } = buildService();
-    (service as any).keys.clear();
-    await (service as any).backfillExisting();
+    service['keys'].clear();
+    await service['backfillExisting']();
 
     // A bucket outage must not blank out anyone's images.
     expect(prisma.community.updateMany).not.toHaveBeenCalled();
@@ -112,46 +123,38 @@ describe('default asset backfill', () => {
  */
 describe('repointing records onto the current defaults', () => {
   const buildService = (version = 'v2') => {
-    const calls: Array<{ model: string; args: any }> = [];
+    const calls: Array<{ model: string; args: UpdateArgs }> = [];
     const prisma = {
       community: {
-        updateMany: jest.fn(async (args: any) => {
+        updateMany: jest.fn((args: UpdateArgs) => {
           calls.push({ model: 'community', args });
-          return { count: 2 };
+          return Promise.resolve({ count: 2 });
         }),
       },
       user: {
-        updateMany: jest.fn(async (args: any) => {
+        updateMany: jest.fn((args: UpdateArgs) => {
           calls.push({ model: 'user', args });
-          return { count: 3 };
+          return Promise.resolve({ count: 3 });
         }),
       },
       media: { upsert: jest.fn() },
     };
     const service = new DefaultAssetsService(
-      {} as any,
-      prisma as any,
-      { get: () => undefined } as any,
+      stub<StorageProvider>(),
+      stub<PrismaService>(prisma),
+      stub<ConfigService>({ get: () => undefined }),
     );
-    for (const n of [
-      'community-cover',
-      'profile-cover',
-      'community-avatar',
-      'profile-avatar',
-    ]) {
-      (service as any).keys.set(n, `defaults/${n}-${version}.webp`);
+    for (const n of ASSET_NAMES) {
+      service['keys'].set(n, `defaults/${n}-${version}.webp`);
     }
     return { service, prisma, calls };
   };
 
   const run = async () => {
     const ctx = buildService();
-    await (ctx.service as any).repointOutdatedDefaults();
+    await ctx.service['repointOutdatedDefaults']();
     /** The update issued for one column, or a failure naming what is missing. */
-    const callFor = (
-      model: string,
-      field: string,
-    ): { where: any; data: any } => {
+    const callFor = (model: string, field: string): UpdateArgs => {
       const hit = ctx.calls.find(
         (c) => c.model === model && field in c.args.data,
       );
@@ -162,8 +165,16 @@ describe('repointing records onto the current defaults', () => {
   };
 
   /** Does a stored value satisfy the filter the service built? */
-  const matches = (where: any, field: string, value: string | null) => {
-    const [prefixClause, notClause] = where.AND;
+  const matches = (
+    where: Record<string, unknown>,
+    field: string,
+    value: string | null,
+  ) => {
+    // [{ field: { startsWith } }, { NOT: { field: current } }]
+    const [prefixClause, notClause] = where.AND as [
+      Record<string, { startsWith: string }>,
+      { NOT: Record<string, string> },
+    ];
     const prefix = prefixClause[field].startsWith;
     const current = notClause.NOT[field];
     return (
@@ -249,8 +260,8 @@ describe('repointing records onto the current defaults', () => {
     // A bucket outage would otherwise repoint live rows at a key that is not
     // there — trading stale artwork for broken images.
     const { service, prisma } = buildService();
-    (service as any).keys.clear();
-    await (service as any).repointOutdatedDefaults();
+    service['keys'].clear();
+    await service['repointOutdatedDefaults']();
 
     expect(prisma.user.updateMany).not.toHaveBeenCalled();
     expect(prisma.community.updateMany).not.toHaveBeenCalled();

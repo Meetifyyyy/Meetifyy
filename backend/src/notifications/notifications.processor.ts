@@ -3,6 +3,7 @@ import { Job } from 'bullmq';
 import { Logger } from '@nestjs/common';
 import { NotificationsService } from './notifications.service';
 import { DomainEventService } from '../events/domain-event.service';
+import { errorMessage, errorStack } from '../common/utils/error.util';
 
 export const NOTIFICATIONS_QUEUE = 'notifications';
 
@@ -55,7 +56,10 @@ export class NotificationsProcessor extends WorkerHost {
         );
       }
     } catch (err) {
-      this.logger.error(`Job ${job.name} failed: ${err.message}`, err.stack);
+      this.logger.error(
+        `Job ${job.name} failed: ${errorMessage(err)}`,
+        errorStack(err),
+      );
       throw err; // BullMQ will retry based on job options
     }
   }

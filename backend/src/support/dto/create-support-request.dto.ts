@@ -36,7 +36,7 @@ export class SupportAttachmentRefDto {
   @IsString({ message: 'Attachment key must be a string' })
   @IsNotEmpty({ message: 'Attachment key is required' })
   @MaxLength(300, { message: 'Attachment key is too long' })
-  key: string;
+  key!: string;
 
   /**
    * Original filename, for display only.
@@ -60,12 +60,12 @@ export class CreateSupportRequestDto {
   @IsNotEmpty({ message: 'Enter your name' })
   @MinLength(2, { message: 'Name must be at least 2 characters' })
   @MaxLength(100, { message: 'Name cannot exceed 100 characters' })
-  name: string;
+  name!: string;
 
   @Transform(trim)
   @IsEmail({}, { message: 'Enter a valid email address' })
   @MaxLength(254, { message: 'Email address cannot exceed 254 characters' })
-  email: string;
+  email!: string;
 
   // Restricted to the public list rather than the whole enum: the legacy
   // members exist only so old rows still parse, and `OTHER` already covers
@@ -74,14 +74,14 @@ export class CreateSupportRequestDto {
   @IsIn(PUBLIC_SUPPORT_CATEGORIES as SupportCategory[], {
     message: 'Choose one of the listed categories',
   })
-  category: SupportCategory;
+  category!: SupportCategory;
 
   @Transform(trim)
   @IsString({ message: 'Subject must be a string' })
   @IsNotEmpty({ message: 'Add a subject' })
   @MinLength(3, { message: 'Subject must be at least 3 characters' })
   @MaxLength(200, { message: 'Subject cannot exceed 200 characters' })
-  subject: string;
+  subject!: string;
 
   @Transform(trim)
   @IsString({ message: 'Description must be a string' })
@@ -92,7 +92,7 @@ export class CreateSupportRequestDto {
   @MaxLength(10000, {
     message: 'Description cannot exceed 10000 characters',
   })
-  description: string;
+  description!: string;
 
   @IsOptional()
   @ValidateNested({ each: true })

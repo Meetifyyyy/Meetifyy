@@ -33,7 +33,7 @@ describe('deleted-user presentation', () => {
       const user = { ...real, accountStatus: status, deletedAt: new Date() };
       expect(isUnavailableUser(user)).toBe(true);
 
-      const shown = presentUser(user)! as any;
+      const shown = presentUser(user)! as Record<string, unknown>;
       expect(shown.id).toBe('u1'); // rows still key off it
       expect(shown.displayName).toBe(DELETED_USER_DISPLAY_NAME);
       expect(shown.avatar).toBeNull();
@@ -63,7 +63,7 @@ describe('deleted-user presentation', () => {
       collegeEmail: 'sam@university.edu',
       birthday: '2004-01-01',
     };
-    const shown = presentUser(user) as any;
+    const shown = presentUser(user) as Record<string, unknown>;
     expect(shown.collegeEmail).toBeUndefined();
     expect(shown.birthday).toBeUndefined();
   });

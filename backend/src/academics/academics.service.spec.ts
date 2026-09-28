@@ -6,7 +6,10 @@ describe('AcademicsService', () => {
   const service = new AcademicsService();
   const currentYearNow = new Date().getFullYear();
 
-  const expectReject = (input: any, message: string) => {
+  const expectReject = (
+    input: Parameters<AcademicsService['validate']>[0],
+    message: string,
+  ) => {
     expect(() => service.validate(input)).toThrow(BadRequestException);
     expect(() => service.validate(input)).toThrow(message);
   };

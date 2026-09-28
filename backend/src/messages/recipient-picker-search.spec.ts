@@ -21,38 +21,53 @@ import { allowAllRateLimitProvider } from '../common/rate-limit/testing/rate-lim
  * and filtered it in JavaScript would satisfy an assertion on the result and
  * still be wrong.
  */
+/** One arm of the search clause's `OR`. */
+type SearchArm = {
+  type?: string;
+  participants?: { some: { userId: unknown; user: { OR: unknown } } };
+};
+/** One entry of the conversation filter's `AND`. */
+type ConversationClause = { OR?: SearchArm[] };
+/** The participant query, as far as these assertions read it. */
+type ParticipantQuery = {
+  take?: number;
+  where: { conversation: { AND: ConversationClause[] } };
+};
+
+const makePrisma = () => ({
+  conversation: { findFirst: jest.fn(), findUnique: jest.fn() },
+  conversationParticipant: {
+    findUnique: jest.fn(),
+    findMany: jest
+      .fn<Promise<unknown[]>, [ParticipantQuery]>()
+      .mockResolvedValue([]),
+    findFirst: jest.fn(),
+  },
+  message: {
+    create: jest.fn(),
+    findFirst: jest.fn(),
+    findMany: jest.fn(),
+  },
+  deletedMessage: { findMany: jest.fn() },
+  block: { findFirst: jest.fn() },
+  $transaction: jest.fn(),
+});
+
 describe('getUserConversations — picker search', () => {
   let service: MessagesService;
-  let prisma: any;
+  let prisma: ReturnType<typeof makePrisma>;
 
   const buildModule = async (
     batchYears: Record<string, number | null> = {},
   ) => {
+    const prismaFake = makePrisma();
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         allowAllRateLimitProvider(),
         verificationAccessMockProvider(),
         studentYearPolicyMockProvider(batchYears),
         MessagesService,
-        {
-          provide: PrismaService,
-          useValue: {
-            conversation: { findFirst: jest.fn(), findUnique: jest.fn() },
-            conversationParticipant: {
-              findUnique: jest.fn(),
-              findMany: jest.fn().mockResolvedValue([]),
-              findFirst: jest.fn(),
-            },
-            message: {
-              create: jest.fn(),
-              findFirst: jest.fn(),
-              findMany: jest.fn(),
-            },
-            deletedMessage: { findMany: jest.fn() },
-            block: { findFirst: jest.fn() },
-            $transaction: jest.fn(),
-          },
-        },
+        { provide: PrismaService, useValue: prismaFake },
         {
           provide: PresenceService,
           useValue: {
@@ -89,13 +104,13 @@ describe('getUserConversations — picker search', () => {
     }).compile();
 
     service = module.get<MessagesService>(MessagesService);
-    prisma = module.get(PrismaService);
+    prisma = prismaFake;
   };
 
   /** The `AND` array the conversation filter is assembled into. */
   const emittedAnd = () => {
     const call = prisma.conversationParticipant.findMany.mock.calls[0][0];
-    return call.where.conversation.AND as any[];
+    return call.where.conversation.AND;
   };
 
   const searchClause = () =>
@@ -113,7 +128,7 @@ describe('getUserConversations — picker search', () => {
   it('matches a group on its own name', async () => {
     await service.getUserConversations('viewer', 50, 0, true, 'hike');
 
-    expect(searchClause().OR).toContainEqual({
+    expect(searchClause()!.OR).toContainEqual({
       type: 'GROUP',
       name: { contains: 'hike', mode: 'insensitive' },
     });
@@ -122,9 +137,9 @@ describe('getUserConversations — picker search', () => {
   it('matches a DM on the partner display name or username', async () => {
     await service.getUserConversations('viewer', 50, 0, true, 'sarthak');
 
-    const dmArm = searchClause().OR.find((arm: any) => arm.type === 'DM');
-    expect(dmArm.participants.some.userId).toEqual({ not: 'viewer' });
-    expect(dmArm.participants.some.user.OR).toEqual([
+    const dmArm = searchClause()!.OR!.find((arm) => arm.type === 'DM');
+    expect(dmArm!.participants!.some.userId).toEqual({ not: 'viewer' });
+    expect(dmArm!.participants!.some.user.OR).toEqual([
       { displayName: { contains: 'sarthak', mode: 'insensitive' } },
       { username: { contains: 'sarthak', mode: 'insensitive' } },
     ]);
@@ -136,7 +151,7 @@ describe('getUserConversations — picker search', () => {
     // The participant arm is scoped to DMs. A group row is rendered under its
     // own name, so matching it on a member the list never shows would look
     // like a result out of nowhere.
-    searchClause().OR.forEach((arm: any) => {
+    searchClause()!.OR!.forEach((arm) => {
       if (arm.participants) expect(arm.type).toBe('DM');
     });
   });
@@ -190,15 +205,15 @@ describe('getUserConversations — picker search', () => {
 
   it('scopes the cache entry by term, so two searches are two lists', async () => {
     const redis = {
-      get: jest.fn().mockResolvedValue(null),
+      get: jest.fn<Promise<string | null>, [string]>().mockResolvedValue(null),
       setex: jest.fn().mockResolvedValue('OK'),
     };
-    (service as any).redis = redis;
+    Object.assign(service, { redis });
 
     await service.getUserConversations('viewer', 50, 0, true, 'anita');
     await service.getUserConversations('viewer', 50, 0, true, 'bharat');
 
-    const [first, second] = redis.get.mock.calls.map((c: any[]) => c[0]);
+    const [first, second] = redis.get.mock.calls.map((c) => c[0]);
     expect(first).not.toEqual(second);
     expect(first).toContain('anita');
     expect(second).toContain('bharat');

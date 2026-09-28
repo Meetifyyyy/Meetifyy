@@ -3,8 +3,19 @@ import {
   NotFoundException,
   BadRequestException,
   ArgumentsHost,
+  Logger,
 } from '@nestjs/common';
 import { HttpExceptionFilter } from './http-exception.filter';
+import { LOG_CAUSE } from '../logging/log-format';
+import { stub } from '../testing/stub';
+
+/** The fields of the error body the filter sends; tests read them by name. */
+interface ErrorBody {
+  statusCode: number;
+  message: unknown;
+  code?: string;
+  [key: string]: unknown;
+}
 
 /**
  * The filter rebuilds every error body, so anything a caller relies on has to be
@@ -15,9 +26,9 @@ describe('HttpExceptionFilter', () => {
   const filter = new HttpExceptionFilter();
 
   const run = (exception: unknown) => {
-    const json = jest.fn();
+    const json = jest.fn<void, [ErrorBody]>();
     const status = jest.fn(() => ({ json }));
-    const host = {
+    const host = stub<ArgumentsHost>({
       switchToHttp: () => ({
         getResponse: () => ({ status, json, headersSent: false }),
         getRequest: () => ({
@@ -26,10 +37,12 @@ describe('HttpExceptionFilter', () => {
           body: {},
         }),
       }),
-    } as unknown as ArgumentsHost;
+    });
 
     filter.catch(exception, host);
-    return { status, body: json.mock.calls[0]?.[0] };
+    const body = json.mock.calls[0]?.[0];
+    if (!body) throw new Error('the filter sent no body');
+    return { status, body };
   };
 
   it('passes a policy code through to the client', () => {
@@ -75,7 +88,7 @@ describe('HttpExceptionFilter', () => {
         message: 'This activity is private and you do not have access.',
         title: 'Secret rooftop dinner',
         attendees: ['user-1'],
-      } as any),
+      }),
     );
     expect(Object.keys(body).sort()).toEqual([
       'code',
@@ -101,33 +114,38 @@ describe('HttpExceptionFilter', () => {
  * hands the cause over for 4xx instead of logging its own.
  */
 describe('HttpExceptionFilter — one line per failure', () => {
-  const { LOG_CAUSE } = require('../logging/log-format');
+  afterEach(() => jest.restoreAllMocks());
 
-  function run(exception: any) {
-    const filter =
-      new (require('./http-exception.filter').HttpExceptionFilter)();
-    const req: any = {
+  function run(exception: unknown) {
+    const filter = new HttpExceptionFilter();
+    const req: Record<string, unknown> = {
       method: 'GET',
       url: '/api/thing',
       body: {},
       id: 'req-1',
       user: { id: 'u1' },
     };
-    const res: any = { status: () => res, json: () => res, headersSent: false };
+    const res = {
+      status: () => res,
+      json: () => res,
+      headersSent: false,
+    };
     const errorSpy = jest
-      .spyOn(filter.logger, 'error')
+      .spyOn(Logger.prototype, 'error')
       .mockImplementation(() => {});
     const warnSpy = jest
-      .spyOn(filter.logger, 'warn')
+      .spyOn(Logger.prototype, 'warn')
       .mockImplementation(() => {});
-    filter.catch(exception, {
-      switchToHttp: () => ({ getResponse: () => res, getRequest: () => req }),
-    } as any);
+    filter.catch(
+      exception,
+      stub<ArgumentsHost>({
+        switchToHttp: () => ({ getResponse: () => res, getRequest: () => req }),
+      }),
+    );
     return { req, errorSpy, warnSpy };
   }
 
   it('does not log a 4xx itself — it hands the cause to the response line', () => {
-    const { NotFoundException } = require('@nestjs/common');
     const { req, errorSpy, warnSpy } = run(
       new NotFoundException('Thing not found'),
     );
@@ -141,7 +159,7 @@ describe('HttpExceptionFilter — one line per failure', () => {
     const { req, errorSpy } = run(new Error('boom'));
 
     expect(errorSpy).toHaveBeenCalledTimes(1);
-    const [line] = errorSpy.mock.calls[0];
+    const line: unknown = errorSpy.mock.calls[0][0];
     expect(line).toContain('500');
     expect(line).toContain('✗ boom');
     // Not also handed over — that would duplicate it onto pino-http's line.

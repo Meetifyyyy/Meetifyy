@@ -86,6 +86,19 @@ describe('production container app configuration', () => {
     expect(cfg.app.cors.allowLocalNetwork).toBe(false);
   });
 
+  it('sends CSP and HSTS in production by default', () => {
+    const { security } = boot()().app;
+    expect(security.cspEnabled).toBe(true);
+    expect(security.hstsEnabled).toBe(true);
+  });
+
+  it.each(['CSP_ENABLED', 'HSTS_ENABLED'])(
+    'refuses to boot production with %s=false',
+    (name) => {
+      expect(boot({ [name]: 'false' })).toThrow(new RegExp(name));
+    },
+  );
+
   it('refuses to boot if a deployment still asks for the supabase provider', () => {
     expect(boot({ STORAGE_PROVIDER: 'supabase' })).toThrow(/STORAGE_PROVIDER/);
   });

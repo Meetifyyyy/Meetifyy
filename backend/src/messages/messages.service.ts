@@ -8,8 +8,26 @@ import {
   Logger,
   Optional,
 } from '@nestjs/common';
+import { withInviteExpiry } from './core/invite-data';
+import {
+  arrayOrEmpty,
+  payloadFields,
+  stringOrEmpty,
+  stringOrNull,
+} from './core/message-payload';
+import { isJsonValue } from '../common/utils/json.util';
+import { isRecord } from '../common/utils/type-guards.util';
 import { OnEvent } from '@nestjs/event-emitter';
-import { MentionSource, NotificationEntityType } from '@prisma/client';
+import {
+  MentionSource,
+  NotificationEntityType,
+  Prisma,
+  type Conversation,
+} from '@prisma/client';
+import {
+  assertGroupConversation,
+  isActiveParticipant,
+} from './core/group-membership';
 import Redis from 'ioredis';
 import { PrismaService } from '../prisma/prisma.service';
 import { PresenceService } from '../presence/presence.service';
@@ -45,6 +63,10 @@ import {
   asStringOrNull,
 } from '../common/utils/coerce.util';
 import { RateLimitService } from '../common/rate-limit/rate-limit.service';
+import {
+  UpdateGroupSettingsDto,
+  pickGroupSettings,
+} from './dto/update-group-settings.dto';
 
 /** The questions MessagesService asks the Instant Match domain. Kept small so
  *  the coupling between the two stays visible: may this user write into this
@@ -55,6 +77,20 @@ export interface InstantMatchChatGuard {
    *  caller is one of its two participants. */
   canReadChat(userId: string, conversationId: string): Promise<boolean>;
 }
+
+/**
+ * The message row formatMessageResponse reads: the smallest shape its three
+ * callers select (send, idempotent resend, catch-up). Catch-up selects more
+ * sender fields, which still satisfies it.
+ */
+type ResponseMessageRow = Prisma.MessageGetPayload<{
+  include: {
+    sender: {
+      select: { id: true; username: true; displayName: true; avatar: true };
+    };
+    replyTo: { select: typeof REPLY_TO_SELECT };
+  };
+}>;
 
 @Injectable()
 export class MessagesService
@@ -127,8 +163,11 @@ export class MessagesService
    * user whose status changed, plus everyone holding a DM with them.
    */
   @OnEvent('user:verification_changed')
-  async handleVerificationChanged(payload: any) {
-    const targets: string[] = payload?.targetUserIds || [];
+  async handleVerificationChanged(payload: unknown) {
+    const listed = isRecord(payload) ? payload.targetUserIds : undefined;
+    const targets: string[] = Array.isArray(listed)
+      ? listed.filter((t): t is string => typeof t === 'string')
+      : [];
     if (targets.length === 0) return;
     await this.invalidateUserConversationsCache(targets).catch(() => {});
   }
@@ -149,8 +188,13 @@ export class MessagesService
   @OnEvent('user.deletion_requested')
   @OnEvent('user.deletion_cancelled')
   @OnEvent('user.deleted')
-  async handleAccountLifecycleChanged(payload: any) {
-    const userId = payload?.data?.userId || payload?.userId;
+  async handleAccountLifecycleChanged(payload: unknown) {
+    const event = isRecord(payload) ? payload : {};
+    const data = isRecord(event.data) ? event.data : {};
+    const userId =
+      (typeof data.userId === 'string' && data.userId) ||
+      (typeof event.userId === 'string' && event.userId) ||
+      undefined;
     if (!userId) return;
 
     try {
@@ -549,7 +593,7 @@ export class MessagesService
     ).filter((m) => participantIdSet.has(m.userId));
 
     // 1. Idempotency Check
-    const clientMsgId = (payload as any).clientId || (payload as any).tempId;
+    const clientMsgId = payload.clientId || payload.tempId;
     if (clientMsgId) {
       // Idempotency: match on the indexed `clientMessageId` column (index
       // [senderId, clientMessageId]) instead of a JSON payload-path predicate.
@@ -605,22 +649,7 @@ export class MessagesService
     // Normalize group-invite expiry at write time so it is identical on every
     // send path (this MessagesService path + the DM/group core path). A group
     // invite defaults to a 48h TTL; isExpired is recomputed on read below.
-    let initialInviteData = payload.inviteData || null;
-    if (
-      initialInviteData &&
-      (initialInviteData.type === 'group_invite' ||
-        initialInviteData.groupId ||
-        initialInviteData.conversationId)
-    ) {
-      const expiresAt =
-        initialInviteData.expiresAt ||
-        new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
-      initialInviteData = {
-        ...initialInviteData,
-        expiresAt,
-        isExpired: new Date(expiresAt).getTime() <= Date.now(),
-      };
-    }
+    const initialInviteData = withInviteExpiry(payload.inviteData);
 
     // 3. Transactional Write
     const message = await this.prisma.$transaction(async (tx) => {
@@ -644,14 +673,18 @@ export class MessagesService
             height: asNumberOrNull(payload.height),
             duration: asNumberOrNull(payload.duration),
             mentions: sanitizedMentions,
-            inviteData: initialInviteData,
+            // Client JSON (the DTO checks only that it is an object); proven
+            // to be JSON before it is written, rather than asserted.
+            inviteData: isJsonValue(initialInviteData)
+              ? initialInviteData
+              : null,
             isForwarded: asBoolean(payload.isForwarded),
             forwardedFromMessageId: asStringOrNull(
               payload.forwardedFromMessageId,
             ),
             tempId: clientMsgId || null,
             clientId: clientMsgId || null,
-          } as any,
+          },
         },
         include: {
           sender: {
@@ -739,8 +772,8 @@ export class MessagesService
     );
   }
 
-  private async formatMessageResponse(
-    message: any,
+  private formatMessageResponse(
+    message: ResponseMessageRow,
     realConvId: string,
     publicIdOrId: string,
     senderId: string,
@@ -755,38 +788,25 @@ export class MessagesService
     // has no row in the conversation list to guess from.
     chatType: 'instant' | 'normal' = 'normal',
   ) {
-    const msgPayload = message.payload || {};
-    let replyToObj: any = null;
-    if (message.replyTo) {
-      replyToObj = buildReplyToSnapshot(message.replyTo, senderId);
-    }
+    const msgPayload = payloadFields(message.payload);
+    const replyToObj = message.replyTo
+      ? buildReplyToSnapshot(message.replyTo, senderId)
+      : null;
 
     const pubId = publicIdOrId || realConvId;
     const clientKey =
-      msgPayload.clientId || msgPayload.tempId || clientMsgIdHint || null;
+      stringOrNull(msgPayload.clientId) ||
+      stringOrNull(msgPayload.tempId) ||
+      clientMsgIdHint ||
+      null;
     const isUnsent = message.state === 'UNSENT';
 
     // Recompute group-invite expiry on read so a stored invite that has since
     // passed its expiresAt reflects isExpired: true without needing a rewrite.
-    let outInviteData = isUnsent ? null : msgPayload.inviteData || null;
-    if (
-      outInviteData &&
-      (outInviteData.type === 'group_invite' ||
-        outInviteData.groupId ||
-        outInviteData.conversationId)
-    ) {
-      const createdAtMs = message.createdAt
-        ? new Date(message.createdAt).getTime()
-        : Date.now();
-      const expiresAt =
-        outInviteData.expiresAt ||
-        new Date(createdAtMs + 48 * 60 * 60 * 1000).toISOString();
-      outInviteData = {
-        ...outInviteData,
-        expiresAt,
-        isExpired: new Date(expiresAt).getTime() <= Date.now(),
-      };
-    }
+    const outInviteData = withInviteExpiry(
+      isUnsent ? null : msgPayload.inviteData,
+      message.createdAt,
+    );
 
     const msgRes = {
       id: message.id,
@@ -805,11 +825,15 @@ export class MessagesService
       type: message.type ? message.type.toLowerCase() : 'chat',
       state: message.state || 'SENT',
       isUnsent,
-      payload: isUnsent ? { text: 'This message was unsent' } : msgPayload,
-      text: isUnsent ? 'This message was unsent' : msgPayload.text || '',
-      mediaUrl: isUnsent ? null : msgPayload.mediaUrl || null,
-      mediaType: isUnsent ? null : msgPayload.mediaType || null,
-      mentions: isUnsent ? [] : msgPayload.mentions || [],
+      payload: isUnsent
+        ? { text: 'This message was unsent' }
+        : message.payload || {},
+      text: isUnsent
+        ? 'This message was unsent'
+        : stringOrEmpty(msgPayload.text),
+      mediaUrl: isUnsent ? null : stringOrNull(msgPayload.mediaUrl),
+      mediaType: isUnsent ? null : stringOrNull(msgPayload.mediaType),
+      mentions: isUnsent ? [] : arrayOrEmpty(msgPayload.mentions),
       inviteData: outInviteData,
       replyTo: isUnsent ? null : replyToObj,
       status: 'sent',
@@ -869,15 +893,8 @@ export class MessagesService
       take: 100,
     });
 
-    const formatted = await Promise.all(
-      messages.map((m) =>
-        this.formatMessageResponse(
-          m,
-          m.conversationId,
-          m.conversationId,
-          userId,
-        ),
-      ),
+    const formatted = messages.map((m) =>
+      this.formatMessageResponse(m, m.conversationId, m.conversationId, userId),
     );
 
     return formatted;
@@ -933,10 +950,13 @@ export class MessagesService
     }
 
     let clearedAt: Date | null = null;
-    const whereCondition: any = {
+    const whereCondition: Prisma.MessageWhereInput = {
       conversationId: realConvId,
       deletedAt: null,
     };
+    // Bounds on createdAt from three independent sources (the viewer leaving,
+    // clearing the chat, and the page cursor), merged into one filter.
+    const createdAtFilter: Prisma.DateTimeFilter<'Message'> = {};
 
     const [deletedForUser, currentParticipant, participants] =
       await Promise.all([
@@ -975,7 +995,16 @@ export class MessagesService
             // here" for a thread the conversation list never covered — a deep
             // link, or one scrolled past the first page. Without it the
             // composer stayed enabled until a send came back refused.
-            user: { select: { accountStatus: true, deletedAt: true } },
+            // `settings.readReceipts` is what decides whether their read time
+            // and read status may be shown below. It was never selected, so
+            // that check read `undefined` and always passed.
+            user: {
+              select: {
+                accountStatus: true,
+                deletedAt: true,
+                settings: { select: { readReceipts: true } },
+              },
+            },
           },
         }),
       ]);
@@ -994,7 +1023,7 @@ export class MessagesService
       clearedAt = participant.clearedAt;
       const pLeftAt = participant.leftAt;
       if (pLeftAt) {
-        whereCondition.createdAt = { lte: pLeftAt };
+        createdAtFilter.lte = pLeftAt;
       }
     }
 
@@ -1011,16 +1040,13 @@ export class MessagesService
     // directions) and surfaced in the composer, not by hiding rows here.
 
     if (clearedAt) {
-      whereCondition.createdAt = {
-        ...(whereCondition.createdAt || {}),
-        gt: clearedAt,
-      };
+      createdAtFilter.gt = clearedAt;
     }
 
-    const orConditions: any[] = [];
+    const orConditions: Prisma.MessageWhereInput[] = [];
 
     // Pagination logic
-    if (beforeCursor) {
+    if (typeof beforeCursor === 'string' && beforeCursor) {
       let cursorDate: Date | null = null;
       let cursorId: string | null = null;
 
@@ -1053,21 +1079,19 @@ export class MessagesService
             ],
           });
         } else {
-          whereCondition.createdAt = {
-            ...(typeof whereCondition.createdAt === 'object'
-              ? whereCondition.createdAt
-              : {}),
-            lt: cursorDate,
-          };
+          createdAtFilter.lt = cursorDate;
         }
       }
     }
 
+    if (Object.keys(createdAtFilter).length > 0) {
+      whereCondition.createdAt = createdAtFilter;
+    }
     if (orConditions.length > 0) {
-      whereCondition.AND = [...(whereCondition.AND || []), ...orConditions];
+      whereCondition.AND = orConditions;
     }
 
-    const messages: any[] = await this.prisma.message.findMany({
+    const messages = await this.prisma.message.findMany({
       where: whereCondition,
       include: {
         sender: {
@@ -1104,8 +1128,11 @@ export class MessagesService
     const otherParticipants = participants.filter(
       (p) => currentUserId && p.userId !== currentUserId,
     );
+    // Someone with read receipts off never counts as having read anything.
     const otherReadTimestamps = otherParticipants
-      .filter((p) => p.lastReadAt != null)
+      .filter(
+        (p) => p.user?.settings?.readReceipts !== false && p.lastReadAt != null,
+      )
       .map((p) => new Date(p.lastReadAt!).getTime());
 
     const isAllRead =
@@ -1115,11 +1142,11 @@ export class MessagesService
 
     const messagesMapped = messages.map((m) => {
       const payload = m.payload || {};
+      const fields = payloadFields(payload);
 
-      let replyToObj: any = null;
-      if (m.replyTo) {
-        replyToObj = buildReplyToSnapshot(m.replyTo, currentUserId);
-      }
+      const replyToObj = m.replyTo
+        ? buildReplyToSnapshot(m.replyTo, currentUserId)
+        : null;
 
       const isRead =
         currentUserId &&
@@ -1128,25 +1155,10 @@ export class MessagesService
         minOtherLastReadAt + 5000 >= new Date(m.createdAt).getTime();
       const isUnsent = m.state === 'UNSENT';
 
-      let inviteData = isUnsent ? null : payload.inviteData || null;
-      if (
-        inviteData &&
-        (inviteData.type === 'group_invite' ||
-          inviteData.groupId ||
-          inviteData.conversationId)
-      ) {
-        const createdAtMs = m.createdAt
-          ? new Date(m.createdAt).getTime()
-          : Date.now();
-        const expiresAt =
-          inviteData.expiresAt ||
-          new Date(createdAtMs + 48 * 60 * 60 * 1000).toISOString();
-        inviteData = {
-          ...inviteData,
-          expiresAt,
-          isExpired: new Date(expiresAt).getTime() <= Date.now(),
-        };
-      }
+      const inviteData = withInviteExpiry(
+        isUnsent ? null : fields.inviteData,
+        m.createdAt,
+      );
 
       return {
         id: m.id,
@@ -1165,10 +1177,10 @@ export class MessagesService
           : '',
         type: m.type ? m.type.toLowerCase() : 'chat',
         payload: isUnsent ? { text: 'This message was unsent' } : payload,
-        text: isUnsent ? 'This message was unsent' : payload.text || '',
-        mediaUrl: isUnsent ? null : payload.mediaUrl || null,
-        mediaType: isUnsent ? null : payload.mediaType || null,
-        mentions: isUnsent ? [] : payload.mentions || [],
+        text: isUnsent ? 'This message was unsent' : stringOrEmpty(fields.text),
+        mediaUrl: isUnsent ? null : stringOrNull(fields.mediaUrl),
+        mediaType: isUnsent ? null : stringOrNull(fields.mediaType),
+        mentions: isUnsent ? [] : arrayOrEmpty(fields.mentions),
         inviteData,
         replyTo: isUnsent ? null : replyToObj,
         status: isRead ? 'read' : 'sent',
@@ -1211,7 +1223,7 @@ export class MessagesService
     const targetUserUnavailable =
       !isGroupConversation &&
       otherLiveParticipants.length === 1 &&
-      isUnavailableUser((otherLiveParticipants[0] as any).user);
+      isUnavailableUser(otherLiveParticipants[0].user);
 
     return {
       messages: messagesMapped,
@@ -1220,15 +1232,19 @@ export class MessagesService
       participants: participants.map((p) => ({
         userId: p.userId,
         lastReadAt:
-          (p as any).user?.settings?.readReceipts !== false
-            ? p.lastReadAt
-            : null,
+          p.user?.settings?.readReceipts !== false ? p.lastReadAt : null,
       })),
       nextCursor,
     };
   }
 
-  private presenceCache = new Map<string, { data: any; expiresAt: number }>();
+  private presenceCache = new Map<
+    string,
+    {
+      data: { isOnline: boolean; lastActive: string | null };
+      expiresAt: number;
+    }
+  >();
   /**
    * @param eligibleOnly Restrict to threads that can actually be SENT into by a
    *   recipient picker. Share modals pass true; the inbox never does.
@@ -1261,7 +1277,10 @@ export class MessagesService
     if (this.redis) {
       try {
         const cached = await this.redis.get(cacheKey);
-        if (cached) return JSON.parse(cached);
+        // The value written below: this same list, JSON-serialized. Dates come
+        // back as ISO strings, which is also exactly how the fresh list
+        // reaches the client, so the response is identical either way.
+        if (cached) return JSON.parse(cached) as typeof result;
       } catch {
         // A cache miss and an unreachable Redis are the same thing here: rebuild the list.
       }
@@ -1499,9 +1518,9 @@ export class MessagesService
     const blockedSet = new Set(excludedUserIds);
     const blockedByMeSet = new Set(blockedByMeIds);
 
-    const dmConvIds = (participants as any[])
-      .filter((p: any) => p.conversation.type === 'DM')
-      .map((p: any) => p.conversation.id);
+    const dmConvIds = participants
+      .filter((p) => p.conversation.type === 'DM')
+      .map((p) => p.conversation.id);
     const dmOtherParticipants =
       dmConvIds.length > 0
         ? await this.prisma.conversationParticipant.findMany({
@@ -1546,7 +1565,8 @@ export class MessagesService
           })
         : [];
 
-    const targetUserByConvId = new Map<string, any>();
+    type DmPartner = NonNullable<(typeof dmOtherParticipants)[number]['user']>;
+    const targetUserByConvId = new Map<string, DmPartner>();
     dmOtherParticipants.forEach((op) => {
       if (op.user) targetUserByConvId.set(op.conversationId, op.user);
     });
@@ -1592,7 +1612,7 @@ export class MessagesService
     // replacing the previous per-conversation checkPresenceVisibility N+1.
     const visTargets: { userId: string; rule: string; isEnabled: boolean }[] =
       [];
-    for (const p of participants as any[]) {
+    for (const p of participants) {
       const ou = targetUserByConvId.get(p.conversation.id);
       if (!ou || blockedSet.has(ou.id)) continue;
       if (!presenceMap.get(ou.id)?.isOnline) continue;
@@ -1620,167 +1640,166 @@ export class MessagesService
       ? true
       : await verificationAccess.isUserEligible(userId);
 
-    const result = await Promise.all(
-      (participants as any[]).map(async (p: any) => {
-        const conv = p.conversation;
-        const otherUser = targetUserByConvId.get(conv.id);
-        // Single source for the row title, avatar, composer state and
-        // target-user block, so those four cannot disagree.
-        const targetUnavailable = otherUser
-          ? isUnavailableUser(otherUser)
-          : false;
-        const isGroupConv = conv.type === 'GROUP' || conv.isGroup;
-        const groupAvatar = conv.avatarKey || null;
+    const result = participants.map((p) => {
+      const conv = p.conversation;
+      const otherUser = targetUserByConvId.get(conv.id);
+      // Single source for the row title, avatar, composer state and
+      // target-user block, so those four cannot disagree.
+      const targetUnavailable = otherUser
+        ? isUnavailableUser(otherUser)
+        : false;
+      // `|| conv.isGroup` was here: no such column exists, so it never mattered.
+      const isGroupConv = conv.type === 'GROUP';
+      const groupAvatar = conv.avatarKey || null;
 
-        const userPresence = otherUser ? presenceMap.get(otherUser.id) : null;
-        let canSeeOnline = false;
-        let blockStatus = {
-          isBlocked: false,
-          isBlockedByMe: false,
-          isBlockedByThem: false,
+      const userPresence = otherUser ? presenceMap.get(otherUser.id) : null;
+      let canSeeOnline = false;
+      let blockStatus = {
+        isBlocked: false,
+        isBlockedByMe: false,
+        isBlockedByThem: false,
+      };
+
+      if (otherUser) {
+        // Directional. `blockedSet` is the MUTUAL set, so using it for
+        // `isBlockedByMe` told the person who *was* blocked that they had
+        // blocked someone — offering them an Unblock button for a block they
+        // never made. Each side now gets its own accurate flag.
+        const isBlocked = blockedSet.has(otherUser.id);
+        const blockedByMe = blockedByMeSet.has(otherUser.id);
+        blockStatus = {
+          isBlocked,
+          isBlockedByMe: blockedByMe,
+          isBlockedByThem: isBlocked && !blockedByMe,
         };
+        canSeeOnline =
+          !isBlocked &&
+          !!userPresence?.isOnline &&
+          presenceVisibleSet.has(otherUser.id);
+      }
 
-        if (otherUser) {
-          // Directional. `blockedSet` is the MUTUAL set, so using it for
-          // `isBlockedByMe` told the person who *was* blocked that they had
-          // blocked someone — offering them an Unblock button for a block they
-          // never made. Each side now gets its own accurate flag.
-          const isBlocked = blockedSet.has(otherUser.id);
-          const blockedByMe = blockedByMeSet.has(otherUser.id);
-          blockStatus = {
-            isBlocked,
-            isBlockedByMe: blockedByMe,
-            isBlockedByThem: isBlocked && !blockedByMe,
-          };
-          canSeeOnline =
-            !isBlocked &&
-            !!userPresence?.isOnline &&
-            presenceVisibleSet.has(otherUser.id);
-        }
+      const pubId = conv.publicId || conv.id;
+      const unreadCount = p.unreadCount || 0;
 
-        const pubId = conv.publicId || conv.id;
-        const unreadCount = p.unreadCount || 0;
+      // The last-message preview lives on the Conversation row and is therefore
+      // shared by both participants — but Clear and Delete are per-user. Left
+      // unguarded, a user who cleared the chat still saw the other person's
+      // last message sitting in their list row, quoting content that no longer
+      // exists for them anywhere else. Hide any preview at or before this
+      // user's own cutoff; the next message they actually receive is after it
+      // and shows normally.
+      const cutoff = p.clearedAt;
+      const previewCleared = Boolean(
+        cutoff &&
+        conv.lastMessageAt &&
+        new Date(conv.lastMessageAt) <= new Date(cutoff),
+      );
 
-        // The last-message preview lives on the Conversation row and is therefore
-        // shared by both participants — but Clear and Delete are per-user. Left
-        // unguarded, a user who cleared the chat still saw the other person's
-        // last message sitting in their list row, quoting content that no longer
-        // exists for them anywhere else. Hide any preview at or before this
-        // user's own cutoff; the next message they actually receive is after it
-        // and shows normally.
-        const cutoff = p.clearedAt as Date | null;
-        const previewCleared = Boolean(
-          cutoff &&
-          conv.lastMessageAt &&
-          new Date(conv.lastMessageAt) <= new Date(cutoff),
-        );
+      const resolvedLastMsg =
+        conv.lastMessageAt && !previewCleared
+          ? {
+              id: conv.lastMessageId || null,
+              createdAt: conv.lastMessageAt,
+              senderId: conv.lastMessageSenderId || '',
+              senderName: conv.lastMessageSenderId === userId ? 'You' : '',
+              text: conv.lastMessageText || '',
+              type: conv.lastMessageType
+                ? conv.lastMessageType.toLowerCase()
+                : 'chat',
+              mediaUrl: null,
+              mediaType: null,
+            }
+          : null;
 
-        const resolvedLastMsg =
-          conv.lastMessageAt && !previewCleared
-            ? {
-                id: conv.lastMessageId || null,
-                createdAt: conv.lastMessageAt,
-                senderId: conv.lastMessageSenderId || '',
-                senderName: conv.lastMessageSenderId === userId ? 'You' : '',
-                text: conv.lastMessageText || '',
-                type: conv.lastMessageType
-                  ? conv.lastMessageType.toLowerCase()
-                  : 'chat',
-                mediaUrl: null,
-                mediaType: null,
-              }
-            : null;
-
-        return {
-          id: pubId,
-          publicId: pubId,
-          internalId: conv.id,
-          type: conv.type,
-          isMember: p.leftAt == null,
-          ownerId: conv.ownerId || null,
-          isGroup: isGroupConv,
-          name: isGroupConv
-            ? conv.name || 'Group'
-            : conv.name || presentUserName(otherUser) || 'Chat',
-          avatar: isGroupConv
-            ? groupAvatar
-            : conv.avatarKey || presentUserAvatar(otherUser) || null,
-          description: conv.description || null,
-          status: conv.status || 'ACTIVE',
-          isInstantMatch: conv.isInstantMatch || false,
-          expiresAt: conv.expiresAt || null,
-          createdAt: conv.createdAt,
-          updatedAt: conv.updatedAt,
-          whoCanJoin: conv.whoCanJoin || 'ANYONE',
-          visibility: conv.visibility || 'PUBLIC',
-          allowSharing: conv.allowSharing !== false,
-          editGroupPermission: conv.editGroupPermission || 'ADMIN',
-          groupUpdatesActive: p.groupUpdatesActive !== false,
-          pendingRequests: [],
-          admins: [],
-          members: [],
-          memberCount: isGroupConv
-            ? conv._count?.participants || conv.memberCount || 0
-            : 0,
-          pinned: p.isPinned || false,
-          pinnedAt: p.pinnedAt || null,
-          muted: p.isMuted || false,
-          // `blocked` drives the locked-input overlay, which both sides must get:
-          // neither party can send once a block exists in either direction.
-          blocked: blockStatus.isBlocked,
-          isBlockedByMe: blockStatus.isBlockedByMe,
-          isBlockedByThem: blockStatus.isBlockedByThem,
-          unreadCount,
-          unread: unreadCount,
-          lastMessage: resolvedLastMsg,
-          // Whether *this* viewer may send into this thread right now, judged
-          // by the one policy the backend enforces with. The client mirrors it
-          // to disable the composer; it is not the enforcement itself.
-          canSendMessages: isGroupConv
-            ? viewerEligible
-            : !targetUnavailable &&
-              viewerEligible &&
-              (!enforcingVerification ||
-                !otherUser ||
-                verificationAccess.isEligibleStatus(
-                  otherUser.verificationStatus,
-                )) &&
-              // First-year isolation. The query above already excludes a
-              // restricted DM; this covers the narrow window where a batch
-              // resolved between the two steps, and keeps this flag a faithful
-              // mirror of what the send path will do.
-              (!otherUser ||
-                this.studentYearPolicy.areBatchYearsCompatible(
-                  conversationViewerBatch,
-                  this.studentYearPolicy.getUserBatchYear(otherUser),
-                )),
-          targetUserUnavailable: targetUnavailable,
-          targetUser: otherUser
-            ? {
-                id: otherUser.id,
-                username: targetUnavailable
-                  ? DELETED_USER_USERNAME
-                  : otherUser.username,
-                displayName: presentUserName(otherUser),
-                avatar: presentUserAvatar(otherUser),
-                isDeleted: targetUnavailable,
-                profileAvailable: !targetUnavailable,
-                verificationStatus: targetUnavailable
-                  ? 'UNVERIFIED'
-                  : otherUser.verificationStatus,
-                isOnline: targetUnavailable
-                  ? false
-                  : canSeeOnline
-                    ? userPresence?.isOnline || false
-                    : false,
-                lastActive: targetUnavailable
-                  ? null
-                  : userPresence?.lastActive || null,
-              }
-            : null,
-        };
-      }),
-    );
+      return {
+        id: pubId,
+        publicId: pubId,
+        internalId: conv.id,
+        type: conv.type,
+        isMember: p.leftAt == null,
+        ownerId: conv.ownerId || null,
+        isGroup: isGroupConv,
+        name: isGroupConv
+          ? conv.name || 'Group'
+          : conv.name || presentUserName(otherUser) || 'Chat',
+        avatar: isGroupConv
+          ? groupAvatar
+          : conv.avatarKey || presentUserAvatar(otherUser) || null,
+        description: conv.description || null,
+        status: conv.status || 'ACTIVE',
+        isInstantMatch: conv.isInstantMatch || false,
+        expiresAt: conv.expiresAt || null,
+        createdAt: conv.createdAt,
+        updatedAt: conv.updatedAt,
+        whoCanJoin: conv.whoCanJoin || 'ANYONE',
+        visibility: conv.visibility || 'PUBLIC',
+        allowSharing: conv.allowSharing !== false,
+        editGroupPermission: conv.editGroupPermission || 'ADMIN',
+        groupUpdatesActive: p.groupUpdatesActive !== false,
+        pendingRequests: [],
+        admins: [],
+        members: [],
+        // The `memberCount` column was also read here as a fallback, but this
+        // query never selects it, so the count has always been `_count`.
+        memberCount: isGroupConv ? conv._count?.participants || 0 : 0,
+        pinned: p.isPinned || false,
+        pinnedAt: p.pinnedAt || null,
+        muted: p.isMuted || false,
+        // `blocked` drives the locked-input overlay, which both sides must get:
+        // neither party can send once a block exists in either direction.
+        blocked: blockStatus.isBlocked,
+        isBlockedByMe: blockStatus.isBlockedByMe,
+        isBlockedByThem: blockStatus.isBlockedByThem,
+        unreadCount,
+        unread: unreadCount,
+        lastMessage: resolvedLastMsg,
+        // Whether *this* viewer may send into this thread right now, judged
+        // by the one policy the backend enforces with. The client mirrors it
+        // to disable the composer; it is not the enforcement itself.
+        canSendMessages: isGroupConv
+          ? viewerEligible
+          : !targetUnavailable &&
+            viewerEligible &&
+            (!enforcingVerification ||
+              !otherUser ||
+              verificationAccess.isEligibleStatus(
+                otherUser.verificationStatus,
+              )) &&
+            // First-year isolation. The query above already excludes a
+            // restricted DM; this covers the narrow window where a batch
+            // resolved between the two steps, and keeps this flag a faithful
+            // mirror of what the send path will do.
+            (!otherUser ||
+              this.studentYearPolicy.areBatchYearsCompatible(
+                conversationViewerBatch,
+                this.studentYearPolicy.getUserBatchYear(otherUser),
+              )),
+        targetUserUnavailable: targetUnavailable,
+        targetUser: otherUser
+          ? {
+              id: otherUser.id,
+              username: targetUnavailable
+                ? DELETED_USER_USERNAME
+                : otherUser.username,
+              displayName: presentUserName(otherUser),
+              avatar: presentUserAvatar(otherUser),
+              isDeleted: targetUnavailable,
+              profileAvailable: !targetUnavailable,
+              verificationStatus: targetUnavailable
+                ? 'UNVERIFIED'
+                : otherUser.verificationStatus,
+              isOnline: targetUnavailable
+                ? false
+                : canSeeOnline
+                  ? userPresence?.isOnline || false
+                  : false,
+              lastActive: targetUnavailable
+                ? null
+                : userPresence?.lastActive || null,
+            }
+          : null,
+      };
+    });
 
     if (this.redis) {
       this.redis.setex(cacheKey, 60, JSON.stringify(result)).catch(() => {});
@@ -1843,7 +1862,7 @@ export class MessagesService
         },
       });
       if (existing) {
-        const pubId = (existing as any).publicId || existing.id;
+        const pubId = existing.publicId || existing.id;
         return { id: pubId, publicId: pubId };
       }
     }
@@ -1986,12 +2005,12 @@ export class MessagesService
       throw new NotFoundException('Message not found');
     }
 
-    const payload = (originalMsg.payload as any) || {};
-    const text = payload.text || '';
-    const mediaUrl = payload.mediaUrl || null;
-    const mediaType = payload.mediaType || null;
+    const payload = payloadFields(originalMsg.payload);
+    const text = stringOrEmpty(payload.text);
+    const mediaUrl = stringOrNull(payload.mediaUrl);
+    const mediaType = stringOrNull(payload.mediaType);
 
-    const forwarded: any[] = [];
+    const forwarded: Awaited<ReturnType<MessagesService['sendMessage']>>[] = [];
     const chunkSize = 5;
     for (let i = 0; i < targetConversationIds.length; i += chunkSize) {
       const chunk = targetConversationIds.slice(i, i + chunkSize);
@@ -2006,8 +2025,10 @@ export class MessagesService
 
         return this.sendMessage(userId, realConvId, {
           text,
-          mediaUrl,
-          mediaType,
+          // sendMessage treats null and undefined alike (truthiness and
+          // asStringOrNull); its DTO spells "absent" as undefined.
+          mediaUrl: mediaUrl ?? undefined,
+          mediaType: mediaType ?? undefined,
           replyToId: undefined,
           mentions: [],
           isForwarded: true,
@@ -2016,7 +2037,7 @@ export class MessagesService
       });
 
       const results = await Promise.all(promises);
-      results.forEach((msg: any) => {
+      results.forEach((msg) => {
         if (msg) forwarded.push(msg);
       });
     }
@@ -2072,8 +2093,8 @@ export class MessagesService
       avatarVal = undefined;
     }
 
-    let updated: any;
-    let participantRows: any[];
+    let updated: Conversation;
+    let participantRows: { userId: string }[];
     try {
       [updated, participantRows] = await Promise.all([
         this.prisma.conversation.update({
@@ -2122,6 +2143,7 @@ export class MessagesService
     targetUserId: string,
   ) {
     const realConvId = await this.resolveConversationId(conversationId);
+    await assertGroupConversation(this.prisma, realConvId);
     const participant = await this.prisma.conversationParticipant.findUnique({
       where: {
         userId_conversationId: {
@@ -2130,7 +2152,10 @@ export class MessagesService
         },
       },
     });
-    if (!participant) {
+    // An active member: a row alone is not enough, since removing or leaving
+    // keeps it (with `leftAt` set) — and the upsert below clears `leftAt`, so
+    // a removed member could otherwise add themselves straight back.
+    if (!isActiveParticipant(participant)) {
       throw new ForbiddenException('Not a member of this conversation');
     }
 
@@ -2175,6 +2200,22 @@ export class MessagesService
       );
     }
 
+    // Someone already in the group is left exactly as they are. The upsert
+    // resets the role to MEMBER, so "adding" the owner or an admin used to
+    // demote them.
+    const existing = await this.prisma.conversationParticipant.findUnique({
+      where: {
+        userId_conversationId: {
+          userId: targetUserId,
+          conversationId: realConvId,
+        },
+      },
+      select: { leftAt: true, deletedAt: true },
+    });
+    if (isActiveParticipant(existing)) {
+      return { success: true, alreadyMember: true };
+    }
+
     await this.prisma.conversationParticipant.upsert({
       where: {
         userId_conversationId: {
@@ -2187,7 +2228,7 @@ export class MessagesService
         deletedAt: null,
         joinedAt: new Date(),
         role: 'MEMBER',
-      } as any,
+      },
       create: {
         userId: targetUserId,
         conversationId: realConvId,
@@ -2196,7 +2237,7 @@ export class MessagesService
     });
 
     this.invalidateUserConversationsCache([targetUserId]).catch(() => {});
-    return { success: true };
+    return { success: true, alreadyMember: false };
   }
 
   async removeGroupMember(
@@ -2205,6 +2246,7 @@ export class MessagesService
     targetUserId: string,
   ) {
     const realConvId = await this.resolveConversationId(conversationId);
+    await assertGroupConversation(this.prisma, realConvId);
     const requester = await this.prisma.conversationParticipant.findUnique({
       where: {
         userId_conversationId: {
@@ -2229,7 +2271,7 @@ export class MessagesService
       },
     });
 
-    if (!target || (target as any).leftAt || target.deletedAt) {
+    if (!target || target.leftAt || target.deletedAt) {
       throw new NotFoundException('Member not found in group');
     }
 
@@ -2250,7 +2292,7 @@ export class MessagesService
           conversationId: realConvId,
         },
       },
-      data: { leftAt: new Date() } as any,
+      data: { leftAt: new Date() },
     });
 
     this.invalidateUserConversationsCache([targetUserId]).catch(() => {});
@@ -2259,17 +2301,18 @@ export class MessagesService
 
   async leaveGroup(conversationId: string, userId: string) {
     const realConvId = await this.resolveConversationId(conversationId);
+    await assertGroupConversation(this.prisma, realConvId);
     const participant = await this.prisma.conversationParticipant.findUnique({
       where: { userId_conversationId: { userId, conversationId: realConvId } },
     });
 
-    if (!participant || (participant as any).leftAt || participant.deletedAt) {
+    if (!participant || participant.leftAt || participant.deletedAt) {
       return { success: true };
     }
 
     await this.prisma.conversationParticipant.update({
       where: { userId_conversationId: { userId, conversationId: realConvId } },
-      data: { leftAt: new Date() } as any,
+      data: { leftAt: new Date() },
     });
 
     this.invalidateUserConversationsCache([userId]).catch(() => {});
@@ -2402,7 +2445,7 @@ export class MessagesService
         conversationId: realConvId,
         leftAt: null,
         deletedAt: null,
-      } as any,
+      },
       select: { userId: true },
     });
     return participants.map((p) => p.userId);
@@ -2418,13 +2461,17 @@ export class MessagesService
         leftAt: null,
         deletedAt: null,
         groupUpdatesActive: true,
-      } as any,
+      },
       select: { userId: true },
     });
     return participants.map((p) => p.userId);
   }
 
-  async updateGroupSettings(conversationId: string, userId: string, data: any) {
+  async updateGroupSettings(
+    conversationId: string,
+    userId: string,
+    data: UpdateGroupSettingsDto,
+  ) {
     const realConvId = await this.resolveConversationId(conversationId);
     const participant = await this.prisma.conversationParticipant.findUnique({
       where: { userId_conversationId: { userId, conversationId: realConvId } },
@@ -2442,16 +2489,7 @@ export class MessagesService
 
     // Whitelist admin-editable settings — never write the raw body (prevents
     // mass-assignment of ownerId/status/type/expiresAt/etc.).
-    const ALLOWED_SETTINGS = [
-      'whoCanJoin',
-      'visibility',
-      'allowSharing',
-      'editGroupPermission',
-    ] as const;
-    const settingsData: any = {};
-    for (const key of ALLOWED_SETTINGS) {
-      if (data[key] !== undefined) settingsData[key] = data[key];
-    }
+    const settingsData = pickGroupSettings(data);
 
     if (Object.keys(settingsData).length > 0) {
       if (
@@ -2557,7 +2595,7 @@ export class MessagesService
           deletedAt: null,
           joinedAt: new Date(),
           role: 'MEMBER',
-        } as any,
+        },
         create: {
           userId: targetUserId,
           conversationId: realConvId,
@@ -2620,7 +2658,7 @@ export class MessagesService
     text: string,
   ) {
     const realConvId = await this.resolveConversationId(conversationId);
-    const message: any = await this.prisma.message.create({
+    const message = await this.prisma.message.create({
       data: {
         conversationId: realConvId,
         senderId,

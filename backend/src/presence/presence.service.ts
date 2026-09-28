@@ -3,6 +3,7 @@ import { RedisService } from '../redis/redis.service';
 import Redis from 'ioredis';
 import { PrismaService } from '../prisma/prisma.service';
 import { detach } from '../common/utils/detach.util';
+import { errorMessage } from '../common/utils/error.util';
 
 export interface UserPresence {
   lastSeen: string;
@@ -151,7 +152,9 @@ export class PresenceService {
       if (this.redis) {
         const key = this.getPresenceKey(userId);
         const data = await this.redis.get(key);
-        let presence: UserPresence | null = data ? JSON.parse(data) : null;
+        let presence: UserPresence | null = data
+          ? (JSON.parse(data) as UserPresence)
+          : null;
 
         presence = this.cleanPresence(presence);
         const previousStatus = presence?.status || 'offline';
@@ -204,7 +207,9 @@ export class PresenceService {
       if (this.redis) {
         const key = this.getPresenceKey(userId);
         const data = await this.redis.get(key);
-        let presence: UserPresence | null = data ? JSON.parse(data) : null;
+        let presence: UserPresence | null = data
+          ? (JSON.parse(data) as UserPresence)
+          : null;
 
         if (presence) {
           presence.socketIds = presence.socketIds.filter(
@@ -224,7 +229,7 @@ export class PresenceService {
                     try {
                       const currentData = await this.redis?.get(key);
                       let currPresence: UserPresence | null = currentData
-                        ? JSON.parse(currentData)
+                        ? (JSON.parse(currentData) as UserPresence)
                         : null;
                       currPresence = this.cleanPresence(currPresence);
                       if (
@@ -304,7 +309,9 @@ export class PresenceService {
       if (this.redis) {
         const key = this.getPresenceKey(userId);
         const data = await this.redis.get(key);
-        let presence: UserPresence | null = data ? JSON.parse(data) : null;
+        let presence: UserPresence | null = data
+          ? (JSON.parse(data) as UserPresence)
+          : null;
         presence = this.cleanPresence(presence);
         if (presence && presence.socketIds.length === 0) {
           presence.status = 'offline';
@@ -335,7 +342,7 @@ export class PresenceService {
           const val = values[idx];
           if (val) {
             try {
-              let pres: UserPresence | null = JSON.parse(val);
+              let pres: UserPresence | null = JSON.parse(val) as UserPresence;
               pres = this.cleanPresence(pres);
               if (pres) result.set(uId, pres);
             } catch {
@@ -376,7 +383,7 @@ export class PresenceService {
       this.logger.log(`Removed presence for deleted user=${userId}`);
     } catch (err) {
       this.logger.warn(
-        `Failed to remove presence for user=${userId}: ${err?.message || err}`,
+        `Failed to remove presence for user=${userId}: ${errorMessage(err)}`,
       );
     }
   }

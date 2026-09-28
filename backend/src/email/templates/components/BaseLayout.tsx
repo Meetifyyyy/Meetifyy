@@ -18,7 +18,10 @@ interface BaseLayoutProps {
   children: React.ReactNode;
 }
 
-export const BaseLayout: React.FC<BaseLayoutProps> = ({ previewText, children }) => {
+export const BaseLayout: React.FC<BaseLayoutProps> = ({
+  previewText,
+  children,
+}) => {
   return (
     <Html>
       <Head />
@@ -33,24 +36,32 @@ export const BaseLayout: React.FC<BaseLayoutProps> = ({ previewText, children })
               style={logo}
             />
           </Section>
-          
-          <Section style={contentWrapper}>
-            {children}
-          </Section>
+
+          <Section style={contentWrapper}>{children}</Section>
 
           <Hr style={divider} />
-          
+
           <Section style={footer}>
             <Text style={footerText}>
-              <Link href={SITE_CONFIG.instagramUrl} style={socialLink}>Instagram</Link>
+              <Link href={SITE_CONFIG.instagramUrl} style={socialLink}>
+                Instagram
+              </Link>
               <span style={footerSeparator}>•</span>
-              <Link href={SITE_CONFIG.linkedinUrl} style={socialLink}>LinkedIn</Link>
+              <Link href={SITE_CONFIG.linkedinUrl} style={socialLink}>
+                LinkedIn
+              </Link>
             </Text>
             <Text style={footerText}>
-              &copy; {new Date().getFullYear()} {SITE_CONFIG.appName}. All rights reserved.<br />
-              <Link href={SITE_CONFIG.privacyUrl} style={footerLink}>Privacy Policy</Link>
+              &copy; {new Date().getFullYear()} {SITE_CONFIG.appName}. All
+              rights reserved.
+              <br />
+              <Link href={SITE_CONFIG.privacyUrl} style={footerLink}>
+                Privacy Policy
+              </Link>
               <span style={footerSeparator}>•</span>
-              <Link href={SITE_CONFIG.termsUrl} style={footerLink}>Terms of Service</Link>
+              <Link href={SITE_CONFIG.termsUrl} style={footerLink}>
+                Terms of Service
+              </Link>
             </Text>
           </Section>
         </Container>

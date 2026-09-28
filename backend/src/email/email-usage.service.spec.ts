@@ -1,10 +1,19 @@
 import { EmailUsageService } from './email-usage.service';
+import { stub } from '../common/testing/stub';
+import type { RedisService } from '../redis/redis.service';
 
 /**
  * The daily counter. Two properties matter: it must key by UTC day so replicas
  * in different regions agree, and it must never let a Redis problem turn a
  * delivered email into a failed job.
  */
+
+/** The slice of an ioredis MULTI chain the counter uses. */
+type MultiChain = {
+  incr(k: string): MultiChain;
+  expire(k: string, s: number): MultiChain;
+  exec(): Promise<unknown[]>;
+};
 
 class FakeRedis {
   store = new Map<string, number>();
@@ -13,7 +22,7 @@ class FakeRedis {
 
   multi() {
     const ops: Array<() => void> = [];
-    const chain: any = {
+    const chain: MultiChain = {
       incr: (k: string) => {
         ops.push(() => this.store.set(k, (this.store.get(k) ?? 0) + 1));
         return chain;
@@ -22,24 +31,28 @@ class FakeRedis {
         ops.push(() => this.expires.set(k, s));
         return chain;
       },
-      exec: async () => {
-        if (this.failMode === 'throw') throw new Error('redis down');
+      exec: () => {
+        if (this.failMode === 'throw')
+          return Promise.reject(new Error('redis down'));
         ops.forEach((op) => op());
-        return [];
+        return Promise.resolve([]);
       },
     };
     return chain;
   }
 
-  async get(key: string) {
-    if (this.failMode === 'throw') throw new Error('redis down');
+  get(key: string) {
+    if (this.failMode === 'throw')
+      return Promise.reject(new Error('redis down'));
     const v = this.store.get(key);
-    return v === undefined ? null : String(v);
+    return Promise.resolve(v === undefined ? null : String(v));
   }
 }
 
 const makeService = (client: FakeRedis | null) =>
-  new EmailUsageService({ getClient: () => client } as any);
+  new EmailUsageService(
+    stub<RedisService>({ getClient: jest.fn(() => client) }),
+  );
 
 const todayKey = (provider: string) =>
   `email:sent:${provider}:${new Date().toISOString().slice(0, 10)}`;

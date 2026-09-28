@@ -21,17 +21,35 @@ import { allowAllRateLimitProvider } from '../common/rate-limit/testing/rate-lim
  * These tests exercise the real policy service against the shared messaging
  * base class, so they fail if either the rule or the choke point moves.
  */
+/** `user` lookups answering from a map of verification statuses. */
+const usersWith = (statuses: Record<string, VerificationStatus>) => ({
+  findMany: jest.fn(({ where }: { where: { id: { in: string[] } } }) =>
+    Promise.resolve(
+      where.id.in
+        .filter((id) => statuses[id])
+        .map((id) => ({ id, verificationStatus: statuses[id] })),
+    ),
+  ),
+  findUnique: jest.fn(({ where }: { where: { id: string } }) =>
+    Promise.resolve(
+      statuses[where.id]
+        ? { id: where.id, verificationStatus: statuses[where.id] }
+        : null,
+    ),
+  ),
+});
+
 describe('messaging — both participants must be verified', () => {
   const ME = 'user-me';
   const THEM = 'user-them';
 
   let service: DmService;
-  let prisma: any;
+  let prisma: ReturnType<typeof makePrisma>;
 
-  const buildWith = async (statuses: Record<string, VerificationStatus>) => {
-    prisma = {
-      conversation: {
-        findUnique: jest.fn(async () => ({
+  const makePrisma = (statuses: Record<string, VerificationStatus>) => ({
+    conversation: {
+      findUnique: jest.fn(() =>
+        Promise.resolve({
           id: 'conv-internal',
           publicId: 'conv-public',
           name: null,
@@ -40,24 +58,17 @@ describe('messaging — both participants must be verified', () => {
             { userId: ME, isMuted: false },
             { userId: THEM, isMuted: false },
           ],
-        })),
-        findFirst: jest.fn(async () => null),
-      },
-      conversationParticipant: { findMany: jest.fn(async () => []) },
-      user: {
-        findMany: jest.fn(async ({ where }: any) =>
-          where.id.in
-            .filter((id: string) => statuses[id])
-            .map((id: string) => ({ id, verificationStatus: statuses[id] })),
-        ),
-        findUnique: jest.fn(async ({ where }: any) =>
-          statuses[where.id]
-            ? { id: where.id, verificationStatus: statuses[where.id] }
-            : null,
-        ),
-      },
-      message: { create: jest.fn() },
-    };
+        }),
+      ),
+      findFirst: jest.fn(() => Promise.resolve(null)),
+    },
+    conversationParticipant: { findMany: jest.fn(() => Promise.resolve([])) },
+    user: usersWith(statuses),
+    message: { create: jest.fn() },
+  });
+
+  const buildWith = async (statuses: Record<string, VerificationStatus>) => {
+    prisma = makePrisma(statuses);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -71,7 +82,7 @@ describe('messaging — both participants must be verified', () => {
         { provide: DomainEventService, useValue: { emit: jest.fn() } },
         {
           provide: MentionsService,
-          useValue: { sanitize: jest.fn(async () => []) },
+          useValue: { sanitize: jest.fn(() => Promise.resolve([])) },
         },
       ],
     }).compile();
@@ -139,41 +150,36 @@ describe('conversation history carries the send verdict', () => {
   const THEM = 'user-them';
 
   const buildService = async (statuses: Record<string, VerificationStatus>) => {
-    const prisma: any = {
+    const prisma = {
       conversation: {
-        findUnique: jest.fn(async () => ({
-          id: 'conv-internal',
-          type: 'DM',
-          participants: [{ userId: ME }, { userId: THEM }],
-        })),
-        findFirst: jest.fn(async () => null),
+        findUnique: jest.fn(() =>
+          Promise.resolve({
+            id: 'conv-internal',
+            type: 'DM',
+            participants: [{ userId: ME }, { userId: THEM }],
+          }),
+        ),
+        findFirst: jest.fn(() => Promise.resolve(null)),
       },
       conversationParticipant: {
-        findFirst: jest.fn(async () => ({
-          userId: ME,
-          lastReadAt: null,
-          clearedAt: null,
-          leftAt: null,
-        })),
-        findMany: jest.fn(async () => [
-          { userId: ME, lastReadAt: null, clearedAt: null, leftAt: null },
-          { userId: THEM, lastReadAt: null, clearedAt: null, leftAt: null },
-        ]),
-      },
-      deletedMessage: { findMany: jest.fn(async () => []) },
-      message: { findMany: jest.fn(async () => []) },
-      user: {
-        findMany: jest.fn(async ({ where }: any) =>
-          where.id.in
-            .filter((id: string) => statuses[id])
-            .map((id: string) => ({ id, verificationStatus: statuses[id] })),
+        findFirst: jest.fn(() =>
+          Promise.resolve({
+            userId: ME,
+            lastReadAt: null,
+            clearedAt: null,
+            leftAt: null,
+          }),
         ),
-        findUnique: jest.fn(async ({ where }: any) =>
-          statuses[where.id]
-            ? { id: where.id, verificationStatus: statuses[where.id] }
-            : null,
+        findMany: jest.fn(() =>
+          Promise.resolve([
+            { userId: ME, lastReadAt: null, clearedAt: null, leftAt: null },
+            { userId: THEM, lastReadAt: null, clearedAt: null, leftAt: null },
+          ]),
         ),
       },
+      deletedMessage: { findMany: jest.fn(() => Promise.resolve([])) },
+      message: { findMany: jest.fn(() => Promise.resolve([])) },
+      user: usersWith(statuses),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -188,7 +194,7 @@ describe('conversation history carries the send verdict', () => {
         { provide: DomainEventService, useValue: { emit: jest.fn() } },
         {
           provide: MentionsService,
-          useValue: { sanitize: jest.fn(async () => []) },
+          useValue: { sanitize: jest.fn(() => Promise.resolve([])) },
         },
       ],
     }).compile();

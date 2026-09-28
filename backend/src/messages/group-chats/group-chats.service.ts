@@ -5,6 +5,11 @@ import {
   BadRequestException,
   Optional,
 } from '@nestjs/common';
+import type { Conversation } from '@prisma/client';
+import {
+  assertGroupConversation,
+  isActiveParticipant,
+} from '../core/group-membership';
 import { MessagingCoreService } from '../core/messaging-core.service';
 import {
   isUnavailableUser,
@@ -25,6 +30,10 @@ import { StudentYearPolicyService } from '../../common/student-year/student-year
 import { RateLimitService } from '../../common/rate-limit/rate-limit.service';
 import { assertNewConversationWithinRateLimit } from '../core/message-limits';
 import { detach } from '../../common/utils/detach.util';
+import {
+  UpdateGroupSettingsDto,
+  pickGroupSettings,
+} from '../dto/update-group-settings.dto';
 
 @Injectable()
 export class GroupChatsService extends MessagingCoreService {
@@ -168,7 +177,7 @@ export class GroupChatsService extends MessagingCoreService {
       },
     });
 
-    return (participants as any[]).map((p: any) => {
+    return participants.map((p) => {
       const conv = p.conversation;
       const pubId = conv.publicId || conv.id;
       const groupAvatar = conv.avatarKey || null;
@@ -181,7 +190,7 @@ export class GroupChatsService extends MessagingCoreService {
       // exists for them anywhere else. Hide any preview at or before this
       // user's own cutoff; the next message they actually receive is after it
       // and shows normally.
-      const cutoff = p.clearedAt as Date | null;
+      const cutoff = p.clearedAt;
       const previewCleared = Boolean(
         cutoff &&
         conv.lastMessageAt &&
@@ -384,7 +393,9 @@ export class GroupChatsService extends MessagingCoreService {
         const cached = await this.redis.get(
           this.groupDetailsDataKey(realConvId, userId, ver),
         );
-        if (cached) return JSON.parse(cached);
+        // This same response, JSON-serialized below; dates come back as the
+        // ISO strings the fresh response is sent as anyway.
+        if (cached) return JSON.parse(cached) as typeof result;
       } catch {
         // A cache miss and an unreachable Redis are the same thing here: rebuild the response.
       }
@@ -421,8 +432,8 @@ export class GroupChatsService extends MessagingCoreService {
       throw new ForbiddenException('Group not found or you are not a member');
     }
 
-    const participants = (conv as any).participants || [];
-    const myParticipant = participants.find((p: any) => p.userId === userId);
+    const participants = conv.participants || [];
+    const myParticipant = participants.find((p) => p.userId === userId);
     if (!myParticipant) {
       throw new ForbiddenException('Group not found or you are not a member');
     }
@@ -467,9 +478,9 @@ export class GroupChatsService extends MessagingCoreService {
 
     // Deterministic role order: OWNER (0), ADMIN (1), MEMBER (2)
     const roleRank = { OWNER: 0, ADMIN: 1, MEMBER: 2 };
-    const sortedParticipants = [...participants].sort((a: any, b: any) => {
-      const rankA = roleRank[a.role as keyof typeof roleRank] ?? 99;
-      const rankB = roleRank[b.role as keyof typeof roleRank] ?? 99;
+    const sortedParticipants = [...participants].sort((a, b) => {
+      const rankA = roleRank[a.role] ?? 99;
+      const rankB = roleRank[b.role] ?? 99;
       if (rankA !== rankB) return rankA - rankB;
       const nameA = (
         a.user?.displayName ||
@@ -485,17 +496,17 @@ export class GroupChatsService extends MessagingCoreService {
     });
 
     const admins = sortedParticipants
-      .filter((p: any) => p.role === 'ADMIN')
-      .map((p: any) => p.userId);
+      .filter((p) => p.role === 'ADMIN')
+      .map((p) => p.userId);
     const members = sortedParticipants
-      .filter((p: any) => p.role === 'MEMBER')
-      .map((p: any) => p.userId);
+      .filter((p) => p.role === 'MEMBER')
+      .map((p) => p.userId);
 
     // A member who deleted their account keeps their row — removing it would
     // silently rewrite the group's history and its member count for everyone
     // else — but is presented as the tombstone, and flagged so the client
     // renders the name as plain text with no profile link.
-    const memberDetails = sortedParticipants.map((p: any) => {
+    const memberDetails = sortedParticipants.map((p) => {
       const unavailable = isUnavailableUser(p.user);
       return {
         userId: p.userId,
@@ -510,7 +521,7 @@ export class GroupChatsService extends MessagingCoreService {
       };
     });
 
-    const pendingRequests = pendingJoinRequests.map((req: any) => ({
+    const pendingRequests = pendingJoinRequests.map((req) => ({
       id: req.id,
       userId: req.userId,
       username: req.user?.username || '',
@@ -626,8 +637,8 @@ export class GroupChatsService extends MessagingCoreService {
       avatarVal = undefined;
     }
 
-    let updated: any;
-    let participantRows: any[];
+    let updated: Conversation;
+    let participantRows: { userId: string }[];
     try {
       [updated, participantRows] = await Promise.all([
         this.prisma.conversation.update({
@@ -684,6 +695,7 @@ export class GroupChatsService extends MessagingCoreService {
     targetUserId: string,
   ) {
     const realConvId = await this.resolveConversationId(conversationId);
+    await assertGroupConversation(this.prisma, realConvId);
     const participant = await this.prisma.conversationParticipant.findUnique({
       where: {
         userId_conversationId: {
@@ -692,7 +704,10 @@ export class GroupChatsService extends MessagingCoreService {
         },
       },
     });
-    if (!participant) {
+    // An active member: a row alone is not enough, since removing or leaving
+    // keeps it (with `leftAt` set) — and the upsert below clears `leftAt`, so
+    // a removed member could otherwise add themselves straight back.
+    if (!isActiveParticipant(participant)) {
       throw new ForbiddenException('Not a member of this conversation');
     }
 
@@ -737,6 +752,22 @@ export class GroupChatsService extends MessagingCoreService {
       );
     }
 
+    // Someone already in the group is left exactly as they are. The upsert
+    // resets the role to MEMBER, so "adding" the owner or an admin used to
+    // demote them.
+    const existing = await this.prisma.conversationParticipant.findUnique({
+      where: {
+        userId_conversationId: {
+          userId: targetUserId,
+          conversationId: realConvId,
+        },
+      },
+      select: { leftAt: true, deletedAt: true },
+    });
+    if (isActiveParticipant(existing)) {
+      return { success: true, alreadyMember: true };
+    }
+
     await this.prisma.conversationParticipant.upsert({
       where: {
         userId_conversationId: {
@@ -749,7 +780,7 @@ export class GroupChatsService extends MessagingCoreService {
         deletedAt: null,
         joinedAt: new Date(),
         role: 'MEMBER',
-      } as any,
+      },
       create: {
         userId: targetUserId,
         conversationId: realConvId,
@@ -757,7 +788,7 @@ export class GroupChatsService extends MessagingCoreService {
       },
     });
 
-    return { success: true };
+    return { success: true, alreadyMember: false };
   }
 
   async removeGroupMember(
@@ -766,6 +797,7 @@ export class GroupChatsService extends MessagingCoreService {
     targetUserId: string,
   ) {
     const realConvId = await this.resolveConversationId(conversationId);
+    await assertGroupConversation(this.prisma, realConvId);
 
     const [requester, target] = await Promise.all([
       this.prisma.conversationParticipant.findUnique({
@@ -793,7 +825,7 @@ export class GroupChatsService extends MessagingCoreService {
       throw new ForbiddenException('Only group admins can remove members');
     }
 
-    if (!target || (target as any).leftAt || target.deletedAt) {
+    if (!target || target.leftAt || target.deletedAt) {
       throw new NotFoundException('Member not found in group');
     }
 
@@ -814,7 +846,7 @@ export class GroupChatsService extends MessagingCoreService {
           conversationId: realConvId,
         },
       },
-      data: { leftAt: new Date() } as any,
+      data: { leftAt: new Date() },
     });
 
     return { success: true };
@@ -822,17 +854,18 @@ export class GroupChatsService extends MessagingCoreService {
 
   async leaveGroup(conversationId: string, userId: string) {
     const realConvId = await this.resolveConversationId(conversationId);
+    await assertGroupConversation(this.prisma, realConvId);
     const participant = await this.prisma.conversationParticipant.findUnique({
       where: { userId_conversationId: { userId, conversationId: realConvId } },
     });
 
-    if (!participant || (participant as any).leftAt || participant.deletedAt) {
+    if (!participant || participant.leftAt || participant.deletedAt) {
       return { success: true };
     }
 
     await this.prisma.conversationParticipant.update({
       where: { userId_conversationId: { userId, conversationId: realConvId } },
-      data: { leftAt: new Date() } as any,
+      data: { leftAt: new Date() },
     });
 
     if (participant.role === 'OWNER') {
@@ -902,7 +935,11 @@ export class GroupChatsService extends MessagingCoreService {
     return { success: true };
   }
 
-  async updateGroupSettings(conversationId: string, userId: string, data: any) {
+  async updateGroupSettings(
+    conversationId: string,
+    userId: string,
+    data: UpdateGroupSettingsDto,
+  ) {
     const realConvId = await this.resolveConversationId(conversationId);
 
     // Auth check FIRST — validate membership before any mutation
@@ -919,16 +956,7 @@ export class GroupChatsService extends MessagingCoreService {
     // Whitelist admin-editable settings. Never spread the raw body into
     // conversation.update — that would let an admin mass-assign ANY column
     // (ownerId, status, type, expiresAt, lastMessageText, isInstantMatch, …).
-    const ALLOWED_SETTINGS = [
-      'whoCanJoin',
-      'visibility',
-      'allowSharing',
-      'editGroupPermission',
-    ] as const;
-    const restData: any = {};
-    for (const key of ALLOWED_SETTINGS) {
-      if (data[key] !== undefined) restData[key] = data[key];
-    }
+    const restData = pickGroupSettings(data);
 
     // Admin-only fields require OWNER or ADMIN role
     if (Object.keys(restData).length > 0) {
@@ -939,18 +967,16 @@ export class GroupChatsService extends MessagingCoreService {
       }
     }
 
-    const ops: Promise<any>[] = [];
-
-    if (groupUpdatesActive !== undefined) {
-      ops.push(
-        this.prisma.conversationParticipant.update({
-          where: {
-            userId_conversationId: { userId, conversationId: realConvId },
-          },
-          data: { groupUpdatesActive },
-        }),
-      );
-    }
+    // The caller's own notification switch, when they sent one.
+    const participantUpdate =
+      groupUpdatesActive !== undefined
+        ? this.prisma.conversationParticipant.update({
+            where: {
+              userId_conversationId: { userId, conversationId: realConvId },
+            },
+            data: { groupUpdatesActive },
+          })
+        : Promise.resolve(null);
 
     const updateConvPromise =
       Object.keys(restData).length > 0
@@ -978,18 +1004,16 @@ export class GroupChatsService extends MessagingCoreService {
             },
           });
 
-    ops.push(updateConvPromise);
-    ops.push(
+    // Same three queries, run together, in the same order as before.
+    const [, updatedConv, participantRows] = await Promise.all([
+      participantUpdate,
+      updateConvPromise,
       this.prisma.conversationParticipant.findMany({
         where: { conversationId: realConvId, leftAt: null, deletedAt: null },
         select: { userId: true },
       }),
-    );
-
-    const results = await Promise.all(ops);
-    const updatedConv = results[results.length - 2];
-    const participantRows = results[results.length - 1] || [];
-    const participantIds = participantRows.map((p: any) => p.userId);
+    ]);
+    const participantIds = (participantRows || []).map((p) => p.userId);
     void this.invalidateUserConversationsCache(participantIds);
     this._invalidateGroupDetailsByRealId(realConvId).catch(() => {});
 
@@ -1105,7 +1129,7 @@ export class GroupChatsService extends MessagingCoreService {
           deletedAt: null,
           joinedAt: new Date(),
           role: 'MEMBER',
-        } as any,
+        },
         create: {
           userId: targetUserId,
           conversationId: realConvId,

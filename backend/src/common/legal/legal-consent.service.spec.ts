@@ -1,4 +1,13 @@
+import type { LegalDocumentType } from '@prisma/client';
 import { LegalConsentService } from './legal-consent.service';
+import { stub } from '../testing/stub';
+import type { PrismaService } from '../../prisma/prisma.service';
+
+/** An acknowledgement row as the fake stores it. */
+type AckRow = { userId: string; versionId: string; versionNumber?: number };
+
+/** The per-user acknowledgement lookup the gate issues. */
+type AckQuery = { where: { userId: string; versionId: { in: string[] } } };
 
 /**
  * The gate that decides whether a user may keep using Meetifyy.
@@ -11,7 +20,7 @@ import { LegalConsentService } from './legal-consent.service';
 describe('LegalConsentService', () => {
   const TERMS_V4 = {
     id: 'v-terms-4',
-    documentType: 'TERMS_OF_SERVICE' as any,
+    documentType: 'TERMS_OF_SERVICE' as LegalDocumentType,
     versionNumber: 4,
     title: 'Terms of Service',
     subtitle: null,
@@ -26,42 +35,59 @@ describe('LegalConsentService', () => {
   const PRIVACY_V2 = {
     ...TERMS_V4,
     id: 'v-privacy-2',
-    documentType: 'PRIVACY_POLICY' as any,
+    documentType: 'PRIVACY_POLICY' as LegalDocumentType,
     versionNumber: 2,
   };
 
-  let prisma: any;
+  let prisma: LegalPrismaFake;
   let service: LegalConsentService;
   /** What the database returns for `isCurrent: true` — required or not. */
-  let required: any[];
-  let acknowledgements: { userId: string; versionId: string }[];
+  let required: (typeof TERMS_V4)[];
+  let acknowledgements: AckRow[];
 
-  beforeEach(() => {
-    required = [];
-    acknowledgements = [];
-    prisma = {
-      legalDocumentVersion: {
-        findMany: jest.fn(async () => required),
-      },
-      legalAcknowledgement: {
-        findMany: jest.fn(async ({ where }: any) =>
+  /** The fake Prisma surface; `createMany` is installed per suite. */
+  type LegalPrismaFake = {
+    legalDocumentVersion: {
+      findMany: jest.Mock<Promise<(typeof TERMS_V4)[]>, []>;
+    };
+    legalAcknowledgement: {
+      findMany: jest.Mock<Promise<AckRow[]>, [AckQuery]>;
+      count: jest.Mock<Promise<number>, [AckQuery]>;
+      createMany?: jest.Mock<Promise<{ count: number }>, [{ data: AckRow[] }]>;
+    };
+  };
+
+  const makePrisma = (): LegalPrismaFake => ({
+    legalDocumentVersion: {
+      findMany: jest.fn(() => Promise.resolve(required)),
+    },
+    legalAcknowledgement: {
+      findMany: jest.fn(({ where }: AckQuery) =>
+        Promise.resolve(
           acknowledgements.filter(
             (a) =>
               a.userId === where.userId &&
               where.versionId.in.includes(a.versionId),
           ),
         ),
-        count: jest.fn(
-          async ({ where }: any) =>
-            acknowledgements.filter(
-              (a) =>
-                a.userId === where.userId &&
-                where.versionId.in.includes(a.versionId),
-            ).length,
+      ),
+      count: jest.fn(({ where }: AckQuery) =>
+        Promise.resolve(
+          acknowledgements.filter(
+            (a) =>
+              a.userId === where.userId &&
+              where.versionId.in.includes(a.versionId),
+          ).length,
         ),
-      },
-    };
-    service = new LegalConsentService(prisma);
+      ),
+    },
+  });
+
+  beforeEach(() => {
+    required = [];
+    acknowledgements = [];
+    prisma = makePrisma();
+    service = new LegalConsentService(stub<PrismaService>(prisma));
   });
 
   describe('when nothing requires acknowledgement', () => {
@@ -191,14 +217,14 @@ describe('LegalConsentService', () => {
      */
     beforeEach(() => {
       prisma.legalAcknowledgement.createMany = jest.fn(
-        async ({ data }: any) => {
+        ({ data }: { data: AckRow[] }) => {
           for (const row of data) {
             const clash = acknowledgements.some(
               (a) => a.userId === row.userId && a.versionId === row.versionId,
             );
             if (!clash) acknowledgements.push(row);
           }
-          return { count: data.length };
+          return Promise.resolve({ count: data.length });
         },
       );
     });
@@ -207,7 +233,7 @@ describe('LegalConsentService', () => {
       required = [TERMS_V4, PRIVACY_V2];
       await service.recordSignupConsent('new-user');
       expect(acknowledgements).toHaveLength(2);
-      expect(acknowledgements.map((a: any) => a.versionNumber).sort()).toEqual([
+      expect(acknowledgements.map((a) => a.versionNumber).sort()).toEqual([
         2, 4,
       ]);
     });
@@ -234,8 +260,11 @@ describe('LegalConsentService', () => {
      */
     it('never throws into the account-creation path', async () => {
       required = [TERMS_V4];
-      prisma.legalAcknowledgement.createMany = jest.fn(async () => {
-        throw new Error('connection reset');
+      prisma.legalAcknowledgement.createMany = jest.fn<
+        Promise<{ count: number }>,
+        [{ data: AckRow[] }]
+      >(() => {
+        return Promise.reject(new Error('connection reset'));
       });
       await expect(
         service.recordSignupConsent('new-user'),

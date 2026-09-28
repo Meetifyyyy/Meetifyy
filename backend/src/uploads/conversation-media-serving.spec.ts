@@ -1,4 +1,7 @@
+import type { Response } from 'express';
 import { UploadsController } from './uploads.controller';
+import { stub } from '../common/testing/stub';
+import type { StorageService } from './uploads.service';
 
 /**
  * How an authorized conversation attachment actually reaches the browser.
@@ -19,58 +22,73 @@ import { UploadsController } from './uploads.controller';
 describe('serving an authorized conversation attachment', () => {
   const KEY = 'chat/deadbeefdeadbeefdeadbeefdeadbeef.webp';
 
-  const buildRes = () => {
-    const res: any = {
-      headers: {} as Record<string, string>,
-      statusCode: null as number | null,
-      redirectedTo: null as string | null,
+  /** An Express response that records what the controller did with it. */
+  type RecordedResponse = Response & {
+    headers: Record<string, string>;
+    redirectedTo: string | null;
+    ended: boolean;
+  };
+
+  const buildRes = (): RecordedResponse => {
+    // `statusCode` starts unset: the controller never reads it, and every
+    // assertion on it follows a `status()` call.
+    const res: RecordedResponse = stub<RecordedResponse>({
+      headers: {},
+      redirectedTo: null,
       ended: false,
-      setHeader(k: string, v: string) {
-        this.headers[k.toLowerCase()] = v;
-      },
-      removeHeader() {},
-      status(code: number) {
-        this.statusCode = code;
-        return this;
-      },
-      redirect(url: string) {
-        this.redirectedTo = url;
-        return this;
-      },
-      end() {
-        this.ended = true;
-        return this;
-      },
-      sendFile() {
+      setHeader: jest.fn((k: string, v: string) => {
+        res.headers[k.toLowerCase()] = v;
+      }),
+      removeHeader: jest.fn(() => {}),
+      status: jest.fn((code: number) => {
+        res.statusCode = code;
+        return res;
+      }),
+      redirect: jest.fn((url: string) => {
+        res.redirectedTo = url;
+        return res;
+      }),
+      end: jest.fn(() => {
+        res.ended = true;
+        return res;
+      }),
+      sendFile: jest.fn(() => {
         throw new Error('should not read from local disk');
-      },
-      send() {
+      }),
+      send: jest.fn(() => {
         throw new Error('should not send a body');
-      },
-    };
+      }),
+    });
     return res;
   };
 
-  const build = (over: Partial<Record<string, any>> = {}) => {
-    const storage: any = {
-      isSafeStorageKey: () => true,
-      isAlwaysPrivateKey: () => false,
-      isConversationScopedKey: () => true,
-      canViewConversationMedia: jest.fn().mockResolvedValue(true),
-      getSignedUrlForViewer: jest
-        .fn()
-        .mockResolvedValue('https://r2.example/signed?sig=abc'),
-      getResolvedPublicUrl: jest
-        .fn()
-        .mockResolvedValue('https://pub-test.r2.dev/' + KEY),
-      exists: jest.fn().mockResolvedValue(true),
-      ...over,
+  const storageDefaults = () => ({
+    isSafeStorageKey: () => true,
+    isAlwaysPrivateKey: () => false,
+    isConversationScopedKey: () => true,
+    canViewConversationMedia: jest.fn().mockResolvedValue(true),
+    getSignedUrlForViewer: jest
+      .fn()
+      .mockResolvedValue('https://r2.example/signed?sig=abc'),
+    getResolvedPublicUrl: jest
+      .fn()
+      .mockResolvedValue('https://pub-test.r2.dev/' + KEY),
+    exists: jest.fn().mockResolvedValue(true),
+  });
+
+  const build = (over: Partial<ReturnType<typeof storageDefaults>> = {}) => {
+    const storage = { ...storageDefaults(), ...over };
+    return {
+      controller: new UploadsController(stub<StorageService>(storage)),
+      storage,
     };
-    return { controller: new UploadsController(storage), storage };
   };
 
-  const serve = (controller: any, res: any, viewerId: string | null) =>
-    (controller as any).handleGetMedia(KEY, 'chat', res, viewerId);
+  const serve = (
+    controller: UploadsController,
+    res: RecordedResponse,
+    viewerId: string | null,
+  ) => controller['handleGetMedia'](KEY, 'chat', res, viewerId);
 
   it('redirects to a signed url, not the public one', async () => {
     const { controller, storage } = build();
@@ -110,8 +128,8 @@ describe('serving an authorized conversation attachment', () => {
 
   it('refuses an anonymous request', async () => {
     const { controller, storage } = build({
-      canViewConversationMedia: jest.fn(async (_k: string, v: unknown) =>
-        Boolean(v),
+      canViewConversationMedia: jest.fn((_k: string, v: unknown) =>
+        Promise.resolve(Boolean(v)),
       ),
     });
     const res = buildRes();

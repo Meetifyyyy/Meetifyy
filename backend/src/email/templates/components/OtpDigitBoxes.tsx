@@ -86,7 +86,8 @@ const digitTextCell = {
   color: '#2563eb',
   fontSize: '26px',
   fontWeight: '700',
-  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+  fontFamily:
+    'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
   lineHeight: '56px',
   textAlign: 'center' as const,
   margin: 0,
@@ -108,5 +109,6 @@ const templateText = {
   fontSize: '26px',
   fontWeight: '700',
   letterSpacing: '8px',
-  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+  fontFamily:
+    'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
 };

@@ -63,13 +63,7 @@ describe('LinkPreviewService', () => {
  */
 describe('LinkPreviewService — private address detection', () => {
   const isPrivate = (address: string): boolean =>
-    (LinkPreviewService.prototype as any).isPrivateAddress.call(
-      {
-        normalizeAddress: (LinkPreviewService.prototype as any)
-          .normalizeAddress,
-      },
-      address,
-    );
+    new LinkPreviewService()['isPrivateAddress'](address);
 
   const blocked = [
     '127.0.0.1',
@@ -91,6 +85,14 @@ describe('LinkPreviewService — private address detection', () => {
     '::ffff:10.0.0.1',
     '::ffff:192.168.1.1',
     '::ffff:100.100.100.200',
+    // The same again in hex, which is how the URL parser writes them.
+    '::ffff:a9fe:a9fe',
+    '::ffff:7f00:1',
+    '::ffff:a00:1',
+    '0:0:0:0:0:ffff:ac10:1',
+    // IPv4-compatible (deprecated) and multicast.
+    '::7f00:1',
+    'ff02::1',
   ];
 
   it.each(blocked)('treats %s as private', (address) => {
@@ -101,5 +103,27 @@ describe('LinkPreviewService — private address detection', () => {
 
   it.each(allowed)('still allows the public address %s', (address) => {
     expect(isPrivate(address)).toBe(false);
+  });
+});
+
+/**
+ * The same bypass end to end. The URL parser rewrites a mapped IPv6 literal
+ * into hex (`[::ffff:169.254.169.254]` becomes `[::ffff:a9fe:a9fe]`), and an
+ * IP-literal host skips DNS, so the pinned lookup never runs: the address
+ * check is the only guard, and it recognised only the dotted form.
+ */
+describe('LinkPreviewService — IPv6 literals in the URL', () => {
+  const service = new LinkPreviewService();
+
+  it.each([
+    'http://[::ffff:169.254.169.254]/latest/meta-data',
+    'http://[::ffff:127.0.0.1]:4000/',
+    'http://[0:0:0:0:0:ffff:7f00:1]/',
+    'http://[::ffff:10.0.0.1]/',
+    'http://[::127.0.0.1]/',
+    'http://[::1]/',
+    'http://[fe80::1]/',
+  ])('refuses %s before connecting', async (url) => {
+    await expect(service.getPreview(url)).rejects.toThrow(ForbiddenException);
   });
 });

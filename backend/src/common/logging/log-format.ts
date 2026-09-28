@@ -1,3 +1,5 @@
+import { isRecord, stringField } from '../utils/type-guards.util';
+
 /**
  * One line format for every backend log, so the terminal can be scanned
  * vertically instead of read.
@@ -29,12 +31,24 @@ export const LOG_CAUSE = '__logCause';
  * the latter silently yielded `undefined` — which is why the user id was
  * missing from every success line even after it was "added".
  */
-export function fromRequest<T = any>(
-  req: any,
-  path: (r: any) => T,
-): T | undefined {
+export function fromRequest(
+  req: unknown,
+  read: (r: unknown) => string | undefined,
+): string | undefined {
   if (!req) return undefined;
-  return path(req) ?? path(req.raw) ?? undefined;
+  return read(req) ?? read(isRecord(req) ? req.raw : undefined);
+}
+
+/** The authenticated user's id, from either request shape. */
+export function requestUserId(req: unknown): string | undefined {
+  return fromRequest(req, (r) =>
+    stringField(isRecord(r) ? r.user : undefined, 'id'),
+  );
+}
+
+/** The refusal reason HttpExceptionFilter parked under LOG_CAUSE. */
+export function requestLogCause(req: unknown): string | undefined {
+  return fromRequest(req, (r) => stringField(r, LOG_CAUSE));
 }
 
 /**
@@ -222,7 +236,7 @@ export const prettyFormatters = {
     level: number,
     lvl: paintLevel(label),
   }),
-  log: (obj: any) => ({
+  log: (obj: Record<string, unknown>) => ({
     ...obj,
     ts: clockStamp(),
     // nestjs-pino stamps `context` on every log a Nest service makes, so a
@@ -233,6 +247,6 @@ export const prettyFormatters = {
     // *binding*, which is serialized straight into the output and never
     // reaches this formatter, so the value here would overwrite it with the
     // default anyway.
-    context: contextPrefix(obj?.context || 'HTTP'),
+    context: contextPrefix(stringField(obj, 'context') || 'HTTP'),
   }),
 };

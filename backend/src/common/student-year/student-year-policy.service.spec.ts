@@ -3,7 +3,10 @@ import {
   FIRST_YEAR_RESTRICTED_CODE,
   FIRST_YEAR_RESTRICTED_MESSAGE,
   StudentYearPolicyService,
+  type StudentYearSubject,
 } from './student-year-policy.service';
+import { stub } from '../testing/stub';
+import type { PrismaService } from '../../prisma/prisma.service';
 
 /**
  * The policy is exercised against a fake Prisma so these tests stay fast and
@@ -16,22 +19,24 @@ function makeService(
     batchYear?: number | null;
   }> = [],
 ) {
-  const prisma: any = {
+  const prisma = {
     user: {
-      findMany: jest.fn(async ({ where }: any) => {
+      findMany: jest.fn(({ where }: { where?: { id?: { in?: string[] } } }) => {
         const ids: string[] = where?.id?.in ?? [];
-        return users
-          .filter((u) => ids.includes(u.id))
-          .map((u) => ({
-            id: u.id,
-            batchYear: u.batchYear ?? null,
-            email: u.email ?? null,
-            collegeEmail: null,
-          }));
+        return Promise.resolve(
+          users
+            .filter((u) => ids.includes(u.id))
+            .map((u) => ({
+              id: u.id,
+              batchYear: u.batchYear ?? null,
+              email: u.email ?? null,
+              collegeEmail: null,
+            })),
+        );
       }),
     },
   };
-  const service = new StudentYearPolicyService(prisma);
+  const service = new StudentYearPolicyService(stub<PrismaService>(prisma));
   service.invalidateAll();
   return { service, prisma };
 }
@@ -118,7 +123,8 @@ describe('first-year detection', () => {
     // must change nothing.
     expect(
       service.getUserBatchYear(
-        { passingYear: 2026, course: 'B.Tech 2026' } as any,
+        { passingYear: 2026, course: 'B.Tech 2026' } as StudentYearSubject &
+          Record<string, unknown>,
         2026,
       ),
     ).toBeNull();
@@ -367,8 +373,11 @@ describe('runtime enforcement', () => {
     try {
       await service.assertCanInteract('first-a', ['senior'], 'share_modal');
       throw new Error('should have thrown');
-    } catch (err: any) {
-      const body = err.getResponse();
+    } catch (err: unknown) {
+      const body = (err as ForbiddenException).getResponse() as {
+        code?: string;
+        message?: string;
+      };
       expect(body.code).toBe(FIRST_YEAR_RESTRICTED_CODE);
       expect(body.message).toBe(FIRST_YEAR_RESTRICTED_MESSAGE);
       // The refusal must not name which side failed, in either direction.

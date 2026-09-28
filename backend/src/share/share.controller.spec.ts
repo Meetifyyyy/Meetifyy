@@ -1,8 +1,15 @@
 process.env.APP_ENV = process.env.APP_ENV || 'development';
 
+import type { Response } from 'express';
+import { expect } from '@jest/globals';
 import { config } from '../config';
+import { stub } from '../common/testing/stub';
+import type { ShareCardCache } from './share-card.cache';
 import { ShareController } from './share.controller';
-import type { PublicSharePost } from './share-preview.service';
+import type {
+  PublicSharePost,
+  SharePreviewService,
+} from './share-preview.service';
 import { sharePost } from './testing/share-post.fixture';
 
 /**
@@ -29,11 +36,23 @@ describe('ShareController', () => {
 
   const post = (over: Partial<PublicSharePost> = {}) => sharePost(over);
 
-  const makeRes = () => {
+  /** An Express response that records what the controller wrote to it. */
+  type RecordedResponse = Response & {
+    body: unknown;
+    headers: Record<string, string>;
+  };
+
+  /** The JSON endpoint's answer for a post that may be shared. */
+  type AvailableJson = Extract<
+    Awaited<ReturnType<ShareController['json']>>,
+    { available: true }
+  >;
+
+  const makeRes = (): RecordedResponse => {
     const headers: Record<string, string> = {};
-    const res: any = {
+    const res: RecordedResponse = stub<RecordedResponse>({
       statusCode: 200,
-      body: undefined as any,
+      body: undefined,
       setHeader: (k: string, v: string) => {
         headers[k.toLowerCase()] = v;
         return res;
@@ -42,26 +61,38 @@ describe('ShareController', () => {
         res.statusCode = code;
         return res;
       },
-      send: (body: any) => {
+      send: (body: unknown) => {
         res.body = body;
         return res;
       },
-      end: (body?: any) => {
+      end: (body?: unknown) => {
         if (body !== undefined) res.body = body;
         return res;
       },
       headers,
-    };
+    });
     return res;
   };
 
   const setup = (result: PublicSharePost | null) => {
     const cards = {
-      get: jest.fn().mockResolvedValue(Buffer.from('jpeg-bytes')),
+      get: jest
+        .fn<
+          ReturnType<ShareCardCache['get']>,
+          Parameters<ShareCardCache['get']>
+        >()
+        .mockResolvedValue(Buffer.from('jpeg-bytes')),
     };
-    const preview = { getPublicPost: jest.fn().mockResolvedValue(result) };
+    const preview = {
+      getPublicPost: jest
+        .fn<Promise<PublicSharePost | null>, [string]>()
+        .mockResolvedValue(result),
+    };
     return {
-      controller: new ShareController(preview as any, cards as any),
+      controller: new ShareController(
+        stub<SharePreviewService>(preview),
+        stub<ShareCardCache>(cards),
+      ),
       cards,
       preview,
     };
@@ -108,9 +139,9 @@ describe('ShareController', () => {
     it('never caches a refusal, so a deletion takes effect on the next fetch', async () => {
       const { controller } = setup(null);
       for (const call of [
-        (res: any) => controller.crawlerDocument(POST_ID, res),
-        (res: any) => controller.image(POST_ID, res),
-        (res: any) => controller.json(POST_ID, res),
+        (res: RecordedResponse) => controller.crawlerDocument(POST_ID, res),
+        (res: RecordedResponse) => controller.image(POST_ID, res),
+        (res: RecordedResponse) => controller.json(POST_ID, res),
       ]) {
         const res = makeRes();
         await call(res);
@@ -147,7 +178,7 @@ describe('ShareController', () => {
 
     it('returns only the preview projection, never engagement or viewer state', async () => {
       const { controller } = setup(post());
-      const body: any = await controller.json(POST_ID, makeRes());
+      const body = (await controller.json(POST_ID, makeRes())) as AvailableJson;
 
       // The allow-list, asserted exactly. A field added to the projection is a
       // field published to anyone with the link, so it has to be a decision

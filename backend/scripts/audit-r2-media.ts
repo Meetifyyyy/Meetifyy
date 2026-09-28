@@ -27,7 +27,11 @@
  *   npx ts-node backend/scripts/audit-r2-media.ts [--dry-run]
  */
 
-import { S3Client, ListObjectsV2Command, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import {
+  S3Client,
+  ListObjectsV2Command,
+  DeleteObjectCommand,
+} from '@aws-sdk/client-s3';
 import { PrismaClient } from '@prisma/client';
 import * as dotenv from 'dotenv';
 import * as path from 'path';
@@ -41,7 +45,8 @@ const R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID;
 const R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY;
 const R2_BUCKET = process.env.R2_BUCKET_NAME || 'meetifyy-media';
 
-const isDryRun = process.argv.includes('--dry-run') || !process.argv.includes('--live');
+const isDryRun =
+  process.argv.includes('--dry-run') || !process.argv.includes('--live');
 
 const FOLDERS_TO_AUDIT = [
   'avatars',
@@ -72,7 +77,9 @@ function isProtected(key: string): boolean {
 async function runAudit() {
   console.log(`=======================================================`);
   console.log(`Cloudflare R2 Media Audit & Orphan Cleanup`);
-  console.log(`Mode: ${isDryRun ? 'DRY RUN (no files deleted)' : 'LIVE (deleting unreferenced files)'}`);
+  console.log(
+    `Mode: ${isDryRun ? 'DRY RUN (no files deleted)' : 'LIVE (deleting unreferenced files)'}`,
+  );
   console.log(`Bucket: ${R2_BUCKET}`);
   console.log(`=======================================================\n`);
 
@@ -104,10 +111,19 @@ async function runAudit() {
     messages,
   ] = await Promise.all([
     prisma.user.findMany({ select: { avatar: true, cover: true } }),
-    prisma.community.findMany({ where: { deletedAt: null }, select: { avatarKey: true, coverKey: true } }),
+    prisma.community.findMany({
+      where: { deletedAt: null },
+      select: { avatarKey: true, coverKey: true },
+    }),
     prisma.conversation.findMany({ select: { avatarKey: true } }),
-    prisma.crewActivity.findMany({ where: { deletedAt: null }, select: { coverImage: true } }),
-    prisma.campusEvent.findMany({ where: { deletedAt: null }, select: { posterUrl: true } }),
+    prisma.crewActivity.findMany({
+      where: { deletedAt: null },
+      select: { coverImage: true },
+    }),
+    prisma.campusEvent.findMany({
+      where: { deletedAt: null },
+      select: { posterUrl: true },
+    }),
     prisma.college.findMany({ select: { logoKey: true, bannerKey: true } }),
     prisma.media.findMany({ select: { objectKey: true, postId: true } }),
     prisma.message.findMany({
@@ -151,7 +167,9 @@ async function runAudit() {
     if (m.attachmentMedia?.objectKey) addRef(m.attachmentMedia.objectKey);
   });
 
-  console.log(`Total active media references found in DB: ${activeRefSet.size}\n`);
+  console.log(
+    `Total active media references found in DB: ${activeRefSet.size}\n`,
+  );
 
   let totalR2Objects = 0;
   let totalProtected = 0;
@@ -185,7 +203,9 @@ async function runAudit() {
 
           const isReferenced =
             activeRefSet.has(key) ||
-            Array.from(activeRefSet).some((ref) => ref.includes(key) || key.includes(ref));
+            Array.from(activeRefSet).some(
+              (ref) => ref.includes(key) || key.includes(ref),
+            );
 
           if (isReferenced) {
             totalActive++;
@@ -196,11 +216,16 @@ async function runAudit() {
 
             if (!isDryRun) {
               try {
-                await s3.send(new DeleteObjectCommand({ Bucket: R2_BUCKET, Key: key }));
+                await s3.send(
+                  new DeleteObjectCommand({ Bucket: R2_BUCKET, Key: key }),
+                );
                 await prisma.media.deleteMany({ where: { objectKey: key } });
                 console.log(`    -> Deleted from R2`);
-              } catch (delErr: any) {
-                console.error(`    -> Deletion failed:`, delErr?.message);
+              } catch (delErr: unknown) {
+                console.error(
+                  `    -> Deletion failed:`,
+                  (delErr as Error | null | undefined)?.message,
+                );
               }
             }
           }

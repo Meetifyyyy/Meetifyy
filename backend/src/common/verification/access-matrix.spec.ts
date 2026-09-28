@@ -4,6 +4,9 @@ import { WsException } from '@nestjs/websockets';
 import { VerificationStatus } from '@prisma/client';
 import { VerificationGuard } from '../guards/verification.guard';
 import { VerificationAccessService } from './verification-access.service';
+import { stub } from '../testing/stub';
+import type { PrismaService } from '../../prisma/prisma.service';
+import type { DomainEventService } from '../../events/domain-event.service';
 import { IS_VERIFIED_ONLY_KEY } from '../decorators/verified-only.decorator';
 
 /**
@@ -21,7 +24,10 @@ describe('verification access matrix', () => {
     (s) => !ELIGIBLE.includes(s),
   );
 
-  let prisma: any;
+  let prisma: {
+    user: { findUnique: jest.Mock; findMany: jest.Mock };
+    conversationParticipant: { findMany: jest.Mock };
+  };
   let access: VerificationAccessService;
   let guard: VerificationGuard;
   let reflector: Reflector;
@@ -30,7 +36,7 @@ describe('verification access matrix', () => {
     type: 'http' | 'ws';
     userId?: string;
   }): ExecutionContext =>
-    ({
+    stub<ExecutionContext>({
       getType: () => opts.type,
       getHandler: () => ({}),
       getClass: () => ({}),
@@ -40,9 +46,10 @@ describe('verification access matrix', () => {
         }),
       }),
       switchToWs: () => ({
-        getClient: () => (opts.userId ? { userId: opts.userId } : {}),
+        // The gateway keeps a socket's identity in `socket.data`.
+        getClient: () => ({ data: opts.userId ? { userId: opts.userId } : {} }),
       }),
-    }) as unknown as ExecutionContext;
+    });
 
   const asUser = (status: VerificationStatus | null) => {
     access.invalidateAll();
@@ -58,9 +65,12 @@ describe('verification access matrix', () => {
     delete process.env.FEATURE_VERIFICATION_ENABLED;
     prisma = {
       user: { findUnique: jest.fn(), findMany: jest.fn() },
-      conversationParticipant: { findMany: jest.fn(async () => []) },
+      conversationParticipant: { findMany: jest.fn(() => Promise.resolve([])) },
     };
-    access = new VerificationAccessService(prisma, { emit: jest.fn() } as any);
+    access = new VerificationAccessService(
+      stub<PrismaService>(prisma),
+      stub<DomainEventService>({ emit: jest.fn() }),
+    );
     reflector = new Reflector();
     jest
       .spyOn(reflector, 'getAllAndOverride')

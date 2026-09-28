@@ -8,10 +8,14 @@ import { RateLimitService } from '../rate-limit/rate-limit.service';
 import {
   applyRateLimitHeaders,
   rateLimitException,
+  requestIdOf,
 } from '../rate-limit/rate-limit.response';
+import type { Response } from 'express';
+import type { GuardRequest } from '../types/authenticated-request';
 import { clientIp } from '../rate-limit/client-ip.util';
 import { JwtGuard } from './jwt.guard';
 import * as jwt from 'jsonwebtoken';
+import { ADMIN_TOKEN_ALGORITHM } from '../../admin/auth/admin-token.constants';
 import { config } from '../../config';
 
 /**
@@ -58,8 +62,8 @@ export class RateLimitGuard implements CanActivate {
     if (context.getType() !== 'http') return true;
 
     const http = context.switchToHttp();
-    const request = http.getRequest();
-    const response = http.getResponse();
+    const request = http.getRequest<GuardRequest>();
+    const response = http.getResponse<Response>();
 
     // Liveness and readiness probes must never be rate limited: a 429 here
     // causes the outage it was meant to report.
@@ -77,7 +81,7 @@ export class RateLimitGuard implements CanActivate {
     applyRateLimitHeaders(response, decision);
 
     if (!decision.allowed) {
-      throw rateLimitException(decision, request?.id);
+      throw rateLimitException(decision, requestIdOf(request));
     }
 
     return true;
@@ -94,7 +98,7 @@ export class RateLimitGuard implements CanActivate {
    * unresolved would fall into the anonymous per-IP tier, so every admin in one
    * office would share a single 120/min budget while loading a dashboard.
    */
-  private async resolveUserId(request: any): Promise<string | null> {
+  private async resolveUserId(request: GuardRequest): Promise<string | null> {
     if (request?.user?.id) return request.user.id;
     if (request?.admin?.id) return `admin:${request.admin.id}`;
 
@@ -125,7 +129,10 @@ export class RateLimitGuard implements CanActivate {
    * stable, unforgeable key to count against. Namespaced with `admin:` so an
    * admin id can never collide with a user id.
    */
-  private resolveAdminId(request: any, bearer: string | null): string | null {
+  private resolveAdminId(
+    request: GuardRequest,
+    bearer: string | null,
+  ): string | null {
     const secret = config.auth.admin.accessSecret;
     if (!secret) return null;
 
@@ -133,8 +140,13 @@ export class RateLimitGuard implements CanActivate {
     if (!token) return null;
 
     try {
-      const payload: any = jwt.verify(token, secret, { algorithms: ['HS256'] });
-      return payload?.sub ? `admin:${payload.sub}` : null;
+      const payload = jwt.verify(token, secret, {
+        algorithms: [ADMIN_TOKEN_ALGORITHM],
+      });
+      // A token whose payload is a bare string carries no subject.
+      return typeof payload === 'object' && payload.sub
+        ? `admin:${payload.sub}`
+        : null;
     } catch {
       return null;
     }

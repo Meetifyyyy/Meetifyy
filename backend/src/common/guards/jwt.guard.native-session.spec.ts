@@ -1,6 +1,11 @@
 import { Reflector } from '@nestjs/core';
 import { UnauthorizedException, ForbiddenException } from '@nestjs/common';
 import { JwtGuard } from './jwt.guard';
+import {
+  buildSessionGuard,
+  httpContext,
+  type SessionRow,
+} from './testing/jwt-guard.fixture';
 
 /**
  * The installed app authenticates with a bearer token, which ordinary routes
@@ -26,30 +31,19 @@ describe('JwtGuard — native app session binding', () => {
   const USER = 'user-1';
   const OTHER = 'user-2';
 
-  let guard: any;
-  let sessions: Record<
-    string,
-    { revoked: boolean; expiresAt: Date; userId: string }
-  >;
+  let guard: JwtGuard;
+  let sessions: Record<string, SessionRow>;
   let bearerAllowedOnRoute: boolean;
 
-  const context = (
-    {
-      cookies = {},
-      headers = {},
-      method = 'GET',
-    }: {
-      cookies?: Record<string, string>;
-      headers?: Record<string, string>;
-      method?: string;
-    } = {},
-  ) => ({
-    switchToHttp: () => ({
-      getRequest: () => ({ cookies, headers, method }),
-    }),
-    getHandler: () => ({}),
-    getClass: () => ({}),
-  });
+  const context = ({
+    cookies = {},
+    headers = {},
+    method = 'GET',
+  }: {
+    cookies?: Record<string, string>;
+    headers?: Record<string, string>;
+    method?: string;
+  } = {}) => httpContext({ cookies, headers, method });
 
   /** What the app sends: a bearer token plus the session it belongs to. */
   const nativeRequest = (sessionId: string, method = 'GET') =>
@@ -84,28 +78,15 @@ describe('JwtGuard — native app session binding', () => {
       },
     };
 
-    const prisma = {
-      userSession: {
-        findUnique: jest.fn(
-          async ({ where }: any) => sessions[where.id] ?? null,
-        ),
-      },
-    };
-
     const reflector = new Reflector();
     jest
       .spyOn(reflector, 'getAllAndOverride')
-      .mockImplementation(() => bearerAllowedOnRoute as any);
+      .mockImplementation(() => bearerAllowedOnRoute);
 
-    guard = new JwtGuard({} as any, prisma as any, reflector, {
-      isSatisfied: async () => true,
-    } as any);
-
-    guard.validateToken = jest.fn(async () => ({ id: USER, email: 'a@b.c' }));
-    guard.enforceAccountStatus = jest.fn(async () => undefined);
-    Object.defineProperty(guard, 'supabaseService', {
-      value: { isConfigured: true },
-      writable: true,
+    guard = buildSessionGuard({
+      findSession: (id) => Promise.resolve(sessions[id] ?? null),
+      user: { id: USER, email: 'a@b.c' },
+      reflector,
     });
   });
 
@@ -141,7 +122,9 @@ describe('JwtGuard — native app session binding', () => {
      */
     it('still refuses a bare bearer token on an ordinary route', async () => {
       await expect(
-        guard.canActivate(context({ headers: { authorization: 'Bearer tok' } })),
+        guard.canActivate(
+          context({ headers: { authorization: 'Bearer tok' } }),
+        ),
       ).rejects.toThrow(UnauthorizedException);
     });
 
@@ -169,9 +152,9 @@ describe('JwtGuard — native app session binding', () => {
     });
 
     it('refuses a bearer naming a session that does not exist', async () => {
-      await expect(guard.canActivate(nativeRequest('no-such-id'))).rejects.toThrow(
-        UnauthorizedException,
-      );
+      await expect(
+        guard.canActivate(nativeRequest('no-such-id')),
+      ).rejects.toThrow(UnauthorizedException);
     });
 
     it('refuses an empty session id rather than treating it as absent', async () => {
@@ -208,7 +191,11 @@ describe('JwtGuard — native app session binding', () => {
       await expect(
         guard.canActivate(
           context({
-            cookies: { mf_access: 'tok', mf_sid: 'live-own', mf_csrf: 'secret' },
+            cookies: {
+              mf_access: 'tok',
+              mf_sid: 'live-own',
+              mf_csrf: 'secret',
+            },
             method: 'POST',
           }),
         ),
@@ -225,7 +212,9 @@ describe('JwtGuard — native app session binding', () => {
     it('accepts a bare bearer on a route that opted in', async () => {
       bearerAllowedOnRoute = true;
       await expect(
-        guard.canActivate(context({ headers: { authorization: 'Bearer tok' } })),
+        guard.canActivate(
+          context({ headers: { authorization: 'Bearer tok' } }),
+        ),
       ).resolves.toBe(true);
     });
   });

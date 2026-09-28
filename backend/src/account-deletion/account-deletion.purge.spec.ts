@@ -2,6 +2,60 @@ import { AccountDeletionService } from './account-deletion.service';
 import { AccountDeletionPurgeService } from './account-deletion.purge.service';
 import { PURGE_MAX_ATTEMPTS } from './account-deletion.constants';
 import { JwtGuard } from '../common/guards/jwt.guard';
+import { stub } from '../common/testing/stub';
+import type { RedisService } from '../redis/redis.service';
+import type { PresenceService } from '../presence/presence.service';
+import type { DomainEventService } from '../events/domain-event.service';
+import type { MediaCleanupService } from '../uploads/media-cleanup.service';
+import type { UserOtpService } from '../otp/user-otp.service';
+import type { PrismaService } from '../prisma/prisma.service';
+
+/** The user row both services act on, with the columns they read and write. */
+type UserRow = {
+  id: string;
+  username: string;
+  displayName: string;
+  email: string;
+  avatar: string | null;
+  cover: string | null;
+  accountStatus: string;
+  deletedAt: Date | null;
+  deletionRequestedAt: Date | null;
+  scheduledPurgeAt: Date | null;
+  purgeStartedAt: Date | null;
+  purgeCompletedAt: Date | null;
+  purgeAttempts: number;
+  purgeLastError: string | null;
+  /** Written by the anonymisation. */
+  bio?: string | null;
+  collegeId?: string | null;
+  isCampusRep?: boolean;
+};
+
+/** The purge transaction's signature, as the services call it. */
+type TransactionMock = jest.Mock<
+  Promise<unknown>,
+  [(tx: unknown) => unknown, TransactionOptions?]
+>;
+
+/** The `where` shapes the fake interprets (anything else is ignored). */
+type UserWhere = {
+  id?: string;
+  accountStatus?: string;
+  deletedAt?: null;
+  purgeStartedAt?: null;
+  purgeAttempts?: { lt?: number };
+  scheduledPurgeAt?: { gt?: Date; lte?: Date };
+  OR?: Array<{ purgeStartedAt?: null | { lt?: Date } }>;
+};
+
+/** The arguments a recorded Prisma write received. */
+type WriteArgs = {
+  where?: Record<string, unknown>;
+  data?: Record<string, unknown>;
+};
+
+type TransactionOptions = { timeout?: number; maxWait?: number };
 
 /**
  * The permanent-deletion worker, and the race between it and recovery.
@@ -17,18 +71,24 @@ describe('AccountDeletionPurgeService — permanent deletion', () => {
 
   let purge: AccountDeletionPurgeService;
   let deletion: AccountDeletionService;
-  let prisma: any;
-  let mediaCleanupService: any;
-  let domainEventService: any;
-  let row: any;
-  let posts: any[];
-  let activities: any[];
-  let calls: Record<string, any[][]>;
+  let prisma: {
+    user: { findUnique: jest.Mock; findMany: jest.Mock; updateMany: jest.Mock };
+    $transaction: TransactionMock;
+  };
+  let mediaCleanupService: {
+    extractStorageKey: jest.Mock;
+    queueMediaDeletion: jest.Mock<Promise<void>, [string[]]>;
+  };
+  let domainEventService: { emit: jest.Mock };
+  let row: UserRow;
+  let posts: { id: string }[];
+  let activities: { id: string; coverImage: string }[];
+  let calls: Record<string, WriteArgs[][]>;
 
   const record = (model: string, op: string) =>
-    jest.fn(async (...args: any[]) => {
+    jest.fn((...args: WriteArgs[]) => {
       (calls[`${model}.${op}`] ??= []).push(args);
-      return { count: 1 };
+      return Promise.resolve({ count: 1 });
     });
 
   beforeEach(() => {
@@ -54,7 +114,7 @@ describe('AccountDeletionPurgeService — permanent deletion', () => {
       purgeLastError: null,
     };
 
-    const matches = (where: any): boolean => {
+    const matches = (where: UserWhere): boolean => {
       if (where.id && where.id !== row.id) return false;
       if (where.accountStatus && where.accountStatus !== row.accountStatus) {
         return false;
@@ -71,18 +131,18 @@ describe('AccountDeletionPurgeService — permanent deletion', () => {
       }
       if (
         where.scheduledPurgeAt?.gt &&
-        !(row.scheduledPurgeAt > where.scheduledPurgeAt.gt)
+        !(row.scheduledPurgeAt! > where.scheduledPurgeAt.gt)
       ) {
         return false;
       }
       if (
         where.scheduledPurgeAt?.lte &&
-        !(row.scheduledPurgeAt <= where.scheduledPurgeAt.lte)
+        !(row.scheduledPurgeAt! <= where.scheduledPurgeAt.lte)
       ) {
         return false;
       }
       if (where.OR) {
-        const ok = where.OR.some((clause: any) => {
+        const ok = where.OR.some((clause) => {
           if (clause.purgeStartedAt === null)
             return row.purgeStartedAt === null;
           if (clause.purgeStartedAt?.lt) {
@@ -98,31 +158,31 @@ describe('AccountDeletionPurgeService — permanent deletion', () => {
       return true;
     };
 
-    const emptyModel = (extra: any = {}) => ({
-      findMany: jest.fn(async () => []),
-      findFirst: jest.fn(async () => null),
-      deleteMany: jest.fn(async () => ({ count: 0 })),
-      updateMany: jest.fn(async () => ({ count: 0 })),
-      update: jest.fn(async () => ({})),
+    const emptyModel = (extra: Record<string, jest.Mock> = {}) => ({
+      findMany: jest.fn(() => Promise.resolve([])),
+      findFirst: jest.fn(() => Promise.resolve(null)),
+      deleteMany: jest.fn(() => Promise.resolve({ count: 0 })),
+      updateMany: jest.fn(() => Promise.resolve({ count: 0 })),
+      update: jest.fn(() => Promise.resolve({})),
       ...extra,
     });
 
-    const tx: any = {
+    const tx = {
       user: {
-        update: jest.fn(async ({ data }: any) => {
+        update: jest.fn(({ data }: { data: Partial<UserRow> }) => {
           (calls['user.update'] ??= []).push([{ data }]);
           Object.assign(row, data);
-          return row;
+          return Promise.resolve(row);
         }),
       },
       post: {
-        findMany: jest.fn(async ({ where }: any) =>
-          where.authorId === USER_ID ? posts : [],
+        findMany: jest.fn(({ where }: { where: { authorId?: string } }) =>
+          Promise.resolve(where.authorId === USER_ID ? posts : []),
         ),
         deleteMany: record('post', 'deleteMany'),
       },
       crewActivity: {
-        findMany: jest.fn(async () => activities),
+        findMany: jest.fn(() => Promise.resolve(activities)),
         deleteMany: record('crewActivity', 'deleteMany'),
       },
       community: emptyModel(),
@@ -132,10 +192,12 @@ describe('AccountDeletionPurgeService — permanent deletion', () => {
         updateMany: record('comment', 'updateMany'),
       },
       media: {
-        findMany: jest.fn(async ({ where }: any) =>
-          where.postId
-            ? [{ objectKey: 'posts/p1.jpg' }]
-            : [{ id: 'm9', objectKey: 'uploads/stray.jpg' }],
+        findMany: jest.fn(({ where }: { where: { postId?: unknown } }) =>
+          Promise.resolve(
+            where.postId
+              ? [{ objectKey: 'posts/p1.jpg' }]
+              : [{ id: 'm9', objectKey: 'uploads/stray.jpg' }],
+          ),
         ),
         deleteMany: record('media', 'deleteMany'),
       },
@@ -186,53 +248,71 @@ describe('AccountDeletionPurgeService — permanent deletion', () => {
 
     prisma = {
       user: {
-        findUnique: jest.fn(async ({ where }: any) =>
-          where.id === USER_ID ? { ...row } : null,
+        findUnique: jest.fn(({ where }: { where: { id: string } }) =>
+          Promise.resolve(where.id === USER_ID ? { ...row } : null),
         ),
-        findMany: jest.fn(async ({ where }: any) =>
-          matches(where) ? [{ id: USER_ID }] : [],
+        findMany: jest.fn(({ where }: { where: UserWhere }) =>
+          Promise.resolve(matches(where) ? [{ id: USER_ID }] : []),
         ),
-        updateMany: jest.fn(async ({ where, data }: any) => {
-          if (!matches(where)) return { count: 0 };
-          const resolved = { ...data };
-          if (data.purgeAttempts?.increment) {
-            resolved.purgeAttempts =
-              row.purgeAttempts + data.purgeAttempts.increment;
-          }
-          Object.assign(row, resolved);
-          return { count: 1 };
-        }),
+        updateMany: jest.fn(
+          ({
+            where,
+            data,
+          }: {
+            where: UserWhere;
+            data: Partial<Omit<UserRow, 'purgeAttempts'>> & {
+              purgeAttempts?: number | { increment?: number };
+            };
+          }) => {
+            if (!matches(where)) return Promise.resolve({ count: 0 });
+            const resolved = { ...data };
+            const increment =
+              typeof data.purgeAttempts === 'object'
+                ? data.purgeAttempts.increment
+                : undefined;
+            if (increment) {
+              resolved.purgeAttempts = row.purgeAttempts + increment;
+            }
+            Object.assign(row, resolved);
+            return Promise.resolve({ count: 1 });
+          },
+        ),
       },
-      $transaction: jest.fn(async (fn: any, _opts?: any) => fn(tx)),
+      $transaction: jest.fn(
+        (fn: (tx: unknown) => unknown, _opts?: TransactionOptions) =>
+          Promise.resolve(fn(tx)),
+      ),
     };
 
     mediaCleanupService = {
       extractStorageKey: jest.fn((v: string | null) => v ?? null),
-      queueMediaDeletion: jest.fn(async () => {}),
+      queueMediaDeletion: jest.fn((_keys: string[]) => Promise.resolve()),
     };
     domainEventService = { emit: jest.fn() };
 
     purge = new AccountDeletionPurgeService(
-      prisma,
-      { getClient: () => null } as any,
-      { removePresence: jest.fn(async () => {}) } as any,
-      domainEventService,
-      mediaCleanupService,
+      stub<PrismaService>(prisma),
+      stub<RedisService>({ getClient: () => null }),
+      stub<PresenceService>({ removePresence: jest.fn(async () => {}) }),
+      stub<DomainEventService>(domainEventService),
+      stub<MediaCleanupService>(mediaCleanupService),
     );
     deletion = new AccountDeletionService(
-      prisma,
-      { getClient: () => null } as any,
-      { removePresence: jest.fn(async () => {}) } as any,
-      domainEventService,
-      {
-        issue: jest.fn(async () => ({
-          code: '123456',
-          expiresAt: new Date(Date.now() + 600_000),
-        })),
+      stub<PrismaService>(prisma),
+      stub<RedisService>({ getClient: () => null }),
+      stub<PresenceService>({ removePresence: jest.fn(async () => {}) }),
+      stub<DomainEventService>(domainEventService),
+      stub<UserOtpService>({
+        issue: jest.fn(() =>
+          Promise.resolve({
+            code: '123456',
+            expiresAt: new Date(Date.now() + 600_000),
+          }),
+        ),
         verify: jest.fn(async () => {}),
         invalidate: jest.fn(async () => {}),
         invalidateAll: jest.fn(async () => {}),
-      } as any,
+      }),
       {
         sendAccountDeletionOtpEmail: jest.fn(async () => {}),
         sendAccountRecoveryOtpEmail: jest.fn(async () => {}),
@@ -330,7 +410,7 @@ describe('AccountDeletionPurgeService — permanent deletion', () => {
       // creator instead. A DRAFT was never published and is purely theirs.
       const [args] = calls['campusEvent.updateMany'][0];
       expect(args.where).toMatchObject({ createdBy: USER_ID, status: 'DRAFT' });
-      expect(args.data.deletedAt).toBeInstanceOf(Date);
+      expect(args.data!.deletedAt).toBeInstanceOf(Date);
     });
 
     it('deletes instant-match sessions on both sides of the pairing', () => {
@@ -362,16 +442,16 @@ describe('AccountDeletionPurgeService — permanent deletion', () => {
         targetId: USER_ID,
         status: { in: ['PENDING', 'UNDER_REVIEW'] },
       });
-      expect(args.data.status).toBe('RESOLVED');
-      expect(args.data.resolvedAt).toBeInstanceOf(Date);
-      expect(args.data.resolution).toMatch(/permanently deleted/i);
+      expect(args.data!.status).toBe('RESOLVED');
+      expect(args.data!.resolvedAt).toBeInstanceOf(Date);
+      expect(args.data!.resolution).toMatch(/permanently deleted/i);
     });
 
     it('never touches reports the user filed about other people', () => {
       // Those are still actionable — the subject has done nothing to warrant
       // the report being dropped just because the reporter left.
       const touchedReporter = calls['report.updateMany'].some(
-        ([args]: any[]) => 'reporterId' in (args.where ?? {}),
+        ([args]) => 'reporterId' in (args.where ?? {}),
       );
       expect(touchedReporter).toBe(false);
       expect(calls['report.deleteMany']).toBeUndefined();
@@ -444,8 +524,11 @@ describe('AccountDeletionPurgeService — permanent deletion', () => {
     });
 
     it('records the error and releases the claim when a purge fails', async () => {
-      prisma.$transaction = jest.fn(async () => {
-        throw new Error('R2 unavailable');
+      prisma.$transaction = jest.fn<
+        Promise<unknown>,
+        [(tx: unknown) => unknown, TransactionOptions?]
+      >(() => {
+        return Promise.reject(new Error('R2 unavailable'));
       });
       const result = await purge.runSweep();
       expect(result).toEqual({ claimed: 1, purged: 0, failed: 1 });
@@ -457,8 +540,11 @@ describe('AccountDeletionPurgeService — permanent deletion', () => {
 
     it('retries a released row on the next sweep and succeeds', async () => {
       const realTransaction = prisma.$transaction;
-      prisma.$transaction = jest.fn(async () => {
-        throw new Error('transient');
+      prisma.$transaction = jest.fn<
+        Promise<unknown>,
+        [(tx: unknown) => unknown, TransactionOptions?]
+      >(() => {
+        return Promise.reject(new Error('transient'));
       });
       await purge.runSweep();
       prisma.$transaction = realTransaction;

@@ -1,28 +1,36 @@
 import { ExecutionContext, HttpException } from '@nestjs/common';
 import { LoginRateLimitGuard, loginAccountKey } from './login-ratelimit.guard';
 import { RateLimitService } from '../rate-limit/rate-limit.service';
-import { RedisService } from '../../redis/redis.service';
+import type { RedisService } from '../../redis/redis.service';
+import type { HttpArgumentsHost } from '@nestjs/common/interfaces';
+import { stub } from '../testing/stub';
 
 function makeService(): RateLimitService {
-  return new RateLimitService({
-    getClient: () => null,
-  } as unknown as RedisService);
+  return new RateLimitService(stub<RedisService>({ getClient: () => null }));
 }
 
-function ctx(request: any): ExecutionContext {
-  const response = {
-    headers: {} as Record<string, string>,
-    setHeader(n: string, v: string) {
+/** The response the guard writes its RateLimit headers to. */
+type RecordedResponse = {
+  headers: Record<string, string>;
+  setHeader(n: string, v: string): void;
+};
+
+function ctx(request: object): ExecutionContext {
+  const response: RecordedResponse = {
+    headers: {},
+    setHeader(this: RecordedResponse, n: string, v: string) {
       this.headers[n] = v;
     },
   };
-  return {
-    getType: () => 'http',
-    switchToHttp: () => ({
-      getRequest: () => request,
-      getResponse: () => response,
-    }),
-  } as unknown as ExecutionContext;
+  return stub<ExecutionContext>({
+    getType: jest.fn(() => 'http'),
+    switchToHttp: jest.fn(() =>
+      stub<HttpArgumentsHost>({
+        getRequest: jest.fn(() => request),
+        getResponse: jest.fn(() => response),
+      }),
+    ),
+  });
 }
 
 const attempt = (identifier: string, ip = '203.0.113.7') => ({
@@ -111,7 +119,7 @@ describe('LoginRateLimitGuard', () => {
     it('returns no RateLimit-Remaining header on a sensitive policy', async () => {
       const guard = new LoginRateLimitGuard(makeService());
       const context = ctx(attempt('someone@example.edu'));
-      const response: any = context.switchToHttp().getResponse();
+      const response = context.switchToHttp().getResponse<RecordedResponse>();
 
       await guard.canActivate(context);
 
