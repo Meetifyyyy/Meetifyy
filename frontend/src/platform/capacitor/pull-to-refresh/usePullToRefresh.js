@@ -35,7 +35,7 @@ import { isScrollLocked } from '@shared/hooks/useScrollLock';
  */
 
 /** Finger travel needed before releasing counts as a refresh. */
-const TRIGGER_DISTANCE = 72;
+export const TRIGGER_DISTANCE = 72;
 /** Visual ceiling, so a long drag cannot run the indicator off the screen. */
 const MAX_PULL = 120;
 /**
@@ -94,10 +94,22 @@ function isInsideNestedScroller(target, root) {
   return false;
 }
 
-export function usePullToRefresh({ onRefresh, disabled = false, getScrollTop } = {}) {
+/**
+ * @param {object}   [opts.onDistance] `(distance, dragging) => void`, called with
+ *   every change of the pulled distance: once per animation frame while the
+ *   finger drags (`dragging` true, the latest position only), and at once on
+ *   release, refresh and settle (`dragging` false, animate to it). The screen
+ *   paints the gesture from here, straight onto the DOM.
+ *
+ * The distance is deliberately NOT React state. It used to be, and every
+ * touchmove (several per frame) re-rendered the wrapper and ran its layout
+ * effects mid-gesture; on a mid-range phone that is where the pull's dropped
+ * frames came from. React state now changes only with the phase — idle,
+ * pulling, ready, refreshing — a handful of times per gesture.
+ */
+export function usePullToRefresh({ onRefresh, disabled = false, getScrollTop, onDistance } = {}) {
   const containerRef = useRef(null);
 
-  const [distance, setDistance] = useState(0);
   /** 'idle' | 'pulling' | 'ready' | 'refreshing' */
   const [phase, setPhase] = useState('idle');
 
@@ -107,17 +119,37 @@ export function usePullToRefresh({ onRefresh, disabled = false, getScrollTop } =
   const distanceRef = useRef(0);
   const activeRef = useRef(false);
   const phaseRef = useRef('idle');
+  const frameRef = useRef(0);
   const onRefreshRef = useRef(onRefresh);
   const disabledRef = useRef(disabled);
   const getScrollTopRef = useRef(getScrollTop);
+  const onDistanceRef = useRef(onDistance);
 
   onRefreshRef.current = onRefresh;
   disabledRef.current = disabled;
   getScrollTopRef.current = getScrollTop;
+  onDistanceRef.current = onDistance;
 
   const setPhaseBoth = useCallback((next) => {
+    if (phaseRef.current === next) return;
     phaseRef.current = next;
     setPhase(next);
+  }, []);
+
+  /** Moves the gesture to `value`: now if released, next frame if dragging. */
+  const moveTo = useCallback((value, dragging) => {
+    distanceRef.current = value;
+    if (!dragging) {
+      if (frameRef.current) cancelAnimationFrame(frameRef.current);
+      frameRef.current = 0;
+      onDistanceRef.current?.(value, false);
+      return;
+    }
+    if (frameRef.current) return;
+    frameRef.current = requestAnimationFrame(() => {
+      frameRef.current = 0;
+      onDistanceRef.current?.(distanceRef.current, true);
+    });
   }, []);
 
   const atTop = useCallback(() => {
@@ -128,10 +160,9 @@ export function usePullToRefresh({ onRefresh, disabled = false, getScrollTop } =
 
   const settle = useCallback(() => {
     activeRef.current = false;
-    distanceRef.current = 0;
-    setDistance(0);
+    moveTo(0, false);
     setPhaseBoth('idle');
-  }, [setPhaseBoth]);
+  }, [moveTo, setPhaseBoth]);
 
   const runRefresh = useCallback(async () => {
     /*
@@ -144,8 +175,7 @@ export function usePullToRefresh({ onRefresh, disabled = false, getScrollTop } =
 
     activeRef.current = false;
     setPhaseBoth('refreshing');
-    setDistance(TRIGGER_DISTANCE);
-    distanceRef.current = TRIGGER_DISTANCE;
+    moveTo(TRIGGER_DISTANCE, false);
 
     const startedAt = Date.now();
     try {
@@ -164,7 +194,7 @@ export function usePullToRefresh({ onRefresh, disabled = false, getScrollTop } =
       const hold = Math.max(0, MIN_REFRESH_MS - elapsed);
       window.setTimeout(settle, hold);
     }
-  }, [setPhaseBoth, settle]);
+  }, [moveTo, setPhaseBoth, settle]);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -205,8 +235,7 @@ export function usePullToRefresh({ onRefresh, disabled = false, getScrollTop } =
       // under way.
       if (delta <= 0 || !atTop()) {
         if (distanceRef.current !== 0) {
-          distanceRef.current = 0;
-          setDistance(0);
+          moveTo(0, false);
           setPhaseBoth('idle');
         }
         activeRef.current = false;
@@ -214,8 +243,7 @@ export function usePullToRefresh({ onRefresh, disabled = false, getScrollTop } =
       }
 
       const damped = damp(delta);
-      distanceRef.current = damped;
-      setDistance(damped);
+      moveTo(damped, true);
       setPhaseBoth(damped >= TRIGGER_DISTANCE ? 'ready' : 'pulling');
 
       /*
@@ -249,16 +277,15 @@ export function usePullToRefresh({ onRefresh, disabled = false, getScrollTop } =
       el.removeEventListener('touchmove', onTouchMove);
       el.removeEventListener('touchend', onTouchEnd);
       el.removeEventListener('touchcancel', onTouchEnd);
+      if (frameRef.current) cancelAnimationFrame(frameRef.current);
+      frameRef.current = 0;
     };
-  }, [atTop, runRefresh, settle, setPhaseBoth]);
+  }, [atTop, moveTo, runRefresh, settle, setPhaseBoth]);
 
   return {
     containerRef,
-    distance,
     phase,
     isRefreshing: phase === 'refreshing',
-    /** 0..1 — how close the drag is to arming, for the indicator. */
-    progress: Math.min(1, distance / TRIGGER_DISTANCE),
     TRIGGER_DISTANCE,
   };
 }

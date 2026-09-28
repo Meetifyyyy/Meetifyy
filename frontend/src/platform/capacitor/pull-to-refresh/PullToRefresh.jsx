@@ -1,5 +1,5 @@
-import { useEffect, useLayoutEffect, useState } from 'react';
-import usePullToRefresh from './usePullToRefresh';
+import { useCallback, useLayoutEffect, useRef } from 'react';
+import usePullToRefresh, { TRIGGER_DISTANCE } from './usePullToRefresh';
 import styles from './PullToRefresh.module.css';
 
 /**
@@ -24,6 +24,8 @@ import styles from './PullToRefresh.module.css';
  */
 /** Matches the content's spring-back transition, plus a frame of slack. */
 const SPRING_MS = 360;
+/** The spring every part of the pull settles with. */
+const SPRING = '0.32s cubic-bezier(0.22, 1, 0.36, 1)';
 
 /**
  * @param {object} props
@@ -43,61 +45,135 @@ export default function PullToRefresh({
   surface = 'canvas',
   pullTargetRef,
 }) {
-  const { containerRef, distance, phase, isRefreshing, progress } = usePullToRefresh({
+  const gapRef = useRef(null);
+  const indicatorRef = useRef(null);
+  const dialRef = useRef(null);
+  const arcRef = useRef(null);
+  const contentRef = useRef(null);
+  const settleTimerRef = useRef(0);
+  const refreshingRef = useRef(false);
+  const pullTargetRefRef = useRef(pullTargetRef);
+  pullTargetRefRef.current = pullTargetRef;
+
+  /*
+   * Paints the gesture, straight onto the DOM. Called by the hook once per
+   * frame while dragging and once on each release, refresh and settle, so a
+   * pull never re-renders React (see usePullToRefresh).
+   *
+   * One distance drives everything: the content, the gap surface above it,
+   * the indicator, the dial, and — as CSS variables — a fixed cover header
+   * (Profile). While dragging nothing transitions (the finger is the
+   * animation); otherwise every part springs with the same curve, so they move
+   * as one object.
+   */
+  const paint = useCallback((distance, dragging) => {
+    const d = Math.max(0, distance);
+    const spring = dragging ? 'none' : `transform ${SPRING}`;
+    const timing = dragging ? '0s' : SPRING;
+    window.clearTimeout(settleTimerRef.current);
+
+    /*
+     * The content carries a transform only while displaced or springing back.
+     *
+     * It used to carry `translate3d(0, 0, 0)` permanently. Any transform makes
+     * the element the containing block for its `position: fixed` descendants,
+     * so every overlay rendered inside a screen - the New Message sheet, menus,
+     * FABs - was positioned against the page instead of the viewport and moved
+     * whenever the page did. It is dropped once the spring has settled.
+     */
+    const content = contentRef.current;
+    if (content) {
+      content.style.transition = spring;
+      content.style.transform = `translate3d(0, ${d}px, 0)`;
+      content.style.willChange = d > 0 ? 'transform' : 'auto';
+    }
+    const gap = gapRef.current;
+    if (gap) {
+      gap.style.transition = spring;
+      gap.style.transform = `translate3d(0, ${d}px, 0)`;
+      gap.style.visibility = 'visible';
+    }
+    const indicator = indicatorRef.current;
+    if (indicator) {
+      indicator.style.transform = `translate3d(-50%, ${d}px, 0) scale(${0.6 + 0.4 * Math.min(1, d / 40)})`;
+      indicator.style.opacity = String(Math.min(1, d / 26));
+      /*
+       * The SAME transition the content uses, and for the same reason: on
+       * release the distance settles to the resting refresh offset, and an
+       * indicator without it jumped there in one frame while the content
+       * glided. Both follow one distance, so both get one curve.
+       */
+      indicator.style.transition = dragging ? 'none' : `transform ${SPRING}, opacity 0.2s linear`;
+    }
+    // Tracks the finger 1:1 up to the threshold: the arc closing into a full
+    // ring IS the progress readout. While refreshing, CSS animates it instead.
+    const progress = Math.min(1, d / TRIGGER_DISTANCE);
+    if (dialRef.current) {
+      dialRef.current.style.transform = refreshingRef.current ? '' : `rotate(${progress * 270}deg)`;
+    }
+    if (arcRef.current) {
+      arcRef.current.style.strokeDashoffset = refreshingRef.current ? '' : String(94.2 - 94.2 * progress);
+    }
+
+    // A fixed header over the pull (Profile's cover) gets the pull as CSS
+    // variables. `--pull-to-refresh-distance`/`-transition` move its buttons
+    // with the content; `--pull-to-refresh-offset` is the same distance as a
+    // number, for CSS that scales by it (the cover zooms to fill the opened
+    // area); `--pull-to-refresh-timing` is the spring, set only while springing
+    // so nothing else that header animates ever lags. The page content under
+    // this wrapper (Profile's own cover) reads `--ptr-offset`/`--ptr-timing`.
+    // Never on <html>: a property changed there restyles the whole page.
+    const target = pullTargetRefRef.current?.current;
+    if (target) {
+      target.style.setProperty('--pull-to-refresh-transition', spring);
+      target.style.setProperty('--pull-to-refresh-timing', timing);
+      target.style.setProperty('--pull-to-refresh-offset', String(d));
+      if (d > 0) target.style.setProperty('--pull-to-refresh-distance', `${d}px`);
+      else target.style.removeProperty('--pull-to-refresh-distance');
+    }
+    // The wrapper (the hook's container) is the content's parent.
+    const wrapper = content?.parentElement ?? null;
+    if (wrapper && target) {
+      wrapper.style.setProperty('--ptr-offset', String(d));
+      wrapper.style.setProperty('--ptr-timing', timing);
+    }
+
+    // Settled at rest: drop the transform and the easing once the spring ends.
+    if (d === 0 && !dragging) {
+      settleTimerRef.current = window.setTimeout(() => {
+        if (content) {
+          content.style.transform = 'none';
+          content.style.transition = 'none';
+        }
+        if (gap) {
+          gap.style.transform = 'none';
+          gap.style.visibility = 'hidden';
+        }
+        target?.style.setProperty('--pull-to-refresh-timing', '0s');
+        wrapper?.style.setProperty('--ptr-timing', '0s');
+      }, SPRING_MS);
+    }
+  }, []);
+
+  const { containerRef, phase, isRefreshing } = usePullToRefresh({
     onRefresh,
     disabled,
     getScrollTop,
+    onDistance: paint,
   });
+  refreshingRef.current = isRefreshing;
 
-  const pulling = phase === 'pulling' || phase === 'ready';
-  const springTransition = pulling ? 'none' : 'transform 0.32s cubic-bezier(0.22, 1, 0.36, 1)';
-
-  /*
-   * Whether the content carries a transform at all.
-   *
-   * It used to carry `translate3d(0, 0, 0)` permanently. Any transform makes
-   * the element the containing block for its `position: fixed` descendants,
-   * so every overlay rendered inside a screen - the New Message sheet, menus,
-   * FABs - was positioned against the page instead of the viewport and moved
-   * whenever the page did. The transform now exists only while the content is
-   * displaced or springing back, and is dropped once it has settled.
-   */
-  const [moving, setMoving] = useState(false);
-  useEffect(() => {
-    if (distance > 0) {
-      setMoving(true);
-      return undefined;
-    }
-    const t = window.setTimeout(() => setMoving(false), SPRING_MS);
-    return () => window.clearTimeout(t);
-  }, [distance]);
-  const displaced = moving || distance > 0;
-
-  // A fixed header over the pull (Profile's cover) is given the pull as CSS
-  // variables. `--pull-to-refresh-distance`/`-transition` move a header with
-  // the content; `--pull-to-refresh-offset` is the same distance as a plain
-  // number, for CSS that scales by it (the cover zooms to fill the opened
-  // area), and `--pull-to-refresh-timing` is the spring-back easing, set only
-  // while springing back so nothing else that header animates ever lags.
-  // The same two are set on this wrapper as `--ptr-offset`/`--ptr-timing` for
-  // the page content under it (Profile's own cover). Not on <html>: a custom
-  // property changed there restyles the whole page on every frame of a pull.
-  const timing = !pulling && displaced ? '0.32s cubic-bezier(0.22, 1, 0.36, 1)' : '0s';
+  // Entering or leaving the refreshing state swaps the dial between the
+  // finger-driven arc and its CSS spin; repaint at the current distance.
   useLayoutEffect(() => {
-    const target = pullTargetRef?.current;
-    if (!target) return;
-    target.style.setProperty('--pull-to-refresh-transition', springTransition);
-    target.style.setProperty('--pull-to-refresh-timing', timing);
-    target.style.setProperty('--pull-to-refresh-offset', String(Math.max(0, distance)));
-    if (distance > 0) target.style.setProperty('--pull-to-refresh-distance', `${distance}px`);
-    else target.style.removeProperty('--pull-to-refresh-distance');
-    const wrapper = containerRef.current;
-    if (wrapper) {
-      wrapper.style.setProperty('--ptr-offset', String(Math.max(0, distance)));
-      wrapper.style.setProperty('--ptr-timing', timing);
+    if (dialRef.current && isRefreshing) {
+      dialRef.current.style.transform = '';
+      if (arcRef.current) arcRef.current.style.strokeDashoffset = '';
     }
-  }, [containerRef, distance, pullTargetRef, springTransition, timing]);
+  }, [isRefreshing]);
+
   useLayoutEffect(() => () => {
+    window.clearTimeout(settleTimerRef.current);
     const target = pullTargetRef?.current;
     if (!target) return;
     for (const name of [
@@ -117,16 +193,7 @@ export default function PullToRefresh({
          * is always the content's top edge - the page reads as one surface
          * being pulled, with nothing behind it showing through.
          */
-        <div
-          className={styles.gap}
-          style={{
-            transform: displaced ? `translate3d(0, ${distance}px, 0)` : 'none',
-            transition: springTransition,
-            // Nothing clips it at rest any more (see .root), so it hides itself.
-            visibility: displaced ? 'visible' : 'hidden',
-          }}
-          aria-hidden="true"
-        />
+        <div ref={gapRef} className={styles.gap} style={{ visibility: 'hidden' }} aria-hidden="true" />
       )}
       {/*
         The indicator sits ABOVE the content and is revealed by the content
@@ -135,43 +202,17 @@ export default function PullToRefresh({
         drives the whole effect.
       */}
       <div
+        ref={indicatorRef}
         className={`${styles.indicator} ${pullTargetRef ? styles.indicatorOverHeader : ''}`}
-        style={{
-          transform: `translate3d(-50%, ${distance}px, 0) scale(${0.6 + 0.4 * Math.min(1, distance / 40)})`,
-          opacity: Math.min(1, distance / 26),
-          /*
-           * The SAME transition the content uses, and for the same reason.
-           *
-           * On release the distance settles from wherever the finger left it
-           * to the resting refresh offset. The content animated that change
-           * because it had a transition; this element did not, so it jumped
-           * there in one frame while the content glided — the indicator
-           * visibly snapping upward out of step with the list under it.
-           *
-           * Both are driven by the same `distance`, so giving them the same
-           * transition is what keeps them one object rather than two things
-           * that happen to agree while the finger is down.
-           */
-          transition: pulling
-            ? 'none'
-            : 'transform 0.32s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.2s linear',
-        }}
+        // At rest; painted by `paint` from here on (same values, same curve).
+        style={{ transform: 'translate3d(-50%, 0, 0) scale(0.6)', opacity: 0 }}
         aria-hidden="true"
       >
         <div
+          ref={dialRef}
           className={`${styles.dial} ${phase === 'ready' ? styles.dialReady : ''} ${
             isRefreshing ? styles.dialSpinning : ''
           }`}
-          style={
-            isRefreshing
-              ? undefined
-              : {
-                  // Tracks the finger 1:1 up to the threshold. The arc closing
-                  // into a full ring IS the progress readout, so there is no
-                  // separate percentage to draw.
-                  transform: `rotate(${progress * 270}deg)`,
-                }
-          }
         >
           <svg viewBox="0 0 36 36" width="34" height="34" aria-hidden="true">
             <defs>
@@ -209,32 +250,14 @@ export default function PullToRefresh({
               // ring draws itself; while refreshing, the length is animated in
               // CSS so the arc breathes as it spins.
               strokeDasharray="94.2"
-              strokeDashoffset={isRefreshing ? undefined : 94.2 - 94.2 * progress}
+              ref={arcRef}
+              strokeDashoffset={94.2}
             />
           </svg>
         </div>
       </div>
 
-      <div
-        className={styles.content}
-        style={{
-          /*
-           * An explicit zero while springing back, so both ends of the
-           * transition are the same kind of value (a transition into `none`
-           * is interpolated inconsistently). `none` only once settled - see
-           * `displaced` above.
-           */
-          transform: displaced ? `translate3d(0, ${distance}px, 0)` : 'none',
-          /*
-           * No transition WHILE dragging — the finger is the animation, and a
-           * transition here would make the content lag behind it. The spring
-           * back is the only part that is animated.
-           */
-          transition: springTransition,
-          // Promoted only for the moments it actually moves.
-          willChange: distance > 0 ? 'transform' : 'auto',
-        }}
-      >
+      <div ref={contentRef} className={styles.content}>
         {children}
       </div>
     </div>
