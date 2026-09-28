@@ -565,13 +565,29 @@ export class UsersService {
       ...(opts.course ? { course: opts.course } : {}),
       ...(opts.branch ? { branch: opts.branch } : {}),
       ...(yearFilter ? { passingYear: yearFilter } : {}),
+      // The search and the keyset cursor are both `OR`s. The cursor's is the
+      // top-level `OR`; the search's goes under `AND`. Spread side by side, the
+      // cursor's replaced the search's and every page after the first ignored
+      // the search text (A18).
       ...(search
         ? {
-            OR: [
+            AND: [
               {
-                displayName: { contains: search, mode: 'insensitive' as const },
+                OR: [
+                  {
+                    displayName: {
+                      contains: search,
+                      mode: 'insensitive' as const,
+                    },
+                  },
+                  {
+                    username: {
+                      contains: search,
+                      mode: 'insensitive' as const,
+                    },
+                  },
+                ],
               },
-              { username: { contains: search, mode: 'insensitive' as const } },
             ],
           }
         : {}),
@@ -592,8 +608,9 @@ export class UsersService {
      * the real rule: the blocker may open the profile, the blocked user may not.
      *
      * First-year isolation still filters the query, through `injectUserFilter`
-     * rather than a spread: `where` already carries an `OR` (the search clause
-     * and the keyset cursor), so assigning another one would drop it.
+     * rather than a spread: `where` already carries an `AND` (the search
+     * clause) and an `OR` (the keyset cursor), so assigning either would drop
+     * one of them.
      */
     const directoryWhere = this.studentYearPolicy.injectUserFilter(
       where,
