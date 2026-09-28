@@ -11,6 +11,11 @@ import {
 } from '@nestjs/common';
 import { AdminCollegesService } from './admin-colleges.service';
 import { AdminJwtGuard } from '../../common/guards/admin-jwt.guard';
+import {
+  ChangeCollegeStatusDto,
+  CreateCollegeDto,
+  UpdateCollegeDto,
+} from './dto/college.dto';
 
 @UseGuards(AdminJwtGuard)
 @Controller('admin/colleges')
@@ -38,32 +43,21 @@ export class AdminCollegesController {
   }
 
   @Post()
-  async createCollege(
-    @Body()
-    dto: {
-      name: string;
-      shortName?: string;
-      slug?: string;
-      domains: string[];
-      city?: string;
-      state?: string;
-      country?: string;
-      logoKey?: string;
-      bannerKey?: string;
-      isPrivate?: boolean;
-    },
-  ) {
+  async createCollege(@Body() dto: CreateCollegeDto) {
     return this.collegesService.createCollege(dto);
   }
 
   @Patch(':id')
-  async updateCollege(@Param('id') id: string, @Body() dto: any) {
+  async updateCollege(@Param('id') id: string, @Body() dto: UpdateCollegeDto) {
     return this.collegesService.updateCollege(id, dto);
   }
 
   @Patch(':id/status')
-  async changeStatus(@Param('id') id: string, @Body('status') status: string) {
-    return this.collegesService.changeStatus(id, status);
+  async changeStatus(
+    @Param('id') id: string,
+    @Body() dto: ChangeCollegeStatusDto,
+  ) {
+    return this.collegesService.changeStatus(id, dto.status);
   }
 
   @Patch(':id/restore')
