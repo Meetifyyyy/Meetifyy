@@ -2,16 +2,12 @@ package app.meetifyy;
 
 import android.content.res.Configuration;
 import android.graphics.drawable.ColorDrawable;
-import android.animation.ObjectAnimator;
-import android.animation.PropertyValuesHolder;
-import android.animation.ValueAnimator;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
 import android.webkit.WebView;
 import android.view.View;
-import android.view.animation.AccelerateDecelerateInterpolator;
 import android.view.animation.DecelerateInterpolator;
 
 import androidx.core.splashscreen.SplashScreen;
@@ -33,15 +29,10 @@ public class MainActivity extends BridgeActivity {
 
     private static final long SPLASH_TIMEOUT_MS = 5000;
     private static final long POLL_INTERVAL_MS = 32;
-    /** One breath: in, then out, of the splash logo (see startSplashLogoBreathing). */
-    private static final long BREATH_HALF_MS = 1100L;
-    private static final float BREATH_SCALE = 1.055f;
     /** The splash fades over the already-painted page: a crossfade, not a cut. */
     private static final long SPLASH_FADE_MS = 280L;
 
     private boolean contentPainted = false;
-    private ObjectAnimator splashLogoAnimator;
-    private int splashIconLookupAttempts;
     private final Handler handler = new Handler(Looper.getMainLooper());
 
     @Override
@@ -69,29 +60,20 @@ public class MainActivity extends BridgeActivity {
         final int splashColor = resolvedTheme.isDark ? SystemUiHelper.COLOR_DARK : SystemUiHelper.COLOR_LIGHT;
         if (getWindow() != null && getWindow().getDecorView() != null) {
             findAndColorSplashView(getWindow().getDecorView(), splashColor);
-            getWindow().getDecorView().post(() -> {
-                findAndColorSplashView(getWindow().getDecorView(), splashColor);
-                startSplashLogoBreathing(getWindow().getDecorView());
-            });
+            getWindow().getDecorView().post(() ->
+                findAndColorSplashView(getWindow().getDecorView(), splashColor));
         }
 
         /*
-         * The SYSTEM splash stays on screen until the page is ready, and is then
-         * removed in one step.
+         * The SYSTEM splash stays on screen until the page is ready and has
+         * painted (see launchReadiness.js), with a static logo.
          *
-         * It used to exit on the first frame into a hand-off view held by the
-         * exit-animation listener. That view lives in the activity's window,
-         * which is padded by the system-bar insets (more at the bottom than the
-         * top), so its centre sat higher than the full-screen system splash:
-         * measured on a device, the logo vanished for two frames and came back
-         * ~15px higher, then wobbled while insets settled. Keeping the system
-         * window up leaves nothing to line up.
+         * Handing it over to a view in this window early — which is what any
+         * logo animation would need, since Android 12+ draws a held splash in
+         * its own window — moved the logo ~15px as the window's insets settled.
+         * Holding the system window leaves nothing to line up.
          */
         splashScreen.setKeepOnScreenCondition(() -> !contentPainted);
-        // Fade out only after the page reports appReady. The page is told as the
-        // fade STARTS, so its own entrance plays under the fading splash and the
-        // two crossfade; waiting for the fade to end left an empty frame between
-        // them (measured: ~300 ms of bare background before the opening screen).
         splashScreen.setOnExitAnimationListener(provider -> {
             if (provider == null) return;
             fadeSplashOut(provider);
@@ -165,6 +147,7 @@ public class MainActivity extends BridgeActivity {
 
     /** Lifts the splash; from here the page owns the system bars. */
     private void finishLaunch(WebView webView) {
+        if (contentPainted) return;
         contentPainted = true;
         if (webView != null) requestPageBars(webView);
     }
@@ -206,36 +189,7 @@ public class MainActivity extends BridgeActivity {
         webView.evaluateJavascript(script, null);
     }
 
-    /**
-     * A slow, continuous breath on the splash logo.
-     *
-     * It was a double "heartbeat" (two quick bumps, then a pause) on a linear
-     * interpolator, which read as jumpy. This is one sine-shaped swell and
-     * release, repeated in reverse so there is no seam at the loop point.
-     *
-     * The pivot is left at its default, the view's centre, which the framework
-     * keeps correct as the view is laid out. It used to be set explicitly from
-     * getWidth()/getHeight(), which are 0 when this first runs, pinning the
-     * pivot to the top-left corner so every scale also moved the logo.
-     */
-    private void startSplashLogoBreathing(View decor) {
-        final View icon = findSplashIcon(decor);
-        if (icon == null) {
-            if (++splashIconLookupAttempts < 12 && !contentPainted) {
-                decor.postDelayed(() -> startSplashLogoBreathing(decor), POLL_INTERVAL_MS);
-            }
-            return;
-        }
-        splashLogoAnimator = ObjectAnimator.ofPropertyValuesHolder(icon,
-            PropertyValuesHolder.ofFloat(View.SCALE_X, 1f, BREATH_SCALE),
-            PropertyValuesHolder.ofFloat(View.SCALE_Y, 1f, BREATH_SCALE));
-        splashLogoAnimator.setDuration(BREATH_HALF_MS);
-        splashLogoAnimator.setRepeatCount(ValueAnimator.INFINITE);
-        splashLogoAnimator.setRepeatMode(ValueAnimator.REVERSE);
-        splashLogoAnimator.setInterpolator(new AccelerateDecelerateInterpolator());
-        splashLogoAnimator.start();
-    }
-
+    /** The splash logo view, in the splash view the exit listener is handed. */
     private View findSplashIcon(View root) {
         final int iconId = getResources().getIdentifier(
             "splashscreen_icon_view", "id", getPackageName()
@@ -245,23 +199,23 @@ public class MainActivity extends BridgeActivity {
 
     /**
      * Crossfades the splash into the page, which is already painted beneath it.
+     * The page is told as the fade starts, so its own entrance plays under it.
      *
-     * The logo is pinned for the duration. The page repaints the system bars as
-     * the splash lifts, and a change in their insets re-lays out the splash
-     * view, which moved the centred logo upward in the last frames of the
-     * fade. Any such shift is cancelled with an equal and opposite translation,
-     * so the logo stays exactly where it has been all along.
+     * The logo is pinned for the duration: the page repaints the system bars
+     * as the splash lifts, and a change in their insets re-lays out the splash
+     * view, which could move the centred logo upward in the last frames. Any
+     * such shift is cancelled with an equal and opposite translation.
      */
     private void fadeSplashOut(SplashScreenViewProvider provider) {
         final View splashView = provider.getView();
         notifySplashExiting();
         if (splashView == null) {
-            stopSplashLogoBreathing();
             provider.remove();
             notifySplashExited();
             return;
         }
-        final View icon = findSplashIcon(splashView);
+        View icon = provider.getIconView();
+        if (icon == null) icon = findSplashIcon(splashView);
         if (icon != null) {
             final int[] start = new int[2];
             icon.getLocationOnScreen(start);
@@ -269,8 +223,7 @@ public class MainActivity extends BridgeActivity {
             icon.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> {
                 final int[] now = new int[2];
                 v.getLocationOnScreen(now);
-                final int laidOutY = now[1] - Math.round(v.getTranslationY());
-                v.setTranslationY(startY - laidOutY);
+                v.setTranslationY(startY - (now[1] - Math.round(v.getTranslationY())));
             });
         }
         splashView.animate()
@@ -278,17 +231,10 @@ public class MainActivity extends BridgeActivity {
             .setDuration(SPLASH_FADE_MS)
             .setInterpolator(new DecelerateInterpolator())
             .withEndAction(() -> {
-                stopSplashLogoBreathing();
                 provider.remove();
                 notifySplashExited();
             })
             .start();
-    }
-
-    private void stopSplashLogoBreathing() {
-        if (splashLogoAnimator == null) return;
-        splashLogoAnimator.cancel();
-        splashLogoAnimator = null;
     }
 
     /**
@@ -404,7 +350,6 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     public void onDestroy() {
-        stopSplashLogoBreathing();
         handler.removeCallbacksAndMessages(null);
         super.onDestroy();
     }
