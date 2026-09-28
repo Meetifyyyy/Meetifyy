@@ -180,6 +180,22 @@ describe('sanitize-html utilities (configuration tests)', () => {
   // ── htmlToPlainText ───────────────────────────────────────────────────────
 
   describe('htmlToPlainText', () => {
+    // The mock returns its input, so these exercise the entity decoding that
+    // follows sanitize-html (CodeQL #49).
+    it('decodes entities exactly once, keeping text typed as an entity', () => {
+      // The author wrote "&lt;b&gt;"; the stored HTML holds it escaped.
+      expect(htmlToPlainText('&amp;lt;b&amp;gt;')).toBe('&lt;b&gt;');
+      expect(htmlToPlainText('&amp;amp;')).toBe('&amp;');
+    });
+
+    it('still decodes the ordinary entities', () => {
+      expect(
+        htmlToPlainText(
+          'a &lt; b &amp;&amp; c &gt; d &quot;q&quot; it&#39;s&nbsp;ok',
+        ),
+      ).toBe('a < b && c > d "q" it\'s ok');
+    });
+
     it('calls sanitize-html with empty allowedTags to strip all markup', () => {
       htmlToPlainText('<p>Hello <strong>world</strong></p>');
       // htmlToPlainText calls sanitize-html; check the options

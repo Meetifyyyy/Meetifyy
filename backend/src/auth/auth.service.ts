@@ -34,6 +34,7 @@ import { randomInt } from 'crypto';
 import { NotificationType } from '@prisma/client';
 import { StudentYearPolicyService } from '../common/student-year/student-year-policy.service';
 import { LegalConsentService } from '../common/legal/legal-consent.service';
+import { stripTags } from '../common/utils/strip-tags.util';
 
 /**
  * Bounded LRU cache for auth sync results.
@@ -1557,8 +1558,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     personalEmail: string;
   }) {
     const sanitizeStr = (str: string) =>
-      (str || '')
-        .replace(/<[^>]*>?/g, '')
+      stripTags(str || '')
         // eslint-disable-next-line no-control-regex -- matching control characters is the point: this strips them from untrusted input
         .replace(/[\u200B-\u200D\uFEFF\u0000-\u001F\u007F-\u009F]/g, '')
         .trim();
