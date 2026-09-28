@@ -40,7 +40,6 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { PresenceModule } from './presence/presence.module';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { BullModule } from '@nestjs/bullmq';
-import Redis from 'ioredis';
 import type { RedisOptions } from 'bullmq';
 import type {
   SerializedError,
@@ -256,54 +255,16 @@ import { randomUUID } from 'node:crypto';
           };
         }
 
-        let sharedProducerClient: Redis | null = null;
-        let sharedSubscriberClient: Redis | null = null;
-
         return {
           connection,
           // Namespaces every queue by environment. Without it, a local worker
           // pointed at the deployed Redis silently steals production jobs.
           prefix: config.redis.queuePrefix,
-          createClient: (
-            type: 'client' | 'subscriber' | 'bclient',
-            opts?: RedisOptions,
-          ) => {
-            const clientOpts: RedisOptions = {
-              ...connection,
-              ...(opts || {}),
-              retryStrategy(times: number) {
-                if (times > 5) return null;
-                return Math.min(times * 1000, 5000);
-              },
-              reconnectOnError(err: Error) {
-                if (
-                  err.message &&
-                  err.message.includes('max number of clients reached')
-                ) {
-                  return false;
-                }
-                return true;
-              },
-            };
-
-            if (type === 'client') {
-              if (!sharedProducerClient) {
-                sharedProducerClient = new Redis(clientOpts);
-              }
-              return sharedProducerClient;
-            }
-            if (type === 'subscriber') {
-              if (!sharedSubscriberClient) {
-                sharedSubscriberClient = new Redis(clientOpts);
-              }
-              return sharedSubscriberClient;
-            }
-            return new Redis(clientOpts);
-          },
-          defaultJobOptions: {
-            removeOnComplete: true,
-            removeOnFail: { count: 100 },
-          },
+          // There is no `createClient` here. It is a Bull v3 option that
+          // neither bullmq nor @nestjs/bullmq reads, so the bounded retry it
+          // declared never applied (A13). BullMQ's own default — reconnect
+          // indefinitely — is the right one for a worker: giving up after a
+          // few attempts would leave the process up with its queues dead.
         };
       },
     }),
