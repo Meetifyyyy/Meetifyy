@@ -20,7 +20,9 @@
 #
 # Flow:
 #   merge/push to main
-#   → CI checks must pass (ci.yml runs first)
+#   → wait for CI's `validate` check on the same commit; stop unless it passed
+#     (scripts/await-ci.sh — the two workflows start together, so this job
+#     is what makes "CI first" true)
 #   → build Docker image (prod-<sha> tag)
 #   → push to ACR
 #   → run `prisma migrate deploy` → PROD Supabase (via Container App Job)
@@ -54,8 +56,31 @@ permissions:
   contents: read
 
 jobs:
+  # Deploy only a commit CI has passed. CI and this workflow start from the
+  # same push; without this job a commit whose tests failed was still built,
+  # migrated and rolled out. See scripts/await-ci.sh.
+  await-ci:
+    name: Wait for CI
+    runs-on: ubuntu-latest
+    permissions:
+      checks: read
+      contents: read
+    timeout-minutes: 35
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts/await-ci.sh
+          sparse-checkout-cone-mode: false
+
+      - name: Wait for the validate check on this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/await-ci.sh "${{ github.sha }}"
+
   deploy-prod:
     name: Build & Deploy → PROD
+    needs: await-ci
     runs-on: ubuntu-latest
     # The `production` GitHub Environment gates access to PROD-only secrets.
     # Development secrets in the `development` environment are not visible here.
