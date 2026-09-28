@@ -822,6 +822,57 @@
     transition: transform var(--ptr-timing, 0s), opacity var(--ptr-timing, 0s);
   }
 
+  /*
+   * The avatar recedes under the header. From the moment its top edge touches
+   * the header's bottom until it has passed fully beneath it, it shrinks
+   * toward its own bottom edge and fades, in step with the scroll and in
+   * reverse on the way back. A view timeline inset by the header's height
+   * (56px + the status bar) runs it on the compositor; where view timelines
+   * are unsupported the avatar simply scrolls as before.
+   */
+  @supports (animation-timeline: view()) {
+    :global(html[data-collapsing-header]) .avatarWrapper {
+      transform-origin: 50% 100%;
+      animation: avatarRecede linear both;
+      animation-timeline: view(block calc(56px + var(--status-bar-inset, 0px)) 0px);
+      animation-range: exit 0% exit 100%;
+    }
+
+    /*
+     * The name and handle stay fully visible until they reach the header, then
+     * fade as they pass under it. The name's timeline is named and hoisted to
+     * <html>, so the header's title (CollapsingHeader) fades in on exactly the
+     * same timeline: one hands over to the other, frame for frame.
+     */
+    :global(html[data-collapsing-header]) {
+      timeline-scope: --profile-name;
+    }
+
+    :global(html[data-collapsing-header]) .name {
+      view-timeline: --profile-name block;
+      view-timeline-inset: calc(56px + var(--status-bar-inset, 0px)) 0px;
+      animation: fadeUnderHeader linear both;
+      animation-timeline: --profile-name;
+      animation-range: exit 0% exit 100%;
+    }
+
+    :global(html[data-collapsing-header]) .username {
+      animation: fadeUnderHeader linear both;
+      animation-timeline: view(block calc(56px + var(--status-bar-inset, 0px)) 0px);
+      animation-range: exit 0% exit 100%;
+    }
+  }
+
+  /*
+   * `clip`, not `hidden`, for the card while the collapsing header is up:
+   * `hidden` made the card a scroll container, and a view timeline follows
+   * its nearest scroll container, so the timelines above tracked a card that
+   * never scrolls. `clip` clips the same, rounded corners included.
+   */
+  :global(html[data-collapsing-header]) .profileCard {
+    overflow: clip;
+  }
+
   :global(html[data-collapsing-header]) .coverPullBlur > * {
     width: 100%;
     height: 100%;
@@ -841,8 +892,21 @@
     transition: none;
   }
 
-  :global(html[data-collapsing-header]) .name,
-  :global(html[data-collapsing-header]) .username {
-    opacity: calc(1 - var(--profile-collapse, 0));
+  /* Where timelines are unsupported, the scroll-linked fade as before. */
+  @supports not (animation-timeline: view()) {
+    :global(html[data-collapsing-header]) .name,
+    :global(html[data-collapsing-header]) .username {
+      opacity: calc(1 - var(--profile-collapse, 0));
+    }
   }
+}
+
+@keyframes avatarRecede {
+  from { transform: scale(1); opacity: 1; }
+  to   { transform: scale(0.55); opacity: 0; }
+}
+
+@keyframes fadeUnderHeader {
+  from { opacity: 1; }
+  to   { opacity: 0; }
 }
