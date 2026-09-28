@@ -46,7 +46,7 @@ export default tseslint.config(
       // The five no-unsafe-* rules report where an `any` is used; this one
       // reports where it is written. With it off, one `any` in a service
       // surfaced as dozens of violations in its callers and never at the
-      // source. Existing sites are recorded in eslint-suppressions.json.
+      // source.
       '@typescript-eslint/no-explicit-any': 'error',
       // Underscore marks a binding that exists for its position, not its
       // value: a caught error we deliberately ignore, an argument a signature

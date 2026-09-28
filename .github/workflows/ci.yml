@@ -121,15 +121,13 @@ jobs:
           npx tsc --project tsconfig.json --noEmit --incremental false
           npx tsc --project tsconfig.tooling.json
 
-      # BLOCKING. The pre-existing backlog is recorded in
-      # eslint-suppressions.json, so only a violation that is not in that file
-      # fails the build: a new `any`, a new floating promise. The file may only
-      # shrink. When a fix removes a recorded violation, ESLint fails until the
-      # ledger is pruned (`npm run lint -- --prune-suppressions`), so it never
-      # keeps room for new violations to hide in. This step was advisory
-      # before, and the backlog grew by about half while it was.
+      # BLOCKING, at zero: no errors, no warnings, and no suppressions ledger.
+      # The backlog that ledger once recorded (about 8,000 violations) has been
+      # fixed, so any violation — a new `any`, a new floating promise — fails
+      # the build. This step was advisory once, and the backlog grew by about
+      # half while it was.
       - name: ESLint
-        run: npm run lint
+        run: npm run lint -- --max-warnings 0
 
       # prebuild script runs `prisma generate` again — harmless, ensures the
       # dist output matches the latest generated client.

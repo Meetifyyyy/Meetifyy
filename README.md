@@ -129,16 +129,13 @@ Both deploys are automatic on merge. Nothing is deployed by hand.
 ### Backend lint
 
 `npm run lint` in `backend/` lints every source file, including the email
-templates and `scripts/`, and it blocks CI. Older violations are recorded in
-`backend/eslint-suppressions.json`. Any violation not in that file fails the
-build, so a new `any` or a new unawaited promise can't be merged.
+templates and `scripts/`, and CI runs it with `--max-warnings 0`: the backend
+is at zero errors and zero warnings, with no suppressions, so a new `any` or a
+new unawaited promise can't be merged. Never silence a rule to make code pass —
+no `eslint-disable` comments, no suppressions file, no relaxed config: fix the
+code, or raise it for a decision.
 
-The file only ever shrinks. After fixing recorded violations, run
-`npm run lint -- --prune-suppressions` and commit the smaller file with the
-fix. Lint fails until you do. Never regenerate it with `--suppress-all` to make
-a new violation pass: fix the code.
-
-The conventions that keep new violations out:
+The conventions that keep it at zero:
 
 - **No `any`, and no `as any`.** A cast to reach a missing field hides a real
   mismatch: fix the query's `select`/`include`, or take `unknown` and narrow it.
