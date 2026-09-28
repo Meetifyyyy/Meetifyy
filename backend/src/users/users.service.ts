@@ -104,6 +104,139 @@ type ConnectionUser = Prisma.UserGetPayload<{
   select: typeof CONNECTION_SELECT;
 }> & { isFirstYearStudent: boolean };
 
+/** A body value as a log line shows it: '-' when absent, JSON when not a primitive. */
+function logValue(value: unknown): string {
+  if (value === undefined || value === null) return '-';
+  return typeof value === 'string' || typeof value === 'number'
+    ? String(value)
+    : JSON.stringify(value);
+}
+
+/** What PATCH /api/users/me returns: the profile as the client renders it. */
+const PROFILE_UPDATE_SELECT = {
+  id: true,
+  username: true,
+  displayName: true,
+  isCampusRep: true,
+  avatar: true,
+  collegeId: true,
+  college: { select: { id: true, name: true } },
+  cover: true,
+  bio: true,
+  birthday: true,
+  course: true,
+  branch: true,
+  passingYear: true,
+  location: true,
+  interests: true,
+  profileCompleted: true,
+  createdAt: true,
+  updatedAt: true,
+} satisfies Prisma.UserSelect;
+
+/** The scalar profile columns a profile update may write. */
+type ProfileScalarWrite = {
+  displayName?: string;
+  username?: string;
+  bio?: string;
+  birthday?: string;
+  avatar?: string | null;
+  cover?: string | null;
+  course?: string;
+  branch?: string;
+  passingYear?: number;
+  location?: string | null;
+  profileCompleted?: boolean;
+  interests?: string[];
+  email?: string;
+};
+
+/**
+ * An avatar or cover value from the body: `undefined` when not sent, `null` to
+ * clear it (any falsy value, as before), otherwise the string reference. A
+ * non-string used to reach Prisma and fail as a 500; it is a 400 now.
+ */
+function mediaRefInput(
+  value: unknown,
+  field: string,
+): string | null | undefined {
+  if (value === undefined) return undefined;
+  if (!value) return null;
+  if (typeof value !== 'string') {
+    throw new BadRequestException(`${field} must be a string`);
+  }
+  return value;
+}
+
+/** A link from the profile to the Media row behind a reference. */
+type MediaLink =
+  | { connect: { objectKey: string } }
+  | {
+      connectOrCreate: {
+        where: { objectKey: string };
+        create: {
+          provider: string;
+          bucket: string;
+          objectKey: string;
+          mimeType: string;
+          fileSize: number;
+          ownerId: string;
+        };
+      };
+    };
+
+/**
+ * How the avatar/cover relation changes for a submitted reference.
+ *
+ * Always Prisma's relation (checked) input — never the raw `…MediaId` column.
+ * Mixing the two in one write is rejected by Prisma, and a profile save can
+ * clear one image while setting the other. `create` is what a brand-new row
+ * gets: a link, or nothing (there is nothing to disconnect yet).
+ *
+ * A reference that is neither an uploaded key nor an external URL (a CSS
+ * gradient cover, a bare key) links nothing and leaves the relation alone, as
+ * it always has.
+ */
+function mediaRelationWrite(
+  ref: string | null | undefined,
+  userId: string,
+):
+  { update: MediaLink | { disconnect: true }; create?: MediaLink } | undefined {
+  if (ref === undefined) return undefined;
+  if (ref === null) return { update: { disconnect: true } };
+  let link: MediaLink | undefined;
+  if (ref.startsWith('/api/media/')) {
+    link = { connect: { objectKey: ref.replace('/api/media/', '') } };
+  } else if (ref.startsWith('http')) {
+    link = {
+      connectOrCreate: {
+        where: { objectKey: ref },
+        create: {
+          provider: 'external',
+          bucket: 'external',
+          objectKey: ref,
+          mimeType: 'image/jpeg',
+          fileSize: 0,
+          ownerId: userId,
+        },
+      },
+    };
+  }
+  return link ? { update: link, create: link } : undefined;
+}
+
+/**
+ * The address a brand-new row falls back to when the token carries no real
+ * one: the body's `email` if it sent a usable one, else a placeholder. Only
+ * read in that case, so an odd value elsewhere is never looked at.
+ */
+function bodyEmailOrFallback(email: unknown, userId: string): string {
+  if (email !== undefined && email !== null && typeof email !== 'string') {
+    throw new BadRequestException('email must be a string');
+  }
+  return email || `${userId}@meetifyy.user`;
+}
+
 @Injectable()
 export class UsersService {
   private readonly logger = new Logger('UsersService');
@@ -1136,12 +1269,27 @@ export class UsersService {
     };
   }
 
+  /**
+   * Name/username filter for the profile's follower/following viewer.
+   *
+   * In SQL, before LIMIT/OFFSET, like every other filter on these lists, so a
+   * search pages through ALL matches rather than only the rows already loaded.
+   * LIKE wildcards in the input are escaped so they match literally.
+   */
+  private followListSearchFilter(search?: string): Prisma.Sql {
+    const term = search?.trim().replace(/^@/, '').slice(0, 64);
+    if (!term) return Prisma.empty;
+    const pattern = `%${term.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+    return Prisma.sql`AND (u."username" ILIKE ${pattern} OR u."displayName" ILIKE ${pattern})`;
+  }
+
   async getFollowers(
     username: string,
     currentUserId?: string,
     limit = 20,
     offset = 0,
     eligibleOnly = false,
+    search?: string,
   ) {
     const cleanUsername = username.trim().toLowerCase();
 
@@ -1224,6 +1372,7 @@ export class UsersService {
       ${eligibilityFilter}
       ${followerPolicyFilter}
       ${activeOnlyFilter}
+      ${this.followListSearchFilter(search)}
       ORDER BY f."createdAt" DESC
       LIMIT ${limit} OFFSET ${offset};
     `;
@@ -1255,6 +1404,7 @@ export class UsersService {
     limit = 20,
     offset = 0,
     eligibleOnly = false,
+    search?: string,
   ) {
     const cleanUsername = username.trim().toLowerCase();
 
@@ -1322,6 +1472,7 @@ export class UsersService {
       ${eligibilityFilter}
       ${followingPolicyFilter}
       ${followingActiveOnlyFilter}
+      ${this.followListSearchFilter(search)}
       ORDER BY f."createdAt" DESC
       LIMIT ${limit} OFFSET ${offset};
     `;
@@ -1347,7 +1498,11 @@ export class UsersService {
     });
   }
 
-  async updateProfile(userId: string, data: any, userEmail?: string) {
+  async updateProfile(
+    userId: string,
+    data: Record<string, unknown>,
+    userEmail?: string,
+  ) {
     // Only allow updating valid user profile fields
     const {
       displayName,
@@ -1360,7 +1515,9 @@ export class UsersService {
       interests,
       birthday,
     } = data;
-    const updateData: any = {};
+    // Scalar columns only. The two media relations are kept apart (below)
+    // because the update and the create branch must write them differently.
+    const updateData: ProfileScalarWrite = {};
     if (displayName !== undefined) {
       const trimmedDisplayName =
         typeof displayName === 'string' ? displayName.trim() : '';
@@ -1421,57 +1578,13 @@ export class UsersService {
       updateData.birthday = birthday.trim();
     }
 
-    if (avatar !== undefined) {
-      updateData.avatar = avatar || null;
-      if (avatar && typeof avatar === 'string') {
-        if (avatar.startsWith('/api/media/')) {
-          const objectKey = avatar.replace('/api/media/', '');
-          updateData.avatarMedia = { connect: { objectKey } };
-        } else if (avatar.startsWith('http')) {
-          updateData.avatarMedia = {
-            connectOrCreate: {
-              where: { objectKey: avatar },
-              create: {
-                provider: 'external',
-                bucket: 'external',
-                objectKey: avatar,
-                mimeType: 'image/jpeg',
-                fileSize: 0,
-                ownerId: userId,
-              },
-            },
-          };
-        }
-      } else {
-        updateData.avatarMediaId = null;
-      }
-    }
+    const avatarRef = mediaRefInput(avatar, 'avatar');
+    if (avatarRef !== undefined) updateData.avatar = avatarRef;
+    const avatarMedia = mediaRelationWrite(avatarRef, userId);
 
-    if (cover !== undefined) {
-      updateData.cover = cover || null;
-      if (cover && typeof cover === 'string') {
-        if (cover.startsWith('/api/media/')) {
-          const objectKey = cover.replace('/api/media/', '');
-          updateData.coverMedia = { connect: { objectKey } };
-        } else if (cover.startsWith('http')) {
-          updateData.coverMedia = {
-            connectOrCreate: {
-              where: { objectKey: cover },
-              create: {
-                provider: 'external',
-                bucket: 'external',
-                objectKey: cover,
-                mimeType: 'image/jpeg',
-                fileSize: 0,
-                ownerId: userId,
-              },
-            },
-          };
-        }
-      } else {
-        updateData.coverMediaId = null;
-      }
-    }
+    const coverRef = mediaRefInput(cover, 'cover');
+    if (coverRef !== undefined) updateData.cover = coverRef;
+    const coverMedia = mediaRelationWrite(coverRef, userId);
 
     // Academic information is validated against the official GLA catalogue on the
     // server, so a handcrafted request cannot pair a course with another course's
@@ -1492,7 +1605,7 @@ export class UsersService {
       // Log the rejected combination (ids only — no personal data) so an invalid
       // pairing reaching the server is diagnosable without replaying the request.
       this.logger.warn(
-        `[ACADEMIC] rejected for user=${userId} course=${data.course ?? '-'} branch=${data.branch ?? '-'} year=${data.passingYear ?? data.currentYear ?? '-'}: ${(err as Error).message}`,
+        `[ACADEMIC] rejected for user=${userId} course=${logValue(data.course)} branch=${logValue(data.branch)} year=${logValue(data.passingYear ?? data.currentYear)}: ${(err as Error).message}`,
       );
       throw err;
     }
@@ -1506,16 +1619,27 @@ export class UsersService {
       );
     }
 
-    if (location !== undefined) updateData.location = location;
-    if (profileCompleted !== undefined)
+    if (location !== undefined) {
+      if (location !== null && typeof location !== 'string') {
+        throw new BadRequestException('location must be a string');
+      }
+      updateData.location = location;
+    }
+    if (profileCompleted !== undefined) {
+      if (typeof profileCompleted !== 'boolean') {
+        throw new BadRequestException('profileCompleted must be a boolean');
+      }
       updateData.profileCompleted = profileCompleted;
+    }
     if (Array.isArray(interests))
-      updateData.interests = interests.filter((i) => typeof i === 'string');
+      updateData.interests = (interests as unknown[]).filter(
+        (i): i is string => typeof i === 'string',
+      );
 
     const realEmail =
       userEmail && !userEmail.endsWith('@meetifyy.user')
         ? userEmail.trim().toLowerCase()
-        : data.email || `${userId}@meetifyy.user`;
+        : bodyEmailOrFallback(data.email, userId);
 
     const existingUserRecord = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -1553,51 +1677,41 @@ export class UsersService {
           })
         : null;
 
-    let updated: any;
+    let updated: Prisma.UserGetPayload<{
+      select: typeof PROFILE_UPDATE_SELECT;
+    }>;
     try {
       updated = await this.prisma.user.upsert({
         where: { id: userId },
-        update: updateData,
+        update: {
+          ...updateData,
+          ...(avatarMedia && { avatarMedia: avatarMedia.update }),
+          ...(coverMedia && { coverMedia: coverMedia.update }),
+        },
         create: {
           id: userId,
           username: fallbackUsername,
           displayName: fallbackDisplayName,
           email: realEmail,
           ...updateData,
+          // A new row has no media to disconnect; only a link is written.
+          ...(avatarMedia?.create && { avatarMedia: avatarMedia.create }),
+          ...(coverMedia?.create && { coverMedia: coverMedia.create }),
           notificationPrefs: {
             create: {},
           },
         },
-        select: {
-          id: true,
-          username: true,
-          displayName: true,
-          isCampusRep: true,
-          avatar: true,
-          collegeId: true,
-          college: { select: { id: true, name: true } },
-          cover: true,
-          bio: true,
-          birthday: true,
-          course: true,
-          branch: true,
-          passingYear: true,
-          location: true,
-          interests: true,
-          profileCompleted: true,
-          createdAt: true,
-          updatedAt: true,
-        },
+        select: PROFILE_UPDATE_SELECT,
       });
     } catch (err) {
-      if (avatar !== undefined && avatar) {
+      if (avatarRef) {
         this.mediaCleanupService
-          ?.discardFailedNewUpload(avatar, userId)
+          ?.discardFailedNewUpload(avatarRef, userId)
           .catch(() => {});
       }
-      if (cover !== undefined && cover) {
+      if (coverRef) {
         this.mediaCleanupService
-          ?.discardFailedNewUpload(cover, userId)
+          ?.discardFailedNewUpload(coverRef, userId)
           .catch(() => {});
       }
       throw err;
@@ -1646,8 +1760,10 @@ export class UsersService {
           cover: updated.cover ?? null,
           displayName: updated.displayName ?? null,
         })
-        .catch((err) =>
-          this.logger.warn(`Failed to broadcast user.updated: ${err?.message}`),
+        .catch((err: unknown) =>
+          this.logger.warn(
+            `Failed to broadcast user.updated: ${(err as Error | undefined)?.message}`,
+          ),
         );
     }
 
@@ -1662,8 +1778,15 @@ export class UsersService {
     });
   }
 
-  async updateSettings(userId: string, data: any) {
-    const payload: any = {};
+  async updateSettings(userId: string, data: Record<string, unknown>) {
+    const payload: {
+      emailNotifs?: boolean;
+      pushNotifs?: boolean;
+      privateProfile?: boolean;
+      showOnlineStatus?: boolean;
+      readReceipts?: boolean;
+      whoCanSeeOnline?: string;
+    } = {};
     if (typeof data.emailNotifs === 'boolean')
       payload.emailNotifs = data.emailNotifs;
     if (typeof data.pushNotifs === 'boolean')

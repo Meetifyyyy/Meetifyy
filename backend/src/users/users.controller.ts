@@ -183,7 +183,14 @@ export class UsersController {
   @Patch('me')
   @UseGuards(JwtGuard)
   @AllowBearerToken()
-  async updateProfile(@Req() req: AuthenticatedRequest, @Body() data: any) {
+  async updateProfile(
+    @Req() req: AuthenticatedRequest,
+    // Deliberately an open record, not a whitelisting DTO: every client —
+    // installed apps included, which cannot be updated — sends whole form
+    // objects here, and the service reads only the fields it knows, narrowing
+    // each one. See users.profile-update.spec.ts.
+    @Body() data: Record<string, unknown>,
+  ) {
     const currentUserId = req.user?.id;
     // user_metadata is arbitrary JSON from the identity provider, so its
     // `email` is only usable once it has actually been checked to be a string.
@@ -202,7 +209,10 @@ export class UsersController {
 
   @Patch('me/settings')
   @UseGuards(JwtGuard)
-  async updateSettings(@Req() req: AuthenticatedRequest, @Body() data: any) {
+  async updateSettings(
+    @Req() req: AuthenticatedRequest,
+    @Body() data: Record<string, unknown>,
+  ) {
     return this.usersService.updateSettings(req.user.id, data);
   }
 
@@ -249,6 +259,7 @@ export class UsersController {
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
     @Query('eligibleOnly') eligibleOnly?: string,
+    @Query('search') search?: string,
   ) {
     const limitNum = limit ? parseInt(limit, 10) : 50;
     const offsetNum = offset ? parseInt(offset, 10) : 0;
@@ -258,6 +269,8 @@ export class UsersController {
       limitNum,
       offsetNum,
       eligibleOnly === 'true',
+      // A repeated ?search= arrives as an array; only a single string is a term.
+      typeof search === 'string' ? search : undefined,
     );
   }
 
@@ -273,6 +286,7 @@ export class UsersController {
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
     @Query('eligibleOnly') eligibleOnly?: string,
+    @Query('search') search?: string,
   ) {
     const limitNum = limit ? parseInt(limit, 10) : 50;
     const offsetNum = offset ? parseInt(offset, 10) : 0;
@@ -282,6 +296,8 @@ export class UsersController {
       limitNum,
       offsetNum,
       eligibleOnly === 'true',
+      // A repeated ?search= arrives as an array; only a single string is a term.
+      typeof search === 'string' ? search : undefined,
     );
   }
 
