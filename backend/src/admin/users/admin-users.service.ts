@@ -4,7 +4,8 @@ import {
   BadRequestException,
   ConflictException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { AccountStatus, Prisma } from '@prisma/client';
+import { parseEnumFilter } from '../../common/utils/enum-filter.util';
 import { PrismaService } from '../../prisma/prisma.service';
 import { JwtGuard } from '../../common/guards/jwt.guard';
 import { SupabaseService } from '../../supabase/supabase.service';
@@ -23,14 +24,22 @@ export class AdminUsersService {
     page?: number;
     limit?: number;
   }) {
+    // Validated before any query: an unknown enum value is a 400, not a
+    // Prisma validation error (500).
+    const accountStatus = parseEnumFilter(
+      AccountStatus,
+      query.accountStatus,
+      'accountStatus',
+    );
+
     const page = Math.max(1, query.page || 1);
     const limit = Math.min(100, Math.max(1, query.limit || 20));
     const skip = (page - 1) * limit;
 
-    const where: any = {};
+    const where: Prisma.UserWhereInput = {};
 
-    if (query.accountStatus) {
-      where.accountStatus = query.accountStatus;
+    if (accountStatus) {
+      where.accountStatus = accountStatus;
     }
 
     if (query.collegeId) {

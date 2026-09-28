@@ -1,23 +1,4 @@
 {
-  "src/admin/reports/admin-reports.controller.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 1
-    }
-  },
-  "src/admin/users/admin-users.service.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 3
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 3
-    }
-  },
   "src/communities/communities.controller.ts": {
     "@typescript-eslint/no-unsafe-return": {
       "count": 1
@@ -41,17 +22,6 @@
     },
     "@typescript-eslint/no-unsafe-return": {
       "count": 1
-    }
-  },
-  "src/moderation/moderation.service.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 2
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 3
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 5
     }
   },
   "src/users/users.controller.ts": {
