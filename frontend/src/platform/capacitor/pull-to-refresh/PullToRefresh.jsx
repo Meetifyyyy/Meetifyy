@@ -52,21 +52,6 @@ export default function PullToRefresh({
   const pulling = phase === 'pulling' || phase === 'ready';
   const springTransition = pulling ? 'none' : 'transform 0.32s cubic-bezier(0.22, 1, 0.36, 1)';
 
-  // Fixed cover headers travel with the content during a pull, then return to
-  // their viewport position while the content springs back.
-  useLayoutEffect(() => {
-    const target = pullTargetRef?.current;
-    if (!target) return;
-    target.style.setProperty('--pull-to-refresh-transition', springTransition);
-    if (distance > 0) target.style.setProperty('--pull-to-refresh-distance', `${distance}px`);
-    else target.style.removeProperty('--pull-to-refresh-distance');
-  }, [distance, pullTargetRef, springTransition]);
-
-  useLayoutEffect(() => () => {
-    pullTargetRef?.current?.style.removeProperty('--pull-to-refresh-distance');
-    pullTargetRef?.current?.style.removeProperty('--pull-to-refresh-transition');
-  }, [pullTargetRef]);
-
   /*
    * Whether the content carries a transform at all.
    *
@@ -87,6 +72,33 @@ export default function PullToRefresh({
     return () => window.clearTimeout(t);
   }, [distance]);
   const displaced = moving || distance > 0;
+
+  // A fixed header over the pull (Profile's cover) is given the pull as CSS
+  // variables. `--pull-to-refresh-distance`/`-transition` move a header with
+  // the content; `--pull-to-refresh-offset` is the same distance as a plain
+  // number, for CSS that scales by it (the cover zooms to fill the opened
+  // area), and `--pull-to-refresh-timing` is the spring-back easing, set only
+  // while springing back so nothing else that header animates ever lags.
+  const timing = !pulling && displaced ? '0.32s cubic-bezier(0.22, 1, 0.36, 1)' : '0s';
+  useLayoutEffect(() => {
+    const target = pullTargetRef?.current;
+    if (!target) return;
+    target.style.setProperty('--pull-to-refresh-transition', springTransition);
+    target.style.setProperty('--pull-to-refresh-timing', timing);
+    target.style.setProperty('--pull-to-refresh-offset', String(Math.max(0, distance)));
+    if (distance > 0) target.style.setProperty('--pull-to-refresh-distance', `${distance}px`);
+    else target.style.removeProperty('--pull-to-refresh-distance');
+  }, [distance, pullTargetRef, springTransition, timing]);
+  useLayoutEffect(() => () => {
+    const target = pullTargetRef?.current;
+    if (!target) return;
+    for (const name of [
+      '--pull-to-refresh-distance',
+      '--pull-to-refresh-transition',
+      '--pull-to-refresh-offset',
+      '--pull-to-refresh-timing',
+    ]) target.style.removeProperty(name);
+  }, [pullTargetRef]);
 
   return (
     <div ref={containerRef} className={styles.root}>
@@ -115,7 +127,7 @@ export default function PullToRefresh({
         drives the whole effect.
       */}
       <div
-        className={styles.indicator}
+        className={`${styles.indicator} ${pullTargetRef ? styles.indicatorOverHeader : ''}`}
         style={{
           transform: `translate3d(-50%, ${distance}px, 0) scale(${0.6 + 0.4 * Math.min(1, distance / 40)})`,
           opacity: Math.min(1, distance / 26),

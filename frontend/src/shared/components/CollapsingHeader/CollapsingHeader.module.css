@@ -41,21 +41,64 @@
   right: 0;
   z-index: 0;
   height: var(--profile-cover-height, calc(100vw / 3 + var(--status-bar-inset, 0px)));
-  overflow: hidden;
-  transform: scaleY(var(--profile-cover-scale, 1));
-  transform-origin: top center;
+  /* Scrolls away 1:1 with the page, then pins (useCollapsingHeader). */
+  transform: translate3d(0, calc(var(--cover-shift, 0) * -1px), 0);
   will-change: transform;
   pointer-events: none;
 }
 
-.coverBackground > * {
+/*
+ * The pull. Zooms from the top edge by exactly the pulled distance
+ * ((height + pull) / height), so the cover's top stays under the status bar
+ * and its bottom meets the content that the pull moved down: no gap above,
+ * below or at the sides. It clips here rather than on .coverBackground, so the
+ * clip scales with it. The easing is set only while springing back.
+ */
+.coverStretch {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  transform-origin: 50% 0;
+  transform: scale(calc(1 + var(--pull-to-refresh-offset, 0) / var(--cover-h, 1)));
+  transition: transform var(--pull-to-refresh-timing, 0s);
+  will-change: transform;
+}
+
+.coverSharp,
+.coverBlur {
+  position: absolute;
+  inset: 0;
+}
+
+.coverSharp > *,
+.coverBlur > * {
   width: 100%;
   height: 100%;
   aspect-ratio: auto;
 }
 
+/*
+ * The same cover, blurred once and crossfaded in by opacity alone, so the
+ * blur is never recomputed per frame. Scaled a little so its soft edges fall
+ * outside the clip. Scroll and pull each contribute (they never overlap:
+ * a pull only starts at the top of the page).
+ */
+.coverBlur {
+  filter: blur(14px) saturate(1.1);
+  transform: scale(1.12);
+  opacity: min(1, calc(var(--cover-blur, 0) + var(--pull-to-refresh-offset, 0) / 120));
+  transition: opacity var(--pull-to-refresh-timing, 0s);
+  will-change: opacity;
+}
+
 .coverBackground :global(button) {
   pointer-events: auto;
+}
+
+/* A cover header stays in place during a pull; its cover stretches instead. */
+.withCover {
+  transform: none;
+  transition: none;
 }
 
 .surface {

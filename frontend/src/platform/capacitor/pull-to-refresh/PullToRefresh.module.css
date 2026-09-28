@@ -66,6 +66,24 @@
   will-change: transform;
 }
 
+/*
+ * A screen with a fixed cover header (Profile) keeps its cover filling the
+ * area the pull opens, so the indicator is raised above that header (z 60)
+ * rather than drawn beneath the cover.
+ */
+.indicatorOverHeader {
+  z-index: 61;
+}
+
+/* Over a photo the bare ring can vanish, so it sits on a small surface disc. */
+.indicatorOverHeader .dial {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--color-surface-screen, var(--color-bg-white));
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.22);
+}
+
 .dial {
   display: flex;
   align-items: center;

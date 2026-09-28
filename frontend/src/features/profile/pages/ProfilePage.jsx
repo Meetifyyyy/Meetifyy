@@ -415,6 +415,7 @@ export default function ProfilePage() {
         backVariant="profile"
         coverBackground
         coverContent={IS_MOBILE_BUILD ? profileCover : null}
+        coverBackdrop={IS_MOBILE_BUILD ? <CoverImage cover={effectiveUser.cover} className={s.coverPhoto} /> : null}
         collapseRangeMultiplier={1.45}
         headerRef={collapsingHeaderRef}
         rightAction={IS_MOBILE_BUILD ? (

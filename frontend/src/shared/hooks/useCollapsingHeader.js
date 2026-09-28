@@ -1,6 +1,8 @@
 import { useLayoutEffect } from 'react';
 
 const clamp01 = (n) => (n < 0 ? 0 : n > 1 ? 1 : n);
+/** Eases in and out of the blur so it neither snaps on nor stalls at the end. */
+const smoothstep = (t) => t * t * (3 - 2 * t);
 
 /**
  * Drives a header that starts transparent over a cover image and becomes the
@@ -14,6 +16,16 @@ const clamp01 = (n) => (n < 0 ? 0 : n > 1 ? 1 : n);
  * While mounted the status bar shows the cover behind it. Its icons are light
  * over the cover and follow the theme once the header is solid. The mobile
  * system-bar installer observes these root attributes and updates native bars.
+ *
+ * With `coverBackground` (Profile) the header also carries the page's cover:
+ * `--cover-shift` scrolls it away 1:1 with the page until only a header's
+ * height of it is left, where it pins; `--cover-blur` (0..1) crossfades it into
+ * a blurred copy over the same distance, so the cover itself becomes the
+ * header's background. It used to be squashed with `scaleY` instead, which
+ * distorted the photo. Sizes are re-measured whenever the cover or the header
+ * resizes: the status-bar inset arrives after mount and changes the cover's
+ * height without a window resize, which left the fixed copy at a stale height,
+ * out of line with the page.
  */
 export function useCollapsingHeader({
   enabled,
@@ -30,7 +42,6 @@ export function useCollapsingHeader({
     const previousIconPreference = root.getAttribute('data-status-bar-icons');
     const previousCollapse = root.style.getPropertyValue('--profile-collapse');
     const previousCoverHeight = root.style.getPropertyValue('--profile-cover-height');
-    const previousCoverScale = root.style.getPropertyValue('--profile-cover-scale');
     const editCoverButton = coverBackground ? header.querySelector('button[aria-label="Edit cover"]') : null;
     root.setAttribute('data-collapsing-header', '');
 
@@ -39,18 +50,21 @@ export function useCollapsingHeader({
 
     const update = () => {
       frame = 0;
-      const coverHeight = coverRef.current?.offsetHeight || 0;
+      // Sub-pixel: offsetHeight rounds, which left the fixed cover up to half a
+      // pixel off the page's placeholder.
+      const coverHeight = coverRef.current?.getBoundingClientRect().height || 0;
       const headerHeight = header.offsetHeight;
       const range = Math.max(1, coverHeight - headerHeight) * collapseRangeMultiplier;
       const progress = clamp01(window.scrollY / range);
       header.style.setProperty('--collapse', progress.toFixed(3));
       root.style.setProperty('--profile-collapse', progress.toFixed(3));
       if (coverBackground) {
+        const pinAt = Math.max(1, coverHeight - headerHeight);
+        const scrolled = Math.max(0, window.scrollY);
         root.style.setProperty('--profile-cover-height', `${coverHeight}px`);
-        root.style.setProperty(
-          '--profile-cover-scale',
-          (coverHeight ? 1 + (headerHeight / coverHeight - 1) * progress : 1).toFixed(4),
-        );
+        header.style.setProperty('--cover-h', String(Math.max(1, coverHeight)));
+        header.style.setProperty('--cover-shift', String(Math.min(scrolled, pinAt)));
+        header.style.setProperty('--cover-blur', smoothstep(clamp01(scrolled / pinAt)).toFixed(3));
       }
       if (editCoverButton) {
         editCoverButton.style.opacity = (1 - progress).toFixed(3);
@@ -72,6 +86,11 @@ export function useCollapsingHeader({
     update();
     window.addEventListener('scroll', schedule, { passive: true });
     window.addEventListener('resize', schedule);
+    const resizeObserver = typeof ResizeObserver === 'function' ? new ResizeObserver(schedule) : null;
+    if (resizeObserver) {
+      resizeObserver.observe(header);
+      if (coverRef.current) resizeObserver.observe(coverRef.current);
+    }
     // A theme change flips which icons the solid header needs.
     const themeObserver = new MutationObserver(() => {
       lastLight = null;
@@ -83,14 +102,13 @@ export function useCollapsingHeader({
       if (frame) cancelAnimationFrame(frame);
       window.removeEventListener('scroll', schedule);
       window.removeEventListener('resize', schedule);
+      resizeObserver?.disconnect();
       themeObserver.disconnect();
       root.removeAttribute('data-collapsing-header');
       if (previousCollapse) root.style.setProperty('--profile-collapse', previousCollapse);
       else root.style.removeProperty('--profile-collapse');
       if (previousCoverHeight) root.style.setProperty('--profile-cover-height', previousCoverHeight);
       else root.style.removeProperty('--profile-cover-height');
-      if (previousCoverScale) root.style.setProperty('--profile-cover-scale', previousCoverScale);
-      else root.style.removeProperty('--profile-cover-scale');
       if (previousIconPreference === null) root.removeAttribute('data-status-bar-icons');
       else root.setAttribute('data-status-bar-icons', previousIconPreference);
     };
