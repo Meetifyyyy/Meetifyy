@@ -414,7 +414,7 @@ export default function ProfilePage() {
         onBack={() => goBack('/home')}
         backVariant="profile"
         coverBackground
-        coverContent={IS_MOBILE_BUILD ? profileCover : null}
+        coverContent={IS_MOBILE_BUILD ? <CoverImage cover={effectiveUser.cover} className={s.coverPhoto} /> : null}
         coverBackdrop={IS_MOBILE_BUILD ? <CoverImage cover={effectiveUser.cover} className={s.coverPhoto} /> : null}
         collapseRangeMultiplier={1.45}
         headerRef={collapsingHeaderRef}
@@ -453,7 +453,13 @@ export default function ProfilePage() {
           {/* Profile card */}
       <div className={s.profileCard}>
             <div className={s.coverWrap} ref={coverRef}>
-              {!IS_MOBILE_BUILD && profileCover}
+              {profileCover}
+              {IS_MOBILE_BUILD && (
+                /* The same cover, blurred, faded in by a pull (see .coverPullBlur). */
+                <div className={s.coverPullBlur} aria-hidden="true">
+                  <CoverImage cover={effectiveUser.cover} className={s.coverPhoto} />
+                </div>
+              )}
               <button className={s.mobileBackBtn} onClick={() => goBack('/home')} aria-label="Go back">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                   <line x1="19" y1="12" x2="5" y2="12" />

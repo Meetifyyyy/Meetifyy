@@ -34,25 +34,62 @@
   display: none;
 }
 
-.coverBackground {
+.coverClip {
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
   z-index: 0;
+  /*
+   * The header band, widened to the pulled distance during a pull. Clipping
+   * here is what keeps this copy off the page's own cover and the avatar
+   * that overlaps it. The height follows the content's spring back.
+   */
+  /* + 20px so the soft edge below overlaps the page's own cover (the same
+     pixels) rather than the gap the pull opens above it. */
+  height: max(100%, calc(var(--pull-to-refresh-distance, 0px) + 20px));
+  transition: height var(--pull-to-refresh-timing, 0s);
+  overflow: hidden;
+  pointer-events: none;
+  /* A soft lower edge, so the band never reads as a line across the photo. */
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 20px), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 20px), transparent);
+}
+
+.coverBackground {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
   height: var(--profile-cover-height, calc(100vw / 3 + var(--status-bar-inset, 0px)));
   /* Scrolls away 1:1 with the page, then pins (useCollapsingHeader). */
   transform: translate3d(0, calc(var(--cover-shift, 0) * -1px), 0);
   will-change: transform;
-  pointer-events: none;
 }
 
 /*
- * The pull. Zooms from the top edge by exactly the pulled distance
- * ((height + pull) / height), so the cover's top stays under the status bar
- * and its bottom meets the content that the pull moved down: no gap above,
- * below or at the sides. It clips here rather than on .coverBackground, so the
- * clip scales with it. The easing is set only while springing back.
+ * Where supported, the same motion is a scroll-driven animation: it runs on
+ * the compositor in the same frame as the scroll itself. Driven from a scroll
+ * listener, the copy trailed the page's own cover by a frame, which showed as
+ * a moving seam at the edge of the band.
+ */
+@supports (animation-timeline: scroll()) {
+  .coverBackground {
+    animation: coverScrollAway linear both;
+    animation-timeline: scroll(root block);
+    animation-range: 0px calc(var(--cover-pin-at, 1) * 1px);
+  }
+}
+
+@keyframes coverScrollAway {
+  from { transform: translate3d(0, 0, 0); }
+  to   { transform: translate3d(0, calc(var(--cover-pin-at, 1) * -1px), 0); }
+}
+
+/*
+ * The pull. Zooms from the top of the screen by (h + pull) / h: the same
+ * mapping the page's cover gets by zooming about its bottom edge (see
+ * ProfilePage.module.css), so the two meet without a seam.
  */
 .coverStretch {
   position: absolute;
@@ -80,25 +117,35 @@
 /*
  * The same cover, blurred once and crossfaded in by opacity alone, so the
  * blur is never recomputed per frame. Scaled a little so its soft edges fall
- * outside the clip. Scroll and pull each contribute (they never overlap:
- * a pull only starts at the top of the page).
+ * outside the clip. Not darkened: the title's text-shadow keeps it legible.
  */
 .coverBlur {
   filter: blur(14px) saturate(1.1);
   transform: scale(1.12);
-  opacity: min(1, calc(var(--cover-blur, 0) + var(--pull-to-refresh-offset, 0) / 120));
+  /* Never fully 0: an invisible layer is not painted, so its blur was first
+     rasterised mid-scroll, which dropped frames. 1% over the same photo is
+     imperceptible and keeps it ready. */
+  opacity: clamp(0.01, calc(var(--cover-blur, 0) + var(--pull-to-refresh-offset, 0) / 120), 1);
   transition: opacity var(--pull-to-refresh-timing, 0s);
   will-change: opacity;
 }
 
-.coverBackground :global(button) {
-  pointer-events: auto;
-}
-
-/* A cover header stays in place during a pull; its cover stretches instead. */
+/*
+ * A cover header stays in place during a pull (its cover fills the gap); its
+ * buttons and titles travel down with the page, like the rest of the screen.
+ */
 .withCover {
   transform: none;
   transition: none;
+}
+
+.withCover > :not(.coverClip) {
+  transform: translate3d(0, var(--pull-to-refresh-distance, 0px), 0);
+  transition: var(--pull-to-refresh-transition, none);
+}
+
+.withCover > .titles {
+  transform: translate3d(0, calc((1 - var(--collapse)) * 5px + var(--pull-to-refresh-distance, 0px)), 0);
 }
 
 .surface {
@@ -153,9 +200,10 @@
   opacity: var(--collapse);
 }
 
+/* No shade over the Profile cover: the photo is shown as it is, at rest and
+   during a pull. The buttons carry their own backgrounds. */
 .profileHeader::before {
-  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.48), rgba(0, 0, 0, 0.34));
-  opacity: 1;
+  display: none;
 }
 
 .profileHeader .iconOnCover {

@@ -40,13 +40,26 @@ export function useCollapsingHeader({
 
     const root = document.documentElement;
     const previousIconPreference = root.getAttribute('data-status-bar-icons');
-    const previousCollapse = root.style.getPropertyValue('--profile-collapse');
     const previousCoverHeight = root.style.getPropertyValue('--profile-cover-height');
+    const previousCoverH = root.style.getPropertyValue('--profile-cover-h');
     const editCoverButton = coverBackground ? header.querySelector('button[aria-label="Edit cover"]') : null;
     root.setAttribute('data-collapsing-header', '');
+    const pageCard = coverRef.current?.parentElement ?? null;
 
     let frame = 0;
     let lastLight = null;
+    let lastCoverHeight = -1;
+    let lastHeaderHeight = -1;
+    /*
+     * Per-frame values go on the elements that read them, never on <html>: a
+     * custom property changed on the root invalidates the style of the whole
+     * page, every frame of a scroll. The card is the cover's parent, which
+     * holds the page's cover, name and handle.
+     */
+    const setOnPage = (name, value) => {
+      const card = coverRef.current?.parentElement;
+      if (card) card.style.setProperty(name, value);
+    };
 
     const update = () => {
       frame = 0;
@@ -57,14 +70,27 @@ export function useCollapsingHeader({
       const range = Math.max(1, coverHeight - headerHeight) * collapseRangeMultiplier;
       const progress = clamp01(window.scrollY / range);
       header.style.setProperty('--collapse', progress.toFixed(3));
-      root.style.setProperty('--profile-collapse', progress.toFixed(3));
+      setOnPage('--profile-collapse', progress.toFixed(3));
       if (coverBackground) {
         const pinAt = Math.max(1, coverHeight - headerHeight);
         const scrolled = Math.max(0, window.scrollY);
-        root.style.setProperty('--profile-cover-height', `${coverHeight}px`);
-        header.style.setProperty('--cover-h', String(Math.max(1, coverHeight)));
+        // Sizes change rarely (layout, the status-bar inset); only then are
+        // they written, and only then on the root.
+        if (coverHeight !== lastCoverHeight || headerHeight !== lastHeaderHeight) {
+          lastCoverHeight = coverHeight;
+          lastHeaderHeight = headerHeight;
+          root.style.setProperty('--profile-cover-height', `${coverHeight}px`);
+          root.style.setProperty('--profile-cover-h', String(Math.max(1, coverHeight)));
+          header.style.setProperty('--cover-h', String(Math.max(1, coverHeight)));
+          // The scroll-driven animation's range (CollapsingHeader.module.css).
+          header.style.setProperty('--cover-pin-at', String(pinAt));
+        }
         header.style.setProperty('--cover-shift', String(Math.min(scrolled, pinAt)));
-        header.style.setProperty('--cover-blur', smoothstep(clamp01(scrolled / pinAt)).toFixed(3));
+        const blur = smoothstep(clamp01(scrolled / pinAt)).toFixed(3);
+        header.style.setProperty('--cover-blur', blur);
+        // The page's own cover blurs with the header band, so the band's
+        // edge never shows as a sharp/blurred division across the photo.
+        setOnPage('--cover-blur', blur);
       }
       if (editCoverButton) {
         editCoverButton.style.opacity = (1 - progress).toFixed(3);
@@ -105,10 +131,12 @@ export function useCollapsingHeader({
       resizeObserver?.disconnect();
       themeObserver.disconnect();
       root.removeAttribute('data-collapsing-header');
-      if (previousCollapse) root.style.setProperty('--profile-collapse', previousCollapse);
-      else root.style.removeProperty('--profile-collapse');
+      pageCard?.style.removeProperty('--profile-collapse');
+      pageCard?.style.removeProperty('--cover-blur');
       if (previousCoverHeight) root.style.setProperty('--profile-cover-height', previousCoverHeight);
       else root.style.removeProperty('--profile-cover-height');
+      if (previousCoverH) root.style.setProperty('--profile-cover-h', previousCoverH);
+      else root.style.removeProperty('--profile-cover-h');
       if (previousIconPreference === null) root.removeAttribute('data-status-bar-icons');
       else root.setAttribute('data-status-bar-icons', previousIconPreference);
     };

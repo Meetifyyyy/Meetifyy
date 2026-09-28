@@ -793,6 +793,39 @@
     height: 100%;
   }
 
+  /*
+   * The cover stays in the page, under the avatar that overlaps it; the
+   * header only shows its own copy inside the header band (CollapsingHeader).
+   *
+   * A pull zooms it about its bottom edge by (h + pull) / h, so it reaches the
+   * top of the screen from wherever the pulled content sits. The header's copy
+   * zooms about the top of the screen by the same factor, which maps every row
+   * of the photo to the same screen row in both: no seam between them.
+   */
+  :global(html[data-collapsing-header]) .coverWrap > .coverPhoto,
+  :global(html[data-collapsing-header]) .coverPullBlur {
+    transform-origin: 50% 100%;
+    transform: scale(calc(1 + var(--ptr-offset, 0) / var(--profile-cover-h, 1)));
+    transition: transform var(--ptr-timing, 0s);
+  }
+
+  :global(html[data-collapsing-header]) .coverPullBlur {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    /* Blurs with the header band while scrolling, and with a pull. */
+    /* Floor of 1%: see .coverBlur in CollapsingHeader.module.css. */
+    opacity: clamp(0.01, calc(var(--cover-blur, 0) + var(--ptr-offset, 0) / 120), 1);
+    transition: transform var(--ptr-timing, 0s), opacity var(--ptr-timing, 0s);
+  }
+
+  :global(html[data-collapsing-header]) .coverPullBlur > * {
+    width: 100%;
+    height: 100%;
+    filter: blur(14px) saturate(1.1);
+    transform: scale(1.12);
+  }
+
   :global(html[data-collapsing-header]) .menuWrap {
     position: absolute;
     top: calc(12px + var(--status-bar-inset, 0px));

@@ -73,6 +73,8 @@
  */
 .indicatorOverHeader {
   z-index: 61;
+  /* Below the status bar, in the gap above the header's lowered buttons. */
+  margin-top: var(--status-bar-inset, 0px);
 }
 
 /* Over a photo the bare ring can vanish, so it sits on a small surface disc. */

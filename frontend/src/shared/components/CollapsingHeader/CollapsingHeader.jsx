@@ -14,12 +14,14 @@ import styles from './CollapsingHeader.module.css';
  * `coverRef` is the cover element: its height is the scroll distance over
  * which the header fills in.
  *
- * With `coverBackground`, `coverContent` is the page's cover, drawn here so it
- * can become the header's background: it scrolls away with the page, pins,
- * and crossfades into `coverBackdrop` — the same cover, blurred once by CSS —
- * as the page scrolls or is pulled to refresh. A pull zooms both from the top
- * edge by exactly the pulled distance, so the cover always fills the area the
- * pull opens (see useCollapsingHeader and PullToRefresh for the variables).
+ * With `coverBackground`, `coverContent` is a copy of the page's cover that
+ * becomes the header's background. It is clipped to the header band, so the
+ * page's own cover (and the avatar over it) is never painted over; inside the
+ * band the copy lines up with the page's cover exactly, scrolls away with it,
+ * pins, and crossfades into `coverBackdrop` (the same cover, blurred once by
+ * CSS). A pull zooms it from the top edge and widens the band to the pulled
+ * distance, so the area the pull opens is always filled; the header's buttons
+ * travel down with the page (see useCollapsingHeader and PullToRefresh).
  */
 export default function CollapsingHeader({
   coverRef,
@@ -53,12 +55,12 @@ export default function CollapsingHeader({
       className={`${styles.header} ${coverShade ? '' : styles.noCoverShade} ${backVariant === 'profile' ? styles.profileHeader : ''} ${coverBackground ? styles.withCover : ''}`}
     >
       {coverBackground && (
-        <div className={styles.coverBackground}>
-          <div className={styles.coverStretch}>
-            <div className={styles.coverSharp}>{coverContent}</div>
-            {coverBackdrop && (
-              <div className={styles.coverBlur} aria-hidden="true">{coverBackdrop}</div>
-            )}
+        <div className={styles.coverClip} aria-hidden="true">
+          <div className={styles.coverBackground}>
+            <div className={styles.coverStretch}>
+              <div className={styles.coverSharp}>{coverContent}</div>
+              {coverBackdrop && <div className={styles.coverBlur}>{coverBackdrop}</div>}
+            </div>
           </div>
         </div>
       )}

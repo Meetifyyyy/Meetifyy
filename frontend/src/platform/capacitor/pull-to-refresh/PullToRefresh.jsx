@@ -79,6 +79,9 @@ export default function PullToRefresh({
   // number, for CSS that scales by it (the cover zooms to fill the opened
   // area), and `--pull-to-refresh-timing` is the spring-back easing, set only
   // while springing back so nothing else that header animates ever lags.
+  // The same two are set on this wrapper as `--ptr-offset`/`--ptr-timing` for
+  // the page content under it (Profile's own cover). Not on <html>: a custom
+  // property changed there restyles the whole page on every frame of a pull.
   const timing = !pulling && displaced ? '0.32s cubic-bezier(0.22, 1, 0.36, 1)' : '0s';
   useLayoutEffect(() => {
     const target = pullTargetRef?.current;
@@ -88,7 +91,12 @@ export default function PullToRefresh({
     target.style.setProperty('--pull-to-refresh-offset', String(Math.max(0, distance)));
     if (distance > 0) target.style.setProperty('--pull-to-refresh-distance', `${distance}px`);
     else target.style.removeProperty('--pull-to-refresh-distance');
-  }, [distance, pullTargetRef, springTransition, timing]);
+    const wrapper = containerRef.current;
+    if (wrapper) {
+      wrapper.style.setProperty('--ptr-offset', String(Math.max(0, distance)));
+      wrapper.style.setProperty('--ptr-timing', timing);
+    }
+  }, [containerRef, distance, pullTargetRef, springTransition, timing]);
   useLayoutEffect(() => () => {
     const target = pullTargetRef?.current;
     if (!target) return;
