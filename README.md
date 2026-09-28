@@ -138,6 +138,34 @@ The file only ever shrinks. After fixing recorded violations, run
 fix. Lint fails until you do. Never regenerate it with `--suppress-all` to make
 a new violation pass: fix the code.
 
+The conventions that keep new violations out:
+
+- **No `any`, and no `as any`.** A cast to reach a missing field hides a real
+  mismatch: fix the query's `select`/`include`, or take `unknown` and narrow it.
+- **Type the sources.** `@CurrentUser() user: AuthenticatedUser`,
+  `getRequest<AuthenticatedRequest>()`, `Prisma.XWhereInput` for a `where` built
+  up conditionally, `$queryRaw<Row[]>`, `Prisma.TransactionClient`, and declared
+  return types on service methods other modules call.
+- **Untrusted input is `unknown` until validated:** a class-validator DTO for
+  HTTP bodies, `parseSocketPayload` for socket payloads, a guard after
+  `JSON.parse`. Catch variables are `unknown`; use `errorMessage()`.
+- **Fields are definitely assigned:** `field!: T` for a required DTO field,
+  `field?: T` for an `@IsOptional()` one, `T | undefined` for one that can stay
+  unset.
+- **Tests are typed too.** Build fakes with `stub<T>()` from
+  `src/common/testing/stub.ts`, give `jest.fn` its signature, and reach private
+  members as `service['member']`. Never change what a fake returns to satisfy a
+  type.
+- **Scripts are TypeScript** (`npx ts-node scripts/<name>.ts`). Importing
+  `@prisma/client` loads `backend/.env`, so check a script with its variables
+  set to empty strings, and never with `--apply`.
+
+Before opening a PR, run in `backend/`:
+
+```bash
+npm run lint && npx tsc --noEmit -p tsconfig.json && npx tsc --noEmit -p tsconfig.tooling.json && npx jest
+```
+
 ---
 
 ## Database changes — always use migrations
