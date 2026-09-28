@@ -132,6 +132,9 @@ export class DmService extends MessagingCoreService {
         isPinned: true,
         pinnedAt: true,
         clearedAt: true,
+        // The viewer's own: set when they were removed from or left the
+        // thread (only possible before those routes became group-only).
+        leftAt: true,
         lastReadAt: true,
         unreadCount: true,
         groupUpdatesActive: true,
@@ -396,9 +399,7 @@ export class DmService extends MessagingCoreService {
         publicId: pubId,
         internalId: conv.id,
         type: 'DM' as const,
-        // Always true: the viewer's own `leftAt` is neither selected nor
-        // filtered on, and a DM has no leave flow that sets it.
-        isMember: true,
+        isMember: p.leftAt == null,
         ownerId: conv.ownerId || null,
         // `conv.name` and `conv.avatarKey` are null on a DM (they are group
         // fields), so the partner's own values are what actually render —
