@@ -142,6 +142,35 @@ describe('AdminVerificationService', () => {
       expect(mockPrisma.verificationRequest.updateMany).not.toHaveBeenCalled();
     });
 
+    it.each([[['a', 'b']], [{ reason: 'x' }], [42]])(
+      'refuses adminNotes of %j as a 400, writing nothing',
+      async (adminNotes) => {
+        stubRequest(VerificationStatus.PENDING);
+        await expect(
+          service.updateStatus(
+            'req-1',
+            VerificationStatus.REJECTED,
+            adminNotes,
+          ),
+        ).rejects.toThrow(BadRequestException);
+        expect(
+          mockPrisma.verificationRequest.updateMany,
+        ).not.toHaveBeenCalled();
+      },
+    );
+
+    it('records a rejection reason given as a string, capped at 500', async () => {
+      stubRequest(VerificationStatus.PENDING);
+      await service.updateStatus(
+        'req-1',
+        VerificationStatus.REJECTED,
+        'x'.repeat(600),
+      );
+      const [args] = mockPrisma.verificationRequest.updateMany.mock
+        .calls[0] as [{ data: { rejectionReason?: unknown } }];
+      expect(args.data.rejectionReason).toBe('x'.repeat(500));
+    });
+
     it('approves a pending request and syncs the user row', async () => {
       stubRequest(VerificationStatus.PENDING);
 

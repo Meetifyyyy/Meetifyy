@@ -179,12 +179,18 @@ export class AdminVerificationService {
   async updateStatus(
     id: string,
     status: VerificationStatus,
-    adminNotes?: string,
+    // A JSON body field: the global pipe converts only query and route
+    // params, so an array or object arrives here as sent.
+    adminNotes?: unknown,
     reviewerId?: string,
   ) {
     if (!Object.values(VerificationStatus).includes(status)) {
       throw new BadRequestException(`Unknown verification status: ${status}`);
     }
+    if (adminNotes != null && typeof adminNotes !== 'string') {
+      throw new BadRequestException('adminNotes must be a string');
+    }
+    const notes = adminNotes ?? undefined;
 
     const request = await this.prisma.verificationRequest.findUnique({
       where: { id },
@@ -219,7 +225,7 @@ export class AdminVerificationService {
         rejectionReason:
           status === VerificationStatus.REJECTED ||
           status === VerificationStatus.RESUBMISSION_REQUIRED
-            ? adminNotes?.slice(0, 500) || null
+            ? notes?.slice(0, 500) || null
             : null,
         // Who decided. Read from the verified admin session, so a review is
         // attributable to a person rather than to "an admin". The column
