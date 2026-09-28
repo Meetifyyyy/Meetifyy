@@ -26,6 +26,10 @@ import { StudentYearPolicyService } from '../../common/student-year/student-year
 import { RateLimitService } from '../../common/rate-limit/rate-limit.service';
 import { assertNewConversationWithinRateLimit } from '../core/message-limits';
 import { detach } from '../../common/utils/detach.util';
+import {
+  UpdateGroupSettingsDto,
+  pickGroupSettings,
+} from '../dto/update-group-settings.dto';
 
 @Injectable()
 export class GroupChatsService extends MessagingCoreService {
@@ -905,7 +909,11 @@ export class GroupChatsService extends MessagingCoreService {
     return { success: true };
   }
 
-  async updateGroupSettings(conversationId: string, userId: string, data: any) {
+  async updateGroupSettings(
+    conversationId: string,
+    userId: string,
+    data: UpdateGroupSettingsDto,
+  ) {
     const realConvId = await this.resolveConversationId(conversationId);
 
     // Auth check FIRST — validate membership before any mutation
@@ -922,16 +930,7 @@ export class GroupChatsService extends MessagingCoreService {
     // Whitelist admin-editable settings. Never spread the raw body into
     // conversation.update — that would let an admin mass-assign ANY column
     // (ownerId, status, type, expiresAt, lastMessageText, isInstantMatch, …).
-    const ALLOWED_SETTINGS = [
-      'whoCanJoin',
-      'visibility',
-      'allowSharing',
-      'editGroupPermission',
-    ] as const;
-    const restData: any = {};
-    for (const key of ALLOWED_SETTINGS) {
-      if (data[key] !== undefined) restData[key] = data[key];
-    }
+    const restData = pickGroupSettings(data);
 
     // Admin-only fields require OWNER or ADMIN role
     if (Object.keys(restData).length > 0) {
@@ -942,18 +941,16 @@ export class GroupChatsService extends MessagingCoreService {
       }
     }
 
-    const ops: Promise<any>[] = [];
-
-    if (groupUpdatesActive !== undefined) {
-      ops.push(
-        this.prisma.conversationParticipant.update({
-          where: {
-            userId_conversationId: { userId, conversationId: realConvId },
-          },
-          data: { groupUpdatesActive },
-        }),
-      );
-    }
+    // The caller's own notification switch, when they sent one.
+    const participantUpdate =
+      groupUpdatesActive !== undefined
+        ? this.prisma.conversationParticipant.update({
+            where: {
+              userId_conversationId: { userId, conversationId: realConvId },
+            },
+            data: { groupUpdatesActive },
+          })
+        : Promise.resolve(null);
 
     const updateConvPromise =
       Object.keys(restData).length > 0
@@ -981,18 +978,16 @@ export class GroupChatsService extends MessagingCoreService {
             },
           });
 
-    ops.push(updateConvPromise);
-    ops.push(
+    // Same three queries, run together, in the same order as before.
+    const [, updatedConv, participantRows] = await Promise.all([
+      participantUpdate,
+      updateConvPromise,
       this.prisma.conversationParticipant.findMany({
         where: { conversationId: realConvId, leftAt: null, deletedAt: null },
         select: { userId: true },
       }),
-    );
-
-    const results = await Promise.all(ops);
-    const updatedConv = results[results.length - 2];
-    const participantRows = results[results.length - 1] || [];
-    const participantIds = participantRows.map((p: any) => p.userId);
+    ]);
+    const participantIds = (participantRows || []).map((p) => p.userId);
     void this.invalidateUserConversationsCache(participantIds);
     this._invalidateGroupDetailsByRealId(realConvId).catch(() => {});
 

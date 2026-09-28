@@ -21,6 +21,7 @@ import { NotificationsService } from '../../notifications/notifications.service'
 import { NotificationFactory } from '../../notifications/notification.factory';
 import { SendMessageDto } from '../core/dto/send-message.dto';
 import { detach } from '../../common/utils/detach.util';
+import { UpdateGroupSettingsDto } from '../dto/update-group-settings.dto';
 
 @Controller('api/group-chats')
 export class GroupChatsController {
@@ -560,7 +561,7 @@ export class GroupChatsController {
   async updateSettings(
     @Req() req: AuthenticatedRequest,
     @Param('id') conversationId: string,
-    @Body() body: any,
+    @Body() body: UpdateGroupSettingsDto,
   ) {
     const userId = req.user?.id;
     const result = await this.groupChatsService.updateGroupSettings(

@@ -59,6 +59,10 @@ import {
   asStringOrNull,
 } from '../common/utils/coerce.util';
 import { RateLimitService } from '../common/rate-limit/rate-limit.service';
+import {
+  UpdateGroupSettingsDto,
+  pickGroupSettings,
+} from './dto/update-group-settings.dto';
 
 /** The questions MessagesService asks the Instant Match domain. Kept small so
  *  the coupling between the two stays visible: may this user write into this
@@ -2437,7 +2441,11 @@ export class MessagesService
     return participants.map((p) => p.userId);
   }
 
-  async updateGroupSettings(conversationId: string, userId: string, data: any) {
+  async updateGroupSettings(
+    conversationId: string,
+    userId: string,
+    data: UpdateGroupSettingsDto,
+  ) {
     const realConvId = await this.resolveConversationId(conversationId);
     const participant = await this.prisma.conversationParticipant.findUnique({
       where: { userId_conversationId: { userId, conversationId: realConvId } },
@@ -2455,16 +2463,7 @@ export class MessagesService
 
     // Whitelist admin-editable settings — never write the raw body (prevents
     // mass-assignment of ownerId/status/type/expiresAt/etc.).
-    const ALLOWED_SETTINGS = [
-      'whoCanJoin',
-      'visibility',
-      'allowSharing',
-      'editGroupPermission',
-    ] as const;
-    const settingsData: any = {};
-    for (const key of ALLOWED_SETTINGS) {
-      if (data[key] !== undefined) settingsData[key] = data[key];
-    }
+    const settingsData = pickGroupSettings(data);
 
     if (Object.keys(settingsData).length > 0) {
       if (
