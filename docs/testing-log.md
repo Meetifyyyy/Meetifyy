@@ -1069,3 +1069,40 @@ Each is resolved by a Part 2 test and retagged when it is.
 | No contract tests vs the backend | Proposed Phase 3b, once `core/api/endpoints` exists |
 | ESLint non-blocking in CI | `continue-on-error: true` for backend and frontend jobs |
 | Backend: 155 spec files, 2 e2e | not touched by this programme |
+
+---
+
+## Live local APK installation mistakes (2026-09-27)
+
+During local USB testing, the agent made these mistakes:
+
+1. Installed the normal bundled debug APK when the user wanted a live local
+   APK. The bundled frontend could not provide live edits.
+2. Selected the alternate mobile server on port 3002, despite the user's
+   designated mobile APK server being port 3001. The original 3001 process was
+   configured for the remote development API; its port did not imply local API
+   configuration.
+3. Packaged `server.url` with `/index.mobile.html`. This loaded the mobile HTML
+   but left that filename as React Router's application path. A real-device
+   screenshot showed "Page not found" with the website-style header.
+4. Initially treated successful builds and installations as sufficient without
+   confirming the launch screen on the phone.
+
+The corrected local artifact is `local/apk/live/meetifyy-live-local.apk`.
+Its embedded `assets/capacitor.config.json` was inspected and its launch URL
+corrected to `http://localhost:3001/`. The running mobile Vite configuration
+was checked for `VITE_CLIENT=mobile` and `VITE_API_URL=http://localhost:4000`.
+USB reverse forwarding connected ports 3001 and 4000. The extra 3002 server
+and its forwarding were stopped; both remaining app servers responded.
+
+The corrected APK was installed and restarted. A device screenshot confirmed
+the mobile login screen, replacing the erroneous Not Found screen. This was
+a launch-screen check, not verification of every authenticated feature or
+of successful login. The committed Capacitor config was left without a live
+server URL, and temporary generated configuration was restored after packaging.
+
+Future installation requests in this workflow must use the live artifact,
+verify its embedded URL and the running server's API target, and inspect the
+device before claiming that the intended screen is working. These rules are
+also summarized in the repository's root `AGENTS.md` so subsequent agents
+read them at the start of work.
