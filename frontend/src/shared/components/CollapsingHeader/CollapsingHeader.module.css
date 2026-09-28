@@ -45,7 +45,10 @@
    * here is what keeps this copy off the page's own cover and the avatar
    * that overlaps it. The height follows the content's spring back.
    */
-  height: max(100%, var(--pull-to-refresh-distance, 0px));
+  /* + 4px of overlap with the page's cover (identical pixels there): the two
+     edges meet on fractional pixels, and without it the anti-aliased row
+     between them showed the page surface as a thin white line. */
+  height: max(100%, calc(var(--pull-to-refresh-distance, 0px) + 4px));
   transition: height var(--pull-to-refresh-timing, 0s);
   overflow: hidden;
   pointer-events: none;
