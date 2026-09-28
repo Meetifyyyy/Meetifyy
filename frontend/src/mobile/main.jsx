@@ -32,6 +32,7 @@
  */
 // First: keeps a phone in landscape on the mobile layout (see the module).
 import './installLandscapePhoneMedia';
+import { installLaunchReadiness } from './launchReadiness';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -129,6 +130,9 @@ installSystemBars(
     getEdges: readPageEdgeColors,
   }),
 );
+
+// Before the app renders: AuthContext may call ready() on its first effect.
+installLaunchReadiness();
 
 createRoot(document.getElementById('root')).render(
   <QueryClientProvider client={queryClient}>

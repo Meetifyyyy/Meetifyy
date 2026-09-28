@@ -173,10 +173,13 @@ export default function AppOpenScreen() {
     };
   }, []);
 
-  // On Android, let the native splash fade away before bringing this screen
-  // in. In a browser there is no native splash hand-off to wait for.
+  // On Android, bring this screen in as the native splash starts to fade, so
+  // the two crossfade. It used to wait for the fade to END, which left about
+  // 300 ms of bare background between the logo and this screen. The "exited"
+  // signals stay as fallbacks. In a browser there is no native splash.
   useLayoutEffect(() => {
-    const nativeSplashAlreadyExited = () => {
+    const nativeSplashLeaving = () => {
+      if (window.__meetifyySplashExiting === true) return true;
       if (window.__meetifyySplashExited === true) return true;
       try {
         return window.sessionStorage.getItem('__meetifyySplashExited') === 'true';
@@ -186,18 +189,18 @@ export default function AppOpenScreen() {
     };
     const isNative = typeof window.Capacitor?.isNativePlatform === 'function'
       && window.Capacitor.isNativePlatform();
-    if (!isNative) {
-      setSplashExited(true);
-      return undefined;
-    }
-    if (nativeSplashAlreadyExited()) {
+    if (!isNative || nativeSplashLeaving()) {
       setSplashExited(true);
       return undefined;
     }
 
     const showOpeningScreen = () => setSplashExited(true);
+    window.addEventListener('meetifyy:splash-exiting', showOpeningScreen, { once: true });
     window.addEventListener('meetifyy:splash-exited', showOpeningScreen, { once: true });
-    return () => window.removeEventListener('meetifyy:splash-exited', showOpeningScreen);
+    return () => {
+      window.removeEventListener('meetifyy:splash-exiting', showOpeningScreen);
+      window.removeEventListener('meetifyy:splash-exited', showOpeningScreen);
+    };
   }, []);
 
   const leaveTo = useCallback(
@@ -226,7 +229,10 @@ export default function AppOpenScreen() {
   const handleLogin = useCallback(() => leaveTo('/login'), [leaveTo]);
 
   return (
-    <div className={`${styles.screen} ${splashExited ? styles.visible : ''} ${leaving ? styles.leaving : ''}`}>
+    <div
+      data-launch-surface
+      className={`${styles.screen} ${splashExited ? styles.visible : ''} ${leaving ? styles.leaving : ''}`}
+    >
       {/* Brand light. No content — nothing here is read or tapped. */}
       <div className={styles.canvas} aria-hidden="true">
         <span className={styles.auraBrand} />
