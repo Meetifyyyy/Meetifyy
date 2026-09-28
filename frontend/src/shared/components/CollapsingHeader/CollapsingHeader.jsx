@@ -59,7 +59,12 @@ export default function CollapsingHeader({
           <div className={styles.coverBackground}>
             <div className={styles.coverStretch}>
               <div className={styles.coverSharp}>{coverContent}</div>
-              {coverBackdrop && <div className={styles.coverBlur}>{coverBackdrop}</div>}
+              {coverBackdrop && (
+                <>
+                  <div className={`${styles.coverBlur} ${styles.coverBlurScroll}`}>{coverBackdrop}</div>
+                  <div className={`${styles.coverBlur} ${styles.coverBlurPull}`}>{coverBackdrop}</div>
+                </>
+              )}
             </div>
           </div>
         </div>

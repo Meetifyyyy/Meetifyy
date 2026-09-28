@@ -113,19 +113,32 @@
 }
 
 /*
- * The same cover, blurred once and crossfaded in by opacity alone, so the
- * blur is never recomputed per frame. Scaled a little so its soft edges fall
- * outside the clip. Not darkened: the title's text-shadow keeps it legible.
+ * The same cover, blurred (BlurredCover: a tiny pre-blurred bitmap stretched
+ * by the GPU, no CSS filter) and crossfaded in by opacity alone. Two layers,
+ * because the scroll and the pull each own a share and opacities cannot be
+ * added in CSS: the scroll's share is a scroll-driven animation (compositor),
+ * the pull's follows the pulled distance.
  */
-.coverBlur {
-  filter: blur(14px) saturate(1.1);
-  transform: scale(1.12);
-  /* Never fully 0: an invisible layer is not painted, so its blur was first
-     rasterised mid-scroll, which dropped frames. 1% over the same photo is
-     imperceptible and keeps it ready. */
-  opacity: clamp(0.01, calc(var(--cover-blur, 0) + var(--pull-to-refresh-offset, 0) / 120), 1);
+.coverBlurScroll {
+  opacity: var(--cover-blur, 0);
+}
+
+@supports (animation-timeline: scroll()) {
+  .coverBlurScroll {
+    animation: coverBlurIn ease-in-out both;
+    animation-timeline: scroll(root block);
+    animation-range: 0px calc(var(--cover-pin-at, 1) * 1px);
+  }
+}
+
+@keyframes coverBlurIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.coverBlurPull {
+  opacity: min(1, calc(var(--pull-to-refresh-offset, 0) / 120));
   transition: opacity var(--pull-to-refresh-timing, 0s);
-  will-change: opacity;
 }
 
 /*
@@ -235,6 +248,13 @@
     animation: titleIn linear both;
     animation-timeline: --profile-name;
     animation-range: exit 0% exit 100%;
+  }
+
+  /* The rise is the animation's `translate`; the scroll-linked 5px offset
+     would otherwise stay applied (nothing updates --collapse here) and hold
+     the title below the buttons' centre line. Only the pull moves it. */
+  .profileHeader.withCover > .titles {
+    transform: translate3d(0, var(--pull-to-refresh-distance, 0px), 0);
   }
 }
 

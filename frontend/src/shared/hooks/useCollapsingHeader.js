@@ -42,12 +42,23 @@ export function useCollapsingHeader({
     const previousIconPreference = root.getAttribute('data-status-bar-icons');
     const previousCoverHeight = root.style.getPropertyValue('--profile-cover-height');
     const previousCoverH = root.style.getPropertyValue('--profile-cover-h');
+    const previousPinAt = root.style.getPropertyValue('--cover-pin-at');
     const editCoverButton = coverBackground ? header.querySelector('button[aria-label="Edit cover"]') : null;
     root.setAttribute('data-collapsing-header', '');
     const pageCard = coverRef.current?.parentElement ?? null;
 
     let frame = 0;
     let lastLight = null;
+    /*
+     * With scroll-driven animations, everything a cover header animates on
+     * scroll (the cover's position, its blur, the title, the page's name and
+     * avatar) is CSS on the compositor, so no scroll listener is needed at all:
+     * only sizes are measured, when they change.
+     */
+    const cssDriven = coverBackground
+      && typeof CSS !== 'undefined'
+      && typeof CSS.supports === 'function'
+      && CSS.supports('animation-timeline: scroll()');
     let lastCoverHeight = -1;
     let lastHeaderHeight = -1;
     /*
@@ -82,8 +93,9 @@ export function useCollapsingHeader({
           root.style.setProperty('--profile-cover-height', `${coverHeight}px`);
           root.style.setProperty('--profile-cover-h', String(Math.max(1, coverHeight)));
           header.style.setProperty('--cover-h', String(Math.max(1, coverHeight)));
-          // The scroll-driven animation's range (CollapsingHeader.module.css).
-          header.style.setProperty('--cover-pin-at', String(pinAt));
+          // The scroll-driven animations' range, read by the header and the
+          // page alike, hence the root (written only when sizes change).
+          root.style.setProperty('--cover-pin-at', String(pinAt));
         }
         header.style.setProperty('--cover-shift', String(Math.min(scrolled, pinAt)));
         const blur = smoothstep(clamp01(scrolled / pinAt)).toFixed(3);
@@ -110,7 +122,7 @@ export function useCollapsingHeader({
     };
 
     update();
-    window.addEventListener('scroll', schedule, { passive: true });
+    if (!cssDriven) window.addEventListener('scroll', schedule, { passive: true });
     window.addEventListener('resize', schedule);
     const resizeObserver = typeof ResizeObserver === 'function' ? new ResizeObserver(schedule) : null;
     if (resizeObserver) {
@@ -137,6 +149,8 @@ export function useCollapsingHeader({
       else root.style.removeProperty('--profile-cover-height');
       if (previousCoverH) root.style.setProperty('--profile-cover-h', previousCoverH);
       else root.style.removeProperty('--profile-cover-h');
+      if (previousPinAt) root.style.setProperty('--cover-pin-at', previousPinAt);
+      else root.style.removeProperty('--cover-pin-at');
       if (previousIconPreference === null) root.removeAttribute('data-status-bar-icons');
       else root.setAttribute('data-status-bar-icons', previousIconPreference);
     };

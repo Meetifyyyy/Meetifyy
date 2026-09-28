@@ -72,6 +72,7 @@ INTERESTS_BY_CATEGORY.forEach(category => {
 
 
 import CoverImage from '@shared/components/ui/CoverImage';
+import BlurredCover from '@shared/components/ui/BlurredCover';
 import CollapsingHeader from '@shared/components/CollapsingHeader/CollapsingHeader';
 import { Bookmark, Lock, MoreVertical, Settings, Share2, Flag } from '@shared/components/icons';
 import Menu, { MenuItem, useMenu } from '@shared/components/ui/Menu';
@@ -415,7 +416,7 @@ export default function ProfilePage() {
         backVariant="profile"
         coverBackground
         coverContent={IS_MOBILE_BUILD ? <CoverImage cover={effectiveUser.cover} className={s.coverPhoto} /> : null}
-        coverBackdrop={IS_MOBILE_BUILD ? <CoverImage cover={effectiveUser.cover} className={s.coverPhoto} /> : null}
+        coverBackdrop={IS_MOBILE_BUILD ? <BlurredCover cover={effectiveUser.cover} /> : null}
         collapseRangeMultiplier={1.45}
         headerRef={collapsingHeaderRef}
         rightAction={IS_MOBILE_BUILD ? (
@@ -455,10 +456,15 @@ export default function ProfilePage() {
             <div className={s.coverWrap} ref={coverRef}>
               {profileCover}
               {IS_MOBILE_BUILD && (
-                /* The same cover, blurred, faded in by a pull (see .coverPullBlur). */
-                <div className={s.coverPullBlur} aria-hidden="true">
-                  <CoverImage cover={effectiveUser.cover} className={s.coverPhoto} />
-                </div>
+                /* The same cover, blurred: faded in by scrolling and by a pull. */
+                <>
+                  <div className={`${s.coverPullBlur} ${s.coverScrollBlur}`} aria-hidden="true">
+                    <BlurredCover cover={effectiveUser.cover} />
+                  </div>
+                  <div className={s.coverPullBlur} aria-hidden="true">
+                    <BlurredCover cover={effectiveUser.cover} />
+                  </div>
+                </>
               )}
               <button className={s.mobileBackBtn} onClick={() => goBack('/home')} aria-label="Go back">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">

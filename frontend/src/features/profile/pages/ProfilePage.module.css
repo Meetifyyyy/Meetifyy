@@ -813,13 +813,28 @@
     position: absolute;
     inset: 0;
     pointer-events: none;
-    /* The blurred copy is scaled past its box; unclipped, its soft fringe
-       spilled onto the card below as a shadow during a pull. */
     overflow: hidden;
-    /* Blurs with the header band while scrolling, and with a pull. */
-    /* Floor of 1%: see .coverBlur in CollapsingHeader.module.css. */
-    opacity: clamp(0.01, calc(var(--cover-blur, 0) + var(--ptr-offset, 0) / 120), 1);
+    /* The pull's share of the blur. */
+    opacity: min(1, calc(var(--ptr-offset, 0) / 120));
     transition: transform var(--ptr-timing, 0s), opacity var(--ptr-timing, 0s);
+  }
+
+  /*
+   * The scroll's share, in step with the header band (same range, same curve),
+   * so the band's edge never shows as a division across the photo. A
+   * scroll-driven animation: it runs on the compositor with the scroll.
+   */
+  :global(html[data-collapsing-header]) .coverPullBlur.coverScrollBlur {
+    opacity: var(--cover-blur, 0);
+    transition: transform var(--ptr-timing, 0s);
+  }
+
+  @supports (animation-timeline: scroll()) {
+    :global(html[data-collapsing-header]) .coverPullBlur.coverScrollBlur {
+      animation: blurIn ease-in-out both;
+      animation-timeline: scroll(root block);
+      animation-range: 0px calc(var(--cover-pin-at, 1) * 1px);
+    }
   }
 
   /*
@@ -876,8 +891,6 @@
   :global(html[data-collapsing-header]) .coverPullBlur > * {
     width: 100%;
     height: 100%;
-    filter: blur(14px) saturate(1.1);
-    transform: scale(1.12);
   }
 
   :global(html[data-collapsing-header]) .menuWrap {
@@ -890,6 +903,10 @@
 
   :global(html[data-collapsing-header]) .editCoverBtn {
     transition: none;
+    /* A backdrop blur is recomputed every frame the cover moves beneath it
+       (scroll, pull). A slightly deeper plain background reads the same. */
+    backdrop-filter: none;
+    background: rgba(0, 0, 0, 0.55);
   }
 
   /* Where timelines are unsupported, the scroll-linked fade as before. */
@@ -909,4 +926,9 @@
 @keyframes fadeUnderHeader {
   from { opacity: 1; }
   to   { opacity: 0; }
+}
+
+@keyframes blurIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
