@@ -11,6 +11,7 @@ import { AdminJwtGuard } from '../../common/guards/admin-jwt.guard';
 import { AdminAuthService } from './admin-auth.service';
 import type { PrismaService } from '../../prisma/prisma.service';
 import type { EmailService } from '../../email/email.service';
+import { stub } from '../../common/testing/stub';
 
 /**
  * The three admin tokens (pending, access, refresh) as the server reads them
@@ -56,10 +57,7 @@ function makeGuardForSession(adminId: string) {
     },
   };
   return {
-    guard: new AdminJwtGuard(
-      {} as ConfigService,
-      prisma as unknown as PrismaService,
-    ),
+    guard: new AdminJwtGuard({} as ConfigService, stub<PrismaService>(prisma)),
   };
 }
 
@@ -69,9 +67,9 @@ function guardContext(accessToken: string) {
     headers: {},
     cookies: { admin_access: accessToken },
   };
-  return {
+  return stub<ExecutionContext>({
     switchToHttp: () => ({ getRequest: () => request }),
-  } as unknown as ExecutionContext;
+  });
 }
 
 describe('AdminJwtGuard', () => {
@@ -92,15 +90,15 @@ describe('AdminJwtGuard', () => {
     };
     const guard = new AdminJwtGuard(
       {} as ConfigService,
-      prisma as unknown as PrismaService,
+      stub<PrismaService>(prisma),
     );
     return { guard, prisma };
   };
 
   const contextFor = (request: Record<string, unknown>) =>
-    ({
+    stub<ExecutionContext>({
       switchToHttp: () => ({ getRequest: () => request }),
-    }) as unknown as ExecutionContext;
+    });
 
   const request = (token: string, extra: Record<string, unknown> = {}) => ({
     method: 'GET',
@@ -197,7 +195,7 @@ describe('AdminAuthService tokens', () => {
       superAdminSession: { findUnique: jest.fn().mockResolvedValue(null) },
     };
     const service = new AdminAuthService(
-      prisma as unknown as PrismaService,
+      stub<PrismaService>(prisma),
       {} as ConfigService,
       {} as EmailService,
     );
@@ -258,7 +256,7 @@ describe('AdminAuthService tokens', () => {
         securityEvent: { create: jest.fn().mockResolvedValue({}) },
       };
       return new AdminAuthService(
-        prisma as unknown as PrismaService,
+        stub<PrismaService>(prisma),
         {} as ConfigService,
         {} as EmailService,
       );

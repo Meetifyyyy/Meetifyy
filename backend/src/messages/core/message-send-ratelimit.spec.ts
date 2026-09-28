@@ -10,6 +10,7 @@ import { BadRequestException } from '@nestjs/common';
 import { RateLimitService } from '../../common/rate-limit/rate-limit.service';
 import { RedisService } from '../../redis/redis.service';
 import { RATE_LIMIT_POLICIES } from '../../config/rate-limit.config';
+import { stub } from '../../common/testing/stub';
 
 /**
  * Budgets are read from the policy map rather than hardcoded, so tuning a limit
@@ -27,9 +28,11 @@ const P = {
 };
 
 function makeService(): RateLimitService {
-  return new RateLimitService({
-    getClient: () => null,
-  } as unknown as RedisService);
+  return new RateLimitService(
+    stub<RedisService>({
+      getClient: () => null,
+    }),
+  );
 }
 
 const send = (svc: RateLimitService, user: string, conv: string) =>

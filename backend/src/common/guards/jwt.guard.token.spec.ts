@@ -5,6 +5,7 @@ import { JwtGuard } from './jwt.guard';
 import type { SupabaseService } from '../../supabase/supabase.service';
 import type { PrismaService } from '../../prisma/prisma.service';
 import type { LegalConsentService } from '../legal/legal-consent.service';
+import { stub } from '../testing/stub';
 
 /**
  * Token → AuthenticatedUser, through the real verification path.
@@ -34,10 +35,10 @@ describe('JwtGuard token validation', () => {
       .mockReset()
       .mockResolvedValue({ data: null, error: new Error('x') });
     guard = new JwtGuard(
-      {
+      stub<SupabaseService>({
         isConfigured: true,
         client: { auth: { getUser } },
-      } as unknown as SupabaseService,
+      }),
       {} as PrismaService,
       new Reflector(),
       {} as LegalConsentService,

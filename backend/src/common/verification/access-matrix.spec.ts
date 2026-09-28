@@ -36,7 +36,7 @@ describe('verification access matrix', () => {
     type: 'http' | 'ws';
     userId?: string;
   }): ExecutionContext =>
-    ({
+    stub<ExecutionContext>({
       getType: () => opts.type,
       getHandler: () => ({}),
       getClass: () => ({}),
@@ -49,7 +49,7 @@ describe('verification access matrix', () => {
         // The gateway keeps a socket's identity in `socket.data`.
         getClient: () => ({ data: opts.userId ? { userId: opts.userId } : {} }),
       }),
-    }) as unknown as ExecutionContext;
+    });
 
   const asUser = (status: VerificationStatus | null) => {
     access.invalidateAll();

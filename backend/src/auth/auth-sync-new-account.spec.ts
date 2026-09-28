@@ -5,6 +5,7 @@ import type { DomainValidatorService } from '../common/services/domain-validator
 import type { DefaultAssetsService } from '../uploads/default-assets.service';
 import { createStudentYearPolicyMock } from '../common/student-year/testing/student-year-policy.mock';
 import { createLegalConsentMock } from '../common/legal/testing/legal-consent.mock';
+import { stub } from '../common/testing/stub';
 
 /**
  * The first sync of a brand-new account.
@@ -91,15 +92,15 @@ describe('AuthService.syncProfile — a new account', () => {
       },
     };
     return new AuthService(
-      prisma as unknown as PrismaService,
-      { isConfigured: true, client: {} } as unknown as SupabaseService,
-      {
+      stub<PrismaService>(prisma),
+      stub<SupabaseService>({ isConfigured: true, client: {} }),
+      stub<DomainValidatorService>({
         validateDomain: jest.fn().mockResolvedValue({
           isValid: true,
           info: { collegeId: 'college-1', collegeName: 'Example College' },
         }),
-      } as unknown as DomainValidatorService,
-      { refFor: () => null } as unknown as DefaultAssetsService,
+      }),
+      stub<DefaultAssetsService>({ refFor: () => null }),
       createStudentYearPolicyMock(),
       createLegalConsentMock(),
     );

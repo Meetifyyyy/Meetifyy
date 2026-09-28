@@ -21,6 +21,7 @@ import {
   type MockRequestInit,
   type MockResponse,
 } from '../common/testing/express.mock';
+import { stub } from '../common/testing/stub';
 
 /**
  * The session lifecycle, as seen from the routes that own it.
@@ -60,13 +61,13 @@ describe('AuthController — session lifecycle', () => {
     },
   ) =>
     new AuthController(
-      authService as unknown as AuthService,
+      stub<AuthService>(authService),
       emailService as EmailService,
-      {
+      stub<RateLimitService>({
         consume: jest.fn().mockResolvedValue({ allowed: true }),
         penalize: jest.fn().mockResolvedValue(undefined),
-      } as unknown as RateLimitService,
-      sessions as unknown as UserSessionService,
+      }),
+      stub<UserSessionService>(sessions),
     );
 
   beforeEach(() => {

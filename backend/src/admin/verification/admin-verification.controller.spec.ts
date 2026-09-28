@@ -4,6 +4,7 @@ import { AdminVerificationService } from './admin-verification.service';
 import { AdminJwtGuard } from '../../common/guards/admin-jwt.guard';
 import { VerificationStatus } from '@prisma/client';
 import type { AdminRequest } from '../../common/types/authenticated-request';
+import { stub } from '../../common/testing/stub';
 
 describe('AdminVerificationController', () => {
   let controller: AdminVerificationController;
@@ -71,7 +72,7 @@ describe('AdminVerificationController', () => {
 
   describe('updateStatus', () => {
     /** What AdminJwtGuard attaches after verifying the admin session. */
-    const req = { admin: { id: 'super-admin-7' } } as unknown as AdminRequest;
+    const req = stub<AdminRequest>({ admin: { id: 'super-admin-7' } });
 
     it('should call updateStatus on service with correct params', async () => {
       const updateResponse = {
@@ -103,10 +104,10 @@ describe('AdminVerificationController', () => {
 
       await controller.updateStatus(
         // A caller trying to attribute the review to someone else.
-        {
+        stub<AdminRequest>({
           admin: { id: 'super-admin-7' },
           body: { reviewerId: 'super-admin-1' },
-        } as unknown as AdminRequest,
+        }),
         'req-1',
         VerificationStatus.REJECTED,
         'Blurry',

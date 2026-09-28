@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { HttpExceptionFilter } from './http-exception.filter';
 import { LOG_CAUSE } from '../logging/log-format';
+import { stub } from '../testing/stub';
 
 /** The fields of the error body the filter sends; tests read them by name. */
 interface ErrorBody {
@@ -27,7 +28,7 @@ describe('HttpExceptionFilter', () => {
   const run = (exception: unknown) => {
     const json = jest.fn<void, [ErrorBody]>();
     const status = jest.fn(() => ({ json }));
-    const host = {
+    const host = stub<ArgumentsHost>({
       switchToHttp: () => ({
         getResponse: () => ({ status, json, headersSent: false }),
         getRequest: () => ({
@@ -36,7 +37,7 @@ describe('HttpExceptionFilter', () => {
           body: {},
         }),
       }),
-    } as unknown as ArgumentsHost;
+    });
 
     filter.catch(exception, host);
     const body = json.mock.calls[0]?.[0];
@@ -135,9 +136,12 @@ describe('HttpExceptionFilter — one line per failure', () => {
     const warnSpy = jest
       .spyOn(Logger.prototype, 'warn')
       .mockImplementation(() => {});
-    filter.catch(exception, {
-      switchToHttp: () => ({ getResponse: () => res, getRequest: () => req }),
-    } as unknown as ArgumentsHost);
+    filter.catch(
+      exception,
+      stub<ArgumentsHost>({
+        switchToHttp: () => ({ getResponse: () => res, getRequest: () => req }),
+      }),
+    );
     return { req, errorSpy, warnSpy };
   }
 

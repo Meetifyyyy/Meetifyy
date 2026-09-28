@@ -3,6 +3,7 @@ import type { Prisma } from '@prisma/client';
 import { of } from 'rxjs';
 import { AuditInterceptor } from './audit.interceptor';
 import type { PrismaService } from '../../prisma/prisma.service';
+import { stub } from '../../common/testing/stub';
 
 type AuditRow = Prisma.AuditLogUncheckedCreateInput;
 
@@ -22,9 +23,9 @@ describe('AuditInterceptor — verification reviews', () => {
     req: Record<string, unknown>,
     response: unknown = { request: { id: 'req-1' } },
   ): Promise<AuditRow | undefined> => {
-    const ctx = {
+    const ctx = stub<ExecutionContext>({
       switchToHttp: () => ({ getRequest: () => req }),
-    } as unknown as ExecutionContext;
+    });
     const next: CallHandler = { handle: () => of(response) };
     await new Promise<void>((resolve) =>
       interceptor.intercept(ctx, next).subscribe({ complete: () => resolve() }),
@@ -60,7 +61,7 @@ describe('AuditInterceptor — verification reviews', () => {
           .mockResolvedValue({}),
       },
     };
-    interceptor = new AuditInterceptor(prisma as unknown as PrismaService);
+    interceptor = new AuditInterceptor(stub<PrismaService>(prisma));
   });
 
   it('records an approval against the admin who made it', async () => {

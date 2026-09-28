@@ -6,6 +6,17 @@ import { createVerificationAccessMock } from '../common/verification/testing/ver
 import { createStudentYearPolicyMock } from '../common/student-year/testing/student-year-policy.mock';
 import { createLegalConsentMock } from '../common/legal/testing/legal-consent.mock';
 import { allowAllRateLimit } from '../common/rate-limit/testing/rate-limit.mock';
+import { stub } from '../common/testing/stub';
+import type { SupabaseService } from '../supabase/supabase.service';
+import type { MessagesService } from '../messages/messages.service';
+import type { PresenceService } from '../presence/presence.service';
+import type { InstantMatchService } from '../instant-match/instant-match.service';
+import type { InstantMatchRateLimiter } from '../instant-match/instant-match.rate-limiter';
+import type { PrismaService } from '../prisma/prisma.service';
+import type { RedisService } from '../redis/redis.service';
+import type { ActivityAuthorizationService } from '../activities/activity-authorization.service';
+import type { CommunitiesService } from '../communities/communities.service';
+import type { BlocksService } from '../users/blocks.service';
 
 /**
  * Conversation-scoped socket events: who may cause them, and what they accept.
@@ -44,37 +55,42 @@ function build() {
   });
 
   const gateway = new RealtimeGateway(
-    ...([
-      { isConfigured: true, client: { auth: { getUser: jest.fn() } } },
-      { markAsRead, sendMessage },
-      { setOnline: jest.fn(), setOffline: jest.fn() },
-      {},
-      // The per-process limiter for ephemeral events: always allows here.
-      { consume: () => true },
-      {
-        conversation: { findFirst },
-        conversationParticipant: { findMany: jest.fn().mockResolvedValue([]) },
-      },
-      { getClient: jest.fn() },
-      {},
-      {},
-      { getExcludedUserIds: jest.fn().mockResolvedValue([]) },
-      createVerificationAccessMock(),
-      createStudentYearPolicyMock(),
-      allowAllRateLimit(),
-      createLegalConsentMock(),
-      undefined,
-    ] as unknown as ConstructorParameters<typeof RealtimeGateway>),
+    stub<SupabaseService>({
+      isConfigured: true,
+      client: stub<SupabaseService['client']>({
+        auth: { getUser: jest.fn() },
+      }),
+    }),
+    stub<MessagesService>({ markAsRead, sendMessage }),
+    stub<PresenceService>({ setOnline: jest.fn(), setOffline: jest.fn() }),
+    stub<InstantMatchService>(),
+    // The per-process limiter for ephemeral events: always allows here.
+    stub<InstantMatchRateLimiter>({ consume: () => true }),
+    stub<PrismaService>({
+      conversation: { findFirst },
+      conversationParticipant: { findMany: jest.fn().mockResolvedValue([]) },
+    }),
+    stub<RedisService>({ getClient: jest.fn() }),
+    stub<ActivityAuthorizationService>(),
+    stub<CommunitiesService>(),
+    stub<BlocksService>({
+      getExcludedUserIds: jest.fn().mockResolvedValue([]),
+    }),
+    createVerificationAccessMock(),
+    createStudentYearPolicyMock(),
+    allowAllRateLimit(),
+    createLegalConsentMock(),
+    undefined,
   );
   // Records one entry per room, whether the gateway names one room or several.
-  gateway.server = {
+  gateway.server = stub<RealtimeGateway['server']>({
     to: (room: string | string[]) => ({
-      emit: (event: string, payload: unknown) => {
+      emit: jest.fn((event: string, payload: unknown) => {
         for (const r of ([] as string[]).concat(room))
           emitted.push({ room: r, event, payload });
-      },
+      }),
     }),
-  } as unknown as RealtimeGateway['server'];
+  });
 
   return { gateway, emitted, findFirst, markAsRead, sendMessage };
 }
@@ -82,7 +98,7 @@ function build() {
 /** A connected socket for `userId`: the gateway keeps identity in `socket.data`. */
 function socketFor(userId: string) {
   const emit: Emit = jest.fn<void, [string, unknown]>();
-  return {
+  return stub<Parameters<RealtimeGateway['handleTypingStart']>[0]>({
     id: `sock-${userId}`,
     data: { userId, userName: userId },
     rooms: new Set<string>(),
@@ -90,7 +106,7 @@ function socketFor(userId: string) {
     join: jest.fn(),
     leave: jest.fn(),
     to: () => ({ emit: jest.fn() }),
-  } as unknown as Parameters<RealtimeGateway['handleTypingStart']>[0];
+  });
 }
 
 const rooms = (e: { room: string }[]) => e.map((x) => x.room).sort();

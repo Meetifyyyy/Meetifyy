@@ -6,6 +6,7 @@ import { JwtGuard } from './jwt.guard';
 import type { SupabaseService } from '../../supabase/supabase.service';
 import type { PrismaService } from '../../prisma/prisma.service';
 import type { LegalConsentService } from '../legal/legal-consent.service';
+import { stub } from '../testing/stub';
 
 /**
  * JWKS fetching under hostile input.
@@ -44,10 +45,12 @@ describe('JwtGuard JWKS refresh', () => {
   let now = Date.parse('2026-09-24T00:00:00Z');
   let published: object[] = [jwk(k1.publicKey, 'k1')];
   const fetchMock = jest.fn(() =>
-    Promise.resolve({
-      ok: true,
-      json: () => Promise.resolve({ keys: published }),
-    } as unknown as Response),
+    Promise.resolve(
+      stub<Response>({
+        ok: true,
+        json: () => Promise.resolve({ keys: published }),
+      }),
+    ),
   );
   let guard: JwtGuard;
   const originalFetch = global.fetch;
@@ -59,7 +62,7 @@ describe('JwtGuard JWKS refresh', () => {
     global.fetch = fetchMock;
 
     guard = new JwtGuard(
-      { isConfigured: true, client: {} } as unknown as SupabaseService,
+      stub<SupabaseService>({ isConfigured: true, client: {} }),
       {} as PrismaService,
       new Reflector(),
       {} as LegalConsentService,

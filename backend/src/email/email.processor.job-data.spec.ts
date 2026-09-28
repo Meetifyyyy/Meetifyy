@@ -18,6 +18,7 @@ import type { EmailJob, EmailJobData } from './email-jobs';
 import type { SupportEmailBuilder } from './support-email.builder';
 import type { PrismaService } from '../prisma/prisma.service';
 import type { EmailUsageService } from './email-usage.service';
+import { stub } from '../common/testing/stub';
 
 /**
  * EmailProcessor against the job data EmailService enqueues. The transports are
@@ -29,11 +30,11 @@ describe('EmailProcessor job data', () => {
 
   const processor = () => {
     const p = new EmailProcessor(
-      { build } as unknown as SupportEmailBuilder,
+      stub<SupportEmailBuilder>({ build }),
       {} as PrismaService,
-      {
+      stub<EmailUsageService>({
         recordSent: jest.fn().mockResolvedValue(undefined),
-      } as unknown as EmailUsageService,
+      }),
     );
     Object.assign(p, {
       driver: 'smtp',

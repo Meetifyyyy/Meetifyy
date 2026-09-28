@@ -6,14 +6,14 @@ import {
 import { UsersService } from './users.service';
 import { JwtGuard } from '../common/guards/jwt.guard';
 import type { AuthenticatedRequest } from '../common/types/authenticated-request';
+import { stub } from '../common/testing/stub';
 
 /**
  * A request carrying only what these controllers actually read off it — the
  * JWT subject. Building the full AuthenticatedUser here would assert nothing
  * extra and hide which field the controller depends on.
  */
-const asRequest = (id: string) =>
-  ({ user: { id } }) as unknown as AuthenticatedRequest;
+const asRequest = (id: string) => stub<AuthenticatedRequest>({ user: { id } });
 
 /**
  * The blocked list and the unblock route are the two endpoints that could leak
