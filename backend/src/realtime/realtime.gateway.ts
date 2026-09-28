@@ -60,6 +60,12 @@ import {
   SocketSendMessagePayload,
   correlationIdOf,
   parseSocketPayload,
+  CatchupPayload,
+  PostRoomPayload,
+  ActivityRoomPayload,
+  CommunityRoomPayload,
+  JoinRoomsPayload,
+  INVALID_PAYLOAD,
 } from './socket-payloads';
 
 /**
@@ -1121,11 +1127,13 @@ export class RealtimeGateway
   @SubscribeMessage('message:catchup')
   async handleMessageCatchup(
     @ConnectedSocket() client: AppSocket,
-    @MessageBody() data: { since: string },
+    @MessageBody() data: unknown,
   ) {
     const userId = client.data.userId;
-    if (!userId || !data?.since)
+    const parsed = parseSocketPayload(CatchupPayload, data);
+    if (!userId || !parsed.ok)
       return { status: 'error', error: 'Invalid parameters' };
+    const { since } = parsed.value;
 
     // The other reconnect-time query. Capped so a mass disconnect cannot turn
     // into a thundering herd against Postgres.
@@ -1137,7 +1145,7 @@ export class RealtimeGateway
     try {
       const messages = await this.messagesService.getCatchupMessages(
         userId,
-        data.since,
+        since,
       );
       return { status: 'ok', messages };
     } catch (err) {
@@ -1169,10 +1177,13 @@ export class RealtimeGateway
   @SubscribeMessage('post:join')
   async handlePostJoin(
     @ConnectedSocket() client: AppSocket,
-    @MessageBody() data: { postId?: string },
+    @MessageBody() data: unknown,
   ) {
+    const parsed = parseSocketPayload(PostRoomPayload, data);
+    if (!parsed.ok) return INVALID_PAYLOAD;
+    const { postId } = parsed.value;
     const userId = client.data.userId;
-    if (!userId || !data?.postId) return;
+    if (!userId) return;
     const limited = await this.limitEvent(userId, [
       { policy: 'socket.roomjoin.user', identifier: userId },
     ]);
@@ -1187,13 +1198,13 @@ export class RealtimeGateway
     // receive its comments live, including posts the REST route answers with a
     // 404: a blocked author's, or one hidden by first-year isolation. The
     // policy below is the one `getPostById` applies, so the two paths agree.
-    const allowed = await this.checkPostRoomAccess(userId, data.postId);
+    const allowed = await this.checkPostRoomAccess(userId, postId);
     if (!allowed) {
-      void client.leave(`post_${data.postId}`);
+      void client.leave(`post_${postId}`);
       return;
     }
 
-    void client.join(`post_${data.postId}`);
+    void client.join(`post_${postId}`);
   }
 
   /**
@@ -1242,10 +1253,11 @@ export class RealtimeGateway
   @SubscribeMessage('post:leave')
   handlePostLeave(
     @ConnectedSocket() client: AppSocket,
-    @MessageBody() data: { postId?: string },
+    @MessageBody() data: unknown,
   ) {
-    if (!data?.postId) return;
-    void client.leave(`post_${data.postId}`);
+    const parsed = parseSocketPayload(PostRoomPayload, data);
+    if (!parsed.ok) return INVALID_PAYLOAD;
+    void client.leave(`post_${parsed.value.postId}`);
   }
 
   // A client viewing an activity joins its discussion room so it receives live
@@ -1254,10 +1266,13 @@ export class RealtimeGateway
   @SubscribeMessage('activity:join')
   async handleActivityJoin(
     @ConnectedSocket() client: AppSocket,
-    @MessageBody() data: { activityId?: string },
+    @MessageBody() data: unknown,
   ) {
+    const parsed = parseSocketPayload(ActivityRoomPayload, data);
+    if (!parsed.ok) return INVALID_PAYLOAD;
+    const { activityId } = parsed.value;
     const userId = client.data.userId;
-    if (!userId || !data?.activityId) return;
+    if (!userId) return;
 
     const limited = await this.limitEvent(userId, [
       { policy: 'socket.roomjoin.user', identifier: userId },
@@ -1267,20 +1282,17 @@ export class RealtimeGateway
     // Room membership is an authorization decision, not a client preference:
     // the room carries discussion messages, attendee changes and activity
     // metadata, so a viewer who may not open the activity may not subscribe.
-    const decision = await this.checkActivityRoomAccess(
-      userId,
-      data.activityId,
-    );
+    const decision = await this.checkActivityRoomAccess(userId, activityId);
     if (!decision.allowed) {
       client.emit('activity:access_denied', {
-        activityId: data.activityId,
+        activityId: activityId,
         code: decision.code,
         message: decision.reason,
       });
-      void client.leave(`activity_${data.activityId}`);
+      void client.leave(`activity_${activityId}`);
       return;
     }
-    void client.join(`activity_${data.activityId}`);
+    void client.join(`activity_${activityId}`);
   }
 
   /**
@@ -1398,10 +1410,11 @@ export class RealtimeGateway
   @SubscribeMessage('activity:leave')
   handleActivityLeave(
     @ConnectedSocket() client: AppSocket,
-    @MessageBody() data: { activityId?: string },
+    @MessageBody() data: unknown,
   ) {
-    if (!data?.activityId) return;
-    void client.leave(`activity_${data.activityId}`);
+    const parsed = parseSocketPayload(ActivityRoomPayload, data);
+    if (!parsed.ok) return INVALID_PAYLOAD;
+    void client.leave(`activity_${parsed.value.activityId}`);
   }
 
   @SubscribeMessage('typing:start')
@@ -1602,8 +1615,11 @@ export class RealtimeGateway
   @SubscribeMessage('conversation:join_rooms')
   async handleJoinRooms(
     @ConnectedSocket() client: AppSocket,
-    @MessageBody() data: { conversationIds: string[] },
+    @MessageBody() data: unknown,
   ) {
+    const parsed = parseSocketPayload(JoinRoomsPayload, data);
+    if (!parsed.ok) return INVALID_PAYLOAD;
+    const { conversationIds } = parsed.value;
     const userId = client.data.userId;
     if (userId) {
       const limited = await this.limitEvent(userId, [
@@ -1611,16 +1627,11 @@ export class RealtimeGateway
       ]);
       if (limited) return limited;
     }
-    if (
-      !userId ||
-      !data?.conversationIds ||
-      !Array.isArray(data.conversationIds)
-    )
-      return;
+    if (!userId) return;
 
     // Skip DB lookup if client is already joined to all requested rooms
-    const unjoinedIds = data.conversationIds.filter(
-      (id) => id && !client.rooms.has(`conv_${id}`),
+    const unjoinedIds = conversationIds.filter(
+      (id) => !client.rooms.has(`conv_${id}`),
     );
     if (unjoinedIds.length === 0) return;
 
@@ -1667,9 +1678,11 @@ export class RealtimeGateway
   @SubscribeMessage('community:join_room')
   async handleJoinCommunityRoom(
     @ConnectedSocket() client: AppSocket,
-    @MessageBody() data: { communityId: string },
+    @MessageBody() data: unknown,
   ) {
-    if (!data?.communityId) return;
+    const parsed = parseSocketPayload(CommunityRoomPayload, data);
+    if (!parsed.ok) return INVALID_PAYLOAD;
+    const { communityId } = parsed.value;
 
     const userId = client.data.userId;
     if (userId) {
@@ -1683,27 +1696,23 @@ export class RealtimeGateway
     // community's are not public information, and this took the id from the
     // client without checking anything at all — so any socket could name a
     // private community and watch its membership change in real time.
-    const allowed = await this.checkCommunityRoomAccess(
-      userId,
-      data.communityId,
-    );
+    const allowed = await this.checkCommunityRoomAccess(userId, communityId);
     if (!allowed) {
-      void client.leave(`community_${data.communityId}`);
+      void client.leave(`community_${communityId}`);
       return;
     }
 
-    void client.join(`community_${data.communityId}`);
+    void client.join(`community_${communityId}`);
 
     // Answer with the count as it stands right now. The community payload the
     // page rendered from can be up to 60s stale (it is Redis-cached), and
     // presence moves far faster than that — so without this the viewer sits
     // on an old number until somebody happens to connect or disconnect.
     try {
-      const online = await this.communitiesService.countOnlineMembers(
-        data.communityId,
-      );
+      const online =
+        await this.communitiesService.countOnlineMembers(communityId);
       client.emit('community:presence', {
-        communityId: data.communityId,
+        communityId: communityId,
         online,
       });
     } catch {
@@ -1746,11 +1755,11 @@ export class RealtimeGateway
   @SubscribeMessage('community:leave_room')
   handleLeaveCommunityRoom(
     @ConnectedSocket() client: AppSocket,
-    @MessageBody() data: { communityId: string },
+    @MessageBody() data: unknown,
   ) {
-    if (data?.communityId) {
-      void client.leave(`community_${data.communityId}`);
-    }
+    const parsed = parseSocketPayload(CommunityRoomPayload, data);
+    if (!parsed.ok) return INVALID_PAYLOAD;
+    void client.leave(`community_${parsed.value.communityId}`);
   }
 
   // ─── Instant Match Socket Handlers ──────────────────────────────────────────

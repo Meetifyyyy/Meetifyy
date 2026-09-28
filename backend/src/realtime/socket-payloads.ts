@@ -1,5 +1,7 @@
 import { plainToInstance } from 'class-transformer';
 import {
+  ArrayMaxSize,
+  IsArray,
   IsNotEmpty,
   IsOptional,
   IsString,
@@ -50,6 +52,62 @@ export class SeenPayload extends ConversationRefPayload {
  * so it is required.
  */
 export class SocketSendMessagePayload extends SendMessageDto {}
+
+/** `message:catchup`: the client's last sync time, an ISO timestamp. */
+export class CatchupPayload {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(64)
+  since!: string;
+}
+
+/** `post:join` / `post:leave`. */
+export class PostRoomPayload {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(MAX_REFERENCE_ID_LENGTH)
+  postId!: string;
+}
+
+/** `activity:join` / `activity:leave`. */
+export class ActivityRoomPayload {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(MAX_REFERENCE_ID_LENGTH)
+  activityId!: string;
+}
+
+/** `community:join_room` / `community:leave_room`. */
+export class CommunityRoomPayload {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(MAX_REFERENCE_ID_LENGTH)
+  communityId!: string;
+}
+
+/**
+ * The most ids one `conversation:join_rooms` may name. The client's global
+ * sync sends every loaded conversation under up to three aliases (id, public
+ * id, internal id), so this is set well above any real list rather than near
+ * one: refusing a heavy user's sync would silently stop their realtime.
+ */
+export const MAX_JOIN_ROOMS = 1000;
+
+/** `conversation:join_rooms`. */
+export class JoinRoomsPayload {
+  @IsArray()
+  @ArrayMaxSize(MAX_JOIN_ROOMS)
+  @IsString({ each: true })
+  @IsNotEmpty({ each: true })
+  @MaxLength(MAX_REFERENCE_ID_LENGTH, { each: true })
+  conversationIds!: string[];
+}
+
+/** The ack for a payload that failed validation. */
+export const INVALID_PAYLOAD = {
+  status: 'error' as const,
+  error: 'Invalid payload',
+};
 
 export type ParsedPayload<T> =
   { ok: true; value: T } | { ok: false; errors: string[] };
