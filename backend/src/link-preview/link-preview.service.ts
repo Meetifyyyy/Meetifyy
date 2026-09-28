@@ -7,7 +7,7 @@ import {
 import * as cheerio from 'cheerio';
 import { stringField } from '../common/utils/type-guards.util';
 import { lookup } from 'dns/promises';
-import { isIP, type LookupFunction } from 'net';
+import { BlockList, isIP, type LookupFunction } from 'net';
 import * as http from 'http';
 import * as https from 'https';
 
@@ -240,59 +240,43 @@ export class LinkPreviewService {
     }
   }
 
-  private isPrivateAddress(address: string): boolean {
-    const normalized = this.normalizeAddress(address);
-
-    if (isIP(normalized) === 4) {
-      const octets = normalized.split('.').map(Number);
-      const [a, b] = octets;
-      return (
-        a === 0 ||
-        a === 10 ||
-        a === 127 ||
-        (a === 169 && b === 254) ||
-        (a === 172 && b >= 16 && b <= 31) ||
-        (a === 192 && b === 168) ||
-        // Carrier-grade NAT. Several clouds put their metadata service in here
-        // (Alibaba's sits at 100.100.100.200), so it is as sensitive as the
-        // link-local range above.
-        (a === 100 && b >= 64 && b <= 127) ||
-        a >= 224
-      );
-    }
-
-    return (
-      normalized === '::1' ||
-      normalized === '::' ||
-      normalized.startsWith('fc') ||
-      normalized.startsWith('fd') ||
-      normalized.startsWith('fe8') ||
-      normalized.startsWith('fe9') ||
-      normalized.startsWith('fea') ||
-      normalized.startsWith('feb')
-    );
-  }
-
   /**
-   * Collapses an IPv4-mapped IPv6 address to its IPv4 form.
+   * Whether an address is anything but a public unicast one.
    *
-   * The mapped forms used to be screened by a list of string prefixes —
-   * `::ffff:127.`, `::ffff:10.`, `::ffff:192.168.` — which covered three of the
-   * private ranges and missed the rest. `::ffff:169.254.169.254` is the cloud
-   * metadata endpoint and it is not any of those three, so it passed the check
-   * and the fetch went through; `::ffff:172.16.0.1` did the same. Neither is
-   * exotic to reach: the host being previewed publishes its own DNS, so an
-   * attacker can simply answer with an AAAA record in mapped form.
-   *
-   * Normalizing instead of listing means the IPv4 rules below are the only
-   * place a private range is defined, and a mapped address cannot be private in
-   * one notation and public in the other.
+   * Decided by a `net.BlockList`, which compares an IPv4-mapped IPv6 address
+   * (`::ffff:169.254.169.254`, or `::ffff:a9fe:a9fe` as the URL parser writes
+   * it) against the IPv4 rules in every notation. The previous string checks
+   * recognised only the dotted mapped form, and an IP-literal host skips DNS,
+   * so `http://[::ffff:169.254.169.254]/` reached the metadata endpoint.
    */
-  private normalizeAddress(address: string): string {
-    const lower = address.toLowerCase();
-    const mapped = /^(?:::ffff:|::)(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/.exec(
-      lower,
-    );
-    return mapped && isIP(mapped[1]) === 4 ? mapped[1] : lower;
+  private isPrivateAddress(address: string): boolean {
+    const family = isIP(address);
+    if (family === 0) return true;
+    return PRIVATE_RANGES.check(address, family === 4 ? 'ipv4' : 'ipv6');
   }
 }
+
+const PRIVATE_RANGES = (() => {
+  const ranges = new BlockList();
+  for (const [network, prefix] of [
+    ['0.0.0.0', 8],
+    ['10.0.0.0', 8],
+    ['127.0.0.0', 8],
+    ['169.254.0.0', 16], // link-local, including cloud metadata
+    ['172.16.0.0', 12],
+    ['192.168.0.0', 16],
+    // Carrier-grade NAT. Several clouds put their metadata service in here
+    // (Alibaba's sits at 100.100.100.200).
+    ['100.64.0.0', 10],
+    ['224.0.0.0', 3], // multicast and reserved
+  ] as const)
+    ranges.addSubnet(network, prefix, 'ipv4');
+  for (const [network, prefix] of [
+    ['::', 96], // unspecified, loopback and IPv4-compatible (::a.b.c.d)
+    ['fc00::', 7], // unique local
+    ['fe80::', 10], // link-local
+    ['ff00::', 8], // multicast
+  ] as const)
+    ranges.addSubnet(network, prefix, 'ipv6');
+  return ranges;
+})();
