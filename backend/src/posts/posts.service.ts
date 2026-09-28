@@ -1946,22 +1946,25 @@ export class PostsService {
     // visited this list, in this order.
     const flat = shaped;
 
-    const commentsDeletable =
-      await this.contentDeletionAuthorizer.canDeleteEach(
-        userId,
-        // A comment has no community of its own — moderation rights come from
-        // the post it sits under.
-        flat.map((c: any) => ({
-          authorId: c.authorId,
-          communityId: postCommunityId,
-        })),
-      );
+    // A scrubbed placeholder is already gone, so it is never deletable — and it
+    // carries `authorId: null`, which must not reach the authorizer: for a
+    // moderator it looks authors up with `userId: { in: [...] }`, and Prisma
+    // rejects a null there, failing the whole page. Only live comments are asked.
+    const live = flat.filter(
+      (c): c is Extract<(typeof flat)[number], { authorId: string }> =>
+        !c.isDeleted,
+    );
+    const liveDeletable = await this.contentDeletionAuthorizer.canDeleteEach(
+      userId,
+      // A comment has no community of its own — moderation rights come from
+      // the post it sits under.
+      live.map((c) => ({ authorId: c.authorId, communityId: postCommunityId })),
+    );
+    const deletableById = new Map(live.map((c, i) => [c.id, liveDeletable[i]]));
     // In place, as before: `comments` below is this same array.
-    const comments = flat.map((c, i) =>
+    const comments = flat.map((c) =>
       Object.assign(c, {
-        // A scrubbed placeholder is already gone; offering to remove it again
-        // is meaningless and its authorId is no longer meaningful either.
-        canDelete: c.isDeleted ? false : commentsDeletable[i],
+        canDelete: c.isDeleted ? false : (deletableById.get(c.id) ?? false),
       }),
     );
 

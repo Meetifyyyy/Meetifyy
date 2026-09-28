@@ -132,17 +132,6 @@
       "count": 5
     }
   },
-  "src/posts/posts.service.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 1
-    }
-  },
   "src/users/users.controller.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 2
