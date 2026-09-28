@@ -19,6 +19,7 @@ import type { SupportEmailBuilder } from './support-email.builder';
 import type { PrismaService } from '../prisma/prisma.service';
 import type { EmailUsageService } from './email-usage.service';
 import { stub } from '../common/testing/stub';
+import { config } from '../config';
 
 /**
  * EmailProcessor against the job data EmailService enqueues. The transports are
@@ -47,6 +48,42 @@ describe('EmailProcessor job data', () => {
     ({ id: 'job-1', name, data }) as EmailJob;
 
   beforeEach(() => jest.clearAllMocks());
+
+  // CI has no RESEND_API_KEY, and the key is required only when Resend is the
+  // driver. The SDK throws on an empty key, so constructing it unconditionally
+  // crashed the processor in any environment that sends over SMTP alone.
+  describe('without a Resend API key', () => {
+    // The SDK falls back to process.env.RESEND_API_KEY when given an empty
+    // key, so that is cleared too: a developer's shell must not decide this.
+    const savedEnvKey = process.env.RESEND_API_KEY;
+    beforeEach(() => {
+      jest.replaceProperty(config.email.resend, 'apiKey', '');
+      delete process.env.RESEND_API_KEY;
+    });
+    afterEach(() => {
+      jest.restoreAllMocks();
+      if (savedEnvKey !== undefined) process.env.RESEND_API_KEY = savedEnvKey;
+    });
+
+    it('still constructs, and sends over SMTP', async () => {
+      const p = processor();
+      await p.process(
+        job('send-welcome-email', { email: 'a@example.test', name: 'A' }),
+      );
+      expect(sendMail).toHaveBeenCalledTimes(1);
+    });
+
+    it('fails a Resend send as a job error, not at boot', async () => {
+      const p = processor();
+      Object.assign(p, { driver: 'resend' });
+      await expect(
+        p.process(
+          job('send-welcome-email', { email: 'a@example.test', name: 'A' }),
+        ),
+      ).rejects.toThrow(/RESEND_API_KEY/);
+      expect(sendMail).not.toHaveBeenCalled();
+    });
+  });
 
   it('sends a template job to the address it carries', async () => {
     await processor().process(

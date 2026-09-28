@@ -32,7 +32,9 @@ const SUPPORT_JOB_NAMES: string[] = Object.values(SUPPORT_EMAIL_JOBS);
 @Processor('email')
 export class EmailProcessor extends WorkerHost implements OnModuleInit {
   private readonly logger = new Logger(EmailProcessor.name);
-  private resend: Resend;
+  // Null without RESEND_API_KEY: the SDK throws on an empty key, and the key
+  // is only required when Resend is the driver (email.config.ts).
+  private resend: Resend | null;
   private smtpTransporter: nodemailer.Transporter<SMTPTransport.SentMessageInfo>;
   private driver: string;
   private fallbackDriver: string;
@@ -49,7 +51,7 @@ export class EmailProcessor extends WorkerHost implements OnModuleInit {
     const { driver, fallbackDriver, smtp, resend, from } = config.email;
     this.driver = driver;
     this.fallbackDriver = fallbackDriver;
-    this.resend = new Resend(resend.apiKey);
+    this.resend = resend.apiKey ? new Resend(resend.apiKey) : null;
 
     this.smtpTransporter = nodemailer.createTransport({
       host: smtp.host,
@@ -107,6 +109,7 @@ export class EmailProcessor extends WorkerHost implements OnModuleInit {
 
     const { fromDomain } = config.email.resend;
     try {
+      if (!this.resend) return;
       const { data, error } = await this.resend.domains.list();
       if (error) {
         this.logger.error(
@@ -521,6 +524,9 @@ export class EmailProcessor extends WorkerHost implements OnModuleInit {
     deliveryTarget: DeliveryTarget,
     job: EmailJob,
   ): Promise<unknown> {
+    if (!this.resend) {
+      throw new Error('Resend is not configured: RESEND_API_KEY is empty');
+    }
     const { data, error } = await this.resend.emails.send({
       from: mail.from,
       to: mail.to,
