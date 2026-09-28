@@ -7,7 +7,7 @@ import {
   Optional,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { Prisma } from '@prisma/client';
+import { Prisma, type Community } from '@prisma/client';
 import { DomainEventService } from '../events/domain-event.service';
 import { RedisService } from '../redis/redis.service';
 import { PresenceService } from '../presence/presence.service';
@@ -17,7 +17,10 @@ import { DefaultAssetsService } from '../uploads/default-assets.service';
 import { sampleRandom } from '../common/utils/sample-random.util';
 import { errorMessage } from '../common/utils/error.util';
 import { stringField } from '../common/utils/type-guards.util';
-import type { CreateCommunityDto } from './dto/community.dto';
+import type {
+  CreateCommunityDto,
+  UpdateCommunityDto,
+} from './dto/community.dto';
 import Redis from 'ioredis';
 import { roleCan, moderatorPermissions } from './moderator-permissions';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -52,6 +55,15 @@ const ALL_LIST_SELECT = {
 type CommunityListRow = Prisma.CommunityGetPayload<{
   select: typeof ALL_LIST_SELECT;
 }>;
+
+/** Filters accepted by the public list (see getAllCommunities). */
+export interface CommunityListFilters {
+  search?: string;
+  visibility?: 'public' | 'private';
+}
+
+/** Upper bound on "your communities"; far above any real account. */
+const MY_COMMUNITIES_LIMIT = 200;
 
 /** Columns of the campus list (see getCampusCommunities). */
 const CAMPUS_LIST_SELECT = {
@@ -121,6 +133,34 @@ type StripMember = Omit<
       'moderatorPromotedAt' | 'moderatorNoticeAckedAt'
     >
   >;
+
+/**
+ * The relation write that links a community image to its Media row: an
+ * uploaded reference connects to it, an external URL connects or creates one.
+ * Anything else (a bare key) links nothing and leaves the relation alone, as
+ * it always has.
+ */
+function communityMediaLink(ref: string, ownerId: string) {
+  if (ref.startsWith('/api/media/')) {
+    return { connect: { objectKey: ref.replace('/api/media/', '') } };
+  }
+  if (ref.startsWith('http')) {
+    return {
+      connectOrCreate: {
+        where: { objectKey: ref },
+        create: {
+          provider: 'external',
+          bucket: 'external',
+          objectKey: ref,
+          mimeType: 'image/jpeg',
+          fileSize: 0,
+          ownerId,
+        },
+      },
+    };
+  }
+  return undefined;
+}
 
 @Injectable()
 export class CommunitiesService implements OnModuleInit {
@@ -400,21 +440,58 @@ export class CommunitiesService implements OnModuleInit {
     if (communityId) {
       this.localFallback.delete(`detail:${communityId}`);
     }
-    this.localFallback.delete('all:30:0');
-    this.localFallback.delete('all:20:0');
-    this.localFallback.delete('all:50:0');
+    // List keys carry the visibility filter and page, so drop them by prefix.
+    for (const key of this.localFallback.keys()) {
+      if (key.startsWith('all:')) this.localFallback.delete(key);
+    }
     if (collegeId) {
       this.localFallback.delete(`campus:${collegeId}:30:0`);
       this.localFallback.delete(`campus:${collegeId}:20:0`);
     }
   }
 
-  async getAllCommunities(userId?: string, limit = 30, offset = 0) {
-    const cacheKey = `all:${limit}:${offset}`;
-    let communities = await this.getCachedList<CommunityListRow>(cacheKey);
+  async getAllCommunities(
+    userId?: string,
+    limit = 30,
+    offset = 0,
+    filters: CommunityListFilters = {},
+  ) {
+    const searchTerm = (filters.search || '').trim();
+    const visibility = filters.visibility;
+    const searchWhere = searchTerm
+      ? {
+          OR: [
+            { name: { contains: searchTerm, mode: 'insensitive' as const } },
+            {
+              description: {
+                contains: searchTerm,
+                mode: 'insensitive' as const,
+              },
+            },
+          ],
+        }
+      : {};
+    const visibilityWhere =
+      visibility === 'public'
+        ? { isPrivate: false }
+        : visibility === 'private'
+          ? { isPrivate: true }
+          : {};
+
+    // Only unsearched pages are cached: a search term is unbounded input, and
+    // caching each one would let any client fill Redis with single-use keys.
+    const cacheKey = `all:${visibility || 'any'}:${limit}:${offset}`;
+    let communities = searchTerm
+      ? null
+      : await this.getCachedList<CommunityListRow>(cacheKey);
     if (!communities) {
       communities = await this.prisma.community.findMany({
-        where: { deletedAt: null, isCampusCommunity: false },
+        where: {
+          deletedAt: null,
+          isCampusCommunity: false,
+          ...visibilityWhere,
+          ...searchWhere,
+        },
         // Projected to what the browse grid, the sidebar's joined list and the
         // post/comment community tags actually read. The unprojected findMany
         // this replaces also returned `deletedAt` (null for every row it can
@@ -427,7 +504,7 @@ export class CommunitiesService implements OnModuleInit {
         take: limit,
         skip: offset,
       });
-      await this.setCachedList(cacheKey, communities, 60);
+      if (!searchTerm) await this.setCachedList(cacheKey, communities, 60);
     }
 
     if (!userId || communities.length === 0) {
@@ -435,17 +512,36 @@ export class CommunitiesService implements OnModuleInit {
         ...c,
         isJoined: false,
         userRole: null,
+        hasPendingRequest: false,
       }));
     }
 
-    const userMemberships = await this.prisma.communityMember.findMany({
-      where: { userId, communityId: { in: communities.map((c) => c.id) } },
-      select: { communityId: true, role: true },
-    });
+    const ids = communities.map((c) => c.id);
+    const privateIds = communities.filter((c) => c.isPrivate).map((c) => c.id);
+    const [userMemberships, pendingRequests] = await Promise.all([
+      this.prisma.communityMember.findMany({
+        where: { userId, communityId: { in: ids } },
+        select: { communityId: true, role: true },
+      }),
+      // A private community answers a join with a request, not a membership,
+      // so without this the list cannot tell "Request to join" from
+      // "Requested" and a card would offer to send the same request again.
+      privateIds.length > 0
+        ? this.prisma.communityJoinRequest.findMany({
+            where: {
+              userId,
+              status: 'PENDING',
+              communityId: { in: privateIds },
+            },
+            select: { communityId: true },
+          })
+        : Promise.resolve([] as { communityId: string }[]),
+    ]);
 
     const membershipMap = new Map(
       userMemberships.map((m) => [m.communityId, m.role]),
     );
+    const pendingSet = new Set(pendingRequests.map((r) => r.communityId));
 
     return communities.map((c) => {
       const isOwner = Boolean(c.ownerId && c.ownerId === userId);
@@ -454,6 +550,60 @@ export class CommunitiesService implements OnModuleInit {
         ...c,
         isJoined: isMember || isOwner,
         userRole: isOwner ? 'OWNER' : membershipMap.get(c.id) || null,
+        hasPendingRequest: !isMember && !isOwner && pendingSet.has(c.id),
+      };
+    });
+  }
+
+  /**
+   * Every community the viewer belongs to — public, private and campus — with
+   * the time of its most recent post.
+   *
+   * "Your communities" used to be derived on the client by filtering the first
+   * page of `GET /communities` (the thirty largest public communities) for
+   * membership, so a member of a small community, a private one or a campus
+   * one outside that page never saw it listed. Membership is the query here,
+   * not a filter applied afterwards.
+   *
+   * Not cached: it is per-viewer and changes on every join or leave, and it is
+   * two indexed queries.
+   */
+  async getMyCommunities(userId: string) {
+    if (!userId) return [];
+
+    const memberships = await this.prisma.communityMember.findMany({
+      where: { userId, community: { deletedAt: null } },
+      select: {
+        role: true,
+        joinedAt: true,
+        community: { select: ALL_LIST_SELECT },
+      },
+      orderBy: { joinedAt: 'desc' },
+      take: MY_COMMUNITIES_LIMIT,
+    });
+    if (memberships.length === 0) return [];
+
+    const lastPosts = await this.prisma.post.groupBy({
+      by: ['communityId'],
+      where: {
+        communityId: { in: memberships.map((m) => m.community.id) },
+        deletedAt: null,
+      },
+      _max: { createdAt: true },
+    });
+    const lastPostAt = new Map(
+      lastPosts.map((p) => [p.communityId, p._max.createdAt]),
+    );
+
+    return memberships.map((m) => {
+      const isOwner = m.community.ownerId === userId;
+      return {
+        ...m.community,
+        isJoined: true,
+        userRole: isOwner ? 'OWNER' : m.role,
+        hasPendingRequest: false,
+        joinedAt: m.joinedAt,
+        lastPostAt: lastPostAt.get(m.community.id) ?? null,
       };
     });
   }
@@ -1419,7 +1569,7 @@ export class CommunitiesService implements OnModuleInit {
 
   async updateCommunity(
     communityId: string,
-    data: any,
+    data: UpdateCommunityDto,
     requestingUserId: string,
   ) {
     const [community, member] = await Promise.all([
@@ -1445,23 +1595,22 @@ export class CommunitiesService implements OnModuleInit {
       );
     }
 
-    const updateData: any = {};
+    // Every media change goes through the relation (checked) input — never the
+    // raw `avatarMediaId` / `coverMediaId` columns. Prisma rejects a mix of the
+    // two in one update, and the edit modal always sends both images: a
+    // community with the default avatar and no cover produced exactly that mix,
+    // so every save to one failed (pending item A16).
+    const updateData: Prisma.CommunityUpdateInput = {};
     if (data.name !== undefined) updateData.name = data.name;
-    if (data.description !== undefined || data.desc !== undefined) {
-      updateData.description = data.description || data.desc;
+    // An empty description leaves it unchanged, as it always has.
+    if (data.description !== undefined) {
+      updateData.description = data.description || undefined;
     }
     if (data.isPrivate !== undefined) {
       updateData.isPrivate = Boolean(data.isPrivate);
     }
-    if (data.color !== undefined) {
-      updateData.color =
-        typeof data.color === 'string' && data.color.trim()
-          ? data.color.trim().slice(0, 200)
-          : null;
-    }
 
-    const rawAvatarInput =
-      data.avatarKey !== undefined ? data.avatarKey : data.avatar;
+    const rawAvatarInput = data.avatarKey;
     // Clearing the avatar is an explicit action (sending null or empty string);
     // only a non-empty value that cannot be a media reference is discarded.
     const avatarInput =
@@ -1471,61 +1620,24 @@ export class CommunitiesService implements OnModuleInit {
 
     if (rawAvatarInput !== undefined) {
       updateData.avatarKey = avatarInput;
-      if (avatarInput && typeof avatarInput === 'string') {
-        if (avatarInput.startsWith('/api/media/')) {
-          updateData.avatarMedia = {
-            connect: { objectKey: avatarInput.replace('/api/media/', '') },
-          };
-        } else if (avatarInput.startsWith('http')) {
-          updateData.avatarMedia = {
-            connectOrCreate: {
-              where: { objectKey: avatarInput },
-              create: {
-                provider: 'external',
-                bucket: 'external',
-                objectKey: avatarInput,
-                mimeType: 'image/jpeg',
-                fileSize: 0,
-                ownerId: requestingUserId,
-              },
-            },
-          };
-        }
-      } else {
-        updateData.avatarMediaId = null;
-      }
+      const link = avatarInput
+        ? communityMediaLink(avatarInput, requestingUserId)
+        : undefined;
+      if (link) updateData.avatarMedia = link;
+      else if (!avatarInput) updateData.avatarMedia = { disconnect: true };
     }
 
-    const coverInput =
-      data.coverKey !== undefined ? data.coverKey : data.coverImage;
+    const coverInput = data.coverKey;
     if (coverInput !== undefined) {
       updateData.coverKey = coverInput || null;
-      if (coverInput && typeof coverInput === 'string') {
-        if (coverInput.startsWith('/api/media/')) {
-          updateData.coverMedia = {
-            connect: { objectKey: coverInput.replace('/api/media/', '') },
-          };
-        } else if (coverInput.startsWith('http')) {
-          updateData.coverMedia = {
-            connectOrCreate: {
-              where: { objectKey: coverInput },
-              create: {
-                provider: 'external',
-                bucket: 'external',
-                objectKey: coverInput,
-                mimeType: 'image/jpeg',
-                fileSize: 0,
-                ownerId: requestingUserId,
-              },
-            },
-          };
-        }
-      } else {
-        updateData.coverMediaId = null;
-      }
+      const link = coverInput
+        ? communityMediaLink(coverInput, requestingUserId)
+        : undefined;
+      if (link) updateData.coverMedia = link;
+      else if (!coverInput) updateData.coverMedia = { disconnect: true };
     }
 
-    let updated: any;
+    let updated: Community;
     try {
       updated = await this.prisma.community.update({
         where: { id: communityId },
