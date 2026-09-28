@@ -32,7 +32,7 @@ export default function Step6Photo() {
   const [quickAvatars] = useState(() => generateRandomAvatarSet(5));
 
   const getProcessedAvatarUrl = useCallback((url) => {
-    if (!url || !url.includes('api.dicebear.com/')) return url;
+    // Returns anything that is not a DiceBear URL unchanged.
     return normalizeDicebearUrl(url);
   }, []);
 

@@ -1,6 +1,7 @@
 import { forwardRef, useState, useEffect, useMemo } from 'react';
 import { UsersIcon } from '@heroicons/react/24/solid';
 import { getMediaUrl, normalizeDicebearUrl, deriveThumbnailKey } from '@shared/api/apiClient';
+import { isDicebearUrl } from '@core/api/media';
 import { useCanSeeOthersPresence } from '@shared/hooks/usePresenceVisibility';
 import { DEFAULT_AVATAR_SRC, isPlatformDefaultAvatar } from '@shared/constants/defaultAvatar';
 import styles from './Avatar.module.css';
@@ -21,7 +22,7 @@ export function getProcessedAvatarUrl(src) {
   if (isPlatformDefaultAvatar(clean)) {
     return DEFAULT_AVATAR_SRC;
   }
-  if (clean.includes('api.dicebear.com/')) {
+  if (isDicebearUrl(clean)) {
     return normalizeDicebearUrl(clean);
   }
   return getMediaUrl(clean);

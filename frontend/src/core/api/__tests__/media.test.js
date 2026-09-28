@@ -16,6 +16,7 @@ import {
   createMediaUrls,
   deriveThumbnailKey,
   getPastelBgColor,
+  isDicebearUrl,
   isPrivateNetworkHost,
   normalizeDicebearUrl,
 } from '../media';
@@ -139,6 +140,33 @@ describe('pure helpers', () => {
 
   it('normalizeDicebearUrl ignores non-DiceBear input', () => {
     expect(normalizeDicebearUrl('https://example.com/a.png')).toBe('https://example.com/a.png');
+  });
+
+  // CodeQL #35 #57 #58 #68: DiceBear is recognised by host, not by a
+  // substring anywhere in the string.
+  it.each([
+    'https://api.dicebear.com/7.x/thumbs/svg?seed=a',
+    'http://API.DICEBEAR.COM/9.x/avataaars/svg',
+    '//api.dicebear.com/7.x/initials/svg?seed=b',
+    'api.dicebear.com/7.x/thumbs/svg?seed=c',
+  ])('isDicebearUrl accepts %s', (url) => {
+    expect(isDicebearUrl(url)).toBe(true);
+  });
+
+  it.each([
+    'https://evil.test/?next=https://api.dicebear.com/x',
+    'https://api.dicebear.com.evil.test/7.x/svg',
+    'https://notapi.dicebear.com/7.x/svg',
+    'avatars/api.dicebear.com/a.webp',
+    '',
+    null,
+  ])('isDicebearUrl refuses %s', (url) => {
+    expect(isDicebearUrl(url)).toBe(false);
+  });
+
+  it('normalizeDicebearUrl leaves a URL that only mentions DiceBear alone', () => {
+    const other = 'https://evil.test/?next=https://api.dicebear.com/x';
+    expect(normalizeDicebearUrl(other)).toBe(other);
   });
 
   it('deriveThumbnailKey follows the folder/name_thumb.webp convention', () => {
