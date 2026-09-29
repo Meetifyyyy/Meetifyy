@@ -112,6 +112,13 @@ const transport = createTransport({
 
 export const apiClient = transport.apiClient;
 export const getBackendUrl = transport.getBackendUrl;
+
+/**
+ * The installed app's session id, or '' on the web (where it is an HttpOnly
+ * cookie the page cannot read). The socket handshake sends it as REST sends
+ * `x-session-id`: a WebView will not store the session cookie.
+ */
+export const getNativeSessionId = () => session.getSessionId?.() || '';
 export const getAccessToken = transport.getAccessToken;
 export const isApiFailoverActive = transport.isApiFailoverActive;
 export const readCsrfCookie = transport.readCsrfCookie;

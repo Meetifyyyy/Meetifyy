@@ -646,4 +646,67 @@ describe('RealtimeGateway — session binding on the handshake', () => {
     await build(null).handleConnection(c);
     expect(c.disconnect).toHaveBeenCalled();
   });
+  /**
+   * The installed app cannot hold the session cookie (a WebView refuses the
+   * SameSite=Strict ones), so it names its session in the handshake payload.
+   * Before this the gateway required the cookie, accepted the transport and
+   * then disconnected every native socket: "Reconnecting" forever.
+   */
+  describe('a native handshake that names its session in the payload', () => {
+    const nativeSocket = (auth: Record<string, unknown>) =>
+      fakeSocket({
+        id: 's1',
+        handshake: { auth, headers: {} },
+        data: {},
+        disconnect: jest.fn(),
+        join: jest.fn(),
+        emit: jest.fn(),
+      });
+
+    it("is accepted when the session is live and the caller's", async () => {
+      const c = nativeSocket({ token: 'tok', sessionId: 'sess-1' });
+      await build(live).handleConnection(c);
+      expect(c.disconnect).not.toHaveBeenCalled();
+    });
+
+    it('is still refused when the session belongs to somebody else', async () => {
+      const c = nativeSocket({ token: 'tok', sessionId: 'sess-1' });
+      await build({ ...live, userId: 'someone-else' }).handleConnection(c);
+      expect(c.disconnect).toHaveBeenCalled();
+    });
+
+    it('is still refused when the session is revoked', async () => {
+      const c = nativeSocket({ token: 'tok', sessionId: 'sess-1' });
+      await build({ ...live, revoked: true }).handleConnection(c);
+      expect(c.disconnect).toHaveBeenCalled();
+    });
+
+    it.each([
+      ['a number', 42],
+      ['an object', { id: 'x' }],
+      ['an empty string', '   '],
+      ['an oversized string', 'x'.repeat(129)],
+    ])('treats %s as no session id at all', async (_label, sessionId) => {
+      const c = nativeSocket({ token: 'tok', sessionId });
+      await build(live).handleConnection(c);
+      expect(c.disconnect).toHaveBeenCalled();
+    });
+
+    it('does not let the payload override a cookie session', async () => {
+      const c = fakeSocket({
+        id: 's1',
+        handshake: {
+          auth: { token: 'tok', sessionId: 'other' },
+          headers: { cookie: 'mf_access=tok; mf_sid=sess-1' },
+        },
+        data: {},
+        disconnect: jest.fn(),
+        join: jest.fn(),
+        emit: jest.fn(),
+      });
+      const gateway = build(live);
+      await gateway.handleConnection(c);
+      expect(c.data.sessionId).toBe('sess-1');
+    });
+  });
 });

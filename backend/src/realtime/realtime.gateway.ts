@@ -857,10 +857,21 @@ export class RealtimeGateway
      * The app has not sent a handshake token since the session became a cookie;
      * the gateway simply went on honouring one.
      */
-    const handshakeSessionId = cookieValue(
-      client.handshake.headers,
-      USER_SESSION_ID_COOKIE,
-    );
+    /*
+     * The session id comes from the cookie on the web, and from the handshake
+     * payload for the installed app: a WebView will not store the SameSite=Strict
+     * cookies, so the app holds its own session and sends the id as it does on
+     * REST (`x-session-id`). Without this every native socket was accepted and
+     * then disconnected here, which the app showed as "Reconnecting" forever.
+     *
+     * Nothing about the id is taken on trust. Whichever way it arrives it goes
+     * through the SAME lookup below — the session must exist, be live, and
+     * belong to the user the verified token names — so this widens where the
+     * id may come from, not what is checked.
+     */
+    const handshakeSessionId =
+      cookieValue(client.handshake.headers, USER_SESSION_ID_COOKIE) ||
+      authSessionId(client.handshake.auth);
     if (!handshakeSessionId) {
       this.logger.warn('Client connection rejected: no session id');
       client.disconnect();
@@ -2069,4 +2080,19 @@ function cookieValue(
 
 function cookieToken(headers: IncomingHttpHeaders | undefined): string {
   return cookieValue(headers, USER_ACCESS_COOKIE);
+}
+
+/**
+ * The session id a native client names in its handshake payload, or ''.
+ *
+ * Only a non-empty string of sane length is an id; anything else (a number, an
+ * object, an oversized value) is treated as absent so it falls through to the
+ * "no session id" refusal rather than reaching the database.
+ */
+function authSessionId(auth: unknown): string {
+  if (typeof auth !== 'object' || auth === null) return '';
+  const raw: unknown = (auth as { sessionId?: unknown }).sessionId;
+  if (typeof raw !== 'string') return '';
+  const id = raw.trim();
+  return id.length > 0 && id.length <= 128 ? id : '';
 }

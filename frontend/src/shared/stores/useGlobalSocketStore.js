@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { io } from 'socket.io-client';
-import { getBackendUrl, isApiFailoverActive, API_PROXY_PREFIX } from '@shared/api/apiClient';
+import { getBackendUrl, getNativeSessionId, isApiFailoverActive, API_PROXY_PREFIX } from '@shared/api/apiClient';
 
 export const useGlobalSocketStore = create((set, get) => ({
   socket: null,
@@ -37,7 +37,10 @@ export const useGlobalSocketStore = create((set, get) => ({
     const viaProxy = isApiFailoverActive();
     const newSocket = io(socketUrl, {
       path: viaProxy ? `${API_PROXY_PREFIX}/socket.io` : '/socket.io',
-      auth: { token, deviceId },
+      // A function, so every (re)connection sends the CURRENT session id: the
+      // installed app has no session cookie to carry it, and the gateway
+      // disconnects a handshake that names no session.
+      auth: (send) => send({ token, deviceId, sessionId: getNativeSessionId() || undefined }),
       // Start on long-polling and let engine.io upgrade to WebSocket once it has
       // proved the upgrade actually completes.
       //
