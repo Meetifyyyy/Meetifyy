@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The development (debug) APK is labelled so it cannot be mistaken for the
+         production app on a phone that has both. Only the display names are
+         overridden: the application id, scheme and everything else stay as in
+         main, and the release variant does not see this file at all. -->
+    <string name="app_name">Meetifyy DEV</string>
+    <string name="title_activity_main">Meetifyy DEV</string>
+</resources>
