@@ -1,6 +1,7 @@
 import * as React from 'react';
-import { Section } from '@react-email/components';
+import { Section, Text } from '@react-email/components';
 import { BaseLayout } from './components/BaseLayout';
+import { color, font, type } from './components/tokens';
 import { SupportFooterNotice } from './components/SupportDetails';
 import { SITE_CONFIG } from '../../config/site.config';
 
@@ -18,6 +19,7 @@ export const SupportReplyEmail: React.FC<SupportReplyEmailProps> = ({
 }) => {
   return (
     <BaseLayout previewText={`Update on your support request #${ticketNumber}`}>
+      <Text style={type.eyebrow}>Reply to request #{ticketNumber}</Text>
       <Section style={replyContainer}>
         <div
           style={replyBody}
@@ -34,15 +36,14 @@ export const SupportReplyEmail: React.FC<SupportReplyEmailProps> = ({
 };
 
 const replyContainer = {
-  padding: '8px 0 16px',
+  padding: '0 0 8px',
 };
 
 const replyBody = {
   fontSize: '15px',
   lineHeight: '26px',
-  color: '#1e293b',
-  fontFamily:
-    '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+  color: color.body,
+  fontFamily: font.sans,
   margin: '0',
   wordBreak: 'break-word' as const,
 };

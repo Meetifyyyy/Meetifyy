@@ -3,7 +3,6 @@ import {
   Body,
   Container,
   Head,
-  Hr,
   Html,
   Img,
   Link,
@@ -12,56 +11,78 @@ import {
   Text,
 } from '@react-email/components';
 import { SITE_CONFIG } from '../../../config/site.config';
+import { color, font } from './tokens';
 
 interface BaseLayoutProps {
   previewText?: string;
   children: React.ReactNode;
 }
 
+/**
+ * Narrow screens shrink the gutters and the two largest type sizes. Everything
+ * else is fluid already. `!important` is required to beat inline styles.
+ */
+const responsiveCss = `
+  @media only screen and (max-width: 620px) {
+    .px { padding-left: 24px !important; padding-right: 24px !important; }
+    .headline { font-size: 28px !important; line-height: 34px !important; }
+    .digit { width: 40px !important; height: 50px !important; line-height: 48px !important; font-size: 23px !important; margin: 0 2px !important; }
+    .stack { display: block !important; width: 100% !important; }
+    .stack-label { padding-bottom: 2px !important; }
+    .stack-value { padding-top: 0 !important; }
+  }
+`;
+
 export const BaseLayout: React.FC<BaseLayoutProps> = ({
   previewText,
   children,
 }) => {
   return (
-    <Html>
-      <Head />
+    <Html lang="en">
+      <Head>
+        <meta name="color-scheme" content="light only" />
+        <meta name="supported-color-schemes" content="light only" />
+        <style>{responsiveCss}</style>
+      </Head>
       {previewText && <Preview>{previewText}</Preview>}
       <Body style={main}>
         <Container style={container}>
-          <Section style={header}>
-            <Img
-              src={SITE_CONFIG.wordmarkUrl}
-              width="140"
-              alt="Meetifyy"
-              style={logo}
-            />
+          <Section style={sheet}>
+            <Section className="px" style={masthead}>
+              <Img
+                src={SITE_CONFIG.wordmarkUrl}
+                width="140"
+                alt="Meetifyy"
+                style={logo}
+              />
+            </Section>
+
+            <Section className="px" style={content}>
+              {children}
+            </Section>
           </Section>
 
-          <Section style={contentWrapper}>{children}</Section>
-
-          <Hr style={divider} />
-
           <Section style={footer}>
-            <Text style={footerText}>
-              <Link href={SITE_CONFIG.instagramUrl} style={socialLink}>
+            <Text style={footerLinks}>
+              <Link href={SITE_CONFIG.instagramUrl} style={footerLink}>
                 Instagram
               </Link>
-              <span style={footerSeparator}>•</span>
-              <Link href={SITE_CONFIG.linkedinUrl} style={socialLink}>
+              <span style={dot}>·</span>
+              <Link href={SITE_CONFIG.linkedinUrl} style={footerLink}>
                 LinkedIn
               </Link>
+              <span style={dot}>·</span>
+              <Link href={SITE_CONFIG.privacyUrl} style={footerLink}>
+                Privacy
+              </Link>
+              <span style={dot}>·</span>
+              <Link href={SITE_CONFIG.termsUrl} style={footerLink}>
+                Terms
+              </Link>
             </Text>
-            <Text style={footerText}>
+            <Text style={footerCopy}>
               &copy; {new Date().getFullYear()} {SITE_CONFIG.appName}. All
               rights reserved.
-              <br />
-              <Link href={SITE_CONFIG.privacyUrl} style={footerLink}>
-                Privacy Policy
-              </Link>
-              <span style={footerSeparator}>•</span>
-              <Link href={SITE_CONFIG.termsUrl} style={footerLink}>
-                Terms of Service
-              </Link>
             </Text>
           </Section>
         </Container>
@@ -71,64 +92,69 @@ export const BaseLayout: React.FC<BaseLayoutProps> = ({
 };
 
 const main = {
-  backgroundColor: '#f8fafc',
-  fontFamily:
-    '-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif',
-  padding: '36px 0',
+  backgroundColor: color.page,
+  fontFamily: font.sans,
+  margin: 0,
+  padding: '40px 12px',
 };
 
 const container = {
-  backgroundColor: '#ffffff',
   margin: '0 auto',
-  padding: '40px 32px',
-  borderRadius: '16px',
-  maxWidth: '580px',
-  border: '1px solid #e2e8f0',
-  boxShadow: '0 4px 20px -2px rgba(15, 23, 42, 0.05)',
+  maxWidth: '600px',
+  width: '100%',
 };
 
-const header = {
-  padding: '0 0 32px',
+const sheet = {
+  backgroundColor: color.sheet,
+  border: `1px solid ${color.hairline}`,
+  borderRadius: '20px',
+  overflow: 'hidden',
+};
+
+const masthead = {
+  padding: '28px 44px 24px',
   textAlign: 'center' as const,
+  borderBottom: `1px solid ${color.hairline}`,
 };
 
 const logo = {
   display: 'block',
   margin: '0 auto',
+  border: 0,
 };
 
-const contentWrapper = {
-  padding: '0',
-};
-
-const divider = {
-  borderColor: '#f1f5f9',
-  margin: '32px 0 24px',
+const content = {
+  padding: '40px 44px 44px',
 };
 
 const footer = {
+  padding: '28px 12px 0',
   textAlign: 'center' as const,
 };
 
-const footerText = {
-  color: '#94a3b8',
+const footerLinks = {
+  fontFamily: font.sans,
   fontSize: '12px',
   lineHeight: '18px',
-  margin: '8px 0',
+  color: color.muted,
+  margin: '0 0 6px',
 };
 
 const footerLink = {
-  color: '#94a3b8',
-  textDecoration: 'underline',
-};
-
-const socialLink = {
-  color: '#64748b',
+  color: color.muted,
   textDecoration: 'none',
-  fontWeight: '500',
+  fontWeight: 500,
 };
 
-const footerSeparator = {
-  color: '#cbd5e1',
+const dot = {
+  color: color.faint,
   margin: '0 8px',
+};
+
+const footerCopy = {
+  fontFamily: font.sans,
+  fontSize: '12px',
+  lineHeight: '18px',
+  color: color.faint,
+  margin: 0,
 };

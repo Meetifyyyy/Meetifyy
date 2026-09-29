@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { Button } from '@react-email/components';
+import { color, font } from './tokens';
 
 interface ButtonCTAProps {
   href: string;
@@ -17,22 +18,20 @@ export const ButtonCTA: React.FC<ButtonCTAProps> = ({ href, children }) => {
 };
 
 const buttonContainer = {
-  textAlign: 'center' as const,
   margin: '28px 0',
 };
 
 const button = {
-  backgroundColor: '#2563eb',
-  borderRadius: '10px',
-  color: '#ffffff',
+  backgroundColor: color.button,
+  borderRadius: '12px',
+  color: '#FFFFFF',
+  fontFamily: font.sans,
   fontSize: '15px',
-  fontWeight: '600',
+  lineHeight: '20px',
+  fontWeight: 600,
+  letterSpacing: '0.01em',
   textDecoration: 'none',
   textAlign: 'center' as const,
   display: 'inline-block',
-  width: '100%',
-  maxWidth: '320px',
-  padding: '14px 28px',
-  boxSizing: 'border-box' as const,
-  boxShadow: '0 4px 14px rgba(37, 99, 235, 0.28)',
+  padding: '15px 32px',
 };

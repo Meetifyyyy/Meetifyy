@@ -1,14 +1,12 @@
 import * as React from 'react';
-import { Heading, Text } from '@react-email/components';
 import { BaseLayout } from './components/BaseLayout';
+import { Headline, Paragraph } from './components/Blocks';
 import {
   SupportAttachmentItem,
   SupportAttachmentsSection,
   SupportFooterNotice,
   SupportIdPill,
   SupportSummaryCard,
-  heading,
-  text,
 } from './components/SupportDetails';
 import { SITE_CONFIG } from '../../config/site.config';
 
@@ -43,20 +41,17 @@ export const SupportRequestReceivedEmail: React.FC<
     <BaseLayout
       previewText={`We received your support request #${ticketNumber}`}
     >
-      <Heading style={heading}>Support Request Received</Heading>
-
-      <Text style={text}>{greeting}</Text>
-      <Text style={text}>
-        We have received your support request and our team will review it as
-        soon as possible.
-      </Text>
+      <Headline eyebrow="Request logged" title="Support request received">
+        {greeting} we have received your support request and our team will
+        review it as soon as possible.
+      </Headline>
 
       <SupportIdPill ticketNumber={ticketNumber} />
 
-      <Text style={text}>
+      <Paragraph>
         Please keep this ID for your reference when contacting us about this
         request.
-      </Text>
+      </Paragraph>
 
       <SupportSummaryCard
         name={name}

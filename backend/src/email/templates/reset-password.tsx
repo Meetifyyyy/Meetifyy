@@ -1,7 +1,7 @@
 import * as React from 'react';
-import { Heading, Text } from '@react-email/components';
 import { BaseLayout } from './components/BaseLayout';
 import { ButtonCTA } from './components/ButtonCTA';
+import { Headline, Paragraph, Signoff } from './components/Blocks';
 
 interface ResetPasswordEmailProps {
   name?: string;
@@ -14,44 +14,22 @@ export const ResetPasswordEmail = ({
 }: ResetPasswordEmailProps) => {
   return (
     <BaseLayout previewText="Reset your Meetifyy password">
-      <Heading style={heading}>Reset your password</Heading>
-
-      <Text style={text}>Hi {name},</Text>
-      <Text style={text}>
-        We received a request to reset the password for your Meetifyy account.
-        Click the button below to choose a new password:
-      </Text>
+      <Headline eyebrow="Password reset" title="Reset your password">
+        Hi {name}, we received a request to reset the password for your Meetifyy
+        account. Use the button below to choose a new password.
+      </Headline>
 
       <ButtonCTA href={resetLink}>Reset Password</ButtonCTA>
 
-      <Text style={text}>
+      <Paragraph>
         This password reset link is valid for 10 minutes. If you did not request
         a password reset, you can safely ignore this email. Your password will
         remain secure and unchanged.
-      </Text>
+      </Paragraph>
 
-      <Text style={text}>
-        Thanks,
-        <br />
-        <strong>The Meetifyy Team</strong>
-      </Text>
+      <Signoff />
     </BaseLayout>
   );
-};
-
-const heading = {
-  fontSize: '22px',
-  fontWeight: 'bold',
-  color: '#0f172a',
-  marginBottom: '20px',
-  textAlign: 'center' as const,
-};
-
-const text = {
-  fontSize: '15px',
-  lineHeight: '24px',
-  color: '#334155',
-  marginBottom: '16px',
 };
 
 export default ResetPasswordEmail;

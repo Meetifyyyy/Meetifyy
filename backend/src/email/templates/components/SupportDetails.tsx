@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { Hr, Link, Section, Text } from '@react-email/components';
+import { color, font, type } from './tokens';
 
 export interface DetailRow {
   label: string;
@@ -42,7 +43,7 @@ export const SupportIdPill: React.FC<{ ticketNumber: string }> = ({
   </Section>
 );
 
-/** Structured Support Request Summary card. */
+/** Structured Support request summary card. */
 export const SupportSummaryCard: React.FC<{
   name?: string | null;
   categoryLabel: string;
@@ -58,7 +59,7 @@ export const SupportSummaryCard: React.FC<{
   return (
     <Section style={summaryBox}>
       <div style={summaryHeader}>
-        <Text style={summaryTitle}>Support Request Summary</Text>
+        <Text style={summaryTitle}>Support request summary</Text>
       </div>
 
       <table
@@ -121,7 +122,7 @@ export const SupportAttachmentsSection: React.FC<{
                   style={isLast ? undefined : attachmentRowBorder}
                 >
                   <td style={attachmentIconCell}>
-                    <span style={attachmentIconBadge}>📎</span>
+                    <span style={attachmentIconBadge} />
                   </td>
                   <td style={attachmentInfoCell}>
                     <div style={attachmentNameText}>{item.filename}</div>
@@ -181,192 +182,151 @@ export const SupportFooterNotice: React.FC<{
   </Section>
 );
 
-// ── Typography & Base Styles ───────────────────────────────────────────────
+// ── Typography (kept as exports for existing importers) ────────────────────
 
-export const heading = {
-  fontSize: '21px',
-  fontWeight: '700',
-  color: '#0f172a',
-  letterSpacing: '-0.02em',
-  margin: '0 0 16px',
-  textAlign: 'center' as const,
-};
+export const heading = type.headline;
+export const text = type.body;
+export const mutedText = type.small;
 
-export const text = {
-  fontSize: '15px',
-  lineHeight: '24px',
-  color: '#334155',
-  margin: '0 0 16px',
-};
-
-export const mutedText = {
-  fontSize: '13.5px',
-  lineHeight: '22px',
-  color: '#64748b',
-  margin: '0 0 14px',
-};
-
-// ── Support ID Pill Styles ──────────────────────────────────────────────────
+// ── Support ID ──────────────────────────────────────────────────────────────
 
 const idCardStyle = {
-  backgroundColor: '#f1f5f9',
-  border: '1px solid #e2e8f0',
-  borderRadius: '10px',
-  padding: '12px 20px',
-  margin: '18px 0 20px',
+  backgroundColor: color.tint,
+  borderRadius: '14px',
+  padding: '16px 20px',
+  margin: '4px 0 24px',
   textAlign: 'center' as const,
 };
 
 const idLabelCell = {
-  color: '#475569',
-  fontSize: '14px',
-  fontWeight: '500',
-  paddingRight: '8px',
+  color: color.muted,
+  fontFamily: font.sans,
+  fontSize: '13px',
+  fontWeight: 500,
+  paddingRight: '10px',
   verticalAlign: 'middle' as const,
 };
 
 const idValueCell = {
-  color: '#2563eb',
-  fontSize: '16px',
-  fontWeight: '700',
-  fontFamily:
-    'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+  color: color.accent,
+  fontSize: '18px',
+  fontWeight: 600,
+  fontFamily: font.sans,
   letterSpacing: '0.04em',
   verticalAlign: 'middle' as const,
 };
 
-// ── Support Summary Box Styles ──────────────────────────────────────────────
+// ── Request summary ─────────────────────────────────────────────────────────
 
 const summaryBox = {
-  backgroundColor: '#ffffff',
-  border: '1px solid #e2e8f0',
-  borderRadius: '12px',
-  overflow: 'hidden',
-  margin: '22px 0 20px',
-  boxShadow: '0 1px 3px rgba(15, 23, 42, 0.04)',
+  margin: '28px 0',
 };
 
 const summaryHeader = {
-  backgroundColor: '#f8fafc',
-  padding: '11px 18px',
-  borderBottom: '1px solid #e2e8f0',
+  padding: '0 0 10px',
+  borderBottom: `1px solid ${color.rule}`,
 };
 
 const summaryTitle = {
-  fontSize: '11.5px',
-  fontWeight: '700',
-  color: '#475569',
-  textTransform: 'uppercase' as const,
-  letterSpacing: '0.07em',
+  ...type.label,
   margin: 0,
 };
 
 const rowBorder = {
-  borderBottom: '1px solid #f1f5f9',
+  borderBottom: `1px solid ${color.hairline}`,
 };
 
 const summaryLabel = {
-  color: '#64748b',
-  fontSize: '13.5px',
-  fontWeight: '500',
+  color: color.muted,
+  fontFamily: font.sans,
+  fontSize: '13px',
   lineHeight: '20px',
-  padding: '12px 18px',
-  width: '130px',
+  padding: '14px 16px 14px 0',
+  width: '120px',
   verticalAlign: 'top' as const,
 };
 
 const summaryValue = {
-  color: '#0f172a',
+  color: color.ink,
+  fontFamily: font.sans,
   fontSize: '14px',
   lineHeight: '21px',
-  fontWeight: '600',
-  padding: '12px 18px',
+  fontWeight: 600,
+  padding: '14px 0',
   verticalAlign: 'top' as const,
 };
 
-const summaryLabelLast = {
-  ...summaryLabel,
-  padding: '14px 18px 16px',
-};
-
-const summaryValueLast = {
-  ...summaryValue,
-  padding: '14px 18px 16px',
-};
+const summaryLabelLast = { ...summaryLabel };
+const summaryValueLast = { ...summaryValue };
 
 const descriptionContent = {
-  color: '#1e293b',
+  color: color.body,
+  fontFamily: font.sans,
   fontSize: '14px',
   lineHeight: '22px',
-  fontWeight: '400',
-  backgroundColor: '#f8fafc',
-  border: '1px solid #e2e8f0',
-  borderRadius: '8px',
+  fontWeight: 400,
+  backgroundColor: color.inset,
+  borderRadius: '10px',
   padding: '12px 14px',
   whiteSpace: 'pre-wrap' as const,
   wordBreak: 'break-word' as const,
 };
 
-// ── Attachments Box Styles ──────────────────────────────────────────────────
+// ── Attachments ─────────────────────────────────────────────────────────────
 
 const attachmentsBox = {
-  backgroundColor: '#ffffff',
-  border: '1px solid #e2e8f0',
-  borderRadius: '12px',
-  overflow: 'hidden',
-  margin: '18px 0 20px',
-  boxShadow: '0 1px 3px rgba(15, 23, 42, 0.04)',
+  margin: '28px 0',
 };
 
 const attachmentsHeader = {
-  backgroundColor: '#f8fafc',
-  padding: '11px 18px',
-  borderBottom: '1px solid #e2e8f0',
+  padding: '0 0 10px',
+  borderBottom: `1px solid ${color.rule}`,
 };
 
 const attachmentsTitle = {
-  fontSize: '11.5px',
-  fontWeight: '700',
-  color: '#475569',
-  textTransform: 'uppercase' as const,
-  letterSpacing: '0.07em',
+  ...type.label,
   margin: 0,
 };
 
 const attachmentsBody = {
-  padding: '6px 18px',
+  padding: 0,
 };
 
 const attachmentRowBorder = {
-  borderBottom: '1px solid #f1f5f9',
+  borderBottom: `1px solid ${color.hairline}`,
 };
 
 const attachmentIconCell = {
-  width: '28px',
+  width: '20px',
   verticalAlign: 'middle' as const,
-  padding: '10px 0',
+  padding: '14px 0',
 };
 
 const attachmentIconBadge = {
-  fontSize: '14px',
   display: 'inline-block',
+  width: '8px',
+  height: '8px',
+  borderRadius: '2px',
+  backgroundColor: color.accent,
 };
 
 const attachmentInfoCell = {
   verticalAlign: 'middle' as const,
-  padding: '10px 10px',
+  padding: '14px 10px 14px 0',
 };
 
 const attachmentNameText = {
-  color: '#0f172a',
-  fontSize: '13.5px',
-  fontWeight: '600',
+  color: color.ink,
+  fontFamily: font.sans,
+  fontSize: '14px',
+  fontWeight: 600,
   lineHeight: '19px',
   wordBreak: 'break-all' as const,
 };
 
 const attachmentSizeText = {
-  color: '#64748b',
+  color: color.muted,
+  fontFamily: font.sans,
   fontSize: '12px',
   lineHeight: '16px',
   marginTop: '2px',
@@ -375,50 +335,51 @@ const attachmentSizeText = {
 const attachmentActionCell = {
   textAlign: 'right' as const,
   verticalAlign: 'middle' as const,
-  padding: '10px 0',
+  padding: '14px 0',
   width: '90px',
 };
 
 const attachmentViewButton = {
-  backgroundColor: '#eff6ff',
-  border: '1px solid #bfdbfe',
-  borderRadius: '6px',
-  color: '#2563eb',
+  backgroundColor: color.tint,
+  borderRadius: '8px',
+  color: color.accent,
+  fontFamily: font.sans,
   fontSize: '12.5px',
-  fontWeight: '600',
+  fontWeight: 600,
   textDecoration: 'none',
-  padding: '6px 12px',
+  padding: '7px 13px',
   display: 'inline-block',
   textAlign: 'center' as const,
 };
 
 const attachmentAttachedLabel = {
-  color: '#64748b',
+  color: color.muted,
+  fontFamily: font.sans,
   fontSize: '12px',
-  fontWeight: '500',
+  fontWeight: 500,
 };
 
-// ── Footer Styles ───────────────────────────────────────────────────────────
+// ── Footer notice ───────────────────────────────────────────────────────────
 
 const footerSection = {
-  margin: '24px 0 0',
+  margin: '32px 0 0',
 };
 
 const subtleDivider = {
-  borderColor: '#f1f5f9',
-  margin: '24px 0 16px',
+  borderColor: color.hairline,
+  margin: '0 0 18px',
 };
 
 const footerNoticeText = {
-  color: '#94a3b8',
+  color: color.muted,
+  fontFamily: font.sans,
   fontSize: '12.5px',
   lineHeight: '19px',
-  textAlign: 'center' as const,
   margin: '0',
 };
 
 const footerNoticeLink = {
-  color: '#2563eb',
+  color: color.ink,
   textDecoration: 'underline',
-  fontWeight: '500',
+  fontWeight: 600,
 };

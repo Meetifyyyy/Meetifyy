@@ -1,7 +1,13 @@
 import * as React from 'react';
-import { Heading, Text, Section } from '@react-email/components';
 import { BaseLayout } from './components/BaseLayout';
-import { OtpDigitBoxes } from './components/OtpDigitBoxes';
+import {
+  Callout,
+  Headline,
+  Notice,
+  Paragraph,
+  Signoff,
+} from './components/Blocks';
+import { OtpCode } from './components/OtpCode';
 
 interface AccountDeletionOtpEmailProps {
   name?: string;
@@ -32,124 +38,44 @@ export const AccountDeletionOtpEmail = ({
 
   return (
     <BaseLayout previewText="Confirm your account deletion request">
-      <Heading style={heading}>Confirm account deletion</Heading>
+      <Headline eyebrow="Action required" title="Confirm account deletion">
+        {greeting} we received a request to delete your Meetifyy account. To
+        continue, enter the verification code below.
+      </Headline>
 
-      <Text style={text}>{greeting}</Text>
-      <Text style={text}>
-        We received a request to delete your Meetifyy account. To continue,
-        enter the verification code below.
-      </Text>
+      <Callout tone="danger" title="Didn't request this?">
+        Someone may have access to your account. Do not enter this code. Change
+        your password straight away and contact us if anything looks wrong.
+      </Callout>
 
-      <Section style={otpCard}>
-        <div style={boxesWrapper}>
-          <OtpDigitBoxes otp={otp} />
-        </div>
-        <Text style={otpExpiry}>
-          This code will expire in <strong>{expiryTime}</strong>.
-        </Text>
-      </Section>
+      <OtpCode
+        otp={otp}
+        footnote={
+          <>
+            This code will expire in{' '}
+            <strong style={{ color: '#0A0F1D' }}>{expiryTime}</strong>.
+          </>
+        }
+      />
 
-      <Section style={warningCard}>
-        <Text style={warningTitle}>Didn&apos;t request this?</Text>
-        <Text style={warningText}>
-          Someone may have access to your account. Do not enter this code.
-          Change your password straight away and contact us if anything looks
-          wrong.
-        </Text>
-      </Section>
-
-      <Text style={text}>
+      <Paragraph>
         Once confirmed, your account is scheduled for deletion and hidden from
         everyone else. You have <strong>30 days</strong> to change your mind,
         during which you can sign back in to recover it. After 30 days the
         deletion is permanent and cannot be undone.
-      </Text>
-
-      <Text style={text}>
+      </Paragraph>
+      <Paragraph>
         For your security, never share this code with anyone.
-      </Text>
+      </Paragraph>
 
-      <Text style={noticeText}>
+      <Notice>
         This is an automated email. Please do not reply directly to this
         message.
-      </Text>
+      </Notice>
 
-      <Text style={text}>
-        Thanks,
-        <br />
-        <strong>The Meetifyy Team</strong>
-      </Text>
+      <Signoff />
     </BaseLayout>
   );
-};
-
-const heading = {
-  fontSize: '22px',
-  fontWeight: 'bold',
-  color: '#0f172a',
-  marginBottom: '20px',
-  textAlign: 'center' as const,
-};
-
-const text = {
-  fontSize: '15px',
-  lineHeight: '24px',
-  color: '#334155',
-  marginBottom: '16px',
-};
-
-const noticeText = {
-  fontSize: '13px',
-  lineHeight: '20px',
-  color: '#64748b',
-  marginBottom: '16px',
-};
-
-const otpCard = {
-  backgroundColor: '#f8faff',
-  border: '1px solid #dbeafe',
-  borderRadius: '16px',
-  padding: '30px 16px 26px',
-  textAlign: 'center' as const,
-  margin: '24px 0',
-  boxShadow: '0 4px 16px -2px rgba(37, 99, 235, 0.06)',
-};
-
-const boxesWrapper = {
-  margin: '0 auto',
-  textAlign: 'center' as const,
-};
-
-const otpExpiry = {
-  fontSize: '13px',
-  color: '#475569',
-  margin: '18px 0 0',
-};
-
-/**
- * Amber rather than red. Red reads as "this already went wrong"; the accurate
- * message is "check this was you before it does".
- */
-const warningCard = {
-  backgroundColor: '#fffbeb',
-  border: '1px solid #fde68a',
-  borderRadius: '12px',
-  padding: '16px 18px',
-  margin: '24px 0',
-};
-
-const warningTitle = {
-  fontSize: '14px',
-  fontWeight: 'bold' as const,
-  color: '#92400e',
-  margin: '0 0 6px',
-};
-
-const warningText = {
-  fontSize: '14px',
-  lineHeight: '22px',
-  color: '#78350f',
-  margin: 0,
 };
 
 export default AccountDeletionOtpEmail;

@@ -10,6 +10,8 @@ import { NewLoginEmail } from './src/email/templates/new-login';
 import { PasswordChangedEmail } from './src/email/templates/password-changed';
 import { SupportRequestReceivedEmail } from './src/email/templates/support-request-received';
 import { SupportReplyEmail } from './src/email/templates/support-reply';
+import { AccountDeletionOtpEmail } from './src/email/templates/account-deletion-otp';
+import { AccountRecoveryOtpEmail } from './src/email/templates/account-recovery-otp';
 
 async function sendAll() {
   const transporter = nodemailer.createTransport({
@@ -105,6 +107,21 @@ async function sendAll() {
         replyHtml:
           '<p>Hi Sarthak,</p><p>We looked into your account and noticed that your university domain had a temporary mail delivery throttle. We have updated your verification settings and dispatched a new code.</p><p>Please try signing in again now. If you have any further questions, feel free to visit our Help and Support page.</p><p>Best regards,<br />Meetifyy Support Team</p>',
         helpCentreUrl: 'https://dev.meetifyy.app/help-and-support',
+      }),
+    },
+    {
+      subject: 'Confirm your Meetifyy account deletion',
+      component: createElement(AccountDeletionOtpEmail, {
+        name: 'Sarthak Saini',
+        otp: '318402',
+      }),
+    },
+    {
+      subject: 'Recover your Meetifyy account',
+      component: createElement(AccountRecoveryOtpEmail, {
+        name: 'Sarthak Saini',
+        otp: '652917',
+        scheduledDeletionDate: '12 October 2026',
       }),
     },
   ];
