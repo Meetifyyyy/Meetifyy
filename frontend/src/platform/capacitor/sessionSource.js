@@ -83,14 +83,18 @@ export function createCapacitorSessionSource({ secureStorage }) {
   async function adopt(tokens) {
     if (!tokens) return;
 
-    if (tokens.refreshToken) {
-      await secureStorage.set(REFRESH_KEY, tokens.refreshToken);
-      refreshToken = tokens.refreshToken;
-    }
-    if (tokens.sessionId) {
-      await secureStorage.set(SESSION_ID_KEY, tokens.sessionId);
-      sessionId = tokens.sessionId;
-    }
+    // Both writes at once: they are independent Keystore entries, and a refresh
+    // on the boot path waits for them before its replay goes out. Each value
+    // still reaches memory only once ITS write has landed — so a rotated
+    // refresh token that made it to disk is never shadowed in memory by the
+    // retired one, whatever happens to the other write.
+    const { refreshToken: nextRefresh, sessionId: nextSessionId } = tokens;
+    await Promise.all([
+      nextRefresh &&
+        secureStorage.set(REFRESH_KEY, nextRefresh).then(() => { refreshToken = nextRefresh; }),
+      nextSessionId &&
+        secureStorage.set(SESSION_ID_KEY, nextSessionId).then(() => { sessionId = nextSessionId; }),
+    ]);
     if (tokens.accessToken) accessToken = tokens.accessToken;
   }
 

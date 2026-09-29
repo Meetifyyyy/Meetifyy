@@ -341,7 +341,12 @@ describe('createTransport — a client that holds its own credential', () => {
 
     release();
     await inFlight;
-    expect(calls).toHaveLength(1);
+    // Loaded: a refresh token and no access token, so it renews first and then
+    // sends the request — rather than sending it into a certain 401.
+    expect(calls.map((c) => String(c.url))).toEqual([
+      expect.stringContaining('/api/auth/session/refresh'),
+      expect.stringContaining('/api/posts/feed'),
+    ]);
   });
 
   /**
@@ -460,10 +465,98 @@ describe('createTransport — reopening the app after it was closed', () => {
     // The session probe must succeed. If it throws, the app signs the user out.
     expect(body).toEqual({ user: { id: 'u1' } });
 
-    const first = sent[0];
-    const retry = sent[sent.length - 1];
-    expect(first.auth).toBeNull(); // nothing to send yet — this is the cold start
-    expect(retry.auth).toBe('Bearer minted'); // the retry must ADD the header
+    // Renew first, then ask once — with the header the refresh just minted.
+    // There used to be a third request in front of these: the probe sent with
+    // no header, into a 401 that was certain.
+    expect(sent.map((r) => r.url)).toEqual([
+      expect.stringContaining('/api/auth/session/refresh'),
+      expect.stringContaining('/api/auth/session'),
+    ]);
+    expect(sent[1].auth).toBe('Bearer minted');
+  });
+
+  it('renews once for a burst of requests, and every one of them carries the result', async () => {
+    const session = coldStartSession();
+    const sent = [];
+    globalThis.fetch = vi.fn(async (url, init) => {
+      const u = String(url);
+      sent.push({ url: u, auth: init.headers?.['Authorization'] ?? null });
+      if (u.includes('/api/auth/session/refresh')) {
+        await session.adopt({ accessToken: 'minted', refreshToken: 'rotated' });
+        return { ok: true, status: 200, headers: { get: () => null }, json: async () => ({}), text: async () => '' };
+      }
+      return { ok: true, status: 200, headers: { get: () => null }, json: async () => ({}), text: async () => '{}' };
+    });
+
+    const { t } = build({ session });
+    await Promise.all([
+      t.apiClient.get('/api/auth/session'),
+      t.apiClient.get('/api/posts/feed'),
+      t.apiClient.get('/api/messages'),
+    ]);
+
+    expect(sent.filter((r) => r.url.includes('/refresh'))).toHaveLength(1);
+    expect(sent.filter((r) => !r.url.includes('/refresh')).every((r) => r.auth === 'Bearer minted')).toBe(true);
+  });
+
+  it('replays a request that was overtaken by a renewal instead of rotating again', async () => {
+    const session = coldStartSession();
+    await session.adopt({ accessToken: 'old' });
+    const sent = [];
+    let releaseFirst;
+    const firstHeld = new Promise((r) => { releaseFirst = r; });
+    globalThis.fetch = vi.fn(async (url, init) => {
+      const u = String(url);
+      const auth = init.headers?.['Authorization'] ?? null;
+      sent.push({ url: u, auth });
+      if (u.includes('/refresh')) {
+        await session.adopt({ accessToken: 'minted' });
+        return { ok: true, status: 200, headers: { get: () => null }, json: async () => ({}), text: async () => '' };
+      }
+      if (u.includes('/slow')) await firstHeld; // still in flight while another request renews
+      const ok = auth === 'Bearer minted';
+      return { ok, status: ok ? 200 : 401, headers: { get: () => null }, json: async () => ({}), text: async () => '{}' };
+    });
+
+    const { t } = build({ session });
+    const slow = t.apiClient.get('/api/slow');
+    await t.apiClient.get('/api/fast'); // 401 with 'old' -> renews to 'minted'
+    releaseFirst();
+    await slow; // 401 with 'old', but 'minted' is already in hand
+
+    expect(sent.filter((r) => r.url.includes('/refresh'))).toHaveLength(1);
+    expect(sent.at(-1)).toEqual({ url: expect.stringContaining('/api/slow'), auth: 'Bearer minted' });
+  });
+
+  it('does not hold a public request behind the renewal', async () => {
+    const session = coldStartSession();
+    const sent = [];
+    globalThis.fetch = vi.fn(async (url) => {
+      sent.push(String(url));
+      return { ok: true, status: 200, headers: { get: () => null }, json: async () => ({}), text: async () => '{}' };
+    });
+
+    const { t } = build({ session });
+    await t.apiClient.get('/api/app/version');
+
+    expect(sent).toEqual([expect.stringContaining('/api/app/version')]);
+  });
+
+  it('spends one attempt when the renewal cannot reach the server, not one per request', async () => {
+    const session = coldStartSession();
+    const sent = [];
+    globalThis.fetch = vi.fn(async (url) => {
+      const u = String(url);
+      sent.push(u);
+      if (u.includes('/refresh')) throw new TypeError('offline');
+      return { ok: true, status: 200, headers: { get: () => null }, json: async () => ({}), text: async () => '{}' };
+    });
+
+    const { t } = build({ session });
+    await t.apiClient.get('/api/posts/feed');
+    await t.apiClient.get('/api/messages');
+
+    expect(sent.filter((u) => u.includes('/refresh'))).toHaveLength(1);
   });
 });
 

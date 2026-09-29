@@ -36,22 +36,33 @@ const EMPTY_USERS_MAP = {};
 const EMPTY_USERS = [];
 
 function useBuildUsersMap() {
-  const { currentUser } = useAuth();
+  const { currentUser, isLoggedIn } = useAuth();
 
-  // Deferred to idle time so a globally-mounted consumer doesn't fire this
-  // during the initial page render.
+  /**
+   * Deferred until the app is signed in AND idle, so this never competes with
+   * the first screen.
+   *
+   * It was a fixed 1.5 s timer from mount. On a cold start that is while the
+   * session is still being restored — so the first request went out with no
+   * credential — and on a warm one it landed in the middle of the feed's first
+   * render. These lists only fill in mention and sender lookups; nothing on
+   * screen waits for them.
+   */
   const [isIdleLoaded, setIsIdleLoaded] = useState(false);
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setIsIdleLoaded(true);
-    }, 1500);
+    if (!isLoggedIn || isIdleLoaded) return undefined;
+    if (typeof window.requestIdleCallback === 'function') {
+      const handle = window.requestIdleCallback(() => setIsIdleLoaded(true), { timeout: 5000 });
+      return () => window.cancelIdleCallback(handle);
+    }
+    const timer = setTimeout(() => setIsIdleLoaded(true), 3000);
     return () => clearTimeout(timer);
-  }, []);
+  }, [isLoggedIn, isIdleLoaded]);
 
   const { data: rawUsers = EMPTY_USERS } = useQuery({
     queryKey: ['users'],
     queryFn: () => usersApi.getAll(20, 0),
-    enabled: Boolean(currentUser?.id && isIdleLoaded),
+    enabled: Boolean(isLoggedIn && currentUser?.id && isIdleLoaded),
     staleTime: 5 * 60_000,
   });
   // Was `useCampusUsers(isIdleLoaded ? 50 : 0)`. The limit-0 form still issued a

@@ -142,6 +142,13 @@ export function createTransport({
      * awaits it first.
      */
     if (session.getRefreshToken?.()) return true;
+    /**
+     * ...and its answer is final. A self-custody client with no stored
+     * refresh token has nothing to authenticate with, whatever a stale
+     * `loggedIn` marker says — asking anyway spent a 401, a refresh that 401'd
+     * and their preflights under the splash, to reach the same "signed out".
+     */
+    if (session.holdsOwnCredential?.() === true) return false;
     if (readCsrfCookie()) return true;
     return localStore.get('loggedIn') === 'true';
   }
@@ -261,6 +268,11 @@ export function createTransport({
   const dropEtag = (url) => etags.drop(url);
 
   let _refreshPromise = null;
+  // Long enough for a slow mobile link. Past it the server counts as unreachable,
+  // and the boot falls back to the profile it holds instead of rendering nothing.
+  const REFRESH_TIMEOUT_MS = 8_000;
+  // The refresh token the up-front renewal in `request` last spent an attempt on.
+  let _preRefreshedFor = null;
 
   /**
    * Renews the session cookies, once, no matter how many callers ask.
@@ -291,6 +303,7 @@ export function createTransport({
     if (_refreshPromise) return _refreshPromise;
 
     _refreshPromise = (async () => {
+      let deadline = null;
       try {
         // A recovery tab holds a one-time credential for the reset page and no
         // session of its own. Rotating anything on its behalf is meaningless.
@@ -310,7 +323,19 @@ export function createTransport({
          * this cannot become a way for a web page to opt into the body path.
          */
         const storedRefresh = session.getRefreshToken?.();
+
+        /**
+         * A deadline, because this sits in front of every request once it is
+         * in flight — the boot probe included. With none, a stalled connection
+         * held auth undecided until the native splash's backstop lifted onto a
+         * page that renders nothing while undecided. Timing out is an ordinary
+         * "unavailable": the session is untouched and the boot falls back to
+         * the profile it holds.
+         */
+        const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+        deadline = controller ? setTimeout(() => controller.abort(), REFRESH_TIMEOUT_MS) : null;
         const res = await fetch(url, {
+          signal: controller?.signal,
           method: 'POST',
           credentials: 'include',
           cache: 'no-store',
@@ -357,6 +382,7 @@ export function createTransport({
         // Offline, blocked, timed out. Says nothing about the session.
         return 'unavailable';
       } finally {
+        if (deadline) clearTimeout(deadline);
         _refreshPromise = null;
       }
     })();
@@ -420,6 +446,39 @@ export function createTransport({
       (selfCustody || isBearerPath(path))
     ) {
       await session.whenReady();
+    }
+
+    /**
+     * Renew BEFORE asking, when the answer to "do I have an access token?" is
+     * already known to be no.
+     *
+     * The installed app keeps its access token in memory only, so every cold
+     * start holds a refresh token and nothing to send. Sending anyway bought a
+     * guaranteed 401, then the refresh, then a replay: three serial round trips
+     * (plus a preflight) before the boot probe could answer, all of it under
+     * the splash. Measured on a device, the doomed request alone was ~350 ms.
+     *
+     * Same single-flight promise as the 401 path, so it is still exactly one
+     * rotation however many requests arrive together — concurrent callers wait
+     * on it instead of racing to present the same token. Attempted once per
+     * refresh token: if it comes back unavailable (offline), later requests go
+     * out as before and the 401 path owns any retry, rather than every request
+     * re-trying a refresh that just failed. Public paths skip it: they are
+     * answered signed out by design and must not wait on a rotation.
+     */
+    if (
+      selfCustody &&
+      !explicitCredential &&
+      !session.getToken() &&
+      session.getRefreshToken?.() &&
+      !isPublicPath(path)
+    ) {
+      if (_refreshPromise) {
+        await _refreshPromise;
+      } else if (_preRefreshedFor !== session.getRefreshToken()) {
+        _preRefreshedFor = session.getRefreshToken();
+        await refreshCookieSession();
+      }
     }
 
     const token = explicitCredential ? bearer : getToken(); // synchronous
@@ -500,6 +559,9 @@ export function createTransport({
     // Same reasoning for a request carrying its own credential: its 401 says
     // nothing about the ambient session. See `bearer` above.
     options.explicitCredential = explicitCredential;
+    // Which access token this request carried, so a 401 can tell "my token
+    // has ended" from "my token was replaced while I was in flight".
+    options.sentToken = token || '';
 
     if (signal) options.signal = signal;
     // Per-call deadline, for the few mutations whose UI holds a visible spinner
@@ -636,7 +698,20 @@ export function createTransport({
       // The retry carries no new Authorization header, and that is deliberate:
       // the credential is the cookie the server just rewrote, and `credentials:
       // 'include'` is what sends it.
-      const outcome = await refreshCookieSession();
+      /**
+       * Already renewed while this request was in flight: replay with the new
+       * token, do not rotate again.
+       *
+       * A request that left before a refresh finished comes back 401 after it —
+       * and used to start a SECOND rotation of the session it had just
+       * renewed. Measured on a device, that was a second ~700 ms refresh on
+       * launch, and every extra rotation of the same family is one more chance
+       * to look like a replay. Self-custody only: on the web the credential is
+       * a cookie this code never sees, and the single-flight covers it.
+       */
+      const current = session.holdsOwnCredential?.() ? session.getToken?.() : '';
+      const superseded = Boolean(current) && current !== options.sentToken;
+      const outcome = superseded ? 'renewed' : await refreshCookieSession();
       if (outcome === 'renewed') {
         const retryHeaders = { ...options.headers };
         if (options.method && !SAFE_METHODS.has(options.method)) {

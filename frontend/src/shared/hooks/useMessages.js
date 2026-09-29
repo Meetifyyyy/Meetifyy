@@ -42,7 +42,11 @@ export function useConversations() {
   const { data: rawConversations = EMPTY_CONVERSATIONS, isLoading, error } = useQuery({
     queryKey: MESSAGE_KEYS.conversations,
     queryFn: () => messagesApi.getConversations(50, 0),
-    enabled: Boolean(isLoggedIn || currentUser?.id),
+    // Signed in, not merely "a profile is cached". The cached profile is there
+    // from the first render of a cold start, so this used to fire while the
+    // session was still being restored — before any credential was in hand —
+    // and spend a 401 on the way to asking again once it was.
+    enabled: isLoggedIn,
     staleTime: 60 * 1000,   // 60s
     gcTime:    5 * 60 * 1000,
     refetchOnWindowFocus: false,
