@@ -15,13 +15,17 @@ const DEBOUNCE_MS = 200;
  * user table. See UsersService.getMentionSuggestions for the scoring logic
  * (mutual connections, recent chats, community membership, prefix match).
  */
-export function useMentionSuggestions({ query = '', communityId = null, maxResults = 15 }) {
+export function useMentionSuggestions({ query = '', communityId = null, maxResults = 15, enabled = true }) {
   const [suggestions, setSuggestions] = useState([]);
   const [loading, setLoading] = useState(false);
   const cacheRef = useRef(new Map()); // cacheKey -> { data, expiresAt }
   const requestIdRef = useRef(0);
 
   useEffect(() => {
+    // Nothing is asked until somebody types "@". Every composer, comment box
+    // and chat input mounts this, and each used to search on mount — the home
+    // feed's composer alone put a mention search on every cold start.
+    if (!enabled) return undefined;
     const cleanQuery = query.trim().toLowerCase();
     const cacheKey = `${cleanQuery}|${communityId || ''}|${maxResults}`;
 
@@ -57,7 +61,7 @@ export function useMentionSuggestions({ query = '', communityId = null, maxResul
     }, DEBOUNCE_MS);
 
     return () => clearTimeout(timer);
-  }, [query, communityId, maxResults]);
+  }, [query, communityId, maxResults, enabled]);
 
   return { suggestions, loading };
 }

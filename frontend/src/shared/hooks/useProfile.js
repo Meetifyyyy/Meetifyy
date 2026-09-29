@@ -25,7 +25,7 @@ export const PROFILE_KEYS = {
  * Fetches a full profile by username.
  * Seeds from IndexedDB so navigating to a recently-viewed profile is instant.
  */
-export function useProfile(username) {
+export function useProfile(username, { enabled = true } = {}) {
   const queryClient = useQueryClient();
   const qk = PROFILE_KEYS.byUsername(username);
 
@@ -39,7 +39,7 @@ export function useProfile(username) {
       warmCover(data?.cover);
       return data;
     },
-    enabled: !!username && username !== 'unknown',
+    enabled: enabled && !!username && username !== 'unknown',
     staleTime: 2 * 60 * 1000,
     gcTime: 15 * 60 * 1000,
     // No keep-previous here: the key IS the identity. Carrying the last

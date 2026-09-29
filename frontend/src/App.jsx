@@ -63,6 +63,8 @@ import NotificationsSkeleton from './features/notifications/components/skeletons
 import SearchSkeleton from './features/search/components/skeletons/SearchSkeleton';
 import SettingsSkeleton from './features/settings/components/skeletons/SettingsSkeleton';
 import SavedPageSkeleton from './features/feed/components/skeletons/SavedPageSkeleton';
+import MessagesRouteSkeleton from './features/messages/shared/components/skeletons/MessagesRouteSkeleton';
+import ActivityDetailSkeleton from './features/crew/components/ActivityDetailSkeleton';
 
 function lazyRoute(componentImport) {
   // Route chunks are precached by the worker that owns this document. A new
@@ -272,7 +274,20 @@ import AccountDeletionGate from './shared/components/AccountDeletionGate';
 import LegalUpdateGate from './shared/components/LegalUpdateGate';
 import VerifiedWelcome from './shared/components/VerifiedWelcome';
 import NotFoundState from './shared/components/ui/NotFoundState';
-import PublicNotFound from './shared/components/PublicNotFound';
+/*
+ * Lazy: the public 404 brings the landing page's navbar, and with it
+ * framer-motion — which made it, not any screen people actually open, the
+ * reason the whole animation engine sat in the startup bundle. It is only ever
+ * shown for a dead link.
+ */
+const LazyPublicNotFound = lazy(() => import('./shared/components/PublicNotFound'));
+function PublicNotFound() {
+  return (
+    <Suspense fallback={null}>
+      <LazyPublicNotFound />
+    </Suspense>
+  );
+}
 
 /**
  * NotFound — shown for authenticated users who hit an unmatched route.
@@ -471,7 +486,7 @@ export default function App({ homeElement }) {
             { path: '/communities',                element: withBoundary(<CommunitiesRoute />, <CommunitiesPageSkeleton />) },
             { path: '/communities/search',         element: withBoundary(<CommunitySearchRoute />, null) },
             { path: '/communities/:id',            element: withBoundary(<CommunityDetailRoute />, null), handle: { wide: true } },
-            { path: '/messages/:param1?/:param2?', element: withBoundary(<MessagesRoute />, null), handle: { wide: true } },
+            { path: '/messages/:param1?/:param2?', element: withBoundary(<MessagesRoute />, <MessagesRouteSkeleton />), handle: { wide: true } },
             // /inbox was the old prefix for the same screens. It stays routable
             // for existing links but redirects, so Messages has exactly one
             // canonical URL per conversation.
@@ -488,7 +503,7 @@ export default function App({ homeElement }) {
             { path: '/campus/events/:id',          element: withBoundary(<CampusEventDetailPage />, null), handle: { wide: true } },
             { path: '/crew',                       element: withBoundary(<FindYourCrewPage />, <CrewSkeleton />), handle: { wide: true } },
             { path: '/crew/create',                element: withBoundary(<CreateActivityPage />, null), handle: { wide: true } },
-            { path: '/crew/:id',                   element: withBoundary(<ActivityDetailPage />, null), handle: { wide: true } },
+            { path: '/crew/:id',                   element: withBoundary(<ActivityDetailPage />, <ActivityDetailSkeleton />), handle: { wide: true } },
             { path: '/saved',                      element: withBoundary(<SavedPage />, <SavedPageSkeleton />) },
             { path: '*',                           element: withBoundary(<NotFound />) },
           ],

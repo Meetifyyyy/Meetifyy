@@ -29,22 +29,22 @@ describe('useGlobalSocketStore handshake', () => {
     useGlobalSocketStore.setState({ socket: null, _lastToken: null, _lastOrigin: null });
   });
 
-  it('names the installed app\'s session, which has no cookie to carry it', () => {
+  it('names the installed app\'s session, which has no cookie to carry it', async () => {
     sessionId.current = 'sess-123';
-    useGlobalSocketStore.getState().connect('tok', 'dev-1');
+    await useGlobalSocketStore.getState().connect('tok', 'dev-1');
     expect(handshake()).toEqual({ token: 'tok', deviceId: 'dev-1', sessionId: 'sess-123' });
   });
 
-  it('takes the token from the API client when the caller has none (the installed app keeps it in secure storage)', () => {
+  it('takes the token from the API client when the caller has none (the installed app keeps it in secure storage)', async () => {
     sessionId.current = 'sess-123';
     accessToken.current = 'stored-token';
-    useGlobalSocketStore.getState().connect(undefined, 'dev-1');
+    await useGlobalSocketStore.getState().connect(undefined, 'dev-1');
     expect(handshake()).toEqual({ token: 'stored-token', deviceId: 'dev-1', sessionId: 'sess-123' });
   });
 
-  it('reads the token at each connection, so a refreshed token is not sent stale', () => {
+  it('reads the token at each connection, so a refreshed token is not sent stale', async () => {
     accessToken.current = 'old';
-    useGlobalSocketStore.getState().connect(undefined, 'dev-1');
+    await useGlobalSocketStore.getState().connect(undefined, 'dev-1');
     const options = ioMock.mock.calls.at(-1)[1];
     accessToken.current = 'new';
     let sent;
@@ -52,9 +52,9 @@ describe('useGlobalSocketStore handshake', () => {
     expect(sent.token).toBe('new');
   });
 
-  it('reads the session id at each connection, so a rotated session is not sent stale', () => {
+  it('reads the session id at each connection, so a rotated session is not sent stale', async () => {
     sessionId.current = 'sess-1';
-    useGlobalSocketStore.getState().connect('tok', 'dev-1');
+    await useGlobalSocketStore.getState().connect('tok', 'dev-1');
     const options = ioMock.mock.calls.at(-1)[1];
     sessionId.current = 'sess-2';
     let sent;
@@ -62,11 +62,18 @@ describe('useGlobalSocketStore handshake', () => {
     expect(sent.sessionId).toBe('sess-2');
   });
 
-  it('sends no session id on the web, where the cookie carries it', () => {
+  it('sends no session id on the web, where the cookie carries it', async () => {
     sessionId.current = '';
     accessToken.current = '';
-    useGlobalSocketStore.getState().connect('tok', 'dev-1');
+    await useGlobalSocketStore.getState().connect('tok', 'dev-1');
     expect(handshake().sessionId).toBeUndefined();
     expect(handshake().token).toBe('tok');
+  });
+
+  it('does not open a socket for a connect that was cancelled while the library loaded', async () => {
+    const pending = useGlobalSocketStore.getState().connect('tok', 'dev-1');
+    useGlobalSocketStore.getState().disconnect();
+    await pending;
+    expect(ioMock).not.toHaveBeenCalled();
   });
 });

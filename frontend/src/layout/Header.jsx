@@ -95,7 +95,32 @@ export default function Header({ variant = 'dashboard', wide = false }) {
    * now track follows immediately and survive a reload. The auth lists stay
    * as a first-paint fallback for the moment before the query resolves.
    */
-  const { profile: ownProfile } = useProfile(username);
+  //
+  // Not on mount, though: the header is on every screen, and this put a
+  // profile fetch into every launch alongside the feed. It is wanted when the
+  // drawer opens, and it warms the Profile tab — so it waits for the drawer or
+  // for the first screen to settle, whichever comes first.
+  const [profileWanted, setProfileWanted] = useState(false);
+  useEffect(() => {
+    if (profileWanted) return undefined;
+    if (drawerOpen) {
+      setProfileWanted(true);
+      return undefined;
+    }
+    let idle = null;
+    const timer = setTimeout(() => {
+      if ('requestIdleCallback' in window) {
+        idle = window.requestIdleCallback(() => setProfileWanted(true), { timeout: 3000 });
+      } else {
+        setProfileWanted(true);
+      }
+    }, 3000);
+    return () => {
+      clearTimeout(timer);
+      if (idle !== null) window.cancelIdleCallback(idle);
+    };
+  }, [drawerOpen, profileWanted]);
+  const { profile: ownProfile } = useProfile(username, { enabled: profileWanted });
 
   const followersCount =
     ownProfile?.stats?.followers

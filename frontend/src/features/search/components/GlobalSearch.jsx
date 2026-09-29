@@ -49,8 +49,16 @@ export default function GlobalSearch() {
 
   const [preSearchPath, setPreSearchPath] = useState('/');
 
-  // Load server-synced recent searches
+  // Load server-synced recent searches — on first focus, not on mount. This
+  // box is in the header of every screen (and hidden on phones), so fetching
+  // on mount put a request on every launch for a list nobody had opened. The
+  // copy in localStorage covers the moment before it lands.
+  const [hasFocused, setHasFocused] = useState(false);
   useEffect(() => {
+    if (isFocused) setHasFocused(true);
+  }, [isFocused]);
+  useEffect(() => {
+    if (!hasFocused) return undefined;
     let mounted = true;
     searchApi.getRecentSearches()
       .then(res => {
@@ -61,7 +69,7 @@ export default function GlobalSearch() {
       })
       .catch(() => {});
     return () => { mounted = false; };
-  }, []);
+  }, [hasFocused]);
 
   const prevQRef = useRef(q);
   // Last debounced value the URL-writer effect acted on. See the guard note below.

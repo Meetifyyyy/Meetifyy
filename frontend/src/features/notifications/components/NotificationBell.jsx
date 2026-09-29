@@ -1,5 +1,4 @@
 import { Link, useLocation } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
 import { BellIcon as BellOutline } from '@heroicons/react/24/outline';
 import { BellIcon as BellSolid } from '@heroicons/react/24/solid';
 import NavIcon from '@layout/NavIcon';
@@ -29,20 +28,14 @@ export default function NotificationBell() {
           solid={<BellSolid />}
         />
         
-        <AnimatePresence>
-          {unreadCount > 0 && (
-            <motion.div
-              key="badge"
-              initial={{ scale: 0 }}
-              animate={{ scale: 1 }}
-              exit={{ scale: 0 }}
-              transition={{ type: 'spring', stiffness: 500, damping: 25 }}
-              className={styles.badge}
-            >
-              {unreadCount > 99 ? '99+' : unreadCount}
-            </motion.div>
-          )}
-        </AnimatePresence>
+        {/* A CSS pop-in, not framer-motion. This bell is in the header of
+            every signed-in screen, so it was the one import that put the
+            whole animation engine into the startup bundle. */}
+        {unreadCount > 0 && (
+          <div className={styles.badge}>
+            {unreadCount > 99 ? '99+' : unreadCount}
+          </div>
+        )}
       </div>
     </Link>
   );

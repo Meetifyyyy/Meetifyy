@@ -115,26 +115,54 @@ export default function DashboardLayoutWrapper() {
     return () => clearTimeout(id);
   }, [ownCover]);
 
+  /**
+   * The primary tabs' route chunks, fetched in the background so switching to
+   * one does not wait on the network.
+   *
+   * One chunk per idle period, starting once the first screen has had time to
+   * settle. All eight used to be imported in a single idle callback with a
+   * 1.5 s deadline — so on a cold start they were downloaded, parsed and
+   * evaluated together (Messages alone is ~100 kB) in the same seconds as the
+   * feed's first render, and FeedRoute was among them although it is the page
+   * already on screen. Ordered by how often each tab is opened first.
+   */
   useEffect(() => {
-    // Preload primary route chunks in background idle time for flicker-free transitions
-    const preload = () => {
-      import('@features/campus/pages/CampusPage');
-      import('@features/messages/pages/MessagesRoute');
-      import('@features/feed/pages/FeedRoute');
-      import('@features/crew/pages/FindYourCrewPage');
-      import('@features/communities/pages/CommunitiesRoute');
-      import('@features/notifications/pages/NotificationsRoute');
-      import('@features/settings/pages/SettingsRoute');
-      import('@features/profile/pages/ProfilePage');
+    const queue = [
+      () => import('@features/messages/pages/MessagesRoute'),
+      () => import('@features/communities/pages/CommunitiesRoute'),
+      () => import('@features/profile/pages/ProfilePage'),
+      () => import('@features/notifications/pages/NotificationsRoute'),
+      () => import('@features/crew/pages/FindYourCrewPage'),
+      () => import('@features/campus/pages/CampusPage'),
+      () => import('@features/settings/pages/SettingsRoute'),
+    ];
+    const hasIdle = 'requestIdleCallback' in window;
+    let timer = null;
+    let idle = null;
+    let cancelled = false;
+
+    const next = () => {
+      const load = queue.shift();
+      if (!load || cancelled) return;
+      load()
+        .catch(() => {})
+        .finally(() => {
+          if (cancelled) return;
+          if (hasIdle) idle = window.requestIdleCallback(next, { timeout: 2000 });
+          else timer = setTimeout(next, 200);
+        });
     };
 
-    if ('requestIdleCallback' in window) {
-      const id = window.requestIdleCallback(preload, { timeout: 1500 });
-      return () => window.cancelIdleCallback(id);
-    } else {
-      const id = setTimeout(preload, 300);
-      return () => clearTimeout(id);
-    }
+    timer = setTimeout(() => {
+      if (hasIdle) idle = window.requestIdleCallback(next, { timeout: 2000 });
+      else next();
+    }, 2500);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+      if (idle !== null) window.cancelIdleCallback(idle);
+    };
   }, []);
 
   useEffect(() => {

@@ -112,7 +112,8 @@ export default function MentionInput({
   const { suggestions, loading } = useMentionSuggestions({
     query: mentionQuery,
     communityId,
-    maxResults: 15
+    maxResults: 15,
+    enabled: mentionActive,
   });
 
   // Track active selection range within the editor
