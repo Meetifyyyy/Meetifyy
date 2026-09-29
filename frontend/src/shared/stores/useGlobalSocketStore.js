@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { io } from 'socket.io-client';
-import { getBackendUrl, getNativeSessionId, isApiFailoverActive, API_PROXY_PREFIX } from '@shared/api/apiClient';
+import { getAccessToken, getBackendUrl, getNativeSessionId, isApiFailoverActive, API_PROXY_PREFIX } from '@shared/api/apiClient';
 
 export const useGlobalSocketStore = create((set, get) => ({
   socket: null,
@@ -37,10 +37,19 @@ export const useGlobalSocketStore = create((set, get) => ({
     const viaProxy = isApiFailoverActive();
     const newSocket = io(socketUrl, {
       path: viaProxy ? `${API_PROXY_PREFIX}/socket.io` : '/socket.io',
-      // A function, so every (re)connection sends the CURRENT session id: the
-      // installed app has no session cookie to carry it, and the gateway
-      // disconnects a handshake that names no session.
-      auth: (send) => send({ token, deviceId, sessionId: getNativeSessionId() || undefined }),
+      // A function, so every (re)connection sends the CURRENT credentials.
+      //
+      // The installed app has no session cookie to carry them, and its tokens
+      // live in secure storage rather than in the `session` object the caller
+      // holds — `token` is undefined there — so they are read from the API
+      // client, which also means a reconnect after a token refresh does not
+      // present the stale one. The gateway disconnects a handshake that names
+      // no token or no session.
+      auth: (send) => send({
+        token: token || getAccessToken() || undefined,
+        deviceId,
+        sessionId: getNativeSessionId() || undefined,
+      }),
       // Start on long-polling and let engine.io upgrade to WebSocket once it has
       // proved the upgrade actually completes.
       //

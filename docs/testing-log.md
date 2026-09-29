@@ -1170,3 +1170,15 @@ and "credential only accepted as a cookie":
   `VoiceMessagePlayer` (cross-origin detection is correct for the app),
   `AuthContext` host comparison, `config.app.siteUrl` (set in every env file),
   `web-only` `window.location.href` uses, CORS for the socket (polling worked).
+
+**Socket fix, second half (2026-09-29).** After the gateway accepted the session
+id the app still reconnected: the connect packet carried `sessionId` but no
+`token`, because on the installed app the token lives in secure storage, not in
+the React `session` `SocketManager` reads. The handshake now takes
+`token || getAccessToken()` at every connection. Verified on the development APK
+against the redeployed dev API: no `41` disconnect, all `socket.io` requests 200,
+the WebSocket upgrade completes (`2probe`/`3probe`, then presence frames), the
+UI no longer says "Reconnecting", and Share -> Copy link yields
+`https://dev.meetifyy.app/post/<id>`. One emit sent immediately on connect still
+gets a single transient `Unauthenticated` (the gateway authenticates after it
+acks the namespace); the client recovers on its own and it predates this work.
