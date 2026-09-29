@@ -83,11 +83,12 @@ export default function SettingsHelpPanel() {
       <div className={settingsStyles.group}>
         {/* Loading State */}
         {isLoading && (
-          <div>
-            {[0, 1, 2, 3].map((i) => (
-              <div key={i} className={panelStyles.skeletonItem}>
-                <Skeleton type="rect" width="75%" height="16px" style={{ borderRadius: '4px' }} />
-                <Skeleton type="rect" width="16px" height="16px" style={{ borderRadius: '4px' }} />
+          <div role="status" aria-label="Loading questions">
+            {/* Question lines only: the chevron beside each is static chrome.
+                The item keeps its flex layout, so the row height is unchanged. */}
+            {['75%', '62%', '70%', '56%'].map((w) => (
+              <div key={w} className={panelStyles.skeletonItem}>
+                <Skeleton type="rect" width={w} height="16px" style={{ borderRadius: '4px' }} />
               </div>
             ))}
           </div>

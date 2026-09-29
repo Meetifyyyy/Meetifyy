@@ -71,11 +71,7 @@ export default function DMList({
 
       <div className={styles.msgConvScroll}>
         {isLoading ? (
-          <>
-            <ConversationSkeleton />
-            <ConversationSkeleton />
-            <ConversationSkeleton />
-          </>
+          <ConversationSkeleton count={7} />
         ) : filteredConvs.length === 0 ? (
           <ConversationEmptyState
             searchVal={searchVal}

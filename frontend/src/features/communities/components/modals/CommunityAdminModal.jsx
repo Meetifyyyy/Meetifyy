@@ -15,6 +15,7 @@ import ConfirmModal from '@shared/components/modals/ConfirmModal';
 import styles from './CommunityAdminModal.module.css';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 import { useScrollLock } from '@shared/hooks/useScrollLock';
+import RowSkeleton from '@shared/components/skeletons/RowSkeleton';
 
 export default function CommunityAdminModal({ community, onClose, onDeleteCommunity }) {
   // Back dismisses this dialog rather than navigating the page behind it.
@@ -499,12 +500,25 @@ export default function CommunityAdminModal({ community, onClose, onDeleteCommun
         {activeTab === 'requests' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
             <div style={{ fontWeight: 600, fontSize: '1rem', color: 'var(--color-text-main)' }}>
-              Pending Requests ({requests.length})
+              {/* No count until the list has loaded: "(0)" while loading is a claim. */}
+              Pending Requests{isLoadingRequests ? '' : ` (${requests.length})`}
             </div>
             {isLoadingRequests ? (
-              <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>
-                Loading requests...
-              </div>
+              <RowSkeleton
+                count={3}
+                avatarSize="40px"
+                rowStyle={{
+                  gap: '0.75rem',
+                  padding: '0.75rem 1rem',
+                  border: '1px solid var(--color-border)',
+                  borderRadius: 'var(--radius-md)',
+                  background: 'var(--color-bg-soft)',
+                  marginBottom: '0.75rem',
+                  minHeight: '4.2rem',
+                  boxSizing: 'border-box',
+                }}
+                label="Loading requests"
+              />
             ) : requests.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>
                 No pending join requests.

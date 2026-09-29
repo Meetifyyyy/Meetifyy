@@ -1,0 +1,89 @@
+/*
+ * Mirrors `.convItem` in ../sidebar/ConversationList.module.css, including its
+ * narrow-layout override, so real rows replace these without moving. Kept as
+ * its own small module so the route-level fallback in App.jsx can use it
+ * without pulling the whole conversation-list stylesheet into the main chunk.
+ */
+.row {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 0.85rem 1rem;
+  margin: 0.35rem 0.6rem;
+  box-sizing: border-box;
+}
+
+.info {
+  flex: 1;
+  min-width: 0;
+}
+
+.line {
+  display: block !important;
+}
+
+@container messages (max-width: 768px) {
+  .row {
+    padding: 0.75rem;
+    margin: 0;
+  }
+}
+
+/* ── Route-level fallback (lazy chunk still loading) ─────────────────────── */
+
+.list {
+  width: 350px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--color-border-light);
+  overflow: hidden;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  height: 72px;
+  padding: 0 1.25rem;
+  border-bottom: 1px solid var(--color-border-light);
+  flex-shrink: 0;
+  box-sizing: border-box;
+}
+
+.title {
+  font-family: "Changa One", cursive;
+  font-weight: normal;
+  font-size: 28.8px;
+  color: var(--color-text-main);
+  margin: 0;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+}
+
+/* The search field and New button arrive with the page; their row is held
+   open so the list below does not move when they do. */
+.searchRowSpace {
+  height: calc(38px + 1.5rem);
+  flex-shrink: 0;
+}
+
+@container messages (max-width: 768px) {
+  .list {
+    width: 100%;
+    flex: 1;
+    min-height: 0;
+    border-right: none;
+    padding-top: 12px;
+  }
+
+  .header {
+    height: auto;
+    padding: 8px 0.25rem 4px;
+    border-bottom: none;
+  }
+
+  .searchRowSpace {
+    height: calc(38px + 0.8rem);
+    margin-top: 0.25rem;
+  }
+}

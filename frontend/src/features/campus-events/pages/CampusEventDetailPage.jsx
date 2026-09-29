@@ -59,10 +59,9 @@ export default function CampusEventDetailPage() {
               <div className={styles.content}>
                 <Skeleton type="text" width="65%" height="36px" style={{ borderRadius: '6px' }} />
                 <div className={styles.infoSection}>
-                  <Skeleton type="rect" width="100%" height="64px" style={{ borderRadius: '14px' }} />
-                  <Skeleton type="rect" width="100%" height="64px" style={{ borderRadius: '14px' }} />
-                  <Skeleton type="rect" width="100%" height="64px" style={{ borderRadius: '14px' }} />
-                  <Skeleton type="rect" width="100%" height="64px" style={{ borderRadius: '14px' }} />
+                  {/* The four info cards as one block: their heights plus the
+                      three 0.75rem gaps between them. */}
+                  <Skeleton type="rect" width="100%" height="calc(4 * 64px + 3 * 0.75rem)" style={{ borderRadius: '14px' }} />
                 </div>
                 <div className={styles.descriptionSection}>
                   <Skeleton type="text" width="28%" height="22px" style={{ borderRadius: '6px' }} />

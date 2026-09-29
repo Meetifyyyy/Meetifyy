@@ -8,6 +8,7 @@ import { useCommunityRecommendations } from '@shared/hooks/useCommunityRecommend
 import CommunityRow from '../components/directory/CommunityRow';
 import CommunityRowSkeleton from '../components/directory/CommunityRowSkeleton';
 import SearchLayout from '@features/search/components/SearchLayout';
+import { useDelayedFlag } from '@features/search/hooks/useDelayedFlag';
 import searchStyles from '@features/search/pages/SearchResultsRoute.module.css';
 import listStyles from '../components/directory/CommunityList.module.css';
 import styles from './CommunitySearchRoute.module.css';
@@ -66,6 +67,8 @@ export default function CommunitySearchRoute() {
   // While a new query is in flight the previous results stay on screen, dimmed,
   // instead of the list emptying on every keystroke.
   const isUpdating = !showingSuggestions && results.isPlaceholderData;
+  // Same rule as the global search field: no spinner for quick round trips.
+  const showUpdating = useDelayedFlag(isUpdating, 300);
 
   return (
     <SearchLayout section="communities" mainClassName={styles.page}>
@@ -89,7 +92,7 @@ export default function CommunitySearchRoute() {
                 value={value}
                 onChange={(e) => setValue(e.target.value)}
               />
-              {isUpdating && <Loader2 size={16} className={searchStyles.updatingSpinner} aria-label="Updating results" />}
+              {showUpdating && <Loader2 size={16} className={searchStyles.updatingSpinner} aria-label="Updating results" />}
               {value && (
                 <button
                   type="button"
@@ -149,11 +152,15 @@ export default function CommunitySearchRoute() {
             <div className={listStyles.more}>
               <button
                 type="button"
-                className={listStyles.secondaryBtn}
+                className={`${listStyles.secondaryBtn} ${results.isFetchingNextPage ? listStyles.busy : ''}`}
                 onClick={() => results.fetchNextPage()}
                 disabled={results.isFetchingNextPage}
+                aria-busy={results.isFetchingNextPage}
               >
-                {results.isFetchingNextPage ? 'Loading…' : 'Show more'}
+                <span className={listStyles.busyLabel}>Show more</span>
+                {results.isFetchingNextPage && (
+                  <span className={`spinner ${listStyles.busySpinner}`} role="status" aria-label="Loading more communities" />
+                )}
               </button>
             </div>
           )}

@@ -1,0 +1,14 @@
+/* Same geometry as `.item` in ../NotificationItem.module.css, so the real rows
+   replace these without the card changing height. */
+.row {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid var(--color-border-light);
+  box-sizing: border-box;
+}
+
+.row:last-child {
+  border-bottom: none;
+}

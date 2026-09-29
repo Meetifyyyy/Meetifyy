@@ -5,6 +5,7 @@ import { useSmartBack } from '@shared/hooks/useSmartBack';
 import { useAuth } from '@shared/context/AuthContext';
 
 import Avatar from '@shared/components/avatar/Avatar';
+import Skeleton from '@shared/components/skeletons/Skeleton';
 import sharedStyles from '../components/skeletons/CampusShared.module.css';
 import pageStyles from './DirectoryPage.module.css';
 const styles = { ...sharedStyles, ...pageStyles };
@@ -173,6 +174,19 @@ const DirectoryCard = memo(function DirectoryCard({ user, courses, onSelect, isS
   );
 });
 
+/** A directory card while it loads: avatar + name/course block. */
+function DirectoryCardSkeleton() {
+  return (
+    <div className={styles.directoryCard} style={{ cursor: 'default' }} aria-hidden="true">
+      <Skeleton type="circle" width="56px" height="56px" />
+      <div className={styles.cardText} style={{ gap: '0.45rem' }}>
+        <Skeleton type="text" width="60%" height="1rem" style={{ margin: 0 }} />
+        <Skeleton type="text" width="40%" height="0.8rem" style={{ margin: 0 }} />
+      </div>
+    </div>
+  );
+}
+
 export default function DirectoryPage() {
   const navigate = useNavigate();
   const goBack = useSmartBack();
@@ -310,6 +324,11 @@ export default function DirectoryPage() {
                 onSelect={openProfile}
               />
             ))}
+            {/* First page not here yet: cards the size of the real ones,
+                rather than an empty grid. */}
+            {isLoading && collegeStudents.length === 0 && (
+              Array.from({ length: 6 }, (_, i) => <DirectoryCardSkeleton key={`skeleton-${i}`} />)
+            )}
             {!isLoading && collegeStudents.length === 0 && !showCurrentUserCard && (
               <p className={styles.emptyState}>
                 No students found.
@@ -319,9 +338,9 @@ export default function DirectoryPage() {
             {/* Infinite-scroll sentinel + next-page indicator */}
             <div ref={sentinelRef} className={styles.pageSentinel} aria-hidden="true" />
             {isFetchingNextPage && (
-              <p className={styles.loadingMore}>
-                Loading more…
-              </p>
+              <div className={styles.loadingMore}>
+                <span className="spinner" role="status" aria-label="Loading more students" />
+              </div>
             )}
           </div>
         </div>

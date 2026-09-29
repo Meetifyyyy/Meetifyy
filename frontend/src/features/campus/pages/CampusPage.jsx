@@ -19,6 +19,7 @@ import Menu, { MenuItem, useMenu } from '@shared/components/ui/Menu';
 import { useActivities } from '@shared/hooks/useCrew';
 import CrewCard from '@features/crew/components/cards/CrewCard';
 import CrewCardSkeleton from '@features/crew/components/cards/CrewCardSkeleton';
+import Skeleton from '@shared/components/skeletons/Skeleton';
 import { mapActivity } from '@shared/utils/mapActivity';
 import VerificationGate from '@shared/components/VerificationGate/VerificationGate';
 import { resolveCommunityAvatar } from '@shared/utils/avatar';
@@ -256,8 +257,8 @@ export default function CampusPage() {
   // activities feed had no gate of its own and loaded behind the locked page.
   const isVerified = useIsVerified();
 
-  const { campusUsers } = useCampusUsers(50);
-  const { campusCommunities } = useCampusCommunities();
+  const { campusUsers, isLoading: campusUsersLoading } = useCampusUsers(50);
+  const { campusCommunities, isLoading: campusCommunitiesLoading } = useCampusCommunities();
 
   // Lightweight discovery surface: only upcoming events here. The full
   // Upcoming/Ongoing/Past breakdown lives on the dedicated /campus/events page.
@@ -469,7 +470,17 @@ export default function CampusPage() {
               {visibleSuggestedUsers.map(user => (
                 <SuggestedUserCard key={user.id} user={user} onSelect={openProfile} />
               ))}
-              {suggestedUsers.length === 0 && (
+              {/* Still loading is not "no suggestions": hold the row with
+                  avatar + name blocks until the users arrive. */}
+              {suggestedUsers.length === 0 && campusUsersLoading && (
+                Array.from({ length: MIN_SUGGESTED_USERS }, (_, i) => (
+                  <div key={i} className={styles.knowCard} aria-hidden="true">
+                    <Skeleton type="circle" width="88px" height="88px" />
+                    <Skeleton type="text" width="64px" height="0.7rem" style={{ margin: 0 }} />
+                  </div>
+                ))
+              )}
+              {suggestedUsers.length === 0 && !campusUsersLoading && (
                 <span style={{ color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>No suggestions available.</span>
               )}
             </div>
@@ -495,6 +506,15 @@ export default function CampusPage() {
                 </button>
               )}
             </div>
+            {!hasCommunities && campusCommunitiesLoading && (
+              <div className={styles.communitiesSectionWrapper} aria-hidden="true">
+                <Skeleton
+                  type="rect"
+                  height="calc(52px + 1.9rem + 2px)"
+                  style={{ display: 'block', borderRadius: 'var(--radius-lg, 16px)' }}
+                />
+              </div>
+            )}
             {hasCommunities && (
               <div className={styles.communitiesSectionWrapper}>
                 <div className={styles.communitiesScrollContainer} ref={communityListRef}>

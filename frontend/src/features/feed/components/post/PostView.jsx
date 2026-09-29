@@ -108,11 +108,8 @@ function PostContentSkeleton() {
         <Skeleton type="rect" width="92%" height="14px" style={{ borderRadius: '4px' }} />
         <Skeleton type="rect" width="60%" height="14px" style={{ borderRadius: '4px' }} />
       </div>
-      <div style={{ display: 'flex', gap: '1.5rem', marginTop: '1.25rem' }}>
-        <Skeleton type="rect" width="60px" height="28px" style={{ borderRadius: '14px' }} />
-        <Skeleton type="rect" width="60px" height="28px" style={{ borderRadius: '14px' }} />
-        <Skeleton type="rect" width="60px" height="28px" style={{ borderRadius: '14px' }} />
-      </div>
+      {/* The action row is static chrome: reserve its height, draw nothing. */}
+      <div style={{ height: '28px', marginTop: '1.25rem' }} />
     </div>
   );
 }

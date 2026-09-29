@@ -464,6 +464,7 @@ const EMPTY_DATE_TIME = {
 };
 import { DEFAULT_ACTIVITY_COVERS as RANDOM_COVERS } from '@shared/constants/activityCovers';
 import { getProcessedAvatarUrl } from '@shared/components/avatar/Avatar';
+import RowSkeleton from '@shared/components/skeletons/RowSkeleton';
 
 /**
  * Solid-colour covers used when the user explicitly removes the cover image.
@@ -725,9 +726,16 @@ function ActivityCreatedModal({ activityTitle, coverImage, activityDate, creatio
 
         <div style={{ flex: 1, overflowY: 'auto', padding: '0.5rem 1.5rem', display: 'flex', flexDirection: 'column' }}>
           {isLoading ? (
-            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '120px' }}>
-              <p style={{ textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '0.85rem', margin: 0 }}>Loading…</p>
-            </div>
+            <RowSkeleton
+              count={5}
+              avatarSize="38px"
+              rowStyle={{
+                gap: '0.75rem',
+                padding: '0.65rem 0',
+                borderBottom: '1px solid var(--color-border-light)',
+              }}
+              label="Loading friends"
+            />
           ) : (isError || cannotLoadFriends) ? (
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.6rem', alignItems: 'center', justifyContent: 'center', minHeight: '120px' }}>
               <p style={{ textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '0.85rem', margin: 0 }}>

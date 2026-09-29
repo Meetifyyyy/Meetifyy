@@ -107,7 +107,11 @@ function formatDateTime(activity) {
  */
 function AttendeesMore({ canExpand, total, shown, onExpand, hasNextPage, isFetching, onLoadMore }) {
   if (isFetching) {
-    return <div className={styles.attendeesMore} aria-live="polite">Loading…</div>;
+    return (
+      <div className={styles.attendeesMore}>
+        <span className={`spinner ${styles.attendeesMoreSpinner}`} role="status" aria-label="Loading attendees" />
+      </div>
+    );
   }
   if (canExpand) {
     const remaining = Math.max((total || 0) - shown, 0);

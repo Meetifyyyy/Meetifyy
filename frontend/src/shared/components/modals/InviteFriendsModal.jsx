@@ -11,6 +11,7 @@ import styles from './InviteFriendsModal.module.css';
 import { Search, X, Check } from '@shared/components/icons';
 import { filterCompatibleUsers } from '@shared/lib/studentYearPolicy';
 import { useDebounce } from '@shared/hooks/useDebounce';
+import RowSkeleton from '../skeletons/RowSkeleton';
 
 export default function InviteFriendsModal({
   activityId,
@@ -142,7 +143,23 @@ export default function InviteFriendsModal({
 
         <div className={styles.body}>
           {isLoadingFriends ? (
-            <div className={styles.emptyState}>Loading friends...</div>
+            // This sheet is always dark, whatever the app theme, so the
+            // skeleton is pinned to its dark palette.
+            <div data-theme="dark">
+              <RowSkeleton
+                count={5}
+                avatarSize="48px"
+                rowStyle={{
+                  gap: '0.85rem',
+                  padding: '0.75rem',
+                  borderRadius: '12px',
+                  background: 'rgba(255, 255, 255, 0.03)',
+                  border: '1px solid rgba(255, 255, 255, 0.05)',
+                  marginBottom: '0.5rem',
+                }}
+                label="Loading friends"
+              />
+            </div>
           ) : filteredFriends.length === 0 ? (
             <div className={styles.emptyState}>
               {searchQuery ? 'No friends match your search.' : 'You are not following any friends yet.'}

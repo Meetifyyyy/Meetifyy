@@ -320,25 +320,3 @@
     margin: 0.25rem 0 0.25rem 0.5rem;
   }
 }
-/* ── Loading ────────────────────────────────────────────────────────────────
-   Shown while the first page of notifications is on its way.
-
-   A spinner rather than the six skeleton rows this used to render. Skeletons
-   are the right choice when the shape of what is coming is known and fixed;
-   a notification list is not — the rows are different heights, there may be
-   four of them or none, and the skeletons were guessing wrong often enough
-   that content visibly jumped when it landed. One spinner makes no promise
-   about the shape, so nothing has to be corrected. It is also a great deal
-   less DOM on a page whose whole job is to render quickly. */
-.loadingState {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 0.85rem;
-  /* Holds the same vertical space the empty state does, so switching between
-     loading, empty and loaded does not resize the scroll container. */
-  min-height: 60vh;
-  color: var(--color-text-muted);
-  font-size: 0.9rem;
-}

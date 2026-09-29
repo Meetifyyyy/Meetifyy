@@ -884,6 +884,7 @@ export default function CommunityView({ communityId, onBack, onPostClick, onComm
     fetchNextPage,
     hasNextPage,
     isFetchingNextPage,
+    isPending: isPostsPending,
   } = useInfiniteQuery({
     queryKey: ['community-posts', communityId],
     queryFn: async ({ pageParam }) => {
@@ -1378,7 +1379,14 @@ export default function CommunityView({ communityId, onBack, onPostClick, onComm
               )}
 
               <div className={styles.postsFeed}>
-                {communityPosts.length === 0 ? (
+                {communityPosts.length === 0 && isPostsPending ? (
+                  // The first page has not arrived: this is not an empty
+                  // community yet, so it must not say so.
+                  <>
+                    <PostSkeleton />
+                    <PostSkeleton />
+                  </>
+                ) : communityPosts.length === 0 ? (
                   <div className={styles.emptyPosts}>
                     <div
                       className={styles.emptyPostsIcon}

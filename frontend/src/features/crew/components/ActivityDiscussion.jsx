@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, useCallback, memo } from 
 import { createPortal } from 'react-dom';
 import { MessageCircle, X, Send, ChevronUp } from '@shared/components/icons';
 import Avatar from '@shared/components/avatar/Avatar';
+import Skeleton from '@shared/components/skeletons/Skeleton';
 import { CollegeRepresentativeBadge } from '@shared/components/badges/CollegeRepresentativeBadge';
 import { useAuth } from '@shared/context/AuthContext';
 import { timeAgo } from '@shared/utils/time';
@@ -151,18 +152,37 @@ export const ActivityDiscussion = memo(function ActivityDiscussion({
       <div className={styles.messages} ref={scrollRef} onScroll={handleScroll}>
         {hasMore && !isLoading && (
           <button
-            className={styles.loadOlderBtn}
+            className={`${styles.loadOlderBtn} ${isFetchingMore ? styles.busy : ''}`}
             onClick={handleLoadOlder}
             disabled={isFetchingMore}
+            aria-busy={isFetchingMore}
           >
-            <ChevronUp size={14} />
-            {isFetchingMore ? 'Loading…' : 'Load earlier messages'}
+            {/* The label keeps its place while loading so the button does not
+                change size; a spinner sits over it. */}
+            <span className={styles.busyLabel}>
+              <ChevronUp size={14} />
+              Load earlier messages
+            </span>
+            {isFetchingMore && (
+              <span className={`spinner ${styles.busySpinner}`} role="status" aria-label="Loading earlier messages" />
+            )}
           </button>
         )}
 
         {isLoading ? (
-          <div className={styles.stateMsg}>
-            <span className="spinner" aria-hidden="true" />
+          // Message rows (avatar + name + text) until the history arrives.
+          // Scoped dark: this panel is always drawn on dark glass, including
+          // the floating variant that is portalled outside the dark page.
+          <div className={styles.skeletonRows} data-theme="dark" role="status" aria-label="Loading discussion">
+            {['62%', '45%', '70%'].map((width) => (
+              <div key={width} className={styles.msgRow} aria-hidden="true">
+                <Skeleton type="circle" width="28px" height="28px" />
+                <div className={styles.skeletonBody}>
+                  <Skeleton type="text" width="30%" height="0.7rem" style={{ margin: 0 }} />
+                  <Skeleton type="rect" width={width} height="2rem" style={{ borderRadius: 12 }} />
+                </div>
+              </div>
+            ))}
           </div>
         ) : isError ? (
           <div className={styles.stateMsg}>Couldn't load the discussion.</div>

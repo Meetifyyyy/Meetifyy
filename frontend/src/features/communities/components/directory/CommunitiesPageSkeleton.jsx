@@ -1,16 +1,59 @@
-import Skeleton from '@shared/components/skeletons/Skeleton';
+import { useSearchParams } from 'react-router-dom';
+import { Plus, Search, Users, Compass } from '@shared/components/icons';
 import CommunityRowSkeleton from './CommunityRowSkeleton';
+import SectionHeading from './SectionHeading';
+import listStyles from './CommunityList.module.css';
 import pageStyles from '../../pages/CommunitiesRoute.module.css';
 
-/** Route fallback for /communities, laid out like the page it stands in for. */
+const TABS = [
+  { id: 'yours', label: 'Yours', Icon: Users },
+  { id: 'explore', label: 'Explore', Icon: Compass },
+];
+
+/**
+ * Route fallback for /communities, laid out like the page it stands in for.
+ * The header (title, search and create buttons, tabs) is static, so it is
+ * drawn for real — it only shows while the page's code loads, so its controls
+ * are inert. Only the list is a placeholder.
+ */
 export default function CommunitiesPageSkeleton() {
+  const [params] = useSearchParams();
+  const tab = params.get('tab') === 'explore' ? 'explore' : 'yours';
+
   return (
-    <main className="centre" aria-hidden="true">
+    <main className={`centre ${pageStyles.page}`} aria-busy="true">
       <div className={pageStyles.box}>
-        <div style={{ padding: '0.9rem 0' }}>
-          <Skeleton type="text" width="150px" height="1.4rem" style={{ margin: 0 }} />
+        <div className={pageStyles.header} aria-hidden="true">
+          <div className={pageStyles.topBar}>
+            <h1 className={pageStyles.title}>Communities</h1>
+            <div className={pageStyles.topActions}>
+              <button type="button" className={pageStyles.iconBtn} tabIndex={-1}>
+                <Search size={20} strokeWidth={2.5} />
+              </button>
+              <button type="button" className={`${pageStyles.iconBtn} ${pageStyles.iconBtnPrimary}`} tabIndex={-1}>
+                <Plus size={20} strokeWidth={2.75} />
+              </button>
+            </div>
+          </div>
+          <div className={pageStyles.tabs}>
+            {TABS.map(({ id, label, Icon }) => (
+              <button
+                key={id}
+                type="button"
+                tabIndex={-1}
+                className={`${pageStyles.tab} ${tab === id ? pageStyles.tabActive : ''}`}
+              >
+                <Icon size={18} aria-hidden="true" />
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
-        <CommunityRowSkeleton count={5} />
+
+        <section className={listStyles.section}>
+          {tab === 'explore' && <SectionHeading title="Discover" meta="Public and private" />}
+          <CommunityRowSkeleton count={tab === 'explore' ? 5 : 4} />
+        </section>
       </div>
     </main>
   );

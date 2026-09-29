@@ -3,17 +3,15 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { render, cleanup } from '@testing-library/react';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import SettingsSkeleton from '../components/skeletons/SettingsSkeleton';
-import { SETTINGS_TREE } from '../pages/SettingsRoute';
 
 /**
- * A skeleton is only worth showing if it is the shape of what replaces it. This
- * one had drifted a restructure behind the real page — three labelled sections
- * of seven flat rows, against a root that renders one card of category rows —
- * so it collapsed into a different layout on mount.
+ * The Settings chunk-load fallback.
  *
- * The row count is asserted against SETTINGS_TREE rather than hardcoded, so
- * adding or removing a root entry fails here instead of silently reintroducing
- * the mismatch this rewrite fixed.
+ * Everything on the Settings root is static and arrives with the chunk, so the
+ * fallback draws only the real frame and top bar. Skeleton icon tiles, label
+ * bars and chevrons stood for nothing that was loading, and twice drifted into
+ * a second layout the page then snapped into - these tests pin that they stay
+ * gone, and that the header is the real, working one.
  */
 function renderAt(path) {
   return render(
@@ -29,29 +27,28 @@ function renderAt(path) {
 describe('SettingsSkeleton', () => {
   afterEach(cleanup);
 
-  it('draws one placeholder row per root entry, plus Log Out', () => {
-    const { container } = renderAt('/settings');
-    const rows = container.querySelectorAll('[class*="rowItem"]');
-    expect(rows.length).toBe(SETTINGS_TREE.length + 1);
+  it('renders the real title and a working back button, not placeholders', () => {
+    const { getByText, getByRole } = renderAt('/settings');
+    expect(getByText('Settings')).toBeTruthy();
+    expect(getByRole('button', { name: 'Go back' })).toBeTruthy();
   });
 
-  it('gives each list row the icon, two text bars and chevron the real row has', () => {
+  it('does not skeletonise the static category list', () => {
     const { container } = renderAt('/settings');
-    const firstRow = container.querySelector('[class*="rowItem"]');
-    // icon tile + text column + chevron
-    expect(firstRow.children.length).toBe(3);
-    expect(firstRow.querySelector('[class*="rowText"]').children.length).toBe(2);
+    expect(container.querySelectorAll('[class*="skeleton"]').length).toBe(0);
+    expect(container.querySelectorAll('[class*="rowItem"]').length).toBe(0);
   });
 
-  it('renders both panes, so the split layout has no gap on load', () => {
+  it('keeps the split frame, so the page lands in the same shape', () => {
     const { container } = renderAt('/settings');
     expect(container.querySelector('[class*="listPane"]')).toBeTruthy();
     expect(container.querySelector('[class*="detailPane"]')).toBeTruthy();
   });
 
-  it('renders on a panel URL too', () => {
-    const { container } = renderAt('/settings/interests');
-    expect(container.querySelector('[class*="detailPane"]')).toBeTruthy();
-    expect(container.querySelectorAll('[class*="detailRow"]').length).toBe(4);
+  it('leaves the title blank on a panel URL rather than guessing it', () => {
+    const { container, queryByText, getByRole } = renderAt('/settings/interests');
+    expect(queryByText('Settings')).toBeNull();
+    expect(getByRole('button', { name: 'Go back' })).toBeTruthy();
+    expect(container.querySelector('[class*="topBarTitle"]').textContent).toBe('');
   });
 });

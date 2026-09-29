@@ -1,4 +1,7 @@
-/* ── Settings Skeleton Module CSS ── */
+/* ── Settings chunk-load fallback ──
+   Mirrors the frame and top bar in pages/SettingsRoute.module.css (surface,
+   radius, 58px bar with no bottom rule, 40px back button, Changa One title) so
+   the real page replaces it without the header moving. */
 .page {
   --settings-gutter: 20px;
   position: relative;
@@ -11,37 +14,12 @@
   max-height: calc(100dvh - 60px - 0.5rem);
   overflow: hidden;
   box-sizing: border-box;
-  background: var(--color-bg-white, #ffffff);
+  background: var(--color-surface-screen);
   border-radius: var(--radius-xl, 20px);
   border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
   box-shadow: var(--shadow-sm, 0 1px 3px rgba(0, 0, 0, 0.04));
 }
 
-:global([data-theme="dark"]) .page {
-  background: var(--color-bg-alt, #181a1f);
-  border-color: var(--color-border, #333945);
-}
-
-/* ── Mobile Full-Screen Full-Bleed Adjustments ── */
-@media (max-width: 768px) {
-  .page {
-    --settings-gutter: 16px;
-    border-radius: 0 !important;
-    border: none !important;
-    box-shadow: none !important;
-    height: 100% !important;
-    min-height: 100dvh !important;
-    max-height: none !important;
-  }
-
-  .topBar {
-    border-top-left-radius: 0 !important;
-    border-top-right-radius: 0 !important;
-    padding: 0 8px;
-  }
-}
-
-/* ── Top Bar Skeleton ── */
 .topBar {
   position: sticky;
   top: 0;
@@ -51,18 +29,34 @@
   justify-content: space-between;
   height: 58px;
   padding: 0 16px;
-  background: var(--color-bg-white);
+  background: var(--color-surface-screen);
   border-bottom: 1px solid var(--color-border-light);
   border-top-left-radius: var(--radius-xl, 20px);
   border-top-right-radius: var(--radius-xl, 20px);
 }
 
-:global([data-theme="dark"]) .topBar {
-  background: var(--color-bg-alt, #181a1f);
-  border-color: var(--color-border, #333945);
+.backBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: var(--color-text-main);
+  border-radius: var(--radius-full);
+  flex-shrink: 0;
 }
 
-/* ── Split Layout Container ── */
+.topBarTitle {
+  font-family: 'Changa One', sans-serif;
+  font-size: 1.3rem;
+  font-weight: normal;
+  color: var(--color-text-main);
+  letter-spacing: -0.01em;
+}
+
 .splitBody {
   display: flex;
   flex: 1;
@@ -70,130 +64,44 @@
   overflow: hidden;
 }
 
-/* ── Left Navigation List Pane ── */
-.listPane {
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  overflow-y: auto;
-  scrollbar-width: none;
-  background: var(--color-bg-white);
-}
-
-.listPane::-webkit-scrollbar {
-  display: none;
-}
-
-:global([data-theme="dark"]) .listPane {
-  background: var(--color-bg-alt, #181a1f);
-}
-
-/* ── Right Detail Content Pane ── */
+.listPane,
 .detailPane {
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  overflow-y: auto;
-  scrollbar-width: none;
-  background: var(--color-bg-white);
-}
-
-.detailPane::-webkit-scrollbar {
   display: none;
 }
 
-:global([data-theme="dark"]) .detailPane {
-  background: var(--color-bg-alt, #181a1f);
-}
-
-/* ── Responsive Split Breakdown ── */
-@media (min-width: 1024px) {
-  .listPane {
-    width: 320px;
-    flex-shrink: 0;
-    border-right: 1px solid var(--color-border-light);
-    display: flex !important;
+@media (max-width: 768px) {
+  .page {
+    --settings-gutter: 16px;
+    border-radius: 0;
+    border: none;
+    box-shadow: none;
+    height: 100%;
+    max-height: none;
   }
 
-  :global([data-theme="dark"]) .listPane {
-    border-right-color: var(--color-border, #333945);
+  .topBar {
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+    border-bottom: none;
+    padding: 0 8px;
+  }
+}
+
+/* Desktop split: the list pane's surface and rule are drawn so the frame the
+   page lands in is already the right shape. */
+@media (min-width: 1024px) {
+  .listPane {
+    display: block;
+    width: 320px;
+    flex-shrink: 0;
+    background: var(--color-bg-white);
+    border-right: 1px solid var(--color-border-light);
   }
 
   .detailPane {
+    display: block;
     flex: 1;
     min-width: 0;
-    display: flex !important;
+    background: var(--color-bg-white);
   }
-}
-
-@media (max-width: 1023px) {
-  /* On mobile/tablet, show only list when no panel, or detail when panel is active */
-  .hideMobileList {
-    display: none !important;
-  }
-
-  .hideMobileDetail {
-    display: none !important;
-  }
-}
-
-/* ── Inner Scrollable Content ── */
-.bodyContent {
-  flex: 1;
-  padding: 16px 0 32px;
-}
-
-/* ── Minimal Card Group Skeleton ── */
-.cardGroup {
-  background: var(--color-bg-white);
-  border: 1px solid var(--color-border-light);
-  border-radius: var(--radius-lg, 16px);
-  margin: 0 var(--settings-gutter) 14px;
-  overflow: hidden;
-  box-shadow: var(--shadow-sm, 0 1px 3px rgba(0, 0, 0, 0.04));
-}
-
-:global([data-theme="dark"]) .cardGroup {
-  background: var(--color-bg-alt, #181a1f);
-  border-color: var(--color-border, #333945);
-}
-
-/* ── List Row Silhouette ── */
-.rowItem {
-  display: flex;
-  align-items: center;
-  padding: 12px var(--settings-gutter);
-  gap: 12px;
-}
-
-/* Mirrors .rowText in SettingsRoute.module.css — the label/description column
-   between the icon tile and the chevron. Its 2px gap and the 13px/10px bars
-   add up to the same height as the real two-line row, which is what keeps the
-   list from shifting when the content arrives. */
-.rowText {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.rowDivider {
-  height: 1px;
-  background: var(--color-border-light);
-  margin-left: calc(var(--settings-gutter) + 48px);
-}
-
-:global([data-theme="dark"]) .rowDivider {
-  background: var(--color-border, #333945);
-}
-
-/* ── Detail Pane Row ── */
-.detailRow {
-  padding: 14px var(--settings-gutter);
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
 }

@@ -1,4 +1,11 @@
+import Skeleton from '@shared/components/skeletons/Skeleton';
 import styles from './ModeratorPermissionList.module.css';
+
+const SKELETON_LINES = [
+  ['38%', '82%'],
+  ['46%', '74%'],
+  ['34%', '88%'],
+];
 
 /**
  * The moderator permission list, rendered identically wherever it appears.
@@ -14,7 +21,22 @@ import styles from './ModeratorPermissionList.module.css';
  */
 export default function ModeratorPermissionList({ permissions, isLoading, isError }) {
   if (isLoading) {
-    return <p className={styles.state}>Loading permissions…</p>;
+    // A few label + description lines in the list's own rhythm. The check
+    // mark beside each entry is static chrome, so its column is left empty
+    // rather than drawn, and the text lines up with where the real text lands.
+    return (
+      <ul className={styles.list} role="status" aria-label="Loading permissions">
+        {SKELETON_LINES.map(([label, desc]) => (
+          <li key={label} className={styles.item} aria-hidden="true">
+            <span className={styles.checkSpace} />
+            <span className={styles.body}>
+              <Skeleton type="text" width={label} height="0.9rem" style={{ display: 'block', marginBottom: '0.25rem' }} />
+              <Skeleton type="text" width={desc} height="0.8rem" style={{ display: 'block', marginBottom: 0 }} />
+            </span>
+          </li>
+        ))}
+      </ul>
+    );
   }
 
   if (isError || !permissions?.length) {

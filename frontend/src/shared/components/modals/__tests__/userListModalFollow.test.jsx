@@ -325,7 +325,8 @@ describe('UserListModal — unfollowing from the list', () => {
  * for a few frames every time the modal was reopened.
  *
  * These tests pin the property that removes the flicker at its source: on
- * reopen there is nothing cached to render, so the modal shows its spinner
+ * reopen there is nothing cached to render, so the modal shows its loading
+ * skeleton
  * and the first rows it ever paints are the server's.
  */
 describe('UserListModal — reopening after an unfollow', () => {
@@ -346,7 +347,7 @@ describe('UserListModal — reopening after an unfollow', () => {
   const loadingVisible = () =>
     document.querySelectorAll('[class*="loadingState"]').length > 0;
 
-  it('shows the spinner, not the previous list, while the reopen fetch is in flight', async () => {
+  it('shows the loading skeleton, not the previous list, while the reopen fetch is in flight', async () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
     const first = renderModal({ type: 'following', queryClient });
@@ -417,7 +418,7 @@ describe('UserListModal — reopening after an unfollow', () => {
     expect(queryClient.getQueryData(['following', 'me', ''])).toBeUndefined();
   });
 
-  it('keeps rows on screen while a NEXT page loads, rather than flashing the spinner', async () => {
+  it('keeps rows on screen while a NEXT page loads, rather than flashing the loading skeleton', async () => {
     // A full page, so the query believes there is more to fetch.
     const pageOne = Array.from({ length: 20 }, (_, i) => ({
       id: `p${i}`,
@@ -441,7 +442,7 @@ describe('UserListModal — reopening after an unfollow', () => {
     expect(getFollowingMock).toHaveBeenLastCalledWith('me', 20, 20, false, '');
 
     // The loading gate must exclude next-page fetches: replacing the list with
-    // a spinner over the list mid-scroll would break infinite loading outright.
+    // a loading state over the list mid-scroll would break infinite loading outright.
     expect(loadingVisible()).toBe(false);
     expect(screen.getByText('@user0')).toBeTruthy();
 

@@ -6,6 +6,7 @@ import { apiClient } from '@shared/api/apiClient';
 import styles from '../pages/SettingsRoute.module.css';
 import { VERIFICATION_ALLOWED_TYPES } from '@shared/constants/mediaLimits';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import Skeleton from '@shared/components/skeletons/Skeleton';
 import VerificationCameraCapture from './VerificationCameraCapture';
 import {
   prepareVerificationDocument,
@@ -234,8 +235,10 @@ export default function SettingsVerificationPanel() {
         )}
 
         {verificationLoading && (
-          <div style={{ marginTop: '1rem', color: 'var(--color-text-light)', fontSize: '0.875rem' }}>
-            <span>Checking your verification status…</span>
+          // One coarse block where the review card or the submission form
+          // will land; which of the two is not known until this resolves.
+          <div role="status" aria-label="Checking your verification status" style={{ marginTop: '1rem' }}>
+            <Skeleton type="rect" width="100%" height="88px" style={{ display: 'block', borderRadius: '12px' }} />
           </div>
         )}
 

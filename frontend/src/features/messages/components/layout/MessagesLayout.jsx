@@ -232,9 +232,17 @@ export default function MessagesLayout() {
       ? (baseConv.avatarKey || baseConv.avatar || null)
       : (baseConv.avatar || initialPage?.avatar || otherMsg?.senderAvatar || null);
 
+    // Opened by deep link or reload before the conversation list arrived: the
+    // history response carries no name or avatar, so until the list (or a
+    // message from the other side) supplies one there is nothing true to show.
+    // The header renders a placeholder block for this instead of the literal
+    // fallback name "Chat" with a generic avatar.
+    const identityPending = !baseConv.isDraft && !baseConv.name && !initialPage?.name && !otherMsg && isConversationsLoading;
+
     return {
       ...baseConv,
       name: inferredName,
+      identityPending,
       avatar: inferredAvatar,
       messages: allMessages,
       participants: initialPage?.participants || baseConv.participants || baseConv.members || [],
@@ -251,7 +259,7 @@ export default function MessagesLayout() {
         initialPage?.targetUserUnavailable ?? baseConv.targetUserUnavailable,
       nextCursor: latestPage?.nextCursor || null,
     };
-  }, [baseConv, allMessages, rawPages, currentUser?.id]);
+  }, [baseConv, allMessages, rawPages, currentUser?.id, isConversationsLoading]);
 
   // URL sync
   useEffect(() => {
@@ -389,11 +397,7 @@ export default function MessagesLayout() {
 
           <div className={sidebarStyles.msgConvScroll}>
             {isConversationsLoading ? (
-              <>
-                <ConversationSkeleton />
-                <ConversationSkeleton />
-                <ConversationSkeleton />
-              </>
+              <ConversationSkeleton count={7} />
             ) : filteredConvs.length === 0 ? (
               <ConversationEmptyState
                 searchVal={searchVal}

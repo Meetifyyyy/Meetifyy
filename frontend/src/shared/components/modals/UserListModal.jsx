@@ -7,6 +7,7 @@ import { useAuth } from '@shared/context/AuthContext';
 import { CollegeRepresentativeBadge } from '@shared/components/badges/CollegeRepresentativeBadge';
 import FollowButton from '../ui/FollowButton';
 import Avatar from '../avatar/Avatar';
+import RowSkeleton from '../skeletons/RowSkeleton';
 import styles from './UserListModal.module.css';
 
 const PAGE_SIZE = 20;
@@ -144,9 +145,7 @@ export default function UserListModal({ type, profileUsername, onClose, onTypeCh
 
   const {
     data,
-    isPlaceholderData,
     isPending,
-    isFetching,
     isError,
     fetchNextPage,
     hasNextPage,
@@ -188,14 +187,13 @@ export default function UserListModal({ type, profileUsername, onClose, onTypeCh
     gcTime: 0,
     staleTime: 0,
 
-    // A background refetch would replace the list under the reader, and the
-    // loading gate below would flash the spinner over a list they are part-way
-    // through. Nothing here changes without the viewer acting, and acting
-    // already updates the rows in place.
+    // A background refetch would reshuffle the list under the reader. Nothing
+    // here changes without the viewer acting, and acting already updates the
+    // rows in place.
     refetchOnWindowFocus: false,
 
     // While a search is refining the SAME tab, keep the current rows up until
-    // the narrower list arrives instead of flashing the spinner per keystroke.
+    // the narrower list arrives instead of flashing the loading state per keystroke.
     // Never carried across tabs: followers must not stand in for following.
     placeholderData: (previous, previousQuery) =>
       previousQuery?.queryKey?.[0] === listKind ? previous : undefined,
@@ -214,14 +212,17 @@ export default function UserListModal({ type, profileUsername, onClose, onTypeCh
   );
 
   /**
-   * Show the spinner whenever there is no server-confirmed list for THIS
-   * opening — not merely on a cold start.
+   * Row skeletons only while there is no list at all for THIS opening.
    *
-   * `isFetchingNextPage` is excluded deliberately: paging in more rows is not
-   * a reason to replace the rows already on screen with a spinner, and doing
-   * so would break infinite scroll's appearance entirely.
+   * `gcTime: 0` above is what guarantees a reopen starts with no cached rows,
+   * so `isPending` alone covers the case that matters: the first rows ever
+   * painted for an opening are the server's. Once a list is on screen it stays
+   * there - a background refetch updates it in place instead of swapping the
+   * rows the reader is part-way through for a loading state, and a next-page
+   * fetch shows only the small spinner at the foot of the list. A search on
+   * the same tab keeps the previous rows via `placeholderData`.
    */
-  const showLoading = isPending || (isFetching && !isFetchingNextPage && !isPlaceholderData);
+  const showLoading = isPending;
 
   useEffect(() => {
     const target = observerTargetRef.current;
@@ -302,9 +303,13 @@ export default function UserListModal({ type, profileUsername, onClose, onTypeCh
 
         <div className={styles.body} role="tabpanel">
           {showLoading ? (
-            <div className={styles.loadingState} role="status" aria-label="Loading">
-              <div className="spinner" aria-hidden="true" />
-            </div>
+            <RowSkeleton
+              count={6}
+              avatarSize="42px"
+              className={styles.loadingState}
+              rowStyle={{ padding: '0.65rem 0.85rem', gap: '0.85rem' }}
+              label={`Loading ${listKind}`}
+            />
           ) : isError ? (
             <div className={styles.empty}>
               <p className={styles.emptyTitle}>Could not load list</p>
@@ -350,9 +355,8 @@ export default function UserListModal({ type, profileUsername, onClose, onTypeCh
 
               <div ref={observerTargetRef} className={styles.loadMoreTrigger}>
                 {isFetchingNextPage && (
-                  <div className={styles.spinnerWrap}>
+                  <div className={styles.spinnerWrap} role="status" aria-label={`Loading more ${listKind}`}>
                     <div className="spinner" aria-hidden="true" />
-                    <span className={styles.spinnerText}>Loading more...</span>
                   </div>
                 )}
               </div>

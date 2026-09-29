@@ -230,3 +230,22 @@
 :global([data-theme='dark']) .searchInput:hover:not(:focus) {
   background: #3c3a47;
 }
+
+/* Spinner over the (hidden) label while the next page loads: one grid cell,
+   so the button keeps the label's width and nothing reflows. */
+.loadMoreInner {
+  display: inline-grid;
+  place-items: center;
+}
+
+.loadMoreInner > * {
+  grid-area: 1 / 1;
+}
+
+.loadMoreLabelHidden {
+  visibility: hidden;
+}
+
+.loadMoreSpinner {
+  --spinner-track-color: rgba(127, 127, 127, 0.25);
+}

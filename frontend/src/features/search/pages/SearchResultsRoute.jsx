@@ -3,6 +3,7 @@ import { useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import { useUrlState } from '@shared/hooks/useUrlState';
 import { Search, Clock, X, RefreshCw, AlertCircle, ArrowLeft, Loader2, Users, Activity, Globe2, FileText } from '@shared/components/icons';
 import { useGlobalSearch } from '@features/search/hooks/useGlobalSearch';
+import { useDelayedFlag } from '@features/search/hooks/useDelayedFlag';
 import Avatar from '@shared/components/avatar/Avatar';
 import { CollegeRepresentativeBadge } from '@shared/components/badges/CollegeRepresentativeBadge';
 import { isImageUrl } from '@shared/utils/avatar';
@@ -204,6 +205,9 @@ export default function SearchResultsRoute() {
     hasNextPage,
     isFetchingNextPage,
   } = useGlobalSearch(debouncedQuery, 30, activeChip);
+  // The in-field "updating" spinner waits out quick round trips instead of
+  // blinking on every keystroke.
+  const showUpdating = useDelayedFlag(isSearching && !isLoading, 300);
 
   // Stable identity (functional setState, no dependency on recentSearches) so the
   // memoized row `onOpen` handler below never changes ref while typing — rows stay memoized.
@@ -367,7 +371,7 @@ export default function SearchResultsRoute() {
                   }
                 }}
               />
-              {isSearching && !isLoading && (
+              {showUpdating && (
                 <Loader2 size={16} className={styles.updatingSpinner} aria-label="Updating results" />
               )}
               {inputVal && (

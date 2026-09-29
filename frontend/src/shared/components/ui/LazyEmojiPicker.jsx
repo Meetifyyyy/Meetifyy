@@ -96,15 +96,14 @@ export default function LazyEmojiPicker(props) {
             height: 'min(420px, 65vh)',
             display: 'grid',
             placeItems: 'center',
-            fontSize: '0.85rem',
-            color: 'var(--color-text-muted)',
             background: 'var(--color-bg-white)',
             borderRadius: 'var(--radius-lg, 14px)',
             border: '1px solid var(--color-border)',
           }}
           role="status"
+          aria-label="Loading emojis"
         >
-          Loading emojis...
+          <span className="spinner" aria-hidden="true" />
         </div>
       }
     >

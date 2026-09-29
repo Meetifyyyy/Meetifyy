@@ -7,6 +7,7 @@ import pageStyles from './CampusCommunitiesPage.module.css';
 const styles = { ...sharedStyles, ...pageStyles };
 import { Plus, Search, ArrowLeft } from '@shared/components/icons';
 import CommunityRow from '@features/communities/components/directory/CommunityRow';
+import CommunityRowSkeleton from '@features/communities/components/directory/CommunityRowSkeleton';
 import listStyles from '@features/communities/components/directory/CommunityList.module.css';
 import { useCampusCommunities } from '@shared/hooks/useCommunities';
 import { useDebounce } from '@shared/hooks/useDebounce';
@@ -37,7 +38,7 @@ export default function CampusCommunitiesPage() {
   // and came back undefined for every row. Removed along with the memo that
   // recomputed it.
   const debouncedSearch = useDebounce(searchQuery, 300);
-  const { campusCommunities: collegeCommunities } = useCampusCommunities(debouncedSearch);
+  const { campusCommunities: collegeCommunities, isLoading } = useCampusCommunities(debouncedSearch);
 
   const openCommunity = useCallback((id) => {
     navigate(`/communities/${id}`, { state: { from: location.pathname } });
@@ -93,7 +94,12 @@ export default function CampusCommunitiesPage() {
         </div>
 
         <div className={styles.campusBody} style={{ flex: 1, display: 'flex', flexDirection: 'column', width: '100%', boxSizing: 'border-box' }}>
-          {collegeCommunities.length > 0 ? (
+          {collegeCommunities.length === 0 && isLoading ? (
+            // Loading is not "No Community": rows the size of the real ones.
+            <section className={listStyles.surface} aria-busy="true">
+              <CommunityRowSkeleton count={5} />
+            </section>
+          ) : collegeCommunities.length > 0 ? (
             <section className={listStyles.surface}>
               <div className={listStyles.list}>
                 {collegeCommunities.map(community => (

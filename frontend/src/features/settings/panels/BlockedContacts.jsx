@@ -147,7 +147,6 @@ export default function BlockedContacts() {
                 <Skeleton type="rect" width="120px" height="14px" style={{ borderRadius: '4px', marginBottom: '6px' }} />
                 <Skeleton type="rect" width="70px" height="12px" style={{ borderRadius: '4px' }} />
               </div>
-              <Skeleton type="rect" width="72px" height="32px" style={{ borderRadius: 'var(--radius-full, 9999px)' }} />
             </div>
           ))}
         </div>
@@ -204,7 +203,16 @@ export default function BlockedContacts() {
               onClick={handleLoadMore}
               disabled={isLoadingMore}
             >
-              {isLoadingMore ? 'Loading…' : 'Load more'}
+              {/* The label keeps its place (hidden) under the spinner, so the
+                  button does not change size while the next page loads. */}
+              <span className={styles.loadMoreInner}>
+                <span className={isLoadingMore ? styles.loadMoreLabelHidden : undefined}>
+                  Load more
+                </span>
+                {isLoadingMore && (
+                  <span className={`spinner ${styles.loadMoreSpinner}`} role="status" aria-label="Loading more blocked contacts" />
+                )}
+              </span>
             </button>
           )}
         </>

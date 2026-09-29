@@ -16,9 +16,8 @@ function DropdownContent({ suggestions, loading, selectedIndex, onSelect, positi
         style={stylePos}
         ref={containerRef}
       >
-        <div className={styles.loadingRow}>
-          <span className={styles.spinner} />
-          <span>Searching...</span>
+        <div className={styles.loadingRow} role="status" aria-label="Searching users">
+          <span className={styles.spinner} aria-hidden="true" />
         </div>
       </div>
     );

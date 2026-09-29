@@ -1,9 +1,44 @@
 import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback, memo } from 'react';
 import { ErrorState } from '@shared/components/ui/StateViews';
 import Avatar from '@shared/components/avatar/Avatar';
+import Skeleton from '@shared/components/skeletons/Skeleton';
 import { showToast } from '@shared/utils/toast';
 import MessageBubble from './MessageBubble';
 import styles from './ChatMessageList.module.css';
+
+/*
+ * First-load placeholder for a thread: a few bubble-shaped blocks alternating
+ * sides, bottom-aligned like the real thread so nothing jumps when messages
+ * arrive. Deliberately few and fixed - it stands for "messages go here", not
+ * for a count of anything.
+ */
+const MESSAGE_SKELETON_ROWS = [
+  { mine: false, width: '58%' },
+  { mine: true, width: '44%' },
+  { mine: false, width: '66%' },
+  { mine: true, width: '52%' },
+  { mine: false, width: '38%' },
+];
+
+function MessageListSkeleton() {
+  return (
+    <div className={styles.msgSkeleton} role="status" aria-label="Loading messages">
+      {MESSAGE_SKELETON_ROWS.map((row, i) => (
+        <div
+          key={i}
+          className={`${styles.msgSkeletonRow} ${row.mine ? styles.msgSkeletonRowMine : ''}`}
+        >
+          <Skeleton
+            width={row.width}
+            height="2.5rem"
+            className={styles.msgSkeletonBubble}
+            style={{ borderRadius: '1.1rem' }}
+          />
+        </div>
+      ))}
+    </div>
+  );
+}
 import { compareMessages } from '../utils/cacheUtils';
 import { createMessageHighlighter } from '../utils/messageHighlight';
 
@@ -648,8 +683,7 @@ export default function ChatMessageList({
       {/* ── Top loading indicator (loading older messages) ── */}
       {(hasMore || isLoadingMore) && !isLoading && (
         <div className={styles.topLoadingIndicator}>
-          <div className={styles.topLoadingSpinner} />
-          <span className={styles.topLoadingText}>Loading older messages…</span>
+          <div className={styles.topLoadingSpinner} role="status" aria-label="Loading older messages" />
         </div>
       )}
 
@@ -731,15 +765,8 @@ export default function ChatMessageList({
         </div>
       )}
 
-      {/* ── Full-screen spinner (initial load only) ── */}
-      {isLoading && (
-        <div className={styles.msgInitialLoadingCenter}>
-          <div
-            className="spinner"
-            aria-label="Loading messages"
-          />
-        </div>
-      )}
+      {/* ── Message skeleton (initial load only) ── */}
+      {isLoading && <MessageListSkeleton />}
 
       {/* ── Error state ── */}
       {!isLoading && error && (

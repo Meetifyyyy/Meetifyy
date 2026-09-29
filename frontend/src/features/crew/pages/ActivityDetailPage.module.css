@@ -954,3 +954,10 @@
   outline: 2px solid var(--color-primary);
   outline-offset: 2px;
 }
+
+.attendeesMore .attendeesMoreSpinner {
+  --spinner-size: 18px;
+  --spinner-track-color: rgba(255, 255, 255, 0.2);
+  --spinner-color: rgba(255, 255, 255, 0.85);
+  vertical-align: middle;
+}

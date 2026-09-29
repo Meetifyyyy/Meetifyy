@@ -30,6 +30,7 @@ import ProfileRightSidebar from '../components/ProfileRightSidebar';
 import ShareProfileModal from '../components/ShareProfileModal';
 import AvatarPickerModal from '@features/auth/signup/components/AvatarPickerModal';
 import ProfilePageSkeleton from '../components/skeletons/ProfilePageSkeleton';
+import PostSkeleton from '@features/feed/components/skeletons/PostSkeleton';
 import { createPortal } from 'react-dom';
 import ReportModal from '@shared/components/modals/ReportModal/ReportModal';
 import { getCollegeName } from '@shared/utils/user';
@@ -234,14 +235,20 @@ export default function ProfilePage() {
   } = useProfile(targetUsername);
 
   // Query User Posts
+  const postsEnabled = !!targetUsername && targetUsername !== 'unknown';
   const {
     data: postsData,
+    isPending: isPostsPending,
   } = useQuery({
     queryKey: ['user-posts', targetUsername],
     queryFn: () => postsApi.getUserPosts(targetUsername, 20),
-    enabled: !!targetUsername && targetUsername !== 'unknown',
+    enabled: postsEnabled,
     staleTime: 30000,
   });
+  // No posts have arrived yet. Without this the page fell straight through to
+  // "No posts yet" while the request was still in flight. (A disabled query
+  // also reports pending, hence the `postsEnabled` guard.)
+  const postsLoading = postsEnabled && isPostsPending;
 
   // Derived above the early returns below, because useAcademicSummary must run on
   // EVERY render. Placing it after `return <ProfilePageSkeleton />` meant the hook
@@ -305,7 +312,15 @@ export default function ProfilePage() {
   const isDifferentUser = profileUser && targetUsername && profileUser.username?.toLowerCase() !== targetUsername.toLowerCase();
   const showingSkeleton = isLoadingProfile || isDataIncomplete || isDifferentUser;
   if (showingSkeleton) {
-    return <ProfilePageSkeleton />;
+    // On your own profile the header is already known from the signed-in
+    // user, so it renders for real and only stats and posts wait.
+    // Decided from the URL alone: while loading, `profileUser` can still be
+    // the previously viewed profile, which must not make someone else's page
+    // open with your own header.
+    const isOwnUrl = !profileUsername
+      || profileUsername.toLowerCase() === currentUserUsername?.toLowerCase();
+    const seedUser = isOwnUrl && authUser?.username ? authUser : null;
+    return <ProfilePageSkeleton user={seedUser} />;
   }
 
 
@@ -628,6 +643,11 @@ export default function ProfilePage() {
                 <h3 className={s.emptyStateTitle}>This Account is Private</h3>
                 <p className={s.emptyStateDesc}>Follow this account to see their posts and updates.</p>
               </div>
+            ) : postsLoading ? (
+              <>
+                <PostSkeleton />
+                <PostSkeleton />
+              </>
             ) : posts.length === 0 ? (
               <div className={s.emptyState}>
                 <svg className={s.emptyStateIcon} width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">

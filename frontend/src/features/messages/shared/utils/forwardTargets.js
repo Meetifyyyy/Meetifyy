@@ -26,15 +26,31 @@ export function filterForwardTargets(conversations, searchQuery) {
 }
 
 /**
+ * Which of the three states the recipient list is in.
+ *
+ * Rows already on hand always win: a background refetch must not replace a
+ * list the person is choosing from. With none, a pending first load is
+ * `'loading'` (the modal draws row skeletons), and only a settled, empty
+ * result is `'empty'`.
+ */
+export function forwardListState({ isLoading, count }) {
+  if (count > 0) return 'list';
+  return isLoading ? 'loading' : 'empty';
+}
+
+/**
  * What to say when there is nothing to show.
  *
  * Three distinct situations were all rendered as "No conversations found":
  * still loading, searched for something with no match, and genuinely having
  * nobody to forward to. The first is the one that mattered, because while the
  * list was permanently broken the modal confidently reported an empty result.
+ *
+ * Loading has no sentence at all: the modal shows row skeletons for it, so an
+ * empty-state message must never appear while the list is still arriving.
  */
 export function forwardEmptyMessage({ isLoading, searchQuery }) {
-  if (isLoading) return 'Loading chats...';
+  if (isLoading) return null;
   if (String(searchQuery || '').trim()) return 'No chats match that search';
   return 'No chats to forward to yet';
 }

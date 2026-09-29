@@ -21,7 +21,8 @@ export default function ActivityDetailSkeleton() {
 
       <div className={pageStyles.glass}>
 
-        {/* ── Top bar — real back button, shimmer action buttons ── */}
+        {/* ── Top bar — real back button. The share/save buttons need the
+            activity, so they arrive with it rather than as placeholders. ── */}
         <div className={pageStyles.topBar}>
           <div className={pageStyles.headerLeft}>
             <button
@@ -35,10 +36,7 @@ export default function ActivityDetailSkeleton() {
               </svg>
             </button>
           </div>
-          <div className={pageStyles.rightActions}>
-            <Skeleton type="circle" width="34px" height="34px" />
-            <Skeleton type="circle" width="34px" height="34px" />
-          </div>
+          <div className={pageStyles.rightActions} />
         </div>
 
         {/* ── Scroll area ─────────────────────────────────────── */}
@@ -64,7 +62,7 @@ export default function ActivityDetailSkeleton() {
 
               {/* Desktop-only attendees */}
               <div className={`${pageStyles.attendeesSection} ${pageStyles.desktopOnlyAttendees}`}>
-                <Skeleton type="text" width="110px" height="1rem" style={{ marginBottom: '1.25rem', borderRadius: 6 }} />
+                <h3 className={pageStyles.attendeesTitle}>Attendees</h3>
                 {[0, 1, 2].map((i) => (
                   <div key={i} className={styles.attendeeRow}>
                     <Skeleton type="circle" width="44px" height="44px" />
@@ -82,14 +80,8 @@ export default function ActivityDetailSkeleton() {
 
               {/* Date / location glass card */}
               <div className={pageStyles.leftInfoBlock} style={{ marginTop: 0, marginBottom: '2rem' }}>
-                <div className={styles.infoRow}>
-                  <Skeleton type="rect" width="32px" height="32px" style={{ borderRadius: 6, flexShrink: 0 }} />
-                  <Skeleton type="text" height="0.95rem" style={{ flex: 1, borderRadius: 5 }} />
-                </div>
-                <div className={styles.infoRow}>
-                  <Skeleton type="rect" width="32px" height="32px" style={{ borderRadius: 6, flexShrink: 0 }} />
-                  <Skeleton type="text" width="55%" height="0.95rem" style={{ borderRadius: 5 }} />
-                </div>
+                {/* Date and location: one block, the height of their two rows. */}
+                <Skeleton type="rect" height="calc(64px + 1.25rem)" style={{ display: 'block', borderRadius: 10 }} />
               </div>
 
               {/* Host row glass card */}
@@ -110,7 +102,7 @@ export default function ActivityDetailSkeleton() {
 
               {/* Mobile-only attendees */}
               <div className={`${pageStyles.attendeesSection} ${pageStyles.mobileOnlyAttendees}`}>
-                <Skeleton type="text" width="110px" height="1rem" style={{ marginBottom: '1.25rem', borderRadius: 6 }} />
+                <h3 className={pageStyles.attendeesTitle}>Attendees</h3>
                 {[0, 1].map((i) => (
                   <div key={i} className={styles.attendeeRow}>
                     <Skeleton type="circle" width="44px" height="44px" />
@@ -122,10 +114,11 @@ export default function ActivityDetailSkeleton() {
                 ))}
               </div>
 
-              {/* Discussion panel skeleton */}
+              {/* Discussion: the same 220px the page reserves for it while
+                  its code loads, so the hand-over does not move anything. */}
               <Skeleton
                 type="rect"
-                height="380px"
+                height="220px"
                 style={{ borderRadius: 18, display: 'block', marginTop: '1rem' }}
               />
             </div>

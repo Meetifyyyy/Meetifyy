@@ -63,11 +63,15 @@ export default function ExploreCommunities({ onCreate }) {
             <div className={listStyles.more}>
               <button
                 type="button"
-                className={listStyles.secondaryBtn}
+                className={`${listStyles.secondaryBtn} ${isFetchingNextPage ? listStyles.busy : ''}`}
                 onClick={() => fetchNextPage()}
                 disabled={isFetchingNextPage}
+                aria-busy={isFetchingNextPage}
               >
-                {isFetchingNextPage ? 'Loading…' : 'Show more'}
+                <span className={listStyles.busyLabel}>Show more</span>
+                {isFetchingNextPage && (
+                  <span className={`spinner ${listStyles.busySpinner}`} role="status" aria-label="Loading more communities" />
+                )}
               </button>
             </div>
           )}

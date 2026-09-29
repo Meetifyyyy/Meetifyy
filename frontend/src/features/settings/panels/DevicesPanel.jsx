@@ -4,6 +4,7 @@ import { sessionsApi } from '@shared/api/apiClient';
 import { showToast } from '@shared/utils/toast';
 import { Devices, LogOut, Check } from '@shared/components/icons';
 import styles from './DevicesPanel.module.css';
+import RowSkeleton from '@shared/components/skeletons/RowSkeleton';
 
 /**
  * The devices signed in to this account.
@@ -82,10 +83,27 @@ export default function DevicesPanel() {
     },
   });
 
+  const intro = (
+    <p className={styles.intro}>
+      You&apos;re signed in on these devices. If you don&apos;t recognise one,
+      sign it out — it stops working straight away.
+    </p>
+  );
+
   if (isLoading) {
+    // The explanation is static and renders for real; only the device rows,
+    // which are what is actually being fetched, are placeholders.
     return (
-      <div className={styles.state}>
-        <span className={styles.stateText}>Loading your devices…</span>
+      <div className={styles.wrap}>
+        {intro}
+        <RowSkeleton
+          count={3}
+          avatarSize="36px"
+          avatarRadius="10px"
+          className={styles.list}
+          rowClassName={styles.row}
+          label="Loading your devices"
+        />
       </div>
     );
   }
@@ -106,10 +124,7 @@ export default function DevicesPanel() {
 
   return (
     <div className={styles.wrap}>
-      <p className={styles.intro}>
-        You&apos;re signed in on these devices. If you don&apos;t recognise one,
-        sign it out — it stops working straight away.
-      </p>
+      {intro}
 
       <div className={styles.list}>
         {list.map((session) => (

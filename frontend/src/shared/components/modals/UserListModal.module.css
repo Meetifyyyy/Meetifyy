@@ -176,12 +176,11 @@
   cursor: pointer;
 }
 
+/* Row skeletons: stacked with the same gap `.body` puts between real rows. */
 .loadingState {
-  flex: 1;
   display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 2rem 0;
+  flex-direction: column;
+  gap: 0.5rem;
 }
 
 .body {

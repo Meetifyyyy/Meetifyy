@@ -4,19 +4,6 @@
    ActivityDetailPage.module.css — imported directly in the component.
    ─────────────────────────────────────────────────────────────────── */
 
-/* Row shared by date & location lines inside the glass info card */
-.infoRow {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  margin-bottom: 0;
-}
-
-/* Secondary margin between info rows */
-.infoRow + .infoRow {
-  margin-top: 1.25rem;
-}
-
 /* Host name block inside the host glass card */
 .hostMeta {
   display: flex;

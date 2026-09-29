@@ -13,6 +13,7 @@ import PullToRefresh from '@shared/components/PullToRefresh';
 
 import NotificationList from '../components/NotificationList';
 import InvitationList from '../components/InvitationList';
+import NotificationRowsSkeleton from '../components/skeletons/NotificationRowsSkeleton';
 import styles from './NotificationsRoute.module.css';
 import { useUsersMap } from '@shared/hooks/useUsersMap';
 
@@ -508,9 +509,9 @@ export default function NotificationsRoute() {
 
         <div className={styles.list}>
           {(activeTab === 'invitations' ? inviteFeed.isLoading : isLoading) ? (
-            <div className={styles.loadingState} role="status" aria-live="polite">
-              <div className="spinner" aria-label="Loading notifications" />
-            </div>
+            <NotificationRowsSkeleton
+              label={activeTab === 'invitations' ? 'Loading invitations' : 'Loading notifications'}
+            />
           ) : error ? (
             <ErrorState onRetry={retry} />
           ) : activeTab === 'invitations' ? (
@@ -557,7 +558,31 @@ export default function NotificationsRoute() {
                   textAlign: 'center',
                 }}
               >
-                {inviteFeed.isFetchingNextPage ? 'Loading…' : 'Load More'}
+                {/* The label stays in the layout (hidden) under the spinner, so
+                    the button keeps its size while the next page loads. */}
+                <span
+                  style={{
+                    display: 'inline-grid',
+                    placeItems: 'center',
+                  }}
+                >
+                  <span
+                    style={{
+                      gridArea: '1 / 1',
+                      visibility: inviteFeed.isFetchingNextPage ? 'hidden' : 'visible',
+                    }}
+                  >
+                    Load More
+                  </span>
+                  {inviteFeed.isFetchingNextPage && (
+                    <span
+                      className="spinner"
+                      role="status"
+                      aria-label="Loading more invitations"
+                      style={{ gridArea: '1 / 1', '--spinner-track-color': 'rgba(127, 127, 127, 0.25)' }}
+                    />
+                  )}
+                </span>
               </button>
             </div>
           )}

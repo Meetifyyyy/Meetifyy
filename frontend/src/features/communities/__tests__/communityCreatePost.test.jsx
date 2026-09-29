@@ -141,7 +141,7 @@ describe('Create Post in Communities & PostComposer', () => {
     });
     queryClient.setQueryData(['communityPosts', 'comm1'], []);
 
-    const { container, getAllByText } = render(
+    const { container, findAllByText } = render(
       <QueryClientProvider client={queryClient}>
         <MemoryRouter>
           <MediaViewerProvider>
@@ -156,7 +156,9 @@ describe('Create Post in Communities & PostComposer', () => {
       expect(editor).toBeTruthy();
     });
 
-    const createPostBtns = getAllByText('Create Post');
+    // The empty state (and its Create Post button) appears only once the first
+    // page of posts has resolved; while it is pending the feed shows skeletons.
+    const createPostBtns = await findAllByText('Create Post');
     expect(createPostBtns.length).toBeGreaterThan(0);
 
     fireEvent.click(createPostBtns[0]);

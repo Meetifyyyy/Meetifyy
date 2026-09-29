@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { filterForwardTargets, forwardEmptyMessage } from '../forwardTargets';
+import { filterForwardTargets, forwardEmptyMessage, forwardListState } from '../forwardTargets';
 
 const CHATS = [
   { id: '1', name: 'Zero', username: '0000' },
@@ -46,8 +46,8 @@ describe('the empty state tells the truth', () => {
    * All three cases used to render "No conversations found". That is what let
    * a permanently broken list look like a legitimately empty one for so long.
    */
-  it('says so while still loading', () => {
-    expect(forwardEmptyMessage({ isLoading: true, searchQuery: '' })).toMatch(/loading/i);
+  it('has no sentence while still loading (the modal draws row skeletons)', () => {
+    expect(forwardEmptyMessage({ isLoading: true, searchQuery: '' })).toBeNull();
   });
 
   it('blames the search when there is one', () => {
@@ -63,6 +63,21 @@ describe('the empty state tells the truth', () => {
   it('prefers loading over the search message', () => {
     // Typing while the first page is still in flight must not claim the search
     // came back empty.
-    expect(forwardEmptyMessage({ isLoading: true, searchQuery: 'zzz' })).toMatch(/loading/i);
+    expect(forwardEmptyMessage({ isLoading: true, searchQuery: 'zzz' })).toBeNull();
+  });
+});
+
+describe('the list state never shows an empty state while loading', () => {
+  it('is loading while the first load is pending and nothing is on hand', () => {
+    expect(forwardListState({ isLoading: true, count: 0 })).toBe('loading');
+  });
+
+  it('keeps showing rows during a background refetch', () => {
+    expect(forwardListState({ isLoading: true, count: 3 })).toBe('list');
+  });
+
+  it('is empty only once loading has settled with nothing to show', () => {
+    expect(forwardListState({ isLoading: false, count: 0 })).toBe('empty');
+    expect(forwardListState({ isLoading: false, count: 2 })).toBe('list');
   });
 });

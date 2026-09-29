@@ -233,3 +233,23 @@
     margin: 0;
   }
 }
+
+/* ── A button that is working ───────────────────────────────
+   The label stays in place (invisible) so the button keeps its size, and a
+   small spinner sits over it. */
+
+.busy {
+  position: relative;
+}
+
+.busy .busyLabel {
+  visibility: hidden;
+}
+
+.busy .busySpinner {
+  --spinner-size: 16px;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  margin: -8px 0 0 -8px;
+}

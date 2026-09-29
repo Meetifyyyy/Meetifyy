@@ -1,5 +1,6 @@
 import PageHeader from '@layout/PageHeader';
 import styles from '../../pages/NotificationsRoute.module.css';
+import NotificationRowsSkeleton from './NotificationRowsSkeleton';
 
 export default function NotificationsSkeleton() {
   const headerTabs = [
@@ -10,17 +11,19 @@ export default function NotificationsSkeleton() {
   return (
     <main className="centre centre-wide animate-in">
       <div className={styles.page}>
-        <PageHeader
-          title="Notifications"
-          backPath="/home"
-          tabs={headerTabs}
-          activeTab="all"
-        />
+        {/* Same wrapper the route uses, so the header does not move when the
+            route replaces this. */}
+        <div className={styles.headerArea}>
+          <PageHeader
+            title="Notifications"
+            backPath="/home"
+            tabs={headerTabs}
+            activeTab="all"
+          />
+        </div>
 
         <div className={styles.list}>
-          <div className={styles.loadingState} role="status" aria-live="polite">
-            <div className="spinner" aria-label="Loading notifications" />
-          </div>
+          <NotificationRowsSkeleton />
         </div>
       </div>
     </main>

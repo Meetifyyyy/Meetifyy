@@ -4,7 +4,8 @@ import { Search, Check, X } from '@shared/components/icons';
 import styles from './ForwardMessageModal.module.css';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 import { useScrollLock } from '@shared/hooks/useScrollLock';
-import { filterForwardTargets, forwardEmptyMessage } from '../../utils/forwardTargets';
+import RowSkeleton from '@shared/components/skeletons/RowSkeleton';
+import { filterForwardTargets, forwardEmptyMessage, forwardListState } from '../../utils/forwardTargets';
 
 export default function ForwardMessageModal({
   isOpen = true,
@@ -37,6 +38,8 @@ export default function ForwardMessageModal({
   );
 
   if (!isOpen) return null;
+
+  const listState = forwardListState({ isLoading, count: filteredConversations.length });
 
   const toggleSelect = (id) => {
     setSelectedIds(prev => 
@@ -83,7 +86,14 @@ export default function ForwardMessageModal({
         </div>
 
         <div className={styles.convList}>
-          {filteredConversations.length > 0 ? (
+          {listState === 'loading' ? (
+            <RowSkeleton
+              count={5}
+              lines={1}
+              rowClassName={styles.convItem}
+              label="Loading chats"
+            />
+          ) : listState === 'list' ? (
             filteredConversations.map((conv) => {
               const isSelected = selectedIds.includes(conv.id);
               return (
@@ -106,8 +116,9 @@ export default function ForwardMessageModal({
             /*
              * Three different states used to render as "No conversations
              * found", and for a long time the list was ALWAYS empty because
-             * nothing passed the conversations prop in. Saying "loading" while
-             * loading is what makes a genuinely empty list believable.
+             * nothing passed the conversations prop in. Loading draws row
+             * skeletons above, so this only ever renders once the list has
+             * settled - which is what makes a genuinely empty list believable.
              */
             <div className={styles.emptyText}>
               {forwardEmptyMessage({ isLoading, searchQuery })}
