@@ -41,6 +41,7 @@ import {
   USER_CSRF_COOKIE,
   USER_REFRESH_COOKIE,
   USER_SESSION_ID_COOKIE,
+  USER_SESSION_ID_HEADER,
 } from './session/user-session-cookies';
 import { config } from '../config';
 import { UserSessionRevokedReason } from '@prisma/client';
@@ -82,7 +83,23 @@ export class AuthController {
    * "none", which made every session look like somebody else's.
    */
   private currentSessionId(req: Request): string | null {
-    return readCookie(req, USER_SESSION_ID_COOKIE) || null;
+    const cookie = readCookie(req, USER_SESSION_ID_COOKIE);
+    if (cookie) return cookie;
+
+    /*
+     * The installed app has no cookie: a WebView refuses the SameSite=Strict
+     * ones, so it names its session in `x-session-id` beside a bearer token.
+     * Without this every native caller looked sessionless here, and "sign out
+     * other devices" and a password change revoked ALL sessions — including
+     * the one making the request, which signed the app out of itself.
+     *
+     * The cookie wins whenever there is one, so a cookie session cannot be
+     * pointed at another id by adding a header. On these routes JwtGuard has
+     * already resolved the header id and matched it to the token's own user,
+     * so it is the caller's own session by the time it is read here.
+     */
+    const header = req.headers?.[USER_SESSION_ID_HEADER];
+    return typeof header === 'string' && header.trim() ? header.trim() : null;
   }
 
   /**

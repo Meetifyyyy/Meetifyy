@@ -141,6 +141,31 @@ describe('createEndpoints', () => {
     ]);
   });
 
+  describe('supportApi.uploadAttachment (a raw fetch, outside the transport)', () => {
+    const upload = async (transport) => {
+      const fetchSpy = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ key: 'k' }) });
+      vi.stubGlobal('fetch', fetchSpy);
+      try {
+        await createEndpoints(transport).supportApi.uploadAttachment(new Blob(['x']));
+      } finally {
+        vi.unstubAllGlobals();
+      }
+      return fetchSpy.mock.calls[0][1].headers;
+    };
+
+    it('names the installed app\'s session beside the bearer, which the guard requires', async () => {
+      const { transport } = stubTransport();
+      const headers = await upload({ ...transport, getSessionId: () => 'sess-9' });
+      expect(headers).toEqual({ Authorization: 'Bearer stub-token', 'x-session-id': 'sess-9' });
+    });
+
+    it('sends no session header on the web, where a cookie carries it', async () => {
+      const { transport } = stubTransport();
+      const headers = await upload(transport);
+      expect(headers).toEqual({ Authorization: 'Bearer stub-token' });
+    });
+  });
+
   it('a second client with a different transport is fully isolated', () => {
     // The whole point of the factory, stated as a test: two clients, two
     // transports, no shared state, no leakage between them.

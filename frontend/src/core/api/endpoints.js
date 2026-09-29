@@ -34,8 +34,9 @@
  * @param {{get,post,patch,put,delete}} transport.apiClient  verb helpers
  * @param {() => string} transport.getToken                  current access token, may be ''
  * @param {() => string} transport.getBackendUrl             absolute API origin
+ * @param {() => string} [transport.getSessionId]            the installed app's session id, '' on web
  */
-export function createEndpoints({ apiClient, getToken, getBackendUrl }) {
+export function createEndpoints({ apiClient, getToken, getBackendUrl, getSessionId = () => '' }) {
   const authApi = {
     /**
      * Sync the current user's Supabase profile to the Postgres database.
@@ -681,11 +682,21 @@ export function createEndpoints({ apiClient, getToken, getBackendUrl }) {
       form.append('file', file);
 
       const token = getToken();
+      // A bare bearer token is refused by the guard; the installed app names its
+      // session beside it, as `transport` does for every other call.
+      const sessionId = getSessionId();
       const res = await fetch(`${getBackendUrl()}/api/support/attachments`, {
         method: 'POST',
         body: form,
         signal,
-        ...(token ? { headers: { Authorization: `Bearer ${token}` } } : {}),
+        ...(token
+          ? {
+              headers: {
+                Authorization: `Bearer ${token}`,
+                ...(sessionId ? { 'x-session-id': sessionId } : {}),
+              },
+            }
+          : {}),
       });
 
       if (!res.ok) {

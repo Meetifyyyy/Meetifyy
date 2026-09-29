@@ -242,6 +242,76 @@ describe('AuthController — session revocation scope', () => {
     expect(res.clearCookie).not.toHaveBeenCalled();
   });
 
+  /**
+   * The installed app has no session cookie, so it names its session in the
+   * `x-session-id` header. Before this, "sign out other devices" from the app
+   * revoked every session including its own.
+   */
+  describe('from the installed app (x-session-id header, no cookie)', () => {
+    const nativeReq = (sessionId?: string) =>
+      stub<Request>({
+        cookies: {},
+        headers: sessionId ? { 'x-session-id': sessionId } : {},
+      });
+
+    it("spares the caller's own session for scope 'others'", async () => {
+      await controller.revokeAllSessions(
+        user,
+        nativeReq('native-session'),
+        stub<Response>(res),
+        { scope: 'others' },
+      );
+      expect(sessions.revokeAllForUser).toHaveBeenCalledWith(
+        'u1',
+        expect.anything(),
+        'native-session',
+      );
+    });
+
+    it('still spares nothing for scope all', async () => {
+      await controller.revokeAllSessions(
+        user,
+        nativeReq('native-session'),
+        stub<Response>(res),
+        { scope: 'all' },
+      );
+      expect(sessions.revokeAllForUser).toHaveBeenCalledWith(
+        'u1',
+        expect.anything(),
+        undefined,
+      );
+    });
+
+    it('lets a cookie session win over a header naming another id', async () => {
+      await controller.revokeAllSessions(
+        user,
+        stub<Request>({
+          cookies: { mf_sid: 'cookie-session' },
+          headers: { 'x-session-id': 'someone-elses' },
+        }),
+        stub<Response>(res),
+      );
+      expect(sessions.revokeAllForUser).toHaveBeenCalledWith(
+        'u1',
+        expect.anything(),
+        'cookie-session',
+      );
+    });
+
+    it('ignores an empty or non-string header', async () => {
+      await controller.revokeAllSessions(
+        user,
+        stub<Request>({ cookies: {}, headers: { 'x-session-id': '   ' } }),
+        stub<Response>(res),
+      );
+      expect(sessions.revokeAllForUser).toHaveBeenCalledWith(
+        'u1',
+        expect.anything(),
+        undefined,
+      );
+    });
+  });
+
   it('still works when there is no refresh cookie to identify', async () => {
     sessions.sessionIdForRefreshToken.mockResolvedValue(null);
     const result = await controller.revokeAllSessions(

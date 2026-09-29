@@ -1,5 +1,5 @@
 import imageCompression from 'browser-image-compression';
-import { apiClient, deriveThumbnailKey, getBackendUrl, getAccessToken } from '../api/apiClient';
+import { apiClient, deriveThumbnailKey, getBackendUrl, getAccessToken, getNativeSessionId } from '../api/apiClient';
 import { MAX_COVERED_IMAGE_SIZE_MB } from '../constants/mediaLimits';
 
 /**
@@ -311,6 +311,10 @@ export const uploadFileDirect = async (file, folder = 'general', onProgress = nu
         if (isRelative) {
           const token = getAccessToken();
           if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+          // The installed app names its session beside the bearer, as on every
+          // other call; without it the guard refuses a bare bearer token.
+          const nativeSessionId = getNativeSessionId();
+          if (nativeSessionId) xhr.setRequestHeader('x-session-id', nativeSessionId);
         }
         if (file.type) {
           xhr.setRequestHeader('Content-Type', file.type);

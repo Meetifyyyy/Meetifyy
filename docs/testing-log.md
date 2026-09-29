@@ -1157,3 +1157,16 @@ then disconnected. The client now sends `sessionId` in the handshake payload and
 the gateway accepts it through the same ownership/liveness lookup. (2) Links
 shared from the app were built on `window.location.origin`, which inside the
 app is `https://localhost`; they now use `VITE_SITE_URL` (`publicOrigin`).
+
+**Audit for the same two classes (2026-09-29).** "Origin is `https://localhost`"
+and "credential only accepted as a cookie":
+- `AuthController.currentSessionId` read only the `mf_sid` cookie, so for the app
+  it was always null: *Sign out other devices* and *change password* revoked
+  every session including the caller's own, and the device list marked no current
+  device. It now falls back to `x-session-id` (cookie still wins).
+- `supportApi.uploadAttachment` and the direct-upload PUT sent a bare bearer
+  token, which the guard refuses; both now send `x-session-id` on native.
+- Checked and fine: `classifyMeetifyyURL` (internal domains are configuration),
+  `VoiceMessagePlayer` (cross-origin detection is correct for the app),
+  `AuthContext` host comparison, `config.app.siteUrl` (set in every env file),
+  `web-only` `window.location.href` uses, CORS for the socket (polling worked).
