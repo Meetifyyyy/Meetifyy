@@ -1,0 +1,114 @@
+/*
+ * The reply bar. See ReplyDock.jsx.
+ *
+ * Fixed to the bottom of the visible viewport. Everything outside the bar's
+ * border is transparent — no backdrop, no gradient, no shadow — so the page
+ * shows through around it; only the bar itself is a surface.
+ */
+.dock {
+  --dock-gap: 8px;
+  position: fixed;
+  left: var(--dock-left, 0px);
+  width: var(--dock-width, 100%);
+  bottom: 0;
+  z-index: 200;
+  box-sizing: border-box;
+  padding: 14px max(12px, env(safe-area-inset-right, 0px)) calc(var(--dock-gap) + env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px));
+  /* Only the bar takes touches; everything around it is transparent and lets
+     them (and the comments scrolling beneath) through. */
+  pointer-events: none;
+  background: transparent;
+}
+
+.bar {
+  pointer-events: auto;
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  min-height: 48px;
+  padding: 4px;
+  border-radius: 24px;
+  background: var(--color-bg-white);
+  border: 0.75px solid var(--color-border);
+}
+
+.avatar {
+  flex-shrink: 0;
+  /* Sits on the field's first line, not its middle, once the text wraps. */
+  margin-bottom: 0;
+}
+
+.field {
+  flex: 1;
+  min-width: 0;
+  /* Centres a single line against the 38px avatar; grows upward with the text. */
+  padding: 7px 4px;
+  cursor: text;
+}
+
+/* The editor's own line-height is 1.5 at 0.95rem; the placeholder is the bar's
+   resting label, so it is set a touch stronger than a form hint. */
+.input [role='textbox'] {
+  font-size: 0.98rem;
+}
+
+/* Send: a slot that opens from nothing when there is something to send. */
+.send {
+  flex-shrink: 0;
+  width: 0;
+  height: 32px;
+  /* Centred on a one-line bar (avatar 38px), still pinned to the bottom as it grows. */
+  margin-bottom: 3px;
+  margin-left: -10px; /* takes back the flex gap while closed */
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: var(--color-primary);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  opacity: 0;
+  transform: scale(0.5);
+  pointer-events: none;
+  cursor: pointer;
+  transition:
+    width 0.24s cubic-bezier(0.22, 0.9, 0.3, 1),
+    margin-left 0.24s cubic-bezier(0.22, 0.9, 0.3, 1),
+    opacity 0.18s ease,
+    transform 0.24s cubic-bezier(0.22, 0.9, 0.3, 1);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.dock[data-send='open'] .send {
+  width: 32px;
+  margin-left: 0;
+  opacity: 1;
+  transform: scale(1);
+  pointer-events: auto;
+}
+
+.dock[data-send='open'] .send:not(:disabled):active {
+  transform: scale(0.92);
+}
+
+/* Posting: the slot stays open but is not tappable again. */
+.dock[data-send='open'] .send:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+@media (min-width: 769px) {
+  .dock {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bar,
+  .send {
+    transition: none;
+  }
+}

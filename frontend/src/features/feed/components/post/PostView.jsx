@@ -1,14 +1,12 @@
-import { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from 'react';
-import { createPortal } from 'react-dom';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { postsApi } from '@shared/api/apiClient';
 import { showToast } from '@shared/utils/toast';
 
-import Avatar from '@shared/components/avatar/Avatar';
-import MentionInput from '@shared/components/mentions/MentionInput';
 import Skeleton from '@shared/components/skeletons/Skeleton';
 import Post from './Post';
+import ReplyDock from './ReplyDock';
 import { CommentTreeRoot } from './CommentNode';
 import styles from './PostView.module.css';
 import { useAuth } from '@shared/context/AuthContext';
@@ -146,7 +144,6 @@ export default function PostView({ post, onBack, autoFocusComment = false }) {
   );
 
   const [replyContent, setReplyContent] = useState({ text: '', mentions: [] });
-  const [composerOpen, setComposerOpen] = useState(shouldFocusComment);
   const [isPostingComment, setIsPostingComment] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const { currentUser } = useAuth();
@@ -155,21 +152,14 @@ export default function PostView({ post, onBack, autoFocusComment = false }) {
   const queryClient = useQueryClient();
   const loadMoreRef = useRef(null);
   const composerRef = useRef(null);
+  const columnRef = useRef(null);
   const hasAutoFocusedRef = useRef(false);
 
+  // The reply bar's field is always there (see ReplyDock): "open the composer"
+  // is just "put the caret in it".
   const focusComposer = useCallback(() => {
-    setComposerOpen(true);
-    if (composerRef.current) {
-      composerRef.current.focus();
-      composerRef.current.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' });
-    }
-  }, []);
-
-  useLayoutEffect(() => {
-    if (!composerOpen) return;
     composerRef.current?.focus();
-    composerRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' });
-  }, [composerOpen]);
+  }, []);
 
   // Seed data from a feed-card click (passed via router state, so it already
   // has author/text/media/poll) lets the query start in a "success" state
@@ -304,6 +294,8 @@ export default function PostView({ post, onBack, autoFocusComment = false }) {
     try {
       await addComment({ postId: livePost.id, text: replyContent.text, parentId: null, mentions: replyContent.mentions, currentUser });
       setReplyContent({ text: '', mentions: [] });
+      // Posted: the bar goes back to its resting state and the keyboard drops.
+      composerRef.current?.blur();
     } catch {
       // useAddComment surfaces its own toast; the draft stays put.
     } finally {
@@ -312,7 +304,7 @@ export default function PostView({ post, onBack, autoFocusComment = false }) {
   };
 
   return (
-    <div className={styles.postViewContainer}>
+    <div ref={columnRef} className={styles.postViewContainer}>
 
       {/* Top Bar — always renders instantly, never gated on post data */}
       <div className={styles.postViewTopbar}>
@@ -336,36 +328,6 @@ export default function PostView({ post, onBack, autoFocusComment = false }) {
           <PostContentSkeleton />
         )}
       </div>
-
-      {/* Reply Composer (Top Level) */}
-      {hasContent && (
-        <div className={`${styles.postViewComposer} ${composerOpen ? '' : styles.composerClosed}`}>
-          <Avatar src={currentUser?.avatar} name={currentUser?.displayName} size="40px" disableHover />
-          <form onSubmit={handleMainReplySubmit} className={styles.replyForm}>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <MentionInput
-                inputRef={composerRef}
-                autoFocus={shouldFocusComment}
-                placeholder="Post your reply..."
-                value={replyContent}
-                onChange={setReplyContent}
-                onSubmit={handleMainReplySubmit}
-                className={styles.replyTextarea}
-                singleLine={false}
-              />
-            </div>
-            <div className={styles.replyActions}>
-              <button
-                type="submit"
-                disabled={!replyContent.text.trim() || isPostingComment}
-                className={`${styles.replyBtn} ${replyContent.text.trim() && !isPostingComment ? styles.replyBtnActive : styles.replyBtnDisabled}`}
-              >
-                {isPostingComment ? 'Posting…' : 'Reply'}
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
 
       {/* Replies List */}
       <div className={styles.postViewReplies}>
@@ -400,15 +362,16 @@ export default function PostView({ post, onBack, autoFocusComment = false }) {
           </>
         )}
       </div>
-      {hasContent && createPortal(
-        <div className={styles.replyDock}>
-          <button type="button" className={styles.openReplyButton} onClick={focusComposer}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.4 8.4 0 0 1 3.8-.9H13a8.5 8.5 0 0 1 8 8v.5Z" />
-            </svg>
-            Write a reply
-          </button>
-        </div>, document.body,
+      {hasContent && (
+        <ReplyDock
+          currentUser={currentUser}
+          value={replyContent}
+          onChange={setReplyContent}
+          onSubmit={handleMainReplySubmit}
+          isPosting={isPostingComment}
+          inputRef={composerRef}
+          columnRef={columnRef}
+        />
       )}
     </div>
   );

@@ -12,13 +12,11 @@
   border: 1px solid var(--color-border-light);
   flex-shrink: 0;
   overflow: hidden;
-  padding-bottom: 0.5rem;
+  /* Room for the floating reply bar (ReplyDock), so the last comment can
+     scroll clear of it. */
+  padding-bottom: 64px;
   scrollbar-width: none;
   -ms-overflow-style: none;
-}
-
-.replyDock {
-  display: none;
 }
 
 .postViewContainer::-webkit-scrollbar {
@@ -87,75 +85,6 @@
   padding: 0 !important;
 }
 
-.postViewComposer {
-  padding: 1rem 1.5rem;
-  border-bottom: 1px solid var(--color-border-light);
-  display: flex;
-  gap: 1rem;
-}
-
-.composerAvatar {  composes: ui-avatar from global;
-  width: 40px;
-  height: 40px;
-  background: linear-gradient(135deg, var(--color-primary), var(--color-secondary));
-  color: #FFFFFF;
-  font-weight: 600;
-  font-family: var(--font-family-display);
-}
-
-.replyForm {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  background: transparent;
-  padding: 0.2rem 0;
-  margin-right: 2rem;
-}
-
-.replyTextarea {
-  width: 100%;
-  min-height: 24px;
-  background: transparent;
-  border: none;
-  outline: none;
-  resize: none;
-  font-family: var(--font-family-sans);
-  font-size: 1rem;
-  color: var(--color-text-main);
-  padding-top: 0.4rem;
-  padding-bottom: 0.4rem;
-  overflow: hidden;
-  line-height: 1.5;
-}
-
-.replyActions {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: auto;
-}
-
-.replyBtn {
-  color: #FFFFFF;
-  border: none;
-  padding: 0.4rem 1.25rem;
-  border-radius: 100px;
-  font-weight: 600;
-  font-family: var(--font-family-sans);
-  transition: all var(--transition-normal);
-}
-
-.replyBtnActive {
-  background: var(--color-primary);
-  cursor: pointer;
-}
-
-.replyBtnDisabled {
-  background: rgba(var(--color-primary-rgb), 0.15);
-  color: rgba(255, 255, 255, 0.4);
-  cursor: not-allowed;
-}
-
 .postViewReplies {
   display: flex;
   flex-direction: column;
@@ -197,13 +126,11 @@
   opacity: 0.7;
 }
 
-.composerAvatarImg {  composes: ui-avatar-img from global;
-  border-radius: 50%;
-}
-
 @media (max-width: 768px) {
   .postViewContainer {
-    padding-bottom: calc(88px + max(env(safe-area-inset-bottom, 0px), var(--navigation-bar-inset, 0px)));
+    /* Room for the floating reply bar (ReplyDock) and the phone's navigation
+       bar beneath it, so the last comment can scroll clear of both. */
+    padding-bottom: calc(64px + max(env(safe-area-inset-bottom, 0px), var(--navigation-bar-inset, 0px)));
     margin-bottom: 0;
     min-height: 100dvh;
     border: none;
@@ -211,63 +138,9 @@
   }
 
   .postViewTopbar,
-  .postViewMain,
-  .postViewComposer {
+  .postViewMain {
     padding-left: 1rem;
     padding-right: 1rem;
-  }
-
-  .postViewComposer {
-    gap: 0.75rem;
-  }
-
-  .composerClosed {
-    display: none;
-  }
-
-  .replyDock {
-    position: fixed;
-    inset: auto 0 0;
-    z-index: 50;
-    display: flex;
-    justify-content: center;
-    padding: 12px max(16px, env(safe-area-inset-right, 0px)) calc(12px + max(env(safe-area-inset-bottom, 0px), var(--navigation-bar-inset, 0px))) max(16px, env(safe-area-inset-left, 0px));
-    background: var(--color-surface-screen);
-    box-sizing: border-box;
-  }
-
-  .openReplyButton {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 10px;
-    width: 100%;
-    max-width: 560px;
-    min-height: 48px;
-    padding: 12px 20px;
-    border: 1px solid var(--color-border-light);
-    border-radius: 999px;
-    background: var(--color-primary);
-    color: #fff;
-    font-family: var(--font-family-sans);
-    font-size: 0.95rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: opacity 0.16s ease, transform 0.16s ease;
-    -webkit-tap-highlight-color: transparent;
-  }
-
-  .openReplyButton:active {
-    opacity: 0.88;
-    transform: scale(0.985);
-  }
-
-  :global(html[data-keyboard-open]) .replyDock {
-    display: none;
-  }
-
-  .replyForm {
-    margin-right: 0;
   }
 
   .postViewReplies {
@@ -277,8 +150,7 @@
 
 @media (max-width: 480px) {
   .postViewTopbar,
-  .postViewMain,
-  .postViewComposer {
+  .postViewMain {
     padding-left: 0.85rem;
     padding-right: 0.85rem;
   }

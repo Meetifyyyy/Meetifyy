@@ -104,7 +104,7 @@ describe('Comment button click behavior on post card and post view', () => {
   it('redirects focus to comment input when PostView opens with autoFocusComment or state.focusComment', async () => {
     const queryClient = new QueryClient();
 
-    const { container } = render(
+    render(
       <QueryClientProvider client={queryClient}>
         <MemoryRouter initialEntries={[{ pathname: '/post/p1', state: { post: samplePost, focusComment: true } }]}>
           <MediaViewerProvider>
@@ -115,7 +115,8 @@ describe('Comment button click behavior on post card and post view', () => {
     );
 
     await waitFor(() => {
-      const editor = container.querySelector('[contenteditable="true"]');
+      // The reply bar is portalled to <body> (see ReplyDock), not into the render container.
+      const editor = document.querySelector('[contenteditable="true"]');
       expect(editor).toBeTruthy();
       expect(document.activeElement).toBe(editor);
     });
@@ -124,7 +125,7 @@ describe('Comment button click behavior on post card and post view', () => {
   it('focuses composer when comment button inside PostView is clicked', async () => {
     const queryClient = new QueryClient();
 
-    const { container, getByLabelText } = render(
+    const { getByLabelText } = render(
       <QueryClientProvider client={queryClient}>
         <MemoryRouter initialEntries={[{ pathname: '/post/p1', state: { post: samplePost } }]}>
           <MediaViewerProvider>
@@ -138,7 +139,8 @@ describe('Comment button click behavior on post card and post view', () => {
     fireEvent.click(commentBtn);
 
     await waitFor(() => {
-      const editor = container.querySelector('[contenteditable="true"]');
+      // The reply bar is portalled to <body> (see ReplyDock), not into the render container.
+      const editor = document.querySelector('[contenteditable="true"]');
       expect(editor).toBeTruthy();
       expect(document.activeElement).toBe(editor);
     });
