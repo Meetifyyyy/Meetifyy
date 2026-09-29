@@ -107,36 +107,10 @@ describe('share payloads', () => {
     });
   });
 
-  describe('the image handed to a share sheet', () => {
-    it('is the story canvas, not the unfurl thumbnail', () => {
-      // Two different pictures on purpose. `og:image` is a 1200x630 JPEG sized
-      // for a chat thumbnail; this is a whole 1080x1920 story. Sending the
-      // thumbnail to Instagram leaves Instagram to decide what surrounds it,
-      // which is the thing that cannot be changed afterwards.
-      const payload = buildPostShare({ id: 'p1', text: 'x' }, author);
-      expect(payload.cardImageUrl).toBe(
-        'http://localhost:3000/api/share/post/p1/story.jpg',
-      );
-      expect(payload.cardImageUrl).not.toContain('image.jpg');
-      // JPEG, not PNG. The story canvas is fully opaque — the backdrop covers
-      // all 1080x1920 — so PNG spent 450KB carrying an alpha channel that was
-      // entirely 255, against 107KB as JPEG. That size lost the download race
-      // on mobile data, which is what left Instagram with a link instead of an
-      // image.
-      expect(payload.cardFileName).toMatch(/\.jpg$/);
-    });
-
-    it('is absent when there is no post to draw', () => {
-      expect(buildPostShare({}, author).cardImageUrl).toBe('');
-    });
-
-    it('is offered for posts only', () => {
-      // A profile, community or activity has no rendered card, so there is
-      // nothing to hand over as a file and the link is the whole payload.
-      expect(buildProfileShare({ username: 'a' }).cardImageUrl).toBeUndefined();
-      expect(buildCommunityShare({ id: 'c' }).cardImageUrl).toBeUndefined();
-      expect(buildActivityShare({ id: 'a' }).cardImageUrl).toBeUndefined();
-    });
+  it('carries no card image: story cards are drawn on the device now', () => {
+    // The old Web Share path fetched a server-rendered story.jpg. The app's
+    // native Stories flow renders its own card, and the website offers none.
+    expect(buildPostShare({ id: 'p1', text: 'x' }, author).cardImageUrl).toBeUndefined();
   });
 
   describe('the other shareable things', () => {

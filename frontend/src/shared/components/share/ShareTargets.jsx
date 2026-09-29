@@ -15,7 +15,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Check,
-  Instagram,
   Link as LinkIcon,
   Linkedin,
   Reddit,
@@ -24,23 +23,12 @@ import {
   XPlatform,
 } from '@shared/components/icons';
 import {
-  INSTAGRAM_GUIDANCE,
-  INSTAGRAM_MODE,
-  INSTAGRAM_STORY_GUIDANCE,
-  instagramHint,
-  instagramLabel,
-  resolveInstagramMode,
-  shareToInstagram,
-} from '@shared/lib/share/instagram';
-import {
   SHARE_TARGETS,
   canNativeShare,
   copyToClipboard,
-  fetchShareCard,
   openShareWindow,
   shareNatively,
 } from '@shared/lib/share/shareTargets';
-import { capturePostCard } from '@shared/lib/share/cardCapture';
 import styles from './ShareTargets.module.css';
 
 const ICONS = {
@@ -48,7 +36,6 @@ const ICONS = {
   x: XPlatform,
   linkedin: Linkedin,
   reddit: Reddit,
-  instagram: Instagram,
   copy: LinkIcon,
   native: ShareIcon,
   share: ShareIcon,
@@ -57,7 +44,14 @@ const ICONS = {
 /** How long a target's transient label stays before reverting. */
 const FEEDBACK_MS = 2400;
 
-export default function ShareTargets({ payload, onShared, cardElement }) {
+/**
+ * @param {object} props
+ * @param {Array<{id: string, label: string, icon: Function, onSelect: Function}>} [props.leadingTargets]
+ *   Extra tiles placed right after Copy link that are actions rather than links —
+ *   the installed app's Instagram Story tile. They run their own handler and
+ *   get no copy/share fallback.
+ */
+export default function ShareTargets({ payload, onShared, leadingTargets = [] }) {
   /**
    * The outcome of the last action, attached to the target it belongs to.
    *
@@ -66,8 +60,8 @@ export default function ShareTargets({ payload, onShared, cardElement }) {
    * feedback appears ON the button that was pressed rather than as a line of
    * text somewhere below it.
    *
-   * `announcement` is the fuller sentence — the Instagram instruction does not
-   * fit on a 78px tile — and is carried only to the screen-reader region.
+   * `announcement` is the fuller sentence, carried only to the screen-reader
+   * region.
    */
   const [feedback, setFeedback] = useState(null);
   const timerRef = useRef(null);
@@ -77,109 +71,12 @@ export default function ShareTargets({ payload, onShared, cardElement }) {
   // for an answer that cannot change.
   const [nativeAvailable] = useState(() => canNativeShare(payload));
 
-  /**
-   * What the Instagram button can do here — see `resolveInstagramMode`.
-   *
-   * Resolved once per payload rather than per render: the browser's answer
-   * cannot change during the life of a dialog, and it decides the tile's label,
-   * its hint and whether the card is worth downloading at all.
-   */
-  const instagramMode = useMemo(() => resolveInstagramMode(payload), [payload]);
-  const cardAvailable = instagramMode === INSTAGRAM_MODE.STORY;
-
-  /**
-   * The rendered card, fetched while the dialog is merely open.
-   *
-   * This is not an optimisation, it is the thing that makes the Instagram path
-   * work at all. `navigator.share` has to be called while the page still holds
-   * transient activation from the tap, and Safari refuses one that comes after
-   * an awaited `fetch`. Downloading the card here — in the seconds somebody
-   * spends looking at the dialog — means the tap itself does nothing but hand
-   * over a File that is already in memory.
-   *
-   * The PROMISE is kept, not just the resolved File. A tap that lands before
-   * the download finishes then awaits the request already in flight instead of
-   * starting a second one — and, crucially, instead of silently giving up.
-   *
-   * Giving up was the bug. The first version stored only the resolved value and
-   * fell through to sharing the link whenever it was still null, so anyone who
-   * tapped promptly got the old behaviour — Instagram Direct, no Story — with
-   * nothing on screen to say why.
-   */
-  const cardRef = useRef(null);
-
-  /**
-   * The same card once it has resolved, so the common path awaits NOTHING.
-   *
-   * `await` on an already-settled promise still defers to a microtask, and a
-   * tap handler that reaches `navigator.share` a turn later is at the mercy of
-   * how each browser accounts for transient activation. When the download has
-   * finished — which it has, in every case but a tap within the first second —
-   * this ref lets the handler call `share` synchronously, which no browser
-   * argues with.
-   */
-  const cardFileRef = useRef(null);
-
   useEffect(
     () => () => {
       if (timerRef.current) clearTimeout(timerRef.current);
     },
     [],
   );
-
-  useEffect(() => {
-    // Only where a File can actually be shared, and only for the things that
-    // have a card. Everywhere else this would be a wasted download of an image
-    // nothing can use.
-    if (!cardAvailable) return undefined;
-
-    // Prefer capturing the exact rendered DOM card element from the feed.
-    // If cardElement is passed, or if the post element is present in the DOM by data-post-id:
-    const el =
-      cardElement ||
-      payload?.cardElement ||
-      (typeof document !== 'undefined' && payload?.url
-        ? (() => {
-            const match = payload.url.match(/\/post\/([^/?#]+)/);
-            return match
-              ? document.querySelector(`[data-post-id="${match[1]}"]`)
-              : null;
-          })()
-        : null);
-
-    const getCard = async () => {
-      if (el) {
-        try {
-          const captured = await capturePostCard(el, payload?.cardFileName);
-          if (captured) return captured;
-        } catch {
-          // Fall through to network fetch
-        }
-      }
-      return fetchShareCard(payload?.cardImageUrl, payload?.cardFileName);
-    };
-
-    const pending = getCard();
-    cardRef.current = pending;
-    cardFileRef.current = null;
-    pending.then((file) => {
-      // Guard against a payload that changed while this was in flight: the
-      // dialog may now be sharing a different post.
-      if (cardRef.current === pending) cardFileRef.current = file;
-    });
-
-    return () => {
-      cardRef.current = null;
-      cardFileRef.current = null;
-    };
-  }, [
-    cardAvailable,
-    cardElement,
-    payload?.cardElement,
-    payload?.cardImageUrl,
-    payload?.cardFileName,
-    payload?.url,
-  ]);
 
   const announce = useCallback((targetId, tone, label, announcement) => {
     setFeedback({ targetId, tone, label, announcement: announcement ?? label });
@@ -234,51 +131,6 @@ export default function ShareTargets({ payload, onShared, cardElement }) {
         return;
       }
 
-      if (target.id === 'instagram') {
-        // The card is normally downloaded before anybody taps. When it is not —
-        // a tap in the first second, or a slow connection — the tap WAITS for
-        // the request already in flight and says so, rather than quietly
-        // sharing the link instead. Quietly sharing the link is how this
-        // arrived as "Instagram only offers Direct".
-        let card = cardFileRef.current;
-        if (!card && cardRef.current) {
-          announce('instagram', 'busy', 'Preparing…');
-          card = await cardRef.current;
-        }
-
-        const { outcome, copied } = await shareToInstagram({
-          mode: instagramMode,
-          card,
-          payload,
-        });
-
-        // 'dismissed' is somebody changing their mind at the share sheet, not
-        // a failure, and gets no feedback at all.
-        if (outcome === 'dismissed') {
-          setFeedback(null);
-          return;
-        }
-        if (outcome === 'failed') {
-          announce('instagram', 'error', 'Failed', 'Could not copy the link');
-          return;
-        }
-
-        announce(
-          'instagram',
-          'ok',
-          outcome === 'copied' ? 'Copied!' : 'Sent!',
-          outcome === 'story'
-            ? copied
-              ? INSTAGRAM_STORY_GUIDANCE
-              : 'Card sent to Instagram.'
-            : outcome === 'link'
-              ? 'Shared to Instagram.'
-              : INSTAGRAM_GUIDANCE,
-        );
-        onShared?.('instagram');
-        return;
-      }
-
       const url = target.build(payload);
       if (url && openShareWindow(url)) {
         onShared?.(target.id);
@@ -290,13 +142,7 @@ export default function ShareTargets({ payload, onShared, cardElement }) {
       // possible response, so the link is copied instead.
       if (await copy(target.id, 'Link copied instead')) onShared?.(target.id);
     },
-    [announce, copy, instagramMode, onShared, payload],
-  );
-
-  const labelFor = useCallback(
-    (target) =>
-      target.id === 'instagram' ? instagramLabel(instagramMode) : target.label,
-    [instagramMode],
+    [announce, copy, onShared, payload],
   );
 
   /**
@@ -320,6 +166,13 @@ export default function ShareTargets({ payload, onShared, cardElement }) {
     next.splice(copyIndex + 1, 0, nativeTarget);
     return next;
   }, [nativeAvailable]);
+  // Copy link always leads; any extra action tiles (the app's Story) follow
+  // it, then the platforms.
+  const rowTargets = useMemo(() => {
+    const copy = targets.filter((t) => t.id === 'copy');
+    const rest = targets.filter((t) => t.id !== 'copy');
+    return [...copy, ...leadingTargets, ...rest];
+  }, [leadingTargets, targets]);
 
   return (
     <div className={styles.root}>
@@ -329,41 +182,29 @@ export default function ShareTargets({ payload, onShared, cardElement }) {
         somebody how many options they are about to move through.
       */}
       <ul className={styles.targets}>
-        {targets.map((target) => {
-          /*
-            Instagram is the one destination whose name depends on what it can
-            actually do. "Instagram Story" appears only where a Story is
-            genuinely on offer — a browser that can share files AND something
-            with a rendered card. Everywhere else the tile says "Instagram",
-            because that is all it can deliver, and a Story label that opens a
-            direct message is the kind of promise that costs the whole row its
-            credibility.
-          */
+        {rowTargets.map((target) => {
           const active = feedback?.targetId === target.id;
           const succeeded = active && feedback.tone === 'ok';
           // The check replaces the destination's own mark only while the
           // feedback is up, so the tile still reads as that destination.
-          const Icon = succeeded ? Check : ICONS[target.id];
+          const Icon = succeeded ? Check : target.icon || ICONS[target.id];
 
           return (
             <li key={target.id}>
               <button
                 type="button"
                 className={styles.target}
-                onClick={() => handleTarget(target)}
+                onClick={() => (target.onSelect ? target.onSelect() : handleTarget(target))}
                 // The visible label is beneath the icon and is the accessible
                 // name, so no aria-label is needed — and adding one would
                 // override the visible text, which breaks voice control.
                 data-target={target.id}
-                // Only Instagram carries one, and what it says depends on
-                // what this dialog can actually do here — see instagramHint.
-                title={target.needsHint ? instagramHint(instagramMode) : undefined}
               >
                 <span className={styles.iconWrap} aria-hidden="true">
                   <Icon size={26} />
                 </span>
                 <span className={styles.label}>
-                  {active ? feedback.label : labelFor(target)}
+                  {active ? feedback.label : target.label}
                 </span>
               </button>
             </li>
@@ -377,9 +218,8 @@ export default function ShareTargets({ payload, onShared, cardElement }) {
         Visually hidden rather than absent: a sighted user reads "Copied!" on
         the tile they just pressed, which is where they are already looking, and
         a second line of text below the row was both redundant and a permanent
-        band of empty space waiting for it. This carries the fuller sentence —
-        the Instagram instruction does not fit on a tile — and is always in the
-        tree, because a live region created at the same moment its text changes
+        band of empty space waiting for it. This carries the fuller sentence and
+        is always in the tree, because a live region created at the same moment its text changes
         is not announced at all.
       */}
       <p className={styles.srOnly} role="status" aria-live="polite">

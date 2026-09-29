@@ -17,9 +17,9 @@ function Sheet({ onClose }) {
 
 let phone = true;
 
-function touch(el, type, y, t) {
+function touch(el, type, y, t, x = 0) {
   const e = new Event(type, { bubbles: true, cancelable: true });
-  Object.defineProperty(e, 'touches', { value: type === 'touchend' ? [] : [{ clientY: y }] });
+  Object.defineProperty(e, 'touches', { value: type === 'touchend' ? [] : [{ clientY: y, clientX: x }] });
   Object.defineProperty(e, 'timeStamp', { value: t });
   el.dispatchEvent(e);
   return e;
@@ -52,7 +52,28 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+/** A swipe that travels `dx` sideways while drifting `dy` down. */
+function swipe(el, dx, dy, ms) {
+  touch(el, 'touchstart', 100, 0, 100);
+  const steps = 5;
+  let last;
+  for (let i = 1; i <= steps; i++) {
+    last = touch(el, 'touchmove', 100 + (dy * i) / steps, (ms * i) / steps, 100 + (dx * i) / steps);
+  }
+  touch(el, 'touchend', 100 + dy, ms, 100 + dx);
+  return last;
+}
+
 describe('useSheetDrag', () => {
+  it('leaves a sideways swipe to the row under it, even one that drifts down', () => {
+    const onClose = vi.fn();
+    const { getByTestId } = render(<Sheet onClose={onClose} />);
+    const move = swipe(getByTestId('handle'), -240, 60, 300);
+    expect(move.defaultPrevented).toBe(false);
+    vi.runAllTimers();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
   it('closes after a drag past a quarter of the sheet', () => {
     const onClose = vi.fn();
     const { getByTestId } = render(<Sheet onClose={onClose} />);

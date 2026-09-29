@@ -13,21 +13,9 @@
  *
  * WHAT EACH PLATFORM REALLY SUPPORTS
  * Every entry here is the documented, supported flow for that platform, not a
- * URL that looks plausible. Where a platform does not support web sharing —
- * Instagram — this says so and does something useful instead, rather than
- * opening an endpoint that shows a login wall.
- */
-
-/**
- * Instagram is not a URL, and its whole story lives in `./instagram.js`.
- *
- * The short version, because it is the finding that shaped this file: Stories
- * renders no link preview at all — a link there is a sticker Instagram never
- * fetches `og:image` for — so handing Instagram a URL only ever offers Direct.
- * The card has to travel as an image FILE instead. `instagram.js` owns the
- * capability check, the three modes and the action; the primitives it uses
- * (`canShareFiles`, `shareFiles`, `copyToClipboard`, `shareNatively`) are all
- * below and are not Instagram-specific.
+ * URL that looks plausible. Instagram is deliberately absent: it has no web
+ * share URL at all. The installed app shares to Instagram Stories natively
+ * (src/mobile/share/), and the website does not pretend to.
  */
 
 /**
@@ -39,8 +27,7 @@
  *
  * The order is the order they are shown, and it is deliberate: Copy link leads
  * because it is the one destination that cannot fail and the fallback every
- * other target uses, Instagram follows because it resolves to the same action,
- * then the platforms that genuinely open a composer.
+ * other target uses, then the platforms that genuinely open a composer.
  */
 export const SHARE_TARGETS = [
   {
@@ -50,17 +37,6 @@ export const SHARE_TARGETS = [
     // every platform below can fail on a popup blocker, a missing app or an
     // in-app browser, and this is what they all fall back to. It is also what
     // somebody reaches for when the destination they want is not listed.
-    build: () => null,
-  },
-  {
-    id: 'instagram',
-    label: 'Instagram',
-    /**
-     * Not a URL, and its label and hint are not fixed either: both depend on
-     * what this device can do for this payload, so `./instagram.js` resolves
-     * them and the component asks it. The label here is the fallback.
-     */
-    needsHint: true,
     build: () => null,
   },
   {
@@ -225,107 +201,6 @@ export async function copyToClipboard(value) {
     return false;
   }
 }
-
-/**
- * Whether this browser can put FILES into the share sheet.
- *
- * Web Share API Level 2. Chrome on Android and Safari on iOS support it;
- * desktop browsers largely do not. This is the capability that decides whether
- * Instagram can be offered a Story at all, so it is checked with a real File
- * rather than by sniffing the user agent — a probe that is wrong is worse than
- * no probe, because the failure lands on the user as a share sheet that does
- * not contain the app they wanted.
- */
-export function canShareFiles(type = 'image/jpeg') {
-  if (typeof navigator === 'undefined') return false;
-  if (typeof navigator.share !== 'function') return false;
-  if (typeof navigator.canShare !== 'function') return false;
-  if (typeof File === 'undefined') return false;
-
-  try {
-    // Probed with the type actually being shared. A probe that says `image/jpeg`
-    // while the code goes on to share something else is asking the wrong
-    // question, and the answer only looks right by luck.
-    const probe = new File([new Blob([1])], `probe.${type.split('/')[1]}`, {
-      type,
-    });
-    return navigator.canShare({ files: [probe] });
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Downloads the rendered card and wraps it as a File the share sheet accepts.
- *
- * FETCHED AHEAD OF THE TAP, NOT DURING IT
- * `navigator.share` must be called while the browser still considers the page
- * to have transient activation from a user gesture. Safari in particular
- * refuses a share that comes after an awaited `fetch`. So callers prefetch this
- * when the dialog OPENS and hand the finished File to `share` synchronously
- * when the button is pressed — the fetch happens in the gap where the person is
- * still reading the dialog.
- *
- * Returns null for anything that goes wrong. A missing card falls back to
- * sharing the link, which is the behaviour that existed before.
- */
-export async function fetchShareCard(url, fileName = 'card.jpg') {
-  if (!url) return null;
-
-  try {
-    const response = await fetch(url, {
-      // The card is public and the endpoint takes no session. Sending cookies
-      // would force a credentialed CORS mode for no reason.
-      credentials: 'omit',
-      signal: AbortSignal.timeout(CARD_FETCH_TIMEOUT_MS),
-    });
-    if (!response.ok) return null;
-
-    const blob = await response.blob();
-    if (!blob.size || !/^image\//i.test(blob.type)) return null;
-    // A share sheet has to hold this in memory and hand it to another app.
-    if (blob.size > MAX_CARD_BYTES) return null;
-
-    return new File([blob], fileName, {
-      type: blob.type,
-      lastModified: Date.now(),
-    });
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Hands files to the OS share sheet.
- *
- * Files ONLY — no `url`, no `text`. Some share targets refuse a payload that
- * mixes them, and Instagram is one of the ones that behaves least predictably:
- * given an image plus a URL it can fall back to treating the whole thing as a
- * message, which is the case this whole path exists to get away from. The link
- * travels via the clipboard instead, which is where a story link sticker needs
- * it anyway.
- */
-export async function shareFiles(files) {
-  if (!files?.length) return 'unsupported';
-  if (typeof navigator?.share !== 'function') return 'unsupported';
-
-  try {
-    if (typeof navigator.canShare === 'function' && !navigator.canShare({ files })) {
-      return 'unsupported';
-    }
-    await navigator.share({ files });
-    return 'shared';
-  } catch (error) {
-    if (error?.name === 'AbortError') return 'dismissed';
-    return 'unsupported';
-  }
-}
-
-/** How long to wait for the card before giving up and sharing the link. */
-const CARD_FETCH_TIMEOUT_MS = 8000;
-
-/** Ceiling on a card handed to another application. Ours are well under it. */
-const MAX_CARD_BYTES = 8 * 1024 * 1024;
 
 /** Whether this browser can open a native share sheet for a payload. */
 export function canNativeShare(payload) {

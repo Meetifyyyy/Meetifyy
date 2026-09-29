@@ -303,6 +303,43 @@ export interface DeepLinks {
 }
 
 /**
+ * Instagram's "Add to Story" composer, reached natively.
+ *
+ * Consumer: `src/mobile/share/InstagramStoryPanel`.
+ *
+ * Native only, by construction: Instagram accepts a Story asset only from an
+ * app that can hand it a `content://` URI (Android) or typed pasteboard items
+ * (iOS). A web page can do neither, so there is no web implementation and the
+ * website never offers the action.
+ */
+export type InstagramStoriesUnavailableReason =
+  | 'not_installed'
+  | 'unsupported_platform'
+  | 'not_configured';
+
+export interface InstagramStoriesShare {
+  /** The card, as a transparent PNG, base64 without a data: prefix. */
+  stickerPngBase64: string;
+  /** `#RRGGBB` colours Instagram draws its background gradient between. */
+  backgroundTopColor: string;
+  backgroundBottomColor: string;
+}
+
+export interface InstagramStories {
+  availability(): Promise<
+    { available: true } | { available: false; reason: InstagramStoriesUnavailableReason }
+  >;
+  /**
+   * Resolves once Instagram's composer has been launched. Instagram reports
+   * nothing back — whether the person posts or cancels is not observable —
+   * so a resolved promise means "handed over", never "published".
+   * Rejects with an `Error` whose `code` is one of `INSTAGRAM_NOT_INSTALLED`,
+   * `MISSING_APP_ID`, `INVALID_ASSET`, `FILE_ERROR`, `LAUNCH_FAILED`.
+   */
+  share(input: InstagramStoriesShare): Promise<void>;
+}
+
+/**
  * What this build is running on.
  *
  * Consumer: session registration (Phase 6) — it supplies `UserSession.platform`

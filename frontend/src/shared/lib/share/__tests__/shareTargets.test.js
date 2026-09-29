@@ -3,11 +3,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   SHARE_TARGETS,
   canNativeShare,
-  canShareFiles,
   copyToClipboard,
-  fetchShareCard,
   openShareWindow,
-  shareFiles,
   shareNatively,
 } from '../shareTargets';
 
@@ -40,7 +37,6 @@ describe('share targets', () => {
     // missing.
     expect(SHARE_TARGETS.map((t) => t.id)).toEqual([
       'copy',
-      'instagram',
       'whatsapp',
       'x',
       'linkedin',
@@ -109,106 +105,10 @@ describe('share targets', () => {
     });
   });
 
-  describe('Instagram', () => {
-    it('builds no url, because Instagram has no web share endpoint', () => {
-      // Every "Instagram share URL" is a login wall. The button copies the link
-      // instead, or hands off to the OS share sheet where there is one.
-      expect(target('instagram').build(payload)).toBeNull();
-    });
-
-    // The label, the hint and the action all live in `instagram.js` and are
-    // covered by its own suite: they depend on the browser and the payload, and
-    // this table knows about neither.
-    it('is the only target that needs explaining', () => {
-      // It is the only one whose behaviour is not obvious from its name, so it
-      // is the only one that carries a hint — and the hint depends on the
-      // device, which is why the component resolves it rather than this table.
-      expect(SHARE_TARGETS.filter((t) => t.needsHint).map((t) => t.id)).toEqual([
-        'instagram',
-      ]);
-    });
-  });
-
-  describe('sharing the card as a file', () => {
-    // The mechanism behind the Instagram fix: Instagram's share target offers
-    // "Add to story" and "Add to post" for `image/*` and only "Direct" for a
-    // URL, so the card has to travel as a File.
-
-    it('detects file support with a real File rather than a user-agent guess', () => {
-      expect(canShareFiles()).toBe(false); // no navigator.share in jsdom
-
-      navigator.share = vi.fn();
-      navigator.canShare = vi.fn().mockReturnValue(true);
-      expect(canShareFiles()).toBe(true);
-      expect(navigator.canShare).toHaveBeenCalledWith({
-        files: [expect.any(File)],
-      });
-
-      navigator.canShare = vi.fn().mockReturnValue(false);
-      expect(canShareFiles()).toBe(false);
-    });
-
-    it('wraps the fetched card as an image File', async () => {
-      globalThis.fetch = vi.fn().mockResolvedValue({
-        ok: true,
-        blob: async () => new Blob(['x'], { type: 'image/jpeg' }),
-      });
-
-      const file = await fetchShareCard('https://x.test/card.jpg', 'card.jpg');
-      expect(file).toBeInstanceOf(File);
-      expect(file.type).toBe('image/jpeg');
-      expect(file.name).toBe('card.jpg');
-    });
-
-    it('refuses anything that is not an image', async () => {
-      // A rewrite that falls through to the SPA returns HTML with a 200. Handing
-      // that to a share sheet as a "card" is worse than not offering one.
-      globalThis.fetch = vi.fn().mockResolvedValue({
-        ok: true,
-        blob: async () => new Blob(['<!doctype html>'], { type: 'text/html' }),
-      });
-      await expect(fetchShareCard('https://x.test/card.jpg')).resolves.toBeNull();
-    });
-
-    it('returns null rather than throwing on any failure', async () => {
-      globalThis.fetch = vi.fn().mockResolvedValue({ ok: false });
-      await expect(fetchShareCard('https://x.test/card.jpg')).resolves.toBeNull();
-
-      globalThis.fetch = vi.fn().mockRejectedValue(new Error('offline'));
-      await expect(fetchShareCard('https://x.test/card.jpg')).resolves.toBeNull();
-
-      await expect(fetchShareCard('')).resolves.toBeNull();
-    });
-
-    it('shares files alone, never mixed with a url', async () => {
-      navigator.share = vi.fn().mockResolvedValue(undefined);
-      navigator.canShare = vi.fn().mockReturnValue(true);
-      const file = new File([new Blob(['x'])], 'c.jpg', { type: 'image/jpeg' });
-
-      await expect(shareFiles([file])).resolves.toBe('shared');
-      expect(navigator.share).toHaveBeenCalledWith({ files: [file] });
-    });
-
-    it('reports a dismissal separately from a refusal', async () => {
-      const file = new File([new Blob(['x'])], 'c.jpg', { type: 'image/jpeg' });
-      navigator.canShare = vi.fn().mockReturnValue(true);
-
-      const abort = new Error('cancelled');
-      abort.name = 'AbortError';
-      navigator.share = vi.fn().mockRejectedValue(abort);
-      await expect(shareFiles([file])).resolves.toBe('dismissed');
-
-      navigator.share = vi.fn().mockRejectedValue(new Error('nope'));
-      await expect(shareFiles([file])).resolves.toBe('unsupported');
-    });
-
-    it('is unsupported where the browser declines the payload', async () => {
-      navigator.share = vi.fn();
-      navigator.canShare = vi.fn().mockReturnValue(false);
-      const file = new File([new Blob(['x'])], 'c.jpg', { type: 'image/jpeg' });
-      await expect(shareFiles([file])).resolves.toBe('unsupported');
-      expect(navigator.share).not.toHaveBeenCalled();
-    });
+  it('offers no Instagram target on the web', () => {
+    // Instagram has no web share URL; a Story can only be handed over by the
+    // installed app's native plugin (src/mobile/share/), never from here.
+    expect(target('instagram')).toBeUndefined();
   });
 
   describe('opening a share window', () => {

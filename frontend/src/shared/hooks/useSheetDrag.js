@@ -23,6 +23,8 @@ import { useEffect, useRef } from 'react';
  * - Touch events, not pointer events: a pointer drag on a touch screen is
  *   cancelled the moment the browser decides the gesture is a scroll, and only
  *   a non-passive `touchmove` can claim it.
+ * - It yields to horizontal gestures: a touch whose first movement is more
+ *   sideways than downward is left to the row or carousel under it.
  * - It yields to scrolling. A drag starts only from the handle
  *   (`[data-sheet-handle]`) or when the content under the finger is already
  *   scrolled to the top, so reading a long sheet never closes it by accident.
@@ -51,6 +53,7 @@ export function useSheetDrag(onClose, { enabled = true, media = '(max-width: 768
     const FLICK_SPEED = 0.5; // px per ms, downward
 
     let startY = 0;
+    let startX = 0;
     let fingerY = 0;
     let lastY = 0;
     let lastT = 0;
@@ -105,6 +108,7 @@ export function useSheetDrag(onClose, { enabled = true, media = '(max-width: 768
       armed = true;
       dragging = false;
       startY = fingerY = lastY = e.touches[0].clientY;
+      startX = e.touches[0].clientX;
       lastT = e.timeStamp;
       velocity = 0;
     };
@@ -114,9 +118,14 @@ export function useSheetDrag(onClose, { enabled = true, media = '(max-width: 768
       const y = e.touches[0].clientY;
       const dy = y - startY;
       if (!dragging) {
+        // Axis lock. A gesture that moves sideways first belongs to whatever
+        // scrolls horizontally under the finger (a row of share targets, a
+        // carousel) and never moves the sheet, however it wanders after.
+        const dx = Math.abs(e.touches[0].clientX - startX);
+        if (dx > 6 && dx >= Math.abs(dy)) { armed = false; return; }
         // An upward first move is a scroll, not a dismiss; let it go.
         if (dy < -4) { armed = false; return; }
-        if (dy < 6) return;
+        if (dy < 6 || dy < dx) return;
         dragging = true;
         // Re-base on the current finger so the sheet does not jump by the
         // slop distance the moment it is grabbed.

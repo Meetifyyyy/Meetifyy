@@ -1,0 +1,115 @@
+.panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0%;
+  min-height: 0;
+  gap: 12px;
+}
+
+/* A 9:16 story, shrunk to fit whatever height the sheet leaves. */
+.frame {
+  position: relative;
+  flex: 1 1 0%;
+  min-height: 0;
+  aspect-ratio: 9 / 16;
+  max-width: 100%;
+  margin: 0 auto;
+  border-radius: 16px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Instagram places the sticker centred at roughly this width. */
+.card {
+  width: 78%;
+  max-height: 88%;
+  height: auto;
+  object-fit: contain;
+  display: block;
+}
+
+.status {
+  margin: 0;
+  min-height: 1.3em;
+  text-align: center;
+  font-size: 0.875rem;
+  color: var(--color-text-muted);
+}
+
+.statusError {
+  color: var(--color-danger, #dc2626);
+}
+
+.actions {
+  display: flex;
+  gap: 10px;
+  /* Clears the navigation bar the WebView runs under (mobile postcss adds it). */
+  padding-bottom: calc(6px + env(safe-area-inset-bottom));
+}
+
+.primary,
+.secondary {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  border-radius: 12px;
+  font: inherit;
+  font-weight: 600;
+  font-size: 0.95rem;
+  cursor: pointer;
+}
+
+.primary {
+  border: none;
+  background: var(--color-primary);
+  color: #ffffff;
+}
+
+.secondary {
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-white);
+  color: var(--color-text-main);
+}
+
+.primary:disabled,
+.secondary:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.spinner,
+.buttonSpinner {
+  border-radius: 50%;
+  border: 3px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #ffffff;
+  animation: spin 0.8s linear infinite;
+}
+
+.spinner {
+  width: 32px;
+  height: 32px;
+}
+
+.buttonSpinner {
+  width: 16px;
+  height: 16px;
+  border-width: 2px;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner,
+  .buttonSpinner {
+    animation-duration: 2.4s;
+  }
+}

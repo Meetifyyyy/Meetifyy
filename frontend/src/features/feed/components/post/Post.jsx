@@ -1,4 +1,4 @@
-import { useState, memo, useMemo, useCallback, useRef } from 'react';
+import { useState, memo, useMemo, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { resolveCommunityAvatarThumb } from '@shared/utils/avatar';
 import { sanitizeUrl } from '@shared/utils/urlSanitize';
@@ -131,7 +131,6 @@ function Post({ postData, onClick, onCommentClick, onDeleted, isDetailed = false
   const { openViewer } = useMediaViewerActions();
   const menu = useMenu();
   const [isExpanded, setIsExpanded] = useState(false);
-  const postCardRef = useRef(null);
 
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
@@ -307,7 +306,6 @@ function Post({ postData, onClick, onCommentClick, onDeleted, isDetailed = false
 
   return (
     <div
-      ref={postCardRef}
       data-post-id={id}
       className={`${styles.post}${isDetailed ? ` ${styles.postDetailed}` : ''}${isDeleting ? ` ${styles.postDeleting}` : ''}`}
       onClick={isDeleting ? undefined : handleCardClick}
@@ -531,7 +529,6 @@ function Post({ postData, onClick, onCommentClick, onDeleted, isDetailed = false
         post={postData}
         authorOverride={author}
         onCommentClick={handleCommentClick}
-        postCardRef={postCardRef}
       />
 
       {showDeleteConfirm && (

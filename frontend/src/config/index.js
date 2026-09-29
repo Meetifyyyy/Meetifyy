@@ -81,6 +81,13 @@ export const config = {
      */
     internalDomains: csv('VITE_INTERNAL_DOMAINS'),
     supportEmail: str('VITE_SUPPORT_EMAIL'),
+    /**
+     * The Meta (Facebook) App ID Instagram requires, as `source_application`,
+     * before it accepts a Story from another app. Public by design — Meta
+     * identifies the sending app with it; it grants nothing — so it is safe
+     * in a VITE_ variable. Empty means the app does not offer Stories.
+     */
+    facebookAppId: str('VITE_FACEBOOK_APP_ID'),
   },
 
   api: {

@@ -325,8 +325,12 @@ function NotFound() {
  *   sign up — and someone opening the installed app has already done both.
  *   This is the ONLY route the app overrides; every other screen is this same
  *   table, unchanged.
+ * @param {React.ReactNode} [props.rootExtras]
+ *   Rendered once inside the router root, beside the app-wide mounts. The
+ *   native build uses it for its inbound-link navigator, which needs the
+ *   router's `navigate`; the website passes nothing.
  */
-export default function App({ homeElement }) {
+export default function App({ homeElement, rootExtras = null }) {
   // NOTE: This router is created inside the App component using useMemo so that
   // nested route elements and hooks (like ProtectedRoute, SocketManager) can
   // safely consume context from AuthProvider, which wraps App in main.jsx.
@@ -344,6 +348,7 @@ export default function App({ homeElement }) {
           <NotificationLabMount />
           <CookieBanner />
           <CookiePreferencesModal />
+          {rootExtras}
           <Outlet />
         </ErrorBoundary>
       ),
@@ -521,7 +526,7 @@ export default function App({ homeElement }) {
   future: {
     v7_startTransition: true,
   }
-}), [homeElement]);
+}), [homeElement, rootExtras]);
 
   return <RouterProvider router={router} />;
 }

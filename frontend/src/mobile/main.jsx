@@ -53,6 +53,9 @@ import UpdateGate from './UpdateGate';
 import { createCapacitorSystemBars } from '../platform/capacitor/systemBars';
 import { installSystemBars } from './installSystemBars';
 import { readPageEdgeColors } from './pageEdgeColors';
+import { createCapacitorDeepLinks } from '../platform/capacitor/deepLinks';
+import DeepLinkNavigator from './navigation/DeepLinkNavigator';
+import { config } from '../config';
 
 import '../styles/variables.css';
 import '../styles/global.css';
@@ -137,6 +140,25 @@ installLaunchReadiness({
   }),
 });
 
+/**
+ * Links into the app: `https://<site>/post/…` and the other shareable routes,
+ * delivered by Android App Links (see AndroidManifest.xml). Subscribed before
+ * the first render so the link that cold-started the app is not missed; the
+ * navigator inside the router drains it once mounted.
+ */
+const deepLinks = createCapacitorDeepLinks({
+  allowedHosts: [safeHost(config.app.siteUrl)],
+});
+const deepLinkNavigator = <DeepLinkNavigator deepLinks={deepLinks} />;
+
+function safeHost(url) {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return '';
+  }
+}
+
 // A returning user's home route and first feed page, started alongside the
 // session restore rather than after it (see the module).
 warmSignedInLanding(queryClient);
@@ -174,7 +196,7 @@ createRoot(document.getElementById('root')).render(
                   behind it, making requests.
                 */}
                 <UpdateGate>
-                  <App homeElement={<AppOpenScreen />} />
+                  <App homeElement={<AppOpenScreen />} rootExtras={deepLinkNavigator} />
                 </UpdateGate>
                 <MediaViewerHost />
               </UsersMapProvider>

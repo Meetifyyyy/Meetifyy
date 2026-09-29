@@ -2,4 +2,6 @@
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
     <external-path name="my_images" path="." />
     <cache-path name="my_cache_images" path="." />
+    <!-- Story cards handed to Instagram by InstagramStoriesPlugin. -->
+    <cache-path name="instagram_stories" path="instagram-stories/" />
 </paths>

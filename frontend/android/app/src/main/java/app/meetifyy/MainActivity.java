@@ -45,8 +45,9 @@ public class MainActivity extends BridgeActivity {
         // 2. Install splash screen using the resolved theme
         final SplashScreen splashScreen = SplashScreen.installSplashScreen(this);
 
-        // 3. Register custom SystemUi plugin before super.onCreate
+        // 3. Register the app's own plugins before super.onCreate
         registerPlugin(SystemUiPlugin.class);
+        registerPlugin(InstagramStoriesPlugin.class);
 
         super.onCreate(savedInstanceState);
 

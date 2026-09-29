@@ -1,0 +1,10 @@
+{
+  "$comment": "Android App Links: which signing certificates may open links on each site. Read by scripts/app-links-plugin.js, which emits /.well-known/assetlinks.json for the host in VITE_SITE_URL. Fingerprints are public certificate hashes, not secrets. Each environment lists only its own build: dev.meetifyy.app the debug key that signs development APKs; meetifyy.app the release (and Play app-signing) key once it is approved. An empty list emits nothing, so links open in the browser.",
+  "packageName": "app.meetifyy",
+  "hosts": {
+    "dev.meetifyy.app": [
+      "B7:F1:F2:46:DB:75:FA:A2:09:A5:49:63:69:05:41:08:0E:D1:33:6B:CC:44:22:79:28:B0:F3:9F:55:68:7D:38"
+    ],
+    "meetifyy.app": []
+  }
+}

@@ -1,0 +1,362 @@
+/* The share sheet. Theme tokens only (styles/variables.css), so it follows
+   light and dark with the rest of the app. Hierarchy comes from spacing,
+   type and one accent — no gradients, no glass. */
+
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20000;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+  animation: fadeIn 0.18s ease;
+}
+
+.sheet {
+  width: 100%;
+  max-width: 480px;
+  height: 78vh;
+  height: 78dvh;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-bg-white);
+  color: var(--color-text-main);
+  border-radius: 28px 28px 0 0;
+  box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.12);
+  animation: slideUp 0.32s cubic-bezier(0.16, 1, 0.3, 1);
+  overflow: hidden;
+}
+
+@media (min-width: 769px) {
+  .backdrop {
+    align-items: center;
+  }
+
+  .sheet {
+    height: min(640px, 86vh);
+    border-radius: 28px;
+  }
+}
+
+/* Header ------------------------------------------------------------------ */
+
+.header {
+  flex-shrink: 0;
+  padding: 8px 20px 4px;
+}
+
+.header > :global(.sheet-handle) {
+  margin: 0 auto 6px;
+}
+
+.headerRow {
+  display: grid;
+  grid-template-columns: 36px 1fr 36px;
+  align-items: center;
+  min-height: 40px;
+}
+
+.title {
+  grid-column: 2;
+  margin: 0;
+  text-align: center;
+  font-size: 1.02rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.closeBtn {
+  grid-column: 3;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 50%;
+  background: var(--color-bg-soft);
+  color: var(--color-text-main);
+  cursor: pointer;
+}
+
+/* Phones close by dragging, the backdrop or Back. Hidden, not removed, so the
+   title stays centred in its grid. */
+@media (max-width: 768px) {
+  .closeBtn {
+    visibility: hidden;
+  }
+}
+
+/* Visually hidden, still announced. */
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* Body -------------------------------------------------------------------- */
+
+.body {
+  flex: 1 1 0%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 8px 20px 0;
+}
+
+.fill {
+  flex: 1;
+}
+
+/* What is being shared */
+.subject {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  margin-bottom: 14px;
+  border: 1px solid var(--color-border);
+  border-radius: 18px;
+  min-width: 0;
+  flex-shrink: 0;
+}
+
+.subjectThumb {
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  border-radius: 12px;
+  object-fit: cover;
+  background: var(--color-bg-soft);
+}
+
+.round {
+  border-radius: 50%;
+}
+
+.subjectInitial {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-primary);
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 1.05rem;
+}
+
+.subjectText {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 2px;
+}
+
+.subjectTitle {
+  font-weight: 650;
+  font-size: 0.94rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.subjectSubtitle {
+  font-size: 0.84rem;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Search */
+.search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 42px;
+  padding: 0 14px;
+  margin-bottom: 14px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  background: var(--color-bg-soft);
+  color: var(--color-text-muted);
+}
+
+.search input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--color-text-main);
+  font: inherit;
+  font-size: 0.95rem;
+}
+
+.search:focus-within {
+  box-shadow: 0 0 0 2px rgba(var(--color-primary-rgb), 0.35);
+}
+
+/* Recipients: a grid of people, tapped to pick */
+.grid {
+  flex: 1 1 0%;
+  min-height: 0;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  align-content: start;
+  gap: 18px 8px;
+  padding: 4px 0 16px;
+  scrollbar-width: none;
+}
+
+.grid::-webkit-scrollbar {
+  display: none;
+}
+
+.person {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.avatarWrap {
+  position: relative;
+  display: inline-flex;
+  border-radius: 50%;
+  transition: transform 0.16s ease, box-shadow 0.16s ease;
+}
+
+.person:active .avatarWrap {
+  transform: scale(0.95);
+}
+
+.picked .avatarWrap {
+  box-shadow: 0 0 0 2.5px var(--color-bg-white), 0 0 0 4.5px var(--color-primary);
+}
+
+.check {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--color-primary);
+  color: #ffffff;
+  border: 2px solid var(--color-bg-white);
+}
+
+.personName {
+  max-width: 100%;
+  font-size: 0.78rem;
+  line-height: 1.25;
+  text-align: center;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-word;
+}
+
+.picked .personName {
+  font-weight: 650;
+}
+
+.personState {
+  font-size: 0.7rem;
+  color: var(--color-text-muted);
+}
+
+.personFailed {
+  color: var(--color-danger, #dc2626);
+}
+
+.empty {
+  grid-column: 1 / -1;
+  margin: 24px 0;
+  text-align: center;
+  color: var(--color-text-muted);
+  font-size: 0.9rem;
+}
+
+/* Footer: the share row, or Send once someone is picked */
+.footer {
+  flex-shrink: 0;
+  margin: 0 -20px;
+  padding: 6px 20px calc(8px + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.sendBtn {
+  width: 100%;
+  height: 50px;
+  border: none;
+  border-radius: 14px;
+  background: var(--color-primary);
+  color: #ffffff;
+  font: inherit;
+  font-weight: 650;
+  font-size: 1rem;
+  cursor: pointer;
+  animation: rise 0.2s ease;
+}
+
+.sendBtn:disabled {
+  opacity: 0.7;
+  cursor: default;
+}
+
+.unavailable {
+  padding: 32px 20px;
+  text-align: center;
+  color: var(--color-text-muted);
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { transform: translate3d(0, 100%, 0); }
+  to { transform: translate3d(0, 0, 0); }
+}
+
+@keyframes rise {
+  from { opacity: 0; transform: translate3d(0, 6px, 0); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .backdrop,
+  .sheet,
+  .sendBtn {
+    animation: none;
+  }
+}
+
+/* Phones: with the title hidden and no ✕, the header row would be an empty
+   band under the handle. */
+@media (max-width: 768px) {
+  .headerRow:has(.srOnly) {
+    display: none;
+  }
+}

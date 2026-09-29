@@ -47,7 +47,18 @@ android {
         }
     }
     buildTypes {
+        /*
+         * The host this build claims for Android App Links (AndroidManifest.xml).
+         * Debug builds talk to the development API, so they open development
+         * links; release builds open production ones. Never cross them: a
+         * development build answering production links would open real users'
+         * shared content against the development backend.
+         */
+        debug {
+            manifestPlaceholders = [appLinkHost: "dev.meetifyy.app"]
+        }
         release {
+            manifestPlaceholders = [appLinkHost: "meetifyy.app"]
             if (releasePropsFile.exists()) {
                 signingConfig signingConfigs.release
             }

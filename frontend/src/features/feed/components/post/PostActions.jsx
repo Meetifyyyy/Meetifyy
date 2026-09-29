@@ -13,7 +13,6 @@ function PostActions({
   className = '',
   style,
   authorOverride,
-  postCardRef,
 }) {
   const { currentUser } = useAuth();
   const { mutate: toggleLike } = useLikePost();
@@ -170,7 +169,6 @@ function PostActions({
           onClose={() => setShowShareModal(false)}
           post={post}
           author={author}
-          postCardElement={postCardRef?.current}
         />
       )}
     </>

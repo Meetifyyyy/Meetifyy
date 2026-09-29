@@ -23,6 +23,25 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
+            <!--
+                Android App Links for the shareable routes. appLinkHost is set
+                per build type in app/build.gradle (debug opens the development
+                site, release the production one), and Android only hands a
+                link to this app once that host's /.well-known/assetlinks.json
+                lists this build's signing certificate. Until then the link
+                opens in the browser, which is the correct fallback.
+            -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="${appLinkHost}" />
+                <data android:pathPrefix="/post/" />
+                <data android:pathPrefix="/profile/" />
+                <data android:pathPrefix="/communities/" />
+                <data android:pathPrefix="/crew/" />
+            </intent-filter>
+
         </activity>
 
         <provider
@@ -35,6 +54,14 @@
                 android:resource="@xml/file_paths"></meta-data>
         </provider>
     </application>
+
+    <!--
+        Package visibility (Android 11+): without this, resolveActivity cannot
+        see Instagram and every share would report it as not installed.
+    -->
+    <queries>
+        <package android:name="com.instagram.android" />
+    </queries>
 
     <!-- Permissions -->
 

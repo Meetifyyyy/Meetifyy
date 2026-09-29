@@ -1,3 +1,4 @@
+import { appLinksPlugin } from './scripts/app-links-plugin.js';
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
@@ -148,6 +149,8 @@ export default defineConfig(({ mode }) => {
   plugins: [
     react(),
     stampBuildVersionPlugin(),
+    // /.well-known/assetlinks.json for this deployment's host only.
+    appLinksPlugin({ root: __dirname, siteUrl: env.VITE_SITE_URL }),
     // Production only: see the plugin's own note.
     ...(isProductionApp ? [stripDevHostGuardPlugin(), stripDevCspPlugin()] : []),
     ...(isProductionApp ? [VitePWA({

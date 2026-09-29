@@ -77,7 +77,7 @@ const renderModal = () => {
 };
 
 const type = async (text) => {
-  fireEvent.change(screen.getByPlaceholderText('Search connections or groups...'), {
+  fireEvent.change(screen.getByLabelText('Search chats'), {
     target: { value: text },
   });
   await act(async () => {
@@ -93,8 +93,9 @@ const settle = async () =>
   });
 
 const renderedNames = () =>
-  Array.from(document.querySelectorAll('[class*="contactName"]')).map(
-    (n) => n.textContent,
+  // By role, so a restyle of the recipient grid does not break the test.
+  screen.queryAllByRole('option').map(
+    (n) => n.querySelector('[class*="personName"]')?.textContent,
   );
 
 /** The term the component last asked the server for. */
@@ -176,7 +177,7 @@ describe('Share picker — search reaches the server', () => {
     await settle();
     getConversationsMock.mockClear();
 
-    const input = screen.getByPlaceholderText('Search connections or groups...');
+    const input = screen.getByLabelText('Search chats');
     for (const value of ['h', 'hi', 'hik', 'hike']) {
       fireEvent.change(input, { target: { value } });
       await act(async () => {
