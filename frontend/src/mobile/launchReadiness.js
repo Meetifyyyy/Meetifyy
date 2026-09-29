@@ -22,20 +22,49 @@ export function installLaunchReadiness({
   now = () => performance.now(),
   nextFrame = (cb) => window.requestAnimationFrame(cb),
   hasSurface = () => document.querySelector(LAUNCH_SURFACE_SELECTOR) !== null,
+  // A clock that does not depend on frames. See `backstop` below.
+  later = (cb, ms) => window.setTimeout(cb, ms),
+  // Told as the splash is released, so native can lift it without waiting for
+  // its next poll (which queues behind this thread). Optional.
+  onRelease = () => {},
 } = {}) {
   if (!boot || typeof boot.ready !== 'function') return;
   const release = boot.ready;
   let pending = false;
+  let released = false;
+  // Marks on the page's own timeline, readable over devtools from a device
+  // build: where a launch spends its time between auth and the splash lifting.
+  const mark = (name) => { try { performance.mark(name); } catch { /* optional */ } };
+  const releaseOnce = (via) => {
+    if (released) return;
+    released = true;
+    mark(`meetifyy:splash-release:${via}`);
+    release();
+    try { onRelease(); } catch { /* the poll still lifts the splash */ }
+  };
 
   boot.ready = () => {
     if (pending || boot.appReady) return;
     pending = true;
+    mark('meetifyy:auth-decided');
     const startedAt = now();
-    const settle = () => nextFrame(() => nextFrame(() => release()));
+    const settle = () => {
+      mark('meetifyy:surface');
+      nextFrame(() => nextFrame(() => releaseOnce('frames')));
+    };
     const check = () => {
       if (hasSurface() || now() - startedAt >= maxWaitMs) settle();
       else nextFrame(check);
     };
     check();
+    /*
+     * The wait above is counted in animation frames, and frames are exactly
+     * what a page behind a held splash may not get: the platform can throttle
+     * rAF for a WebView whose window is not being drawn. If it does, neither
+     * the cap nor the two-frame settle ever completes and the NATIVE backstop
+     * (seconds later) is what finally lifts the splash. A timer keeps the cap
+     * honest; in the normal case the frames win and this does nothing.
+     */
+    later(() => releaseOnce('timer'), maxWaitMs + 100);
   };
 }

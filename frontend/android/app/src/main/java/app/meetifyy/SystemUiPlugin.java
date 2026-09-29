@@ -169,6 +169,31 @@ public class SystemUiPlugin extends Plugin {
         });
     }
 
+    /**
+     * The page is ready and has painted: lift the splash now.
+     *
+     * MainActivity also polls for readiness with evaluateJavascript, but that
+     * call is queued behind the page's main thread — which, the moment auth is
+     * decided, is busy mounting the shell and rendering the feed. Measured on a
+     * device the poll saw readiness ~500 ms after the page had set it, all of it
+     * spent behind a splash covering an already-painted screen. A plugin call is
+     * posted to the native side as it is made, so it does not wait for that
+     * work. The poll stays as the fallback.
+     *
+     * @param call `theme`: "dark" or "light", the theme the page booted in, so
+     *             the window behind it is corrected exactly as the poll would.
+     */
+    @PluginMethod
+    public void appReady(PluginCall call) {
+        final String theme = call.getString("theme", "");
+        final Activity activity = getActivity();
+        if (activity instanceof MainActivity) {
+            final MainActivity main = (MainActivity) activity;
+            activity.runOnUiThread(() -> main.onPageReady(theme));
+        }
+        call.resolve();
+    }
+
     /** The bars' current heights, in CSS px. Lets the page fill its own layout before the first paint. */
     @PluginMethod
     public void getInsets(PluginCall call) {

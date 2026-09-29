@@ -10,12 +10,14 @@ function harness({ surfaceAfterFrames = Infinity, maxWaitMs = 900, msPerFrame = 
   const boot = { appReady: false, ready: release };
   let frames = 0;
   const queue = [];
+  const timers = [];
   installLaunchReadiness({
     boot,
     maxWaitMs,
     now: () => frames * msPerFrame,
     nextFrame: (cb) => queue.push(cb),
     hasSurface: () => frames >= surfaceAfterFrames,
+    later: (cb, ms) => timers.push({ cb, ms }),
   });
   const tick = (n = 1) => {
     for (let i = 0; i < n; i += 1) {
@@ -23,7 +25,8 @@ function harness({ surfaceAfterFrames = Infinity, maxWaitMs = 900, msPerFrame = 
       queue.splice(0).forEach((cb) => cb());
     }
   };
-  return { boot, release, tick };
+  const fireTimers = () => timers.splice(0).forEach((t) => t.cb());
+  return { boot, release, tick, timers, fireTimers };
 }
 
 describe('launch readiness', () => {
@@ -65,5 +68,39 @@ describe('launch readiness', () => {
 
   it('does nothing when there is no boot object (web)', () => {
     expect(() => installLaunchReadiness({ boot: undefined })).not.toThrow();
+  });
+
+  it('still releases on time when frames stop arriving', () => {
+    const { boot, release, timers, fireTimers } = harness({ surfaceAfterFrames: 0 });
+    boot.ready();
+    expect(timers[0].ms).toBeGreaterThan(900);
+    fireTimers(); // no frame has run at all
+    expect(release).toHaveBeenCalledTimes(1);
+  });
+
+  it('releases once when the frames win and the timer fires later', () => {
+    const { boot, release, tick, fireTimers } = harness({ surfaceAfterFrames: 0 });
+    boot.ready();
+    tick(2);
+    fireTimers();
+    expect(release).toHaveBeenCalledTimes(1);
+  });
+
+  it('tells native as it releases, exactly once', () => {
+    const onRelease = vi.fn();
+    const release = vi.fn();
+    const boot = { appReady: false, ready: release };
+    const queue = [];
+    const timers = [];
+    installLaunchReadiness({
+      boot, now: () => 0, nextFrame: (cb) => queue.push(cb), hasSurface: () => true,
+      later: (cb) => timers.push(cb), onRelease,
+    });
+    boot.ready();
+    queue.splice(0).forEach((cb) => cb());
+    queue.splice(0).forEach((cb) => cb());
+    timers.forEach((cb) => cb());
+    expect(release).toHaveBeenCalledTimes(1);
+    expect(onRelease).toHaveBeenCalledTimes(1);
   });
 });

@@ -33,6 +33,7 @@
 // First: keeps a phone in landscape on the mobile layout (see the module).
 import './installLandscapePhoneMedia';
 import { installLaunchReadiness } from './launchReadiness';
+import { warmSignedInLanding } from './warmSignedInLanding';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -125,10 +126,20 @@ installNativeBackButton(createCapacitorBackButton());
  * Runs after the stylesheets above are imported; reading the variable before
  * them returns nothing and the strips keep their CSS fallback.
  */
-installSystemBars(createCapacitorSystemBars(), { readEdges: readPageEdgeColors });
+const systemBars = createCapacitorSystemBars();
+installSystemBars(systemBars, { readEdges: readPageEdgeColors });
 
 // Before the app renders: AuthContext may call ready() on its first effect.
-installLaunchReadiness();
+// The release is pushed to native as it happens (see SystemUiPlugin.appReady).
+installLaunchReadiness({
+  onRelease: () => systemBars.launchReady({
+    theme: document.documentElement.getAttribute('data-theme') || '',
+  }),
+});
+
+// A returning user's home route and first feed page, started alongside the
+// session restore rather than after it (see the module).
+warmSignedInLanding(queryClient);
 
 createRoot(document.getElementById('root')).render(
   <QueryClientProvider client={queryClient}>

@@ -99,10 +99,10 @@
       crawls an app bundle, and the platform draws the splash itself.
   -->
 
-  <link rel="icon" type="image/png" sizes="192x192" href="/favicon.png" />
   <link rel="preload" href="/fonts/inter-100_900-normal-13.woff2" as="font" type="font/woff2" crossorigin />
   <link rel="preload" href="/fonts/changaone-400-normal-15.woff2" as="font" type="font/woff2" crossorigin />
-  <link rel="preload" href="/fonts/changa-400-normal-18.woff2" as="font" type="font/woff2" crossorigin />
+  <!-- Not Changa (plain): only the profile page sets it, so preloading it put
+       23 kB in front of every launch for a screen that may never open. -->
   <link rel="stylesheet" href="/src/styles/fonts.css" />
 </head>
 <body>

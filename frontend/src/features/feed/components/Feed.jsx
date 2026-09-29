@@ -10,6 +10,7 @@ import PullToRefresh from '@shared/components/PullToRefresh';
 import styles from './Feed.module.css';
 import { useAuth } from '@shared/context/AuthContext';
 import { addCreatedPostToCaches } from '../utils/postCache';
+import { feedQueryOptions } from '../utils/feedQuery';
 import VerificationGate from '@shared/components/VerificationGate/VerificationGate';
 import HeaderScrollEdge from '@shared/components/ui/HeaderScrollEdge';
 import HomeCommunities from '@features/communities/components/home/HomeCommunities';
@@ -27,18 +28,7 @@ function Feed({ onPostClick, onCommentClick }) {
     isLoading,
     isError,
     refetch,
-  } = useInfiniteQuery({
-    // Scope the feed cache to the current user and search query
-    queryKey: ['feed', searchQuery, currentUser?.id],
-    queryFn: async ({ pageParam = undefined }) => {
-      const limit = 20;
-      const res = await postsApi.getFeed(limit, pageParam);
-      return res; // Returns { posts: [...], nextCursor: ... }
-    },
-    getNextPageParam: (lastPage) => lastPage?.nextCursor || undefined,
-    staleTime: 60_000,
-    gcTime: 10 * 60_000,
-  });
+  } = useInfiniteQuery(feedQueryOptions(searchQuery, currentUser?.id));
 
   // Flatten the pages of posts into a single deduped array with stable reference
   const allPosts = useMemo(() => {

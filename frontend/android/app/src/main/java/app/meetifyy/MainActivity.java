@@ -6,6 +6,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
+import android.util.Log;
 import android.webkit.WebView;
 import android.view.View;
 import android.view.animation.DecelerateInterpolator;
@@ -90,7 +91,7 @@ public class MainActivity extends BridgeActivity {
                 final WebView webView = getBridge() != null ? getBridge().getWebView() : null;
                 if (SystemClock.uptimeMillis() >= deadline) {
                     // Backstop. The page is on screen from here and owns the bars.
-                    finishLaunch(webView);
+                    finishLaunch(webView, "backstop");
                     return;
                 }
                 if (webView == null) {
@@ -135,7 +136,7 @@ public class MainActivity extends BridgeActivity {
                             applyLaunchBackground(pageDark);
                         }
                         if (value.startsWith("ready")) {
-                            finishLaunch(webView);
+                            finishLaunch(webView, "poll");
                         } else {
                             handler.postDelayed(self, POLL_INTERVAL_MS);
                         }
@@ -145,10 +146,31 @@ public class MainActivity extends BridgeActivity {
         });
     }
 
+    /**
+     * Readiness pushed from the page (SystemUiPlugin.appReady), instead of
+     * waiting for the next poll to get through the page's busy main thread.
+     * Applies the same theme correction the poll does before lifting.
+     */
+    void onPageReady(String theme) {
+        if (contentPainted) return;
+        final boolean pageDark = "dark".equals(theme);
+        final boolean pageLight = "light".equals(theme);
+        if (pageDark || pageLight) {
+            final boolean launchDark = SystemUiHelper.resolveTheme(this).isDark;
+            if (pageDark != launchDark) {
+                SystemUiHelper.applySystemBars(this, pageDark, null);
+                applyLaunchBackground(pageDark);
+            }
+        }
+        finishLaunch(getBridge() != null ? getBridge().getWebView() : null, "push");
+    }
+
     /** Lifts the splash; from here the page owns the system bars. */
-    private void finishLaunch(WebView webView) {
+    private void finishLaunch(WebView webView, String via) {
         if (contentPainted) return;
         contentPainted = true;
+        // Debug builds only: when, and by which path, the splash lifted.
+        if ((getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) Log.i("MeetifyyLaunch", "splash released via " + via);
         if (webView != null) requestPageBars(webView);
     }
 

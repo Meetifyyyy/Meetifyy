@@ -139,6 +139,15 @@ export function createCapacitorSystemBars({ getComputed } = {}) {
 
   return {
     /**
+     * Tells the native splash the page is ready and painted, directly — see
+     * `SystemUiPlugin.appReady`. Fire-and-forget: the native poll is the
+     * fallback, so a failure here only costs the time it always used to.
+     */
+    launchReady({ theme } = {}) {
+      if (!Capacitor.isNativePlatform?.() || Capacitor.getPlatform?.() !== 'android') return;
+      SystemUi.appReady({ theme: theme || '' }).catch(() => {});
+    },
+    /**
      * Sets the bars' icon appearance. `status` and `navigation` are `true` for
      * LIGHT icons (drawn over a dark surface).
      */

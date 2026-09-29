@@ -90,7 +90,11 @@ function emitAsIndexHtml() {
  * explain.
  */
 function dropWebOnlyPublicAssets() {
-  const WEB_ONLY = [/^splash\//, /^robots\.txt$/, /^version\.json$/, /^og\//];
+  // The browser-tab and install icons, too: a WebView draws no favicon and the
+  // launcher icon comes from the native resources. `logo-192.png` stays — the
+  // instant-match notification uses it.
+  const ICONS = ['favicon.ico', 'favicon.png', 'logo.png', 'logo-512.png', 'logo-512-maskable.png', 'logo-192-maskable.png'];
+  const WEB_ONLY = [/^splash\//, /^robots\.txt$/, /^version\.json$/, /^og\//, ...ICONS.map((f) => new RegExp(`^${f.replace(/\./g, '\\.')}$`))];
   return {
     name: 'meetifyy-mobile-drop-web-assets',
     apply: 'build',
@@ -103,7 +107,7 @@ function dropWebOnlyPublicAssets() {
       // publicDir files are copied outside the bundle graph, so they have to be
       // removed from disk rather than from `bundle`.
       const out = path.resolve(__dirname, 'dist-mobile');
-      for (const rel of ['splash', 'robots.txt', 'version.json', 'og']) {
+      for (const rel of ['splash', 'robots.txt', 'version.json', 'og', ...ICONS]) {
         fs.rmSync(path.join(out, rel), { recursive: true, force: true });
       }
     },
@@ -231,7 +235,10 @@ export default defineConfig({
           // which the app replaces with its own opening screen — so the chunk
           // would be near-empty here. Omitting it does not by itself exclude
           // the library; not importing it does.
-          'vendor-react': ['react', 'react-dom', 'react-router-dom', '@tanstack/react-query', '@tanstack/react-virtual'],
+          // Not `@tanstack/react-virtual`: only the feed and notification lists
+          // use it, and in this chunk it was preloaded on every launch,
+          // signed out included. It now travels with the screens that need it.
+          'vendor-react': ['react', 'react-dom', 'react-router-dom', '@tanstack/react-query'],
           'vendor-emoji': ['emoji-mart', '@emoji-mart/react'],
           'vendor-icons': ['@hugeicons/react', '@hugeicons/core-free-icons', '@heroicons/react'],
           'vendor-zustand': ['zustand', 'immer'],
