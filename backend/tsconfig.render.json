@@ -7,7 +7,8 @@
     "allowSyntheticDefaultImports": true,
     "skipLibCheck": true,
     "noImplicitAny": false,
-    "strictNullChecks": false
+    "strictNullChecks": false,
+    "strictPropertyInitialization": false
   },
-  "include": ["render-templates.ts", "src/email/templates/**/*", "src/common/**/*"]
+  "include": ["render-templates.ts", "send-all-mailpit.ts", "src/email/templates/**/*", "src/common/**/*"]
 }
