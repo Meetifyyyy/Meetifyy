@@ -18,6 +18,7 @@
  * people read; the message only has to say whose post this is.
  */
 import { config } from '@config';
+import { publicOrigin } from '@shared/utils/publicOrigin';
 
 /**
  * What this deployment calls itself.
@@ -99,11 +100,13 @@ export function activityShareUrl(activityId) {
  * a link copied on dev.meetifyy.app must open dev, and one copied on localhost
  * must open localhost. In production the origin IS the canonical host, so the
  * case that matters is correct with no environment branching.
+ *
+ * The one exception is the installed app, whose own origin is the WebView's
+ * `https://localhost` and opens nowhere for anyone else: see `publicOrigin`.
  */
 function absoluteUrl(path) {
   if (!path) return '';
-  const origin = typeof window === 'undefined' ? '' : window.location.origin;
-  return `${origin}${path}`;
+  return `${publicOrigin()}${path}`;
 }
 
 /**

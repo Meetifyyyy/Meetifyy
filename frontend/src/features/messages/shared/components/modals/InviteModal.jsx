@@ -17,6 +17,7 @@ import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 import { useScrollLock } from '@shared/hooks/useScrollLock';
 import { getProcessedAvatarUrl } from '@shared/components/avatar/Avatar';
 import { filterCompatibleUsers } from '@shared/lib/studentYearPolicy';
+import { publicOrigin } from '@shared/utils/publicOrigin';
 
 export default function InviteModal({ isOpen, onClose, group }) {
   // Back dismisses this dialog rather than navigating the page behind it.
@@ -55,7 +56,7 @@ export default function InviteModal({ isOpen, onClose, group }) {
     copyLockRef.current = true;
 
     const relativeUrl = generateConversationUrl(group, currentUser?.id, '/inbox');
-    const link = `${window.location.origin}${relativeUrl}`;
+    const link = `${publicOrigin()}${relativeUrl}`;
 
     // Through the shared helper, which falls back where `navigator.clipboard`
     // does not exist and reports failure rather than leaving the lock stuck.
