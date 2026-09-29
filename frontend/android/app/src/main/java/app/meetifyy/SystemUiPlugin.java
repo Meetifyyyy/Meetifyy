@@ -5,26 +5,34 @@ import android.content.SharedPreferences;
 import android.graphics.Color;
 
 import android.view.View;
-import android.view.Window;
+import android.webkit.WebView;
 
 import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
-import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
-import androidx.core.view.WindowInsetsControllerCompat;
 
+import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
+import com.getcapacitor.WebViewListener;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
 import java.util.Locale;
 
 /**
- * Paints the status bar and the navigation bar to match the app's own theme.
+ * The window's side of the system bars.
  *
- * Persists the user's theme selection into SharedPreferences so MainActivity
- * can resolve and apply it on cold start before any UI / splash screen is rendered.
+ * The bars themselves are transparent for the life of the activity and the
+ * WebView is laid out beneath them (see {@link SystemUiHelper#applySystemBars}),
+ * so this plugin does three small things and none of them paints a bar:
+ *
+ * 1. publishes the bars' heights to the page as CSS custom properties, which is
+ *    how the page knows how much of its edge the bars cover;
+ * 2. sets the bar ICON appearance (light or dark), the one thing the page
+ *    cannot draw;
+ * 3. persists the user's theme into SharedPreferences so MainActivity can
+ *    resolve it on the next cold start, before any UI or splash is drawn.
  */
 @CapacitorPlugin(name = "SystemUi")
 public class SystemUiPlugin extends Plugin {
@@ -33,7 +41,7 @@ public class SystemUiPlugin extends Plugin {
     public static final String KEY_BACKGROUND = SystemUiHelper.KEY_BACKGROUND;
 
     /**
-     * @param call `background`: CSS hex color string (e.g. #FFFFFF or #000000)
+     * @param call `background`: CSS hex colour of the theme's chrome (persisted for the next launch)
      *             `lightIcons`: true when icons must be light (dark background)
      *             `theme`: optional "light", "dark", or "system"
      *             `preferenceSet`: optional boolean indicating explicit user choice
@@ -44,12 +52,6 @@ public class SystemUiPlugin extends Plugin {
         final boolean lightIcons = Boolean.TRUE.equals(call.getBoolean("lightIcons", false));
         final String theme = call.getString("theme", null);
         final Boolean preferenceSet = call.getBoolean("preferenceSet", null);
-        // Per-bar colours: each bar continues the page edge it meets. Optional;
-        // without them both bars take `background`, as before.
-        final Integer statusColor = parseOptionalColor(call.getString("statusBackground"));
-        final Integer navColor = parseOptionalColor(call.getString("navBackground"));
-        final Boolean statusLightIcons = call.getBoolean("statusLightIcons", null);
-        final Boolean navLightIcons = call.getBoolean("navLightIcons", null);
 
         if (background == null || background.isEmpty()) {
             call.reject("background is required");
@@ -71,12 +73,8 @@ public class SystemUiPlugin extends Plugin {
         }
 
         activity.runOnUiThread(() -> {
-            final boolean isDark = lightIcons;
-
             // Persisted FIRST and synchronously: this is what the next cold
-            // start's splash and launch background are drawn from. `apply()`
-            // wrote it in the background, so a toggle followed quickly by the
-            // app being killed launched next time in the old theme.
+            // start's splash and launch background are drawn from.
             final SharedPreferences prefs =
                 activity.getSharedPreferences(SystemUiHelper.PREFS, Activity.MODE_PRIVATE);
             final SharedPreferences.Editor editor = prefs.edit();
@@ -92,50 +90,110 @@ public class SystemUiPlugin extends Plugin {
             }
             editor.commit();
 
-            SystemUiHelper.applySystemBars(
-                activity,
-                statusColor != null ? statusColor : color,
-                statusLightIcons != null ? statusLightIcons : isDark,
-                navColor != null ? navColor : color,
-                navLightIcons != null ? navLightIcons : isDark,
-                color
-            );
-            // A theme change while a screen draws behind the status bar must
-            // not paint an opaque strip back over its cover.
-            if (statusBarTransparent) applyOverlayStatusBar(activity, overlayLightIcons);
-            if (navigationBarOverlay) applyOverlayNavigationBar(activity, overlayNavigationLightIcons);
+            // Persisting only. Neither the window's colour (it follows the
+            // page's bottom edge: setWindowColor) nor the bars' icons (they
+            // follow what is under them: setIcons) is set here, because this
+            // call would put the theme's values back over the page's.
 
             // No AppCompatDelegate.setDefaultNightMode() here. The UI is the
             // WebView, which already has the theme; switching the native night
             // mode at runtime only produced a configuration change whose
-            // handler repainted the bars from the preferences as they were
-            // BEFORE this call — the old theme — racing the page. The native
-            // night mode is applied from the preferences above at the next
-            // launch (MainActivity.onCreate), which is the only time native
-            // resources (the splash) are drawn.
+            // handler repainted from the preferences as they were BEFORE this
+            // call — the old theme — racing the page. The native night mode is
+            // applied from the preferences above at the next launch
+            // (MainActivity.onCreate), which is the only time native resources
+            // (the splash) are drawn.
 
             call.resolve();
         });
     }
 
-    /*
-     * ── Drawing behind the status bar ──────────────────────────────────────
+    /**
+     * Keeps the window (and the WebView's own background) the colour of the
+     * page's bottom edge.
      *
-     * Profile and community pages put their cover image under a transparent
-     * status bar. Capacitor's SystemBars pads the decor view by the system-bar
-     * insets (that padding is why every page starts below the clock), so this
-     * plugin takes over that listener: identical padding on every edge, except
-     * the top while an overlay is requested. The top inset is handed to the
-     * page as `--status-bar-inset` so its header can clear the clock. Selected
-     * entry/auth screens can also draw behind the transparent navigation bar;
-     * its safe inset is exposed as `--navigation-bar-inset`.
+     * The window shows in exactly one situation once the page is up: the soft
+     * keyboard. The WebView is shrunk to the space above it at once, and the
+     * keyboard then slides in over roughly a quarter of a second, so for that
+     * long a strip above the keyboard is window rather than page. In the
+     * theme's colour it was a white patch flashing across a dark screen. In the
+     * colour of the page's bottom edge it reads as the page continuing down
+     * behind the keyboard. Not persisted: this follows the page, and the theme
+     * colour for the next cold start is `setColors`'.
+     *
+     * @param call `color`: CSS hex colour
+     */
+    @PluginMethod
+    public void setWindowColor(PluginCall call) {
+        final String value = call.getString("color");
+        final int color;
+        try {
+            color = Color.parseColor(value);
+        } catch (IllegalArgumentException | NullPointerException e) {
+            call.reject("unparseable colour: " + value);
+            return;
+        }
+        final Activity activity = getActivity();
+        if (activity == null) {
+            call.reject("no activity");
+            return;
+        }
+        activity.runOnUiThread(() -> {
+            SystemUiHelper.setWindowColor(activity, color);
+            if (getBridge() != null && getBridge().getWebView() != null) {
+                getBridge().getWebView().setBackgroundColor(color);
+            }
+            call.resolve();
+        });
+    }
+
+    /**
+     * Icon appearance only. Called on every change of the page's edge colours,
+     * so it does nothing else: no preferences, no window repaint.
+     *
+     * @param call `statusLightIcons`: light status-bar icons (over a dark edge)
+     *             `navLightIcons`: light navigation-bar icons
+     */
+    @PluginMethod
+    public void setIcons(PluginCall call) {
+        final boolean statusLight = Boolean.TRUE.equals(call.getBoolean("statusLightIcons", false));
+        final boolean navLight = Boolean.TRUE.equals(call.getBoolean("navLightIcons", false));
+        final Activity activity = getActivity();
+        if (activity == null) {
+            call.reject("no activity");
+            return;
+        }
+        activity.runOnUiThread(() -> {
+            SystemUiHelper.setBarIcons(activity, statusLight, navLight);
+            call.resolve();
+        });
+    }
+
+    /** The bars' current heights, in CSS px. Lets the page fill its own layout before the first paint. */
+    @PluginMethod
+    public void getInsets(PluginCall call) {
+        final JSObject result = new JSObject();
+        result.put("top", lastTop);
+        result.put("bottom", lastBottom);
+        call.resolve(result);
+    }
+
+    /*
+     * ── Insets ─────────────────────────────────────────────────────────────
+     *
+     * Capacitor's SystemBars pads the decor view by the system-bar insets (that
+     * padding is why the WebView used to stop above the navigation buttons), so
+     * this plugin takes over that listener: no padding for the bars, on any
+     * edge, so the WebView runs edge to edge. The bars' heights go to the page
+     * as `--status-bar-inset` and `--navigation-bar-inset`, and the page keeps
+     * its own controls clear of them. The one exception is the soft keyboard:
+     * that still shrinks the WebView, because the keyboard is opaque and the
+     * page has nothing to draw under it.
      */
 
-    private volatile boolean statusBarOverlay = false;
-    private volatile boolean statusBarTransparent = false;
-    private volatile boolean overlayLightIcons = true;
-    private volatile boolean navigationBarOverlay = false;
-    private volatile boolean overlayNavigationLightIcons = true;
+    private int lastTop = 0;
+    private int lastBottom = 0;
+    private boolean published = false;
 
     @Override
     public void load() {
@@ -146,17 +204,27 @@ public class SystemUiPlugin extends Plugin {
         if (activity != null) {
             activity.getWindow().getDecorView().post(this::installInsetsListener);
         }
+        // A new document (the first load, a reload) has none of the custom
+        // properties set on the previous one, and the insets have not changed,
+        // so nothing would republish them.
+        getBridge().addWebViewListener(new WebViewListener() {
+            @Override
+            public void onPageCommitVisible(WebView view, String url) {
+                super.onPageCommitVisible(view, url);
+                published = false;
+                final Activity a = getActivity();
+                if (a != null) ViewCompat.requestApplyInsets(a.getWindow().getDecorView());
+            }
+        });
     }
 
     /**
      * Capacitor's SystemBars registers its own listener on the same view, and
      * a view has one listener: whichever registered last wins. It registers at
-     * load and may do so again later, so installing ours once was not enough —
-     * when SystemBars' listener came back, the WebView was laid out under the
-     * navigation buttons (the page's bottom content, and the app's own bottom
-     * bar, hidden behind them) until something re-applied insets. Ours is
-     * therefore (re)installed at every point where that could have happened.
-     * Re-installing is idempotent: same listener logic, one re-dispatch.
+     * load and may do so again later, so installing ours once was not enough.
+     * Ours is therefore (re)installed at every point where that could have
+     * happened. Re-installing is idempotent: same listener logic, one
+     * re-dispatch.
      */
     @Override
     protected void handleOnStart() {
@@ -183,127 +251,42 @@ public class SystemUiPlugin extends Plugin {
             final Insets ime = insets.getInsets(WindowInsetsCompat.Type.ime());
             final boolean keyboardVisible = insets.isVisible(WindowInsetsCompat.Type.ime());
 
-            v.setPadding(
-                bars.left,
-                0,
-                bars.right,
-                keyboardVisible ? ime.bottom : (navigationBarOverlay ? 0 : bars.bottom)
-            );
+            // Sides for a landscape cutout / side navigation; the bottom is
+            // the keyboard only. The WebView is shrunk to its final size at
+            // once, so for the length of the keyboard's slide the strip above
+            // the keyboard is not the WebView but the window behind it — which
+            // is why the window is kept the colour of the page's bottom edge
+            // (see setWindowColor) rather than the theme's.
+            v.setPadding(bars.left, 0, bars.right, keyboardVisible ? ime.bottom : 0);
 
             final float density = activity.getResources().getDisplayMetrics().density;
-            publishStatusBarInset(Math.round(bars.top / density));
-            publishNavigationBarInset(navigationBarOverlay ? Math.round(bars.bottom / density) : 0);
+            // With the keyboard up the WebView ends at the keyboard's top edge,
+            // so the navigation bar is not under any of the page.
+            publish(Math.round(bars.top / density), keyboardVisible ? 0 : Math.round(bars.bottom / density));
 
             // Zeroed rather than CONSUMED, as Capacitor does, so the WebView keeps
             // recalculating its own safe-area values (chromium issue 461332423).
             return new WindowInsetsCompat.Builder(insets).setInsets(types, Insets.of(0, 0, 0, 0)).build();
         });
+
         ViewCompat.requestApplyInsets(decor);
     }
 
-    private void publishStatusBarInset(int cssPx) {
+    /** One script for both values, and none at all when nothing changed. */
+    private void publish(int topCssPx, int bottomCssPx) {
+        if (published && topCssPx == lastTop && bottomCssPx == lastBottom) return;
+        published = true;
+        lastTop = topCssPx;
+        lastBottom = bottomCssPx;
         if (getBridge() == null || getBridge().getWebView() == null) return;
         final String js = String.format(
             Locale.US,
-            "document.documentElement.style.setProperty('--status-bar-inset','%dpx')",
-            cssPx
+            "(function(){var s=document.documentElement.style;"
+                + "s.setProperty('--status-bar-inset','%dpx');"
+                + "s.setProperty('--navigation-bar-inset','%dpx');"
+                + "try{localStorage.setItem('meetifyy.insets','%d,%d')}catch(e){}})()",
+            topCssPx, bottomCssPx, topCssPx, bottomCssPx
         );
         getBridge().executeOnMainThread(() -> getBridge().getWebView().evaluateJavascript(js, null));
-    }
-
-    private void publishNavigationBarInset(int cssPx) {
-        if (getBridge() == null || getBridge().getWebView() == null) return;
-        final String js = String.format(
-            Locale.US,
-            "document.documentElement.style.setProperty('--navigation-bar-inset','%dpx')",
-            cssPx
-        );
-        getBridge().executeOnMainThread(() -> getBridge().getWebView().evaluateJavascript(js, null));
-    }
-
-    private static Integer parseOptionalColor(String value) {
-        if (value == null || value.isEmpty()) return null;
-        try {
-            return Color.parseColor(value);
-        } catch (IllegalArgumentException e) {
-            return null;
-        }
-    }
-
-    private static void applyOverlayStatusBar(Activity activity, boolean lightIcons) {
-        final Window window = activity.getWindow();
-        window.setStatusBarColor(Color.TRANSPARENT);
-        final WindowInsetsControllerCompat controller =
-            WindowCompat.getInsetsController(window, window.getDecorView());
-        controller.setAppearanceLightStatusBars(!lightIcons);
-    }
-
-    private static void applyOverlayNavigationBar(Activity activity, boolean lightIcons) {
-        final Window window = activity.getWindow();
-        window.setNavigationBarColor(Color.TRANSPARENT);
-        final WindowInsetsControllerCompat controller =
-            WindowCompat.getInsetsController(window, window.getDecorView());
-        controller.setAppearanceLightNavigationBars(!lightIcons);
-    }
-
-    /**
-     * @param call `enabled`: draw the page behind a transparent status bar
-     *             `lightIcons`: status bar icons light (over a dark cover) or dark
-     *             `contentUnderlay`: remove the top safe-area inset for pages drawing behind the bar
-     *             `navigationEnabled`: draw the page behind the transparent navigation bar
-     */
-    @PluginMethod
-    public void setStatusBarOverlay(PluginCall call) {
-        final boolean enabled = Boolean.TRUE.equals(call.getBoolean("enabled", false));
-        final boolean lightIcons = Boolean.TRUE.equals(call.getBoolean("lightIcons", true));
-        // Older clients used `enabled` for both transparency and underlay.
-        final boolean contentUnderlay = Boolean.TRUE.equals(call.getBoolean("contentUnderlay", enabled));
-        final boolean navigationEnabled = Boolean.TRUE.equals(call.getBoolean("navigationEnabled", false));
-        final boolean navigationLightIcons = Boolean.TRUE.equals(call.getBoolean("navigationLightIcons", true));
-        final Activity activity = getActivity();
-        if (activity == null) {
-            call.reject("no activity");
-            return;
-        }
-
-        activity.runOnUiThread(() -> {
-            installInsetsListener();
-            final boolean wasTransparent = statusBarTransparent;
-            final boolean changed = statusBarTransparent != enabled || statusBarOverlay != contentUnderlay;
-            final boolean navigationChanged = navigationBarOverlay != navigationEnabled;
-            statusBarTransparent = enabled;
-            statusBarOverlay = contentUnderlay;
-            overlayLightIcons = lightIcons;
-            navigationBarOverlay = navigationEnabled;
-            overlayNavigationLightIcons = navigationLightIcons;
-
-            if (enabled) {
-                applyOverlayStatusBar(activity, lightIcons);
-            } else if (wasTransparent) {
-                // Back to the app's opaque colours, as last set by setColors.
-                final SharedPreferences prefs =
-                    activity.getSharedPreferences(SystemUiHelper.PREFS, Activity.MODE_PRIVATE);
-                final boolean dark = prefs.getBoolean(SystemUiHelper.KEY_LIGHT_ICONS, false);
-                final int color = prefs.getInt(SystemUiHelper.KEY_BACKGROUND, dark ? Color.BLACK : Color.WHITE);
-                SystemUiHelper.applySystemBars(activity, dark, color);
-            }
-
-            if (navigationEnabled) {
-                applyOverlayNavigationBar(activity, navigationLightIcons);
-            } else if (navigationChanged) {
-                final SharedPreferences prefs =
-                    activity.getSharedPreferences(SystemUiHelper.PREFS, Activity.MODE_PRIVATE);
-                final boolean dark = prefs.getBoolean(SystemUiHelper.KEY_LIGHT_ICONS, false);
-                final int color = prefs.getInt(SystemUiHelper.KEY_BACKGROUND, dark ? Color.BLACK : Color.WHITE);
-                final WindowInsetsControllerCompat controller = WindowCompat.getInsetsController(
-                    activity.getWindow(), activity.getWindow().getDecorView()
-                );
-                controller.setAppearanceLightNavigationBars(!dark);
-                activity.getWindow().setNavigationBarColor(color);
-            }
-
-            if (changed || navigationChanged) ViewCompat.requestApplyInsets(activity.getWindow().getDecorView());
-            call.resolve();
-        });
     }
 }

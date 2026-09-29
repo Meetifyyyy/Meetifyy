@@ -19,6 +19,7 @@ import { useJoinActivity } from '../hooks/useJoinActivity';
 import { useActivityLifecycle } from '../hooks/useActivityLifecycle';
 import { useActivityById, useActivityAttendees } from '@shared/hooks/useCrew';
 import { useAmbientTint } from '@shared/hooks/useAmbientTint';
+import { useSystemBars } from '@shared/hooks/useSystemBars';
 import { toggleRegistry } from '@shared/utils/mutationRegistry';
 // Deferred: the discussion pulls its own message page and joins a socket room.
 // Loading it with the route made the detail page wait on a module and a request
@@ -128,6 +129,9 @@ function AttendeesMore({ canExpand, total, shown, onExpand, hasNextPage, isFetch
 
 /* ── Main component ────────────────────────────────────────── */
 export default function ActivityDetailPage() {
+  // Fixed edge to edge on a phone, over the activity's own imagery: both system
+  // bars are drawn over by the page, with light icons.
+  useSystemBars({ status: 'transparent', statusIcons: 'light', navigation: 'transparent', navigationIcons: 'light', canvas: true });
   const { id } = useParams();
   const cleanId = useMemo(() => id ? id.replace(/^(act_)+/, '') : id, [id]);
   const location = useLocation();

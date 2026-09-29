@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import mascot from '../assets/images/mascot.webp';
 import authBg from '../assets/images/auth_bg.webp';
 import { preloadAuthScreens } from '../features/auth/routes/authRoutes';
+import { useSystemBars } from '../shared/hooks/useSystemBars';
 import styles from './AppOpenScreen.module.css';
 
 /**
@@ -135,43 +136,20 @@ export default function AppOpenScreen() {
 
   /**
    * Runs this one screen edge to edge, with the phone's bars transparent.
+   * See `useSystemBars` for how, and why it is a layout effect: the bars must
+   * change in the same frame as the screen, not the frame after.
    *
-   * An attribute on <html> rather than a call into the native layer, because
-   * the colour already travels that way: `installSystemBars` reads
-   * `--color-nav-surface` and pushes it to the plugin, and the stylesheet
-   * redefines that variable while the attribute is set. So this is one DOM
-   * write, no plugin import in a screen component, and nothing to keep in step
-   * with the palette.
-   *
-   * Removed on unmount, not left behind: every other screen has an opaque
-   * status bar sitting above its header, and a transparent one there would put
-   * the clock on top of the header's own content. `installSystemBars` watches
-   * this attribute as well as `data-theme`, so the removal repaints the bars on
-   * the way out the same way the addition painted them on the way in.
-   *
-   * The native splash is untouched by any of this — it has already finished by
-   * the time this component mounts.
+   * The navigation buttons' colour follows the theme, because the screen's
+   * canvas is light in one and dark in the other. The native splash is
+   * untouched by any of this — it has already finished by the time this
+   * component mounts.
    */
-  useLayoutEffect(() => {
-    const root = document.documentElement;
-    const previousIconPreference = root.getAttribute('data-status-bar-icons');
-    const previousNavigationBar = root.getAttribute('data-navigation-bar');
-    const previousNavigationIcons = root.getAttribute('data-navigation-bar-icons');
-    const navigationIcons = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
-    root.setAttribute('data-bars', 'transparent');
-    root.setAttribute('data-status-bar-icons', 'dark');
-    root.setAttribute('data-navigation-bar', 'transparent');
-    root.setAttribute('data-navigation-bar-icons', navigationIcons);
-    return () => {
-      root.removeAttribute('data-bars');
-      if (previousNavigationBar === null) root.removeAttribute('data-navigation-bar');
-      else root.setAttribute('data-navigation-bar', previousNavigationBar);
-      if (previousNavigationIcons === null) root.removeAttribute('data-navigation-bar-icons');
-      else root.setAttribute('data-navigation-bar-icons', previousNavigationIcons);
-      if (previousIconPreference === null) root.removeAttribute('data-status-bar-icons');
-      else root.setAttribute('data-status-bar-icons', previousIconPreference);
-    };
-  }, []);
+  useSystemBars({
+    status: 'transparent',
+    statusIcons: 'dark',
+    navigation: 'transparent',
+    navigationIcons: document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark',
+  });
 
   // On Android, bring this screen in as the native splash starts to fade, so
   // the two crossfade. It used to wait for the fade to END, which left about

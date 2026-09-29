@@ -1,30 +1,35 @@
 import { Capacitor, registerPlugin, SystemBars, SystemBarsStyle } from '@capacitor/core';
-import { setStatusBarOverlay } from './statusBarOverlay';
 
 /**
- * Keeps the phone's status bar and navigation bar the same colour as the app.
+ * The native half of the phone's system bars.
  *
- * Two plugins, because neither does the whole job:
+ * The bars are transparent for the life of the app and the WebView is laid out
+ * beneath them, so the PAGE paints every pixel of them (see
+ * `src/mobile/installSystemBars.js`, which decides what colour, and
+ * `SystemUiPlugin.java`, which explains why). What only the native side can do
+ * is small, and this is all of it:
  *
- *   - `SystemBars` ships with Capacitor 8 and sets the bar STYLE, meaning
- *     whether their icons are drawn light or dark. It cannot set a background.
- *   - `SystemUi` is ours (`android/app/src/main/java/app/meetifyy/SystemUiPlugin.java`)
- *     and sets the background, which is what actually removes the white bands.
+ *   - `setIcons`      whether each bar's clock/battery/buttons are drawn light or
+ *                     dark. The platform offers no other way to set this.
+ *   - `persistTheme`  remembers the theme so the next cold start's splash and
+ *                     window are drawn in it before any page exists.
+ *   - `getInsets`     how tall the bars are, so the page can keep its controls
+ *                     clear of them before the first paint.
  *
- * The style call is kept even though `SystemUi` sets the appearance itself: on
- * iOS there is no `SystemUi`, and the status bar there still needs to know
- * whether to draw its clock light or dark.
+ * Nothing here paints a bar. Every call is fire-and-forget, and every failure
+ * is swallowed: on the web neither plugin exists, on iOS only Capacitor's own
+ * exists, and a bar whose icons keep their previous appearance is a cosmetic
+ * problem. Throwing would take down whatever called it, which is a theme change.
  *
- * WHY THE COLOUR IS READ FROM CSS RATHER THAN HARD-CODED
- * `--color-nav-surface` is what the app's own bottom navigation is painted
- * with, so reading it is what guarantees the phone's navigation bar and the
- * app's bar directly above it are ONE strip rather than two nearly-matching
- * ones. Change the palette and this follows without anyone remembering it
- * exists.
+ * `SystemBars` (Capacitor's) is still used on iOS, where there is no `SystemUi`
+ * and the status bar still needs to know whether to draw its clock light or dark.
  *
- * Not `--color-bg-white`: that is the CARD surface (#ffffff / #202020). Tying
- * the system bars to it made them mid-grey on dark, which reads as a third
- * surface floating between the app and the phone.
+ * WHERE THE THEME COLOUR COMES FROM
+ * `--color-nav-surface` is what the app's own bottom navigation is painted with.
+ * The window colour is read from it so the frames before the WebView draws match
+ * the app's chrome, and it follows the palette without anyone remembering it
+ * exists. Not `--color-bg-white`: that is the CARD surface (#ffffff / #202020),
+ * which made the window mid-grey on dark.
  */
 
 const SystemUi = registerPlugin('SystemUi');
@@ -94,7 +99,31 @@ export function needsLightIcons(hex) {
   return luminance < 0.5;
 }
 
-export function createCapacitorSystemBars({ getComputed, getEdges } = {}) {
+/** Bridge calls are retried because the first one can run before the bridge is wired. */
+async function callWithRetry(call) {
+  /*
+   * This module is installed at module scope and fires on the next frame,
+   * which on a cold start is earlier than Capacitor has finished wiring up its
+   * plugins. The call rejected, the catch swallowed it, and the bars kept their
+   * launch appearance for the whole session — measured on a device, while
+   * calling the same method by hand a moment later worked perfectly.
+   *
+   * Three attempts over ~700ms covers bridge startup without being a poll.
+   * Failing after that is genuinely "this platform has no SystemUi", which is
+   * iOS and the web preview, and is not worth shouting about.
+   */
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      return await call();
+    } catch {
+      if (attempt === 2) return null;
+      await new Promise((r) => setTimeout(r, 150 + attempt * 200));
+    }
+  }
+  return null;
+}
+
+export function createCapacitorSystemBars({ getComputed } = {}) {
   const read =
     getComputed ??
     (() =>
@@ -102,45 +131,46 @@ export function createCapacitorSystemBars({ getComputed, getEdges } = {}) {
         .getPropertyValue('--color-nav-surface')
         .trim());
 
-  // The last payload sent, so a re-sample that finds the same page colours
-  // (most of them) costs no bridge call.
-  let lastSent = '';
+  // The last payloads sent, so a re-sample that finds the same colours (most
+  // of them) costs no bridge call.
+  let lastIcons = '';
+  let lastTheme = '';
+  let lastWindowColor = '';
 
   return {
-    setStatusBarOverlay(enabled, options) {
-      return setStatusBarOverlay(enabled, options);
-    },
     /**
-     * Pushes the app's current surface colour to the system bars.
-     *
-     * Every failure is swallowed: on web neither plugin exists, on iOS only one
-     * does, and a bar that keeps its old colour is a cosmetic problem. Throwing
-     * here would take down whatever called it, which is a theme change.
+     * Sets the bars' icon appearance. `status` and `navigation` are `true` for
+     * LIGHT icons (drawn over a dark surface).
      */
-    async apply({ force = false } = {}) {
+    async setIcons({ status, navigation }) {
+      const key = `${status ? 1 : 0}${navigation ? 1 : 0}`;
+      if (key === lastIcons) return;
+      lastIcons = key;
+
+      await callWithRetry(() => SystemUi.setIcons({
+        statusLightIcons: !!status,
+        navLightIcons: !!navigation,
+      }));
+
+      // iOS only: it has no `SystemUi`, and its status bar takes a style rather
+      // than an appearance flag. On Android `SystemUi` above already did this,
+      // and Capacitor's `setStyle` would repaint the bar's background too.
+      if (Capacitor.getPlatform() !== 'ios') return;
+      try {
+        await SystemBars.setStyle({ style: status ? SystemBarsStyle.Dark : SystemBarsStyle.Light });
+      } catch {
+        // Not every platform implements it.
+      }
+    },
+
+    /**
+     * Persists the theme so the next cold start's window and splash match it,
+     * and gives the window the app's chrome colour for the frames before the
+     * WebView draws. Does not touch the bars.
+     */
+    async persistTheme({ force = false } = {}) {
       const background = toHexColor(read());
       if (!background) return;
-
-      const lightIcons = needsLightIcons(background);
-
-      // Each bar continues the page it meets (see src/mobile/pageEdgeColors.js).
-      // `background` stays the theme's chrome colour: it is what is persisted
-      // for the next cold start, and what either bar falls back to when its
-      // edge of the page cannot be read.
-      const edges = (getEdges && getEdges()) || {};
-      const statusBackground = toHexColor(edges.top) || background;
-      const navBackground = toHexColor(edges.bottom) || background;
-
-      // Android 15+ enforces a transparent system status bar for apps that
-      // target API 35+, so setStatusBarColor alone cannot make the pixels
-      // behind its icons opaque. mobile.css paints this exact sampled surface
-      // in the status-bar inset; native icon appearance is still set below.
-      if (typeof document !== 'undefined') {
-        const root = document.documentElement;
-        if (root.style.getPropertyValue('--mobile-status-bar-background') !== statusBackground) {
-          root.style.setProperty('--mobile-status-bar-background', statusBackground);
-        }
-      }
 
       let theme = 'light';
       let preferenceSet = false;
@@ -153,55 +183,37 @@ export function createCapacitorSystemBars({ getComputed, getEdges } = {}) {
         }
       } catch (_) {}
 
-      /**
-       * Retried, because the first attempt runs before the bridge is ready.
-       *
-       * This is installed at module scope and fires on the next frame, which on
-       * a cold start is earlier than Capacitor has finished wiring up its
-       * plugins. The call rejected, the catch swallowed it, and the bars kept
-       * the window colour for the whole session — measured on a device: the app
-       * in light mode with both system bars still #121212, while calling the
-       * same method by hand a moment later worked perfectly.
-       *
-       * Three attempts over ~700ms covers bridge startup without being a poll.
-       * Failing after that is genuinely "this platform has no SystemUi", which
-       * is iOS and the web preview, and is not worth shouting about.
-       */
-      const key = [background, theme, preferenceSet, statusBackground, navBackground].join('|');
-      if (!force && key === lastSent) return;
-      lastSent = key;
+      const key = [background, theme, preferenceSet].join('|');
+      if (!force && key === lastTheme) return;
+      lastTheme = key;
 
-      for (let attempt = 0; attempt < 3; attempt++) {
-        try {
-          await SystemUi.setColors({
-            background,
-            lightIcons,
-            theme,
-            preferenceSet,
-            statusBackground,
-            statusLightIcons: needsLightIcons(statusBackground),
-            navBackground,
-            navLightIcons: needsLightIcons(navBackground),
-          });
-          break;
-        } catch {
-          if (attempt === 2) break;
-          await new Promise((r) => setTimeout(r, 150 + attempt * 200));
-        }
-      }
+      await callWithRetry(() => SystemUi.setColors({
+        background,
+        lightIcons: needsLightIcons(background),
+        theme,
+        preferenceSet,
+      }));
+    },
 
-      // iOS only. On Android `SystemUi` above already sets the icon appearance,
-      // and Capacitor's `setStyle` repaints the bar background itself —
-      // measured on a device, it turned both bars white straight after
-      // SystemUi had painted them the page's colours.
-      if (Capacitor.getPlatform() !== 'ios') return;
+    /**
+     * Keeps the window behind the WebView the colour of the page's bottom edge.
+     * It shows only while the soft keyboard slides in (the WebView has already
+     * shrunk; the keyboard has not yet arrived), where the theme's colour was a
+     * white patch across a dark screen. See SystemUiPlugin.setWindowColor.
+     */
+    async setWindowColor(color) {
+      const hex = toHexColor(color);
+      if (!hex || hex === lastWindowColor) return;
+      lastWindowColor = hex;
+      await callWithRetry(() => SystemUi.setWindowColor({ color: hex }));
+    },
+
+    /** `{ top, bottom }` in CSS px, or null where the plugin does not exist. */
+    async getInsets() {
       try {
-        await SystemBars.setStyle({
-          style: needsLightIcons(statusBackground) ? SystemBarsStyle.Dark : SystemBarsStyle.Light,
-        });
+        return await SystemUi.getInsets();
       } catch {
-        // Not every platform implements it; the colour above is the part that
-        // matters on Android.
+        return null;
       }
     },
   };

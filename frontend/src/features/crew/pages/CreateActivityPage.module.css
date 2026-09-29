@@ -1554,6 +1554,21 @@ input:checked+.slider:before {
 
 /* ── Responsive ── */
 @media (max-width: 720px) {
+  /* The page runs under the phone's navigation bar. A soft scrim keeps the
+     bar's buttons legible over whatever scrolls beneath them; it is only as tall
+     as the bar (nothing at all where there is no bar to protect). */
+  .root::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: calc(var(--navigation-bar-inset, 0px) * 1.6);
+    background: linear-gradient(to top, rgba(11, 13, 20, 0.72), rgba(11, 13, 20, 0));
+    pointer-events: none;
+    z-index: 30;
+  }
+
   .root {
     position: fixed !important;
     inset: 0 !important;
@@ -1581,7 +1596,15 @@ input:checked+.slider:before {
     width: 100%;
     max-width: 100%;
     flex: none;
-    padding-bottom: 2rem;
+    /* The page runs under the phone's navigation bar, so the last field has to
+       be able to scroll clear of it. */
+    padding-bottom: calc(2rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  /* This screen is fixed edge to edge, behind both system bars: its own top
+     bar clears the status bar. Zero on the website. */
+  .topBar {
+    padding-top: calc(0.9rem + var(--status-bar-inset, 0px));
   }
 
   .fieldInput {
@@ -1611,7 +1634,7 @@ input:checked+.slider:before {
   }
 
   .topBar {
-    padding: 0.7rem 1rem;
+    padding: calc(0.7rem + var(--status-bar-inset, 0px)) 1rem 0.7rem;
   }
 
   .body {

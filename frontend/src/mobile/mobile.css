@@ -57,24 +57,67 @@ body::-webkit-scrollbar,
   display: none !important;
 }
 
-/* Android 15+ enforces a transparent system status bar for this target SDK.
-   Paint an opaque page-matched surface in that inset so WebView content never
-   shows through behind the clock and system icons. */
-html::before {
+/* ----------------------------------------------------------------------------
+   The system bars, drawn by the page.
+
+   The WebView runs edge to edge: the status bar and the navigation bar are
+   transparent (and on Android 15+ the platform forces them to be), and whatever
+   is beneath them is the page. Two fixed strips keep scrolled content from
+   showing through the clock and the navigation buttons. Their colour is
+   `--sys-top-bg` / `--sys-bottom-bg`, written by `installSystemBars` in the same
+   animation frame as the DOM change that made them stale, so a bar never shows
+   the previous page's colour.
+
+   Their height is the bar's, published by the native shell.
+
+   STACKING
+   The top strip sits above the app's headers (the dashboard header is 500) and
+   BELOW every overlay (the drawer and its scrim are 999/1000, modals and viewers
+   are higher). An overlay therefore covers the bars' area like any other part
+   of the screen: the drawer reaches the top and bottom of the display and its
+   scrim dims the bars with everything else, without any screen having to know.
+
+   The bottom strip sits above page content but BELOW the bottom navigation
+   (100), which paints its own strip under the navigation bar. That is what lets
+   the navigation bar slide away in one motion with the bar under it.
+---------------------------------------------------------------------------- */
+html::before,
+html::after {
   content: '';
   position: fixed;
-  inset: 0 0 auto;
-  height: max(env(safe-area-inset-top, 0px), var(--status-bar-inset, 0px));
-  background: var(--mobile-status-bar-background, var(--color-nav-surface));
+  left: 0;
+  right: 0;
   pointer-events: none;
-  z-index: 2147483647;
+}
+
+html::before {
+  top: 0;
+  height: max(env(safe-area-inset-top, 0px), var(--status-bar-inset, 0px));
+  background: var(--sys-top-bg, var(--color-nav-surface));
+  z-index: 900;
+}
+
+html::after {
+  bottom: 0;
+  height: var(--navigation-bar-inset, 0px);
+  background: var(--sys-bottom-bg, var(--color-nav-surface));
+  z-index: 90;
 }
 
 /* App opening and auth screens, plus profile/community covers, draw their own
-   backgrounds underneath the status icons. Keep the inset overlay clear only
-   while one of those mobile screens has explicitly enabled underlay. */
+   backgrounds underneath the bars. Keep the strip clear only while one of those
+   screens has explicitly asked. */
+/* A full-screen page that opts in (see useSystemBars `canvas`): the document
+   behind it is the colour it paints at its bottom edge. While the keyboard
+   opens or closes the WebView is resized, and the strip that resize exposes is
+   the document — the light theme's canvas behind a dark screen. */
+html[data-bars-canvas] {
+  background: var(--sys-window-bg, #000) !important;
+}
+
 html[data-bars='transparent']::before,
-html[data-collapsing-header]::before {
+html[data-collapsing-header]::before,
+html[data-navigation-bar='transparent']::after {
   background: transparent;
 }
 

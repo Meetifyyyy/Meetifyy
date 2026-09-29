@@ -41,6 +41,7 @@ import fs from 'node:fs';
 import react from '@vitejs/plugin-react';
 import { sharedAliases, sharedCss, sharedOnWarn } from './vite.shared.js';
 import { landscapePhoneMediaPostcss } from './src/mobile/landscapePhoneMedia.js';
+import { safeAreaPostcss } from './src/mobile/safeAreaPostcss.js';
 
 /**
  * Renames the built `index.mobile.html` to `index.html`.
@@ -202,12 +203,14 @@ export default defineConfig({
   plugins: [react(), emitAsIndexHtml(), dropWebOnlyPublicAssets(), serveMobileIndexHtml()],
 
   // The shared CSS pipeline, plus the rewrite that keeps a phone in landscape
-  // on the mobile layout (see src/mobile/landscapePhoneMedia.js).
+  // on the mobile layout (see src/mobile/landscapePhoneMedia.js) and the one
+  // that makes the bottom safe-area inset include the navigation bar the
+  // WebView now runs underneath (see src/mobile/safeAreaPostcss.js).
   css: {
     ...sharedCss,
     postcss: {
       ...sharedCss.postcss,
-      plugins: [...sharedCss.postcss.plugins, landscapePhoneMediaPostcss()],
+      plugins: [...sharedCss.postcss.plugins, landscapePhoneMediaPostcss(), safeAreaPostcss()],
     },
   },
 

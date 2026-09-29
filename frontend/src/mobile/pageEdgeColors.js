@@ -76,6 +76,7 @@ function paintedColorAt(x, probeY, barY) {
   const height = window.innerHeight;
 
   for (const el of [...stack, document.body]) {
+    if (el.closest?.('[data-bars-ignore]')) continue;
     const style = getComputedStyle(el);
     if (isPageGradient(style) && (el === document.body || style.position === 'fixed')) {
       return pageGradientColorAt(x, barY, width, height, readVar);
@@ -110,6 +111,15 @@ export function readPageEdgeColors() {
   // against the pixels it touches, and the gradient's value half a bar further
   // out read as a visibly different shade.
   const top = paintedColorAt(x, topProbe, contentTop);
-  const bottom = paintedColorAt(x, h - 1, h);
+  // The bottom is probed just ABOVE the navigation bar, the mirror of the top:
+  // the strip continues the last surface the page painted before the bar, so a
+  // page whose sheet stops a few pixels short of the screen's edge (padding
+  // reserved for the bar) does not leave the bar in a different colour from
+  // the page it belongs to.
+  const navInset = Number.parseFloat(
+    getComputedStyle(document.documentElement).getPropertyValue('--navigation-bar-inset'),
+  ) || 0;
+  const bottomProbe = Math.max(0, h - navInset - 1);
+  const bottom = paintedColorAt(x, bottomProbe, h);
   return { top: top && toHex(top), bottom: bottom && toHex(bottom) };
 }

@@ -3,10 +3,12 @@ import { describe, it, expect, vi } from 'vitest';
 const platform = { current: 'android' };
 const setStyle = vi.fn(async () => {});
 const setColors = vi.fn(async () => {});
+const setIcons = vi.fn(async () => {});
+const getInsets = vi.fn(async () => ({ top: 32, bottom: 48 }));
 
 vi.mock('@capacitor/core', () => ({
   Capacitor: { getPlatform: () => platform.current },
-  registerPlugin: () => ({ setColors }),
+  registerPlugin: () => ({ setColors, setIcons, getInsets }),
   SystemBars: { setStyle },
   SystemBarsStyle: { Dark: 'DARK', Light: 'LIGHT', Default: 'DEFAULT' },
 }));
@@ -108,42 +110,72 @@ describe('needsLightIcons', () => {
 });
 
 describe('createCapacitorSystemBars', () => {
+  /**
+   * The bars are painted by the page; the native side only sets which way the
+   * icons are drawn. Nothing here may carry a bar colour any more — a colour
+   * sent natively is a second painter that has to be kept in step with the page.
+   */
+  it('sends only the icon appearance to the native side', async () => {
+    setIcons.mockClear();
+    const bars = createCapacitorSystemBars({ getComputed: () => '#ffffff' });
+    await bars.setIcons({ status: false, navigation: true });
+    expect(setIcons).toHaveBeenCalledWith({ statusLightIcons: false, navLightIcons: true });
+  });
+
+  it('makes no bridge call when the icons have not changed', async () => {
+    setIcons.mockClear();
+    const bars = createCapacitorSystemBars({ getComputed: () => '#ffffff' });
+    await bars.setIcons({ status: true, navigation: true });
+    await bars.setIcons({ status: true, navigation: true });
+    expect(setIcons).toHaveBeenCalledTimes(1);
+    await bars.setIcons({ status: false, navigation: true });
+    expect(setIcons).toHaveBeenCalledTimes(2);
+  });
+
+  it('persists the theme, not a bar colour', async () => {
+    setColors.mockClear();
+    const bars = createCapacitorSystemBars({ getComputed: () => '#000000' });
+    await bars.persistTheme({ force: true });
+    expect(setColors).toHaveBeenCalledWith({
+      background: '#000000',
+      lightIcons: true,
+      theme: 'light',
+      preferenceSet: false,
+    });
+    const sent = setColors.mock.calls[0][0];
+    expect(sent).not.toHaveProperty('statusBackground');
+    expect(sent).not.toHaveProperty('navBackground');
+  });
+
   it('does nothing when the colour cannot be resolved', async () => {
     // A variable read before the stylesheets load returns ''. Pushing that
-    // would reject in the plugin, or worse, paint the bars black.
-    const bars = createCapacitorSystemBars({ getComputed: () => '' });
-    await expect(bars.apply()).resolves.toBeUndefined();
-  });
-
-  it('survives a platform where neither plugin exists', async () => {
-    const bars = createCapacitorSystemBars({ getComputed: () => '#202020' });
-    await expect(bars.apply()).resolves.toBeUndefined();
-  });
-
-  it('sends each bar its own page-edge colour', async () => {
+    // would reject in the plugin, or worse, paint the window black.
     setColors.mockClear();
-    const bars = createCapacitorSystemBars({
-      getComputed: () => '#ffffff',
-      getEdges: () => ({ top: '#d7e6f9', bottom: '#101010' }),
-    });
-    await bars.apply({ force: true });
-    expect(setColors).toHaveBeenCalledWith(expect.objectContaining({
-      background: '#ffffff',
-      statusBackground: '#d7e6f9',
-      statusLightIcons: false,
-      navBackground: '#101010',
-      navLightIcons: true,
-    }));
+    const bars = createCapacitorSystemBars({ getComputed: () => '' });
+    await expect(bars.persistTheme()).resolves.toBeUndefined();
+    expect(setColors).not.toHaveBeenCalled();
+  });
+
+  it('survives a platform where the plugin does not exist', async () => {
+    setIcons.mockRejectedValue(new Error('not implemented'));
+    const bars = createCapacitorSystemBars({ getComputed: () => '#202020' });
+    await expect(bars.setIcons({ status: true, navigation: true })).resolves.toBeUndefined();
+    setIcons.mockResolvedValue(undefined);
+  }, 5000);
+
+  it('reads the bars\' heights from the native side', async () => {
+    const bars = createCapacitorSystemBars({ getComputed: () => '#ffffff' });
+    await expect(bars.getInsets()).resolves.toEqual({ top: 32, bottom: 48 });
   });
 
   it('leaves the Android bars to SystemUi: Capacitor setStyle repaints them', async () => {
     setStyle.mockClear();
     platform.current = 'android';
-    await createCapacitorSystemBars({ getComputed: () => '#ffffff' }).apply({ force: true });
+    await createCapacitorSystemBars({ getComputed: () => '#ffffff' }).setIcons({ status: false, navigation: false });
     expect(setStyle).not.toHaveBeenCalled();
 
     platform.current = 'ios';
-    await createCapacitorSystemBars({ getComputed: () => '#ffffff' }).apply({ force: true });
+    await createCapacitorSystemBars({ getComputed: () => '#ffffff' }).setIcons({ status: false, navigation: false });
     expect(setStyle).toHaveBeenCalled();
   });
 });

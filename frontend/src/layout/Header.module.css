@@ -1032,6 +1032,11 @@
     transform: translateY(-100%);
     pointer-events: none;
   }
+
+  /* Set by BottomNav around a route change: chrome is placed, not slid. */
+  :global(html[data-nav-instant]) .header {
+    transition: none;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

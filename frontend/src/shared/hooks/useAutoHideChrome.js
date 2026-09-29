@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useLayoutEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import { isTextFieldFocused } from './useKeyboardInset';
 
@@ -177,7 +177,9 @@ export function useAutoHideChrome({ enabled = true } = {}) {
 
   // Every navigation starts with the chrome visible: arriving on a new page
   // with the nav already hidden reads as it having vanished.
-  useEffect(() => {
+  // A layout effect: the chrome must already be back when the new page first
+  // paints, not a frame after it.
+  useLayoutEffect(() => {
     document.documentElement.removeAttribute('data-chrome-hidden');
   }, [pathname]);
 }

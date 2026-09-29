@@ -1,7 +1,7 @@
 import { createContext, Fragment, memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { ArrowLeft, Check } from '@shared/components/icons';
-import { IS_MOBILE_BUILD } from '@config';
+import { useSystemBars } from '@shared/hooks/useSystemBars';
 import wordmark from '@assets/images/meetifyy_wordmark.svg';
 import wordmarkDark from '@assets/images/meetifyy_wordmark_dark.svg';
 import proofCards from '@assets/images/auth_proof_cards.webp';
@@ -237,39 +237,27 @@ function AuthShellMaster({
     [setStoryCallback, setBack],
   );
 
+  // The auth canvas runs edge to edge, behind both system bars.
+  useSystemBars({
+    status: 'transparent',
+    statusIcons: 'light',
+    navigation: 'transparent',
+    navigationIcons: 'light',
+  });
+
   useLayoutEffect(() => {
     const html = document.documentElement;
     const body = document.body;
     const prevHtmlBg = html.style.background;
     const prevBodyBg = body.style.background;
-    const prevBars = html.getAttribute('data-bars');
-    const prevStatusBarIcons = html.getAttribute('data-status-bar-icons');
-    const prevNavigationBar = html.getAttribute('data-navigation-bar');
-    const prevNavigationBarIcons = html.getAttribute('data-navigation-bar-icons');
 
     html.style.setProperty('--auth-bg', `url(${authBg})`);
     html.classList.add('auth-canvas-active');
     body.classList.add('auth-canvas-active');
-    if (IS_MOBILE_BUILD) {
-      html.setAttribute('data-bars', 'transparent');
-      html.setAttribute('data-status-bar-icons', 'light');
-      html.setAttribute('data-navigation-bar', 'transparent');
-      html.setAttribute('data-navigation-bar-icons', 'light');
-    }
 
     return () => {
       html.classList.remove('auth-canvas-active');
       body.classList.remove('auth-canvas-active');
-      if (IS_MOBILE_BUILD) {
-        if (prevBars === null) html.removeAttribute('data-bars');
-        else html.setAttribute('data-bars', prevBars);
-        if (prevStatusBarIcons === null) html.removeAttribute('data-status-bar-icons');
-        else html.setAttribute('data-status-bar-icons', prevStatusBarIcons);
-        if (prevNavigationBar === null) html.removeAttribute('data-navigation-bar');
-        else html.setAttribute('data-navigation-bar', prevNavigationBar);
-        if (prevNavigationBarIcons === null) html.removeAttribute('data-navigation-bar-icons');
-        else html.setAttribute('data-navigation-bar-icons', prevNavigationBarIcons);
-      }
       html.style.removeProperty('--auth-bg');
       html.style.background = prevHtmlBg;
       body.style.background = prevBodyBg;

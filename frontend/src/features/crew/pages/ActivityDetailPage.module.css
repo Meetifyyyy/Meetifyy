@@ -787,6 +787,21 @@
 }
 
 @media (max-width: 900px) {
+  /* The page runs under the phone's navigation bar. A soft scrim keeps the
+     bar's buttons legible over whatever scrolls beneath them; it is only as tall
+     as the bar (nothing at all where there is no bar to protect). */
+  .root::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: calc(var(--navigation-bar-inset, 0px) * 1.6);
+    background: linear-gradient(to top, rgba(11, 13, 20, 0.72), rgba(11, 13, 20, 0));
+    pointer-events: none;
+    z-index: 30;
+  }
+
   .scrollArea {
     overflow-y: auto !important;
   }
@@ -831,6 +846,12 @@
     height: 100% !important;
   }
 
+  /* Fixed edge to edge, behind both system bars: the top bar clears the
+     status bar. Zero on the website. */
+  .topBar {
+    padding-top: calc(0.9rem + var(--status-bar-inset, 0px));
+  }
+
   .imgCol {
     flex: none;
     width: 100%;
@@ -857,7 +878,8 @@
   .stickyJoinWrap {
     left: 50% !important;
     transform: translateX(-50%) !important;
-    bottom: 1.5rem !important;
+    /* Clear of the phone's navigation bar: the page runs beneath it. */
+    bottom: calc(1.5rem + env(safe-area-inset-bottom, 0px)) !important;
     padding-bottom: 0 !important;
     width: calc(100% - 2rem) !important;
     max-width: 400px !important;

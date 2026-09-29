@@ -13,6 +13,7 @@ import ImageSearchModal from '@shared/components/modals/ImageSearchModal';
 import { openVerificationModal } from '@shared/stores/verificationModalStore';
 import { commitDraftImage, removeDraftImage } from '@shared/utils/draftImageCache';
 import { useAmbientTint } from '@shared/hooks/useAmbientTint';
+import { useSystemBars } from '@shared/hooks/useSystemBars';
 
 import {
   Send,
@@ -849,6 +850,10 @@ function ActivityCreatedModal({ activityTitle, coverImage, activityDate, creatio
 }
 
 export default function CreateActivityPage() {
+  // Fixed edge to edge on a phone, over a dark canvas in either theme: the
+  // status bar and the navigation bar are drawn over by the page, with light
+  // icons. (Its top bar and last field clear them; see the stylesheet.)
+  useSystemBars({ status: 'transparent', statusIcons: 'light', navigation: 'transparent', navigationIcons: 'light', canvas: true });
   const navigate = useNavigate();
   const goBack = useSmartBack();
   const location = useLocation();

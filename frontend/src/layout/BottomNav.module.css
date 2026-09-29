@@ -219,6 +219,11 @@
     transform: translateY(calc(100% + 24px));
     pointer-events: none;
   }
+
+  /* Set by BottomNav around a route change: the bar is placed, not slid. */
+  :global(html[data-nav-instant]) .bottomNav {
+    transition: none;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

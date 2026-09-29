@@ -1,3 +1,4 @@
+import { useLayoutEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useSmartNavigation } from '@shared/hooks/useSmartNavigation';
 import { useAuth } from '@shared/context/AuthContext';
@@ -23,6 +24,31 @@ export default function BottomNav({ hidden }) {
   const location = useLocation();
   const { total: unreadMessagesCount } = useUnreadCounts();
 
+  /**
+   * A new page starts with the bar already where it belongs.
+   *
+   * The bar slides (0.26s) when it hides on scroll, and the same transition
+   * used to run when a navigation changed whether it is shown — so arriving on
+   * a page from one that hides it, Settings or Saved, showed the page with no
+   * bar and then slid it up over the next quarter of a second. Scrolling is
+   * the only thing that should animate it. This flag turns the transition off
+   * for the frames around a route change (see BottomNav.module.css); a layout
+   * effect, so it is in place before the new page's first paint.
+   */
+  useLayoutEffect(() => {
+    const root = document.documentElement;
+    root.setAttribute('data-nav-instant', '');
+    let second = 0;
+    const first = requestAnimationFrame(() => {
+      second = requestAnimationFrame(() => root.removeAttribute('data-nav-instant'));
+    });
+    return () => {
+      cancelAnimationFrame(first);
+      cancelAnimationFrame(second);
+      root.removeAttribute('data-nav-instant');
+    };
+  }, [location.pathname]);
+
   const handleTabClick = (path) => {
     navigate(path);
   };
@@ -47,7 +73,10 @@ export default function BottomNav({ hidden }) {
   const isHidden = hidden || isChatOpen;
 
   return (
-    <div className={`app-bottom-nav ${styles.bottomNav} ${isHidden ? styles.hiddenNav : ''}`}>
+    // `data-bars-ignore`: this bar paints its own strip under the phone's
+    // navigation bar, so it is not what that bar has to continue. When it
+    // slides away, the page behind it is. See mobile/pageEdgeColors.js.
+    <div data-bars-ignore className={`app-bottom-nav ${styles.bottomNav} ${isHidden ? styles.hiddenNav : ''}`}>
       <button 
         className={`${styles.bottomNavItem}${isHomeActive ? ` ${styles.active}` : ''}`}
         onClick={() => handleTabClick('/home')}

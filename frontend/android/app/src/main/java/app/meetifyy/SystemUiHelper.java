@@ -95,40 +95,29 @@ public final class SystemUiHelper {
     }
 
     /**
-     * Applies system status bar, navigation bar, decor view, and icon appearance.
+     * Puts the window edge to edge and leaves it that way for the life of the
+     * activity.
      *
-     * @param activity current Activity
-     * @param isDark true for dark mode (#000000 with light icons), false for light mode (#FFFFFF with dark icons)
-     * @param customColor optional custom background color override (e.g. from web computed style)
+     * WHY THE BARS ARE NEVER REPAINTED
+     * Both system bars are transparent and the WebView is laid out beneath
+     * them, so the only thing that paints those pixels is the page. It used to
+     * be the other way round: the bars were painted natively with a colour the
+     * page sampled from itself and sent across the bridge, so every navigation
+     * moved two independent systems — the WebView and the window — that had to
+     * be kept in step by an asynchronous call. They never were: the bar changed
+     * a few frames after the page (measured on a device: 70 ms to 500 ms), which
+     * is the flicker. On Android 15+ (targetSdk 35+) the platform forces bar
+     * colours transparent anyway, so the painted-bar model could not have worked
+     * there at all.
+     *
+     * What remains native is the window colour (shown only in the frames before
+     * the WebView has drawn) and the bar ICON appearance, which the platform
+     * gives no other way to set.
+     *
+     * @param isDark true for the dark theme (window #000000, light icons)
+     * @param customColor optional window colour override (the page's chrome colour)
      */
     public static void applySystemBars(Activity activity, boolean isDark, Integer customColor) {
-        final int barColor = (customColor != null)
-            ? customColor
-            : (isDark ? COLOR_DARK : COLOR_LIGHT);
-        applySystemBars(activity, barColor, isDark, barColor, isDark, barColor);
-    }
-
-    /**
-     * Paints each bar separately, so each can continue the page edge it meets.
-     *
-     * @param statusLightIcons true when the status bar's icons must be light
-     * @param navLightIcons    true when the navigation bar's buttons must be light
-     * @param windowColor      the window/decor colour: the theme's chrome, which is
-     *                         what shows for a frame while the WebView lays out
-     */
-    private static int statusBarHeight(Activity activity) {
-        final int id = activity.getResources().getIdentifier("status_bar_height", "dimen", "android");
-        return id > 0 ? activity.getResources().getDimensionPixelSize(id) : 0;
-    }
-
-    public static void applySystemBars(
-        Activity activity,
-        int statusColor,
-        boolean statusLightIcons,
-        int navColor,
-        boolean navLightIcons,
-        int windowColor
-    ) {
         if (activity == null || activity.isFinishing()) return;
 
         final Window window = activity.getWindow();
@@ -136,54 +125,77 @@ public final class SystemUiHelper {
         final View decor = window.getDecorView();
         if (decor == null) return;
 
+        final int windowColor = (customColor != null)
+            ? customColor
+            : (isDark ? COLOR_DARK : COLOR_LIGHT);
+
+        WindowCompat.setDecorFitsSystemWindows(window, false);
         window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
         window.clearFlags(
             WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS |
             WindowManager.LayoutParams.FLAG_TRANSLUCENT_NAVIGATION
         );
 
-        // Disable contrast enforcement on Android 10+ (API 29+) to eliminate grey scrim on 3-button nav
+        // Contrast enforcement (API 29+) puts a grey scrim behind a 3-button
+        // navigation bar. The page draws its own surface there.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             window.setStatusBarContrastEnforced(false);
             window.setNavigationBarContrastEnforced(false);
         }
 
-        // Apply bar colors for API < 35
-        window.setStatusBarColor(statusColor);
-        window.setNavigationBarColor(navColor);
+        window.setStatusBarColor(Color.TRANSPARENT);
+        window.setNavigationBarColor(Color.TRANSPARENT);
 
-        // Window background. Edge to edge, this is what the bars actually show
-        // (see SystemBarsBackground), so it carries both bar colours. When the
-        // two bars match it is the plain colour, as before.
-        // Replacing a view's background resets its padding, and the decor's
-        // padding is where the system-bar insets live. Carried across the swap
-        // so the window never lays out without them — a frame without padding
-        // shifted everything centred in the window, the splash icon included,
-        // which is the up-and-down jump seen at launch.
+        // Replacing a view's background can reset its padding, and the decor's
+        // padding is where the keyboard inset lives. Carried across the swap so
+        // the window never lays out without it for a frame.
         final int padLeft = decor.getPaddingLeft();
         final int padTop = decor.getPaddingTop();
         final int padRight = decor.getPaddingRight();
         final int padBottom = decor.getPaddingBottom();
-        if (statusColor == navColor) {
-            window.setBackgroundDrawable(new ColorDrawable(statusColor));
-            decor.setBackgroundColor(statusColor);
-        } else {
-            final SystemBarsBackground bands =
-                new SystemBarsBackground(statusColor, navColor, statusBarHeight(activity));
-            window.setBackgroundDrawable(bands);
-            decor.setBackground(new SystemBarsBackground(statusColor, navColor, statusBarHeight(activity)));
-        }
+        window.setBackgroundDrawable(new ColorDrawable(windowColor));
+        decor.setBackgroundColor(windowColor);
+        decor.setPadding(padLeft, padTop, padRight, padBottom);
 
-        // Appearance controller for system bar icons and gesture pill
+        setBarIcons(activity, isDark, isDark);
+    }
+
+    /**
+     * Paints the window and decor view, keeping the decor's padding (which is
+     * where the keyboard inset lives — replacing a background can reset it).
+     */
+    public static void setWindowColor(Activity activity, int color) {
+        if (activity == null || activity.isFinishing()) return;
+        final Window window = activity.getWindow();
+        if (window == null) return;
+        final View decor = window.getDecorView();
+        if (decor == null) return;
+        final int l = decor.getPaddingLeft();
+        final int t = decor.getPaddingTop();
+        final int r = decor.getPaddingRight();
+        final int b = decor.getPaddingBottom();
+        window.setBackgroundDrawable(new ColorDrawable(color));
+        decor.setBackgroundColor(color);
+        decor.setPadding(l, t, r, b);
+    }
+
+    /**
+     * Sets whether each bar's icons are drawn light (over a dark surface) or
+     * dark. This is the one part of the bars the page cannot paint itself.
+     */
+    public static void setBarIcons(Activity activity, boolean statusLightIcons, boolean navLightIcons) {
+        if (activity == null || activity.isFinishing()) return;
+        final Window window = activity.getWindow();
+        if (window == null) return;
+        final View decor = window.getDecorView();
+        if (decor == null) return;
+
         WindowInsetsControllerCompat controller = WindowCompat.getInsetsController(window, decor);
         if (controller == null) {
             controller = new WindowInsetsControllerCompat(window, decor);
         }
-
-        // isAppearanceLight means "dark icons on light background"
+        // isAppearanceLight means "dark icons on a light background"
         controller.setAppearanceLightStatusBars(!statusLightIcons);
         controller.setAppearanceLightNavigationBars(!navLightIcons);
-
-        decor.setPadding(padLeft, padTop, padRight, padBottom);
     }
 }

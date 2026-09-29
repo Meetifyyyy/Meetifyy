@@ -58,11 +58,13 @@
   left: 0;
   right: 0;
   z-index: 10001;
-  height: 60px;
+  /* The viewer is fixed over the whole screen, status bar included: the bar's
+     controls sit below the phone's status bar, and the scrim grows to cover it. */
+  height: calc(60px + var(--status-bar-inset, 0px));
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 12px;
+  padding: var(--status-bar-inset, 0px) 12px 0;
   background: linear-gradient(to bottom, rgba(0, 0, 0, 0.42) 0%, transparent 100%);
   opacity: 0;
   transform: translateY(-8px);
@@ -242,7 +244,7 @@
 
 .counterBadge {
   position: fixed;
-  top: 16px;
+  top: calc(16px + var(--status-bar-inset, 0px));
   left: 50%;
   transform: translateX(-50%);
   background: var(--mv-btn-bg);

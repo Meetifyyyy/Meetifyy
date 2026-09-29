@@ -1106,3 +1106,54 @@ verify its embedded URL and the running server's API target, and inspect the
 device before claiming that the intended screen is working. These rules are
 also summarized in the repository's root `AGENTS.md` so subsequent agents
 read them at the start of work.
+
+
+---
+
+## System bars, page transitions, profile loading, reply bar (2026-09-29)
+
+Measured on the I2208 (Android 14, WebView 153, 3-button navigation) with
+`adb shell screenrecord` (720x1604) and per-frame pixel sampling of the status
+bar, header and navigation bar.
+
+**Before** (page changes that the bars had to follow):
+- Crew -> Create Activity: the navigation bar went black ~500 ms *before* the
+  status bar, while the page was still Crew.
+- Campus -> Notifications: the status bar kept Campus's red for ~70 ms.
+- Settings: navigation bar strip light blue under a white page.
+- Profile: cover pop-in ~200 ms after the page, fading in from a pale shimmer.
+
+**Root cause:** the bars were native, painted with a colour the page measured
+about itself (`elementsFromPoint`) in an idle callback and sent over the bridge.
+Two systems, two clocks.
+
+**After:** status bar, header and navigation bar change in the *same frame* on
+every navigation in light and dark (12 consecutive routes, plus 13 routes at
+120 ms spacing; attributes returned to baseline afterwards).
+
+**Keyboard on Create Activity:** opening showed a white patch (window colour)
+above the sliding keyboard for ~30 ms; closing (after a per-frame-resize
+experiment) showed the light document canvas behind a dark page. Fixed with
+`setWindowColor` + `useSystemBars({ canvas: true })`; verified by recording both
+directions, on a dark page and on Search (light).
+
+**Not verified on the device:** Activity Detail and the Video viewer (the dev
+database has no activities and no video posts). Their CSS was changed the same
+way as Create Activity and the Image viewer, which were verified.
+
+**Harness (local scratchpad, not committed):** `screenrecord --size 720x1604`,
+`ffmpeg -vsync 0` to frames, `ffprobe` for timestamps, Chrome DevTools Protocol
+through `adb forward tcp:9222 localabstract:webview_devtools_remote_<pid>` to
+navigate (`history.pushState` + `popstate`), read computed styles, and run an
+audit that lists interactive elements intruding into the navigation-bar zone.
+
+**Found on the development APK (2026-09-29): Instant Match "Reconnecting" and
+localhost share links.** Both are old and neither is a local-vs-dev mix-up: with
+no local server and no port forwards the app talked only to
+`dev-api.meetifyy.app`. (1) The socket handshake completed (`40{sid}`) and the
+server answered with `41` at once: the gateway required the session id from a
+*cookie*, which a WebView never stores, so every native socket was accepted and
+then disconnected. The client now sends `sessionId` in the handshake payload and
+the gateway accepts it through the same ownership/liveness lookup. (2) Links
+shared from the app were built on `window.location.origin`, which inside the
+app is `https://localhost`; they now use `VITE_SITE_URL` (`publicOrigin`).

@@ -112,24 +112,20 @@ if (typeof document !== 'undefined') {
 installNativeBackButton(createCapacitorBackButton());
 
 /**
- * The phone's status bar follows each native screen's top-edge colour; the
- * navigation bar follows its bottom edge.
+ * The phone's system bars, continued from the page.
  *
  * Installed here rather than from a component because it is a property of the
- * process, not of any screen, and it must survive every route change. Each
- * bar takes the colour the current page paints at its edge, so both bars
- * continue the page rather than framing it; the theme's
- * chrome colour is the fallback and what the next cold start launches with.
+ * process, not of any screen, and it must survive every route change. The bars
+ * are transparent and the WebView runs beneath them, so the page paints them
+ * itself: each strip takes the colour the current page paints at the edge it
+ * meets (`readPageEdgeColors`), in the same frame as the change that caused it.
+ * The theme's chrome colour is the fallback and what the next cold start
+ * launches with.
  *
  * Runs after the stylesheets above are imported; reading the variable before
- * them returns nothing and the bars keep the window's default white.
+ * them returns nothing and the strips keep their CSS fallback.
  */
-installSystemBars(
-  createCapacitorSystemBars({
-    // Both system bars continue the current page at the edge they meet.
-    getEdges: readPageEdgeColors,
-  }),
-);
+installSystemBars(createCapacitorSystemBars(), { readEdges: readPageEdgeColors });
 
 // Before the app renders: AuthContext may call ready() on its first effect.
 installLaunchReadiness();
