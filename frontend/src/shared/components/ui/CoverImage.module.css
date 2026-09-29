@@ -34,6 +34,13 @@
   transition: opacity 0.3s ease;
 }
 
+/* Installed app: cut from the placeholder to the photo. A cross-fade between a
+   pale shimmer and a dark photo passes through a washed-out in-between shade
+   for its whole length, which read as the cover "loading in a different colour". */
+.instant.visible {
+  transition: none;
+}
+
 .coverSkeleton {
   position: absolute;
   inset: 0;

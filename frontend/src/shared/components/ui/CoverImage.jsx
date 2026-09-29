@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { getMediaUrl } from '@shared/api/apiClient';
+import { IS_MOBILE_BUILD } from '@config';
+import { isImageReady, markImageReady, warmImage } from '@shared/utils/imageWarmup';
 import styles from './CoverImage.module.css';
 
 /**
@@ -28,7 +30,15 @@ export function getCleanCoverUrl(cover) {
   return { isEmpty: false, url: getMediaUrl(clean) };
 }
 
-const loadedCoverCache = new Set();
+/**
+ * Starts fetching and decoding a stored cover so the screen that shows it can
+ * open with it already there. A gradient or an empty cover has nothing to load.
+ */
+export function warmCover(cover) {
+  const resolved = getCleanCoverUrl(cover);
+  if (resolved.isEmpty || resolved.isGradient) return Promise.resolve(false);
+  return warmImage(resolved.url);
+}
 
 export default function CoverImage({
   cover,
@@ -45,9 +55,9 @@ export default function CoverImage({
   const isGradient = !isEmpty && resolved.isGradient;
   const url = (!isEmpty && !isGradient) ? resolved.url : null;
 
-  const isPreloaded = isEmpty || isGradient ||
-    (url && loadedCoverCache.has(url)) ||
-    (url && (url.startsWith('blob:') || url.startsWith('data:')));
+  // Ready from the very first render when the image was warmed up earlier (see
+  // `shared/utils/imageWarmup`): no skeleton, no hidden frame, no fade.
+  const isPreloaded = isEmpty || isGradient || isImageReady(url);
 
   const [loading, setLoading] = useState(!isPreloaded);
 
@@ -58,24 +68,29 @@ export default function CoverImage({
       return;
     }
     setError(false);
-    const preloaded = url && (
-      loadedCoverCache.has(url) ||
-      url.startsWith('blob:') ||
-      url.startsWith('data:')
-    );
-    setLoading(!preloaded);
+    setLoading(!isImageReady(url));
   }, [cover]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!isEmpty && !isGradient && imgRef.current && imgRef.current.complete) {
-      if (url) loadedCoverCache.add(url);
+      if (url) markImageReady(url);
       setLoading(false);
     }
   }, [url, isEmpty, isGradient]);
 
+  /**
+   * Revealed once DECODED, not merely loaded. `load` fires when the bytes have
+   * arrived, but the first paint showing the image still has to decode it, and
+   * that is where a large photo used to pop in (or flash half-drawn).
+   */
   const handleLoad = () => {
-    if (url) loadedCoverCache.add(url);
-    setLoading(false);
+    const reveal = () => {
+      if (url) markImageReady(url);
+      setLoading(false);
+    };
+    const image = imgRef.current;
+    if (image?.decode) image.decode().then(reveal, reveal);
+    else reveal();
   };
 
   const handleError = () => {
@@ -96,7 +111,7 @@ export default function CoverImage({
           ref={imgRef}
           src={url}
           alt={alt}
-          className={`${styles.coverImg} ${loading ? styles.hidden : styles.visible}`}
+          className={`${styles.coverImg} ${loading ? styles.hidden : styles.visible} ${IS_MOBILE_BUILD ? styles.instant : ''}`}
           onLoad={handleLoad}
           onError={handleError}
           draggable={false}

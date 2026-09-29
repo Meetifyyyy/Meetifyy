@@ -10,6 +10,7 @@ import { usersApi } from '@shared/api/apiClient';
 import { idbGet, idbSet } from '@shared/lib/idb';
 import { useAuth } from '@shared/context/AuthContext';
 import { useIsVerified } from './useIsVerified';
+import { warmCover } from '@shared/components/ui/CoverImage';
 
 // ── Query keys ───────────────────────────────────────────────────────────────
 export const PROFILE_KEYS = {
@@ -33,6 +34,9 @@ export function useProfile(username) {
     queryFn: async () => {
       const data = await usersApi.getByUsername(username);
       idbSet('profiles', username?.toLowerCase(), data);
+      // The cover is fetched and decoded as soon as the profile is known, not
+      // when the screen mounts: it is the slowest thing on the page.
+      warmCover(data?.cover);
       return data;
     },
     enabled: !!username && username !== 'unknown',
@@ -72,6 +76,7 @@ export function useProfile(username) {
     if (!username || username === 'unknown' || query.data) return;
     idbGet('profiles', username.toLowerCase()).then((cached) => {
       if (cached?.value && cached.value.stats) {
+        warmCover(cached.value.cover);
         queryClient.setQueryData(qk, cached.value, {
           updatedAt: cached.storedAt,
         });

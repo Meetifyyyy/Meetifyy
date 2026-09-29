@@ -12,6 +12,7 @@
  */
 import { communitiesApi, activitiesApi, usersApi, messagesApi } from '@shared/api/apiClient';
 import { PROFILE_KEYS } from './useProfile';
+import { warmCover } from '@shared/components/ui/CoverImage';
 
 // ── Community ────────────────────────────────────────────────────────────────
 
@@ -36,7 +37,11 @@ export function prefetchProfile(queryClient, username) {
   if (!username || username === 'unknown' || !queryClient) return;
   queryClient.prefetchQuery({
     queryKey: PROFILE_KEYS.byUsername(username),
-    queryFn: () => usersApi.getByUsername(username),
+    queryFn: async () => {
+      const data = await usersApi.getByUsername(username);
+      warmCover(data?.cover);
+      return data;
+    },
     staleTime: 2 * 60 * 1000,
   });
 }

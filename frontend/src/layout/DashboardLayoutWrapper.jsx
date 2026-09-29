@@ -12,6 +12,7 @@ import InstantMatchChat from '@features/instant-match/components/chat/InstantMat
 import { useAutoHideChrome } from '@shared/hooks/useAutoHideChrome';
 import { useKeyboardInset } from '@shared/hooks/useKeyboardInset';
 import { VerificationModal } from '@shared/components/VerificationGate';
+import { warmCover } from '@shared/components/ui/CoverImage';
 
 /**
  * Both are overlays: the search sheet the FAB opens, and the popup that appears
@@ -98,6 +99,21 @@ export default function DashboardLayoutWrapper() {
   // to, so the header would never come back.
   const isMessages = matches.some((m) => m.pathname.startsWith('/messages'));
   useAutoHideChrome({ enabled: !isMessages });
+
+  // Your own cover is the slowest thing on your profile and it is known from
+  // sign-in, so it is fetched and decoded now, in idle time, rather than when
+  // the profile opens — which is when it used to pop in.
+  const ownCover = currentUser?.cover;
+  useEffect(() => {
+    if (!ownCover) return undefined;
+    const warm = () => warmCover(ownCover);
+    if ('requestIdleCallback' in window) {
+      const id = window.requestIdleCallback(warm, { timeout: 2000 });
+      return () => window.cancelIdleCallback(id);
+    }
+    const id = setTimeout(warm, 500);
+    return () => clearTimeout(id);
+  }, [ownCover]);
 
   useEffect(() => {
     // Preload primary route chunks in background idle time for flicker-free transitions
