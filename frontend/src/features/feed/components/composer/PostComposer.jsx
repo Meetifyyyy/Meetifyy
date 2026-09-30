@@ -420,7 +420,12 @@ const PostComposer = forwardRef(function PostComposer({ onSubmit }, ref) {
           </button>
         </div>
 
-        <div className={`${styles.composerExpandContainer}${expandedState ? ` ${styles.expanded}` : ''}`}>
+        <div
+          className={`${styles.composerExpandContainer}${expandedState ? ` ${styles.expanded}` : ''}`}
+          aria-hidden={!expandedState}
+          inert={expandedState ? undefined : ''}
+        >
+          <div className={styles.composerExpandClip}>
           <div className={styles.composerExpandInner}>
           {showPoll && (
             <div className={styles.inlinePollCreator}>
@@ -595,6 +600,7 @@ const PostComposer = forwardRef(function PostComposer({ onSubmit }, ref) {
               )}
             </button>
           </div>
+        </div>
         </div>
       </div>
     </div>

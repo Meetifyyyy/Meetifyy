@@ -151,3 +151,24 @@ describe('PostComposer — typing into poll options', () => {
     expect(container.textContent).toContain('20');
   });
 });
+
+describe('PostComposer — collapsed controls', () => {
+  it('makes actions inert immediately on collapse and restores them on reopening', () => {
+    const { container } = render(<PostComposer onSubmit={async () => {}} />);
+    const actions = container.querySelector('button[title="Image"]').closest('[aria-hidden]');
+
+    expect(actions.getAttribute('aria-hidden')).toBe('true');
+    expect(actions.hasAttribute('inert')).toBe(true);
+
+    fireEvent.click(composerBody(container));
+    expect(actions.getAttribute('aria-hidden')).toBe('false');
+    expect(actions.hasAttribute('inert')).toBe(false);
+
+    fireEvent.mouseDown(document.body);
+    expect(actions.getAttribute('aria-hidden')).toBe('true');
+    expect(actions.hasAttribute('inert')).toBe(true);
+
+    fireEvent.click(composerBody(container));
+    expect(actions.hasAttribute('inert')).toBe(false);
+  });
+});

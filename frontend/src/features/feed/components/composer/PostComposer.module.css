@@ -4,7 +4,7 @@
 
 .postComposer {
   background: var(--color-bg-white);
-  border: none;
+  border: 1px solid var(--color-border-light);
   border-radius: var(--radius-xl);
   padding: 0.75rem 1rem;
   display: flex;
@@ -101,57 +101,40 @@
   background: rgba(var(--color-primary-rgb), 0.15);
 }
 
-/*
- * Expand / collapse.
- *
- * Height to `auto` has no cheap animation: whatever technique is used, the
- * box's height changes and the feed below moves. The 0fr -> 1fr grid row is
- * the lightest honest version of that: no JS measuring, no max-height guess
- * (which animates dead space and eases wrongly), and the feed below is only
- * shifted, not re-laid-out inside. It is kept short so that layout work lasts
- * as few frames as possible.
- *
- * Everything the eye actually follows -- the actions fading and rising into
- * place -- is opacity and transform on the inner block, which the compositor
- * runs off the main thread. `visibility` flips at the end of the collapse so the
- * hidden buttons leave the tab order and the accessibility tree.
- */
+/* The flow height must change to move the feed below. Keep that small,
+   CSS-only transition brief; fade/translate the controls in the same interval.
+   The grid item has no padding so 0fr really collapses to zero. */
 .composerExpandContainer {
   display: grid;
   grid-template-rows: 0fr;
   visibility: hidden;
-  transition:
-    grid-template-rows 0.22s cubic-bezier(0.3, 0, 0.2, 1),
-    visibility 0s linear 0.22s;
+  transition: grid-template-rows 180ms ease-out, visibility 0s linear 180ms;
 }
 
 .composerExpandContainer.expanded {
   grid-template-rows: 1fr;
   visibility: visible;
-  transition:
-    grid-template-rows 0.26s cubic-bezier(0.16, 1, 0.3, 1),
-    visibility 0s linear 0s;
+  transition: grid-template-rows 180ms ease-out, visibility 0s;
+}
+
+.composerExpandClip {
+  min-height: 0;
+  overflow: hidden;
 }
 
 .composerExpandInner {
-  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
-  overflow: hidden;
   padding-top: 0.75rem;
   opacity: 0;
-  transform: translateY(-6px);
-  transition: opacity 0.14s ease, transform 0.18s ease;
+  transform: translateY(-4px);
+  transition: opacity 180ms ease-out, transform 180ms ease-out;
 }
 
 .composerExpandContainer.expanded .composerExpandInner {
   opacity: 1;
-  transform: none;
-  /* Content arrives just behind the height, so it never pops in clipped. */
-  transition:
-    opacity 0.2s ease 0.06s,
-    transform 0.26s cubic-bezier(0.16, 1, 0.3, 1) 0.04s;
+  transform: translateY(0);
 }
 
 @media (prefers-reduced-motion: reduce) {
