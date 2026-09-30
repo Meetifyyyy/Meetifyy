@@ -22,8 +22,11 @@ const getDayLabel = (date, dateLabel) => {
   return new Date().getDate();
 };
 
-export default function CalendarIcon({ date, dateLabel, size, style, variant, className }) {
-  const month = getMonthLabel(date, dateLabel);
+export default function CalendarIcon({ date, dateLabel, size, style, variant, className, sentenceCaseMonth = false }) {
+  const monthLabel = getMonthLabel(date, dateLabel);
+  const month = sentenceCaseMonth
+    ? monthLabel.charAt(0) + monthLabel.slice(1).toLowerCase()
+    : monthLabel;
   const day = getDayLabel(date, dateLabel);
 
   const isLarge = size === 'large';
@@ -96,7 +99,7 @@ export default function CalendarIcon({ date, dateLabel, size, style, variant, cl
 
   return (
     <div className={`${styles.eventDate}${className ? ` ${className}` : ''}`} style={eventDateStyle}>
-      <div className={styles.eventMonth} style={eventMonthStyle}>{month}</div>
+      <div className={styles.eventMonth} style={{ ...eventMonthStyle, textTransform: sentenceCaseMonth ? 'none' : undefined }}>{month}</div>
       <div className={styles.eventDay} style={eventDayStyle}>{day}</div>
     </div>
   );

@@ -177,9 +177,8 @@ export default function NotificationList({
                   borderTop: virtualItem.index > 0 ? '1px solid var(--color-border-light)' : 'none',
                   fontSize: '0.75rem',
                   fontWeight: 700,
-                  letterSpacing: '0.08em',
                   color: 'var(--color-text-muted)',
-                  textTransform: 'uppercase'
+                  textTransform: 'none'
                 }}
               >
                 {item.title}

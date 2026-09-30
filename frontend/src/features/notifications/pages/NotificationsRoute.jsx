@@ -439,7 +439,7 @@ export default function NotificationsRoute() {
     return [
       { title: 'Today', key: 'today', items: groups.today },
       { title: 'Yesterday', key: 'yesterday', items: groups.yesterday },
-      { title: 'This Week', key: 'thisWeek', items: groups.thisWeek },
+      { title: 'This week', key: 'thisWeek', items: groups.thisWeek },
       { title: 'Earlier', key: 'earlier', items: groups.earlier }
     ].filter(g => g.items.length > 0);
   }, [loadedNotifications]);
@@ -451,7 +451,7 @@ export default function NotificationsRoute() {
   ).length;
 
   const headerTabs = useMemo(() => [
-    { id: 'all', label: 'All Notifications' },
+    { id: 'all', label: 'All notifications' },
     { 
       id: 'invitations', 
       label: (
@@ -572,7 +572,7 @@ export default function NotificationsRoute() {
                       visibility: inviteFeed.isFetchingNextPage ? 'hidden' : 'visible',
                     }}
                   >
-                    Load More
+                    Load more
                   </span>
                   {inviteFeed.isFetchingNextPage && (
                     <span
@@ -617,7 +617,7 @@ export default function NotificationsRoute() {
                     transition: 'all 0.2s',
                   }}
                 >
-                  Load More
+                  Load more
                 </button>
               )}
             </div>

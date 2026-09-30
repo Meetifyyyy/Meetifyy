@@ -142,7 +142,7 @@
   border-radius: var(--radius-full);
   padding: 0.2rem 0.6rem;
   letter-spacing: 0.02em;
-  text-transform: uppercase;
+  text-transform: none;
 }
 /* Settled invites stay in the list as a record. They are visually quieter than
    a pending one — the row is history, not a request for a decision — but the
@@ -161,7 +161,7 @@
   border-radius: var(--radius-full);
   padding: 0.2rem 0.65rem;
   letter-spacing: 0.02em;
-  text-transform: uppercase;
+  text-transform: none;
   border: 1px solid transparent;
 }
 

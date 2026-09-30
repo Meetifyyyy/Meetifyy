@@ -4,7 +4,7 @@ import NotificationRowsSkeleton from './NotificationRowsSkeleton';
 
 export default function NotificationsSkeleton() {
   const headerTabs = [
-    { id: 'all', label: 'All Notifications' },
+    { id: 'all', label: 'All notifications' },
     { id: 'invitations', label: 'Invitations' }
   ];
 

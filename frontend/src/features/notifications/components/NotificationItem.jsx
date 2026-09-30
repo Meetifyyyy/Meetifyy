@@ -103,6 +103,7 @@ function NotificationItem({
             {/* Calendar date badge – bottom-right, matching CrewCard */}
             <div className={styles.calendarBadge}>
               <CalendarIcon
+                sentenceCaseMonth
                 date={activityDate}
                 size="badge"
                 style={{ border: '2.5px solid var(--color-bg-white, #ffffff)', boxShadow: 'none' }}

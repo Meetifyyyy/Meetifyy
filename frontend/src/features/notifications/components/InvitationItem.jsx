@@ -49,6 +49,7 @@ export default function InvitationItem({
         />
         <div className={styles.calendarBadge}>
           <CalendarIcon
+            sentenceCaseMonth
             date={inv.startDate}
             size="badge"
             style={{ border: '2.5px solid var(--color-bg-white, #ffffff)', boxShadow: 'none' }}
