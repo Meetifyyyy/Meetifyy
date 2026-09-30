@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
-import { Bookmark, List, Grid, Calendar, FileText } from '@shared/components/icons';
+import { Bookmark, List, Grid } from '@shared/components/icons';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { postsApi, activitiesApi } from '@shared/api/apiClient';
 import Post from '../components/post/Post';
@@ -14,12 +14,6 @@ import { useSavedActivitiesStore } from '@shared/stores/savedActivitiesStore';
 export default function SavedPage() {
   const navigate = useNavigate();
   const goBack = useSmartBack();
-  const [activeTab, setActiveTab] = useState('all'); // 'all' | 'activities' | 'posts'
-
-  const handleTabClick = (tab) => {
-    setActiveTab((prev) => (prev === tab ? 'all' : tab));
-  };
-
   const handlePostClick = (post, options) => {
     navigate(`/post/${post.id}`, {
       state: {
@@ -118,31 +112,23 @@ export default function SavedPage() {
 
   const loadMoreRef = useRef(null);
 
-  // IntersectionObserver for pagination / infinite scroll
+  // Both saved lists remain visible; paginate each independently.
   useEffect(() => {
-    if (activeTab === 'posts') {
-      if (!hasNextPostsPage || isPostsLoading || isFetchingNextPostsPage) return;
-      const observer = new IntersectionObserver(
-        (entries) => {
-          if (entries[0].isIntersecting) fetchNextPostsPage();
-        },
-        { threshold: 0.1, rootMargin: '200px' }
-      );
-      if (loadMoreRef.current) observer.observe(loadMoreRef.current);
-      return () => observer.disconnect();
-    } else if (activeTab === 'activities') {
-      if (!hasNextActivitiesPage || isActivitiesLoading || isFetchingNextActivitiesPage) return;
-      const observer = new IntersectionObserver(
-        (entries) => {
-          if (entries[0].isIntersecting) fetchNextActivitiesPage();
-        },
-        { threshold: 0.1, rootMargin: '200px' }
-      );
-      if (loadMoreRef.current) observer.observe(loadMoreRef.current);
-      return () => observer.disconnect();
-    }
+    const canLoadPosts = hasNextPostsPage && !isPostsLoading && !isFetchingNextPostsPage;
+    const canLoadActivities = hasNextActivitiesPage && !isActivitiesLoading && !isFetchingNextActivitiesPage;
+    if (!canLoadPosts && !canLoadActivities) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (!entries[0]?.isIntersecting) return;
+        if (canLoadPosts) fetchNextPostsPage();
+        if (canLoadActivities) fetchNextActivitiesPage();
+      },
+      { threshold: 0.1, rootMargin: '200px' }
+    );
+    if (loadMoreRef.current) observer.observe(loadMoreRef.current);
+    return () => observer.disconnect();
   }, [
-    activeTab,
     hasNextPostsPage,
     isPostsLoading,
     isFetchingNextPostsPage,
@@ -161,8 +147,6 @@ export default function SavedPage() {
     localStorage.setItem('saved_view_mode', viewMode);
   }, [viewMode]);
 
-  const showActivities = activeTab === 'all' || activeTab === 'activities';
-  const showPosts = activeTab === 'all' || activeTab === 'posts';
   const hasNoItems = fullSavedActivities.length === 0 && fullPosts.length === 0;
 
   return (
@@ -179,25 +163,7 @@ export default function SavedPage() {
         </div>
 
         <div className={styles.headerRight}>
-          {/* Integrated Filter Pills */}
-          <div className={styles.tabGroup}>
-            <button
-              className={`${styles.tabBtn} ${activeTab === 'activities' ? styles.active : ''}`}
-              onClick={() => handleTabClick('activities')}
-            >
-              <Calendar size={15} />
-              <span>Activities ({fullSavedActivities.length})</span>
-            </button>
-            <button
-              className={`${styles.tabBtn} ${activeTab === 'posts' ? styles.active : ''}`}
-              onClick={() => handleTabClick('posts')}
-            >
-              <FileText size={15} />
-              <span>Posts ({fullPosts.length})</span>
-            </button>
-          </div>
-
-          {showPosts && fullPosts.length > 0 && (
+          {fullPosts.length > 0 && (
             <div className={styles.viewToggleGroup}>
               <button 
                 className={`${styles.viewToggleBtn} ${viewMode === 'compact' ? styles.active : ''}`}
@@ -228,7 +194,7 @@ export default function SavedPage() {
         ) : hasNoItems ? (
           <div className={styles.emptyState}>
             <div className={styles.emptyIconWrapper}>
-              <Bookmark size={48} strokeWidth={1} />
+              <Bookmark size={32} strokeWidth={1.5} aria-hidden="true" />
             </div>
             <h2>Nothing saved yet</h2>
             <p>Tap the bookmark icon on any activity or post to save it here</p>
@@ -236,9 +202,9 @@ export default function SavedPage() {
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
             {/* ACTIVITIES SECTION */}
-            {showActivities && fullSavedActivities.length > 0 && (
+            {fullSavedActivities.length > 0 && (
               <div className={styles.sectionContainer}>
-                {activeTab === 'all' && showPosts && fullPosts.length > 0 && (
+                {fullPosts.length > 0 && (
                   <h3 className={styles.sectionTitle}>Saved Activities</h3>
                 )}
                 <div className={styles.activitiesGrid}>
@@ -254,9 +220,9 @@ export default function SavedPage() {
             )}
 
             {/* POSTS SECTION */}
-            {showPosts && fullPosts.length > 0 && (
+            {fullPosts.length > 0 && (
               <div className={styles.sectionContainer}>
-                {activeTab === 'all' && showActivities && fullSavedActivities.length > 0 && (
+                {fullSavedActivities.length > 0 && (
                   <h3 className={styles.sectionTitle}>Saved Posts</h3>
                 )}
                 <div className={`${styles.content} ${viewMode === 'expanded' ? styles.expandedLayout : styles.compactLayout}`}>
@@ -309,9 +275,9 @@ export default function SavedPage() {
         )}
       </div>
 
-      {((showPosts && hasNextPostsPage) || (showActivities && hasNextActivitiesPage)) && (
+      {(hasNextPostsPage || hasNextActivitiesPage) && (
         <div ref={loadMoreRef} style={{ padding: '1.5rem', display: 'flex', justifyContent: 'center' }}>
-          <div className="spinner" aria-label="Loading saved posts" />
+          <div className="spinner" aria-label="Loading saved items" />
         </div>
       )}
     </main>

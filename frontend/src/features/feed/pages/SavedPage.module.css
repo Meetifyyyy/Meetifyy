@@ -78,65 +78,8 @@
 }
 
 .title {
-  font-family: 'Changa One', sans-serif;
-  font-size: 1.8rem;
-  font-weight: normal;
-  color: var(--color-text-main);
+  composes: type-page-title from global;
   margin: 0;
-}
-
-.tabGroup {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-}
-
-.tabBtn {
-  background: transparent;
-  border: 1px solid var(--color-border, #e2e8f0);
-  color: var(--color-text-muted, #64748b);
-  padding: 0.35rem 0.85rem;
-  border-radius: 9999px;
-  font-size: 0.82rem;
-  font-weight: 600;
-  font-family: var(--font-family-sans, sans-serif);
-  cursor: pointer;
-  transition: background 0.2s, color 0.2s, border-color 0.2s;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  user-select: none;
-  transform: none !important;
-}
-
-.tabBtn:hover,
-.tabBtn:active {
-  color: var(--color-text-main, #0f172a);
-  border-color: var(--color-text-muted, #94a3b8);
-}
-
-@media (hover: hover) and (pointer: fine) {
-
-  .tabBtn:hover,
-.tabBtn:active {
-  transform: none !important;
-  }
-}
-
-.tabBtn.active {
-  background: var(--color-primary, #8f0c13);
-  color: #ffffff !important;
-  border-color: var(--color-primary, #8f0c13);
-}
-
-:global([data-theme="dark"]) .tabBtn {
-  border-color: rgba(255, 255, 255, 0.18);
-  color: #94a3b8;
-}
-
-:global([data-theme="dark"]) .tabBtn.active {
-  background: var(--color-primary, #8f0c13);
-  color: #ffffff !important;
 }
 
 .sectionContainer {
@@ -146,11 +89,10 @@
 }
 
 .sectionTitle {
-  font-size: 1.05rem;
+  font-size: var(--font-size-lg);
   font-weight: 700;
   color: var(--color-text-main);
   margin: 0 0 0.25rem 0.25rem;
-  letter-spacing: -0.01em;
 }
 
 .viewToggleGroup {
@@ -212,25 +154,30 @@
 }
 
 .emptyIconWrapper {
-  width: 80px;
-  height: 80px;
+  width: 64px;
+  height: 64px;
   border-radius: 50%;
   background: var(--color-bg-soft);
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 1.5rem;
+  margin-bottom: 1.25rem;
   color: var(--color-text-muted);
 }
 
 .emptyState h2 {
-  font-size: 1.25rem;
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+  line-height: var(--leading-snug);
+  text-wrap: balance;
   color: var(--color-text-main);
   margin: 0 0 0.5rem 0;
 }
 
 .emptyState p {
-  font-size: 0.95rem;
+  font-size: var(--font-size-base);
+  line-height: var(--leading-relaxed);
+  text-wrap: pretty;
   margin: 0;
   max-width: 300px;
 }
@@ -333,7 +280,7 @@
 
 .compactAuthorName {
   font-weight: 600;
-  font-size: 0.9rem;
+  font-size: var(--font-size-base);
   color: var(--color-text-main);
   white-space: nowrap;
   overflow: hidden;
@@ -342,7 +289,7 @@
 }
 
 .compactUsername {
-  font-size: 0.85rem;
+  font-size: var(--font-size-sm);
   color: var(--color-text-muted);
   white-space: nowrap;
   overflow: hidden;
@@ -351,7 +298,7 @@
 }
 
 .compactPreview {
-  font-size: 0.85rem;
+  font-size: var(--font-size-sm);
   color: var(--color-text-muted);
   white-space: nowrap;
   overflow: hidden;
@@ -401,7 +348,7 @@
   }
 
   .compactAuthorName {
-    font-size: 0.85rem;
+    font-size: var(--font-size-sm);
   }
 
   .compactPreview {
