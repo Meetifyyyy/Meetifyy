@@ -273,12 +273,9 @@
   background: var(--nm-fill);
 }
 
-.userItemOn {
-  background: rgba(var(--color-primary-rgb), 0.08);
-}
-
+.userItemOn,
 .userItemOn:hover {
-  background: rgba(var(--color-primary-rgb), 0.12);
+  background: transparent;
 }
 
 .userItem:active {

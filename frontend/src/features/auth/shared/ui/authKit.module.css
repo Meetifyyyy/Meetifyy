@@ -3429,99 +3429,47 @@
   opacity: 0;
 }
 
-/* ── Avatar picker: dark theme ─────────────────────────────────────────────
-   The picker used to be forced light. It is portalled to <body>, outside the
-   auth shell, so the auth palette is spelled out here: card #1c1b22 like the
-   auth card, a raised strip for the tabs, field-fill (#2c2a37) for controls,
-   hairline dividers, and a darker overlay. */
-:global([data-theme='dark']) .avatarModalOverlay {
-  background: rgba(3, 4, 12, 0.72);
-}
-
-:global([data-theme='dark']) .avatarModalCard {
-  --color-bg-white: #1c1b22;
-  --color-bg-soft: #211f2a;
-  --color-bg-alt: #2c2a37;
-  --color-text-main: #f4f3f8;
-  --color-text-muted: #b6b3c4;
-  --color-border: rgba(255, 255, 255, 0.07);
-  --color-border-dark: rgba(255, 255, 255, 0.14);
-  background: #1c1b22;
-  border-color: rgba(255, 255, 255, 0.07);
-  color: #f4f3f8;
+/* Avatar picker: use the same dark surfaces and accent as the share sheet.
+   Inherit the app's tokens through the portal; preserve the signup picker
+   when it explicitly requests the light palette. */
+:global([data-theme='dark']) .avatarModalOverlay:not(.forceLightMode) {
+  background: rgba(0, 0, 0, 0.45);
   color-scheme: dark;
-  box-shadow: 0 30px 70px -20px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(255, 255, 255, 0.04);
 }
 
-:global([data-theme='dark']) .avatarModalHeader,
-:global([data-theme='dark']) .avatarModalBody,
-:global([data-theme='dark']) .avatarModalFooter {
-  background: #1c1b22;
-  border-color: rgba(255, 255, 255, 0.07);
+:global([data-theme='dark']) .avatarModalOverlay:not(.forceLightMode) .avatarModalCard {
+  background: var(--color-bg-white);
+  color: var(--color-text-main);
+  border-color: var(--color-border-light);
 }
 
-:global([data-theme='dark']) .avatarModalTabs {
-  background: #211f2a;
-  border-color: rgba(255, 255, 255, 0.07);
-}
-
-:global([data-theme='dark']) .avatarTabBtn {
-  color: #9a96a8;
-}
-
-:global([data-theme='dark']) .avatarTabBtn:hover {
-  color: #f4f3f8;
-  background: rgba(255, 255, 255, 0.05);
-}
-
-:global([data-theme='dark']) .avatarTabBtnActive {
-  background: #2c2a37;
-  color: #f4f3f8;
-  border-color: rgba(255, 255, 255, 0.08);
+:global([data-theme='dark']) .avatarModalOverlay:not(.forceLightMode) .avatarTabBtnActive,
+:global([data-theme='dark']) .avatarModalOverlay:not(.forceLightMode) .avatarRefreshBtn,
+:global([data-theme='dark']) .avatarModalOverlay:not(.forceLightMode) .avatarUploadModalBtn {
+  background: var(--color-bg-soft);
+  color: var(--color-text-main);
+  border-color: var(--color-border);
   box-shadow: none;
 }
 
-:global([data-theme='dark']) .avatarModalClose:hover {
-  background: rgba(255, 255, 255, 0.06);
+:global([data-theme='dark']) .avatarModalOverlay:not(.forceLightMode) .avatarGridItem:hover .avatarGridImgCircle,
+:global([data-theme='dark']) .avatarModalOverlay:not(.forceLightMode) .avatarGridItemActive .avatarGridImgCircle {
+  border-color: var(--color-primary);
 }
 
-:global([data-theme='dark']) .avatarGridImgCircle {
-  border-color: #33303f;
-  background: #2c2a37;
+:global([data-theme='dark']) .avatarModalOverlay:not(.forceLightMode) .avatarGridItemActive .avatarGridImgCircle {
+  box-shadow: 0 0 0 3px rgba(var(--color-primary-rgb), 0.25);
 }
 
-:global([data-theme='dark']) .avatarGridCheck {
-  border-color: #1c1b22;
-}
-
-:global([data-theme='dark']) .avatarRefreshBtn,
-:global([data-theme='dark']) .avatarUploadModalBtn {
-  background: #2c2a37;
-  border-color: transparent;
-  color: #f4f3f8;
+:global([data-theme='dark']) .avatarModalOverlay:not(.forceLightMode) .avatarGridCheck,
+:global([data-theme='dark']) .avatarModalOverlay:not(.forceLightMode) .avatarSelectBtn {
+  background: var(--color-primary);
+  color: #ffffff;
   box-shadow: none;
 }
 
-:global([data-theme='dark']) .avatarRefreshBtn:hover,
-:global([data-theme='dark']) .avatarUploadModalBtn:hover {
-  background: #33313f;
-  border-color: transparent;
-}
-
-:global([data-theme='dark']) .avatarSelectBtn:disabled {
-  opacity: 0.4;
-}
-
-:global([data-theme='dark']) .avatarModalBody::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-:global([data-theme='dark']) .avatarModalBody::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.14);
-}
-
-:global([data-theme='dark']) .avatarModalHandle {
-  background: rgba(255, 255, 255, 0.18);
+:global([data-theme='dark']) .avatarModalOverlay:not(.forceLightMode) .avatarSelectBtn:hover:not(:disabled) {
+  background: var(--color-primary-hover);
 }
 
 /* ============================================================================
