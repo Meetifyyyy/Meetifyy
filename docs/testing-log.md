@@ -1182,3 +1182,76 @@ UI no longer says "Reconnecting", and Share -> Copy link yields
 `https://dev.meetifyy.app/post/<id>`. One emit sent immediately on connect still
 gets a single transient `Unauthenticated` (the gateway authenticates after it
 acks the namespace); the client recovers on its own and it predates this work.
+
+## Post composer motion (2026-10-01)
+
+The shared web/Capacitor composer now uses a synchronized 180 ms CSS transition
+for the expandable row and its controls, without the previous staggered delays.
+An unpadded clipping wrapper lets the collapsed grid row reach zero height;
+previously the grid item's padding retained 12 px. Collapsed actions become inert
+and hidden from assistive technology immediately, including during the closing
+transition. Reduced-motion preferences disable the transition.
+
+Research: web.dev's [animation guide](https://web.dev/articles/animations-guide)
+recommends transform/opacity and warns that size animation requires layout.
+The small expandable row still animates grid size to move the feed naturally;
+this is not a compositor-only animation. No animation library, native bridge,
+JavaScript size measurement, or per-frame JavaScript loop was added to the app.
+
+A local Chromium fixture using the actual composer CSS and 35 dummy post cards
+was checked at 390 px and 1280 px widths. Both old and new versions sampled
+approximately 17 ms maximum frame intervals on this computer; this is not
+proof of improved frame rate. The new version reached 0 px when collapsed
+(previously 12 px), settled at the same 60 px expanded action height after rapid
+reversals, and reported 0 s transition duration with reduced motion. The fixture
+is under git-ignored `local/composer-motion/` and does not represent a full
+application or keyboard performance test. The mobile development bundle built
+successfully and contains the new clipping-wrapper styles. No APK installation
+or real-device recording was performed for this change.
+
+### Media viewer close lifecycle (2026-10-01)
+
+Fixed the shared viewer header remaining visible during the 280 ms media exit.
+Closing now immediately hides header, navigation, counter and video controls,
+makes the exiting overlay inert, pauses mounted videos, and closes the menu.
+Close timers are guarded against duplicate requests and cleared on unmount or
+new media sessions; reduced-motion dismissal skips the animation wait.
+
+Five regression cases cover immediate closing state, immediate video pause,
+duplicate dismissal, stale-timer cancellation/reopening and reduced motion.
+A local Chrome CSS fixture at 390 px and 1280 px widths verified visibility
+hidden, opacity 0 and transition duration 0 s for all chrome on the first exit
+frame. This fixture is not an authenticated application or real-device test.
+A separate source audit, with W3C/web.dev research, is saved locally at
+`local/media-viewer-audit/report.md`; its remaining findings are not fixed here.
+
+Validation: all 163 frontend test files / 1,653 tests passed, including the five
+new close-lifecycle cases. Frontend lint, typecheck and mobile development build
+passed. Backend code is unchanged; the backend suite passed earlier in this
+session. No APK was rebuilt/installed and no device recording was performed.
+
+### Media viewer frontend follow-up (2026-10-01)
+
+Restricted autoplay/registry ownership to the current video, with unique IDs,
+metadata-only neighbor preloading and immediate pause on deselection/closing.
+Added image signing error/retry handling and fixed public-URL retry resolution.
+Removed the unsupported owner Delete menu item and its false success toast.
+Downloads now resolve through the authorized media cache without modifying
+signed query parameters. Image measurement no longer toggles transforms.
+Added viewer focus containment/background inertness/opener restoration across
+portalled menus and nested dialogs. Hidden controls/slides are inert; keyboard
+shortcuts no longer act on neighboring videos or duplicate slider/button input.
+
+All 165 frontend files / 1,661 tests passed, including playback, image recovery,
+authorized download, focus, and close lifecycle regression cases. Lint,
+typecheck, and web/mobile development builds passed. A Chrome fixture using the
+actual focus hook verified Tab wrapping, hidden-control exclusion, background
+inertness, nested dialog focus/restore and opener restoration. This is not an
+authenticated end-to-end or real-device test. No backend/native project files
+were changed. Remaining deletion/caption data integration, native saving and
+verification gaps are listed in `local/problemfound.md`.
+
+New message modal: selected recipient rows now keep a transparent background,
+including hover; selection checkmarks remain. A Chrome fixture using the actual
+stylesheet verified the selected-row background; lint/typecheck passed after
+this CSS change.
