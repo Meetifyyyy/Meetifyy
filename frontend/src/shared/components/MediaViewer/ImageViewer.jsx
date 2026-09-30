@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
+import VideoViewer from './VideoViewer';
 import { useSignedMediaSrc } from '@shared/hooks/useSignedMediaSrc';
 import styles from './MediaViewer.module.css';
 
@@ -70,7 +71,8 @@ export default function ImageViewer({ src: rawSrc, mediaRef, onToggleControls, p
    * cannot be authorized by an <img> tag inside the app, so it is signed first.
    * Non-conversation media passes through untouched.
    */
-  const { src } = useSignedMediaSrc(rawSrc);
+  const { src, failed: srcFailed, pending: srcPending, refresh: refreshSrc } = useSignedMediaSrc(rawSrc);
+  const [retryAttempt, setRetryAttempt] = useState(0);
   const wrapRef = useRef(null);
   const imgRef = useRef(null);
 
@@ -114,20 +116,12 @@ export default function ImageViewer({ src: rawSrc, mediaRef, onToggleControls, p
     vpSize.current = { w: wrap.clientWidth, h: wrap.clientHeight };
   }, []);
 
-  /**
-   * Measure the rendered image size AT SCALE=1.
-   * We temporarily zero out the transform so offsetWidth/Height return the
-   * natural CSS-constrained size, then restore it. This is one forced reflow
-   * but only happens on load and resize — never during gesture tracking.
-   */
+  // offset dimensions are independent of transforms; no style writes needed.
   const measureImg = useCallback(() => {
     const img = imgRef.current;
     if (!img) return;
-    const saved = img.style.transform;
-    img.style.transform = 'translate3d(0,0,0) scale(1)';
     const w = img.offsetWidth;
     const h = img.offsetHeight;
-    img.style.transform = saved;
     if (w > 0 && h > 0) {
       imgSize.current = { w, h };
     }
@@ -544,7 +538,7 @@ export default function ImageViewer({ src: rawSrc, mediaRef, onToggleControls, p
       setEntering(true);
     }
     resetState();
-  }, [src, measureVp, measureImg, resetState]);
+  }, [src, srcPending, retryAttempt, measureVp, measureImg, resetState]);
 
   // ─────────────────────────────────────
   // Resize handler
@@ -624,13 +618,13 @@ export default function ImageViewer({ src: rawSrc, mediaRef, onToggleControls, p
         onDoubleClick={handleDoubleClick}
         onClick={handleClick}
       >
-        {!loaded && !error && (
+        {!loaded && !error && !srcFailed && (
           <div className={styles.skeleton}>
             <div className={styles.skeletonRect} />
           </div>
         )}
 
-        {error ? (
+        {(error || srcFailed) && !srcPending ? (
           <div className={styles.brokenWrap}>
             <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
               <rect x="3" y="3" width="18" height="18" rx="2" />
@@ -639,18 +633,15 @@ export default function ImageViewer({ src: rawSrc, mediaRef, onToggleControls, p
               <line x1="4" y1="4" x2="20" y2="20" stroke="rgba(255,80,80,0.6)" strokeWidth="2" />
             </svg>
             <span>Media unavailable</span>
+            <button type="button" className={styles.videoRetryBtn} onClick={(e) => {
+              e.stopPropagation(); setError(false); setLoaded(false); setRetryAttempt(n => n + 1); refreshSrc();
+            }}>Try again</button>
           </div>
         ) : (typeof src === 'string' && (/\.(mp4|webm|mov|mkv|avi|flv)/i.test(src) || src.startsWith('data:video/'))) ? (
-          <video
-            src={src || undefined}
-            controls
-            autoPlay
-            playsInline
-            style={{ maxWidth: '90vw', maxHeight: '85vh', borderRadius: '12px', outline: 'none' }}
-            onClick={(e) => e.stopPropagation()}
-          />
+          <VideoViewer src={rawSrc} mediaRef={mediaRef} isCurrent={isCurrent} />
         ) : (
           <img
+            key={retryAttempt}
             ref={(el) => {
               imgRef.current = el;
               if (isCurrent && mediaRef) mediaRef.current = el;

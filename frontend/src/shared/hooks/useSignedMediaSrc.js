@@ -65,6 +65,7 @@ export function useSignedMediaSrc(value) {
 
     // Nothing to resolve: either empty, or already a URL that needs no signing.
     if (!needsSigning(value)) {
+      setSrc(initialFor(value));
       setPending(false);
       return undefined;
     }

@@ -50,6 +50,22 @@
   background: #000000;
 }
 
+/* Closing removes chrome in the same commit as the exit starts. It must not
+   remain over the underlying page while the media fades out. */
+.overlay.closing .topBar,
+.overlay.closing .counterBadge,
+.overlay.closing .navBtn,
+.overlay.closing .videoControlsOverlay,
+.overlay.closing .centerReplayBtn,
+.overlay.closing .tapFeedback,
+.overlay.closing .seekRipple {
+  visibility: hidden;
+  opacity: 0 !important;
+  pointer-events: none;
+  transition: none;
+  animation: none;
+}
+
 /* ── Top Bar ────────────────────────────────────────────────────────────────
    Floats over the media — always needs dark gradient for readability */
 .topBar {

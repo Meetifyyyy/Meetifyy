@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useId } from 'react';
 import { useSignedMediaSrc } from '@shared/hooks/useSignedMediaSrc';
 import styles from './MediaViewer.module.css';
 import {
@@ -85,6 +85,7 @@ export default function VideoViewer({ src: rawSrc, mediaRef, onControlsChange, o
    * whatever is actually on screen.
    */
   const errorCardRef = useRef(null);
+  const registryId = useId();
 
   /*
    * `canShowFrame` as a ref, because the gesture callbacks below are defined
@@ -165,9 +166,9 @@ export default function VideoViewer({ src: rawSrc, mediaRef, onControlsChange, o
     clearTimeout(hideTimerRef.current);
     // Auto-hide only when playing and not dragging
     const v = videoRef.current;
-    if (v && !v.paused && !v.ended && !isDragging) {
+    if (v && !v.paused && !v.ended && !isDragging && !wrapRef.current?.contains(document.activeElement)) {
       hideTimerRef.current = setTimeout(() => {
-        setCtrlVisible(false);
+        if (!wrapRef.current?.contains(document.activeElement)) setCtrlVisible(false);
       }, HIDE_DELAY_MS);
     }
   }, [isDragging]);
@@ -282,14 +283,14 @@ export default function VideoViewer({ src: rawSrc, mediaRef, onControlsChange, o
     if (!v) return;
     // Nothing to play yet. Calling play() on a source-less element rejects,
     // and the handler below would turn that rejection into a visible error.
-    if (!src) return;
+    if (!src || !isCurrent) return;
 
     let active = true;
 
     const attemptPlay = () => {
       v.play().catch((err) => {
         if (!active) return;
-        if (err.name === 'NotAllowedError') {
+        if (err.name === 'NotAllowedError' && active) {
           v.muted = true;
           setMuted(true);
           v.play().catch((err2) => {
@@ -306,8 +307,9 @@ export default function VideoViewer({ src: rawSrc, mediaRef, onControlsChange, o
 
     return () => {
       active = false;
+      v.pause();
     };
-  }, [src]);
+  }, [src, isCurrent]);
 
   // ─── Video event handlers ────────────────────────────────────────────────
   useEffect(() => {
@@ -322,11 +324,12 @@ export default function VideoViewer({ src: rawSrc, mediaRef, onControlsChange, o
     setMuted(false);
 
     // Register with global video registry with priority 10 (MediaViewer active video)
-    const deregister = feedVideoRegistry.register('media-viewer-video', v, 10);
-    feedVideoRegistry.requestPlay('media-viewer-video');
+    const deregister = isCurrent ? feedVideoRegistry.register(registryId, v, 10) : () => {};
+    if (isCurrent) feedVideoRegistry.requestPlay(registryId);
 
     const onPlay = () => {
-      feedVideoRegistry.requestPlay('media-viewer-video');
+      if (!isCurrent) { v.pause(); return; }
+      if (isCurrent) feedVideoRegistry.requestPlay(registryId);
       setPlaying(true);
       setEnded(false);
       startProgressLoop();
@@ -334,7 +337,7 @@ export default function VideoViewer({ src: rawSrc, mediaRef, onControlsChange, o
     };
 
     const onPause = () => {
-      feedVideoRegistry.notifyPause('media-viewer-video');
+      feedVideoRegistry.notifyPause(registryId);
       setPlaying(false);
       stopProgressLoop();
       clearTimeout(hideTimerRef.current);
@@ -342,7 +345,7 @@ export default function VideoViewer({ src: rawSrc, mediaRef, onControlsChange, o
     };
 
     const onEnded = () => {
-      feedVideoRegistry.notifyPause('media-viewer-video');
+      feedVideoRegistry.notifyPause(registryId);
       setPlaying(false);
       setEnded(true);
       stopProgressLoop();
@@ -397,7 +400,7 @@ export default function VideoViewer({ src: rawSrc, mediaRef, onControlsChange, o
       stopProgressLoop();
       deregister();
     };
-  }, [src, startProgressLoop, stopProgressLoop, resetHideTimer]);
+  }, [src, isCurrent, registryId, startProgressLoop, stopProgressLoop, resetHideTimer]);
 
   // ─── Tab/Page visibility: pause when tab hidden ──────────────────────────
   useEffect(() => {
@@ -406,12 +409,12 @@ export default function VideoViewer({ src: rawSrc, mediaRef, onControlsChange, o
       if (!v) return;
       if (document.hidden && !v.paused) {
         v.pause();
-        feedVideoRegistry.notifyPause('media-viewer-video');
+        feedVideoRegistry.notifyPause(registryId);
       }
     };
     document.addEventListener('visibilitychange', onVisChange);
     return () => document.removeEventListener('visibilitychange', onVisChange);
-  }, []);
+  }, [registryId]);
 
   // ─── Pause & cleanup on unmount only ───────────────────────────────────────
   useEffect(() => {
@@ -419,7 +422,7 @@ export default function VideoViewer({ src: rawSrc, mediaRef, onControlsChange, o
       const v = videoRef.current;
       if (v) {
         v.pause();
-        feedVideoRegistry.notifyPause('media-viewer-video');
+        feedVideoRegistry.notifyPause(registryId);
       }
       stopProgressLoop();
       clearTimeout(hideTimerRef.current);
@@ -428,7 +431,7 @@ export default function VideoViewer({ src: rawSrc, mediaRef, onControlsChange, o
       clearTimeout(tapFeedbackTimerRef.current);
       if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
     };
-  }, [stopProgressLoop]);
+  }, [stopProgressLoop, registryId]);
 
   // ─── Playback actions ─────────────────────────────────────────────────────
   const togglePlay = useCallback(() => {
@@ -496,7 +499,8 @@ export default function VideoViewer({ src: rawSrc, mediaRef, onControlsChange, o
     const handler = (e) => {
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
       const v = videoRef.current;
-      if (!v) return;
+      if (!v || !isCurrent || e.defaultPrevented || e.target.closest('[role="dialog"]') !== wrapRef.current?.closest('[role="dialog"]')) return;
+      if (e.target.closest('button, [role="slider"], [role="menu"]')) return;
       switch (e.key) {
         case ' ':
         case 'k':
@@ -554,7 +558,7 @@ export default function VideoViewer({ src: rawSrc, mediaRef, onControlsChange, o
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [togglePlay, seekBy, adjustVolume, toggleMute, toggleFullscreen, showControls]);
+  }, [isCurrent, togglePlay, seekBy, adjustVolume, toggleMute, toggleFullscreen, showControls]);
 
   // Close speed menu on outside click
   useEffect(() => {
@@ -965,7 +969,7 @@ export default function VideoViewer({ src: rawSrc, mediaRef, onControlsChange, o
         className={styles.viewerVideo}
         playsInline
         autoPlay={isCurrent}
-        preload="auto"
+        preload={isCurrent ? "auto" : "metadata"}
         aria-label="Video player"
         /*
          * Hidden unless it has an actual frame to show.
@@ -1130,6 +1134,8 @@ export default function VideoViewer({ src: rawSrc, mediaRef, onControlsChange, o
       {canShowFrame && (
         <div
           data-controls
+          inert={!ctrlVisible || !isCurrent ? '' : undefined}
+          aria-hidden={!ctrlVisible || !isCurrent}
           className={`${styles.videoControlsOverlay} ${ctrlVisible ? styles.controlsOverlayVisible : ''}`}
         >
           <div className={styles.videoGradient} aria-hidden="true" />

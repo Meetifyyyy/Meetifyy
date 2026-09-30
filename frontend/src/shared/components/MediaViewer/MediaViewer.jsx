@@ -7,6 +7,8 @@ import { showToast } from '@shared/utils/toast';
 import { copyToClipboard, shareNatively } from '@shared/lib/share/shareTargets';
 import ImageViewer from './ImageViewer';
 import VideoViewer from './VideoViewer';
+import { mediaCache } from '@shared/utils/MediaCacheManager';
+import { useViewerFocus } from './useViewerFocus';
 import styles from './MediaViewer.module.css';
 import ReportModal from '@shared/components/modals/ReportModal/ReportModal';
 import ForwardMessageModal from '@features/messages/shared/components/modals/ForwardMessageModal';
@@ -21,7 +23,6 @@ import {
   Download,
   Share,
   Flag,
-  Trash2,
 } from '@shared/components/icons';
 import Menu, { MenuItem, useMenu } from '@shared/components/ui/Menu';
 
@@ -64,9 +65,14 @@ export default function MediaViewer() {
   /** Ref forwarded to the media element (img or video) for vertical drag. */
   const mediaElRef  = useRef(null);
 
+  const [closing, setClosing] = useState(false);
+  const closingRef = useRef(false);
+  const closeTimerRef = useRef(null);
+
   const [visible, setVisible]               = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
   const moreMenu = useMenu();
+  const closeMoreMenu = moreMenu.close;
   const [showForwardModal, setShowForwardModal] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
   const [hasReported, setHasReported]       = useState(false);
@@ -75,7 +81,14 @@ export default function MediaViewer() {
   const didClose = useRef(false);
 
   const handleClose = useCallback(() => {
+    if (closingRef.current) return;
+    closingRef.current = true;
+    setClosing(true);
     setVisible(false);
+    closeMoreMenu();
+    downloadAbortRef.current?.abort();
+    // Stop the viewer's audio immediately, rather than waiting for unmount.
+    overlayRef.current?.querySelectorAll('video').forEach(video => video.pause());
     controlsHiddenByGesture.current = false;
     // Pause all feed videos (below MediaViewer priority 10) on close
     if (typeof window !== 'undefined') {
@@ -83,8 +96,17 @@ export default function MediaViewer() {
         .then(({ feedVideoRegistry: r }) => r.pauseAll(10))
         .catch(() => {});
     }
-    setTimeout(closeViewer, 280);
-  }, [closeViewer]);
+    const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    closeTimerRef.current = setTimeout(() => {
+      closeTimerRef.current = null;
+      closeViewer();
+    }, reducedMotion ? 0 : 280);
+  }, [closeViewer, closeMoreMenu]);
+
+  useEffect(() => () => {
+    clearTimeout(closeTimerRef.current);
+    downloadAbortRef.current?.abort();
+  }, []);
 
   useOverlayBack(open, handleClose);
   useScrollLock(open);
@@ -134,18 +156,23 @@ export default function MediaViewer() {
 
   // ── Open / close animation ──────────────────────────────────────────────────
   useEffect(() => {
+    clearTimeout(closeTimerRef.current);
+    closeTimerRef.current = null;
     if (open) {
+      closingRef.current = false;
+      setClosing(false);
       didClose.current = false;
       setControlsVisible(true);
       if (trackRef.current) {
         trackRef.current.style.transition = 'none';
         trackRef.current.style.transform = `translate3d(-${indexRef.current * 100}%, 0, 0)`;
       }
-      requestAnimationFrame(() => setVisible(true));
+      const frame = requestAnimationFrame(() => setVisible(true));
+      return () => cancelAnimationFrame(frame);
     } else {
       setVisible(false);
     }
-  }, [open]);
+  }, [open, items]);
 
   // Sync track position smoothly when index changes
   useEffect(() => {
@@ -172,6 +199,7 @@ export default function MediaViewer() {
   useEffect(() => {
     if (!open) return;
     const handler = (e) => {
+      if (e.defaultPrevented || e.target.closest?.('[role="dialog"]') !== overlayRef.current) return;
       if (e.key === 'Escape') { handleClose(); return; }
       if (isVid) return;
       if (e.key === 'ArrowLeft')  navigate(-1);
@@ -181,10 +209,7 @@ export default function MediaViewer() {
     return () => window.removeEventListener('keydown', handler);
   }, [open, navigate, isVid, handleClose]);
 
-  // ── Focus trap ──────────────────────────────────────────────────────────────
-  useEffect(() => {
-    if (open) overlayRef.current?.focus();
-  }, [open]);
+  useViewerFocus(open, overlayRef);
 
   // ═══════════════════════════════════════════════════════════════════════════
   // UNIFIED GESTURE SYSTEM
@@ -506,15 +531,18 @@ export default function MediaViewer() {
     if (downloadState) return;
     const url = currentItem?.url;
     if (!url) return;
-    const isVideoItem = currentItem.type === 'video' || currentItem.isVideo;
+    const isVideoItem = isVideo(currentItem);
 
     setDownloadState('preparing');
     const controller = new AbortController();
     downloadAbortRef.current = controller;
 
     try {
-      const cacheBustUrl = url + (url.includes('?') ? '&' : '?') + `download=${Date.now()}`;
-      const response = await fetch(cacheBustUrl, { signal: controller.signal });
+      const downloadUrl = await mediaCache.getUrl(url);
+      if (controller.signal.aborted) throw new DOMException('Cancelled', 'AbortError');
+      if (!downloadUrl) throw new Error('Media unavailable');
+      // Signed query parameters must remain unchanged.
+      const response = await fetch(downloadUrl, { signal: controller.signal });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       setDownloadState('downloading');
 
@@ -532,6 +560,7 @@ export default function MediaViewer() {
         blob = await new Promise((res, rej) =>
           canvas.toBlob(b => b ? res(b) : rej(new Error('toBlob failed')), 'image/png')
         );
+        imageBitmap.close();
         filename = filename.replace(/\.webp$/i, '.png');
         if (!filename.toLowerCase().endsWith('.png')) filename += '.png';
       }
@@ -589,7 +618,8 @@ export default function MediaViewer() {
       ref={overlayRef}
       data-media-viewer="true"
       data-theme="dark"
-      className={`${styles.overlay} ${visible ? styles.visible : ''}`}
+      className={`${styles.overlay} ${visible ? styles.visible : ''} ${closing ? styles.closing : ''}`}
+      inert={closing ? '' : undefined}
       onClick={handleOverlayClick}
       tabIndex={-1}
       role="dialog"
@@ -604,7 +634,7 @@ export default function MediaViewer() {
       )}
 
       {/* ── Top bar ── */}
-      <div className={`${styles.topBar} ${controlsVisible ? styles.controlsVisible : ''}`}>
+      <div inert={!controlsVisible ? '' : undefined} aria-hidden={!controlsVisible} className={`${styles.topBar} ${controlsVisible ? styles.controlsVisible : ''}`}>
         <div className={styles.topBarLeft}>
           <button className={styles.iconBtn} onClick={handleClose} aria-label="Close">
             <X size={18} strokeWidth={2} />
@@ -648,16 +678,6 @@ export default function MediaViewer() {
                 {hasReported ? 'Already reported' : 'Report'}
               </MenuItem>
 
-              {meta?.isOwner && (
-                <MenuItem
-                  icon={Trash2}
-                  tone="danger"
-                  onSelect={() => { showToast('Deleted'); handleClose(); }}
-                  onClose={moreMenu.close}
-                >
-                  Delete
-                </MenuItem>
-              )}
             </Menu>
           </div>
         </div>
@@ -682,7 +702,7 @@ export default function MediaViewer() {
             const isItemVideo = isVideo(item);
 
             return (
-              <div key={item?.url || i} className={styles.slide} data-slide-index={i}>
+              <div key={item?.url || i} className={styles.slide} data-slide-index={i} inert={!isCurrent ? '' : undefined} aria-hidden={!isCurrent}>
                 {shouldRender && item?.url && (
                   isItemVideo ? (
                     <VideoViewer
@@ -691,7 +711,7 @@ export default function MediaViewer() {
                       mediaRef={isCurrent ? mediaElRef : null}
                       onControlsChange={isCurrent ? setControlsVisible : undefined}
                       onStageClick={moreMenu.close}
-                      isCurrent={isCurrent}
+                      isCurrent={isCurrent && !closing}
                     />
                   ) : (
                     <ImageViewer
@@ -699,7 +719,7 @@ export default function MediaViewer() {
                       src={item.url}
                       mediaRef={isCurrent ? mediaElRef : null}
                       onToggleControls={toggleControls}
-                      isCurrent={isCurrent}
+                      isCurrent={isCurrent && !closing}
                     />
                   )
                 )}
@@ -718,6 +738,8 @@ export default function MediaViewer() {
             onClick={(e) => { e.stopPropagation(); navigate(-1); }}
             onPointerDown={(e) => e.stopPropagation()}
             onMouseDown={(e) => e.stopPropagation()}
+            inert={!controlsVisible ? '' : undefined}
+            aria-hidden={!controlsVisible}
             disabled={index === 0}
             aria-label="Previous"
           >
@@ -729,6 +751,8 @@ export default function MediaViewer() {
             onClick={(e) => { e.stopPropagation(); navigate(1); }}
             onPointerDown={(e) => e.stopPropagation()}
             onMouseDown={(e) => e.stopPropagation()}
+            inert={!controlsVisible ? '' : undefined}
+            aria-hidden={!controlsVisible}
             disabled={index === items.length - 1}
             aria-label="Next"
           >
