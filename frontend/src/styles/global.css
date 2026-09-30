@@ -440,7 +440,7 @@ nav a.active {
 @media (max-width: 768px) {
   .custom-toast,
   .custom-toast.custom-toast-bottom {
-    bottom: calc(60px + var(--bottom-nav-gap) + env(safe-area-inset-bottom, 0px) + 12px);
+    bottom: calc(var(--bottom-nav-height) + var(--bottom-nav-gap) + env(safe-area-inset-bottom, 0px) + 12px);
     top: auto;
   }
 

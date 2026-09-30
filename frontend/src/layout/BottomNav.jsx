@@ -160,11 +160,12 @@ export default function BottomNav({ hidden }) {
               className={`${styles.bottomNavAvatar} ${isProfileActive ? styles.activeAvatarBorder : ''}`.trim()}
             />
           ) : (
-            // Deliberately NOT run through <NavIcon>: the Profile tab usually
-            // shows the user's avatar, and cross-fading a fill under a photo
-            // that is only sometimes there would make this one tab behave
-            // differently from itself. Left exactly as it was.
-            isProfileActive ? <ProfileSolid /> : <ProfileOutline strokeWidth={1.75} />
+            <NavIcon
+              className={styles.navIcon}
+              active={isProfileActive}
+              outline={<ProfileOutline strokeWidth={1.75} />}
+              solid={<ProfileSolid />}
+            />
           )}
         </div>
         <span>Profile</span>

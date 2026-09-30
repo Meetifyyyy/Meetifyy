@@ -65,7 +65,7 @@
   cursor: pointer;
   flex: 1;
   height: 100%;
-  transition: color 0.2s ease, opacity 0.12s ease;
+  transition: color 180ms ease-out, opacity 120ms ease-out;
   padding: 4px 0;
   border-radius: var(--radius-md);
   -webkit-tap-highlight-color: transparent;
@@ -97,6 +97,8 @@
   width: 26px !important;
   height: 26px !important;
   flex-shrink: 0;
+  box-shadow: 0 0 0 2px transparent;
+  transition: box-shadow 180ms ease-out;
 }
 
 /*
@@ -123,21 +125,24 @@
   border: 0;
 }
 
-.bottomNavItem:hover {
-  color: var(--color-text-main);
+@media (hover: hover) and (pointer: fine) {
+  .bottomNavItem:hover:not(.active) {
+    color: var(--color-text-main);
+  }
 }
 
 .bottomNavItem:active {
   /* Opacity, not scale: a scaled press springs back after the tap lands,
      which reads as the icons shifting once they reach their place. */
-  opacity: 0.6;
-  transition: opacity 0.05s ease;
+  opacity: 0.78;
 }
 
 /* Cross-fade only. NavIcon grows the incoming layer from 0.9, which on a bar
    this small looks like the icon settling into position after every tap. */
 .navIcon > svg {
   transform: none !important;
+  transition: opacity 180ms ease-out;
+  will-change: auto;
 }
 
 .bottomNavItem.active {
@@ -227,5 +232,10 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .bottomNav { transition: none; }
+  .bottomNav,
+  .bottomNavItem,
+  .bottomNavAvatar,
+  .navIcon > svg {
+    transition: none;
+  }
 }

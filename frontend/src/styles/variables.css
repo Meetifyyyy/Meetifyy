@@ -26,7 +26,7 @@
   --color-nav-surface: #FFFFFF;
   /* Full-width mobile BottomNav, attached to the screen edge. */
   --bottom-nav-gap: 0px;
-  --bottom-nav-height: 60px;
+  --bottom-nav-height: 52px;
   /* Everything the attached nav covers, measured from the viewport bottom:
      bar + home indicator. Pages reserve THIS, never a literal, so a
      change to the nav or a device with a larger inset cannot clip content. */
