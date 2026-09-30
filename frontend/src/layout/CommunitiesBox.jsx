@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { ChevronDown, Compass } from '@shared/components/icons';
+import { ChevronDown, Users } from '@shared/components/icons';
 import { useMyCommunities } from '@shared/hooks/useCommunities';
 import CommunityAvatar from '@features/communities/components/directory/CommunityAvatar';
 import styles from './CommunitiesBox.module.css';
@@ -53,7 +53,7 @@ export default function CommunitiesBox({ onItemClick, className = '' }) {
             className={styles.exploreMore}
             onClick={onItemClick}
           >
-            <Compass size={18} className={styles.exploreIcon} />
+            <Users size={18} className={styles.exploreIcon} aria-hidden="true" />
             <span>{myCommunities.length > 0 ? 'All communities' : 'Explore communities'}</span>
           </Link>
         </div>

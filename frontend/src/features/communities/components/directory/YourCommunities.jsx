@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Compass, Plus, AlertCircle, Users } from '@shared/components/icons';
+import { AlertCircle } from '@shared/components/icons';
 import { useMyCommunities } from '@shared/hooks/useCommunities';
 import CommunityRow from './CommunityRow';
 import CommunityRowSkeleton from './CommunityRowSkeleton';
@@ -40,20 +40,19 @@ export default function YourCommunities({ onExplore, onCreate }) {
       <section className={styles.section} aria-label="Your communities">
         <SectionHeading title="Your communities" />
         <EmptyPanel
-          icon={<Users size={22} />}
-          title="No communities yet"
+          title="Find your community"
           actions={(
             <>
               <button type="button" className={styles.primaryBtn} onClick={onExplore}>
-                <Compass size={16} /> Explore
+                Explore communities
               </button>
               <button type="button" className={styles.secondaryBtn} onClick={onCreate}>
-                <Plus size={16} /> Create one
+                Create a community
               </button>
             </>
           )}
         >
-          Communities you join or start will show up here, most active first.
+          Connect with students who share your interests. Join a community to see it here, or start your own.
         </EmptyPanel>
       </section>
     );

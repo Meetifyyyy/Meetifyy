@@ -1,13 +1,13 @@
 import { useSearchParams } from 'react-router-dom';
-import { Plus, Search, Users, Compass } from '@shared/components/icons';
+import { Plus, Search } from '@shared/components/icons';
 import CommunityRowSkeleton from './CommunityRowSkeleton';
 import SectionHeading from './SectionHeading';
 import listStyles from './CommunityList.module.css';
 import pageStyles from '../../pages/CommunitiesRoute.module.css';
 
 const TABS = [
-  { id: 'yours', label: 'Yours', Icon: Users },
-  { id: 'explore', label: 'Explore', Icon: Compass },
+  { id: 'yours', label: 'Yours' },
+  { id: 'explore', label: 'Explore' },
 ];
 
 /**
@@ -35,15 +35,14 @@ export default function CommunitiesPageSkeleton() {
               </button>
             </div>
           </div>
-          <div className={pageStyles.tabs}>
-            {TABS.map(({ id, label, Icon }) => (
+          <div data-tab={tab} className={pageStyles.tabs}>
+            {TABS.map(({ id, label }) => (
               <button
                 key={id}
                 type="button"
                 tabIndex={-1}
                 className={`${pageStyles.tab} ${tab === id ? pageStyles.tabActive : ''}`}
               >
-                <Icon size={18} aria-hidden="true" />
                 {label}
               </button>
             ))}

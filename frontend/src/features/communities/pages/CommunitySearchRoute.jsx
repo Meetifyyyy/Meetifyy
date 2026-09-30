@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Search, X, Loader2, AlertCircle, Compass } from '@shared/components/icons';
+import { ArrowLeft, Search, X, Loader2, AlertCircle, Users } from '@shared/components/icons';
 import { useDebouncedState } from '@shared/hooks/useDebounce';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
 import { useExploreCommunities } from '@shared/hooks/useCommunities';
@@ -128,7 +128,7 @@ export default function CommunitySearchRoute() {
 
           {!isLoading && !results.isError && list.length === 0 && (
             <div className={listStyles.state}>
-              <span className={listStyles.stateIcon}><Compass size={22} /></span>
+              <span className={listStyles.stateIcon}><Users size={22} aria-hidden="true" /></span>
               <h2 className={listStyles.stateTitle}>
                 {showingSuggestions ? 'Nothing to suggest yet' : 'No communities match'}
               </h2>

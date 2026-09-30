@@ -57,11 +57,10 @@
   justify-content: center;
   width: 40px;
   height: 40px;
-  border: none;
+  border: 1px solid var(--color-text-main);
   border-radius: 50%;
-  /* Solid: the theme's strongest ink as the fill, the page colour as the icon. */
-  background: var(--color-text-main);
-  color: var(--color-surface-screen, var(--color-bg-white));
+  background: transparent;
+  color: var(--color-text-main);
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
   transition: opacity var(--transition-fast, 0.15s ease), transform 0.1s ease;
@@ -82,20 +81,21 @@
 
 /* Create is the page's one primary action: solid brand blue. */
 .iconBtnPrimary {
+  border-color: var(--color-primary);
   background: var(--color-primary);
   color: #fff;
 }
 
 .tabs {
-  display: flex;
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   margin: 0 -1rem;
   border-bottom: 1px solid var(--color-border-light);
 }
 
 .tab {
   position: relative;
-  /* Exactly half each, whatever the label widths, so the two underlines meet. */
-  flex: 1 1 0;
   min-width: 0;
   margin: 0;
   padding: 0;
@@ -103,7 +103,6 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.4rem;
   height: 48px;
   border: none;
   background: transparent;
@@ -111,6 +110,16 @@
   font-size: 0.95rem;
   font-weight: 600;
   cursor: pointer;
+  transition: color 180ms ease-out, opacity 180ms ease-out;
+}
+
+.tab:active {
+  opacity: 0.7;
+}
+
+.tab:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -4px;
 }
 
 .tab:hover {
@@ -121,14 +130,28 @@
   color: var(--color-text-main);
 }
 
-.tabActive::after {
+.tabs::after {
   content: '';
   position: absolute;
   left: 0;
-  right: 0;
+  width: 50%;
   bottom: -1px;
   height: 3px;
   background: var(--color-text-main);
+  pointer-events: none;
+  transform: translateX(0);
+  transition: transform 180ms ease-out;
+}
+
+.tabs[data-tab="explore"]::after {
+  transform: translateX(100%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tab,
+  .tabs::after {
+    transition: none;
+  }
 }
 
 @media (max-width: 768px) {

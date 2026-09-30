@@ -117,9 +117,7 @@
   white-space: nowrap;
 }
 
-/* ── Empty panel ─────────────────────────────────────────
-   Compact and contained: a bordered well sized to its message rather than a
-   screen-filling placeholder. */
+/* Text-focused empty states, directly on the page surface. */
 
 .empty {
   display: flex;
@@ -127,35 +125,25 @@
   align-items: center;
   text-align: center;
   margin: 0 0.5rem;
-  padding: 2rem 1.25rem 1.75rem;
-  border: 1px dashed var(--color-border);
-  border-radius: var(--radius-lg);
-}
-
-.emptyIcon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 44px;
-  height: 44px;
-  margin-bottom: 0.875rem;
-  border-radius: 12px;
-  background: rgba(var(--color-primary-rgb, 37, 99, 235), 0.1);
-  color: var(--color-primary);
+  padding: 3.5rem 1rem;
 }
 
 .emptyTitle {
   margin: 0;
-  font-size: 1rem;
+  max-width: 28ch;
+  text-wrap: balance;
+  line-height: 1.4;
+  font-size: 1.125rem;
   font-weight: 600;
   color: var(--color-text-main);
 }
 
 .emptyText {
-  margin: 0.375rem 0 0;
-  max-width: 32ch;
+  margin: 0.625rem 0 0;
+  max-width: 42ch;
+  text-wrap: pretty;
   font-size: 0.875rem;
-  line-height: 1.5;
+  line-height: 1.65;
   color: var(--color-text-muted);
 }
 

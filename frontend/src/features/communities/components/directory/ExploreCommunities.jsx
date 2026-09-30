@@ -1,4 +1,4 @@
-import { Compass, AlertCircle, Plus } from '@shared/components/icons';
+import { AlertCircle } from '@shared/components/icons';
 import { useExploreCommunities } from '@shared/hooks/useCommunities';
 import CommunityRow from './CommunityRow';
 import CommunityRowSkeleton from './CommunityRowSkeleton';
@@ -40,15 +40,14 @@ export default function ExploreCommunities({ onCreate }) {
 
       {!isLoading && !isError && communities.length === 0 && (
         <EmptyPanel
-          icon={<Compass size={22} />}
-          title="Nothing to discover yet"
+          title="Be the first to bring people together"
           actions={(
             <button type="button" className={listStyles.primaryBtn} onClick={onCreate}>
-              <Plus size={16} /> Create a community
+              Create a community
             </button>
           )}
         >
-          No one has started a community here. Start the first one and invite people in.
+          There are no communities to explore yet. Start one around a shared interest and invite students to join.
         </EmptyPanel>
       )}
 

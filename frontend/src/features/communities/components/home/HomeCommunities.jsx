@@ -1,6 +1,6 @@
 import { memo, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { ChevronRight, Compass } from '@shared/components/icons';
+import { ChevronRight, Users } from '@shared/components/icons';
 import { useMyCommunities } from '@shared/hooks/useCommunities';
 import CommunityAvatar from '../directory/CommunityAvatar';
 import { byRecentActivity } from '../directory/communityMeta';
@@ -25,7 +25,7 @@ function HomeCommunities() {
   if (!isLoading && shown.length === 0) {
     return (
       <Link to="/communities?tab=explore" className={`${styles.card} ${styles.prompt}`}>
-        <span className={styles.promptIcon}><Compass size={20} /></span>
+        <span className={styles.promptIcon}><Users size={20} aria-hidden="true" /></span>
         <span className={styles.promptText}>
           <span className={styles.promptTitle}>Find your communities</span>
           <span className={styles.promptSub}>Join a few and their posts show up here.</span>

@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Plus, Search, Users, Compass } from '@shared/components/icons';
+import { Plus, Search } from '@shared/components/icons';
 import { useAuth } from '@shared/context/AuthContext';
 import { openVerificationModal } from '@shared/stores/verificationModalStore';
 import YourCommunities from '../components/directory/YourCommunities';
@@ -14,8 +14,8 @@ const CreateCommunityModal = lazy(() => import('../components/modals/CreateCommu
 const SCROLL_KEY = 'meetifyy_communities_scrollY';
 
 const TABS = [
-  { id: 'yours', label: 'Yours', Icon: Users },
-  { id: 'explore', label: 'Explore', Icon: Compass },
+  { id: 'yours', label: 'Yours' },
+  { id: 'explore', label: 'Explore' },
 ];
 
 /**
@@ -89,8 +89,8 @@ export default function CommunitiesRoute() {
                 </button>
               </div>
             </div>
-            <nav className={styles.tabs} role="tablist" aria-label="Communities">
-              {TABS.map(({ id, label, Icon }) => (
+            <nav data-tab={tab} className={styles.tabs} role="tablist" aria-label="Communities">
+              {TABS.map(({ id, label }) => (
                 <button
                   key={id}
                   type="button"
@@ -99,7 +99,6 @@ export default function CommunitiesRoute() {
                   className={`${styles.tab} ${tab === id ? styles.tabActive : ''}`}
                   onClick={() => setTab(id)}
                 >
-                  <Icon size={18} aria-hidden="true" />
                   {label}
                 </button>
               ))}
