@@ -937,6 +937,12 @@
     background: var(--color-surface-screen);
   }
 
+  /* Full-screen over the status bar: the header owns the clearance. */
+  .header {
+    height: calc(72px + max(env(safe-area-inset-top, 0px), var(--status-bar-inset, 0px)));
+    padding-top: max(env(safe-area-inset-top, 0px), var(--status-bar-inset, 0px));
+  }
+
   .scrollBody {
     padding-bottom: calc(6rem + env(safe-area-inset-bottom, 0px)) !important;
   }

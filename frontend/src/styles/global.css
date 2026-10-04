@@ -512,7 +512,8 @@ nav a.active {
    distribute and the whole page grows instead of just the message list.
    60px matches Header.module.css's fixed .header height. */
 .centre--messages {
-  background: var(--color-surface-screen, var(--color-bg-white));
+  /* No background here: on desktop the rounded .messagesLayout paints the
+     surface, and a square one behind it showed at its corners. */
   padding: 0 !important;
   max-width: none !important;
   height: calc(100dvh - 60px - 0.5rem) !important;
@@ -556,6 +557,7 @@ nav a.active {
   }
 
   .centre--messages {
+    background: var(--color-surface-screen, var(--color-bg-white));
     padding-bottom: 0 !important;
     overflow: hidden !important;
     /* The global app Header is display:none on mobile for /messages (Header's

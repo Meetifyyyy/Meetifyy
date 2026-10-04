@@ -65,7 +65,7 @@ function applyTransform(imgEl, tx, ty, scale, animated = false) {
 // Component
 // ─────────────────────────────────────────────
 
-export default function ImageViewer({ src: rawSrc, mediaRef, onToggleControls, preloadNext, preloadPrev, isCurrent = true }) {
+export default function ImageViewer({ src: rawSrc, mediaRef, onToggleControls, preloadNext, preloadPrev, isCurrent = true, closing = false }) {
   /*
    * Same reason as VideoViewer: a conversation attachment's `/api/media/` URL
    * cannot be authorized by an <img> tag inside the app, so it is signed first.
@@ -146,10 +146,13 @@ export default function ImageViewer({ src: rawSrc, mediaRef, onToggleControls, p
   }, []);
 
   useEffect(() => {
-    if (!isCurrent) {
+    // While the viewer is closing the image must stay exactly where the
+    // dismiss drag left it; resetting here snapped it back to the centre
+    // before the fade, which read as a jump.
+    if (!isCurrent && !closing) {
       resetState();
     }
-  }, [isCurrent, resetState]);
+  }, [isCurrent, closing, resetState]);
 
   // ─────────────────────────────────────
   // Commit transform helper

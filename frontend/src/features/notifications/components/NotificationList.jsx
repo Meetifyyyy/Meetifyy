@@ -170,16 +170,7 @@ export default function NotificationList({
           >
             {item.type === 'header' ? (
               <h2
-                className={pageStyles.groupTitle}
-                style={{
-                  margin: 0,
-                  padding: virtualItem.index === 0 ? '0.75rem 1rem 0.5rem 1rem' : '1.25rem 1rem 0.5rem 1rem',
-                  borderTop: virtualItem.index > 0 ? '1px solid var(--color-border-light)' : 'none',
-                  fontSize: '0.75rem',
-                  fontWeight: 700,
-                  color: 'var(--color-text-muted)',
-                  textTransform: 'none'
-                }}
+                className={`${pageStyles.groupTitle} ${virtualItem.index > 0 ? pageStyles.groupTitleDivided : ''}`}
               >
                 {item.title}
               </h2>

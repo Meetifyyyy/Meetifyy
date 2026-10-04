@@ -151,6 +151,7 @@ export default function SavedPage() {
 
   return (
     <main className="centre animate-in">
+      <div className={styles.box}>
       <header className={styles.header}>
         <div className={styles.headerLeft}>
           <button className={styles.headerSquareBtn} onClick={() => goBack('/home')} title="Back">
@@ -185,7 +186,7 @@ export default function SavedPage() {
       </header>
 
       {/* CONTENT SECTION */}
-      <div style={{ padding: '0.75rem' }}>
+      <div style={{ padding: '0.25rem 0.75rem 0.75rem' }}>
         {(isActivitiesLoading || isPostsLoading) && hasNoItems ? (
           <div className={styles.activitiesGrid}>
             <CrewCardSkeleton />
@@ -280,6 +281,7 @@ export default function SavedPage() {
           <div className="spinner" aria-label="Loading saved items" />
         </div>
       )}
+      </div>
     </main>
   );
 }

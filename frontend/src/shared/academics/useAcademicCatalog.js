@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { loadAcademicCatalog } from './academicCatalog';
+import { loadAcademicCatalog, getCachedAcademicCatalog } from './academicCatalog';
 
 /**
  * Loads the academic catalogue once per session and shares it across every form
@@ -8,8 +8,8 @@ import { loadAcademicCatalog } from './academicCatalog';
  * @returns {{ courses: import('./academicCatalog').AcademicCourse[], loading: boolean, error: string|null }}
  */
 export function useAcademicCatalog() {
-  const [courses, setCourses] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [courses, setCourses] = useState(() => getCachedAcademicCatalog() || []);
+  const [loading, setLoading] = useState(() => !getCachedAcademicCatalog());
   const [error, setError] = useState(null);
 
   useEffect(() => {

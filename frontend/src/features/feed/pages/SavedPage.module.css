@@ -78,7 +78,13 @@
 }
 
 .title {
-  composes: type-page-title from global;
+  /* Same face as the Settings top bar title. */
+  font-family: 'Changa One', sans-serif;
+  font-size: 1.6rem;
+  font-weight: normal;
+  color: var(--color-text-main);
+  letter-spacing: -0.01em;
+  line-height: 1.2;
   margin: 0;
 }
 
@@ -361,4 +367,21 @@
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 380px), 1fr));
   gap: 0.75rem;
   width: 100%;
+}
+/* Large screens: the whole column is one card, as on Communities, running
+   down to 0.5rem above the window's bottom edge however short the list. */
+@media (min-width: 769px) {
+  .box {
+    min-width: 0;
+    min-height: calc(100dvh - 60px - 0.5rem);
+    margin-bottom: 0.5rem;
+    box-sizing: border-box;
+    background: var(--color-bg-white);
+    border: 1px solid var(--color-border-light);
+    border-radius: var(--radius-lg);
+  }
+
+  .box > .header {
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  }
 }

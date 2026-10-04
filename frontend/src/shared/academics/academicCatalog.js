@@ -41,6 +41,19 @@ function writeCache(courses) {
   }
 }
 
+/**
+ * The catalogue if it is already in memory or the local cache, else null.
+ * Lets a hook render with real data on its first pass instead of one empty
+ * render followed by a state update, which made derived labels pop in late.
+ * @returns {AcademicCourse[]|null}
+ */
+export function getCachedAcademicCatalog() {
+  if (memory) return memory;
+  const cached = readCache();
+  if (cached) memory = cached;
+  return cached || null;
+}
+
 /** @returns {Promise<AcademicCourse[]>} */
 export function loadAcademicCatalog() {
   if (memory) return Promise.resolve(memory);

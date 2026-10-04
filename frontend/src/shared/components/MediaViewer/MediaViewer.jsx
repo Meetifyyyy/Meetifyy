@@ -720,6 +720,7 @@ export default function MediaViewer() {
                       mediaRef={isCurrent ? mediaElRef : null}
                       onToggleControls={toggleControls}
                       isCurrent={isCurrent && !closing}
+                      closing={closing}
                     />
                   )
                 )}

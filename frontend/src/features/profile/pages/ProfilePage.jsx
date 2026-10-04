@@ -38,6 +38,7 @@ import { getCollegeName } from '@shared/utils/user';
 import RightPanel from '@layout/RightPanel';
 import { INTERESTS_BY_CATEGORY } from '@shared/constants/interestsData';
 import { useAcademicSummary } from '@shared/academics/useAcademicSummary';
+import { useAcademicCatalog } from '@shared/academics/useAcademicCatalog';
 import { IS_MOBILE_BUILD } from '@config';
 
 function balanceTagsIntoTwoRows(tags) {
@@ -276,6 +277,9 @@ export default function ProfilePage() {
   // The tag sits in a row of one-word interest chips, so it carries the course
   // name alone rather than the full course • branch • year line.
   const academicSummary = useAcademicSummary(effectiveUser, { branch: false, year: false });
+  // The course tag needs the catalogue. Hold the skeleton until it is there, so
+  // the tag rows are laid out once instead of re-balancing when it arrives.
+  const { loading: catalogLoading } = useAcademicCatalog();
 
   /*
    * Declared above the skeleton early-return below, so it runs on every
@@ -310,7 +314,8 @@ export default function ProfilePage() {
   // Show skeleton on first load OR while fetching incomplete/different user data
   const isDataIncomplete = profileUser && !profileUser.stats;
   const isDifferentUser = profileUser && targetUsername && profileUser.username?.toLowerCase() !== targetUsername.toLowerCase();
-  const showingSkeleton = isLoadingProfile || isDataIncomplete || isDifferentUser;
+  const showingSkeleton = isLoadingProfile || isDataIncomplete || isDifferentUser
+    || (catalogLoading && Boolean(effectiveUser?.course));
   if (showingSkeleton) {
     // On your own profile the header is already known from the signed-in
     // user, so it renders for real and only stats and posts wait.
