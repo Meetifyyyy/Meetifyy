@@ -110,10 +110,23 @@ const CampusEventsPage = lazyRoute(() => import('./features/campus-events/pages/
 const CampusEventDetailPage = lazyRoute(() => import('./features/campus-events/pages/CampusEventDetailPage'));
 const SavedPage = lazyRoute(() => import('./features/feed/pages/SavedPage'));
 const AboutPage = lazyRoute(() => import('./features/info/pages/AboutPage'));
-const CommunityGuidelinesPage = lazyRoute(() => import('./features/info/pages/CommunityGuidelinesPage'));
-const CookiePolicyPage = lazyRoute(() => import('./features/info/pages/CookiePolicyPage'));
-const PrivacyPolicyPage = lazyRoute(() => import('./features/info/pages/PrivacyPolicyPage'));
-const TermsPage = lazyRoute(() => import('./features/info/pages/TermsPage'));
+// The legal pages are website-only. In the installed app each of their routes
+// opens the page on the website instead (OpenLegalOnWebsite), and these are
+// gated on the folding constant so the documents are not bundled into the APK.
+const CommunityGuidelinesPage = IS_MOBILE_BUILD ? null : lazyRoute(() => import('./features/info/pages/CommunityGuidelinesPage'));
+const CookiePolicyPage = IS_MOBILE_BUILD ? null : lazyRoute(() => import('./features/info/pages/CookiePolicyPage'));
+const PrivacyPolicyPage = IS_MOBILE_BUILD ? null : lazyRoute(() => import('./features/info/pages/PrivacyPolicyPage'));
+const TermsPage = IS_MOBILE_BUILD ? null : lazyRoute(() => import('./features/info/pages/TermsPage'));
+const OpenLegalOnWebsite = IS_MOBILE_BUILD ? lazyRoute(() => import('./features/info/pages/OpenLegalOnWebsite')) : null;
+
+/**
+ * A legal page route's element: the page on the website, a hand-off to it in
+ * the app. Each route keeps a literal `path:` key, which seoRoutes.test.js reads
+ * out of this file to check every path is routed on Vercel.
+ */
+const legalElement = (path, Page) => (IS_MOBILE_BUILD
+  ? <OpenLegalOnWebsite path={path} />
+  : <StaticRoute>{withBoundary(<Page />, null)}</StaticRoute>);
 const HelpSupportPage = lazyRoute(() => import('./features/info/help/HelpSupportPage'));
 
 /**
@@ -405,11 +418,11 @@ export default function App({ homeElement, rootExtras = null }) {
         },
         {
           path: '/privacy-policy',
-          element: <StaticRoute>{withBoundary(<PrivacyPolicyPage />, null)}</StaticRoute>,
+          element: legalElement('/privacy-policy', PrivacyPolicyPage),
         },
         {
           path: '/terms-and-conditions',
-          element: <StaticRoute>{withBoundary(<TermsPage />, null)}</StaticRoute>,
+          element: legalElement('/terms-and-conditions', TermsPage),
         },
         {
           path: '/terms',
@@ -417,11 +430,11 @@ export default function App({ homeElement, rootExtras = null }) {
         },
         {
           path: '/community-guidelines',
-          element: <StaticRoute>{withBoundary(<CommunityGuidelinesPage />, null)}</StaticRoute>,
+          element: legalElement('/community-guidelines', CommunityGuidelinesPage),
         },
         {
           path: '/cookie-policy',
-          element: <StaticRoute>{withBoundary(<CookiePolicyPage />, null)}</StaticRoute>,
+          element: legalElement('/cookie-policy', CookiePolicyPage),
         },
         {
           path: '/help-and-support',

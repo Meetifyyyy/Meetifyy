@@ -277,8 +277,7 @@ import { randomUUID } from 'node:crypto';
     // Public help centre + support-request intake. The admin-facing half lives
     // inside AdminModule, behind AdminJwtGuard.
     SupportModule,
-    // Public legal pages + the user's own consent record. Same split: the
-    // admin-facing half is AdminLegalModule inside AdminModule.
+    // Published legal versions + the user's own consent record.
     LegalModule,
     // Slow-request capture. Applies a global middleware, so it must be
     // imported for any route to be measured.

@@ -719,61 +719,46 @@
   color: var(--doc-text);
 }
 
-/* ── Load / error / empty states for a database-backed document ── */
-.docState {
-  padding: 3rem 0;
-  text-align: center;
-  font-family: 'Inter', sans-serif;
-  font-size: 0.95rem;
-  color: var(--doc-muted);
+/* ── Installed app: app top bar instead of the website navbar ── */
+.appTopBar {
+  /* The app shell already places the page below the status bar, so the bar
+     adds no inset of its own; it only sticks just under the bar. */
+  position: sticky;
+  top: max(env(safe-area-inset-top, 0px), var(--status-bar-inset, 0px));
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 56px;
+  padding: 0 8px;
+  background: var(--doc-surface);
+  border-bottom: 1px solid var(--doc-border);
 }
 
-.docStateTitle {
-  font-family: 'Changa One', sans-serif;
-  font-size: 1.35rem;
-  font-weight: 400;
-  color: var(--doc-heading);
-  margin: 0 0 0.5rem;
-}
-
-.docRetryBtn {
-  margin-top: 1.25rem;
-  padding: 0.6rem 1.2rem;
-  font-family: 'Inter', sans-serif;
-  font-size: 0.9rem;
-  font-weight: 600;
-  color: var(--doc-surface);
-  background: var(--doc-accent);
+.appBackBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
   border: none;
-  border-radius: 10px;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--doc-heading);
   cursor: pointer;
 }
 
-.docRetryBtn:hover {
-  background: var(--doc-accent-strong);
+.appTopBarTitle {
+  font-family: 'Changa One', sans-serif;
+  font-size: 1.3rem;
+  color: var(--doc-heading);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.docSkeletonLine {
-  height: 0.9rem;
-  margin: 0 auto 0.85rem;
-  max-width: 34rem;
-  border-radius: 6px;
-  background: linear-gradient(90deg, var(--doc-surface-alt) 25%, #ecebe9 37%, var(--doc-surface-alt) 63%);
-  background-size: 400% 100%;
-  animation: docSkeleton 1.4s ease infinite;
-}
-
-@keyframes docSkeleton {
-  0% {
-    background-position: 100% 50%;
-  }
-  100% {
-    background-position: 0 50%;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .docSkeletonLine {
-    animation: none;
-  }
+/* The website reserves room under its fixed navbar; the app bar is in flow. */
+.appTopBar + .mainContent {
+  padding-top: 1.25rem;
 }

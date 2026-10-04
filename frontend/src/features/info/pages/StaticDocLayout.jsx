@@ -1,4 +1,6 @@
 import { useLayoutEffect } from 'react';
+import { IS_MOBILE_BUILD } from '@config';
+import { useSmartBack } from '@shared/hooks/useSmartBack';
 import LandingNavbar from '../../auth/landing/components/LandingNavbar';
 import LandingFooter from '../../auth/landing/components/LandingFooter';
 import '../../auth/landing/landing.css';
@@ -9,8 +11,7 @@ export default function StaticDocLayout({
   title,
   subtitle,
   effectiveDate,
-  // Shown for the four admin-managed legal documents, which are served from the
-  // database. Absent on the pages that are still hand-written (About).
+  // Shown for the four legal documents. Absent on pages without one (About).
   effectiveFrom,
   noHeroCard = false,
   leftAlign = false,
@@ -50,17 +51,6 @@ export default function StaticDocLayout({
     const bodyEl = document.body;
     const rootEl = document.getElementById('root');
 
-    const prevHtmlOverflow = htmlEl.style.overflow;
-    const prevBodyHeight = bodyEl.style.height;
-    const prevBodyOverflow = bodyEl.style.overflow;
-
-    let prevRootHeight = '';
-    let prevRootOverflow = '';
-    if (rootEl) {
-      prevRootHeight = rootEl.style.height;
-      prevRootOverflow = rootEl.style.overflow;
-    }
-
     htmlEl.style.overflow = 'auto';
     bodyEl.style.height = 'auto';
     bodyEl.style.overflow = 'visible';
@@ -70,19 +60,24 @@ export default function StaticDocLayout({
     }
 
     return () => {
-      htmlEl.style.overflow = prevHtmlOverflow;
-      bodyEl.style.height = prevBodyHeight;
-      bodyEl.style.overflow = prevBodyOverflow;
+      // Cleared, not restored: a value captured while a scroll lock or another
+      // page's override was applied would be written back and leave the app
+      // unable to scroll until a reload.
+      htmlEl.style.removeProperty('overflow');
+      bodyEl.style.removeProperty('height');
+      bodyEl.style.removeProperty('overflow');
       if (rootEl) {
-        rootEl.style.height = prevRootHeight;
-        rootEl.style.overflow = prevRootOverflow;
+        rootEl.style.removeProperty('height');
+        rootEl.style.removeProperty('overflow');
       }
     };
   }, []);
 
   return (
     <div className={styles.pageWrapper}>
-      <LandingNavbar />
+      {/* In the app this is a screen, not a website page: an app top bar that
+          clears the status bar, and no marketing navbar or footer. */}
+      {IS_MOBILE_BUILD ? <AppTopBar title={title} /> : <LandingNavbar />}
       <main className={styles.mainContent}>
         {noHeroCard ? (
           <div className={leftAlign ? styles.heroNoCardLeft : styles.heroNoCard}>
@@ -119,7 +114,29 @@ export default function StaticDocLayout({
           {children}
         </div>
       </main>
-      <LandingFooter />
+      {!IS_MOBILE_BUILD && <LandingFooter />}
     </div>
+  );
+}
+
+function AppTopBar({ title }) {
+  const goBack = useSmartBack();
+  return (
+    <header className={styles.appTopBar}>
+      <button
+        type="button"
+        className={styles.appBackBtn}
+        aria-label="Go back"
+        onClick={() => goBack('/settings')}
+      >
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
+          stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <line x1="19" y1="12" x2="5" y2="12" />
+          <polyline points="12 19 5 12 12 5" />
+        </svg>
+      </button>
+      <span className={styles.appTopBarTitle}>{title}</span>
+      <span className={styles.appBackBtn} aria-hidden="true" />
+    </header>
   );
 }

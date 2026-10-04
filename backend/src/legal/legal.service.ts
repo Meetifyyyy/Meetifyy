@@ -30,9 +30,9 @@ export interface PublicLegalDocument {
  * The read side of the legal-document system: what is published, and what the
  * signed-in user still has to accept.
  *
- * Writes live in `AdminLegalService`, behind `AdminJwtGuard`. Nothing here can
- * change a document — a public controller that could publish would be the whole
- * point of the draft/publish workflow undone.
+ * Nothing here can change a document. The public text is static website content
+ * (frontend `legalDocuments.js`); the rows here are the version record that
+ * consent is tracked against, and there is no longer an admin editor for them.
  *
  * Every read here is served from `LegalConsentService`'s in-process cache of the
  * currently published versions rather than from the database. These four
