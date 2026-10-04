@@ -8,7 +8,10 @@ const mocks = vi.hoisted(() => ({
   register: vi.fn(() => vi.fn()), requestPlay: vi.fn(), notifyPause: vi.fn(),
 }));
 vi.mock('@shared/hooks/useSignedMediaSrc', () => ({
-  useSignedMediaSrc: () => ({ ...mocks.source, refresh: mocks.refresh }),
+  // An empty value (no poster) resolves to nothing, as the real hook does.
+  useSignedMediaSrc: (value) => (value
+    ? { ...mocks.source, refresh: mocks.refresh, attempt: 0 }
+    : { src: '', failed: false, pending: false, refresh: mocks.refresh, attempt: 0 }),
 }));
 vi.mock('@shared/utils/feedVideoRegistry', () => ({ feedVideoRegistry: mocks }));
 let play;

@@ -139,12 +139,34 @@ describe('service-worker update lifecycle', () => {
     // the extension match and the Accept-header match — or it does nothing.
     const imageRoute = workerSource.slice(
       workerSource.indexOf("accept.includes('image')") - 400,
-      workerSource.indexOf("cacheName: 'meetifyy-images-v4'"),
+      workerSource.indexOf("cacheName: 'meetifyy-images-v5'"),
     );
     expect(imageRoute).toContain("/api/share/");
     expect(imageRoute.indexOf('/api/share/')).toBeLessThan(
       imageRoute.indexOf("accept.includes('image')"),
     );
+  });
+
+  /**
+   * Private media must not be retained by the image cache.
+   *
+   * `/api/media/chat/<key>` is authorized per request and redirects to a signed
+   * URL; CacheFirst would key the final bytes by the stable `/api/media` URL and
+   * serve them to anyone, for a week, without asking the server.
+   */
+  it('keeps private and signed media out of the image cache', () => {
+    const imageRoute = workerSource.slice(
+      workerSource.indexOf("accept.includes('image')") - 1800,
+      workerSource.indexOf("cacheName: 'meetifyy-images-v5'"),
+    );
+    for (const needle of ["'/api/media/'", '/object/sign/', 'x-amz-']) {
+      expect(imageRoute.toLowerCase()).toContain(needle.toLowerCase());
+      expect(imageRoute.toLowerCase().indexOf(needle.toLowerCase())).toBeLessThan(
+        imageRoute.indexOf("accept.includes('image')"),
+      );
+    }
+    // The old cache name is no longer an allowed one, so activation drops it.
+    expect(workerSource).not.toContain("'meetifyy-images-v4',");
   });
 
   it('contains no deployment polling or cache-busting reload workaround', () => {

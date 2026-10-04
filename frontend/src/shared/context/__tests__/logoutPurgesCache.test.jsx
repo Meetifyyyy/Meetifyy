@@ -26,6 +26,7 @@ const currentSession = vi.hoisted(() => vi.fn());
 const clearSpy = vi.hoisted(() => vi.fn());
 const logoutSession = vi.hoisted(() => vi.fn());
 const fetchMock = vi.hoisted(() => vi.fn());
+const mediaClearSpy = vi.hoisted(() => vi.fn());
 
 vi.mock('@shared/lib/supabase', () => ({
   supabase: {
@@ -39,6 +40,9 @@ vi.mock('@shared/lib/supabase', () => ({
   isSupabaseConfigured: true,
   isRecoveryTab: () => false,
   clearRecoveryTab: () => {},
+}));
+vi.mock('@shared/utils/MediaCacheManager', () => ({
+  mediaCache: { clear: (...a) => mediaClearSpy(...a) },
 }));
 vi.mock('@config', () => ({
   // `false` because these exercise the WEB client. The constant gates which
@@ -182,5 +186,59 @@ describe('signing out empties the server-data cache', () => {
 
       expect(clearSpy).toHaveBeenCalled();
     }
+  });
+
+  describe('private media', () => {
+    let deleted;
+    beforeEach(() => {
+      deleted = [];
+      vi.stubGlobal('caches', {
+        keys: async () => ['meetifyy-api-network', 'meetifyy-images-v5', 'js-chunks-cache', 'app-shell'],
+        delete: async (name) => { deleted.push(name); return true; },
+      });
+    });
+
+    const settle = () => act(async () => { await Promise.resolve(); await Promise.resolve(); });
+
+    it('forgets resolved media URLs and deletes the service worker image cache on logout', async () => {
+      await mount();
+      await act(async () => { await auth.login('alice', 'pw'); });
+      mediaClearSpy.mockClear();
+
+      await act(async () => { await auth.logout(); });
+      await settle();
+
+      expect(mediaClearSpy).toHaveBeenCalled();
+      expect(deleted).toContain('meetifyy-images-v5');
+      expect(deleted).toContain('meetifyy-api-network');
+      // Only account-scoped caches go; the app's own code and shell stay.
+      expect(deleted).not.toContain('js-chunks-cache');
+      expect(deleted).not.toContain('app-shell');
+    });
+
+    it('does the same when a different account is adopted', async () => {
+      await mount();
+      await act(async () => { await auth.login('alice', 'pw'); });
+      mediaClearSpy.mockClear();
+
+      fetchMock.mockResolvedValue(loginResponse({ user: USER_B, csrfToken: 'c2', meta: {} }));
+      await act(async () => { await auth.login('bob', 'pw'); });
+      await settle();
+
+      expect(mediaClearSpy).toHaveBeenCalled();
+      expect(deleted).toContain('meetifyy-images-v5');
+    });
+
+    it('keeps media caches when the same account is re-adopted', async () => {
+      await mount();
+      await act(async () => { await auth.login('alice', 'pw'); });
+      mediaClearSpy.mockClear();
+
+      await act(async () => { await auth.login('alice', 'pw'); });
+      await settle();
+
+      expect(mediaClearSpy).not.toHaveBeenCalled();
+      expect(deleted).toEqual([]);
+    });
   });
 });

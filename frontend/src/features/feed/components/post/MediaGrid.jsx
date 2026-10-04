@@ -161,36 +161,46 @@ const InlineVideoPlayer = memo(function InlineVideoPlayer({
     const wrapEl = videoRef.current?.parentElement;
     if (!wrapEl) return;
 
+    // The last visibility the observer reported. Entries that arrive while a
+    // keyboard is up are not acted on (it shrinks the viewport and drops the
+    // ratio without anything scrolling, which paused then resumed unmuted),
+    // but they are kept and replayed when text entry ends.
+    let ratio = 0;
+    const decide = () => {
+      const v = videoRef.current;
+      if (!v) return;
+      if (ratio >= 0.4) {
+        feedVideoRegistry.requestPlay(uid);
+        v.muted = false;
+        v.volume = 1;
+        v.play().catch(() => {
+          // Browser autoplay fallback if unmuted blocked
+          v.muted = true;
+          setMuted(true);
+          v.play().catch(() => {});
+        });
+      } else if (!v.paused) {
+        v.pause();
+        feedVideoRegistry.notifyPause(uid);
+      }
+    };
+
     const obs = new IntersectionObserver(
       ([entry]) => {
-        const v = videoRef.current;
-        if (!v) return;
-        // A keyboard shrinks the viewport and drops the ratio without anything
-        // scrolling; pausing then resuming (unmuted) on close is not wanted.
+        ratio = entry.intersectionRatio;
         if (document.documentElement.hasAttribute('data-text-entry')) return;
-
-        if (entry.intersectionRatio >= 0.4) {
-          feedVideoRegistry.requestPlay(uid);
-          v.muted = false;
-          v.volume = 1;
-          v.play().catch(() => {
-            // Browser autoplay fallback if unmuted blocked
-            v.muted = true;
-            setMuted(true);
-            v.play().catch(() => {});
-          });
-        } else {
-          if (!v.paused) {
-            v.pause();
-            feedVideoRegistry.notifyPause(uid);
-          }
-        }
+        decide();
       },
       { threshold: [0, 0.4] },
     );
+    const onTextEntryEnd = () => decide();
+    window.addEventListener('meetifyy:text-entry-end', onTextEntryEnd);
 
     obs.observe(wrapEl);
-    return () => obs.disconnect();
+    return () => {
+      obs.disconnect();
+      window.removeEventListener('meetifyy:text-entry-end', onTextEntryEnd);
+    };
   }, [uid]);
 
   // ── Page visibility: pause when tab hidden ───────────────────────────────
@@ -474,7 +484,7 @@ function rememberAspect(src, aspect) {
   }
 }
 
-export function MediaGrid({ media, onMediaClick, onRemove }) {
+export function MediaGrid({ media, onMediaClick, onRemove, authorName }) {
   const [mediaList, setMediaList] = useState(() => normalizeMedia(media));
   const [loadedStates, setLoadedStates] = useState(() => {
     const initial = {};
@@ -646,6 +656,50 @@ export function MediaGrid({ media, onMediaClick, onRemove }) {
     }
   };
 
+  /*
+   * Each tile is opened through a real, named button laid over it. The tiles used
+   * to be bare <img>/<div> elements with a click handler, so a keyboard or screen
+   * reader user could neither reach nor identify them. The name says which one it
+   * is and whose post it belongs to; nothing here describes the picture itself,
+   * because nothing the author wrote does.
+   *
+   * Only rendered when something handles the click (the composer's preview grid
+   * passes `onRemove` and no `onMediaClick`).
+   */
+  const openerLabel = (index, verb) => {
+    const total = mediaList.length;
+    const kind = mediaList[index]?.isVideo ? 'video' : 'photo';
+    const position = total > 1 ? ` ${index + 1} of ${total}` : '';
+    const by = authorName ? ` by ${authorName}` : '';
+    return `${verb} ${kind}${position}${by}`;
+  };
+
+  const renderOpener = (index) => {
+    if (!onMediaClick) return null;
+    return (
+      <button
+        type="button"
+        className={styles.mediaOpener}
+        aria-label={openerLabel(index, 'Open')}
+        onClick={(e) => handleItemClick(e, index)}
+      />
+    );
+  };
+
+  // A lone video starts playing in place; the viewer opens from the player's
+  // expand control. This button is that "play" step for keyboards.
+  const renderPlayOpener = (index) => (
+    <button
+      type="button"
+      className={styles.mediaOpener}
+      aria-label={openerLabel(index, 'Play')}
+      onClick={(e) => {
+        e.stopPropagation();
+        setInlinePlaying((prev) => ({ ...prev, [index]: true }));
+      }}
+    />
+  );
+
   const renderRemoveButton = (index) => {
     if (!onRemove) return null;
     return (
@@ -749,6 +803,7 @@ export function MediaGrid({ media, onMediaClick, onRemove }) {
                 <path d="M8 5v14l11-7z" />
               </svg>
             </div>
+            {renderPlayOpener(0)}
             {renderRemoveButton(0)}
           </div>
         </div>
@@ -789,6 +844,7 @@ export function MediaGrid({ media, onMediaClick, onRemove }) {
               }`}
             />
           )}
+          {renderOpener(0)}
           {renderRemoveButton(0)}
         </div>
       </div>
@@ -824,6 +880,7 @@ export function MediaGrid({ media, onMediaClick, onRemove }) {
                     </svg>
                   </div>
                 )}
+                {renderOpener(index)}
                 {renderRemoveButton(index)}
               </div>
             );
@@ -860,6 +917,7 @@ export function MediaGrid({ media, onMediaClick, onRemove }) {
                 </svg>
               </div>
             )}
+            {renderOpener(0)}
             {renderRemoveButton(0)}
           </div>
           <div className={styles.gridThreeRight}>
@@ -888,6 +946,7 @@ export function MediaGrid({ media, onMediaClick, onRemove }) {
                       </svg>
                     </div>
                   )}
+                  {renderOpener(index)}
                   {renderRemoveButton(index)}
                 </div>
               );
@@ -936,6 +995,7 @@ export function MediaGrid({ media, onMediaClick, onRemove }) {
                   <span>+{overlayCount}</span>
                 </div>
               )}
+              {renderOpener(index)}
               {renderRemoveButton(index)}
             </div>
           );

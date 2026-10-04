@@ -335,10 +335,3 @@
   /* Still clearly "active", just not moving. */
   .im-fab-halo { background: color-mix(in srgb, var(--im-coral) 45%, transparent); }
 }
-
-/* The Match button does not ride up on the keyboard: hidden for the whole of
-   text entry on a touch device (data-text-entry, see useKeyboardInset). */
-html[data-text-entry] .im-fab-dock {
-  visibility: hidden;
-  transition: none;
-}

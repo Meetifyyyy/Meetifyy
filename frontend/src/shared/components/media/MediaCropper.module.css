@@ -1,0 +1,215 @@
+/*
+ * The crop dialog.
+ *
+ * It used to be one fixed-height card (a 340px crop area plus header and footer)
+ * centred in a fixed viewport with no way to scroll, so in a landscape phone or a
+ * short window the Apply and Cancel buttons ended up below the edge of the screen
+ * with nothing to reach them. Now the card is capped to the space the viewport
+ * really has (dynamic height, minus the system insets), the crop area shrinks
+ * before anything is cut, and the middle scrolls if it still does not fit while
+ * the header and the actions stay on screen.
+ */
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  box-sizing: border-box;
+  padding:
+    max(16px, env(safe-area-inset-top, 0px))
+    max(16px, env(safe-area-inset-right, 0px))
+    max(16px, env(safe-area-inset-bottom, 0px))
+    max(16px, env(safe-area-inset-left, 0px));
+  transition: opacity 0.2s ease-in-out;
+  opacity: 1;
+}
+
+.overlay.closing {
+  opacity: 0;
+}
+
+.card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 540px;
+  max-height: 100%;
+  overflow: hidden;
+  border: none;
+  border-radius: 24px;
+  background: var(--color-bg-white, #ffffff);
+  color: var(--color-text-main, #0f172a);
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.35);
+  outline: none;
+  transition: transform 0.2s ease-in-out, opacity 0.2s ease-in-out;
+  transform: scale(1);
+  opacity: 1;
+}
+
+.closing .card {
+  transform: scale(0.95);
+  opacity: 0;
+}
+
+.header {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 20px 14px 20px;
+}
+
+.title {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--color-text-main, #0f172a);
+}
+
+.closeBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--color-text-muted, #64748b);
+  cursor: pointer;
+}
+
+.closeBtn:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0 16px;
+}
+
+.cropArea {
+  position: relative;
+  width: 100%;
+  /* The unit fallback comes first: a browser without dynamic viewport units drops
+   * the second declaration and keeps this one. */
+  height: clamp(180px, 45vh, 340px);
+  height: clamp(180px, 45dvh, 340px);
+  overflow: hidden;
+  border-radius: 16px;
+  background: #090d16;
+}
+
+.zoomRow {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 4px 4px;
+}
+
+.zoomLabel {
+  min-width: 40px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-text-muted, #64748b);
+}
+
+.zoomSlider {
+  width: 100%;
+  accent-color: var(--color-primary, #2563eb);
+  cursor: pointer;
+}
+
+.actions {
+  display: flex;
+  flex: none;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 16px 20px 20px 20px;
+}
+
+.cancelBtn,
+.applyBtn {
+  padding: 10px 18px;
+  border: none;
+  border-radius: 12px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.cancelBtn {
+  background: var(--color-bg-soft, #f1f5f9);
+  color: var(--color-text-main, #0f172a);
+}
+
+.applyBtn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  background: var(--color-primary, #2563eb);
+  color: #ffffff;
+}
+
+.cancelBtn:disabled,
+.applyBtn:disabled {
+  cursor: not-allowed;
+}
+
+.applyBtn:disabled {
+  opacity: 0.75;
+}
+
+.closeBtn:focus-visible,
+.cancelBtn:focus-visible,
+.applyBtn:focus-visible,
+.zoomSlider:focus-visible {
+  outline: 2px solid var(--color-primary, #2563eb);
+  outline-offset: 2px;
+}
+
+.spinner {
+  animation: cropperSpin 0.9s linear infinite;
+}
+
+@keyframes cropperSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Reduced motion: no fade, no scale, no spin. The "Cropping..." label and the
+ * static icon remain, so progress is still shown without movement. */
+@media (prefers-reduced-motion: reduce) {
+  .overlay,
+  .card {
+    transition: none;
+  }
+
+  .spinner {
+    animation: none;
+  }
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}

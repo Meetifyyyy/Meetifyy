@@ -14,6 +14,7 @@ import {
 import { useSavedActivitiesStore } from '../stores/savedActivitiesStore';
 import { getCollegeName } from '@shared/utils/user';
 import { idbClearAll } from '@shared/lib/idb';
+import { mediaCache } from '@shared/utils/MediaCacheManager';
 import { useQueryClient } from '@tanstack/react-query';
 import { propagateUserMedia } from '@shared/utils/propagateUserMedia';
 
@@ -172,12 +173,28 @@ function resetClientStateForNewUser(queryClient) {
 
   useSavedActivitiesStore.getState().clearAll?.();
   idbClearAll().catch((e) => console.error('Failed to clear local cache', e));
+
+  /**
+   * Private media.
+   *
+   * `mediaCache` holds the previous account's signed URLs in memory (and a
+   * public-URL index in localStorage). Clearing it also bumps its generation, so
+   * a signing request still in flight for the previous account is discarded
+   * instead of being written back after the switch.
+   */
+  mediaCache.clear();
+
   if (typeof caches !== 'undefined') {
     caches
       .keys()
       .then((names) =>
         Promise.all(
-          names.filter((n) => n.startsWith('meetifyy-api')).map((n) => caches.delete(n)),
+          names
+            // `meetifyy-images*` holds image bytes the service worker fetched,
+            // which on a shared machine includes whatever the previous person
+            // looked at. Public images simply download again.
+            .filter((n) => n.startsWith('meetifyy-api') || n.startsWith('meetifyy-images'))
+            .map((n) => caches.delete(n)),
         ),
       )
       .catch(() => {});
@@ -296,19 +313,23 @@ export function AuthProvider({ children }) {
    */
   const adoptUser = useCallback((user) => {
     if (!isValidUser(user)) return false;
-    setCurrentUser((prev) => {
-      // A different account than the one this browser was holding. Nothing
-      // belonging to the previous person may survive into this session — not
-      // the cached profile, not their saved posts, not their follow lists.
-      if (prev && prev.id !== user.id) {
-        resetClientStateForNewUser(queryClientRef.current);
-      }
-      try {
-        localStorage.setItem('currentUser', JSON.stringify(user));
-        localStorage.setItem('loggedIn', 'true');
-      } catch (_) {}
-      return user;
-    });
+    // A different account than the one this browser was holding. Nothing
+    // belonging to the previous person may survive into this session — not
+    // the cached profile, not their saved posts, not their follow lists.
+    //
+    // Done here and not inside the state updater below: an updater must be pure
+    // (React may run it twice, and during render), and clearing the query cache
+    // notifies every mounted query, which is a state update in other components.
+    const previousId = currentUserIdRef.current;
+    if (previousId && previousId !== user.id) {
+      resetClientStateForNewUser(queryClientRef.current);
+    }
+    currentUserIdRef.current = user.id;
+    try {
+      localStorage.setItem('currentUser', JSON.stringify(user));
+      localStorage.setItem('loggedIn', 'true');
+    } catch (_) {}
+    setCurrentUser(user);
     setSession({ user: { id: user.id, email: user.email || '' } });
     setAuthStatus(AUTH_STATUS.AUTHENTICATED);
     return true;
@@ -322,6 +343,9 @@ export function AuthProvider({ children }) {
    * this.
    */
   const clearLocalSession = useCallback(() => {
+    // Synchronously, so a sign-in that follows before the next commit sees no
+    // previous account (the reset below has already emptied everything).
+    currentUserIdRef.current = null;
     setSession(null);
     setCurrentUser(null);
     setAuthStatus(AUTH_STATUS.UNAUTHENTICATED);

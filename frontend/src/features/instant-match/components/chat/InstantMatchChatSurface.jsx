@@ -7,6 +7,7 @@ import { showToast } from '@shared/utils/toast';
 import Avatar from '@shared/components/avatar/Avatar';
 import { useChatManager } from '@features/messages/shared/hooks/useChatManager';
 import ChatMessageList from '@features/messages/shared/components/ChatMessageList';
+import { chatMediaItem } from '@features/messages/shared/utils/chatMediaItem';
 import ChatInputArea from '@features/messages/shared/components/ChatInputArea';
 import { useTypingIndicator } from '@features/messages/shared/hooks/useTypingIndicator';
 import { useCountdown } from '../../hooks/useCountdown';
@@ -54,7 +55,7 @@ export default function InstantMatchChatSurface({
    */
   const { openViewer } = useMediaViewerActions();
   const handleOpenMedia = useCallback(
-    (url, type) => openViewer([{ url, type: type || 'image' }], 0),
+    (url, type, extra) => openViewer([chatMediaItem(url, type, extra)], 0),
     [openViewer],
   );
 
@@ -76,7 +77,14 @@ export default function InstantMatchChatSurface({
   // Escape closes the chat. It never leaves the match — that decision is not
   // reachable from this screen at all.
   useEffect(() => {
-    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    const onKey = (e) => {
+      if (e.key !== 'Escape') return;
+      // Escape belongs to the topmost layer. With the media viewer open over this
+      // chat (or a sheet that already took the key) it must not close the chat
+      // underneath as well.
+      if (e.defaultPrevented || document.querySelector('[data-media-viewer]')) return;
+      onClose();
+    };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [onClose]);

@@ -5,6 +5,7 @@ import { showToast } from '@shared/utils/toast';
 import { Reply, MoreVertical, Image as ImageIcon, AlertCircle, Play } from '@shared/components/icons';
 import Avatar from '@shared/components/avatar/Avatar';
 import { mediaCache } from '@shared/utils/MediaCacheManager';
+import { useSignedMediaSrc } from '@shared/hooks/useSignedMediaSrc';
 import RichText from '@shared/components/mentions/RichText';
 import { generateConversationUrl } from '@shared/utils/conversationUrl';
 import { isSystemMessage } from '../utils/cacheUtils';
@@ -131,7 +132,30 @@ function SystemMessageContent({ text, navigate }) {
 
 const loadedImageUrls = new Set();
 
-function ImageWithSkeleton({ src, alt, className, onClick, isStandalone = false, onErrorChange, width, height, onClickSrc }) {
+/*
+ * The "open this media" control. A real <button> laid over the thumbnail rather
+ * than a click handler on the <img>/<div>, so it is in the tab order, answers to
+ * Enter and Space, and is announced as an action. It carries only a generic name
+ * ("Open photo"): no description of the content is invented.
+ */
+const OPEN_MEDIA_BUTTON_STYLE = {
+  position: 'absolute',
+  inset: 0,
+  width: '100%',
+  height: '100%',
+  margin: 0,
+  padding: 0,
+  border: 0,
+  borderRadius: 'inherit',
+  background: 'transparent',
+  cursor: 'pointer',
+  zIndex: 2,
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+};
+
+function ImageWithSkeleton({ src, alt, className, onClick, isStandalone = false, onErrorChange, width, height, onClickSrc, openDisabled = false }) {
   const [loaded, setLoaded] = useState(() => Boolean(src && loadedImageUrls.has(src)));
   const [imgSrc, setImgSrc] = useState(null);
   const [error, setError] = useState(false);
@@ -251,131 +275,124 @@ function ImageWithSkeleton({ src, alt, className, onClick, isStandalone = false,
           alt={alt || ''}
           decoding="async"
           className={`${className} ${!loaded ? styles.msgMediaImgHidden : styles.msgMediaImgVisible}`}
-          onClick={() => onClick && onClick(onClickSrc || finalSrc)}
           onLoad={handleImageLoad}
           onError={handleError}
+        />
+      )}
+      {onClick && finalSrc && !openDisabled && (
+        <button
+          type="button"
+          aria-label="Open photo"
+          style={OPEN_MEDIA_BUTTON_STYLE}
+          onClick={() => onClick(onClickSrc || finalSrc)}
         />
       )}
     </div>
   );
 }
 
-function VideoPlayerWithOverlay({ src, poster = null, duration = null, width = null, height = null, isInline = false, hasText = false, onOpenMediaModal }) {
-  const videoRef = useRef(null);
-  const [videoError, setVideoError] = useState(false);
-
+export function VideoPlayerWithOverlay({ src, poster = null, duration = null, width = null, height = null, isInline = false, hasText = false, onOpenMediaModal, openExtra, openDisabled = false }) {
   /*
-   * Signed through the cache, exactly like the image path beside it.
+   * Signed through the shared hook, exactly like the viewer and the image path.
    *
-   * This read `getMediaUrl(src)` and nothing else, which produces the unsigned
-   * `/api/media/chat/<key>.mp4` URL. That route authorizes conversation media
-   * from the session, and a <video> tag can no more send a bearer token than an
-   * <img> can — so in the installed app every chat video was a 404 and the
-   * player showed "Couldn't play this video". The website hid it because the
-   * browser attaches the session cookie to the same request.
+   * This used to read `getMediaUrl(src)` and nothing else, which produces the
+   * unsigned `/api/media/chat/<key>.mp4` URL. That route authorizes
+   * conversation media from the session, and a <video> tag can no more send a
+   * bearer token than an <img> can — so in the installed app every chat video
+   * was a 404. The website hid it because the browser attaches the session
+   * cookie to the same request.
    *
-   * `mediaCache.getUrl` takes a key or an already-resolved /api/media/ URL, so
-   * passing `src` straight through is safe whichever form the caller used.
+   * The hook also gives three states instead of two: signing in flight, signing
+   * refused, and playable. They used to collapse into `!resolvedSrc`, so every
+   * bubble flashed "Video unavailable" while its signature was still on the way.
    */
-  const [resolvedSrc, setResolvedSrc] = useState('');
-  const [resolvedPoster, setResolvedPoster] = useState('');
+  const { src: resolvedSrc, pending, failed, refresh, attempt } = useSignedMediaSrc(src);
+  // A missing poster is cosmetic, so it has no error state of its own.
+  const { src: resolvedPoster } = useSignedMediaSrc(poster || '');
+  const [videoError, setVideoError] = useState(false);
+  const reloadedRef = useRef(false);
 
   useEffect(() => {
-    let alive = true;
     setVideoError(false);
-
-    if (!src) {
-      setResolvedSrc('');
-      return undefined;
-    }
-    if (src.startsWith('blob:') || src.startsWith('data:')) {
-      setResolvedSrc(src);
-      return undefined;
-    }
-
-    mediaCache
-      .getUrl(src)
-      .then((url) => {
-        if (!alive) return;
-        // Null means the server would not sign it — surfacing the player's own
-        // error state is better than pointing the tag at a URL known to 404.
-        if (url) setResolvedSrc(url);
-        else setVideoError(true);
-      })
-      .catch(() => { if (alive) setVideoError(true); });
-
-    return () => { alive = false; };
+    reloadedRef.current = false;
   }, [src]);
 
-  useEffect(() => {
-    let alive = true;
-    if (!poster) {
-      setResolvedPoster('');
-      return undefined;
-    }
-    if (poster.startsWith('blob:') || poster.startsWith('data:')) {
-      setResolvedPoster(poster);
-      return undefined;
-    }
-    // A missing poster is cosmetic, so this one stays silent on failure.
-    mediaCache.getUrl(poster).then((url) => { if (alive && url) setResolvedPoster(url); }).catch(() => {});
-    return () => { alive = false; };
-  }, [poster]);
   const aspect = (width && height) ? (width / height) : (16 / 9);
   const durationLabel = (Number.isFinite(duration) && duration > 0)
     ? `${Math.floor(duration / 60)}:${String(Math.round(duration % 60)).padStart(2, '0')}`
     : null;
+  const wrapperClass = `${styles.msgMediaWrapper} ${isInline ? styles.msgMediaWrapperInline : styles.msgMediaWrapperStandalone}`;
 
-  const handlePlayClick = (e) => {
-    e.stopPropagation();
-    if (videoError || !resolvedSrc) return;
-    if (onOpenMediaModal) {
-      onOpenMediaModal(resolvedSrc, 'video');
-    } else if (videoRef.current) {
-      if (videoRef.current.paused) {
-        videoRef.current.play().catch(() => {});
-      } else {
-        videoRef.current.pause();
-      }
+  const handleVideoError = () => {
+    /*
+     * One silent re-sign before reporting failure: the usual cause is a
+     * signature that expired while the bubble sat in the list. `attempt` keys
+     * the <video>, so even an unchanged URL gets a fresh load.
+     */
+    if (!reloadedRef.current) {
+      reloadedRef.current = true;
+      refresh();
+      return;
     }
+    setVideoError(true);
   };
 
-  const handleLoadedMetadata = () => {
-    // Media dimension resizing is removed; sizing is purely CSS + --aspect now.
+  const handleRetry = (e) => {
+    e.stopPropagation();
+    reloadedRef.current = false;
+    setVideoError(false);
+    refresh();
   };
 
-  if (videoError || !resolvedSrc) {
+  if (!src || failed || videoError) {
     return (
       <div className={`${styles.msgMediaErrorCard} ${!isInline ? styles.msgMediaErrorStandalone : ''}`}>
         <AlertCircle size={24} style={{ opacity: 0.5 }} />
         <span style={{ fontSize: '0.72rem', opacity: 0.6, marginTop: '4px' }}>Video unavailable</span>
+        {src && (
+          <button
+            type="button"
+            onClick={handleRetry}
+            style={{ marginTop: '6px', padding: '2px 10px', fontSize: '0.72rem', borderRadius: '999px', border: '1px solid currentColor', background: 'transparent', color: 'inherit', opacity: 0.8, cursor: 'pointer' }}
+          >
+            Retry
+          </button>
+        )}
       </div>
+    );
+  }
+
+  if (pending || !resolvedSrc) {
+    // Same box as the finished player, so the list does not jump when the
+    // signature arrives.
+    return (
+      <div
+        className={wrapperClass}
+        style={{ '--aspect': aspect, backgroundColor: '#16181c' }}
+        role="status"
+        aria-busy="true"
+        aria-label="Loading video"
+      />
     );
   }
 
   return (
     <div
-      className={`${styles.msgMediaWrapper} ${isInline ? styles.msgMediaWrapperInline : styles.msgMediaWrapperStandalone}`}
-      style={{
-        '--aspect': aspect,
-        backgroundColor: '#16181c',
-        cursor: 'pointer',
-      }}
-      onClick={() => onOpenMediaModal && onOpenMediaModal(resolvedSrc, 'video')}
+      className={wrapperClass}
+      style={{ '--aspect': aspect, backgroundColor: '#16181c' }}
     >
       <video
-        ref={videoRef}
+        key={attempt}
         src={resolvedSrc}
         poster={resolvedPoster || undefined}
         playsInline
         muted
+        aria-hidden="true"
+        tabIndex={-1}
         // With a poster + known dimensions we can defer ALL video bytes until the
         // user actually plays (preload="none"); otherwise fetch just metadata.
         preload={resolvedPoster ? 'none' : 'metadata'}
-        onLoadedMetadata={handleLoadedMetadata}
-        onLoadedData={handleLoadedMetadata}
-        onCanPlay={handleLoadedMetadata}
-        onError={() => setVideoError(true)}
+        onError={handleVideoError}
         className={styles.msgMediaImgVisible}
         style={{
           display: 'block',
@@ -391,35 +408,44 @@ function VideoPlayerWithOverlay({ src, poster = null, duration = null, width = n
           {durationLabel}
         </span>
       )}
-      <button
-        type="button"
-        onClick={handlePlayClick}
-        aria-label="Play in media viewer"
-        style={{
-          position: 'absolute',
-          top: '50%',
-          left: '50%',
-          transform: 'translate(-50%, -50%)',
-          width: '52px',
-          height: '52px',
-          borderRadius: '50%',
-          backgroundColor: 'rgba(0, 0, 0, 0.65)',
-          backdropFilter: 'blur(6px)',
-          border: '1.5px solid rgba(255, 255, 255, 0.35)',
-          color: '#ffffff',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          cursor: 'pointer',
-          zIndex: 3,
-          transition: 'transform 0.15s ease, background-color 0.15s ease',
-          pointerEvents: 'auto',
-          paddingLeft: '3px'
-        }}
-        onMouseDown={(e) => e.stopPropagation()}
-      >
-        <Play size={24} fill="white" />
-      </button>
+      {/*
+        The whole tile is the control, and it is a real button. Playback always
+        happens in the viewer: the inline element is a muted, control-less
+        preview, so there is nothing for an in-place "play" to do.
+        It hands the viewer the STABLE source (`src`), never the signed
+        `resolvedSrc`: a signed URL expires, cannot be re-signed once it has
+        lost its key, and would be forwarded to other people as-is.
+      */}
+      {onOpenMediaModal && !openDisabled && (
+        <button
+          type="button"
+          aria-label="Open video"
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpenMediaModal(src, 'video', openExtra);
+          }}
+          style={OPEN_MEDIA_BUTTON_STYLE}
+        >
+          <span
+            aria-hidden="true"
+            style={{
+              width: '52px',
+              height: '52px',
+              borderRadius: '50%',
+              backgroundColor: 'rgba(0, 0, 0, 0.65)',
+              backdropFilter: 'blur(6px)',
+              border: '1.5px solid rgba(255, 255, 255, 0.35)',
+              color: '#ffffff',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              paddingLeft: '3px',
+            }}
+          >
+            <Play size={24} fill="white" />
+          </span>
+        </button>
+      )}
     </div>
   );
 }
@@ -840,6 +866,7 @@ const MessageBubble = memo(function MessageBubble({
   // original is loaded only when the viewer opens (onClick -> mediaUrl).
   const rawThumbUrl = msg.payload?.thumbnailUrl || msg.payload?.localPreviewUrl || rawMediaUrl;
   const thumbUrl = rawThumbUrl ? getMediaUrl(rawThumbUrl) : mediaUrl;
+  const videoPoster = thumbUrl !== mediaUrl ? thumbUrl : null;
   const mediaWidth = msg.payload?.width || msg.width || null;
   const mediaHeight = msg.payload?.height || msg.height || null;
   const mediaDuration = msg.payload?.duration || msg.duration || null;
@@ -848,6 +875,29 @@ const MessageBubble = memo(function MessageBubble({
   const uploadProgress = typeof msg.uploadProgress === 'number' ? msg.uploadProgress : 0;
   const isUploading = uploadStatus === 'uploading';
   const isUploadFailed = uploadStatus === 'failed' || (isMe && isFailedMsg && rawMediaUrl && String(rawMediaUrl).startsWith('blob:'));
+
+  /*
+   * What the viewer is told about this message when it opens one of its media.
+   *
+   * `report` is offered only when there is a real, server-confirmed message to
+   * report and it is somebody else's: an optimistic `temp_…` id names nothing
+   * the server knows, and a person does not report their own message. When it
+   * is left out the viewer hides Report rather than guessing a target from the
+   * media URL.
+   */
+  const buildOpenExtra = (thumb) => {
+    const extra = {};
+    if (isRealServerMsg && !isMe) {
+      extra.report = {
+        targetType: 'MESSAGE',
+        targetId: msg.id,
+        ...(senderName ? { name: senderName } : {}),
+        ...(senderAvatar ? { avatar: senderAvatar } : {}),
+      };
+    }
+    if (thumb) extra.thumb = thumb;
+    return Object.keys(extra).length > 0 ? extra : undefined;
+  };
   const isAudio = msg.mediaType === 'audio' || msg.type === 'voice' || msg.payload?.mediaType === 'audio';
   const isVideo =
     msg.mediaType === 'video' ||
@@ -938,7 +988,7 @@ const MessageBubble = memo(function MessageBubble({
       <div className={styles.msgImageCardContainer}>
         <div className={`${styles.msgMainRow} ${isMe ? styles.msgMainRowMe : styles.msgMainRowThem}`}>
           <div className={styles.msgImageCard} style={{ overflow: 'hidden', borderRadius: '16px', width: 'fit-content', height: 'fit-content', position: 'relative' }}>
-            <VideoPlayerWithOverlay src={mediaUrl} poster={thumbUrl !== mediaUrl ? thumbUrl : null} duration={mediaDuration} width={mediaWidth} height={mediaHeight} isInline={false} onOpenMediaModal={onOpenMediaModal} />
+            <VideoPlayerWithOverlay src={mediaUrl} poster={videoPoster} duration={mediaDuration} width={mediaWidth} height={mediaHeight} isInline={false} onOpenMediaModal={onOpenMediaModal} openExtra={buildOpenExtra(videoPoster)} openDisabled={isUploading || isUploadFailed} />
             {(isUploading || isUploadFailed) && (
               <MediaUploadOverlay
                 progress={uploadProgress}
@@ -968,7 +1018,8 @@ const MessageBubble = memo(function MessageBubble({
               width={mediaWidth}
               height={mediaHeight}
               className={styles.msgMediaImgStandalone}
-              onClick={() => !mediaError && !isUploading && onOpenMediaModal && onOpenMediaModal(mediaUrl)}
+              onClick={() => !mediaError && !isUploading && onOpenMediaModal && onOpenMediaModal(mediaUrl, 'image', buildOpenExtra(thumbUrl !== mediaUrl ? thumbUrl : null))}
+              openDisabled={isUploading || isUploadFailed}
               isStandalone={true}
               onErrorChange={setMediaError}
             />
@@ -1049,7 +1100,7 @@ const MessageBubble = memo(function MessageBubble({
           {mediaUrl && (
             isVideo ? (
               <div style={{ position: 'relative' }}>
-                <VideoPlayerWithOverlay src={mediaUrl} poster={thumbUrl !== mediaUrl ? thumbUrl : null} duration={mediaDuration} width={mediaWidth} height={mediaHeight} isInline={true} hasText={hasText} />
+                <VideoPlayerWithOverlay src={mediaUrl} poster={videoPoster} duration={mediaDuration} width={mediaWidth} height={mediaHeight} isInline={true} hasText={hasText} onOpenMediaModal={onOpenMediaModal} openExtra={buildOpenExtra(videoPoster)} openDisabled={isUploading || isUploadFailed} />
                 {(isUploading || isUploadFailed) && (
                   <MediaUploadOverlay
                     progress={uploadProgress}
@@ -1068,7 +1119,8 @@ const MessageBubble = memo(function MessageBubble({
                   width={mediaWidth}
                   height={mediaHeight}
                   className={styles.msgMediaImg}
-                  onClick={() => !mediaError && !isUploading && onOpenMediaModal && onOpenMediaModal(mediaUrl)}
+                  onClick={() => !mediaError && !isUploading && onOpenMediaModal && onOpenMediaModal(mediaUrl, 'image', buildOpenExtra(thumbUrl !== mediaUrl ? thumbUrl : null))}
+                  openDisabled={isUploading || isUploadFailed}
                   isStandalone={false}
                   onErrorChange={setMediaError}
                 />

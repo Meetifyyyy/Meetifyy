@@ -74,7 +74,8 @@
   transition: filter 0.25s ease;
 }
 
-.singleImage:hover {
+.singleImage:hover,
+.singleImageWrapper:hover .singleImage {
   filter: brightness(0.97);
 }
 
@@ -516,6 +517,31 @@
   .gridFour {
     max-height: 260px;
   }
+}
+
+/* A real button laid over a tile so it can be reached, named and activated from a
+ * keyboard. Transparent: the picture underneath stays exactly as it was. Sits
+ * below the remove control (z-index 10). */
+.mediaOpener {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mediaOpener:focus-visible {
+  outline: 3px solid var(--color-primary, #2563eb);
+  outline-offset: -3px;
 }
 
 .removeBtn {

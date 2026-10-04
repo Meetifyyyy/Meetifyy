@@ -170,7 +170,6 @@ export default function ChatMessageList({
   users,
   initial,
   searchQuery,
-  openViewer,
   onOpenMediaModal,
   onReply,
   onReplyTo,
@@ -717,7 +716,7 @@ export default function ChatMessageList({
               onReplyTo={onReplyTo}
               onContextMenu={onContextMenu || onOpenContextMenu}
               onOpenContextMenu={onOpenContextMenu}
-              onOpenMediaModal={onOpenMediaModal || openViewer}
+              onOpenMediaModal={onOpenMediaModal}
               onRetryUpload={onRetryUpload}
               onCancelUpload={onCancelUpload}
               onJumpToMessage={jumpToMessage}

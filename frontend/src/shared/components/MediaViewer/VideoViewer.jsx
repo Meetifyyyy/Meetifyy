@@ -12,6 +12,7 @@ import {
   Minimize,
 } from '@shared/components/icons';
 import { feedVideoRegistry } from '@shared/utils/feedVideoRegistry';
+import { PLAYBACK_PRIORITY } from '@shared/utils/playbackPriority';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 const SPEEDS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
@@ -32,8 +33,19 @@ function fmt(s) {
 
 function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 
+/*
+ * Zero is a valid saved volume — it is what ArrowDown stores when the user
+ * silences a video — so only a missing or unparsable value falls back to full
+ * volume. `|| 1` treated 0 as "missing". A stored number outside 0..1 would also
+ * make `video.volume = n` throw, so it is clamped rather than trusted.
+ */
 function getSavedVolume() {
-  try { return parseFloat(localStorage.getItem(VOLUME_KEY)) || 1; } catch { return 1; }
+  try {
+    const raw = localStorage.getItem(VOLUME_KEY);
+    if (raw === null) return 1;
+    const n = Number.parseFloat(raw);
+    return Number.isFinite(n) ? clamp(n, 0, 1) : 1;
+  } catch { return 1; }
 }
 function saveVolume(v) {
   try { localStorage.setItem(VOLUME_KEY, String(v)); } catch {}
@@ -63,14 +75,17 @@ function SeekRipple({ direction, visible }) {
 }
 
 // ─── Main component ───────────────────────────────────────────────────────────
-export default function VideoViewer({ src: rawSrc, mediaRef, onControlsChange, onStageClick, isCurrent = true }) {
+export default function VideoViewer({ src: rawSrc, poster: rawPoster, mediaRef, onControlsChange, onStageClick, isCurrent = true }) {
   /*
    * The viewer is handed whatever the opener had — usually an unsigned
    * `/api/media/<key>` URL. For a conversation attachment that URL 404s inside
    * the app, which is what produced "Couldn't play this video" on every chat
    * video. See useSignedMediaSrc for why a <video> tag cannot authorize itself.
    */
-  const { src, failed: srcFailed, pending: srcPending, refresh: refreshSrc } = useSignedMediaSrc(rawSrc);
+  const { src, failed: srcFailed, pending: srcPending, refresh: refreshSrc, attempt } = useSignedMediaSrc(rawSrc);
+  // A poster for a conversation attachment is a private key too, so it is signed
+  // the same way. A poster that cannot be resolved is cosmetic and just absent.
+  const { src: posterSrc } = useSignedMediaSrc(rawPoster || '');
 
   /*
    * The element the viewer's drag-to-dismiss gesture should move.
@@ -88,10 +103,10 @@ export default function VideoViewer({ src: rawSrc, mediaRef, onControlsChange, o
   const registryId = useId();
 
   /*
-   * `canShowFrame` as a ref, because the gesture callbacks below are defined
+   * `canInteract` as a ref, because the gesture callbacks below are defined
    * before it is computed and must not be rebuilt on every state change.
    */
-  const canShowFrameRef = useRef(false);
+  const canInteractRef = useRef(false);
   const wrapRef       = useRef(null);
   const videoRef      = useRef(null);
   const progressRef   = useRef(null);
@@ -116,7 +131,14 @@ export default function VideoViewer({ src: rawSrc, mediaRef, onControlsChange, o
   const [playing, setPlaying]       = useState(false);
   const [ended, setEnded]           = useState(false);
   const [duration, setDuration]     = useState(0);
-  const [isLoading, setIsLoading]   = useState(true);
+  /*
+   * Two readiness levels, not one. Metadata (HAVE_METADATA) means the duration
+   * is known and the controls are usable; a decoded frame (HAVE_CURRENT_DATA)
+   * means there is something to look at. Treating the first as the second left
+   * an empty video element on screen between them.
+   */
+  const [metaReady, setMetaReady]   = useState(false);
+  const [frameReady, setFrameReady] = useState(false);
   const [isBuffering, setIsBuf]     = useState(false);
 
   // Real-time DOM refs for performance (bypassing React re-renders on video tick)
@@ -124,6 +146,7 @@ export default function VideoViewer({ src: rawSrc, mediaRef, onControlsChange, o
   const progressThumbRef    = useRef(null);
   const bufferedFillRef     = useRef(null);
   const currentTimeTextRef  = useRef(null);
+  const ariaSecondRef       = useRef(-1);
 
   // ── Volume ──────────────────────────────────────────────────────────────────
   const [volume, setVolume]         = useState(getSavedVolume);
@@ -133,6 +156,15 @@ export default function VideoViewer({ src: rawSrc, mediaRef, onControlsChange, o
   // ── Controls visibility ─────────────────────────────────────────────────────
   const [ctrlVisible, setCtrlVisible] = useState(true);
   const [isDragging, setIsDragging]   = useState(false);
+  /*
+   * Read by the timers and handlers that must not be rebuilt when a drag starts
+   * or ends. `isDragging` used to be a dependency of `resetHideTimer`, which fed
+   * the video-event effect, so every seek tore down and rebuilt the element's
+   * listeners, its registry entry and its progress loop.
+   */
+  const isDraggingRef = useRef(false);
+  const ctrlVisibleRef = useRef(true);
+  ctrlVisibleRef.current = ctrlVisible;
 
   // Notify parent MediaViewer of control visibility changes
   useEffect(() => {
@@ -160,18 +192,23 @@ export default function VideoViewer({ src: rawSrc, mediaRef, onControlsChange, o
   // ── Center play/pause flash feedback ──────────────────────────────────────
   const [tapFeedback, setTapFeedback]   = useState(null); // 'play' | 'pause' | null
   const tapFeedbackTimerRef             = useRef(null);
+  // Frame callbacks and the touch-suppression timer, kept so unmount can cancel
+  // them instead of letting them touch a component that is gone.
+  const feedbackRafRef                  = useRef(null);
+  const rippleRafRef                    = useRef(null);
+  const touchGuardTimerRef              = useRef(null);
 
   // ─── Auto-hide timer ────────────────────────────────────────────────────────
   const resetHideTimer = useCallback(() => {
     clearTimeout(hideTimerRef.current);
     // Auto-hide only when playing and not dragging
     const v = videoRef.current;
-    if (v && !v.paused && !v.ended && !isDragging && !wrapRef.current?.contains(document.activeElement)) {
+    if (v && !v.paused && !v.ended && !isDraggingRef.current && !wrapRef.current?.contains(document.activeElement)) {
       hideTimerRef.current = setTimeout(() => {
         if (!wrapRef.current?.contains(document.activeElement)) setCtrlVisible(false);
       }, HIDE_DELAY_MS);
     }
-  }, [isDragging]);
+  }, []);
 
   const showControls = useCallback(() => {
     setCtrlVisible(true);
@@ -179,15 +216,15 @@ export default function VideoViewer({ src: rawSrc, mediaRef, onControlsChange, o
   }, [resetHideTimer]);
 
   const toggleControls = useCallback(() => {
-    setCtrlVisible((prev) => {
-      const next = !prev;
-      if (next) {
-        resetHideTimer();
-      } else {
-        clearTimeout(hideTimerRef.current);
-      }
-      return next;
-    });
+    // Decided outside the state updater: an updater must be pure, and this one
+    // started and cleared a timer.
+    const next = !ctrlVisibleRef.current;
+    setCtrlVisible(next);
+    if (next) {
+      resetHideTimer();
+    } else {
+      clearTimeout(hideTimerRef.current);
+    }
   }, [resetHideTimer]);
 
   const handleActivity = useCallback(() => {
@@ -207,8 +244,18 @@ export default function VideoViewer({ src: rawSrc, mediaRef, onControlsChange, o
       if (progressThumbRef.current) {
         progressThumbRef.current.style.left = `${pct}%`;
       }
-      if (progressRef.current) {
-        progressRef.current.setAttribute('aria-valuenow', String(Math.round(pct)));
+      if (progressRef.current && Number.isFinite(dur)) {
+        /*
+         * Position in seconds with a spoken form, rather than a rounded percent.
+         * Written only when the whole second changes: this runs every frame
+         * while playing, and a screen reader re-announces any attribute write.
+         */
+        const whole = Math.floor(ct);
+        if (ariaSecondRef.current !== whole) {
+          ariaSecondRef.current = whole;
+          progressRef.current.setAttribute('aria-valuenow', String(whole));
+          progressRef.current.setAttribute('aria-valuetext', `${fmt(ct)} of ${fmt(dur)}`);
+        }
       }
       if (bufferedEnd !== null && bufferedFillRef.current) {
         const bufPct = (bufferedEnd / dur) * 100;
@@ -217,7 +264,11 @@ export default function VideoViewer({ src: rawSrc, mediaRef, onControlsChange, o
     } else {
       if (progressFillRef.current) progressFillRef.current.style.width = '0%';
       if (progressThumbRef.current) progressThumbRef.current.style.left = '0%';
-      if (progressRef.current) progressRef.current.setAttribute('aria-valuenow', '0');
+      if (progressRef.current) {
+        ariaSecondRef.current = 0;
+        progressRef.current.setAttribute('aria-valuenow', '0');
+        progressRef.current.setAttribute('aria-valuetext', '0:00');
+      }
       if (bufferedFillRef.current) bufferedFillRef.current.style.width = '0%';
     }
   }, []);
@@ -255,11 +306,11 @@ export default function VideoViewer({ src: rawSrc, mediaRef, onControlsChange, o
        * anything to report.
        */
       if (srcPending) {
-        setIsLoading(true);
+        setMetaReady(false);
+        setFrameReady(false);
         setError(false);
         return;
       }
-      setIsLoading(false);
       setError(true);
       return;
     }
@@ -267,7 +318,8 @@ export default function VideoViewer({ src: rawSrc, mediaRef, onControlsChange, o
     setEnded(false);
     updateProgressDOM(0, 0, 0);
     setDuration(0);
-    setIsLoading(true);
+    setMetaReady(false);
+    setFrameReady(false);
     setIsBuf(false);
     setError(false);
     setHoverTime(null);
@@ -275,7 +327,7 @@ export default function VideoViewer({ src: rawSrc, mediaRef, onControlsChange, o
     setShowSpeedMenu(false);
     setCtrlVisible(true);
     stopProgressLoop();
-  }, [src, srcPending, stopProgressLoop, updateProgressDOM]);
+  }, [src, srcPending, attempt, stopProgressLoop, updateProgressDOM]);
 
   // ─── Autoplay with unmuted/muted fallback ────────────────────────────────
   useEffect(() => {
@@ -297,7 +349,6 @@ export default function VideoViewer({ src: rawSrc, mediaRef, onControlsChange, o
             console.warn('Muted autoplay also blocked:', err2);
           });
         } else if (err.name !== 'AbortError') {
-          setIsLoading(false);
           setError(true);
         }
       });
@@ -309,27 +360,43 @@ export default function VideoViewer({ src: rawSrc, mediaRef, onControlsChange, o
       active = false;
       v.pause();
     };
-  }, [src, isCurrent]);
+    // `attempt` re-runs this for the new element a retry mounts.
+  }, [src, isCurrent, attempt]);
+
+  // ─── Element set-up: runs once per <video> element, not per control change ──
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    /*
+     * The saved level applies to a NEW element. It used to be re-applied by the
+     * listener effect below, which also forced `muted = false`, so every seek
+     * silently discarded the user's mute (and the muted-autoplay fallback that
+     * iOS needs). The element keeps its own volume and mute across a source
+     * change, so nothing here needs to run again until it is replaced.
+     */
+    const vol = getSavedVolume();
+    v.volume = vol;
+    setVolume(vol);
+    setMuted(v.muted);
+  }, [attempt]);
+
+  // ─── Registry: one entry per current element ─────────────────────────────
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v || !isCurrent) return undefined;
+    const deregister = feedVideoRegistry.register(registryId, v, PLAYBACK_PRIORITY.VIEWER);
+    feedVideoRegistry.requestPlay(registryId);
+    return deregister;
+  }, [isCurrent, registryId, attempt]);
 
   // ─── Video event handlers ────────────────────────────────────────────────
   useEffect(() => {
     const v = videoRef.current;
     if (!v) return;
 
-    // Set saved volume
-    const vol = getSavedVolume();
-    v.volume  = vol;
-    v.muted   = false;
-    setVolume(vol);
-    setMuted(false);
-
-    // Register with global video registry with priority 10 (MediaViewer active video)
-    const deregister = isCurrent ? feedVideoRegistry.register(registryId, v, 10) : () => {};
-    if (isCurrent) feedVideoRegistry.requestPlay(registryId);
-
     const onPlay = () => {
       if (!isCurrent) { v.pause(); return; }
-      if (isCurrent) feedVideoRegistry.requestPlay(registryId);
+      feedVideoRegistry.requestPlay(registryId);
       setPlaying(true);
       setEnded(false);
       startProgressLoop();
@@ -355,10 +422,11 @@ export default function VideoViewer({ src: rawSrc, mediaRef, onControlsChange, o
 
     const onWaiting      = () => setIsBuf(true);
     const onPlaying      = () => { setIsBuf(false); resetHideTimer(); };
-    const onCanPlay      = () => { setIsLoading(false); setIsBuf(false); };
-    const onLoadedMeta   = () => { setDuration(v.duration); setIsLoading(false); };
-    const onLoadStart    = () => { setIsLoading(true); setError(false); };
-    const onError        = () => { setIsLoading(false); setError(true); };
+    const onCanPlay      = () => { setMetaReady(true); setFrameReady(true); setIsBuf(false); };
+    const onLoadedMeta   = () => { setDuration(v.duration); setMetaReady(true); };
+    const onLoadedData   = () => setFrameReady(true);
+    const onLoadStart    = () => { setMetaReady(false); setFrameReady(false); setError(false); };
+    const onError        = () => setError(true);
     const onVolumeChange = () => { setMuted(v.muted); setVolume(v.volume); };
     const onRateChange   = () => setSpeed(v.playbackRate);
     const onFsChange     = () => setIsFullscreen(!!document.fullscreenElement);
@@ -370,18 +438,32 @@ export default function VideoViewer({ src: rawSrc, mediaRef, onControlsChange, o
     v.addEventListener('playing',          onPlaying);
     v.addEventListener('canplay',          onCanPlay);
     v.addEventListener('loadedmetadata',   onLoadedMeta);
+    v.addEventListener('loadeddata',       onLoadedData);
     v.addEventListener('loadstart',        onLoadStart);
     v.addEventListener('error',            onError);
     v.addEventListener('volumechange',     onVolumeChange);
     v.addEventListener('ratechange',       onRateChange);
     document.addEventListener('fullscreenchange', onFsChange);
 
+    /*
+     * Catch up with whatever happened before these listeners existed. Effects
+     * run after the element has started loading, so its events can already
+     * have fired.
+     */
     if (v.readyState >= 1) {
       setDuration(v.duration);
-      setIsLoading(false);
+      setMetaReady(true);
     }
-    if (v.readyState >= 3) {
-      setIsBuf(false);
+    if (v.readyState >= 2) setFrameReady(true);
+    if (v.readyState >= 3) setIsBuf(false);
+    /*
+     * An element that is already playing never fires `play` again, so the
+     * progress loop has to be restarted here. This is what stops the time and
+     * seek bar freezing if this effect is ever re-run mid-playback.
+     */
+    if (!v.paused && !v.ended) {
+      setPlaying(true);
+      startProgressLoop();
     }
 
     return () => {
@@ -392,15 +474,15 @@ export default function VideoViewer({ src: rawSrc, mediaRef, onControlsChange, o
       v.removeEventListener('playing',          onPlaying);
       v.removeEventListener('canplay',          onCanPlay);
       v.removeEventListener('loadedmetadata',   onLoadedMeta);
+      v.removeEventListener('loadeddata',       onLoadedData);
       v.removeEventListener('loadstart',        onLoadStart);
       v.removeEventListener('error',            onError);
       v.removeEventListener('volumechange',     onVolumeChange);
       v.removeEventListener('ratechange',       onRateChange);
       document.removeEventListener('fullscreenchange', onFsChange);
       stopProgressLoop();
-      deregister();
     };
-  }, [src, isCurrent, registryId, startProgressLoop, stopProgressLoop, resetHideTimer]);
+  }, [src, isCurrent, attempt, registryId, startProgressLoop, stopProgressLoop, resetHideTimer]);
 
   // ─── Tab/Page visibility: pause when tab hidden ──────────────────────────
   useEffect(() => {
@@ -429,6 +511,9 @@ export default function VideoViewer({ src: rawSrc, mediaRef, onControlsChange, o
       clearTimeout(clickTimerRef.current);
       clearTimeout(rippleTimerRef.current);
       clearTimeout(tapFeedbackTimerRef.current);
+      clearTimeout(touchGuardTimerRef.current);
+      cancelAnimationFrame(feedbackRafRef.current);
+      cancelAnimationFrame(rippleRafRef.current);
       if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
     };
   }, [stopProgressLoop, registryId]);
@@ -439,13 +524,12 @@ export default function VideoViewer({ src: rawSrc, mediaRef, onControlsChange, o
     onStageClick?.();
     const v = videoRef.current;
     if (!v) return;
-    if (v.ended) {
-      v.currentTime = 0;
-      v.play().catch(() => {});
-    } else if (v.paused) {
+    if (v.ended || v.paused) {
+      // Replaying and resuming fail the same way, so they report it the same
+      // way. The replay path used to swallow every rejection.
+      if (v.ended) v.currentTime = 0;
       v.play().catch((err) => {
         if (err.name !== 'AbortError') {
-          setIsLoading(false);
           setIsBuf(false);
           setError(true);
         }
@@ -592,6 +676,7 @@ export default function VideoViewer({ src: rawSrc, mediaRef, onControlsChange, o
 
   const handleProgressMouseDown = useCallback((e) => {
     e.stopPropagation();
+    isDraggingRef.current = true;
     setIsDragging(true);
     clearTimeout(hideTimerRef.current);
     setCtrlVisible(true);
@@ -606,6 +691,7 @@ export default function VideoViewer({ src: rawSrc, mediaRef, onControlsChange, o
       commitSeek(frac);
     };
     const onUp = () => {
+      isDraggingRef.current = false;
       setIsDragging(false);
       resetHideTimer();
     };
@@ -635,6 +721,7 @@ export default function VideoViewer({ src: rawSrc, mediaRef, onControlsChange, o
   const handleProgressTouchStart = useCallback((e) => {
     e.stopPropagation();
     const touch = e.touches[0];
+    isDraggingRef.current = true;
     setIsDragging(true);
     clearTimeout(hideTimerRef.current);
     setCtrlVisible(true);
@@ -648,16 +735,45 @@ export default function VideoViewer({ src: rawSrc, mediaRef, onControlsChange, o
       if (touch) commitSeek(getSeekFraction(touch.clientX));
     };
     const onEnd = () => {
+      isDraggingRef.current = false;
       setIsDragging(false);
       resetHideTimer();
     };
     document.addEventListener('touchmove', onMove, { passive: true });
     document.addEventListener('touchend', onEnd);
+    // A touch the system takes over (edge-swipe back, an incoming call) ends in
+    // `touchcancel`, never `touchend`. Without this the drag never finished:
+    // the controls stopped auto-hiding and any later touch kept seeking.
+    document.addEventListener('touchcancel', onEnd);
     return () => {
       document.removeEventListener('touchmove', onMove);
       document.removeEventListener('touchend', onEnd);
+      document.removeEventListener('touchcancel', onEnd);
     };
   }, [isDragging, getSeekFraction, commitSeek, resetHideTimer]);
+
+  /*
+   * The full set of keys the ARIA slider pattern asks for. The window-level
+   * shortcuts deliberately ignore a focused slider, so everything it should
+   * answer to has to be here: arrows nudge, Page keys step further, Home/End
+   * jump to the ends. Up/Down mean "more/less" on a slider, so they seek here
+   * rather than changing the volume.
+   */
+  const handleSliderKeyDown = useCallback((e) => {
+    switch (e.key) {
+      case 'ArrowLeft':
+      case 'ArrowDown':  seekBy(-5); break;
+      case 'ArrowRight':
+      case 'ArrowUp':    seekBy(5); break;
+      case 'PageDown':   seekBy(-10); break;
+      case 'PageUp':     seekBy(10); break;
+      case 'Home':       commitSeek(0); break;
+      case 'End':        commitSeek(1); break;
+      default: return;
+    }
+    e.preventDefault();
+    showControls();
+  }, [seekBy, commitSeek, showControls]);
 
   // ─── Volume ───────────────────────────────────────────────────────────────
   const handleVolumeChange = useCallback((e) => {
@@ -665,8 +781,10 @@ export default function VideoViewer({ src: rawSrc, mediaRef, onControlsChange, o
     const v   = videoRef.current;
     if (!v) return;
     v.volume = val;
+    // Zero is saved too: it is a chosen level, not an absence of one.
+    saveVolume(val);
     if (val === 0) { v.muted = true; }
-    else { v.muted = false; prevVolRef.current = val; saveVolume(val); }
+    else { v.muted = false; prevVolRef.current = val; }
   }, []);
 
   // ─── Speed ───────────────────────────────────────────────────────────────
@@ -682,7 +800,8 @@ export default function VideoViewer({ src: rawSrc, mediaRef, onControlsChange, o
   const triggerTapFeedback = useCallback((type) => {
     setTapFeedback(null);
     clearTimeout(tapFeedbackTimerRef.current);
-    requestAnimationFrame(() => {
+    cancelAnimationFrame(feedbackRafRef.current);
+    feedbackRafRef.current = requestAnimationFrame(() => {
       setTapFeedback(type);
       tapFeedbackTimerRef.current = setTimeout(() => setTapFeedback(null), 550);
     });
@@ -692,7 +811,8 @@ export default function VideoViewer({ src: rawSrc, mediaRef, onControlsChange, o
   const triggerRipple = useCallback((dir) => {
     setRipple(null);
     clearTimeout(rippleTimerRef.current);
-    requestAnimationFrame(() => {
+    cancelAnimationFrame(rippleRafRef.current);
+    rippleRafRef.current = requestAnimationFrame(() => {
       setRipple(dir);
       rippleTimerRef.current = setTimeout(() => setRipple(null), 650);
     });
@@ -739,7 +859,8 @@ export default function VideoViewer({ src: rawSrc, mediaRef, onControlsChange, o
 
     // Flag to suppress synthetic mouse clicks
     isTouchHandledRef.current = true;
-    setTimeout(() => { isTouchHandledRef.current = false; }, 400);
+    clearTimeout(touchGuardTimerRef.current);
+    touchGuardTimerRef.current = setTimeout(() => { isTouchHandledRef.current = false; }, 400);
 
     onStageClick?.();
 
@@ -760,7 +881,7 @@ export default function VideoViewer({ src: rawSrc, mediaRef, onControlsChange, o
      * Keeping the chrome up is the only thing a tap should do here, and it is
      * what stops the close button disappearing behind an error card.
      */
-    if (!canShowFrameRef.current) {
+    if (!canInteractRef.current) {
       lastTapRef.current = { time: 0, x: 0, y: 0, zone: null };
       clearTimeout(clickTimerRef.current);
       clickTimerRef.current = null;
@@ -827,7 +948,7 @@ export default function VideoViewer({ src: rawSrc, mediaRef, onControlsChange, o
     onStageClick?.();
 
     // Same rule as the touch path: nothing to play, so only keep chrome up.
-    if (!canShowFrameRef.current) {
+    if (!canInteractRef.current) {
       setCtrlVisible(true);
       clearTimeout(hideTimerRef.current);
       return;
@@ -888,7 +1009,15 @@ export default function VideoViewer({ src: rawSrc, mediaRef, onControlsChange, o
    * Everything else — signing, loading, errored, no source — must hide it so
    * the browser's own placeholder never reaches the screen.
    */
-  const canShowFrame = Boolean(src) && !hasError && !srcPending && !isLoading;
+  const hasSource = Boolean(src) && !hasError && !srcPending;
+  // Controls and gestures need only the metadata (duration, seekable); the
+  // picture needs a decoded frame. Showing the element on metadata alone put an
+  // empty native placeholder on screen under live controls.
+  const canInteract = hasSource && (metaReady || frameReady);
+  const canShowFrame = hasSource && frameReady;
+  // A poster is a deliberate stand-in for the first frame, so it may be shown
+  // as soon as the controls are.
+  const showVideo = canShowFrame || (canInteract && Boolean(posterSrc));
 
   /*
    * Re-aim the viewer's gesture target whenever the visible element changes.
@@ -898,8 +1027,22 @@ export default function VideoViewer({ src: rawSrc, mediaRef, onControlsChange, o
    * back when the video returns.
    */
   useEffect(() => {
-    canShowFrameRef.current = canShowFrame;
-  }, [canShowFrame]);
+    canInteractRef.current = canInteract;
+  }, [canInteract]);
+
+  /*
+   * The controls are mounted only while there is something to control, so the
+   * seek bar is a brand-new element each time they return. Everything that
+   * paints it is driven by the progress loop, which does not run while paused —
+   * without this a paused video reopened its controls at 0:00.
+   */
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!canInteract || !v) return;
+    const bufEnd = v.buffered.length > 0 ? v.buffered.end(v.buffered.length - 1) : null;
+    ariaSecondRef.current = -1;
+    updateProgressDOM(v.currentTime, v.duration, bufEnd);
+  }, [canInteract, updateProgressDOM]);
 
   /*
    * Deliberately has NO dependency array.
@@ -915,8 +1058,11 @@ export default function VideoViewer({ src: rawSrc, mediaRef, onControlsChange, o
     mediaRef.current = hasError ? errorCardRef.current : videoRef.current;
   });
 
+  // Spinner while the source is signing or its metadata is outstanding, and
+  // while a requested play is waiting on its first frame or on the network. Not
+  // for a video that is merely paused awaiting a tap.
   const showSpinner =
-    (isLoading || srcPending || (isBuffering && playing)) &&
+    (srcPending || !metaReady || (playing && (!frameReady || isBuffering))) &&
     !hasError &&
     (Boolean(src) || srcPending);
   const hasDuration = duration > 0 && isFinite(duration);
@@ -961,11 +1107,19 @@ export default function VideoViewer({ src: rawSrc, mediaRef, onControlsChange, o
          * through for the frames before a real URL arrived.
          *
          * `undefined` removes the attribute, so the element simply has nothing
-         * to load and stays quiet. The element itself is never keyed or
-         * conditionally rendered, so it is not recreated when the URL resolves
-         * or on a retry — it keeps its identity and just gets a source.
+         * to load and stays quiet. The element is never conditionally
+         * rendered, so it is not recreated when the URL resolves — it keeps its
+         * identity and just gets a source. Only a retry replaces it.
          */
+        /*
+         * Keyed by the retry count so a retry mounts a fresh element. A retry
+         * whose URL is unchanged (public, blob, already-absolute) otherwise
+         * hands the same element the same `src`, which starts no load at all
+         * and left a permanent spinner.
+         */
+        key={attempt}
         src={src || undefined}
+        poster={posterSrc || undefined}
         className={styles.viewerVideo}
         playsInline
         autoPlay={isCurrent}
@@ -994,7 +1148,7 @@ export default function VideoViewer({ src: rawSrc, mediaRef, onControlsChange, o
          * thing being hidden.
          */
         style={
-          canShowFrame
+          showVideo
             ? { opacity: 1, visibility: 'visible', transition: 'opacity 0.2s ease' }
             : { opacity: 0, visibility: 'hidden', transition: 'none' }
         }
@@ -1052,22 +1206,15 @@ export default function VideoViewer({ src: rawSrc, mediaRef, onControlsChange, o
             onClick={(e) => {
               e.stopPropagation();
               /*
-               * Re-sign, do not just re-load.
-               *
-               * `v.load()` re-requests the SAME url, and the usual reason a
-               * media url stops working is that its signature expired — so the
-               * retry was guaranteed to fail again while still tearing the
-               * element's pipeline down and back up, which is what made the
-               * frame flicker. `refreshSrc()` drops the cached entry and asks
-               * for a fresh signature; the new url arrives as a prop change and
-               * the element loads it once, normally.
-               *
-               * No `v.load()` here at all: assigning a new `src` already starts
-               * a load, and doing both runs two overlapping load cycles on one
-               * element.
+               * Re-sign AND restart. The usual reason a media url stops working
+               * is that its signature expired, so `refreshSrc()` drops the
+               * cached entry and asks for a new one. It also bumps `attempt`,
+               * which keys the <video>: for a source that needs no signing the
+               * URL comes back unchanged, and a new element is the only thing
+               * that makes the browser load it again. No `v.load()`: a new
+               * element or a new `src` already starts exactly one load.
                */
               setError(false);
-              setIsLoading(true);
               refreshSrc();
             }}
           >
@@ -1083,13 +1230,13 @@ export default function VideoViewer({ src: rawSrc, mediaRef, onControlsChange, o
 
       {/*
         ── Center play/pause flash ────────────────────────────────────────
-        Also gated on `canShowFrame`: this is feedback for a playback gesture,
+        Also gated on `canInteract`: this is feedback for a playback gesture,
         so it is meaningless when there is nothing playing, and belongs nowhere
         near the error card. Defence in depth behind the `data-controls` fix
         above — any future gesture path that slips through still cannot draw a
         play icon over an error.
       */}
-      {tapFeedback && canShowFrame && (
+      {tapFeedback && canInteract && (
         <div key={tapFeedback + Date.now()} className={styles.tapFeedback} aria-hidden="true">
           {tapFeedback === 'play' ? (
             <svg viewBox="0 0 24 24" fill="currentColor" width="44" height="44">
@@ -1106,7 +1253,7 @@ export default function VideoViewer({ src: rawSrc, mediaRef, onControlsChange, o
       {/* ── Center replay button on video end ── */}
       {/* Same gate: a replay affordance over a video that never played is a
           second stray control on the error card. */}
-      {ended && canShowFrame && (
+      {ended && canInteract && (
         <button
           className={styles.centerReplayBtn}
           onClick={(e) => {
@@ -1122,7 +1269,7 @@ export default function VideoViewer({ src: rawSrc, mediaRef, onControlsChange, o
 
       {/*
         ── Controls overlay ───────────────────────────────────────────────
-        Gated on `canShowFrame`, not just on `!hasError`.
+        Gated on `canInteract`, not just on `!hasError`.
 
         The src-change reset calls `setCtrlVisible(true)` so the controls are up
         when a video opens. On a retry that reset runs again while there is
@@ -1131,7 +1278,7 @@ export default function VideoViewer({ src: rawSrc, mediaRef, onControlsChange, o
         signing round trip, then removed. Controls belong to a video that
         exists; until one does, the spinner is the whole UI.
       */}
-      {canShowFrame && (
+      {canInteract && (
         <div
           data-controls
           inert={!ctrlVisible || !isCurrent ? '' : undefined}
@@ -1152,17 +1299,15 @@ export default function VideoViewer({ src: rawSrc, mediaRef, onControlsChange, o
               role="slider"
               aria-label="Seek"
               aria-valuemin={0}
-              aria-valuemax={100}
+              aria-valuemax={hasDuration ? Math.floor(duration) : 0}
               aria-valuenow={0}
+              aria-valuetext="0:00"
               tabIndex={0}
               onMouseDown={handleProgressMouseDown}
               onMouseMove={handleProgressMouseMove}
               onMouseLeave={handleProgressMouseLeave}
               onTouchStart={handleProgressTouchStart}
-              onKeyDown={(e) => {
-                if (e.key === 'ArrowLeft')  { e.preventDefault(); seekBy(-5); }
-                if (e.key === 'ArrowRight') { e.preventDefault(); seekBy(5); }
-              }}
+              onKeyDown={handleSliderKeyDown}
             >
               <div className={styles.videoProgressBg} />
               <div ref={bufferedFillRef} className={styles.videoProgressBuffer} style={{ width: '0%' }} />

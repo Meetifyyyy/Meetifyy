@@ -208,15 +208,27 @@ function Post({ postData, onClick, onCommentClick, onDeleted, isDetailed = false
    * handler defeated it.
    */
   const handleMediaClick = useCallback((items, index) => {
+    const isOwner = Boolean(currentUser?.id) && currentUser.id === (authorId ?? author?.id);
     openViewer(items, index, {
       authorName: author.displayName,
       authorAvatar: author.avatar,
       authorUsername: author.username,
       timestamp: postData.createdAt ? new Date(postData.createdAt).toLocaleString() : time,
       source: 'Post',
-      isOwner: currentUser?.id === authorId,
+      isOwner,
       post: postData,
       author,
+      /*
+       * What the viewer reports when someone reports this media: the post, by its
+       * server id. The viewer used to guess - the post's author as a USER, or
+       * the media URL as a post id - and the backend answered the first with the
+       * wrong kind of report and the second with a 404.
+       *
+       * Left out entirely for your own post, which is not something to offer
+       * a report on, and for a post without a real id; the viewer then shows no
+       * Report action rather than one that cannot work.
+       */
+      ...(!isOwner && postData.id ? { report: { targetType: 'POST', targetId: postData.id } } : {}),
     });
   }, [openViewer, author, postData, time, currentUser?.id, authorId]);
 
@@ -483,6 +495,7 @@ function Post({ postData, onClick, onCommentClick, onDeleted, isDetailed = false
             <MediaGrid
               media={postData.media}
               onMediaClick={handleMediaClick}
+              authorName={postData.author?.displayName || postData.author?.username}
             />
           )}
           {postData.linkPreview && (

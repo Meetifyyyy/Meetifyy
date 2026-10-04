@@ -1,10 +1,17 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useId, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import Cropper from 'react-easy-crop';
 import { getCroppedImg } from './cropImageUtils';
 import { X, Check, Loader2 } from '@shared/components/icons';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 import { useScrollLock } from '@shared/hooks/useScrollLock';
+import { useDialogFocus } from '@shared/hooks/useDialogFocus';
+import styles from './MediaCropper.module.css';
+
+// Read live, not captured at module load or first render: the setting can change
+// while the app is open, and the answer is wanted at the moment of the delay.
+const prefersReducedMotion = () =>
+  typeof window !== 'undefined' && Boolean(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches);
 
 export default function MediaCropper({ imageFile, aspect, cropShape = 'rect', onCropComplete, onCancel, onError }) {
   // Back dismisses this dialog rather than navigating the page behind it.
@@ -37,8 +44,25 @@ export default function MediaCropper({ imageFile, aspect, cropShape = 'rect', on
 
   const [isClosing, setIsClosing] = useState(false);
 
+  const titleId = useId();
+  const zoomId = useId();
+  const dialogRef = useRef(null);
+
+  // Escape cancels, unless a crop is already being produced - cancelling then
+  // would unmount the dialog under a result that is about to be delivered.
+  useDialogFocus(dialogRef, {
+    active: Boolean(imageSrc),
+    onEscape: () => { if (!isProcessing && !isClosing) onCancel(); },
+    getInitialFocus: () => dialogRef.current,
+  });
+
   const handleSmoothClose = (callback) => {
     setIsClosing(true);
+    // With reduced motion there is no fade to wait for, so nothing waits.
+    if (prefersReducedMotion()) {
+      callback();
+      return;
+    }
     setTimeout(() => {
       callback();
     }, 200);
@@ -62,9 +86,11 @@ export default function MediaCropper({ imageFile, aspect, cropShape = 'rect', on
       });
       croppedFile.previewUrl = URL.createObjectURL(croppedBlob);
 
-      // Mandatory 500ms minimum spinner animation display
+      // Minimum spinner display, so a very fast crop does not flash. Skipped when
+      // the person has asked for reduced motion: the "Cropping..." label is the
+      // feedback, and holding the dialog for a half second adds nothing to it.
       const elapsed = Date.now() - startTime;
-      if (elapsed < 500) {
+      if (elapsed < 500 && !prefersReducedMotion()) {
         await new Promise((resolve) => setTimeout(resolve, 500 - elapsed));
       }
 
@@ -87,21 +113,7 @@ export default function MediaCropper({ imageFile, aspect, cropShape = 'rect', on
 
   return createPortal(
     <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 99999,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        background: 'rgba(0, 0, 0, 0.75)',
-        backdropFilter: 'blur(6px)',
-        WebkitBackdropFilter: 'blur(6px)',
-        padding: '16px',
-        boxSizing: 'border-box',
-        transition: 'opacity 0.2s ease-in-out',
-        opacity: isClosing ? 0 : 1
-      }}
+      className={`${styles.overlay} ${isClosing ? styles.closing : ''}`}
       onClick={(e) => {
         if (e.target === e.currentTarget && !isProcessing && !isClosing) {
           handleSmoothClose(onCancel);
@@ -109,59 +121,34 @@ export default function MediaCropper({ imageFile, aspect, cropShape = 'rect', on
       }}
     >
       <div
-        style={{
-          background: 'var(--color-bg-white, #ffffff)',
-          color: 'var(--color-text-main, #0f172a)',
-          width: '100%',
-          maxWidth: '540px',
-          borderRadius: '24px',
-          overflow: 'hidden',
-          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.35)',
-          border: 'none',
-          display: 'flex',
-          flexDirection: 'column',
-          boxSizing: 'border-box',
-          position: 'relative',
-          transition: 'transform 0.2s ease-in-out, opacity 0.2s ease-in-out',
-          transform: isClosing ? 'scale(0.95)' : 'scale(1)',
-          opacity: isClosing ? 0 : 1
-        }}
+        ref={dialogRef}
+        className={styles.card}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        aria-busy={isProcessing || undefined}
+        tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '18px 20px 14px 20px'
-          }}
-        >
-          <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700, color: 'var(--color-text-main, #0f172a)' }}>
+        <div className={styles.header}>
+          <h3 id={titleId} className={styles.title}>
             Crop Image
           </h3>
           <button
             type="button"
             onClick={onCancel}
             disabled={isProcessing}
-            style={{
-              background: 'transparent',
-              border: 'none',
-              cursor: 'pointer',
-              padding: '6px',
-              borderRadius: '50%',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: 'var(--color-text-muted, #64748b)'
-            }}
+            className={styles.closeBtn}
+            aria-label="Close"
           >
-            <X size={20} />
+            <X size={20} aria-hidden="true" />
           </button>
         </div>
-        
-        {/* Cropper Area */}
-        <div style={{ padding: '0 16px' }}>
+
+        {/* Scrolls on its own when the window is too short for everything; the
+            header and the actions stay put, so Apply is always reachable. */}
+        <div className={styles.body}>
           <style>{`
             .customSquircleCropArea {
               border-radius: 24px !important;
@@ -170,7 +157,7 @@ export default function MediaCropper({ imageFile, aspect, cropShape = 'rect', on
               border-radius: ${cropShape === 'round' ? '50%' : '24px'} !important;
             }
           `}</style>
-          <div style={{ position: 'relative', width: '100%', height: '340px', background: '#090d16', borderRadius: '16px', overflow: 'hidden' }}>
+          <div className={styles.cropArea}>
             <Cropper
               image={imageSrc}
               crop={crop}
@@ -187,94 +174,57 @@ export default function MediaCropper({ imageFile, aspect, cropShape = 'rect', on
               showGrid={true}
             />
           </div>
-        </div>
 
-        {/* Controls & Footer */}
-        <div
-          style={{
-            padding: '16px 20px 20px 20px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '16px'
-          }}
-        >
           {/* Zoom Slider */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-            <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--color-text-muted, #64748b)', minWidth: '40px' }}>
+          <div className={styles.zoomRow}>
+            <label htmlFor={zoomId} className={styles.zoomLabel}>
               Zoom
-            </span>
+            </label>
             <input
+              id={zoomId}
               type="range"
               value={zoom}
               min={1}
               max={3}
               step={0.05}
+              aria-valuetext={`${Math.round(zoom * 100)}%`}
               onChange={(e) => setZoom(Number(e.target.value))}
-              style={{
-                width: '100%',
-                accentColor: 'var(--color-primary, #2563eb)',
-                cursor: 'pointer'
-              }}
+              className={styles.zoomSlider}
             />
           </div>
+        </div>
 
-          {/* Action Buttons */}
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
-            <button
-              type="button"
-              onClick={onCancel}
-              disabled={isProcessing}
-              style={{
-                padding: '10px 18px',
-                borderRadius: '12px',
-                border: 'none',
-                background: 'var(--color-bg-soft, #f1f5f9)',
-                color: 'var(--color-text-main, #0f172a)',
-                fontWeight: 600,
-                fontSize: '0.9rem',
-                cursor: 'pointer'
-              }}
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={handleConfirm}
-              disabled={isProcessing}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                padding: '10px 20px',
-                borderRadius: '12px',
-                border: 'none',
-                background: 'var(--color-primary, #2563eb)',
-                color: '#ffffff',
-                fontWeight: 600,
-                fontSize: '0.9rem',
-                cursor: isProcessing ? 'not-allowed' : 'pointer',
-                opacity: isProcessing ? 0.75 : 1
-              }}
-            >
-              {isProcessing ? (
-                <>
-                  <Loader2 size={18} style={{ animation: 'cropperSpin 0.9s linear infinite' }} />
-                  <span>Cropping...</span>
-                </>
-              ) : (
-                <>
-                  <Check size={18} />
-                  <span>Apply Crop</span>
-                </>
-              )}
-            </button>
-            <style>{`
-              @keyframes cropperSpin {
-                from { transform: rotate(0deg); }
-                to { transform: rotate(360deg); }
-              }
-            `}</style>
-          </div>
+        {/* Announced separately: a live region inside a button is not spoken. */}
+        <p className={styles.srOnly} role="status">{isProcessing ? 'Cropping image' : ''}</p>
+
+        {/* Action Buttons */}
+        <div className={styles.actions}>
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={isProcessing}
+            className={styles.cancelBtn}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleConfirm}
+            disabled={isProcessing}
+            className={styles.applyBtn}
+          >
+            {isProcessing ? (
+              <>
+                <Loader2 size={18} className={styles.spinner} aria-hidden="true" />
+                <span>Cropping...</span>
+              </>
+            ) : (
+              <>
+                <Check size={18} aria-hidden="true" />
+                <span>Apply Crop</span>
+              </>
+            )}
+          </button>
         </div>
       </div>
     </div>,

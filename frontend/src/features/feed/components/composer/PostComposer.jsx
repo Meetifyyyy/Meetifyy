@@ -1,3 +1,4 @@
+import { IS_MOBILE_BUILD } from '@config';
 import { useState, useRef, useEffect, useMemo, memo, forwardRef, useImperativeHandle } from 'react';
 import LazyEmojiPicker from '@shared/components/ui/LazyEmojiPicker';
 import { useAuth } from '@shared/context/AuthContext';
@@ -58,7 +59,8 @@ const PostComposer = forwardRef(function PostComposer({ onSubmit }, ref) {
     focus: () => {
       setIsExpanded(true);
       if (inputRef.current) {
-        inputRef.current.focus();
+        // The browser must not also scroll to the field while the keyboard moves.
+        inputRef.current.focus({ preventScroll: true });
         // 'nearest', instant: a smooth centre-scroll ran against the keyboard
         // resizing the viewport and left the composer off-centre anyway.
         composerRef.current?.scrollIntoView?.({ block: 'nearest' });
@@ -117,8 +119,12 @@ const PostComposer = forwardRef(function PostComposer({ onSubmit }, ref) {
   useEffect(() => {
     const onKeyboardHidden = () => {
       if (hasContent) return;
+      // Only when the TEXT field is what has focus. Tapping Photo/Video/Poll
+      // moves focus to that button and hides the keyboard on the way, and the
+      // composer must stay open for what it is about to do (a file picker).
       const active = document.activeElement;
-      if (active && composerRef.current?.contains(active)) active.blur();
+      if (!active || !composerRef.current?.contains(active) || !active.isContentEditable) return;
+      active.blur();
       setIsExpanded(false);
     };
     window.addEventListener('meetifyy:keyboard-hidden', onKeyboardHidden);
@@ -366,24 +372,33 @@ const PostComposer = forwardRef(function PostComposer({ onSubmit }, ref) {
   // the composer has finished opening the mode is switched to text, and the
   // keyboard slides in over an already-settled layout instead of resizing the
   // window in the middle of the expand animation.
-  const [keyboardReady, setKeyboardReady] = useState(false);
+  // The app only: on the website (and iOS, where a keyboard can be raised only
+  // from inside the tap itself) the field takes focus normally.
+  const [keyboardReady, setKeyboardReady] = useState(!IS_MOBILE_BUILD);
   useEffect(() => {
+    if (!IS_MOBILE_BUILD) return undefined;
     if (!expandedState) {
       setKeyboardReady(false);
       return undefined;
     }
-    const t = setTimeout(() => setKeyboardReady(true), EXPAND_MS);
+    const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    const t = setTimeout(() => setKeyboardReady(true), reduced ? 0 : EXPAND_MS);
     return () => clearTimeout(t);
   }, [expandedState]);
 
   // The mode switch alone does not make Android raise the keyboard for a field
   // that already has focus, so ask for it once the composer has settled.
   useEffect(() => {
-    if (!keyboardReady) return;
+    if (!IS_MOBILE_BUILD || !keyboardReady) return;
     const el = document.activeElement;
-    if (el && composerRef.current?.contains(el) && el.isContentEditable) {
+    if (
+      el && composerRef.current?.contains(el) && el.isContentEditable &&
+      !document.documentElement.hasAttribute('data-keyboard-open')
+    ) {
       el.blur();
-      el.focus({ preventScroll: true });
+      // The platform focus, not the editor's own override, which moves the caret
+      // to the end and would discard where the user already put it.
+      HTMLElement.prototype.focus.call(el, { preventScroll: true });
     }
   }, [keyboardReady]);
 
@@ -425,7 +440,7 @@ const PostComposer = forwardRef(function PostComposer({ onSubmit }, ref) {
           ) {
             return;
           }
-          inputRef.current?.focus();
+          inputRef.current?.focus({ preventScroll: true });
         }}
       >
         <div className={styles.composerTopRow}>
@@ -441,7 +456,7 @@ const PostComposer = forwardRef(function PostComposer({ onSubmit }, ref) {
                 if (!isExpanded) setIsExpanded(true);
               }}
               onFocus={() => setIsExpanded(true)}
-              inputMode={keyboardReady ? 'text' : 'none'}
+              inputMode={keyboardReady ? undefined : 'none'}
               onSubmit={() => { if (!showPoll) handlePost(); }}
               singleLine={false}
             />

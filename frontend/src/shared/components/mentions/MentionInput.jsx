@@ -335,9 +335,7 @@ export default function MentionInput({
   const focusEditor = useCallback((options) => {
     const el = editorRef.current;
     if (!el) return;
-    // Never let the browser scroll the page to the field: with a keyboard
-    // animating that is a second, competing scroll.
-    HTMLElement.prototype.focus.call(el, { preventScroll: true, ...options });
+    HTMLElement.prototype.focus.call(el, options);
     try {
       const range = document.createRange();
       range.selectNodeContents(el);

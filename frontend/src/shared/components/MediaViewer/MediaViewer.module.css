@@ -916,7 +916,7 @@
   left: 0;
   right: 0;
   bottom: 0;
-  height: 110px;
+  height: calc(110px + env(safe-area-inset-bottom, 0px));
   background: linear-gradient(to top, rgba(0, 0, 0, 0.55) 0%, transparent 100%);
   pointer-events: none;
   border-radius: 0 0 2px 2px;
@@ -1032,7 +1032,10 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 0.75rem 0.85rem;
+  /* Clear of the home indicator / navigation bar. The mobile build rewrites
+     env(safe-area-inset-bottom) into max(env, --navigation-bar-inset), so this
+     already covers an edge-to-edge Android WebView; do not add that var here. */
+  padding: 0 0.75rem calc(0.85rem + env(safe-area-inset-bottom, 0px));
   gap: 0.25rem;
   z-index: 1;
   position: relative;
@@ -1365,13 +1368,80 @@
   to { transform: rotate(360deg); }
 }
 
-@media (max-width: 768px), (pointer: coarse) {
-  .navBtn {
-    display: none !important;
+/* ── Paging buttons on touch screens ─────────────────────────────────────────
+   These used to be hidden on every touch screen and narrow window, which left
+   swiping as the only way to page - nothing for a switch user, nothing while
+   zoomed (swipe paging is off then), and nothing for a MOUSE user in a narrow
+   desktop window (mouse drag does not page). They now stay, and a touch screen
+   only gets them a little closer to the edge. They fade with the other controls,
+   so a tap on the image still clears them. */
+@media (pointer: coarse) {
+  .navPrev { left: 0.5rem; }
+  .navNext { right: 0.5rem; }
+}
+
+/* Zoom buttons are for pointer and keyboard users; touch has pinch / double-tap. */
+.zoomControls {
+  position: fixed;
+  left: 50%;
+  bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+  z-index: 10001;
+  display: none;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--mv-btn-border);
+  background: var(--mv-btn-bg);
+  box-shadow: var(--mv-btn-shadow);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  transform: translateX(-50%);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+}
+
+.zoomControls.controlsVisible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.zoomBtn {
+  min-width: 40px;
+  height: 36px;
+  padding: 0 0.7rem;
+  border: none;
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--mv-btn-color);
+  font: inherit;
+  font-size: 0.9rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.zoomBtn:hover {
+  background: var(--mv-btn-bg-hover);
+}
+
+.zoomBtn:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .zoomControls {
+    display: flex;
   }
 }
 
-@media (max-width: 600px) {
+/* A phone on its side is wider than 600px but only ~360px tall, so the
+   compact video controls have to apply there too. Written as a second query in
+   the list: the app's landscape adapter only rewrites max-width queries of 768
+   and up, so this one stays exactly as written. */
+@media (max-width: 600px), (pointer: coarse) and (max-height: 500px) {
   .bottomContextScrim {
     padding: 2.25rem 0.85rem calc(1rem + env(safe-area-inset-bottom, 0px));
   }
@@ -1400,7 +1470,7 @@
   }
 
   .videoControlsRow {
-    padding: 0 0.5rem 0.7rem;
+    padding: 0 0.5rem calc(0.7rem + env(safe-area-inset-bottom, 0px));
   }
 
   .videoProgressArea {
@@ -1543,6 +1613,11 @@
   .overlay,
   .topBar,
   .stage,
+  .stageTrack,
+  .imageWrap,
+  .mediaImage,
+  .zoomControls,
+  .zoomBtn,
   .navBtn,
   .counterBadge,
   .bottomContextScrim,

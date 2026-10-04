@@ -204,7 +204,7 @@ export function installSystemBars(systemBars, { readEdges } = {}) {
   if (appRoot) pageObserver.observe(appRoot, { childList: true, subtree: true });
 
   window.addEventListener('popstate', scheduleWithSettle);
-  window.addEventListener('meetifyy:keyboard-hidden', () => setTimeout(scheduleWithSettle, 50));
+  window.addEventListener('meetifyy:text-entry-end', () => setTimeout(scheduleWithSettle, 50));
   window.addEventListener('resize', schedule);
   /**
    * Once a scroll has stopped: what sits at the bottom edge of a long page

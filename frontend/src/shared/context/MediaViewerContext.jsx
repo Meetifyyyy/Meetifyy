@@ -1,5 +1,7 @@
-import { createContext, useContext, useState, useCallback, useMemo, useRef } from 'react';
+import { createContext, useContext, useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { getMediaUrl } from '@shared/api/apiClient';
+import { overlayManager } from '@shared/services/OverlayManager';
+import { useAuth } from './AuthContext';
 
 /**
  * Two contexts, deliberately.
@@ -45,6 +47,29 @@ export function useMediaViewer() {
 }
 
 /**
+ * Turns one caller-supplied entry into a viewer item, or null when it cannot be
+ * shown. Every field the caller passed survives (ids, report data, ...); the
+ * viewer only adds to it:
+ *   url      - resolved, absolute (see openViewer)
+ *   rawUrl   - the url exactly as the caller gave it, before resolution
+ *   slideKey - unique per entry, so two entries with the same url (a forwarded
+ *              attachment shown twice) do not collide as React keys
+ */
+function normalizeItem(item, position) {
+  if (!item) return null;
+  const input = typeof item === 'string' ? { url: item, type: 'image' } : item;
+  if (typeof input !== 'object' || typeof input.url !== 'string' || input.url === '') return null;
+  const url = getMediaUrl(input.url);
+  return {
+    ...input,
+    url,
+    rawUrl: input.rawUrl ?? input.url,
+    ...(input.thumb ? { thumb: getMediaUrl(input.thumb) } : {}),
+    slideKey: `${position}:${url}`,
+  };
+}
+
+/**
  * mediaItems: Array of { url, type: 'image'|'video', caption?, thumb? }
  * startIndex: which item to open on
  * meta: { authorName, authorAvatar, authorUsername, timestamp, source, isOwner }
@@ -72,23 +97,63 @@ export function MediaViewerProvider({ children }) {
    * a caller that already resolved is unaffected.
    */
   const openViewer = useCallback((items, startIndex = 0, meta = null, originRect = null) => {
-    savedScrollRef.current = window.scrollY;
-    const resolved = (Array.isArray(items) ? items : []).map((item) => {
-      if (!item) return item;
-      if (typeof item === 'string') return { url: getMediaUrl(item), type: 'image' };
-      return {
-        ...item,
-        ...(item.url ? { url: getMediaUrl(item.url) } : {}),
-        ...(item.thumb ? { thumb: getMediaUrl(item.thumb) } : {}),
-      };
+    const source = Array.isArray(items) ? items : [];
+    const wanted = Number.isFinite(startIndex) ? Math.trunc(startIndex) : 0;
+
+    // Entries that cannot be shown are dropped, and the index is carried across
+    // the drop: it is the NUMBER OF SHOWABLE ENTRIES BEFORE the one the caller
+    // asked for, so the viewer opens on that same entry rather than on whatever
+    // now sits at the old position. Out of range clamps to the nearest end.
+    const resolved = [];
+    let before = 0;
+    source.forEach((entry, i) => {
+      const item = normalizeItem(entry, resolved.length);
+      if (!item) return;
+      if (i < wanted) before += 1;
+      resolved.push(item);
     });
-    setState({ open: true, items: resolved, index: startIndex, meta, originRect });
+
+    // Nothing to show: opening an empty dialog (counter and menu, no media)
+    // is worse than not opening.
+    if (resolved.length === 0) return;
+
+    savedScrollRef.current = window.scrollY;
+    const index = Math.min(Math.max(before, 0), resolved.length - 1);
+    setState({ open: true, items: resolved, index, meta, originRect });
   }, []);
 
   const closeViewer = useCallback(() => {
-    setState((prev) => ({ ...prev, open: false }));
+    setState((prev) => (prev.open ? { ...prev, open: false } : prev));
     // Scroll restoration handled in modal after close animation
   }, []);
+
+  /*
+   * The viewer sits above the router and the auth gate, so nothing closes it
+   * when the page underneath changes. Two things must:
+   *
+   *   - a page change the router makes (a deep link, a session-expiry redirect;
+   *     `popstate` never fires for these - see OverlayManager.onRouteChange);
+   *   - the session ending, which would otherwise leave a signed-in user's media
+   *     on screen over the login page.
+   *
+   * Both clear the saved scroll position first. The viewer restores it ~320 ms
+   * after it closes, which is right when it closed over the page it opened on
+   * and wrong on a different page: it would scroll the new route to the old
+   * route's offset.
+   */
+  const dismissForNavigation = useCallback(() => {
+    savedScrollRef.current = null;
+    closeViewer();
+  }, [closeViewer]);
+
+  useEffect(() => overlayManager.onRouteChange(dismissForNavigation), [dismissForNavigation]);
+
+  const { isLoggedIn } = useAuth();
+  const wasLoggedInRef = useRef(isLoggedIn);
+  useEffect(() => {
+    if (wasLoggedInRef.current && !isLoggedIn) dismissForNavigation();
+    wasLoggedInRef.current = isLoggedIn;
+  }, [isLoggedIn, dismissForNavigation]);
 
   const navigate = useCallback((dir) => {
     setState((prev) => {

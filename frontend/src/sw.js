@@ -40,13 +40,15 @@ const CURRENT_CACHES = new Set([
   'css-chunks-cache',
   'google-fonts-cache',
   'gstatic-fonts-cache',
-  // v4, not v3. Existing installations hold an image cache that may contain a
+  // v5, not v4. Existing installations hold an image cache that may contain a
   // share card cached CacheFirst for seven days — possibly a failed or opaque
   // one, which is returned forever and makes the Instagram button fall back to
-  // a link. Renaming the cache means the activate handler below drops the old
-  // one outright, so nobody is left with a poisoned entry the new route can no
-  // longer reach. Ordinary images simply re-download once.
-  'meetifyy-images-v4',
+  // a link — and, since the route also accepted them, private conversation media
+  // (an `/api/media/chat/...` entry keyed by its stable URL, served back
+  // without any authorization check). Renaming the cache means the activate
+  // handler below drops the old one outright, so nobody is left holding either.
+  // Ordinary images simply re-download once.
+  'meetifyy-images-v5',
   // 'meetifyy-api-swr' is deliberately absent. No route writes to it any more,
   // and leaving it off the allowlist means the activate handler below deletes
   // whatever stale bodies an existing installation is still holding.
@@ -186,12 +188,32 @@ registerRoute(
     // to another application.
     if (url.pathname.startsWith('/api/share/')) return false;
 
+    /*
+     * Private media is never kept in this cache.
+     *
+     * `/api/media/<key>` is authorized per request, from the session. For a
+     * conversation attachment it answers with a redirect to a short-lived signed
+     * URL, but this route would store the final image under the STABLE
+     * `/api/media/...` key and hand it back CacheFirst for a week to whoever
+     * asks next on this browser — another account, or the same one after being
+     * removed from the chat — with the server never consulted. Signed URLs
+     * (R2 `X-Amz-*`, Supabase `/object/sign/`) are credentials in themselves:
+     * caching their bytes only leaves a previous account's pictures on disk
+     * after sign-out. Public media is unaffected: it is served from its own
+     * immutable CDN URL, which the browser's HTTP cache already holds.
+     */
+    if (url.pathname.startsWith('/api/media/')) return false;
+    if (url.pathname.includes('/object/sign/')) return false;
+    for (const name of url.searchParams.keys()) {
+      if (/^x-amz-(signature|credential)$/i.test(name) || /^(signature|token)$/i.test(name)) return false;
+    }
+
     const accept = request.headers.get('accept') || '';
     if (accept.includes('image')) return true;
     return /\.(png|jpe?g|webp|gif|svg|avif|ico)$/i.test(url.pathname);
   },
   new CacheFirst({
-    cacheName: 'meetifyy-images-v4',
+    cacheName: 'meetifyy-images-v5',
     plugins: [
       new ExpirationPlugin({ maxEntries: 200, maxAgeSeconds: 7 * 24 * 60 * 60 }),
       new CacheableResponsePlugin({ statuses: [0, 200] }),

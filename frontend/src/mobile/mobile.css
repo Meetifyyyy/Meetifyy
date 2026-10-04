@@ -179,6 +179,7 @@ select,
    viewport has shrunk: 0 normally, about -330px with the keyboard. Adding it to
    `bottom` puts both back on the screen's real bottom edge, in the same layout
    pass as the resize and with nothing to time. They sit behind the keyboard.
+   (Nothing hides them from JS; there is no state to get stuck.)
 ---------------------------------------------------------------------------- */
 @media (max-width: 768px) {
   html {
@@ -192,11 +193,5 @@ select,
 
   html .im-fab-dock {
     bottom: calc(60px + var(--bottom-nav-gap, 12px) + env(safe-area-inset-bottom) + 16px + var(--kb-viewport-shrink));
-  }
-
-  /* No JS hiding in the app: the rules above already keep both out of sight. */
-  html[data-text-entry] .app-bottom-nav,
-  html[data-text-entry] .im-fab-dock {
-    visibility: visible !important;
   }
 }

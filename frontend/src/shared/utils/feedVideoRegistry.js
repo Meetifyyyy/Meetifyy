@@ -8,8 +8,14 @@
  *
  * Priority levels
  *   10  – MediaViewer (active media viewer video)
+ *    5  – VoiceMessagePlayer (a voice note the user started deliberately)
  *    0  – InlineVideoPlayer (feed card inline video)
+ *
+ * Despite the name this is element-agnostic: it needs only `paused` and
+ * `pause()`, so an <audio> registers exactly like a <video>.
  */
+
+export { PLAYBACK_PRIORITY } from './playbackPriority';
 
 class FeedVideoRegistry {
   constructor() {
@@ -37,8 +43,17 @@ class FeedVideoRegistry {
   }
 
   /**
-   * Request permission to play. Pauses the current active video if it has
-   * lower or equal priority, then grants permission.
+   * Request permission to play.
+   *
+   * An active source of lower or equal priority is paused and the caller is
+   * granted. An active source of HIGHER priority is left alone and the caller is
+   * refused: a feed video scrolling into view behind the open viewer must not
+   * stop the video being watched in it. A refused caller that is already playing
+   * is paused here, so ignoring the result cannot leave two sources audible;
+   * callers that have not started yet should simply not call `play()`.
+   *
+   * An "active" entry whose element is already paused (it stopped without
+   * telling us) never blocks anyone.
    * @param {string} id
    * @returns {boolean} true if the caller may proceed with play()
    */
@@ -48,8 +63,15 @@ class FeedVideoRegistry {
 
     const current = this._activeId && this._entries.get(this._activeId);
     if (current && this._activeId !== id) {
+      const currentIsPlaying = !current.el.paused;
+      if (currentIsPlaying && current.priority > entry.priority) {
+        try {
+          if (!entry.el.paused) entry.el.pause();
+        } catch (_) {}
+        return false;
+      }
       try {
-        if (!current.el.paused) current.el.pause();
+        if (currentIsPlaying) current.el.pause();
       } catch (_) {}
     }
 

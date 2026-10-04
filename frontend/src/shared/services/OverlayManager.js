@@ -19,6 +19,9 @@ class OverlayManager {
     // Number of popstate events we caused ourselves and must not interpret as
     // a user Back press.
     this.pendingSelfPops = 0;
+    // Listeners told when the router moved to a different page (see
+    // notifyRouteChange).
+    this.routeListeners = new Set();
   }
 
   /**
@@ -256,6 +259,35 @@ class OverlayManager {
     if (index !== -1) {
       this.stack.splice(index, 1);
     }
+  }
+
+  /**
+   * Subscribe to "the router is now on a different page". Returns a disposer.
+   *
+   * `handlePopstate` only sees history pops. A `navigate()` push - a deep link,
+   * a session-expiry redirect, a notification tap - fires no popstate, so
+   * anything mounted above the router (the media viewer lives outside it) would
+   * stay open over an unrelated route. The router root reports every URL change
+   * through `notifyRouteChange` and such overlays subscribe here to close.
+   */
+  onRouteChange(listener) {
+    this.routeListeners.add(listener);
+    return () => this.routeListeners.delete(listener);
+  }
+
+  /**
+   * Called by the router root with the new path + search. Not called for the
+   * entries `open()` pushes: those keep the URL and change only the history
+   * state, so an overlay opening never reads as navigation.
+   */
+  notifyRouteChange(url) {
+    [...this.routeListeners].forEach((listener) => {
+      try {
+        listener(url);
+      } catch (e) {
+        console.error('Error in route change listener:', e);
+      }
+    });
   }
 
   hasOpenOverlays() {

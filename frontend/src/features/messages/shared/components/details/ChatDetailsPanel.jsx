@@ -6,14 +6,14 @@ import Avatar from '@shared/components/avatar/Avatar';
 import ConfirmModal from '@shared/components/modals/ConfirmModal';
 import styles from './ChatDetailsPanel.module.css';
 import { useAcademicSummary } from '@shared/academics/useAcademicSummary';
-import { Pin, Trash2, ChevronRight, User, Search, Ban, UserPlus, UserCheck, UserX, Shield, Flag, Image as ImageIcon, ArrowLeft, MoreVertical } from '@shared/components/icons';
+import { Pin, Trash2, User, Search, Ban, UserPlus, UserCheck, UserX, Shield, Flag, ArrowLeft, MoreVertical } from '@shared/components/icons';
 import Menu, { MenuItem, useMenu } from '@shared/components/ui/Menu';
 import InviteModal from '../modals/InviteModal';
 import ReportModal from '@shared/components/modals/ReportModal/ReportModal';
 import { showToast } from '@shared/utils/toast';
 
 import ChatGalleryPage from './ChatGalleryPage';
-import MediaThumb from '@shared/components/media/MediaThumb';
+import { GalleryStrip, GalleryCoverageNote, galleryOrigin } from './galleryShared';
 import GroupChangeOwnerPage from './GroupChangeOwnerPage';
 import GroupEditPage from './GroupEditPage';
 import GroupSettingsPage from './GroupSettingsPage';
@@ -30,46 +30,12 @@ import { sortGroupMembers } from '@shared/utils/memberSort';
 import { skipToken, useQuery, useQueryClient } from '@tanstack/react-query';
 import { groupApi } from '@shared/api/apiClient';
 
-/**
- * The horizontal gallery preview shown in chat details.
- *
- * Defined once. It was previously inlined twice — identically — in the DM and
- * group branches of the panel, so the raw-URL bug below had to be fixed in two
- * places and any future change would need remembering in both.
- */
-function GalleryStrip({ mediaList, onOpen }) {
-  const hasMedia = Array.isArray(mediaList) && mediaList.length > 0;
-  return (
-    <div className={styles.galleryCard}>
-      <div className={styles.galleryHeader} onClick={onOpen}>
-        <span className={styles.galleryTitle}>Gallery</span>
-        <ChevronRight className={styles.galleryChevron} size={20} />
-      </div>
-      {hasMedia ? (
-        <div className={styles.galleryRow}>
-          {mediaList.map((item, idx) => (
-            <MediaThumb
-              key={`${item.url}-${idx}`}
-              src={item.url}
-              poster={item.thumbnailUrl}
-              type={item.type}
-              alt=""
-              onClick={onOpen}
-              className={styles.galleryThumbnail}
-            />
-          ))}
-        </div>
-      ) : (
-        <div className={styles.noMediaContainer}>
-          <ImageIcon size={18} className={styles.noMediaIcon} />
-          <span>No media</span>
-        </div>
-      )}
-    </div>
-  );
-}
-
-export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, onClearChat, onSearch, onLeaveActivity }) {
+export default function ChatDetailsPanel({
+  conversation, onBack, onBlockUser, onClearChat, onSearch, onLeaveActivity,
+  // Optional: the conversation's history paging, from the chat manager. Without
+  // them the gallery still works, and says it covers only what is loaded.
+  hasMore, isLoadingMore, onLoadMore,
+}) {
   const navigate = useNavigate();
   const { currentUser } = useAuth();
   const users = useUsersMap();
@@ -218,8 +184,9 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
       if (mediaUrl && typeof mediaUrl === 'string') {
         const isVid = mediaType.includes('video') || /\.(mp4|mov|mkv)/i.test(mediaUrl) || mediaUrl.startsWith('data:video/');
         const isImg = mediaType.includes('image') || /\.(png|jpe?g|gif|webp|svg)/i.test(mediaUrl) || mediaUrl.startsWith('data:image/');
-        if (isVid) list.push({ type: 'video', url: mediaUrl, thumbnailUrl, createdAt: new Date(createdAt).getTime() });
-        else if (isImg) list.push({ type: 'image', url: mediaUrl, thumbnailUrl, createdAt: new Date(createdAt).getTime() });
+        const origin = galleryOrigin(msg, currentUser);
+        if (isVid) list.push({ type: 'video', url: mediaUrl, thumbnailUrl, ...origin, createdAt: new Date(createdAt).getTime() });
+        else if (isImg) list.push({ type: 'image', url: mediaUrl, thumbnailUrl, ...origin, createdAt: new Date(createdAt).getTime() });
       }
 
       // Embedded links & data URLs in text
@@ -262,7 +229,7 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
 
     // Sort LATEST FIRST (most recent media items first)
     return uniqueList.sort((a, b) => b.createdAt - a.createdAt);
-  }, [galleryMessages]);
+  }, [galleryMessages, currentUser]);
 
   // Hooks must run on every render, so this sits ABOVE the early return below.
   // It reads the DM partner's academic fields straight off the conversation
@@ -464,6 +431,9 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
       <ChatGalleryPage
         mediaList={mediaList}
         onBack={() => setShowGalleryPage(false)}
+        hasMore={hasMore}
+        isLoadingMore={isLoadingMore}
+        onLoadMore={onLoadMore}
       />
     );
   }
@@ -818,7 +788,11 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
             )}
 
 
-            <GalleryStrip mediaList={mediaList} onOpen={() => setShowGalleryPage(true)} />
+            <GalleryStrip
+              mediaList={mediaList}
+              onOpen={() => setShowGalleryPage(true)}
+              coverage={<GalleryCoverageNote hasMore={hasMore} isLoadingMore={isLoadingMore} onLoadMore={onLoadMore} />}
+            />
           </div>
         )}
 
@@ -832,7 +806,11 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
               </div>
             )}
 
-            <GalleryStrip mediaList={mediaList} onOpen={() => setShowGalleryPage(true)} />
+            <GalleryStrip
+              mediaList={mediaList}
+              onOpen={() => setShowGalleryPage(true)}
+              coverage={<GalleryCoverageNote hasMore={hasMore} isLoadingMore={isLoadingMore} onLoadMore={onLoadMore} />}
+            />
 
             {isMember && (
               <button
@@ -1039,7 +1017,7 @@ export default function ChatDetailsPanel({ conversation, onBack, onBlockUser, on
         <ReportModal
           isOpen={!!reportUserTarget}
           onClose={() => setReportUserTarget(null)}
-          targetType="user"
+          targetType="USER"
           targetId={reportUserTarget.id}
           targetName={reportUserTarget.displayName || reportUserTarget.name || reportUserTarget.username}
           targetAvatar={reportUserTarget.avatar}

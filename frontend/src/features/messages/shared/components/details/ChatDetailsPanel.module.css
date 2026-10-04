@@ -796,6 +796,47 @@
   justify-content: space-between;
   cursor: pointer;
   user-select: none;
+  /* A real <button> now: drop the native chrome so it looks as the row did. */
+  width: 100%;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+.galleryHeader:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 4px;
+  border-radius: 6px;
+}
+
+.galleryCoverage {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.75rem;
+  padding: 0.25rem 0 0;
+  color: var(--color-text-muted, #64748b);
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.galleryLoadOlder {
+  border: 0;
+  background: none;
+  padding: 0.25rem 0;
+  color: var(--color-primary);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.galleryLoadOlder:disabled {
+  opacity: 0.6;
+  cursor: default;
 }
 
 .galleryTitle {

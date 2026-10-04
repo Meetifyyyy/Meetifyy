@@ -38,14 +38,6 @@
 
 /* Declared after .bottomNav so it wins on order at equal specificity: an open
    chat hides the nav outright, and that must beat the keyboard translate. */
-/* Hidden for the whole of text entry on a touch device (see useKeyboardInset):
-   the keyboard covers it anyway, and showing it let it flash on top of the
-   keyboard for a frame as the WebView shrank. */
-:global(html[data-text-entry]) .bottomNav {
-  visibility: hidden;
-  transition: none;
-}
-
 .hiddenNav {
   transform: translateY(100%);
   opacity: 0;

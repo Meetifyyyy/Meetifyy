@@ -11,6 +11,8 @@ import ChatDetailsPanel from './details/ChatDetailsPanel';
 import ConfirmModal from '@shared/components/modals/ConfirmModal';
 import NotFoundState from '@shared/components/ui/NotFoundState';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
+import { chatMediaItem } from '../utils/chatMediaItem';
+import { forwardToTargets } from '../utils/forwardDelivery';
 import styles from './ChatAreaLayout.module.css';
 
 const ForwardMessageModal = lazy(() => import('./modals/ForwardMessageModal'));
@@ -236,7 +238,7 @@ export default function ChatAreaLayout({
           onLoadMore={onLoadMore}
           onContextMenu={openContextMenu}
           onReplyTo={setReplyingTo}
-          onOpenMediaModal={(url, type) => openViewer([{ url, type: type || 'image' }], 0)}
+          onOpenMediaModal={(url, type, extra) => openViewer([chatMediaItem(url, type, extra)], 0)}
           onMarkSeen={onMarkSeen}
           onRetryUpload={onRetryUpload}
           onCancelUpload={onCancelUpload}
@@ -289,41 +291,51 @@ export default function ChatAreaLayout({
             conversations={forwardTargets}
             isLoading={isLoadingForwardTargets}
             onClose={() => setForwardingMsg(null)}
-            onConfirmForward={async (targetIds) => {
+            onConfirmForward={async (targetIds, { operationId }) => {
               const text = forwardingMsg.text || forwardingMsg.payload?.text || '';
               const mediaUrl = forwardingMsg.mediaUrl || forwardingMsg.payload?.mediaUrl || null;
               const mediaType = forwardingMsg.mediaType || forwardingMsg.payload?.mediaType || null;
 
-              // Every target is attempted even after one fails, so a single bad
-              // recipient does not silently cancel the rest of the selection.
-              const failed = [];
-              for (const id of targetIds) {
-                try {
-                  await sendDirectMessage(id, { text, mediaUrl, mediaType });
-                } catch {
-                  failed.push(id);
-                }
-              }
-
-              if (failed.length === 0) return;
-
               /*
+               * Every target is attempted even after one fails, so a single bad
+               * recipient does not silently cancel the rest of the selection.
+               *
                * This used to be `catch (e) { // ignore }` with an unconditional
                * close in `finally`, so a forward that sent nothing at all looked
-               * exactly like one that worked: the modal closed and no message
-               * appeared anywhere. Partial failures were invisible too.
+               * exactly like one that worked. Then it threw, which kept the modal
+               * open but kept the WHOLE selection too: the retry re-sent to the
+               * people who already had it, under fresh client ids the server could
+               * not recognise as repeats.
                *
-               * Throwing keeps the modal open with the selection intact, which
-               * is what lets the person retry the ones that did not go.
+               * Now each recipient's client id comes from the modal's operation
+               * id, so a repeat is recognised and delivers nothing new, and a
+               * partial failure throws a ForwardPartialError naming who is left —
+               * the modal narrows its selection to exactly those.
                */
-              const sent = targetIds.length - failed.length;
-              showToast(
-                sent > 0
-                  ? `Forwarded to ${sent} of ${targetIds.length} chats`
-                  : 'Could not forward the message',
-                'error',
-              );
-              throw new Error(`forward failed for ${failed.length} recipient(s)`);
+              try {
+                await forwardToTargets({
+                  targetIds,
+                  operationId,
+                  // Nine positional arguments: the last is the options bag, and
+                  // `tempId` is how a client id reaches the request (it is also the
+                  // optimistic message's id, so a retry merges rather than duplicates).
+                  send: (id, clientId) => sendDirectMessage(
+                    id,
+                    { text, mediaUrl, mediaType },
+                    undefined, undefined, undefined, undefined, undefined, undefined,
+                    { tempId: clientId },
+                  ),
+                });
+              } catch (error) {
+                const sent = error?.sentCount ?? 0;
+                showToast(
+                  sent > 0
+                    ? `Forwarded to ${sent} of ${targetIds.length} chats`
+                    : 'Could not forward the message',
+                  'error',
+                );
+                throw error;
+              }
             }}
           />
         </Suspense>

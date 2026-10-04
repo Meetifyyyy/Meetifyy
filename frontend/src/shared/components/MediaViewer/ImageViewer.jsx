@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import VideoViewer from './VideoViewer';
 import { useSignedMediaSrc } from '@shared/hooks/useSignedMediaSrc';
 import styles from './MediaViewer.module.css';
+import { prefersReducedMotion } from './viewerMotion';
 
 // ─────────────────────────────────────────────
 // Constants
@@ -9,6 +10,14 @@ import styles from './MediaViewer.module.css';
 const MIN_SCALE = 1;
 const MAX_SCALE = 5;
 const DOUBLE_TAP_MS = 280;
+/** A touch that moves farther than this (px) is a drag, not a tap. */
+const TAP_SLOP_PX = 12;
+/** A touch held longer than this (ms) is a press, not a tap. */
+const TAP_MAX_MS = 350;
+/** Two taps farther apart than this (px) are two separate taps. */
+const DOUBLE_TAP_DISTANCE_PX = 40;
+/** Keyboard zoom multiplier per key press. */
+const KEY_ZOOM_STEP = 1.5;
 const DOUBLE_TAP_ZOOM = 2;
 const MOMENTUM_FRICTION = 0.88;   // per-frame multiplier (lower = stops faster)
 const MOMENTUM_MIN_SPEED = 0.3;   // px/frame below which we stop
@@ -55,7 +64,7 @@ function clampTranslation(tx, ty, scale, imgSize, vpSize) {
 /** Apply a CSS transform directly to the image element (no React re-render). */
 function applyTransform(imgEl, tx, ty, scale, animated = false) {
   if (!imgEl) return;
-  imgEl.style.transition = animated
+  imgEl.style.transition = animated && !prefersReducedMotion()
     ? `transform ${ANIM_DURATION_MS}ms cubic-bezier(0.25, 0.46, 0.45, 0.94)`
     : 'none';
   imgEl.style.transform = `translate3d(${tx}px, ${ty}px, 0) scale(${scale})`;
@@ -65,7 +74,7 @@ function applyTransform(imgEl, tx, ty, scale, animated = false) {
 // Component
 // ─────────────────────────────────────────────
 
-export default function ImageViewer({ src: rawSrc, mediaRef, onToggleControls, preloadNext, preloadPrev, isCurrent = true, closing = false }) {
+export default function ImageViewer({ src: rawSrc, mediaRef, zoomApiRef, onToggleControls, isCurrent = true, closing = false }) {
   /*
    * Same reason as VideoViewer: a conversation attachment's `/api/media/` URL
    * cannot be authorized by an <img> tag inside the app, so it is signed first.
@@ -97,14 +106,14 @@ export default function ImageViewer({ src: rawSrc, mediaRef, onToggleControls, p
   // ── Momentum RAF
   const momentumRaf = useRef(null);
 
-  // ── Double-tap detection
-  const lastTapRef = useRef(0);
+  // ── Double-tap detection: the last COMPLETED tap, { t, x, y } (t = 0: none).
+  const lastTapRef = useRef({ t: 0, x: 0, y: 0 });
+
+  // ── The single-finger touch in progress: { x, y, t, moved } (null: none).
+  const touchRef = useRef(null);
 
   // ── Track whether user has dragged (to distinguish click from drag)
   const didDragRef = useRef(false);
-
-  // ── Whether an animated transition is in progress
-  const animatingRef = useRef(false);
 
   // ─────────────────────────────────────
   // Measure helpers
@@ -139,7 +148,8 @@ export default function ImageViewer({ src: rawSrc, mediaRef, onToggleControls, p
     drag.current = null;
     pinch.current = null;
     didDragRef.current = false;
-    animatingRef.current = false;
+    touchRef.current = null;
+    lastTapRef.current = { t: 0, x: 0, y: 0 };
     xf.current = { scale: 1, tx: 0, ty: 0 };
     applyTransform(imgRef.current, 0, 0, 1, false);
     if (wrapRef.current) wrapRef.current.removeAttribute('data-zoomed');
@@ -172,11 +182,6 @@ export default function ImageViewer({ src: rawSrc, mediaRef, onToggleControls, p
         wrapRef.current.removeAttribute('data-zoomed');
       }
     }
-    
-    if (animated) {
-      animatingRef.current = true;
-      setTimeout(() => { animatingRef.current = false; }, ANIM_DURATION_MS + 10);
-    }
   }, []);
 
   // ─────────────────────────────────────
@@ -192,6 +197,8 @@ export default function ImageViewer({ src: rawSrc, mediaRef, onToggleControls, p
 
   const startMomentum = useCallback((vx, vy) => {
     stopMomentum();
+    // Coasting after a flick is motion the user did not ask to see.
+    if (prefersReducedMotion()) return;
     if (Math.hypot(vx, vy) < MOMENTUM_MIN_SPEED) return;
 
     let cvx = vx;
@@ -363,11 +370,14 @@ export default function ImageViewer({ src: rawSrc, mediaRef, onToggleControls, p
   const handleTouchStart = useCallback((e) => {
     stopMomentum();
 
-    if (e.touches.length === 2) {
+    if (e.touches.length >= 2) {
       // ── Pinch start
       e.preventDefault();
       drag.current = null; // cancel any active drag
       didDragRef.current = true; // suppress click
+      // A pinch is never part of a tap, and ends any tap in progress.
+      touchRef.current = null;
+      lastTapRef.current = { t: 0, x: 0, y: 0 };
 
       const t1 = e.touches[0];
       const t2 = e.touches[1];
@@ -387,24 +397,19 @@ export default function ImageViewer({ src: rawSrc, mediaRef, onToggleControls, p
         ty: xf.current.ty,
       };
     } else if (e.touches.length === 1) {
-      // ── Single touch: detect double-tap or start drag
+      // ── Single touch. Whether it is a tap is only known when it ENDS (it may
+      // become a drag), so this just remembers where and when it began.
       const touch = e.touches[0];
-      const now = Date.now();
 
-      if (now - lastTapRef.current < DOUBLE_TAP_MS) {
-        // Double-tap
-        e.preventDefault();
-        lastTapRef.current = 0;
-        didDragRef.current = true;
-        doDoubleTap(touch.clientX, touch.clientY);
-        return;
-      }
-      lastTapRef.current = now;
+      // Every new touch starts clean: a pinch or a double-tap earlier set this
+      // to swallow the click that follows it, and leaving it set made every
+      // later tap on the un-zoomed image a no-op.
+      didDragRef.current = false;
+      touchRef.current = { x: touch.clientX, y: touch.clientY, t: Date.now(), moved: false };
 
       // Only start a drag if already zoomed
       if (xf.current.scale <= 1) return;
 
-      didDragRef.current = false;
       drag.current = {
         startX: touch.clientX,
         startY: touch.clientY,
@@ -413,7 +418,7 @@ export default function ImageViewer({ src: rawSrc, mediaRef, onToggleControls, p
         history: [{ tx: xf.current.tx, ty: xf.current.ty, t: performance.now() }],
       };
     }
-  }, [stopMomentum, doDoubleTap]);
+  }, [stopMomentum]);
 
   const handleTouchMove = useCallback((e) => {
     if (e.touches.length === 2 && pinch.current) {
@@ -439,33 +444,49 @@ export default function ImageViewer({ src: rawSrc, mediaRef, onToggleControls, p
       }
 
       commit(false);
-    } else if (e.touches.length === 1 && drag.current) {
-      // ── Single-finger pan (only when zoomed)
-      if (xf.current.scale <= 1) return;
-      e.preventDefault();
+      return;
+    }
 
-      const touch = e.touches[0];
-      const dx = touch.clientX - drag.current.startX;
-      const dy = touch.clientY - drag.current.startY;
+    if (e.touches.length !== 1) return;
 
-      if (Math.hypot(dx, dy) > 3) didDragRef.current = true;
+    // Moving past the slop turns the touch into a drag: it can no longer be
+    // the tap half of a double-tap, however the finger leaves the screen.
+    const touch = e.touches[0];
+    const began = touchRef.current;
+    if (began && !began.moved && Math.hypot(touch.clientX - began.x, touch.clientY - began.y) > TAP_SLOP_PX) {
+      began.moved = true;
+      lastTapRef.current = { t: 0, x: 0, y: 0 };
+    }
 
-      xf.current.tx = drag.current.lastTx + dx;
-      xf.current.ty = drag.current.lastTy + dy;
-      commit(false);
+    if (!drag.current) return;
+    // ── Single-finger pan (only when zoomed)
+    if (xf.current.scale <= 1) return;
+    e.preventDefault();
 
-      const now = performance.now();
-      drag.current.history.push({ tx: xf.current.tx, ty: xf.current.ty, t: now });
-      while (drag.current.history.length > 1 &&
-             now - drag.current.history[0].t > MOMENTUM_HISTORY_MS) {
-        drag.current.history.shift();
-      }
+    const dx = touch.clientX - drag.current.startX;
+    const dy = touch.clientY - drag.current.startY;
+
+    if (Math.hypot(dx, dy) > 3) didDragRef.current = true;
+
+    xf.current.tx = drag.current.lastTx + dx;
+    xf.current.ty = drag.current.lastTy + dy;
+    commit(false);
+
+    const now = performance.now();
+    drag.current.history.push({ tx: xf.current.tx, ty: xf.current.ty, t: now });
+    while (drag.current.history.length > 1 &&
+           now - drag.current.history[0].t > MOMENTUM_HISTORY_MS) {
+      drag.current.history.shift();
     }
   }, [commit]);
 
   const handleTouchEnd = useCallback((e) => {
+    const began = touchRef.current;
+    touchRef.current = null;
+
     if (pinch.current) {
       pinch.current = null;
+      lastTapRef.current = { t: 0, x: 0, y: 0 };
       // After a pinch, if scale snapped to 1, reset translation
       if (xf.current.scale === MIN_SCALE) {
         xf.current.tx = 0;
@@ -490,7 +511,40 @@ export default function ImageViewer({ src: rawSrc, mediaRef, onToggleControls, p
         }
       }
     }
-  }, [commit, startMomentum]);
+
+    // ── Tap recognition. A tap is a lone finger that stayed put and came up
+    // quickly. Anything else - a swipe, a pan, a long press, a finger that was
+    // one of several - is not a tap and breaks any double-tap in progress.
+    const now = Date.now();
+    const isTap = began && !began.moved && e.touches.length === 0 && now - began.t <= TAP_MAX_MS;
+    if (!isTap) {
+      lastTapRef.current = { t: 0, x: 0, y: 0 };
+      return;
+    }
+
+    const prev = lastTapRef.current;
+    const isDoubleTap = prev.t > 0
+      && now - prev.t < DOUBLE_TAP_MS
+      && Math.hypot(began.x - prev.x, began.y - prev.y) < DOUBLE_TAP_DISTANCE_PX;
+
+    if (isDoubleTap) {
+      lastTapRef.current = { t: 0, x: 0, y: 0 };
+      // Swallow the click this touch would otherwise synthesize.
+      if (e.cancelable) e.preventDefault();
+      didDragRef.current = true;
+      doDoubleTap(began.x, began.y);
+    } else {
+      lastTapRef.current = { t: now, x: began.x, y: began.y };
+    }
+  }, [commit, startMomentum, doDoubleTap]);
+
+  /** The OS took the touch away (a system gesture, a call): nothing completed. */
+  const handleTouchCancel = useCallback(() => {
+    touchRef.current = null;
+    pinch.current = null;
+    drag.current = null;
+    lastTapRef.current = { t: 0, x: 0, y: 0 };
+  }, []);
 
   // ─────────────────────────────────────
   // Click handler (toggle controls, not drag)
@@ -577,16 +631,16 @@ export default function ImageViewer({ src: rawSrc, mediaRef, onToggleControls, p
     wrap.addEventListener('touchstart', handleTouchStart, { passive: false });
     wrap.addEventListener('touchmove', handleTouchMove, { passive: false });
     wrap.addEventListener('touchend', handleTouchEnd, { passive: false });
-    wrap.addEventListener('touchcancel', handleTouchEnd, { passive: false });
+    wrap.addEventListener('touchcancel', handleTouchCancel, { passive: true });
 
     return () => {
       wrap.removeEventListener('wheel', handleWheel);
       wrap.removeEventListener('touchstart', handleTouchStart);
       wrap.removeEventListener('touchmove', handleTouchMove);
       wrap.removeEventListener('touchend', handleTouchEnd);
-      wrap.removeEventListener('touchcancel', handleTouchEnd);
+      wrap.removeEventListener('touchcancel', handleTouchCancel);
     };
-  }, [handleWheel, handleTouchStart, handleTouchMove, handleTouchEnd]);
+  }, [handleWheel, handleTouchStart, handleTouchMove, handleTouchEnd, handleTouchCancel]);
 
   // Mouse move/up go on window so dragging outside the wrap still works
   useEffect(() => {
@@ -597,6 +651,101 @@ export default function ImageViewer({ src: rawSrc, mediaRef, onToggleControls, p
       window.removeEventListener('mouseup', handleMouseUp);
     };
   }, [handleMouseMove, handleMouseUp]);
+
+  // ─────────────────────────────────────
+  // Keyboard zoom / pan (driven by MediaViewer's key handler and zoom buttons)
+  // ─────────────────────────────────────
+
+  const zoomBy = useCallback((factor) => {
+    // Nothing to zoom until the image has loaded and been measured.
+    if (!imgSize.current) return;
+    stopMomentum();
+    const old = xf.current.scale;
+    let next = clamp(old * factor, MIN_SCALE, MAX_SCALE);
+    // Zooming out lands exactly on 1x rather than an imperceptible 1.04x that
+    // leaves the image "zoomed" for gesture purposes.
+    if (next < 1.05) next = MIN_SCALE;
+    if (next === old) return;
+
+    // Zoom about the viewport centre, so the translation scales with it.
+    const ratio = next / old;
+    xf.current.scale = next;
+    xf.current.tx = next === MIN_SCALE ? 0 : xf.current.tx * ratio;
+    xf.current.ty = next === MIN_SCALE ? 0 : xf.current.ty * ratio;
+    commit(true);
+  }, [stopMomentum, commit]);
+
+  const resetZoom = useCallback(() => {
+    stopMomentum();
+    if (xf.current.scale === MIN_SCALE && xf.current.tx === 0 && xf.current.ty === 0) return;
+    xf.current = { scale: MIN_SCALE, tx: 0, ty: 0 };
+    commit(true);
+  }, [stopMomentum, commit]);
+
+  /** Returns true when the image actually moved (false at the edge). */
+  const panBy = useCallback((dx, dy) => {
+    if (xf.current.scale <= 1.01) return false;
+    stopMomentum();
+    const { scale, tx, ty } = xf.current;
+    const next = clampTranslation(tx + dx, ty + dy, scale, imgSize.current, vpSize.current);
+    if (next.tx === tx && next.ty === ty) return false;
+    xf.current.tx = next.tx;
+    xf.current.ty = next.ty;
+    commit(true);
+    return true;
+  }, [stopMomentum, commit]);
+
+  useEffect(() => {
+    if (!zoomApiRef) return undefined;
+    const api = {
+      zoomIn: () => zoomBy(KEY_ZOOM_STEP),
+      zoomOut: () => zoomBy(1 / KEY_ZOOM_STEP),
+      reset: resetZoom,
+      panBy,
+      isZoomed: () => xf.current.scale > 1.01,
+    };
+    zoomApiRef.current = api;
+    return () => {
+      if (zoomApiRef.current === api) zoomApiRef.current = null;
+    };
+  }, [zoomApiRef, zoomBy, resetZoom, panBy]);
+
+  // ─────────────────────────────────────
+  // Gesture target
+  // ─────────────────────────────────────
+
+  /*
+   * The viewer's vertical dismiss drags whatever `mediaRef` points at and then
+   * clears its transform. That must NOT be the <img>: the image's own transform
+   * IS the zoom (translate + scale), so clearing it from outside un-zoomed the
+   * picture on screen while this component still believed it was zoomed.
+   *
+   * It is the wrapper instead. The wrapper holds whichever state is showing - the
+   * skeleton while loading, the image, or the "Media unavailable" card - so a
+   * drag always moves what the user can see, and the zoom transform is left
+   * alone. A video routed through here keeps its own gesture target (VideoViewer
+   * claims it), so this stands down for it.
+   *
+   * No dependency list: it must re-assert after every commit, like VideoViewer's,
+   * because the target should follow the visible state without a bookkeeping
+   * list that can fall behind. The cleanup below only releases the ref when it
+   * is still ours, so a neighbouring slide that has already claimed it keeps it.
+   */
+  const showsError = (error || srcFailed) && !srcPending;
+  const isVideoSrc = typeof src === 'string' && (/\.(mp4|webm|mov|mkv|avi|flv)/i.test(src) || src.startsWith('data:video/'));
+  const showsVideo = isVideoSrc && !showsError;
+  useEffect(() => {
+    if (!mediaRef || showsVideo) return;
+    mediaRef.current = wrapRef.current;
+  });
+
+  useEffect(() => {
+    if (!mediaRef) return undefined;
+    const wrap = wrapRef.current;
+    return () => {
+      if (mediaRef.current === wrap) mediaRef.current = null;
+    };
+  }, [mediaRef]);
 
   // ─────────────────────────────────────
   // Cleanup on unmount
@@ -627,7 +776,7 @@ export default function ImageViewer({ src: rawSrc, mediaRef, onToggleControls, p
           </div>
         )}
 
-        {(error || srcFailed) && !srcPending ? (
+        {showsError ? (
           <div className={styles.brokenWrap}>
             <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
               <rect x="3" y="3" width="18" height="18" rx="2" />
@@ -640,14 +789,13 @@ export default function ImageViewer({ src: rawSrc, mediaRef, onToggleControls, p
               e.stopPropagation(); setError(false); setLoaded(false); setRetryAttempt(n => n + 1); refreshSrc();
             }}>Try again</button>
           </div>
-        ) : (typeof src === 'string' && (/\.(mp4|webm|mov|mkv|avi|flv)/i.test(src) || src.startsWith('data:video/'))) ? (
+        ) : showsVideo ? (
           <VideoViewer src={rawSrc} mediaRef={mediaRef} isCurrent={isCurrent} />
         ) : (
           <img
             key={retryAttempt}
             ref={(el) => {
               imgRef.current = el;
-              if (isCurrent && mediaRef) mediaRef.current = el;
               if (el && el.complete && el.naturalWidth > 0 && !loaded) {
                 setLoaded(true);
                 setEntering(false);
@@ -668,9 +816,6 @@ export default function ImageViewer({ src: rawSrc, mediaRef, onToggleControls, p
           />
         )}
       </div>
-
-      {preloadNext && <link rel="preload" as="image" href={preloadNext} />}
-      {preloadPrev && <link rel="preload" as="image" href={preloadPrev} />}
     </>
   );
 }

@@ -12,18 +12,30 @@ export function useViewerFocus(open, overlayRef) {
     const dialogOpeners = new Map();
     let previousRoot = viewer;
     const dialogSelector = '[role="dialog"][aria-modal="true"]';
+    const menuSelector = '[role="menu"]';
+    const FOLLOWING = Node.DOCUMENT_POSITION_FOLLOWING;
+    // Portals append to <body>, so document order is stacking order: a dialog
+    // that follows the viewer was opened from it, and one that precedes it is a
+    // layer the viewer was opened over. Treating every other dialog as "ours"
+    // pulled focus into whatever sat underneath the viewer.
+    const isAfterViewer = el => Boolean(viewer.compareDocumentPosition(el) & FOLLOWING);
     const nestedDialogs = () => [...document.querySelectorAll(dialogSelector)]
-      .filter(el => el !== viewer && !el.closest('[inert]'));
+      .filter(el => el !== viewer && isAfterViewer(el) && !el.closest('[inert]'));
     const activeRoot = () => nestedDialogs().at(-1) || viewer;
-    const roots = () => [activeRoot(), ...document.querySelectorAll('[role="menu"]')];
+    const roots = () => [activeRoot(), ...document.querySelectorAll(menuSelector)];
     const isAllowed = target => roots().some(root => root.contains(target));
     const tabbables = () => roots().flatMap(root => [...root.querySelectorAll(focusable)])
       .filter(el => !el.closest('[inert], [aria-hidden="true"]') && getComputedStyle(el).visibility !== 'hidden');
     const focusFirst = () => (tabbables()[0] || activeRoot()).focus();
+    // Only layers opened after the viewer stay interactive. Everything else in
+    // <body> - the app root and any dialog beneath the viewer - is made inert,
+    // whether or not it happens to contain a dialog of its own.
+    const isOwnLayer = child => child.contains(viewer)
+      || child.matches(menuSelector)
+      || (isAfterViewer(child) && (child.matches(dialogSelector) || Boolean(child.querySelector(dialogSelector))));
     const syncBackground = () => {
       for (const child of document.body.children) {
-        const isPortal = child === viewer || child.matches(`${dialogSelector}, [role="menu"]`) || child.querySelector(dialogSelector);
-        if (isPortal || ['SCRIPT', 'STYLE', 'LINK'].includes(child.tagName)) continue;
+        if (isOwnLayer(child) || ['SCRIPT', 'STYLE', 'LINK'].includes(child.tagName)) continue;
         if (!originalInert.has(child)) originalInert.set(child, child.getAttribute('inert'));
         child.setAttribute('inert', '');
       }

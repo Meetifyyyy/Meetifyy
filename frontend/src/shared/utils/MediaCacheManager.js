@@ -13,6 +13,12 @@ class MediaCacheManager {
     this.resolvers = []; // Array of { resolve, reject, keys }
     this.EXPIRY_BUFFER = 60 * 1000; // 1 minute buffer before actual expiry
     this.PERSIST_KEY = 'meetifyy_media_urls_v1';
+    // The API accepts at most this many keys per request (uploads.controller.ts).
+    this.MAX_KEYS_PER_REQUEST = 100;
+    // Bumped by clear(). A batch that was in flight when the cache was cleared
+    // (an account switch) belongs to the previous generation and is dropped, so
+    // it cannot write the previous account's URLs back in.
+    this.generation = 0;
     this.STABLE_TTL = 7 * 24 * 60 * 60 * 1000; // 7d — safe for immutable public assets
     this._hydrateFromStorage();
   }
@@ -188,42 +194,81 @@ class MediaCacheManager {
       return this.pendingRequests.get(key);
     }
 
+    let entry;
     const promise = new Promise((resolve, reject) => {
+      entry = { resolve, reject, key, promise: null };
       this.batchQueue.add(key);
-      this.resolvers.push({ resolve, reject, key });
-      
-      if (!this.batchTimeout) {
+      this.resolvers.push(entry);
+
+      if (this.batchQueue.size >= this.MAX_KEYS_PER_REQUEST) {
+        // A full request's worth is waiting: send it now instead of letting an
+        // unbounded queue build up for the rest of the window.
+        if (this.batchTimeout) clearTimeout(this.batchTimeout);
+        this.batchTimeout = null;
+        void this.processBatch(); // fire-and-forget: results settle each key's promise
+      } else if (!this.batchTimeout) {
         this.batchTimeout = setTimeout(() => this.processBatch(), 50); // 50ms batching window
       }
     });
 
+    entry.promise = promise;
     this.pendingRequests.set(key, promise);
     return promise;
   }
 
+  /**
+   * Resolves everything queued, in requests of at most MAX_KEYS_PER_REQUEST.
+   *
+   * The API rejects a request with more than 100 keys outright, so one oversized
+   * queue used to fail every key in it. Each chunk is now its own request with
+   * its own error handling: one failing chunk leaves the others untouched.
+   */
   async processBatch() {
     const keysToFetch = Array.from(this.batchQueue);
     const resolversToProcess = [...this.resolvers];
-    
+
     this.batchQueue.clear();
     this.resolvers = [];
     this.batchTimeout = null;
 
     if (keysToFetch.length === 0) return;
 
+    const generation = this.generation;
+    const size = this.MAX_KEYS_PER_REQUEST;
+    const chunks = [];
+    for (let i = 0; i < keysToFetch.length; i += size) {
+      chunks.push(keysToFetch.slice(i, i + size));
+    }
+
+    await Promise.all(chunks.map((keys) => {
+      const keySet = new Set(keys);
+      const resolvers = resolversToProcess.filter(({ key }) => keySet.has(key));
+      return this._fetchChunk(keys, resolvers, generation);
+    }));
+  }
+
+  async _fetchChunk(keys, resolvers, generation) {
     try {
       const expiresIn = 3600; // 1 hour
       // Call backend bulk endpoint
       const response = await apiClient.post('/api/media/signed-urls', {
-        keys: keysToFetch,
+        keys,
         expiresIn
       });
+
+      // clear() ran while this request was out. Whoever asked is gone; settle
+      // their promises with nothing and do not cache the answer.
+      if (generation !== this.generation) {
+        resolvers.forEach(({ resolve }) => resolve(null));
+        return;
+      }
 
       const now = Date.now();
       const expiresAt = now + (expiresIn * 1000);
       let persistedAny = false;
 
-      resolversToProcess.forEach(({ resolve, key }) => {
+      resolvers.forEach((entry) => {
+        const { resolve, key } = entry;
         const url = response?.[key];
         if (url) {
           // Immutable public URLs get a long TTL and survive reloads; signed URLs
@@ -255,13 +300,15 @@ class MediaCacheManager {
             resolve(getMediaUrl(key));
           }
         }
-        this.pendingRequests.delete(key);
+        this._forgetPending(entry);
       });
       if (persistedAny) this._persistStable();
     } catch (error) {
       console.warn('Bulk signed URL fetch fallback triggered:', error?.message || error);
-      resolversToProcess.forEach(({ resolve, key }) => {
-        if (/_thumb\.[a-z0-9]+$/i.test(key)) {
+      const stale = generation !== this.generation;
+      resolvers.forEach((entry) => {
+        const { resolve, key } = entry;
+        if (stale || /_thumb\.[a-z0-9]+$/i.test(key)) {
           resolve(null);
         } else if (this._isConversationScopedKey(key)) {
           // Same reasoning as the success path: there is no unsigned URL worth
@@ -270,8 +317,20 @@ class MediaCacheManager {
         } else {
           resolve(getMediaUrl(key));
         }
-        this.pendingRequests.delete(key);
+        this._forgetPending(entry);
       });
+    }
+  }
+
+  /**
+   * Drops a settled request's in-flight promise — but only if it is still the
+   * one registered for that key. invalidate() followed by getUrl() registers a
+   * newer promise for the same key, which must keep its entry or the next
+   * caller starts a duplicate request.
+   */
+  _forgetPending(entry) {
+    if (this.pendingRequests.get(entry.key) === entry.promise) {
+      this.pendingRequests.delete(entry.key);
     }
   }
 
@@ -309,9 +368,27 @@ class MediaCacheManager {
     }
   }
 
+  /**
+   * Forgets everything: resolved URLs, in-flight requests and the queue.
+   *
+   * Called when the signed-in account changes. Requests already on the wire are
+   * not cancelled, but the generation bump makes their answers be discarded.
+   */
   clear() {
+    this.generation += 1;
     this.cache.clear();
     this.pendingRequests.clear();
+    if (this.batchTimeout) clearTimeout(this.batchTimeout);
+    this.batchTimeout = null;
+    this.batchQueue.clear();
+    // Anyone still waiting on a queued key is released with "nothing" rather
+    // than left hanging on a request that will never be sent.
+    const waiting = this.resolvers;
+    this.resolvers = [];
+    waiting.forEach(({ resolve }) => resolve(null));
+    try {
+      if (typeof localStorage !== 'undefined') localStorage.removeItem(this.PERSIST_KEY);
+    } catch (_) { /* storage disabled — nothing was written */ }
   }
 }
 

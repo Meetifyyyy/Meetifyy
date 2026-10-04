@@ -33,12 +33,18 @@ import { mediaCache } from '@shared/utils/MediaCacheManager';
  * this returns a flag rather than letting callers test `!src`.
  *
  * @param {string} value storage key, /api/media/ URL, absolute URL, blob: or data:
- * @returns {{ src: string, failed: boolean, pending: boolean, refresh: () => void }}
+ * @returns {{ src: string, failed: boolean, pending: boolean, refresh: () => void, attempt: number }}
  *   `failed` is true only once the server has actually declined to sign, which
  *   for a conversation key means the viewer is not a participant or the object
  *   is gone. `refresh` drops the cached URL and signs again — what a retry
  *   button wants, since the usual reason a media URL stops working is that the
  *   signature expired, and re-requesting the same dead URL cannot fix that.
+ *
+ *   `attempt` counts retries. It exists because a retry does not always change
+ *   `src`: a public, blob or already-absolute URL needs no signing, so the same
+ *   string comes back and nothing downstream would notice. A consumer that owns
+ *   a media element keys it by `attempt`, which is what actually restarts the
+ *   element's load pipeline.
  */
 export function useSignedMediaSrc(value) {
   // Seeded synchronously so an already-usable value (blob:, data:, a public
@@ -52,16 +58,24 @@ export function useSignedMediaSrc(value) {
   valueRef.current = value;
 
   const refresh = useCallback(() => {
-    if (valueRef.current) mediaCache.invalidate(valueRef.current);
+    const current = valueRef.current;
+    if (current) mediaCache.invalidate(current);
+    if (needsSigning(current)) {
+      /*
+       * Drop the stale URL in the same render as the new attempt. Left alone it
+       * stays on screen for the one render before the effect below blanks it,
+       * and a media element keyed by `attempt` would spend that render fetching
+       * the signature that is known to be dead.
+       */
+      setSrc('');
+      setPending(true);
+    }
     setAttempt((n) => n + 1);
   }, []);
 
   useEffect(() => {
     let alive = true;
     setFailed(false);
-
-    const immediate = attempt === 0 ? initialFor(value) : '';
-    setSrc(immediate);
 
     // Nothing to resolve: either empty, or already a URL that needs no signing.
     if (!needsSigning(value)) {
@@ -70,6 +84,10 @@ export function useSignedMediaSrc(value) {
       return undefined;
     }
 
+    // A retry must not reuse what was cached before it; only the first attempt
+    // may paint a cached signature straight away.
+    const immediate = attempt === 0 ? initialFor(value) : '';
+    setSrc(immediate);
     setPending(true);
 
     mediaCache
@@ -92,7 +110,7 @@ export function useSignedMediaSrc(value) {
     };
   }, [value, attempt]);
 
-  return { src, failed, pending, refresh };
+  return { src, failed, pending, refresh, attempt };
 }
 
 /** True when the value still has to be exchanged for a fetchable URL. */

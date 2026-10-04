@@ -9,6 +9,7 @@ import ImageViewer from './ImageViewer';
 import VideoViewer from './VideoViewer';
 import { mediaCache } from '@shared/utils/MediaCacheManager';
 import { useViewerFocus } from './useViewerFocus';
+import { motionTransition, prefersReducedMotion } from './viewerMotion';
 import styles from './MediaViewer.module.css';
 import ReportModal from '@shared/components/modals/ReportModal/ReportModal';
 import ForwardMessageModal from '@features/messages/shared/components/modals/ForwardMessageModal';
@@ -54,6 +55,10 @@ const DISMISS_VELOCITY_THRESHOLD = 0.70;
 const DISMISS_MIN_FOR_VELOCITY = 40;
 /** Vertical: damping applied to raw drag delta during dismiss gesture. */
 const DISMISS_DRAG_DAMPEN = 0.88;
+/** Keyboard: how far one arrow press pans a zoomed image (px). */
+const KEY_PAN_STEP = 80;
+/** How long the snap-back transition runs before its inline styles are cleared (ms). */
+const SNAPBACK_CLEANUP_MS = 340;
 
 export default function MediaViewer() {
   const { state, closeViewer, navigate, savedScrollRef } = useMediaViewer();
@@ -68,6 +73,12 @@ export default function MediaViewer() {
   const [closing, setClosing] = useState(false);
   const closingRef = useRef(false);
   const closeTimerRef = useRef(null);
+  /** Zoom controls of the CURRENT image slide (null on a video or while loading). */
+  const zoomApiRef = useRef(null);
+  // The snap-back clears its inline styles after the transition. Tracked so a
+  // newer gesture, a close or an unmount can cancel it instead of letting it
+  // erase what they wrote (see resetGestureTransforms).
+  const snapbackTimerRef = useRef(null);
 
   const [visible, setVisible]               = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
@@ -80,9 +91,17 @@ export default function MediaViewer() {
   const downloadAbortRef = useRef(null);
   const didClose = useRef(false);
 
+  const cancelSnapbackCleanup = useCallback(() => {
+    clearTimeout(snapbackTimerRef.current);
+    snapbackTimerRef.current = null;
+  }, []);
+
   const handleClose = useCallback(() => {
     if (closingRef.current) return;
     closingRef.current = true;
+    // The dismiss fly-out has just been written; a pending snap-back cleanup
+    // would clear it mid-flight.
+    cancelSnapbackCleanup();
     setClosing(true);
     setVisible(false);
     closeMoreMenu();
@@ -96,15 +115,15 @@ export default function MediaViewer() {
         .then(({ feedVideoRegistry: r }) => r.pauseAll(10))
         .catch(() => {});
     }
-    const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
     closeTimerRef.current = setTimeout(() => {
       closeTimerRef.current = null;
       closeViewer();
-    }, reducedMotion ? 0 : 280);
-  }, [closeViewer, closeMoreMenu]);
+    }, prefersReducedMotion() ? 0 : 280);
+  }, [closeViewer, closeMoreMenu, cancelSnapbackCleanup]);
 
   useEffect(() => () => {
     clearTimeout(closeTimerRef.current);
+    clearTimeout(snapbackTimerRef.current);
     downloadAbortRef.current?.abort();
   }, []);
 
@@ -122,37 +141,6 @@ export default function MediaViewer() {
   useEffect(() => { itemsLenRef.current = items.length; }, [items.length]);
 
   const controlsHiddenByGesture = useRef(false);
-
-  // ── Smart adjacent image preloading (immediate async decode, memory-safe) ──
-  const preloadImgsRef = useRef([]);
-  useEffect(() => {
-    if (!open || !items || items.length <= 1) return;
-
-    // Clear previous preloads
-    preloadImgsRef.current.forEach((img) => { img.src = ''; });
-    preloadImgsRef.current = [];
-
-    const candidates = [items[index + 1], items[index - 1]].filter(
-      (item) => item && item.url && !isVideo(item),
-    );
-    if (candidates.length === 0) return;
-
-    candidates.forEach((item) => {
-      const img = new Image();
-      img.decoding = 'async';
-      img.src = item.url;
-      if (typeof img.decode === 'function') {
-        img.decode().catch(() => {});
-      }
-      preloadImgsRef.current.push(img);
-    });
-
-    return () => {
-      preloadImgsRef.current.forEach((img) => { img.src = ''; });
-      preloadImgsRef.current = [];
-    };
-  }, [open, items, index]);
-
 
   // ── Open / close animation ──────────────────────────────────────────────────
   useEffect(() => {
@@ -178,7 +166,7 @@ export default function MediaViewer() {
   useEffect(() => {
     if (!open) return;
     if (trackRef.current && !gestureRef.current.active) {
-      trackRef.current.style.transition = 'transform 0.32s cubic-bezier(0.25, 0.46, 0.45, 0.94)';
+      trackRef.current.style.transition = motionTransition('transform', 0.32);
       trackRef.current.style.transform  = `translate3d(-${index * 100}%, 0, 0)`;
     }
   }, [index, open]);
@@ -187,6 +175,9 @@ export default function MediaViewer() {
     if (!open && !didClose.current) {
       didClose.current = true;
       const timer = setTimeout(() => {
+        // Cleared when the page changed under the viewer (route or session):
+        // the offset belongs to the page it opened over, not this one.
+        if (savedScrollRef.current == null) return;
         window.scrollTo(0, savedScrollRef.current || 0);
       }, 320);
       return () => clearTimeout(timer);
@@ -202,8 +193,39 @@ export default function MediaViewer() {
       if (e.defaultPrevented || e.target.closest?.('[role="dialog"]') !== overlayRef.current) return;
       if (e.key === 'Escape') { handleClose(); return; }
       if (isVid) return;
-      if (e.key === 'ArrowLeft')  navigate(-1);
-      if (e.key === 'ArrowRight') navigate(1);
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+      // Zoom keys, and arrows that pan a ZOOMED image. At 1x - or when the image
+      // is already against the edge in the arrow's direction - the left and
+      // right arrows keep paging the gallery, so zoom never traps the keyboard.
+      const zoom = zoomApiRef.current;
+      switch (e.key) {
+        case '+':
+        case '=':
+          if (zoom) { e.preventDefault(); zoom.zoomIn(); }
+          return;
+        case '-':
+        case '_':
+          if (zoom) { e.preventDefault(); zoom.zoomOut(); }
+          return;
+        case '0':
+          if (zoom) { e.preventDefault(); zoom.reset(); }
+          return;
+        case 'ArrowLeft':
+          if (zoom?.isZoomed() && zoom.panBy(KEY_PAN_STEP, 0)) { e.preventDefault(); return; }
+          navigate(-1);
+          return;
+        case 'ArrowRight':
+          if (zoom?.isZoomed() && zoom.panBy(-KEY_PAN_STEP, 0)) { e.preventDefault(); return; }
+          navigate(1);
+          return;
+        case 'ArrowUp':
+          if (zoom?.isZoomed() && zoom.panBy(0, KEY_PAN_STEP)) e.preventDefault();
+          return;
+        case 'ArrowDown':
+          if (zoom?.isZoomed() && zoom.panBy(0, -KEY_PAN_STEP)) e.preventDefault();
+          return;
+      }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
@@ -253,31 +275,44 @@ export default function MediaViewer() {
     active: false,
   }));
 
-  /** Reset the media element and overlay transforms after vertical dismiss gesture. */
+  /**
+   * Put the dragged media element and the backdrop back after a vertical drag.
+   *
+   * The animated form clears its inline styles once the transition has run, so
+   * the stylesheet takes over again. That cleanup is TRACKED: it captures the
+   * elements it was scheduled for, and a newer gesture, a close or an unmount
+   * cancels it. It used to be a bare timeout that wrote through the live refs
+   * 340 ms later, which erased whatever the user had started in the meantime
+   * (a second drag, the dismiss fly-out, the next slide's transform).
+   */
   const resetGestureTransforms = useCallback((animated = true) => {
-    const ease = animated ? 'transform 0.32s cubic-bezier(0.25, 0.46, 0.45, 0.94)' : 'none';
-    if (mediaElRef.current) {
-      mediaElRef.current.style.transition = ease;
-      mediaElRef.current.style.transform  = '';
+    cancelSnapbackCleanup();
+    const animate = animated && !prefersReducedMotion();
+    const media = mediaElRef.current;
+    const backdrop = overlayRef.current;
+    if (media) {
+      media.style.transition = animate ? motionTransition('transform', 0.32) : 'none';
+      media.style.transform  = '';
     }
-    if (overlayRef.current) {
-      overlayRef.current.style.transition = animated ? 'background-color 0.32s ease' : 'none';
-      overlayRef.current.style.backgroundColor = '';
+    if (backdrop) {
+      backdrop.style.transition = animate ? 'background-color 0.32s ease' : 'none';
+      backdrop.style.backgroundColor = '';
     }
     // Clear after transition so CSS classes take over again
-    if (animated) {
-      setTimeout(() => {
-        if (mediaElRef.current) {
-          mediaElRef.current.style.transition = '';
-          mediaElRef.current.style.transform  = '';
+    if (animate) {
+      snapbackTimerRef.current = setTimeout(() => {
+        snapbackTimerRef.current = null;
+        if (media) {
+          media.style.transition = '';
+          media.style.transform  = '';
         }
-        if (overlayRef.current) {
-          overlayRef.current.style.transition       = '';
-          overlayRef.current.style.backgroundColor  = '';
+        if (backdrop) {
+          backdrop.style.transition      = '';
+          backdrop.style.backgroundColor = '';
         }
-      }, 340);
+      }, SNAPBACK_CLEANUP_MS);
     }
-  }, []);
+  }, [cancelSnapbackCleanup]);
 
   /** Check whether the pointer-down target is inside a video control zone. */
   const isVideoControl = (target) => {
@@ -299,6 +334,10 @@ export default function MediaViewer() {
     // Skip if on a video control element — video manages its own touch
     if (isVid && isVideoControl(target)) return;
 
+    // A snap-back from the previous drag may still be settling. This gesture is
+    // about to write the same elements, so that cleanup must not run over it.
+    cancelSnapbackCleanup();
+
     gestureRef.current = {
       startX: clientX,
       startY: clientY,
@@ -309,7 +348,7 @@ export default function MediaViewer() {
       axis: null,
       active: true,
     };
-  }, [isVid]);
+  }, [isVid, cancelSnapbackCleanup]);
 
   const rafIdRef = useRef(null);
 
@@ -372,6 +411,45 @@ export default function MediaViewer() {
     }
   }, []);
 
+  /**
+   * Abandon the gesture in progress WITHOUT deciding anything.
+   *
+   * A gesture only commits (turns a swipe into a page change, a drag into a
+   * dismiss) when the user lifts a single finger on their own terms. It is
+   * cancelled instead when the OS takes the touch away (`touchcancel`), when a
+   * second finger arrives (that finger is the start of a pinch, which belongs to
+   * the image), and when a finger lifts while another is still down. Evaluating
+   * the thresholds in those cases turned a cancelled or reassigned gesture into a
+   * navigation or a close.
+   *
+   * Everything the gesture moved goes back where it was.
+   */
+  const cancelGesture = useCallback(() => {
+    if (rafIdRef.current) {
+      cancelAnimationFrame(rafIdRef.current);
+      rafIdRef.current = null;
+    }
+    const g = gestureRef.current;
+    if (!g.active) return;
+    g.active = false;
+    const { axis } = g;
+    g.axis = null;
+
+    if (stageRef.current) stageRef.current.style.willChange = '';
+    if (trackRef.current) trackRef.current.style.willChange = '';
+
+    if (axis === 'h' && trackRef.current) {
+      trackRef.current.style.transition = motionTransition('transform', 0.32);
+      trackRef.current.style.transform  = `translate3d(-${indexRef.current * 100}%, 0, 0)`;
+    } else if (axis === 'v') {
+      resetGestureTransforms(true);
+    }
+    if (controlsHiddenByGesture.current) {
+      controlsHiddenByGesture.current = false;
+      setControlsVisible(true);
+    }
+  }, [resetGestureTransforms]);
+
   const onGestureEnd = useCallback(() => {
     if (rafIdRef.current) {
       cancelAnimationFrame(rafIdRef.current);
@@ -404,19 +482,19 @@ export default function MediaViewer() {
 
       if ((pastDist || pastVelocity) && swipeLeft && idx < len - 1) {
         if (trackRef.current) {
-          trackRef.current.style.transition = 'transform 0.32s cubic-bezier(0.25, 0.46, 0.45, 0.94)';
+          trackRef.current.style.transition = motionTransition('transform', 0.32);
           trackRef.current.style.transform  = `translate3d(-${(idx + 1) * 100}%, 0, 0)`;
         }
         navigate(1);
       } else if ((pastDist || pastVelocity) && swipeRight && idx > 0) {
         if (trackRef.current) {
-          trackRef.current.style.transition = 'transform 0.32s cubic-bezier(0.25, 0.46, 0.45, 0.94)';
+          trackRef.current.style.transition = motionTransition('transform', 0.32);
           trackRef.current.style.transform  = `translate3d(-${(idx - 1) * 100}%, 0, 0)`;
         }
         navigate(-1);
       } else {
         if (trackRef.current) {
-          trackRef.current.style.transition = 'transform 0.32s cubic-bezier(0.25, 0.46, 0.45, 0.94)';
+          trackRef.current.style.transition = motionTransition('transform', 0.32);
           trackRef.current.style.transform  = `translate3d(-${idx * 100}%, 0, 0)`;
         }
       }
@@ -432,11 +510,11 @@ export default function MediaViewer() {
         const sign    = dy > 0 ? 1 : -1;
         const finishY = sign * vh;
         if (mediaElRef.current) {
-          mediaElRef.current.style.transition = 'transform 0.24s cubic-bezier(0.25, 0.46, 0.45, 0.94)';
+          mediaElRef.current.style.transition = motionTransition('transform', 0.24);
           mediaElRef.current.style.transform  = `translate3d(0, ${finishY}px, 0)`;
         }
         if (overlayRef.current) {
-          overlayRef.current.style.transition       = 'background-color 0.24s ease';
+          overlayRef.current.style.transition       = prefersReducedMotion() ? 'none' : 'background-color 0.24s ease';
           overlayRef.current.style.backgroundColor  = 'rgba(0,0,0,0)';
         }
         handleClose();
@@ -446,29 +524,35 @@ export default function MediaViewer() {
         setControlsVisible(true);
         resetGestureTransforms(true);
       }
-    } else {
-      // No axis determined — just snap back
-      if (trackRef.current) {
-        trackRef.current.style.transition = 'transform 0.32s cubic-bezier(0.25, 0.46, 0.45, 0.94)';
-        trackRef.current.style.transform  = `translate3d(-${idx * 100}%, 0, 0)`;
-      }
-      resetGestureTransforms(false);
     }
+    // No axis: the finger never moved far enough to mean anything - a tap.
+    // Nothing was transformed, so there is nothing to put back, and in
+    // particular the media element's transform is not touched: for an image
+    // that is its zoom.
   }, [navigate, handleClose, resetGestureTransforms]);
 
   // ── Touch events (touch-only: desktop mouse drag navigation is disabled) ──
   const handleStageTouchStart = useCallback((e) => {
-    if (e.touches.length !== 1) return;
+    // A second finger is a pinch: it belongs to the image, and whatever one-finger
+    // gesture was under way is over.
+    if (e.touches.length !== 1) {
+      cancelGesture();
+      return;
+    }
     // Set will-change for GPU promotion during gesture
     if (stageRef.current) stageRef.current.style.willChange = 'transform';
     if (trackRef.current) trackRef.current.style.willChange = 'transform';
     const t = e.touches[0];
     onGestureStart(t.clientX, t.clientY, e.target);
-  }, [onGestureStart]);
+  }, [onGestureStart, cancelGesture]);
 
   const handleStageTouchMove = useCallback((e) => {
     const g = gestureRef.current;
-    if (!g.active || e.touches.length !== 1) return;
+    if (!g.active) return;
+    if (e.touches.length !== 1) {
+      cancelGesture();
+      return;
+    }
     const t = e.touches[0];
 
     g.lastX    = t.clientX;
@@ -486,11 +570,20 @@ export default function MediaViewer() {
     if (!rafIdRef.current) {
       rafIdRef.current = requestAnimationFrame(applyGestureTransform);
     }
-  }, [applyGestureTransform]);
+  }, [applyGestureTransform, cancelGesture]);
 
-  const handleStageTouchEnd = useCallback(() => {
+  const handleStageTouchEnd = useCallback((e) => {
+    // Another finger is still down: this lift ends nothing the user finished.
+    if (e.touches && e.touches.length > 0) {
+      cancelGesture();
+      return;
+    }
     onGestureEnd();
-  }, [onGestureEnd]);
+  }, [onGestureEnd, cancelGesture]);
+
+  const handleStageTouchCancel = useCallback(() => {
+    cancelGesture();
+  }, [cancelGesture]);
 
   useEffect(() => {
     return () => {
@@ -505,17 +598,17 @@ export default function MediaViewer() {
   useEffect(() => {
     const stage = stageRef.current;
     if (!open || !stage) return;
-    stage.addEventListener('touchstart',  handleStageTouchStart, { passive: true });
-    stage.addEventListener('touchmove',   handleStageTouchMove,  { passive: false });
-    stage.addEventListener('touchend',    handleStageTouchEnd,   { passive: true });
-    stage.addEventListener('touchcancel', handleStageTouchEnd,   { passive: true });
+    stage.addEventListener('touchstart',  handleStageTouchStart,  { passive: true });
+    stage.addEventListener('touchmove',   handleStageTouchMove,   { passive: false });
+    stage.addEventListener('touchend',    handleStageTouchEnd,    { passive: true });
+    stage.addEventListener('touchcancel', handleStageTouchCancel, { passive: true });
     return () => {
       stage.removeEventListener('touchstart',  handleStageTouchStart);
       stage.removeEventListener('touchmove',   handleStageTouchMove);
       stage.removeEventListener('touchend',    handleStageTouchEnd);
-      stage.removeEventListener('touchcancel', handleStageTouchEnd);
+      stage.removeEventListener('touchcancel', handleStageTouchCancel);
     };
-  }, [open, handleStageTouchStart, handleStageTouchMove, handleStageTouchEnd]);
+  }, [open, handleStageTouchStart, handleStageTouchMove, handleStageTouchEnd, handleStageTouchCancel]);
 
   const toggleControls = useCallback(() => {
     setControlsVisible(v => !v);
@@ -702,7 +795,7 @@ export default function MediaViewer() {
             const isItemVideo = isVideo(item);
 
             return (
-              <div key={item?.url || i} className={styles.slide} data-slide-index={i} inert={!isCurrent ? '' : undefined} aria-hidden={!isCurrent}>
+              <div key={item?.slideKey ?? `${i}:${item?.url ?? ''}`} className={styles.slide} data-slide-index={i} inert={!isCurrent ? '' : undefined} aria-hidden={!isCurrent}>
                 {shouldRender && item?.url && (
                   isItemVideo ? (
                     <VideoViewer
@@ -718,6 +811,7 @@ export default function MediaViewer() {
                       key={item.url}
                       src={item.url}
                       mediaRef={isCurrent ? mediaElRef : null}
+                      zoomApiRef={isCurrent ? zoomApiRef : null}
                       onToggleControls={toggleControls}
                       isCurrent={isCurrent && !closing}
                       closing={closing}
@@ -762,7 +856,27 @@ export default function MediaViewer() {
         </>
       )}
 
-
+      {/* ── Zoom controls — a keyboard / pointer alternative to pinch and
+          double-tap. Hidden on touch screens (see the stylesheet). ── */}
+      {!isVid && currentItem?.url && (
+        <div
+          role="group"
+          aria-label="Zoom"
+          inert={!controlsVisible ? '' : undefined}
+          aria-hidden={!controlsVisible}
+          className={`${styles.zoomControls} ${controlsVisible ? styles.controlsVisible : ''}`}
+        >
+          <button type="button" className={styles.zoomBtn} aria-label="Zoom out" onClick={() => zoomApiRef.current?.zoomOut()}>
+            &minus;
+          </button>
+          <button type="button" className={styles.zoomBtn} aria-label="Fit to screen" onClick={() => zoomApiRef.current?.reset()}>
+            Fit
+          </button>
+          <button type="button" className={styles.zoomBtn} aria-label="Zoom in" onClick={() => zoomApiRef.current?.zoomIn()}>
+            +
+          </button>
+        </div>
+      )}
 
       {/* ── Modals ── */}
       <ReportModal

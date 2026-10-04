@@ -1,5 +1,6 @@
 import { memo, useCallback } from 'react';
 import { useWindowVirtualizer, observeWindowRect } from '@tanstack/react-virtual';
+import { IS_MOBILE_BUILD } from '@config';
 import Post from './post/Post';
 
 /**
@@ -68,10 +69,15 @@ function VirtualFeedList({ posts, onPostClick, onCommentClick }) {
       return height;
     },
     overscan: 5,
-    observeElementRect: observeStableWindowRect,
-    // Rows mount and unmount while the user scrolls; flushing each render
-    // synchronously made every mount a layout inside the scroll frame.
-    useFlushSync: false,
+    // App only (data-text-entry exists only there); the website is unchanged.
+    ...(IS_MOBILE_BUILD
+      ? {
+          observeElementRect: observeStableWindowRect,
+          // Rows mount and unmount while the user scrolls; flushing each render
+          // synchronously made every mount a layout inside the scroll frame.
+          useFlushSync: false,
+        }
+      : {}),
     getItemKey,
     // In a social feed, user-initiated expansion ("See more" / "See less") must expand/collapse
     // in place without moving the viewport. Allow TanStack Virtual's normal adjustment ONLY

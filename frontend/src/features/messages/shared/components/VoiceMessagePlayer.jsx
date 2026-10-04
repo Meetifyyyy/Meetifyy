@@ -1,5 +1,7 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
-import { getMediaUrl } from '@shared/api/apiClient';
+import { useState, useRef, useEffect, useCallback, useId } from 'react';
+import { useSignedMediaSrc } from '@shared/hooks/useSignedMediaSrc';
+import { feedVideoRegistry } from '@shared/utils/feedVideoRegistry';
+import { PLAYBACK_PRIORITY } from '@shared/utils/playbackPriority';
 import styles from './VoiceMessagePlayer.module.css';
 
 // Global cache for audio durations so we never recalculate or lose durations on re-renders
@@ -7,9 +9,6 @@ const durationCache = new Map();
 
 // Global cache for waveform bars
 const waveformCache = new Map();
-
-// Global tracker for currently playing audio to prevent multiple voice notes playing at once
-let activeAudioInstance = null;
 
 // Total bars in the waveform
 const NUM_BARS = 32;
@@ -59,7 +58,15 @@ const formatTime = (secs) => {
 
 export default function VoiceMessagePlayer({ src, audioUrl, duration: initialDuration, fromMe, isMe }) {
   const rawSrc = src || audioUrl;
-  const audioSrc = rawSrc ? getMediaUrl(rawSrc) : '';
+  /*
+   * Signed like every other conversation attachment. `voice/` is a conversation
+   * folder, so the unsigned `/api/media/voice/...` URL this used to render is
+   * authorised from the session cookie — which the installed app does not have,
+   * so in the app every voice note was a 404.
+   */
+  const { src: audioSrc, failed: srcFailed, refresh: refreshSrc } = useSignedMediaSrc(rawSrc);
+  const registryId = useId();
+  const reloadedRef = useRef(false);
   const isFromMe = fromMe ?? isMe;
 
   const audioRef = useRef(null);
@@ -77,8 +84,8 @@ export default function VoiceMessagePlayer({ src, audioUrl, duration: initialDur
     if (initialDuration && isFinite(initialDuration) && initialDuration > 0) {
       return Number(initialDuration);
     }
-    if (audioSrc && durationCache.has(audioSrc)) {
-      return durationCache.get(audioSrc);
+    if (rawSrc && durationCache.has(rawSrc)) {
+      return durationCache.get(rawSrc);
     }
     return 0;
   });
@@ -86,7 +93,13 @@ export default function VoiceMessagePlayer({ src, audioUrl, duration: initialDur
   const [isInvalidBlob, setIsInvalidBlob] = useState(false);
   const [waveformBars, setWaveformBars] = useState(() => getWaveformBars(rawSrc || ''));
 
-  const isValidSource = Boolean(audioSrc && !isInvalidBlob);
+  const isValidSource = Boolean(audioSrc && !isInvalidBlob && !srcFailed);
+
+  // A new message is a new chance: forget any failure from the previous one.
+  useEffect(() => {
+    setIsInvalidBlob(false);
+    reloadedRef.current = false;
+  }, [rawSrc]);
 
   const durationRef = useRef(duration);
   durationRef.current = duration;
@@ -96,7 +109,7 @@ export default function VoiceMessagePlayer({ src, audioUrl, duration: initialDur
     setWaveformBars(getWaveformBars(rawSrc || ''));
     if (!audioSrc) return;
 
-    const cacheKey = `real_${audioSrc}`;
+    const cacheKey = `real_${rawSrc}`;
     if (waveformCache.has(cacheKey)) {
       setWaveformBars(waveformCache.get(cacheKey));
       return;
@@ -187,11 +200,11 @@ export default function VoiceMessagePlayer({ src, audioUrl, duration: initialDur
     if (initialDuration && isFinite(initialDuration) && initialDuration > 0) {
       const num = Number(initialDuration);
       setDuration(num);
-      if (audioSrc) durationCache.set(audioSrc, num);
-    } else if (audioSrc && durationCache.has(audioSrc)) {
-      setDuration(durationCache.get(audioSrc));
+      if (rawSrc) durationCache.set(rawSrc, num);
+    } else if (rawSrc && durationCache.has(rawSrc)) {
+      setDuration(durationCache.get(rawSrc));
     }
-  }, [initialDuration, audioSrc]);
+  }, [initialDuration, rawSrc]);
 
   // Clean duration extractor that solves Chrome WebM Infinity bug
   const extractDuration = useCallback(() => {
@@ -201,21 +214,21 @@ export default function VoiceMessagePlayer({ src, audioUrl, duration: initialDur
     const d = audio.duration;
     if (isFinite(d) && d > 0) {
       setDuration(d);
-      if (audioSrc) durationCache.set(audioSrc, d);
+      if (rawSrc) durationCache.set(rawSrc, d);
     } else if (d === Infinity) {
       const onTimeUpdateForDuration = () => {
         audio.removeEventListener('timeupdate', onTimeUpdateForDuration);
         const realDuration = audio.duration;
         if (isFinite(realDuration) && realDuration > 0) {
           setDuration(realDuration);
-          if (audioSrc) durationCache.set(audioSrc, realDuration);
+          if (rawSrc) durationCache.set(rawSrc, realDuration);
         }
         audio.currentTime = 0;
       };
       audio.addEventListener('timeupdate', onTimeUpdateForDuration);
       audio.currentTime = 1e101;
     }
-  }, [audioSrc]);
+  }, [rawSrc]);
 
   // Animation frame loop for 60fps smooth playback progress
   useEffect(() => {
@@ -225,7 +238,7 @@ export default function VoiceMessagePlayer({ src, audioUrl, duration: initialDur
         const d = audioRef.current.duration;
         if (d && isFinite(d) && d !== durationRef.current) {
           setDuration(d);
-          if (audioSrc) durationCache.set(audioSrc, d);
+          if (rawSrc) durationCache.set(rawSrc, d);
         }
         animationRef.current = requestAnimationFrame(updateProgress);
       }
@@ -244,48 +257,74 @@ export default function VoiceMessagePlayer({ src, audioUrl, duration: initialDur
         animationRef.current = null;
       }
     };
-  }, [isPlaying, audioSrc, syncTime]);
+  }, [isPlaying, rawSrc, syncTime]);
 
   // Repaint when duration or bars change
   useEffect(() => {
     paintProgress(duration > 0 ? currentTimeRef.current / duration : 0);
   }, [duration, waveformBars, paintProgress]);
 
-  // Clean up audio on unmount
+  /*
+   * Joins the app-wide playback arbitration. This replaced a module-level
+   * "active audio" variable that only other voice notes knew about, so a voice
+   * note and a video could play over each other. The <audio> only exists while
+   * the source is usable, hence the dependency; the effect also owns pausing it
+   * when it goes away, which a mount-only cleanup could not (the element is
+   * often not there yet at mount, while the URL is still being signed).
+   */
   useEffect(() => {
     const audio = audioRef.current;
+    if (!audio) return undefined;
+    const deregister = feedVideoRegistry.register(registryId, audio, PLAYBACK_PRIORITY.VOICE);
     return () => {
-      if (audio) {
-        if (activeAudioInstance === audio) {
-          activeAudioInstance = null;
-        }
-        audio.pause();
-      }
+      deregister();
+      audio.pause();
     };
-  }, []);
+  }, [isValidSource, registryId]);
 
   const togglePlay = async () => {
-    if (!audioRef.current || !isValidSource) return;
+    const audio = audioRef.current;
+    if (!audio || !isValidSource) return;
 
     if (isPlaying) {
-      audioRef.current.pause();
+      audio.pause();
       setIsPlaying(false);
-    } else {
-      if (activeAudioInstance && activeAudioInstance !== audioRef.current) {
-        activeAudioInstance.pause();
-      }
-      activeAudioInstance = audioRef.current;
-
-      try {
-        await audioRef.current.play();
-        setIsPlaying(true);
-      } catch (err) {
-        if (err.name !== 'AbortError') {
-          console.error('Audio playback error:', err);
-        }
-        setIsPlaying(false);
-      }
+      return;
     }
+
+    // Pauses whatever else is playing (another voice note, a feed video). It is
+    // refused only by something higher-priority, such as the open viewer.
+    if (!feedVideoRegistry.requestPlay(registryId)) return;
+
+    try {
+      await audio.play();
+      setIsPlaying(true);
+    } catch (err) {
+      if (err.name !== 'AbortError') {
+        console.error('Audio playback error:', err);
+      }
+      setIsPlaying(false);
+    }
+  };
+
+  const handlePause = () => {
+    feedVideoRegistry.notifyPause(registryId);
+    setIsPlaying(false);
+  };
+
+  const handleAudioError = () => {
+    setIsPlaying(false);
+    /*
+     * A signed URL expires, so one failure is not proof the note is gone: ask
+     * for a fresh signature once before giving up. A local blob has nothing to
+     * re-sign and is invalid at once.
+     */
+    if (!reloadedRef.current && audioSrc && !audioSrc.startsWith('blob:')) {
+      reloadedRef.current = true;
+      refreshSrc();
+      return;
+    }
+    setIsInvalidBlob(true);
   };
 
   const handleTimeUpdate = () => {
@@ -295,6 +334,7 @@ export default function VoiceMessagePlayer({ src, audioUrl, duration: initialDur
   };
 
   const handleEnded = () => {
+    feedVideoRegistry.notifyPause(registryId);
     setIsPlaying(false);
     if (audioRef.current) {
       audioRef.current.currentTime = 0;
@@ -385,11 +425,8 @@ export default function VoiceMessagePlayer({ src, audioUrl, duration: initialDur
           onDurationChange={extractDuration}
           onCanPlay={extractDuration}
           onEnded={handleEnded}
-          onPause={() => setIsPlaying(false)}
-          onError={() => {
-            setIsPlaying(false);
-            setIsInvalidBlob(true);
-          }}
+          onPause={handlePause}
+          onError={handleAudioError}
         />
       )}
 
