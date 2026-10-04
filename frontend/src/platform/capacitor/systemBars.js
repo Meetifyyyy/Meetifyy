@@ -177,8 +177,10 @@ export function createCapacitorSystemBars({ getComputed } = {}) {
      * and gives the window the app's chrome colour for the frames before the
      * WebView draws. Does not touch the bars.
      */
-    async persistTheme({ force = false } = {}) {
-      const background = toHexColor(read());
+    async persistTheme({ force = false, background: known } = {}) {
+      // `known` spares a getComputedStyle read (a forced style recalc) when the
+      // caller already has the colour; see installSystemBars.
+      const background = toHexColor(known) || toHexColor(read());
       if (!background) return;
 
       let theme = 'light';

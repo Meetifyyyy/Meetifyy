@@ -1,6 +1,26 @@
 import { memo, useCallback } from 'react';
-import { useWindowVirtualizer } from '@tanstack/react-virtual';
+import { useWindowVirtualizer, observeWindowRect } from '@tanstack/react-virtual';
 import Post from './post/Post';
+
+/**
+ * The window height the virtualizer measures, kept steady while a keyboard is up.
+ *
+ * It watches the window and, on Android, the keyboard shrinks the WebView by
+ * ~330px. The shorter window changed which rows count as visible, so a row
+ * unmounted as the keyboard opened and remounted when it closed (a flicker, and
+ * a flushSync render mid-animation). The keyboard covers the bottom of the
+ * screen; it does not make fewer rows relevant, so while text entry is active
+ * (`data-text-entry`, see useKeyboardInset) the last height without a keyboard
+ * is reported instead.
+ */
+function observeStableWindowRect(instance, cb) {
+  let steady = 0;
+  return observeWindowRect(instance, (rect) => {
+    const typing = document.documentElement.hasAttribute('data-text-entry');
+    if (!typing || !steady) steady = rect.height;
+    cb(typing ? { width: rect.width, height: Math.max(steady, rect.height) } : rect);
+  });
+}
 
 function VirtualFeedList({ posts, onPostClick, onCommentClick }) {
   // Stable across re-renders (as long as `onPostClick` itself is stable) so
@@ -34,8 +54,9 @@ function VirtualFeedList({ posts, onPostClick, onCommentClick }) {
         if (p.media.length === 1) {
           const m = p.media[0];
           const rawAspect = Number(m?.aspectRatio) || (m?.width && m?.height ? m.width / m.height : (m?.type === 'video' || m?.isVideo ? 16 / 9 : 1.25));
-          // Target post container width is ~600px, max-height clamp is ~550px, min-height is ~120px
-          const naturalHeight = 600 / (rawAspect || 1.25);
+          // Container is ~600px on desktop and the phone's width in the app.
+          const width = Math.min(600, (typeof window !== 'undefined' ? window.innerWidth : 600) - 24);
+          const naturalHeight = width / (rawAspect || 1.25);
           const clampedHeight = Math.max(120, Math.min(550, naturalHeight));
           height += Math.round(clampedHeight);
         } else {
@@ -47,6 +68,10 @@ function VirtualFeedList({ posts, onPostClick, onCommentClick }) {
       return height;
     },
     overscan: 5,
+    observeElementRect: observeStableWindowRect,
+    // Rows mount and unmount while the user scrolls; flushing each render
+    // synchronously made every mount a layout inside the scroll frame.
+    useFlushSync: false,
     getItemKey,
     // In a social feed, user-initiated expansion ("See more" / "See less") must expand/collapse
     // in place without moving the viewport. Allow TanStack Virtual's normal adjustment ONLY

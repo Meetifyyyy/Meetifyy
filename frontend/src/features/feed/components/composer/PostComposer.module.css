@@ -101,20 +101,25 @@
   background: rgba(var(--color-primary-rgb), 0.15);
 }
 
-/* The flow height must change to move the feed below. Keep that small,
-   CSS-only transition brief; fade/translate the controls in the same interval.
-   The grid item has no padding so 0fr really collapses to zero. */
+/* Expands and collapses downward by animating the row track, so the feed below
+   follows smoothly. This is affordable because nothing else competes for the
+   frames any more: the feed rows are absolutely positioned (moving the list
+   container does not re-lay them out), the virtualizer ignores the keyboard
+   shrink, the system-bar colour sampler is paused during text entry, and media
+   is sized from --app-vh. (An earlier one-step version of this snapped; the
+   jank it was meant to cure came from those other sources, not from this.) */
 .composerExpandContainer {
   display: grid;
   grid-template-rows: 0fr;
   visibility: hidden;
-  transition: grid-template-rows 180ms ease-out, visibility 0s linear 180ms;
+  /* Stay visible while the track closes. */
+  transition: grid-template-rows 220ms cubic-bezier(0.2, 0.8, 0.2, 1), visibility 0s linear 220ms;
 }
 
 .composerExpandContainer.expanded {
   grid-template-rows: 1fr;
   visibility: visible;
-  transition: grid-template-rows 180ms ease-out, visibility 0s;
+  transition: grid-template-rows 220ms cubic-bezier(0.2, 0.8, 0.2, 1), visibility 0s;
 }
 
 .composerExpandClip {
@@ -128,8 +133,8 @@
   gap: 0.75rem;
   padding-top: 0.75rem;
   opacity: 0;
-  transform: translateY(-4px);
-  transition: opacity 180ms ease-out, transform 180ms ease-out;
+  transform: translateY(-6px);
+  transition: opacity 160ms ease-out, transform 160ms ease-out;
 }
 
 .composerExpandContainer.expanded .composerExpandInner {

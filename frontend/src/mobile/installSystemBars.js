@@ -80,8 +80,25 @@ export function installSystemBars(systemBars, { readEdges } = {}) {
     if (insets) setInsets(insets.top, insets.bottom);
   });
 
-  const readThemeChrome = () =>
-    toHexColor(getComputedStyle(root).getPropertyValue('--color-nav-surface'));
+  /**
+   * The theme's chrome colour, read once per theme.
+   *
+   * Reading a custom property through getComputedStyle forces a full style
+   * recalculation, and `sample` runs on every DOM change, transition end and
+   * resize. Measured on the I2208 while the post composer expanded and the
+   * keyboard opened, these reads were ~42 ms of forced recalcs across the
+   * gesture. The value depends only on `data-theme`, so it is cached by it.
+   */
+  let chromeTheme = null;
+  let chromeColour = null;
+  const readThemeChrome = () => {
+    const theme = root.getAttribute('data-theme');
+    if (theme !== chromeTheme || !chromeColour) {
+      chromeTheme = theme;
+      chromeColour = toHexColor(getComputedStyle(root).getPropertyValue('--color-nav-surface'));
+    }
+    return chromeColour;
+  };
 
   let lastTop;
   let lastBottom;
@@ -127,7 +144,8 @@ export function installSystemBars(systemBars, { readEdges } = {}) {
       status: iconsFor(topTransparent, root.getAttribute('data-status-bar-icons'), top),
       navigation: iconsFor(bottomTransparent, root.getAttribute('data-navigation-bar-icons'), bottom),
     });
-    systemBars.persistTheme?.();
+    // Handed the cached colour so it does not force its own style recalc.
+    systemBars.persistTheme?.({ background: chrome });
     // The window behind the WebView follows the page's bottom edge even where
     // the page draws behind the bar (there `bottom` is still what it paints).
     systemBars.setWindowColor?.(bottom);
@@ -141,6 +159,10 @@ export function installSystemBars(systemBars, { readEdges } = {}) {
   };
   /** At most one sample per frame, in the frame the change lands in. */
   const schedule = () => {
+    // Sampling reads computed styles and elementsFromPoint, each a forced
+    // layout. During text entry the page's edge colours do not change, and the
+    // keyboard is animating, so wait: a keyboard-hidden event samples afterwards.
+    if (root.hasAttribute('data-text-entry')) return;
     if (!frame) frame = requestAnimationFrame(run);
   };
   /**
@@ -182,6 +204,7 @@ export function installSystemBars(systemBars, { readEdges } = {}) {
   if (appRoot) pageObserver.observe(appRoot, { childList: true, subtree: true });
 
   window.addEventListener('popstate', scheduleWithSettle);
+  window.addEventListener('meetifyy:keyboard-hidden', () => setTimeout(scheduleWithSettle, 50));
   window.addEventListener('resize', schedule);
   /**
    * Once a scroll has stopped: what sits at the bottom edge of a long page

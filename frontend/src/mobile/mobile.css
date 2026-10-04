@@ -165,3 +165,38 @@ select,
   user-select: text !important;
   -webkit-touch-callout: default !important;
 }
+
+
+/* ----------------------------------------------------------------------------
+   Bottom chrome stays on the physical bottom edge while the keyboard is up.
+
+   The keyboard shrinks the WebView, and `position: fixed; bottom: N` follows
+   the shrunken viewport, so the bottom nav and the Instant Match button were
+   lifted onto the keyboard for the frames before JS could react (and hiding
+   them from JS left them vanishing before the keyboard arrived, then sliding
+   back after). 100vh is the layout viewport and --app-vh the keyboard-free one
+   (see useKeyboardInset), so `100vh - 100 * --app-vh` is exactly how far the
+   viewport has shrunk: 0 normally, about -330px with the keyboard. Adding it to
+   `bottom` puts both back on the screen's real bottom edge, in the same layout
+   pass as the resize and with nothing to time. They sit behind the keyboard.
+---------------------------------------------------------------------------- */
+@media (max-width: 768px) {
+  html {
+    --nav-kb-shift: 0px;
+    --kb-viewport-shrink: calc(100vh - 100 * var(--app-vh, 1vh));
+  }
+
+  html .app-bottom-nav {
+    bottom: var(--kb-viewport-shrink);
+  }
+
+  html .im-fab-dock {
+    bottom: calc(60px + var(--bottom-nav-gap, 12px) + env(safe-area-inset-bottom) + 16px + var(--kb-viewport-shrink));
+  }
+
+  /* No JS hiding in the app: the rules above already keep both out of sight. */
+  html[data-text-entry] .app-bottom-nav,
+  html[data-text-entry] .im-fab-dock {
+    visibility: visible !important;
+  }
+}

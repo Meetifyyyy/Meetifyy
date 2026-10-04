@@ -165,6 +165,9 @@ const InlineVideoPlayer = memo(function InlineVideoPlayer({
       ([entry]) => {
         const v = videoRef.current;
         if (!v) return;
+        // A keyboard shrinks the viewport and drops the ratio without anything
+        // scrolling; pausing then resuming (unmuted) on close is not wanted.
+        if (document.documentElement.hasAttribute('data-text-entry')) return;
 
         if (entry.intersectionRatio >= 0.4) {
           feedVideoRegistry.requestPlay(uid);
@@ -539,7 +542,7 @@ export function MediaGrid({ media, onMediaClick, onRemove }) {
       });
       // These URLs are newly resolved, so any earlier failure was against a
       // different (unresolved) src and should not suppress them.
-      setFailedStates({});
+      setFailedStates((prev) => (Object.keys(prev).length ? {} : prev));
     });
 
     return () => {

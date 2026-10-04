@@ -93,6 +93,7 @@ export default function MentionInput({
   className = '',
   style = {},
   autoFocus = false,
+  inputMode,
   inputRef
 }) {
   const containerRef = useRef(null);
@@ -334,7 +335,9 @@ export default function MentionInput({
   const focusEditor = useCallback((options) => {
     const el = editorRef.current;
     if (!el) return;
-    HTMLElement.prototype.focus.call(el, options);
+    // Never let the browser scroll the page to the field: with a keyboard
+    // animating that is a second, competing scroll.
+    HTMLElement.prototype.focus.call(el, { preventScroll: true, ...options });
     try {
       const range = document.createRange();
       range.selectNodeContents(el);
@@ -574,6 +577,7 @@ export default function MentionInput({
         ref={editorRef}
         className={styles.editor}
         contentEditable={true}
+        inputMode={inputMode}
         onInput={handleInput}
         onKeyDown={handleKeyDownInternal}
         onKeyUp={saveSelection}

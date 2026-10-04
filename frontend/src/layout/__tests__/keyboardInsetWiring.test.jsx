@@ -50,6 +50,16 @@ describe('keyboard inset wiring', () => {
 
   it('keeps the nav translating by the published shift', () => {
     const css = read('src/layout/BottomNav.module.css');
-    expect(css).toMatch(/transform:\s*translateY\(var\(--kb-layout-shift,\s*0px\)\)/);
+    // The website translates by the published shift (the default of --nav-kb-shift).
+    expect(css).toMatch(
+      /transform:\s*translateY\(var\(--nav-kb-shift,\s*var\(--kb-layout-shift,\s*0px\)\)\)/,
+    );
+  });
+
+  it('has the installed app position the nav from the stable viewport instead', () => {
+    const css = read('src/mobile/mobile.css');
+    expect(css).toMatch(/--nav-kb-shift:\s*0px/);
+    expect(css).toMatch(/\.app-bottom-nav\s*\{\s*bottom:\s*var\(--kb-viewport-shrink\)/);
+    expect(css).toMatch(/\.im-fab-dock\s*\{[^}]*var\(--kb-viewport-shrink\)/);
   });
 });

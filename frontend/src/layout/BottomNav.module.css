@@ -30,11 +30,22 @@
      keyboard covers it — visible and unmoved, rather than hidden and popping
      back. It is 0 on browsers that overlay the keyboard instead (iOS), where
      `bottom: 0` is already the right place. */
-  transform: translateY(var(--kb-layout-shift, 0px));
+  /* --nav-kb-shift defaults to the measured shift. The installed app overrides
+     it to 0 and positions the bar from the stable viewport height instead (see
+     mobile/mobile.css), which needs no JS to land in the same frame. */
+  transform: translateY(var(--nav-kb-shift, var(--kb-layout-shift, 0px)));
 }
 
 /* Declared after .bottomNav so it wins on order at equal specificity: an open
    chat hides the nav outright, and that must beat the keyboard translate. */
+/* Hidden for the whole of text entry on a touch device (see useKeyboardInset):
+   the keyboard covers it anyway, and showing it let it flash on top of the
+   keyboard for a frame as the WebView shrank. */
+:global(html[data-text-entry]) .bottomNav {
+  visibility: hidden;
+  transition: none;
+}
+
 .hiddenNav {
   transform: translateY(100%);
   opacity: 0;

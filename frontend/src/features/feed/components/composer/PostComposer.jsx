@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, memo, forwardRef, useImperativeHandle } from 'react';
+import { useState, useRef, useEffect, useMemo, memo, forwardRef, useImperativeHandle } from 'react';
 import LazyEmojiPicker from '@shared/components/ui/LazyEmojiPicker';
 import { useAuth } from '@shared/context/AuthContext';
 import Avatar from '@shared/components/avatar/Avatar';
@@ -10,6 +10,9 @@ import { uploadsApi } from '@shared/api/apiClient';
 import { showToast } from '@shared/utils/toast';
 import { normalizeBodyText } from '@shared/utils/bodyText';
 import { ALLOWED_IMAGE_ACCEPT } from '@shared/constants/mediaLimits';
+
+/** Matches the expand transition in PostComposer.module.css (220ms) plus a frame. */
+const EXPAND_MS = 240;
 
 
 /**
@@ -56,7 +59,9 @@ const PostComposer = forwardRef(function PostComposer({ onSubmit }, ref) {
       setIsExpanded(true);
       if (inputRef.current) {
         inputRef.current.focus();
-        composerRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
+        // 'nearest', instant: a smooth centre-scroll ran against the keyboard
+        // resizing the viewport and left the composer off-centre anyway.
+        composerRef.current?.scrollIntoView?.({ block: 'nearest' });
       }
     }
   }), []);
@@ -105,6 +110,20 @@ const PostComposer = forwardRef(function PostComposer({ onSubmit }, ref) {
     document.addEventListener('mousedown', handler, { passive: true });
     return () => document.removeEventListener('mousedown', handler);
   }, [showEmoji, hasContent, isExpanded]);
+
+  // Back dismisses the keyboard without blurring the field, and mousedown (above)
+  // never fires, so an empty composer would stay open with no keyboard. Treat the
+  // keyboard closing as the end of the interaction.
+  useEffect(() => {
+    const onKeyboardHidden = () => {
+      if (hasContent) return;
+      const active = document.activeElement;
+      if (active && composerRef.current?.contains(active)) active.blur();
+      setIsExpanded(false);
+    };
+    window.addEventListener('meetifyy:keyboard-hidden', onKeyboardHidden);
+    return () => window.removeEventListener('meetifyy:keyboard-hidden', onKeyboardHidden);
+  }, [hasContent]);
 
   const handlePost = async (e) => {
     if (e) {
@@ -342,6 +361,38 @@ const PostComposer = forwardRef(function PostComposer({ onSubmit }, ref) {
 
   const expandedState = isExpanded || hasContent;
 
+  // Expand first, THEN raise the keyboard. A tap focuses the field at once (so
+  // the caret is there), but with inputmode="none" no keyboard comes up; once
+  // the composer has finished opening the mode is switched to text, and the
+  // keyboard slides in over an already-settled layout instead of resizing the
+  // window in the middle of the expand animation.
+  const [keyboardReady, setKeyboardReady] = useState(false);
+  useEffect(() => {
+    if (!expandedState) {
+      setKeyboardReady(false);
+      return undefined;
+    }
+    const t = setTimeout(() => setKeyboardReady(true), EXPAND_MS);
+    return () => clearTimeout(t);
+  }, [expandedState]);
+
+  // The mode switch alone does not make Android raise the keyboard for a field
+  // that already has focus, so ask for it once the composer has settled.
+  useEffect(() => {
+    if (!keyboardReady) return;
+    const el = document.activeElement;
+    if (el && composerRef.current?.contains(el) && el.isContentEditable) {
+      el.blur();
+      el.focus({ preventScroll: true });
+    }
+  }, [keyboardReady]);
+
+  // A new array on every render made MediaGrid redo its URL resolution on each
+  // keystroke and each upload-progress tick. Only url/type matter to it.
+  const gridKey = media.map((m) => `${m.previewUrl}|${m.type}`).join('\n');
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const gridMedia = useMemo(() => media.map((m) => ({ url: m.previewUrl, type: m.type })), [gridKey]);
+
   return (
     <div className={styles.postComposerWrapper} ref={composerRef}>
       {/* Popups rendered above the composer */}
@@ -390,6 +441,7 @@ const PostComposer = forwardRef(function PostComposer({ onSubmit }, ref) {
                 if (!isExpanded) setIsExpanded(true);
               }}
               onFocus={() => setIsExpanded(true)}
+              inputMode={keyboardReady ? 'text' : 'none'}
               onSubmit={() => { if (!showPoll) handlePost(); }}
               singleLine={false}
             />
@@ -499,7 +551,7 @@ const PostComposer = forwardRef(function PostComposer({ onSubmit }, ref) {
           {media.length > 0 && (
             <div style={{ position: 'relative', width: '100%', display: 'flex', flexDirection: 'column', gap: '8px' }}>
               <MediaGrid 
-                media={media.map(m => ({ url: m.previewUrl, type: m.type }))} 
+                media={gridMedia}
                 onRemove={(idx) => removeMedia(media[idx].previewUrl)}
               />
 
