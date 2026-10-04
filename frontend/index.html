@@ -141,6 +141,12 @@
         --launch-bg: #000000;
       }
     }
+    /* Set by the launch shell's scroll lock below. */
+    html.boot-scroll-lock,
+    html.boot-scroll-lock body {
+      overflow: hidden;
+      overflow: clip;
+    }
     #launch-shell {
       position: fixed;
       inset: 0;
@@ -500,12 +506,13 @@
       // Matches the strategy used by useScrollLock in the React layer:
       // overflow:hidden then overflow:clip on <html> keeps it a non-scroll-
       // container so position:sticky elements are not affected.
-      var _htmlOverflow = document.documentElement.style.overflow;
-      var _bodyOverflow = document.body.style.overflow;
-      document.documentElement.style.overflow = 'hidden';
-      document.documentElement.style.overflow = 'clip';
-      document.body.style.overflow = 'hidden';
-      document.body.style.overflow = 'clip';
+      //
+      // A class, never inline styles. React mounts behind this shell, and
+      // anything there that saves an inline `overflow` to restore later (a page,
+      // an overlay's scroll lock) used to save this lock's `clip` as the
+      // original and write it back after the shell had gone, leaving the site
+      // unscrollable until a reload.
+      document.documentElement.classList.add('boot-scroll-lock');
 
       // Block mouse-wheel scrolling.
       function _blockWheel(e) { e.preventDefault(); }
@@ -526,8 +533,7 @@
       document.addEventListener('keydown',   _blockKeys,  { passive: false });
 
       function _releaseScrollLock() {
-        document.documentElement.style.overflow = _htmlOverflow;
-        document.body.style.overflow            = _bodyOverflow;
+        document.documentElement.classList.remove('boot-scroll-lock');
         document.removeEventListener('wheel',     _blockWheel, { passive: false });
         document.removeEventListener('touchmove', _blockTouch, { passive: false });
         document.removeEventListener('keydown',   _blockKeys,  { passive: false });

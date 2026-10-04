@@ -70,17 +70,6 @@ export default function PublicNotFound() {
     const bodyEl = document.body;
     const rootEl = document.getElementById('root');
 
-    const prevHtmlOverflow = htmlEl.style.overflow;
-    const prevBodyHeight = bodyEl.style.height;
-    const prevBodyOverflow = bodyEl.style.overflow;
-
-    let prevRootHeight = '';
-    let prevRootOverflow = '';
-    if (rootEl) {
-      prevRootHeight = rootEl.style.height;
-      prevRootOverflow = rootEl.style.overflow;
-    }
-
     htmlEl.style.overflow = 'auto';
     bodyEl.style.height = 'auto';
     bodyEl.style.overflow = 'visible';
@@ -90,12 +79,13 @@ export default function PublicNotFound() {
     }
 
     return () => {
-      htmlEl.style.overflow = prevHtmlOverflow;
-      bodyEl.style.height = prevBodyHeight;
-      bodyEl.style.overflow = prevBodyOverflow;
+      // Cleared, not restored: see LandingPage.
+      htmlEl.style.removeProperty('overflow');
+      bodyEl.style.removeProperty('height');
+      bodyEl.style.removeProperty('overflow');
       if (rootEl) {
-        rootEl.style.height = prevRootHeight;
-        rootEl.style.overflow = prevRootOverflow;
+        rootEl.style.removeProperty('height');
+        rootEl.style.removeProperty('overflow');
       }
     };
   }, []);

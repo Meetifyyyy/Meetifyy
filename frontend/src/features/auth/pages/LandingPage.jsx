@@ -23,17 +23,6 @@ export default function LandingPage() {
       rootEl.classList.add('landing-scroll-active');
     }
 
-    const prevHtmlOverflow = htmlEl.style.overflow;
-    const prevBodyHeight = bodyEl.style.height;
-    const prevBodyOverflow = bodyEl.style.overflow;
-    
-    let prevRootHeight = '';
-    let prevRootOverflow = '';
-    if (rootEl) {
-      prevRootHeight = rootEl.style.height;
-      prevRootOverflow = rootEl.style.overflow;
-    }
-
     htmlEl.style.overflow = 'auto';
     bodyEl.style.height = 'auto';
     bodyEl.style.overflow = 'visible';
@@ -48,12 +37,16 @@ export default function LandingPage() {
       if (rootEl) {
         rootEl.classList.remove('landing-scroll-active');
       }
-      htmlEl.style.overflow = prevHtmlOverflow;
-      bodyEl.style.height = prevBodyHeight;
-      bodyEl.style.overflow = prevBodyOverflow;
+      // Cleared, not restored: nothing else sets these inline outside a
+      // scroll lock, and a "previous" captured while another page's override
+      // was still applied would write that override back and leave the app
+      // unscrollable until a reload.
+      htmlEl.style.removeProperty('overflow');
+      bodyEl.style.removeProperty('height');
+      bodyEl.style.removeProperty('overflow');
       if (rootEl) {
-        rootEl.style.height = prevRootHeight;
-        rootEl.style.overflow = prevRootOverflow;
+        rootEl.style.removeProperty('height');
+        rootEl.style.removeProperty('overflow');
       }
     };
   }, []);

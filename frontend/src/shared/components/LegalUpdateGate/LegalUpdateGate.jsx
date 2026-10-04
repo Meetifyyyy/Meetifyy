@@ -3,6 +3,7 @@ import PropTypes from 'prop-types';
 import { useAuth } from '../../context/AuthContext';
 import { legalApi } from '@shared/api/apiClient';
 import { hardenExternalLinks } from '@shared/utils/legalHtmlLinks';
+import { useScrollLock } from '@shared/hooks/useScrollLock';
 import {
   AlertCircle,
   ArrowLeft,
@@ -171,14 +172,7 @@ export default function LegalUpdateGate({ children }) {
 
   // The page behind must not scroll while the gate is up, and on iOS a body
   // that keeps scrolling is how a "blocking" overlay ends up scrolled off.
-  useEffect(() => {
-    if (!blocking) return undefined;
-    const previous = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.body.style.overflow = previous;
-    };
-  }, [blocking]);
+  useScrollLock(blocking);
 
   const handleAccept = async () => {
     if (!agreed || submitting) return;
