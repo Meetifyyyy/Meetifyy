@@ -149,12 +149,14 @@ export default function ShareSheet({ isOpen, onClose, kind, entity, author }) {
     if (ok) setTimeout(onClose, SENT_CLOSE_MS);
   }, [onClose, selected, sendAll]);
 
-  // App only: Instagram Story leads the share row and opens in place.
+  // App: Instagram Story leads the share row and opens in place.
+  // Website: Instagram has no web share URL, so its tile copies the link to
+  // paste there (handled by ShareTargets as the `instagram` target).
   const storyTargets = useMemo(
     () =>
       InstagramStoryPanel
         ? [{ id: 'instagram-story', label: 'Story', icon: Instagram, onSelect: () => setView('story') }]
-        : [],
+        : [{ id: 'instagram', label: 'Instagram', icon: Instagram }],
     [],
   );
 

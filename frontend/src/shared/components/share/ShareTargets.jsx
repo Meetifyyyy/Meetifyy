@@ -118,6 +118,13 @@ export default function ShareTargets({ payload, onShared, leadingTargets = [] })
         return;
       }
 
+      // Website only (see ShareSheet): Instagram cannot be opened with a link
+      // to share, so the link is copied for the user to paste there.
+      if (target.id === 'instagram') {
+        if (await copy('instagram', 'Link copied. Paste it in Instagram')) onShared?.('instagram');
+        return;
+      }
+
       if (target.id === 'native' || target.id === 'share') {
         const outcome = await shareNatively(payload);
         if (outcome === 'shared') {
