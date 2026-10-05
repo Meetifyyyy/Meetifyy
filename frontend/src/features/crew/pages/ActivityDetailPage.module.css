@@ -961,3 +961,35 @@
   --spinner-color: rgba(255, 255, 255, 0.85);
   vertical-align: middle;
 }
+
+/*
+ * Phones: one backdrop blur, on .glass, and none nested inside it.
+ *
+ * An element with backdrop-filter is a Backdrop Root (CSS Filter Effects 2): a
+ * backdrop-filter inside it sees only the card's own painted content, never
+ * the page behind. So these nested blurs were blurring the card's near-uniform
+ * fill — an effect you cannot see — at the full GPU cost of a backdrop pass
+ * each, every frame (one full-width blur measured ~30% more GPU time per frame
+ * on a mid-range phone). `will-change: backdrop-filter` also kept .hostRow on
+ * its own layer permanently. Desktop (fine pointer) keeps them.
+ */
+@media (pointer: coarse) {
+  .leftInfoBlock,
+  .hostRow,
+  .description,
+  .attendeesSection,
+  .joinBtn,
+  .leaveBtn {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
+  .joinedBtn {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+
+  .hostRow {
+    will-change: auto;
+  }
+}

@@ -1760,3 +1760,33 @@ input:checked+.slider:before {
     max-width: none;
   }
 }
+
+/*
+ * Phones: no backdrop blur on the form's own surfaces.
+ *
+ * Everything below sits over .ambientImg / .ambientColor, which is already a
+ * 48–64px blur of the cover — a smooth wash of colour. Blurring that again
+ * changes almost nothing you can see, but every backdrop-filter is its own GPU
+ * pass on every frame the form scrolls or a field repaints. On a mid-range
+ * phone one full-width backdrop blur measured ~30% more GPU time per frame
+ * (gfxinfo A/B, Vivo I2208); this form stacked ten. The surfaces keep their
+ * translucent fills, so they still read as glass over the ambient colour.
+ *
+ * Kept: the small controls over the sharp cover image (.changeBtn,
+ * .removeBtn, .publishHint) and the transient layers over sharp content
+ * (.reminderDrop, the modals), where the blur is actually visible.
+ * Desktop (fine pointer) keeps every blur.
+ */
+@media (pointer: coarse) {
+  .fieldInput,
+  .fieldTextarea,
+  .fieldBtn,
+  .locRow,
+  .reminderRow,
+  .toggleRow,
+  .groupCard,
+  .imgSquare {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}

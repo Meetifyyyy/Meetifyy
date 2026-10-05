@@ -18,8 +18,9 @@
   align-items: center;
   z-index: 100;
   box-shadow: none;
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
-  backdrop-filter: blur(20px) saturate(180%);
+  /* No backdrop-filter. The background above is opaque in both themes, so a
+     blur behind it is invisible — but the WebView still computed it over the
+     scrolling page on every frame, on every screen that shows this bar. */
   box-sizing: border-box;
   padding: 0 0.5rem;
   /* Stay put when the keyboard opens.

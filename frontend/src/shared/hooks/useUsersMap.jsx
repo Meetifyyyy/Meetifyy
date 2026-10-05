@@ -35,6 +35,25 @@ const EMPTY_USERS_MAP = {};
 // on every render while the query is still loading.
 const EMPTY_USERS = [];
 
+const shallowEqual = (a, b) => {
+  if (a === b) return true;
+  if (!a || !b || typeof a !== 'object' || typeof b !== 'object') return false;
+  const ak = Object.keys(a);
+  if (ak.length !== Object.keys(b).length) return false;
+  return ak.every((k) => a[k] === b[k]);
+};
+
+/**
+ * True when two maps describe the same users. Entries usually keep their
+ * identity (query results are structurally shared), and the few this hook
+ * builds itself are compared field by field.
+ */
+const sameUsers = (prev, next) => {
+  const keys = Object.keys(next);
+  if (keys.length !== Object.keys(prev).length) return false;
+  return keys.every((k) => shallowEqual(prev[k], next[k]));
+};
+
 function useBuildUsersMap() {
   const { currentUser, isLoggedIn } = useAuth();
 
@@ -72,7 +91,16 @@ function useBuildUsersMap() {
   const { campusUsers: rawCampusUsers } = useCampusUsers(50, { enabled: isIdleLoaded });
   const { conversations: processedConversations } = useConversations();
 
-  return useMemo(() => {
+  /**
+   * The previous map, kept whenever the users in it are unchanged.
+   *
+   * The conversation list changes on every message anywhere (preview, unread
+   * count, ordering), and this map is read by every RichText and MessageBubble
+   * on screen — a context change gets past their `memo`. Handing out a new
+   * object each time re-rendered every post body and every bubble in an open
+   * thread per incoming message. Only a change to a user in the map now does.
+   */
+  const built = useMemo(() => {
     const map = {};
     (rawUsers || []).forEach(u => { if (u?.id) map[u.id] = u; });
     (rawCampusUsers || []).forEach(u => { if (u?.id) map[u.id] = u; });
@@ -99,6 +127,15 @@ function useBuildUsersMap() {
     });
     return map;
   }, [rawUsers, rawCampusUsers, processedConversations]);
+
+  // React's "adjust state while rendering" pattern: the provider re-renders
+  // once more when the users really changed, and never otherwise.
+  const [stable, setStable] = useState(built);
+  if (stable !== built && !sameUsers(stable, built)) {
+    setStable(built);
+    return built;
+  }
+  return stable;
 }
 
 export function UsersMapProvider({ children }) {

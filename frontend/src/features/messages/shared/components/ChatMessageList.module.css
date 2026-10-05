@@ -932,7 +932,9 @@
   transition: opacity 0.15s ease;
   align-self: center;
   flex-shrink: 0;
-  will-change: opacity;
+  /* No will-change: this is on every message, so it promoted one compositor
+     layer per bubble — hundreds in a long thread, on phones where hover never
+     fires at all. The opacity transition promotes it for its own duration. */
 }
 
 .msgBubbleContainer:hover .msgHoverActions,
