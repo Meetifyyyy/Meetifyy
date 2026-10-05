@@ -1916,9 +1916,15 @@ export class PostsService {
         // Replies are filtered on the same basis. A reply whose parent was
         // filtered out is unreachable anyway, since the parent never enters
         // the frontier — so a blocked user's subtree disappears with them.
+        //
+        // `postId` is redundant for the result — createComment refuses a
+        // parent on another post — but not for the plan: `parentId` has no
+        // index, so without it every level scanned the whole Comment table.
+        // With it, each level reads only this post's rows via
+        // `(postId, createdAt)`.
         where: await this.blocksService.injectBlockFilter(
           userId,
-          { parentId: { in: frontier } },
+          { postId, parentId: { in: frontier } },
           'authorId',
         ),
         orderBy: { createdAt: 'asc' },
