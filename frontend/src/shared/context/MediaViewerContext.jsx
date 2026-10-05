@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { getMediaUrl } from '@shared/api/apiClient';
 import { overlayManager } from '@shared/services/OverlayManager';
+import { clearReportedTargets } from '@shared/utils/reportedTargets';
 import { useAuth } from './AuthContext';
 
 /**
@@ -82,9 +83,11 @@ export function MediaViewerProvider({ children }) {
     index: 0,
     meta: null,
     originRect: null,
+    // Bumped by every openViewer. The viewer keys its per-open state on it, so a
+    // sheet, a report flow or a download left over from one open cannot carry
+    // into the next.
+    sessionId: 0,
   });
-
-  const savedScrollRef = useRef(0);
 
   /**
    * The viewer renders `item.url` straight into an <img>/<video>, and did no
@@ -117,14 +120,14 @@ export function MediaViewerProvider({ children }) {
     // is worse than not opening.
     if (resolved.length === 0) return;
 
-    savedScrollRef.current = window.scrollY;
     const index = Math.min(Math.max(before, 0), resolved.length - 1);
-    setState({ open: true, items: resolved, index, meta, originRect });
+    setState((prev) => ({ open: true, items: resolved, index, meta, originRect, sessionId: (prev.sessionId ?? 0) + 1 }));
   }, []);
 
   const closeViewer = useCallback(() => {
+    // The viewer never moves the page behind it (the scroll lock freezes it and
+    // focus is handed back without scrolling), so there is no position to restore.
     setState((prev) => (prev.open ? { ...prev, open: false } : prev));
-    // Scroll restoration handled in modal after close animation
   }, []);
 
   /*
@@ -136,22 +139,22 @@ export function MediaViewerProvider({ children }) {
    *   - the session ending, which would otherwise leave a signed-in user's media
    *     on screen over the login page.
    *
-   * Both clear the saved scroll position first. The viewer restores it ~320 ms
-   * after it closes, which is right when it closed over the page it opened on
-   * and wrong on a different page: it would scroll the new route to the old
-   * route's offset.
+   * Both just close it. It used to restore a saved scroll offset ~320 ms later,
+   * which on a different page scrolled the new route to the old route's offset;
+   * the viewer no longer moves the page, so there is nothing to undo.
    */
-  const dismissForNavigation = useCallback(() => {
-    savedScrollRef.current = null;
-    closeViewer();
-  }, [closeViewer]);
+  const dismissForNavigation = closeViewer;
 
   useEffect(() => overlayManager.onRouteChange(dismissForNavigation), [dismissForNavigation]);
 
   const { isLoggedIn } = useAuth();
   const wasLoggedInRef = useRef(isLoggedIn);
   useEffect(() => {
-    if (wasLoggedInRef.current && !isLoggedIn) dismissForNavigation();
+    if (wasLoggedInRef.current && !isLoggedIn) {
+      dismissForNavigation();
+      // What the signed-out person reported is not what the next one has.
+      clearReportedTargets();
+    }
     wasLoggedInRef.current = isLoggedIn;
   }, [isLoggedIn, dismissForNavigation]);
 
@@ -166,7 +169,7 @@ export function MediaViewerProvider({ children }) {
   // All three callbacks are `useCallback`-stable and the ref is an identity, so
   // this object is created once for the life of the provider.
   const actions = useMemo(
-    () => ({ openViewer, closeViewer, navigate, savedScrollRef }),
+    () => ({ openViewer, closeViewer, navigate }),
     [openViewer, closeViewer, navigate],
   );
 

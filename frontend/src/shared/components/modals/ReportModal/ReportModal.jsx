@@ -42,6 +42,7 @@ const reportFormSchema = z
  *   targetAvatar?: string
  *   reportedFrom?: string
  *   onSubmitted?: () => void
+ *   onFailed?: (error) => void   - the request was rejected (error.status is the HTTP status)
  */
 export default function ReportModal({
   isOpen,
@@ -53,6 +54,7 @@ export default function ReportModal({
   targetAvatar,
   reportedFrom = 'app',
   onSubmitted,
+  onFailed,
 }) {
   const {
     register,
@@ -82,6 +84,9 @@ export default function ReportModal({
       reset();
       if (onSubmitted) onSubmitted();
       onClose();
+    },
+    onError: (error) => {
+      if (onFailed) onFailed(error);
     },
   });
 

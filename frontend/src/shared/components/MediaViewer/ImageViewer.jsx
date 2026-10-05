@@ -74,7 +74,7 @@ function applyTransform(imgEl, tx, ty, scale, animated = false) {
 // Component
 // ─────────────────────────────────────────────
 
-export default function ImageViewer({ src: rawSrc, mediaRef, zoomApiRef, onToggleControls, isCurrent = true, closing = false }) {
+export default function ImageViewer({ src: rawSrc, label = 'Photo', mediaRef, zoomApiRef, onToggleControls, isCurrent = true, closing = false }) {
   /*
    * Same reason as VideoViewer: a conversation attachment's `/api/media/` URL
    * cannot be authorized by an <img> tag inside the app, so it is signed first.
@@ -304,6 +304,8 @@ export default function ImageViewer({ src: rawSrc, mediaRef, zoomApiRef, onToggl
   const handleMouseDown = useCallback((e) => {
     // Only left button
     if (e.button !== 0) return;
+    // A drag flag left over from an earlier pan would swallow this click.
+    didDragRef.current = false;
     // Only pan when zoomed
     if (xf.current.scale <= 1) return;
 
@@ -804,7 +806,7 @@ export default function ImageViewer({ src: rawSrc, mediaRef, zoomApiRef, onToggl
               }
             }}
             src={src || undefined}
-            alt="Media"
+            alt={label}
             loading="eager"
             decoding="async"
             fetchpriority={isCurrent ? "high" : "auto"}

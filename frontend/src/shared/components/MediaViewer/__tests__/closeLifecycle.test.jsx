@@ -3,10 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 
 const viewer = vi.hoisted(() => ({
-  getUrl: vi.fn(), state: null, close: vi.fn(), navigate: vi.fn(), menuClose: vi.fn(), savedScrollRef: { current: 0 },
+  getUrl: vi.fn(), state: null, close: vi.fn(), navigate: vi.fn(), menuClose: vi.fn(), 
 }));
 vi.mock('@shared/context/MediaViewerContext', () => ({
-  useMediaViewer: () => ({ state: viewer.state, closeViewer: viewer.close, navigate: viewer.navigate, savedScrollRef: viewer.savedScrollRef }),
+  useMediaViewer: () => ({ state: viewer.state, closeViewer: viewer.close, navigate: viewer.navigate }),
 }));
 vi.mock('@shared/hooks/useOverlayBack', () => ({ useOverlayBack: () => {} }));
 vi.mock('@shared/hooks/useScrollLock', () => ({ useScrollLock: () => {} }));
@@ -108,5 +108,18 @@ describe('media viewer close lifecycle', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Close' }));
     act(() => vi.advanceTimersByTime(0));
     expect(viewer.close).toHaveBeenCalledTimes(1);
+  });
+
+  describe('the page behind the viewer', () => {
+    it('is never scrolled by the viewer, on close or afterwards', () => {
+      // It used to scroll the opener back into view when focus returned, then
+      // jump the page back with a delayed scrollTo: two visible jumps.
+      const scrollTo = vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
+      const result = open();
+      viewer.state = { ...viewer.state, open: false };
+      result.rerender(<MediaViewer />);
+      act(() => vi.advanceTimersByTime(1000));
+      expect(scrollTo).not.toHaveBeenCalled();
+    });
   });
 });

@@ -8,12 +8,17 @@ import { copyToClipboard, shareNatively } from '@shared/lib/share/shareTargets';
 import ImageViewer from './ImageViewer';
 import VideoViewer from './VideoViewer';
 import { mediaCache } from '@shared/utils/MediaCacheManager';
+import { feedVideoRegistry } from '@shared/utils/feedVideoRegistry';
+import { PLAYBACK_PRIORITY } from '@shared/utils/playbackPriority';
+import { hasReportedTarget, markTargetReported, reportKey } from '@shared/utils/reportedTargets';
+import { forwardToTargets } from '@features/messages/shared/utils/forwardDelivery';
+import { forwardableMediaUrl } from './forwardSource';
 import { useViewerFocus } from './useViewerFocus';
 import { motionTransition, prefersReducedMotion } from './viewerMotion';
 import styles from './MediaViewer.module.css';
 import ReportModal from '@shared/components/modals/ReportModal/ReportModal';
 import ForwardMessageModal from '@features/messages/shared/components/modals/ForwardMessageModal';
-import { useRecipientConversations } from '@shared/hooks/useRecipientConversations';
+import { useForwardRecipients } from '@features/messages/shared/hooks/useForwardRecipients';
 import { useMessageActions } from '@shared/hooks/useMessageActions';
 import {
   X,
@@ -60,8 +65,33 @@ const KEY_PAN_STEP = 80;
 /** How long the snap-back transition runs before its inline styles are cleared (ms). */
 const SNAPBACK_CLEANUP_MS = 340;
 
+/**
+ * One mounted instance per OPEN of the viewer.
+ *
+ * The host keeps this component mounted for the whole session (so the chunk and
+ * the close animation survive), which meant every piece of local state - a
+ * Forward sheet, a report flow, a download in progress - outlived the item it
+ * belonged to and reappeared over the next one. `openViewer` bumps `sessionId`,
+ * and keying the inner component on it gives each open a clean slate; the
+ * unmount also aborts whatever the previous open still had running.
+ */
 export default function MediaViewer() {
-  const { state, closeViewer, navigate, savedScrollRef } = useMediaViewer();
+  const { state } = useMediaViewer();
+  return <MediaViewerSession key={state.sessionId ?? 0} />;
+}
+
+/** What the report flow targets: the item's own, else the opener's default. */
+function reportTargetFor(item, meta) {
+  const candidate = item?.report ?? meta?.report;
+  if (!candidate || typeof candidate !== 'object') return null;
+  const { targetType, targetId } = candidate;
+  if (typeof targetType !== 'string' || targetType === '') return null;
+  if (typeof targetId !== 'string' || targetId === '') return null;
+  return candidate;
+}
+
+function MediaViewerSession() {
+  const { state, closeViewer, navigate } = useMediaViewer();
   const { open, items, index, meta } = state;
 
   const overlayRef  = useRef(null);
@@ -86,14 +116,31 @@ export default function MediaViewer() {
   const closeMoreMenu = moreMenu.close;
   const [showForwardModal, setShowForwardModal] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
-  const [hasReported, setHasReported]       = useState(false);
+  // Bumped when something is marked reported, so the menu re-reads the shared set.
+  const [, setReportedTick]                 = useState(0);
   const [downloadState, setDownloadState]   = useState(null);
+  /** The download in flight (its AbortController), or null. Doubles as its identity. */
   const downloadAbortRef = useRef(null);
-  const didClose = useRef(false);
+  /** Pending "clear the status" timer, so a close or a new download can cancel it. */
+  const downloadStatusTimerRef = useRef(null);
 
   const cancelSnapbackCleanup = useCallback(() => {
     clearTimeout(snapbackTimerRef.current);
     snapbackTimerRef.current = null;
+  }, []);
+
+  /**
+   * Stop the download in flight and forget it. Clearing the ref is what makes the
+   * abandoned run harmless: every state write it still attempts is conditional on
+   * being the CURRENT run (see handleDownload).
+   */
+  const abortDownload = useCallback(() => {
+    clearTimeout(downloadStatusTimerRef.current);
+    downloadStatusTimerRef.current = null;
+    const controller = downloadAbortRef.current;
+    downloadAbortRef.current = null;
+    controller?.abort();
+    setDownloadState(null);
   }, []);
 
   const handleClose = useCallback(() => {
@@ -105,27 +152,32 @@ export default function MediaViewer() {
     setClosing(true);
     setVisible(false);
     closeMoreMenu();
-    downloadAbortRef.current?.abort();
+    abortDownload();
     // Stop the viewer's audio immediately, rather than waiting for unmount.
     overlayRef.current?.querySelectorAll('video').forEach(video => video.pause());
     controlsHiddenByGesture.current = false;
     // Pause all feed videos (below MediaViewer priority 10) on close
-    if (typeof window !== 'undefined') {
-      import('@shared/utils/feedVideoRegistry')
-        .then(({ feedVideoRegistry: r }) => r.pauseAll(10))
-        .catch(() => {});
-    }
+    feedVideoRegistry.pauseAll(PLAYBACK_PRIORITY.VIEWER);
     closeTimerRef.current = setTimeout(() => {
       closeTimerRef.current = null;
       closeViewer();
     }, prefersReducedMotion() ? 0 : 280);
-  }, [closeViewer, closeMoreMenu, cancelSnapbackCleanup]);
+  }, [closeViewer, closeMoreMenu, cancelSnapbackCleanup, abortDownload]);
 
   useEffect(() => () => {
     clearTimeout(closeTimerRef.current);
     clearTimeout(snapbackTimerRef.current);
+    clearTimeout(downloadStatusTimerRef.current);
     downloadAbortRef.current?.abort();
+    downloadAbortRef.current = null;
   }, []);
+
+  // Whatever is playing behind the viewer - a feed video, a voice note - stops
+  // when it opens. Its own registry would only refuse NEW lower-priority plays;
+  // something already running has to be told.
+  useEffect(() => {
+    if (open) feedVideoRegistry.pauseAll(PLAYBACK_PRIORITY.VIEWER);
+  }, [open]);
 
   useOverlayBack(open, handleClose);
   useScrollLock(open);
@@ -149,7 +201,6 @@ export default function MediaViewer() {
     if (open) {
       closingRef.current = false;
       setClosing(false);
-      didClose.current = false;
       setControlsVisible(true);
       if (trackRef.current) {
         trackRef.current.style.transition = 'none';
@@ -171,18 +222,6 @@ export default function MediaViewer() {
     }
   }, [index, open]);
 
-  useEffect(() => {
-    if (!open && !didClose.current) {
-      didClose.current = true;
-      const timer = setTimeout(() => {
-        // Cleared when the page changed under the viewer (route or session):
-        // the offset belongs to the page it opened over, not this one.
-        if (savedScrollRef.current == null) return;
-        window.scrollTo(0, savedScrollRef.current || 0);
-      }, 320);
-      return () => clearTimeout(timer);
-    }
-  }, [open, savedScrollRef]);
 
   // The outside-click listener is gone — `Menu` owns its own dismissal.
 
@@ -190,7 +229,11 @@ export default function MediaViewer() {
   useEffect(() => {
     if (!open) return;
     const handler = (e) => {
-      if (e.defaultPrevented || e.target.closest?.('[role="dialog"]') !== overlayRef.current) return;
+      // Focus can fall to <body> while the viewer is open (the control that held it
+      // was hidden and made inert), and keys must keep working there.
+      const inViewer = e.target.closest?.('[role="dialog"]') === overlayRef.current;
+      const orphaned = e.target === document.body || e.target === document.documentElement;
+      if (e.defaultPrevented || !(inViewer || orphaned)) return;
       if (e.key === 'Escape') { handleClose(); return; }
       if (isVid) return;
       if (e.ctrlKey || e.metaKey || e.altKey) return;
@@ -626,26 +669,52 @@ export default function MediaViewer() {
     if (!url) return;
     const isVideoItem = isVideo(currentItem);
 
-    setDownloadState('preparing');
+    clearTimeout(downloadStatusTimerRef.current);
     const controller = new AbortController();
     downloadAbortRef.current = controller;
+    const { signal } = controller;
+    /*
+     * Only the current run may touch the UI or save a file. Cancel, close and a
+     * newer download all replace `downloadAbortRef`, so a run that is still
+     * awaiting (decoding, converting) finds out at its next checkpoint and
+     * stops, instead of saving a file nobody wants any more or overwriting the
+     * status of whatever is on screen now. AbortController itself can only cut
+     * the network phase; the checkpoints cover everything after it.
+     */
+    const isCurrent = () => downloadAbortRef.current === controller;
+    const checkpoint = () => {
+      if (signal.aborted || !isCurrent()) throw new DOMException('Cancelled', 'AbortError');
+    };
+    const settle = (state, ms) => {
+      if (!isCurrent()) return;
+      setDownloadState(state);
+      downloadStatusTimerRef.current = setTimeout(() => {
+        downloadStatusTimerRef.current = null;
+        setDownloadState(null);
+      }, ms);
+    };
+
+    let imageBitmap = null;
+    setDownloadState('preparing');
 
     try {
       const downloadUrl = await mediaCache.getUrl(url);
-      if (controller.signal.aborted) throw new DOMException('Cancelled', 'AbortError');
+      checkpoint();
       if (!downloadUrl) throw new Error('Media unavailable');
       // Signed query parameters must remain unchanged.
-      const response = await fetch(downloadUrl, { signal: controller.signal });
+      const response = await fetch(downloadUrl, { signal });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       setDownloadState('downloading');
 
       let blob = await response.blob();
+      checkpoint();
       let filename = url.split('/').pop()?.split('?')[0] || 'media';
       let extension = filename.split('.').pop() || '';
 
       if (!isVideoItem && (blob.type === 'image/webp' || extension.toLowerCase() === 'webp')) {
         setDownloadState('converting');
-        const imageBitmap = await createImageBitmap(blob);
+        imageBitmap = await createImageBitmap(blob);
+        checkpoint();
         const canvas = document.createElement('canvas');
         canvas.width  = imageBitmap.width;
         canvas.height = imageBitmap.height;
@@ -653,29 +722,43 @@ export default function MediaViewer() {
         blob = await new Promise((res, rej) =>
           canvas.toBlob(b => b ? res(b) : rej(new Error('toBlob failed')), 'image/png')
         );
-        imageBitmap.close();
+        checkpoint();
         filename = filename.replace(/\.webp$/i, '.png');
         if (!filename.toLowerCase().endsWith('.png')) filename += '.png';
       }
 
+      // Last chance to stop: after this the browser owns the save.
+      checkpoint();
       const blobUrl = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = blobUrl; a.download = filename;
       document.body.appendChild(a); a.click(); document.body.removeChild(a);
       setTimeout(() => URL.revokeObjectURL(blobUrl), 100);
 
-      setDownloadState('completed');
-      setTimeout(() => setDownloadState(null), 1500);
+      settle('completed', 1500);
     } catch (err) {
-      setDownloadState(err.name === 'AbortError' ? 'cancelled' : 'failed');
-      setTimeout(() => setDownloadState(null), 2000);
+      settle(err?.name === 'AbortError' ? 'cancelled' : 'failed', 2000);
     } finally {
-      downloadAbortRef.current = null;
+      // The decoded bitmap is released on every path, including a failed draw.
+      imageBitmap?.close();
+      if (isCurrent()) downloadAbortRef.current = null;
     }
   };
 
   const handleCancelDownload = () => {
-    downloadAbortRef.current?.abort();
+    const controller = downloadAbortRef.current;
+    if (!controller) return;
+    // Take effect now rather than when the current phase happens to finish: the
+    // run is detached first (so it can no longer save or change the status), then
+    // the person is told straight away.
+    downloadAbortRef.current = null;
+    controller.abort();
+    clearTimeout(downloadStatusTimerRef.current);
+    setDownloadState('cancelled');
+    downloadStatusTimerRef.current = setTimeout(() => {
+      downloadStatusTimerRef.current = null;
+      setDownloadState(null);
+    }, 2000);
   };
 
   /**
@@ -705,6 +788,30 @@ export default function MediaViewer() {
   if (!open) return null;
 
   const hasMany = items.length > 1;
+
+  // Report: only what the opener said. There is no guessing from the author or
+  // the URL - those produced reports of the wrong kind, or of ids that do not
+  // exist. No target, no Report action.
+  const reportTarget = reportTargetFor(currentItem, meta);
+  const currentReportKey = reportTarget ? reportKey(reportTarget) : null;
+  const hasReported = currentReportKey ? hasReportedTarget(currentReportKey) : false;
+  const markCurrentReported = () => {
+    if (!currentReportKey) return;
+    markTargetReported(currentReportKey);
+    setReportedTick((n) => n + 1);
+  };
+
+  // Forward: a stored (non-expiring, non-local) reference only.
+  const forwardUrl = forwardableMediaUrl(currentItem);
+  const downloadBusy = ['preparing', 'downloading', 'converting'].includes(downloadState);
+  const downloadMessage = {
+    preparing: 'Preparing download…',
+    downloading: 'Downloading media…',
+    converting: 'Converting to PNG…',
+    completed: 'Download completed',
+    failed: 'Download failed',
+    cancelled: 'Download cancelled',
+  }[downloadState] || '';
 
   return createPortal(
     <div
@@ -737,7 +844,14 @@ export default function MediaViewer() {
         <div className={styles.topBarRight}>
           {/* Forward — only for DM attachments */}
           {meta?.source !== 'Post' && (
-            <button className={styles.iconBtn} onClick={() => setShowForwardModal(true)} aria-label="Forward">
+            <button
+              type="button"
+              className={styles.iconBtn}
+              onClick={() => setShowForwardModal(true)}
+              disabled={!forwardUrl}
+              aria-label="Forward"
+              title={forwardUrl ? undefined : "This media can't be forwarded"}
+            >
               <Forward size={18} strokeWidth={1.75} />
             </button>
           )}
@@ -762,14 +876,16 @@ export default function MediaViewer() {
                 </MenuItem>
               )}
 
-              <MenuItem
-                icon={Flag}
-                disabled={hasReported}
-                onSelect={() => setShowReportModal(true)}
-                onClose={moreMenu.close}
-              >
-                {hasReported ? 'Already reported' : 'Report'}
-              </MenuItem>
+              {reportTarget && (
+                <MenuItem
+                  icon={Flag}
+                  disabled={hasReported}
+                  onSelect={() => setShowReportModal(true)}
+                  onClose={moreMenu.close}
+                >
+                  {hasReported ? 'Already reported' : 'Report'}
+                </MenuItem>
+              )}
 
             </Menu>
           </div>
@@ -801,6 +917,7 @@ export default function MediaViewer() {
                     <VideoViewer
                       key={item.url}
                       src={item.url}
+                      poster={item.thumb}
                       mediaRef={isCurrent ? mediaElRef : null}
                       onControlsChange={isCurrent ? setControlsVisible : undefined}
                       onStageClick={moreMenu.close}
@@ -810,6 +927,7 @@ export default function MediaViewer() {
                     <ImageViewer
                       key={item.url}
                       src={item.url}
+                      label={hasMany ? `Photo ${i + 1} of ${items.length}` : 'Photo'}
                       mediaRef={isCurrent ? mediaElRef : null}
                       zoomApiRef={isCurrent ? zoomApiRef : null}
                       onToggleControls={toggleControls}
@@ -879,46 +997,58 @@ export default function MediaViewer() {
       )}
 
       {/* ── Modals ── */}
-      <ReportModal
-        isOpen={showReportModal}
-        onClose={() => setShowReportModal(false)}
-        targetType={meta?.postId ? 'POST' : (meta?.author?.id ? 'USER' : 'POST')}
-        targetId={meta?.postId || meta?.author?.id || currentItem?.url || 'media'}
-        targetName={meta?.author?.name || meta?.author?.username}
-        targetAvatar={meta?.author?.avatar}
-        targetPreview={currentItem?.caption || meta?.post?.text?.slice(0, 80)}
-        reportedFrom="media-viewer"
-        onSubmitted={() => setHasReported(true)}
-      />
+      {reportTarget && (
+        <ReportModal
+          isOpen={showReportModal}
+          onClose={() => setShowReportModal(false)}
+          targetType={reportTarget.targetType}
+          targetId={reportTarget.targetId}
+          targetName={reportTarget.name ?? meta?.authorName}
+          targetAvatar={reportTarget.avatar ?? meta?.authorAvatar}
+          targetPreview={currentItem?.caption || (reportTarget.targetType === 'POST' ? meta?.post?.text?.slice(0, 80) : undefined)}
+          reportedFrom="media-viewer"
+          onSubmitted={markCurrentReported}
+          onFailed={(error) => {
+            // The server already holds an open report from this person for this
+            // exact thing: say so from now on instead of offering it again.
+            if (error?.status === 409) {
+              markCurrentReported();
+              setShowReportModal(false);
+            }
+          }}
+        />
+      )}
 
-      {showForwardModal && (
+      {showForwardModal && forwardUrl && (
         <LazyForwardModal
           isOpen={showForwardModal}
-          currentItem={currentItem}
+          mediaUrl={forwardUrl}
+          mediaType={currentItem?.type || (isVideo(currentItem) ? 'video' : 'image')}
           onClose={() => setShowForwardModal(false)}
         />
       )}
 
+      {/* Spoken status for the download, present from the start so a screen reader
+          is already listening when the text changes. */}
+      <div className={styles.srOnly} role="status" aria-live="polite" aria-atomic="true">
+        {downloadMessage}
+      </div>
+
       {downloadState && (
         <div className={styles.downloadModalOverlay}>
-          <div className={styles.downloadModal}>
-            {['preparing', 'downloading', 'converting'].includes(downloadState) ? (
-              <div className={styles.downloadSpinner} />
+          <div className={styles.downloadModal} role="group" aria-label="Download">
+            {downloadBusy ? (
+              <div className={styles.downloadSpinner} aria-hidden="true" />
             ) : downloadState === 'completed' ? (
-              <div className={styles.downloadIconSuccess}>✓</div>
+              <div className={styles.downloadIconSuccess} aria-hidden="true">✓</div>
             ) : (
-              <div className={styles.downloadIconError}>✕</div>
+              <div className={styles.downloadIconError} aria-hidden="true">✕</div>
             )}
-            <div className={styles.downloadText}>
-              {downloadState === 'preparing'   && 'Preparing download…'}
-              {downloadState === 'downloading' && 'Downloading media…'}
-              {downloadState === 'converting'  && 'Converting to PNG…'}
-              {downloadState === 'completed'   && 'Download completed'}
-              {downloadState === 'failed'      && 'Download failed'}
-              {downloadState === 'cancelled'   && 'Download cancelled'}
+            <div className={styles.downloadText} aria-hidden="true">
+              {downloadMessage}
             </div>
-            {['preparing', 'downloading', 'converting'].includes(downloadState) && (
-              <button className={styles.downloadCancelBtn} onClick={handleCancelDownload}>
+            {downloadBusy && (
+              <button type="button" className={styles.downloadCancelBtn} onClick={handleCancelDownload}>
                 Cancel
               </button>
             )}
@@ -933,12 +1063,15 @@ export default function MediaViewer() {
 /**
  * Lazy component that only subscribes to conversations and message action hooks
  * when the forward modal is actually opened.
+ *
+ * `mediaUrl` is already vetted by `forwardableMediaUrl` - stored, not local, not
+ * signed - so it is safe to persist into new messages.
  */
-function LazyForwardModal({ isOpen, currentItem, onClose }) {
+function LazyForwardModal({ isOpen, mediaUrl, mediaType, onClose }) {
   // The picker's list, not the inbox's. Forward is a recipient choice, so it
   // must exclude threads that cannot be sent into; useConversations would have
   // offered every thread the user has.
-  const { conversations, isLoading } = useRecipientConversations(isOpen);
+  const { conversations, isLoading, onSearchChange } = useForwardRecipients(isOpen);
   const { sendDirectMessage } = useMessageActions();
 
   if (!isOpen) return null;
@@ -946,38 +1079,46 @@ function LazyForwardModal({ isOpen, currentItem, onClose }) {
   return (
     <ForwardMessageModal
       isOpen={isOpen}
-      msg={{ mediaUrl: currentItem?.url, mediaType: currentItem?.type || 'image' }}
+      msg={{ mediaUrl, mediaType }}
       conversations={conversations || []}
       isLoading={isLoading}
+      onSearchChange={onSearchChange}
       onClose={onClose}
-      onConfirmForward={async (targetIds) => {
-        // Same contract as the in-chat forward: attempt every target, report
-        // honestly, and throw so the modal keeps the selection for a retry.
-        // This used to be `catch (_) {}` with an unconditional close, so a
-        // forward that sent nothing looked exactly like one that worked.
-        const failed = [];
-        for (const id of targetIds) {
-          try {
-            await sendDirectMessage(id, {
-              text: '',
-              mediaUrl: currentItem?.url,
-              mediaType: currentItem?.type || 'image',
-            });
-          } catch {
-            failed.push(id);
-          }
+      onConfirmForward={async (targetIds, { operationId }) => {
+        /*
+         * Same contract as the in-chat forward: attempt every target, report
+         * honestly, and throw so the modal keeps the selection for a retry. This
+         * used to be `catch (_) {}` with an unconditional close, so a forward that
+         * sent nothing looked exactly like one that worked; and then it kept the
+         * whole selection, so a retry re-sent to everyone who already had it.
+         *
+         * Each recipient's client id comes from the modal's operation id, so a
+         * repeat is recognised by the server and the thrown ForwardPartialError
+         * tells the modal exactly who is left.
+         */
+        try {
+          await forwardToTargets({
+            targetIds,
+            operationId,
+            // The ninth positional argument is the options bag; `tempId` is how a
+            // client id reaches the request (see useMessageActions.sendDirectMessage).
+            send: (id, clientId) => sendDirectMessage(
+              id,
+              { text: '', mediaUrl, mediaType },
+              undefined, undefined, undefined, undefined, undefined, undefined,
+              { tempId: clientId },
+            ),
+          });
+        } catch (error) {
+          const sent = error?.sentCount ?? 0;
+          showToast(
+            sent > 0
+              ? `Forwarded to ${sent} of ${targetIds.length} chats`
+              : 'Could not forward the media',
+            'error',
+          );
+          throw error;
         }
-
-        if (failed.length === 0) return;
-
-        const sent = targetIds.length - failed.length;
-        showToast(
-          sent > 0
-            ? `Forwarded to ${sent} of ${targetIds.length} chats`
-            : 'Could not forward the media',
-          'error',
-        );
-        throw new Error(`forward failed for ${failed.length} recipient(s)`);
       }}
     />
   );

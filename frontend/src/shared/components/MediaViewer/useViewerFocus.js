@@ -31,6 +31,8 @@ export function useViewerFocus(open, overlayRef) {
     // <body> - the app root and any dialog beneath the viewer - is made inert,
     // whether or not it happens to contain a dialog of its own.
     const isOwnLayer = child => child.contains(viewer)
+      // Toasts are status messages, not content behind the viewer; inert would hide them from assistive tech.
+      || child.classList.contains('custom-toast')
       || child.matches(menuSelector)
       || (isAfterViewer(child) && (child.matches(dialogSelector) || Boolean(child.querySelector(dialogSelector))));
     const syncBackground = () => {
@@ -49,7 +51,7 @@ export function useViewerFocus(open, overlayRef) {
         if (previousRoot.isConnected && root !== viewer) dialogOpeners.set(root, document.activeElement);
         const trigger = dialogOpeners.get(previousRoot);
         previousRoot = root;
-        if (trigger?.isConnected && isAllowed(trigger) && !trigger.closest('[inert]')) trigger.focus();
+        if (trigger?.isConnected && isAllowed(trigger) && !trigger.closest('[inert]')) trigger.focus({ preventScroll: true });
         else if (!isAllowed(document.activeElement)) focusFirst();
       }
     });
@@ -78,7 +80,11 @@ export function useViewerFocus(open, overlayRef) {
         if (value === null) child.removeAttribute('inert');
         else child.setAttribute('inert', value);
       });
-      if (opener?.isConnected && !opener.closest('[inert]')) opener.focus();
+      // Handing focus back must not move the page. A plain focus() scrolls the
+      // element into view, and the opener is a media tile that is often taller
+      // than the screen or partly above it - so closing the viewer used to jump
+      // the page, and a delayed scroll restore then jumped it back: the flicker.
+      if (opener?.isConnected && !opener.closest('[inert]')) opener.focus({ preventScroll: true });
     };
   }, [open, overlayRef]);
 }

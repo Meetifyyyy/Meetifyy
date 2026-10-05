@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import { useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { useViewerFocus } from '../useViewerFocus';
 function Viewer() {
@@ -85,5 +85,23 @@ describe('viewer modal focus', () => {
       expect(document.activeElement).toBe(b1);
       sheet.remove();
     });
+  });
+  it('does not make a toast inert - it is a status message, not content behind the viewer', () => {
+    const toast = document.createElement('div');
+    toast.className = 'custom-toast custom-toast-error';
+    toast.setAttribute('role', 'alert');
+    document.body.append(toast);
+    const result = render(<Viewer />);
+    expect(toast.hasAttribute('inert')).toBe(false);
+    result.unmount(); toast.remove();
+  });
+  it('hands focus back without scrolling the page', () => {
+    const opener = document.createElement('button');
+    document.body.append(opener); opener.focus();
+    const focus = vi.spyOn(opener, 'focus');
+    const result = render(<Viewer />);
+    result.unmount();
+    expect(focus).toHaveBeenCalledWith({ preventScroll: true });
+    opener.remove();
   });
 });
