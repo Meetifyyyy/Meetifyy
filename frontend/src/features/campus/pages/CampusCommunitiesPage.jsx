@@ -21,6 +21,32 @@ import VerificationGate from '@shared/components/VerificationGate/VerificationGa
  */
 const CreateCommunityModal = lazy(() => import('@features/communities/components/modals/CreateCommunityModal'));
 
+/**
+ * Nothing to list. Two different situations, so two different messages:
+ * a campus with no communities (the next step is to start one) and a search that
+ * matched none (the next step is to search differently; creating a community is
+ * not the answer to a typo).
+ */
+export function EmptyCommunities({ searching, query, onCreate }) {
+  return (
+    <div className={styles.emptyState}>
+      <p className={styles.emptyEyebrow}>{searching ? 'Search' : 'Campus communities'}</p>
+      <h2 className={styles.emptyTitle}>{searching ? 'No matches' : 'No communities yet'}</h2>
+      <p className={styles.emptyText}>
+        {searching
+          ? <>Nothing on campus matches <span className={styles.emptyQuery}>{query}</span>.</>
+          : 'Be the first to start one for your campus.'}
+      </p>
+      {!searching && (
+        <button type="button" className={styles.emptyAction} onClick={onCreate}>
+          <Plus size={16} />
+          Create community
+        </button>
+      )}
+    </div>
+  );
+}
+
 export default function CampusCommunitiesPage() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -112,75 +138,7 @@ export default function CampusCommunitiesPage() {
               </div>
             </section>
           ) : (
-            <div style={{
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              textAlign: 'center',
-              flex: 1,
-              minHeight: 'calc(65vh - 100px)',
-              padding: '2rem 1rem',
-              boxSizing: 'border-box',
-            }}>
-              <div style={{
-                fontSize: '3.25rem',
-                lineHeight: 1,
-                marginBottom: '0.4rem',
-                display: 'flex',
-                justifyContent: 'center',
-                alignItems: 'center',
-                filter: 'drop-shadow(0 6px 12px rgba(0,0,0,0.15))'
-              }}>
-                🚀
-              </div>
-              <h2 style={{
-                margin: '0 0 0.25rem 0',
-                color: 'var(--color-text-main)',
-                fontSize: '1.35rem',
-                fontWeight: '700',
-                letterSpacing: '-0.02em',
-                textAlign: 'center',
-                lineHeight: 1.25,
-              }}>
-                No Community
-              </h2>
-              <p style={{
-                color: 'var(--color-text-muted)',
-                fontSize: '0.88rem',
-                margin: '0 0 1rem 0',
-                textAlign: 'center',
-                lineHeight: 1.35,
-                maxWidth: '320px',
-              }}>
-                Your campus needs its first community
-              </p>
-              <button
-                type="button"
-                onClick={openCreateModal}
-                style={{
-                  background: 'var(--color-primary, #2563eb)',
-                  color: 'white',
-                  border: 'none',
-                  padding: '0.65rem 1.35rem',
-                  borderRadius: '24px',
-                  fontWeight: '600',
-                  fontSize: '0.88rem',
-                  cursor: 'pointer',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '0.4rem',
-                  boxShadow: '0 4px 14px rgba(37, 99, 235, 0.25)',
-                  transition: 'background 0.2s ease, opacity 0.2s ease',
-                }}
-                onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--color-primary-hover, #1d4ed8)'; }}
-                onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--color-primary, #2563eb)'; }}
-              >
-                <Plus size={16} />
-                Create Community
-              </button>
-            </div>
+            <EmptyCommunities searching={Boolean(debouncedSearch.trim())} query={debouncedSearch.trim()} onCreate={openCreateModal} />
           )}
         </div>
 

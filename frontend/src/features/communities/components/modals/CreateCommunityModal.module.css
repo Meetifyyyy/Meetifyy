@@ -614,7 +614,13 @@
     border-bottom-right-radius: 0;
     border-top-left-radius: 24px;
     border-top-right-radius: 24px;
-    padding: 1.5rem 1.25rem 1.25rem 1.25rem;
+    /* The sheet is bottom-aligned on a full-height overlay, so its bottom edge
+       is the screen's - which in the installed app is under the system
+       navigation bar. The footer buttons live at that edge, so the sheet's own
+       bottom padding clears the bar. (The mobile build's PostCSS pairs
+       env(safe-area-inset-bottom) with the native bar height; the site and PWA
+       get the home-indicator inset from env() itself.) */
+    padding: 1.5rem 1.25rem calc(1.25rem + env(safe-area-inset-bottom, 0px)) 1.25rem;
     animation: slideUpMobile 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   }
 

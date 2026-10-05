@@ -8,6 +8,7 @@ import { CollegeRepresentativeBadge } from '@shared/components/badges/CollegeRep
 import styles from './CommunityMembersModal.module.css';
 import { useUsersMap } from '@shared/hooks/useUsersMap';
 import { useAuth } from '@shared/context/AuthContext';
+import BlockUserModal from '@shared/components/modals/BlockUserModal';
 import { usersApi, communitiesApi } from '@shared/api/apiClient';
 import { showToast } from '@shared/utils/toast';
 import ReportModal from '@shared/components/modals/ReportModal/ReportModal';
@@ -44,6 +45,7 @@ function MemberActionMenu({
   // Promotion is gated behind an explicit confirmation that spells out the
   // powers being granted; nothing changes until it is confirmed.
   const [confirmPromote, setConfirmPromote] = useState(false);
+  const [confirmBlock, setConfirmBlock] = useState(false);
   const btnRef = useRef(null);
 
   const toggleOpen = (e) => {
@@ -81,8 +83,14 @@ function MemberActionMenu({
 
   if (isCurrentUser) return null;
 
-  const handleBlock = async () => {
+  // Blocking is asked first (see BlockUserModal); the menu only opens the question.
+  const handleBlock = () => {
     setOpen(false);
+    setConfirmBlock(true);
+  };
+
+  const confirmBlockUser = async () => {
+    setConfirmBlock(false);
     try {
       await usersApi.blockUser(member.id);
       showToast(`${member.name} blocked`, 'success');
@@ -150,6 +158,14 @@ function MemberActionMenu({
     setConfirmPromote(false);
   };
 
+  const blockModal = confirmBlock ? (
+    <BlockUserModal
+      name={member.name}
+      onConfirm={confirmBlockUser}
+      onCancel={() => setConfirmBlock(false)}
+    />
+  ) : null;
+
   const promoteModal = confirmPromote ? (
     <PromoteModeratorModal
       memberName={member.name}
@@ -161,7 +177,7 @@ function MemberActionMenu({
 
   return (
     <div style={{ flexShrink: 0 }}>
-      {promoteModal}
+      {promoteModal}{blockModal}
       <button
         ref={btnRef}
         onClick={toggleOpen}

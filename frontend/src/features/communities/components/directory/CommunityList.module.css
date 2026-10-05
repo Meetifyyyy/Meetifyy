@@ -43,7 +43,15 @@
 .more {
   display: flex;
   justify-content: center;
-  padding: 0.75rem 0 0.5rem;
+  padding: 1rem 0 0.75rem;
+}
+
+/* "Show more" is the one control under a long list: same height as the empty-state
+   actions, with enough width to read as a deliberate button rather than a chip. */
+.more .secondaryBtn {
+  height: 44px;
+  min-width: 11rem;
+  padding: 0 1.5rem;
 }
 
 /* ── Empty and error states ─────────────────────────────── */
@@ -97,24 +105,24 @@
    rhythm: tabs, a titled section, then its content. */
 
 .heading {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 0.25rem 0.5rem 0.625rem;
+  display: block;
+  padding: 0.75rem 0.5rem 1rem;
 }
 
 .headingTitle {
   margin: 0;
-  font-size: 0.95rem;
-  font-weight: 600;
+  font-size: 1.6rem;
+  font-weight: 800;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
   color: var(--color-text-main);
 }
 
-.headingMeta {
-  font-size: 0.8rem;
+.headingSubtitle {
+  margin: 0.4rem 0 0;
+  font-size: 0.95rem;
+  line-height: 1.4;
   color: var(--color-text-muted);
-  white-space: nowrap;
 }
 
 /* Text-focused empty states, directly on the page surface. */
@@ -149,17 +157,33 @@
 
 .emptyActions {
   display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 0.5rem;
-  margin-top: 1.125rem;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.625rem;
+  width: min(100%, 20rem);
+  margin-top: 1.5rem;
 }
 
+/* Side by side once there is room, at equal width so the pair reads as one unit. */
+@media (min-width: 520px) {
+  .emptyActions {
+    flex-direction: row;
+    width: auto;
+  }
+
+  .emptyActions .primaryBtn,
+  .emptyActions .secondaryBtn {
+    flex: 1 1 0;
+    min-width: 11rem;
+  }
+}
+
+/* Full-size touch targets: the compact 36px pills were fine on a mouse and small on a thumb. */
 .emptyActions .primaryBtn,
 .emptyActions .secondaryBtn {
-  height: 36px;
-  padding: 0 0.95rem;
-  font-size: 0.85rem;
+  height: 44px;
+  padding: 0 1.25rem;
+  font-size: 0.9rem;
 }
 
 /* ── Buttons ─────────────────────────────────────────────── */

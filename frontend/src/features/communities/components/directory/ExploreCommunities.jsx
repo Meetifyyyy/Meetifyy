@@ -24,7 +24,7 @@ export default function ExploreCommunities({ onCreate }) {
 
   return (
     <section className={listStyles.section} aria-busy={isFetching} aria-label="Communities">
-      <SectionHeading title="Discover" meta="Public and private" />
+      <SectionHeading title="Discover your people" subtitle="Find communities built around what you love, across campus." />
       {isLoading && <CommunityRowSkeleton count={5} />}
 
       {!isLoading && isError && communities.length === 0 && (
@@ -40,14 +40,14 @@ export default function ExploreCommunities({ onCreate }) {
 
       {!isLoading && !isError && communities.length === 0 && (
         <EmptyPanel
-          title="Be the first to bring people together"
+          title="Be the first to start one"
           actions={(
             <button type="button" className={listStyles.primaryBtn} onClick={onCreate}>
               Create a community
             </button>
           )}
         >
-          There are no communities to explore yet. Start one around a shared interest and invite students to join.
+          There are no communities to explore yet.
         </EmptyPanel>
       )}
 

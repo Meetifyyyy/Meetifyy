@@ -31,3 +31,81 @@
     display: inline;
   }
 }
+
+/* ── Empty state ─────────────────────────────────────────────────────────────
+   Led by type, not decoration: a small tracked label, a large tight headline, one
+   muted sentence and one action. No icon, illustration or emoji - the page is a
+   directory, and an empty directory should read as exactly that. */
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  flex: 1;
+  min-height: calc(65vh - 100px);
+  padding: 2rem 1.5rem;
+  box-sizing: border-box;
+}
+
+.emptyEyebrow {
+  margin: 0 0 0.75rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.emptyTitle {
+  margin: 0;
+  max-width: 14ch;
+  font-size: clamp(1.9rem, 7vw, 2.6rem);
+  font-weight: 800;
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+  text-wrap: balance;
+  color: var(--color-text-main);
+}
+
+.emptyText {
+  margin: 0.9rem 0 0;
+  max-width: 30ch;
+  font-size: 1rem;
+  line-height: 1.5;
+  text-wrap: balance;
+  color: var(--color-text-muted);
+}
+
+.emptyQuery {
+  color: var(--color-text-main);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.emptyAction {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  min-height: 46px;
+  margin-top: 1.75rem;
+  padding: 0 1.6rem;
+  border: none;
+  border-radius: 999px;
+  background: var(--color-primary, #2563eb);
+  color: #fff;
+  font-size: 0.92rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.emptyAction:hover {
+  background: var(--color-primary-hover, #1d4ed8);
+}
+
+.emptyAction:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}

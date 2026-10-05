@@ -8,6 +8,10 @@ import EmptyPanel from './EmptyPanel';
 import { byRecentActivity } from './communityMeta';
 import styles from './CommunityList.module.css';
 
+// 3 words / 9 words.
+const YOURS_TITLE = 'Communities you’ve joined';
+const YOURS_SUBTITLE = 'Jump back into the groups you’re already part of.';
+
 export default function YourCommunities({ onExplore, onCreate }) {
   const { myCommunities, isLoading, isError, refetch } = useMyCommunities();
   const sorted = useMemo(() => [...myCommunities].sort(byRecentActivity), [myCommunities]);
@@ -38,9 +42,9 @@ export default function YourCommunities({ onExplore, onCreate }) {
   if (sorted.length === 0) {
     return (
       <section className={styles.section} aria-label="Your communities">
-        <SectionHeading title="Your communities" />
+        <SectionHeading title={YOURS_TITLE} subtitle={YOURS_SUBTITLE} />
         <EmptyPanel
-          title="Find your community"
+          title="Nothing here yet"
           actions={(
             <>
               <button type="button" className={styles.primaryBtn} onClick={onExplore}>
@@ -52,7 +56,7 @@ export default function YourCommunities({ onExplore, onCreate }) {
             </>
           )}
         >
-          Connect with students who share your interests. Join a community to see it here, or start your own.
+          Communities you join will show up here.
         </EmptyPanel>
       </section>
     );
@@ -60,10 +64,7 @@ export default function YourCommunities({ onExplore, onCreate }) {
 
   return (
     <section className={styles.section} aria-label="Your communities">
-      <SectionHeading
-        title="Your communities"
-        meta={`${sorted.length} · most active first`}
-      />
+      <SectionHeading title={YOURS_TITLE} subtitle={YOURS_SUBTITLE} />
       <div className={styles.list}>
         {sorted.map((c) => (
           <CommunityRow key={c.id} community={c} variant="mine" from="/communities" />

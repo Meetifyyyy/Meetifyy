@@ -19,9 +19,10 @@
 }
 
 @media (max-width: 768px) {
+  /* Only the surface colour is set here. Padding and min-height of the page shell
+     (`.centre`) are owned by the global mobile rule, which wins over anything a
+     page declares, and which already reserves the space for the bottom bar. */
   .page {
-    min-height: calc(100dvh - var(--status-bar-inset, 0px));
-    padding: 0 !important;
     background: var(--color-surface-screen, var(--color-bg-white));
   }
 }
@@ -162,8 +163,13 @@
     border: none;
     border-radius: 0;
     background: var(--color-surface-screen, var(--color-bg-white));
-    padding: 0 0.5rem var(--bottom-nav-clearance, 60px);
-    min-height: calc(100dvh - var(--status-bar-inset, 0px));
+    padding: 0 0.5rem;
+    /* The shell (`.centre`) already ends in padding for the bottom bar
+       (clearance + a 12px buffer). The card used to ALSO pad itself by the
+       clearance and fill a whole screen, so the two stacked and the page was
+       always one bar-height longer than the screen: a permanent scroll with
+       nothing to scroll to. Short lists now fill exactly the room that is left. */
+    min-height: calc(100dvh - var(--status-bar-inset, 0px) - var(--bottom-nav-clearance, 60px) - 12px);
     margin: 0;
     gap: 0.75rem;
   }
