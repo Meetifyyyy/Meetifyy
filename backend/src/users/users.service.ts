@@ -34,6 +34,7 @@ import {
   isReservedUsername,
   RESERVED_USERNAME_MESSAGE,
 } from '../common/users/reserved-usernames';
+import { conversationListFirstPageKeys } from '../messages/conversation-list-cache';
 
 /** The follow CTE's single row (see followUser). */
 interface FollowCteRow {
@@ -2031,20 +2032,15 @@ export class UsersService {
   }
 
   /**
-   * Bust the `user:conversations:*` Redis cache for the given users. Mirrors the
-   * key scheme in MessagesService.invalidateUserConversationsCache (page 0 for
-   * the common UI page sizes). Kept here to avoid a MessagesService <-> UsersService
+   * Bust the conversation-list Redis cache for the given users: the first page
+   * at the common page sizes, keyed exactly as MessagesService writes it (see
+   * conversation-list-cache.ts). Kept here to avoid a MessagesService <-> UsersService
    * circular dependency.
    */
   private async invalidateConversationListCache(userIds: string[]) {
     const redis = this.redisService?.getClient?.();
     if (!redis) return;
-    const COMMON_LIMITS = [20, 30, 50];
-    const keys: string[] = [];
-    for (const uid of userIds) {
-      for (const lim of COMMON_LIMITS)
-        keys.push(`user:conversations:${uid}:${lim}:0`);
-    }
+    const keys = userIds.flatMap(conversationListFirstPageKeys);
     if (keys.length > 0) await redis.del(...keys).catch(() => {});
   }
 

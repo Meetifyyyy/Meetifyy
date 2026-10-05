@@ -76,6 +76,10 @@ import {
   UpdateGroupSettingsDto,
   pickGroupSettings,
 } from './dto/update-group-settings.dto';
+import {
+  conversationListCacheKey,
+  conversationListFirstPageKeys,
+} from './conversation-list-cache';
 
 /** The questions MessagesService asks the Instant Match domain. Kept small so
  *  the coupling between the two stays visible: may this user write into this
@@ -263,13 +267,7 @@ export class MessagesService
         // H-3 fix: Construct keys directly from known user IDs — no SCAN needed.
         // The conversation list is paginated with limit/offset; we invalidate page 0
         // (the most common fetch) plus a few common limits to cover the UI variants.
-        const COMMON_LIMITS = [20, 30, 50];
-        const keysToDelete: string[] = [];
-        for (const uId of userIds) {
-          for (const lim of COMMON_LIMITS) {
-            keysToDelete.push(`user:conversations:${uId}:${lim}:0`);
-          }
-        }
+        const keysToDelete = userIds.flatMap(conversationListFirstPageKeys);
         if (keysToDelete.length > 0) {
           await this.redis.del(...keysToDelete);
         }
@@ -1392,7 +1390,13 @@ export class MessagesService
     // a v1 entry can hold a restricted thread, and serving one would be a hole
     // in the policy for the length of its TTL. The key is scoped by viewer,
     // which is what makes caching a policy-filtered list safe at all.
-    const cacheKey = `user:conversations:v2:${eligibleOnly ? 'pick:' : ''}${userId}:${limit}:${offset}:${cleanSearch.toLowerCase()}`;
+    const cacheKey = conversationListCacheKey(
+      userId,
+      limit,
+      offset,
+      cleanSearch,
+      eligibleOnly,
+    );
     if (this.redis) {
       try {
         const cached = await this.redis.get(cacheKey);

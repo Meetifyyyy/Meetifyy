@@ -34,6 +34,7 @@ import {
   UpdateGroupSettingsDto,
   pickGroupSettings,
 } from '../dto/update-group-settings.dto';
+import { conversationListFirstPageKeys } from '../conversation-list-cache';
 
 @Injectable()
 export class GroupChatsService extends MessagingCoreService {
@@ -78,22 +79,10 @@ export class GroupChatsService extends MessagingCoreService {
     if (!redis) return;
     try {
       if (userIds && userIds.length > 0) {
-        await Promise.all(
-          userIds.map(async (uId) => {
-            let cursor = '0';
-            do {
-              const [nextCursor, keys] = await redis.scan(
-                cursor,
-                'MATCH',
-                `user:conversations:${uId}:*`,
-                'COUNT',
-                50,
-              );
-              cursor = nextCursor;
-              if (keys && keys.length > 0) await redis.del(...keys);
-            } while (cursor !== '0');
-          }),
-        );
+        // A direct DEL of the pages clients refetch, like the other evictors.
+        // A SCAN walks the whole keyspace — the one the job queues live in —
+        // per participant; deeper and searched pages expire with the TTL.
+        await redis.del(...userIds.flatMap(conversationListFirstPageKeys));
       } else {
         let cursor = '0';
         do {
