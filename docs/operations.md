@@ -159,11 +159,30 @@ back to routing the file through the Container App — slower, and it burns egre
 on the API.
 
 ```json
-[{ "AllowedOrigins": ["https://meetifyy.app", "https://www.meetifyy.app"],
+[{ "AllowedOrigins": ["https://meetifyy.app", "https://www.meetifyy.app", "https://localhost"],
    "AllowedMethods": ["GET", "PUT", "HEAD"],
-   "AllowedHeaders": ["Content-Type", "Cache-Control"],
+   "AllowedHeaders": ["Content-Type", "Cache-Control", "Range"],
    "ExposeHeaders": ["ETag"], "MaxAgeSeconds": 3600 }]
 ```
+
+`https://localhost` is the installed app's origin (Capacitor serves the bundle
+from it, the same reason it is in the API's CORS list). Without it every upload
+from the app falls back to the pass-through. `Range` is for video seeking on
+media loaded with `crossOrigin`. Exact origins only — never `*.meetifyy.app`.
+
+Development uses the same shape with its own origins:
+`https://dev.meetifyy.app`, `https://dev-admin.meetifyy.app`,
+`https://localhost`, and the local dev servers `http://localhost:3000`
+(web), `http://localhost:3001` (mobile) and `http://localhost:5174` (admin).
+Those `localhost:<port>` entries never go on a production bucket.
+
+Check a bucket with a preflight (no credentials needed):
+
+```bash
+curl -s -o /dev/null -D - -X OPTIONS "https://<account-id>.r2.cloudflarestorage.com/<bucket>/x" -H "Origin: https://localhost" -H "Access-Control-Request-Method: PUT" -H "Access-Control-Request-Headers: content-type,cache-control" | grep -iE "^HTTP|access-control-allow-origin"
+```
+
+`200` with the origin echoed back means allowed; `403` means refused.
 
 Production R2 is a **separate Cloudflare account** from dev — new account ID,
 new token, new buckets. The API token should be **Object Read & Write** scoped
