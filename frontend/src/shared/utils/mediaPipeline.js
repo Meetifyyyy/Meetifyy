@@ -1,4 +1,20 @@
-import imageCompression from 'browser-image-compression';
+/**
+ * The compressor (~52 KB), loaded on the first upload rather than at startup.
+ *
+ * This module is reached from the composer and the share sheet, both of which
+ * are on the Home screen, so a static import parsed the library on every
+ * launch for a feature most launches never use.
+ */
+let compressorPromise = null;
+const loadCompressor = () => {
+  compressorPromise ??= import('browser-image-compression')
+    .then((m) => m.default)
+    .catch((err) => {
+      compressorPromise = null; // let a later upload retry the chunk
+      throw err;
+    });
+  return compressorPromise;
+};
 import { apiClient, deriveThumbnailKey, getBackendUrl, getAccessToken, getNativeSessionId } from '../api/apiClient';
 import { MAX_COVERED_IMAGE_SIZE_MB } from '../constants/mediaLimits';
 
@@ -214,6 +230,14 @@ export const compressImage = async (file, options = {}) => {
     exifOrientation: 1, // Reset EXIF
   };
 
+  let imageCompression;
+  try {
+    imageCompression = await loadCompressor();
+  } catch (error) {
+    console.warn('Image compressor unavailable, using original file:', error);
+    return file;
+  }
+
   try {
     const compressedFile = await imageCompression(file, compressionOptions);
     return compressedFile;
@@ -258,6 +282,17 @@ const band = (start, end, pct) => start + ((end - start) * Math.max(0, Math.min(
  * `onProgress` reports TRUE byte progress for THIS file on a 0-100 scale, so
  * callers can map it into whatever band of their overall pipeline they want.
  */
+/**
+ * Set once a direct-to-storage PUT fails at the network level (in practice: the
+ * bucket's CORS policy refuses this origin), for the rest of the session.
+ *
+ * Every upload otherwise paid for a presign, a refused preflight and an
+ * orphaned pending row before falling back — twice per image, since the
+ * thumbnail is a second upload. The next launch tries the direct path again,
+ * so fixing the bucket's CORS takes effect without an app update.
+ */
+let directUploadBlocked = false;
+
 export const uploadFileDirect = async (file, folder = 'general', onProgress = null, signal = null, variantKey = null, meta = {}) => {
   const report = makeProgressReporter(onProgress);
   try {
@@ -284,7 +319,10 @@ export const uploadFileDirect = async (file, folder = 'general', onProgress = nu
 
     // 1. Try Direct Upload via Presigned URL
     try {
-      const { uploadUrl, publicUrl, key, mediaId } = await apiClient.post('/api/media/presigned-url', {
+      if (directUploadBlocked) {
+        throw new Error('Direct upload unavailable on this network this session');
+      }
+      const { uploadUrl, publicUrl, key, mediaId, headers: signedHeaders } = await apiClient.post('/api/media/presigned-url', {
         filename: normalizedName,
         contentType: file.type || 'application/octet-stream',
         folder,
@@ -319,7 +357,14 @@ export const uploadFileDirect = async (file, folder = 'general', onProgress = nu
         if (file.type) {
           xhr.setRequestHeader('Content-Type', file.type);
         }
-        xhr.setRequestHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        // The headers the URL was signed with, sent verbatim. An older API that
+        // does not report them signed the public value for everything.
+        const required = signedHeaders && typeof signedHeaders === 'object'
+          ? signedHeaders
+          : { 'Cache-Control': 'public, max-age=31536000, immutable' };
+        for (const [name, value] of Object.entries(required)) {
+          if (typeof value === 'string') xhr.setRequestHeader(name, value);
+        }
 
         if (xhr.upload) {
           // True byte progress. Capped at 99 until the server actually ACKs the
@@ -347,7 +392,11 @@ export const uploadFileDirect = async (file, folder = 'general', onProgress = nu
           }
         };
 
-        xhr.onerror = () => reject(new Error('Network or CORS error during media upload'));
+        xhr.onerror = () => {
+          // Status 0 with no response: refused before reaching storage.
+          directUploadBlocked = true;
+          reject(new Error('Network or CORS error during media upload'));
+        };
         xhr.onabort = () => reject(new DOMException('Media upload aborted', 'AbortError'));
         if (signal) {
           if (signal.aborted) { try { xhr.abort(); } catch (_) {} }
@@ -374,6 +423,9 @@ export const uploadFileDirect = async (file, folder = 'general', onProgress = nu
       const formData = new FormData();
       formData.append('file', file, normalizedName);
       formData.append('folder', folder);
+      // A thumbnail keeps its derived key, so the UI's `<name>_thumb.webp`
+      // finds it. Without this it was stored under a random key and orphaned.
+      if (variantKey) formData.append('variantKey', variantKey);
 
       // NOTE: apiClient is fetch-based and cannot emit upload progress events,
       // so this pass-through leg is indeterminate by nature. We hold the bar at

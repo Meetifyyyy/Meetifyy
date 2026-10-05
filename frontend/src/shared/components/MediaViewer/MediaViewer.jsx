@@ -16,7 +16,7 @@ import { forwardableMediaUrl } from './forwardSource';
 import { useViewerFocus } from './useViewerFocus';
 import { motionTransition, prefersReducedMotion } from './viewerMotion';
 import styles from './MediaViewer.module.css';
-import ReportModal from '@shared/components/modals/ReportModal/ReportModal';
+import ReportModal from '@shared/components/modals/ReportModal/LazyReportModal';
 import ForwardMessageModal from '@features/messages/shared/components/modals/ForwardMessageModal';
 import { useForwardRecipients } from '@features/messages/shared/hooks/useForwardRecipients';
 import { useMessageActions } from '@shared/hooks/useMessageActions';

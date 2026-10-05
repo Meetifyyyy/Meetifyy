@@ -32,7 +32,7 @@ import AvatarPickerModal from '@features/auth/signup/components/AvatarPickerModa
 import ProfilePageSkeleton from '../components/skeletons/ProfilePageSkeleton';
 import PostSkeleton from '@features/feed/components/skeletons/PostSkeleton';
 import { createPortal } from 'react-dom';
-import ReportModal from '@shared/components/modals/ReportModal/ReportModal';
+import ReportModal from '@shared/components/modals/ReportModal/LazyReportModal';
 import { getCollegeName } from '@shared/utils/user';
 
 import RightPanel from '@layout/RightPanel';

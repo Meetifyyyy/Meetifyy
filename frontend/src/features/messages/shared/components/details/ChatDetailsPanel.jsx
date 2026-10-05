@@ -9,7 +9,7 @@ import { useAcademicSummary } from '@shared/academics/useAcademicSummary';
 import { Pin, Trash2, User, Search, Ban, UserPlus, UserCheck, UserX, Shield, Flag, ArrowLeft, MoreVertical } from '@shared/components/icons';
 import Menu, { MenuItem, useMenu } from '@shared/components/ui/Menu';
 import InviteModal from '../modals/InviteModal';
-import ReportModal from '@shared/components/modals/ReportModal/ReportModal';
+import ReportModal from '@shared/components/modals/ReportModal/LazyReportModal';
 import { showToast } from '@shared/utils/toast';
 
 import ChatGalleryPage from './ChatGalleryPage';

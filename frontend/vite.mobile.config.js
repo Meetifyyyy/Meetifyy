@@ -219,7 +219,13 @@ export default defineConfig({
   },
 
   resolve: {
-    alias: sharedAliases(__dirname),
+    alias: {
+      // First, so it wins over the generic `@shared` alias: the provider auth
+      // client loads on first use in the app instead of in the entry chunk.
+      // See src/mobile/supabaseFacade.js.
+      '@shared/lib/supabase': path.resolve(__dirname, 'src/mobile/supabaseFacade.js'),
+      ...sharedAliases(__dirname),
+    },
   },
 
   build: {

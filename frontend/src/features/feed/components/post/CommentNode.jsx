@@ -31,7 +31,7 @@ import { useNavigate } from 'react-router-dom';
 import { CollegeRepresentativeBadge } from '@shared/components/badges/CollegeRepresentativeBadge';
 import { getCollegeName } from '@shared/utils/user';
 import Avatar, { getProcessedAvatarUrl } from '@shared/components/avatar/Avatar';
-import ReportModal from '@shared/components/modals/ReportModal/ReportModal';
+import ReportModal from '@shared/components/modals/ReportModal/LazyReportModal';
 import RichText from '@shared/components/mentions/RichText';
 import { normalizeBodyText, truncateBodyText, clipMentions, COMMENT_LIMITS } from '@shared/utils/bodyText';
 import { timeAgo } from '@shared/utils/time';

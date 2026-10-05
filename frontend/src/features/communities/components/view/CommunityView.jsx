@@ -53,7 +53,7 @@ const POSTS_PAGE_SIZE = 15;
  * actually arrives.
  */
 const PENDING_LOCAL_POSTS = [];
-import ReportModal from '@shared/components/modals/ReportModal/ReportModal';
+import ReportModal from '@shared/components/modals/ReportModal/LazyReportModal';
 import ModeratorWelcomeModal from '../moderation/ModeratorWelcomeModal';
 import { NotificationOff, NotificationOn, MoreVertical, Share2, Users, Settings, Flag } from '@shared/components/icons';
 import Menu, { MenuItem, useMenu } from '@shared/components/ui/Menu';
@@ -646,7 +646,8 @@ export default function CommunityView({ communityId, onBack, onPostClick, onComm
   // it. It used to sit two hundred lines down, which put it in the temporal
   // dead zone for anything above — and a dependency array is evaluated during
   // render, so referencing it earlier throws rather than merely being stale.
-  const { socket, isConnected } = useGlobalSocketStore();
+  const socket = useGlobalSocketStore((s) => s.socket);
+  const isConnected = useGlobalSocketStore((s) => s.isConnected);
   const navigate = useNavigate();
   const users = useUsersMap();
   const { addPost, updateCommunity } = useCommunityActions();

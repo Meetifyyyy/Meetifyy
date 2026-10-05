@@ -16,7 +16,7 @@ import styles from './Post.module.css';
 import PostActions from './PostActions';
 import { useMediaViewerActions } from '@shared/context/MediaViewerContext';
 import ConfirmModal from '@shared/components/modals/ConfirmModal';
-import ReportModal from '@shared/components/modals/ReportModal/ReportModal';
+import ReportModal from '@shared/components/modals/ReportModal/LazyReportModal';
 import MediaGrid from './MediaGrid';
 import { useDeletePost, DELETING_FLAG } from '../../hooks/useDeletePost';
 import { useVotePoll } from '../../hooks/useVotePoll';

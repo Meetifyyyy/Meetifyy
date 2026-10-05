@@ -16,7 +16,7 @@ vi.mock('@shared/components/ui/Menu', () => ({
 }));
 vi.mock('../ImageViewer', () => ({ default: () => <img alt="Test media" /> }));
 vi.mock('../VideoViewer', () => ({ default: () => <video /> }));
-vi.mock('@shared/components/modals/ReportModal/ReportModal', () => ({ default: () => null }));
+vi.mock('@shared/components/modals/ReportModal/LazyReportModal', () => ({ default: () => null }));
 vi.mock('@features/messages/shared/components/modals/ForwardMessageModal', () => ({ default: () => null }));
 vi.mock('@shared/hooks/useRecipientConversations', () => ({ useRecipientConversations: () => ({ conversations: [] }) }));
 vi.mock('@shared/hooks/useMessageActions', () => ({ useMessageActions: () => ({}) }));

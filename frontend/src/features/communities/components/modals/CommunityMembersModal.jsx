@@ -11,7 +11,7 @@ import { useAuth } from '@shared/context/AuthContext';
 import BlockUserModal from '@shared/components/modals/BlockUserModal';
 import { usersApi, communitiesApi } from '@shared/api/apiClient';
 import { showToast } from '@shared/utils/toast';
-import ReportModal from '@shared/components/modals/ReportModal/ReportModal';
+import ReportModal from '@shared/components/modals/ReportModal/LazyReportModal';
 import { sortGroupMembers } from '@shared/utils/memberSort';
 import { useCommunityActions } from '@shared/hooks/useCommunityActions';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';

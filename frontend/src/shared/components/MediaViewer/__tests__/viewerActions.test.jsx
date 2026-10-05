@@ -32,7 +32,7 @@ vi.mock('../ImageViewer', () => ({
 vi.mock('../VideoViewer', () => ({
   default: (props) => { h.video = props; return <video />; },
 }));
-vi.mock('@shared/components/modals/ReportModal/ReportModal', () => ({
+vi.mock('@shared/components/modals/ReportModal/LazyReportModal', () => ({
   default: (props) => { h.report = props; return props.isOpen ? <div data-testid="report-open" /> : null; },
 }));
 vi.mock('@features/messages/shared/components/modals/ForwardMessageModal', () => ({
