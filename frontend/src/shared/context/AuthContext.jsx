@@ -16,6 +16,7 @@ import { getCollegeName } from '@shared/utils/user';
 import { idbClearAll } from '@shared/lib/idb';
 import { mediaCache } from '@shared/utils/MediaCacheManager';
 import { useQueryClient } from '@tanstack/react-query';
+import { IS_MOBILE_BUILD } from '@config';
 import { propagateUserMedia } from '@shared/utils/propagateUserMedia';
 import { suppressRedirectIntent, allowRedirectIntent } from '@shared/utils/redirectIntent';
 
@@ -144,6 +145,9 @@ const SESSION_SCOPED_KEYS = [
   'meetify_following_list',
   'meetify_followers_list',
   'meetify_show_community_details',
+  // The installed app's last Home feed page, shown at launch (see
+  // mobile/feedSnapshot.js).
+  'meetifyy_feed_snapshot_v1',
 ];
 
 /**
@@ -581,11 +585,54 @@ export function AuthProvider({ children }) {
       // Every first-time arrival and every shared link lands here.
       if (!mayHaveCookieSession()) return signedOut();
 
+      /**
+       * The installed app opens on the account it already holds, and checks
+       * with the server behind it — the way Instagram, X and Reddit start.
+       *
+       * The native splash is held until this effect decides, and deciding by
+       * asking the server held it for two serial round trips: 2.5–4.5 s
+       * measured on a mid-range phone, and past the 5 s backstop on a slow
+       * network. Android's own guidance is to hold a splash for LOCAL data
+       * only. Both facts used here are local: a refresh token in the Keystore
+       * (just read above) and the profile the last session saved.
+       *
+       * Nothing is trusted that was not before. Every request still has to
+       * authenticate, and is held behind the same renewal. This is the path
+       * `settleUnknown` already takes when the server cannot be reached; it is
+       * just taken first now. If the server refuses the session, the 401 it
+       * answers with tears everything down (`auth:unauthorized` →
+       * `clearLocalSession`), and so does the probe's own outcome below — a
+       * revoked device sees its own cached screen for a moment, then the
+       * signed-out app.
+       *
+       * Installed app only. A browser has no Keystore credential to say a
+       * session exists, and a shared machine is where a cached profile must
+       * never be shown before the server agrees.
+       */
+      if (IS_MOBILE_BUILD) {
+        let cached = null;
+        try {
+          cached = JSON.parse(localStorage.getItem('currentUser') || 'null');
+        } catch (_) {}
+        if (isValidUser(cached) && adoptUser(cached)) {
+          const result = await restoreSession();
+          if (cancelled) return;
+          if (result?.outcome === 'signed-in') {
+            adoptUser(result.user);
+          } else if (result?.outcome === 'signed-out') {
+            clearLocalSession();
+          }
+          // 'unknown' (offline, server unreachable): stay on the cached
+          // account, exactly as settleUnknown would have.
+          return;
+        }
+      }
+
       settle(await restoreSession());
     })();
 
     return () => { cancelled = true; };
-  }, [adoptUser, restoreSession]);
+  }, [adoptUser, restoreSession, clearLocalSession]);
 
   /**
    * Tell the launch shell it may lift.

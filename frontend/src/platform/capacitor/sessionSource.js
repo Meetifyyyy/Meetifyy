@@ -15,15 +15,25 @@
  *     protecting; the session id travels with it because a token without its id
  *     is useless — the API refuses a bearer that cannot name its session.
  *
- *   - The ACCESS token stays in memory ONLY. It lives an hour, it is replaced
- *     on every refresh, and writing it to disk would add a second copy of a
- *     credential for no benefit: a cold start can always mint a fresh one from
- *     the refresh token. Fewer copies of a secret is the whole design.
+ *   - The ACCESS token is kept there too, with its expiry. It used to stay in
+ *     memory only ("fewer copies of a secret"), which made EVERY cold start
+ *     rotate the refresh token before anything could load: 1–2.5 s measured on
+ *     a mid-range phone, and each rotation a window in which an app killed
+ *     mid-request (swiped away, or reclaimed by an OS that pre-starts apps)
+ *     lost the new refresh token and was signed out as a replay. Persisting it
+ *     is what AppAuth, the reference OAuth client for Android, does with its
+ *     whole auth state. It adds no exposure: anything that can read this
+ *     Keystore entry can read the thirty-day refresh token beside it, which is
+ *     strictly more powerful than a one-hour access token, and the access token
+ *     is session-bound (`x-session-id`), so revoking the device still ends it.
+ *     It is used at launch only with more than ACCESS_MIN_REMAINING_MS left.
  *
  * HOW A COLD START SIGNS BACK IN
  * It does not refresh here. `whenReady()` only loads what is on disk into
- * memory; the first request then goes out with no access token, comes back 401,
- * and the transport's existing single-flight refresh-and-retry does the rest.
+ * memory. With a usable access token the first request simply carries it; with
+ * none, the transport renews first through its single-flight refresh, and a
+ * stored token that turns out to be refused (revoked device) gets the usual
+ * 401 → refresh-and-retry.
  * Reusing that path rather than adding a second one keeps every refresh
  * single-flight — two independent renewals of the same rotating token look
  * exactly like a replay to the provider, which revokes the whole family and
@@ -36,8 +46,33 @@
 
 const REFRESH_KEY = 'mf.session.refresh';
 const SESSION_ID_KEY = 'mf.session.id';
+const ACCESS_KEY = 'mf.session.access';
 
-export function createCapacitorSessionSource({ secureStorage }) {
+/** A stored access token closer to expiry than this is not used at launch. */
+const ACCESS_MIN_REMAINING_MS = 2 * 60 * 1000;
+
+/**
+ * When an access token expires, in epoch ms: from its own `exp` claim, else
+ * from the response's `expiresIn`. Null when neither is known — such a token
+ * is kept in memory but never written, because one with no knowable expiry
+ * could not be judged at the next launch.
+ */
+function accessExpiry(token, expiresInSeconds, now) {
+  try {
+    const payload = token.split('.')[1];
+    if (payload) {
+      const json = JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')));
+      if (typeof json?.exp === 'number') return json.exp * 1000;
+    }
+  } catch {
+    // Not a readable JWT; fall through to the response's own lifetime.
+  }
+  return typeof expiresInSeconds === 'number' && expiresInSeconds > 0
+    ? now + expiresInSeconds * 1000
+    : null;
+}
+
+export function createCapacitorSessionSource({ secureStorage, now = () => Date.now() }) {
   let accessToken = '';
   let refreshToken = '';
   let sessionId = '';
@@ -53,15 +88,30 @@ export function createCapacitorSessionSource({ secureStorage }) {
    */
   async function restore() {
     try {
-      const [storedRefresh, storedSessionId] = await Promise.all([
+      const [storedRefresh, storedSessionId, storedAccess] = await Promise.all([
         secureStorage.get(REFRESH_KEY),
         secureStorage.get(SESSION_ID_KEY),
+        secureStorage.get(ACCESS_KEY).catch(() => null),
       ]);
 
       if (!storedRefresh || !storedSessionId) return false;
 
       refreshToken = storedRefresh;
       sessionId = storedSessionId;
+
+      // Still good for a while: the launch needs no rotation at all.
+      try {
+        const access = storedAccess ? JSON.parse(storedAccess) : null;
+        if (
+          typeof access?.token === 'string' &&
+          typeof access?.exp === 'number' &&
+          access.exp - now() > ACCESS_MIN_REMAINING_MS
+        ) {
+          accessToken = access.token;
+        }
+      } catch {
+        // Unreadable: the transport renews as it always did.
+      }
       return true;
     } catch {
       return false;
@@ -88,14 +138,18 @@ export function createCapacitorSessionSource({ secureStorage }) {
     // still reaches memory only once ITS write has landed — so a rotated
     // refresh token that made it to disk is never shadowed in memory by the
     // retired one, whatever happens to the other write.
-    const { refreshToken: nextRefresh, sessionId: nextSessionId } = tokens;
+    const { refreshToken: nextRefresh, sessionId: nextSessionId, accessToken: nextAccess } = tokens;
+    const exp = nextAccess ? accessExpiry(nextAccess, tokens.expiresIn, now()) : null;
     await Promise.all([
       nextRefresh &&
         secureStorage.set(REFRESH_KEY, nextRefresh).then(() => { refreshToken = nextRefresh; }),
       nextSessionId &&
         secureStorage.set(SESSION_ID_KEY, nextSessionId).then(() => { sessionId = nextSessionId; }),
+      // Best-effort: a failed write only means the next launch renews.
+      nextAccess && exp &&
+        secureStorage.set(ACCESS_KEY, JSON.stringify({ token: nextAccess, exp })).catch(() => {}),
     ]);
-    if (tokens.accessToken) accessToken = tokens.accessToken;
+    if (nextAccess) accessToken = nextAccess;
   }
 
   /** Signing out, or a session the server no longer recognises. */
@@ -105,6 +159,7 @@ export function createCapacitorSessionSource({ secureStorage }) {
     sessionId = '';
     await secureStorage.remove(REFRESH_KEY);
     await secureStorage.remove(SESSION_ID_KEY);
+    await secureStorage.remove(ACCESS_KEY).catch(() => {});
   }
 
   return {
@@ -129,6 +184,30 @@ export function createCapacitorSessionSource({ secureStorage }) {
     whenReady: () => {
       if (!readyPromise) readyPromise = restore();
       return readyPromise;
+    },
+
+    /**
+     * Resolves once the app is on screen.
+     *
+     * Some phones start apps in the background before anyone opens them (seen
+     * on a Vivo as `preStart_up`) and kill them at will. A refresh-token
+     * rotation in that state is a rotation nobody needs, and if the process is
+     * killed between the server rotating and the new token reaching the
+     * Keystore, the next launch presents a retired token and is signed out as
+     * a replay. So the launch renewal waits until the app is visible.
+     */
+    whenForeground: () => {
+      if (typeof document === 'undefined' || document.visibilityState !== 'hidden') {
+        return Promise.resolve();
+      }
+      return new Promise((resolve) => {
+        const onChange = () => {
+          if (document.visibilityState === 'hidden') return;
+          document.removeEventListener('visibilitychange', onChange);
+          resolve();
+        };
+        document.addEventListener('visibilitychange', onChange);
+      });
     },
 
     adopt,

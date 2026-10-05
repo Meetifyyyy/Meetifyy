@@ -475,6 +475,107 @@ describe('createTransport — reopening the app after it was closed', () => {
     expect(sent[1].auth).toBe('Bearer minted');
   });
 
+  it('answers the boot probe from the renewal when the server sends the profile', async () => {
+    const session = coldStartSession();
+    const sent = [];
+    globalThis.fetch = vi.fn(async (url, init) => {
+      const u = String(url);
+      sent.push({ url: u, body: init.body ? JSON.parse(init.body) : null });
+      if (u.includes('/api/auth/session/refresh')) {
+        const tokens = { accessToken: 'minted', refreshToken: 'rotated', sessionId: 's2' };
+        return {
+          ok: true, status: 200, headers: { get: () => null },
+          json: async () => ({ ...tokens, csrfToken: 'c', user: { id: 'u1', meta: { m: 1 } }, meta: { m: 1 } }),
+          text: async () => '',
+        };
+      }
+      return { ok: true, status: 200, headers: { get: () => null }, json: async () => ({}), text: async () => '{}' };
+    });
+
+    const { t } = build({ session });
+    const body = await t.apiClient.get('/api/auth/session');
+
+    expect(body).toEqual({ user: { id: 'u1', meta: { m: 1 } }, meta: { m: 1 }, sessionId: 's2', csrfToken: 'c' });
+    // One round trip, not two — and it asked for the profile.
+    expect(sent.map((r) => r.url)).toEqual([expect.stringContaining('/api/auth/session/refresh')]);
+    expect(sent[0].body).toEqual({ refreshToken: 'stored-refresh', includeProfile: true });
+
+    // Consumed once: a later probe asks the server, it is never a cache.
+    await t.apiClient.get('/api/auth/session');
+    expect(sent).toHaveLength(2);
+    expect(sent[1].url).toContain('/api/auth/session');
+  });
+
+  it('does not answer the probe from a renewal that a sign-out has since undone', async () => {
+    const session = coldStartSession();
+    // The real sign-out path: AuthContext.logout -> session.forget(), which
+    // drops the stored credential. It never calls clearLocalAuthState.
+    let signedOut = false;
+    const getRefresh = session.getRefreshToken;
+    session.getRefreshToken = () => (signedOut ? '' : getRefresh());
+    session.forget = () => { signedOut = true; };
+    globalThis.fetch = vi.fn(async (url) => {
+      if (String(url).includes('/refresh')) {
+        return {
+          ok: true, status: 200, headers: { get: () => null },
+          json: async () => ({ accessToken: 'minted', refreshToken: 'rotated', user: { id: 'u1' } }),
+          text: async () => '',
+        };
+      }
+      return { ok: true, status: 200, headers: { get: () => null }, json: async () => ({}), text: async () => '{"user":null}' };
+    });
+    const { t } = build({ session });
+    await t.apiClient.get('/api/posts/feed');
+    session.forget();
+    expect(await t.apiClient.get('/api/auth/session')).toEqual({ user: null });
+  });
+
+  it('does not answer for a different session that signed in since', async () => {
+    const session = coldStartSession();
+    globalThis.fetch = vi.fn(async (url) => {
+      if (String(url).includes('/refresh')) {
+        return {
+          ok: true, status: 200, headers: { get: () => null },
+          json: async () => ({ accessToken: 'minted', refreshToken: 'rotated', user: { id: 'account-a' } }),
+          text: async () => '',
+        };
+      }
+      return { ok: true, status: 200, headers: { get: () => null }, json: async () => ({}), text: async () => '{"user":{"id":"account-b"}}' };
+    });
+    const { t } = build({ session });
+    await t.apiClient.get('/api/posts/feed'); // renewal for account A, profile unconsumed
+    await session.adopt({ refreshToken: 'account-b-refresh' }); // signed in as B
+    expect(await t.apiClient.get('/api/auth/session')).toEqual({ user: { id: 'account-b' } });
+  });
+
+  it('does not renew while the app is in the background, then renews once', async () => {
+    const session = coldStartSession();
+    // One shared "shown" moment, as with the real visibilitychange: every
+    // request that waited is released by it.
+    let show;
+    const shown = new Promise((r) => { show = r; });
+    session.whenForeground = () => shown;
+    const sent = [];
+    globalThis.fetch = vi.fn(async (url) => {
+      sent.push(String(url));
+      if (String(url).includes('/refresh')) {
+        await session.adopt({ accessToken: 'minted', refreshToken: 'rotated' });
+        return { ok: true, status: 200, headers: { get: () => null }, json: async () => ({}), text: async () => '' };
+      }
+      return { ok: true, status: 200, headers: { get: () => null }, json: async () => ({}), text: async () => '{}' };
+    });
+
+    const { t } = build({ session });
+    const burst = Promise.all([t.apiClient.get('/api/posts/feed'), t.apiClient.get('/api/messages')]);
+    await new Promise((r) => setTimeout(r, 0));
+    // Pre-started in the background: nothing has gone out.
+    expect(sent).toEqual([]);
+
+    show();
+    await burst;
+    expect(sent.filter((u) => u.includes('/refresh'))).toHaveLength(1);
+  });
+
   it('renews once for a burst of requests, and every one of them carries the result', async () => {
     const session = coldStartSession();
     const sent = [];

@@ -1,5 +1,6 @@
 import { whenSessionReady, mayHaveCookieSession } from '../shared/api/apiClient';
 import { feedQueryOptions } from '../features/feed/utils/feedQuery';
+import { restoreFeedSnapshot, persistFeedSnapshot } from './feedSnapshot';
 
 /**
  * Starts a returning user's first screen while the session is still being
@@ -28,6 +29,12 @@ export function warmSignedInLanding(queryClient, { storage = window.localStorage
     return;
   }
   if (!cachedUserId) return;
+
+  // The last feed page from this device, so the first frame shows real posts
+  // rather than a skeleton waiting on the network; the prefetch below
+  // refreshes it. And keep it current for the next launch.
+  restoreFeedSnapshot(queryClient, cachedUserId, { storage });
+  persistFeedSnapshot(queryClient, cachedUserId, { storage });
 
   // Same specifier as the route's `lazyRoute`, so it is the same chunk.
   void import('../features/feed/pages/FeedRoute').catch(() => {});

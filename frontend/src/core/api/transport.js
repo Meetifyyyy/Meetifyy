@@ -99,6 +99,7 @@ export function createTransport({
    * machine.
    */
   function clearLocalAuthState() {
+    _bootProfile = null;
     session.forget();
     forgetCsrfToken();
     [
@@ -275,6 +276,23 @@ export function createTransport({
   let _preRefreshedFor = null;
 
   /**
+   * The profile the up-front renewal brought back, held for the boot probe.
+   *
+   * A cold start used to cost two serial round trips under the splash: the
+   * renewal, then `GET /api/auth/session` to learn who the renewed session
+   * belongs to. Measured on a mid-range phone that second trip was 240–950 ms
+   * on top of a 1.3–2.4 s refresh. The server now loads the profile while it
+   * waits on the provider and returns it with the tokens when asked, so the
+   * probe is answered from here instead of going out.
+   *
+   * Consumed once, and only within a few seconds of the renewal that produced
+   * it: it answers "who am I" for THIS boot, and is never a cache. An API that
+   * predates the field returns no `user`, and the probe goes out as before.
+   */
+  let _bootProfile = null;
+  const BOOT_PROFILE_TTL_MS = 15_000;
+
+  /**
    * Renews the session cookies, once, no matter how many callers ask.
    *
    * This replaces `supabase.auth.refreshSession()`, which was the wrong thing in
@@ -299,7 +317,7 @@ export function createTransport({
    * rotations of the same token is indistinguishable from a replay. Everyone
    * waits on the first one.
    */
-  function refreshCookieSession() {
+  function refreshCookieSession({ includeProfile = false } = {}) {
     if (_refreshPromise) return _refreshPromise;
 
     _refreshPromise = (async () => {
@@ -341,7 +359,9 @@ export function createTransport({
           cache: 'no-store',
           headers: { 'Content-Type': 'application/json' },
           body: storedRefresh
-            ? JSON.stringify({ refreshToken: storedRefresh })
+            ? JSON.stringify(includeProfile
+              ? { refreshToken: storedRefresh, includeProfile: true }
+              : { refreshToken: storedRefresh })
             : undefined,
         });
 
@@ -376,6 +396,22 @@ export function createTransport({
          * Absent on web, where there is nothing to store.
          */
         if (session.adopt) await session.adopt(body);
+
+        _bootProfile = includeProfile && body?.user
+          ? {
+            at: Date.now(),
+            // Bound to the credential it arrived with. Signing out clears the
+            // stored refresh token and signing in replaces it, so whichever
+            // path ends this session, the profile can no longer answer for it.
+            forRefresh: session.getRefreshToken?.() || null,
+            payload: {
+              user: body.user,
+              meta: body.meta ?? body.user.meta,
+              sessionId: body.sessionId ?? null,
+              csrfToken: body.csrfToken ?? null,
+            },
+          }
+          : null;
 
         return 'renewed';
       } catch {
@@ -473,12 +509,27 @@ export function createTransport({
       session.getRefreshToken?.() &&
       !isPublicPath(path)
     ) {
+      // Never rotate from the background (an OS pre-start, on the app): see
+      // the session source. Absent on clients that have no such state. The
+      // checks below run AFTER the wait, because every boot request waits here
+      // and only the first to resume may start the renewal.
+      await session.whenForeground?.();
       if (_refreshPromise) {
         await _refreshPromise;
-      } else if (_preRefreshedFor !== session.getRefreshToken()) {
+      } else if (!session.getToken() && _preRefreshedFor !== session.getRefreshToken()) {
         _preRefreshedFor = session.getRefreshToken();
-        await refreshCookieSession();
+        // Always with the profile: whichever boot request gets here first
+        // starts the one renewal everyone waits on, and the probe is usually
+        // among them. The server loads it concurrently with the provider call.
+        await refreshCookieSession({ includeProfile: true });
       }
+    }
+
+    if (method === 'GET' && path === '/api/auth/session' && _bootProfile) {
+      const held = _bootProfile;
+      _bootProfile = null;
+      const sameSession = held.forRefresh !== null && held.forRefresh === (session.getRefreshToken?.() || null);
+      if (sameSession && Date.now() - held.at < BOOT_PROFILE_TTL_MS) return held.payload;
     }
 
     const token = explicitCredential ? bearer : getToken(); // synchronous
