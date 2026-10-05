@@ -194,7 +194,33 @@ export class JwtGuard implements CanActivate {
       ...resolved,
       expiresAt: now + JwtGuard.SESSION_STATE_TTL_MS,
     });
+    if (resolved.active) this.markSessionUsed(sessionId);
     return resolved;
+  }
+
+  /**
+   * Records that a session has been used: on its first use, then at most once
+   * a minute. Runs on a cache miss only, so a busy session costs one cheap,
+   * mostly no-op UPDATE per cache period.
+   *
+   * The first use is what tells refresh-token recovery that a successor
+   * reached its owner (UserSessionService.recoverLostRotation): an unused
+   * successor is evidence of a lost response, a used one is not. It also keeps
+   * the device list's "last active" honest — nothing wrote it after sign-in.
+   * Fire-and-forget: a failed write costs accuracy, never the request.
+   */
+  private markSessionUsed(sessionId: string): void {
+    try {
+      // Not awaited on purpose: the request never waits on bookkeeping.
+      void this.prisma.$executeRaw`
+        UPDATE "UserSession" SET "lastActiveAt" = now()
+        WHERE id = ${sessionId}
+          AND ("lastActiveAt" = "createdAt"
+               OR "lastActiveAt" < now() - interval '60 seconds')
+      `.catch(() => undefined);
+    } catch {
+      // A synchronous failure (no client) is as harmless as an async one.
+    }
   }
 
   public static isUserRevoked(userId: string): boolean {
@@ -540,6 +566,26 @@ export class JwtGuard implements CanActivate {
      */
     const legacyBearerHandover = !usedCookie && !sessionBoundBearer;
 
+    /**
+     * The account-status and legal lookups depend only on who the token names,
+     * so they START now, beside the session lookup, instead of one after
+     * another. On a cold cache (a launch, or a new access token) that was three
+     * serial database round trips before any route could run.
+     *
+     * Only the fetching overlaps. The checks below still judge in the same
+     * order — session, then account, then legal — so a signed-out session is
+     * still reported as signed out, never as a suspension. Both are reads.
+     */
+    const prefetchedStatus = userPayload?.id
+      ? this.resolveAccountStatus(userPayload.id)
+      : undefined;
+    const prefetchedLegal = this.legalCheckApplies(context, userPayload)
+      ? this.legalConsent.isSatisfied(userPayload.id)
+      : undefined;
+    // Observed here so an early refusal never leaves it unhandled; the
+    // check below still awaits the original and rethrows its failure.
+    prefetchedLegal?.catch(() => undefined);
+
     if (!legacyBearerHandover) {
       const sessionId = usedCookie
         ? request.cookies?.[USER_SESSION_ID_COOKIE]
@@ -570,13 +616,17 @@ export class JwtGuard implements CanActivate {
     // render. A suspended account keeps a working session by design so it can
     // be told what happened and appeal, but every route that is not explicitly
     // marked `@AllowSuspended()` is refused server-side.
-    await this.enforceAccountStatus(context, userPayload);
+    await this.enforceAccountStatus(context, userPayload, prefetchedStatus);
 
     // Mandatory legal acceptance, enforced beside the other two lifecycle
     // gates rather than by the modal the client chooses to render. A second
     // tab, the browser's back button, a direct URL, a hand-driven REST call and
     // a replayed access token all land here.
-    await this.enforceLegalAcknowledgement(context, userPayload);
+    await this.enforceLegalAcknowledgement(
+      context,
+      userPayload,
+      prefetchedLegal,
+    );
 
     request.user = userPayload;
     return true;
@@ -593,6 +643,7 @@ export class JwtGuard implements CanActivate {
   private async enforceAccountStatus(
     context: ExecutionContext,
     userPayload: AuthenticatedUser,
+    prefetched?: Promise<string | null>,
   ): Promise<void> {
     const userId = userPayload?.id;
     if (!userId) return;
@@ -606,7 +657,7 @@ export class JwtGuard implements CanActivate {
       [context.getHandler(), context.getClass()],
     );
 
-    const status = await this.resolveAccountStatus(userId);
+    const status = await (prefetched ?? this.resolveAccountStatus(userId));
     if (status === 'SUSPENDED' && !suspensionAllowed) {
       throw new ForbiddenException({
         code: SUSPENDED_ERROR_CODE,
@@ -648,20 +699,27 @@ export class JwtGuard implements CanActivate {
    * document requires acknowledgement — which is the normal state of the
    * system — so this adds no query to the common request.
    */
-  private async enforceLegalAcknowledgement(
+  /** Whether this route requires current legal acceptance from this user. */
+  private legalCheckApplies(
     context: ExecutionContext,
     userPayload: AuthenticatedUser,
-  ): Promise<void> {
-    const userId = userPayload?.id;
-    if (!userId) return;
-
-    const allowed = this.reflector.getAllAndOverride<boolean>(
+  ): boolean {
+    if (!userPayload?.id) return false;
+    return !this.reflector.getAllAndOverride<boolean>(
       ALLOW_PENDING_LEGAL_ACK_KEY,
       [context.getHandler(), context.getClass()],
     );
-    if (allowed) return;
+  }
 
-    const satisfied = await this.legalConsent.isSatisfied(userId);
+  private async enforceLegalAcknowledgement(
+    context: ExecutionContext,
+    userPayload: AuthenticatedUser,
+    prefetched?: Promise<boolean>,
+  ): Promise<void> {
+    if (!this.legalCheckApplies(context, userPayload)) return;
+
+    const satisfied = await (prefetched ??
+      this.legalConsent.isSatisfied(userPayload.id));
     if (satisfied) return;
 
     throw new ForbiddenException({

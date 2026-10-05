@@ -69,14 +69,20 @@ export function buildSessionGuard({
   findSession,
   user,
   reflector = new Reflector(),
+  executeRaw = jest.fn<Promise<number>, [TemplateStringsArray, ...unknown[]]>(
+    () => Promise.resolve(1),
+  ),
 }: {
   /** Answers `userSession.findUnique` for a session id. */
   findSession: (id: string) => Promise<SessionRow | null>;
+  /** Receives the guard's "session used" stamp. */
+  executeRaw?: jest.Mock<Promise<number>, [TemplateStringsArray, ...unknown[]]>;
   /** Who every token belongs to. */
   user: { id: string; email?: string };
   reflector?: Reflector;
 }): JwtGuard {
   const prisma = stub<PrismaService>({
+    $executeRaw: executeRaw,
     userSession: {
       findUnique: jest.fn(({ where }: { where: { id: string } }) =>
         findSession(where.id),

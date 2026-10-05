@@ -21,6 +21,20 @@ export const REFRESH_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000;
  */
 export const SESSION_STATE_CACHE_MS = 30 * 1000;
 
+/**
+ * How long a lost rotation can be recovered (see `recoverLostRotation`).
+ *
+ * Published grace windows run from a few seconds (Supabase's reuse interval is
+ * 10 s) to about 30 s. This is a little longer because it is also narrower:
+ * plain reuse intervals accept the parent even after its successor was used,
+ * while this requires the successor never to have been used — so an attacker
+ * holding the parent inside the window gains a session that is revoked as soon
+ * as the real app comes back. The app no longer renews while it is in the
+ * background, which removes the "killed mid-refresh by the OS" case this
+ * would otherwise have to stretch to cover.
+ */
+export const REFRESH_REUSE_GRACE_MS = 60 * 1000;
+
 export interface DeviceInfo {
   ip?: string | null;
   userAgent?: string | null;
@@ -151,6 +165,9 @@ export class UserSessionService {
    * answer: both parties are signed out, and the real user notices and signs in
    * again, which is the outcome we want over silently letting an attacker ride
    * along.
+   *
+   * With one exception, for a response that never arrived — see
+   * `recoverLostRotation`.
    */
   async rotate(
     refreshToken: string,
@@ -176,17 +193,7 @@ export class UserSessionService {
     if (!existing) return { ok: false, reason: 'unknown' };
 
     if (existing.replacedById) {
-      await this.revokeFamily(
-        existing.familyId,
-        UserSessionRevokedReason.REFRESH_REPLAY,
-      );
-      this.logger.warn(
-        `session.refresh_replay ${JSON.stringify({
-          userId: existing.userId,
-          familyId: existing.familyId,
-        })}`,
-      );
-      return { ok: false, reason: 'replayed' };
+      return this.onReuse(existing, existing.replacedById, device);
     }
 
     if (existing.revoked) return { ok: false, reason: 'revoked' };
@@ -216,8 +223,12 @@ export class UserSessionService {
       select: { id: true },
     });
 
-    await this.prisma.userSession.update({
-      where: { id: existing.id },
+    // Conditional, so two requests presenting the same token at once cannot
+    // both succeed: the read above is not a lock, and without this the second
+    // overwrote `replacedById` and left the first holding a successor the
+    // family no longer pointed at.
+    const claimed = await this.prisma.userSession.updateMany({
+      where: { id: existing.id, replacedById: null },
       data: {
         replacedById: next.id,
         revoked: true,
@@ -225,6 +236,19 @@ export class UserSessionService {
         lastActiveAt: new Date(),
       },
     });
+    if (claimed.count !== 1) {
+      // Somebody rotated it first. Ours was never handed out, so it goes, and
+      // this presentation is judged like any other reuse.
+      await this.prisma.userSession
+        .deleteMany({ where: { id: next.id } })
+        .catch(() => undefined);
+      const winner = await this.prisma.userSession.findUnique({
+        where: { id: existing.id },
+        select: { replacedById: true },
+      });
+      if (!winner?.replacedById) return { ok: false, reason: 'revoked' };
+      return this.onReuse(existing, winner.replacedById, device);
+    }
 
     return {
       ok: true,
@@ -235,6 +259,154 @@ export class UserSessionService {
         refreshToken: nextToken,
         expiresAt,
         providerRefreshToken: openSecret(existing.providerRefresh),
+      },
+    };
+  }
+
+  /**
+   * A token that has already been rotated, presented again.
+   *
+   * Normally theft, and answered by revoking the whole family. But one
+   * innocent cause looks identical from here: the response carrying the
+   * successor never reached the app — it was killed mid-request (swiped away,
+   * or reclaimed by the OS; some phones pre-start and kill apps in the
+   * background), or the connection dropped. Its next launch then presents the
+   * only token it has, and strict detection signed the user out for it. That
+   * was observed on a device.
+   *
+   * RFC 9700 asks for reuse detection, and the major providers temper it for
+   * exactly this case: Supabase accepts the immediately previous token within
+   * a reuse interval, Auth0 has a rotation overlap period. This follows them,
+   * narrowly — `recoverLostRotation` lists the conditions.
+   */
+  private async onReuse(
+    existing: {
+      id: string;
+      userId: string;
+      familyId: string;
+      expiresAt: Date;
+    },
+    successorId: string,
+    device: DeviceInfo,
+  ): Promise<
+    | { ok: true; userId: string; session: RotatedSession }
+    | { ok: false; reason: 'replayed' }
+  > {
+    const recovered = await this.recoverLostRotation(
+      existing,
+      successorId,
+      device,
+    );
+    if (recovered) return recovered;
+
+    await this.revokeFamily(
+      existing.familyId,
+      UserSessionRevokedReason.REFRESH_REPLAY,
+    );
+    this.logger.warn(
+      `session.refresh_replay ${JSON.stringify({
+        userId: existing.userId,
+        familyId: existing.familyId,
+      })}`,
+    );
+    return { ok: false, reason: 'replayed' };
+  }
+
+  /**
+   * Re-issues from a token whose successor demonstrably never reached anyone.
+   *
+   * All of these must hold, or this returns null and the family is revoked:
+   *   - the presented token is the IMMEDIATE parent of the live token — an
+   *     older ancestor is always treated as theft;
+   *   - that successor has not itself been rotated, revoked, or USED: its
+   *     `lastActiveAt` is still its creation time, which JwtGuard advances on
+   *     first use (`JwtGuard.markSessionUsed`). A legitimate app uses its new token straight away, so a
+   *     successor that was handed to anyone and used is not a lost response;
+   *   - the successor is at most REFRESH_REUSE_GRACE_MS old;
+   *   - the session itself has not expired.
+   *
+   * The unused successor is revoked and a new one minted from the presented
+   * token, carrying the successor's provider token — the newest one; the
+   * presented token's own copy has already been spent at the provider.
+   * Claimed with a conditional update, so two presentations cannot both win.
+   */
+  private async recoverLostRotation(
+    existing: {
+      id: string;
+      userId: string;
+      familyId: string;
+      expiresAt: Date;
+    },
+    successorId: string,
+    device: DeviceInfo,
+  ): Promise<{ ok: true; userId: string; session: RotatedSession } | null> {
+    if (existing.expiresAt <= new Date()) return null;
+
+    const successor = await this.prisma.userSession.findUnique({
+      where: { id: successorId },
+      select: {
+        id: true,
+        revoked: true,
+        replacedById: true,
+        createdAt: true,
+        lastActiveAt: true,
+        providerRefresh: true,
+      },
+    });
+    if (!successor || successor.revoked || successor.replacedById) return null;
+    if (!successor.createdAt || !successor.lastActiveAt) return null;
+    if (successor.lastActiveAt.getTime() !== successor.createdAt.getTime())
+      return null;
+    if (Date.now() - successor.createdAt.getTime() > REFRESH_REUSE_GRACE_MS)
+      return null;
+
+    const claimed = await this.prisma.userSession.updateMany({
+      where: {
+        id: successor.id,
+        revoked: false,
+        replacedById: null,
+        lastActiveAt: successor.lastActiveAt,
+      },
+      data: { revoked: true, revokedAt: new Date() },
+    });
+    if (claimed.count !== 1) return null;
+    JwtGuard.forgetSession(successor.id);
+
+    const nextToken = this.newRefreshToken();
+    const expiresAt = new Date(Date.now() + REFRESH_TOKEN_TTL_MS);
+    const next = await this.prisma.userSession.create({
+      data: {
+        userId: existing.userId,
+        familyId: existing.familyId,
+        refreshHash: this.hashRefreshToken(nextToken),
+        providerRefresh: successor.providerRefresh,
+        expiresAt,
+        ip: device.ip ?? null,
+        userAgent: device.userAgent?.slice(0, 512) ?? null,
+        ...this.describe(device.userAgent),
+      },
+      select: { id: true },
+    });
+    await this.prisma.userSession.update({
+      where: { id: existing.id },
+      data: { replacedById: next.id },
+    });
+
+    this.logger.warn(
+      `session.refresh_recovered ${JSON.stringify({
+        userId: existing.userId,
+        familyId: existing.familyId,
+      })}`,
+    );
+    return {
+      ok: true,
+      userId: existing.userId,
+      session: {
+        sessionId: next.id,
+        familyId: existing.familyId,
+        refreshToken: nextToken,
+        expiresAt,
+        providerRefreshToken: openSecret(successor.providerRefresh),
       },
     };
   }

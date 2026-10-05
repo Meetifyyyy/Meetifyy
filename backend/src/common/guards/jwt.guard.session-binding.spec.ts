@@ -73,6 +73,44 @@ describe('JwtGuard — session binding', () => {
   const attempt = (cookies: Record<string, string>, method = 'GET') =>
     guard.canActivate(context(cookies, method));
 
+  describe('records that a session was used', () => {
+    const stampFor = (executeRaw: jest.Mock) =>
+      executeRaw.mock.calls.map((call: unknown[]) => call.slice(1)).flat();
+
+    it('stamps a live session, which is what lost-rotation recovery reads', async () => {
+      const executeRaw = jest.fn<
+        Promise<number>,
+        [TemplateStringsArray, ...unknown[]]
+      >(() => Promise.resolve(1));
+      guard = buildSessionGuard({
+        findSession: (id) => Promise.resolve(sessions[id] ?? null),
+        user: { id: USER, email: 'a@b.c' },
+        executeRaw,
+      });
+      await attempt({ mf_access: 'tok', mf_sid: 'live-own' });
+      expect(stampFor(executeRaw)).toContain('live-own');
+    });
+
+    it('does not stamp a revoked session, and never fails the request over it', async () => {
+      const executeRaw = jest.fn<
+        Promise<number>,
+        [TemplateStringsArray, ...unknown[]]
+      >(() => Promise.reject(new Error('db down')));
+      guard = buildSessionGuard({
+        findSession: (id) => Promise.resolve(sessions[id] ?? null),
+        user: { id: USER, email: 'a@b.c' },
+        executeRaw,
+      });
+      await expect(
+        attempt({ mf_access: 'tok', mf_sid: 'live-own' }),
+      ).resolves.toBe(true);
+      await expect(
+        attempt({ mf_access: 'tok', mf_sid: 'revoked-own' }),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+      expect(stampFor(executeRaw)).not.toContain('revoked-own');
+    });
+  });
+
   it('accepts a live session belonging to the caller', async () => {
     await expect(
       attempt({ mf_access: 'tok', mf_sid: 'live-own' }),

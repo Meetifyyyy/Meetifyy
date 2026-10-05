@@ -2,7 +2,10 @@ import { UserSessionRevokedReason } from '@prisma/client';
 import type { UserSession } from '@prisma/client';
 import { stub } from '../../common/testing/stub';
 import type { PrismaService } from '../../prisma/prisma.service';
-import { UserSessionService } from './user-session.service';
+import {
+  REFRESH_REUSE_GRACE_MS,
+  UserSessionService,
+} from './user-session.service';
 
 /**
  * Sessions exist so that a stolen credential can be taken away.
@@ -27,6 +30,8 @@ type SessionWhere = {
   familyId?: string;
   refreshHash?: string;
   revoked?: boolean;
+  replacedById?: null;
+  lastActiveAt?: Date;
 };
 
 describe('UserSessionService', () => {
@@ -47,7 +52,17 @@ describe('UserSessionService', () => {
             select?: object;
           }) => {
             const id = `sess-${rows.size + 1}`;
-            rows.set(id, { id, replacedById: null, revoked: false, ...data });
+            // Both columns default to the same insert-time timestamp in the
+            // database, which is what "never used" is read from.
+            const at = new Date();
+            rows.set(id, {
+              id,
+              replacedById: null,
+              revoked: false,
+              createdAt: at,
+              lastActiveAt: at,
+              ...data,
+            });
             return Promise.resolve(select ? { id } : rows.get(id));
           },
         ),
@@ -113,6 +128,12 @@ describe('UserSessionService', () => {
               if (where.refreshHash && row.refreshHash !== where.refreshHash)
                 continue;
               if (where.revoked === false && row.revoked) continue;
+              if (where.replacedById === null && row.replacedById) continue;
+              if (
+                where.lastActiveAt &&
+                row.lastActiveAt?.getTime() !== where.lastActiveAt.getTime()
+              )
+                continue;
               Object.assign(row, data);
               count++;
             }
@@ -124,6 +145,12 @@ describe('UserSessionService', () => {
     });
     service = new UserSessionService(prisma);
   });
+
+  /** What JwtGuard does on a session's first use. */
+  const markUsed = (sessionId: string) => {
+    const row = rows.get(sessionId)!;
+    row.lastActiveAt = new Date(row.createdAt!.getTime() + 5_000);
+  };
 
   const device = {
     ip: '1.2.3.4',
@@ -153,7 +180,10 @@ describe('UserSessionService', () => {
     if (!rotated.ok) return;
     expect(rotated.session.refreshToken).not.toBe(first.refreshToken);
 
-    // The presented token is now spent.
+    // The presented token is now spent once its successor is in use. (While
+    // the successor is unused it can still recover a lost response — see the
+    // "never arrived" tests below.)
+    markUsed(rotated.session.sessionId);
     const reuse = await service.rotate(first.refreshToken, device);
     expect(reuse.ok).toBe(false);
   });
@@ -168,6 +198,9 @@ describe('UserSessionService', () => {
     const second = await service.rotate(first.refreshToken, device);
     expect(second.ok).toBe(true);
     if (!second.ok) return;
+    // The successor reached its holder and was used (JwtGuard stamps first
+    // use). The old token coming back after that is not a lost response.
+    markUsed(second.session.sessionId);
 
     const replay = await service.rotate(first.refreshToken, device);
     expect(replay.ok).toBe(false);
@@ -188,6 +221,72 @@ describe('UserSessionService', () => {
         (r) => r.revokedReason === UserSessionRevokedReason.REFRESH_REPLAY,
       ),
     ).toBe(true);
+  });
+
+  describe('a rotation whose response never arrived', () => {
+    it('re-issues when the successor was never used', async () => {
+      const first = await service.issue('u1', device, 'provider-1');
+      const lost = await service.rotate(first.refreshToken, device);
+      expect(lost.ok).toBe(true);
+      if (!lost.ok) return;
+      // The provider token the server stored after the lost refresh.
+      rows.get(lost.session.sessionId)!.providerRefresh = 'sealed-provider-2';
+
+      // The app was killed before saving `lost`; it presents what it has.
+      const again = await service.rotate(first.refreshToken, device);
+      expect(again.ok).toBe(true);
+      if (!again.ok) return;
+      expect(again.session.sessionId).not.toBe(lost.session.sessionId);
+      expect(rows.get(lost.session.sessionId)!.revoked).toBe(true);
+      // Carries the newest provider token, not the spent one.
+      expect(rows.get(again.session.sessionId)!.providerRefresh).toBe(
+        'sealed-provider-2',
+      );
+      // Nothing else was touched: the family lives on.
+      expect(rows.get(again.session.sessionId)!.revoked).toBe(false);
+
+      // And the recovered token rotates normally.
+      const next = await service.rotate(again.session.refreshToken, device);
+      expect(next.ok).toBe(true);
+    });
+
+    it('treats it as theft once the successor has been used', async () => {
+      const first = await service.issue('u1', device);
+      const second = await service.rotate(first.refreshToken, device);
+      if (!second.ok) throw new Error('rotation failed');
+      markUsed(second.session.sessionId);
+
+      const replay = await service.rotate(first.refreshToken, device);
+      expect(replay).toEqual({ ok: false, reason: 'replayed' });
+      expect([...rows.values()].every((r) => r.revoked)).toBe(true);
+    });
+
+    it('treats it as theft after the grace period', async () => {
+      const first = await service.issue('u1', device);
+      const second = await service.rotate(first.refreshToken, device);
+      if (!second.ok) throw new Error('rotation failed');
+      const old = new Date(Date.now() - REFRESH_REUSE_GRACE_MS - 1000);
+      Object.assign(rows.get(second.session.sessionId)!, {
+        createdAt: old,
+        lastActiveAt: old,
+      });
+
+      const replay = await service.rotate(first.refreshToken, device);
+      expect(replay).toEqual({ ok: false, reason: 'replayed' });
+    });
+
+    it('never recovers for an older ancestor', async () => {
+      const first = await service.issue('u1', device);
+      const second = await service.rotate(first.refreshToken, device);
+      if (!second.ok) throw new Error('rotation failed');
+      markUsed(second.session.sessionId);
+      const third = await service.rotate(second.session.refreshToken, device);
+      expect(third.ok).toBe(true);
+
+      // `first` is two generations back: its successor was rotated already.
+      const replay = await service.rotate(first.refreshToken, device);
+      expect(replay).toEqual({ ok: false, reason: 'replayed' });
+    });
   });
 
   it('refuses an expired session', async () => {
