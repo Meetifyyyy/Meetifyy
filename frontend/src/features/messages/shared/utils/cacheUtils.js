@@ -1,3 +1,10 @@
+import {
+  invalidateConversationMedia,
+  isConfirmedMessage,
+  messageCarriesGalleryMedia,
+  removeConversationMedia,
+} from './conversationMediaCache';
+
 /**
  * A system message is the conversation narrating itself — "@gyu changed group
  * name to X", someone joined, someone left. It has a sender on the wire (the
@@ -43,6 +50,33 @@ export function matchesConversationId(c, targetId) {
   // leaking previews, unread counts, and cache updates across unrelated chats.
 
   return false;
+}
+
+/**
+ * The conversation list with the unread count of one conversation zeroed.
+ *
+ * Returns the SAME array when nothing needed changing, so a no-op does not
+ * re-render every list and badge that reads it.
+ *
+ * It answers "is this the conversation?" with `matchesConversationId` - the same
+ * predicate the arrival of a message uses to INCREMENT the count. These two used
+ * to disagree: arrival matched case-insensitively, ignoring a `c_` prefix and
+ * accepting a partner's username, while clearing compared three fields exactly.
+ * A chat opened by an id that arrival recognised but clearing did not (the
+ * instant notification links by the id on the message) was counted up and never
+ * counted back down, so its badge stayed lit after you had read it.
+ */
+export function withConversationUnreadCleared(conversations, targetId) {
+  if (!Array.isArray(conversations) || !targetId) return conversations;
+  let modified = false;
+  const updated = conversations.map((c) => {
+    if (matchesConversationId(c, targetId) && ((c.unreadCount || 0) > 0 || (c.unread || 0) > 0)) {
+      modified = true;
+      return { ...c, unreadCount: 0, unread: 0 };
+    }
+    return c;
+  });
+  return modified ? updated : conversations;
 }
 
 export function getConversationAliases(c) {
@@ -170,6 +204,12 @@ export const STATUS_RANK = { failed: -1, sending: 0, sent: 1, delivered: 2, read
 export function appendMessageToCache(queryClient, activeChatId, message, { createIfMissing = false } = {}) {
   if (!queryClient || !activeChatId || !message) return;
 
+  // A photo or video that really exists on the server belongs in the shared-media
+  // gallery, which is its own query and would otherwise not hear about it.
+  if (isConfirmedMessage(message) && messageCarriesGalleryMedia(message)) {
+    invalidateConversationMedia(queryClient);
+  }
+
   queryClient.setQueryData(['messages', activeChatId], (old) => {
     if (!old || !old.pages || old.pages.length === 0) {
       if (!createIfMissing) return undefined;
@@ -270,6 +310,11 @@ export function appendMessageToCache(queryClient, activeChatId, message, { creat
 
 export function updateMessageInCache(queryClient, activeChatId, targetId, patch) {
   if (!queryClient || !activeChatId || !targetId) return;
+
+  // An unsent message takes its attachment with it.
+  if (patch && typeof patch === 'object' && (patch.isUnsent || patch.state === 'UNSENT')) {
+    invalidateConversationMedia(queryClient);
+  }
 
   const targetKeys = new Set();
   if (typeof targetId === 'string' || typeof targetId === 'number') {
@@ -395,6 +440,8 @@ export function updateMessageStatusInCache(queryClient, activeChatId, messageId,
 export function removeMessageFromCache(queryClient, activeChatId, messageId) {
   if (!queryClient || !activeChatId || !messageId) return;
 
+  invalidateConversationMedia(queryClient);
+
   queryClient.setQueryData(['messages', activeChatId], (old) => {
     if (!old || !old.pages) return old;
 
@@ -436,6 +483,8 @@ export function purgeConversationFromCaches(queryClient, convId, conversations =
   aliases.forEach((alias) => {
     queryClient.removeQueries({ queryKey: ['messages', alias], exact: true });
   });
+  // The deleted conversation's gallery goes with it.
+  removeConversationMedia(queryClient);
 
   return [...aliases];
 }

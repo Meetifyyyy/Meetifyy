@@ -491,6 +491,18 @@ export function createEndpoints({ apiClient, getToken, getBackendUrl, getSession
       const query = params.toString();
       return apiClient.get(`/api/messages/${conversationId}${query ? `?${query}` : ''}`);
     },
+    /**
+     * One page of the conversation's shared photos and videos, newest first.
+     * `before` is the previous page's `nextCursor`. Served from the database, so
+     * it does not depend on how much of the history this client has loaded.
+     */
+    getConversationMedia: (conversationId, { before, limit, signal } = {}) => {
+      const params = new URLSearchParams();
+      if (before) params.set('before', before);
+      if (limit) params.set('limit', String(limit));
+      const query = params.toString();
+      return apiClient.get(`/api/messages/${encodeURIComponent(conversationId)}/media${query ? `?${query}` : ''}`, { signal });
+    },
     sendDirectMessage: (conversationId, payload) => apiClient.post(`/api/messages/${conversationId}/messages`, payload),
     // `sendMessage` is the name every generic caller uses: useChatManager picks
     // one of dmApi / groupApi / messagesApi by chat type and then calls

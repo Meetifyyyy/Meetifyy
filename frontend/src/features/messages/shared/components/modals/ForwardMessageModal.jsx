@@ -32,7 +32,10 @@ export default function ForwardMessageModal({
   onClose,
   conversations = [],
   isLoading = false,
-  onConfirmForward
+  onConfirmForward,
+  // Told what is typed, so the owner can search the server for it: the list it
+  // hands in is one page, and filtering that page alone cannot find anyone past it.
+  onSearchChange = null,
 }) {
   // Back dismisses this dialog rather than navigating the page behind it.
   useOverlayBack(Boolean(isOpen), onClose);
@@ -55,10 +58,15 @@ export default function ForwardMessageModal({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
   const operationIdRef = useRef(null);
+  // Latest callback, read from the close effect without re-running it when the
+  // owner passes a new function.
+  const onSearchChangeRef = useRef(onSearchChange);
+  onSearchChangeRef.current = onSearchChange;
 
   useEffect(() => {
     if (!isOpen) {
       setSearchQuery('');
+      onSearchChangeRef.current?.('');
       setSelectedIds([]);
       setIsSubmitting(false);
       setStatusMessage('');
@@ -141,7 +149,7 @@ export default function ForwardMessageModal({
             placeholder="Search conversations..."
             aria-label="Search conversations"
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => { setSearchQuery(e.target.value); onSearchChange?.(e.target.value); }}
           />
         </div>
 

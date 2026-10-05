@@ -25,6 +25,8 @@ import GroupContextMenu from '../../group-chats/components/sidebar/GroupContextM
 
 import GroupInvitePanel from '../../shared/components/GroupInvitePanel';
 import NewMessageModal from '../../shared/components/modals/NewMessageModal';
+import MuteAlertsModal from '../../shared/components/modals/MuteAlertsModal';
+import BlockUserModal from '@shared/components/modals/BlockUserModal';
 import ConversationSkeleton from '../../shared/components/skeletons/ConversationSkeleton';
 import ConversationEmptyState from '../../shared/components/sidebar/ConversationEmptyState';
 
@@ -124,6 +126,21 @@ export default function MessagesLayout() {
   // leaving it mounted would refetch a 404 (or worse, keep rendering the
   // history from cache). Navigating first means the thread unmounts before the
   // purge lands, so nothing re-reads the caches on their way out.
+  /*
+   * Muting asks first. It silences a whole chat and is easy to trigger by
+   * accident from a long-press or right-click, and nothing on the row says it
+   * happened. Unmuting needs no question: it only brings notifications back.
+   */
+  const [muteTarget, setMuteTarget] = useState(null);
+  const requestMute = useCallback((conv) => {
+    if (!conv) return;
+    if (conv.muted ?? conv.isMuted) {
+      toggleMuteConversation(conv.id);
+      return;
+    }
+    setMuteTarget(conv);
+  }, [toggleMuteConversation]);
+
   const handleDeleteConversation = useCallback((conv) => {
     if (!conv) return;
     if (activeChatId && matchesConversationId(conv, activeChatId)) {
@@ -260,6 +277,24 @@ export default function MessagesLayout() {
       nextCursor: latestPage?.nextCursor || null,
     };
   }, [baseConv, allMessages, rawPages, currentUser?.id, isConversationsLoading]);
+
+  /*
+   * Blocking (and unblocking) is asked first. A block is mutual, severs the
+   * follows between the two people and leaves the chat read-only, and the buttons
+   * that trigger it - in the contact details and in the "you blocked this person"
+   * strip - say none of that. Both go through here so they cannot disagree.
+   */
+  const [blockTarget, setBlockTarget] = useState(null);
+  const requestBlock = useCallback((targetId, currentlyBlocked) => {
+    if (!targetId) return;
+    const sameChat = (c) => c && (String(c.userId) === String(targetId) || String(c.targetUser?.id) === String(targetId));
+    const conv = sameChat(activeConv) ? activeConv : (conversations || []).find(sameChat);
+    setBlockTarget({
+      targetId,
+      currentlyBlocked: Boolean(currentlyBlocked),
+      name: conv?.targetUser?.displayName || conv?.name || conv?.targetUser?.username || '',
+    });
+  }, [activeConv, conversations]);
 
   // URL sync
   useEffect(() => {
@@ -476,8 +511,6 @@ export default function MessagesLayout() {
                 onLeaveGroup={leaveGroup}
                 onEndGroup={endGroup}
                 onClearChat={clearChat}
-                onTogglePin={togglePinConversation}
-                onToggleMute={toggleMuteConversation}
                 onBack={handleBack}
                 onNewMessage={() => setIsModalOpen(true)}
                 showChatOnMobile={showChatOnMobile}
@@ -494,9 +527,7 @@ export default function MessagesLayout() {
               onSendMessage={handleSendMessage}
               onReactMessage={reactToMessage}
               onClearChat={clearChat}
-              onTogglePin={togglePinConversation}
-              onToggleMute={toggleMuteConversation}
-              onBlockUser={toggleBlockUser}
+              onBlockUser={requestBlock}
               onBack={handleBack}
               onNewMessage={() => setIsModalOpen(true)}
               showChatOnMobile={showChatOnMobile}
@@ -518,7 +549,7 @@ export default function MessagesLayout() {
               conv={contextMenu.conv}
               position={{ x: contextMenu.x, y: contextMenu.y }}
               onClose={() => setContextMenu(null)}
-              onMute={() => toggleMuteConversation(contextMenu.conv.id)}
+              onMute={() => requestMute(contextMenu.conv)}
               onPin={() => togglePinConversation(contextMenu.conv.id)}
               onLeave={() => leaveGroup(contextMenu.conv.id)}
             />
@@ -529,12 +560,34 @@ export default function MessagesLayout() {
             conv={contextMenu.conv}
             position={{ x: contextMenu.x, y: contextMenu.y }}
             onClose={() => setContextMenu(null)}
-            onMute={() => toggleMuteConversation(contextMenu.conv.id)}
+            onMute={() => requestMute(contextMenu.conv)}
             onPin={() => togglePinConversation(contextMenu.conv.id)}
             onDelete={() => handleDeleteConversation(contextMenu.conv)}
           />
         );
       })()}
+
+      {blockTarget && (
+        <BlockUserModal
+          name={blockTarget.name}
+          isBlocked={blockTarget.currentlyBlocked}
+          onCancel={() => setBlockTarget(null)}
+          onConfirm={() => {
+            toggleBlockUser(blockTarget.targetId, blockTarget.currentlyBlocked);
+            setBlockTarget(null);
+          }}
+        />
+      )}
+
+      {muteTarget && (
+        <MuteAlertsModal
+          onCancel={() => setMuteTarget(null)}
+          onConfirm={() => {
+            toggleMuteConversation(muteTarget.id);
+            setMuteTarget(null);
+          }}
+        />
+      )}
 
       {isModalOpen && (
         <NewMessageModal

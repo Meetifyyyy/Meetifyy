@@ -14,8 +14,6 @@ export default function GroupChatArea({
   onLeaveGroup,
   onEndGroup,
   onClearChat,
-  onTogglePin,
-  onToggleMute,
   onBack,
   onNewMessage,
   showChatOnMobile,
@@ -92,6 +90,7 @@ export default function GroupChatArea({
     <ChatAreaLayout
       {...state}
       conversation={effectiveConv}
+      onClearChat={onClearChat}
       showChatOnMobile={showChatOnMobile}
       isLoading={isLoading}
       notFound={notFound}
@@ -116,8 +115,6 @@ export default function GroupChatArea({
           onLeaveGroup={onLeaveGroup}
           onEndGroup={onEndGroup}
           onClearChat={onClearChat}
-          onTogglePin={onTogglePin}
-          onToggleMute={onToggleMute}
           onToggleSearch={() => {
             if (state.showSearch) {
               state.closeSearch();

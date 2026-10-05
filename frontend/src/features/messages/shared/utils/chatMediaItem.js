@@ -9,7 +9,7 @@
  *
  * @param {string} url
  * @param {'image'|'video'} [type]
- * @param {{ report?: object, thumb?: string, id?: string }} [extra]
+ * @param {{ report?: object, thumb?: string, id?: string, rawUrl?: string }} [extra]
  */
 export function chatMediaItem(url, type, extra) {
   const item = { url, type: type || 'image' };
@@ -17,6 +17,7 @@ export function chatMediaItem(url, type, extra) {
     if (extra.thumb) item.thumb = extra.thumb;
     if (extra.id) item.id = extra.id;
     if (extra.report) item.report = extra.report;
+    if (extra.rawUrl) item.rawUrl = extra.rawUrl;
   }
   return item;
 }

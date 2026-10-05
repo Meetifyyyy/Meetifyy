@@ -1,10 +1,9 @@
-import { useState, useRef, useEffect, memo } from 'react';
+import { useState, useRef, useEffect, useCallback, memo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { showToast } from '@shared/utils/toast';
 
 import { Reply, MoreVertical, Image as ImageIcon, AlertCircle, Play } from '@shared/components/icons';
 import Avatar from '@shared/components/avatar/Avatar';
-import { mediaCache } from '@shared/utils/MediaCacheManager';
 import { useSignedMediaSrc } from '@shared/hooks/useSignedMediaSrc';
 import RichText from '@shared/components/mentions/RichText';
 import { generateConversationUrl } from '@shared/utils/conversationUrl';
@@ -155,92 +154,88 @@ const OPEN_MEDIA_BUTTON_STYLE = {
   justifyContent: 'center',
 };
 
-function ImageWithSkeleton({ src, alt, className, onClick, isStandalone = false, onErrorChange, width, height, onClickSrc, openDisabled = false }) {
-  const [loaded, setLoaded] = useState(() => Boolean(src && loadedImageUrls.has(src)));
-  const [imgSrc, setImgSrc] = useState(null);
-  const [error, setError] = useState(false);
-  const [retryCount, setRetryCount] = useState(0);
-  const prevSrcRef = useRef(src);
+/**
+ * A chat image that is always in exactly one of three states: loading (skeleton),
+ * shown, or unavailable. Keyed on its source so a different image starts clean.
+ *
+ * It used to run its own resolution effect, guarded by "skip when the source has
+ * not changed since the previous render". That guard is also true on the very
+ * FIRST render, so a freshly mounted bubble never asked for a signed URL: it
+ * painted the unsigned `/api/media/<key>` URL, which only works where the
+ * browser happens to attach a session cookie. Anywhere else (the installed app)
+ * the load failed, the single retry re-requested the same URL (a state setter
+ * given an identical value does nothing), and when signing also came back empty
+ * no further load or error event ever fired - the skeleton stayed up for good,
+ * across closing the viewer and refreshing alike.
+ *
+ * Resolution is now the shared `useSignedMediaSrc`, the same pipeline the
+ * viewer, the gallery thumbnails and the video tile use. It never paints an
+ * unsigned URL, reports "declined to sign" as a state of its own, and a retry
+ * re-signs and remounts the <img> (keyed by `attempt`) so the browser really
+ * does ask again.
+ */
+function ImageWithSkeleton(props) {
+  return <SignedChatImage key={`${props.src || 'none'}|${props.fallbackSrc || ''}`} {...props} />;
+}
+
+/**
+ * `src` is the preferred (usually thumbnail) source and `fallbackSrc` the full
+ * image. Thumbnails are derived, best-effort variants - the cache resolves a
+ * missing one to nothing precisely "so callers fall back to the full image" -
+ * so a thumbnail that cannot be signed or loaded moves on to the original
+ * before the bubble gives up.
+ */
+function SignedChatImage({ src, fallbackSrc, alt, className, onClick, isStandalone = false, onErrorChange, width, height, onClickSrc, openDisabled = false }) {
+  const sources = fallbackSrc && fallbackSrc !== src ? [src, fallbackSrc] : [src];
+  const [sourceIndex, setSourceIndex] = useState(0);
+  const active = sources[sourceIndex];
+  const { src: signed, failed, refresh, attempt } = useSignedMediaSrc(active);
+  const [loaded, setLoaded] = useState(() => Boolean(signed && loadedImageUrls.has(signed)));
+  const [imgFailed, setImgFailed] = useState(false);
+  const retriedRef = useRef(false);
   const onErrorRef = useRef(onErrorChange);
   onErrorRef.current = onErrorChange;
   const aspect = (width && height) ? (width / height) : 1;
+  const error = !src || imgFailed;
+
+  const lastIndex = sources.length - 1;
+  /** Moves to the next source; false when there is none left. */
+  const advance = useCallback(() => {
+    if (sourceIndex >= lastIndex) return false;
+    retriedRef.current = false;
+    setLoaded(false);
+    setSourceIndex(sourceIndex + 1);
+    return true;
+  }, [sourceIndex, lastIndex]);
+
+  // The server declined to sign this source: try the next one, else give up.
+  useEffect(() => {
+    if (failed && !advance()) setImgFailed(true);
+  }, [failed, advance]);
+
+  // Already decoded earlier in the session: no skeleton once the URL is in hand.
+  useEffect(() => {
+    if (signed && loadedImageUrls.has(signed)) setLoaded(true);
+  }, [signed]);
 
   useEffect(() => {
-    if (src === prevSrcRef.current && retryCount === 0) return;
-    prevSrcRef.current = src;
-
-    let isMounted = true;
-    const resolvedSync = mediaCache.getSyncUrl(src) || src;
-    const isCached = Boolean(resolvedSync && loadedImageUrls.has(resolvedSync));
-
-    if (!isCached) {
-      setLoaded(false);
-    } else {
-      setLoaded(true);
-    }
-    setError(false);
-    onErrorRef.current?.(false);
-
-    if (!src) {
-      setError(true);
-      onErrorRef.current?.(true);
-      return;
-    }
-
-    if (resolvedSync) {
-      setImgSrc(resolvedSync);
-    }
-
-    if (src.startsWith('blob:') || src.startsWith('data:')) {
-      setImgSrc(src);
-      setLoaded(true);
-      if (src) loadedImageUrls.add(src);
-      return;
-    }
-
-    const fetchUrl = async () => {
-      try {
-        const resolvedUrl = await mediaCache.getUrl(src);
-        if (isMounted) {
-          if (resolvedUrl) {
-            setImgSrc(resolvedUrl);
-            if (loadedImageUrls.has(resolvedUrl)) {
-              setLoaded(true);
-            }
-          } else if (!resolvedSync) {
-            setError(true);
-            onErrorRef.current?.(true);
-          }
-        }
-      } catch (err) {
-        if (isMounted && !resolvedSync) {
-          setError(true);
-          onErrorRef.current?.(true);
-        }
-      }
-    };
-
-    fetchUrl();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [src, retryCount]);
+    onErrorRef.current?.(error);
+  }, [error]);
 
   const handleError = () => {
-    if (retryCount === 0 && src) {
-      mediaCache.invalidate(src);
-      setRetryCount(1);
+    if (!retriedRef.current) {
+      // Usually an expired signature: sign again rather than re-request a dead URL.
+      retriedRef.current = true;
+      setLoaded(false);
+      refresh();
       return;
     }
-    setError(true);
-    onErrorRef.current?.(true);
+    if (!advance()) setImgFailed(true);
   };
 
   const handleImageLoad = () => {
     setLoaded(true);
-    const activeUrl = imgSrc || src;
-    if (activeUrl) loadedImageUrls.add(activeUrl);
+    if (signed) loadedImageUrls.add(signed);
     if (src) loadedImageUrls.add(src);
   };
 
@@ -257,11 +252,9 @@ function ImageWithSkeleton({ src, alt, className, onClick, isStandalone = false,
     );
   }
 
-  const finalSrc = imgSrc || src;
-
   return (
-    <div 
-      className={`${styles.msgMediaWrapper} ${isStandalone ? styles.msgMediaWrapperStandalone : styles.msgMediaWrapperInline}`} 
+    <div
+      className={`${styles.msgMediaWrapper} ${isStandalone ? styles.msgMediaWrapperStandalone : styles.msgMediaWrapperInline}`}
       style={{ '--aspect': aspect }}
     >
       {!loaded && (
@@ -269,9 +262,10 @@ function ImageWithSkeleton({ src, alt, className, onClick, isStandalone = false,
           <ImageIcon size={22} className={styles.msgMediaSkeletonIcon} />
         </div>
       )}
-      {finalSrc && (
+      {signed && (
         <img
-          src={finalSrc}
+          key={attempt}
+          src={signed}
           alt={alt || ''}
           decoding="async"
           className={`${className} ${!loaded ? styles.msgMediaImgHidden : styles.msgMediaImgVisible}`}
@@ -279,12 +273,12 @@ function ImageWithSkeleton({ src, alt, className, onClick, isStandalone = false,
           onError={handleError}
         />
       )}
-      {onClick && finalSrc && !openDisabled && (
+      {onClick && src && !openDisabled && (
         <button
           type="button"
           aria-label="Open photo"
           style={OPEN_MEDIA_BUTTON_STYLE}
-          onClick={() => onClick(onClickSrc || finalSrc)}
+          onClick={() => onClick(onClickSrc || signed || active)}
         />
       )}
     </div>
@@ -896,6 +890,9 @@ const MessageBubble = memo(function MessageBubble({
       };
     }
     if (thumb) extra.thumb = thumb;
+    // The stored form, so a forward from the viewer persists the key and not this
+    // environment's absolute API host (the in-chat forward already sends the stored form).
+    if (typeof rawMediaUrl === 'string' && rawMediaUrl && !rawMediaUrl.startsWith('blob:')) extra.rawUrl = rawMediaUrl;
     return Object.keys(extra).length > 0 ? extra : undefined;
   };
   const isAudio = msg.mediaType === 'audio' || msg.type === 'voice' || msg.payload?.mediaType === 'audio';
@@ -1013,6 +1010,7 @@ const MessageBubble = memo(function MessageBubble({
           <div className={styles.msgImageCard} style={{ position: 'relative' }}>
             <ImageWithSkeleton
               src={thumbUrl}
+              fallbackSrc={mediaUrl}
               onClickSrc={mediaUrl}
               alt=""
               width={mediaWidth}
@@ -1114,6 +1112,7 @@ const MessageBubble = memo(function MessageBubble({
               <div style={{ position: 'relative' }}>
                 <ImageWithSkeleton
                   src={thumbUrl}
+                  fallbackSrc={mediaUrl}
                   onClickSrc={mediaUrl}
                   alt=""
                   width={mediaWidth}

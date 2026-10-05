@@ -85,7 +85,7 @@ describe('createEndpoints', () => {
     }
   });
 
-  it('exposes 193 methods in total', () => {
+  it('exposes 194 methods in total', () => {
     // A blunt guard, on purpose: this number changed to 191 when the endpoints
     // were lifted out of apiClient.js, and it is what catches a namespace being
     // dropped by a future refactor of this file. Update it deliberately when an
@@ -93,7 +93,7 @@ describe('createEndpoints', () => {
     const { transport } = stubTransport();
     const api = createEndpoints(transport);
     const total = Object.values(api).reduce((n, ns) => n + Object.keys(ns).length, 0);
-    expect(total).toBe(193);
+    expect(total).toBe(194); // 193 + messagesApi.getConversationMedia (the shared-media gallery)
   });
 
   it('is a factory, not a singleton — two calls yield independent objects', () => {

@@ -1,4 +1,4 @@
-import { ArrowLeft, MoreVertical, Search, NotificationOff, NotificationOn, LogOut, Info, Trash2, Pin } from '@shared/components/icons';
+import { ArrowLeft, MoreVertical, Search, LogOut, Trash2 } from '@shared/components/icons';
 import Menu, { MenuItem, useMenu } from '@shared/components/ui/Menu';
 import { useAuth } from '@shared/context/AuthContext';
 import Avatar from '@shared/components/avatar/Avatar';
@@ -10,8 +10,6 @@ export default function GroupChatHeader({
   onLeaveGroup, 
   onEndGroup,
   onClearChat, 
-  onTogglePin,
-  onToggleMute,
   onToggleSearch, 
   onOpenDetails,
   isAdmin,
@@ -26,14 +24,6 @@ export default function GroupChatHeader({
   const moreMenu = useMenu();
 
   if (!conversation) return null;
-
-  // Muted state comes from the shared conversation cache, never from local
-  // component state. The button used to flip a `useState` and nothing else:
-  // the label toggled, no request was ever sent, and the state was lost on
-  // remount — the chat was never actually muted. Reading the cache means this
-  // button, the sidebar context menu and the notification suppression all
-  // observe one value, and the optimistic write updates all three at once.
-  const isMuted = Boolean(conversation.muted ?? conversation.isMuted);
 
   // Ownership only — deliberately NOT `isAdmin`.
   //
@@ -97,37 +87,13 @@ export default function GroupChatHeader({
             title="More Options"
             aria-label="Group chat options"
           >
-            <MoreVertical size={18} />
+            <MoreVertical size={20} strokeWidth={2.25} />
           </button>
           
           <Menu {...moreMenu.menuProps} size="md" ariaLabel="Group chat options">
-            {onOpenDetails && (
-              <MenuItem icon={Info} onSelect={onOpenDetails} onClose={moreMenu.close}>
-                Group info
-              </MenuItem>
-            )}
-
             {onToggleSearch && (
               <MenuItem icon={Search} onSelect={onToggleSearch} onClose={moreMenu.close}>
                 Find in chat
-              </MenuItem>
-            )}
-
-            <MenuItem
-              icon={isMuted ? NotificationOn : NotificationOff}
-              onSelect={() => onToggleMute?.(conversation.id, isMuted)}
-              onClose={moreMenu.close}
-            >
-              {isMuted ? 'Unmute alerts' : 'Mute alerts'}
-            </MenuItem>
-
-            {onTogglePin && (
-              <MenuItem
-                icon={Pin}
-                onSelect={() => onTogglePin(conversation.id, conversation.pinned || conversation.isPinned)}
-                onClose={moreMenu.close}
-              >
-                {conversation.pinned || conversation.isPinned ? 'Unpin group' : 'Pin group'}
               </MenuItem>
             )}
 

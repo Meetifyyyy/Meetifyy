@@ -2,7 +2,7 @@ import { Suspense, lazy, useCallback, useRef, useEffect } from 'react';
 import { Plus, Search, Send, X } from '@shared/components/icons';
 import { useMediaViewerActions } from '@shared/context/MediaViewerContext';
 import { useMessageActions } from '@shared/hooks/useMessageActions';
-import { useRecipientConversations } from '@shared/hooks/useRecipientConversations';
+import { useForwardRecipients } from '../hooks/useForwardRecipients';
 import { showToast } from '@shared/utils/toast';
 import ChatMessageList from './ChatMessageList';
 import ChatInputArea from './ChatInputArea';
@@ -68,6 +68,9 @@ export default function ChatAreaLayout({
   inputDisabledReason = null,
   extraModals = null,
   onLeaveActivity = null,
+  // Contact-details actions, supplied by the DM screen.
+  onBlockUser = null,
+  onClearChat = null,
 
   // Whether to show avatar next to typing bubble (groups only)
   _showTypingAvatar = false,
@@ -93,7 +96,8 @@ export default function ChatAreaLayout({
   const {
     conversations: forwardTargets,
     isLoading: isLoadingForwardTargets,
-  } = useRecipientConversations(Boolean(forwardingMsg));
+    onSearchChange: onForwardSearchChange,
+  } = useForwardRecipients(Boolean(forwardingMsg));
   const searchInputRef = useRef(null);
 
   const handleCloseSearch = useCallback(() => {
@@ -171,6 +175,8 @@ export default function ChatAreaLayout({
           onClose={closeDetails}
           onSearch={handleOpenSearch}
           onLeaveActivity={onLeaveActivity}
+          onBlockUser={onBlockUser}
+          onClearChat={onClearChat ? () => onClearChat(conversation.id) : undefined}
         />
       </div>
     );
@@ -254,6 +260,7 @@ export default function ChatAreaLayout({
         onCancelReply={() => setReplyingTo(null)}
         disabled={inputDisabled}
         disabledReason={inputDisabledReason}
+        onBlockUser={onBlockUser}
       />
 
       {contextMenuState && (
@@ -290,6 +297,7 @@ export default function ChatAreaLayout({
             msg={forwardingMsg}
             conversations={forwardTargets}
             isLoading={isLoadingForwardTargets}
+            onSearchChange={onForwardSearchChange}
             onClose={() => setForwardingMsg(null)}
             onConfirmForward={async (targetIds, { operationId }) => {
               const text = forwardingMsg.text || forwardingMsg.payload?.text || '';

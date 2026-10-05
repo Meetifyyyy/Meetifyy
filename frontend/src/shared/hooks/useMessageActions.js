@@ -5,6 +5,7 @@ import { showToast } from '../utils/toast';
 import { useConversations } from './useMessages';
 import { processAndUploadImage, uploadFileDirect } from '../utils/mediaPipeline';
 import { purgeConversationFromCaches, matchesConversationId, getConversationAliases, appendMessageToCache } from '../../features/messages/shared/utils/cacheUtils';
+import { invalidateConversationMedia } from '../../features/messages/shared/utils/conversationMediaCache';
 import { idbDeleteConversationMessages } from '../../features/messages/shared/utils/idbMessages';
 import { scheduleConversationWrite } from '../utils/conversationWriteQueue';
 
@@ -381,6 +382,8 @@ export function useMessageActions() {
 
     try {
       await messagesApi.clearChat(convId);
+      // Everything before the clear is gone for this viewer, gallery included.
+      invalidateConversationMedia(queryClient);
     } catch (e) {
       previousMessages.forEach((data, alias) => {
         if (data) queryClient.setQueryData(['messages', alias], data);

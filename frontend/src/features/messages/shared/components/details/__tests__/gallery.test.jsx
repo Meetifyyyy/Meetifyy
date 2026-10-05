@@ -5,9 +5,18 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const openViewer = vi.hoisted(() => vi.fn());
+const media = vi.hoisted(() => ({ result: null, calls: [], fetchNextPage: vi.fn(), refetch: vi.fn() }));
+const size = vi.hoisted(() => ({ value: { width: 0, height: 0 } }));
 
 vi.mock('@shared/context/MediaViewerContext', () => ({
   useMediaViewerActions: () => ({ openViewer }),
+}));
+vi.mock('@shared/hooks/useElementSize', () => ({ useElementSize: () => size.value }));
+vi.mock('../../../hooks/useConversationMedia', () => ({
+  useConversationMedia: (conversationId, options) => {
+    media.calls.push({ conversationId, ...options });
+    return media.result;
+  },
 }));
 // The tile's own behaviour is covered by its own tests; here it only needs to
 // expose what the gallery hands it.
@@ -26,102 +35,203 @@ vi.mock('@shared/components/media/MediaThumb', () => ({
   ),
 }));
 
-import { GalleryStrip, GalleryCoverageNote, GALLERY_STRIP_LIMIT, galleryOrigin } from '../galleryShared';
+import { GalleryPreview } from '../galleryShared';
 import ChatGalleryPage, { galleryViewerItem } from '../ChatGalleryPage';
 
 const items = (n) => Array.from({ length: n }, (_, i) => ({
+  id: `m${i}`,
   type: i % 2 ? 'video' : 'image',
   url: `chat/f-${i}.jpg`,
   thumbnailUrl: i % 2 ? `chat/f-${i}_thumb.jpg` : '',
 }));
 
-describe('gallery strip', () => {
-  afterEach(cleanup);
+const result = (over = {}) => ({
+  items: [], isPending: false, isError: false, hasNextPage: false,
+  isFetchingNextPage: false, fetchNextPage: media.fetchNextPage, refetch: media.refetch, ...over,
+});
 
-  it('mounts at most 12 tiles however long the history is', () => {
-    render(<GalleryStrip mediaList={items(300)} onOpen={() => {}} />);
-    expect(screen.getAllByTestId('tile')).toHaveLength(GALLERY_STRIP_LIMIT);
-    expect(GALLERY_STRIP_LIMIT).toBe(12);
+beforeEach(() => {
+  media.calls = [];
+  media.fetchNextPage.mockReset();
+  media.refetch.mockReset();
+  media.result = result();
+  size.value = { width: 0, height: 0 };
+  openViewer.mockReset();
+});
+afterEach(cleanup);
+
+describe('gallery preview', () => {
+  it('asks for nothing until its row has been measured', () => {
+    render(<GalleryPreview conversationId="c1" onOpen={() => {}} />);
+    expect(media.calls.at(-1)).toMatchObject({ conversationId: 'c1', pageSize: 0 });
   });
 
-  it('names each tile by kind and position within the whole gallery, without inventing a description', () => {
-    render(<GalleryStrip mediaList={items(30)} onOpen={() => {}} />);
-    expect(screen.getByRole('button', { name: 'Open photo 1 of 30' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Open video 2 of 30' })).toBeTruthy();
+  it('asks for exactly as many tiles as fit in the row it measured', () => {
+    size.value = { width: 290, height: 90 };
+    const { rerender } = render(<GalleryPreview conversationId="c1" onOpen={() => {}} />);
+    const narrow = media.calls.at(-1).pageSize;
+
+    size.value = { width: 560, height: 90 };
+    rerender(<GalleryPreview conversationId="c1" onOpen={() => {}} />);
+    const wide = media.calls.at(-1).pageSize;
+
+    expect(narrow).toBe(3);
+    expect(wide).toBeGreaterThan(narrow);
   });
 
-  it('the header is a real, named button', () => {
+  it('draws only one row of tiles, eagerly, named by kind and position', () => {
+    size.value = { width: 290, height: 90 };
+    media.result = result({ items: items(10) });
+    render(<GalleryPreview conversationId="c1" onOpen={() => {}} />);
+
+    expect(screen.getAllByTestId('tile')).toHaveLength(3);
+    expect(screen.getAllByTestId('tile')[0].dataset.lazy).toBe('false');
+    expect(screen.getByRole('button', { name: 'Open photo 1' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Open video 2' })).toBeTruthy();
+  });
+
+  it('the header and a tile both open the full gallery; the header is a named button', () => {
+    size.value = { width: 290, height: 90 };
+    media.result = result({ items: items(3) });
     const onOpen = vi.fn();
-    render(<GalleryStrip mediaList={items(5)} onOpen={onOpen} />);
-    const header = screen.getByRole('button', { name: 'Open gallery, 5 items' });
-    expect(header.tagName).toBe('BUTTON');
-    fireEvent.click(header);
-    expect(onOpen).toHaveBeenCalledTimes(1);
+    render(<GalleryPreview conversationId="c1" onOpen={onOpen} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open gallery' }));
+    fireEvent.click(screen.getAllByTestId('tile')[0]);
+    expect(onOpen).toHaveBeenCalledTimes(2);
   });
 
-  it('shows the empty state without tiles', () => {
-    render(<GalleryStrip mediaList={[]} onOpen={() => {}} />);
-    expect(screen.getByText('No media')).toBeTruthy();
+  it('shows placeholders while the first answer is on its way - never "No media"', () => {
+    size.value = { width: 290, height: 90 };
+    media.result = result({ isPending: true });
+    render(<GalleryPreview conversationId="c1" onOpen={() => {}} />);
+
+    expect(screen.queryByText('No media')).toBeNull();
     expect(screen.queryAllByTestId('tile')).toHaveLength(0);
   });
-});
 
-describe('coverage note', () => {
-  afterEach(cleanup);
-
-  it('says the gallery covers loaded messages and offers to load older ones', () => {
-    const onLoadMore = vi.fn();
-    render(<GalleryCoverageNote hasMore isLoadingMore={false} onLoadMore={onLoadMore} />);
-    expect(screen.getByText(/messages loaded so far/i)).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Load older messages' }));
-    expect(onLoadMore).toHaveBeenCalledTimes(1);
+  it('says "No media" only once the server has answered with none', () => {
+    size.value = { width: 290, height: 90 };
+    media.result = result({ items: [] });
+    render(<GalleryPreview conversationId="c1" onOpen={() => {}} />);
+    expect(screen.getByText('No media')).toBeTruthy();
   });
 
-  it('disables the action while a page is loading', () => {
-    render(<GalleryCoverageNote hasMore isLoadingMore onLoadMore={() => {}} />);
-    expect(screen.getByRole('button', { name: /Loading/ }).disabled).toBe(true);
-  });
+  it('reports a failed load with a retry, instead of pretending there is no media', () => {
+    size.value = { width: 290, height: 90 };
+    media.result = result({ isError: true });
+    render(<GalleryPreview conversationId="c1" onOpen={() => {}} />);
 
-  it('is silent once the whole history is loaded', () => {
-    const { container } = render(<GalleryCoverageNote hasMore={false} />);
-    expect(container.innerHTML).toBe('');
-  });
-
-  it('still states the limit when it has not been told about paging', () => {
-    render(<GalleryCoverageNote />);
-    expect(screen.getByText(/messages loaded so far/i)).toBeTruthy();
-    expect(screen.queryByRole('button')).toBeNull();
+    expect(screen.queryByText('No media')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(media.refetch).toHaveBeenCalledTimes(1);
   });
 });
 
-describe('galleryOrigin', () => {
-  const me = { id: 'u-me' };
-
-  it('reports a confirmed message from someone else by the message id', () => {
-    expect(galleryOrigin({ id: 'm-1', senderId: 'u-other' }, me)).toEqual({
-      id: 'm-1',
-      report: { targetType: 'MESSAGE', targetId: 'm-1' },
+describe('full gallery', () => {
+  let observers;
+  beforeEach(() => {
+    observers = [];
+    globalThis.IntersectionObserver = vi.fn(function IO(callback) {
+      this.callback = callback;
+      this.observe = vi.fn();
+      this.disconnect = vi.fn();
+      observers.push(this);
     });
   });
+  afterEach(() => { delete globalThis.IntersectionObserver; });
 
-  it('keeps the id but offers no report for your own message', () => {
-    const o = galleryOrigin({ id: 'm-2', senderId: 'u-me' }, me);
-    expect(o.id).toBe('m-2');
-    expect(o.report).toBeUndefined();
+  it('sizes its first request from the screen it is on, once', () => {
+    size.value = { width: 336, height: 600 };
+    const { rerender } = render(<ChatGalleryPage conversationId="c1" onBack={() => {}} />);
+    const first = media.calls.at(-1).pageSize;
+    expect(first).toBeGreaterThanOrEqual(6);
+
+    // Rotating the phone re-flows the tiles; it does not re-request the gallery.
+    size.value = { width: 700, height: 300 };
+    rerender(<ChatGalleryPage conversationId="c1" onBack={() => {}} />);
+    expect(media.calls.at(-1).pageSize).toBe(first);
   });
 
-  it('has neither for an unconfirmed message', () => {
-    expect(galleryOrigin({ id: 'temp_123', senderId: 'u-other' }, me)).toEqual({});
-    expect(galleryOrigin({ id: 'c_temp_9', senderId: 'u-other' }, me)).toEqual({});
-    expect(galleryOrigin({ id: 'm-3', senderId: 'u-other', isOptimistic: true }, me)).toEqual({});
-    expect(galleryOrigin({ senderId: 'u-other' }, me)).toEqual({});
+  it('asks for nothing before it has been measured', () => {
+    render(<ChatGalleryPage conversationId="c1" onBack={() => {}} />);
+    expect(media.calls.at(-1).pageSize).toBe(0);
+  });
+
+  it('loads the next page when the end comes into view, and not otherwise', () => {
+    size.value = { width: 336, height: 600 };
+    media.result = result({ items: items(12), hasNextPage: true });
+    render(<ChatGalleryPage conversationId="c1" onBack={() => {}} />);
+
+    const observer = observers.at(-1);
+    observer.callback([{ isIntersecting: false }]);
+    expect(media.fetchNextPage).not.toHaveBeenCalled();
+    observer.callback([{ isIntersecting: true }]);
+    expect(media.fetchNextPage).toHaveBeenCalledTimes(1);
+  });
+
+  it('stops watching once there is nothing more, or while a page is already coming', () => {
+    size.value = { width: 336, height: 600 };
+    media.result = result({ items: items(12), hasNextPage: false });
+    render(<ChatGalleryPage conversationId="c1" onBack={() => {}} />);
+    expect(observers).toHaveLength(0);
+
+    cleanup();
+    media.result = result({ items: items(12), hasNextPage: true, isFetchingNextPage: true });
+    render(<ChatGalleryPage conversationId="c1" onBack={() => {}} />);
+    expect(observers).toHaveLength(0);
+  });
+
+  it('states the empty, loading and error cases separately', () => {
+    size.value = { width: 336, height: 600 };
+
+    media.result = result({ isPending: true });
+    const view = render(<ChatGalleryPage conversationId="c1" onBack={() => {}} />);
+    expect(screen.queryByText('No media')).toBeNull();
+    view.unmount();
+
+    media.result = result({ items: [] });
+    const empty = render(<ChatGalleryPage conversationId="c1" onBack={() => {}} />);
+    expect(screen.getByText('No media')).toBeTruthy();
+    empty.unmount();
+
+    media.result = result({ isError: true });
+    render(<ChatGalleryPage conversationId="c1" onBack={() => {}} />);
+    expect(screen.getByRole('alert').textContent).toMatch(/couldn.t load/i);
+  });
+
+  it('keeps what is loaded on screen when a later page fails, and offers to retry that page', () => {
+    size.value = { width: 336, height: 600 };
+    media.result = result({ items: items(6), isError: true, hasNextPage: true });
+    render(<ChatGalleryPage conversationId="c1" onBack={() => {}} />);
+
+    expect(screen.getAllByTestId('tile')).toHaveLength(6);
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(media.fetchNextPage).toHaveBeenCalledTimes(1);
+  });
+
+  it('opens the viewer at the tapped index with every loaded entry mapped', () => {
+    size.value = { width: 336, height: 600 };
+    media.result = result({
+      items: [
+        { id: 'm1', type: 'image', url: 'chat/a.jpg', report: { targetType: 'MESSAGE', targetId: 'm1' } },
+        { id: 'm2', type: 'image', url: 'chat/b.jpg' },
+      ],
+    });
+    render(<ChatGalleryPage conversationId="c1" onBack={() => {}} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Open photo 2' }));
+
+    expect(openViewer).toHaveBeenCalledWith(
+      [
+        { url: 'chat/a.jpg', type: 'image', id: 'm1', report: { targetType: 'MESSAGE', targetId: 'm1' } },
+        { url: 'chat/b.jpg', type: 'image', id: 'm2' },
+      ],
+      1,
+    );
   });
 });
 
 describe('gallery page → viewer items (opener contract)', () => {
-  beforeEach(() => openViewer.mockReset());
-  afterEach(cleanup);
-
   it('carries thumb, message id and the MESSAGE report target', () => {
     expect(galleryViewerItem({
       type: 'video',
@@ -138,26 +248,10 @@ describe('gallery page → viewer items (opener contract)', () => {
     });
   });
 
-  it('leaves report off for entries that are not a confirmed message from someone else', () => {
-    const item = galleryViewerItem({ type: 'image', url: 'https://example.com/x.png' });
-    expect(item).toEqual({ url: 'https://example.com/x.png', type: 'image' });
+  it('leaves report off for your own attachments', () => {
+    const item = galleryViewerItem({ type: 'image', url: 'chat/x.png', id: 'm1' });
+    expect(item).toEqual({ url: 'chat/x.png', type: 'image', id: 'm1' });
     expect('report' in item).toBe(false);
-  });
-
-  it('opens the viewer at the tapped index with every entry mapped', () => {
-    const list = [
-      { type: 'image', url: 'chat/a.jpg', id: 'm1', report: { targetType: 'MESSAGE', targetId: 'm1' } },
-      { type: 'image', url: 'chat/b.jpg' },
-    ];
-    render(<ChatGalleryPage mediaList={list} onBack={() => {}} hasMore={false} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Open photo 2 of 2' }));
-    expect(openViewer).toHaveBeenCalledWith(
-      [
-        { url: 'chat/a.jpg', type: 'image', id: 'm1', report: { targetType: 'MESSAGE', targetId: 'm1' } },
-        { url: 'chat/b.jpg', type: 'image' },
-      ],
-      1,
-    );
   });
 });
 

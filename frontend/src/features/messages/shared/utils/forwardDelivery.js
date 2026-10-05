@@ -19,11 +19,14 @@ const MAX_CLIENT_ID_LENGTH = 128;
 
 /** A new id for one logical "forward this to these people" action. */
 export function newForwardOperationId() {
-  const rand =
-    typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-      ? crypto.randomUUID()
-      : `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
-  return rand.replace(/-/g, '').slice(0, 24);
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID().replace(/-/g, '').slice(0, 24);
+  }
+  if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
+    const bytes = crypto.getRandomValues(new Uint8Array(12));
+    return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+  }
+  throw new Error('A secure random source is required to forward a message');
 }
 
 /** Stable client id for one recipient within one forward operation. */

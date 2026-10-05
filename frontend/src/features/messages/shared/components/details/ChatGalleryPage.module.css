@@ -1,8 +1,34 @@
+/* The scrolling area of the full gallery.
+   Padding is exactly 12px on every side. The system navigation bar is cleared by
+   a spacer after the content (an inset, not padding), so the tiles keep the same
+   12px margin as everywhere else and the last row can still be scrolled clear of it. */
+.galleryBody {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  box-sizing: border-box;
+  padding: 12px;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.galleryBody::-webkit-scrollbar {
+  display: none;
+}
+
+.galleryBody::after {
+  content: '';
+  display: block;
+  height: env(safe-area-inset-bottom, 0px);
+}
+
+/* Columns are chosen from the width the gallery actually has (see galleryLayout),
+   and 1fr stretches the tiles to fill it, so no strip of empty space is left at
+   the edge whatever the screen width. */
 .galleryGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
-  gap: 0.75rem;
-  padding: 1.25rem;
+  grid-template-columns: repeat(var(--gallery-cols, 3), minmax(0, 1fr));
+  gap: 8px;
 }
 
 .galleryGridItem {
@@ -13,6 +39,11 @@
   border: 1px solid var(--color-border-light);
   position: relative;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+}
+
+.galleryPlaceholder {
+  box-shadow: none;
+  opacity: 0.6;
 }
 
 .galleryGridMedia {
@@ -30,8 +61,36 @@
   filter: brightness(0.75);
 }
 
+.galleryState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 4rem 1rem;
+  color: var(--color-text-muted, #64748b);
+  font-size: 0.95rem;
+  font-weight: 500;
+}
+
+.galleryFooter {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 1rem 0 0.25rem;
+  color: var(--color-text-muted, #64748b);
+  font-size: 0.82rem;
+}
+
+/* Observed to decide when to request the next page; takes no space. */
+.gallerySentinel {
+  height: 1px;
+  margin-top: -1px;
+}
+
 @media (max-width: 768px) {
-  :global([data-theme="dark"]) .galleryGrid {
+  :global([data-theme="dark"]) .galleryBody {
     background: #000000;
   }
 }

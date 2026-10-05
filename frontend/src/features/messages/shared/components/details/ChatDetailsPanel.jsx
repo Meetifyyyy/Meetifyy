@@ -13,7 +13,7 @@ import ReportModal from '@shared/components/modals/ReportModal/ReportModal';
 import { showToast } from '@shared/utils/toast';
 
 import ChatGalleryPage from './ChatGalleryPage';
-import { GalleryStrip, GalleryCoverageNote, galleryOrigin } from './galleryShared';
+import { GalleryPreview } from './galleryShared';
 import GroupChangeOwnerPage from './GroupChangeOwnerPage';
 import GroupEditPage from './GroupEditPage';
 import GroupSettingsPage from './GroupSettingsPage';
@@ -27,14 +27,11 @@ import {
 } from '@shared/constants/mediaLimits';
 import { commitDraftImage } from '@shared/utils/draftImageCache';
 import { sortGroupMembers } from '@shared/utils/memberSort';
-import { skipToken, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { groupApi } from '@shared/api/apiClient';
 
 export default function ChatDetailsPanel({
   conversation, onBack, onBlockUser, onClearChat, onSearch, onLeaveActivity,
-  // Optional: the conversation's history paging, from the chat manager. Without
-  // them the gallery still works, and says it covers only what is loaded.
-  hasMore, isLoadingMore, onLoadMore,
 }) {
   const navigate = useNavigate();
   const { currentUser } = useAuth();
@@ -110,126 +107,6 @@ export default function ChatDetailsPanel({
     setShowChangeOwnerPage(false);
     setShowRequestsPage(false);
   }, [conversation.id]);
-
-  const queryClient = useQueryClient();
-
-  // Subscribe reactively to the live message cache so the gallery re-derives
-  // whenever new media is shared. `queryClient.getQueryData` alone is a
-  // non-reactive snapshot — reading it in a memo keyed only on
-  // `conversation.messages` let the gallery go stale. This observer re-renders
-  // the panel whenever the canonical ['messages', <pubId>] cache changes
-  // (optimistic send, socket delivery, media URL swap), keeping it in sync.
-  const messagesKey = conversation?.publicId || conversation?.id || conversation?.internalId || null;
-  //
-  // `skipToken` rather than a bare `enabled: false`: a query with no queryFn
-  // at all is a configuration error to TanStack, and it logged the
-  // "No queryFn was passed" warning on every single render of this panel —
-  // hundreds of lines of console noise that buried real errors. skipToken is
-  // the supported way to say "this observer never fetches", so the cache
-  // subscription works exactly as before, silently.
-  const { data: liveHistory } = useQuery({
-    queryKey: ['messages', messagesKey],
-    queryFn: skipToken, // subscribe to cache updates only; never refetch here
-  });
-
-  const galleryMessages = useMemo(() => {
-    const fromLive = liveHistory?.pages ? liveHistory.pages.flatMap(p => p?.messages || []) : [];
-    if (fromLive.length > 0) return fromLive;
-    // Fallback for the brief window before the canonical cache is populated.
-    for (const key of [conversation?.id, conversation?.internalId].filter(Boolean)) {
-      const qd = queryClient.getQueryData(['messages', key]);
-      if (qd?.pages) {
-        const msgs = qd.pages.flatMap(p => p?.messages || []);
-        if (msgs.length > 0) return msgs;
-      }
-    }
-    return conversation?.messages || [];
-  }, [liveHistory, conversation?.id, conversation?.internalId, conversation?.messages, queryClient]);
-
-  // Extract shared media from message history (ONLY images and videos, EXCLUDING voice notes/audio)
-  const mediaList = useMemo(() => {
-    const list = [];
-    const messages = galleryMessages;
-
-    messages.forEach(msg => {
-      const text = msg.text || msg.payload?.text || '';
-      // Coerced to a string here: the `|| ''` fallback only covers falsy values, so
-      // a truthy non-string mediaUrl (an object payload, for instance) reached
-      // `mediaUrl.startsWith('data:audio/')` in the isAudio check below -- which runs
-      // before the `typeof mediaUrl === 'string'` guard further down -- and threw
-      // "mediaUrl.startsWith is not a function", taking the whole panel down.
-      const rawMediaUrl = msg.mediaUrl || msg.payload?.mediaUrl || (msg.type === 'media' ? (msg.text || msg.payload?.text) : null) || '';
-      const mediaUrl = typeof rawMediaUrl === 'string' ? rawMediaUrl : '';
-      const mediaType = (msg.mediaType || msg.payload?.mediaType || msg.type || '').toLowerCase();
-      // Chat uploads store a separate thumbnail alongside the original. Carrying
-      // it here is what lets a video tile show a real frame instead of a black
-      // rectangle, and lets an image tile load the small file rather than the full one.
-      const rawThumb = msg.thumbnailUrl || msg.payload?.thumbnailUrl || '';
-      const thumbnailUrl = typeof rawThumb === 'string' ? rawThumb : '';
-      const createdAt = msg.createdAt || msg.timestamp || new Date();
-
-      // Skip voice notes & audio files completely
-      const isAudio = (
-        mediaType.includes('audio') || 
-        mediaType.includes('voice') || 
-        msg.type === 'voice' || 
-        msg.type === 'VOICE' || 
-        msg.isVoiceNote ||
-        /\.(mp3|wav|ogg|m4a|aac|flac)/i.test(mediaUrl) ||
-        mediaUrl.startsWith('data:audio/')
-      );
-      if (isAudio) return;
-
-      // Direct media attachments (uploaded image/video in chat)
-      if (mediaUrl && typeof mediaUrl === 'string') {
-        const isVid = mediaType.includes('video') || /\.(mp4|mov|mkv)/i.test(mediaUrl) || mediaUrl.startsWith('data:video/');
-        const isImg = mediaType.includes('image') || /\.(png|jpe?g|gif|webp|svg)/i.test(mediaUrl) || mediaUrl.startsWith('data:image/');
-        const origin = galleryOrigin(msg, currentUser);
-        if (isVid) list.push({ type: 'video', url: mediaUrl, thumbnailUrl, ...origin, createdAt: new Date(createdAt).getTime() });
-        else if (isImg) list.push({ type: 'image', url: mediaUrl, thumbnailUrl, ...origin, createdAt: new Date(createdAt).getTime() });
-      }
-
-      // Embedded links & data URLs in text
-      if (text && typeof text === 'string') {
-        const urls = text.match(/\bhttps?:\/\/\S+/gi) || [];
-        urls.forEach(url => {
-          // Extension sniffing has to ignore the query string and hash, or a
-          // signed/---versioned media URL never matches. `cleanUrl` was
-          // referenced here without ever being defined, so this callback threw
-          // a ReferenceError for any message containing a link.
-          const cleanUrl = url.split('?')[0].split('#')[0];
-          const isImg = /\.(png|jpe?g|gif|webp|svg|avif)/i.test(cleanUrl) || url.startsWith('data:image/') || url.includes('/presets/') || url.includes('/storage/v1/object/');
-          const isVid = /\.(mp4|mov|webm)/i.test(cleanUrl) || url.startsWith('data:video/');
-          if (isImg) list.push({ type: 'image', url, createdAt: new Date(createdAt).getTime() });
-          else if (isVid) list.push({ type: 'video', url, createdAt: new Date(createdAt).getTime() });
-        });
-
-        if (text.startsWith('data:image/')) {
-          list.push({ type: 'image', url: text, createdAt: new Date(createdAt).getTime() });
-        } else if (text.startsWith('data:video/')) {
-          list.push({ type: 'video', url: text, createdAt: new Date(createdAt).getTime() });
-        }
-      }
-
-      // Link previews
-      if (msg.linkPreview?.image) {
-        list.push({ type: 'image', url: msg.linkPreview.image, createdAt: new Date(createdAt).getTime() });
-      }
-    });
-
-    const seen = new Set();
-    const uniqueList = [];
-    for (let i = 0; i < list.length; i++) {
-      const item = list[i];
-      if (!seen.has(item.url)) {
-        seen.add(item.url);
-        uniqueList.push(item);
-      }
-    }
-
-    // Sort LATEST FIRST (most recent media items first)
-    return uniqueList.sort((a, b) => b.createdAt - a.createdAt);
-  }, [galleryMessages, currentUser]);
 
   // Hooks must run on every render, so this sits ABOVE the early return below.
   // It reads the DM partner's academic fields straight off the conversation
@@ -429,11 +306,8 @@ export default function ChatDetailsPanel({
   if (showGalleryPage) {
     return (
       <ChatGalleryPage
-        mediaList={mediaList}
+        conversationId={conversation.id}
         onBack={() => setShowGalleryPage(false)}
-        hasMore={hasMore}
-        isLoadingMore={isLoadingMore}
-        onLoadMore={onLoadMore}
       />
     );
   }
@@ -686,9 +560,11 @@ export default function ChatDetailsPanel({
                       // Must name the target and the current state: calling
                       // this bare sent a request for user "undefined".
                       const targetId = conversation.targetUser?.id || conversation.userId;
+                      // Only raises the question (see MessagesLayout.requestBlock). It used to
+                      // close the details straight after, which suited an instant block but
+                      // not a confirmation: cancelling would have dropped you into the chat.
                       if (onBlockUser && targetId) {
                         onBlockUser(targetId, Boolean(conversation.isBlockedByMe));
-                        onBack();
                       }
                     }}
                     title={conversation.isBlockedByMe ? "Unblock Contact" : "Block Contact"}
@@ -788,10 +664,9 @@ export default function ChatDetailsPanel({
             )}
 
 
-            <GalleryStrip
-              mediaList={mediaList}
+            <GalleryPreview
+              conversationId={conversation.id}
               onOpen={() => setShowGalleryPage(true)}
-              coverage={<GalleryCoverageNote hasMore={hasMore} isLoadingMore={isLoadingMore} onLoadMore={onLoadMore} />}
             />
           </div>
         )}
@@ -806,10 +681,9 @@ export default function ChatDetailsPanel({
               </div>
             )}
 
-            <GalleryStrip
-              mediaList={mediaList}
+            <GalleryPreview
+              conversationId={conversation.id}
               onOpen={() => setShowGalleryPage(true)}
-              coverage={<GalleryCoverageNote hasMore={hasMore} isLoadingMore={isLoadingMore} onLoadMore={onLoadMore} />}
             />
 
             {isMember && (

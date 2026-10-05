@@ -94,10 +94,11 @@
 .msgConvSearch {
   display: flex;
   align-items: center;
-  /* Borderless filled field, the same treatment as the Crew search. The 1px
-     transparent edge keeps its box the same size as the Crew one. */
+  /* Filled field with a thin edge, from the standard border token (the lighter
+     one is near-invisible on a white page), so it reads in both themes. The edge is always 1px, so focusing
+     recolours it rather than resizing the field. */
   background: var(--action-secondary-bg, rgba(15, 23, 42, 0.06));
-  border: 1px solid transparent;
+  border: 1px solid var(--color-border);
   border-radius: 100px;
   padding: 0 0.85rem;
   flex: 1;
@@ -108,7 +109,8 @@
 
 .msgConvSearch:focus-within {
   background: var(--color-bg-white);
-  box-shadow: 0 0 0 1.5px rgba(var(--color-primary-rgb), 0.45);
+  border-color: rgba(var(--color-primary-rgb), 0.55);
+  box-shadow: 0 0 0 1.5px rgba(var(--color-primary-rgb), 0.25);
 }
 
 .searchIcon {

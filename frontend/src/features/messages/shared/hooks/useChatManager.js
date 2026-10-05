@@ -5,7 +5,7 @@ import { useGlobalSocketStore } from '@shared/stores/useGlobalSocketStore';
 import { processAndUploadImage, processAndUploadVideo, uploadFileDirect, getImageDimensions } from '@shared/utils/mediaPipeline';
 import { useAuth } from '@shared/context/AuthContext';
 import { useConversations } from '@shared/hooks/useMessages';
-import { appendMessageToCache, updateMessageInCache, updateConversationPreview, matchesConversationId, getConversationAliases, compareMessages, checkIsMe } from '../utils/cacheUtils';
+import { appendMessageToCache, updateMessageInCache, updateConversationPreview, matchesConversationId, getConversationAliases, compareMessages, checkIsMe, withConversationUnreadCleared } from '../utils/cacheUtils';
 
 import { idbGetMessages, idbSaveMessages, idbPatchMessage, idbDeleteMessage, migrateHistoricalFailedMessages, trimMessageCache } from '../utils/idbMessages';
 
@@ -358,24 +358,8 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
 
     lastMarkedReadRef.current = activeChatId;
 
-    queryClient.setQueryData(['conversations'], (oldConvs) => {
-      if (!Array.isArray(oldConvs)) return oldConvs;
-      let modified = false;
-
-      const updated = oldConvs.map((c) => {
-        const isMatch = String(c.id) === String(activeChatId) ||
-          String(c.publicId) === String(activeChatId) ||
-          String(c.internalId) === String(activeChatId);
-
-        if (isMatch && ((c.unreadCount || 0) > 0 || (c.unread || 0) > 0)) {
-          modified = true;
-          return { ...c, unreadCount: 0, unread: 0 };
-        }
-        return c;
-      });
-
-      return modified ? updated : oldConvs;
-    });
+    queryClient.setQueryData(['conversations'], (oldConvs) =>
+      withConversationUnreadCleared(oldConvs, activeChatId));
 
     // Single authoritative path: socket if connected, HTTP fallback only if not.
     // Never fire both — the backend writes on either event.

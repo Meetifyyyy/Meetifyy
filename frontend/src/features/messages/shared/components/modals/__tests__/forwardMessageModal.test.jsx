@@ -166,3 +166,38 @@ describe('Forward sheet delivery', () => {
     expect(ids[0]).not.toBe(ids[1]);
   });
 });
+
+describe('Forward sheet search', () => {
+  it('reports what is typed, so the owner can search past the first page', () => {
+    const onSearchChange = vi.fn();
+    renderModal({ onSearchChange });
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'Search conversations' }), { target: { value: 'zed' } });
+    expect(onSearchChange).toHaveBeenLastCalledWith('zed');
+  });
+
+  it('clears the owner\'s search when the sheet closes', () => {
+    const onSearchChange = vi.fn();
+    const { rerender } = renderModal({ onSearchChange });
+    fireEvent.change(screen.getByRole('textbox', { name: 'Search conversations' }), { target: { value: 'zed' } });
+
+    rerender(
+      <ForwardMessageModal
+        isOpen={false}
+        msg={{ text: 'hi' }}
+        conversations={CHATS}
+        onClose={vi.fn()}
+        onConfirmForward={vi.fn()}
+        onSearchChange={onSearchChange}
+      />,
+    );
+    expect(onSearchChange).toHaveBeenLastCalledWith('');
+  });
+
+  it('still works for an owner that does not search the server', () => {
+    renderModal();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Search conversations' }), { target: { value: 'ali' } });
+    expect(screen.getByRole('checkbox', { name: 'Alice' })).toBeTruthy();
+    expect(screen.queryByRole('checkbox', { name: 'Bob' })).toBeNull();
+  });
+});

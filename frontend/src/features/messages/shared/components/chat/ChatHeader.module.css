@@ -113,10 +113,18 @@
   transition: all var(--transition-fast);
 }
 
-.msgChatActionBtn:hover,
+/* The icon stays its own colour - black on light, white on dark (the icon-base
+   token) - in every state. It used to turn brand blue on :hover, and on a phone
+   :hover sticks after a tap, so the menu icon stayed blue until you tapped
+   elsewhere. Feedback is the soft disc behind it. */
 .msgChatActionBtnActive {
   background: var(--color-bg-soft, rgba(0, 0, 0, 0.05));
-  color: var(--color-primary);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .msgChatActionBtn:hover {
+    background: var(--color-bg-soft, rgba(0, 0, 0, 0.05));
+  }
 }
 
 .msgMoreDropdown {

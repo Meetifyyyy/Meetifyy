@@ -16,4 +16,9 @@ describe('chatMediaItem', () => {
     expect(chatMediaItem('u', 'image', { other: 1 })).toEqual({ url: 'u', type: 'image' });
     expect(chatMediaItem('u', 'image', 'x')).toEqual({ url: 'u', type: 'image' });
   });
+
+  it('keeps the stored url so a forward from the viewer persists the key, not an absolute host', () => {
+    expect(chatMediaItem('https://api.test/api/media/chat/a.webp', 'image', { rawUrl: '/api/media/chat/a.webp' }))
+      .toEqual({ url: 'https://api.test/api/media/chat/a.webp', type: 'image', rawUrl: '/api/media/chat/a.webp' });
+  });
 });

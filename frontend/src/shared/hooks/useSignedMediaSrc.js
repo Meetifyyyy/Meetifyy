@@ -50,7 +50,9 @@ export function useSignedMediaSrc(value) {
   // Seeded synchronously so an already-usable value (blob:, data:, a public
   // URL, or one already in the cache) paints on the first frame with no flash.
   const [src, setSrc] = useState(() => initialFor(value));
-  const [failed, setFailed] = useState(false);
+  // Which value the server declined to sign, not just "something failed": a
+  // new value must never inherit the previous one's failure for a render.
+  const [failedFor, setFailedFor] = useState(null);
   const [pending, setPending] = useState(() => needsSigning(value));
   const [attempt, setAttempt] = useState(0);
 
@@ -75,7 +77,7 @@ export function useSignedMediaSrc(value) {
 
   useEffect(() => {
     let alive = true;
-    setFailed(false);
+    setFailedFor(null);
 
     // Nothing to resolve: either empty, or already a URL that needs no signing.
     if (!needsSigning(value)) {
@@ -95,11 +97,11 @@ export function useSignedMediaSrc(value) {
       .then((url) => {
         if (!alive) return;
         if (url) setSrc(url);
-        else if (!immediate) setFailed(true);
+        else if (!immediate) setFailedFor(value);
       })
       .catch(() => {
         // Only a failure if there was nothing usable to fall back to.
-        if (alive && !immediate) setFailed(true);
+        if (alive && !immediate) setFailedFor(value);
       })
       .finally(() => {
         if (alive) setPending(false);
@@ -110,6 +112,7 @@ export function useSignedMediaSrc(value) {
     };
   }, [value, attempt]);
 
+  const failed = failedFor !== null && failedFor === value;
   return { src, failed, pending, refresh, attempt };
 }
 

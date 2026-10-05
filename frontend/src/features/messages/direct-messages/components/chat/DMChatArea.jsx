@@ -9,8 +9,6 @@ export default function DMChatArea({
   onSendMessage,
   onReactMessage,
   onClearChat,
-  onTogglePin,
-  onToggleMute,
   onBlockUser,
   onBack,
   onNewMessage,
@@ -55,6 +53,11 @@ export default function DMChatArea({
     <ChatAreaLayout
       {...state}
       conversation={conversation}
+      // Block and Clear live in the contact details now, so they are handed down
+      // to it. Blocking is about the PERSON and works before a conversation
+      // exists; clearing needs a real conversation to act on.
+      onBlockUser={onBlockUser}
+      onClearChat={conversation?.isDraft ? undefined : onClearChat}
       showChatOnMobile={showChatOnMobile}
       isLoading={isLoading}
       notFound={notFound}
@@ -73,24 +76,14 @@ export default function DMChatArea({
         <DMChatHeader
           conversation={conversation}
           onBack={onBack}
-          onBlock={onBlockUser}
           /*
            * A draft has no conversation row yet, so its id is the synthetic
-           * `draft_<userId>` this screen invents to key the route. Pin, mute and
-           * clear are conversation-scoped: handed that id they called endpoints
-           * that cannot resolve it, failed server-side and silently did
-           * nothing, which is what made the header menu look broken until the
-           * first message had been sent.
-           *
-           * They are withheld rather than disabled because there is nothing to
-           * act on: an empty draft cannot be pinned, muted or cleared, and the
-           * header already renders each item only when its handler exists.
-           * Contact Info and Block stay, because both are about the PERSON and
-           * work perfectly well before a conversation exists.
+           * `draft_<userId>` this screen invents to key the route. Clearing is
+           * conversation-scoped: handed that id it called an endpoint that
+           * cannot resolve it and silently did nothing, so it is withheld
+           * rather than disabled - there is nothing to clear in an empty draft.
            */
           onClearChat={conversation?.isDraft ? undefined : onClearChat}
-          onTogglePin={conversation?.isDraft ? undefined : onTogglePin}
-          onToggleMute={conversation?.isDraft ? undefined : onToggleMute}
           onToggleSearch={conversation?.isDraft ? undefined : () => {
             if (state.showSearch) {
               state.closeSearch();
