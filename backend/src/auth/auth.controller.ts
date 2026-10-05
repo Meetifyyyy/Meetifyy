@@ -491,6 +491,29 @@ export class AuthController {
       throw new UnauthorizedException('Session expired');
     }
 
+    /**
+     * The profile, when the client asks for it, loaded WHILE the provider call
+     * is in flight rather than in a second request after it.
+     *
+     * An installed app's cold start renews first (its access token lives in
+     * memory only) and then had to ask `GET /api/auth/session` who it was: two
+     * serial round trips under the splash. The rotated row already names the
+     * user, and the row is a foreign key to an existing account, so this is the
+     * same `syncProfile` that route runs — same eligibility checks, same shape.
+     *
+     * Opt-in, because the ordinary mid-session renewal has no use for a profile.
+     * Any failure here (a banned account, a database hiccup) only omits the
+     * field: the client then asks `GET /api/auth/session` as it always did, and
+     * that route reports the failure properly. It is only ever sent once the
+     * provider refresh below has succeeded.
+     */
+    const includeProfile =
+      (req.body as { includeProfile?: unknown } | undefined)?.includeProfile ===
+      true;
+    const profilePromise = includeProfile
+      ? this.authService.syncProfile({ id: rotated.userId }).catch(() => null)
+      : Promise.resolve(null);
+
     const refreshed =
       await this.authService.refreshProviderSession(providerToken);
     if (!refreshed) {
@@ -514,9 +537,12 @@ export class AuthController {
       rotated.session.sessionId,
     );
 
+    const profile = await profilePromise;
+
     return {
       csrfToken,
       sessionId: rotated.session.sessionId,
+      ...(profile ? { user: profile, meta: profile.meta } : {}),
       ...this.nativeSessionTokens(
         req,
         refreshed.access_token,

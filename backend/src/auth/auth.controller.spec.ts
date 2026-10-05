@@ -55,7 +55,10 @@ describe('AuthController — Security / Email Notification Spoofing Prevention',
       revokeAllForUser: jest.fn().mockResolvedValue(2),
       listForUser: jest.fn().mockResolvedValue([]),
       sessionIdForRefreshToken: jest.fn().mockResolvedValue('s1'),
-      storeProviderRefresh: jest.fn().mockResolvedValue(undefined),
+      storeProviderRefresh: jest.fn<
+        ReturnType<UserSessionService['storeProviderRefresh']>,
+        Parameters<UserSessionService['storeProviderRefresh']>
+      >(() => Promise.resolve()),
     };
     controller = new AuthController(
       stub<AuthService>(authService),
@@ -407,5 +410,140 @@ describe('AuthController — change password', () => {
     // Signing devices out on a failed attempt would let anyone holding a
     // session log everybody else out by guessing wrongly.
     expect(sessions.revokeAllForUser).not.toHaveBeenCalled();
+  });
+});
+
+describe('AuthController — refresh can carry the profile', () => {
+  let controller: AuthController;
+  let authService: {
+    syncProfile: jest.Mock<
+      ReturnType<AuthService['syncProfile']>,
+      Parameters<AuthService['syncProfile']>
+    >;
+    refreshProviderSession: jest.Mock<
+      ReturnType<AuthService['refreshProviderSession']>,
+      Parameters<AuthService['refreshProviderSession']>
+    >;
+  };
+  let sessions: {
+    rotate: jest.Mock<
+      ReturnType<UserSessionService['rotate']>,
+      Parameters<UserSessionService['rotate']>
+    >;
+    storeProviderRefresh: jest.Mock<
+      ReturnType<UserSessionService['storeProviderRefresh']>,
+      Parameters<UserSessionService['storeProviderRefresh']>
+    >;
+  };
+  let res: { cookie: jest.Mock; clearCookie: jest.Mock };
+
+  const profile = stub<Awaited<ReturnType<AuthService['syncProfile']>>>({
+    id: 'u1',
+    username: 'ada',
+    meta: { postBookmarkIds: [], activityBookmarkIds: [], unreadNotifCount: 0 },
+  });
+  const req = (body?: Record<string, unknown>) =>
+    stub<Request>({
+      cookies: { mf_refresh: 'our-refresh' },
+      headers: {},
+      socket: {},
+      body,
+    });
+
+  beforeEach(() => {
+    authService = {
+      syncProfile: jest.fn<
+        ReturnType<AuthService['syncProfile']>,
+        Parameters<AuthService['syncProfile']>
+      >(() => Promise.resolve(profile)),
+      refreshProviderSession: jest
+        .fn<
+          ReturnType<AuthService['refreshProviderSession']>,
+          Parameters<AuthService['refreshProviderSession']>
+        >()
+        .mockResolvedValue({
+          access_token: 'access',
+          refresh_token: 'provider-next',
+          expires_in: 3600,
+        }),
+    };
+    sessions = {
+      rotate: jest
+        .fn<
+          ReturnType<UserSessionService['rotate']>,
+          Parameters<UserSessionService['rotate']>
+        >()
+        .mockResolvedValue({
+          ok: true,
+          userId: 'u1',
+          session: {
+            sessionId: 's2',
+            familyId: 'f1',
+            refreshToken: 'our-next',
+            expiresAt: new Date(Date.now() + 86_400_000),
+            providerRefreshToken: 'provider-refresh',
+          },
+        }),
+      storeProviderRefresh: jest.fn<
+        ReturnType<UserSessionService['storeProviderRefresh']>,
+        Parameters<UserSessionService['storeProviderRefresh']>
+      >(() => Promise.resolve()),
+    };
+    res = { cookie: jest.fn(), clearCookie: jest.fn() };
+    controller = new AuthController(
+      stub<AuthService>(authService),
+      stub<EmailService>(),
+      stub<RateLimitService>({ consume: jest.fn(), penalize: jest.fn() }),
+      stub<UserSessionService>(sessions),
+    );
+  });
+
+  it('returns the profile when asked, loaded alongside the provider call', async () => {
+    // The provider call is held open: the profile must already have been
+    // requested by then, or the two are serial again.
+    let release: () => void = () => undefined;
+    authService.refreshProviderSession.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          release = () =>
+            resolve({ access_token: 'a', refresh_token: 'p', expires_in: 60 });
+        }),
+    );
+    const pending = controller.refreshSession(
+      req({ includeProfile: true }),
+      stub<Response>(res),
+    );
+    await new Promise((r) => setImmediate(r));
+    expect(authService.syncProfile).toHaveBeenCalledWith({ id: 'u1' });
+    release();
+
+    const body = await pending;
+    expect(body).toMatchObject({ user: profile, meta: profile.meta });
+  });
+
+  it('leaves the ordinary renewal exactly as it was', async () => {
+    const body = await controller.refreshSession(req(), stub<Response>(res));
+    expect(authService.syncProfile).not.toHaveBeenCalled();
+    expect(body).not.toHaveProperty('user');
+  });
+
+  it('omits the profile, rather than failing the renewal, when it cannot be loaded', async () => {
+    authService.syncProfile.mockRejectedValue(new Error('db down'));
+    const body = await controller.refreshSession(
+      req({ includeProfile: true }),
+      stub<Response>(res),
+    );
+    expect(body).not.toHaveProperty('user');
+    expect(body).toHaveProperty('sessionId', 's2');
+  });
+
+  it('never hands out a profile when the provider refuses the renewal', async () => {
+    authService.refreshProviderSession.mockResolvedValue(null);
+    await expect(
+      controller.refreshSession(
+        req({ includeProfile: true }),
+        stub<Response>(res),
+      ),
+    ).rejects.toThrow('Session expired');
   });
 });
