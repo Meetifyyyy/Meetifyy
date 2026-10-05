@@ -17,6 +17,7 @@ import { idbClearAll } from '@shared/lib/idb';
 import { mediaCache } from '@shared/utils/MediaCacheManager';
 import { useQueryClient } from '@tanstack/react-query';
 import { propagateUserMedia } from '@shared/utils/propagateUserMedia';
+import { suppressRedirectIntent, allowRedirectIntent } from '@shared/utils/redirectIntent';
 
 import { supabase, isSupabaseConfigured, forgetProviderSession } from '@shared/lib/supabase';
 import { describeNetworkError, logNetworkFailure } from '@shared/utils/networkErrors';
@@ -281,6 +282,9 @@ export function AuthProvider({ children }) {
   const lastSyncAtRef = useRef(0);
   const bookmarksHydratedRef = useRef(false);
   const isLoggingOutRef = useRef(false);
+  // Bumped whenever a session starts or ends; lets a slow sign-out know a newer
+  // session has taken over before it destroys credentials.
+  const sessionGenerationRef = useRef(0);
   // Read inside updateProfile without making it a dependency: adding currentUser
   // to that callback's deps would change its identity on every profile change
   // and re-render every consumer of the auth context.
@@ -325,6 +329,10 @@ export function AuthProvider({ children }) {
       resetClientStateForNewUser(queryClientRef.current);
     }
     currentUserIdRef.current = user.id;
+    // A new session supersedes any sign-out still finishing its server call, and
+    // post-login redirects apply to signed-out visits again.
+    sessionGenerationRef.current += 1;
+    allowRedirectIntent();
     try {
       localStorage.setItem('currentUser', JSON.stringify(user));
       localStorage.setItem('loggedIn', 'true');
@@ -342,21 +350,41 @@ export function AuthProvider({ children }) {
    * session" call `logout`, which revokes it server-side first and then calls
    * this.
    */
-  const clearLocalSession = useCallback(() => {
+  const clearLocalSession = useCallback((revocation) => {
     // Synchronously, so a sign-in that follows before the next commit sees no
     // previous account (the reset below has already emptied everything).
     currentUserIdRef.current = null;
+    sessionGenerationRef.current += 1;
+    const generation = sessionGenerationRef.current;
+    // Only a session that existed can "end"; a failed boot probe is not one.
+    if (isLoggedInRef.current) suppressRedirectIntent();
     setSession(null);
     setCurrentUser(null);
     setAuthStatus(AUTH_STATUS.UNAUTHENTICATED);
-    forgetCsrfToken();
     /**
-     * Destroys the native credential. Not awaited: this runs from a state
-     * setter and its callers are synchronous, and the in-memory tokens are
-     * cleared first inside `forget()`, so nothing can authenticate with them
-     * even while the Keychain write is still in flight.
+     * Destroys the credentials this tab authenticates with. Not awaited: this
+     * runs from state setters and its callers are synchronous, and the
+     * in-memory tokens are cleared first inside `forget()`, so nothing can
+     * authenticate with them even while the Keychain write is still in flight.
+     *
+     * When a server-side revocation is still in flight (`logout`), the UI has
+     * already moved to signed-out, but the credentials stay until that request
+     * settles: it may need to renew an expired access token to be accepted, and
+     * a revocation the server refused would leave the session alive there. A
+     * sign-in that happens in between bumps the generation, and its new
+     * credentials are never the ones forgotten here.
      */
-    forgetSessionTokens();
+    const forgetCredentials = () => {
+      forgetCsrfToken();
+      forgetSessionTokens();
+    };
+    if (typeof revocation?.finally === 'function') {
+      void revocation.finally(() => {
+        if (sessionGenerationRef.current === generation) forgetCredentials();
+      }); // observed here; failures are reported by the caller that created it
+    } else {
+      forgetCredentials();
+    }
     clearSessionScopedStorage();
     resetClientStateForNewUser(queryClientRef.current);
   }, []);
@@ -1313,24 +1341,39 @@ export function AuthProvider({ children }) {
    * session belongs to the server now, and other devices have their own rows in
    * the session table — ending one device's session here must not end theirs.
    */
-  const logout = useCallback(async () => {
+  const logout = useCallback(() => {
     isLoggingOutRef.current = true;
-    try {
-      await authApi.logoutSession();
-    } catch (e) {
-      console.error('Server sign-out failed; clearing this browser anyway', e);
-    }
+    /*
+     * Signed out the moment it is asked for, not when the server answers.
+     *
+     * This used to await the revocation first and tear down afterwards, so the
+     * signed-in UI - the Home feed, Settings - stayed on screen, fully
+     * interactive, for the whole round trip (seconds on a slow network or a
+     * cold server), and the logout button's own navigation to `/` was bounced
+     * straight back to Home by the still-authenticated route guard.
+     *
+     * The request is started first so it is built with the credentials that are
+     * still in hand; the UI then moves on without waiting. A revocation that
+     * fails is logged, and the session it leaves behind is one the next boot
+     * discovers is revoked or expired.
+     *
+     * `signOut({ scope: 'local' })`, never the default global scope: other
+     * devices have their own rows in the session table.
+     */
+    const revocation = authApi.logoutSession().catch((e) => {
+      console.error('Server sign-out failed; this browser is signed out anyway', e);
+    });
+    clearLocalSession(revocation);
 
-    clearLocalSession();
-
-    if (isSupabaseConfigured) {
-      try {
-        await supabase.auth.signOut({ scope: 'local' });
-      } catch (e) {
-        console.error('Supabase signOut error', e);
-      }
-    }
-    isLoggingOutRef.current = false;
+    const providerSignOut = isSupabaseConfigured
+      ? supabase.auth.signOut({ scope: 'local' }).catch((e) => {
+          console.error('Supabase signOut error', e);
+        })
+      : Promise.resolve();
+    // Resolves once everything has settled, for callers that care; none need to wait.
+    return Promise.all([revocation, providerSignOut]).then(() => {
+      isLoggingOutRef.current = false;
+    });
   }, [clearLocalSession]);
 
   /**

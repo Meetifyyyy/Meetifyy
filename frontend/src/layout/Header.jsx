@@ -19,12 +19,10 @@ import {
 } from '@heroicons/react/24/outline';
 import styles from './Header.module.css';
 import wordmark from '@assets/images/meetifyy_wordmark.svg';
-import { useQueryClient } from '@tanstack/react-query';
 import dashboardStyles from './DashboardLayout.module.css';
 
 export default function Header({ variant = 'dashboard', wide = false }) {
   const { loading, logout, currentUser } = useAuth();
-  const queryClient = useQueryClient();
   const { theme, toggleTheme } = useTheme();
   const menu = useMenu();
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -66,7 +64,9 @@ export default function Header({ variant = 'dashboard', wide = false }) {
    */
 
   const handleLogout = () => {
-    queryClient.clear();
+    // `logout` signs this tab out synchronously and resets the query cache as
+    // part of that. Clearing the cache here too, first, only made the still
+    // mounted signed-in pages refetch against a session that was ending.
     logout();
     // Replace, don't push: pushing left the authenticated page one entry behind
     // the landing page, so Back after signing out walked straight back into it.

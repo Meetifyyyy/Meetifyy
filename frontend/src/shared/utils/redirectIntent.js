@@ -2,6 +2,10 @@ const KEY = 'postAuthRedirect';
 
 // Auth screens are never a destination worth returning to — bouncing back into
 // one after signing in would loop the user straight out of the app again.
+// True from the moment a signed-in session ends in this document until the next
+// sign-in. See `suppressRedirectIntent`.
+let suppressed = false;
+
 const NON_DESTINATIONS = ['/', '/login', '/signup', '/forgot-password', '/reset-password'];
 
 /**
@@ -25,7 +29,7 @@ function isSafeInAppPath(path) {
  * state does not survive that.
  */
 export function setRedirectIntent(path) {
-  if (!isSafeInAppPath(path)) return;
+  if (suppressed || !isSafeInAppPath(path)) return;
   try {
     sessionStorage.setItem(KEY, path);
   } catch (e) {
@@ -50,4 +54,25 @@ export function clearRedirectIntent() {
   } catch (e) {
     /* ignore */
   }
+}
+
+/**
+ * A session that ENDS is not a visitor asking for a page.
+ *
+ * Signing out of Settings leaves the app mounted on /settings with nobody
+ * signed in, and the protected-route guard cannot tell that apart from a
+ * stranger opening a shared link: it recorded /settings as "where they were
+ * trying to go", and the next sign-in - the same account or another - landed
+ * there instead of on Home. The deep-link return is for people who arrive signed
+ * out; after a sign-out nothing is recorded until the next sign-in, and anything
+ * already stored is dropped.
+ */
+export function suppressRedirectIntent() {
+  suppressed = true;
+  clearRedirectIntent();
+}
+
+/** A sign-in happened: later signed-out visits are visits again. */
+export function allowRedirectIntent() {
+  suppressed = false;
 }
