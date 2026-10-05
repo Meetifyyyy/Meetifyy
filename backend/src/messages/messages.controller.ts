@@ -236,6 +236,28 @@ export class MessagesController {
     );
   }
 
+  /**
+   * The conversation's shared photos and videos, newest first, paged by
+   * `before` (the previous page's `nextCursor`). The contact-details gallery
+   * reads this instead of deriving media from the history pages it holds.
+   */
+  @Get(':conversationId/media')
+  @UseGuards(JwtGuard)
+  async getMedia(
+    @Req() req: AuthenticatedRequest,
+    @Param('conversationId') conversationId: string,
+    @Query('before') beforeCursor?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const parsedLimit = limit ? parseInt(limit, 10) : undefined;
+    return this.messagesService.getConversationMedia(
+      conversationId,
+      req.user.id,
+      beforeCursor,
+      parsedLimit,
+    );
+  }
+
   @Post(':id/messages')
   @UseGuards(JwtGuard)
   @VerifiedOnly()

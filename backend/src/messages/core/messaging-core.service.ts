@@ -1092,6 +1092,71 @@ export class MessagingCoreService {
     };
   }
 
+  /**
+   * The source message of a forward, only if the caller could read it.
+   *
+   * A forward copies a message's text and media into another conversation, so
+   * being allowed to forward it is being allowed to read it. This used to look the
+   * message up by id and nothing else: anyone who held (or guessed) a message id
+   * could copy a private message into their own chat, whatever conversation it
+   * belonged to.
+   *
+   * The caller must be an ACTIVE member of the message's own conversation, and
+   * the message must be inside their read window - the same window history uses:
+   * after they cleared the chat, up to when they left, not deleted for them, not
+   * deleted or unsent, and not a system line.
+   *
+   * Every refusal is the same "not found". Telling an outsider "that message
+   * exists but is not yours" would confirm that an id is real.
+   */
+  protected async getForwardableMessage(messageId: string, userId: string) {
+    const message = await this.prisma.message.findUnique({
+      where: { id: messageId },
+      select: {
+        id: true,
+        conversationId: true,
+        createdAt: true,
+        deletedAt: true,
+        state: true,
+        type: true,
+        payload: true,
+      },
+    });
+    if (
+      !message ||
+      message.deletedAt !== null ||
+      message.state === 'UNSENT' ||
+      message.type === 'SYSTEM'
+    ) {
+      throw new NotFoundException('Message not found');
+    }
+
+    const [participant, deletedForUser] = await Promise.all([
+      this.prisma.conversationParticipant.findFirst({
+        where: {
+          userId,
+          conversationId: message.conversationId,
+          deletedAt: null,
+        },
+        select: { clearedAt: true, leftAt: true },
+      }),
+      this.prisma.deletedMessage.findFirst({
+        where: { userId, messageId },
+        select: { id: true },
+      }),
+    ]);
+
+    if (
+      !participant ||
+      deletedForUser ||
+      (participant.clearedAt && message.createdAt <= participant.clearedAt) ||
+      (participant.leftAt && message.createdAt > participant.leftAt)
+    ) {
+      throw new NotFoundException('Message not found');
+    }
+    return message;
+  }
+
   async forwardMessage(
     messageId: string,
     targetConversationIds: string[],
@@ -1105,14 +1170,7 @@ export class MessagingCoreService {
       targetConversationIds,
     );
 
-    const originalMsg = await this.prisma.message.findUnique({
-      where: { id: messageId },
-      select: { id: true, payload: true, type: true },
-    });
-
-    if (!originalMsg) {
-      throw new NotFoundException('Message not found');
-    }
+    const originalMsg = await this.getForwardableMessage(messageId, userId);
 
     const payload = payloadFields(originalMsg.payload);
     const text = stringOrEmpty(payload.text);

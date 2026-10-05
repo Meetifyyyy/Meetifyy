@@ -47,6 +47,15 @@ import { BlocksService } from '../users/blocks.service';
 import { resolvePresenceVisibilityForViewer } from '../users/privacy.helper';
 import { MentionsService } from '../mentions/mentions.service';
 import { buildReplyToSnapshot, REPLY_TO_SELECT } from './reply-preview.util';
+import {
+  buildMediaCursor,
+  clampMediaLimit,
+  mediaMessageFilter,
+  parseMediaCursor,
+  toMediaItem,
+  type ConversationMediaItem,
+  type ConversationMediaPage,
+} from './conversation-media.util';
 import { MediaCleanupService } from '../uploads/media-cleanup.service';
 import { VerificationAccessService } from '../common/verification/verification-access.service';
 import { StudentYearPolicyService } from '../common/student-year/student-year-policy.service';
@@ -1246,6 +1255,116 @@ export class MessagesService
     }
   >();
   /**
+   * One page of a conversation's shared photos and videos, newest first.
+   *
+   * Authorized exactly like the history it complements: only an active member
+   * reads it, nothing before the viewer's own clear or after they left, and
+   * nothing they deleted for themselves. A live instant-match room answers
+   * empty for anyone the guard does not clear, as its history does.
+   */
+  async getConversationMedia(
+    conversationId: string,
+    currentUserId: string,
+    beforeCursor?: string,
+    limit?: number,
+  ): Promise<ConversationMediaPage> {
+    const take = clampMediaLimit(limit);
+    const realConvId = await this.resolveConversationId(
+      conversationId,
+      currentUserId,
+    );
+
+    const conversation = await this.prisma.conversation.findUnique({
+      where: { id: realConvId },
+      select: { type: true, isInstantMatch: true },
+    });
+    if (
+      conversation &&
+      (conversation.type === 'INSTANT_MATCH' || conversation.isInstantMatch)
+    ) {
+      const allowed = await this.instantMatchGuard?.canReadChat(
+        currentUserId,
+        realConvId,
+      );
+      if (!allowed) return { items: [], nextCursor: null };
+    }
+
+    const [participant, deletedForUser] = await Promise.all([
+      this.prisma.conversationParticipant.findFirst({
+        where: {
+          conversationId: realConvId,
+          userId: currentUserId,
+          deletedAt: null,
+        },
+        select: { clearedAt: true, leftAt: true },
+      }),
+      this.prisma.deletedMessage.findMany({
+        where: {
+          userId: currentUserId,
+          message: { conversationId: realConvId },
+        },
+        select: { messageId: true },
+      }),
+    ]);
+    if (!participant) {
+      throw new ForbiddenException('Not a member of this conversation');
+    }
+
+    const createdAt: Prisma.DateTimeFilter<'Message'> = {};
+    if (participant.clearedAt) createdAt.gt = participant.clearedAt;
+    if (participant.leftAt) createdAt.lte = participant.leftAt;
+
+    const and: Prisma.MessageWhereInput[] = [mediaMessageFilter()];
+    const cursor = parseMediaCursor(beforeCursor);
+    if (cursor) {
+      let position: { createdAt: Date; id: string } | null = null;
+      if (cursor.kind === 'position') {
+        position = cursor;
+      } else {
+        const row = await this.prisma.message.findUnique({
+          where: { id: cursor.id },
+          select: { id: true, createdAt: true },
+        });
+        position = row;
+      }
+      if (position) {
+        and.push({
+          OR: [
+            { createdAt: { lt: position.createdAt } },
+            { createdAt: position.createdAt, id: { lt: position.id } },
+          ],
+        });
+      }
+    }
+
+    const rows = await this.prisma.message.findMany({
+      where: {
+        conversationId: realConvId,
+        deletedAt: null,
+        ...(deletedForUser.length > 0
+          ? { id: { notIn: deletedForUser.map((d) => d.messageId) } }
+          : {}),
+        ...(Object.keys(createdAt).length > 0 ? { createdAt } : {}),
+        AND: and,
+      },
+      select: { id: true, senderId: true, createdAt: true, payload: true },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: take + 1,
+    });
+
+    const hasMore = rows.length > take;
+    const page = hasMore ? rows.slice(0, take) : rows;
+    const items = page
+      .map((row) => toMediaItem(row))
+      .filter((item): item is ConversationMediaItem => item !== null);
+    const last = page[page.length - 1];
+    return {
+      items,
+      nextCursor: hasMore && last ? buildMediaCursor(last) : null,
+    };
+  }
+
+  /**
    * @param eligibleOnly Restrict to threads that can actually be SENT into by a
    *   recipient picker. Share modals pass true; the inbox never does.
    * @param search Match the thread by the name the picker actually renders --
@@ -1996,14 +2115,7 @@ export class MessagesService
       targetConversationIds,
     );
 
-    const originalMsg = await this.prisma.message.findUnique({
-      where: { id: messageId },
-      select: { id: true, payload: true, type: true },
-    });
-
-    if (!originalMsg) {
-      throw new NotFoundException('Message not found');
-    }
+    const originalMsg = await this.getForwardableMessage(messageId, userId);
 
     const payload = payloadFields(originalMsg.payload);
     const text = stringOrEmpty(payload.text);

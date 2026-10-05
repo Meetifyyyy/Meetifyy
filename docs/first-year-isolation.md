@@ -163,6 +163,7 @@ surface that returns users or content, add it here.**
 | Create conversation | `messages/messages.service.ts` | `assertCanInteract`, **before** the existing-thread branch |
 | Create group | `messages/group-chats/group-chats.service.ts` | `assertCanInteract` over the founding roster |
 | Add group member | both services | `assertCanInteract` against **every current member** |
+| Conversation media gallery (read) | `messages/messages.service.ts` → `getConversationMedia` | Active-member gate and the viewer's own read window (cleared / left / deleted-for-me), identical to history. A read of a thread the viewer already belongs to; it adds no discovery, and sending into that thread is still blocked by the rows above |
 
 An **old thread is never an exemption**. This is the deliberate difference from
 the verification gate, which sits *after* the existing-conversation lookup so
