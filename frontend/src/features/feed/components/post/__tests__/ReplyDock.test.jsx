@@ -102,4 +102,30 @@ describe('ReplyDock', () => {
     fireEvent.focus(document.querySelector('[role="textbox"]'));
     expect(dock().getAttribute('data-focused')).toBe('true');
   });
+
+  describe('replying to a comment', () => {
+    it('tags the bar with the target and asks for that reply', () => {
+      render(<ReplyDock currentUser={{}} value={{ text: '', mentions: [] }} onChange={() => {}} onSubmit={() => {}} replyingTo="diya" onCancelReply={() => {}} />);
+      expect(dock().textContent).toContain('Replying to @diya');
+      expect(document.querySelector('[role="textbox"]').getAttribute('placeholder')).toBe('Reply to @diya…');
+    });
+
+    it('drops the target from the × and from Escape', () => {
+      const onCancelReply = vi.fn();
+      render(<ReplyDock currentUser={{}} value={{ text: '', mentions: [] }} onChange={() => {}} onSubmit={() => {}} replyingTo="diya" onCancelReply={onCancelReply} />);
+      fireEvent.click(document.querySelector('[aria-label="Cancel reply"]'));
+      fireEvent.keyDown(document.querySelector('[role="textbox"]'), { key: 'Escape' });
+      expect(onCancelReply).toHaveBeenCalledTimes(2);
+    });
+
+    it('shows no tag when commenting on the post', () => {
+      render(<Harness />);
+      expect(document.querySelector('[aria-label="Cancel reply"]')).toBeNull();
+    });
+
+    it('renders in place, not in a portal, when inline', () => {
+      const { container } = render(<ReplyDock inline currentUser={{}} value={{ text: '', mentions: [] }} onChange={() => {}} onSubmit={() => {}} />);
+      expect(container.querySelector('[role="textbox"]')).toBeTruthy();
+    });
+  });
 });

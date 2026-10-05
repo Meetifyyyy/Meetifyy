@@ -98,6 +98,37 @@
   display: none;
 }
 
+/* Section label: quiet, so the post stays the focus. */
+.commentsHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 0 4px;
+}
+
+.commentsTitle {
+  margin: 0;
+  font-family: var(--font-family-display);
+  font-size: 0.95rem;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--color-text-main);
+}
+
+/* A small neutral pill, so the number reads as a count and not as text. */
+.commentsCount {
+  min-width: 20px;
+  padding: 1px 7px;
+  border-radius: var(--radius-full);
+  background: var(--color-bg-soft);
+  color: var(--color-text-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.5;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
 .loadMoreComments {
   align-self: center;
   display: inline-flex;
@@ -124,6 +155,14 @@
 .loadMoreComments:disabled {
   cursor: default;
   opacity: 0.7;
+}
+
+/* The floating reply bar only exists on phones; wide screens have the inline
+   composer, which takes its own space. */
+@media (min-width: 769px) {
+  .postViewContainer {
+    padding-bottom: 0;
+  }
 }
 
 @media (max-width: 768px) {

@@ -33,6 +33,9 @@ export default function ReplyDock({
   isPosting = false,
   inputRef,
   columnRef,
+  inline = false,
+  replyingTo = null,
+  onCancelReply,
 }) {
   const dockRef = useRef(null);
   const [focused, setFocused] = useState(false);
@@ -44,7 +47,8 @@ export default function ReplyDock({
   useLayoutEffect(() => {
     const column = columnRef?.current;
     const dock = dockRef.current;
-    if (!column || !dock) return undefined;
+    // Inline, the composer is ordinary page content and needs no placing.
+    if (inline || !column || !dock) return undefined;
     const place = () => {
       const rect = column.getBoundingClientRect();
       dock.style.setProperty('--dock-left', `${rect.left}px`);
@@ -58,31 +62,59 @@ export default function ReplyDock({
       observer?.disconnect();
       window.removeEventListener('resize', place);
     };
-  }, [columnRef]);
+  }, [columnRef, inline]);
 
-  return createPortal(
+  const dock = (
     <div
       ref={dockRef}
-      className={styles.dock}
+      className={`${styles.dock} ${inline ? styles.inline : ''}`}
       data-focused={focused ? 'true' : 'false'}
+      data-replying={replyingTo ? 'true' : 'false'}
       data-send={hasText || isPosting ? 'open' : 'closed'}
       // Focus leaving the bar entirely (not moving to the Send button).
       onBlur={(e) => {
         if (!e.currentTarget.contains(e.relatedTarget)) setFocused(false);
       }}
     >
-      <form className={styles.bar} onSubmit={onSubmit}>
+      {!inline && <div className={styles.strip} aria-hidden="true" />}
+      {/* What the next send answers. Tapping × goes back to commenting on the
+          post; pointerdown is swallowed so the keyboard stays up. */}
+      {replyingTo && (
+        <div className={styles.replyingTo}>
+          <span className={styles.replyingToText}>
+            Replying to <strong>@{replyingTo}</strong>
+          </span>
+          <button
+            type="button"
+            className={styles.replyingToClear}
+            aria-label="Cancel reply"
+            onPointerDown={(e) => e.preventDefault()}
+            onClick={onCancelReply}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
+              <path d="M18 6 6 18M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      )}
+      <form
+        className={styles.bar}
+        onSubmit={onSubmit}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape' && replyingTo) onCancelReply?.();
+        }}
+      >
         <Avatar
           src={currentUser?.avatar}
           name={currentUser?.displayName}
-          size="38px"
+          size={inline ? '36px' : '38px'}
           disableHover
           className={styles.avatar}
         />
         <div className={styles.field}>
           <MentionInput
             inputRef={inputRef}
-            placeholder="Post your reply..."
+            placeholder={replyingTo ? `Reply to @${replyingTo}…` : 'Post your reply...'}
             value={value}
             onChange={onChange}
             onFocus={() => setFocused(true)}
@@ -96,19 +128,26 @@ export default function ReplyDock({
           type="submit"
           className={styles.send}
           disabled={!canSend}
-          tabIndex={hasText || isPosting ? 0 : -1}
+          tabIndex={inline || hasText || isPosting ? 0 : -1}
           aria-label={isPosting ? 'Posting reply' : 'Send reply'}
           // Tapping Send must not take focus from the field, or the keyboard
           // drops between the tap and the submit.
           onPointerDown={(e) => e.preventDefault()}
         >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M22 2 11 13" />
-            <path d="M22 2 15 22l-4-9-9-4 20-7Z" />
-          </svg>
+          {inline ? (
+            <span className={styles.sendLabel}>{isPosting ? 'Posting…' : 'Reply'}</span>
+          ) : (
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M22 2 11 13" />
+              <path d="M22 2 15 22l-4-9-9-4 20-7Z" />
+            </svg>
+          )}
         </button>
       </form>
-    </div>,
-    document.body,
+    </div>
   );
+
+  // Inline (wide screens): part of the page, under the post. Otherwise a fixed
+  // bar in a portal, as before.
+  return inline ? dock : createPortal(dock, document.body);
 }

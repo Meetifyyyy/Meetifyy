@@ -1,9 +1,14 @@
 /*
  * The reply bar. See ReplyDock.jsx.
  *
- * Fixed to the bottom of the visible viewport. Everything outside the bar's
- * border is transparent — no backdrop, no gradient, no shadow — so the page
- * shows through around it; only the bar itself is a surface.
+ * Phones: fixed to the bottom of the visible viewport. The pill sits half on
+ * a strip of the screen colour: `.strip` rises from the bottom edge to the
+ * middle of a one-line pill, with a hairline on top, so the comments scroll
+ * away beneath a solid edge while the pill's upper half still floats over
+ * them. The strip takes the taps that land on it (it hides what is under it);
+ * the transparent area above it passes them through.
+ *
+ * Wide screens: `.inline`, an ordinary block under the post.
  */
 .dock {
   --dock-gap: 8px;
@@ -13,22 +18,44 @@
   bottom: 0;
   z-index: 200;
   box-sizing: border-box;
-  padding: 14px max(12px, env(safe-area-inset-right, 0px)) calc(var(--dock-gap) + env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px));
-  /* Only the bar takes touches; everything around it is transparent and lets
-     them (and the comments scrolling beneath) through. */
+  --bar-height: 48px;
+  padding: 14px max(8px, env(safe-area-inset-right, 0px)) calc(var(--dock-gap) + env(safe-area-inset-bottom, 0px)) max(8px, env(safe-area-inset-left, 0px));
   pointer-events: none;
-  background: transparent;
 }
+
+/* From the bottom edge up to half a one-line pill. The pill grows upward and
+   its bottom never moves, so this stays under its lower half as it grows. */
+.strip {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: calc(var(--dock-gap) + env(safe-area-inset-bottom, 0px) + var(--bar-height) / 2);
+  background: var(--color-surface-screen);
+  border-top: 1px solid var(--color-border-light);
+  pointer-events: auto;
+}
+
+/* With the "Replying to" tag up, the strip runs to the top so the tag reads on
+   a solid ground rather than over the comments. */
+.dock[data-replying='true'] .strip {
+  top: 0;
+  height: auto;
+}
+
+.bar,
+.replyingTo { position: relative; }
 
 .bar {
   pointer-events: auto;
   display: flex;
   align-items: flex-end;
   gap: 10px;
-  min-height: 48px;
+  min-height: var(--bar-height);
+  box-sizing: border-box;
   padding: 4px;
   border-radius: 24px;
-  background: var(--color-bg-white);
+  background: var(--color-bg-soft);
   border: 0.75px solid var(--color-border);
 }
 
@@ -99,12 +126,116 @@
   cursor: default;
 }
 
-@media (min-width: 769px) {
-  .dock {
-    padding-left: 16px;
-    padding-right: 16px;
-  }
+/* ── "Replying to @name" tag ─────────────────────────────────────────────── */
+.replyingTo {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: -6px 4px 6px 14px;
+  min-width: 0;
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
 }
+
+.replyingToText {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.replyingToText strong {
+  color: var(--color-text-main);
+  font-weight: 600;
+}
+
+/* 28px to hit, drawn as a small ×. */
+.replyingToClear {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin: -6px 0;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.replyingToClear:hover { background: var(--color-bg-soft); color: var(--color-text-main); }
+.replyingToClear:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 1px; }
+
+/* Wide: lines up with the field, past the avatar. */
+.inline .replyingTo { margin: -4px 0 8px 48px; }
+
+/* ── Inline variant (>= 769px): a composer that belongs to the post ──────── */
+.inline .strip { display: none; }
+
+.dock.inline {
+  position: static;
+  left: auto;
+  width: auto;
+  z-index: auto;
+  padding: 16px 1.5rem;
+  background: transparent;
+  border-bottom: 1px solid var(--color-border-light);
+}
+
+.inline .bar {
+  align-items: flex-start;
+  gap: 12px;
+  min-height: 0;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+}
+
+.inline .field {
+  align-self: stretch;
+  min-height: 40px;
+  box-sizing: border-box;
+  padding: 8px 14px;
+  border-radius: var(--radius-lg);
+  background: var(--color-bg-soft);
+  border: 1px solid transparent;
+  transition: border-color 0.16s ease, background 0.16s ease;
+}
+
+.dock.inline[data-focused='true'] .field {
+  background: var(--color-surface-screen);
+  border-color: var(--color-border-dark);
+}
+
+/* A real button, always present: nothing floats or opens from nowhere.
+   `[data-send]` lifts these over the phone bar's open/closed slot rules. */
+.dock.inline[data-send] .send {
+  align-self: flex-end;
+  width: auto;
+  height: 40px;
+  margin: 0;
+  padding: 0 18px;
+  border-radius: var(--radius-full);
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+  font-family: var(--font-family-sans);
+  font-size: 0.88rem;
+  font-weight: 600;
+  transition: opacity 0.16s ease, background 0.16s ease;
+}
+
+.dock.inline[data-send] .send:hover:not(:disabled) { background: var(--color-primary-hover); }
+.dock.inline[data-send] .send:disabled { opacity: 0.42; cursor: not-allowed; }
+.dock.inline[data-send] .send:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+
+.sendLabel { white-space: nowrap; }
 
 @media (prefers-reduced-motion: reduce) {
   .bar,

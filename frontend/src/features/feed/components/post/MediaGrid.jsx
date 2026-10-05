@@ -170,7 +170,10 @@ const InlineVideoPlayer = memo(function InlineVideoPlayer({
       const v = videoRef.current;
       if (!v) return;
       if (ratio >= 0.4) {
-        feedVideoRegistry.requestPlay(uid);
+        // The registry refuses a feed video while something it ranks higher (the
+        // media viewer, a voice note) is playing. Refused means do not start:
+        // it has already paused this one if it was running.
+        if (!feedVideoRegistry.requestPlay(uid)) return;
         v.muted = false;
         v.volume = 1;
         v.play().catch(() => {
@@ -232,7 +235,7 @@ const InlineVideoPlayer = memo(function InlineVideoPlayer({
     const v = videoRef.current;
     if (!v) return;
     if (v.paused) {
-      feedVideoRegistry.requestPlay(uid);
+      if (!feedVideoRegistry.requestPlay(uid)) return;
       v.muted = false;
       v.volume = 1;
       setMuted(false);

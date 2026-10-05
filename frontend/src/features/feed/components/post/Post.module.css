@@ -489,7 +489,8 @@
 .menuBtn {
   background: none;
   border: none;
-  color: var(--color-text-light, #64748b);
+  /* The same icon colour as the chat header's menu: black on light, white on dark. */
+  color: var(--color-icon-base);
   padding: 0.35rem;
   cursor: pointer;
   border-radius: 50%;
@@ -499,9 +500,10 @@
   transition: all 0.2s;
 }
 
-.menuBtn:hover {
-  background: var(--color-bg-soft, #f1f5f9);
-  color: var(--color-text-main, #0f172a);
+@media (hover: hover) and (pointer: fine) {
+  .menuBtn:hover {
+    background: var(--color-bg-soft, #f1f5f9);
+  }
 }
 
 /**

@@ -12,6 +12,7 @@ import styles from './PostView.module.css';
 import { useAuth } from '@shared/context/AuthContext';
 import { useGlobalSocketStore } from '@stores/useGlobalSocketStore';
 import { useAddComment } from '../../hooks/useAddComment';
+import { useMediaQuery } from '@shared/hooks/useMediaQuery';
 
 /**
  * Flat comment list -> nested tree, reusing every node object that did not
@@ -140,7 +141,13 @@ export default function PostView({ post, onBack, autoFocusComment = false }) {
     location?.hash === '#comment'
   );
 
+  // Wide screens get a composer under the post; phones keep the docked bar.
+  // Same boundary as the stylesheet's 768px breakpoint.
+  const isWide = useMediaQuery('(min-width: 769px)') === true;
   const [replyContent, setReplyContent] = useState({ text: '', mentions: [] });
+  // The comment being answered, if any: { id, username }. Replies are written
+  // in this page's one composer, which shows the target as a tag.
+  const [replyTarget, setReplyTarget] = useState(null);
   const [isPostingComment, setIsPostingComment] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const { currentUser } = useAuth();
@@ -157,6 +164,20 @@ export default function PostView({ post, onBack, autoFocusComment = false }) {
   const focusComposer = useCallback(() => {
     composerRef.current?.focus();
   }, []);
+
+  // Commenting on the post itself drops any reply target.
+  const focusPostComposer = useCallback(() => {
+    setReplyTarget(null);
+    focusComposer();
+  }, [focusComposer]);
+
+  // "Reply" on a comment: tag the composer with it and put the caret there.
+  const handleReplyRequest = useCallback((target) => {
+    setReplyTarget(target);
+    focusComposer();
+  }, [focusComposer]);
+
+  const cancelReply = useCallback(() => setReplyTarget(null), []);
 
   // Seed data from a feed-card click (passed via router state, so it already
   // has author/text/media/poll) lets the query start in a "success" state
@@ -254,31 +275,13 @@ export default function PostView({ post, onBack, autoFocusComment = false }) {
     return livePost?.replies || [];
   }, [livePost?.comments, livePost?.replies]);
 
-  // Adding a reply to a specific comment. Returns the promise so CommentNode can
-  // await it and keep its own composer open if the post fails.
-  //
-  // Depends on the post's *id*, not the post object. `livePost` gets a new
-  // identity on every cache write — including the optimistic like of a single
-  // comment — and this callback is handed to every node in the tree, so
-  // depending on the object rebuilt it each time and defeated the memo on all
-  // of them: liking one comment re-rendered all 61 bodies. The id is the only
-  // part this actually reads.
-  const postIdForReply = livePost?.id;
-  const currentUserRef = useRef(currentUser);
-  currentUserRef.current = currentUser;
-
-  const handleCommentReplySubmit = useCallback((parentId, text, mentions) => {
-    if (!postIdForReply) return Promise.resolve();
-    return addComment({ postId: postIdForReply, text, parentId, mentions, currentUser: currentUserRef.current });
-  }, [addComment, postIdForReply]);
-
   // A confirmed error (post deleted / doesn't exist) is the caller's problem —
   // PostDetailRoute owns the dedicated "Post not found" page and swaps this
   // component out entirely on the next render once its own query sees the
   // same error via the shared cache.
   if (isPostError) return null;
 
-  // Adding a top-level comment on the post.
+  // Adding a comment: on the post, or — with a reply target — under that comment.
   //
   // The composer is cleared only once the server has accepted it. It used to
   // clear synchronously right after firing the mutation, so a comment that
@@ -289,8 +292,9 @@ export default function PostView({ post, onBack, autoFocusComment = false }) {
     if (!replyContent.text.trim() || !livePost || isPostingComment) return;
     setIsPostingComment(true);
     try {
-      await addComment({ postId: livePost.id, text: replyContent.text, parentId: null, mentions: replyContent.mentions, currentUser });
+      await addComment({ postId: livePost.id, text: replyContent.text, parentId: replyTarget?.id ?? null, mentions: replyContent.mentions, currentUser });
       setReplyContent({ text: '', mentions: [] });
+      setReplyTarget(null);
       // Posted: the bar goes back to its resting state and the keyboard drops.
       composerRef.current?.blur();
     } catch {
@@ -317,8 +321,8 @@ export default function PostView({ post, onBack, autoFocusComment = false }) {
           <Post
             postData={livePost}
             isDetailed={true}
-            onClick={focusComposer}
-            onCommentClick={focusComposer}
+            onClick={focusPostComposer}
+            onCommentClick={focusPostComposer}
             onDeleted={onBack}
           />
         ) : (
@@ -326,16 +330,41 @@ export default function PostView({ post, onBack, autoFocusComment = false }) {
         )}
       </div>
 
+      {/* Wide screens: the composer is part of the page, right under the post. */}
+      {hasContent && isWide && (
+        <ReplyDock
+          inline
+          currentUser={currentUser}
+          value={replyContent}
+          onChange={setReplyContent}
+          onSubmit={handleMainReplySubmit}
+          isPosting={isPostingComment}
+          inputRef={composerRef}
+          columnRef={columnRef}
+          replyingTo={replyTarget?.username ?? null}
+          onCancelReply={cancelReply}
+        />
+      )}
+
       {/* Replies List */}
       <div className={styles.postViewReplies}>
         {!hasContent ? null : commentsLoading ? (
           <CommentsSkeleton />
         ) : (
           <>
+            {replies.length > 0 && (
+              <div className={styles.commentsHeader}>
+                <h3 className={styles.commentsTitle}>Comments</h3>
+                <span className={styles.commentsCount}>
+                  {Number(livePost.commentsCount ?? livePost.commentCount ?? livePost.comments?.length ?? 0).toLocaleString()}
+                </span>
+              </div>
+            )}
             <CommentTreeRoot
               postId={livePost.id}
               comments={replies}
-              onReplySubmit={handleCommentReplySubmit}
+              onReplyRequest={handleReplyRequest}
+              replyTargetId={replyTarget?.id ?? null}
             />
 
             {commentsNextCursor && (
@@ -359,7 +388,7 @@ export default function PostView({ post, onBack, autoFocusComment = false }) {
           </>
         )}
       </div>
-      {hasContent && (
+      {hasContent && !isWide && (
         <ReplyDock
           currentUser={currentUser}
           value={replyContent}
@@ -368,6 +397,8 @@ export default function PostView({ post, onBack, autoFocusComment = false }) {
           isPosting={isPostingComment}
           inputRef={composerRef}
           columnRef={columnRef}
+          replyingTo={replyTarget?.username ?? null}
+          onCancelReply={cancelReply}
         />
       )}
     </div>

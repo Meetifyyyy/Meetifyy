@@ -1,130 +1,138 @@
 /*
- * CommentNode.module.css
- * MODIFIED:
- * - Removed ::before pseudo-element vertical line (now SVG)
- * - Removed .connectorElbow (now SVG Bézier)
- * - .repliesContainer no longer needs position:relative for connector drawing
- *   (that responsibility is on .nodeContainer which still has position:relative)
- * - .replyAvatar: ring shadow to visually "lift" it above SVG lines
- * - All colours via theme tokens — zero hardcoded hex values
+ * CommentNode.module.css — Instagram-style comment section.
+ *
+ * Two levels only. A top-level comment, then its replies in one column whose
+ * avatars line up with the top comment's text. No connectors, no cards, no
+ * separators: hierarchy is avatar size, one indent and spacing, all on a 4px
+ * scale.
+ *
+ *                       desktop   phone
+ *   top avatar            36       32
+ *   reply avatar          24       24
+ *   avatar → text         12       10
+ *   reply column indent   48       42   (= top avatar + its gap)
+ *   between threads       24       20
+ *   between replies       16       14
  */
 
-/* ─── Tree root ─────────────────────────────────────────────────────────── */
 .treeRoot {
-  /* SVG connector colours read from here */
-  --connector-color:           var(--color-border-dark);
-  --connector-color-highlight: var(--color-primary);
-  /* Prevent horizontal wrap / overflow issues by clipping or scrolling if space runs out */
+  --top-avatar: 36px;
+  --top-gap: 12px;
+  --reply-avatar: 24px;
+  --reply-gap: 10px;
+  --thread-gap: 20px;
+  --reply-spacing: 16px;
   max-width: 100%;
-  overflow-x: auto;
-  overflow-y: hidden;
-  padding-bottom: 16px;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
+  /* No clipping: two levels cannot widen the page, and a clip would shave the
+     highlight panel where it bleeds into the gutter. */
+  padding: 4px 0 8px;
 }
 
-.treeRoot::-webkit-scrollbar {
-  display: none;
+@media (max-width: 768px) {
+  .treeRoot {
+    --top-avatar: 32px;
+    --top-gap: 10px;
+    --reply-gap: 8px;
+    --thread-gap: 18px;
+    --reply-spacing: 14px;
+  }
 }
 
-/* ─── Appear animation ──────────────────────────────────────────────────── */
-@keyframes nodeAppear {
-  from { opacity: 0; transform: scale(0.96) translateY(-3px); }
-  to   { opacity: 1; transform: scale(1)    translateY(0);    }
+/* ─── Thread ────────────────────────────────────────────────────────────── */
+.thread { margin-top: var(--thread-gap); }
+.thread:first-child { margin-top: 16px; }
+
+/* The reply column starts where the top comment's text does. */
+.replies {
+  padding-left: calc(var(--top-avatar) + var(--top-gap));
 }
 
-/* ─── Node container ────────────────────────────────────────────────────── */
-.nodeContainer {
-  position: relative;    /* SVG overlay anchors here */
-  text-align: left;
-  min-width: 0;
-  animation: nodeAppear 220ms ease-out both;
+/* ─── One comment row ───────────────────────────────────────────────────── */
+@keyframes rowAppear {
+  from { opacity: 0; transform: translateY(-3px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
-.level0 { margin-top: var(--gap-size, 16px); }
-.levelN { margin-top: var(--gap-size, 8px); }
-
-
-
-/* ─── Card ──────────────────────────────────────────────────────────────── */
-.replyCard {
-  border-radius: var(--radius-md, 12px);
-  padding: 0.25rem 0;
-  margin: 0;
-  box-sizing: border-box;
-  position: relative;
-  z-index: 1;            /* sit above SVG (z-index:0) */
-  outline: none;
-  cursor: default;
-}
-
-
-
-.replyCard[role="button"] { cursor: pointer; }
-
-.isCollapsed {
-  /* No opacity reduction */
-}
-
-/* ─── Wrapper ───────────────────────────────────────────────────────────── */
-.replyWrapper {
+.comment {
+  --avatar-size: var(--top-avatar);
+  --avatar-gap: var(--top-gap);
   display: flex;
   align-items: flex-start;
-  gap: 12px;
-  position: relative;
+  gap: var(--avatar-gap);
   min-width: 0;
+  position: relative;
+  /* Keeps the highlight's z-index:-1 inside the row, above the page. */
+  isolation: isolate;
+  animation: rowAppear 180ms ease-out both;
 }
 
-/* ─── Avatar ────────────────────────────────────────────────────────────── */
-.replyAvatar {
+.reply {
+  --avatar-size: var(--reply-avatar);
+  --avatar-gap: var(--reply-gap);
+  margin-top: var(--reply-spacing);
+}
+
+/* The comment being answered in the composer: a tinted panel drawn behind the
+   row with even room on every side (it bleeds into the column's own gutter,
+   so the row's content does not move). */
+.comment::before {
+  content: '';
+  position: absolute;
+  inset: -8px -10px;
+  z-index: -1;
+  border-radius: 12px;
+  background: rgba(var(--color-primary-rgb), 0.07);
+  opacity: 0;
+  transition: opacity 160ms ease;
+  pointer-events: none;
+}
+
+.commentActive::before { opacity: 1; }
+
+@media (max-width: 768px) {
+  .comment::before { inset: -8px; }
+}
+
+.avatar {
   composes: ui-avatar from global;
-  width:  40px;
-  height: 40px;
-  background: var(--color-border);
-  color: var(--color-text-muted);
-  font-weight: 600;
-  font-family: var(--font-family-display);
-  cursor: pointer;
+  width: var(--avatar-size);
+  height: var(--avatar-size);
   flex-shrink: 0;
   border-radius: 50%;
-  position: relative;
-  z-index: 2;
-  /* Ring that "punches" avatar out of the SVG line, keeping it crisp */
-  box-shadow: 0 0 0 3px var(--color-bg-white, #fff),
-              var(--shadow-sm);
+  background: var(--color-border);
+  color: var(--color-text-muted);
+  cursor: pointer;
 }
 
-.replyAvatarImg {
-  composes: ui-avatar-img from global;
-  border-radius: 50%;
-}
-
-/* ─── Content column ────────────────────────────────────────────────────── */
-.replyContent {
+.body {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.3rem;
 }
 
-/* ─── Header row ────────────────────────────────────────────────────────── */
-.replyHeader {
+/* ─── Header: name · time ……… ⋯ ─────────────────────────────────────────── */
+.header {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 0.75rem;
+  align-items: center;
+  gap: 8px;
   min-width: 0;
+  min-height: 20px;
 }
 
-.replyIdentity { flex: 1; min-width: 0; }
+.identity {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
 
 .nameButton {
   display: inline-flex;
   align-items: center;
+  gap: 4px;
   min-width: 0;
-  max-width: 100%;
-  gap: 0.4rem;
   padding: 0;
   border: none;
   background: transparent;
@@ -136,319 +144,223 @@
 .username {
   font-family: var(--font-family-display);
   font-weight: 600;
-  color: var(--color-text-main);
-  font-size: calc(0.88rem * var(--font-scale, 1));
+  font-size: 0.875rem;
   line-height: 1.25;
-  overflow-wrap: anywhere;
+  color: var(--color-text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.commentCollegeIcon {
-  width:  calc(16px * var(--font-scale, 1));
-  height: calc(16px * var(--font-scale, 1));
-  border-radius: 4px;
+.reply .username { font-size: 0.85rem; }
+
+.collegeIcon {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
   object-fit: contain;
   flex-shrink: 0;
 }
 
-.commentMeta {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.3rem;
-  margin-top: 0.1rem;
-  min-width: 0;
+.time {
+  flex-shrink: 0;
+  font-size: 0.8rem;
+  line-height: 1.25;
+  color: var(--color-text-muted);
+  white-space: nowrap;
 }
 
-.handle  { font-weight: 500; color: var(--color-text-muted, #64748b); font-size: calc(0.72rem * var(--font-scale, 1)); }
-.metaDot { font-weight: 600; color: var(--color-text-light); font-size: calc(0.72rem * var(--font-scale, 1)); opacity: .45; }
-.time    { font-weight: 400; color: var(--color-text-light); font-size: calc(0.72rem * var(--font-scale, 1)); margin-top: 1px; }
-
-.replyCountBadge {
-  font-size: calc(0.74rem * var(--font-scale, 1));
-  color: var(--color-primary);
-  font-weight: 600;
-  opacity: .65;
-  transition: opacity 150ms ease;
-}
-.replyCard:hover .replyCountBadge { opacity: 1; }
-
-/* ─── Menu ──────────────────────────────────────────────────────────────── */
 .menuWrapper {
   position: relative;
   margin-left: auto;
   flex-shrink: 0;
+  /* 32px to hit, drawn inside the 20px header line. */
+  margin-block: -6px;
+  margin-right: -8px;
 }
 
 .menuBtn {
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: var(--color-text-muted);
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 0.2rem;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
   border-radius: 50%;
-  transition: background 150ms ease, color 150ms ease;
+  background: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: background 150ms ease, color 150ms ease, opacity 150ms ease;
 }
+
 .menuBtn:hover { background: var(--color-bg-soft); color: var(--color-text-main); }
 
-.reportBtn { display: flex; align-items: center; gap: 0.5rem; }
+/* With a pointer, ⋯ appears with the comment it belongs to; touch keeps it. */
+@media (hover: hover) and (pointer: fine) {
+  .menuBtn { opacity: 0; }
+  .comment:hover .menuBtn,
+  .menuBtn:focus-visible,
+  .menuBtn[aria-expanded='true'] { opacity: 1; }
+}
 
-/* ─── Body ──────────────────────────────────────────────────────────────── */
-.replyText {
+/* ─── Text ──────────────────────────────────────────────────────────────── */
+.text {
+  margin-top: 2px;
   color: var(--color-text-main);
-  font-size: calc(0.92rem * var(--font-scale, 1));
-  line-height: 1.5;
+  font-size: 0.9375rem;
+  line-height: 1.45;
   overflow-wrap: anywhere;
   word-break: break-word;
 }
 
-/* ─── Actions ───────────────────────────────────────────────────────────── */
-.replyActionsRow {
-  display: flex;
-  align-items: center;
-  gap: 0.85rem;
-  margin-top: 0.3rem;
-}
+.reply .text { font-size: 0.9rem; }
 
-.actionBtn {
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
-  background: none;
-  border: none;
-  color: var(--color-text-muted);
-  font-size: calc(0.82rem * var(--font-scale, 1));
-  cursor: pointer;
-  padding: 0;
-  transition: color var(--transition-fast);
-}
-.actionBtn:hover   { color: var(--color-text-main); }
-.actionBtnLiked svg {
+/* Who a reply answers, when that is not the thread's top comment. */
+.replyTo {
   color: var(--color-primary);
-  stroke: var(--color-primary);
+  font-weight: 500;
 }
 
-/* ─── Collapsed state ───────────────────────────────────────────────────── */
-.contentCollapsed { display: none; }
-
-.collapsedIndicator { display: none; }
-
-.viewRepliesBtn {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-  margin-top: 0.4rem;
-  padding: 0;
-  background: none;
-  border: none;
-  cursor: pointer;
-  font-family: var(--font-family-sans);
-  font-size: calc(0.82rem * var(--font-scale, 1));
-  font-weight: 600;
-  color: var(--color-text-muted);
-  transition: color var(--transition-fast);
-}
-.viewRepliesBtn:hover { color: var(--color-primary); }
-
-/* ─── Inline reply composer ─────────────────────────────────────────────── */
-.inlineComposerContainer {
-  margin-top: 0.7rem;
-  background: var(--color-bg-soft);
-  border-radius: var(--radius-lg);
-  padding: 0.75rem;
-  border: 1px solid var(--color-border-light);
-  box-shadow: var(--shadow-sm);
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.inlineTextarea {
-  width: 100%;
-  min-height: 24px;
-  background: transparent;
-  border: none;
-  outline: none;
-  resize: none;
-  font-family: var(--font-family-sans);
-  font-size: 0.95rem;
-  color: var(--color-text-main);
-  padding-top: 0.2rem;
-  padding-bottom: 0.2rem;
-  overflow: hidden;
-  line-height: 1.5;
-}
-
-.inlineActions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 0.5rem;
-  margin-top: 0.25rem;
-}
-
-.cancelBtn {
-  background: transparent;
-  color: var(--color-text-muted);
-  border: none;
-  padding: 0.4rem 1rem;
-  border-radius: var(--radius-full);
-  font-weight: 600;
-  font-family: var(--font-family-sans);
-  cursor: pointer;
-  transition: background var(--transition-fast), color var(--transition-fast);
-}
-.cancelBtn:hover { background: var(--color-border-light); color: var(--color-text-main); }
-
-.submitBtn {
-  border: none;
-  padding: 0.4rem 1rem;
-  border-radius: var(--radius-full);
-  font-weight: 600;
-  font-family: var(--font-family-sans);
-  transition: all var(--transition-fast);
-  color: #FFFFFF;
-}
-.submitBtnActive          { background: var(--color-primary); cursor: pointer; }
-.submitBtnActive:hover    { background: var(--color-primary-hover); }
-.submitBtnDisabled        { background: var(--color-primary); opacity: .42; cursor: not-allowed; }
-
-/* ─── Children grid-collapse ────────────────────────────────────────────── */
-/* CSS Grid row-height trick: animates height without JS via grid-template-rows */
-/* The grid 1fr -> 0fr trick animates height without needing a measured pixel
-   value, so an arbitrarily deep subtree collapses smoothly. Opacity rides
-   along on a slightly shorter curve so the replies fade as they go rather
-   than being sheared off by the closing edge. */
-.repliesGrid {
-  display: grid;
-  grid-template-rows: 1fr;
-  opacity: 1;
-  /* `visibility` is deliberately in the transition list with a 0s duration so
-     expanding reveals the subtree immediately — otherwise it would inherit the
-     collapsed rule's 250ms delay and animate open from nothing. */
-  visibility: visible;
-  transition:
-    grid-template-rows 250ms ease-in-out,
-    opacity 200ms ease-in-out,
-    visibility 0s linear 0s;
-}
-
-/* A collapsed subtree must not stay keyboard-reachable at zero height, but
-   `visibility` cannot be tweened — applied plainly it snaps the replies away
-   on the first frame and the height/opacity animation plays over an already
-   empty box. Delaying it by the full duration lets the collapse finish
-   visibly, then takes the subtree out of the tab order. */
-.repliesGridCollapsed {
-  grid-template-rows: 0fr;
-  opacity: 0;
-  visibility: hidden;
-  transition:
-    grid-template-rows 250ms ease-in-out,
-    opacity 200ms ease-in-out,
-    visibility 0s linear 250ms;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .repliesGrid,
-  .repliesGridCollapsed { transition: none; }
-}
-
-.repliesContainer {
-  overflow: hidden;          /* required for grid collapse */
-  min-height: 0;             /* required for grid collapse */
-  padding-left: var(--indent-size, 1.3rem);
-  margin-top: calc(0.45rem * var(--density-spacing, 1));
-  position: relative;        /* children with position:absolute don't escape */
-}
-
-/* ─── Mobile ────────────────────────────────────────────────────────────── */
-@media (max-width: 768px) {
-  .repliesContainer {
-    padding-left: 16px;
-  }
-
-  .replyAvatar {
-    width:  32px;
-    height: 32px;
-  }
-
-  .replyWrapper {
-    gap: 8px;
-  }
-
-  .username,
-  .replyText { font-size: 0.88rem; }
-  .actionBtn { font-size: 0.78rem; }
-}
-
-/* ─── Deleted comment ───────────────────────────────────────────────────── */
-.replyCardDeleted {
-  /* Use the same padding/margin as .replyCard so layout doesn't jump */
-  cursor: default !important;
-  pointer-events: none;
-}
-
-/* Only re-enable pointer events on the card when it's collapsible */
-.replyCardDeleted[role="button"] {
-  pointer-events: auto;
-  cursor: pointer !important;
-}
-
-.replyAvatarDeleted {
-  background: var(--color-bg-soft);
-  border: 1.5px dashed var(--color-border);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: none;
-  cursor: default;
-}
-
-.deletedLabel {
-  font-family: var(--font-family-display);
-  font-weight: 600;
-  font-size: 0.82rem;
-  color: var(--color-text-light);
-  font-style: italic;
-}
-
-.deletedSubtext {
-  font-size: 0.8rem;
-  color: var(--color-text-light);
-  opacity: 0.7;
-  margin-top: 0.1rem;
-}
-
-/* ─── Spinner for "Deleting…" state ────────────────────────────────────── */
-@keyframes spin {
-  from { transform: rotate(0deg); }
-  to   { transform: rotate(360deg); }
-}
-/* ─── See more / See less ───────────────────────────────────────────────────
- *
- * Matches the post's .seeMoreBtn, scaled with the comment tree's own
- * --font-scale so it stays proportionate as the thread density changes.
- */
-/* Inline, unbolded and matching the comment body — see the note on the post's
-   .seeMoreBtn for why the space and the inline display both matter. */
 .seeMoreBtn {
-  background: none;
-  border: none;
-  padding: 0;
+  display: inline;
   margin: 0;
-  color: var(--color-primary);
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--color-text-muted);
   font: inherit;
-  font-weight: 400;
+  font-weight: 500;
   line-height: inherit;
   vertical-align: baseline;
   white-space: nowrap;
   cursor: pointer;
-  display: inline;
-  transition: color var(--transition-normal);
 }
 
-.seeMoreBtn:hover {
-  color: var(--color-primary-hover);
-  text-decoration: underline;
+.seeMoreBtn:hover { color: var(--color-text-main); }
+
+/* ─── Actions ───────────────────────────────────────────────────────────── */
+/* 32px tall to tap, drawn as small muted text; negative margins keep the row
+   tight to the text and its first icon flush with the text's left edge. */
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: -2px 0 -6px -8px;
+}
+
+.actionBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 32px;
+  padding: 0 8px;
+  border: none;
+  border-radius: var(--radius-full);
+  background: none;
+  color: var(--color-text-muted);
+  font-family: var(--font-family-sans);
+  font-size: 0.8rem;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: color var(--transition-fast), background var(--transition-fast);
+}
+
+.actionBtn:hover { color: var(--color-text-main); }
+.actionBtn:active { background: var(--color-bg-soft); }
+
+/* One width with or without a count, so "Reply" sits at the same x on every
+   row instead of moving with the digits. */
+.likeBtn {
+  min-width: 44px;
+  justify-content: flex-start;
+  /* Digits keep one width, so 9 → 10 does not nudge the row. */
+  font-variant-numeric: tabular-nums;
+}
+
+/* Press: the icon gives under the finger at once; a like then pops. */
+.likeBtn svg {
+  transition: transform 120ms ease, fill 160ms ease, stroke 160ms ease;
+  transform-origin: 50% 60%;
+}
+
+.likeBtn:active svg { transform: scale(0.82); }
+
+@keyframes likePop {
+  0%   { transform: scale(0.82); }
+  45%  { transform: scale(1.28); }
+  100% { transform: scale(1); }
+}
+
+.likePop { animation: likePop 320ms cubic-bezier(0.2, 0.9, 0.3, 1.3); }
+
+/* A like colours the icon only (its fill/stroke); the count stays muted. */
+.actionBtnActive,
+.actionBtnActive:hover { color: var(--color-primary); }
+
+/* ─── View / Hide replies ───────────────────────────────────────────────── */
+/* Plain muted text in the reply column. */
+.replyToggle {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  /* Same -6px as the action row: a thread ending in this toggle ends at the
+     same visual line as one ending in actions, so every gap between threads
+     reads the same. */
+  margin: 2px 0 -6px;
+  padding: 0 8px 0 0;
+  border: none;
+  background: none;
+  color: var(--color-text-muted);
+  font-family: var(--font-family-sans);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: color var(--transition-fast);
+}
+
+.replyToggle:hover { color: var(--color-text-main); }
+
+/* Folded: the toggle follows the top comment's actions directly. */
+.replies > .replyToggle:first-child { margin-top: 0; }
+
+/* ─── Deleted ───────────────────────────────────────────────────────────── */
+.commentDeleted { align-items: center; }
+
+.avatarDeleted {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-bg-soft);
+  border: 1.5px dashed var(--color-border);
+  cursor: default;
+}
+
+.deletedLabel {
+  font-size: 0.85rem;
+  font-style: italic;
+  color: var(--color-text-muted);
+}
+
+/* ─── Focus ─────────────────────────────────────────────────────────────── */
+.menuBtn:focus-visible,
+.actionBtn:focus-visible,
+.replyToggle:focus-visible,
+.nameButton:focus-visible,
+.seeMoreBtn:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .comment { animation: none; }
+  .comment::before { transition: none; }
+  .actionBtn,
+  .replyToggle,
+  .menuBtn,
+  .likeBtn svg { transition: none; }
+  .likePop { animation: none; }
 }

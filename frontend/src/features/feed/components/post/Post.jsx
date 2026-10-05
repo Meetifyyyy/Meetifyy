@@ -394,7 +394,7 @@ function Post({ postData, onClick, onCommentClick, onDeleted, isDetailed = false
             aria-label="Post options"
             className={styles.menuBtn}
           >
-            <MoreHorizontal size={20} />
+            <MoreHorizontal size={20} strokeWidth={2.25} />
           </button>
 
           <Menu {...menu.menuProps} size="sm" ariaLabel="Post options">
