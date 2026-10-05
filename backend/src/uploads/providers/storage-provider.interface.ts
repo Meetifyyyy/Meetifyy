@@ -22,7 +22,13 @@ export interface StorageProvider {
     folder?: string,
     expiresIn?: number,
     explicitKey?: string,
-  ): Promise<{ uploadUrl: string; publicUrl: string; key: string }>;
+  ): Promise<{
+    uploadUrl: string;
+    publicUrl: string;
+    key: string;
+    /** Headers the URL was signed with, which the PUT must send verbatim. */
+    headers?: Record<string, string>;
+  }>;
 
   /**
    * Generate a presigned URL for downloading a private file.

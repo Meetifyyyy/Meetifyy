@@ -18,6 +18,19 @@ import {
   isCoveredImageFolder,
 } from './uploads.constants';
 
+/** Extensions an original can have when a `_thumb` variant derives from it. */
+const VARIANT_BASE_EXTENSIONS = [
+  'webp',
+  'jpg',
+  'jpeg',
+  'png',
+  'gif',
+  'mp4',
+  'webm',
+  'ogv',
+  'mov',
+];
+
 @Injectable()
 export class StorageService {
   private readonly logger = new Logger(StorageService.name);
@@ -55,8 +68,16 @@ export class StorageService {
     userId: string,
     file: Express.Multer.File,
     folder = 'general',
+    variantKey?: string,
   ) {
     const safeFolder = this.normalizeFolder(folder);
+    // A thumbnail arriving through this fallback keeps its derived key. It
+    // used to get a random one, so whenever the direct upload failed the
+    // thumbnail landed where nothing would ever look for it, and the
+    // `<name>_thumb.webp` the UI asks for 404'd.
+    const explicitKey = variantKey
+      ? await this.resolveVariantKey(userId, variantKey, safeFolder)
+      : undefined;
     if (
       isCoveredImageFolder(safeFolder) &&
       file.size > MAX_COVERED_IMAGE_SIZE_BYTES
@@ -86,33 +107,85 @@ export class StorageService {
 
     const ext = this.extensionForMime(file.mimetype);
     const randomHex = randomBytes(16).toString('hex');
-    const key = `${safeFolder}/${randomHex}.${ext}`;
+    const key = explicitKey ?? `${safeFolder}/${randomHex}.${ext}`;
 
     await this.storageProvider.upload(key, file.buffer, file.mimetype);
 
-    // Register media in database
-    const media = await this.prisma.media.create({
-      data: {
-        ownerId: userId,
-        objectKey: key,
-        provider: this.providerName,
-        bucket: this.bucketName,
-        storageKey: key, // Legacy fallback
-        type: file.mimetype.startsWith('video')
-          ? 'VIDEO'
-          : file.mimetype.startsWith('audio')
-            ? 'AUDIO'
-            : 'IMAGE', // Legacy fallback
-        mimeType: file.mimetype,
-        fileSize: file.size,
-        visibility: this.visibilityForFolder(safeFolder),
-      },
-    });
+    // Register media in database. A variant may already have a row from a
+    // presign whose direct upload failed, so that one is upserted.
+    const data = {
+      ownerId: userId,
+      objectKey: key,
+      provider: this.providerName,
+      bucket: this.bucketName,
+      storageKey: key, // Legacy fallback
+      type: file.mimetype.startsWith('video')
+        ? 'VIDEO'
+        : file.mimetype.startsWith('audio')
+          ? 'AUDIO'
+          : 'IMAGE', // Legacy fallback
+      mimeType: file.mimetype,
+      fileSize: file.size,
+      visibility: this.visibilityForFolder(safeFolder),
+    };
+    const media = explicitKey
+      ? await this.prisma.media.upsert({
+          where: { objectKey: key },
+          create: data,
+          update: data,
+        })
+      : await this.prisma.media.create({ data });
 
     // Provide a generic, provider-agnostic URL to the frontend
     const publicUrl = `/api/media/${key}`;
 
     return { publicUrl, key, mediaId: media.id, media };
+  }
+
+  /**
+   * Validates a client-chosen thumbnail key, for the presign and the
+   * pass-through alike.
+   *
+   * The shape check alone (safe characters, same folder, `_thumb.<ext>`)
+   * accepted ANY thumbnail key, so any signed-in user could write the
+   * thumbnail of someone else's post or cover — and, through the row upsert,
+   * take ownership of its Media row. It was harmless only while every direct
+   * upload happened to fail. A variant may now only be written by the owner of
+   * the original it derives from, and only over a variant row they own.
+   */
+  private async resolveVariantKey(
+    userId: string,
+    variantKey: string,
+    safeFolder: string,
+  ): Promise<string> {
+    const [vFolder] = String(variantKey).split('/');
+    const match = /^(.*)_thumb\.(webp|jpe?g|png)$/i.exec(String(variantKey));
+    if (
+      !this.isSafeStorageKey(variantKey) ||
+      vFolder !== safeFolder ||
+      !match
+    ) {
+      throw new BadRequestException('Invalid variant key');
+    }
+    const base = match[1];
+    const [original, existing] = await Promise.all([
+      // Exact keys, not a prefix match, so this is a unique-index lookup.
+      this.prisma.media.findFirst({
+        where: {
+          objectKey: { in: VARIANT_BASE_EXTENSIONS.map((e) => `${base}.${e}`) },
+          ownerId: userId,
+        },
+        select: { id: true },
+      }),
+      this.prisma.media.findUnique({
+        where: { objectKey: variantKey },
+        select: { ownerId: true },
+      }),
+    ]);
+    if (!original || (existing && existing.ownerId !== userId)) {
+      throw new BadRequestException('Invalid variant key');
+    }
+    return variantKey;
   }
 
   /**
@@ -154,26 +227,18 @@ export class StorageService {
     // original's key base. Restrict it hard: safe pattern, an allowed folder,
     // and a `_thumb.<ext>` suffix so it can only ever be a thumbnail variant
     // (never an arbitrary object overwrite).
-    let explicitKey: string | undefined;
-    if (variantKey) {
-      const [vFolder] = String(variantKey).split('/');
-      if (
-        !this.isSafeStorageKey(variantKey) ||
-        vFolder !== safeFolder ||
-        !/_thumb\.(webp|jpe?g|png)$/i.test(variantKey)
-      ) {
-        throw new BadRequestException('Invalid variant key');
-      }
-      explicitKey = variantKey;
-    }
+    const explicitKey = variantKey
+      ? await this.resolveVariantKey(userId, variantKey, safeFolder)
+      : undefined;
 
-    const { uploadUrl, key } = await this.storageProvider.createSignedUploadUrl(
-      filename,
-      contentType,
-      safeFolder,
-      undefined,
-      explicitKey,
-    );
+    const { uploadUrl, key, headers } =
+      await this.storageProvider.createSignedUploadUrl(
+        filename,
+        contentType,
+        safeFolder,
+        undefined,
+        explicitKey,
+      );
 
     const mediaData = {
       ownerId: userId,
@@ -207,7 +272,7 @@ export class StorageService {
     // Provide a generic, provider-agnostic URL to the frontend
     const publicUrl = `/api/media/${key}`;
 
-    return { uploadUrl, publicUrl, key, mediaId: media.id, media };
+    return { uploadUrl, publicUrl, key, headers, mediaId: media.id, media };
   }
 
   async exists(key: string): Promise<boolean> {

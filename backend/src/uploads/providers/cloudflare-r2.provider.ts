@@ -105,7 +105,12 @@ export class CloudflareR2Provider implements StorageProvider {
     folder = 'general',
     expiresIn = 900,
     explicitKey?: string,
-  ): Promise<{ uploadUrl: string; publicUrl: string; key: string }> {
+  ): Promise<{
+    uploadUrl: string;
+    publicUrl: string;
+    key: string;
+    headers?: Record<string, string>;
+  }> {
     const ext =
       filename
         .split('.')
@@ -122,20 +127,29 @@ export class CloudflareR2Provider implements StorageProvider {
       return { uploadUrl, publicUrl: `/api/media/${key}`, key };
     }
 
+    // Identity documents must never be told to cache publicly for a year.
+    // They were, which is how a verification object stayed in a CDN long
+    // after the request that produced it had failed.
+    const cacheControl = key.startsWith('verification/')
+      ? 'private, no-store'
+      : 'public, max-age=31536000, immutable';
     const command = new PutObjectCommand({
       Bucket: this.bucketFor(key),
       Key: key,
-      // Identity documents must never be told to cache publicly for a year.
-      // They were, which is how a verification object stayed in a CDN long
-      // after the request that produced it had failed.
-      CacheControl: key.startsWith('verification/')
-        ? 'private, no-store'
-        : 'public, max-age=31536000, immutable',
+      CacheControl: cacheControl,
     });
     const uploadUrl = await getSignedUrl(this.s3, command, { expiresIn });
     const filePublicUrl = this.getPublicUrl(key);
 
-    return { uploadUrl, publicUrl: filePublicUrl, key };
+    // Cache-Control is part of the signature, so the client has to send this
+    // exact value. It used to hard-code the public one, which would have
+    // broken the signature of every identity-document upload.
+    return {
+      uploadUrl,
+      publicUrl: filePublicUrl,
+      key,
+      headers: { 'Cache-Control': cacheControl },
+    };
   }
 
   /**

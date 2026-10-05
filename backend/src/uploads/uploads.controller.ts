@@ -180,11 +180,17 @@ export class UploadsController {
   async upload(
     @UploadedFile() file: Express.Multer.File,
     @Body('folder') folder: string = 'general',
+    @Body('variantKey') variantKey: string | undefined,
     @Req() req: AuthenticatedRequest,
   ) {
     if (!file) throw new BadRequestException('No file provided');
     const userId = req.user.id;
-    return this.storageService.uploadFile(userId, file, folder);
+    return this.storageService.uploadFile(
+      userId,
+      file,
+      folder,
+      typeof variantKey === 'string' && variantKey ? variantKey : undefined,
+    );
   }
 
   /**
