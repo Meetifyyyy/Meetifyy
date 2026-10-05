@@ -77,6 +77,29 @@ public class SystemUiPlugin extends Plugin {
             // start's splash and launch background are drawn from.
             final SharedPreferences prefs =
                 activity.getSharedPreferences(SystemUiHelper.PREFS, Activity.MODE_PRIVATE);
+
+            // Nothing to write is the common case: the page sends this on every
+            // launch with the values the previous launch already stored. A
+            // commit() is an fsync on the UI thread while the splash is held,
+            // so it is skipped unless a value actually differs. Reads come from
+            // the in-memory copy and cost nothing.
+            final boolean wantPreferenceSet = Boolean.TRUE.equals(preferenceSet);
+            final boolean clearPreferenceSet = !wantPreferenceSet && "system".equalsIgnoreCase(theme);
+            final boolean unchanged =
+                prefs.contains(SystemUiHelper.KEY_BACKGROUND)
+                    && prefs.getInt(SystemUiHelper.KEY_BACKGROUND, 0) == color
+                    && prefs.contains(SystemUiHelper.KEY_LIGHT_ICONS)
+                    && prefs.getBoolean(SystemUiHelper.KEY_LIGHT_ICONS, false) == lightIcons
+                    && (theme == null || theme.equals(prefs.getString(SystemUiHelper.KEY_THEME, null)))
+                    && (!wantPreferenceSet || prefs.getBoolean(SystemUiHelper.KEY_PREFERENCE_SET, false))
+                    && (!clearPreferenceSet
+                        || (prefs.contains(SystemUiHelper.KEY_PREFERENCE_SET)
+                            && !prefs.getBoolean(SystemUiHelper.KEY_PREFERENCE_SET, false)));
+            if (unchanged) {
+                call.resolve();
+                return;
+            }
+
             final SharedPreferences.Editor editor = prefs.edit();
             editor.putInt(SystemUiHelper.KEY_BACKGROUND, color);
             editor.putBoolean(SystemUiHelper.KEY_LIGHT_ICONS, lightIcons);

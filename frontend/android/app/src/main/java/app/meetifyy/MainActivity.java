@@ -31,7 +31,11 @@ public class MainActivity extends BridgeActivity {
     private static final long SPLASH_TIMEOUT_MS = 5000;
     private static final long POLL_INTERVAL_MS = 32;
     /** The splash fades over the already-painted page: a crossfade, not a cut. */
-    private static final long SPLASH_FADE_MS = 280L;
+    /*
+     * Short, and the background only. The page under the splash is fully
+     * painted by the time it lifts, so the fade is a reveal, not a wait.
+     */
+    private static final long SPLASH_FADE_MS = 150L;
 
     private boolean contentPainted = false;
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -221,8 +225,15 @@ public class MainActivity extends BridgeActivity {
     }
 
     /**
-     * Crossfades the splash into the page, which is already painted beneath it.
-     * The page is told as the fade starts, so its own entrance plays under it.
+     * Reveals the page, which is already painted beneath the splash.
+     * The page is told as the reveal starts, so its own entrance plays under it.
+     *
+     * The logo leaves at once and only the background fades. Fading the whole
+     * splash view together left the large logo half-transparent over the feed
+     * for ~250 ms — a ghosted double image, measured frame by frame on a device
+     * and seen as a flicker on every launch. Instagram cuts straight to its
+     * feed; X's logo leaves before the timeline shows. Either way no logo is
+     * ever drawn on top of content.
      *
      * The logo is pinned for the duration: the page repaints the system bars
      * as the splash lifts, and a change in their insets re-lays out the splash
@@ -240,6 +251,7 @@ public class MainActivity extends BridgeActivity {
         View icon = provider.getIconView();
         if (icon == null) icon = findSplashIcon(splashView);
         if (icon != null) {
+            icon.setAlpha(0f);
             final int[] start = new int[2];
             icon.getLocationOnScreen(start);
             final int startY = start[1] - Math.round(icon.getTranslationY());

@@ -2,6 +2,7 @@
   "appId": "app.meetifyy",
   "appName": "Meetifyy",
   "webDir": "dist-mobile",
+  "loggingBehavior": "none",
   "server": {
     "androidScheme": "https",
     "iosScheme": "https"
