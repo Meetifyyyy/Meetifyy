@@ -1,9 +1,10 @@
-import { useLayoutEffect } from 'react';
+import { useEffect, useLayoutEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useSmartNavigation } from '@shared/hooks/useSmartNavigation';
 import { useAuth } from '@shared/context/AuthContext';
 import Avatar from '@shared/components/avatar/Avatar';
 import NavIcon from './NavIcon';
+import { tabPrefetch } from './tabPrefetch';
 import { CampusOutline, CampusSolid } from './CampusIcon';
 import { CrewOutline, CrewSolid } from './CrewIcon';
 import { MessagesOutline, MessagesSolid } from './MessageIcon';
@@ -49,6 +50,10 @@ export default function BottomNav({ hidden }) {
     };
   }, [location.pathname]);
 
+  // The tabs not yet visited are fetched while the browser is idle, so a tap on
+  // one finds its code already there (see tabPrefetch).
+  useEffect(() => tabPrefetch.warmAllWhenIdle(), []);
+
   const handleTabClick = (path) => {
     navigate(path);
   };
@@ -80,7 +85,7 @@ export default function BottomNav({ hidden }) {
       <button 
         className={`${styles.bottomNavItem}${isHomeActive ? ` ${styles.active}` : ''}`}
         onClick={() => handleTabClick('/home')}
-        onMouseEnter={() => import('@features/feed/pages/FeedRoute')}
+        {...tabPrefetch.handlersFor('home')}
       >
         <div className={styles.iconWrapper}>
           <NavIcon
@@ -96,7 +101,7 @@ export default function BottomNav({ hidden }) {
       <button 
         className={`${styles.bottomNavItem}${isCampusActive ? ` ${styles.active}` : ''}`}
         onClick={() => handleTabClick('/campus')}
-        onMouseEnter={() => import('@features/campus/pages/CampusPage')}
+        {...tabPrefetch.handlersFor('campus')}
       >
         <div className={styles.iconWrapper}>
           <NavIcon
@@ -112,7 +117,7 @@ export default function BottomNav({ hidden }) {
       <button 
         className={`${styles.bottomNavItem}${isMessagesActive ? ` ${styles.active}` : ''}`}
         onClick={() => handleTabClick('/messages')}
-        onMouseEnter={() => import('@features/messages/pages/MessagesRoute')}
+        {...tabPrefetch.handlersFor('messages')}
       >
         <div className={styles.iconWrapper}>
           <NavIcon
@@ -133,7 +138,7 @@ export default function BottomNav({ hidden }) {
       <button 
         className={`${styles.bottomNavItem}${isCrewActive ? ` ${styles.active}` : ''}`}
         onClick={() => handleTabClick('/crew')}
-        onMouseEnter={() => import('@features/crew/pages/FindYourCrewPage')}
+        {...tabPrefetch.handlersFor('crew')}
       >
         <div className={styles.iconWrapper}>
           <NavIcon
@@ -149,7 +154,7 @@ export default function BottomNav({ hidden }) {
       <button 
         className={`${styles.bottomNavItem}${isProfileActive ? ` ${styles.active}` : ''}`}
         onClick={() => handleTabClick(`/profile/${username}`)}
-        onMouseEnter={() => import('@features/profile/pages/ProfilePage')}
+        {...tabPrefetch.handlersFor('profile')}
       >
         <div className={styles.iconWrapper}>
           {currentUser?.avatar ? (

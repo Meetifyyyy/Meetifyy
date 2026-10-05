@@ -2,6 +2,7 @@ import { useAuth } from '@shared/context/AuthContext';
 import { useLocation } from 'react-router-dom';
 import { useSmartNavigation } from '@shared/hooks/useSmartNavigation';
 import NavIcon from './NavIcon';
+import { tabPrefetch } from './tabPrefetch';
 import { CampusOutline, CampusSolid } from './CampusIcon';
 import { CrewOutline, CrewSolid } from './CrewIcon';
 import { MessagesOutline, MessagesSolid } from './MessageIcon';
@@ -40,7 +41,7 @@ export default function Sidebar() {
             href="#"
             className={`${styles.sidebarLink}${location.pathname === '/home' ? ` ${styles.active}` : ''}`}
             onClick={(e) => { e.preventDefault(); navigate('/home'); }}
-            onMouseEnter={() => import('@features/feed/pages/FeedRoute')}
+            {...tabPrefetch.handlersFor('home')}
           >
             <NavIcon
               className={styles.navIcon}
@@ -62,7 +63,7 @@ export default function Sidebar() {
               // user can back out of.
               navigate('/messages', { state: { from: location.pathname } });
             }}
-            onMouseEnter={() => import('@features/messages/pages/MessagesRoute')}
+            {...tabPrefetch.handlersFor('messages')}
           >
             <NavIcon
               className={styles.navIcon}
@@ -82,7 +83,7 @@ export default function Sidebar() {
             href="#"
             className={`${styles.sidebarLink}${location.pathname.startsWith('/campus') ? ` ${styles.active}` : ''}`}
             onClick={(e) => { e.preventDefault(); navigate('/campus'); }}
-            onMouseEnter={() => import('@features/campus/pages/CampusPage')}
+            {...tabPrefetch.handlersFor('campus')}
           >
             <NavIcon
               className={styles.navIcon}
@@ -97,7 +98,7 @@ export default function Sidebar() {
             href="#"
             className={`${styles.sidebarLink}${location.pathname.startsWith('/crew') ? ` ${styles.active}` : ''}`}
             onClick={(e) => { e.preventDefault(); navigate('/crew'); }}
-            onMouseEnter={() => import('@features/crew/pages/FindYourCrewPage')}
+            {...tabPrefetch.handlersFor('crew')}
           >
             <NavIcon
               className={styles.navIcon}
@@ -126,7 +127,7 @@ export default function Sidebar() {
             href="#"
             className={`${styles.sidebarLink}${location.pathname.startsWith('/profile') ? ` ${styles.active}` : ''}`}
             onClick={(e) => { e.preventDefault(); navigate(`/profile/${username}`); }}
-            onMouseEnter={() => import('@features/profile/pages/ProfilePage')}
+            {...tabPrefetch.handlersFor('profile')}
           >
             <NavIcon
               className={styles.navIcon}
