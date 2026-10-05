@@ -1,5 +1,6 @@
 import { StrictMode } from 'react';
 import { clearStaleChunkMarker } from '@shared/lib/staleChunkRecovery';
+import { installPressFeedback } from '@shared/lib/pressFeedback';
 import { createRoot } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider } from './shared/context/AuthContext';
@@ -175,6 +176,9 @@ if ('serviceWorker' in navigator) {
  * `registration.update()` polling is gone for the same reason. Nothing looks
  * for a new build mid-session, so nothing can act on finding one.
  */
+// One delegated listener for every control's press feedback; see the module.
+installPressFeedback();
+
 createRoot(document.getElementById('root')).render(
   <QueryClientProvider client={queryClient}>
     <StrictMode>

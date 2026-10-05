@@ -49,9 +49,15 @@ body {
   top: 1.25rem !important;
 }
 
+/* Below the status bar, not under it.
+   `env(safe-area-inset-top)` is 0 inside the installed app's WebView: the
+   native shell publishes the status-bar height as `--status-bar-inset` instead,
+   and the browser/PWA reports it through `env()`. Whichever is non-zero is the
+   real inset, so the larger of the two is used - the same rule the headers
+   follow. A small gap sits between the bar and the first card. */
 @media (max-width: 768px) {
   [data-sonner-toaster][data-y-position="top"] {
-    top: max(1rem, env(safe-area-inset-top, 0px)) !important;
+    top: calc(max(env(safe-area-inset-top, 0px), var(--status-bar-inset, 0px)) + 0.5rem) !important;
   }
 }
 
@@ -813,12 +819,10 @@ button,
   transition: transform 0.15s ease, opacity 0.15s ease, background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
-/* Tactile :active press feedback on touch & click (zero-specificity :where allows component overrides) */
-:where(button, [role="button"], input[type="button"], input[type="submit"], input[type="reset"]):active:not(:disabled):not([aria-disabled="true"]) {
-  transform: scale(0.96);
-  opacity: 0.92;
-  transition: transform 0.05s ease, opacity 0.05s ease;
-}
+/* Press feedback is not a CSS rule any more: a transform transition cannot
+   survive a component declaring its own `transition`, so it snapped. See
+   shared/lib/pressFeedback.js (a Web Animation on `scale`, installed at startup).
+   Opt a control out with data-no-press. */
 
 /* Accessibility: Clear focus-visible rings for keyboard users, cleanly avoiding tap-focus outlines */
 :where(button, [role="button"], a, input, select, textarea):focus:not(:focus-visible) {
