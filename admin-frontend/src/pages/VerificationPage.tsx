@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from '../api/apiClient';
-import { CheckCircle, XCircle, ExternalLink } from '../components/icons';
+import { CheckCircle, XCircle } from '../components/icons';
 import { useConfirm } from '../components/ConfirmProvider';
 import UserAvatar from '../components/UserAvatar';
+import VerificationDocument from './VerificationDocument';
 
 /** Same avatar treatment as the Users and Campus Reps tables. */
 
@@ -22,7 +23,7 @@ export const VerificationPage: React.FC = () => {
   const [rejecting, setRejecting] = useState<any | null>(null);
   const [rejectReason, setRejectReason] = useState('');
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, dataUpdatedAt } = useQuery({
     queryKey: ['adminVerificationRequests', filterStatus],
     queryFn: () => {
       const url = filterStatus === 'ALL' 
@@ -183,59 +184,24 @@ export const VerificationPage: React.FC = () => {
 
               {/* Media Comparison (ID Card & Live Selfie) */}
               <div className="verification-media-grid">
-                <div className="verification-media-card">
-                  <div className="verification-media-header">
-                    <span className="verification-media-label">College ID Card</span>
-                    {req.idCardMedia?.url && (
-                      <a
-                        href={req.idCardMedia.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="verification-media-ext-link"
-                        title="Open full resolution in new tab"
-                      >
-                        <ExternalLink size={12} />
-                        <span>Open</span>
-                      </a>
-                    )}
-                  </div>
-                  <div className="verification-media-frame">
-                    {req.idCardMedia?.url ? (
-                      <a href={req.idCardMedia.url} target="_blank" rel="noopener noreferrer" style={{ display: 'flex', width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center' }}>
-                        <img src={req.idCardMedia.url} alt="College ID Card" />
-                      </a>
-                    ) : (
-                      <div className="verification-media-empty">No ID card uploaded</div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="verification-media-card">
-                  <div className="verification-media-header">
-                    <span className="verification-media-label">Live Selfie</span>
-                    {req.selfieMedia?.url && (
-                      <a
-                        href={req.selfieMedia.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="verification-media-ext-link"
-                        title="Open full resolution in new tab"
-                      >
-                        <ExternalLink size={12} />
-                        <span>Open</span>
-                      </a>
-                    )}
-                  </div>
-                  <div className="verification-media-frame">
-                    {req.selfieMedia?.url ? (
-                      <a href={req.selfieMedia.url} target="_blank" rel="noopener noreferrer" style={{ display: 'flex', width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center' }}>
-                        <img src={req.selfieMedia.url} alt="Live Selfie" />
-                      </a>
-                    ) : (
-                      <div className="verification-media-empty">No selfie uploaded</div>
-                    )}
-                  </div>
-                </div>
+                <VerificationDocument
+                  requestId={req.id}
+                  kind="idCard"
+                  label="College ID Card"
+                  alt="College ID Card"
+                  emptyText="No ID card uploaded"
+                  media={req.idCardMedia}
+                  issuedAt={dataUpdatedAt}
+                />
+                <VerificationDocument
+                  requestId={req.id}
+                  kind="selfie"
+                  label="Live Selfie"
+                  alt="Live Selfie"
+                  emptyText="No selfie uploaded"
+                  media={req.selfieMedia}
+                  issuedAt={dataUpdatedAt}
+                />
               </div>
 
               {req.previousAttempts?.length > 0 && (

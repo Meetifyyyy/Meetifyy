@@ -13,6 +13,7 @@ describe('AdminVerificationController', () => {
   const mockAdminVerificationService = {
     listRequests: jest.fn(),
     updateStatus: jest.fn(),
+    getDocumentUrls: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -66,6 +67,21 @@ describe('AdminVerificationController', () => {
         VerificationStatus.PENDING,
         20,
         0,
+      );
+    });
+  });
+
+  describe('getDocumentUrls', () => {
+    it('delegates to the service with the request id', async () => {
+      const urls = {
+        selfie: { url: 'u', signError: false },
+        idCard: { url: null, signError: true },
+      };
+      mockAdminVerificationService.getDocumentUrls.mockResolvedValue(urls);
+
+      await expect(controller.getDocumentUrls('req-1')).resolves.toBe(urls);
+      expect(mockAdminVerificationService.getDocumentUrls).toHaveBeenCalledWith(
+        'req-1',
       );
     });
   });

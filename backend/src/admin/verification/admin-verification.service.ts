@@ -9,6 +9,17 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { VerificationStatus } from '@prisma/client';
 import { VerificationAccessService } from '../../common/verification/verification-access.service';
 import { StorageService } from '../../uploads/uploads.service';
+import { errorMessage } from '../../common/utils/error.util';
+
+/** How long a reviewer's link to a private document lives. */
+const REVIEW_URL_TTL_SECONDS = 300;
+
+/** A reviewer-signed document URL, or the reason there is none. */
+export interface ReviewerDocumentUrl {
+  url: string | null;
+  /** True only when an object exists and signing it failed; false for "never uploaded". */
+  signError: boolean;
+}
 
 @Injectable()
 export class AdminVerificationService {
@@ -42,47 +53,86 @@ export class AdminVerificationService {
     requests: T[],
   ): Promise<
     (Omit<T, 'selfieMedia' | 'idCardMedia'> & {
-      selfieMedia:
-        (NonNullable<T['selfieMedia']> & { url: string | null }) | null;
-      idCardMedia:
-        (NonNullable<T['idCardMedia']> & { url: string | null }) | null;
+      selfieMedia: (NonNullable<T['selfieMedia']> & ReviewerDocumentUrl) | null;
+      idCardMedia: (NonNullable<T['idCardMedia']> & ReviewerDocumentUrl) | null;
     })[]
   > {
-    const REVIEW_URL_TTL_SECONDS = 300;
     return Promise.all(
       requests.map(async (req) => {
-        // A purged request has no documents to sign for — the retention sweep
-        // removed them after the decision. `url: null` is the honest answer and
-        // the reviewer UI already renders its placeholder for it.
-        const [selfieUrl, idCardUrl] = await Promise.all([
-          req.selfieMedia?.objectKey
-            ? this.storageService
-                .getReviewerSignedUrl(
-                  req.selfieMedia.objectKey,
-                  REVIEW_URL_TTL_SECONDS,
-                )
-                .catch(() => null)
-            : Promise.resolve(null),
-          req.idCardMedia?.objectKey
-            ? this.storageService
-                .getReviewerSignedUrl(
-                  req.idCardMedia.objectKey,
-                  REVIEW_URL_TTL_SECONDS,
-                )
-                .catch(() => null)
-            : Promise.resolve(null),
+        const [selfie, idCard] = await Promise.all([
+          this.signReviewerDocument(req.selfieMedia),
+          this.signReviewerDocument(req.idCardMedia),
         ]);
         return {
           ...req,
+          // A purged request has no documents to sign for — the retention sweep
+          // removed them after the decision — and its relation is null here.
           selfieMedia: req.selfieMedia
-            ? { ...req.selfieMedia, url: selfieUrl }
+            ? { ...req.selfieMedia, ...selfie }
             : null,
           idCardMedia: req.idCardMedia
-            ? { ...req.idCardMedia, url: idCardUrl }
+            ? { ...req.idCardMedia, ...idCard }
             : null,
         };
       }),
     );
+  }
+
+  /**
+   * One document's reviewer URL, and whether getting it failed.
+   *
+   * `url: null` used to mean two different things — nothing was ever uploaded,
+   * and signing failed — and the review screen rendered both as "No ID card
+   * uploaded". A reviewer looking at a transient storage error was told the
+   * student had not submitted a document. `signError` separates them: it is true
+   * only when there IS a stored object and a URL for it could not be produced.
+   */
+  private async signReviewerDocument(
+    media: { objectKey: string } | null | undefined,
+  ): Promise<ReviewerDocumentUrl> {
+    if (!media?.objectKey) return { url: null, signError: false };
+    try {
+      const url = await this.storageService.getReviewerSignedUrl(
+        media.objectKey,
+        REVIEW_URL_TTL_SECONDS,
+      );
+      return url ? { url, signError: false } : { url: null, signError: true };
+    } catch (error) {
+      // The key is an object path, not a document; the error is storage's.
+      this.logger.warn(
+        `Could not sign a verification document: ${errorMessage(error)}`,
+      );
+      return { url: null, signError: true };
+    }
+  }
+
+  /**
+   * Fresh reviewer URLs for one request.
+   *
+   * The URLs in the list expire after five minutes and the page can stay open
+   * far longer, so a link that fails (or is about to be opened) asks for new
+   * ones here instead of making the reviewer reload the whole queue. Same
+   * guard, same TTL, same private objects — nothing is published.
+   */
+  async getDocumentUrls(id: string): Promise<{
+    selfie: ReviewerDocumentUrl;
+    idCard: ReviewerDocumentUrl;
+  }> {
+    const request = await this.prisma.verificationRequest.findUnique({
+      where: { id },
+      select: {
+        selfieMedia: { select: { objectKey: true } },
+        idCardMedia: { select: { objectKey: true } },
+      },
+    });
+    if (!request) {
+      throw new NotFoundException('Verification request not found');
+    }
+    const [selfie, idCard] = await Promise.all([
+      this.signReviewerDocument(request.selfieMedia),
+      this.signReviewerDocument(request.idCardMedia),
+    ]);
+    return { selfie, idCard };
   }
 
   async listRequests(

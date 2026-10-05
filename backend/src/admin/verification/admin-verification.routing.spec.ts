@@ -17,6 +17,12 @@ describe('AdminVerificationController — routing', () => {
   const service = {
     listRequests: jest.fn(() => Promise.resolve({ total: 0, requests: [] })),
     updateStatus: jest.fn(() => Promise.resolve({ request: {}, user: {} })),
+    getDocumentUrls: jest.fn(() =>
+      Promise.resolve({
+        selfie: { url: null, signError: false },
+        idCard: { url: null, signError: false },
+      }),
+    ),
   };
 
   beforeAll(async () => {
@@ -46,6 +52,13 @@ describe('AdminVerificationController — routing', () => {
     await request(app.getHttpServer())
       .get('/admin/verification/requests')
       .expect(200);
+  });
+
+  it('serves fresh document URLs for one request, behind the same guard', async () => {
+    await request(app.getHttpServer())
+      .get('/admin/verification/requests/req-1/documents')
+      .expect(200);
+    expect(service.getDocumentUrls).toHaveBeenCalledWith('req-1');
   });
 
   it('serves the decision endpoint there too, and attributes it', async () => {

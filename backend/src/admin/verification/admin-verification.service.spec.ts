@@ -123,6 +123,97 @@ describe('AdminVerificationService', () => {
     });
   });
 
+  describe('document signing failures', () => {
+    const listWith = (selfie: unknown, idCard: unknown) => {
+      mockPrisma.verificationRequest.count.mockResolvedValue(1);
+      mockPrisma.verificationRequest.findMany.mockResolvedValue([
+        { id: 'req-1', selfieMedia: selfie, idCardMedia: idCard },
+      ]);
+      return service.listRequests();
+    };
+
+    it('flags signError when an uploaded document cannot be signed, instead of reading as "not uploaded"', async () => {
+      mockStorage.getReviewerSignedUrl.mockImplementationOnce(() =>
+        Promise.reject(new Error('storage down')),
+      );
+      const result = await listWith(
+        { id: 'm1', objectKey: 'verification/aaa.jpg' },
+        { id: 'm2', objectKey: 'verification/bbb.jpg' },
+      );
+
+      expect(result.requests[0].selfieMedia).toMatchObject({
+        url: null,
+        signError: true,
+      });
+      // The other document is unaffected.
+      expect(result.requests[0].idCardMedia).toMatchObject({
+        url: 'signed://verification/bbb.jpg',
+        signError: false,
+      });
+    });
+
+    it('treats a signer that returns nothing as a failure too', async () => {
+      mockStorage.getReviewerSignedUrl.mockImplementationOnce(() =>
+        Promise.resolve(null as unknown as string),
+      );
+      const result = await listWith(
+        { id: 'm1', objectKey: 'verification/aaa.jpg' },
+        null,
+      );
+      expect(result.requests[0].selfieMedia?.signError).toBe(true);
+    });
+
+    it('does not flag a document that was never uploaded', async () => {
+      const result = await listWith(null, null);
+      expect(result.requests[0].selfieMedia).toBeNull();
+      expect(result.requests[0].idCardMedia).toBeNull();
+      expect(mockStorage.getReviewerSignedUrl).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getDocumentUrls', () => {
+    it('issues fresh short-lived URLs for one request', async () => {
+      mockPrisma.verificationRequest.findUnique.mockResolvedValue({
+        selfieMedia: { objectKey: 'verification/aaa.jpg' },
+        idCardMedia: null,
+      });
+
+      const result = await service.getDocumentUrls('req-1');
+
+      expect(result.selfie).toEqual({
+        url: 'signed://verification/aaa.jpg',
+        signError: false,
+      });
+      expect(result.idCard).toEqual({ url: null, signError: false });
+      expect(mockStorage.getReviewerSignedUrl).toHaveBeenCalledWith(
+        'verification/aaa.jpg',
+        300,
+      );
+    });
+
+    it('reports a signing failure rather than throwing', async () => {
+      mockPrisma.verificationRequest.findUnique.mockResolvedValue({
+        selfieMedia: { objectKey: 'verification/aaa.jpg' },
+        idCardMedia: { objectKey: 'verification/bbb.jpg' },
+      });
+      mockStorage.getReviewerSignedUrl.mockImplementationOnce(() =>
+        Promise.reject(new Error('nope')),
+      );
+
+      const result = await service.getDocumentUrls('req-1');
+
+      expect(result.selfie).toEqual({ url: null, signError: true });
+      expect(result.idCard.signError).toBe(false);
+    });
+
+    it('404s for an unknown request', async () => {
+      mockPrisma.verificationRequest.findUnique.mockResolvedValue(null);
+      await expect(service.getDocumentUrls('nope')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+  });
+
   describe('updateStatus', () => {
     it('should throw NotFoundException if request not found', async () => {
       mockPrisma.verificationRequest.findUnique.mockResolvedValue(null);

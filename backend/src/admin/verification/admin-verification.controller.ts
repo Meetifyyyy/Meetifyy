@@ -59,6 +59,16 @@ export class AdminVerificationController {
     );
   }
 
+  /**
+   * Fresh signed URLs for one request's documents. The ones in the list expire
+   * after five minutes; the review screen calls this when an image fails to load
+   * or before it opens a full-size link.
+   */
+  @Get('requests/:id/documents')
+  async getDocumentUrls(@Param('id') id: string) {
+    return this.adminVerificationService.getDocumentUrls(id);
+  }
+
   @Patch('requests/:id/status')
   async updateStatus(
     @Req() req: AdminRequest,
