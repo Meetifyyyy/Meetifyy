@@ -29,6 +29,7 @@ export const useGlobalSocketStore = create((set, get) => ({
   _lastToken: null,
   _lastOrigin: null,
   _lastDeviceId: null,
+  _gaveUp: false,
 
   connect: (token, deviceId) => {
     const { socket, _lastToken, _lastOrigin } = get();
@@ -109,8 +110,12 @@ export const useGlobalSocketStore = create((set, get) => ({
         set((state) => ({
           isConnected: true,
           reconnectCount: state.reconnectCount + 1,
+          _gaveUp: false,
         }));
       });
+
+      // The built-in loop has spent its attempts and stopped; see `revive`.
+      newSocket.io.on('reconnect_failed', () => set({ _gaveUp: true }));
 
       newSocket.on('disconnect', () => {
         set({ isConnected: false });
@@ -129,10 +134,38 @@ export const useGlobalSocketStore = create((set, get) => ({
         socket.disconnect();
         socket.close();
       } catch {}
-      set({ socket: null, isConnected: false, _lastToken: null, _lastOrigin: null, _lastDeviceId: null, reconnectCount: 0 });
+      set({ socket: null, isConnected: false, _lastToken: null, _lastOrigin: null, _lastDeviceId: null, reconnectCount: 0, _gaveUp: false });
     }
   },
 }));
+
+/**
+ * Revives a socket that has given up.
+ *
+ * The reconnect loop stops after `reconnectionAttempts` (about two minutes of
+ * backoff), and nothing else ever called `connect()` again — so a phone that
+ * spent a few minutes underground, or in the background, came back with
+ * realtime silently dead until the token next rotated. Coming back to the app
+ * or regaining the network is exactly when it is worth one more try.
+ *
+ * Only after the manager reports `reconnect_failed`, so this never races a
+ * loop that is still backing off — and never re-dials a socket the SERVER
+ * disconnected (a refused or revoked session), which is not a network problem
+ * and would only be refused again. The `connect` handler re-runs the
+ * missed-message sync on its own.
+ */
+if (typeof window !== 'undefined') {
+  const revive = () => {
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+    const { socket, _gaveUp } = useGlobalSocketStore.getState();
+    if (socket && _gaveUp && !socket.connected) {
+      useGlobalSocketStore.setState({ _gaveUp: false });
+      try { socket.connect(); } catch {}
+    }
+  };
+  document.addEventListener('visibilitychange', revive);
+  window.addEventListener('online', revive);
+}
 
 // API failover moves the backend to the same-origin proxy mid-session. The
 // socket that is open at that moment is pointed at a host this network cannot

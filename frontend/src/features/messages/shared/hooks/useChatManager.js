@@ -40,7 +40,7 @@ function makeProgressThrottle(fn, interval = 150) {
 
 export function useChatManager(activeChatId, type = 'messages', currentUserParam) {
   const queryClient = useQueryClient();
-  const { socket } = useGlobalSocketStore();
+  const socket = useGlobalSocketStore((s) => s.socket);
   // Tracks in-flight/failed media uploads so they can be retried or cancelled
   // by clientId without duplicating the message. Value shape:
   // { file, mediaType, targetConvId, localPreviewUrl, abortController, sendArgs }

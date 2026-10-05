@@ -152,7 +152,8 @@ export default function PostView({ post, onBack, autoFocusComment = false }) {
   const [loadingMore, setLoadingMore] = useState(false);
   const { currentUser } = useAuth();
   const { mutateAsync: addComment } = useAddComment();
-  const { socket, isConnected } = useGlobalSocketStore();
+  const socket = useGlobalSocketStore((s) => s.socket);
+  const isConnected = useGlobalSocketStore((s) => s.isConnected);
   const queryClient = useQueryClient();
   const loadMoreRef = useRef(null);
   const composerRef = useRef(null);

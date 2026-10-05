@@ -18,7 +18,11 @@ import { idbDelete } from '../lib/idb';
 
 export default function SocketManager() {
   const { session, isLoggedIn, currentUser, updateCurrentUser } = useAuth();
-  const { connect, disconnect, socket } = useGlobalSocketStore();
+  // One field each: a whole-store read re-rendered on every write (each
+  // reconnect, each flag), and this component wraps the app.
+  const connect = useGlobalSocketStore((s) => s.connect);
+  const disconnect = useGlobalSocketStore((s) => s.disconnect);
+  const socket = useGlobalSocketStore((s) => s.socket);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
 

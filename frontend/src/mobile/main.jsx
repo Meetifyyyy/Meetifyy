@@ -56,6 +56,7 @@ import { installSystemBars } from './installSystemBars';
 import { readPageEdgeColors } from './pageEdgeColors';
 import { createCapacitorDeepLinks } from '../platform/capacitor/deepLinks';
 import DeepLinkNavigator from './navigation/DeepLinkNavigator';
+import { installBackgroundSocket } from './backgroundSocket';
 import { config } from '../config';
 
 import '../styles/variables.css';
@@ -70,11 +71,18 @@ import './mobile.css';
 /**
  * The same cache settings as the website, with one deliberate change.
  *
- * `refetchOnWindowFocus` is off: there is no tab to focus in a WebView, so what
- * fires on the web when someone returns to the tab would simply never fire
- * here. Leaving it on would be a setting that looks active and does nothing.
- * The event that matters on a device — reopening the app — arrives from
- * `AppLifecycle.onResume` once the Capacitor plugins are installed.
+ * `refetchOnWindowFocus` is how the app refreshes on RESUME. It was off, on the
+ * premise that a WebView has no tab to focus — but TanStack's focus manager
+ * listens for `visibilitychange`, and the WebView fires it when the app goes to
+ * the background and comes back (measured on a device, 2026-10-05). The
+ * `AppLifecycle.onResume` that was meant to replace it was never implemented,
+ * so nothing refreshed on resume at all.
+ *
+ * Every stale active query refreshes EXCEPT infinite lists (feed, community
+ * posts, a chat's history, profile posts…). Refetching one re-requests every
+ * page scrolled through, on mobile data, and reorders the list under someone's
+ * thumb the moment they come back — resume also fires on return from the photo
+ * picker mid-compose. Those lists have pull-to-refresh and live socket updates.
  *
  * The rest is copied rather than shared, so the two clients can diverge on
  * mobile-data behaviour without one of them changing the other.
@@ -84,7 +92,7 @@ const queryClient = new QueryClient({
     queries: {
       staleTime: 30_000,
       gcTime: 1000 * 60 * 15,
-      refetchOnWindowFocus: false,
+      refetchOnWindowFocus: (query) => !Array.isArray(query.state.data?.pages),
       refetchOnReconnect: true,
       retry: (failureCount, error) => {
         const status = error?.status;
@@ -163,6 +171,12 @@ function safeHost(url) {
 // A returning user's home route and first feed page, started alongside the
 // session restore rather than after it (see the module).
 warmSignedInLanding(queryClient);
+
+// One delegated listener for every control's press feedback; see the module.
+installPressFeedback();
+
+// Release the realtime socket while the app sits in the background; see the module.
+installBackgroundSocket();
 
 createRoot(document.getElementById('root')).render(
   <QueryClientProvider client={queryClient}>

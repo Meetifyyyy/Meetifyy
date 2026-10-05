@@ -20,7 +20,8 @@ import { updateMessageInCache } from '../../features/messages/shared/utils/cache
 
 export function useGlobalSocketSync() {
   const queryClient = useQueryClient();
-  const { socket, isConnected } = useGlobalSocketStore();
+  const socket = useGlobalSocketStore((s) => s.socket);
+  const isConnected = useGlobalSocketStore((s) => s.isConnected);
   const { currentUser } = useAuth();
   const { conversations } = useConversations();
   const conversationsRef = useRef(conversations);

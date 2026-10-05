@@ -4,7 +4,7 @@ import { useUsersMap } from '@shared/hooks/useUsersMap';
 import { useConversations } from '@shared/hooks/useMessages';
 
 export function useTypingIndicator(conversationId, currentUserId) {
-  const { socket } = useGlobalSocketStore();
+  const socket = useGlobalSocketStore((s) => s.socket);
   const users = useUsersMap();
   const { conversations = [] } = useConversations();
   const [typingUsers, setTypingUsers] = useState(new Map());
