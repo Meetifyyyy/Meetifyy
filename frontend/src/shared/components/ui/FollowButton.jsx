@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuth } from '@shared/context/AuthContext';
 import { useFollowMutation } from '@shared/hooks/useFollowMutation';
 import { toggleRegistry } from '@shared/utils/mutationRegistry';
@@ -7,6 +7,7 @@ import { useFollowState } from '@shared/hooks/useFollowState';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { usersApi } from '@shared/api/apiClient';
 import { PROFILE_KEYS } from '@shared/hooks/useProfile';
+import UnfollowModal from '@shared/components/modals/UnfollowModal';
 import styles from './FollowButton.module.css';
 
 /**
@@ -114,6 +115,8 @@ const FollowButton = ({ targetUsername, initialFollowing, size = 'md', className
   const displayFollowing = toggleRegistry.getLatestIntent(entityKey, following);
 
   const { follow, unfollow } = useFollowMutation(targetUsername);
+  // Unfollowing asks first; following never does.
+  const [confirmingUnfollow, setConfirmingUnfollow] = useState(false);
 
   // Don't render for own profile
   if (isSelf) return null;
@@ -143,6 +146,17 @@ const FollowButton = ({ targetUsername, initialFollowing, size = 'md', className
     e.stopPropagation();  // prevent triggering parent card clicks
     e.preventDefault();
     
+    // The button is showing "Following": this tap would unfollow, so ask first.
+    // Nothing is recorded in the toggle registry until it is confirmed - a
+    // cancelled question must leave no pending intent behind.
+    if (displayFollowing) {
+      setConfirmingUnfollow(true);
+      return;
+    }
+    runToggle();
+  };
+
+  const runToggle = () => {
     const nextFollowing = toggleRegistry.getNextToggleIntent(entityKey, following);
     if (nextFollowing) {
       follow();
@@ -155,6 +169,7 @@ const FollowButton = ({ targetUsername, initialFollowing, size = 'md', className
   const stateClass = displayFollowing ? styles.following : styles.notFollowing;
 
   return (
+    <>
     <button
       onClick={handleClick}
       disabled={false} // allowed for rapid toggle
@@ -171,6 +186,22 @@ const FollowButton = ({ targetUsername, initialFollowing, size = 'md', className
     >
       {label}
     </button>
+    {confirmingUnfollow && (
+      // The sheet is portalled to <body>, but React events still bubble through
+      // the component tree: without this, a tap inside it would also reach the
+      // profile card this button sits in and navigate away.
+      <div style={{ display: 'contents' }} onClick={(e) => e.stopPropagation()}>
+        <UnfollowModal
+          username={targetUsername}
+          onCancel={() => setConfirmingUnfollow(false)}
+          onConfirm={() => {
+            setConfirmingUnfollow(false);
+            runToggle();
+          }}
+        />
+      </div>
+    )}
+    </>
   );
 };
 

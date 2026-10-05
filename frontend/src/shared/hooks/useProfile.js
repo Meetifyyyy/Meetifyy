@@ -5,7 +5,7 @@
  * Includes a prefetch helper for hover-intent loading on profile links.
  */
 import { useQuery, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { usersApi } from '@shared/api/apiClient';
 import { idbGet, idbSet } from '@shared/lib/idb';
 import { useAuth } from '@shared/context/AuthContext';
@@ -47,13 +47,36 @@ export function useProfile(username, { enabled = true } = {}) {
     // person's username for the length of the fetch.
   });
 
-  // If cached data is present but incomplete (missing stats), invalidate to fetch complete profile
-  const isDataIncomplete = query.data && !query.data.stats;
+  /*
+   * A profile seeded without `stats` (from a reply preview, a follow update, an
+   * older cache entry) is completed by ONE refetch.
+   *
+   * It used to refetch whenever the data lacked `stats`, which is not a loop only
+   * if the server's answer always has them. A response without `stats` (a trimmed
+   * profile, one the viewer may not see counts for, a deleted account) landed as
+   * "still incomplete", fired the effect again, and the profile was re-requested
+   * every ~30 ms for as long as anything on screen read it - saturating the main
+   * thread and the connection, so every interaction beside it (opening search in
+   * the chat details took five seconds) stalled.
+   *
+   * So the heal is spent once per incomplete episode. It is re-armed only when
+   * the data has been complete again, i.e. when a later partial write is a new
+   * problem rather than the server's answer to the last one.
+   */
+  const isDataIncomplete = Boolean(query.data) && !query.data.stats;
+  const healRef = useRef({ key: null, spent: false });
+  const healKey = qk.join('|');
   useEffect(() => {
-    if (isDataIncomplete && username && username !== 'unknown') {
-      queryClient.invalidateQueries({ queryKey: qk });
+    if (healRef.current.key !== healKey) healRef.current = { key: healKey, spent: false };
+    if (!isDataIncomplete) {
+      healRef.current.spent = false;
+      return;
     }
-  }, [isDataIncomplete, username, qk, queryClient]);
+    if (healRef.current.spent || !username || username === 'unknown') return;
+    healRef.current.spent = true;
+    queryClient.invalidateQueries({ queryKey: qk });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDataIncomplete, username, healKey, queryClient]);
 
   /**
    * Hydrate from IndexedDB before the first network response.

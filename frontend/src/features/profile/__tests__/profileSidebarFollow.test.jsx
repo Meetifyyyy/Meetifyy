@@ -131,6 +131,18 @@ async function settleMutation() {
   });
 }
 
+/**
+ * Confirms the "Unfollow @name?" sheet that a tap on "Following" now opens. The
+ * sheet closes itself with a short animation before it acts, hence the wait.
+ */
+async function confirmUnfollow() {
+  const confirm = await screen.findByRole('button', { name: 'Unfollow' });
+  await act(async () => {
+    fireEvent.click(confirm);
+    await new Promise((r) => setTimeout(r, 320));
+  });
+}
+
 describe('ProfileRightSidebar — who to follow', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -227,9 +239,11 @@ describe('ProfileRightSidebar — who to follow', () => {
     await settleMutation();
     expect(buttonFor('ann').textContent).toBe('Following');
 
+    // Unfollowing asks first.
     await act(async () => {
       fireEvent.click(buttonFor('ann'));
     });
+    await confirmUnfollow();
     await settleMutation();
     expect(buttonFor('ann').textContent).toBe('Follow');
 
@@ -372,6 +386,7 @@ describe('ProfileRightSidebar — follow state survives opening the profile', ()
 
     expect(buttonFor('ann').textContent).toBe('Following');
     fireEvent.click(buttonFor('ann'));
+    await confirmUnfollow();
     expect(buttonFor('ann').textContent).toBe('Follow');
     await settleMutation();
 

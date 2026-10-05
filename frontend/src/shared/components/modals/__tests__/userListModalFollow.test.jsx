@@ -130,6 +130,25 @@ function renderModal({ type = 'following', queryClient } = {}) {
   return { queryClient: qc, ...utils };
 }
 
+
+/**
+ * Taps a row's follow button the way a person does. Unfollowing now asks first, so
+ * when the button says "Following" the tap is followed by confirming the sheet
+ * (which closes itself with a short animation before it acts).
+ */
+async function tap(username) {
+  const wasFollowing = buttonFor(username)?.textContent === 'Following';
+  await act(async () => {
+    fireEvent.click(buttonFor(username));
+  });
+  if (!wasFollowing) return;
+  const confirm = await screen.findByRole('button', { name: 'Unfollow' });
+  await act(async () => {
+    fireEvent.click(confirm);
+    await new Promise((r) => setTimeout(r, 320));
+  });
+}
+
 /** Past the 300ms coalescing debounce, so the request has actually gone. */
 async function settleMutation() {
   await act(async () => {
@@ -165,9 +184,7 @@ describe('UserListModal — unfollowing from the list', () => {
     await screen.findByText('@ann');
     expect(buttonFor('ann').textContent).toBe('Following');
 
-    await act(async () => {
-      fireEvent.click(buttonFor('ann'));
-    });
+    await tap('ann');
 
     expect(screen.getByText('@ann')).toBeTruthy();
     await waitFor(() => expect(buttonFor('ann')?.textContent).toBe('Follow'));
@@ -185,9 +202,7 @@ describe('UserListModal — unfollowing from the list', () => {
     await screen.findByText('@ann');
     const before = renderedHandles();
 
-    await act(async () => {
-      fireEvent.click(buttonFor('bob'));
-    });
+    await tap('bob');
     await settleMutation();
 
     expect(renderedHandles()).toEqual(before);
@@ -199,9 +214,7 @@ describe('UserListModal — unfollowing from the list', () => {
     await screen.findByText('@ann');
     expect(getFollowingMock).toHaveBeenCalledTimes(1);
 
-    await act(async () => {
-      fireEvent.click(buttonFor('ann'));
-    });
+    await tap('ann');
     await settleMutation();
 
     // An active refetch here is what rebuilt every loaded page and moved the
@@ -213,9 +226,7 @@ describe('UserListModal — unfollowing from the list', () => {
     const { queryClient, unmount } = renderModal({ type: 'following' });
     await screen.findByText('@ann');
 
-    await act(async () => {
-      fireEvent.click(buttonFor('ann'));
-    });
+    await tap('ann');
     await settleMutation();
 
     const cached = queryClient.getQueryData(['following', 'me', '']);
@@ -231,9 +242,7 @@ describe('UserListModal — unfollowing from the list', () => {
     const { queryClient, unmount } = renderModal({ type: 'following' });
     await screen.findByText('@ann');
 
-    await act(async () => {
-      fireEvent.click(buttonFor('ann'));
-    });
+    await tap('ann');
     await settleMutation();
     unmount();
 
@@ -254,9 +263,7 @@ describe('UserListModal — unfollowing from the list', () => {
     renderModal({ type: 'following' });
     await screen.findByText('@ann');
 
-    await act(async () => {
-      fireEvent.click(buttonFor('ann'));
-    });
+    await tap('ann');
     await settleMutation();
 
     // The row must never disappear on an error path either.
@@ -270,9 +277,7 @@ describe('UserListModal — unfollowing from the list', () => {
     await screen.findByText('@ann');
     expect(getFollowersMock).toHaveBeenCalledTimes(1);
 
-    await act(async () => {
-      fireEvent.click(buttonFor('ann'));
-    });
+    await tap('ann');
     await settleMutation();
 
     expect(screen.getByText('@ann')).toBeTruthy();
@@ -285,15 +290,11 @@ describe('UserListModal — unfollowing from the list', () => {
     renderModal({ type: 'following' });
     await screen.findByText('@ann');
 
-    await act(async () => {
-      fireEvent.click(buttonFor('ann'));
-    });
+    await tap('ann');
     await settleMutation();
     expect(buttonFor('ann').textContent).toBe('Follow');
 
-    await act(async () => {
-      fireEvent.click(buttonFor('ann'));
-    });
+    await tap('ann');
     await settleMutation();
 
     expect(buttonFor('ann').textContent).toBe('Following');
@@ -353,9 +354,7 @@ describe('UserListModal — reopening after an unfollow', () => {
     const first = renderModal({ type: 'following', queryClient });
     await screen.findByText('@ann');
 
-    await act(async () => {
-      fireEvent.click(buttonFor('ann'));
-    });
+    await tap('ann');
     await settleMutation();
     expect(screen.getByText('@ann')).toBeTruthy();
 
