@@ -38,9 +38,11 @@ export default function InstantNotificationCard({
   const handleTouchMove = useCallback((e) => {
     const deltaX = e.touches[0].clientX - touchStartXRef.current;
     touchDeltaXRef.current = deltaX;
+    // The card follows the finger at full opacity. It used to fade as it moved
+    // (down to 20%), which made it look like it was already going away while the
+    // person was still deciding; only its position answers the gesture.
     if (cardRef.current && Math.abs(deltaX) > 8) {
       cardRef.current.style.transform = `translateX(${deltaX}px)`;
-      cardRef.current.style.opacity = `${Math.max(0.2, 1 - Math.abs(deltaX) / 250)}`;
     }
   }, []);
 
@@ -49,17 +51,17 @@ export default function InstantNotificationCard({
     if (Math.abs(deltaX) > 75) {
       setDismissed(true);
       if (cardRef.current) {
-        cardRef.current.style.transition = 'transform 0.2s ease-out, opacity 0.2s ease-out';
-        cardRef.current.style.transform = `translateX(${deltaX > 0 ? 350 : -350}px)`;
-        cardRef.current.style.opacity = '0';
+        // Slides clear of the screen at full opacity; with no fade to hide it, a
+        // short slide would leave it visible and then remove it in one frame.
+        cardRef.current.style.transition = 'transform 0.2s ease-out';
+        cardRef.current.style.transform = `translateX(${deltaX > 0 ? window.innerWidth : -window.innerWidth}px)`;
       }
       setTimeout(() => {
         onDismiss?.();
       }, 200);
     } else if (cardRef.current) {
-      cardRef.current.style.transition = 'transform 0.2s ease-out, opacity 0.2s ease-out';
+      cardRef.current.style.transition = 'transform 0.2s ease-out';
       cardRef.current.style.transform = 'translateX(0)';
-      cardRef.current.style.opacity = '1';
       setTimeout(() => {
         if (cardRef.current) cardRef.current.style.transition = '';
       }, 200);
