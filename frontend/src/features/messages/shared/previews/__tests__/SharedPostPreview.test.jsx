@@ -14,6 +14,8 @@ vi.mock('react-router-dom', async () => {
 });
 
 vi.mock('@shared/api/apiClient', () => ({
+  // Avatar asks for the small-size thumbnail variant; none here.
+  deriveThumbnailKey: () => null,
   getMediaUrl: (u) => (u ? `http://media/${u}` : null),
 }));
 

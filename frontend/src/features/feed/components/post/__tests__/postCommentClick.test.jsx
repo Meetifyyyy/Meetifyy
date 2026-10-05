@@ -14,6 +14,8 @@ if (!window.matchMedia) window.matchMedia = () => ({ matches: false, addEventLis
 
 vi.mock('@shared/lib/supabase', () => ({ supabase: { auth: { getSession: () => Promise.resolve({ data: { session: null } }), onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }), signOut: () => Promise.resolve({}) } }, isSupabaseConfigured: false }));
 vi.mock('@shared/api/apiClient', () => ({
+  // Avatar asks for the small-size thumbnail variant; none here.
+  deriveThumbnailKey: () => null,
   // Added with the cookie migration: AuthContext reads these to decide whether
   // a cookie session is worth recovering, and to carry the CSRF token the
   // server returns in the body of every session-issuing response.
@@ -42,7 +44,7 @@ vi.mock('@shared/api/apiClient', () => ({
 }));
 vi.mock('@shared/context/AuthContext', () => ({ useAuth: () => ({ currentUser: { id: 'me', displayName: 'Me', username: 'me' }, isLoggedIn: true, loading: false }) }));
 vi.mock('@shared/lib/idb', () => ({ idbGet: async () => null, idbSet: async () => {}, idbDelete: async () => {} }));
-vi.mock('@stores/useGlobalSocketStore', () => ({ useGlobalSocketStore: () => ({ socket: null, isConnected: false }) }));
+vi.mock('@stores/useGlobalSocketStore', () => ({ useGlobalSocketStore: (sel) => { const st = { socket: null, isConnected: false }; return sel ? sel(st) : st; } }));
 
 const { default: Post } = await import('@features/feed/components/post/Post');
 const { default: PostView } = await import('@features/feed/components/post/PostView');

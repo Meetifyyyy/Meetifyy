@@ -28,6 +28,21 @@ export function getProcessedAvatarUrl(src) {
   return getMediaUrl(clean);
 }
 
+/**
+ * The largest avatar the 160px thumbnail serves sharply on a 3x screen
+ * (160 / 3 ≈ 53), rounded down to the largest common list size. Bigger
+ * avatars — profile headers, invite panels — keep the original.
+ */
+const THUMBNAIL_MAX_PX = 48;
+
+/** True for a fixed size (a number, or `NNpx`) small enough for the thumbnail. */
+function isSmallFixedSize(size) {
+  const px = typeof size === 'number'
+    ? size
+    : /^\s*(\d+(?:\.\d+)?)px\s*$/.exec(String(size))?.[1];
+  return px != null && Number(px) <= THUMBNAIL_MAX_PX;
+}
+
 const loadedAvatarCache = new Set();
 const failedAvatarCache = new Set();
 
@@ -43,11 +58,13 @@ const Avatar = forwardRef(({
   disableHover = false,
   isLoading = false,
   /**
-   * Opt in to the `<key>_thumb.webp` variant of an uploaded avatar.
+   * Use the `<key>_thumb.webp` variant of an uploaded avatar.
    *
-   * Off by default, so no existing caller changes. Turn it on for small
-   * avatars in a list: the stored original is up to 512px, and a directory row
-   * paints it at 56. The thumbnail is generated at 160px, which still covers a
+   * Automatic when the rendered size is fixed and at most 48px — which is
+   * nearly every avatar in the app (feed, comments, chat, lists paint 28–48px).
+   * It used to be opt-in and only one of ~50 callers opted in, so a 32px avatar
+   * downloaded and decoded the 512px original, for every distinct person on
+   * screen. Pass `thumbnail` explicitly to override either way. The thumbnail is generated at 160px, which still covers a
    * 3x phone. `/api/media/<key>_thumb.webp` redirects to the original when no
    * thumbnail was produced (older uploads), so this can only ever be the same
    * bytes or fewer — and the `onError` chain below re-tries the original
@@ -56,7 +73,7 @@ const Avatar = forwardRef(({
    * Not for large avatars: above ~160px rendered, the thumbnail is the smaller
    * image and would visibly soften.
    */
-  thumbnail = false,
+  thumbnail,
   /**
    * Notified when the picture fails to load.
    *
@@ -74,11 +91,12 @@ const Avatar = forwardRef(({
   const fullSrc = useMemo(() => getProcessedAvatarUrl(src), [src]);
   // Null for anything not stored as one of our media keys — a dicebear URL or
   // the bundled default has no variant to ask for.
+  const useThumbnail = thumbnail ?? isSmallFixedSize(size);
   const thumbSrc = useMemo(() => {
-    if (!thumbnail) return null;
+    if (!useThumbnail) return null;
     const key = deriveThumbnailKey(fullSrc);
     return key ? getMediaUrl(key) : null;
-  }, [thumbnail, fullSrc]);
+  }, [useThumbnail, fullSrc]);
   const initialProcessedSrc = thumbSrc || fullSrc;
 
   // Keyed on the original, never the thumbnail: a variant that fails to load

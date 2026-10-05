@@ -21,7 +21,15 @@ import { POST_LIMITS } from '@shared/utils/bodyText';
  */
 
 // Browser APIs the post subtree touches on mount, which jsdom does not provide.
-globalThis.IntersectionObserver = class { observe() {} unobserve() {} disconnect() {} takeRecords() { return []; } };
+// These posts are on screen: everything observed reports as in view, which is
+// what lets near-viewport media (a video's first frame) mount.
+globalThis.IntersectionObserver = class {
+  constructor(cb) { this.cb = cb; }
+  observe(el) { this.cb([{ target: el, isIntersecting: true, intersectionRatio: 1 }], this); }
+  unobserve() {}
+  disconnect() {}
+  takeRecords() { return []; }
+};
 globalThis.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} };
 if (!window.matchMedia) {
   window.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {} });

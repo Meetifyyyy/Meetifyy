@@ -14,6 +14,7 @@ vi.mock('@shared/lib/supabase', () => ({
   isSupabaseConfigured: false,
 }));
 vi.mock('@shared/api/apiClient', () => ({
+  deriveThumbnailKey: () => null,
   getMediaUrl: (u) => (typeof u === 'string' ? u : ''),
   postsApi: {
     getPostById: async () => { calls.getPostById++; return { ...POST, comments: COMMENTS, commentsNextCursor: null }; },
@@ -34,7 +35,7 @@ vi.mock('@shared/context/AuthContext', () => ({
   AuthProvider: ({ children }) => children,
 }));
 vi.mock('@shared/lib/idb', () => ({ idbGet: async () => null, idbSet: async () => {}, idbDelete: async () => {} }));
-vi.mock('@stores/useGlobalSocketStore', () => ({ useGlobalSocketStore: () => ({ socket: null, isConnected: false }) }));
+vi.mock('@stores/useGlobalSocketStore', () => ({ useGlobalSocketStore: (sel) => { const st = { socket: null, isConnected: false }; return sel ? sel(st) : st; } }));
 
 // CommentTreeRoot and CommentNode live in the SAME module, so mocking that
 // module cannot intercept the internal recursion. RichText is rendered once per

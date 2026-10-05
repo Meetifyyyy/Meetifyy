@@ -19,6 +19,7 @@ vi.mock('@shared/lib/supabase', () => ({
 
 vi.mock('@shared/api/apiClient', async () => {
   return {
+    deriveThumbnailKey: () => null,
     getMediaUrl: (u) => (typeof u === 'string' ? u : ''),
     postsApi: {
       getFeed: async (limit, cursor) => { calls.getFeed++; const idx = cursor ? Number(String(cursor).split('-')[1]) : 0; return makeFeedPage(idx); },

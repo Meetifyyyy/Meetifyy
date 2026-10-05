@@ -17,6 +17,8 @@ window.HTMLElement.prototype.scrollIntoView = function() {};
 
 vi.mock('@shared/lib/supabase', () => ({ supabase: { auth: { getSession: () => Promise.resolve({ data: { session: null } }), onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }), signOut: () => Promise.resolve({}) } }, isSupabaseConfigured: false }));
 vi.mock('@shared/api/apiClient', () => ({
+  // Avatar asks for the small-size thumbnail variant; none here.
+  deriveThumbnailKey: () => null,
   // Added with the cookie migration: AuthContext reads these to decide whether
   // a cookie session is worth recovering, and to carry the CSRF token the
   // server returns in the body of every session-issuing response.
@@ -58,7 +60,7 @@ vi.mock('@shared/context/AuthContext', () => ({
   }),
 }));
 vi.mock('@shared/lib/idb', () => ({ idbGet: async () => null, idbSet: async () => {}, idbDelete: async () => {} }));
-vi.mock('@stores/useGlobalSocketStore', () => ({ useGlobalSocketStore: () => ({ socket: null, isConnected: false }) }));
+vi.mock('@stores/useGlobalSocketStore', () => ({ useGlobalSocketStore: (sel) => { const st = { socket: null, isConnected: false }; return sel ? sel(st) : st; } }));
 vi.mock('@shared/hooks/useUsersMap', () => ({ useUsersMap: () => ({}) }));
 vi.mock('@shared/hooks/useCommunities', () => ({
   useCommunities: () => ({ communitiesById: {} }),

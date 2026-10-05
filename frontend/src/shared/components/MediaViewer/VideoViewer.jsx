@@ -233,8 +233,11 @@ export default function VideoViewer({ src: rawSrc, poster: rawPoster, mediaRef, 
 
   // ─── Update Progress DOM nodes directly (Performance) ─────────────────────
   const updateProgressDOM = useCallback((ct, dur, bufferedEnd = null) => {
-    if (currentTimeTextRef.current) {
-      currentTimeTextRef.current.textContent = fmt(ct);
+    // Per frame while playing: replace the text node only when the second
+    // changes, rather than mutating the DOM sixty times a second.
+    const timeText = fmt(ct);
+    if (currentTimeTextRef.current && currentTimeTextRef.current.textContent !== timeText) {
+      currentTimeTextRef.current.textContent = timeText;
     }
     if (dur > 0) {
       const pct = (ct / dur) * 100;

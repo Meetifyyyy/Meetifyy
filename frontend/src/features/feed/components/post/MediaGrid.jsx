@@ -3,6 +3,7 @@ import { mediaCache } from '@shared/utils/MediaCacheManager';
 import { deriveThumbnailKey, getMediaUrl } from '@shared/api/apiClient';
 import { Play, Pause, VolumeHigh, VolumeOff, Maximize } from '@shared/components/icons';
 import { feedVideoRegistry } from '@shared/utils/feedVideoRegistry';
+import { isThumbnailMissing, markThumbnailMissing } from '@shared/utils/missingThumbnails';
 import styles from './MediaGrid.module.css';
 
 // A post's image must never be replaced by an unrelated picture. This used to
@@ -65,10 +66,13 @@ const InlineVideoPlayer = memo(function InlineVideoPlayer({
     const pct = dur > 0 ? (ct / dur) * 100 : 0;
     const timeStr = fmtTime(ct);
 
-    if (timerTextRef.current) {
+    // Only when the shown second changes. This runs every frame of playback,
+    // and assigning textContent always replaces the text node — a DOM mutation
+    // per frame, each of which also woke the system-bar sampler's observer.
+    if (timerTextRef.current && timerTextRef.current.textContent !== timeStr) {
       timerTextRef.current.textContent = timeStr;
     }
-    if (ctrlTimerTextRef.current) {
+    if (ctrlTimerTextRef.current && ctrlTimerTextRef.current.textContent !== timeStr) {
       ctrlTimerTextRef.current.textContent = timeStr;
     }
     const sb = seekbarRef.current;
@@ -487,6 +491,35 @@ function rememberAspect(src, aspect) {
   }
 }
 
+/**
+ * True once the element has come within a screen of the viewport, and stays
+ * true. Used to hold back media that would otherwise load for every post the
+ * virtualized feed keeps mounted off screen.
+ */
+function useNearViewport() {
+  const [el, setEl] = useState(null);
+  const [near, setNear] = useState(false);
+  useEffect(() => {
+    if (near || !el) return undefined;
+    if (typeof IntersectionObserver === 'undefined') {
+      setNear(true);
+      return undefined;
+    }
+    const obs = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) {
+          setNear(true);
+          obs.disconnect();
+        }
+      },
+      { rootMargin: '100% 0px' },
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [el, near]);
+  return [setEl, near];
+}
+
 export function MediaGrid({ media, onMediaClick, onRemove, authorName }) {
   const [mediaList, setMediaList] = useState(() => normalizeMedia(media));
   const [loadedStates, setLoadedStates] = useState(() => {
@@ -503,6 +536,12 @@ export function MediaGrid({ media, onMediaClick, onRemove, authorName }) {
   // state so a later-resolved URL clears it instead of being stuck behind an
   // imperative DOM change.
   const [failedStates, setFailedStates] = useState({});
+  // Video tiles whose poster image failed; they fall back to a first frame.
+  const [posterFailed, setPosterFailed] = useState({});
+  // The single-video tile mounts its first-frame <video> only near the
+  // viewport: the virtualized feed keeps off-screen posts mounted, and each
+  // one fetched video metadata — often megabytes for a phone MP4.
+  const [singleTileRef, singleTileNear] = useNearViewport();
   const [naturalAspects, setNaturalAspects] = useState(() => {
     const initial = {};
     normalizeMedia(media).forEach((item, index) => {
@@ -526,14 +565,22 @@ export function MediaGrid({ media, onMediaClick, onRemove, authorName }) {
 
     Promise.all(list.map(async (item) => {
       try {
-        const thumbKey = item.isVideo ? null : deriveThumbnailKey(item.rawSrc);
-        const [fullUrl, thumbUrl] = await Promise.all([
+        // An image's grid variant and a video's poster are the same derived
+        // `<name>_thumb.webp`; one that 404'd recently is skipped.
+        const derived = deriveThumbnailKey(item.rawSrc);
+        const usable = derived && !isThumbnailMissing(derived) ? derived : null;
+        const thumbKey = item.isVideo ? null : usable;
+        const posterKey = item.isVideo ? usable : null;
+        const [fullUrl, thumbUrl, posterUrl] = await Promise.all([
           mediaCache.getUrl(item.rawSrc).catch(() => item.rawSrc),
           thumbKey ? mediaCache.getUrl(thumbKey).catch(() => null) : Promise.resolve(null),
+          posterKey ? mediaCache.getUrl(posterKey).catch(() => null) : Promise.resolve(null),
         ]);
         return {
           ...item,
           thumbKey,
+          posterKey,
+          posterUrl,
           url: thumbUrl || fullUrl || item.rawSrc,
           fullUrl: fullUrl || item.rawSrc,
         };
@@ -547,7 +594,8 @@ export function MediaGrid({ media, onMediaClick, onRemove, authorName }) {
         if (prevList.length === resolvedList.length) {
           const isSame = prevList.every((oldItem, i) => {
             const newItem = resolvedList[i];
-            return oldItem.url === newItem.url && oldItem.fullUrl === newItem.fullUrl;
+            return oldItem.url === newItem.url && oldItem.fullUrl === newItem.fullUrl
+              && oldItem.posterUrl === newItem.posterUrl;
           });
           if (isSame) return prevList;
         }
@@ -566,6 +614,13 @@ export function MediaGrid({ media, onMediaClick, onRemove, authorName }) {
   if (!mediaList.length) return null;
 
   const handleImageLoad = (index, e) => {
+    // The original loaded after its thumbnail failed: that thumbnail really is
+    // missing, so later mounts and launches skip straight to the original.
+    const failedThumb = e?.target?.getAttribute?.('data-failed-thumb');
+    if (failedThumb) {
+      markThumbnailMissing(failedThumb);
+      e.target.removeAttribute('data-failed-thumb');
+    }
     setLoadedStates((prev) => (prev[index] ? prev : { ...prev, [index]: true }));
     const src = mediaList[index]?.url || mediaList[index]?.fullUrl;
     rememberLoaded(src);
@@ -599,6 +654,11 @@ export function MediaGrid({ media, onMediaClick, onRemove, authorName }) {
     // Step 1: the derived thumbnail may not exist (or not yet) — fall back to
     // the original, which is always the real image for this post.
     if (full && target.src !== full && target.getAttribute('data-fellback') !== '1') {
+      // Not remembered yet: an offline launch or a 5xx fails the thumbnail
+      // too, and marking those would send a day of posts to the full-size
+      // original. handleImageLoad records it once the original has loaded,
+      // which proves the thumbnail — not the network — was the problem.
+      if (item?.thumbKey) target.setAttribute('data-failed-thumb', item.thumbKey);
       target.setAttribute('data-fellback', '1');
       target.src = full;
       return;
@@ -629,7 +689,25 @@ export function MediaGrid({ media, onMediaClick, onRemove, authorName }) {
     setLoadedStates((prev) => ({ ...prev, [index]: true }));
   };
 
+  /** A video tile's poster failed: fall back to its first frame. */
+  const handlePosterError = (index) => {
+    setPosterFailed((prev) => (prev[index] ? prev : { ...prev, [index]: true }));
+  };
+
+  /** What a grid tile paints: the image, or a video's poster (never the MP4). */
+  const tileSrc = (item, index) => (item.isVideo
+    ? (posterFailed[index] ? null : item.posterUrl || null)
+    : item.url || (item.rawSrc ? getMediaUrl(item.rawSrc) : null));
+
+  const onTileError = (index, e) => (mediaList[index]?.isVideo
+    ? handlePosterError(index)
+    : handleImageError(index, e));
+
   const handleVideoLoaded = (index, e) => {
+    // The first frame loaded after the poster failed: the network is fine, so
+    // the poster genuinely does not exist. Remember it.
+    const item = mediaList[index];
+    if (posterFailed[index] && item?.posterKey) markThumbnailMissing(item.posterKey);
     setLoadedStates((prev) => (prev[index] ? prev : { ...prev, [index]: true }));
     const src = mediaList[index]?.url || mediaList[index]?.fullUrl;
     rememberLoaded(src);
@@ -734,7 +812,9 @@ export function MediaGrid({ media, onMediaClick, onRemove, authorName }) {
       const isLoaded = loadedStates[0];
       const isPlayingInline = Boolean(inlinePlaying[0]);
       const rawPoster = item.raw?.poster || item.raw?.thumbnail || item.raw?.thumbnailUrl;
-      const posterUrl = rawPoster ? getMediaUrl(rawPoster) : null;
+      const posterUrl = rawPoster
+        ? getMediaUrl(rawPoster)
+        : (posterFailed[0] ? null : item.posterUrl || null);
       const mediaSrc = item.url || (item.rawSrc ? getMediaUrl(item.rawSrc) : null);
 
       if (isPlayingInline && mediaSrc) {
@@ -761,6 +841,7 @@ export function MediaGrid({ media, onMediaClick, onRemove, authorName }) {
           }}
         >
           <div
+            ref={singleTileRef}
             className={styles.videoWrapper}
             style={{ '--aspect': aspect }}
           >
@@ -772,7 +853,7 @@ export function MediaGrid({ media, onMediaClick, onRemove, authorName }) {
                 loading="lazy"
                 decoding="async"
                 onLoad={(e) => handleImageLoad(0, e)}
-                onError={(e) => handleImageError(0, e)}
+                onError={() => handlePosterError(0)}
                 style={{ visibility: failedStates[0] ? 'hidden' : undefined }}
                 ref={(imgEl) => {
                   if (imgEl && imgEl.complete && imgEl.naturalWidth && !loadedStates[0]) {
@@ -783,7 +864,7 @@ export function MediaGrid({ media, onMediaClick, onRemove, authorName }) {
                   isLoaded ? styles.loaded : styles.loading
                 }`}
               />
-            ) : mediaSrc ? (
+            ) : mediaSrc && singleTileNear ? (
               <video
                 src={`${mediaSrc}#t=0.001`}
                 preload="metadata"
@@ -860,7 +941,7 @@ export function MediaGrid({ media, onMediaClick, onRemove, authorName }) {
       <div className={styles.mediaContainer}>
         <div className={styles.gridTwo}>
           {mediaList.map((item, index) => {
-            const imgSrc = item.url || (item.rawSrc ? getMediaUrl(item.rawSrc) : null);
+            const imgSrc = tileSrc(item, index);
             return (
               <div key={index} className={styles.gridItem} onClick={(e) => handleItemClick(e, index)}>
                 {!loadedStates[index] && <div className={styles.skeleton} />}
@@ -871,7 +952,7 @@ export function MediaGrid({ media, onMediaClick, onRemove, authorName }) {
                     loading="lazy"
                     decoding="async"
                     onLoad={(e) => handleImageLoad(index, e)}
-                    onError={(e) => handleImageError(index, e)}
+                    onError={(e) => onTileError(index, e)}
                     style={{ visibility: failedStates[index] ? 'hidden' : undefined }}
                     className={`${styles.gridImage} ${loadedStates[index] ? styles.loaded : styles.loading}`}
                   />
@@ -895,7 +976,7 @@ export function MediaGrid({ media, onMediaClick, onRemove, authorName }) {
 
   // Three Images (1 Main Left + 2 Stacked Right)
   if (mediaList.length === 3) {
-    const firstImgSrc = mediaList[0].url || (mediaList[0].rawSrc ? getMediaUrl(mediaList[0].rawSrc) : null);
+    const firstImgSrc = tileSrc(mediaList[0], 0);
     return (
       <div className={styles.mediaContainer}>
         <div className={styles.gridThree}>
@@ -908,7 +989,7 @@ export function MediaGrid({ media, onMediaClick, onRemove, authorName }) {
                 loading="lazy"
                 decoding="async"
                 onLoad={(e) => handleImageLoad(0, e)}
-                onError={(e) => handleImageError(0, e)}
+                onError={(e) => onTileError(0, e)}
                 style={{ visibility: failedStates[0] ? 'hidden' : undefined }}
                 className={`${styles.gridImage} ${loadedStates[0] ? styles.loaded : styles.loading}`}
               />
@@ -926,7 +1007,7 @@ export function MediaGrid({ media, onMediaClick, onRemove, authorName }) {
           <div className={styles.gridThreeRight}>
             {mediaList.slice(1, 3).map((item, idx) => {
               const index = idx + 1;
-              const subSrc = item.url || (item.rawSrc ? getMediaUrl(item.rawSrc) : null);
+              const subSrc = tileSrc(item, index);
               return (
                 <div key={index} className={styles.gridItem} onClick={(e) => handleItemClick(e, index)}>
                   {!loadedStates[index] && <div className={styles.skeleton} />}
@@ -937,7 +1018,7 @@ export function MediaGrid({ media, onMediaClick, onRemove, authorName }) {
                       loading="lazy"
                       decoding="async"
                       onLoad={(e) => handleImageLoad(index, e)}
-                      onError={(e) => handleImageError(index, e)}
+                      onError={(e) => onTileError(index, e)}
                       style={{ visibility: failedStates[index] ? 'hidden' : undefined }}
                       className={`${styles.gridImage} ${loadedStates[index] ? styles.loaded : styles.loading}`}
                     />
@@ -970,7 +1051,7 @@ export function MediaGrid({ media, onMediaClick, onRemove, authorName }) {
         {displayItems.map((item, index) => {
           const isLast = index === 3 && totalCount > 4;
           const overlayCount = totalCount - 3; // +2 for 5, +3 for 6
-          const subSrc = item.url || (item.rawSrc ? getMediaUrl(item.rawSrc) : null);
+          const subSrc = tileSrc(item, index);
           return (
             <div key={index} className={styles.gridItem} onClick={(e) => handleItemClick(e, index)}>
               {!loadedStates[index] && <div className={styles.skeleton} />}
@@ -981,7 +1062,7 @@ export function MediaGrid({ media, onMediaClick, onRemove, authorName }) {
                   loading="lazy"
                   decoding="async"
                   onLoad={(e) => handleImageLoad(index, e)}
-                  onError={(e) => handleImageError(index, e)}
+                  onError={(e) => onTileError(index, e)}
                   style={{ visibility: failedStates[index] ? 'hidden' : undefined }}
                   className={`${styles.gridImage} ${loadedStates[index] ? styles.loaded : styles.loading}`}
                 />

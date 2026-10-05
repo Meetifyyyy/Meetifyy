@@ -57,6 +57,7 @@ vi.mock('@shared/lib/supabase', () => ({
 
 const apiCalls = { getState: 0 };
 vi.mock('@shared/api/apiClient', () => ({
+  deriveThumbnailKey: () => null,
   getMediaUrl: (u) => (typeof u === 'string' ? u : ''),
   instantMatchApi: {
     getState: async () => { apiCalls.getState++; return { data: { chat: null, state: { queued: null, pendingMatch: null, recentMatch: null } } }; },
@@ -72,7 +73,7 @@ vi.mock('@shared/context/AuthContext', () => ({
 }));
 vi.mock('@shared/lib/idb', () => ({ idbGet: async () => null, idbSet: async () => {}, idbDelete: async () => {} }));
 vi.mock('@stores/useGlobalSocketStore', () => ({
-  useGlobalSocketStore: Object.assign(() => ({ socket: null, isConnected: true }), {
+  useGlobalSocketStore: Object.assign((sel) => { const st = { socket: null, isConnected: true }; return sel ? sel(st) : st; }, {
     getState: () => ({ socket: null, isConnected: true }),
     subscribe: () => () => {},
   }),
