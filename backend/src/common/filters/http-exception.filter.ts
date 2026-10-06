@@ -7,6 +7,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { Response, Request } from 'express';
+import * as Sentry from '@sentry/nestjs';
 import { httpLine, LOG_CAUSE } from '../logging/log-format';
 import type { ErrorLogRecorder } from '../../observability/error-log.recorder';
 import { requestIdOf } from '../rate-limit/rate-limit.response';
@@ -218,6 +219,35 @@ export class HttpExceptionFilter implements ExceptionFilter {
      * a diagnostics table read by admins is the wrong home for one. The logged
      * line still carries a redacted snippet for the operator tailing logs.
      */
+    // Unexpected failures go to Sentry too, with what is needed to find them:
+    // the route, method, status and request id, and the internal user id only.
+    // 4xx are expected outcomes (validation, auth, not found) and stay out.
+    // A scope per event, so nothing here can bleed into another request's
+    // report. The client still gets exactly the response built above.
+    if (status >= 500) {
+      try {
+        Sentry.withScope((scope) => {
+          const route = resolveRoute(request);
+          scope.setTag('route', route);
+          scope.setTag('http.method', request.method);
+          scope.setTag('http.status_code', String(status));
+          const requestId = requestIdOf(request);
+          if (requestId) scope.setTag('request_id', requestId);
+          const feature = route.split('/').filter(Boolean)[1];
+          if (feature) scope.setTag('feature', feature);
+          if (request.user?.id) scope.setUser({ id: request.user.id });
+          scope.setContext('request', {
+            method: request.method,
+            route,
+            statusCode: status,
+          });
+          Sentry.captureException(exception);
+        });
+      } catch {
+        // Reporting must never turn a handled error into an unhandled one.
+      }
+    }
+
     try {
       this.errorLogs?.record({
         route: resolveRoute(request),

@@ -35,6 +35,11 @@ RUN npx prisma generate
 
 # Compile TypeScript → dist/
 RUN npm run build
+# Stamp each compiled file and its source map with a matching Sentry debug ID.
+# Offline and credential-free: the maps themselves are uploaded by the deploy
+# workflow (only when SENTRY_AUTH_TOKEN is configured), so stack traces in
+# Sentry resolve to the original .ts lines. See docs/sentry.md.
+RUN npx sentry-cli sourcemaps inject dist
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Stage 3 — Production runtime image.

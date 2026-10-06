@@ -98,6 +98,7 @@
     "@nestjs/cli": "^11.0.0",
     "@nestjs/schematics": "^11.0.0",
     "@nestjs/testing": "^11.0.1",
+    "@sentry/cli": "3.8.0",
     "@types/cheerio": "^0.22.35",
     "@types/jest": "^30.0.0",
     "@types/supertest": "^7.0.0",

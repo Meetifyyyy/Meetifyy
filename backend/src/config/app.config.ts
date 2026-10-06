@@ -195,7 +195,23 @@ export const appConfigValues = {
   },
 
   observability: {
+    /**
+     * Sentry. Off unless a DSN is configured; SENTRY_ENABLED=false turns it off
+     * even with one (local debugging against a real project, an incident).
+     * See src/instrument.ts and docs/sentry.md.
+     */
     sentryDsn: str('SENTRY_DSN'),
+    sentryEnabled: bool('SENTRY_ENABLED', { default: 'true' }),
+    /**
+     * Optional, and only ever a cross-check: events are always tagged with
+     * APP_ENV. If this is set and disagrees, Sentry stays off (a production
+     * DSN pasted into a development deployment, or the reverse).
+     */
+    sentryEnvironment: str('SENTRY_ENVIRONMENT'),
+    /** Explicit release; otherwise meetifyy-api@<GIT_COMMIT_SHA>. */
+    sentryRelease: str('SENTRY_RELEASE'),
+    /** The deployed commit, set by the deploy workflows. */
+    gitCommitSha: str('GIT_COMMIT_SHA'),
     sentryTracesSampleRate: num('SENTRY_TRACES_SAMPLE_RATE', {
       default: IS_PRODUCTION ? '0.1' : '1.0',
       min: 0,
