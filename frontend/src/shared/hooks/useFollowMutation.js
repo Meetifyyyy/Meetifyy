@@ -1,4 +1,4 @@
-import { useRef, useCallback } from 'react';
+import { useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { usersApi } from '../api/apiClient';
 import { useAuth } from '../context/AuthContext';
@@ -8,27 +8,22 @@ import {
   writeConfirmedFollowState,
 } from '../utils/followState';
 import { showToast } from '../utils/toast';
+import { requestToggle } from '../utils/serialToggle';
 import { PROFILE_KEYS } from './useProfile';
 
-// Module-level stores so they persist across renders without causing re-renders
-const activeControllers = new Map();   // entityKey -> AbortController
-const pendingTimers = new Map();       // entityKey -> setTimeout ID
-const pendingIntents = new Map();      // entityKey -> boolean (true=follow, false=unfollow)
-
-const DEBOUNCE_MS = 300;
-
 /**
- * Production-grade follow mutation hook with:
- * 1. Instant 0ms optimistic UI updates on every click
- * 2. Request coalescing — only 1 HTTP request per click burst (debounced 300ms)
- * 3. AbortController — cancels in-flight requests when user intent changes
- * 4. Mutation versioning — stale responses never overwrite newer optimistic state
- * 5. One silent refetch only after the FINAL mutation settles
+ * Follow / unfollow:
+ * 1. Instant optimistic UI on every tap.
+ * 2. Requests ordered through serialToggle: one in flight per account, never
+ *    aborted, at most one follow-up per burst. It used to abort the in-flight
+ *    request and send the opposite one, but the server had usually received
+ *    the first already, so both ran in whichever order they landed.
+ * 3. The server's own answer is written as confirmed state once the burst
+ *    settles; a failure restores the state the server actually holds.
  */
 export function useFollowMutation(targetUsername) {
   const { currentUser, updateCurrentUser } = useAuth();
   const queryClient = useQueryClient();
-  const mutationSeqRef = useRef(0);
 
   const cleanTarget = targetUsername?.toLowerCase();
   const cleanCurrent = currentUser?.username?.toLowerCase();
@@ -194,126 +189,61 @@ export function useFollowMutation(targetUsername) {
     }
   }, [queryClient, cleanTarget, cleanCurrent, currentUser, targetUsername, updateCurrentUser]);
 
-  const scheduleRequest = useCallback((intentFollow, mutationId) => {
-    if (!cleanTarget) return;
+  /** The burst has settled on `serverFollowing`: record it and mark lists stale. */
+  const reconcile = useCallback((serverFollowing) => {
+    // Confirmed, not merely observed: this response IS the write. It
+    // re-stamps the per-account clock so any list payload still in flight
+    // from before the action cannot land on top of it.
+    writeConfirmedFollowState(queryClient, cleanTarget, serverFollowing);
 
-    // --- Step 1: Cancel any pending timer for this entity ---
-    if (pendingTimers.has(entityKey)) {
-      clearTimeout(pendingTimers.get(entityKey));
+    // ONE silent background sync — does not update UI (staleTime guard prevents flicker)
+    queryClient.invalidateQueries({ queryKey: PROFILE_KEYS.byUsername(cleanTarget), refetchType: 'none' });
+
+    // Marked stale, NOT refetched — `refetchType: 'none'`.
+    //
+    // An active refetch here is what removed the row you had just acted on.
+    // Unfollowing from your own Following list re-ran the query, the server
+    // correctly no longer returned that account, and it disappeared
+    // mid-click. Worse, an infinite query refetches EVERY loaded page at once,
+    // so on a long list the whole thing was rebuilt and the scroll position
+    // moved under the reader. The optimistic write has already put the rows
+    // in their correct state; the lists refetch when they are next mounted.
+    queryClient.invalidateQueries({ queryKey: ['followers', cleanTarget], refetchType: 'none' });
+    queryClient.invalidateQueries({ queryKey: ['following', cleanTarget], refetchType: 'none' });
+    if (cleanCurrent) {
+      queryClient.invalidateQueries({ queryKey: ['followers', cleanCurrent], refetchType: 'none' });
+      queryClient.invalidateQueries({ queryKey: ['following', cleanCurrent], refetchType: 'none' });
     }
-
-    // --- Step 2: Abort any in-flight request for this entity ---
-    if (activeControllers.has(entityKey)) {
-      activeControllers.get(entityKey).abort();
-      activeControllers.delete(entityKey);
-    }
-
-    // --- Step 3: Record latest pending intent ---
-    pendingIntents.set(entityKey, intentFollow);
-
-    // --- Step 4: Schedule the debounced network call ---
-    const timerId = setTimeout(async () => {
-      pendingTimers.delete(entityKey);
-
-      const finalIntent = pendingIntents.get(entityKey);
-      pendingIntents.delete(entityKey);
-
-      const seq = ++mutationSeqRef.current;
-      const controller = new AbortController();
-      activeControllers.set(entityKey, controller);
-
-      try {
-        const res = finalIntent
-          ? await usersApi.follow(targetUsername, { signal: controller.signal })
-          : await usersApi.unfollow(targetUsername, { signal: controller.signal });
-
-        // Only reconcile if this is still the latest sequence
-        if (seq === mutationSeqRef.current) {
-          activeControllers.delete(entityKey);
-          // Release the pending intent BEFORE writing server state: while the
-          // registry still holds an entry for this key, writeServerFollowState
-          // deliberately declines to write (a newer click would outrank a
-          // response already on the wire).
-          toggleRegistry.clearIfLatest(entityKey, mutationId);
-
-          // The response is the database's own answer — `isFollowing` after
-          // the write. Recording it means the UI is confirmed against the
-          // server on every action rather than trusting the optimistic guess
-          // until something else happens to refetch.
-          const serverFollowing =
-            typeof res?.isFollowing === 'boolean' ? res.isFollowing : finalIntent;
-          // Confirmed, not merely observed: this response IS the write. It
-          // re-stamps the per-account clock so any list payload still in
-          // flight from before the action cannot land on top of it.
-          writeConfirmedFollowState(queryClient, cleanTarget, serverFollowing);
-
-          // ONE silent background sync — does not update UI (staleTime guard prevents flicker)
-          queryClient.invalidateQueries({ queryKey: PROFILE_KEYS.byUsername(cleanTarget), refetchType: 'none' });
-
-          // Marked stale, NOT refetched — `refetchType: 'none'`.
-          //
-          // An active refetch here is what removed the row you had just acted
-          // on. Unfollowing from your own Following list re-ran the query, the
-          // server correctly no longer returned that account, and it
-          // disappeared mid-click. Worse, an infinite query refetches EVERY
-          // loaded page at once, so on a long list the whole thing was rebuilt
-          // and the scroll position moved under the reader.
-          //
-          // The optimistic write above has already put the rows in their
-          // correct state, so nothing on screen is wrong; the lists refetch
-          // when they are next mounted, which for these modals is the next
-          // time one is opened. Same rule as the profile sidebar: an action
-          // changes an item's state, never the list's membership.
-          queryClient.invalidateQueries({ queryKey: ['followers', cleanTarget], refetchType: 'none' });
-          queryClient.invalidateQueries({ queryKey: ['following', cleanTarget], refetchType: 'none' });
-          if (cleanCurrent) {
-            queryClient.invalidateQueries({ queryKey: ['followers', cleanCurrent], refetchType: 'none' });
-            queryClient.invalidateQueries({ queryKey: ['following', cleanCurrent], refetchType: 'none' });
-          }
-          // NOT invalidated, deliberately: ['users', 'recommendations'].
-          // Rebuilding the suggestion list here is what used to make a
-          // followed account vanish from under the cursor. The list is
-          // regenerated when it is next fetched — on a reload, or after its
-          // staleTime — and the account just followed keeps its place until
-          // then, showing "Following".
-        }
-      } catch (err) {
-        activeControllers.delete(entityKey);
-        // If aborted, it means a newer request took over — don't do anything
-        if (err?.name === 'AbortError' || err?.name === 'CanceledError' || err?.code === 'ERR_CANCELED') {
-          toggleRegistry.clearIfLatest(entityKey, mutationId);
-          return;
-        }
-        // If this isn't the latest sequence, swallow the error silently
-        if (seq !== mutationSeqRef.current) {
-          toggleRegistry.clearIfLatest(entityKey, mutationId);
-          return;
-        }
-
-        // Rollback optimistic update for latest-sequence errors
-        applyOptimisticUpdate(!finalIntent);
-        toggleRegistry.clearIfLatest(entityKey, mutationId);
-        showToast('Action failed', 'error');
-      }
-    }, DEBOUNCE_MS);
-
-    pendingTimers.set(entityKey, timerId);
-  }, [entityKey, targetUsername, cleanTarget, cleanCurrent, queryClient, applyOptimisticUpdate]);
+    // NOT invalidated, deliberately: ['users', 'recommendations']. Rebuilding
+    // the suggestion list here made a followed account vanish from under the
+    // cursor; it is regenerated when next fetched.
+  }, [queryClient, cleanTarget, cleanCurrent]);
 
   const toggle = useCallback((intentFollow) => {
-    if (!entityKey) return;
-    // Register intent for UI display (FollowButton reads this via getLatestIntent)
-    // Capture the id so cleanup is scoped to THIS mutation — passing
-    // activeMutations.get(key) back in compared the value to itself, so a
-    // superseded request could clear a newer request's entry.
+    if (!entityKey || !cleanTarget) return;
+    // Register intent for UI display (FollowButton reads this via
+    // getLatestIntent). The id scopes the release to THIS tap, so an older
+    // one can never clear a newer one's entry.
     const mutationId = toggleRegistry.register(entityKey, intentFollow);
-
-    // Step 1: Instant 0ms optimistic UI update
     applyOptimisticUpdate(intentFollow);
 
-    // Step 2: Schedule debounced HTTP request (coalescing)
-    scheduleRequest(intentFollow, mutationId);
-  }, [entityKey, applyOptimisticUpdate, scheduleRequest]);
+    requestToggle(entityKey, intentFollow, {
+      send: (target) => (target ? usersApi.follow(targetUsername) : usersApi.unfollow(targetUsername)),
+      onConfirmed: (target, res, isFinal) => {
+        if (!isFinal) return;
+        // Release the pending intent BEFORE writing server state: while the
+        // registry still holds an entry for this key, writeServerFollowState
+        // deliberately declines to write.
+        toggleRegistry.clearIfLatest(entityKey, mutationId);
+        reconcile(typeof res?.isFollowing === 'boolean' ? res.isFollowing : target);
+      },
+      onFailed: (_err, { desired, confirmed }) => {
+        toggleRegistry.clearIfLatest(entityKey, mutationId);
+        if (desired !== confirmed) applyOptimisticUpdate(confirmed);
+        showToast('Action failed', 'error');
+      },
+    });
+  }, [entityKey, cleanTarget, targetUsername, applyOptimisticUpdate, reconcile]);
 
   return {
     follow: () => toggle(true),
