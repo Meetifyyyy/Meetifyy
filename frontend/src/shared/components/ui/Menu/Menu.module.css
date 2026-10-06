@@ -15,7 +15,9 @@
   padding: 0.25rem;
   border-radius: calc(var(--radius-md) + 2px);
   background: #F1F5F9;
-  border: none;
+  /* A hairline edge so the menu reads as its own surface even where its
+     background is close to the page's (or the shadow is lost on a dark one). */
+  border: 1px solid rgba(15, 23, 42, 0.1);
   box-shadow: var(--shadow-lg);
   /*
    * A menu longer than the screen scrolls inside itself rather than being
@@ -36,6 +38,7 @@
 
 :global([data-theme='dark']) .menu {
   background: #202020;
+  border-color: rgba(255, 255, 255, 0.1);
 }
 
 /*

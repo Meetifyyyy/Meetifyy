@@ -32,12 +32,27 @@
   font-size: 0.9rem;
   font-weight: 600;
   color: var(--color-icon-base);
-  transition: color 0.2s;
   user-select: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
-.communitiesHeader:hover {
-  color: var(--color-icon-base);
+/* Rows press with a soft tint, not a shrink: the app-wide press animation
+   (opted out with data-no-press) scaled a full-width row, which on a phone read
+   as the whole row lurching. The tint arrives fast and leaves slowly, and hover
+   is limited to real pointers — on touch a :hover sticks after the tap, which
+   left the row grey once the finger was gone. */
+@media (hover: hover) and (pointer: fine) {
+  .communityItem:hover {
+    background: var(--color-bg-soft);
+  }
+}
+
+/* The COMMUNITIES header gets no tint at all: it only opens and closes the
+   list, and the chevron turning is its feedback. */
+.communityItem:active,
+.exploreMore:active {
+  background: var(--color-border-light);
+  transition-duration: 0.06s;
 }
 
 .chevronIcon {
@@ -81,7 +96,7 @@
   color: var(--color-icon-base);
   font-size: 0.85rem;
   font-weight: 600;
-  transition: background 0.2s;
+  transition: background-color 0.22s ease;
   min-width: 0;
   -webkit-tap-highlight-color: transparent;
 }
@@ -93,14 +108,6 @@
   flex: 1;
 }
 
-.communityItem:hover {
-  background: var(--color-bg-soft);
-  color: var(--color-icon-base);
-}
-
-.communityItem:active {
-  background: var(--color-border-light);
-}
 
 .emptyCommunities {
   padding: 0.5rem;
@@ -120,15 +127,23 @@
   border-top: 1px solid var(--color-border-light);
   margin-top: 0.25rem;
   padding-top: 0.75rem;
+  border-radius: var(--radius-md);
+  transition: background-color 0.22s ease;
   -webkit-tap-highlight-color: transparent;
 }
 
-.exploreMore:hover {
-  text-decoration: underline;
+@media (hover: hover) and (pointer: fine) {
+  .exploreMore:hover {
+    text-decoration: underline;
+  }
 }
 
 .exploreIcon {
   width: 18px;
   height: 18px;
   flex-shrink: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .communityItem,
+  .exploreMore { transition: none; }
 }

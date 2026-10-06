@@ -23,6 +23,7 @@ export default function CommunitiesBox({ onItemClick, className = '' }) {
       <button
         type="button"
         className={styles.communitiesHeader}
+        data-no-press
         onClick={toggle}
         aria-expanded={isOpen}
       >
@@ -38,6 +39,7 @@ export default function CommunitiesBox({ onItemClick, className = '' }) {
               to={`/communities/${comm.id}`}
               state={{ from: location.pathname }}
               className={styles.communityItem}
+              data-no-press
               onClick={onItemClick}
             >
               <CommunityAvatar community={comm} size={28} />
@@ -51,6 +53,7 @@ export default function CommunitiesBox({ onItemClick, className = '' }) {
           <Link
             to={myCommunities.length > 0 ? '/communities' : '/communities?tab=explore'}
             className={styles.exploreMore}
+            data-no-press
             onClick={onItemClick}
           >
             <Users size={18} className={styles.exploreIcon} aria-hidden="true" />

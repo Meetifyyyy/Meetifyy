@@ -100,6 +100,29 @@ export default function Header({ variant = 'dashboard', wide = false }) {
   // profile fetch into every launch alongside the feed. It is wanted when the
   // drawer opens, and it warms the Profile tab — so it waits for the drawer or
   // for the first screen to settle, whichever comes first.
+  /*
+   * Settings from the drawer.
+   *
+   * The route is a lazy chunk, and the router waits for it before switching:
+   * the first tap used to sit through a network fetch while the drawer slid
+   * shut over a page that had not changed yet, then Settings popped in after.
+   * The chunk is fetched as soon as the drawer opens, so the switch lands with
+   * the slide. (React Router 7 renders the route as a transition, so the
+   * drawer's close still commits first.)
+   *
+   * Navigate BEFORE closing, as before: closing the drawer gives back its
+   * history entry with an async go(-1), which the overlay manager skips once
+   * the URL has moved on. Closing first and navigating later lets that pop
+   * land after the push and take the user straight back out of Settings.
+   */
+  useEffect(() => {
+    if (drawerOpen) import('@features/settings/pages/SettingsRoute').catch(() => {});
+  }, [drawerOpen]);
+  const openSettingsFromDrawer = useCallback(() => {
+    navigate('/settings');
+    setDrawerOpen(false);
+  }, [navigate]);
+
   const [profileWanted, setProfileWanted] = useState(false);
   useEffect(() => {
     if (profileWanted) return undefined;
@@ -251,9 +274,11 @@ export default function Header({ variant = 'dashboard', wide = false }) {
 
         {/* Sticky Drawer Bottom: Settings and Theme Toggle */}
         <div className={styles.drawerBottom}>
-          <button 
+          <button
+            type="button"
             className={styles.drawerSettingsBtn}
-            onClick={() => { navigate('/settings'); setDrawerOpen(false); }}
+            data-no-press
+            onClick={openSettingsFromDrawer}
           >
             <SettingsIcon className={styles.settingsIcon} aria-hidden="true" />
             <span>Settings</span>
