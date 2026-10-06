@@ -82,7 +82,7 @@ export default function VideoViewer({ src: rawSrc, poster: rawPoster, mediaRef, 
    * the app, which is what produced "Couldn't play this video" on every chat
    * video. See useSignedMediaSrc for why a <video> tag cannot authorize itself.
    */
-  const { src, failed: srcFailed, pending: srcPending, refresh: refreshSrc, attempt } = useSignedMediaSrc(rawSrc);
+  const { src, failed: srcFailed, pending: srcPending, refresh: refreshSrc, recover: recoverSrc, attempt } = useSignedMediaSrc(rawSrc);
   // A poster for a conversation attachment is a private key too, so it is signed
   // the same way. A poster that cannot be resolved is cosmetic and just absent.
   const { src: posterSrc } = useSignedMediaSrc(rawPoster || '');
@@ -429,7 +429,7 @@ export default function VideoViewer({ src: rawSrc, poster: rawPoster, mediaRef, 
     const onLoadedMeta   = () => { setDuration(v.duration); setMetaReady(true); };
     const onLoadedData   = () => setFrameReady(true);
     const onLoadStart    = () => { setMetaReady(false); setFrameReady(false); setError(false); };
-    const onError        = () => setError(true);
+    const onError        = () => { if (!recoverSrc()) setError(true); };
     const onVolumeChange = () => { setMuted(v.muted); setVolume(v.volume); };
     const onRateChange   = () => setSpeed(v.playbackRate);
     const onFsChange     = () => setIsFullscreen(!!document.fullscreenElement);
@@ -485,7 +485,7 @@ export default function VideoViewer({ src: rawSrc, poster: rawPoster, mediaRef, 
       document.removeEventListener('fullscreenchange', onFsChange);
       stopProgressLoop();
     };
-  }, [src, isCurrent, attempt, registryId, startProgressLoop, stopProgressLoop, resetHideTimer]);
+  }, [src, isCurrent, attempt, registryId, startProgressLoop, stopProgressLoop, resetHideTimer, recoverSrc]);
 
   // ─── Tab/Page visibility: pause when tab hidden ──────────────────────────
   useEffect(() => {

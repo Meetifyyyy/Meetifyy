@@ -80,7 +80,7 @@ export default function ImageViewer({ src: rawSrc, label = 'Photo', mediaRef, zo
    * cannot be authorized by an <img> tag inside the app, so it is signed first.
    * Non-conversation media passes through untouched.
    */
-  const { src, failed: srcFailed, pending: srcPending, refresh: refreshSrc } = useSignedMediaSrc(rawSrc);
+  const { src, failed: srcFailed, pending: srcPending, refresh: refreshSrc, recover: recoverSrc } = useSignedMediaSrc(rawSrc);
   const [retryAttempt, setRetryAttempt] = useState(0);
   const wrapRef = useRef(null);
   const imgRef = useRef(null);
@@ -576,9 +576,11 @@ export default function ImageViewer({ src: rawSrc, label = 'Photo', mediaRef, zo
   }, [measureVp, measureImg]);
 
   const handleError = useCallback(() => {
+    // A dead signature heals silently: the skeleton stays up while it re-signs.
+    if (recoverSrc()) return;
     setLoaded(true);
     setError(true);
-  }, []);
+  }, [recoverSrc]);
 
   // ─────────────────────────────────────
   // Reset on src change
@@ -597,7 +599,7 @@ export default function ImageViewer({ src: rawSrc, label = 'Photo', mediaRef, zo
       setEntering(true);
     }
     resetState();
-  }, [src, srcPending, retryAttempt, measureVp, measureImg, resetState]);
+  }, [src, retryAttempt, measureVp, measureImg, resetState]);
 
   // ─────────────────────────────────────
   // Resize handler

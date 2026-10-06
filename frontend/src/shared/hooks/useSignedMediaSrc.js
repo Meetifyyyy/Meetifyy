@@ -33,7 +33,7 @@ import { mediaCache } from '@shared/utils/MediaCacheManager';
  * this returns a flag rather than letting callers test `!src`.
  *
  * @param {string} value storage key, /api/media/ URL, absolute URL, blob: or data:
- * @returns {{ src: string, failed: boolean, pending: boolean, refresh: () => void, attempt: number }}
+ * @returns {{ src: string, failed: boolean, pending: boolean, refresh: () => void, recover: () => boolean, attempt: number }}
  *   `failed` is true only once the server has actually declined to sign, which
  *   for a conversation key means the viewer is not a participant or the object
  *   is gone. `refresh` drops the cached URL and signs again — what a retry
@@ -96,8 +96,15 @@ export function useSignedMediaSrc(value) {
       .getUrl(value)
       .then((url) => {
         if (!alive) return;
-        if (url) setSrc(url);
-        else if (!immediate) setFailedFor(value);
+        /*
+         * Keep a URL that is already on screen. Swapping it for the freshly
+         * signed one (a different string for the same object) makes every
+         * <img>/<video> drop what it painted and load again, which is the flicker
+         * on opening a post image. If the immediate URL does not work, the
+         * element's error path calls `refresh`, and a retry never paints one.
+         */
+        if (url && !immediate) setSrc(url);
+        else if (!url && !immediate) setFailedFor(value);
       })
       .catch(() => {
         // Only a failure if there was nothing usable to fall back to.
@@ -112,8 +119,28 @@ export function useSignedMediaSrc(value) {
     };
   }, [value, attempt]);
 
+  /*
+   * Silent self-heal for a URL that stopped working. The first URL painted is
+   * often one picked synchronously (a cached signature, or a derived URL) so
+   * the image shows with no flash and is never swapped afterwards. If that URL
+   * then fails — a signature revoked early, or a page left open past expiry —
+   * the element calls `recover()` from its error handler: the first time for a
+   * value it re-signs and returns true, so the caller keeps its loading state
+   * instead of flashing "unavailable". Only a second failure, on a URL signed
+   * moments ago, is a real one, and then it returns false.
+   */
+  const recoveredForRef = useRef(null);
+  const recover = useCallback(() => {
+    const current = valueRef.current;
+    // Re-requesting the same unsigned URL cannot fix it; let the caller show its error.
+    if (!needsSigning(current) || recoveredForRef.current === current) return false;
+    recoveredForRef.current = current;
+    refresh();
+    return true;
+  }, [refresh]);
+
   const failed = failedFor !== null && failedFor === value;
-  return { src, failed, pending, refresh, attempt };
+  return { src, failed, pending, refresh, recover, attempt };
 }
 
 /** True when the value still has to be exchanged for a fetchable URL. */

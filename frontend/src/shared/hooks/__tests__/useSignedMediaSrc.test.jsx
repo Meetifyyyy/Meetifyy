@@ -57,3 +57,39 @@ describe('useSignedMediaSrc retry', () => {
     expect(result.current.failed).toBe(false);
   });
 });
+
+describe('useSignedMediaSrc first paint and recovery', () => {
+  it('keeps an already-painted URL instead of swapping in a re-signed one', async () => {
+    cache.getSyncUrl.mockReturnValue('https://signed.example/p.jpg?sig=cached');
+    cache.getUrl.mockResolvedValue('https://signed.example/p.jpg?sig=fresh');
+    const { result } = renderHook(() => useSignedMediaSrc('posts/p.jpg'));
+    expect(result.current.src).toBe('https://signed.example/p.jpg?sig=cached');
+
+    await waitFor(() => expect(result.current.pending).toBe(false));
+    expect(result.current.src).toBe('https://signed.example/p.jpg?sig=cached');
+  });
+
+  it('re-signs silently on the first load failure, and only once per value', async () => {
+    cache.getSyncUrl.mockReturnValue('https://signed.example/p.jpg?sig=dead');
+    cache.getUrl.mockResolvedValue('https://signed.example/p.jpg?sig=fresh');
+    const { result } = renderHook(() => useSignedMediaSrc('posts/p.jpg'));
+    await waitFor(() => expect(result.current.pending).toBe(false));
+
+    let healed;
+    act(() => { healed = result.current.recover(); });
+    expect(healed).toBe(true);
+    expect(cache.invalidate).toHaveBeenCalledWith('posts/p.jpg');
+    await waitFor(() => expect(result.current.src).toBe('https://signed.example/p.jpg?sig=fresh'));
+
+    act(() => { healed = result.current.recover(); });
+    expect(healed).toBe(false);
+  });
+
+  it('does not claim to recover a URL that needs no signing', () => {
+    const { result } = renderHook(() => useSignedMediaSrc('https://cdn.example/a.jpg'));
+    let healed;
+    act(() => { healed = result.current.recover(); });
+    expect(healed).toBe(false);
+    expect(result.current.attempt).toBe(0);
+  });
+});

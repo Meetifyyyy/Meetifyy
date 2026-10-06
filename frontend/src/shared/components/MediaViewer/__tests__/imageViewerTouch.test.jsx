@@ -5,7 +5,7 @@ import { act, cleanup, fireEvent, render } from '@testing-library/react';
 
 const signed = vi.hoisted(() => ({ source: { src: 'image.png', failed: false, pending: false }, refresh: vi.fn() }));
 vi.mock('@shared/hooks/useSignedMediaSrc', () => ({
-  useSignedMediaSrc: () => ({ ...signed.source, refresh: signed.refresh, attempt: 0 }),
+  useSignedMediaSrc: () => ({ ...signed.source, refresh: signed.refresh, recover: () => false, attempt: 0 }),
 }));
 vi.mock('../VideoViewer', () => ({ default: () => <video /> }));
 
