@@ -1,6 +1,6 @@
 /* Landing footer.
-   A violet sign-off card with a photo and both doors, then the wordmark and a
-   short blurb beside the link columns and social buttons. */
+   A violet sign-off card with a photo and both doors, then a full-width ink
+   panel: wordmark and blurb, link columns, social links, and a bottom row. */
 
 .footer {
   background: var(--color-bg-white);
@@ -108,20 +108,50 @@
   }
 }
 
-/* ── Links ─────────────────────────────────────────────────────── */
+/* ── Lower panel ───────────────────────────────────────────────── */
+
+.panel {
+  margin-top: clamp(24px, 4vw, 48px);
+  background: #111014;
+  color: #f2f1ee;
+}
+
+.panelInner {
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: clamp(36px, 5vw, 64px) clamp(20px, 4vw, 56px) 0;
+}
 
 .columns {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 32px 24px;
-  padding: clamp(40px, 5vw, 64px) clamp(8px, 1.5vw, 16px) clamp(28px, 4vw, 40px);
+  gap: 36px 24px;
+  padding-bottom: clamp(32px, 4vw, 48px);
+}
+
+.about {
+  grid-column: 1 / -1;
+}
+
+.aboutWordmark {
+  display: block;
+  height: 1.2rem;
+  width: auto;
+  margin-bottom: 16px;
+}
+
+.aboutText {
+  margin: 0;
+  max-width: 34ch;
+  line-height: 1.6;
+  color: rgba(242, 241, 238, 0.62);
 }
 
 .colTitle {
   margin: 0 0 14px;
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: var(--color-text-muted);
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: rgba(242, 241, 238, 0.5);
 }
 
 .list {
@@ -130,29 +160,44 @@
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
 
 .link {
+  position: relative;
   padding: 0;
   border: none;
   background: none;
   font: inherit;
   font-size: 0.98rem;
-  font-weight: 600;
-  color: var(--color-text-main);
+  font-weight: 500;
+  color: #f2f1ee;
   text-decoration: none;
   cursor: pointer;
   text-align: left;
-  transition: color 0.15s ease;
 }
 
-.link:hover {
-  color: var(--color-brand-primary);
+/* An underline that draws in from the left on hover. */
+.link::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -3px;
+  height: 1px;
+  background: currentColor;
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.25s ease;
+}
+
+.link:hover::after {
+  transform: scaleX(1);
 }
 
 .socials {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
 }
 
@@ -162,61 +207,48 @@
   width: 44px;
   height: 44px;
   border-radius: 999px;
-  background: var(--color-bg-alt);
-  color: var(--color-text-main);
-  transition: background 0.15s ease, color 0.15s ease;
+  border: 1px solid rgba(242, 241, 238, 0.16);
+  color: #f2f1ee;
+  transition: background 0.2s ease, border-color 0.2s ease;
 }
 
 .social:hover {
-  background: var(--color-brand-primary);
-  color: #fff;
-}
-
-.socials a:first-child:hover {
-  background: linear-gradient(45deg, #feda75, #d62976 50%, #4f5bd5);
-}
-
-.socials a:last-child:hover {
-  background: #0a66c2;
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.28);
 }
 
 .bottom {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  padding: 18px clamp(8px, 1.5vw, 16px) 28px;
-  border-top: 1px solid var(--color-border);
+  gap: 12px;
+  padding: 20px 0 calc(22px + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .legal {
   margin: 0;
   font-size: 0.85rem;
-  color: var(--color-text-muted);
+  color: rgba(242, 241, 238, 0.5);
 }
 
-/* ── About blurb ───────────────────────────────────────────────── */
-
-.about {
-  grid-column: 1 / -1;
+.toTop {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 1px solid rgba(242, 241, 238, 0.16);
+  border-radius: 999px;
+  background: transparent;
+  color: #f2f1ee;
+  cursor: pointer;
+  transition: background 0.2s ease;
 }
 
-.aboutWordmark {
-  display: block;
-  height: 1.15rem;
-  width: auto;
-  margin-bottom: 14px;
-}
-
-[data-theme="dark"] .aboutWordmark {
-  filter: brightness(0) invert(1);
-}
-
-.aboutText {
-  margin: 0;
-  max-width: 34ch;
-  line-height: 1.55;
-  color: var(--color-text-muted);
+.toTop:hover {
+  background: rgba(255, 255, 255, 0.14);
 }
 
 @media (min-width: 900px) {

@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Menu, X } from '@shared/components/icons';
 import wordmark from '@assets/images/meetifyy_wordmark.svg';
 import { useAuth } from '@shared/context/AuthContext';
 import styles from './LandingNavbar.module.css';
@@ -108,7 +107,12 @@ export default function LandingNavbar() {
             aria-label={menuOpen ? 'Close menu' : 'Open menu'}
             aria-expanded={menuOpen}
           >
-            {menuOpen ? <X size={22} /> : <Menu size={22} />}
+            {/* One drawn icon: the three lines morph into an X and back. */}
+            <span className={`${styles.burger} ${menuOpen ? styles.burgerOpen : ''}`} aria-hidden="true">
+              <span />
+              <span />
+              <span />
+            </span>
           </button>
         </div>
       </header>

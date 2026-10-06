@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { useCookieConsent } from '@shared/context/CookieConsentContext';
-import wordmarkImg from '@assets/images/meetifyy_wordmark.svg';
+import wordmarkImg from '@assets/images/meetifyy_wordmark_dark.svg';
 import stageLights from '../assets/stage-lights.webp';
 import styles from './LandingFooter.module.css';
 
@@ -49,6 +49,11 @@ export default function LandingFooter() {
           />
         </div>
 
+      </div>
+
+      {/* The lower footer: one full-width ink panel in both themes. */}
+      <div className={styles.panel}>
+        <div className={styles.panelInner}>
         <div className={styles.columns}>
           <div className={styles.about}>
             <img src={wordmarkImg} alt="Meetifyy" className={styles.aboutWordmark} />
@@ -92,7 +97,7 @@ export default function LandingFooter() {
                 className={styles.social}
                 aria-label="Instagram"
               >
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <rect x="2" y="2" width="20" height="20" rx="5" />
                   <circle cx="12" cy="12" r="4" />
                   <circle cx="17.5" cy="6.5" r="1" fill="currentColor" stroke="none" />
@@ -105,7 +110,7 @@ export default function LandingFooter() {
                 className={styles.social}
                 aria-label="LinkedIn"
               >
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
                   <path d="M16 8a6 6 0 016 6v7h-4v-7a2 2 0 00-2-2 2 2 0 00-2 2v7h-4v-7a6 6 0 016-6zM2 9h4v12H2z" />
                   <circle cx="4" cy="4" r="2" />
                 </svg>
@@ -115,10 +120,14 @@ export default function LandingFooter() {
         </div>
 
         <div className={styles.bottom}>
-          <p className={styles.legal}>© {new Date().getFullYear()} Meetifyy</p>
-          <p className={styles.legal}>Made for students, by students.</p>
+          <p className={styles.legal}>© {new Date().getFullYear()} Meetifyy · Made for students, by students.</p>
+          <button type="button" className={styles.toTop} onClick={toTop} aria-label="Back to top">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M12 19V5M6 11l6-6 6 6" />
+            </svg>
+          </button>
         </div>
-
+        </div>
       </div>
     </footer>
   );

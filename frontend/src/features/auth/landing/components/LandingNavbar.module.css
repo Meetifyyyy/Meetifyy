@@ -139,6 +139,41 @@
   cursor: pointer;
 }
 
+.burger {
+  position: relative;
+  flex-shrink: 0;
+  /* Lines 8px apart: a step that lands on whole device pixels at 1x, 1.25x,
+     1.5x, 1.75x and 2x, so all three render at the same weight. A 6px step
+     put the middle line between pixels on scaled displays and it blurred. */
+  width: 20px;
+  height: 18px;
+}
+
+.burger > span {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  border-radius: 2px;
+  background: currentColor;
+  transition:
+    transform 0.32s cubic-bezier(0.65, 0, 0.35, 1),
+    opacity 0.2s ease;
+}
+
+.burger > span:nth-child(1) { top: 0; }
+.burger > span:nth-child(2) { top: 8px; }
+.burger > span:nth-child(3) { top: 16px; }
+
+/* Outer lines slide to the middle and cross; the middle one fades. */
+.burgerOpen > span:nth-child(1) { transform: translateY(8px) rotate(45deg); }
+.burgerOpen > span:nth-child(2) { opacity: 0; transform: scaleX(0.2); }
+.burgerOpen > span:nth-child(3) { transform: translateY(-8px) rotate(-45deg); }
+
+@media (prefers-reduced-motion: reduce) {
+  .burger > span { transition: none; }
+}
+
 .mobileMenu {
   position: fixed;
   z-index: 49;
@@ -156,27 +191,47 @@
 .mobileNav {
   display: flex;
   flex-direction: column;
+  /* A global `nav` rule centres its items; rows must span the card. */
+  align-items: stretch;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  counter-reset: menu;
 }
 
 .mobileNavLink {
+  counter-increment: menu;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 14px 14px;
+  gap: 14px;
+  min-height: 56px;
+  margin: 0;
+  padding: 0 8px 0 12px;
   border-radius: 14px;
   font-size: 1.05rem;
   font-weight: 650;
   letter-spacing: -0.015em;
+  text-align: left;
   color: var(--color-text-main);
   text-decoration: none;
 }
 
-.mobileNavLink::after {
-  content: '→';
-  color: var(--color-text-muted);
-  font-weight: 500;
+.mobileNavLink + .mobileNavLink {
+  box-shadow: inset 0 1px 0 var(--color-border);
 }
 
+.mobileNavLink::before {
+  content: counter(menu, decimal-leading-zero);
+  min-width: 1.5em;
+  font-size: 0.75rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-brand-primary);
+}
+
+.mobileNavLink:active {
+  background: var(--color-bg-alt);
+}
 
 .mobileActions {
   display: grid;
