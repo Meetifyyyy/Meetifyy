@@ -101,7 +101,7 @@
 /* Section label: quiet, so the post stays the focus. */
 .commentsHeader {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: 8px;
   padding: 16px 0 4px;
 }
@@ -109,9 +109,10 @@
 .commentsTitle {
   margin: 0;
   font-family: var(--font-family-display);
-  font-size: 0.95rem;
+  font-size: 1rem;
   font-weight: 600;
   line-height: 1.3;
+  letter-spacing: -0.01em;
   color: var(--color-text-main);
 }
 
@@ -120,9 +121,9 @@
   min-width: 20px;
   padding: 1px 7px;
   border-radius: var(--radius-full);
-  background: var(--color-bg-soft);
-  color: var(--color-text-muted);
-  font-size: 0.75rem;
+  background: rgba(var(--color-primary-rgb), 0.1);
+  color: var(--color-primary);
+  font-size: 0.72rem;
   font-weight: 600;
   line-height: 1.5;
   text-align: center;
