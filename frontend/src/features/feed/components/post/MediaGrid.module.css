@@ -1,15 +1,5 @@
 /* MediaGrid.module.css — Dynamic Aspect Ratio Social Media Layout */
 
-.mediaContainer {
-  position: relative;
-  width: 100%;
-  margin-top: 0.65rem;
-  margin-bottom: 0.75rem;
-  border-radius: var(--radius-xl, 20px);
-  overflow: hidden;
-  background: transparent;
-}
-
 /* Single Media Layouts */
 .singleMediaContainer {
   position: relative;
@@ -129,87 +119,113 @@
   opacity: 0;
 }
 
-/* Multi-Image Grid Layouts (2, 3, 4 images) */
-.gridTwo {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 3px;
-  width: 100%;
-  aspect-ratio: 16 / 9;
-  max-height: clamp(200px, calc(40 * var(--app-vh, 1vh)), 340px);
-}
-
-.gridThree {
-  display: grid;
-  grid-template-columns: 1.2fr 1fr;
-  gap: 3px;
-  width: 100%;
-  aspect-ratio: 16 / 9;
-  max-height: clamp(220px, calc(45 * var(--app-vh, 1vh)), 380px);
-}
-
-.gridThreeRight {
-  display: grid;
-  grid-template-rows: 1fr 1fr;
-  gap: 3px;
-  height: 100%;
-}
-
-.gridFour {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  grid-template-rows: 1fr 1fr;
-  gap: 3px;
-  width: 100%;
-  aspect-ratio: 16 / 9;
-  max-height: clamp(240px, calc(50 * var(--app-vh, 1vh)), 400px);
-}
-
-.gridItem {
+/* Multi-media carousel ─────────────────────────────────────────────────────
+ * One row, scrolled natively. Sizes come from mediaLayout.js as ratios of the
+ * row's width and become lengths through container-query units, so they are
+ * exact on the first frame with no measuring:
+ *   --row-h  row height ÷ row width (fixed per set: the card never resizes)
+ *   --a      the tile's frame aspect (its real shape, clamped at extremes)
+ * A tile is the row's height × its aspect, capped at 92% of the row so the next
+ * tile always shows at the edge. */
+.carousel {
   position: relative;
   width: 100%;
+  margin-top: 0.65rem;
+  margin-bottom: 0.75rem;
+  container-type: inline-size;
+}
+
+.carouselTrack {
+  --h: min(calc(var(--row-h, 0.92) * 100cqw), clamp(260px, calc(62 * var(--app-vh, 1vh)), 520px));
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 6px;
+  height: var(--h);
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x mandatory;
+  scroll-padding-inline: 0;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x pan-y;
+  scrollbar-width: none;
+  border-radius: var(--radius-xl, 20px);
+}
+
+.carouselTrack::-webkit-scrollbar {
+  display: none;
+}
+
+.carouselItem {
+  position: relative;
+  flex: 0 0 auto;
+  width: min(calc(var(--h) * var(--a, 1)), 92cqw);
   height: 100%;
   overflow: hidden;
   cursor: pointer;
   border-radius: var(--radius-xl, 20px);
+  scroll-snap-align: start;
+  contain: layout paint;
 }
 
-[data-theme="dark"] .gridItem {
-  /* Removed decorative background */
-}
-
-.gridImage {
+.carouselImage {
+  display: block;
   width: 100%;
   height: 100%;
+  /* The tile already has the media's shape, so cover crops nothing; it only
+     matters for the extreme shapes frameFor clamps, and for a legacy item
+     whose size was unknown when the row was laid out. */
   object-fit: cover;
-  display: block;
-  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), filter 0.25s ease;
+  user-select: none;
+  -webkit-user-drag: none;
 }
 
-.gridItem:hover .gridImage {
-  filter: brightness(0.96);
+/* Only frames that differ from the media's shape crop; the rest already fit. */
+.cropped {
+  object-fit: cover;
 }
 
-/* Overlay count badge (+N remaining) */
-.moreOverlay {
-  position: absolute;
-  inset: 0;
-  background: rgba(15, 23, 42, 0.55);
-  backdrop-filter: blur(4px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #ffffff;
-  font-family: var(--font-family-display, sans-serif);
-  font-size: 1.6rem;
-  font-weight: 700;
-  border-radius: inherit;
-  z-index: 2;
-  transition: background 0.2s ease;
+.carouselArrow {
+  display: none;
 }
 
-.gridItem:hover .moreOverlay {
-  background: rgba(15, 23, 42, 0.65);
+@media (hover: hover) and (pointer: fine) {
+  .carouselArrow {
+    position: absolute;
+    top: 50%;
+    z-index: 12;
+    display: grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: rgba(15, 23, 42, 0.6);
+    color: #fff;
+    cursor: pointer;
+    opacity: 0;
+    transform: translateY(-50%);
+    /* The one press effect (the global press animation is opted out with
+       data-no-press, so the two never stack). */
+    transition: opacity 0.18s ease, transform 0.12s ease, background-color 0.12s ease;
+  }
+
+  .carouselArrow:hover {
+    background: rgba(15, 23, 42, 0.78);
+  }
+
+  .carouselArrow:active {
+    transform: translateY(-50%) scale(0.9);
+  }
+
+  .carousel:hover .carouselArrow,
+  .carouselArrow:focus-visible {
+    opacity: 1;
+  }
+
+  .carouselPrev { left: 8px; }
+  .carouselNext { right: 8px; }
 }
 
 /* Single Video Wrapper & Element */
@@ -506,16 +522,13 @@
     border-radius: var(--radius-lg, 16px);
   }
 
-  .gridTwo {
-    max-height: 220px;
+  .carouselTrack {
+    --h: min(calc(var(--row-h, 0.92) * 100cqw), clamp(240px, calc(56 * var(--app-vh, 1vh)), 440px));
+    border-radius: var(--radius-lg, 16px);
   }
 
-  .gridThree {
-    max-height: 240px;
-  }
-
-  .gridFour {
-    max-height: 260px;
+  .carouselItem {
+    border-radius: var(--radius-lg, 16px);
   }
 }
 

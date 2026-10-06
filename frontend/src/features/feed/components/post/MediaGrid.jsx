@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef, memo, useCallback, useId } from 'react';
+import { useState, useEffect, useRef, memo, useCallback, useId, useMemo } from 'react';
+import { aspectOf, frameFor, carouselHeightRatio, carouselLayout } from '@shared/utils/mediaLayout';
 import { mediaCache } from '@shared/utils/MediaCacheManager';
 import { deriveThumbnailKey, getMediaUrl } from '@shared/api/apiClient';
 import { Play, Pause, VolumeHigh, VolumeOff, Maximize } from '@shared/components/icons';
@@ -520,14 +521,37 @@ function useNearViewport() {
   return [setEl, near];
 }
 
+/*
+ * Per-item state is keyed by the item's own source, never by its position.
+ *
+ * It was keyed by index. Removing an attachment shifted every later item down
+ * one slot, so each inherited its neighbour's "loaded"/"failed"/size state (a
+ * loaded tile could flash its skeleton, a fresh one could show as loaded), and
+ * carousel tiles keyed `${index}:…` all remounted and reloaded their images.
+ */
+const itemKey = (item) => item?.rawSrc || '';
+
 export function MediaGrid({ media, onMediaClick, onRemove, authorName }) {
-  const [mediaList, setMediaList] = useState(() => normalizeMedia(media));
+  /*
+   * What is shown is derived from `media` during render, with resolved URLs
+   * laid over it. It used to be a copy in state, updated only after the async
+   * URL resolution below, so removing an attachment showed up a frame or more
+   * late — and the whole grid re-rendered from scratch when it did.
+   */
+  const [resolvedByKey, setResolvedByKey] = useState({});
+  const normalized = useMemo(() => normalizeMedia(media), [media]);
+  const mediaList = useMemo(
+    () => normalized.map((item) => resolvedByKey[itemKey(item)] ?? item),
+    [normalized, resolvedByKey],
+  );
+  const keyAt = (index) => itemKey(mediaList[index]);
+
   const [loadedStates, setLoadedStates] = useState(() => {
     const initial = {};
-    normalizeMedia(media).forEach((item, index) => {
+    normalizeMedia(media).forEach((item) => {
       const src = item?.url || item?.fullUrl;
       if (src && loadedUrlCache.has(src)) {
-        initial[index] = true;
+        initial[itemKey(item)] = true;
       }
     });
     return initial;
@@ -544,22 +568,32 @@ export function MediaGrid({ media, onMediaClick, onRemove, authorName }) {
   const [singleTileRef, singleTileNear] = useNearViewport();
   const [naturalAspects, setNaturalAspects] = useState(() => {
     const initial = {};
-    normalizeMedia(media).forEach((item, index) => {
+    normalizeMedia(media).forEach((item) => {
       const src = item?.url || item?.fullUrl || item?.rawSrc;
       if (src && naturalAspectCache.has(src)) {
-        initial[index] = naturalAspectCache.get(src);
+        initial[itemKey(item)] = naturalAspectCache.get(src);
       }
     });
     return initial;
   });
   const [inlinePlaying, setInlinePlaying] = useState({});
 
+  /*
+   * The carousel row's height, from the shapes known when the set is first
+   * shown — declared dimensions, or ones measured on an earlier mount. Keyed by
+   * the set itself, not by `naturalAspects`, so a tile that measures itself
+   * later only changes its own width: the card's height never moves.
+   */
+  const itemsKey = mediaList.map((m) => m.rawSrc).join('|');
+  const carouselHeight = useMemo(
+    () => carouselHeightRatio(mediaList.map((m) => aspectOf(m) ?? naturalAspectCache.get(m.rawSrc) ?? null)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- frozen per set on purpose, see above
+    [itemsKey],
+  );
+
   useEffect(() => {
     const list = normalizeMedia(media);
-    if (!list.length) {
-      setMediaList([]);
-      return;
-    }
+    if (!list.length) return undefined;
 
     let isMounted = true;
 
@@ -589,17 +623,18 @@ export function MediaGrid({ media, onMediaClick, onRemove, authorName }) {
       }
     })).then(resolvedList => {
       if (!isMounted) return;
-      // Bail out if the resolved items have identical URLs to avoid triggering re-renders & image reloads
-      setMediaList((prevList) => {
-        if (prevList.length === resolvedList.length) {
-          const isSame = prevList.every((oldItem, i) => {
-            const newItem = resolvedList[i];
-            return oldItem.url === newItem.url && oldItem.fullUrl === newItem.fullUrl
-              && oldItem.posterUrl === newItem.posterUrl;
-          });
-          if (isSame) return prevList;
-        }
-        return resolvedList;
+      // Merge per item, and keep the previous object when nothing changed, so
+      // an unchanged tile keeps its <img> (and its decoded pixels) untouched.
+      setResolvedByKey((prev) => {
+        let changed = false;
+        const next = { ...prev };
+        resolvedList.forEach((item) => {
+          const old = prev[itemKey(item)];
+          if (old && old.url === item.url && old.fullUrl === item.fullUrl && old.posterUrl === item.posterUrl) return;
+          next[itemKey(item)] = item;
+          changed = true;
+        });
+        return changed ? next : prev;
       });
       // These URLs are newly resolved, so any earlier failure was against a
       // different (unresolved) src and should not suppress them.
@@ -621,7 +656,7 @@ export function MediaGrid({ media, onMediaClick, onRemove, authorName }) {
       markThumbnailMissing(failedThumb);
       e.target.removeAttribute('data-failed-thumb');
     }
-    setLoadedStates((prev) => (prev[index] ? prev : { ...prev, [index]: true }));
+    setLoadedStates((prev) => (prev[keyAt(index)] ? prev : { ...prev, [keyAt(index)]: true }));
     const src = mediaList[index]?.url || mediaList[index]?.fullUrl;
     rememberLoaded(src);
 
@@ -631,9 +666,9 @@ export function MediaGrid({ media, onMediaClick, onRemove, authorName }) {
       const aspect = naturalWidth / naturalHeight;
       rememberAspect(src, aspect);
       rememberAspect(mediaList[index]?.rawSrc, aspect);
-      setNaturalAspects((prev) => (prev[index] === aspect ? prev : {
+      setNaturalAspects((prev) => (prev[keyAt(index)] === aspect ? prev : {
         ...prev,
-        [index]: aspect,
+        [keyAt(index)]: aspect,
       }));
     }
   };
@@ -685,18 +720,18 @@ export function MediaGrid({ media, onMediaClick, onRemove, authorName }) {
     // URL resolution finished a moment later and re-rendered with a working
     // src, the element stayed blank forever — the imperative hide outlived the
     // reason for it. Driving it from state means a resolved URL simply renders.
-    setFailedStates((prev) => ({ ...prev, [index]: true }));
-    setLoadedStates((prev) => ({ ...prev, [index]: true }));
+    setFailedStates((prev) => ({ ...prev, [keyAt(index)]: true }));
+    setLoadedStates((prev) => ({ ...prev, [keyAt(index)]: true }));
   };
 
   /** A video tile's poster failed: fall back to its first frame. */
   const handlePosterError = (index) => {
-    setPosterFailed((prev) => (prev[index] ? prev : { ...prev, [index]: true }));
+    setPosterFailed((prev) => (prev[keyAt(index)] ? prev : { ...prev, [keyAt(index)]: true }));
   };
 
   /** What a grid tile paints: the image, or a video's poster (never the MP4). */
   const tileSrc = (item, index) => (item.isVideo
-    ? (posterFailed[index] ? null : item.posterUrl || null)
+    ? (posterFailed[keyAt(index)] ? null : item.posterUrl || null)
     : item.url || (item.rawSrc ? getMediaUrl(item.rawSrc) : null));
 
   const onTileError = (index, e) => (mediaList[index]?.isVideo
@@ -707,8 +742,8 @@ export function MediaGrid({ media, onMediaClick, onRemove, authorName }) {
     // The first frame loaded after the poster failed: the network is fine, so
     // the poster genuinely does not exist. Remember it.
     const item = mediaList[index];
-    if (posterFailed[index] && item?.posterKey) markThumbnailMissing(item.posterKey);
-    setLoadedStates((prev) => (prev[index] ? prev : { ...prev, [index]: true }));
+    if (posterFailed[keyAt(index)] && item?.posterKey) markThumbnailMissing(item.posterKey);
+    setLoadedStates((prev) => (prev[keyAt(index)] ? prev : { ...prev, [keyAt(index)]: true }));
     const src = mediaList[index]?.url || mediaList[index]?.fullUrl;
     rememberLoaded(src);
 
@@ -718,9 +753,9 @@ export function MediaGrid({ media, onMediaClick, onRemove, authorName }) {
       const aspect = vw / vh;
       rememberAspect(src, aspect);
       rememberAspect(mediaList[index]?.rawSrc, aspect);
-      setNaturalAspects((prev) => (prev[index] === aspect ? prev : {
+      setNaturalAspects((prev) => (prev[keyAt(index)] === aspect ? prev : {
         ...prev,
-        [index]: aspect,
+        [keyAt(index)]: aspect,
       }));
     }
   };
@@ -776,7 +811,7 @@ export function MediaGrid({ media, onMediaClick, onRemove, authorName }) {
       aria-label={openerLabel(index, 'Play')}
       onClick={(e) => {
         e.stopPropagation();
-        setInlinePlaying((prev) => ({ ...prev, [index]: true }));
+        setInlinePlaying((prev) => ({ ...prev, [keyAt(index)]: true }));
       }}
     />
   );
@@ -799,22 +834,21 @@ export function MediaGrid({ media, onMediaClick, onRemove, authorName }) {
     const item = mediaList[0];
 
     // Read natural/metadata aspect ratio directly without forcing into any common ratio
-    const aspect =
-      naturalAspects[0] ||
-      item.aspectRatio ||
-      (item.width && item.height ? item.width / item.height : null) ||
-      (item.raw?.width && item.raw?.height ? item.raw.width / item.raw.height : null) ||
-      (item.isVideo ? 16 / 9 : 1.25);
+    // Declared size first: it is known before load, so the frame is final on
+    // the first paint. A measured size covers older rows that never stored one.
+    const declared = aspectOf(item) ?? naturalAspects[keyAt(0)] ?? null;
+    const frame = frameFor(declared ?? (item.isVideo ? 16 / 9 : 1.25));
+    const aspect = frame.aspect;
 
     const isPortrait = aspect < 1;
 
     if (item.isVideo) {
-      const isLoaded = loadedStates[0];
-      const isPlayingInline = Boolean(inlinePlaying[0]);
+      const isLoaded = loadedStates[keyAt(0)];
+      const isPlayingInline = Boolean(inlinePlaying[keyAt(0)]);
       const rawPoster = item.raw?.poster || item.raw?.thumbnail || item.raw?.thumbnailUrl;
       const posterUrl = rawPoster
         ? getMediaUrl(rawPoster)
-        : (posterFailed[0] ? null : item.posterUrl || null);
+        : (posterFailed[keyAt(0)] ? null : item.posterUrl || null);
       const mediaSrc = item.url || (item.rawSrc ? getMediaUrl(item.rawSrc) : null);
 
       if (isPlayingInline && mediaSrc) {
@@ -837,7 +871,7 @@ export function MediaGrid({ media, onMediaClick, onRemove, authorName }) {
           }`}
           onClick={(e) => {
             e.stopPropagation();
-            setInlinePlaying((prev) => ({ ...prev, 0: true }));
+            setInlinePlaying((prev) => ({ ...prev, [keyAt(0)]: true }));
           }}
         >
           <div
@@ -854,13 +888,13 @@ export function MediaGrid({ media, onMediaClick, onRemove, authorName }) {
                 decoding="async"
                 onLoad={(e) => handleImageLoad(0, e)}
                 onError={() => handlePosterError(0)}
-                style={{ visibility: failedStates[0] ? 'hidden' : undefined }}
+                style={{ visibility: failedStates[keyAt(0)] ? 'hidden' : undefined }}
                 ref={(imgEl) => {
-                  if (imgEl && imgEl.complete && imgEl.naturalWidth && !loadedStates[0]) {
+                  if (imgEl && imgEl.complete && imgEl.naturalWidth && !loadedStates[keyAt(0)]) {
                     handleImageLoad(0, { target: imgEl });
                   }
                 }}
-                className={`${styles.singleVideo} ${
+                className={`${styles.singleVideo} ${frame.crop ? styles.cropped : ''} ${
                   isLoaded ? styles.loaded : styles.loading
                 }`}
               />
@@ -873,7 +907,7 @@ export function MediaGrid({ media, onMediaClick, onRemove, authorName }) {
                 onLoadedMetadata={(e) => handleVideoLoaded(0, e)}
                 onLoadedData={(e) => handleVideoLoaded(0, e)}
                 ref={(vidEl) => {
-                  if (vidEl && vidEl.readyState >= 1 && !loadedStates[0]) {
+                  if (vidEl && vidEl.readyState >= 1 && !loadedStates[keyAt(0)]) {
                     handleVideoLoaded(0, { target: vidEl });
                   }
                 }}
@@ -894,7 +928,7 @@ export function MediaGrid({ media, onMediaClick, onRemove, authorName }) {
       );
     }
 
-    const isLoaded = loadedStates[0];
+    const isLoaded = loadedStates[keyAt(0)];
     const imageSrc = item.url || (item.rawSrc ? getMediaUrl(item.rawSrc) : null);
 
     return (
@@ -916,14 +950,14 @@ export function MediaGrid({ media, onMediaClick, onRemove, authorName }) {
               decoding="async"
               onLoad={(e) => handleImageLoad(0, e)}
               onError={(e) => handleImageError(0, e)}
-              style={{ visibility: failedStates[0] ? 'hidden' : undefined }}
+              style={{ visibility: failedStates[keyAt(0)] ? 'hidden' : undefined }}
               ref={(imgEl) => {
-                if (imgEl && imgEl.complete && imgEl.naturalWidth && !loadedStates[0]) {
+                if (imgEl && imgEl.complete && imgEl.naturalWidth && !loadedStates[keyAt(0)]) {
                   handleImageLoad(0, { target: imgEl });
                 }
               }}
               onClick={(e) => handleItemClick(e, 0)}
-              className={`${styles.singleImage} ${
+              className={`${styles.singleImage} ${frame.crop ? styles.cropped : ''} ${
                 isLoaded ? styles.loaded : styles.loading
               }`}
             />
@@ -935,148 +969,147 @@ export function MediaGrid({ media, onMediaClick, onRemove, authorName }) {
     );
   }
 
-  // Two Images (Side-by-side)
-  if (mediaList.length === 2) {
-    return (
-      <div className={styles.mediaContainer}>
-        <div className={styles.gridTwo}>
-          {mediaList.map((item, index) => {
-            const imgSrc = tileSrc(item, index);
-            return (
-              <div key={index} className={styles.gridItem} onClick={(e) => handleItemClick(e, index)}>
-                {!loadedStates[index] && <div className={styles.skeleton} />}
-                {imgSrc && (
-                  <img
-                    src={imgSrc}
-                    alt={`Media ${index + 1}`}
-                    loading="lazy"
-                    decoding="async"
-                    onLoad={(e) => handleImageLoad(index, e)}
-                    onError={(e) => onTileError(index, e)}
-                    style={{ visibility: failedStates[index] ? 'hidden' : undefined }}
-                    className={`${styles.gridImage} ${loadedStates[index] ? styles.loaded : styles.loading}`}
-                  />
-                )}
-                {item.isVideo && (
-                  <div className={styles.playButtonOverlay} aria-label="Play video">
-                    <svg className={styles.playIcon} viewBox="0 0 24 24">
-                      <path d="M8 5v14l11-7z" />
-                    </svg>
-                  </div>
-                )}
-                {renderOpener(index)}
-                {renderRemoveButton(index)}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    );
-  }
+  // Two or more: one horizontal row, sized from each item's real shape.
+  return (
+    <MediaCarousel
+      items={mediaList}
+      heightRatio={carouselHeight}
+      naturalAspects={naturalAspects}
+      loadedStates={loadedStates}
+      failedStates={failedStates}
+      tileSrc={tileSrc}
+      onTileLoad={handleImageLoad}
+      onTileError={onTileError}
+      onItemClick={handleItemClick}
+      renderOpener={renderOpener}
+      renderRemoveButton={renderRemoveButton}
+    />
+  );
+}
 
-  // Three Images (1 Main Left + 2 Stacked Right)
-  if (mediaList.length === 3) {
-    const firstImgSrc = tileSrc(mediaList[0], 0);
-    return (
-      <div className={styles.mediaContainer}>
-        <div className={styles.gridThree}>
-          <div className={styles.gridItem} onClick={(e) => handleItemClick(e, 0)}>
-            {!loadedStates[0] && <div className={styles.skeleton} />}
-            {firstImgSrc && (
-              <img
-                src={firstImgSrc}
-                alt="Media 1"
-                loading="lazy"
-                decoding="async"
-                onLoad={(e) => handleImageLoad(0, e)}
-                onError={(e) => onTileError(0, e)}
-                style={{ visibility: failedStates[0] ? 'hidden' : undefined }}
-                className={`${styles.gridImage} ${loadedStates[0] ? styles.loaded : styles.loading}`}
-              />
-            )}
-            {mediaList[0].isVideo && (
-              <div className={styles.playButtonOverlay} aria-label="Play video">
-                <svg className={styles.playIcon} viewBox="0 0 24 24">
-                  <path d="M8 5v14l11-7z" />
-                </svg>
-              </div>
-            )}
-            {renderOpener(0)}
-            {renderRemoveButton(0)}
-          </div>
-          <div className={styles.gridThreeRight}>
-            {mediaList.slice(1, 3).map((item, idx) => {
-              const index = idx + 1;
-              const subSrc = tileSrc(item, index);
-              return (
-                <div key={index} className={styles.gridItem} onClick={(e) => handleItemClick(e, index)}>
-                  {!loadedStates[index] && <div className={styles.skeleton} />}
-                  {subSrc && (
-                    <img
-                      src={subSrc}
-                      alt={`Media ${index + 1}`}
-                      loading="lazy"
-                      decoding="async"
-                      onLoad={(e) => handleImageLoad(index, e)}
-                      onError={(e) => onTileError(index, e)}
-                      style={{ visibility: failedStates[index] ? 'hidden' : undefined }}
-                      className={`${styles.gridImage} ${loadedStates[index] ? styles.loaded : styles.loading}`}
-                    />
-                  )}
-                  {item.isVideo && (
-                    <div className={styles.playButtonOverlay} aria-label="Play video">
-                      <svg className={styles.playIcon} viewBox="0 0 24 24">
-                        <path d="M8 5v14l11-7z" />
-                      </svg>
-                    </div>
-                  )}
-                  {renderOpener(index)}
-                  {renderRemoveButton(index)}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-    );
-  }
+/**
+ * A horizontally scrolling row of media tiles.
+ *
+ * Native scrolling, not a JS gesture: touch, trackpad and shift-wheel all work
+ * with the platform's own physics, and scroll-snap lands each swipe on an item.
+ * The row's height is fixed by the parent from the items' known shapes, so the
+ * card never changes height while swiping or while tiles load; each tile's
+ * width is its height times its own aspect, capped so the next tile always
+ * shows at the edge.
+ *
+ * The arrow buttons exist for a mouse with no horizontal wheel. They are only
+ * shown to fine pointers that hover; touch and trackpad users just swipe.
+ */
+const MediaCarousel = memo(function MediaCarousel({
+  items,
+  heightRatio,
+  naturalAspects,
+  loadedStates,
+  failedStates,
+  tileSrc,
+  onTileLoad,
+  onTileError,
+  onItemClick,
+  renderOpener,
+  renderRemoveButton,
+}) {
+  const scrollerRef = useRef(null);
+  const keyAt = (index) => itemKey(items[index]);
+  const [edges, setEdges] = useState({ start: true, end: false });
 
-  // Four or More Images (2x2 Grid)
-  const displayItems = mediaList.slice(0, 4);
-  const totalCount = mediaList.length;
+  const updateEdges = useCallback(() => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    const start = el.scrollLeft <= 2;
+    const end = el.scrollLeft + el.clientWidth >= el.scrollWidth - 2;
+    setEdges((prev) => (prev.start === start && prev.end === end ? prev : { start, end }));
+  }, []);
+
+  useEffect(() => {
+    const el = scrollerRef.current;
+    if (!el) return undefined;
+    let frame = 0;
+    const onScroll = () => {
+      if (frame) return;
+      frame = requestAnimationFrame(() => { frame = 0; updateEdges(); });
+    };
+    updateEdges();
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => {
+      el.removeEventListener('scroll', onScroll);
+      if (frame) cancelAnimationFrame(frame);
+    };
+  }, [updateEdges, items.length]);
+
+  /*
+   * Scroll straight to the neighbouring tile's snap point. Scrolling by a
+   * fraction of the width landed between tiles, and scroll-snap then pulled it
+   * the rest of the way: two motions for one click.
+   */
+  const step = (dir) => (e) => {
+    e.stopPropagation();
+    const el = scrollerRef.current;
+    if (!el) return;
+    const starts = Array.from(el.children, (c) => c.offsetLeft - el.firstElementChild.offsetLeft);
+    const maxLeft = el.scrollWidth - el.clientWidth;
+    const here = el.scrollLeft;
+    const target = dir > 0
+      ? starts.find((x) => x > here + 2) ?? maxLeft
+      : [...starts].reverse().find((x) => x < here - 2) ?? 0;
+    const reduce = typeof window !== 'undefined'
+      && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    el.scrollTo({ left: Math.min(target, maxLeft), behavior: reduce ? 'auto' : 'smooth' });
+  };
+
+  const layout = carouselLayout(
+    items.map((item) => aspectOf(item) ?? naturalAspects[itemKey(item)] ?? null),
+    heightRatio,
+  );
 
   return (
-    <div className={styles.mediaContainer}>
-      <div className={styles.gridFour}>
-        {displayItems.map((item, index) => {
-          const isLast = index === 3 && totalCount > 4;
-          const overlayCount = totalCount - 3; // +2 for 5, +3 for 6
-          const subSrc = tileSrc(item, index);
+    <div className={styles.carousel} style={{ '--row-h': heightRatio }}>
+      <div
+        ref={scrollerRef}
+        className={styles.carouselTrack}
+        role="group"
+        aria-label={`${items.length} attachments, scroll sideways for more`}
+      >
+        {items.map((item, index) => {
+          const src = tileSrc(item, index);
+          const frame = layout.items[index];
           return (
-            <div key={index} className={styles.gridItem} onClick={(e) => handleItemClick(e, index)}>
-              {!loadedStates[index] && <div className={styles.skeleton} />}
-              {subSrc && (
+            <div
+              key={itemKey(item) || index}
+              className={styles.carouselItem}
+              style={{ '--a': frame.aspect }}
+              onClick={(e) => onItemClick(e, index)}
+            >
+              {!loadedStates[keyAt(index)] && <div className={styles.skeleton} />}
+              {src && (
                 <img
-                  src={subSrc}
+                  src={src}
                   alt={`Media ${index + 1}`}
-                  loading="lazy"
+                  loading={index < 2 ? 'eager' : 'lazy'}
                   decoding="async"
-                  onLoad={(e) => handleImageLoad(index, e)}
+                  draggable={false}
+                  onLoad={(e) => onTileLoad(index, e)}
                   onError={(e) => onTileError(index, e)}
-                  style={{ visibility: failedStates[index] ? 'hidden' : undefined }}
-                  className={`${styles.gridImage} ${loadedStates[index] ? styles.loaded : styles.loading}`}
+                  ref={(imgEl) => {
+                    if (imgEl && imgEl.complete && imgEl.naturalWidth && !loadedStates[keyAt(index)]) {
+                      onTileLoad(index, { target: imgEl });
+                    }
+                  }}
+                  style={{ visibility: failedStates[keyAt(index)] ? 'hidden' : undefined }}
+                  className={`${styles.carouselImage} ${
+                    loadedStates[keyAt(index)] ? styles.loaded : styles.loading
+                  }`}
                 />
               )}
-              {item.isVideo && !isLast && (
+              {item.isVideo && (
                 <div className={styles.playButtonOverlay} aria-label="Play video">
                   <svg className={styles.playIcon} viewBox="0 0 24 24">
                     <path d="M8 5v14l11-7z" />
                   </svg>
-                </div>
-              )}
-              {isLast && (
-                <div className={styles.moreOverlay}>
-                  <span>+{overlayCount}</span>
                 </div>
               )}
               {renderOpener(index)}
@@ -1085,8 +1118,18 @@ export function MediaGrid({ media, onMediaClick, onRemove, authorName }) {
           );
         })}
       </div>
+      {!edges.start && (
+        <button type="button" data-no-press className={`${styles.carouselArrow} ${styles.carouselPrev}`} aria-label="Previous attachment" onClick={step(-1)}>
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
+        </button>
+      )}
+      {!edges.end && (
+        <button type="button" data-no-press className={`${styles.carouselArrow} ${styles.carouselNext}`} aria-label="Next attachment" onClick={step(1)}>
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
+        </button>
+      )}
     </div>
   );
-}
+});
 
 export default memo(MediaGrid);
