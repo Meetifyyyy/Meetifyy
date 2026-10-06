@@ -116,7 +116,53 @@ export function installSystemBars(systemBars, { readEdges } = {}) {
    * style, layout and paint — so a colour written here is the colour of the
    * very frame that shows the DOM change that prompted it.
    */
+  /*
+   * Moments when the page's edge is in motion and sampling it would capture a
+   * transient, not the page:
+   *
+   *  - A pull-to-refresh on screen (`data-pull-active`, set by PullToRefresh).
+   *    The gesture slides a full-width surface down from the top edge — white
+   *    in the light theme — and sampling mid-pull painted the status bar white
+   *    until the refresh settled, about a second later.
+   *  - A scroll-through screen (Home, `data-bars-scroll-through`) with its
+   *    chrome hidden, or with the chrome still sliding back. The strips are
+   *    transparent there by CSS alone, in the frame the chrome hides; sampling
+   *    while the header was mid-slide used to catch either the header or the
+   *    feed and swap the bar's colour a beat later.
+   *
+   * During either, the strips keep the colours they had and the next settled
+   * sample takes over. Nothing else changes: every other screen and moment
+   * samples exactly as before.
+   */
+  const CHROME_SLIDE_MS = 320;
+  let chromeWasHidden = false;
+  let chromeShownAt = -Infinity;
+  let afterSlide = 0;
+  const edgeInMotion = () => {
+    if (root.hasAttribute('data-pull-active')) return true;
+    const hidden = root.hasAttribute('data-chrome-hidden');
+    if (chromeWasHidden && !hidden) {
+      chromeShownAt = performance.now();
+      clearTimeout(afterSlide);
+      // One sample once the slide back has finished.
+      afterSlide = setTimeout(() => schedule(), CHROME_SLIDE_MS + 20);
+    }
+    chromeWasHidden = hidden;
+    if (!root.hasAttribute('data-bars-scroll-through')) return false;
+    return hidden || performance.now() - chromeShownAt < CHROME_SLIDE_MS;
+  };
+
   const sample = () => {
+    if (edgeInMotion()) {
+      // Where the strips are transparent (chrome hidden on a scroll-through
+      // screen) the icons sit on the page itself, so they follow the theme.
+      if (root.hasAttribute('data-bars-scroll-through') && root.hasAttribute('data-chrome-hidden')
+        && !root.hasAttribute('data-pull-active')) {
+        const darkTheme = root.getAttribute('data-theme') === 'dark';
+        systemBars.setIcons?.({ status: darkTheme, navigation: darkTheme });
+      }
+      return;
+    }
     const topTransparent =
       root.hasAttribute('data-collapsing-header') || root.getAttribute('data-bars') === 'transparent';
     const bottomTransparent = root.getAttribute('data-navigation-bar') === 'transparent';
@@ -191,6 +237,9 @@ export function installSystemBars(systemBars, { readEdges } = {}) {
       // behind them is what the strips continue once they have.
       'data-chrome-hidden',
       'data-no-bottom-nav',
+      // A pull-to-refresh starting and settling (see edgeInMotion).
+      'data-pull-active',
+      'data-bars-scroll-through',
     ],
   });
 
@@ -235,6 +284,7 @@ export function installSystemBars(systemBars, { readEdges } = {}) {
   return () => {
     if (frame) cancelAnimationFrame(frame);
     clearTimeout(settle);
+    clearTimeout(afterSlide);
     observer.disconnect();
     pageObserver.disconnect();
     window.removeEventListener('popstate', scheduleWithSettle);

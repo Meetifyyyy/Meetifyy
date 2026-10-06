@@ -68,6 +68,10 @@ export default function PullToRefresh({
    */
   const paint = useCallback((distance, dragging) => {
     const d = Math.max(0, distance);
+    // While any of the pull is on screen the top edge is in motion, so the
+    // system-bar sampler holds its colours (see installSystemBars). Cleared
+    // once the spring back has finished, below.
+    if (d > 0) document.documentElement.setAttribute('data-pull-active', '');
     const spring = dragging ? 'none' : `transform ${SPRING}`;
     const timing = dragging ? '0s' : SPRING;
     window.clearTimeout(settleTimerRef.current);
@@ -151,6 +155,7 @@ export default function PullToRefresh({
         }
         target?.style.setProperty('--pull-to-refresh-timing', '0s');
         wrapper?.style.setProperty('--ptr-timing', '0s');
+        document.documentElement.removeAttribute('data-pull-active');
       }, SPRING_MS);
     }
   }, []);
@@ -174,6 +179,9 @@ export default function PullToRefresh({
 
   useLayoutEffect(() => () => {
     window.clearTimeout(settleTimerRef.current);
+    // Leaving mid-pull cancels the timer that would have cleared this, and a
+    // stuck marker would hold the system bars' colours forever.
+    document.documentElement.removeAttribute('data-pull-active');
     const target = pullTargetRef?.current;
     if (!target) return;
     for (const name of [

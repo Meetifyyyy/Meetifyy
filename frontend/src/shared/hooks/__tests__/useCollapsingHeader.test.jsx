@@ -134,3 +134,27 @@ describe('useCollapsingHeader cover transition', () => {
     expect(header.style.getPropertyValue('--cover-h')).toBe('152');
   });
 });
+
+describe('shared cover attributes', () => {
+  it('stay while any cover page is mounted, whatever order they leave in', async () => {
+    // Earlier tests leave their hooks mounted; unmount them so the count starts at zero.
+    const { cleanup } = await import('@testing-library/react');
+    cleanup();
+    const root = document.documentElement;
+    root.setAttribute('data-status-bar-icons', 'dark');
+    const make = () => {
+      const header = document.createElement('div');
+      const cover = document.createElement('div');
+      document.body.append(header, cover);
+      return renderHook(() => useCollapsingHeader({ enabled: true, headerRef: { current: header }, coverRef: { current: cover } }));
+    };
+    const a = make();
+    const b = make(); // the next cover page mounts before the first has left
+    a.unmount();
+    expect(root.hasAttribute('data-collapsing-header')).toBe(true);
+    b.unmount();
+    expect(root.hasAttribute('data-collapsing-header')).toBe(false);
+    expect(root.getAttribute('data-status-bar-icons')).toBe('dark');
+    root.removeAttribute('data-status-bar-icons');
+  });
+});

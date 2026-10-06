@@ -121,6 +121,47 @@ html[data-navigation-bar='transparent']::after {
   background: transparent;
 }
 
+/* A scroll-through screen (Home) with its header and bottom navigation slid
+   away: the feed runs under both bars. The bottom nav paints its own strip
+   under the navigation bar and slides away with it, so the page's strip
+   beneath simply clears in the same frame as `data-chrome-hidden`. The top
+   strip moves with the header instead (below). installSystemBars holds the
+   sampled colours still meanwhile, so both come back in the colour they left
+   with. */
+html[data-bars-scroll-through][data-chrome-hidden]::after {
+  background: transparent;
+}
+
+/* The top strip travels WITH the header instead of changing colour.
+
+   It used to clear by fading: it waited 0.26s for the header, then faded, so
+   it trailed the header by ~0.4s on the way out; and on the way back it turned
+   solid at once while the header was still off-screen — a bar popping in, then
+   the header arriving under it. Now it keeps its colour and slides up out of
+   the screen on the header's own transition (same duration, same curve), and
+   slides back in with it. The header is taller and starts lower, so it always
+   covers whatever the strip has uncovered; nothing is ever shown behind the
+   clock except the feed once both have gone. */
+html[data-bars-scroll-through]::before {
+  transition: transform 0.26s cubic-bezier(0.22, 0.9, 0.3, 1);
+}
+
+html[data-bars-scroll-through][data-chrome-hidden]::before {
+  transform: translateY(-100%);
+}
+
+/* Chrome placed rather than slid on a route change (see BottomNav), so the
+   strip is too. */
+html[data-nav-instant]::before {
+  transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-bars-scroll-through]::before {
+    transition: none;
+  }
+}
+
 /* ----------------------------------------------------------------------------
    No long-press text selection.
 

@@ -472,11 +472,35 @@
     justify-content: space-between;
   }
 
+  /*
+   * The page gradient, aligned to the screen without `background-attachment:
+   * fixed`. Chrome on Android (and so the app's WebView) does not support a
+   * fixed attachment: it silently falls back to `scroll`, and the header drew
+   * the whole radial gradient inside its own 56px box — white in the middle,
+   * blue at the ends — instead of its slice of the page's. On a scrolled feed
+   * that band never matched the status strip (which continues the page's real
+   * gradient), so the header coming back showed a bright band arriving under a
+   * blue strip: the colour flicker.
+   *
+   * Sizing the gradient to the screen (the page's own gradient is a fixed
+   * layer of exactly this size, `Background.module.css`) and offsetting it by
+   * the header's distance from the top paints the same pixels a fixed
+   * attachment would. Sticky headers are offset 0: that is where they sit once
+   * stuck, which is the only time content passes under them.
+   */
+  .header {
+    background-attachment: scroll;
+    background-size: 100vw 100dvh;
+    background-position: 0 0;
+    background-repeat: no-repeat;
+  }
+
   .homeHeader {
     position: fixed;
     top: var(--status-bar-inset, 0px);
     left: 0;
     right: 0;
+    background-position: 0 calc(-1 * var(--status-bar-inset, 0px));
   }
 
   .hamburgerBtn {
@@ -639,10 +663,12 @@
      everywhere else. See --color-surface-screen in variables.css. */
   background: var(--color-surface-screen);
   border-right: 1px solid var(--color-border-light);
-  /* Square. It had 16px rounded right corners, which on a panel pinned to
-     three edges of the screen reads as a card that failed to centre itself —
-     the corners cut into the content and reveal the page behind them. A
-     full-height surface meets the screen edge flush. */
+  /* Rounded on its free edge only: the top-right and bottom-right corners
+     soften the panel's open side, while the left stays flush with the screen
+     edge it slides out from. Content is padded inside, so the curve never
+     clips a row. */
+  border-radius: 0 22px 22px 0;
+  overflow: hidden;
   box-shadow: var(--shadow-lg);
   z-index: 1000;
   transform: translateX(-100%);
@@ -945,16 +971,24 @@
   color: var(--color-icon-base);
   cursor: pointer;
   flex: 1;
-  transition: background-color 0.15s ease;
+  transition: background-color 0.22s ease;
   -webkit-tap-highlight-color: transparent;
 }
 
-.drawerSettingsBtn:hover {
-  background: var(--color-bg-soft);
+/* Rows press with a soft tint, not a shrink: the app-wide press animation
+   (opted out with data-no-press) scaled a full-width row, which on a phone read
+   as the whole row lurching. The tint arrives fast and leaves slowly, and hover
+   is limited to real pointers — on touch a :hover sticks after the tap, which
+   left the row grey once the finger was gone. */
+@media (hover: hover) and (pointer: fine) {
+  .drawerSettingsBtn:hover {
+    background: var(--color-bg-soft);
+  }
 }
 
 .drawerSettingsBtn:active {
   background: var(--color-border-light);
+  transition-duration: 0.06s;
 }
 
 .drawerSettingsBtn:focus-visible {
@@ -1031,6 +1065,14 @@
   :global(html[data-chrome-hidden]) .header {
     transform: translateY(-100%);
     pointer-events: none;
+  }
+
+  /* Home's header is fixed BELOW the status bar (top: the inset), so its own
+     height only moved it up to sit directly behind the clock — visible there
+     once the bar is see-through. It travels the inset too and leaves the
+     screen entirely. */
+  :global(html[data-chrome-hidden]) .homeHeader {
+    transform: translateY(calc(-100% - var(--status-bar-inset, 0px)));
   }
 
   /* Set by BottomNav around a route change: chrome is placed, not slid. */

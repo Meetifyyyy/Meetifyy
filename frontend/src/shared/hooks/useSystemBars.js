@@ -21,6 +21,10 @@ import { IS_MOBILE_BUILD } from '@config';
  *                               resized (the keyboard opening or closing) the
  *                               strip it exposes is the document, not the page,
  *                               and was a light patch across a dark screen.
+ *   scrollThrough: true         while the auto-hiding header and bottom navigation
+ *                               are slid away, the page runs under both bars
+ *                               (transparent strips), and they return in their
+ *                               own colour when the chrome does (Home)
  *
  * It writes attributes on <html>, in a LAYOUT effect: that runs in the same
  * commit that mounts the screen, before the frame paints, so the bars change
@@ -43,6 +47,7 @@ const ATTRIBUTES = {
   navigation: 'data-navigation-bar',
   navigationIcons: 'data-navigation-bar-icons',
   canvas: 'data-bars-canvas',
+  scrollThrough: 'data-bars-scroll-through',
 };
 
 const requests = [];

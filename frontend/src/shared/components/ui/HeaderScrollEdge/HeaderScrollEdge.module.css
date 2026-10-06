@@ -58,8 +58,13 @@
 
 @media (max-width: 768px) {
   .edge {
-    /* The mobile header is 56px (see Header.module.css). */
-    --header-height: 56px;
+    /* The mobile header is 56px (see Header.module.css), and in the installed
+       app it sticks BELOW the status bar (`top: var(--status-bar-inset)`), so
+       its bottom edge is the inset further down. Without the inset this sat a
+       status bar's height too high — hidden under the header — and the cards
+       met it with a hard square edge on the phone only (the inset is 0 on the
+       website). */
+    --header-height: calc(56px + var(--status-bar-inset, 0px));
     /* Matches the header's own easing so the two move as one thing. */
     transition: transform 0.26s cubic-bezier(0.22, 0.9, 0.3, 1);
   }

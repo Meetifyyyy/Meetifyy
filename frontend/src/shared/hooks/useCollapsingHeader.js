@@ -27,6 +27,35 @@ const smoothstep = (t) => t * t * (3 - 2 * t);
  * height without a window resize, which left the fixed copy at a stale height,
  * out of line with the page.
  */
+/*
+ * `data-collapsing-header` and the status-bar icon preference are shared by
+ * every cover page, so they are owned by a count, not by "whoever mounted
+ * last". The attribute makes the status strip transparent and drops #root's
+ * status-bar padding; seen stuck on Home on a device, it put the feed and the
+ * header under the clock. Set-on-mount/remove-on-unmount per instance goes
+ * wrong as soon as two cover pages overlap (one mounting before the other has
+ * unmounted): the first to leave removes it under the second, and restores an
+ * icon preference the second had already replaced. Here the first owner takes
+ * the snapshot, the last to leave restores it, and nothing in between can.
+ */
+let owners = 0;
+let iconsBeforeOwners = null;
+
+function claimCoverAttributes(root, iconsBefore) {
+  if (owners === 0) iconsBeforeOwners = iconsBefore;
+  owners += 1;
+  root.setAttribute('data-collapsing-header', '');
+}
+
+function releaseCoverAttributes(root) {
+  owners = Math.max(0, owners - 1);
+  if (owners > 0) return;
+  root.removeAttribute('data-collapsing-header');
+  if (iconsBeforeOwners === null) root.removeAttribute('data-status-bar-icons');
+  else root.setAttribute('data-status-bar-icons', iconsBeforeOwners);
+  iconsBeforeOwners = null;
+}
+
 export function useCollapsingHeader({
   enabled,
   headerRef,
@@ -39,12 +68,12 @@ export function useCollapsingHeader({
     if (!enabled || !header) return undefined;
 
     const root = document.documentElement;
-    const previousIconPreference = root.getAttribute('data-status-bar-icons');
+    // Before update() below writes its own icon preference.
+    const iconsBefore = root.getAttribute('data-status-bar-icons');
     const previousCoverHeight = root.style.getPropertyValue('--profile-cover-height');
     const previousCoverH = root.style.getPropertyValue('--profile-cover-h');
     const previousPinAt = root.style.getPropertyValue('--cover-pin-at');
     const editCoverButton = coverBackground ? header.querySelector('button[aria-label="Edit cover"]') : null;
-    root.setAttribute('data-collapsing-header', '');
     const pageCard = coverRef.current?.parentElement ?? null;
 
     let frame = 0;
@@ -122,6 +151,10 @@ export function useCollapsingHeader({
     };
 
     update();
+    // Claimed only once the setup above has run without throwing: a layout
+    // effect that throws never gets its cleanup, so claiming first would leave
+    // the attribute behind for the rest of the session.
+    claimCoverAttributes(root, iconsBefore);
     if (!cssDriven) window.addEventListener('scroll', schedule, { passive: true });
     window.addEventListener('resize', schedule);
     const resizeObserver = typeof ResizeObserver === 'function' ? new ResizeObserver(schedule) : null;
@@ -142,7 +175,7 @@ export function useCollapsingHeader({
       window.removeEventListener('resize', schedule);
       resizeObserver?.disconnect();
       themeObserver.disconnect();
-      root.removeAttribute('data-collapsing-header');
+      releaseCoverAttributes(root);
       pageCard?.style.removeProperty('--profile-collapse');
       pageCard?.style.removeProperty('--cover-blur');
       if (previousCoverHeight) root.style.setProperty('--profile-cover-height', previousCoverHeight);
@@ -151,8 +184,6 @@ export function useCollapsingHeader({
       else root.style.removeProperty('--profile-cover-h');
       if (previousPinAt) root.style.setProperty('--cover-pin-at', previousPinAt);
       else root.style.removeProperty('--cover-pin-at');
-      if (previousIconPreference === null) root.removeAttribute('data-status-bar-icons');
-      else root.setAttribute('data-status-bar-icons', previousIconPreference);
     };
   }, [enabled, headerRef, coverRef, coverBackground, collapseRangeMultiplier]);
 }
