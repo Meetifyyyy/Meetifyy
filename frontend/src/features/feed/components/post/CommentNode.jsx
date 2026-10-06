@@ -39,8 +39,7 @@ import styles from './CommentNode.module.css';
 import { useAuth } from '@shared/context/AuthContext';
 import { useCommunities } from '@shared/hooks/useCommunities';
 import { useDeleteComment } from '../../hooks/useDeleteComment';
-import { useLikeComment } from '../../hooks/useLikeComment';
-import { toggleRegistry } from '@shared/utils/mutationRegistry';
+import { useLikeComment, readCommentLike } from '../../hooks/useLikeComment';
 import ConfirmModal from '@shared/components/modals/ConfirmModal';
 import Menu, { MenuItem } from '@shared/components/ui/Menu';
 import { MoreHorizontal, Trash2, Flag, Loader2 } from '@shared/components/icons';
@@ -322,7 +321,7 @@ function CommentItemImpl({ postId, comment, threadId, replyTo = null, isReply })
   const { currentUser } = useAuth();
   const { communitiesById } = useCommunities();
   const { mutate: deleteCommentMutate } = useDeleteComment();
-  const { mutate: toggleLike } = useLikeComment();
+  const { toggle: toggleLike } = useLikeComment();
   const { expand, requestReply, setActiveMenuId } = useContext(TreeActionsContext);
   // This comment's own flags, and only this comment's.
   const { isReplying, isMenuOpen: showMenu } = useNodeSelection(comment.id);
@@ -356,10 +355,7 @@ function CommentItemImpl({ postId, comment, threadId, replyTo = null, isReply })
   const author = comment.author || { displayName: 'Unknown', username: 'unknown', avatar: '?' };
   const authorCollege = (author.collegeId && communitiesById) ? communitiesById[author.collegeId] : null;
   const authorCollegeName = getCollegeName(author, '') || authorCollege?.name || '';
-  const initialLiked = comment.hasLiked !== undefined ? comment.hasLiked : (comment.likedBy ? comment.likedBy.includes(currentUser?.id) : false);
-  const initialLikes = comment.likeCount !== undefined ? comment.likeCount : (comment.likes || 0);
-  const localLiked = toggleRegistry.getLatestIntent(`likeComment:${comment.id}`, initialLiked);
-  const localLikesCount = initialLikes + (localLiked !== initialLiked ? (localLiked ? 1 : -1) : 0);
+  const { liked: localLiked, count: localLikesCount } = readCommentLike(comment, currentUser?.id);
 
   const handleProfileClick = () => navigate(`/profile/${author.username}`, { state: { from: window.location.pathname } });
 
@@ -392,7 +388,7 @@ function CommentItemImpl({ postId, comment, threadId, replyTo = null, isReply })
 
   const handleLike = () => {
     setLikeTap((n) => n + 1);
-    toggleLike({ commentId: comment.id, isLiked: !localLiked, postId });
+    toggleLike(postId, comment, currentUser?.id);
   };
 
   const rowClass = `${styles.comment} ${isReply ? styles.reply : styles.topLevel}`;
@@ -446,6 +442,7 @@ function CommentItemImpl({ postId, comment, threadId, replyTo = null, isReply })
                   />
                 )}
               </button>
+              <span className={styles.timeDot} aria-hidden="true">·</span>
               <span className={styles.time}>{comment.createdAt ? timeAgo(comment.createdAt) : comment.time}</span>
             </div>
 
@@ -515,14 +512,14 @@ function CommentItemImpl({ postId, comment, threadId, replyTo = null, isReply })
             <button
               type="button"
               onClick={handleLike}
-              className={`${styles.actionBtn} ${styles.likeBtn} ${localLiked ? styles.actionBtnLiked : ''}`}
+              className={`${styles.actionBtn} ${styles.likeBtn} ${localLiked ? styles.likeBtnOn : ''}`}
               aria-pressed={localLiked}
               aria-label={`${localLiked ? 'Unlike' : 'Like'} comment, ${localLikesCount} ${localLikesCount === 1 ? 'like' : 'likes'}`}
             >
               <svg
                 key={likeTap}
                 className={likeTap > 0 && localLiked ? styles.likePop : undefined}
-                width="14" height="14" viewBox="0 0 24 24" fill={localLiked ? 'var(--color-primary)' : 'none'} stroke={localLiked ? 'var(--color-primary)' : 'currentColor'} strokeWidth="2.5" aria-hidden="true">
+                width="15" height="15" viewBox="0 0 24 24" fill={localLiked ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3" />
               </svg>
               {localLikesCount > 0 && <span>{localLikesCount}</span>}

@@ -11,7 +11,10 @@ vi.mock('@shared/components/mentions/RichText', () => ({ default: ({ content }) 
 vi.mock('@shared/context/AuthContext', () => ({ useAuth: () => ({ currentUser: { id: 'me' } }) }));
 vi.mock('@shared/hooks/useCommunities', () => ({ useCommunities: () => ({ communitiesById: {} }) }));
 vi.mock('../../../hooks/useDeleteComment', () => ({ useDeleteComment: () => ({ mutate: vi.fn() }) }));
-vi.mock('../../../hooks/useLikeComment', () => ({ useLikeComment: () => ({ mutate: vi.fn() }) }));
+vi.mock('../../../hooks/useLikeComment', async (importOriginal) => ({
+  ...(await importOriginal()),
+  useLikeComment: () => ({ toggle: vi.fn() }),
+}));
 
 const { CommentTreeRoot } = await import('../CommentNode');
 

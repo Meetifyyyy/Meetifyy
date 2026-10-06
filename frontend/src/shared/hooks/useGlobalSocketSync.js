@@ -1,6 +1,9 @@
 import { useEffect, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useGlobalSocketStore } from '../stores/useGlobalSocketStore';
+import { applyRemoteLike } from '../utils/likeSync';
+import { postLikeKey, writePostLike } from '@features/feed/hooks/useLikePost';
+import { commentLikeKey, writeCommentLike } from '@features/feed/hooks/useLikeComment';
 import { useAuth } from '../context/AuthContext';
 import { useConversations } from './useMessages';
 import { PROFILE_KEYS } from './useProfile';
@@ -405,57 +408,37 @@ export function useGlobalSocketSync() {
 
         case 'comment.liked':
         case 'comment.unliked': {
-          // Absolute like-count patch for a comment (idempotent). Guarded so it
-          // can't fight the viewer's own in-flight optimistic like; isLiked flags
-          // are left untouched (the like belongs to another user).
+          // Absolute count (and, from this person's other device, the heart),
+          // ordered by the server's version: a late or duplicate event is
+          // dropped, and someone else's like moves the count without
+          // disturbing a like this person has pending. See likeSync.
           const cPostId = event.data?.postId;
           const commentId = event.data?.commentId;
-          const likeCount = event.data?.likeCount;
-          const hasPendingLocal = toggleRegistry.isPending(`likeComment:${commentId}`);
-          if (cPostId && commentId && typeof likeCount === 'number' && !hasPendingLocal) {
-            queryClient.setQueryData(['post', cPostId], (old) => {
-              if (!old || !Array.isArray(old.comments)) return old;
-              return {
-                ...old,
-                comments: old.comments.map((c) => (c.id === commentId ? { ...c, likeCount, likesCount: likeCount } : c)),
-              };
+          if (cPostId && commentId) {
+            const shown = applyRemoteLike(commentLikeKey(commentId), {
+              count: event.data?.likeCount,
+              version: event.data?.version,
+              liked: event.data?.liked,
+              byMe: event.data?.userId === currentUser.id,
             });
+            if (shown) writeCommentLike(queryClient, cPostId, commentId, shown);
           }
           break;
         }
 
         case 'post.liked':
         case 'post.unliked': {
-          // Realtime like-count sync (delivered to the post author and to
-          // anyone with the post open). Patch the aggregate count in place —
-          // never a refetch. We intentionally do NOT touch isLiked flags: the
-          // like was made by another user, so only the count changes for this
-          // viewer. Guarded by the toggle registry so a stray event can't fight
-          // the viewer's own in-flight optimistic like.
+          // Delivered to the author, the liker's own devices and anyone with
+          // the post open. Same ordering rules as comments above; never a refetch.
           const likedPostId = event.data?.postId || event.postId;
-          const likeCount = event.data?.likeCount;
-          const hasPendingLocal = toggleRegistry.isPending(`likePost:${likedPostId}`);
-          if (likedPostId && typeof likeCount === 'number' && !hasPendingLocal) {
-            const patchCount = (p) => (p && p.id === likedPostId ? { ...p, likeCount, likesCount: likeCount } : p);
-            const updater = (old) => {
-              if (!old) return old;
-              if (old.id === likedPostId) return patchCount(old);
-              if (Array.isArray(old)) return old.map(patchCount);
-              if (Array.isArray(old.posts)) return { ...old, posts: old.posts.map(patchCount) };
-              if (old.pages) {
-                return {
-                  ...old,
-                  pages: old.pages.map((page) => {
-                    if (Array.isArray(page.posts)) return { ...page, posts: page.posts.map(patchCount) };
-                    if (Array.isArray(page.items)) return { ...page, items: page.items.map(patchCount) };
-                    return page;
-                  }),
-                };
-              }
-              return old;
-            };
-            queryClient.setQueriesData({ predicate: isPostListQuery }, updater);
-            queryClient.setQueryData(['post', likedPostId], updater);
+          if (likedPostId) {
+            const shown = applyRemoteLike(postLikeKey(likedPostId), {
+              count: event.data?.likeCount,
+              version: event.data?.version,
+              liked: event.data?.liked,
+              byMe: event.data?.userId === currentUser.id,
+            });
+            if (shown) writePostLike(queryClient, likedPostId, shown);
           }
           break;
         }

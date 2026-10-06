@@ -1,45 +1,60 @@
 import { useCallback } from 'react';
-import { useToggleMutation } from '@shared/hooks/useToggleMutation';
+import { useQueryClient } from '@tanstack/react-query';
 import { postsApi } from '@shared/api/apiClient';
+import { toggleLike, readLike } from '@shared/utils/likeSync';
+import { showToast } from '@shared/utils/toast';
 
-export function useLikeComment() {
-  const updateComment = useCallback((queryClient, intent, variables) => {
-    const { commentId, postId } = variables;
-    const queryKey = ['post', postId];
-    queryClient.setQueryData(queryKey, (old) => {
-      if (!old || !Array.isArray(old.comments)) return old;
+export const commentLikeKey = (commentId) => `comment:${commentId}`;
+
+export function commentLikeSnapshot(comment, currentUserId) {
+  const liked = comment.hasLiked !== undefined ? !!comment.hasLiked
+    : comment.isLiked !== undefined ? !!comment.isLiked
+      : comment.isLikedByMe !== undefined ? !!comment.isLikedByMe
+        : (comment.likedBy ? comment.likedBy.includes(currentUserId) : false);
+  const count = comment.likeCount ?? comment.likesCount ?? comment.likes ?? 0;
+  return { liked, count: Number(count) || 0 };
+}
+
+export function readCommentLike(comment, currentUserId) {
+  return readLike(commentLikeKey(comment.id), commentLikeSnapshot(comment, currentUserId));
+}
+
+/**
+ * Absolute write into the post's comment list — the one cache every comment
+ * page is merged into (see loadMoreComments in PostView).
+ */
+export function writeCommentLike(queryClient, postId, commentId, { liked, count }) {
+  queryClient.setQueryData(['post', postId], (old) => {
+    if (!old || !Array.isArray(old.comments)) return old;
+    let changed = false;
+    const comments = old.comments.map((c) => {
+      if (c.id !== commentId) return c;
+      const sameCount = (c.likeCount ?? c.likesCount) === count;
+      const sameLiked = liked === undefined || (c.hasLiked ?? c.isLiked ?? c.isLikedByMe) === liked;
+      if (sameCount && sameLiked) return c;
+      changed = true;
       return {
-        ...old,
-        comments: old.comments.map(c => {
-          if (c.id !== commentId) return c;
-          const prevLiked = c.isLikedByMe !== undefined ? c.isLikedByMe : (c.isLiked || c.hasLiked || false);
-          if (prevLiked === intent) return c;
-          const currentLikes = c.likeCount || c.likesCount || 0;
-          const newLikeCount = Math.max(0, currentLikes + (intent ? 1 : -1));
-          return { ...c, isLiked: intent, hasLiked: intent, isLikedByMe: intent, likeCount: newLikeCount, likesCount: newLikeCount };
-        }),
+        ...c,
+        likeCount: count,
+        likesCount: count,
+        ...(liked === undefined ? {} : { isLiked: liked, hasLiked: liked, isLikedByMe: liked }),
       };
     });
-  }, []);
-
-  const applyRollback = useCallback((queryClient, intent, variables) => {
-    updateComment(queryClient, !intent, variables);
-  }, [updateComment]);
-
-  const callApi = useCallback((intent, signal, variables) => {
-    const { commentId } = variables;
-    return intent
-      ? postsApi.likeComment(commentId, { signal })
-      : postsApi.unlikeComment(commentId, { signal });
-  }, []);
-
-  const { mutate } = useToggleMutation({
-    entityKey: (vars) => `likeComment:${vars.commentId}`,
-    applyOptimistic: updateComment,
-    applyRollback,
-    callApi,
-    invalidateKeys: (vars) => [['post', vars.postId]],
+    return changed ? { ...old, comments } : old;
   });
+}
 
-  return { mutate, isLoading: false };
+export function useLikeComment() {
+  const queryClient = useQueryClient();
+
+  const toggle = useCallback((postId, comment, currentUserId) => {
+    const commentId = comment.id;
+    return toggleLike(commentLikeKey(commentId), commentLikeSnapshot(comment, currentUserId), {
+      send: (liked) => (liked ? postsApi.likeComment(commentId) : postsApi.unlikeComment(commentId)),
+      write: (shown) => writeCommentLike(queryClient, postId, commentId, shown),
+      onError: () => showToast("Couldn't update your like. Try again."),
+    });
+  }, [queryClient]);
+
+  return { toggle };
 }

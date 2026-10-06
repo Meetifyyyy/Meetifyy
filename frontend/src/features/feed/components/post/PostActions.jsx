@@ -1,6 +1,6 @@
 import { useState, memo } from 'react';
 import { useAuth } from '@shared/context/AuthContext';
-import { useLikePost } from '../../hooks/useLikePost';
+import { useLikePost, readPostLike } from '../../hooks/useLikePost';
 import { useSavePost } from '../../hooks/useSavePost';
 import { toggleRegistry } from '@shared/utils/mutationRegistry';
 import { Bookmark } from '@shared/components/icons';
@@ -15,7 +15,7 @@ function PostActions({
   authorOverride,
 }) {
   const { currentUser } = useAuth();
-  const { mutate: toggleLike } = useLikePost();
+  const { toggle: toggleLike } = useLikePost();
   const { mutate: toggleSave } = useSavePost();
   const [showShareModal, setShowShareModal] = useState(false);
 
@@ -24,20 +24,9 @@ function PostActions({
   const id = post.id;
   const author = authorOverride || post.author || { id: post.authorId, displayName: 'User', username: 'user', avatar: null };
 
-  const rawIsLikedByMe = post.hasLiked !== undefined
-    ? !!post.hasLiked
-    : (post.isLiked !== undefined
-      ? !!post.isLiked
-      : (post.isLikedByMe !== undefined
-        ? !!post.isLikedByMe
-        : (post.likedBy ? post.likedBy.includes(currentUser?.id) : false)));
-  const isLikedByMe = toggleRegistry.getLatestIntent(`likePost:${id}`, rawIsLikedByMe);
-
-  const likes = post.likeCount !== undefined
-    ? post.likeCount
-    : (post.likesCount !== undefined
-      ? post.likesCount
-      : (post.likes || 0));
+  // Heart and count from one source, so they can never disagree: the tracked
+  // state while a like is pending or just settled, otherwise the cache.
+  const { liked: isLikedByMe, count: likes } = readPostLike(post, currentUser?.id);
 
   const comments = post.commentCount !== undefined
     ? post.commentCount
@@ -54,9 +43,7 @@ function PostActions({
 
   const toggleLikeHandler = (e) => {
     e.stopPropagation();
-    const entityKey = `likePost:${id}`;
-    const nextLiked = toggleRegistry.getNextToggleIntent(entityKey, isLikedByMe);
-    toggleLike({ postId: id, isLiked: nextLiked });
+    toggleLike(post, currentUser?.id);
   };
 
   const handleCommentHandler = (e) => {

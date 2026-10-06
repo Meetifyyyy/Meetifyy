@@ -115,6 +115,23 @@ interface FeedSqlRow {
   community: Record<string, unknown> | null;
 }
 
+/**
+ * The ordering stamp of a like/unlike, from `clock_timestamp()` inside the
+ * statement that changed the counter.
+ *
+ * That UPDATE holds the row lock while it evaluates RETURNING, and every other
+ * like or unlike of the same post (or comment) waits on that lock, so stamps
+ * taken under it strictly increase in the order the changes happened. Clients
+ * use it to drop a response or realtime event older than one already applied,
+ * which is what stops counts jumping back when deliveries arrive out of order.
+ * Microseconds since the epoch fit a JS number exactly (< 2^53).
+ */
+function likeVersion(raw: bigint | number | null | undefined): number | null {
+  if (raw === null || raw === undefined) return null;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : null;
+}
+
 @Injectable()
 export class PostsService {
   private readonly logger = new Logger('PostsService');
@@ -1194,7 +1211,7 @@ export class PostsService {
       // run as one atomic statement (a CTE), so we pay one backend↔DB round trip
       // instead of two. `inserted` reflects whether a new like row was created.
       const rows = await this.prisma.$queryRaw<
-        Array<{ likeCount: number; inserted: number }>
+        Array<{ likeCount: number; inserted: number; version: bigint }>
       >`
         WITH ins AS (
           INSERT INTO "PostLike" ("userId", "postId", "createdAt")
@@ -1205,10 +1222,11 @@ export class PostsService {
         UPDATE "Post"
         SET "likeCount" = "likeCount" + (SELECT count(*)::int FROM ins)
         WHERE id = ${postId}
-        RETURNING "likeCount", (SELECT count(*)::int FROM ins) AS inserted
+        RETURNING "likeCount", (SELECT count(*)::int FROM ins) AS inserted, (EXTRACT(EPOCH FROM clock_timestamp()) * 1000000)::bigint AS version
       `;
       const inserted = Number(rows?.[0]?.inserted ?? 0);
       const updatedCount = Number(rows?.[0]?.likeCount ?? post.likeCount);
+      const version = likeVersion(rows?.[0]?.version);
       if (inserted === 1) {
         if (post.authorId !== userId) {
           this.prisma.user
@@ -1243,10 +1261,13 @@ export class PostsService {
             });
         }
 
+        // The liker is a target too, so their other signed-in devices
+        // follow along; `liked` + `userId` let those devices update the heart,
+        // and everyone else applies only the count.
         void this.domainEventService.emit(
           'post.liked',
-          { postId, userId, likeCount: updatedCount },
-          [post.authorId],
+          { postId, userId, liked: true, likeCount: updatedCount, version },
+          [post.authorId, userId],
         );
       }
 
@@ -1258,6 +1279,7 @@ export class PostsService {
         isLikedByMe: true,
         likeCount: updatedCount,
         likesCount: updatedCount,
+        version,
       };
     });
   }
@@ -1277,7 +1299,7 @@ export class PostsService {
       // One atomic round-trip: DELETE the like and decrement the counter only if a
       // row was actually removed (floored at 0), via a single CTE statement.
       const rows = await this.prisma.$queryRaw<
-        Array<{ likeCount: number; deleted: number }>
+        Array<{ likeCount: number; deleted: number; version: bigint }>
       >`
         WITH del AS (
           DELETE FROM "PostLike" WHERE "userId" = ${userId} AND "postId" = ${postId}
@@ -1286,15 +1308,16 @@ export class PostsService {
         UPDATE "Post"
         SET "likeCount" = GREATEST(0, "likeCount" - (SELECT count(*)::int FROM del))
         WHERE id = ${postId}
-        RETURNING "likeCount", (SELECT count(*)::int FROM del) AS deleted
+        RETURNING "likeCount", (SELECT count(*)::int FROM del) AS deleted, (EXTRACT(EPOCH FROM clock_timestamp()) * 1000000)::bigint AS version
       `;
       const deleted = Number(rows?.[0]?.deleted ?? 0);
       const updatedCount = Number(rows?.[0]?.likeCount ?? post.likeCount);
+      const version = likeVersion(rows?.[0]?.version);
       if (deleted === 1) {
         void this.domainEventService.emit(
           'post.unliked',
-          { postId, userId, likeCount: updatedCount },
-          [post.authorId],
+          { postId, userId, liked: false, likeCount: updatedCount, version },
+          [post.authorId, userId],
         );
       }
 
@@ -1306,6 +1329,7 @@ export class PostsService {
         isLikedByMe: false,
         likeCount: Math.max(0, updatedCount),
         likesCount: Math.max(0, updatedCount),
+        version,
       };
     });
   }
@@ -1417,7 +1441,7 @@ export class PostsService {
       // One atomic round-trip: INSERT ... ON CONFLICT + increment via a single CTE
       // (never throws P2002, counter can't be double-incremented).
       const rows = await this.prisma.$queryRaw<
-        Array<{ likeCount: number; inserted: number }>
+        Array<{ likeCount: number; inserted: number; version: bigint }>
       >`
         WITH ins AS (
           INSERT INTO "CommentLike" ("userId", "commentId", "createdAt")
@@ -1428,12 +1452,13 @@ export class PostsService {
         UPDATE "Comment"
         SET "likeCount" = "likeCount" + (SELECT count(*)::int FROM ins)
         WHERE id = ${commentId}
-        RETURNING "likeCount", (SELECT count(*)::int FROM ins) AS inserted
+        RETURNING "likeCount", (SELECT count(*)::int FROM ins) AS inserted, (EXTRACT(EPOCH FROM clock_timestamp()) * 1000000)::bigint AS version
       `;
       const inserted = Number(rows?.[0]?.inserted ?? 0);
       const updated = {
         likeCount: Number(rows?.[0]?.likeCount ?? comment.likeCount),
       };
+      const version = likeVersion(rows?.[0]?.version);
 
       if (inserted === 1) {
         if (comment.authorId !== userId) {
@@ -1478,11 +1503,24 @@ export class PostsService {
           commentId,
           postId: comment.postId,
           userId,
+          liked: true,
           likeCount: updated.likeCount,
+          version,
         });
       }
 
-      return { success: true };
+      // The count and version let the client reconcile from the response
+      // instead of refetching the whole post (and its comment pages).
+      return {
+        success: true,
+        commentId,
+        hasLiked: true,
+        isLiked: true,
+        isLikedByMe: true,
+        likeCount: updated.likeCount,
+        likesCount: updated.likeCount,
+        version,
+      };
     });
   }
 
@@ -1500,7 +1538,7 @@ export class PostsService {
     return this.redisService.withLock(lockKey, 2000, async () => {
       // One atomic round-trip: DELETE + floored decrement via a single CTE.
       const rows = await this.prisma.$queryRaw<
-        Array<{ likeCount: number; deleted: number }>
+        Array<{ likeCount: number; deleted: number; version: bigint }>
       >`
         WITH del AS (
           DELETE FROM "CommentLike" WHERE "userId" = ${userId} AND "commentId" = ${commentId}
@@ -1509,20 +1547,35 @@ export class PostsService {
         UPDATE "Comment"
         SET "likeCount" = GREATEST(0, "likeCount" - (SELECT count(*)::int FROM del))
         WHERE id = ${commentId}
-        RETURNING "likeCount", (SELECT count(*)::int FROM del) AS deleted
+        RETURNING "likeCount", (SELECT count(*)::int FROM del) AS deleted, (EXTRACT(EPOCH FROM clock_timestamp()) * 1000000)::bigint AS version
       `;
       const deleted = Number(rows?.[0]?.deleted ?? 0);
+      const likeCount = Math.max(
+        0,
+        Number(rows?.[0]?.likeCount ?? comment.likeCount),
+      );
+      const version = likeVersion(rows?.[0]?.version);
       if (deleted === 1) {
-        const likeCount = Number(rows?.[0]?.likeCount ?? 0);
         void this.domainEventService.emit('comment.unliked', {
           commentId,
           postId: comment.postId,
           userId,
+          liked: false,
           likeCount,
+          version,
         });
       }
 
-      return { success: true };
+      return {
+        success: true,
+        commentId,
+        hasLiked: false,
+        isLiked: false,
+        isLikedByMe: false,
+        likeCount,
+        likesCount: likeCount,
+        version,
+      };
     });
   }
 
