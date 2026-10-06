@@ -1,84 +1,43 @@
 /* ============================================================================
-   AppOpenScreen — the installed app's front door.
+   AppOpenScreen — the installed app's front door. Editorial, type only.
 
-   LAYOUT
-   One centred flex column, three rows:
+     .screen                 100dvh, flat canvas
+       .content              column: ticker / hero / actions
+         .ticker             activities scrolling between two rules
+         .hero               the name, set huge, and one sentence
+         .actions            two flat buttons, side by side
 
-     .screen                 100dvh, safe areas as padding
-       .canvas               brand light, full bleed, inert
-       .content              flex column, centred as a whole
-         .stage       auto    the scene, at its natural square size
-           .stageInner        the square; the scene's coordinate system
-             .blob            the brand shape
-             .mascot          centred inside it
-         .copy        auto    headline + subline, centred
-         .actions     auto    the two doors
+   Sizes are `min(<width budget>, <height budget>, <cap>)`, so a small phone,
+   a tall phone and a tablet keep the same proportions without breakpoints.
 
-   Spare height becomes margin above the scene and below the buttons rather
-   than a hole in the middle, because the column is centred as one block.
-
-   HOW IT FITS EVERY DEVICE — ONE RULE, NOT A LADDER OF BREAKPOINTS
-   Every size on this screen is `min(<width budget>, <height budget>, <cap>)`.
-   That single form is what makes a small phone, a tall phone, a wide phone in
-   landscape and a 13" tablet all get a composition in the same proportions:
-
-     --scene   min(86vw, 48dvh, 540px)
-
-   whichever of the two budgets is scarcer wins, and the cap stops a tablet
-   turning it into a poster. Worked through:
-
-     360 x 640   ->  min(310, 307, 540) = 307   height-bound, small phone
-     412 x 915   ->  min(354, 439, 540) = 354   width-bound, tall phone
-     480 x 800   ->  min(413, 384, 540) = 384   wide phone
-     768 x 1024  ->  min(660, 491, 540) = 491   tablet, portrait
-     1024 x 1366 ->  min(880, 655, 540) = 540   large tablet, capped
-     800 x 400   ->  min(688, 192, 540) = 192   landscape, height-bound
-
-   The type and the buttons are sized the same way, so they grow on a tablet
-   instead of leaving a phone-sized screen marooned in the middle of one. The
-   only media queries left are for the two cases a formula genuinely cannot
-   express: a landscape screen too short for a picture at all, and the reduced
-   motion preference.
-
-   Inside the scene, every piece is positioned as a percentage of `.stageInner`
-   rather than of the viewport, so the arrangement is identical at every one of
-   those sizes.
-
-   THEME
-   Light and dark are designed, not inverted — the rule the auth kit follows.
+   MOTION: the two lines of the name rise out of their masks, then the rest
+   fades in. Only `transform` and `opacity` animate, all done inside ~750ms.
+   Nothing loops.
    ========================================================================= */
 
 .screen {
-  /* ---- Palette (light) ------------------------------------------------- */
-  --edge: #ffffff;
-  --ink: #0f172a;
-  --ink-soft: #55607a;
-  --brand: #5c47fa;
+  /* The app's own tokens, so light/dark follow the global theme. */
+  --edge: var(--color-surface-screen, var(--color-bg-white));
+  --ink: var(--color-text-main);
+  --ink-soft: var(--color-text-muted);
+  --rule: var(--color-border);
+  --brand: var(--color-brand-primary);
 
-  /* The quieter door: solid, and the inverse of the canvas. */
-  --ghost-bg: #000000;
-  --ghost-ink: #ffffff;
-
-  /* ---- Safe areas ------------------------------------------------------ */
   --safe-t: max(env(safe-area-inset-top, 0px), var(--status-bar-inset, 0px));
   --safe-b: max(env(safe-area-inset-bottom, 0px), var(--navigation-bar-inset, 0px));
   --safe-l: env(safe-area-inset-left, 0px);
   --safe-r: env(safe-area-inset-right, 0px);
-
-  /* ---- The one fluid scale (see the header) ---------------------------- */
-  --scene: min(86vw, 48dvh, 540px);
-  /* The readable column. Never the full width of a tablet. */
-  --col: min(100%, 34rem);
-  --gutter: clamp(20px, 5.6vw, 40px);
+  --gutter: clamp(20px, 5.4vw, 40px);
 
   position: relative;
   width: 100%;
   height: 100dvh;
   overflow: hidden;
   background: var(--edge);
+  color: var(--ink);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
   opacity: 0;
-  transform: translate3d(0, 5px, 0);
-  transition: opacity 300ms ease-out, transform 300ms cubic-bezier(0.22, 1, 0.36, 1);
+  transition: opacity 260ms ease-out;
   user-select: none;
   -webkit-user-select: none;
   overscroll-behavior: none;
@@ -87,488 +46,183 @@
 
 .visible {
   opacity: 1;
-  transform: translate3d(0, 0, 0);
 }
 
-.screen:not(.visible) .canvas,
-.screen:not(.visible) .blob,
-.screen:not(.visible) .mascot,
-.screen:not(.visible) .copy,
-.screen:not(.visible) .actions {
-  animation-play-state: paused;
+/* Nothing plays until the native splash starts handing over. */
+.screen:not(.visible) * {
+  animation-play-state: paused !important;
 }
 
-/*
- * `:global()` on the attribute because CSS Modules would otherwise treat
- * `data-theme` as a local name — the same guard the auth kit uses.
- */
-:global([data-theme='dark']) .screen {
-  --edge: #000000;
-  --ink: #f4f3f8;
-  --ink-soft: #9198a8;
-  --brand: #8b7bff;
-
-  --ghost-bg: #ffffff;
-  --ghost-ink: #0f172a;
-}
-
-/* ============================================================================
-   THE TRANSPARENT STATUS BAR
-
-   This screen runs edge to edge: the phone's bars show the canvas through them
-   rather than a painted strip.
-
-   The `data-bars` marker asks the native system UI adapter to let the screen
-   manage its status-bar safe-area inset. The native inset is exposed as `--status-bar-inset`
-   so this screen's content stays clear of the clock; its background continues
-   behind the status bar. The marker is owned by the screen and removed on
-   unmount.
-   ========================================================================= */
-
-/* ============================================================================
-   CANVAS
-
-   Full bleed at every size. An earlier version capped its width on tablets,
-   which drew the brand light as a column with a visible vertical edge down
-   each side of the screen — the one thing a background must never have.
-   ========================================================================= */
-
-.canvas {
-  position: absolute;
-  inset: 0;
-  overflow: hidden;
-  pointer-events: none;
-  z-index: 0;
-}
-
-/*
- * Two bounded aurae rather than one full-bleed gradient — the brand light has
- * a centre and a falloff instead of the screen simply being tinted. Sized in
- * `vmax` so they stay circular and keep covering the corners on a wide screen,
- * where a percentage of the element would have flattened them into ellipses.
- */
-.auraBrand,
-.auraBlue {
-  position: absolute;
-  width: 115vmax;
-  height: 115vmax;
-  border-radius: 50%;
-}
-
-.auraBrand {
-  top: -46vmax;
-  left: -50vmax;
-  background: radial-gradient(
-    circle at 50% 50%,
-    rgba(92, 71, 250, 0.2) 0%,
-    rgba(92, 71, 250, 0.08) 44%,
-    transparent 70%
-  );
-}
-
-.auraBlue {
-  top: -26vmax;
-  right: -54vmax;
-  background: radial-gradient(
-    circle at 50% 50%,
-    rgba(0, 150, 255, 0.2) 0%,
-    rgba(0, 195, 255, 0.08) 42%,
-    transparent 70%
-  );
-}
-
-:global([data-theme='dark']) .auraBrand {
-  background: radial-gradient(
-    circle at 50% 50%,
-    rgba(108, 90, 251, 0.36) 0%,
-    rgba(92, 71, 250, 0.14) 46%,
-    transparent 72%
-  );
-}
-
-:global([data-theme='dark']) .auraBlue {
-  background: radial-gradient(
-    circle at 50% 50%,
-    rgba(0, 140, 255, 0.3) 0%,
-    rgba(0, 170, 255, 0.1) 44%,
-    transparent 72%
-  );
-}
-
-/* ============================================================================
-   CONTENT COLUMN
-   ========================================================================= */
 
 .content {
-  position: relative;
-  z-index: 1;
+  box-sizing: border-box;
+  height: 100%;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  /*
-   * Centred as a whole rather than one row absorbing every spare pixel.
-   * Letting the scene take `flex: 1` put the entire surplus between it and the
-   * headline — measured at 375x812, an 88px hole in the middle of the
-   * composition. This splits the surplus above and below, where it reads as
-   * margin instead of as a gap.
-   */
-  justify-content: center;
-  height: 100%;
-  width: var(--col);
-  margin: 0 auto;
-  padding-top: calc(var(--safe-t) + clamp(8px, 1.6dvh, 18px));
-  padding-bottom: calc(var(--safe-b) + clamp(12px, 2.4dvh, 26px));
-  padding-left: calc(var(--gutter) + var(--safe-l));
-  padding-right: calc(var(--gutter) + var(--safe-r));
+  padding:
+    calc(var(--safe-t) + clamp(12px, 2dvh, 24px))
+    calc(var(--safe-r) + var(--gutter))
+    calc(var(--safe-b) + clamp(16px, 3dvh, 32px))
+    calc(var(--safe-l) + var(--gutter));
 }
 
-/* ============================================================================
-   THE SCENE
-   ========================================================================= */
+/* ---- Ticker: one composited layer sliding left, forever ---------------- */
 
-.stage {
-  /* Shrinks on a short screen, never grows past its square on a tall one. */
-  flex: 0 1 auto;
-  min-height: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  /*
-   * A scene taller than the space left over is cropped evenly top and bottom
-   * rather than pushing the headline off the screen. `--scene` already budgets
-   * against `dvh`, so this only catches the last few pixels.
-   */
+.ticker {
+  margin: 0 calc((var(--safe-r) + var(--gutter)) * -1) 0 calc((var(--safe-l) + var(--gutter)) * -1);
+  padding: 12px 0;
+  border-top: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
   overflow: hidden;
+  opacity: 0;
+  animation: fadeIn 500ms ease-out 420ms forwards;
 }
 
-/*
- * The scene's coordinate system: a real square, sized by `--scene`.
- *
- * It has to be square because every piece inside is placed as a percentage of
- * it. An earlier version wrote `height: 100%` alongside `aspect-ratio: 1`,
- * which does not produce a square — a definite height wins, `max-width` clamps
- * the width, and nothing re-derives the height. Measured at 375x812 it came out
- * 375x572, and on a 412x915 phone it would have been 412x685: the blob would
- * have floated in the middle of its own box while everything pinned to
- * percentages of a much taller box drifted away from it.
- *
- * `flex: 0 0 auto` because a flex item is shrunk along the main axis by
- * default, which would have quietly reintroduced the same distortion.
- */
-.stageInner {
-  position: relative;
-  flex: 0 0 auto;
-  width: var(--scene);
-  aspect-ratio: 1;
+.track {
+  display: flex;
+  width: max-content;
+  animation: marquee 32s linear infinite;
+  will-change: transform;
 }
 
-/* ---- The brand shape ---------------------------------------------------- */
-
-/*
- * No CSS `filter` here — see the <filter> in the markup for why the shadow has
- * to live inside the SVG. `.blobShadow` below only colours it.
- */
-.blob {
-  position: absolute;
-  left: 7%;
-  top: 5%;
-  width: 86%;
-  height: 86%;
-  /*
-   * The filter draws outside the path, and an SVG clips to its viewport by
-   * default — which would square off the shadow at the element's edge.
-   */
-  overflow: visible;
+.run {
+  display: flex;
+  flex-shrink: 0;
 }
 
-/*
- * `flood-color` and `flood-opacity` are real CSS properties on `feDropShadow`,
- * so the shadow is themed from the stylesheet like everything else rather than
- * by swapping an attribute from JavaScript.
- */
-.blobShadow {
-  flood-color: #2540a8;
-  flood-opacity: 0.22;
-}
-
-:global([data-theme='dark']) .blobShadow {
-  flood-color: #3358e8;
-  flood-opacity: 0.42;
-}
-
-/* ---- The mascot --------------------------------------------------------- */
-
-/*
- * Sized, not stretched between four insets.
- *
- * An absolutely positioned REPLACED element resolves `width: auto` to the
- * image's intrinsic width and then ignores the opposing inset as
- * over-constrained — so `left` + `right` + `width: auto` did not centre the
- * mascot, it drew it at its natural size and spilled it across the screen.
- * An explicit width and height is the form that actually centres one.
- *
- *   left 16% + width 68%  -> 16%..84%, centre 50%
- *   top  12% + height 72% -> 12%..84%, centre 48%
- *
- * which is the blob path's own centre.
- */
-.mascot {
-  position: absolute;
-  left: 16%;
-  top: 12%;
-  width: 68%;
-  height: 72%;
-  object-fit: contain;
-  object-position: 50% 50%;
-  pointer-events: none;
-}
-
-/* ============================================================================
-   COPY
-   ========================================================================= */
-
-.copy {
-  flex: 0 0 auto;
-  text-align: center;
-  margin-top: clamp(8px, 1.8dvh, 26px);
-}
-
-/*
- * Changa One — the landing page's display face, already in the bundle and
- * already preloaded by index.mobile.html.
- *
- * The version of this screen before it asked for 'Caveat', which is loaded from
- * Google Fonts by landing.css, and landing.css is not part of the mobile build.
- * It had always been rendering in whatever the WebView considers cursive.
- */
-.headline {
-  margin: 0;
-  font-family: 'Changa One', 'Inter', sans-serif;
-  font-weight: 400;
-  /* Same min(width, height, cap) shape as --scene; see the header. */
-  font-size: min(8.6vw, 5.4dvh, 3.15rem);
-  line-height: 1.12;
+.item {
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+  font-size: min(4.4vw, 2.4dvh, 1.15rem);
+  font-weight: 600;
   letter-spacing: -0.01em;
   color: var(--ink);
 }
 
-.accent {
-  color: var(--brand);
+/* A small brand-coloured mark between items. */
+.item::after {
+  content: '';
+  width: 6px;
+  height: 6px;
+  margin: 0 18px;
+  border-radius: 50%;
+  background: var(--brand);
 }
 
-.subline {
-  margin: clamp(8px, 1.5dvh, 18px) auto 0;
-  max-width: 30rem;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-  font-weight: 400;
-  font-size: min(3.7vw, 2.1dvh, 1.06rem);
-  line-height: 1.5;
-  color: var(--ink-soft);
-}
+/* ---- The name ------------------------------------------------------------ */
 
-/* ============================================================================
-   ACTIONS
-   ========================================================================= */
-
-/*
- * Stacked, not side by side.
- *
- * Two pills in a row each get half the width, which on a 360px phone is about
- * 150px — narrow enough that the longer label crowds its own pill, and narrow
- * enough that neither button reads as the main one. Full width apiece gives the
- * primary its proper weight and leaves the ranking entirely to colour.
- */
-.actions {
-  flex: 0 0 auto;
+.hero {
+  flex: 1 1 auto;
   display: flex;
   flex-direction: column;
-  gap: clamp(9px, 1.4dvh, 14px);
-  width: 100%;
-  margin: clamp(14px, 2.6dvh, 32px) auto 0;
+  justify-content: flex-end;
+  padding-bottom: clamp(20px, 4dvh, 48px);
 }
 
-.ghost,
-.primary {
+.wordmark {
+  margin: 0 0 0 -0.04em;
+  font-weight: 900;
+  font-size: min(38vw, 21dvh, 15rem);
+  line-height: 0.84;
+  letter-spacing: -0.075em;
+  color: var(--ink);
+}
+
+.mask {
+  display: block;
+  overflow: hidden;
+  /* Room for descenders (the y's) inside the mask. */
+  padding-bottom: 0.22em;
+  margin-bottom: -0.22em;
+}
+
+.line {
+  display: block;
+  transform: translate3d(0, 105%, 0);
+  animation: rise 680ms cubic-bezier(0.2, 0.85, 0.2, 1) 60ms forwards;
+}
+
+.line2 {
+  color: var(--brand);
+  animation-delay: 150ms;
+}
+
+.statement {
+  max-width: 19ch;
+  margin: clamp(16px, 2.8dvh, 32px) 0 0;
+  font-size: min(6.4vw, 3.3dvh, 1.9rem);
+  font-weight: 500;
+  line-height: 1.18;
+  letter-spacing: -0.02em;
+  opacity: 0;
+  animation: fadeIn 500ms ease-out 380ms forwards;
+}
+
+/* ---- Buttons ------------------------------------------------------------- */
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  opacity: 0;
+  animation: fadeIn 500ms ease-out 480ms forwards;
+}
+
+/* Same as the auth kit's .button / .buttonGhost, so the next screen matches. */
+.primary,
+.secondary {
   width: 100%;
-  min-height: min(14.5vw, 7dvh, 62px);
-  padding: 0 clamp(8px, 2vw, 18px);
-  border: none;
-  border-radius: 999px;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-  font-size: min(3.9vw, 2.2dvh, 1.08rem);
-  font-weight: 600;
-  letter-spacing: 0.005em;
+  height: 52px;
+  padding: 0 1.5rem;
+  border-radius: var(--radius-md);
+  font-family: inherit;
+  font-size: 0.96rem;
+  font-weight: 700;
   cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  transition: transform 0.13s ease, opacity 0.13s ease, box-shadow 0.13s ease;
+  transition: transform 0.12s ease, opacity 0.12s ease;
 }
 
-.ghost:active,
-.primary:active {
-  transform: scale(0.975);
+.primary {
+  border: none;
+  background: var(--color-brand-primary);
+  color: #fff;
+  box-shadow: 0 10px 22px -12px rgba(92, 71, 250, 0.5);
+}
+
+.secondary {
+  border: 1.5px solid var(--color-border);
+  background: var(--color-bg-white);
+  color: var(--color-text-main);
+}
+
+.primary:active,
+.secondary:active {
+  transform: scale(0.98);
   opacity: 0.9;
 }
 
-/*
- * The quieter door — solid, and the exact inverse of the canvas: black on the
- * light theme, white on the dark one. Both buttons are the same size, so what
- * ranks them is colour: the violet one is the brand asking, this one is just a
- * control.
- */
-.ghost {
-  background: var(--ghost-bg);
-  color: var(--ghost-ink);
-}
-
-.primary {
-  background: #5c47fa;
-  color: #ffffff;
-  box-shadow: 0 10px 28px -8px rgba(92, 71, 250, 0.55);
-}
-
-.primary:active {
-  box-shadow: 0 5px 14px -8px rgba(92, 71, 250, 0.55);
-}
-
-/* ============================================================================
-   ENTRANCE
-
-   Choreographed rather than staggered for its own sake: the shape lands, the
-   character steps into it, and the words and the buttons come last — the order
-   the eye is meant to travel. Done at about 600ms.
-
-   Only `opacity` and `transform`, so none of it touches layout and all of it
-   stays on the compositor.
-   ========================================================================= */
-
-@keyframes canvasIn {
-  from { opacity: 0; }
-  to   { opacity: 1; }
-}
-
-@keyframes riseIn {
-  from { opacity: 0; transform: translate3d(0, 14px, 0); }
-  to   { opacity: 1; transform: translate3d(0, 0, 0); }
-}
-
-@keyframes blobIn {
-  from { opacity: 0; transform: scale(0.84) rotate(-5deg); }
-  to   { opacity: 1; transform: scale(1) rotate(0deg); }
-}
-
-@keyframes mascotIn {
-  from { opacity: 0; transform: translate3d(0, 9%, 0) scale(0.9); }
-  to   { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
-}
-
-.canvas  { animation: canvasIn 0.5s ease-out both; }
-.copy    { animation: riseIn 0.46s cubic-bezier(0.22, 1, 0.36, 1) 0.32s both; }
-.actions { animation: riseIn 0.46s cubic-bezier(0.22, 1, 0.36, 1) 0.42s both; }
-
-/* Scaled from its feet, so it steps into the shape rather than inflating. */
-.mascot {
-  transform-origin: 50% 100%;
-  animation: mascotIn 0.66s cubic-bezier(0.22, 1, 0.36, 1) 0.22s both;
-}
-
-/* ============================================================================
-   IDLE
-
-   One slow breath on the shape, and nothing else. Several things drifting on
-   independent timers is what makes a screen feel like a screensaver. Starts
-   only once the entrance has finished, hence the delay.
-   ========================================================================= */
-
-@keyframes blobDrift {
-  0%, 100% { transform: scale(1) rotate(0deg); }
-  50%      { transform: scale(1.02) rotate(1.4deg); }
-}
-
-.blob {
-  animation:
-    blobIn 0.72s cubic-bezier(0.22, 1, 0.36, 1) 0.06s both,
-    blobDrift 11s ease-in-out 0.9s infinite;
-}
-
-/* ============================================================================
-   EXIT — the handover into auth.
-
-   A short settle, not a page transition: the content recedes a few pixels and
-   fades while the router works, so the signup screen does not cut in over a
-   still-bright front door. The canvas is deliberately left alone — it is
-   already the white or black the next screen starts on, so nothing flashes.
-   ========================================================================= */
+/* ---- Exit: content fades; the flat canvas stays put. --------------------- */
 
 .leaving .content {
   opacity: 0;
-  transform: translate3d(0, -6px, 0) scale(0.995);
-  transition: opacity 0.17s ease-in, transform 0.17s ease-in;
+  transition: opacity 0.17s ease-in;
 }
 
-/* ============================================================================
-   THE ONE CASE A FORMULA CANNOT EXPRESS
-
-   A landscape screen short enough that a picture and a headline cannot both
-   work. Shrinking the two of them leaves neither doing its job, so the scene
-   steps out and the words keep the screen. `--scene` would have handed it 192px
-   of blob on an 800x400 device, which is a thumbnail, not a composition.
-   ========================================================================= */
+@keyframes marquee { to { transform: translate3d(-50%, 0, 0); } }
+@keyframes rise { to { transform: translate3d(0, 0, 0); } }
+@keyframes fadeIn { to { opacity: 1; } }
 
 @media (orientation: landscape) and (max-height: 520px) {
-  .stage {
-    display: none;
-  }
-
-  .copy {
-    margin-top: 0;
-  }
-
-  .headline {
-    font-size: min(6.6dvh, 2.4rem);
-  }
-
-  .subline {
-    font-size: min(2.6dvh, 0.95rem);
-  }
-
-  .actions {
-    /* Side by side here: height is the scarce axis in landscape. */
-    flex-direction: row;
-    max-width: 30rem;
-  }
+  .wordmark { font-size: min(26dvh, 9rem); }
+  .statement { font-size: min(4.6dvh, 1.4rem); max-width: 30ch; }
+  .actions { max-width: 28rem; }
 }
 
-/* ============================================================================
-   REDUCED MOTION
-
-   Everything arrives, nothing moves — including the idle drift, which is the
-   one thing here that never stops on its own.
-   ========================================================================= */
-
-  @media (prefers-reduced-motion: reduce) {
-  .screen {
-    opacity: 1;
-    transform: none;
-    transition: none;
-  }
-  .canvas,
-  .copy,
-  .actions,
-  .blob,
-  .mascot {
-    animation: none !important;
-    opacity: 1;
-    transform: none;
-  }
-
-  .ghost:active,
-  .primary:active {
-    transform: none;
-  }
-
-  .leaving .content {
-    transition: none;
-  }
+@media (prefers-reduced-motion: reduce) {
+  .screen { transition: none; }
+  .screen * { animation: none !important; transition: none !important; }
+  .line { transform: none; }
+  .ticker, .statement, .actions { opacity: 1; }
+  .leaving .content { transition: none; }
 }

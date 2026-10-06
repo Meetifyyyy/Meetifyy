@@ -1,0 +1,631 @@
+/* ============================================================================
+   EditorialLanding — the landing page as a printed spread.
+
+   One grid, thin rules, numbered sections and photography. Colours are the
+   app's own theme tokens, so light and dark follow the rest of the site; the
+   brand violet is used for one thing per section at most.
+   ========================================================================= */
+
+.hero,
+.section,
+.stat {
+  --ink: var(--color-text-main);
+  --ink-soft: var(--color-text-muted);
+  --rule: var(--color-border);
+  --brand: var(--color-brand-primary);
+  --pad: clamp(20px, 4vw, 56px);
+  --violet: #5c47fa;
+  --sun: #ffd84d;
+  --coral: #ff6b4a;
+  --mint: #2fd6a3;
+  --radius: clamp(16px, 2vw, 28px);
+
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 1440px;
+  margin: 0 auto;
+  padding-left: var(--pad);
+  padding-right: var(--pad);
+  color: var(--ink);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+.hero img,
+.section img,
+.stat img,
+.band img {
+  border-radius: var(--radius);
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* ── Hero ───────────────────────────────────────────────────────────────── */
+
+.hero {
+  container-type: inline-size;
+  padding-top: clamp(104px, 14vh, 148px);
+  padding-bottom: clamp(48px, 8vw, 96px);
+}
+
+.wordmark {
+  margin: 0;
+  font-weight: 900;
+  /* "meetifyy." is ~3.95em wide in Inter 900 at this tracking, so 25cqi
+     makes it span the hero's column exactly at every width. */
+  font-size: 25cqi;
+  line-height: 0.82;
+  letter-spacing: -0.07em;
+  white-space: nowrap;
+  margin-left: -0.03em;
+  padding: 0.04em 0 0.14em;
+  border-bottom: 1px solid var(--rule);
+}
+
+.dot {
+  color: var(--brand);
+}
+
+.heroGrid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 24px;
+  padding-top: 24px;
+}
+
+.heroLead {
+  margin: 0;
+  font-size: clamp(30px, 4vw, 54px);
+  font-weight: 700;
+  line-height: 1.02;
+  letter-spacing: -0.035em;
+  max-width: 11ch;
+}
+
+.heroFigure {
+  margin: 0;
+  aspect-ratio: 4 / 5;
+  overflow: hidden;
+}
+
+.heroAside {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 24px;
+}
+
+.heroText {
+  margin: 0;
+  max-width: 34ch;
+  font-size: 1.05rem;
+  line-height: 1.55;
+  color: var(--ink-soft);
+}
+
+.heroActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.btnPrimary,
+.btnSecondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 52px;
+  padding: 0 1.5rem;
+  border-radius: 999px;
+  font-size: 0.96rem;
+  font-weight: 700;
+  text-decoration: none;
+  transition: background 0.16s ease;
+}
+
+.btnPrimary {
+  background: var(--color-brand-primary);
+  color: #fff;
+}
+
+.btnSecondary {
+  border: 1.5px solid var(--color-border);
+  background: var(--color-bg-white);
+  color: var(--color-text-main);
+}
+
+
+@media (min-width: 900px) {
+  .heroGrid {
+    grid-template-columns: 1.1fr 1fr 1.1fr;
+    gap: clamp(24px, 3vw, 48px);
+    align-items: stretch;
+  }
+  .heroFigure {
+    aspect-ratio: auto;
+    height: clamp(320px, calc(100vh - 25cqi - 220px), 560px);
+  }
+  .heroAside {
+    justify-content: space-between;
+  }
+}
+
+/* ── Numbered sections ──────────────────────────────────────────────────── */
+
+.section {
+  scroll-margin-top: 72px;
+  padding-top: clamp(56px, 9vw, 128px);
+  padding-bottom: clamp(24px, 4vw, 48px);
+}
+
+.sectionHead {
+  display: flex;
+  align-items: baseline;
+  gap: 20px;
+  padding: 12px 0 clamp(28px, 4vw, 56px);
+  border-top: 1px solid var(--ink);
+}
+
+.sectionNo {
+  font-size: 0.85rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--brand);
+}
+
+.sectionTitle {
+  margin: 0;
+  font-size: clamp(30px, 4.4vw, 64px);
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.04em;
+}
+
+/* 01 — steps */
+
+.steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: 1fr;
+}
+
+.step {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 20px;
+  padding: 24px 0;
+  border-top: 1px solid var(--rule);
+}
+
+.stepNo {
+  grid-row: span 2;
+  font-size: clamp(56px, 8vw, 120px);
+  font-weight: 900;
+  line-height: 0.8;
+  letter-spacing: -0.06em;
+  color: var(--ink);
+}
+
+.stepTitle {
+  margin: 0 0 8px;
+  font-size: clamp(20px, 2vw, 26px);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.stepText {
+  margin: 0;
+  max-width: 40ch;
+  line-height: 1.55;
+  color: var(--ink-soft);
+}
+
+@media (min-width: 900px) {
+  .steps {
+    grid-template-columns: repeat(3, 1fr);
+    column-gap: clamp(24px, 3vw, 48px);
+  }
+  .step {
+    grid-template-columns: 1fr;
+    row-gap: 20px;
+    padding-top: 28px;
+  }
+  .stepNo {
+    grid-row: auto;
+  }
+}
+
+/* ── Photo band ─────────────────────────────────────────────────────────── */
+
+.band {
+  position: relative;
+  margin: clamp(40px, 6vw, 80px) clamp(12px, 2vw, 28px) 0;
+  border-radius: clamp(20px, 2.6vw, 36px);
+  height: clamp(360px, 62vw, 760px);
+  overflow: hidden;
+}
+
+.band::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.55), transparent 55%);
+}
+
+.bandCaption {
+  position: absolute;
+  z-index: 1;
+  left: clamp(20px, 4vw, 56px);
+  right: clamp(20px, 4vw, 56px);
+  bottom: clamp(20px, 4vw, 56px);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  color: #fff;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+.bandLine {
+  font-size: clamp(64px, 14vw, 220px);
+  font-weight: 900;
+  line-height: 0.82;
+  letter-spacing: -0.065em;
+}
+
+.bandSmall {
+  max-width: 24ch;
+  font-size: 1rem;
+  font-weight: 500;
+  line-height: 1.4;
+  opacity: 0.9;
+}
+
+/* 02 — features */
+
+.featuresGrid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: clamp(32px, 4vw, 64px);
+}
+
+.features {
+  margin: 0;
+}
+
+.feature {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 6px;
+  padding: 20px 0;
+  border-top: 1px solid var(--rule);
+}
+
+.featureName {
+  font-size: clamp(22px, 2.4vw, 32px);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+
+.featureText {
+  margin: 0;
+  line-height: 1.55;
+  color: var(--ink-soft);
+}
+
+.featurePhotos {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  align-content: start;
+}
+
+.featurePhotos img {
+  grid-column: span 2;
+  aspect-ratio: 16 / 10;
+}
+
+@media (min-width: 640px) {
+  .feature {
+    grid-template-columns: minmax(180px, 1fr) 1.6fr;
+    gap: 24px;
+    align-items: baseline;
+  }
+}
+
+@media (min-width: 1024px) {
+  .featuresGrid {
+    grid-template-columns: 1.4fr 1fr;
+  }
+  .featurePhotos {
+    position: sticky;
+    top: 96px;
+  }
+}
+
+/* ── The number ─────────────────────────────────────────────────────────── */
+
+.stat {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 24px;
+  padding-top: clamp(64px, 9vw, 128px);
+  padding-bottom: clamp(24px, 4vw, 48px);
+  align-items: end;
+}
+
+.statNumber {
+  margin: 0;
+  font-size: clamp(120px, 26vw, 380px);
+  font-weight: 900;
+  line-height: 0.8;
+  letter-spacing: -0.075em;
+  color: var(--brand);
+}
+
+.statLabel {
+  margin: 20px 0 0;
+  max-width: 22ch;
+  font-size: clamp(22px, 2.6vw, 36px);
+  font-weight: 700;
+  line-height: 1.12;
+  letter-spacing: -0.03em;
+}
+
+.statPhoto {
+  aspect-ratio: 3 / 2;
+}
+
+@media (min-width: 900px) {
+  .stat {
+    grid-template-columns: 1.3fr 1fr;
+    gap: clamp(32px, 4vw, 64px);
+  }
+}
+
+/* 03 — circles */
+
+.circles {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: clamp(30px, 5.4vw, 84px);
+  font-weight: 800;
+  line-height: 1.08;
+  letter-spacing: -0.045em;
+}
+
+.circles li {
+  display: inline;
+}
+
+.circles li::after {
+  content: ' / ';
+  font-weight: 300;
+  color: var(--rule);
+}
+
+.circles li:last-child::after {
+  content: '';
+}
+
+.circles li:nth-child(3n + 2) {
+  color: var(--ink-soft);
+}
+
+.photoPair {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+  margin-top: clamp(32px, 5vw, 72px);
+}
+
+.photoPair img {
+  aspect-ratio: 3 / 2;
+}
+
+@media (min-width: 768px) {
+  .photoPair {
+    grid-template-columns: 1.5fr 1fr;
+  }
+  .photoPair img:last-child {
+    aspect-ratio: auto;
+  }
+}
+
+/* 04 — voices */
+
+.voicesGrid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: clamp(32px, 4vw, 64px);
+}
+
+.voicesPhoto {
+  aspect-ratio: 3 / 2;
+  max-height: 640px;
+}
+
+.voices {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(32px, 4vw, 56px);
+}
+
+.voice {
+  margin: 0;
+  padding-top: 20px;
+  border-top: 1px solid var(--rule);
+}
+
+.voice p {
+  margin: 0;
+  font-size: clamp(22px, 2.4vw, 34px);
+  font-weight: 600;
+  line-height: 1.22;
+  letter-spacing: -0.025em;
+}
+
+.voice footer {
+  margin-top: 16px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.shareLink {
+  align-self: flex-start;
+  font-weight: 700;
+  color: var(--brand);
+  text-decoration: none;
+  border-bottom: 1.5px solid currentColor;
+  padding-bottom: 2px;
+}
+
+@media (min-width: 900px) {
+  .voicesGrid {
+    grid-template-columns: 1fr 1.4fr;
+    align-items: start;
+  }
+  .voicesPhoto {
+    aspect-ratio: 4 / 5;
+  }
+}
+
+/* ============================================================================
+   COLOUR — a four-colour set (violet, sun, coral, mint) used in solid blocks,
+   so the page reads as a social product rather than a monochrome print piece.
+   ========================================================================= */
+
+.marker {
+  background: linear-gradient(transparent 58%, var(--sun) 58%, var(--sun) 92%, transparent 92%);
+  padding: 0 0.05em;
+}
+
+.heroFigure {
+  position: relative;
+  overflow: visible;
+}
+
+.sticker {
+  position: absolute;
+  z-index: 1;
+  top: 16px;
+  left: -10px;
+  padding: 10px 16px;
+  border-radius: 999px;
+  background: var(--coral);
+  color: #fff;
+  font-size: 0.95rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  transform: rotate(-5deg);
+  box-shadow: 0 10px 24px -10px rgba(255, 80, 40, 0.6);
+}
+
+/* Steps become coloured blocks. */
+.steps {
+  gap: 12px;
+}
+
+.step {
+  border-top: none;
+  border-radius: var(--radius);
+  padding: clamp(22px, 2.6vw, 36px);
+}
+
+.step .stepText {
+  color: inherit;
+  opacity: 0.85;
+}
+
+.step .stepNo {
+  color: inherit;
+}
+
+.tone0 { --tone: var(--violet); --on-tone: #fff; }
+.tone1 { --tone: var(--sun); --on-tone: #1a1530; }
+.tone2 { --tone: var(--coral); --on-tone: #fff; }
+.tone3 { --tone: var(--mint); --on-tone: #0c2b22; }
+
+.step.tone0,
+.step.tone1,
+.step.tone2 {
+  background: var(--tone);
+  color: var(--on-tone);
+}
+
+/* Feature rows: a colour swatch before each name. */
+.featureName {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.swatch {
+  flex-shrink: 0;
+  width: 0.55em;
+  height: 0.55em;
+  border-radius: 6px;
+  background: var(--tone);
+}
+
+/* The number, on a sun-yellow band. */
+.stat {
+  max-width: none;
+  background: var(--sun);
+  color: #1a1530;
+  margin-top: clamp(56px, 8vw, 112px);
+  padding-top: clamp(48px, 7vw, 96px);
+  padding-bottom: clamp(48px, 7vw, 96px);
+  padding-left: max(var(--pad), calc((100% - 1440px) / 2 + var(--pad)));
+  padding-right: max(var(--pad), calc((100% - 1440px) / 2 + var(--pad)));
+}
+
+.statNumber {
+  color: var(--violet);
+}
+
+/* Circles as big coloured tags. */
+.circles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: clamp(22px, 3.4vw, 48px);
+}
+
+.circles li,
+.circles li:nth-child(3n + 2) {
+  display: inline-block;
+  padding: 0.28em 0.6em 0.34em;
+  border-radius: 999px;
+  background: var(--tone);
+  color: var(--on-tone);
+}
+
+.circles li::after,
+.circles li:last-child::after {
+  content: none;
+}
+
+/* Quotes on soft tinted cards. */
+.voice {
+  border-top: none;
+  border-radius: var(--radius);
+  padding: clamp(22px, 2.6vw, 36px);
+}
+
+.soft0 { background: rgba(92, 71, 250, 0.1); }
+.soft1 { background: rgba(47, 214, 163, 0.16); }
+
+:global([data-theme='dark']) .soft0 { background: rgba(124, 104, 255, 0.18); }
+:global([data-theme='dark']) .soft1 { background: rgba(47, 214, 163, 0.16); }
+:global([data-theme='dark']) .marker {
+  background: linear-gradient(transparent 58%, rgba(255, 216, 77, 0.55) 58%, rgba(255, 216, 77, 0.55) 92%, transparent 92%);
+}

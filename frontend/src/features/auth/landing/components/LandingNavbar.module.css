@@ -1,59 +1,55 @@
+/* Landing header — wordmark, section links, two sentence-case buttons.
+   Transparent over the page at the top; a soft frosted bar once scrolled. */
+
 .header {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
+  inset: 12px 0 auto 0;
   z-index: 50;
-  padding: 0.85rem 0;
-  border-bottom: none;
-  box-shadow: none;
-  transition: background-color 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+  padding: 0 clamp(12px, 3vw, 40px);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  pointer-events: none;
 }
 
-.top {
-  background: transparent;
-}
-
-.scrolled {
-  background: #ffffff;
-}
-
-[data-theme="dark"] .scrolled {
-  background: #0b0f19;
-}
-
+/* A floating bar: always a soft surface, a little stronger once scrolled. */
 .inner {
-  max-width: 80rem;
+  pointer-events: auto;
+  max-width: 1280px;
   margin: 0 auto;
-  padding: 0 1.5rem;
+  height: 60px;
+  padding: 0 8px 0 20px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 16px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.78);
+  backdrop-filter: saturate(160%) blur(16px);
+  -webkit-backdrop-filter: saturate(160%) blur(16px);
+  box-shadow: 0 0 0 1px var(--color-border), 0 8px 24px -16px rgba(30, 20, 90, 0.3);
+  transition: box-shadow 0.2s ease, background 0.2s ease;
 }
 
-/* --- Brand --- */
+.scrolled .inner {
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 0 0 1px var(--color-border), 0 12px 32px -14px rgba(30, 20, 90, 0.35);
+}
+
+[data-theme="dark"] .inner {
+  background: rgba(28, 28, 32, 0.78);
+}
+
+[data-theme="dark"] .scrolled .inner {
+  background: rgba(28, 28, 32, 0.92);
+}
+
 .brand {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  cursor: pointer;
-  background: none;
-  border: none;
-  padding: 0;
-  text-align: left;
-  text-decoration: none;
-}
-
-.logoImg {
-  width: 2.75rem;
-  height: 2.75rem;
-  object-fit: contain;
+  flex-shrink: 0;
 }
 
 .wordmarkImg {
-  height: 1.0rem;
+  height: 1rem;
   width: auto;
-  object-fit: contain;
   user-select: none;
 }
 
@@ -61,308 +57,166 @@
   filter: brightness(0) invert(1);
 }
 
-.brandName {
-  font-family: 'Changa One', 'Calistoga', sans-serif;
-  font-size: 1.75rem;
-  font-weight: 400;
-  letter-spacing: -0.025em;
-  color: #0f172a;
+/* ── Section links ─────────────────────────────────────────────── */
+
+.nav {
+  display: none;
+  margin: 0 auto;
+  padding: 4px;
+  gap: 2px;
+  border-radius: 999px;
+  background: var(--color-bg-alt);
 }
 
-[data-theme="dark"] .brandName {
-  color: #f8fafc;
+.navLink {
+  padding: 8px 14px;
+  border-radius: 999px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-decoration: none;
+  transition: background 0.15s ease, color 0.15s ease;
 }
 
-/* --- Desktop CTAs --- */
+.navLink:hover {
+  background: var(--color-bg-white);
+  color: var(--color-text-main);
+}
+
+/* ── Buttons ───────────────────────────────────────────────────── */
+
 .desktopActions {
   display: none;
   align-items: center;
-  gap: 0.75rem;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.signInBtn,
+.ctaBtn {
+  display: inline-flex;
+  align-items: center;
+  height: 44px;
+  padding: 0 18px;
+  border-radius: 999px;
+  font-size: 0.92rem;
+  font-weight: 650;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background 0.15s ease, transform 0.12s ease;
+}
+
+.signInBtn {
+  color: var(--color-text-main);
+}
+
+.signInBtn:hover {
+  background: var(--color-bg-alt);
+}
+
+.ctaBtn {
+  background: var(--color-brand-primary);
+  color: #fff;
+}
+
+.ctaBtn:hover {
+  background: var(--color-brand-accent, #4a36e0);
+}
+
+
+/* ── Mobile ────────────────────────────────────────────────────── */
+
+.hamburger {
+  margin-left: auto;
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border: none;
+  border-radius: 999px;
+  background: var(--color-bg-alt);
+  color: var(--color-text-main);
+  cursor: pointer;
+}
+
+.mobileMenu {
+  position: fixed;
+  z-index: 49;
+  top: 80px;
+  left: clamp(12px, 3vw, 40px);
+  right: clamp(12px, 3vw, 40px);
+  padding: 8px;
+  border-radius: 24px;
+  background: var(--color-bg-white);
+  box-shadow: 0 0 0 1px var(--color-border), 0 24px 48px -20px rgba(20, 10, 80, 0.35);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  text-align: left;
+}
+
+.mobileNav {
+  display: flex;
+  flex-direction: column;
+}
+
+.mobileNavLink {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 14px;
+  border-radius: 14px;
+  font-size: 1.05rem;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+  color: var(--color-text-main);
+  text-decoration: none;
+}
+
+.mobileNavLink::after {
+  content: '→';
+  color: var(--color-text-muted);
+  font-weight: 500;
+}
+
+
+.mobileActions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 6px;
+  padding: 10px 6px 6px;
+  border-top: 1px solid var(--color-border);
+}
+
+.mobileActions .signInBtn,
+.mobileActions .ctaBtn {
+  justify-content: center;
+  height: 48px;
+}
+
+.mobileActions .signInBtn {
+  background: var(--color-bg-alt);
+}
+
+/* Only one button when signed in — let it take the row. */
+.mobileActions .ctaBtn:only-child {
+  grid-column: span 2;
 }
 
 @media (min-width: 768px) {
   .desktopActions {
     display: flex;
   }
-}
-
-.signInBtn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  text-decoration: none;
-  white-space: nowrap;
-  font-family: inherit;
-  font-size: 0.75rem;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  font-weight: 700;
-  color: #0f172a;
-  border: 1px solid rgba(15, 23, 42, 0.35);
-  padding: 0.5rem 1.25rem;
-  border-radius: 9999px;
-  background: transparent;
-  cursor: pointer;
-  transition: border-color 0.2s, background 0.2s, color 0.2s;
-}
-
-.signInBtn:hover {
-  border-color: rgba(15, 23, 42, 0.6);
-  background: rgba(15, 23, 42, 0.05);
-}
-
-[data-theme="dark"] .signInBtn {
-  color: #f8fafc;
-  border: 1px solid rgba(248, 250, 252, 0.35);
-}
-
-[data-theme="dark"] .signInBtn:hover {
-  border-color: rgba(248, 250, 252, 0.65);
-  background: rgba(255, 255, 255, 0.1);
-}
-
-.ctaBtn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  text-decoration: none;
-  white-space: nowrap;
-  font-family: inherit;
-  font-size: 0.75rem;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  font-weight: 700;
-  color: #fff;
-  background: var(--color-brand-primary);
-  padding: 0.5rem 1.375rem;
-  border-radius: 9999px;
-  border: none;
-  cursor: pointer;
-  transition: background 0.3s, box-shadow 0.3s, transform 0.1s;
-}
-
-.ctaBtn:hover {
-  background: #4434d6;
-  box-shadow: 0 8px 20px rgba(92, 71, 250, 0.25);
-}
-
-.ctaBtn:active {
-  transform: scale(0.98);
-}
-
-/* --- Hamburger --- */
-.hamburger {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0.5rem;
-  border-radius: 9999px;
-  border: 1px solid rgba(92, 71, 250, 0.25);
-  background: rgba(240, 238, 255, 0.9);
-  color: var(--color-brand-primary);
-  cursor: pointer;
-  transition: transform 0.2s, background 0.2s;
-  z-index: 50;
-}
-
-@media (hover: hover) and (pointer: fine) {
-
-  .hamburger:hover {
-  transform: scale(1.05);
-  }
-}
-
-.hamburger:active {
-  transform: scale(0.95);
-}
-
-@media (min-width: 768px) {
-  .hamburger {
-    display: none;
-  }
-}
-
-[data-theme="dark"] .hamburger {
-  border-color: rgba(121, 101, 251, 0.3);
-  background: rgba(28, 26, 53, 0.95);
-  color: #8b7bfb;
-}
-
-/* --- Blend overlay --- */
-.blendOverlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: 50;
-  pointer-events: none;
-  mix-blend-mode: difference;
-  transition: padding 0.5s ease-in-out;
-}
-
-.blendBrand {
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
-}
-
-.logoMarkBlank {
-  width: 2.75rem;
-  height: 2.75rem;
-  opacity: 0;
-}
-
-.brandNameBlend {
-  font-size: 1.75rem;
-  font-weight: 400;
-  letter-spacing: -0.025em;
-  color: #fff;
-  transition: all 0.3s;
-}
-
-.blendSignIn {
-  padding: 0.5rem 1.25rem;
-  border: 1px solid transparent;
-  font-size: 0.75rem;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  font-weight: 700;
-  color: #fff;
-  text-align: center;
-}
-
-.blendCtaHide {
-  opacity: 0;
-  font-size: 0.75rem;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  font-weight: 700;
-  padding: 0.5rem 1.375rem;
-}
-
-/* --- Mobile menu --- */
-.mobileMenu {
-  display: flex;
-  position: fixed;
-  inset: 0;
-  z-index: 40;
-  background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(20px);
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  padding: 2rem;
-}
-
-[data-theme="dark"] .mobileMenu {
-  background: rgba(10, 15, 29, 0.98);
-}
-
-@media (min-width: 768px) {
+  .hamburger,
   .mobileMenu {
     display: none;
   }
 }
 
-.mobileMenuCard {
-  width: 100%;
-  max-width: 24rem;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 1.5rem;
-}
-
-.mobileLogo {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 1rem;
-}
-
-.mobileLogoImg {
-  width: 3.5rem;
-  height: 3.5rem;
-  object-fit: contain;
-}
-
-.mobileWordmarkImg {
-  height: 1.15rem;
-  width: auto;
-  object-fit: contain;
-}
-
-[data-theme="dark"] .mobileWordmarkImg {
-  filter: brightness(0) invert(1);
-}
-
-.mobileBrandName {
-  font-size: 1.125rem;
-  font-weight: 900;
-  letter-spacing: -0.025em;
-  color: #111827;
-}
-
-[data-theme="dark"] .mobileBrandName {
-  color: #fff;
-}
-
-.mobileSignIn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  text-decoration: none;
-  font-family: inherit;
-  width: 100%;
-  text-align: center;
-  font-size: 0.875rem;
-  text-transform: uppercase;
-  letter-spacing: 0.15em;
-  font-weight: 700;
-  color: var(--color-brand-primary);
-  padding: 1rem;
-  border: 1.5px solid rgba(92, 71, 250, 0.35);
-  border-radius: 9999px;
-  background: rgba(240, 238, 255, 0.6);
-  cursor: pointer;
-  transition: background 0.2s, border-color 0.2s;
-}
-
-.mobileSignIn:hover {
-  background: rgba(240, 238, 255, 1);
-  border-color: rgba(92, 71, 250, 0.65);
-}
-
-[data-theme="dark"] .mobileSignIn {
-  color: #8b7bfb;
-  border-color: rgba(121, 101, 251, 0.35);
-  background: rgba(121, 101, 251, 0.05);
-}
-
-.mobileCta {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  text-decoration: none;
-  font-family: inherit;
-  width: 100%;
-  text-align: center;
-  background: var(--color-brand-primary);
-  color: #fff;
-  font-size: 0.875rem;
-  text-transform: uppercase;
-  letter-spacing: 0.15em;
-  font-weight: 700;
-  padding: 1rem;
-  border-radius: 9999px;
-  border: none;
-  cursor: pointer;
-  box-shadow: 0 8px 30px rgba(92, 71, 250, 0.2);
-  transition: box-shadow 0.25s, background 0.25s;
-}
-
-.mobileCta:hover {
-  background: #4434d6;
-  box-shadow: 0 12px 35px rgba(92, 71, 250, 0.3);
+@media (min-width: 1024px) {
+  .nav {
+    display: flex;
+  }
+  .desktopActions {
+    margin-left: 0;
+  }
 }

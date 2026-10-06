@@ -1,86 +1,10 @@
 /* ============================================================
-   landing.css — Shared keyframe animations for landing components
+   landing.css — fonts and document scrolling for the landing and info pages
    Import once from LandingPage.jsx
    ============================================================ */
 
 /* Google Fonts used on landing page */
 @import url('https://fonts.googleapis.com/css2?family=Calistoga&family=Changa+One&family=Syne:wght@700;800&family=Caveat:wght@500;700&display=swap');
-
-/* --- Marquee --- */
-@keyframes marquee {
-  0%   { transform: translateX(0); }
-  100% { transform: translateX(-50%); }
-}
-
-@keyframes marquee-reverse {
-  0%   { transform: translateX(-50%); }
-  100% { transform: translateX(0); }
-}
-
-/* --- Phone Float --- */
-@keyframes phoneFloat {
-  0%, 100% { transform: translateY(0); }
-  50%       { transform: translateY(-10px); }
-}
-
-/* --- Floating collage cards --- */
-@keyframes floatA {
-  0%, 100% { transform: rotate(-2deg) translateY(0px); }
-  50%       { transform: rotate(-2deg) translateY(-11px); }
-}
-
-@keyframes floatB {
-  0%, 100% { transform: rotate(2.5deg) translateY(-5px); }
-  50%       { transform: rotate(2.5deg) translateY(6px); }
-}
-
-@keyframes floatC {
-  0%, 100% { transform: rotate(-1.2deg) translateY(0px); }
-  50%       { transform: rotate(-1.2deg) translateY(-9px); }
-}
-
-@keyframes floatD {
-  0%, 100% { transform: translateY(0px); }
-  50%       { transform: translateY(-7px); }
-}
-
-@keyframes floatE {
-  0%, 100% { transform: translateY(0px); }
-  50%       { transform: translateY(-8px); }
-}
-
-/* --- Slow spin --- */
-@keyframes slow-spin {
-  from { transform: rotate(0deg); }
-  to   { transform: rotate(360deg); }
-}
-
-/* --- Pulse dot --- */
-@keyframes pulse-dot {
-  0%, 100% { opacity: 1; }
-  50%       { opacity: 0.4; }
-}
-
-/* --- Utility classes used across landing components --- */
-.landing-marquee-fwd {
-  animation: marquee 35s linear infinite;
-  will-change: transform;
-  backface-visibility: hidden;
-}
-
-.landing-marquee-rev {
-  animation: marquee-reverse 40s linear infinite;
-  will-change: transform;
-  backface-visibility: hidden;
-}
-
-.landing-float-a { animation: floatA 5.2s ease-in-out infinite; }
-.landing-float-b { animation: floatB 6s ease-in-out infinite; }
-.landing-float-c { animation: floatC 5.7s ease-in-out infinite; }
-.landing-float-d { animation: floatD 4.8s ease-in-out infinite; }
-.landing-float-e { animation: floatE 5.4s ease-in-out infinite; }
-.landing-slow-spin { animation: slow-spin 25s linear infinite; }
-.landing-pulse-dot { animation: pulse-dot 2s ease-in-out infinite; }
 
 /* Display font helper */
 .landing-font-display {
@@ -88,9 +12,6 @@
   font-weight: 400 !important;
 }
 
-.landing-font-handwriting {
-  font-family: 'Caveat', cursive;
-}
 
 /* --- Thin Scrollbar --- */
 html.landing-scroll-active,

@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { useCookieConsent } from '@shared/context/CookieConsentContext';
-import logoImg from '@assets/images/meetify_logo.webp';
 import wordmarkImg from '@assets/images/meetifyy_wordmark.svg';
+import stageLights from '../assets/stage-lights.webp';
 import styles from './LandingFooter.module.css';
 
 export default function LandingFooter() {
@@ -25,129 +25,101 @@ export default function LandingFooter() {
   return (
     <footer id="about" className={styles.footer} role="contentinfo">
       <div className={styles.container}>
-        {/* Main Footer Grid */}
-        <div className={styles.mainGrid}>
-          {/* Left Column: Brand Icon, Social Links */}
-          <div className={styles.leftCol}>
-            <Link
-              to="/"
-              onClick={toTop}
-              className={styles.logoBtn}
-              aria-label="Meetifyy home"
-            >
-              <img src={logoImg} alt="Meetifyy" className={styles.logoImg} />
-            </Link>
-
-            {/* Social Icons */}
-            <div className={styles.socialSection}>
-              <span className={styles.sectionLabel}>Social</span>
-              <div className={styles.socialIcons} aria-label="Social media links">
-                {/* Instagram */}
-                <a
-                  href="https://www.instagram.com/meetifyy.in?igsi=YzVoZ3drN29id2tn"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className={styles.socialIcon}
-                  aria-label="Instagram"
-                >
-                  <svg
-                    width="18"
-                    height="18"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <rect x="2" y="2" width="20" height="20" rx="5" />
-                    <circle cx="12" cy="12" r="4" />
-                    <circle cx="17.5" cy="6.5" r="1" fill="currentColor" stroke="none" />
-                  </svg>
-                </a>
-                {/* LinkedIn */}
-                <a
-                  href="https://www.linkedin.com/company/meetifyy/"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className={styles.socialIcon}
-                  aria-label="LinkedIn"
-                >
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M16 8a6 6 0 016 6v7h-4v-7a2 2 0 00-2-2 2 2 0 00-2 2v7h-4v-7a6 6 0 016-6zM2 9h4v12H2z" />
-                    <circle cx="4" cy="4" r="2" />
-                  </svg>
-                </a>
-              </div>
+        <div className={styles.card}>
+          <div className={styles.cardText}>
+            <p className={styles.signoff}>
+              See you on <span className={styles.highlight}>campus</span>.
+            </p>
+            <p className={styles.cardSub}>
+              Join 300+ verified students already finding their people.
+            </p>
+            <div className={styles.cardActions}>
+              <Link to="/signup" className={styles.cta}>Create account</Link>
+              <Link to="/login" className={styles.ctaGhost}>Log in</Link>
             </div>
           </div>
+          <img
+            className={styles.cardPhoto}
+            src={stageLights}
+            alt="Hands raised at a concert under blue stage lights"
+            width="1000"
+            height="800"
+            loading="lazy"
+            decoding="async"
+          />
+        </div>
 
-          {/* Right Navigation Columns */}
-          <div className={styles.rightNavGrid}>
-            <div className={styles.navCol}>
-              {/* h2, not h4: these are the only headings in the contentinfo
-                  landmark, and jumping straight to h4 skipped two levels for no
-                  visual gain. .colTitle sets size, weight and margin, so the
-                  rendered result is identical. */}
-              <h2 className={styles.colTitle}>Company</h2>
-              <ul className={styles.linkList}>
-                <li>
-                  <Link to="/about" onClick={toTop} className={styles.linkBtn}>
-                    About Us
-                  </Link>
-                </li>
-                <li>
-                  <Link to="/help-and-support" onClick={toTop} className={styles.linkBtn}>
-                    Help &amp; Support
-                  </Link>
-                </li>
-              </ul>
-            </div>
+        <div className={styles.columns}>
+          <div className={styles.about}>
+            <img src={wordmarkImg} alt="Meetifyy" className={styles.aboutWordmark} />
+            <p className={styles.aboutText}>
+              The campus social app for verified college students. Circles,
+              plans and chats with the people around you.
+            </p>
+          </div>
 
-            <div className={styles.navCol}>
-              <h2 className={styles.colTitle}>Legal</h2>
-              <ul className={styles.linkList}>
+          <div className={styles.col}>
+            {/* h2: the only headings in the contentinfo landmark. */}
+            <h2 className={styles.colTitle}>Company</h2>
+            <ul className={styles.list}>
+                <li><Link to="/about" onClick={toTop} className={styles.link}>About us</Link></li>
+                <li><Link to="/help-and-support" onClick={toTop} className={styles.link}>Help &amp; support</Link></li>
+            </ul>
+          </div>
+
+          <div className={styles.col}>
+            <h2 className={styles.colTitle}>Legal</h2>
+            <ul className={styles.list}>
+                <li><Link to="/privacy-policy" onClick={toTop} className={styles.link}>Privacy policy</Link></li>
+                <li><Link to="/terms-and-conditions" onClick={toTop} className={styles.link}>Terms of service</Link></li>
+                <li><Link to="/community-guidelines" onClick={toTop} className={styles.link}>Community guidelines</Link></li>
+                <li><Link to="/cookie-policy" onClick={toTop} className={styles.link}>Cookie policy</Link></li>
                 <li>
-                  <Link to="/privacy-policy" onClick={toTop} className={styles.linkBtn}>
-                    Privacy Policy
-                  </Link>
-                </li>
-                <li>
-                  <Link to="/terms-and-conditions" onClick={toTop} className={styles.linkBtn}>
-                    Terms of Service
-                  </Link>
-                </li>
-                <li>
-                  <Link to="/community-guidelines" onClick={toTop} className={styles.linkBtn}>
-                    Community Guidelines
-                  </Link>
-                </li>
-                <li>
-                  <Link to="/cookie-policy" onClick={toTop} className={styles.linkBtn}>
-                    Cookie Policy
-                  </Link>
-                </li>
-                <li>
-                  <button
-                    onClick={openPreferences}
-                    className={styles.linkBtn}
-                    aria-label="Manage cookie preferences"
-                  >
-                    Cookie Preferences
+                  <button type="button" onClick={openPreferences} className={styles.link}>
+                    Cookie preferences
                   </button>
                 </li>
-              </ul>
+            </ul>
+          </div>
+
+          <div className={styles.col}>
+            <h2 className={styles.colTitle}>Follow us</h2>
+            <div className={styles.socials}>
+              <a
+                href="https://www.instagram.com/meetifyy.in?igsi=YzVoZ3drN29id2tn"
+                target="_blank"
+                rel="noopener noreferrer"
+                className={styles.social}
+                aria-label="Instagram"
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="2" y="2" width="20" height="20" rx="5" />
+                  <circle cx="12" cy="12" r="4" />
+                  <circle cx="17.5" cy="6.5" r="1" fill="currentColor" stroke="none" />
+                </svg>
+              </a>
+              <a
+                href="https://www.linkedin.com/company/meetifyy/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className={styles.social}
+                aria-label="LinkedIn"
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M16 8a6 6 0 016 6v7h-4v-7a2 2 0 00-2-2 2 2 0 00-2 2v7h-4v-7a6 6 0 016-6zM2 9h4v12H2z" />
+                  <circle cx="4" cy="4" r="2" />
+                </svg>
+              </a>
             </div>
           </div>
         </div>
 
-        {/* Giant Bottom Wordmark Logo Banner */}
-        <div className={styles.giantWordmarkWrapper}>
-          <img src={wordmarkImg} alt="Meetifyy" className={styles.giantWordmarkImg} />
+        <div className={styles.bottom}>
+          <p className={styles.legal}>© {new Date().getFullYear()} Meetifyy</p>
+          <p className={styles.legal}>Made for students, by students.</p>
         </div>
+
       </div>
     </footer>
   );
 }
-
-

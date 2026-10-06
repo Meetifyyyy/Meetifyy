@@ -19,6 +19,7 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 
 vi.mock('@shared/api/apiClient', () => ({
   // Added with the cookie migration: AuthContext reads these to decide whether
@@ -68,7 +69,7 @@ const TECHNICAL_MARKERS = [
  * labels.
  */
 function openFormAndSubmit() {
-  const { container } = render(<SignupJourneyCTA />);
+  const { container } = render(<MemoryRouter><SignupJourneyCTA /></MemoryRouter>);
 
   // The landing form's submit opens the modal.
   fireEvent.submit(container.querySelector('form'));

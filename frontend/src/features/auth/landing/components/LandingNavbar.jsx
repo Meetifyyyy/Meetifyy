@@ -1,10 +1,13 @@
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Menu, X } from '@shared/components/icons';
 import wordmark from '@assets/images/meetifyy_wordmark.svg';
 import { useAuth } from '@shared/context/AuthContext';
 import styles from './LandingNavbar.module.css';
+
+/** Read by EditorialLanding on mount. */
+export const LANDING_SCROLL_KEY = 'meetifyy:landing-scroll-to';
 
 export default function LandingNavbar() {
   // This navbar is also used on info/footer pages (About, Terms, Privacy,
@@ -23,16 +26,63 @@ export default function LandingNavbar() {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  /**
+   * The browser's own jump to `#id` does not happen here — the app manages
+   * scrolling itself — so section links scroll explicitly. From another page
+   * they navigate to `/#id`, and the landing page scrolls on arrival.
+   */
+  const goToSection = (event, href) => {
+    event.preventDefault();
+    setMenuOpen(false);
+    const id = href.split('#')[1];
+    if (location.pathname === '/') {
+      // The URL is left alone: a raw history write would bypass the router
+      // and desync SmartBackTracker's mirror of the stack.
+      document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } else {
+      // Handed over in storage, not the URL: SmartBackTracker collapses a
+      // push to `/` onto the existing entry, which drops any hash.
+      try { window.sessionStorage.setItem(LANDING_SCROLL_KEY, id); } catch { /* best effort */ }
+      navigate('/');
+    }
+  };
+
+  // Section links are absolute (`/#…`) because this header is also mounted
+  // on the static info pages, where the sections are on another page.
+  const sections = [
+    ['How it works', '/#how-it-works'],
+    ['Features', '/#features'],
+    ['Circles', '/#circles'],
+    ['Stories', '/#testimonials'],
+  ];
+
+  const actions = (onNavigate) =>
+    !authLoading &&
+    (isLoggedIn ? (
+      <Link className={styles.ctaBtn} to="/home" onClick={onNavigate}>
+        Continue to Meetifyy
+      </Link>
+    ) : (
+      <>
+        <Link className={styles.signInBtn} to="/login" onClick={onNavigate}>
+          Log in
+        </Link>
+        <Link className={styles.ctaBtn} to="/signup" onClick={onNavigate}>
+          Create account
+        </Link>
+      </>
+    ));
+
   return (
     <>
-      <header className={`${styles.header} ${scrolled ? styles.scrolled : styles.top}`}>
+      <header className={`${styles.header} ${scrolled ? styles.scrolled : ''}`}>
         <div className={styles.inner}>
-          {/* Logo */}
           {/*
-            An anchor, not a button. This is the site-wide link back to the
-            homepage and it appears on every public page, so as a button it was
-            a dead end for a crawler walking the site from any page but the
-            root. <Link> keeps the client-side navigation identical.
+            An anchor, not a button: this is the site-wide link back to the
+            homepage on every public page, and a crawler needs an href.
           */}
           <Link
             to="/"
@@ -43,86 +93,43 @@ export default function LandingNavbar() {
             <img src={wordmark} alt="Meetifyy" className={styles.wordmarkImg} />
           </Link>
 
-          {/* Desktop CTAs */}
-          <div className={styles.desktopActions}>
-            {!authLoading && (
-              isLoggedIn ? (
-                <Link className={styles.ctaBtn} to="/home">
-                  Continue
-                </Link>
-              ) : (
-                <>
-                  <Link className={styles.signInBtn} to="/login">
-                    Sign In
-                  </Link>
-                  <Link className={styles.ctaBtn} to="/signup">
-                    Create Account
-                  </Link>
-                </>
-              )
-            )}
-          </div>
+          <nav className={styles.nav} aria-label="Sections">
+            {sections.map(([label, href]) => (
+              <a key={href} href={href} className={styles.navLink} onClick={(e) => goToSection(e, href)}>{label}</a>
+            ))}
+          </nav>
 
-          {/* Mobile hamburger */}
+          <div className={styles.desktopActions}>{actions()}</div>
+
           <button
+            type="button"
             onClick={() => setMenuOpen(!menuOpen)}
             className={styles.hamburger}
-            aria-label="Toggle menu"
+            aria-label={menuOpen ? 'Close menu' : 'Open menu'}
+            aria-expanded={menuOpen}
           >
             {menuOpen ? <X size={22} /> : <Menu size={22} />}
           </button>
         </div>
       </header>
 
-      {/* Mobile full-screen menu */}
       <AnimatePresence>
         {menuOpen && (
           <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.25 }}
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.2 }}
             className={styles.mobileMenu}
           >
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0, y: 15 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.95, opacity: 0, y: 15 }}
-              transition={{ type: 'spring', stiffness: 200, damping: 20, delay: 0.05 }}
-              className={styles.mobileMenuCard}
-            >
-              <div className={styles.mobileLogo}>
-                <img src={wordmark} alt="Meetifyy" className={styles.mobileWordmarkImg} />
-              </div>
-              {!authLoading && (
-                isLoggedIn ? (
-                  <Link
-                    to="/home"
-                    onClick={() => setMenuOpen(false)}
-                    className={styles.mobileCta}
-                  >
-                    Continue
-                  </Link>
-                ) : (
-                  <>
-                    <Link
-                      to="/login"
-                      onClick={() => setMenuOpen(false)}
-                      className={styles.mobileSignIn}
-                    >
-                      Sign In
-                    </Link>
-                    <Link
-                      to="/signup"
-                      onClick={() => setMenuOpen(false)}
-                      className={styles.mobileCta}
-                    >
-                      Create Account
-                    </Link>
-                  </>
-                )
-              )}
-            </motion.div>
+            <nav className={styles.mobileNav} aria-label="Sections">
+              {sections.map(([label, href]) => (
+                <a key={href} href={href} className={styles.mobileNavLink} onClick={(e) => goToSection(e, href)}>
+                  {label}
+                </a>
+              ))}
+            </nav>
+            <div className={styles.mobileActions}>{actions(() => setMenuOpen(false))}</div>
           </motion.div>
         )}
       </AnimatePresence>

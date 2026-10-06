@@ -1,11 +1,6 @@
 import { useEffect } from 'react';
-import Background from '@shared/components/ui/Background';
 import LandingNavbar from '../landing/components/LandingNavbar';
-import LandingHero from '../landing/components/LandingHero';
-import HowItWorksSteps from '../landing/components/HowItWorksSteps';
-import CampusFeaturesGrid from '../landing/components/CampusFeaturesGrid';
-import ProposedCirclesMarquee from '../landing/components/ProposedCirclesMarquee';
-import StudentTestimonials from '../landing/components/StudentTestimonials';
+import EditorialLanding from '../landing/components/EditorialLanding';
 import SignupJourneyCTA from '../landing/components/SignupJourneyCTA';
 import LandingFooter from '../landing/components/LandingFooter';
 import '../landing/landing.css';
@@ -51,20 +46,13 @@ export default function LandingPage() {
     };
   }, []);
   return (
-    <>
-      <Background />
-      <div>
-        <LandingNavbar />
-        <main>
-          <LandingHero />
-          <HowItWorksSteps />
-          <CampusFeaturesGrid />
-          <ProposedCirclesMarquee />
-          <StudentTestimonials />
-          <SignupJourneyCTA />
-        </main>
-        <LandingFooter />
-      </div>
-    </>
+    <div style={{ background: 'var(--color-bg-white)', minHeight: '100vh' }}>
+      <LandingNavbar />
+      <main>
+        <EditorialLanding />
+        <SignupJourneyCTA />
+      </main>
+      <LandingFooter />
+    </div>
   );
 }
