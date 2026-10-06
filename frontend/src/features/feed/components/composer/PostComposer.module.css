@@ -130,8 +130,8 @@
 .composerExpandInner {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
-  padding-top: 0.75rem;
+  gap: 0.5rem;
+  padding-top: 0.25rem;
   opacity: 0;
   transform: translateY(-6px);
   transition: opacity 160ms ease-out, transform 160ms ease-out;
@@ -162,13 +162,33 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 0.5rem;
   width: 100%;
-  padding-top: 0.75rem;
+  padding-top: 0.25rem;
+  /* The labels drop by the row's own width, not the screen's: the composer
+     sits in columns of different widths on the website and the app. */
+  container-type: inline-size;
 }
 
 .composerActionsLeft {
   display: flex;
+  align-items: center;
   gap: 0.15rem;
+  min-width: 0;
+}
+
+/* Not enough room for Image / Video / Poll with words (plus the counter and
+   Post): all three become round icon buttons together, never just one. The
+   names stay on each button's aria-label and title. */
+@container (max-width: 380px) {
+  .composerBtnLabel {
+    display: none;
+  }
+
+  .composerActionsLeft .composerIconBtn {
+    width: 38px;
+    padding: 0;
+  }
 }
 
 .composerIconBtn {
@@ -209,6 +229,11 @@
 /* These carry `disabled` in the markup — the media buttons once six items are
    attached — but had no styling for it, so a button that could not be pressed
    looked exactly like one that could. */
+.composerIconBtn[aria-disabled='true'] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .composerIconBtn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
@@ -579,4 +604,91 @@
   .composerEmojiBtn:active {
     transform: none;
   }
+}
+
+/* ─── Media limit ─────────────────────────────────────────────────────────── */
+.mediaLimitNotice {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 10px 8px 10px 12px;
+  border-radius: 12px;
+  background: rgba(245, 158, 11, 0.12);
+  color: #92400e;
+  font-size: 0.85rem;
+  line-height: 1.4;
+  animation: limitNoticeIn 180ms ease-out;
+}
+
+[data-theme='dark'] .mediaLimitNotice {
+  color: #fbbf24;
+}
+
+.mediaLimitNotice > svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.mediaLimitNotice > span {
+  flex: 1;
+  min-width: 0;
+}
+
+.mediaLimitDismiss {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin: -5px 0;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.mediaLimitDismiss:hover {
+  background: rgba(127, 127, 127, 0.15);
+}
+
+@keyframes limitNoticeIn {
+  from { opacity: 0; transform: translateY(-3px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* How many of the six are used, after the Poll button; amber at the limit.
+   Same height as the icon buttons beside it so the row's centre line holds. */
+.mediaCount {
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 3rem;
+  height: 28px;
+  margin-left: 4px;
+  padding: 0 10px;
+  border-radius: var(--radius-full, 999px);
+  background: var(--color-bg-soft);
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.mediaCountFull {
+  background: rgba(245, 158, 11, 0.12);
+  color: #b45309;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mediaLimitNotice { animation: none; }
+}
+
+[data-theme='dark'] .mediaCountFull {
+  color: #fbbf24;
 }

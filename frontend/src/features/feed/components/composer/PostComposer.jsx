@@ -9,6 +9,7 @@ import styles from './PostComposer.module.css';
 import { processAndUploadImage, processAndUploadVideo } from '@shared/utils/mediaPipeline';
 import { uploadsApi } from '@shared/api/apiClient';
 import { showToast } from '@shared/utils/toast';
+import { useSmoothHeight } from '@shared/hooks/useSmoothHeight';
 import { normalizeBodyText } from '@shared/utils/bodyText';
 import { ALLOWED_IMAGE_ACCEPT } from '@shared/constants/mediaLimits';
 
@@ -29,6 +30,25 @@ const EXPAND_MS = 240;
 const POLL_OPTION_MAX_LENGTH = 100;
 
 /**
+ * Most photos and videos one post may carry. The API refuses more
+ * (`@ArrayMaxSize(6)` on CreatePostDto.mediaKeys); this is the same number,
+ * enforced before anything is uploaded.
+ */
+export const MAX_POST_MEDIA = 6;
+const LIMIT_NOTICE_MS = 6000;
+
+/** The warning for a pick that went over the limit, or null when it did not. */
+export function mediaLimitNotice({ selected, added, attachedBefore }) {
+  if (selected <= added) return null;
+  if (added === 0) {
+    return attachedBefore >= MAX_POST_MEDIA
+      ? `You've already added ${MAX_POST_MEDIA} photos and videos, the most a post can have. Remove one to add another.`
+      : `A post can have up to ${MAX_POST_MEDIA} photos and videos.`;
+  }
+  return `Only ${added} of the ${selected} you selected ${added === 1 ? 'was' : 'were'} added. A post can have up to ${MAX_POST_MEDIA} photos and videos.`;
+}
+
+/**
  * The counter appears in the last stretch of the limit and turns amber nearer
  * the end. Both are expressed as characters remaining so they stay meaningful
  * if the cap changes; keyed to the length, they silently stopped matching it.
@@ -46,6 +66,26 @@ const PostComposer = forwardRef(function PostComposer({ onSubmit }, ref) {
   const [pollOptions, setPollOptions] = useState(['', '']);
   const [pollMulti, setPollMulti] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
+  const [limitNotice, setLimitNotice] = useState(null);
+  const { outerRef: mediaOuterRef, innerRef: mediaInnerRef } = useSmoothHeight();
+  /*
+   * The attachment count as of the latest pick, updated synchronously. `media`
+   * is a render behind: two picks in quick succession (or a second picker
+   * opened before the first one's files rendered) both saw the old length and
+   * together went past the limit.
+   */
+  const mediaCountRef = useRef(0);
+  useEffect(() => { mediaCountRef.current = media.length; }, [media.length]);
+
+  // The warning clears itself, and whenever the count drops back under the limit.
+  useEffect(() => {
+    if (!limitNotice) return undefined;
+    const t = setTimeout(() => setLimitNotice(null), LIMIT_NOTICE_MS);
+    return () => clearTimeout(t);
+  }, [limitNotice]);
+  useEffect(() => {
+    if (media.length < MAX_POST_MEDIA) setLimitNotice((n) => (n && n.startsWith("You've already") ? null : n));
+  }, [media.length]);
 
   const composerRef = useRef(null);
   const inputRef = useRef(null);
@@ -262,62 +302,58 @@ const PostComposer = forwardRef(function PostComposer({ onSubmit }, ref) {
     });
   };
 
-  const handleFileChange = (e, expectedType) => {
-    const files = Array.from(e.target.files);
-    if (!files.length) return;
+  const isMediaFull = media.length >= MAX_POST_MEDIA;
 
-    let availableSlots = 6 - media.length;
-    if (availableSlots <= 0) {
-      showToast('Maximum 6 media items allowed', 'error');
-      e.target.value = '';
+  /** Opens a picker, or explains why not when the post is already full. */
+  const openPicker = (inputRef) => {
+    if (mediaCountRef.current >= MAX_POST_MEDIA) {
+      setLimitNotice(mediaLimitNotice({ selected: 1, added: 0, attachedBefore: mediaCountRef.current }));
       return;
     }
+    setLimitNotice(null);
+    inputRef.current?.click();
+  };
 
-    let filesToProcess = files;
-    if (files.length > availableSlots) {
-      filesToProcess = files.slice(0, availableSlots);
-      showToast('Max 6 files allowed.', 'error');
-    }
+  const handleFileChange = (e, expectedType) => {
+    const files = Array.from(e.target.files || []);
+    // Reset now: the same file can be picked again after it is removed.
+    e.target.value = '';
+    if (!files.length) return;
 
     const MAX_FILE_SIZE = 50 * 1024 * 1024;
-    const newMedia = [];
-
-    for (const file of filesToProcess) {
-      if (file.size > MAX_FILE_SIZE) {
-        showToast('File size limit is 50MB', 'error');
-        continue;
-      }
-
+    const valid = [];
+    for (const file of files) {
       const isVideo = file.type.startsWith('video/');
       const isImage = file.type.startsWith('image/');
-
-      if (expectedType === 'image' && !isImage) {
+      if (file.size > MAX_FILE_SIZE) {
+        showToast('File size limit is 50MB', 'error');
+      } else if (expectedType === 'image' && !isImage) {
         showToast('Please select an image file.', 'error');
-        continue;
-      }
-
-      if (expectedType === 'video' && !isVideo) {
+      } else if (expectedType === 'video' && !isVideo) {
         showToast('Please select a video file.', 'error');
-        continue;
-      }
-
-      if (!isVideo && !isImage) {
+      } else if (!isVideo && !isImage) {
         showToast('Unsupported file type', 'error');
-        continue;
+      } else {
+        valid.push({ file, type: isVideo ? 'video' : 'image' });
       }
-
-      const type = isVideo ? 'video' : 'image';
-      const previewUrl = URL.createObjectURL(file);
-      newMedia.push({ type, previewUrl, file, status: 'uploading', progress: 0, mediaKey: null, url: null });
     }
+    if (!valid.length) return;
 
-    if (newMedia.length > 0) {
-      setMedia((prev) => [...prev, ...newMedia]);
-      setIsExpanded(true);
-      newMedia.forEach(m => startUpload(m.file, m.type, m.previewUrl));
-    }
-    
-    e.target.value = '';
+    // Neither the browser's nor Android's picker can be told a maximum, so the
+    // limit is applied to what comes back: the first files that fit are kept,
+    // in the order picked, and the rest are refused with a reason.
+    const attachedBefore = mediaCountRef.current;
+    const accepted = valid.slice(0, Math.max(0, MAX_POST_MEDIA - attachedBefore));
+    mediaCountRef.current = attachedBefore + accepted.length;
+    setLimitNotice(mediaLimitNotice({ selected: valid.length, added: accepted.length, attachedBefore }));
+    if (!accepted.length) return;
+
+    const newMedia = accepted.map(({ file, type }) => ({
+      type, previewUrl: URL.createObjectURL(file), file, status: 'uploading', progress: 0, mediaKey: null, url: null,
+    }));
+    setMedia((prev) => [...prev, ...newMedia]);
+    setIsExpanded(true);
+    newMedia.forEach((m) => startUpload(m.file, m.type, m.previewUrl));
   };
 
   const retryUpload = (previewUrl) => {
@@ -563,41 +599,64 @@ const PostComposer = forwardRef(function PostComposer({ onSubmit }, ref) {
             </div>
           )}
 
-          {media.length > 0 && (
-            <div style={{ position: 'relative', width: '100%', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <MediaGrid 
-                media={gridMedia}
-                onRemove={(idx) => removeMedia(media[idx].previewUrl)}
-              />
+          {/* Always mounted, so adding the first attachment and removing the
+              last one animate too; see useSmoothHeight. */}
+          <div ref={mediaOuterRef}>
+            <div ref={mediaInnerRef}>
+              {media.length > 0 && (
+              <div style={{ position: 'relative', width: '100%', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <MediaGrid 
+                  media={gridMedia}
+                  onRemove={(idx) => removeMedia(media[idx].previewUrl)}
+                />
 
-              {media.some(m => m.status === 'uploading') && (
-                <div style={{ padding: '12px 16px', background: 'var(--color-bg-subtle)', borderRadius: '8px', fontSize: '0.85rem', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <div style={{ fontWeight: 600 }}>
-                    Uploading {media.filter(m => m.status === 'ready').length} / {media.length} items...
+                {media.some(m => m.status === 'uploading') && (
+                  <div style={{ padding: '12px 16px', background: 'var(--color-bg-subtle)', borderRadius: '8px', fontSize: '0.85rem', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <div style={{ fontWeight: 600 }}>
+                      Uploading {media.filter(m => m.status === 'ready').length} / {media.length} items...
+                    </div>
+                    <div style={{ display: 'flex', gap: '4px' }}>
+                      {media.map((m, idx) => (
+                        <div key={idx} style={{ flex: 1, height: '4px', background: 'rgba(0,0,0,0.1)', borderRadius: '2px', overflow: 'hidden' }}>
+                          {m.status === 'uploading' && <div style={{ width: `${m.progress}%`, height: '100%', background: 'var(--color-primary)', transition: 'width 0.2s' }} />}
+                          {m.status === 'ready' && <div style={{ width: '100%', height: '100%', background: 'var(--color-success)' }} />}
+                          {m.status === 'error' && <div style={{ width: '100%', height: '100%', background: 'var(--color-danger)' }} />}
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                  <div style={{ display: 'flex', gap: '4px' }}>
-                    {media.map((m, idx) => (
-                      <div key={idx} style={{ flex: 1, height: '4px', background: 'rgba(0,0,0,0.1)', borderRadius: '2px', overflow: 'hidden' }}>
-                        {m.status === 'uploading' && <div style={{ width: `${m.progress}%`, height: '100%', background: 'var(--color-primary)', transition: 'width 0.2s' }} />}
-                        {m.status === 'ready' && <div style={{ width: '100%', height: '100%', background: 'var(--color-success)' }} />}
-                        {m.status === 'error' && <div style={{ width: '100%', height: '100%', background: 'var(--color-danger)' }} />}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
+                )}
 
-              {media.some(m => m.status === 'error') && (
-                <div style={{ padding: '12px 16px', background: 'var(--color-danger-subtle)', color: 'var(--color-danger)', borderRadius: '8px', fontSize: '0.85rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span>Some uploads failed.</span>
-                  <button 
-                    onClick={() => media.forEach(m => { if (m.status === 'error') retryUpload(m.previewUrl); })}
-                    style={{ background: 'transparent', color: 'inherit', border: '1px solid currentColor', borderRadius: '4px', padding: '4px 8px', cursor: 'pointer', fontWeight: 600 }}
-                  >
-                    Retry Failed
-                  </button>
-                </div>
+                {media.some(m => m.status === 'error') && (
+                  <div style={{ padding: '12px 16px', background: 'var(--color-danger-subtle)', color: 'var(--color-danger)', borderRadius: '8px', fontSize: '0.85rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span>Some uploads failed.</span>
+                    <button 
+                      onClick={() => media.forEach(m => { if (m.status === 'error') retryUpload(m.previewUrl); })}
+                      style={{ background: 'transparent', color: 'inherit', border: '1px solid currentColor', borderRadius: '4px', padding: '4px 8px', cursor: 'pointer', fontWeight: 600 }}
+                    >
+                      Retry Failed
+                    </button>
+                  </div>
+                )}
+              </div>
               )}
+            </div>
+          </div>
+
+          {/*
+            * Inline rather than a toast: on a phone a toast can sit behind the
+            * keyboard or the bottom bar, and this is about the composer the
+            * person is looking at. role="alert" reads it out as it appears.
+            */}
+          {limitNotice && (
+            <div className={styles.mediaLimitNotice} role="alert">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
+              </svg>
+              <span>{limitNotice}</span>
+              <button type="button" className={styles.mediaLimitDismiss} aria-label="Dismiss" onClick={() => setLimitNotice(null)}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+              </button>
             </div>
           )}
 
@@ -607,46 +666,57 @@ const PostComposer = forwardRef(function PostComposer({ onSubmit }, ref) {
               <input ref={videoFileRef} type="file" accept="video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov" multiple onChange={(e) => handleFileChange(e, 'video')} hidden />
               <button 
                 className={styles.composerIconBtn} 
-                title={media.length >= 6 ? "Maximum 6 media items allowed" : "Image"} 
-                onClick={() => imageFileRef.current?.click()}
-                disabled={media.length >= 6}
-                style={{ opacity: media.length >= 6 ? 0.5 : 1, cursor: media.length >= 6 ? 'not-allowed' : 'pointer' }}
+                title={isMediaFull ? `Maximum ${MAX_POST_MEDIA} photos and videos` : "Image"}
+                aria-label="Add image"
+                onClick={() => openPicker(imageFileRef)}
+                aria-disabled={isMediaFull}
               >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-                  <circle cx="8.5" cy="8.5" r="1.5" />
-                  <polyline points="21 15 16 10 5 21" />
+                <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <rect x="3" y="3" width="18" height="18" rx="5.5" />
+                  <circle cx="9" cy="9" r="1.75" />
+                  <path d="M21 15.5l-3.6-3.6a2 2 0 0 0-2.8 0L6 20.5" />
                 </svg>
-                <span>Image</span>
+                <span className={styles.composerBtnLabel}>Image</span>
               </button>
               <button 
                 className={styles.composerIconBtn} 
-                title={media.length >= 6 ? "Maximum 6 media items allowed" : "Video"} 
-                onClick={() => videoFileRef.current?.click()}
-                disabled={media.length >= 6}
-                style={{ opacity: media.length >= 6 ? 0.5 : 1, cursor: media.length >= 6 ? 'not-allowed' : 'pointer' }}
+                title={isMediaFull ? `Maximum ${MAX_POST_MEDIA} photos and videos` : "Video"}
+                aria-label="Add video"
+                onClick={() => openPicker(videoFileRef)}
+                aria-disabled={isMediaFull}
               >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <rect x="2" y="7" width="16" height="10" rx="2" ry="2" />
-                  <polygon points="18 10 22 8 22 16 18 14" />
+                <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <rect x="2.5" y="5.5" width="14" height="13" rx="4" />
+                  <path d="M16.5 10.2l3.6-2.3a1 1 0 0 1 1.4.9v6.4a1 1 0 0 1-1.4.9l-3.6-2.3" />
                 </svg>
-                <span>Video</span>
+                <span className={styles.composerBtnLabel}>Video</span>
               </button>
 
               <button
                 ref={pollBtnRef}
                 className={`${styles.composerIconBtn}${showPoll ? ` ${styles.active}` : ''}`}
                 title="Poll"
+                aria-label={showPoll ? 'Remove poll' : 'Add poll'}
+                aria-pressed={showPoll}
                 onClick={togglePoll}
               >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <rect x="3" y="3" width="18" height="18" rx="2" />
-                  <line x1="9" y1="8" x2="9" y2="16" />
-                  <line x1="12" y1="11" x2="12" y2="16" />
-                  <line x1="15" y1="6" x2="15" y2="16" />
+                <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <rect x="3" y="3" width="18" height="18" rx="5.5" />
+                  <path d="M8.5 16v-4" />
+                  <path d="M12 16V8" />
+                  <path d="M15.5 16v-2.5" />
                 </svg>
-                <span>Poll</span>
+                <span className={styles.composerBtnLabel}>Poll</span>
               </button>
+
+              {media.length > 0 && (
+                <span
+                  className={`${styles.mediaCount} ${isMediaFull ? styles.mediaCountFull : ''}`}
+                  aria-label={`${media.length} of ${MAX_POST_MEDIA} photos and videos added`}
+                >
+                  {media.length}/{MAX_POST_MEDIA}
+                </span>
+              )}
             </div>
             <button 
               type="button"
