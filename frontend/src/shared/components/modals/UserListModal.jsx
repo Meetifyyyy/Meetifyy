@@ -1,4 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { useScrollLock } from '@shared/hooks/useScrollLock';
 import { useNavigate } from 'react-router-dom';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { useDebounce } from '@shared/hooks/useDebounce';
@@ -241,7 +243,16 @@ export default function UserListModal({ type, profileUsername, onClose, onTypeCh
     return () => observer.disconnect();
   }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
-  return (
+  /*
+   * The page behind stays put while the list scrolls. This modal used to render
+   * in place inside the profile page with no lock, so scrolling the list — and
+   * every fling past its end — scrolled the profile underneath. The shared lock
+   * freezes everything under #root and cancels stray touch scrolls; it lets
+   * overlays portalled to <body> keep scrolling, which is why this is now one.
+   */
+  useScrollLock(true);
+
+  return createPortal(
     <div
       className={styles.overlay}
       onClick={(e) => {
@@ -364,6 +375,7 @@ export default function UserListModal({ type, profileUsername, onClose, onTypeCh
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
