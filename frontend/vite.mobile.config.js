@@ -39,7 +39,7 @@ import { defineConfig } from 'vite';
 import path from 'path';
 import fs from 'node:fs';
 import react from '@vitejs/plugin-react';
-import { sharedAliases, sharedCss, sharedOnWarn } from './vite.shared.js';
+import { resolveCommitSha, sentrySourceMaps, sharedAliases, sharedCss, sharedOnWarn } from './vite.shared.js';
 import { landscapePhoneMediaPostcss } from './src/mobile/landscapePhoneMedia.js';
 import { safeAreaPostcss } from './src/mobile/safeAreaPostcss.js';
 
@@ -153,6 +153,38 @@ function serveMobileIndexHtml() {
   };
 }
 
+/**
+ * The installed app's version for Sentry: `<versionName>+<commit>`.
+ *
+ * versionName alone is not enough — it is a hand-edited "1.0" in
+ * android/app/build.gradle and does not change between builds — so the commit
+ * the bundle was built from is appended. The SDK reports the release as
+ * `meetifyy-android@<this>` (or meetifyy-ios@ on iOS), and source maps are
+ * uploaded under exactly that name.
+ */
+function resolveAppVersion() {
+  let versionName = '0.0.0';
+  try {
+    const gradle = fs.readFileSync(path.resolve(__dirname, 'android/app/build.gradle'), 'utf8');
+    versionName = /versionName\s+"([^"]+)"/.exec(gradle)?.[1] || versionName;
+  } catch {
+    // No native project (a CI bundle check): the commit still identifies it.
+  }
+  const sha = resolveCommitSha().slice(0, 12);
+  return sha ? `${versionName}+${sha}` : versionName;
+}
+
+const appVersion = resolveAppVersion();
+// Source maps for the APK's JavaScript, uploaded under the Android release when
+// the shell running the build has Sentry credentials, then removed from
+// dist-mobile so they are never packed into the APK. The deploy environment is
+// left unset: the mode (debug vs release APK) is decided by the caller.
+const sentryMaps = sentrySourceMaps({
+  projectEnv: 'SENTRY_PROJECT_ANDROID',
+  release: `meetifyy-android@${appVersion}`,
+  outDir: 'dist-mobile',
+});
+
 export default defineConfig({
   /**
    * The mobile bundle served in a desktop browser, for a quick look without
@@ -191,6 +223,7 @@ export default defineConfig({
    */
   define: {
     'import.meta.env.VITE_CLIENT': JSON.stringify('mobile'),
+    __MEETIFYY_APP_VERSION__: JSON.stringify(appVersion),
   },
 
   /**
@@ -204,7 +237,14 @@ export default defineConfig({
    */
   base: '/',
 
-  plugins: [react(), emitAsIndexHtml(), dropWebOnlyPublicAssets(), serveMobileIndexHtml()],
+  plugins: [
+    react(),
+    emitAsIndexHtml(),
+    dropWebOnlyPublicAssets(),
+    serveMobileIndexHtml(),
+    // Last, so it sees the final chunks.
+    ...sentryMaps.plugins,
+  ],
 
   // The shared CSS pipeline, plus the rewrite that keeps a phone in landscape
   // on the mobile layout (see src/mobile/landscapePhoneMedia.js) and the one
@@ -230,6 +270,7 @@ export default defineConfig({
 
   build: {
     outDir: 'dist-mobile',
+    sourcemap: sentryMaps.sourcemap,
     emptyOutDir: true,
     rollupOptions: {
       input: path.resolve(__dirname, 'index.mobile.html'),

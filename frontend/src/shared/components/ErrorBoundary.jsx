@@ -2,6 +2,8 @@ import { Component, Fragment } from 'react';
 import CriticalErrorScreen from './ui/CriticalErrorScreen';
 import { recoverFromStaleChunk } from '@shared/lib/staleChunkRecovery';
 import RouteErrorScreen from './ui/RouteErrorScreen';
+import { captureError } from '@shared/lib/monitoring';
+import { featureFromPath } from '@shared/lib/sentryScrub';
 
 /**
  * RouteErrorBoundary — wraps individual routes.
@@ -46,6 +48,13 @@ export class RouteErrorBoundary extends Component {
 
   componentDidCatch(error, errorInfo) {
     console.error('[RouteErrorBoundary]', error, errorInfo);
+    // The user sees the screen below; the error itself is reported. Component
+    // names only — no props or state, which can hold what the user typed.
+    captureError(error, {
+      feature: featureFromPath(typeof window !== 'undefined' ? window.location.pathname : ''),
+      tags: { boundary: 'route' },
+      extra: { componentStack: errorInfo?.componentStack },
+    });
     // Returns true only when a reload has actually been started, in which case
     // the page is on its way out and there is nothing more to do here.
     recoverFromStaleChunk(error);
@@ -103,6 +112,13 @@ export default class ErrorBoundary extends Component {
 
   componentDidCatch(error, errorInfo) {
     console.error('[RootErrorBoundary]', error, errorInfo);
+    // The user sees the screen below; the error itself is reported. Component
+    // names only — no props or state, which can hold what the user typed.
+    captureError(error, {
+      feature: featureFromPath(typeof window !== 'undefined' ? window.location.pathname : ''),
+      tags: { boundary: 'root' },
+      extra: { componentStack: errorInfo?.componentStack },
+    });
     // Same recovery at the root: a stale chunk can just as easily take down a
     // component the route boundaries do not wrap, and the outcome there is a
     // blank app rather than a contained error.

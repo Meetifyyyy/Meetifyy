@@ -52,6 +52,13 @@ const authPaths = {
   verifyEmail: routePath('VITE_AUTH_VERIFY_EMAIL_PATH', '/verify-email'),
 };
 
+/** A 0..1 sampling rate; anything unparseable or out of range falls back. */
+function sampleRate(rawValue, fallback) {
+  if (rawValue === '') return fallback;
+  const n = Number(rawValue);
+  return Number.isFinite(n) && n >= 0 && n <= 1 ? n : fallback;
+}
+
 export const config = {
   env: appEnv,
   /**
@@ -141,7 +148,42 @@ export const config = {
   },
 
   integrations: {
-    sentryDsn: str('VITE_SENTRY_DSN'),
+    /**
+     * Sentry (docs/sentry.md). Off unless a DSN is configured.
+     *
+     * The DSN is public by design (it can only submit events), which is why it
+     * may live in a VITE_ variable. The auth token used to upload source maps
+     * never does: it is read by the build plugin from SENTRY_AUTH_TOKEN, which
+     * Vite does not expose to client code.
+     *
+     * The environment is ALWAYS `env` above (VITE_APP_ENV), never a separate
+     * setting, so a build cannot report itself as the other environment.
+     * VITE_SENTRY_ENVIRONMENT is only a cross-check: if set and different,
+     * Sentry stays off.
+     */
+    sentry: {
+      /**
+       * Two variables, chosen by the build-time constant: the website and the
+       * app are different Sentry projects, and both read the same env files
+       * (`.env` serves `npm run dev` AND debug APK builds). One name for both
+       * would send local website errors into the Android project.
+       */
+      dsn: IS_MOBILE_BUILD ? str('VITE_SENTRY_ANDROID_DSN') : str('VITE_SENTRY_DSN'),
+      enabled: bool('VITE_SENTRY_ENABLED', { fallback: true }),
+      expectedEnvironment: str('VITE_SENTRY_ENVIRONMENT'),
+      /** 0..1. Default: 0.05 in production, 1.0 elsewhere. */
+      /**
+       * Send `sentry-trace`/`baggage` to the API so browser and API traces
+       * join up. Off by default: the API must already accept those headers
+       * (main.ts CORS allowedHeaders) wherever this build talks to, or every
+       * request fails its preflight.
+       */
+      propagateTraces: bool('VITE_SENTRY_PROPAGATE_TRACES', { fallback: false }),
+      tracesSampleRate: sampleRate(
+        str('VITE_SENTRY_TRACES_SAMPLE_RATE'),
+        isProductionDeployment ? 0.05 : 1,
+      ),
+    },
     analyticsId: str('VITE_ANALYTICS_ID'),
   },
 

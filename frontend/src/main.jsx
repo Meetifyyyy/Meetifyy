@@ -18,6 +18,18 @@ import { SpeedInsights } from '@vercel/speed-insights/react';
 import './styles/variables.css';
 import './styles/global.css';
 import './styles/typography.css';
+import { bootWebSentry } from './platform/web/sentryBoot';
+
+// Error monitoring first, so a failure during boot is held and reported once
+// the SDK (a lazy chunk) arrives. A no-op without a DSN; see
+// platform/web/sentryBoot.js and docs/sentry.md. The release is stamped at
+// build time by vite.config.js.
+bootWebSentry({
+  config,
+  isNonProductionHost: isNonProductionHost(window.location.hostname),
+  // eslint-disable-next-line no-undef -- replaced at build time (vite.config.js `define`)
+  release: typeof __MEETIFYY_SENTRY_RELEASE__ === 'string' ? __MEETIFYY_SENTRY_RELEASE__ : '',
+});
 
 const queryClient = new QueryClient({
   defaultOptions: {

@@ -25,7 +25,8 @@
  * than leaving a file that fails silently on the phone.
  */
 import { execFileSync } from 'node:child_process';
-import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync } from 'node:fs';
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -45,8 +46,45 @@ const outDir = resolve(root, 'local/apk', isRelease ? 'release' : 'dev');
 const viteMode = isRelease ? 'production' : 'development';
 const gradleTask = isRelease ? 'assembleRelease' : 'assembleDebug';
 
+/**
+ * Sentry source-map upload for DEBUG builds from the developer's own login.
+ *
+ * `sentry-cli login` (or a hand-written ~/.sentryclirc) stores a token and
+ * default org/project for the DEVELOPMENT Sentry org. A debug APK reports to
+ * that org, so its maps may be uploaded with it: fill in whatever the shell has
+ * not set. A RELEASE build never does this — it reports to the production org,
+ * and a dev token there would put production maps in the dev org — so it only
+ * uploads when SENTRY_AUTH_TOKEN/SENTRY_ORG/SENTRY_PROJECT_ANDROID are exported
+ * explicitly. See docs/sentry.md.
+ */
+function sentryEnvFromCliLogin() {
+  if (isRelease) return {};
+  let ini = '';
+  try {
+    ini = readFileSync(resolve(homedir(), '.sentryclirc'), 'utf8');
+  } catch {
+    return {};
+  }
+  const read = (section, key) => {
+    const block = ini.split(/^\[/m).find((b) => b.startsWith(`${section}]`)) || '';
+    return block.match(new RegExp(`^${key}\\s*=\\s*(.+)$`, 'm'))?.[1]?.trim() || '';
+  };
+  const fill = {};
+  if (!process.env.SENTRY_AUTH_TOKEN && read('auth', 'token')) fill.SENTRY_AUTH_TOKEN = read('auth', 'token');
+  if (!process.env.SENTRY_ORG && read('defaults', 'org')) fill.SENTRY_ORG = read('defaults', 'org');
+  if (!process.env.SENTRY_PROJECT_ANDROID) fill.SENTRY_PROJECT_ANDROID = read('defaults', 'project') || 'meetifyy-android';
+  return fill.SENTRY_AUTH_TOKEN || process.env.SENTRY_AUTH_TOKEN ? fill : {};
+}
+
+const buildEnv = { ...process.env, ...sentryEnvFromCliLogin() };
+if (buildEnv.SENTRY_AUTH_TOKEN && buildEnv.SENTRY_ORG) {
+  console.log(`▸ Sentry: source maps will upload to ${buildEnv.SENTRY_ORG}/${buildEnv.SENTRY_PROJECT_ANDROID || '(no project set)'}`);
+} else {
+  console.log('▸ Sentry: no credentials for this build; source maps will not be uploaded');
+}
+
 const run = (cmd, args, cwd) =>
-  execFileSync(cmd, args, { cwd, stdio: 'inherit', env: process.env });
+  execFileSync(cmd, args, { cwd, stdio: 'inherit', env: buildEnv });
 
 console.log(`\n▸ Building ${variant.toUpperCase()} APK (vite --mode ${viteMode})\n`);
 

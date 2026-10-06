@@ -108,7 +108,7 @@ export function createWebCookieReader({ cookiePrefix = 'mf' } = {}) {
  * unchanged while removing `window.dispatchEvent` from the transport itself. A
  * native client passes callbacks that do something else entirely.
  */
-export function createWebTransportHooks({ onApiErrorCode } = {}) {
+export function createWebTransportHooks({ onApiErrorCode, onApiFailure } = {}) {
   const emit = (name) => {
     try {
       safeWindow()?.dispatchEvent(new Event(name));
@@ -118,6 +118,7 @@ export function createWebTransportHooks({ onApiErrorCode } = {}) {
   };
   return {
     onApiErrorCode,
+    onApiFailure,
     onUnauthorized: () => emit('auth:unauthorized'),
     onOriginChanged: () => emit('api:origin-changed'),
   };

@@ -100,6 +100,11 @@ export interface TransportHooks {
   onUnauthorized?(): void;
   /** The API moved to the fallback origin; anything holding a socket must follow. */
   onOriginChanged?(): void;
+  /**
+   * A request got a non-2xx response. Method, path (no query) and status only;
+   * the app records it for diagnostics (an error-monitoring breadcrumb).
+   */
+  onApiFailure?(failure: { method: string; path: string; status: number; code?: string }): void;
 }
 
 /**

@@ -28,7 +28,7 @@ import { SAFE_METHODS, isBearerPath, isPublicPath } from './paths';
  * @param {object} deps.localStore    SyncKeyValueStore, durable
  * @param {object} deps.sessionStore  SyncKeyValueStore, per-session
  * @param {object} deps.etags         from core/api/etagCache
- * @param {object} deps.hooks         TransportHooks: onApiErrorCode, onUnauthorized, onOriginChanged
+ * @param {object} deps.hooks         TransportHooks: onApiErrorCode, onUnauthorized, onOriginChanged, onApiFailure
  */
 export function createTransport({
   apiOrigin,
@@ -891,6 +891,25 @@ export function createTransport({
       // this file.
       if (res.status === 403) {
         hooks.onApiErrorCode?.(errorCode);
+      }
+
+      // Every failed response, for diagnostics: method, path and status only
+      // (no query string, no body). The app records it as a breadcrumb.
+      try {
+        let failedPath = String(cleanUrl).split('?')[0];
+        try {
+          failedPath = new URL(cleanUrl, 'http://relative.invalid').pathname;
+        } catch {
+          // Keep the query-free string.
+        }
+        hooks.onApiFailure?.({
+          method: options.method || 'GET',
+          path: failedPath,
+          status: res.status,
+          code: errorCode,
+        });
+      } catch {
+        // Diagnostics must never change what the caller sees.
       }
 
       throw err;

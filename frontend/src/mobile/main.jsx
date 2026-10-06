@@ -58,6 +58,7 @@ import { createCapacitorDeepLinks } from '../platform/capacitor/deepLinks';
 import DeepLinkNavigator from './navigation/DeepLinkNavigator';
 import { installBackgroundSocket } from './backgroundSocket';
 import { config } from '../config';
+import { installCapacitorSentry } from '../platform/capacitor/sentry';
 
 import '../styles/variables.css';
 import '../styles/global.css';
@@ -67,6 +68,16 @@ import '../styles/typography.css';
  * file that is allowed to make decisions the website must not inherit.
  */
 import './mobile.css';
+
+// Error monitoring first (JavaScript and native crashes), so a failure during
+// boot is reported too. A no-op without a DSN; see platform/capacitor/sentry.js
+// and docs/sentry.md. The version is stamped at build time by
+// vite.mobile.config.js.
+installCapacitorSentry({
+  config,
+  // eslint-disable-next-line no-undef -- replaced at build time (vite.mobile.config.js `define`)
+  appVersion: typeof __MEETIFYY_APP_VERSION__ === 'string' ? __MEETIFYY_APP_VERSION__ : '',
+});
 
 /**
  * The same cache settings as the website, with one deliberate change.

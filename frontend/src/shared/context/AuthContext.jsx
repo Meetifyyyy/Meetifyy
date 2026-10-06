@@ -22,6 +22,7 @@ import { suppressRedirectIntent, allowRedirectIntent } from '@shared/utils/redir
 
 import { supabase, isSupabaseConfigured, forgetProviderSession } from '@shared/lib/supabase';
 import { describeNetworkError, logNetworkFailure } from '@shared/utils/networkErrors';
+import { addBreadcrumb, clearMonitoringUser, setMonitoringUser } from '@shared/lib/monitoring';
 export { supabase, isSupabaseConfigured };
 
 /**
@@ -283,6 +284,15 @@ export function AuthProvider({ children }) {
   const loading = authStatus === AUTH_STATUS.INITIALIZING;
   const isLoggedIn = authStatus === AUTH_STATUS.AUTHENTICATED;
 
+  // The backstop for error-report attribution: whatever path changes the
+  // account (sign-in, restore, deletion, a server-side sign-out), the reported
+  // user follows it. The sign-in/sign-out paths also set it synchronously.
+  const monitoredUserId = isLoggedIn ? currentUser?.id : null;
+  useEffect(() => {
+    if (monitoredUserId) setMonitoringUser(monitoredUserId);
+    else clearMonitoringUser();
+  }, [monitoredUserId]);
+
   const lastSyncAtRef = useRef(0);
   const bookmarksHydratedRef = useRef(false);
   const isLoggingOutRef = useRef(false);
@@ -344,6 +354,9 @@ export function AuthProvider({ children }) {
     setCurrentUser(user);
     setSession({ user: { id: user.id, email: user.email || '' } });
     setAuthStatus(AUTH_STATUS.AUTHENTICATED);
+    // Error reports name the account by internal id only — never email or name.
+    setMonitoringUser(user.id);
+    addBreadcrumb({ category: 'auth', message: 'signed in', level: 'info' });
     return true;
   }, []);
 
@@ -360,6 +373,10 @@ export function AuthProvider({ children }) {
     currentUserIdRef.current = null;
     sessionGenerationRef.current += 1;
     const generation = sessionGenerationRef.current;
+    // Synchronously, like the id above: an error reported after this must not
+    // be attributed to the account that just left.
+    clearMonitoringUser();
+    addBreadcrumb({ category: 'auth', message: 'signed out', level: 'info' });
     // Only a session that existed can "end"; a failed boot probe is not one.
     if (isLoggedInRef.current) suppressRedirectIntent();
     setSession(null);

@@ -20,6 +20,9 @@
  * accurate description of the situation.
  */
 import path from 'path';
+import { execSync } from 'node:child_process';
+import process from 'node:process';
+import { sentryVitePlugin } from '@sentry/vite-plugin';
 import { postcssHoverMedia } from './scripts/postcss-hover-media.js';
 
 /**
@@ -69,4 +72,65 @@ export function sharedOnWarn(warning, warn) {
     return;
   }
   warn(warning);
+}
+
+/**
+ * The commit this build is made from: Vercel's, then GitHub Actions', then the
+ * local checkout's. Same order as scripts/generate-version.mjs, so the Sentry
+ * release and /version.json name the same deployment.
+ */
+export function resolveCommitSha() {
+  const fromEnv = process.env.VERCEL_GIT_COMMIT_SHA || process.env.GITHUB_SHA || '';
+  if (fromEnv) return fromEnv.trim();
+  try {
+    return execSync('git rev-parse HEAD', { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Source-map upload to Sentry, for one build. Returns `{ plugins, sourcemap }`
+ * to spread into the Vite config.
+ *
+ * Only when the BUILD environment has SENTRY_AUTH_TOKEN, SENTRY_ORG and the
+ * given project variable (Vercel project settings for the website, the shell
+ * for a local APK build). These are not VITE_ variables, so Vite never exposes
+ * them to client code. Without them the build is exactly what it was before:
+ * no maps generated, nothing uploaded.
+ *
+ * With them, maps are generated `hidden` (no sourceMappingURL comment), stamped
+ * with debug IDs, uploaded under `release`, and then DELETED from the output,
+ * so they are never served by the website or packed into the APK.
+ *
+ * @param {object} p
+ * @param {string} p.projectEnv   which env var names the Sentry project
+ * @param {string} p.release      release name, identical to the one the SDK reports
+ * @param {string} p.outDir
+ * @param {string} p.environment  for the deploy record
+ */
+export function sentrySourceMaps({ projectEnv, release, outDir, environment }) {
+  const authToken = process.env.SENTRY_AUTH_TOKEN;
+  const org = process.env.SENTRY_ORG;
+  const project = process.env[projectEnv];
+  if (!authToken || !org || !project || !release) {
+    return { plugins: [], sourcemap: false };
+  }
+  return {
+    sourcemap: 'hidden',
+    plugins: [
+      sentryVitePlugin({
+        org,
+        project,
+        authToken,
+        telemetry: false,
+        release: {
+          name: release,
+          setCommits: false,
+          ...(environment ? { deploy: { env: environment } } : {}),
+        },
+        sourcemaps: { filesToDeleteAfterUpload: [`${outDir}/**/*.map`] },
+      }),
+    ],
+  };
 }

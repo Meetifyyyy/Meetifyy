@@ -41,6 +41,7 @@ import {
   createWebSessionStore,
   createWebTransportHooks,
 } from '@platform/web/storage';
+import { addBreadcrumb } from '@shared/lib/monitoring';
 
 // ── The browser's answers ────────────────────────────────────────────────────
 
@@ -95,6 +96,17 @@ const hooks = createWebTransportHooks({
     if (errorCode === LEGAL_ACK_REQUIRED_CODE) {
       announceLegalConsentChange('required');
     }
+  },
+  // "What happened just before the error": each failed API call, as a
+  // breadcrumb. Method, path and status — never a body or a query string.
+  onApiFailure: ({ method, path, status, code }) => {
+    addBreadcrumb({
+      category: 'api',
+      type: 'http',
+      level: status >= 500 ? 'error' : 'warning',
+      message: `${method} ${path} → ${status}`,
+      data: { method, path, status_code: status, ...(code ? { code } : {}) },
+    });
   },
 });
 

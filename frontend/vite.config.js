@@ -5,7 +5,7 @@ import { VitePWA } from 'vite-plugin-pwa';
 import path from 'path';
 import fs from 'fs';
 import { visualizer } from 'rollup-plugin-visualizer';
-import { sharedAliases, sharedCss, sharedOnWarn } from './vite.shared.js';
+import { resolveCommitSha, sentrySourceMaps, sharedAliases, sharedCss, sharedOnWarn } from './vite.shared.js';
 import { isProductionAppEnv } from './src/config/deploymentEnv.js';
 
 /**
@@ -145,6 +145,18 @@ export default defineConfig(({ mode }) => {
   // hole because its cached shell can bypass Cloudflare Access entirely.
   const isProductionApp = isProductionAppEnv(env.VITE_APP_ENV);
 
+  // Sentry release: meetifyy-web@<commit>, the same commit /version.json names.
+  // Source maps are uploaded under it when the build has Sentry credentials
+  // (see sentrySourceMaps and docs/sentry.md).
+  const commitSha = resolveCommitSha();
+  const sentryRelease = commitSha ? `meetifyy-web@${commitSha}` : '';
+  const sentryMaps = sentrySourceMaps({
+    projectEnv: 'SENTRY_PROJECT_WEB',
+    release: sentryRelease,
+    outDir: 'dist',
+    environment: env.VITE_APP_ENV,
+  });
+
   return {
   plugins: [
     react(),
@@ -216,10 +228,16 @@ export default defineConfig(({ mode }) => {
         globIgnores: ['**/stats.html', 'splash/**'],
       },
     })] : [tombstoneServiceWorkerPlugin()]),
-    visualizer({ open: false, filename: 'stats.html', gzipSize: true, brotliSize: true })
+    visualizer({ open: false, filename: 'stats.html', gzipSize: true, brotliSize: true }),
+    // Last, so it sees the final chunks.
+    ...sentryMaps.plugins,
   ],
+  define: {
+    __MEETIFYY_SENTRY_RELEASE__: JSON.stringify(sentryRelease),
+  },
   css: sharedCss,
   build: {
+    sourcemap: sentryMaps.sourcemap,
     rollupOptions: {
       onwarn: sharedOnWarn,
       output: {
