@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { installPressFeedback, isPressable, pressScaleFor } from '../pressFeedback';
+import { installPressFeedback, isPressable, pressScaleFor, pressedElementSelector, __resetPressSelectors } from '../pressFeedback';
 
 function sized(el, width, height) {
   Object.defineProperty(el, 'offsetWidth', { value: width, configurable: true });
@@ -71,7 +71,10 @@ describe('installPressFeedback', () => {
     stop();
     delete Element.prototype.animate;
     document.body.innerHTML = '';
+    document.head.querySelectorAll('style[data-test]').forEach((n) => n.remove());
+    __resetPressSelectors();
   });
+
 
   const mount = (tag = 'button', width = 100, height = 44) => {
     const el = sized(document.createElement(tag), width, height);
@@ -79,6 +82,37 @@ describe('installPressFeedback', () => {
     document.body.append(el);
     return el;
   };
+
+  const addCss = (css) => {
+    const style = document.createElement('style');
+    style.setAttribute('data-test', '');
+    style.textContent = css;
+    document.head.append(style);
+  };
+
+  it('leaves a control with its own non-transform press alone (one effect, not two)', () => {
+    addCss('.chip:active { opacity: 0.85; }');
+    const el = mount();
+    el.className = 'chip';
+    pointer('pointerdown', el);
+    expect(animations).toHaveLength(0);
+  });
+
+  it('recognises the pressed control in a rule that styles its child', () => {
+    addCss('.likeBtn:active:not(:disabled) svg { transform: scale(.8); }');
+    const el = mount();
+    el.className = 'likeBtn';
+    pointer('pointerdown', el);
+    expect(animations).toHaveLength(0);
+  });
+
+  it('still presses controls with no press style of their own', () => {
+    addCss('.chip:active { opacity: 0.85; }');
+    const el = mount();
+    el.className = 'other';
+    pointer('pointerdown', el);
+    expect(animations).toHaveLength(1);
+  });
 
   it('plays a scale animation on press, on the control that was pressed', () => {
     const el = mount();
@@ -182,6 +216,7 @@ describe('controls that style their own pressed state', () => {
     stop();
     delete Element.prototype.animate;
     document.body.innerHTML = '';
+    __resetPressSelectors();
   });
 
   const press = () => {
@@ -221,5 +256,20 @@ describe('installPressFeedback without Web Animations', () => {
     expect(typeof stop).toBe('function');
     expect(() => stop()).not.toThrow();
     if (original) Element.prototype.animate = original;
+  });
+});
+
+describe('pressedElementSelector', () => {
+  it('keeps the compound that carries :active and drops the rest', () => {
+    expect(pressedElementSelector('.a:active')).toBe('.a');
+    expect(pressedElementSelector('.a:active:not(:disabled) svg')).toBe('.a:not(:disabled)');
+    expect(pressedElementSelector('.wrap .btn:active > .icon')).toBe('.wrap .btn');
+    expect(pressedElementSelector('.tabsPills .tabActive:active')).toBe('.tabsPills .tabActive');
+  });
+
+  it('ignores :active that is not a press of the element', () => {
+    expect(pressedElementSelector('.a:not(:active)')).toBeNull();
+    expect(pressedElementSelector(':active')).toBeNull();
+    expect(pressedElementSelector('.a')).toBeNull();
   });
 });

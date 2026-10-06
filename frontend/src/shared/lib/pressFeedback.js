@@ -20,11 +20,10 @@
  *
  * WHAT IT LEAVES ALONE
  *   - disabled controls, and anything inside `[data-no-press]`;
- *   - controls that already style their own pressed state with a transform
- *     (many do): stacking a second scale on theirs compounds into a visible
- *     squash, so if the control's `transform` changes once it is pressed, this
- *     steps aside for the rest of that press - the same deference the old
- *     zero-specificity CSS rule showed;
+ *   - controls that style their own pressed state, in ANY property (opacity,
+ *     background, colour, transform...): read from the stylesheets before the
+ *     press plays — see hasOwnPressStyle. Two effects for one tap read as the
+ *     control reacting twice;
  *   - large targets (cards, media tiles, list rows): shrinking a photo or a whole
  *     row under the finger is not feedback, it is distortion;
  *   - everything, when the person has asked for reduced motion.
@@ -72,6 +71,126 @@ function prefersReducedMotion() {
   return typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 }
 
+/*
+ * Controls that style their OWN pressed state.
+ *
+ * This used to be detected one frame after the press, and only by a change of
+ * `transform`. A control whose press is an opacity dip, a tint, a colour or a
+ * shadow (the Crew tabs' `:active { opacity: .85 }`, row tints, pills) was not
+ * detected at all, so it got both: its own effect AND this scale — two
+ * different responses to one tap, which reads as the control reacting twice.
+ * A transform press was caught, but only after the scale had already played
+ * for a frame, so even those twitched.
+ *
+ * The answer is in the stylesheets, so it is read from them: every rule with
+ * `:active` names the element it styles when pressed — the compound that
+ * carries the pseudo-class (`.likeBtn:active svg` styles `.likeBtn`'s child,
+ * but it is `.likeBtn` being pressed). Those compounds, with `:active` taken
+ * out, are matched against the control BEFORE anything plays. A control that
+ * matches has its own press and is left entirely to it.
+ *
+ * Rescanned only when the number of stylesheets changes (a lazily loaded
+ * route brings its CSS with it); a press itself costs one `matches` per rule.
+ */
+let pressSelectors = [];
+let scannedSheetCount = -1;
+
+/** Splits a selector list on top-level commas (not those inside `:not(a, b)`). */
+function splitSelectorList(text) {
+  const parts = [];
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i];
+    if (ch === '(') depth += 1;
+    else if (ch === ')') depth -= 1;
+    else if (ch === ',' && depth === 0) {
+      parts.push(text.slice(start, i));
+      start = i + 1;
+    }
+  }
+  parts.push(text.slice(start));
+  return parts.map((part) => part.trim()).filter(Boolean);
+}
+
+/**
+ * The pressed element's own selector from one complex selector, or null:
+ * everything up to the end of the compound that carries `:active`, with
+ * `:active` removed. `:active` inside `:not(...)` / `:has(...)` is not a press.
+ */
+export function pressedElementSelector(selector) {
+  let depth = 0;
+  let at = -1;
+  for (let i = 0; i < selector.length; i += 1) {
+    const ch = selector[i];
+    if (ch === '(') depth += 1;
+    else if (ch === ')') depth -= 1;
+    else if (depth === 0 && selector.startsWith(':active', i)) { at = i; break; }
+  }
+  if (at === -1) return null;
+  let end = selector.length;
+  depth = 0;
+  for (let i = at; i < selector.length; i += 1) {
+    const ch = selector[i];
+    if (ch === '(') depth += 1;
+    else if (ch === ')') depth -= 1;
+    else if (depth === 0 && /[\s>+~]/.test(ch)) { end = i; break; }
+  }
+  const base = (selector.slice(0, at) + selector.slice(at + ':active'.length, end)).trim();
+  // A bare `:active` (or one under `*`) would claim every control on the page.
+  if (!base || base === '*' || /[\s>+~]$/.test(base)) return null;
+  return base;
+}
+
+function collectPressSelectors(rules, out) {
+  for (const rule of rules) {
+    if (rule.selectorText && rule.selectorText.includes(':active')) {
+      for (const part of splitSelectorList(rule.selectorText)) {
+        const base = pressedElementSelector(part);
+        if (base) out.add(base);
+      }
+    }
+    // @media, @supports, @layer and nested style rules.
+    if (rule.cssRules && rule.cssRules.length) collectPressSelectors(rule.cssRules, out);
+  }
+}
+
+function currentPressSelectors(doc) {
+  const sheets = doc.styleSheets;
+  if (!sheets || sheets.length === scannedSheetCount) return pressSelectors;
+  const found = new Set();
+  for (const sheet of sheets) {
+    let rules;
+    try {
+      rules = sheet.cssRules;
+    } catch (_) {
+      continue; // a cross-origin sheet (web fonts) cannot be read, and has no controls
+    }
+    if (rules) collectPressSelectors(rules, found);
+  }
+  scannedSheetCount = sheets.length;
+  pressSelectors = [...found].filter((selector) => {
+    try {
+      doc.documentElement.matches(selector);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  });
+  return pressSelectors;
+}
+
+/** True when the stylesheets give this control a pressed state of its own. */
+export function hasOwnPressStyle(el, doc = document) {
+  return currentPressSelectors(doc).some((selector) => el.matches(selector));
+}
+
+/** For tests: forget the scan. */
+export function __resetPressSelectors() {
+  pressSelectors = [];
+  scannedSheetCount = -1;
+}
+
 /**
  * Starts listening. Returns the function that stops it.
  * Safe to call where Web Animations are missing: it then does nothing.
@@ -103,6 +222,8 @@ export function installPressFeedback(root = document) {
 
     const size = { width: el.offsetWidth, height: el.offsetHeight };
     if (!isPressable(el, size)) return;
+    // Its own :active styling is its press feedback; never add a second.
+    if (hasOwnPressStyle(el, el.ownerDocument || document)) return;
 
     release();
     const transformBefore = getComputedStyle(el).transform;
@@ -123,6 +244,29 @@ export function installPressFeedback(root = document) {
     });
   };
 
+  /*
+   * The stylesheet scan, done while idle rather than on a press: the first
+   * scan of the whole app's CSS took ~20 ms in development, which a tap must
+   * not pay. Rescanned the same way when a route brings new stylesheets.
+   */
+  const doc = root.ownerDocument || root;
+  const idle = (fn) => (typeof window.requestIdleCallback === 'function'
+    ? window.requestIdleCallback(fn, { timeout: 2000 })
+    : window.setTimeout(fn, 200));
+  let idleScan = 0;
+  const scheduleScan = () => {
+    if (idleScan) return;
+    idleScan = idle(() => {
+      idleScan = 0;
+      currentPressSelectors(doc);
+    });
+  };
+  scheduleScan();
+  const headObserver = typeof MutationObserver === 'function' && doc.head
+    ? new MutationObserver(scheduleScan)
+    : null;
+  headObserver?.observe(doc.head, { childList: true });
+
   const opts = { capture: true, passive: true };
   root.addEventListener('pointerdown', onDown, opts);
   // A scroll or drag that takes the gesture away ends in pointercancel.
@@ -132,6 +276,7 @@ export function installPressFeedback(root = document) {
   window.addEventListener('blur', release);
 
   return () => {
+    headObserver?.disconnect();
     release();
     root.removeEventListener('pointerdown', onDown, opts);
     root.removeEventListener('pointerup', release, opts);
