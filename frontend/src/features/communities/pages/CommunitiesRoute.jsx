@@ -45,7 +45,6 @@ export default function CommunitiesRoute() {
   }, [setParams]);
 
   const setTab = useCallback((id) => update({ tab: id === 'explore' ? 'explore' : '' }), [update]);
-  const openExplore = useCallback(() => setTab('explore'), [setTab]);
   // Search is its own page. The scroll position is kept so Back from it lands
   // where the viewer left off rather than at the top.
   const openSearch = useCallback(() => {
@@ -106,11 +105,9 @@ export default function CommunitiesRoute() {
           </div>
 
           {tab === 'yours' ? (
-            <YourCommunities onExplore={openExplore} onCreate={openCreate} />
+            <YourCommunities />
           ) : (
-            <ExploreCommunities
-              onCreate={openCreate}
-            />
+            <ExploreCommunities />
           )}
         </div>
       </main>

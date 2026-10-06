@@ -42,8 +42,10 @@
 
 .title {
   margin: 0;
-  font-size: 1.25rem;
-  font-weight: 700;
+  font-family: 'Changa One', 'Inter', sans-serif;
+  font-size: 1.6rem;
+  font-weight: 400;
+  letter-spacing: 0.005em;
   color: var(--color-text-main);
 }
 

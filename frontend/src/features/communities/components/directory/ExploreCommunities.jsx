@@ -3,14 +3,13 @@ import { useExploreCommunities } from '@shared/hooks/useCommunities';
 import CommunityRow from './CommunityRow';
 import CommunityRowSkeleton from './CommunityRowSkeleton';
 import SectionHeading from './SectionHeading';
-import EmptyPanel from './EmptyPanel';
 import listStyles from './CommunityList.module.css';
 
 /**
  * Discovery: every community, public and private together. Searching has its
  * own page (/communities/search), opened from the header.
  */
-export default function ExploreCommunities({ onCreate }) {
+export default function ExploreCommunities() {
   const {
     communities,
     isLoading,
@@ -36,19 +35,6 @@ export default function ExploreCommunities({ onCreate }) {
             <button type="button" className={listStyles.secondaryBtn} onClick={() => refetch()}>Try again</button>
           </div>
         </div>
-      )}
-
-      {!isLoading && !isError && communities.length === 0 && (
-        <EmptyPanel
-          title="Be the first to start one"
-          actions={(
-            <button type="button" className={listStyles.primaryBtn} onClick={onCreate}>
-              Create a community
-            </button>
-          )}
-        >
-          There are no communities to explore yet.
-        </EmptyPanel>
       )}
 
       {!isLoading && communities.length > 0 && (

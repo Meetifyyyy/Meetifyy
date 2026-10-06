@@ -127,65 +127,6 @@
 
 /* Text-focused empty states, directly on the page surface. */
 
-.empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-  margin: 0 0.5rem;
-  padding: 3.5rem 1rem;
-}
-
-.emptyTitle {
-  margin: 0;
-  max-width: 28ch;
-  text-wrap: balance;
-  line-height: 1.4;
-  font-size: 1.125rem;
-  font-weight: 600;
-  color: var(--color-text-main);
-}
-
-.emptyText {
-  margin: 0.625rem 0 0;
-  max-width: 42ch;
-  text-wrap: pretty;
-  font-size: 0.875rem;
-  line-height: 1.65;
-  color: var(--color-text-muted);
-}
-
-.emptyActions {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 0.625rem;
-  width: min(100%, 20rem);
-  margin-top: 1.5rem;
-}
-
-/* Side by side once there is room, at equal width so the pair reads as one unit. */
-@media (min-width: 520px) {
-  .emptyActions {
-    flex-direction: row;
-    width: auto;
-  }
-
-  .emptyActions .primaryBtn,
-  .emptyActions .secondaryBtn {
-    flex: 1 1 0;
-    min-width: 11rem;
-  }
-}
-
-/* Full-size touch targets: the compact 36px pills were fine on a mouse and small on a thumb. */
-.emptyActions .primaryBtn,
-.emptyActions .secondaryBtn {
-  height: 44px;
-  padding: 0 1.25rem;
-  font-size: 0.9rem;
-}
-
 /* ── Buttons ─────────────────────────────────────────────── */
 
 .primaryBtn,

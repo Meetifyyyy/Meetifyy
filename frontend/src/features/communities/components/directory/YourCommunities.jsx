@@ -4,7 +4,6 @@ import { useMyCommunities } from '@shared/hooks/useCommunities';
 import CommunityRow from './CommunityRow';
 import CommunityRowSkeleton from './CommunityRowSkeleton';
 import SectionHeading from './SectionHeading';
-import EmptyPanel from './EmptyPanel';
 import { byRecentActivity } from './communityMeta';
 import styles from './CommunityList.module.css';
 
@@ -12,7 +11,7 @@ import styles from './CommunityList.module.css';
 const YOURS_TITLE = 'Communities you’ve joined';
 const YOURS_SUBTITLE = 'Jump back into the groups you’re already part of.';
 
-export default function YourCommunities({ onExplore, onCreate }) {
+export default function YourCommunities() {
   const { myCommunities, isLoading, isError, refetch } = useMyCommunities();
   const sorted = useMemo(() => [...myCommunities].sort(byRecentActivity), [myCommunities]);
 
@@ -43,21 +42,6 @@ export default function YourCommunities({ onExplore, onCreate }) {
     return (
       <section className={styles.section} aria-label="Your communities">
         <SectionHeading title={YOURS_TITLE} subtitle={YOURS_SUBTITLE} />
-        <EmptyPanel
-          title="Nothing here yet"
-          actions={(
-            <>
-              <button type="button" className={styles.primaryBtn} onClick={onExplore}>
-                Explore communities
-              </button>
-              <button type="button" className={styles.secondaryBtn} onClick={onCreate}>
-                Create a community
-              </button>
-            </>
-          )}
-        >
-          Communities you join will show up here.
-        </EmptyPanel>
       </section>
     );
   }
