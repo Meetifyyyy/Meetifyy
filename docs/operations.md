@@ -302,6 +302,17 @@ session.
 Note that `isolation.guard.ts` protects the *server*; it cannot see an MCP call,
 which reaches the database directly.
 
+## Error monitoring (Sentry)
+
+Web, Android and API report to separate Sentry projects, tagged by
+environment and release. Configuration, dev/prod separation, privacy rules and
+verification steps: [sentry.md](sentry.md). Off whenever no DSN is set.
+
+Sentry sees errors from inside the apps only. An outage where requests never
+reach the API (as on 2026-10-06, when the dev environment's public endpoint
+refused connections for ~3 hours) produces no Sentry event: that needs an
+uptime monitor on `/health` (Sentry Uptime or an Azure availability test).
+
 ## Security posture
 
 - Obscure admin URLs do not work: every TLS certificate is published to

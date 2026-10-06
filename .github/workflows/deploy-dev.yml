@@ -24,6 +24,12 @@
 #   AZURE_RESOURCE_GROUP_DEV  — e.g. meetifyy-dev-rg
 #   AZURE_CONTAINERAPP_DEV    — e.g. meetifyy-api-dev
 #
+# Optional — Sentry releases and source maps (skipped when unset):
+#   secret   SENTRY_AUTH_TOKEN   — org auth token with project:releases scope
+#   variable SENTRY_ORG          — Sentry organisation slug
+#   variable SENTRY_PROJECT_API  — the API project's slug (e.g. meetifyy-api)
+# Set them on the `development` environment only. See docs/sentry.md.
+#
 # Database credentials are stored as Container App secrets on the DEV Container
 # App — they are NEVER stored as GitHub secrets. The migration job reads them
 # from the Container App secret store at runtime.
@@ -118,6 +124,34 @@ jobs:
           echo "IMAGE=${IMAGE}" >> "$GITHUB_ENV"
           echo "SHORT_SHA=${SHORT_SHA}" >> "$GITHUB_ENV"
           echo "DEV_TAG=${DEV_TAG}" >> "$GITHUB_ENV"
+
+      # ── Sentry release + source maps (DEV) ───────────────────────────
+      # Skipped unless this GitHub Environment has SENTRY_AUTH_TOKEN. The org
+      # and project are environment-scoped variables, so this job can only
+      # ever write to the development configuration. The release name is the one
+      # the API reports at runtime: meetifyy-api@<GIT_COMMIT_SHA>. Maps come
+      # out of the image just built (the Dockerfile stamped them with debug
+      # IDs), so they match the code that is about to run, byte for byte.
+      - name: Sentry release — upload source maps (DEV)
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ vars.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT_API }}
+          IMAGE_REF: ${{ env.IMAGE }}:${{ env.DEV_TAG }}
+        run: |
+          if [ -z "${SENTRY_AUTH_TOKEN}" ] || [ -z "${SENTRY_ORG}" ] || [ -z "${SENTRY_PROJECT}" ]; then
+            echo "Sentry not configured for this environment; skipping release upload."
+            exit 0
+          fi
+          RELEASE="meetifyy-api@${GITHUB_SHA}"
+          CID=$(docker create "${IMAGE_REF}")
+          docker cp "${CID}:/app/dist" ./sentry-dist
+          docker rm "${CID}" >/dev/null
+          npx --yes @sentry/cli@3.8.0 releases new "${RELEASE}"
+          npx --yes @sentry/cli@3.8.0 releases set-commits "${RELEASE}" --commit "${GITHUB_REPOSITORY}@${GITHUB_SHA}" || \
+            echo "Commit association skipped (connect the GitHub integration in Sentry to enable it)."
+          npx --yes @sentry/cli@3.8.0 sourcemaps upload --release "${RELEASE}" ./sentry-dist
+          echo "SENTRY_RELEASE_CREATED=1" >> "$GITHUB_ENV"
 
       # ── 5. Prisma migrate deploy → DEV database ────────────────────────────
       # `prisma migrate deploy` applies only the migration files already
@@ -247,3 +281,15 @@ jobs:
           # Fail the job: the previous version ended on an `echo`, so the step
           # exited 0 and an unhealthy deploy still reported green.
           exit 1
+
+      # ── Sentry: mark the release deployed (DEV) ──────────────────────
+      - name: Sentry release — finalize and record deploy (DEV)
+        if: env.SENTRY_RELEASE_CREATED == '1'
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ vars.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT_API }}
+        run: |
+          RELEASE="meetifyy-api@${GITHUB_SHA}"
+          npx --yes @sentry/cli@3.8.0 releases finalize "${RELEASE}"
+          npx --yes @sentry/cli@3.8.0 deploys new --release "${RELEASE}" -e development
