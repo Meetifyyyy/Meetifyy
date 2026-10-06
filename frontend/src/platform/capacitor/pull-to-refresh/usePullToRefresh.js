@@ -60,6 +60,9 @@ function damp(delta) {
   return MAX_PULL * (1 - Math.exp(-delta / (MAX_PULL * 0.9)));
 }
 
+/** Movement (px) needed before a touch is judged vertical or horizontal. */
+const AXIS_SLOP_PX = 8;
+
 /**
  * True when the touch began inside something that scrolls and is not at its top.
  *
@@ -116,6 +119,9 @@ export function usePullToRefresh({ onRefresh, disabled = false, getScrollTop, on
   // Refs, not state, for everything the touch handlers read: they are attached
   // once and must not be torn down and rebuilt on every frame of a drag.
   const startYRef = useRef(0);
+  const startXRef = useRef(0);
+  // Whether this touch has been judged vertical yet (see onTouchMove).
+  const axisLockedRef = useRef(false);
   const distanceRef = useRef(0);
   const activeRef = useRef(false);
   const phaseRef = useRef('idle');
@@ -215,6 +221,8 @@ export function usePullToRefresh({ onRefresh, disabled = false, getScrollTop, on
       if (isInsideNestedScroller(e.target, el)) return;
 
       startYRef.current = e.touches[0].clientY;
+      startXRef.current = e.touches[0].clientX;
+      axisLockedRef.current = false;
       activeRef.current = true;
     };
 
@@ -229,6 +237,25 @@ export function usePullToRefresh({ onRefresh, disabled = false, getScrollTop, on
       }
 
       const delta = e.touches[0].clientY - startYRef.current;
+
+      /*
+       * Decide the gesture's axis before acting on it. A sideways swipe on a
+       * media carousel always drifts a few pixels down; this used to read that
+       * drift as a pull, translate the whole screen and preventDefault — the
+       * page jittered vertically under a horizontal swipe. Nothing moves until
+       * the finger has gone far enough to tell, and a gesture that is more
+       * sideways than down is handed back for the rest of its life.
+       */
+      if (!axisLockedRef.current) {
+        const dx = Math.abs(e.touches[0].clientX - startXRef.current);
+        const dy = Math.abs(delta);
+        if (Math.max(dx, dy) < AXIS_SLOP_PX) return;
+        if (dx >= dy) {
+          activeRef.current = false;
+          return;
+        }
+        axisLockedRef.current = true;
+      }
 
       // Pulling up, or the page moved off the top mid-drag: hand the gesture
       // back to the browser rather than fighting a scroll that is already

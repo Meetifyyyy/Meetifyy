@@ -23,8 +23,8 @@ describe('PullToRefresh', () => {
   });
   const flushFrame = () => act(() => { frames.splice(0).forEach((cb) => cb(0)); });
 
-  const touch = (el, type, y) => {
-    const t = { clientY: y, clientX: 10, identifier: 1, target: el };
+  const touch = (el, type, y, x = 10) => {
+    const t = { clientY: y, clientX: x, identifier: 1, target: el };
     const event = new Event(type, { bubbles: true, cancelable: true });
     Object.assign(event, { touches: type === 'touchend' ? [] : [t], changedTouches: [t] });
     act(() => { el.dispatchEvent(event); });
@@ -93,5 +93,25 @@ describe('PullToRefresh', () => {
     expect(content.style.transition).toContain('transform 0.32s');
     await act(async () => { vi.advanceTimersByTime(400); });
     expect(content.style.transform).toBe('none');
+  });
+
+  it('leaves a sideways swipe alone even when it drifts down (media carousel)', () => {
+    const onRefresh = vi.fn(() => Promise.resolve());
+    const { page, content } = setup(onRefresh);
+    touch(page, 'touchstart', 100, 200);
+    // Mostly sideways, drifting down: the carousel's gesture, not a pull.
+    for (let i = 1; i <= 12; i += 1) touch(page, 'touchmove', 100 + i * 4, 200 - i * 20);
+    flushFrame();
+    touch(page, 'touchend', 148, 0);
+    expect(content.style.transform === '' || content.style.transform === 'none').toBe(true);
+    expect(onRefresh).not.toHaveBeenCalled();
+  });
+
+  it('does not move the page before it can tell which way the finger is going', () => {
+    const { page, content } = setup(() => Promise.resolve());
+    touch(page, 'touchstart', 100);
+    touch(page, 'touchmove', 105, 12); // inside the slop
+    flushFrame();
+    expect(content.style.transform === '' || content.style.transform === 'none').toBe(true);
   });
 });
