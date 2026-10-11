@@ -115,6 +115,11 @@ import {
   BiscuitIcon,
   FingerPrintIcon,
   SidebarLeftIcon,
+  Call02Icon,
+  BulbIcon,
+  InboxIcon,
+  Bug01Icon,
+  CustomerSupportIcon,
 } from '@hugeicons/core-free-icons';
 
 /**
@@ -243,6 +248,11 @@ const GLYPHS = {
   Shield: Shield01Icon,
   ShieldCheck: ShieldCheckIcon,
   ShieldAlert: ShieldAlertIcon,
+  Phone: Call02Icon,
+  Lightbulb: BulbIcon,
+  Inbox: InboxIcon,
+  Bug: Bug01Icon,
+  LifeBuoy: CustomerSupportIcon,
   ShieldOff: ShieldOffIcon,
   ShieldPlus: ShieldPlusIcon,
   ShieldMinus: ShieldMinusIcon,
@@ -384,6 +394,11 @@ export const Flag = /*#__PURE__*/ icon(GLYPHS.Flag, 'Flag');
 export const Shield = /*#__PURE__*/ icon(GLYPHS.Shield, 'Shield');
 export const ShieldCheck = /*#__PURE__*/ icon(GLYPHS.ShieldCheck, 'ShieldCheck');
 export const ShieldAlert = /*#__PURE__*/ icon(GLYPHS.ShieldAlert, 'ShieldAlert');
+export const Phone = /*#__PURE__*/ icon(GLYPHS.Phone, 'Phone');
+export const Lightbulb = /*#__PURE__*/ icon(GLYPHS.Lightbulb, 'Lightbulb');
+export const Inbox = /*#__PURE__*/ icon(GLYPHS.Inbox, 'Inbox');
+export const Bug = /*#__PURE__*/ icon(GLYPHS.Bug, 'Bug');
+export const LifeBuoy = /*#__PURE__*/ icon(GLYPHS.LifeBuoy, 'LifeBuoy');
 export const ShieldOff = /*#__PURE__*/ icon(GLYPHS.ShieldOff, 'ShieldOff');
 export const ShieldPlus = /*#__PURE__*/ icon(GLYPHS.ShieldPlus, 'ShieldPlus');
 export const ShieldMinus = /*#__PURE__*/ icon(GLYPHS.ShieldMinus, 'ShieldMinus');

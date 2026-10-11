@@ -127,7 +127,11 @@ const OpenLegalOnWebsite = IS_MOBILE_BUILD ? lazyRoute(() => import('./features/
 const legalElement = (path, Page) => (IS_MOBILE_BUILD
   ? <OpenLegalOnWebsite path={path} />
   : <StaticRoute>{withBoundary(<Page />, null)}</StaticRoute>);
-const HelpSupportPage = lazyRoute(() => import('./features/info/help/HelpSupportPage'));
+// Help & Support is website-only too: the website is its single source of
+// truth. The app's Settings > Help & Support covers reporting, ideas, your
+// requests and the Safety centre; "Browse all help" and help search open this
+// page in the system browser, through the same hand-off as the legal pages.
+const HelpSupportPage = IS_MOBILE_BUILD ? null : lazyRoute(() => import('./features/info/help/HelpSupportPage'));
 
 /**
  * Wraps a route element with a scoped error boundary and suspense fallback.
@@ -438,7 +442,7 @@ export default function App({ homeElement, rootExtras = null }) {
         },
         {
           path: '/help-and-support',
-          element: <StaticRoute>{withBoundary(<HelpSupportPage />, null)}</StaticRoute>,
+          element: legalElement('/help-and-support', HelpSupportPage),
         },
         {
           path: '/support',

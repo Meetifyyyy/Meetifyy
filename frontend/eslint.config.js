@@ -60,6 +60,10 @@ export default [
       globals: {
         ...globals.browser,
         ...globals.es2021,
+        // Build stamps from Vite `define` (vite.config.js, vite.mobile.config.js).
+        // Each exists in one build only, so they are read behind `typeof`.
+        __MEETIFYY_APP_VERSION__: 'readonly',
+        __MEETIFYY_SENTRY_RELEASE__: 'readonly',
       },
       parserOptions: {
         ecmaFeatures: { jsx: true },

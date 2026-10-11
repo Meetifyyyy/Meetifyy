@@ -382,70 +382,6 @@
 
 /* ── Form ────────────────────────────────────────────────────────────────── */
 
-.formPanel {
-  margin-top: 1rem;
-  padding: 1.75rem;
-  background: var(--doc-surface);
-  border: 1px solid var(--doc-border);
-  border-radius: 16px;
-  /* A field wider than this is harder to read, not easier to fill. */
-  max-width: 44rem;
-}
-
-.formHeader {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 1rem;
-  margin-bottom: 1.5rem;
-  padding-bottom: 1.25rem;
-  border-bottom: 1px solid var(--doc-border);
-}
-
-.formTitle {
-  margin: 0 0 0.3rem;
-  font-size: 1.05rem;
-  font-weight: 700;
-  color: var(--doc-heading);
-}
-
-.formSubtitle {
-  margin: 0;
-  font-size: 0.85rem;
-  line-height: 1.6;
-  color: var(--doc-faint);
-}
-
-.formClose {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  width: 2rem;
-  height: 2rem;
-  border: none;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--doc-faint);
-  cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
-}
-
-.formClose:hover {
-  background: var(--doc-surface-alt);
-  color: var(--doc-text);
-}
-
-.fieldGrid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1.1rem;
-}
-
-.fieldFull {
-  grid-column: 1 / -1;
-}
-
 .field {
   display: flex;
   flex-direction: column;
@@ -462,24 +398,18 @@
   color: var(--doc-text);
 }
 
-.required {
-  color: #dc2626;
-}
-
 .optional {
   font-weight: 400;
   color: var(--doc-faint);
 }
 
 /* One height for every control so labels and rows align across the grid. */
-.input,
-.select {
+.input {
   height: 2.75rem;
 }
 
 .input,
-.textarea,
-.select {
+.textarea {
   width: 100%;
   padding: 0 0.85rem;
   font-size: 0.9rem;
@@ -499,53 +429,18 @@
 }
 
 /* Native select arrows differ per platform; this draws one consistent chevron. */
-.select {
-  -webkit-appearance: none;
-  appearance: none;
-  padding-right: 2.25rem;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2378716c' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 0.85rem center;
-  cursor: pointer;
-}
 
 .input:focus,
-.textarea:focus,
-.select:focus {
+.textarea:focus {
   outline: none;
   border-color: var(--doc-accent);
   box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.12);
-}
-
-.inputError {
-  border-color: #dc2626;
-}
-
-.inputError:focus {
-  border-color: #dc2626;
-  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.12);
 }
 
 .hint {
   font-size: 0.775rem;
   line-height: 1.5;
   color: var(--doc-faint);
-}
-
-.errorText {
-  display: flex;
-  align-items: center;
-  gap: 0.3rem;
-  font-size: 0.8rem;
-  font-weight: 500;
-  color: #dc2626;
-}
-
-.charCount {
-  font-size: 0.75rem;
-  color: var(--doc-faint);
-  text-align: right;
-  font-variant-numeric: tabular-nums;
 }
 
 /* Off-screen rather than display:none, which some bots skip. */
@@ -558,106 +453,6 @@
 }
 
 /* ── Attachments ─────────────────────────────────────────────────────────── */
-
-.dropZone {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.35rem;
-  width: 100%;
-  padding: 1.25rem 1rem;
-  text-align: center;
-  background: var(--doc-surface-alt);
-  border: 1px dashed var(--doc-border);
-  border-radius: 10px;
-  cursor: pointer;
-  font-family: inherit;
-  transition: border-color 0.16s ease, background 0.16s ease;
-}
-
-.dropZone:hover:not(:disabled) {
-  border-color: var(--doc-faint);
-  background: var(--doc-surface-alt);
-}
-
-.dropZone:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.dropZoneText {
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: var(--doc-text);
-}
-
-.dropZoneHint {
-  font-size: 0.75rem;
-  color: var(--doc-faint);
-}
-
-.fileList {
-  list-style: none;
-  margin: 0.6rem 0 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-}
-
-.fileItem {
-  display: flex;
-  align-items: center;
-  gap: 0.55rem;
-  padding: 0.55rem 0.7rem;
-  font-size: 0.825rem;
-  background: var(--doc-surface);
-  border: 1px solid var(--doc-border);
-  border-radius: 8px;
-  color: var(--doc-body);
-}
-
-.fileName {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.fileMeta {
-  flex-shrink: 0;
-  font-size: 0.75rem;
-  color: var(--doc-faint);
-  font-variant-numeric: tabular-nums;
-}
-
-.fileRemove {
-  flex-shrink: 0;
-  display: inline-flex;
-  padding: 0.25rem;
-  border: none;
-  background: none;
-  color: var(--doc-faint);
-  cursor: pointer;
-  border-radius: 6px;
-  transition: background 0.15s ease, color 0.15s ease;
-}
-
-.fileRemove:hover {
-  color: #dc2626;
-  background: rgba(220, 38, 38, 0.08);
-}
-
-.fileError {
-  border-color: rgba(220, 38, 38, 0.35);
-  background: rgba(220, 38, 38, 0.03);
-  color: #b91c1c;
-}
-
-.fileDone {
-  color: #16a34a;
-}
 
 /* ── Buttons ─────────────────────────────────────────────────────────────── */
 
@@ -711,16 +506,6 @@
   background: var(--doc-surface-alt);
 }
 
-.formActions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.85rem;
-  margin-top: 1.5rem;
-  padding-top: 1.25rem;
-  border-top: 1px solid var(--doc-border);
-}
-
 /* One focus treatment for every interactive element on the page. */
 .categoryCard:focus-visible,
 .faqTrigger:focus-visible,
@@ -728,10 +513,7 @@
 .primaryBtn:focus-visible,
 .ghostBtn:focus-visible,
 .ctaButton:focus-visible,
-.dropZone:focus-visible,
-.searchClear:focus-visible,
-.fileRemove:focus-visible,
-.formClose:focus-visible {
+.searchClear:focus-visible {
   outline: 2px solid var(--doc-accent);
   outline-offset: 2px;
 }
@@ -747,34 +529,6 @@
 }
 
 /* ── Alerts and states ───────────────────────────────────────────────────── */
-
-.alert {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.6rem;
-  padding: 0.85rem 1rem;
-  margin-bottom: 1.25rem;
-  font-size: 0.865rem;
-  line-height: 1.6;
-  border-radius: 10px;
-}
-
-.alertError {
-  color: #991b1b;
-  background: rgba(220, 38, 38, 0.05);
-  border: 1px solid rgba(220, 38, 38, 0.18);
-}
-
-.alertWarn {
-  color: #92400e;
-  background: rgba(245, 158, 11, 0.07);
-  border: 1px solid rgba(245, 158, 11, 0.22);
-}
-
-.alertIcon {
-  flex-shrink: 0;
-  margin-top: 0.12rem;
-}
 
 .stateBox {
   display: flex;
@@ -814,51 +568,6 @@
 
 /* ── Success ─────────────────────────────────────────────────────────────── */
 
-.successPanel {
-  margin-top: 1rem;
-  padding: 2.5rem 2rem;
-  text-align: center;
-  background: var(--doc-surface);
-  border: 1px solid var(--doc-border);
-  border-radius: 16px;
-  max-width: 44rem;
-}
-
-.successIcon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 3rem;
-  height: 3rem;
-  margin-bottom: 1.25rem;
-  border-radius: 9999px;
-  background: rgba(22, 163, 74, 0.1);
-  color: #16a34a;
-}
-
-.successTitle {
-  margin: 0 0 0.85rem;
-  font-size: 1.25rem;
-  font-weight: 700;
-  letter-spacing: -0.015em;
-  color: var(--doc-heading);
-}
-
-.successText {
-  margin: 0 auto;
-  max-width: 34rem;
-  font-size: 0.95rem;
-  line-height: 1.75;
-  color: var(--doc-muted);
-}
-
-.requestIdHighlight {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
-  font-weight: 700;
-  color: var(--doc-heading);
-  letter-spacing: 0.02em;
-}
-
 /* ── Skeleton ────────────────────────────────────────────────────────────── */
 
 .skeleton {
@@ -896,13 +605,6 @@
  * usable width instead of being halved twice over.
  */
 @media (max-width: 48rem) {
-  .fieldGrid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .formPanel {
-    padding: 1.35rem;
-  }
 
   .ctaCard {
     padding: 1.35rem;
@@ -924,11 +626,6 @@
     justify-content: center;
   }
 
-  .formPanel,
-  .successPanel {
-    padding: 1.15rem;
-  }
-
   .formActions .primaryBtn {
     width: 100%;
   }
@@ -948,4 +645,58 @@
   .spin {
     animation-duration: 2.5s;
   }
+}
+
+/* ── Hub (actions, status, sub-views) ────────────────────────────────────── */
+
+.hubTop {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 1rem;
+}
+
+.hubTop:empty {
+  display: none;
+}
+
+.backLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 1.25rem;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--doc-muted);
+  text-decoration: none;
+}
+
+.backLink:hover {
+  color: var(--doc-text);
+}
+
+.viewBody {
+  max-width: 720px;
+  margin-bottom: 2.5rem;
+}
+
+.successActions a.primaryBtn {
+  text-decoration: none;
+  color: #ffffff;
+}
+
+.ctaButtons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.ctaButtonGhost {
+  color: #ffffff;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+}
+
+.ctaButtonGhost:hover {
+  background: rgba(255, 255, 255, 0.1);
 }

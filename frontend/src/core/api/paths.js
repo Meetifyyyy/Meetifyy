@@ -27,6 +27,10 @@ export const PUBLIC_PATHS = [
   '/api/auth/signup',
   '/api/auth/login',
   '/api/health',
+  // The API's real liveness route (HealthController is mounted at `health`,
+  // without the `api/` prefix). The Help page checks it to show a service
+  // status notice, and its visitors are often signed out.
+  '/health',
   // These are called during signup before the user has a session
   '/api/auth/check-username',
   '/api/auth/check-email',
@@ -93,8 +97,20 @@ export function isBearerPath(path) {
   return BEARER_PATHS.some((p) => clean === p || clean.startsWith(`${p}?`));
 }
 
+/**
+ * Signed-in routes beneath a public prefix. `/api/support` is public for the
+ * help centre and the form, but "Your requests" lists the session's own
+ * tickets: it needs the session, and a 401 there must renew the token like any
+ * other signed-in call instead of surfacing as an error. Covers the list, one
+ * request (`/mine/:ticketNumber`) and filing one as the account (`POST /mine`).
+ */
+const SIGNED_IN_UNDER_PUBLIC = ['/api/support/requests/mine'];
+
 export function isPublicPath(path) {
   const clean = path.startsWith('/') ? path : `/${path}`;
+  if (SIGNED_IN_UNDER_PUBLIC.some((p) => clean === p || clean.startsWith(`${p}?`) || clean.startsWith(`${p}/`))) {
+    return false;
+  }
   return PUBLIC_PATHS.some(p => clean === p || clean.startsWith(`${p}?`) || clean.startsWith(`${p}/`));
 }
 

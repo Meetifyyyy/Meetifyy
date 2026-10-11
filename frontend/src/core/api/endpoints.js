@@ -679,6 +679,20 @@ export function createEndpoints({ apiClient, getToken, getBackendUrl, getSession
     searchHelp: (query, { signal } = {}) =>
       apiClient.get(`/api/support/help/search?q=${encodeURIComponent(query)}`, { signal }),
 
+    /** The signed-in account's own requests (status and dates only). */
+    getMyRequests: ({ signal } = {}) => apiClient.get('/api/support/requests/mine', { signal }),
+
+    /** One of them, with what was sent and the team's replies. */
+    getMyRequest: (ticketNumber, { signal } = {}) =>
+      apiClient.get(`/api/support/requests/mine/${encodeURIComponent(ticketNumber)}`, { signal }),
+
+    /**
+     * Files a problem or idea as the signed-in user: name and reply address
+     * come from the account, and the ticket is always linked to it.
+     */
+    submitMyRequest: (payload, { signal } = {}) =>
+      apiClient.post('/api/support/requests/mine', payload, { signal }),
+
     submitRequest: (payload, { signal } = {}) => apiClient.post('/api/support/requests', payload, { signal }),
     submitSupportRequest: (payload, options) => supportApi.submitRequest(payload, options),
 

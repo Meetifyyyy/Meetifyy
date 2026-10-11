@@ -27,7 +27,6 @@ import { bootWebSentry } from './platform/web/sentryBoot';
 bootWebSentry({
   config,
   isNonProductionHost: isNonProductionHost(window.location.hostname),
-  // eslint-disable-next-line no-undef -- replaced at build time (vite.config.js `define`)
   release: typeof __MEETIFYY_SENTRY_RELEASE__ === 'string' ? __MEETIFYY_SENTRY_RELEASE__ : '',
 });
 

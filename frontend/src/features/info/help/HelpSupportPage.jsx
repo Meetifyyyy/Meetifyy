@@ -1,11 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import StaticDocLayout from '../pages/StaticDocLayout';
 import styles from './HelpSupport.module.css';
 import FaqAccordion from './FaqAccordion';
-import SupportRequestForm from './SupportRequestForm';
 import { supportApi } from '@shared/api/apiClient';
+import HelpActions from './hub/HelpActions';
+import HelpFooter from './hub/HelpFooter';
+import HelpView, { VIEW_TITLES } from './hub/HelpView';
+import ServiceStatus from './hub/ServiceStatus';
+import SupportRequestModal from './hub/SupportRequestModal';
+import { HELP_VIEWS, viewFromParams } from './hub/helpHub';
 import {
   AlertCircle,
+  ArrowLeft,
   ArrowRight,
   Bell,
   CalendarDays,
@@ -46,19 +53,59 @@ const SEARCH_DEBOUNCE_MS = 250;
 const MIN_QUERY_LENGTH = 2;
 const QUICK_LINK_COUNT = 5;
 
+const linkFor = (view) => `/help-and-support?view=${view}`;
+
 export default function HelpSupportPage() {
+  const [params] = useSearchParams();
+  const navigate = useNavigate();
+  const view = viewFromParams(params);
+  // Report a problem / Share an idea, opened from any tile or button below.
+  const [modal, setModal] = useState(null);
+
+  return (
+    <>
+      {view ? (
+        <HelpSubPage view={view} onOpen={setModal} />
+      ) : (
+        <HelpHome initialQuery={params.get('q') || ''} onOpen={setModal} />
+      )}
+      <SupportRequestModal
+        kind={modal}
+        onClose={() => setModal(null)}
+        onViewRequests={() => {
+          setModal(null);
+          navigate(linkFor(HELP_VIEWS.REQUESTS));
+        }}
+      />
+    </>
+  );
+}
+
+/** Safety centre and Your requests. */
+function HelpSubPage({ view, onOpen }) {
+  return (
+    <StaticDocLayout badge="Help Centre" title={VIEW_TITLES[view]} noHeroCard leftAlign>
+      <Link to="/help-and-support" className={styles.backLink}>
+        <ArrowLeft size={15} aria-hidden="true" />
+        Help &amp; Support
+      </Link>
+      <div className={styles.viewBody}>
+        <HelpView view={view} onOpen={onOpen} />
+      </div>
+      <HelpFooter />
+    </StaticDocLayout>
+  );
+}
+
+function HelpHome({ initialQuery, onOpen }) {
   const [content, setContent] = useState(null);
-  const [meta, setMeta] = useState(null);
   const [loadState, setLoadState] = useState('loading'); // loading | ready | error
 
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState(initialQuery);
   const [search, setSearch] = useState({ state: 'idle', results: [], query: '' });
 
-  const [formOpen, setFormOpen] = useState(false);
-  const [presetCategory, setPresetCategory] = useState(null);
   const [openArticleId, setOpenArticleId] = useState(null);
 
-  const formSectionRef = useRef(null);
   const searchInputRef = useRef(null);
   // Only the newest load may write state, so a superseded request cannot land
   // after a newer one and overwrite it.
@@ -83,12 +130,9 @@ export default function HelpSupportPage() {
     setLoadState('loading');
 
     try {
-      // Both are public and independent; requesting them together avoids a
-      // render pass where the form exists but has no categories to offer.
-      const [helpCentre, formMeta] = await Promise.all([supportApi.getHelpCentre(), supportApi.getFormMeta()]);
+      const helpCentre = await supportApi.getHelpCentre();
       if (id !== loadIdRef.current) return;
       setContent(helpCentre);
-      setMeta(formMeta);
       setLoadState('ready');
     } catch {
       // A superseded load is ignored, but the newest one always reaches a
@@ -152,38 +196,7 @@ export default function HelpSupportPage() {
     return `${search.results.length} help article${one ? '' : 's'} ${one ? 'matches' : 'match'} "${search.query}".`;
   }, [isSearchActive, searching, search]);
 
-  /**
-   * Maps a help category to the form category it corresponds to.
-   *
-   * Matched against the values the server actually offers rather than derived
-   * by transforming a slug into an enum name: help categories are admin
-   * editable and one can be added that has no form counterpart. With no match
-   * the field is simply left for the user, which is the right outcome.
-   */
-  const formCategoryForSlug = useMemo(() => {
-    const offered = new Set((meta?.categories ?? []).map((option) => option.value));
-    const map = {};
-    for (const category of categories) {
-      const candidate = category.slug.toUpperCase().replace(/-/g, '_');
-      if (offered.has(candidate)) map[category.slug] = candidate;
-    }
-    return map;
-  }, [meta, categories]);
-
-  const openForm = (categoryValue) => {
-    if (categoryValue) setPresetCategory(categoryValue);
-    setFormOpen(true);
-    // Deferred a frame so the panel exists before it is scrolled to.
-    requestAnimationFrame(() => {
-      formSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    });
-  };
-
   const goToCategory = (category) => {
-    // Pre-selecting the matching form category means a user who reads the
-    // articles and still needs help does not restate the topic they chose.
-    const formCategory = formCategoryForSlug[category.slug];
-    if (formCategory) setPresetCategory(formCategory);
     document
       .getElementById(`help-category-${category.slug}`)
       ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -191,9 +204,6 @@ export default function HelpSupportPage() {
 
   const goToArticle = (article) => {
     if (query) setQuery('');
-
-    const formCategory = formCategoryForSlug[article.categorySlug];
-    if (formCategory) setPresetCategory(formCategory);
 
     setOpenArticleId(article.id);
 
@@ -221,7 +231,7 @@ export default function HelpSupportPage() {
     <StaticDocLayout
       badge="Help Centre"
       title="Help & Support"
-      subtitle="Search our answers to the questions we get asked most, or send the team a message. You do not need an account to reach us."
+      subtitle="Answers to the questions students ask most, a Safety centre, and a direct line to the team. You do not need an account to reach us."
       noHeroCard
       leftAlign
     >
@@ -267,6 +277,11 @@ export default function HelpSupportPage() {
         </p>
       </section>
 
+      <div className={styles.hubTop}>
+        <ServiceStatus />
+        {!isSearchActive && <HelpActions linkFor={linkFor} onOpen={onOpen} />}
+      </div>
+
       {/* ── Search results ───────────────────────────────────────────────── */}
 
       {isSearchActive && search.state === 'done' && search.results.length > 0 && (
@@ -291,7 +306,7 @@ export default function HelpSupportPage() {
             <button
               type="button"
               className={`${styles.primaryBtn} ${styles.stateAction}`}
-              onClick={() => openForm(null)}
+              onClick={() => onOpen('problem')}
             >
               Create a support request
             </button>
@@ -442,7 +457,6 @@ export default function HelpSupportPage() {
       {/* ── Support request ──────────────────────────────────────────────── */}
 
       <section
-        ref={formSectionRef}
         id="support-request"
         className={styles.section}
         aria-labelledby="help-contact-heading"
@@ -454,31 +468,32 @@ export default function HelpSupportPage() {
           </h2>
         </div>
 
-        {/*
-          The form is revealed rather than always shown. Six fields plus a file
-          upload sitting permanently under every article would bury the content
-          people came for, and a modal would be cramped on a phone for a form
-          this size. The CTA keeps the page a readable document and gives the
-          form its own full-width space when it is actually wanted.
-        */}
-        {formOpen ? (
-          <SupportRequestForm meta={meta} presetCategory={presetCategory} onClose={() => setFormOpen(false)} />
-        ) : (
-          <div className={styles.ctaCard}>
-            <div>
-              <p className={styles.ctaTitle}>Create a support request</p>
-              <p className={styles.ctaText}>
-                Tell us what is going on and we will reply by email. You will get a Request ID straight away, and you
-                do not need to be signed in.
-              </p>
-            </div>
-            <button type="button" className={styles.ctaButton} onClick={() => openForm(null)}>
-              Contact support
+        <div className={styles.ctaCard}>
+          <div>
+            <p className={styles.ctaTitle}>Talk to the Meetifyy team</p>
+            <p className={styles.ctaText}>
+              Report something that is not working, or tell us what you would like Meetifyy to do. You get a Request
+              ID straight away and we reply by email. You do not need to be signed in.
+            </p>
+          </div>
+          <div className={styles.ctaButtons}>
+            <button type="button" className={styles.ctaButton} onClick={() => onOpen('problem')} aria-haspopup="dialog">
+              Report a problem
               <ArrowRight size={15} aria-hidden="true" />
             </button>
+            <button
+              type="button"
+              className={`${styles.ctaButton} ${styles.ctaButtonGhost}`}
+              onClick={() => onOpen('idea')}
+              aria-haspopup="dialog"
+            >
+              Share an idea
+            </button>
           </div>
-        )}
+        </div>
       </section>
+
+      <HelpFooter />
     </StaticDocLayout>
   );
 }

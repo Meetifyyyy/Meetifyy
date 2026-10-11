@@ -75,7 +75,6 @@ import './mobile.css';
 // vite.mobile.config.js.
 installCapacitorSentry({
   config,
-  // eslint-disable-next-line no-undef -- replaced at build time (vite.mobile.config.js `define`)
   appVersion: typeof __MEETIFYY_APP_VERSION__ === 'string' ? __MEETIFYY_APP_VERSION__ : '',
 });
 

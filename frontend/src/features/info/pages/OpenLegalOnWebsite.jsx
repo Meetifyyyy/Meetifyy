@@ -1,10 +1,11 @@
 import { useEffect, useRef } from 'react';
 import PropTypes from 'prop-types';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { config } from '@config';
 
 /**
- * Installed app only: the legal pages are not part of the APK.
+ * Installed app only: the legal pages and Help & Support are not part of the
+ * APK; the website is their single source of truth.
  *
  * Every route that would render one renders this instead, which opens the same
  * path on the website in the system browser and steps back off the route, so
@@ -21,6 +22,7 @@ import { config } from '@config';
  */
 export default function OpenLegalOnWebsite({ path }) {
   const navigate = useNavigate();
+  const { search } = useLocation();
   const opened = useRef(false);
 
   useEffect(() => {
@@ -28,11 +30,14 @@ export default function OpenLegalOnWebsite({ path }) {
     if (opened.current) return;
     opened.current = true;
 
-    window.location.assign(`${config.app.siteUrl}${path}`);
+    // The query rides along, so a help search typed in the app arrives as one
+    // (`/help-and-support?q=...`). Nothing private is ever in it: no route in
+    // the app puts a token or personal data in a query string.
+    window.location.assign(`${config.app.siteUrl}${path}${search}`);
 
     if (window.history.state?.idx > 0) navigate(-1);
     else navigate('/', { replace: true });
-  }, [navigate, path]);
+  }, [navigate, path, search]);
 
   return null;
 }

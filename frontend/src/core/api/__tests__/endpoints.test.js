@@ -93,7 +93,7 @@ describe('createEndpoints', () => {
     const { transport } = stubTransport();
     const api = createEndpoints(transport);
     const total = Object.values(api).reduce((n, ns) => n + Object.keys(ns).length, 0);
-    expect(total).toBe(194); // 193 + messagesApi.getConversationMedia (the shared-media gallery)
+    expect(total).toBe(197); // 193 + messagesApi.getConversationMedia (shared-media gallery) + supportApi.getMyRequests/getMyRequest/submitMyRequest
   });
 
   it('is a factory, not a singleton — two calls yield independent objects', () => {
