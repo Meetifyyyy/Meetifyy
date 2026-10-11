@@ -80,6 +80,9 @@
 
 .communitiesList {
   min-height: 0;
+  /* A grid item is as wide as its content by default, so a long name ran
+     past the box instead of ending in an ellipsis. */
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
@@ -100,7 +103,10 @@
   -webkit-tap-highlight-color: transparent;
 }
 
-.communityItem>span {
+/* A class, not `> span`: the avatar is a span too, and `flex: 1` stretched it
+   into a wide strip across the row. */
+.communityName {
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

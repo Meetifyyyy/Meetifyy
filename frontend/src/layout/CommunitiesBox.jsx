@@ -41,7 +41,7 @@ export default function CommunitiesBox({ onItemClick, className = '' }) {
               onClick={onItemClick}
             >
               <CommunityAvatar community={comm} size={28} />
-              <span>{comm.name}</span>
+              <span className={styles.communityName}>{comm.name}</span>
             </Link>
           ))}
           {!isLoading && myCommunities.length === 0 && (
