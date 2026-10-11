@@ -1512,8 +1512,12 @@ input:checked + .slider::before {
     --settings-gutter: 12px;
   }
 
+  /* No bottom navigation on settings (DashboardLayoutWrapper hides it), so the
+     80px reserved for one was dead scroll past the last row. Only the phone's
+     own navigation-bar inset and a little breathing room remain. */
   .body {
     padding-top: 6px;
+    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 16px);
   }
 
   .sectionHeader,
@@ -1726,4 +1730,43 @@ input:checked + .slider::before {
   font-size: var(--font-size-base);
   line-height: 1.55;
   color: var(--color-text-muted);
+}
+
+/* ── Field outlines ────────────────────────────────────────────────────────
+   Every text field, search box, textarea and select-style button in Settings
+   and its panels (Blocked Contacts, Help, Devices, ...) gets the same thin
+   outline, so a field reads as a field on both themes instead of a tinted
+   block. Scoped to the page, so panels styled in their own modules are
+   covered without each repeating it; error and focus states keep their own
+   colour by changing only `border-color`. */
+.page :is(
+    input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']):not([type='hidden']),
+    textarea,
+    select
+  ),
+.page .selectButton {
+  border: 1px solid var(--color-border-light);
+}
+
+:global([data-theme='dark']) .page :is(
+    input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']):not([type='hidden']),
+    textarea,
+    select
+  ),
+:global([data-theme='dark']) .page .selectButton {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.page :is(input, textarea, select):focus-visible:not(:disabled),
+.page .selectButtonActive {
+  border-color: var(--color-primary);
+}
+
+.page .inputInvalid {
+  border-color: var(--color-danger);
+}
+
+/* The last block ends at the body's own bottom padding, not padding + margin. */
+.body > :last-child {
+  margin-bottom: 0;
 }

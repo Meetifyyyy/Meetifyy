@@ -98,7 +98,10 @@ export default function DashboardLayoutWrapper() {
   // — Messages runs its own bounded scroller and has no page scroll to react
   // to, so the header would never come back.
   const isMessages = matches.some((m) => m.pathname.startsWith('/messages'));
-  useAutoHideChrome({ enabled: !isMessages });
+  // A post's own view keeps its header: it carries the back button and the
+  // post's context, and hiding it while reading comments left no way back.
+  const isPostView = matches.some((m) => m.pathname.startsWith('/post/'));
+  useAutoHideChrome({ enabled: !isMessages && !isPostView });
 
   // Your own cover is the slowest thing on your profile and it is known from
   // sign-in, so it is fetched and decoded now, in idle time, rather than when

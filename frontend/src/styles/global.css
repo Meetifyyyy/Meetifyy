@@ -160,6 +160,8 @@ html {
 @media (max-width: 768px) {
   :root:not([data-bars='transparent']):not([data-collapsing-header]) #root {
     padding-top: var(--status-bar-inset, 0px);
+    /* Published so a full-height child can subtract it (see .centre--sheet). */
+    --root-inset-top: var(--status-bar-inset, 0px);
   }
 }
 
@@ -637,8 +639,11 @@ nav a.active {
      Overlays opt out by marking themselves, rather than the rule listing the
      pages that have one — a second sheet page with an overlay would otherwise
      reintroduce this silently. */
+  /* Minus whatever #root already pads above it: on the installed app that is
+     the status bar, and a full 100dvh under it made every short sheet page
+     (Settings > Account, Change Password, ...) scroll by exactly that inset. */
   .centre--sheet:not(.centre--search) > *:not([data-sheet-overlay]) {
-    min-height: 100dvh;
+    min-height: calc(100dvh - var(--root-inset-top, 0px));
     box-sizing: border-box;
   }
 
