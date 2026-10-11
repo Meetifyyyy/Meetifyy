@@ -277,7 +277,6 @@ export default function Header({ variant = 'dashboard', wide = false }) {
           <button
             type="button"
             className={styles.drawerSettingsBtn}
-            data-no-press
             onClick={openSettingsFromDrawer}
           >
             <SettingsIcon className={styles.settingsIcon} aria-hidden="true" />

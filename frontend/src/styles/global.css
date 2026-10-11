@@ -824,10 +824,8 @@ button,
   transition: transform 0.15s ease, opacity 0.15s ease, background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
-/* Press feedback is not a CSS rule any more: a transform transition cannot
-   survive a component declaring its own `transition`, so it snapped. See
-   shared/lib/pressFeedback.js (a Web Animation on `scale`, installed at startup).
-   Opt a control out with data-no-press. */
+/* There is no app-wide press effect. A control that wants press feedback
+   styles its own :active state; nothing is layered on top of it. */
 
 /* Accessibility: Clear focus-visible rings for keyboard users, cleanly avoiding tap-focus outlines */
 :where(button, [role="button"], a, input, select, textarea):focus:not(:focus-visible) {
