@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useUsersMap } from '@shared/hooks/useUsersMap';
@@ -10,6 +10,10 @@ import { showToast } from '@shared/utils/toast';
 import { isImageUrl, resolveCommunityAvatar } from '@shared/utils/avatar';
 import CollapsingHeader from '@shared/components/CollapsingHeader/CollapsingHeader';
 import PullToRefresh from '@shared/components/PullToRefresh';
+import { useOverlayBack } from '@shared/hooks/useOverlayBack';
+import { useSystemBars } from '@shared/hooks/useSystemBars';
+import BlurredCover from '@shared/components/ui/BlurredCover';
+import { IS_MOBILE_BUILD } from '@config';
 import { isCommunityMember, isCommunityOwner, resolveCommunityCover } from '@shared/utils/community';
 import { processAndUploadImage } from '@shared/utils/mediaPipeline';
 import {
@@ -137,6 +141,22 @@ function HeroSection({ coverRef, comm, onlineNow, joined, joining, onToggleJoin,
   // `coverKey` is the column; reading `coverImage` found nothing for most
   // communities, and the raw value is a storage key rather than a URL.
   const resolvedCover = resolveCommunityCover(comm);
+  // The pull zooms the cover by (height + pull) / height, so the CSS needs the
+  // cover's own height as a number. Profile gets it from useCollapsingHeader
+  // (cover header); this page has none, and without it the divisor fell back to
+  // 1 and the cover was scaled ~100x, a flat blur. offsetHeight is the layout
+  // height, unaffected by the zoom itself. Resize-driven, never per scroll.
+  useLayoutEffect(() => {
+    const cover = coverRef?.current;
+    if (!IS_MOBILE_BUILD || !cover) return undefined;
+    const write = () => cover.style.setProperty('--profile-cover-h', String(Math.max(1, cover.offsetHeight)));
+    write();
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    const observer = new ResizeObserver(write);
+    observer.observe(cover);
+    return () => observer.disconnect();
+  }, [coverRef]);
+
   // Treat old platform-default keys the same as null: the empty CSS state
   // replaces them instead of requesting a deleted R2 object.
   const hasCover = Boolean(
@@ -164,6 +184,12 @@ function HeroSection({ coverRef, comm, onlineNow, joined, joining, onToggleJoin,
             draggable={false}
             style={{ cursor: 'default', userSelect: 'none', pointerEvents: 'none' }}
           />
+        )}
+        {IS_MOBILE_BUILD && hasCover && (
+          /* The same cover, blurred, faded in by a pull (see CommunityView.module.css). */
+          <div className={styles.coverPullBlur} aria-hidden="true">
+            <BlurredCover cover={resolvedCover} />
+          </div>
         )}
         <div className={styles.heroCoverOverlay} />
         {isAdmin && (
@@ -630,6 +656,11 @@ function GuidelinesCard() {
 
 export default function CommunityView({ communityId, onBack, onPostClick, onCommentClick }) {
   const heroCoverRef = useRef(null);
+  // This page has no bottom navigation, so nothing should be painted under the
+  // device's navigation bar: the page runs through it (no-op on the website).
+  useSystemBars({ navigation: 'transparent' });
+  // The fixed header, so a pull can move its buttons with the content.
+  const collapsingHeaderRef = useRef(null);
   const queryClient = useQueryClient();
 
   // Pull-to-refresh (installed app): the community and its posts, together, so
@@ -746,6 +777,10 @@ export default function CommunityView({ communityId, onBack, onPostClick, onComm
   const handleCloseMobileAbout = () => {
     setIsMobileAboutClosing(true);
   };
+
+  // Back (hardware, gesture, browser) closes the details page only, leaving the
+  // community underneath; without this it popped the community's route too.
+  useOverlayBack(showMobileAbout && !isMobileAboutClosing, handleCloseMobileAbout);
 
   const handleMobileAboutAnimationEnd = () => {
     if (isMobileAboutClosing) {
@@ -1110,6 +1145,7 @@ export default function CommunityView({ communityId, onBack, onPostClick, onComm
         title={comm.name}
         subtitle={`${memberTotal} ${memberTotal === 1 ? 'member' : 'members'}`}
         onBack={onBack}
+        headerRef={collapsingHeaderRef}
       />
       {/*
         Wraps the page content only, NOT the modals below it: a pull translates
@@ -1117,7 +1153,7 @@ export default function CommunityView({ communityId, onBack, onPostClick, onComm
         same split ProfilePage makes). The fixed CollapsingHeader stays outside
         for the same reason.
       */}
-      <PullToRefresh onRefresh={handleRefresh} surface="sheet">
+      <PullToRefresh onRefresh={handleRefresh} surface="sheet" pullTargetRef={collapsingHeaderRef}>
       <div className={styles.mobileHeader}>
         <button 
           className={`${styles.backBtn} ${styles.mobileBackBtn}`}
@@ -1178,6 +1214,144 @@ export default function CommunityView({ communityId, onBack, onPostClick, onComm
         onTitleClick={() => setShowMobileAbout(true)}
         onShare={() => setShowShareModal(true)}
       />
+      <div className={styles.main}>
+        <div className={styles.leftColumn}>
+          <div className={styles.feedHeader}>
+            <h2 className={styles.feedTitle}>
+              Posts
+            </h2>
+          </div>
+
+          {comm.canViewPosts === false ? (
+            comm.isEligibleToJoin === false ? (
+              <div className={styles.emptyPosts} style={{ padding: '3rem 1.5rem', background: 'var(--color-bg-white)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--color-border)', textAlign: 'center', marginTop: '1rem' }}>
+                <div style={{ width: '56px', height: '56px', borderRadius: '50%', background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1rem' }}>
+                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="10" />
+                    <line x1="4.93" y1="4.93" x2="19.07" y2="19.07" />
+                  </svg>
+                </div>
+                <h3 style={{ fontSize: '1.2rem', fontWeight: 700, margin: '0 0 0.5rem', color: 'var(--color-text-main)' }}>
+                  You're not eligible to join this community.
+                </h3>
+                <p style={{ fontSize: '0.92rem', color: 'var(--color-text-muted)', margin: 0, lineHeight: 1.5, maxWidth: '420px', marginLeft: 'auto', marginRight: 'auto' }}>
+                  This community is limited to verified students of {comm.college?.name || 'this college'}.
+                </p>
+              </div>
+            ) : (
+              <div className={styles.emptyPosts} style={{ padding: '3rem 1.5rem', background: 'var(--color-bg-white)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--color-border)', textAlign: 'center', marginTop: '1rem' }}>
+                <div style={{ width: '56px', height: '56px', borderRadius: '50%', background: 'rgba(99, 102, 241, 0.1)', color: 'var(--color-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1rem' }}>
+                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                    <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                  </svg>
+                </div>
+                <h3 style={{ fontSize: '1.2rem', fontWeight: 700, margin: '0 0 0.5rem', color: 'var(--color-text-main)' }}>
+                  This Community is Private
+                </h3>
+                <p style={{ fontSize: '0.92rem', color: 'var(--color-text-muted)', margin: '0 0 1.25rem', lineHeight: 1.5, maxWidth: '420px', marginLeft: 'auto', marginRight: 'auto' }}>
+                  Only approved members can view posts and join this community. Send a request to get access.
+                </p>
+                <button
+                  className={styles.emptyJoinBtn}
+                  onClick={handleToggleJoin}
+                  disabled={joining || comm.hasPendingRequest}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}
+                >
+                  {comm.hasPendingRequest ? 'Requested' : 'Request to Join'}
+                </button>
+              </div>
+            )
+          ) : (
+            <>
+              {joined && (comm.allowMemberPosts !== false || isAdmin) && (
+                <div className={styles.composerWrapper} data-community-composer="true">
+                  <VerificationGate message="Verify your account to post in communities.">
+                    <PostComposer
+                      ref={composerRef}
+                      onSubmit={(text, poll, media, mentions) => addPost(text, poll, communityId, media, mentions)}
+                    />
+                  </VerificationGate>
+                </div>
+              )}
+
+              <div className={styles.postsFeed}>
+                {communityPosts.length === 0 && isPostsPending ? (
+                  // The first page has not arrived: this is not an empty
+                  // community yet, so it must not say so.
+                  <>
+                    <PostSkeleton />
+                    <PostSkeleton />
+                  </>
+                ) : communityPosts.length === 0 ? (
+                  <div className={styles.emptyPosts}>
+                    <div
+                      className={styles.emptyPostsIcon}
+                      onClick={handleCreatePostClick}
+                      role="button"
+                      tabIndex={0}
+                      style={{ cursor: 'pointer' }}
+                      title="Create post"
+                      aria-label="Create post"
+                    >
+                      {comm.trending ? '🚀' : '💭'}
+                    </div>
+                    <h3 className={styles.emptyPostsTitle}>
+                      This community is waiting for its first post
+                    </h3>
+                    <p className={styles.emptyPostsDesc}>
+                      Share an update, photo, event, or question to get everyone talking.
+                    </p>
+                    {!joined ? (
+                      <button className={styles.emptyJoinBtn} onClick={handleToggleJoin} disabled={joining} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}>
+                        {joining ? (
+                          <div className="spinner" style={{ width: '14px', height: '14px', borderWidth: '2px', borderColor: 'white', borderTopColor: 'transparent' }} />
+                        ) : null}
+                        Join to Post
+                      </button>
+                    ) : (
+                      <button className={styles.emptyJoinBtn} onClick={handleCreatePostClick}>
+                        Create Post
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <>
+                    {visibleCommunityPosts.map((p, idx) => (
+                      <div key={p.id} className={styles.postWrapper}>
+                        <div className={styles.postMetaRow}>
+                          {p.authorId && users[p.authorId] && comm.memberList?.find(m => m.name === users[p.authorId]?.displayName)?.admin && (
+                            <span className={styles.postAuthorBadge} style={{ background: 'rgba(236, 72, 153, 0.1)', color: '#EC4899', padding: '0.1rem 0.4rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 600 }}>
+                              Admin
+                            </span>
+                          )}
+                        </div>
+                        <Post
+                          key={p.id}
+                          postData={p}
+                          hideCommunityTag={true}
+                          onClick={handleCommunityPostClick}
+                          onCommentClick={handleCommunityCommentClick}
+                        />
+                      </div>
+                    ))}
+                    {hasMorePosts && (
+                      <div ref={loadMorePostsRef} style={{ padding: '1.5rem', display: 'flex', justifyContent: 'center' }}>
+                        <div className="spinner" aria-label="Loading posts" />
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+
+        <div className={`${styles.rightColumn} ${!showMobileDetails ? styles.hiddenOnMobile : ''}`}>
+          <AboutCard comm={comm} />
+          <GuidelinesCard />
+        </div>
+      </div>
       </PullToRefresh>
 
       {moderatorNotice && !noticeDismissed && (
@@ -1318,144 +1492,6 @@ export default function CommunityView({ communityId, onBack, onPostClick, onComm
         </div>
       )}
 
-      <div className={styles.main}>
-        <div className={styles.leftColumn}>
-          <div className={styles.feedHeader}>
-            <h2 className={styles.feedTitle}>
-              Posts
-            </h2>
-          </div>
-
-          {comm.canViewPosts === false ? (
-            comm.isEligibleToJoin === false ? (
-              <div className={styles.emptyPosts} style={{ padding: '3rem 1.5rem', background: 'var(--color-bg-white)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--color-border)', textAlign: 'center', marginTop: '1rem' }}>
-                <div style={{ width: '56px', height: '56px', borderRadius: '50%', background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1rem' }}>
-                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                    <circle cx="12" cy="12" r="10" />
-                    <line x1="4.93" y1="4.93" x2="19.07" y2="19.07" />
-                  </svg>
-                </div>
-                <h3 style={{ fontSize: '1.2rem', fontWeight: 700, margin: '0 0 0.5rem', color: 'var(--color-text-main)' }}>
-                  You're not eligible to join this community.
-                </h3>
-                <p style={{ fontSize: '0.92rem', color: 'var(--color-text-muted)', margin: 0, lineHeight: 1.5, maxWidth: '420px', marginLeft: 'auto', marginRight: 'auto' }}>
-                  This community is limited to verified students of {comm.college?.name || 'this college'}.
-                </p>
-              </div>
-            ) : (
-              <div className={styles.emptyPosts} style={{ padding: '3rem 1.5rem', background: 'var(--color-bg-white)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--color-border)', textAlign: 'center', marginTop: '1rem' }}>
-                <div style={{ width: '56px', height: '56px', borderRadius: '50%', background: 'rgba(99, 102, 241, 0.1)', color: 'var(--color-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1rem' }}>
-                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-                    <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-                  </svg>
-                </div>
-                <h3 style={{ fontSize: '1.2rem', fontWeight: 700, margin: '0 0 0.5rem', color: 'var(--color-text-main)' }}>
-                  This Community is Private
-                </h3>
-                <p style={{ fontSize: '0.92rem', color: 'var(--color-text-muted)', margin: '0 0 1.25rem', lineHeight: 1.5, maxWidth: '420px', marginLeft: 'auto', marginRight: 'auto' }}>
-                  Only approved members can view posts and join this community. Send a request to get access.
-                </p>
-                <button
-                  className={styles.emptyJoinBtn}
-                  onClick={handleToggleJoin}
-                  disabled={joining || comm.hasPendingRequest}
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}
-                >
-                  {comm.hasPendingRequest ? 'Requested' : 'Request to Join'}
-                </button>
-              </div>
-            )
-          ) : (
-            <>
-              {joined && (comm.allowMemberPosts !== false || isAdmin) && (
-                <div className={styles.composerWrapper} data-community-composer="true">
-                  <VerificationGate message="Verify your account to post in communities.">
-                    <PostComposer
-                      ref={composerRef}
-                      onSubmit={(text, poll, media, mentions) => addPost(text, poll, communityId, media, mentions)}
-                    />
-                  </VerificationGate>
-                </div>
-              )}
-
-              <div className={styles.postsFeed}>
-                {communityPosts.length === 0 && isPostsPending ? (
-                  // The first page has not arrived: this is not an empty
-                  // community yet, so it must not say so.
-                  <>
-                    <PostSkeleton />
-                    <PostSkeleton />
-                  </>
-                ) : communityPosts.length === 0 ? (
-                  <div className={styles.emptyPosts}>
-                    <div
-                      className={styles.emptyPostsIcon}
-                      onClick={handleCreatePostClick}
-                      role="button"
-                      tabIndex={0}
-                      style={{ cursor: 'pointer' }}
-                      title="Create post"
-                      aria-label="Create post"
-                    >
-                      {comm.trending ? '🚀' : '💭'}
-                    </div>
-                    <h3 className={styles.emptyPostsTitle}>
-                      This community is waiting for its first post
-                    </h3>
-                    <p className={styles.emptyPostsDesc}>
-                      Share an update, photo, event, or question to get everyone talking.
-                    </p>
-                    {!joined ? (
-                      <button className={styles.emptyJoinBtn} onClick={handleToggleJoin} disabled={joining} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}>
-                        {joining ? (
-                          <div className="spinner" style={{ width: '14px', height: '14px', borderWidth: '2px', borderColor: 'white', borderTopColor: 'transparent' }} />
-                        ) : null}
-                        Join to Post
-                      </button>
-                    ) : (
-                      <button className={styles.emptyJoinBtn} onClick={handleCreatePostClick}>
-                        Create Post
-                      </button>
-                    )}
-                  </div>
-                ) : (
-                  <>
-                    {visibleCommunityPosts.map((p, idx) => (
-                      <div key={p.id} className={styles.postWrapper}>
-                        <div className={styles.postMetaRow}>
-                          {p.authorId && users[p.authorId] && comm.memberList?.find(m => m.name === users[p.authorId]?.displayName)?.admin && (
-                            <span className={styles.postAuthorBadge} style={{ background: 'rgba(236, 72, 153, 0.1)', color: '#EC4899', padding: '0.1rem 0.4rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 600 }}>
-                              Admin
-                            </span>
-                          )}
-                        </div>
-                        <Post
-                          key={p.id}
-                          postData={p}
-                          hideCommunityTag={true}
-                          onClick={handleCommunityPostClick}
-                          onCommentClick={handleCommunityCommentClick}
-                        />
-                      </div>
-                    ))}
-                    {hasMorePosts && (
-                      <div ref={loadMorePostsRef} style={{ padding: '1.5rem', display: 'flex', justifyContent: 'center' }}>
-                        <div className="spinner" aria-label="Loading posts" />
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
-            </>
-          )}
-        </div>
-
-        <div className={`${styles.rightColumn} ${!showMobileDetails ? styles.hiddenOnMobile : ''}`}>
-          <AboutCard comm={comm} />
-          <GuidelinesCard />
-        </div>
-      </div>
 
       {comm && (
         <ReportModal

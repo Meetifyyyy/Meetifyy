@@ -54,7 +54,7 @@ export default function CollapsingHeader({
       ref={headerRef}
       className={`${styles.header} ${coverShade ? '' : styles.noCoverShade} ${backVariant === 'profile' ? styles.profileHeader : ''} ${coverBackground ? styles.withCover : ''}`}
     >
-      {coverBackground && (
+      {coverBackground && coverContent && (
         <div className={styles.coverClip} aria-hidden="true">
           <div className={styles.coverBackground}>
             <div className={styles.coverStretch}>

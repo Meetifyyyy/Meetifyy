@@ -40,6 +40,7 @@ import { INTERESTS_BY_CATEGORY } from '@shared/constants/interestsData';
 import { useAcademicSummary } from '@shared/academics/useAcademicSummary';
 import { useAcademicCatalog } from '@shared/academics/useAcademicCatalog';
 import { IS_MOBILE_BUILD } from '@config';
+import { useSystemBars } from '@shared/hooks/useSystemBars';
 
 function balanceTagsIntoTwoRows(tags) {
   if (!tags || tags.length === 0) return [[], []];
@@ -90,6 +91,13 @@ export default function ProfilePage() {
   const openDirectMessage = useOpenDirectMessage();
   const { username: currentUserUsername, currentUser: authUser, updateProfile } = useAuth();
   const targetUsername = profileUsername || currentUserUsername;
+
+  // In the app, the page runs under the device's navigation bar while the app's
+  // bottom navigation is slid away, and the bar's own colour comes and goes
+  // with the app's navigation in the same frame - as on Home. (No-op on the
+  // website.) Called before the loading return below, so it holds for the
+  // skeleton too.
+  useSystemBars({ scrollThrough: true });
 
   // The followers/following list is a sub-view of the profile, so the URL owns
   // it: /profile/:username?tab=followers is linkable and survives a reload, and
@@ -407,6 +415,8 @@ export default function ProfilePage() {
       {isOwnProfile && (
         <button
           className={s.editCoverBtn}
+          data-exit-track="edit-cover"
+          data-exit-inert
           onClick={() => setShowCoverEditor(true)}
           title="Edit cover"
           aria-label="Edit cover"
@@ -435,8 +445,6 @@ export default function ProfilePage() {
         onBack={() => goBack('/home')}
         backVariant="profile"
         coverBackground
-        coverContent={IS_MOBILE_BUILD ? <CoverImage cover={effectiveUser.cover} className={s.coverPhoto} /> : null}
-        coverBackdrop={IS_MOBILE_BUILD ? <BlurredCover cover={effectiveUser.cover} /> : null}
         collapseRangeMultiplier={1.45}
         headerRef={collapsingHeaderRef}
         rightAction={IS_MOBILE_BUILD ? (
@@ -478,7 +486,7 @@ export default function ProfilePage() {
               {IS_MOBILE_BUILD && (
                 /* The same cover, blurred: faded in by scrolling and by a pull. */
                 <>
-                  <div className={`${s.coverPullBlur} ${s.coverScrollBlur}`} aria-hidden="true">
+                  <div className={`${s.coverPullBlur} ${s.coverScrollBlur}`} data-cover-blur aria-hidden="true">
                     <BlurredCover cover={effectiveUser.cover} />
                   </div>
                   <div className={s.coverPullBlur} aria-hidden="true">
@@ -520,7 +528,7 @@ export default function ProfilePage() {
               )}
             </div>
             <div className={s.profileInfo}>
-            <div className={s.avatarWrapper}>
+            <div className={s.avatarWrapper} data-exit-track="avatar" data-exit-sticky data-exit-after="110" data-exit-inert>
                 <Avatar
                   src={effectiveUser.avatar}
                   name={effectiveUser.displayName || effectiveUser.name || effectiveUser.username}
@@ -550,11 +558,11 @@ export default function ProfilePage() {
                 )}
               </div>
 
-              <h1 className={s.name}>
+              <h1 className={s.name} data-exit-track="name" data-exit-lead="70">
                 {effectiveUser.displayName || effectiveUser.name || effectiveUser.username}
                 <CollegeRepresentativeBadge isCampusRep={effectiveUser.isCampusRep} collegeName={universityName} user={effectiveUser} size="lg" />
               </h1>
-              <p className={s.username}>@{effectiveUser.username}</p>
+              <p className={s.username} data-exit-track="username">@{effectiveUser.username}</p>
               {effectiveUser.bio && <p className={s.bio}>{effectiveUser.bio}</p>}
 
               {/* Interest tags */}

@@ -69,44 +69,73 @@
   filter: brightness(0.97);
 }
 
-/* Shimmer Loading State — Shining Screen Loader */
+/* Shimmer Loading State — Shining Screen Loader
+ *
+ * The highlight is a layer that TRANSLATES across a flat base, not a gradient
+ * whose `background-position` is animated. A background-position animation
+ * cannot be handed to the compositor: every frame it re-styled and repainted
+ * the tile on the main thread, and it ran for as long as the tile was mounted.
+ * On a carousel that is every tile that has not loaded yet, including the ones
+ * scrolled out of sight (they are `loading="lazy"` and do not load until
+ * swiped to) - so a profile with a few multi-photo posts kept the main thread
+ * rendering at the display rate, forever, while idle (measured on a device:
+ * ~40% of main-thread time with nothing on screen moving). A transform
+ * animation runs on the compositor and costs the main thread nothing.
+ *
+ * The colours are the previous gradient's, split into the base and the sweep.
+ */
 .skeleton {
+  --skeleton-base: rgba(226, 232, 240, 0.5);
+  --skeleton-edge: rgba(241, 245, 249, 0.9);
+  --skeleton-peak: rgba(255, 255, 255, 1);
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
   min-height: 100%;
-  background: linear-gradient(
-    90deg,
-    rgba(226, 232, 240, 0.5) 0%,
-    rgba(241, 245, 249, 0.9) 30%,
-    rgba(255, 255, 255, 1) 50%,
-    rgba(241, 245, 249, 0.9) 70%,
-    rgba(226, 232, 240, 0.5) 100%
-  );
-  background-size: 250% 100%;
-  animation: shimmerWave 1.4s infinite linear;
+  overflow: hidden;
+  background: var(--skeleton-base);
   z-index: 5;
   pointer-events: none;
 }
 
-[data-theme="dark"] .skeleton {
+.skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
   background: linear-gradient(
     90deg,
-    rgba(20, 24, 35, 0.9) 0%,
-    rgba(32, 38, 54, 0.9) 30%,
-    rgba(45, 53, 75, 1) 50%,
-    rgba(32, 38, 54, 0.9) 70%,
-    rgba(20, 24, 35, 0.9) 100%
+    transparent 0%,
+    var(--skeleton-edge) 30%,
+    var(--skeleton-peak) 50%,
+    var(--skeleton-edge) 70%,
+    transparent 100%
   );
+  transform: translate3d(-100%, 0, 0);
+  animation: shimmerWave 1.4s infinite linear;
+  will-change: transform;
+}
+
+[data-theme="dark"] .skeleton {
+  --skeleton-base: rgba(20, 24, 35, 0.9);
+  --skeleton-edge: rgba(32, 38, 54, 0.9);
+  --skeleton-peak: rgba(45, 53, 75, 1);
 }
 
 @keyframes shimmerWave {
   0% {
-    background-position: 250% 0;
+    transform: translate3d(-100%, 0, 0);
   }
   100% {
-    background-position: -250% 0;
+    transform: translate3d(100%, 0, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton::after {
+    animation: none;
+    transform: none;
+    opacity: 0.5;
   }
 }
 

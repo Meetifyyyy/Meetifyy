@@ -194,7 +194,7 @@ export function installSystemBars(systemBars, { readEdges } = {}) {
     systemBars.persistTheme?.({ background: chrome });
     // The window behind the WebView follows the page's bottom edge even where
     // the page draws behind the bar (there `bottom` is still what it paints).
-    systemBars.setWindowColor?.(bottom);
+    systemBars.setWindowColor?.(toHexColor(edges.window) || bottom);
   };
 
   let frame = 0;

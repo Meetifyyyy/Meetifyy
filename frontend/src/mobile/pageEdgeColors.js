@@ -68,7 +68,7 @@ function isPageGradient(style) {
 }
 
 /** The colour painted at viewport point (x, probeY), or null if undecidable. */
-function paintedColorAt(x, probeY, barY) {
+function paintedColorAt(x, probeY, barY, gradientY = barY) {
   const root = document.documentElement;
   const readVar = (name) => getComputedStyle(root).getPropertyValue(name);
   const stack = document.elementsFromPoint(x, probeY);
@@ -79,7 +79,7 @@ function paintedColorAt(x, probeY, barY) {
     if (el.closest?.('[data-bars-ignore]')) continue;
     const style = getComputedStyle(el);
     if (isPageGradient(style) && (el === document.body || style.position === 'fixed')) {
-      return pageGradientColorAt(x, barY, width, height, readVar);
+      return pageGradientColorAt(x, gradientY, width, height, readVar);
     }
     // Only a surface as wide as the screen can be what the bar continues;
     // a card that happens to sit at the edge is content, not the page.
@@ -121,5 +121,19 @@ export function readPageEdgeColors() {
   ) || 0;
   const bottomProbe = Math.max(0, h - navInset - 1);
   const bottom = paintedColorAt(x, bottomProbe, h);
-  return { top: top && toHex(top), bottom: bottom && toHex(bottom) };
+  /*
+   * What the window behind the WebView should be. When the keyboard opens the
+   * WebView shrinks before the keyboard has drawn, and this colour is all that
+   * shows in the gap for a few frames. On a page painted by the app's gradient
+   * the colour at the very bottom is its darkest edge stop, a band visibly
+   * different from the page just above it; the colour where the keyboard's top
+   * edge lands (about 60% down) is what the page looks like there. Pages that
+   * paint an opaque colour at the bottom are unaffected: it is the same colour.
+   */
+  const windowColor = paintedColorAt(x, bottomProbe, h, h * 0.6);
+  return {
+    top: top && toHex(top),
+    bottom: bottom && toHex(bottom),
+    window: windowColor && toHex(windowColor),
+  };
 }

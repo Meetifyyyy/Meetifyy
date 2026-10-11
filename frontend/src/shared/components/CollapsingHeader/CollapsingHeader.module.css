@@ -28,6 +28,12 @@
   background: linear-gradient(to bottom, rgba(0, 0, 0, 0.38), rgba(0, 0, 0, 0));
   opacity: calc(1 - var(--collapse));
   z-index: 1;
+  /* The header slides down with a pull; the shade must not. Carried along it
+     was a dark band (with a hard lower edge) crossing the middle of the
+     zooming cover. Counter-translated by the same distance on the same
+     transition, it stays at the top of the screen, over the status bar. */
+  transform: translateY(calc(-1 * var(--pull-to-refresh-distance, 0px)));
+  transition: var(--pull-to-refresh-transition, none);
 }
 
 .noCoverShade::before {
@@ -60,28 +66,10 @@
   left: 0;
   right: 0;
   height: var(--profile-cover-height, calc(100vw / 3 + var(--status-bar-inset, 0px)));
-  /* Scrolls away 1:1 with the page, then pins (useCollapsingHeader). */
+  /* Scrolls away 1:1 with the page, then pins (--cover-shift, written by
+     useCollapsingHeader). */
   transform: translate3d(0, calc(var(--cover-shift, 0) * -1px), 0);
   will-change: transform;
-}
-
-/*
- * Where supported, the same motion is a scroll-driven animation: it runs on
- * the compositor in the same frame as the scroll itself. Driven from a scroll
- * listener, the copy trailed the page's own cover by a frame, which showed as
- * a moving seam at the edge of the band.
- */
-@supports (animation-timeline: scroll()) {
-  .coverBackground {
-    animation: coverScrollAway linear both;
-    animation-timeline: scroll(root block);
-    animation-range: 0px calc(var(--cover-pin-at, 1) * 1px);
-  }
-}
-
-@keyframes coverScrollAway {
-  from { transform: translate3d(0, 0, 0); }
-  to   { transform: translate3d(0, calc(var(--cover-pin-at, 1) * -1px), 0); }
 }
 
 /*
@@ -116,24 +104,12 @@
  * The same cover, blurred (BlurredCover: a tiny pre-blurred bitmap stretched
  * by the GPU, no CSS filter) and crossfaded in by opacity alone. Two layers,
  * because the scroll and the pull each own a share and opacities cannot be
- * added in CSS: the scroll's share is a scroll-driven animation (compositor),
+ * added in CSS: the scroll's share follows --cover-blur (useCollapsingHeader),
  * the pull's follows the pulled distance.
  */
 .coverBlurScroll {
   opacity: var(--cover-blur, 0);
-}
-
-@supports (animation-timeline: scroll()) {
-  .coverBlurScroll {
-    animation: coverBlurIn ease-in-out both;
-    animation-timeline: scroll(root block);
-    animation-range: 0px calc(var(--cover-pin-at, 1) * 1px);
-  }
-}
-
-@keyframes coverBlurIn {
-  from { opacity: 0; }
-  to   { opacity: 1; }
+  will-change: opacity;
 }
 
 .coverBlurPull {
@@ -239,28 +215,21 @@
 }
 
 /*
- * Profile: the title appears as the page's own name passes under the header,
- * on the name's view timeline (ProfilePage.module.css hoists it to <html>).
- * `translate`, not `transform`, so the pull's transform still applies.
+ * Profile: the title appears as the page's own name passes under the header.
+ * `--exit-name` (0..1) is how far the name has passed; the page fades the name
+ * out by the same value, so one hands over to the other frame for frame.
+ * Written by useCollapsingHeader. (Not a scroll-driven animation: on the
+ * installed app any one of those stalls a fast flick, see that hook.)
  */
-@supports (animation-timeline: view()) {
-  .profileHeader .titles {
-    animation: titleIn linear both;
-    animation-timeline: --profile-name;
-    animation-range: exit 0% exit 100%;
-  }
-
-  /* The rise is the animation's `translate`; the scroll-linked 5px offset
-     would otherwise stay applied (nothing updates --collapse here) and hold
-     the title below the buttons' centre line. Only the pull moves it. */
-  .profileHeader.withCover > .titles {
-    transform: translate3d(0, var(--pull-to-refresh-distance, 0px), 0);
-  }
+.profileHeader .titles {
+  opacity: var(--exit-name, 0);
+  will-change: opacity;
 }
 
-@keyframes titleIn {
-  from { opacity: 0; translate: 0 6px; }
-  to   { opacity: 1; translate: 0 0; }
+/* The rise replaces the scroll-linked offset above, which nothing updates for
+   the Profile header; only the pull moves it besides. */
+.profileHeader.withCover > .titles {
+  transform: translate3d(0, calc((1 - var(--exit-name, 0)) * 6px + var(--pull-to-refresh-distance, 0px)), 0);
 }
 
 .titleStack {

@@ -236,3 +236,28 @@ select,
     bottom: calc(60px + var(--bottom-nav-gap, 12px) + env(safe-area-inset-bottom) + 16px + var(--kb-viewport-shrink));
   }
 }
+
+/* ----------------------------------------------------------------------------
+   The page background does not change shade when the keyboard opens.
+
+   The app background is a radial gradient centred on the viewport (global.css:
+   html, body and #root). The keyboard shrinks the WebView, so the viewport
+   gets shorter and the gradient is recomputed for it: its centre moves up and
+   every colour stop with it, which showed as the whole background shifting
+   shade the moment the keyboard appeared and again when it left. Sized to the
+   keyboard-free viewport (--app-vh, see useKeyboardInset) and anchored to the
+   top, the gradient is the same picture with or without the keyboard; the part
+   the keyboard covers is simply not seen.
+   ------------------------------------------------------------------------- */
+html,
+html[data-theme="light"],
+body {
+  background-size: 100% calc(100 * var(--app-vh, 1vh)) !important;
+  background-repeat: no-repeat !important;
+  background-position: 0 0 !important;
+}
+
+#root {
+  height: calc(100 * var(--app-vh, 1vh));
+  min-height: calc(100 * var(--app-vh, 1vh));
+}

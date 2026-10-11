@@ -1569,6 +1569,16 @@ input:checked+.slider:before {
     z-index: 30;
   }
 
+  /* The keyboard shrinks the WebView, and with it this fixed page. The ambient
+     backdrop is sized in percentages of its box, so it was re-laid-out for the
+     shorter page and its colours shifted. Pinned to the keyboard-free height
+     (--app-vh, see useKeyboardInset) and anchored to the top, it is the same
+     picture with the keyboard up; the page just shows less of it. */
+  .ambientBg {
+    bottom: auto;
+    height: calc(100 * var(--app-vh, 1vh));
+  }
+
   .root {
     position: fixed !important;
     inset: 0 !important;

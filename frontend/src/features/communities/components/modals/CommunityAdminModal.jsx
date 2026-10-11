@@ -16,6 +16,7 @@ import styles from './CommunityAdminModal.module.css';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 import { useScrollLock } from '@shared/hooks/useScrollLock';
 import RowSkeleton from '@shared/components/skeletons/RowSkeleton';
+import { COMMUNITY_DESCRIPTION_MAX } from '@shared/constants/communityLimits';
 
 export default function CommunityAdminModal({ community, onClose, onDeleteCommunity }) {
   // Back dismisses this dialog rather than navigating the page behind it.
@@ -250,11 +251,11 @@ export default function CommunityAdminModal({ community, onClose, onDeleteCommun
               <textarea 
                 value={desc} 
                 onChange={e => setDesc(e.target.value)} 
-                maxLength={250}
+                maxLength={COMMUNITY_DESCRIPTION_MAX}
                 style={{ ...inputStyle, minHeight: '80px', resize: 'vertical' }} 
               />
               <div style={{ display: 'flex', justifyContent: 'flex-end', fontSize: '0.78rem', color: 'var(--color-text-muted)', marginTop: '-0.2rem' }}>
-                {desc.length} / 250
+                {desc.length} / {COMMUNITY_DESCRIPTION_MAX}
               </div>
             </div>
 

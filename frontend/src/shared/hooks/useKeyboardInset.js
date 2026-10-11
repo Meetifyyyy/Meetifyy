@@ -28,6 +28,8 @@ import { IS_MOBILE_BUILD } from '@config';
 
 /** Below this a height change is browser chrome (URL bar), not a keyboard. */
 const KEYBOARD_MIN_HEIGHT = 80;
+/** Past the largest bottom-nav clearance (52px + the gesture/3-button bar). */
+const SHIFT_CAP_PX = 160;
 
 const NON_TEXT_INPUTS = new Set([
   'button', 'checkbox', 'radio', 'file', 'range', 'color', 'submit', 'reset', 'image',
@@ -121,7 +123,14 @@ export function useKeyboardInset() {
       // the URL bar collapsing on scroll would read as one and shove the nav
       // off screen mid-scroll.
       const rawShift = Math.max(0, baseline - innerHeight);
-      const shift = focused && rawShift >= KEYBOARD_MIN_HEIGHT ? rawShift : 0;
+      const exactShift = focused && rawShift >= KEYBOARD_MIN_HEIGHT ? rawShift : 0;
+      // In the app the shift is only ever compared with the bottom-nav
+      // clearance (global.css, Messages; the nav itself is pinned by
+      // mobile.css), so any value past it means the same thing. Capped there,
+      // it stops changing after the first frame of the keyboard's slide: the
+      // WebView now follows the keyboard frame by frame, and every new value
+      // written on <html> restyled the whole page in every one of those frames.
+      const shift = native ? Math.min(exactShift, SHIFT_CAP_PX) : exactShift;
 
       // A pinch zoom shrinks the visual viewport too, and is not a keyboard.
       const zoomed = (vv.scale || 1) > 1.01;

@@ -5,7 +5,7 @@ import { postsApi } from '@shared/api/apiClient';
 import { EmptyState, ErrorState } from '@shared/components/ui/StateViews';
 import VirtualFeedList from './VirtualFeedList';
 import PostComposer from './composer/PostComposer';
-import PostSkeleton from './skeletons/PostSkeleton';
+import HomePostSkeleton from './skeletons/HomePostSkeleton';
 import PullToRefresh from '@shared/components/PullToRefresh';
 import styles from './Feed.module.css';
 import { useAuth } from '@shared/context/AuthContext';
@@ -124,9 +124,9 @@ function Feed({ onPostClick, onCommentClick }) {
 
         {isLoading && (
           <>
-            <PostSkeleton />
-            <PostSkeleton />
-            <PostSkeleton />
+            <HomePostSkeleton media />
+            <HomePostSkeleton />
+            <HomePostSkeleton media />
           </>
         )}
 

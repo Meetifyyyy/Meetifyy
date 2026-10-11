@@ -1,0 +1,29 @@
+/*
+ * The collapsed composer, drawn as itself rather than as a grey block: it has
+ * no data to wait for, so there is nothing to shimmer. Same card, same avatar
+ * and the same placeholder as PostComposer's collapsed state; the real composer
+ * replaces it in place. Only the look is repeated here - the editor, uploads
+ * and poll code stay in PostComposer, which is why this is not the component
+ * itself (importing it would put all of that in the app's first chunk).
+ */
+.composerWrap {
+  position: relative;
+}
+
+.composerPlaceholder {
+  flex: 1;
+  min-width: 0;
+  padding-top: 8px;
+  font-family: var(--font-family-sans);
+  font-size: 0.92rem;
+  font-weight: 400;
+  color: var(--color-text-light);
+}
+
+/* A right-panel card's loading content: one spinner, centred. */
+.panelSpinner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem 0;
+}

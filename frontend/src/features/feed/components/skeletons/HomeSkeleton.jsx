@@ -1,59 +1,75 @@
-import Skeleton from '@shared/components/skeletons/Skeleton';
+import { useAuth } from '@shared/context/AuthContext';
+import Avatar from '@shared/components/avatar/Avatar';
+import VerificationGate from '@shared/components/VerificationGate/VerificationGate';
 import HomeCommunities from '@features/communities/components/home/HomeCommunities';
-import PostSkeleton from './PostSkeleton';
+import HomePostSkeleton from './HomePostSkeleton';
+import composerStyles from '../composer/PostComposer.module.css';
 import styles from '../Feed.module.css';
 import panelStyles from '@layout/RightPanel.module.css';
+import skeletonStyles from './HomeSkeleton.module.css';
 
 /**
- * The collapsed PostComposer is one fixed-height row (40px avatar inside
- * 0.75rem of padding), so a single block of that height holds its place. Its
- * controls are not drawn as separate pieces: the real composer replaces the
- * whole block at once.
+ * The composer is not a skeleton: it waits for no data, so it is drawn as
+ * itself - the collapsed card, the viewer's avatar and the placeholder - and
+ * the real PostComposer takes its place. Behind the same verification gate as
+ * the real one, so an unverified viewer sees the same notice in both.
  */
-function ComposerSkeleton() {
+function ComposerStandIn() {
+  const { currentUser, loading } = useAuth();
   return (
-    <Skeleton
-      type="rect"
-      height="64px"
-      style={{ display: 'block', borderRadius: 'var(--radius-xl)' }}
-    />
+    <VerificationGate message="Verify your account to create posts.">
+      <div className={skeletonStyles.composerWrap}>
+        <div className={composerStyles.postComposer}>
+          <div className={composerStyles.composerTopRow}>
+            <Avatar src={currentUser?.avatar} name={currentUser?.displayName} size="40px" disableHover isLoading={loading} />
+            <span className={skeletonStyles.composerPlaceholder}>What&apos;s on your mind?</span>
+          </div>
+        </div>
+      </div>
+    </VerificationGate>
   );
 }
 
-/** A right-panel card: its real title, then one block for its content. */
-function PanelCardSkeleton({ title, height }) {
+/** A right-panel card with its real title and a spinner where its content will be. */
+function PanelCardLoading({ title }) {
   return (
     <div className={panelStyles.panelCard}>
       <h3 className={panelStyles.panelTitle}>{title}</h3>
-      <Skeleton type="rect" height={height} style={{ display: 'block' }} />
+      <div className={skeletonStyles.panelSpinner}>
+        <div className="spinner" style={{ '--spinner-size': '24px', '--spinner-border-width': '2.5px' }} role="status" aria-label={`Loading ${title}`} />
+      </div>
     </div>
   );
 }
 
 /**
- * Full home page skeleton — mirrors FeedRoute's output: composer, the "Your
- * communities" strip, then posts. The strip is the real component: it draws
- * its own title and loading tiles (or the cached communities), and it is the
- * same component Feed mounts, so nothing below it moves when the page arrives.
+ * The Home page while its route loads - mirrors FeedRoute's output.
+ *
+ *  - The composer and the "Your communities" strip are the page's real
+ *    components (the strip draws its own loading tiles), so nothing above the
+ *    posts moves when the page arrives.
+ *  - Posts are a plain skeleton: author, a couple of lines and a picture on
+ *    some. The feed's own first load shows the same ones.
+ *  - The right panel keeps each card's title and shows a spinner inside it.
  */
 export default function HomeSkeleton() {
   return (
     <>
       <main className="centre" aria-busy="true">
         <div className={styles.feed}>
-          <ComposerSkeleton />
+          <ComposerStandIn />
           <HomeCommunities />
-          <PostSkeleton />
-          <PostSkeleton />
-          <PostSkeleton />
+          <HomePostSkeleton media />
+          <HomePostSkeleton />
+          <HomePostSkeleton media />
         </div>
       </main>
 
       {/* Right panel (hidden below 1100px by its own CSS). */}
       <aside className={panelStyles.rightPanel} aria-hidden="true">
-        <PanelCardSkeleton title="Online Friends" height="70px" />
-        <PanelCardSkeleton title="Recent Activity" height="140px" />
-        <PanelCardSkeleton title="My Upcoming Activities" height="110px" />
+        <PanelCardLoading title="Online Friends" />
+        <PanelCardLoading title="Recent Activity" />
+        <PanelCardLoading title="My Upcoming Activities" />
       </aside>
     </>
   );

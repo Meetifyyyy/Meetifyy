@@ -186,6 +186,13 @@
   transition: opacity 0.3s ease;
 }
 
+.coverPullBlur {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
 .heroCoverOverlay {
   position: absolute;
   inset: 0;
@@ -2064,7 +2071,7 @@
     display: flex;
     flex-direction: column;
     overflow-y: auto;
-    animation: slideUp 0.28s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    animation: aboutInFromRight 0.28s cubic-bezier(0.16, 1, 0.3, 1) forwards;
     -ms-overflow-style: none;
     scrollbar-width: none;
   }
@@ -2074,26 +2081,27 @@
   }
 
   .mobileAboutOverlay.closing {
-    animation: slideDown 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    animation: aboutOutToRight 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
   }
 
-  @keyframes slideUp {
+  /* The details page comes in from the right and goes back out to it. */
+  @keyframes aboutInFromRight {
     from {
-      transform: translateY(100%);
+      transform: translateX(100%);
     }
 
     to {
-      transform: translateY(0);
+      transform: translateX(0);
     }
   }
 
-  @keyframes slideDown {
+  @keyframes aboutOutToRight {
     from {
-      transform: translateY(0);
+      transform: translateX(0);
     }
 
     to {
-      transform: translateY(100%);
+      transform: translateX(100%);
     }
   }
 
@@ -2103,7 +2111,9 @@
     display: flex;
     align-items: center;
     gap: 1rem;
-    padding: 0.75rem 1rem;
+    /* Below the status bar: this overlay covers the whole screen, so the
+       inset is its own to apply (0 on the website). */
+    padding: calc(0.75rem + var(--status-bar-inset, 0px)) 1rem 0.75rem;
     background: var(--color-bg-white);
     border-bottom: 1px solid var(--color-border);
     z-index: 10;
@@ -2337,6 +2347,44 @@
 
   :global(html[data-collapsing-header]) .mobileHeader {
     top: calc(12px + var(--status-bar-inset, 0px));
+  }
+
+  /*
+   * The pull (see ProfilePage.module.css, same mapping): the cover zooms about
+   * its bottom edge by (h + pull) / h, so it reaches the top of the screen from
+   * wherever the pulled content sits, and a blurred copy fades in with the pull.
+   * Nothing above it may clip, hence the overflow overrides.
+   */
+  :global(html[data-collapsing-header]) .wrapper {
+    overflow-x: clip;
+  }
+
+  :global(html[data-collapsing-header]) .heroSection,
+  :global(html[data-collapsing-header]) .heroCover {
+    overflow: visible;
+  }
+
+  /* The whole cover box, so a community with no picture (just the gradient)
+     fills the opened gap too; the blurred layer inside zooms with it. */
+  :global(html[data-collapsing-header]) .heroCover {
+    transform-origin: 50% 100%;
+    transform: scale(calc(1 + var(--ptr-offset, 0) / var(--profile-cover-h, 1)));
+    transition: transform var(--ptr-timing, 0s);
+  }
+
+  :global(html[data-collapsing-header]) .coverPullBlur {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    pointer-events: none;
+    overflow: hidden;
+    opacity: min(1, calc(var(--ptr-offset, 0) / 120));
+    transition: opacity var(--ptr-timing, 0s);
+  }
+
+  :global(html[data-collapsing-header]) .coverPullBlur > * {
+    width: 100%;
+    height: 100%;
   }
 
   :global(html[data-collapsing-header]) .heroCover {

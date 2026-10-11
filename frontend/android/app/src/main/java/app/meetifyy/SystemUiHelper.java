@@ -1,6 +1,7 @@
 package app.meetifyy;
 
 import android.app.Activity;
+import android.app.UiModeManager;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.SharedPreferences;
@@ -35,6 +36,7 @@ public final class SystemUiHelper {
     public static final String KEY_PREFERENCE_SET = "preferenceSet";
     public static final String KEY_BACKGROUND = "lastBackgroundColor";
     public static final String KEY_LIGHT_ICONS = "lightIcons";
+    public static final String KEY_SYSTEM_NIGHT_MODE = "systemNightMode";
 
     public static final int COLOR_LIGHT = Color.WHITE; // #FFFFFF
     public static final int COLOR_DARK = Color.BLACK;  // #000000
@@ -85,13 +87,53 @@ public final class SystemUiHelper {
      * Pre-configures night mode and activity launch theme before installSplashScreen()
      * and super.onCreate().
      */
-    public static void applyNightModeAndLaunchTheme(Activity activity, boolean isDark) {
+    public static void applyNightModeAndLaunchTheme(Activity activity, ResolvedTheme theme) {
+        final boolean isDark = theme.isDark;
+        // "System" stays a live follow of the device, not a snapshot of it.
         AppCompatDelegate.setDefaultNightMode(
-            isDark ? AppCompatDelegate.MODE_NIGHT_YES : AppCompatDelegate.MODE_NIGHT_NO
+            !theme.preferenceSet
+                ? AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM
+                : (isDark ? AppCompatDelegate.MODE_NIGHT_YES : AppCompatDelegate.MODE_NIGHT_NO)
         );
+        syncSystemNightMode(activity, theme.preferenceSet ? (isDark ? "dark" : "light") : "system");
         activity.setTheme(
             isDark ? R.style.AppTheme_NoActionBarLaunch_Dark : R.style.AppTheme_NoActionBarLaunch_Light
         );
+    }
+
+    /**
+     * Tells the SYSTEM which theme this app is in (Android 12+).
+     *
+     * The very first thing on screen at a cold start is the starting window
+     * (the splash), and it is drawn by the system before any of this app's code
+     * runs. Its colours come from resources (`launchBackground`, values vs
+     * values-night) resolved in the night mode the system holds for the app,
+     * which is the device's unless the app has told it otherwise. So a user who
+     * chose Light on a dark phone saw a black splash, then this activity's
+     * white one: the flicker. `setApplicationNightMode` is persisted by the
+     * system, so the next cold start's splash is drawn in the user's theme from
+     * its first frame. Set only when it differs: each call is a configuration
+     * change for the running activity.
+     *
+     * @param themeMode "light", "dark" or "system"
+     */
+    public static void syncSystemNightMode(Context context, String themeMode) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S || context == null) return;
+        final UiModeManager uiMode = (UiModeManager) context.getSystemService(Context.UI_MODE_SERVICE);
+        if (uiMode == null) return;
+        final int wanted = "dark".equalsIgnoreCase(themeMode)
+            ? UiModeManager.MODE_NIGHT_YES
+            : "light".equalsIgnoreCase(themeMode) ? UiModeManager.MODE_NIGHT_NO : UiModeManager.MODE_NIGHT_AUTO;
+        // The value last handed to the system, so an unchanged choice is not a
+        // configuration change (there is no public getter for it).
+        final SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        if (prefs.getInt(KEY_SYSTEM_NIGHT_MODE, -1) == wanted) return;
+        try {
+            uiMode.setApplicationNightMode(wanted);
+            prefs.edit().putInt(KEY_SYSTEM_NIGHT_MODE, wanted).apply();
+        } catch (RuntimeException ignored) {
+            // A vendor build that refuses it keeps the previous behaviour.
+        }
     }
 
     /**

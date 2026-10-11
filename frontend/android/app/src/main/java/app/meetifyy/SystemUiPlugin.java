@@ -9,6 +9,7 @@ import android.webkit.WebView;
 
 import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsAnimationCompat;
 import androidx.core.view.WindowInsetsCompat;
 
 import com.getcapacitor.JSObject;
@@ -18,6 +19,7 @@ import com.getcapacitor.PluginMethod;
 import com.getcapacitor.WebViewListener;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
+import java.util.List;
 import java.util.Locale;
 
 /**
@@ -113,19 +115,25 @@ public class SystemUiPlugin extends Plugin {
             }
             editor.commit();
 
+            // The next cold start's splash is drawn by the system, from the night
+            // mode it holds for the app; keep that in step with the choice now
+            // (SystemUiHelper.syncSystemNightMode). After the commit, so the
+            // configuration change this causes reads the new preferences.
+            if (theme != null) {
+                final boolean chosen = prefs.getBoolean(SystemUiHelper.KEY_PREFERENCE_SET, false);
+                SystemUiHelper.syncSystemNightMode(activity, chosen ? theme : "system");
+            }
+
             // Persisting only. Neither the window's colour (it follows the
             // page's bottom edge: setWindowColor) nor the bars' icons (they
             // follow what is under them: setIcons) is set here, because this
             // call would put the theme's values back over the page's.
 
-            // No AppCompatDelegate.setDefaultNightMode() here. The UI is the
-            // WebView, which already has the theme; switching the native night
-            // mode at runtime only produced a configuration change whose
-            // handler repainted from the preferences as they were BEFORE this
-            // call — the old theme — racing the page. The native night mode is
-            // applied from the preferences above at the next launch
-            // (MainActivity.onCreate), which is the only time native resources
-            // (the splash) are drawn.
+            // No AppCompatDelegate.setDefaultNightMode() here: the UI is the
+            // WebView, which already has the theme. The system's night mode for
+            // the app is synced above, after the commit, so the configuration
+            // change it causes reads the NEW preferences (MainActivity ignores
+            // it anyway once the page has painted).
 
             call.resolve();
         });
@@ -239,6 +247,10 @@ public class SystemUiPlugin extends Plugin {
      * page has nothing to draw under it.
      */
 
+    // The keyboard is mid-slide; see installInsetsListener.
+    private boolean imeAnimating = false;
+    private int sideLeft = 0;
+    private int sideRight = 0;
     private int lastTop = 0;
     private int lastBottom = 0;
     private boolean published = false;
@@ -300,12 +312,20 @@ public class SystemUiPlugin extends Plugin {
             final boolean keyboardVisible = insets.isVisible(WindowInsetsCompat.Type.ime());
 
             // Sides for a landscape cutout / side navigation; the bottom is
-            // the keyboard only. The WebView is shrunk to its final size at
-            // once, so for the length of the keyboard's slide the strip above
-            // the keyboard is not the WebView but the window behind it — which
-            // is why the window is kept the colour of the page's bottom edge
-            // (see setWindowColor) rather than the theme's.
-            v.setPadding(bars.left, 0, bars.right, keyboardVisible ? ime.bottom : 0);
+            // the keyboard only.
+            // While the keyboard is sliding up, the animation callback below owns
+            // the bottom padding (it follows the keyboard frame by frame); setting
+            // the final value here would shrink the WebView at once and leave the
+            // whole travel of the keyboard as a blank strip.
+            sideLeft = bars.left;
+            sideRight = bars.right;
+            // Closing is the other way round: the WebView takes its full height at
+            // once and the keyboard slides away over the page. Grown frame by
+            // frame instead, the newly uncovered strip was not repainted until
+            // the slide ended and showed as a blank band behind the keyboard.
+            if (imeAnimating && !keyboardVisible) imeAnimating = false;
+            v.setPadding(bars.left, 0, bars.right,
+                imeAnimating ? v.getPaddingBottom() : (keyboardVisible ? ime.bottom : 0));
 
             final float density = activity.getResources().getDisplayMetrics().density;
             // With the keyboard up the WebView ends at the keyboard's top edge,
@@ -316,6 +336,31 @@ public class SystemUiPlugin extends Plugin {
             // recalculating its own safe-area values (chromium issue 461332423).
             return new WindowInsetsCompat.Builder(insets).setInsets(types, Insets.of(0, 0, 0, 0)).build();
         });
+
+        ViewCompat.setWindowInsetsAnimationCallback(decor,
+            new WindowInsetsAnimationCompat.Callback(WindowInsetsAnimationCompat.Callback.DISPATCH_MODE_CONTINUE_ON_SUBTREE) {
+                @Override
+                public void onPrepare(WindowInsetsAnimationCompat animation) {
+                    if ((animation.getTypeMask() & WindowInsetsCompat.Type.ime()) != 0) imeAnimating = true;
+                }
+
+                @Override
+                public WindowInsetsCompat onProgress(WindowInsetsCompat insets, List<WindowInsetsAnimationCompat> running) {
+                    if (imeAnimating) {
+                        final Insets ime = insets.getInsets(WindowInsetsCompat.Type.ime());
+                        decor.setPadding(sideLeft, 0, sideRight, ime.bottom);
+                    }
+                    return insets;
+                }
+
+                @Override
+                public void onEnd(WindowInsetsAnimationCompat animation) {
+                    if ((animation.getTypeMask() & WindowInsetsCompat.Type.ime()) == 0) return;
+                    imeAnimating = false;
+                    // Settle on the final value through the normal path.
+                    ViewCompat.requestApplyInsets(decor);
+                }
+            });
 
         ViewCompat.requestApplyInsets(decor);
     }

@@ -1255,3 +1255,105 @@ New message modal: selected recipient rows now keep a transparent background,
 including hover; selection checkmarks remain. A Chrome fixture using the actual
 stylesheet verified the selected-row background; lint/typecheck passed after
 this CSS change.
+
+---
+
+## Profile: fast flicks stalled (2026-10-11)
+
+Measured on the I2208 (Android 14, WebView 154, 60 Hz) with `adb shell input
+swipe` flicks, `dumpsys gfxinfo` frame counts, screen recordings, and CDP
+traces/CPU profiles of the installed debug app.
+
+**Symptom:** on the Profile page a fast flick moved the page for ~100 ms, froze
+for ~1.6 s, then jumped to where the fling would have ended. It coincided with
+the bottom nav starting to hide (~64 px into every flick), which is why it read
+as "the nav stops the scroll". Home, with the same nav logic, flung normally.
+
+**Root cause:** the page's scroll-driven animations (`animation-timeline:
+scroll()/view()`: cover scroll-away, blur crossfade, title, avatar recede,
+name/handle fade). On a freshly mounted Profile, any ONE of them was enough:
+the compositor queued and coalesced the fling's scroll updates and released
+them in one burst. Cancelling all of them restored the fling; cancelling any
+subset did not. Earlier profile work measured slow drags, not flings, so it
+never showed.
+
+| fresh mount, one flick | frames rendered |
+|---|---|
+| before (scroll timelines) | 13, 14, 13 |
+| after (variables written from the scroll position) | 103, 105, 105, 105 |
+
+Screen recording of the same flick: 10 moving frames with a 1.67 s gap before,
+101 moving frames with no gap over 20 ms after. Flick back up from the bottom:
+127 frames, nav shown again.
+
+**Fix:** `useCollapsingHeader` now writes the values from the scroll event itself
+(`--cover-shift`, `--cover-blur`, `--collapse`, and `--exit` on elements marked
+`data-exit-track`), onto the few elements that read them. No `animation-timeline`
+anywhere. Sizes are measured on mount/resize only, not per scroll event.
+
+**Second cause (idle, not flings):** the post media skeleton animated
+`background-position` forever, on every tile that had not loaded, including
+lazy carousel tiles scrolled out of sight. A background-position animation
+cannot run on the compositor, so a profile with a few multi-photo posts kept
+the main thread rendering every frame while idle (229 main frames in 4 s, ~40%
+of main-thread time). It is now a translated highlight layer: 0 main frames in
+4 s idle.
+
+**Also measured after:** drag-scroll janky frames ~4% -> ~1.5%, p99 frame time
+22-24 ms -> 19-21 ms; cover, blur crossfade, title hand-over and avatar recede
+match the previous build at scroll 0/30/60/75/100/160/220/300 px and in
+consecutive frames of a swipe; pull-to-refresh zoom/indicator/settle intact.
+2088 frontend tests, typecheck and lint pass.
+
+**Measuring this:** the stall only appears on a fresh mount (leave Profile and
+re-enter), so measure that way. Do not edit stylesheet rules through the CSSOM
+to bisect: the edits persist across remounts and contaminate later runs.
+
+**Follow-up (same day): the header edge sliced the avatar.** With scrolling smooth,
+the opaque header band's bottom edge visibly cut the avatar, the cover's edit
+button and the name flat as they slid underneath it (the original design, only
+more noticeable now). `--exit` now reaches 1 when an element's top edge touches
+the header (fade over `data-exit-lead` px, default 40), so they are gone before
+the edge reaches them; the edit button is also made inert once mostly faded.
+Verified on the I2208 at 0/15/30/52/75/110/150/230 px: nothing sliced, title
+hands over from the name; fresh-mount flick still 105 frames.
+
+**Follow-up 2: avatar pinned on the header line.** The fade-before-the-edge version
+made the avatar vanish within ~25 px of scroll. It now sticks (`position:
+sticky`, exact, no lag) with its top on the header's bottom line the moment it
+touches it, and keeps shrinking (to 45%, toward the line) and fading over the
+next 110 px, never going behind the header (measured on the I2208: avatar top
+88 px = header bottom 88 px). Fresh-mount flick unchanged at 105 frames. The
+name now starts fading 70 px before it reaches the line, so it clears the avatar.
+
+### Profile: sticky cover container + pull (2026-10-11, follow-up 3)
+- Header background vanished once posts reached it, and a pull showed a black band above the cover. Cause: the sticky cover was bounded by `.profileCard` (ended before the posts) and the card's `overflow: clip` cut the pull zoom. Fix: in the app the card is `display: contents`, its look moved to `.profileInfo`; the cover's container is now the whole column.
+- Also `useSystemBars({ scrollThrough: true })` on Profile (device nav bar clears with the app nav).
+- Verified on the phone (APK): header cover stays pinned through 2 long flicks; mid-pull the cover fills to the top, zoomed and blurred, no dark band; settles back to normal. Not re-run: full suite.
+
+### Community view: pull, safe area, 250-char description, nav bar (2026-10-11)
+- Pull-to-refresh: Community View already had the wrapper, but it wrapped only the hero, so the posts below stayed put and the cover never filled the gap. Now wraps hero + posts, gives the pull to the header (`pullTargetRef`), zooms the cover about its bottom edge (whole `.heroCover`, so a gradient-only cover fills too) with a blurred layer faded in by the pull. Same mapping as Profile.
+- About ("community details") sheet: header now pads by `--status-bar-inset`; it sat under the clock.
+- Description limit 250 everywhere (create modal, admin modal, DTOs): shared `COMMUNITY_DESCRIPTION_MAX` (frontend `shared/constants/communityLimits.js`, backend `communities/community-limits.ts`). The edit form already said 250 but the API refused >200. DB column is unbounded text: no migration. Tests at 199/200/201/249/250/251. (`bio` 200 on users is the profile bio, not a community description: left alone.)
+- Device nav bar: Community View calls `useSystemBars({ navigation: 'transparent' })` (page has no bottom nav). Verified `html::after` is transparent on device.
+- Not reproduced: bottom-nav flicker when tapping the composer. /communities/:id renders no app BottomNav at all (`removeBottomNav`), and a 12 fps screen recording of the post-composer tap showed no bar. Comment composer not exercised (no posts in the test community).
+
+### Background shade shifted when the keyboard opened (2026-10-11)
+- Cause: html/body/#root paint a viewport-centred radial gradient; the keyboard shrinks the WebView, so the gradient was recomputed for the shorter viewport. Fix (app only, `mobile/mobile.css`): size it to the keyboard-free `--app-vh`, anchored top, no-repeat.
+- Verified on device (Community View, composer tap): background pixels at x=3, y=900/1100/1250/1400 were (239,244,252)/(241,246,252)/(241,246,252)/(240,245,252) before the keyboard and, after the fix, identical with it open; before the fix they became (231,240,251)/(226,237,250)/(221,234,249)/(214,230,249). Only the Community page was checked; dark theme not checked.
+
+### Community pull: cover zoom was ~100x (2026-10-11)
+- Cause: the zoom is `1 + pull / --profile-cover-h`, and only Profile's cover header ever wrote that variable; on Community View it fell back to 1 (scale 30-107x measured over CDP = flat colour). Fix: CommunityView measures the cover (`offsetHeight`, ResizeObserver) and sets the variable on it.
+- Verified on device over CDP + screenshots: scale 1.43 / 1.56 / 1.65 at pull 57 / 74 / 86 px, blur opacity 0.48 / 0.62 / 0.72 (min(1, pull/120), same as Profile); the picture visibly zooms and softens, settles back at rest.
+
+### Community details page + keyboard backgrounds (2026-10-11)
+- Details (About) page: slides in from / out to the left (`aboutInFromLeft/aboutOutToLeft`, not the shared `slideUp`), and Back closes it only (`useOverlayBack`); verified on device: Back left the path at /communities/<id> with the overlay closed.
+- Create Activity: the keyboard shrinks the fixed page and its ambient backdrop (percentage-sized radial gradients) was re-laid-out, shifting colours (left-edge pixel 93,49,37 -> 44,37,39 -> 0,0,0 across the open). `.ambientBg` is now pinned to `100 * --app-vh`; pixels at 3 heights stayed the same over frames 6-28 of the recording.
+- Community composer "blank space": it is the WebView resizing a few frames before the keyboard draws; the gap shows the native window colour, which was the gradient's darkest edge (214,230,249), a blue slab under white cards. `readPageEdgeColors` now also returns `window` (gradient at ~60% height, where the keyboard's top lands) and installSystemBars uses it for `setWindowColor`; the gap now reads as the page (near white). The gap itself remains (native: IME animates after resize); dark Create Activity still shows a black gap for ~2 frames.
+
+### Keyboard blank strip, community pull shading, details slide (2026-10-11)
+- Root cause of the blank space when the keyboard opens (every screen): `SystemUiPlugin` set the decor's bottom padding to the FINAL IME inset at once, so the WebView shrank before the keyboard had moved and the keyboard's whole slide (~250 ms) showed the window colour. Now a `WindowInsetsAnimationCompat` callback follows the IME frame by frame while it opens (onProgress -> padding = current ime.bottom); closing keeps the old instant behaviour (grown per frame, the uncovered strip was not repainted until the end).
+- Verified (community composer, screenrecord + per-frame pixels): opening - content stays right above the rising keyboard, no blank frames (was ~5 frames of flat colour). Closing - still ~5 frames where the area the keyboard uncovers shows the page background before the page repaints (renderer resize latency; not fixed). Window colour = page gradient where the keyboard's top lands, so that strip reads as page background.
+- Community pull: the header's legibility shade (`.header::before`) slid down with the pull as a dark band with a hard edge across the zooming cover; now counter-translated so it stays at the top. Checked light + dark.
+- Community details page: slides in from / out to the right (`aboutInFromRight/aboutOutToRight`).
+- Not React Native: KeyboardAvoidingView does not apply (Capacitor 8 WebView). iOS not tested (no device).

@@ -44,7 +44,7 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         // 1. Resolve persisted theme preference BEFORE splash screen is initialized
         final SystemUiHelper.ResolvedTheme resolvedTheme = SystemUiHelper.resolveTheme(this);
-        SystemUiHelper.applyNightModeAndLaunchTheme(this, resolvedTheme.isDark);
+        SystemUiHelper.applyNightModeAndLaunchTheme(this, resolvedTheme);
 
         // 2. Install splash screen using the resolved theme
         final SplashScreen splashScreen = SplashScreen.installSplashScreen(this);

@@ -5,6 +5,7 @@ import {
   IsBoolean,
   IsIn,
 } from 'class-validator';
+import { COMMUNITY_DESCRIPTION_MAX } from '../community-limits';
 
 export class CreateCommunityDto {
   @IsString()
@@ -13,7 +14,9 @@ export class CreateCommunityDto {
 
   @IsString()
   @IsOptional()
-  @MaxLength(200)
+  @MaxLength(COMMUNITY_DESCRIPTION_MAX, {
+    message: `description must be at most ${COMMUNITY_DESCRIPTION_MAX} characters`,
+  })
   description?: string;
 
   @IsString()
@@ -55,7 +58,9 @@ export class UpdateCommunityDto {
 
   @IsString()
   @IsOptional()
-  @MaxLength(200)
+  @MaxLength(COMMUNITY_DESCRIPTION_MAX, {
+    message: `description must be at most ${COMMUNITY_DESCRIPTION_MAX} characters`,
+  })
   description?: string;
 
   @IsString()

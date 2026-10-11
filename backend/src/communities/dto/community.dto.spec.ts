@@ -33,4 +33,27 @@ describe('CreateCommunityDto through the global ValidationPipe', () => {
       ).rejects.toBeInstanceOf(BadRequestException);
     },
   );
+
+  it.each([
+    [199, true],
+    [200, true],
+    [201, true],
+    [249, true],
+    [250, true],
+    [251, false],
+  ])('description of %i characters: accepted=%s', async (length, accepted) => {
+    const result = validate({
+      name: 'Chess club',
+      description: 'a'.repeat(length),
+    });
+    if (accepted) {
+      await expect(result).resolves.toBeInstanceOf(CreateCommunityDto);
+    } else {
+      const error: unknown = await result.catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect(
+        JSON.stringify((error as BadRequestException).getResponse()),
+      ).toMatch(/at most 250 characters/);
+    }
+  });
 });

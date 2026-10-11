@@ -786,6 +786,25 @@
 
   :global(html[data-collapsing-header]) .coverWrap {
     height: calc(100vw / 3 + var(--status-bar-inset, 0px));
+    /*
+     * The page's own cover is what the header shows. It scrolls away with the
+     * page and pins when only the header's height (56px + the status bar) of it
+     * is left, which is `top` = that height minus its own (the inset cancels).
+     * Sticky is done by the compositor in the frame of the scroll, so there is
+     * a single cover and nothing to keep aligned with a copy - the fixed copy
+     * this replaces was moved from script and trailed the page by a frame,
+     * which read as the header overlapping the cover.
+     */
+    position: sticky;
+    top: calc(56px - 100vw / 3);
+    /* Above the content that scrolls beneath it, below the header (60). */
+    z-index: 5;
+  }
+
+  /* No stacking context of its own, so the avatar (z-index 10) still sits over
+     the cover at rest while the rest of the card passes under the pinned cover. */
+  :global(html[data-collapsing-header]) .profileInfo {
+    z-index: auto;
   }
 
   :global(html[data-collapsing-header]) .coverPhoto {
@@ -820,72 +839,68 @@
   }
 
   /*
-   * The scroll's share, in step with the header band (same range, same curve),
-   * so the band's edge never shows as a division across the photo. A
-   * scroll-driven animation: it runs on the compositor with the scroll.
+   * The scroll's share, in step with the header band (same value, same curve),
+   * so the band's edge never shows as a division across the photo. `--cover-blur`
+   * is written onto this element by useCollapsingHeader (`data-cover-blur`).
    */
   :global(html[data-collapsing-header]) .coverPullBlur.coverScrollBlur {
     opacity: var(--cover-blur, 0);
     transition: transform var(--ptr-timing, 0s);
-  }
-
-  @supports (animation-timeline: scroll()) {
-    :global(html[data-collapsing-header]) .coverPullBlur.coverScrollBlur {
-      animation: blurIn ease-in-out both;
-      animation-timeline: scroll(root block);
-      animation-range: 0px calc(var(--cover-pin-at, 1) * 1px);
-    }
+    will-change: opacity;
   }
 
   /*
-   * The avatar recedes under the header. From the moment its top edge touches
-   * the header's bottom until it has passed fully beneath it, it shrinks
-   * toward its own bottom edge and fades, in step with the scroll and in
-   * reverse on the way back. A view timeline inset by the header's height
-   * (56px + the status bar) runs it on the compositor; where view timelines
-   * are unsupported the avatar simply scrolls as before.
+   * The avatar sticks to the header's bottom line when its top edge reaches it
+   * (`position: sticky`: the page pins it, so it sits exactly on the line with
+   * no lag) and from then on keeps shrinking toward that line and fading, never
+   * going behind the header. `--exit` (0..1) is that progress, written onto the
+   * element by useCollapsingHeader (`data-exit-track`, `data-exit-after`).
+   *
+   * NOT a view-timeline animation, as it was: on the installed app any one
+   * scroll-driven animation on this page made a fast flick stall for ~1.6 s and
+   * then jump (13 frames per flick instead of 106). See useCollapsingHeader.
    */
-  @supports (animation-timeline: view()) {
-    :global(html[data-collapsing-header]) .avatarWrapper {
-      transform-origin: 50% 100%;
-      animation: avatarRecede linear both;
-      animation-timeline: view(block calc(56px + var(--status-bar-inset, 0px)) 0px);
-      animation-range: exit 0% exit 100%;
-    }
-
-    /*
-     * The name and handle stay fully visible until they reach the header, then
-     * fade as they pass under it. The name's timeline is named and hoisted to
-     * <html>, so the header's title (CollapsingHeader) fades in on exactly the
-     * same timeline: one hands over to the other, frame for frame.
-     */
-    :global(html[data-collapsing-header]) {
-      timeline-scope: --profile-name;
-    }
-
-    :global(html[data-collapsing-header]) .name {
-      view-timeline: --profile-name block;
-      view-timeline-inset: calc(56px + var(--status-bar-inset, 0px)) 0px;
-      animation: fadeUnderHeader linear both;
-      animation-timeline: --profile-name;
-      animation-range: exit 0% exit 100%;
-    }
-
-    :global(html[data-collapsing-header]) .username {
-      animation: fadeUnderHeader linear both;
-      animation-timeline: view(block calc(56px + var(--status-bar-inset, 0px)) 0px);
-      animation-range: exit 0% exit 100%;
-    }
+  :global(html[data-collapsing-header]) .avatarWrapper {
+    position: sticky !important;
+    top: calc(56px + var(--status-bar-inset, 0px));
+    transform-origin: 50% 0;
+    transform: scale(calc(1 - 0.55 * var(--exit, 0)));
+    /* Gone a little before it has finished shrinking, so the name rising to it
+       never overlaps something still clearly visible. */
+    opacity: calc(1 - min(1, var(--exit, 0) * 1.6));
+    will-change: transform, opacity;
   }
 
   /*
-   * `clip`, not `hidden`, for the card while the collapsing header is up:
-   * `hidden` made the card a scroll container, and a view timeline follows
-   * its nearest scroll container, so the timelines above tracked a card that
-   * never scrolls. `clip` clips the same, rounded corners included.
+   * The name and handle are gone before they reach the header, so its opaque
+   * edge never slices through them. The name hands over to the header's title
+   * (CollapsingHeader) on the same `--exit`; the cover's edit button leaves
+   * with them.
+   */
+  :global(html[data-collapsing-header]) .name,
+  :global(html[data-collapsing-header]) .username,
+  :global(html[data-collapsing-header]) .editCoverBtn {
+    opacity: calc(1 - var(--exit, 0));
+    will-change: opacity;
+  }
+
+  /*
+   * The card stops being a box here (`display: contents`) and its look moves to
+   * the info block. Two reasons, both about the cover:
+   *  - a sticky element pins only inside its container; inside the card the
+   *    pinned cover left with the card, so the header's background vanished as
+   *    soon as the posts reached it. Now its container is the whole column.
+   *  - the card clipped (overflow) whatever grew out of it, so a pull's zoom
+   *    stopped at the card's top and left a dark band above the cover.
    */
   :global(html[data-collapsing-header]) .profileCard {
-    overflow: clip;
+    display: contents;
+  }
+
+  :global(html[data-collapsing-header]) .profileInfo {
+    background: var(--color-bg-white);
+    border-radius: 0 0 24px 24px;
+    margin-bottom: 0.75rem;
   }
 
   :global(html[data-collapsing-header]) .coverPullBlur > * {
@@ -908,27 +923,4 @@
     backdrop-filter: none;
     background: rgba(0, 0, 0, 0.55);
   }
-
-  /* Where timelines are unsupported, the scroll-linked fade as before. */
-  @supports not (animation-timeline: view()) {
-    :global(html[data-collapsing-header]) .name,
-    :global(html[data-collapsing-header]) .username {
-      opacity: calc(1 - var(--profile-collapse, 0));
-    }
-  }
-}
-
-@keyframes avatarRecede {
-  from { transform: scale(1); opacity: 1; }
-  to   { transform: scale(0.55); opacity: 0; }
-}
-
-@keyframes fadeUnderHeader {
-  from { opacity: 1; }
-  to   { opacity: 0; }
-}
-
-@keyframes blurIn {
-  from { opacity: 0; }
-  to   { opacity: 1; }
 }

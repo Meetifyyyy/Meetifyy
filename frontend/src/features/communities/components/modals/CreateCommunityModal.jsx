@@ -6,6 +6,10 @@ import { showToast } from '@shared/utils/toast';
 import { useAuth } from '@shared/context/AuthContext';
 import { openVerificationModal } from '@shared/stores/verificationModalStore';
 import styles from './CreateCommunityModal.module.css';
+import {
+  COMMUNITY_DESCRIPTION_MAX,
+  isValidCommunityDescription,
+} from '@shared/constants/communityLimits';
 import { useCommunityActions } from '@shared/hooks/useCommunityActions';
 import { processAndUploadImage } from '@shared/utils/mediaPipeline';
 import {
@@ -179,8 +183,7 @@ export default function CreateCommunityModal({ onClose, onCreated, isCampusCommu
   }, [name]);
 
   const isDescValid = useMemo(() => {
-    const trimmed = desc.trim();
-    return trimmed.length >= 3 && trimmed.length <= 200;
+    return isValidCommunityDescription(desc);
   }, [desc]);
 
   const isStep2Valid = useMemo(() => {
@@ -497,12 +500,12 @@ export default function CreateCommunityModal({ onClose, onCreated, isCampusCommu
                     value={desc}
                     onChange={(e) => setDesc(e.target.value)}
                     rows={3}
-                    maxLength={200}
+                    maxLength={COMMUNITY_DESCRIPTION_MAX}
                     className={styles.textareaInput}
                   />
                   <label className={styles.textareaLabel}>Description</label>
                 </div>
-                <div className={styles.counterRow}>{desc.length}/200</div>
+                <div className={styles.counterRow}>{desc.length}/{COMMUNITY_DESCRIPTION_MAX}</div>
               </div>
             </>
           )}

@@ -1,5 +1,7 @@
 import { useLayoutEffect } from 'react';
 
+/** Scroll distance over which a tracked element fades out before the header. */
+const DEFAULT_EXIT_LEAD_PX = 40;
 const clamp01 = (n) => (n < 0 ? 0 : n > 1 ? 1 : n);
 /** Eases in and out of the blur so it neither snaps on nor stalls at the end. */
 const smoothstep = (t) => t * t * (3 - 2 * t);
@@ -9,9 +11,21 @@ const smoothstep = (t) => t * t * (3 - 2 * t);
  * themed app header as the page scrolls.
  *
  * Progress (0 over the cover, 1 once the cover has scrolled under the header)
- * is written to `--collapse` on the header element, once per animation frame,
- * straight from the window's scroll position. Nothing re-renders while
- * scrolling: every visual step is CSS reading that one variable.
+ * is written to `--collapse` on the header element straight from the window's
+ * scroll position, in the scroll event itself (it is delivered in the frame it
+ * describes, ahead of that frame's style and paint). Nothing re-renders while
+ * scrolling: every visual step is CSS reading a variable.
+ *
+ * NOT scroll-driven animations (`animation-timeline`). They were used here, and
+ * on the installed app (Android WebView) any one of them on the page made a
+ * fast flick stall: the finger lifted, the page moved for ~100 ms, froze for
+ * ~1.6 s and then jumped to where the fling would have ended. Measured on the
+ * I2208: 13 frames rendered per flick with them, 106 without - the same page,
+ * the same flick. Dragging slowly never showed it, which is why earlier
+ * measurements missed it. The effects are now plain variables, written only
+ * onto the few elements that read them, never onto <html> or the whole card
+ * (a custom property changed on an ancestor restyles everything beneath it,
+ * posts included, every frame).
  *
  * While mounted the status bar shows the cover behind it. Its icons are light
  * over the cover and follow the theme once the header is solid. The mobile
@@ -26,6 +40,20 @@ const smoothstep = (t) => t * t * (3 - 2 * t);
  * resizes: the status-bar inset arrives after mount and changes the cover's
  * height without a window resize, which left the fixed copy at a stale height,
  * out of line with the page.
+ *
+ * Elements inside the page's card marked `data-exit-track="<name>"` get an
+ * `--exit` variable (0..1): 0 while the element is well clear of the header, 1
+ * once its top edge has reached the header's bottom. They are meant to be
+ * invisible by then, so the header's opaque edge never slices through them
+ * (it used to cut the avatar flat as it slid underneath). `data-exit-lead`
+ * is how many px of scroll that takes (default 40). `data-exit-after` is the
+ * other kind: the element is pinned on the header's bottom line by the page
+ * (`position: sticky`, `data-exit-sticky`) and fades over that many px of
+ * scroll after touching it, never going behind the header. `data-exit-inert`
+ * also makes the element non-interactive once it is mostly gone. `--exit-<name>` is
+ * also written on the header, so its title can hand over from the page's own
+ * name. An element marked `data-cover-blur` gets `--cover-blur` (the page's
+ * own copy of the cover blurs with the header band).
  */
 /*
  * `data-collapsing-header` and the status-bar icon preference are shared by
@@ -72,73 +100,119 @@ export function useCollapsingHeader({
     const iconsBefore = root.getAttribute('data-status-bar-icons');
     const previousCoverHeight = root.style.getPropertyValue('--profile-cover-height');
     const previousCoverH = root.style.getPropertyValue('--profile-cover-h');
-    const previousPinAt = root.style.getPropertyValue('--cover-pin-at');
-    const editCoverButton = coverBackground ? header.querySelector('button[aria-label="Edit cover"]') : null;
-    const pageCard = coverRef.current?.parentElement ?? null;
 
     let frame = 0;
     let lastLight = null;
-    /*
-     * With scroll-driven animations, everything a cover header animates on
-     * scroll (the cover's position, its blur, the title, the page's name and
-     * avatar) is CSS on the compositor, so no scroll listener is needed at all:
-     * only sizes are measured, when they change.
-     */
-    const cssDriven = coverBackground
-      && typeof CSS !== 'undefined'
-      && typeof CSS.supports === 'function'
-      && CSS.supports('animation-timeline: scroll()');
     let lastCoverHeight = -1;
     let lastHeaderHeight = -1;
     /*
-     * Per-frame values go on the elements that read them, never on <html>: a
-     * custom property changed on the root invalidates the style of the whole
-     * page, every frame of a scroll. The card is the cover's parent, which
-     * holds the page's cover, name and handle.
+     * Elements that report how far they have passed under the header (see the
+     * hook's comment). Measured in document coordinates with offsetTop, which
+     * ignores transforms: the avatar scales and the content moves in a pull,
+     * and neither may move the point the progress is measured from.
      */
-    const setOnPage = (name, value) => {
+    let trackers = [];
+    let blurEls = [];
+    let resizeObserver = null;
+    const docTop = (el) => {
+      let top = 0;
+      for (let node = el; node; node = node.offsetParent) top += node.offsetTop;
+      return top;
+    };
+    /*
+     * Where a `position: sticky` element sits in the flow, before it sticks.
+     * offsetTop includes the offset sticky applies while it is stuck, which
+     * would move the point this is measured from as the page scrolls, so it is
+     * worked out from the parent's content box and the element's own margin.
+     */
+    const stickyNaturalTop = (el) => {
+      const parent = el.parentElement;
+      if (!parent) return docTop(el);
+      const parentStyle = window.getComputedStyle(parent);
+      const own = window.getComputedStyle(el);
+      return docTop(parent) + parent.clientTop
+        + (Number.parseFloat(parentStyle.paddingTop) || 0)
+        + (Number.parseFloat(own.marginTop) || 0);
+    };
+    const measureTrackers = (insetTop) => {
       const card = coverRef.current?.parentElement;
-      if (card) card.style.setProperty(name, value);
+      if (!card) { trackers = []; blurEls = []; return; }
+      trackers = Array.from(card.querySelectorAll('[data-exit-track]')).map((el) => {
+        // Scroll position at which the element's top edge reaches the header's
+        // bottom.
+        const end = Math.max(1, (el.hasAttribute('data-exit-sticky') ? stickyNaturalTop(el) : docTop(el)) - insetTop);
+        // `data-exit-after`: the element sits on the header's bottom line from
+        // `end` (the page pins it there) and fades over that many px of scroll.
+        // Otherwise it must be gone by `end`, and starts going `lead` px before.
+        const after = Number.parseFloat(el.getAttribute('data-exit-after')) || 0;
+        const lead = Number.parseFloat(el.getAttribute('data-exit-lead')) || DEFAULT_EXIT_LEAD_PX;
+        const start = after > 0 ? end : Math.max(0, end - lead);
+        return {
+          el,
+          name: el.getAttribute('data-exit-track'),
+          start,
+          span: after > 0 ? after : Math.max(1, end - start),
+          inert: el.hasAttribute('data-exit-inert'),
+          last: '',
+        };
+      });
+      blurEls = Array.from(card.querySelectorAll('[data-cover-blur]'));
+      for (const t of trackers) resizeObserver?.observe(t.el);
+    };
+
+    let coverHeight = 0;
+    let headerHeight = 0;
+    let trackerRetries = 20;
+
+    /*
+     * Sizes: measured on mount, on resize and when the cover or header resizes
+     * - never per scroll event, where a layout read would be forced in every
+     * frame of a fling.
+     */
+    const measure = () => {
+      // Sub-pixel: offsetHeight rounds, which left the fixed cover up to half a
+      // pixel off the page's placeholder.
+      coverHeight = coverRef.current?.getBoundingClientRect().height || 0;
+      headerHeight = header.offsetHeight;
+      if (!coverBackground) return;
+      // Sizes change rarely (layout, the status-bar inset); only then are
+      // they written, and only then on the root.
+      if (coverHeight !== lastCoverHeight || headerHeight !== lastHeaderHeight) {
+        lastCoverHeight = coverHeight;
+        lastHeaderHeight = headerHeight;
+        root.style.setProperty('--profile-cover-height', `${coverHeight}px`);
+        root.style.setProperty('--profile-cover-h', String(Math.max(1, coverHeight)));
+        header.style.setProperty('--cover-h', String(Math.max(1, coverHeight)));
+      }
+      // Cheap, and what the name's height does when its web font arrives.
+      measureTrackers(headerHeight);
     };
 
     const update = () => {
-      frame = 0;
-      // Sub-pixel: offsetHeight rounds, which left the fixed cover up to half a
-      // pixel off the page's placeholder.
-      const coverHeight = coverRef.current?.getBoundingClientRect().height || 0;
-      const headerHeight = header.offsetHeight;
       const range = Math.max(1, coverHeight - headerHeight) * collapseRangeMultiplier;
       const progress = clamp01(window.scrollY / range);
       header.style.setProperty('--collapse', progress.toFixed(3));
-      setOnPage('--profile-collapse', progress.toFixed(3));
       if (coverBackground) {
+        // The page can mount after this hook first measures, so keep looking
+        // for the marked elements for a little while.
+        if (trackers.length === 0 && trackerRetries-- > 0 && coverRef.current) measureTrackers(headerHeight);
         const pinAt = Math.max(1, coverHeight - headerHeight);
         const scrolled = Math.max(0, window.scrollY);
-        // Sizes change rarely (layout, the status-bar inset); only then are
-        // they written, and only then on the root.
-        if (coverHeight !== lastCoverHeight || headerHeight !== lastHeaderHeight) {
-          lastCoverHeight = coverHeight;
-          lastHeaderHeight = headerHeight;
-          root.style.setProperty('--profile-cover-height', `${coverHeight}px`);
-          root.style.setProperty('--profile-cover-h', String(Math.max(1, coverHeight)));
-          header.style.setProperty('--cover-h', String(Math.max(1, coverHeight)));
-          // The scroll-driven animations' range, read by the header and the
-          // page alike, hence the root (written only when sizes change).
-          root.style.setProperty('--cover-pin-at', String(pinAt));
-        }
         header.style.setProperty('--cover-shift', String(Math.min(scrolled, pinAt)));
         const blur = smoothstep(clamp01(scrolled / pinAt)).toFixed(3);
         header.style.setProperty('--cover-blur', blur);
         // The page's own cover blurs with the header band, so the band's
         // edge never shows as a sharp/blurred division across the photo.
-        setOnPage('--cover-blur', blur);
+        for (const el of blurEls) el.style.setProperty('--cover-blur', blur);
+        for (const t of trackers) {
+          const exit = clamp01((scrolled - t.start) / t.span).toFixed(3);
+          if (exit === t.last) continue;
+          t.last = exit;
+          t.el.style.setProperty('--exit', exit);
+          if (t.inert) t.el.style.pointerEvents = Number(exit) >= 0.5 ? 'none' : '';
+          if (t.name === 'name') header.style.setProperty('--exit-name', exit);
+        }
       }
-      if (editCoverButton) {
-        editCoverButton.style.opacity = (1 - progress).toFixed(3);
-        editCoverButton.style.pointerEvents = progress === 0 ? 'auto' : 'none';
-        editCoverButton.tabIndex = progress === 0 ? 0 : -1;
-      }
-
       const dark = root.getAttribute('data-theme') === 'dark';
       const lightIcons = coverBackground || progress < 0.5 || dark;
       if (lightIcons !== lastLight) {
@@ -147,20 +221,42 @@ export function useCollapsingHeader({
       }
     };
     const schedule = () => {
-      if (!frame) frame = requestAnimationFrame(update);
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        measure();
+        update();
+      });
     };
+    // Straight from the scroll event, which fires in the frame it describes.
+    // Going through a requestAnimationFrame as well put the header a frame
+    // further behind the page than it has to be.
+    const onScroll = () => update();
 
+    measure();
     update();
     // Claimed only once the setup above has run without throwing: a layout
     // effect that throws never gets its cleanup, so claiming first would leave
     // the attribute behind for the rest of the session.
     claimCoverAttributes(root, iconsBefore);
-    if (!cssDriven) window.addEventListener('scroll', schedule, { passive: true });
-    window.addEventListener('resize', schedule);
-    const resizeObserver = typeof ResizeObserver === 'function' ? new ResizeObserver(schedule) : null;
+    window.addEventListener('scroll', onScroll, { passive: true });
+    // Width only. A height-only resize is the keyboard (the WebView follows it
+    // frame by frame), which moves none of what is measured here; measuring
+    // reads layout, so doing it in every frame of the keyboard's slide forced a
+    // style recalc of the page each time. Element size changes are the
+    // ResizeObserver's below.
+    let lastWidth = window.innerWidth;
+    const onResize = () => {
+      if (window.innerWidth === lastWidth) return;
+      lastWidth = window.innerWidth;
+      schedule();
+    };
+    window.addEventListener('resize', onResize);
+    resizeObserver = typeof ResizeObserver === 'function' ? new ResizeObserver(schedule) : null;
     if (resizeObserver) {
       resizeObserver.observe(header);
       if (coverRef.current) resizeObserver.observe(coverRef.current);
+      for (const t of trackers) resizeObserver.observe(t.el);
     }
     // A theme change flips which icons the solid header needs.
     const themeObserver = new MutationObserver(() => {
@@ -171,19 +267,15 @@ export function useCollapsingHeader({
 
     return () => {
       if (frame) cancelAnimationFrame(frame);
-      window.removeEventListener('scroll', schedule);
-      window.removeEventListener('resize', schedule);
+      window.removeEventListener('scroll', onScroll);
+      window.removeEventListener('resize', onResize);
       resizeObserver?.disconnect();
       themeObserver.disconnect();
       releaseCoverAttributes(root);
-      pageCard?.style.removeProperty('--profile-collapse');
-      pageCard?.style.removeProperty('--cover-blur');
       if (previousCoverHeight) root.style.setProperty('--profile-cover-height', previousCoverHeight);
       else root.style.removeProperty('--profile-cover-height');
       if (previousCoverH) root.style.setProperty('--profile-cover-h', previousCoverH);
       else root.style.removeProperty('--profile-cover-h');
-      if (previousPinAt) root.style.setProperty('--cover-pin-at', previousPinAt);
-      else root.style.removeProperty('--cover-pin-at');
     };
   }, [enabled, headerRef, coverRef, coverBackground, collapseRangeMultiplier]);
 }
