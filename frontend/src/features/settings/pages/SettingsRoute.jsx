@@ -34,7 +34,7 @@ import BlockedContacts from '../panels/BlockedContacts';
 import SettingsVerificationPanel from '../panels/SettingsVerificationPanel';
 import SettingsHelpPanel from '../panels/SettingsHelpPanel';
 import DevicesPanel from '../panels/DevicesPanel';
-import { IS_DEV_BUILD } from '@config';
+import { IS_DEV_BUILD, IS_MOBILE_BUILD } from '@config';
 import { useCookieConsent } from '@shared/context/CookieConsentContext';
 
 // Large-device split layout only kicks in at this width — tablets and phones
@@ -95,7 +95,9 @@ export const SETTINGS_TREE = [
       // Where a signed-in device is ended. Sits beside Change Password because
       // the two are the same job — deciding who still has access.
       { panel: 'devices', label: 'Devices', icon: Devices },
-      { action: 'cookies', label: 'Cookie Preferences', icon: Cookie },
+      // The app has no cookie banner and keeps its sign-in in the device keystore, so
+      // "Cookie Preferences" would name something it does not do.
+      { action: 'cookies', label: IS_MOBILE_BUILD ? 'Storage & Privacy' : 'Cookie Preferences', icon: Cookie },
     ],
     /**
      * Kept apart from the settings above rather than listed among them, and off

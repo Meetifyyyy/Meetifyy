@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import { X, Lock, Shield, RefreshCw, Cookie } from '@shared/components/icons';
 import { useCookieConsent } from '@shared/context/CookieConsentContext';
+import { IS_MOBILE_BUILD } from '@config';
 import { useScrollLock } from '@shared/hooks/useScrollLock';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 import styles from './CookieBanner.module.css';
@@ -16,8 +17,9 @@ const CATEGORIES = [
     id: 'auth',
     icon: Lock,
     name: 'Essential Authentication & Security',
-    description:
-      'Keeps you signed in, protects your account, supports password recovery, and remembers necessary navigation state.',
+    description: IS_MOBILE_BUILD
+      ? 'Keeps you signed in using your device\'s secure keystore, protects your account, and supports password recovery.'
+      : 'Keeps you signed in with secure session cookies, protects your account, supports password recovery, and remembers necessary navigation state.',
   },
   {
     id: 'functional',
@@ -97,9 +99,14 @@ export function CookiePreferencesModal() {
         {/* Body */}
         <div className={styles.modalBody}>
           <p className={styles.bodyLead}>
-            Meetifyy uses browser storage to keep your account secure, remember preferences,
-            and provide features such as offline caching and faster loading. Meetifyy does
-            not use advertising tracking, and our analytics are cookieless.
+            {IS_MOBILE_BUILD
+              ? 'Meetifyy stores data on your device to keep your account secure, remember preferences, and load faster. '
+              : 'Meetifyy uses cookies and browser storage to keep your account secure, remember preferences, and load faster. '}
+            Meetifyy does not use advertising tracking
+            {IS_MOBILE_BUILD ? '.' : ', and our analytics are cookieless.'} If something
+            breaks, an anonymised error report (no message content, no screen
+            recording) is sent to our error-monitoring service, tagged only with
+            an internal account id.
           </p>
 
           <div className={styles.categoryList} role="list">
@@ -147,7 +154,14 @@ export function CookiePreferencesModal() {
 export default function CookieBanner() {
   const { hasAcknowledged, acknowledge, openPreferences } = useCookieConsent();
 
-  if (hasAcknowledged) return null;
+  // The installed app has no cookie banner. It is a notice for a website: it
+  // sets no analytics (Vercel Analytics is not in the app bundle), keeps its
+  // sign-in in the Keystore rather than a cookie, and everything it stores on
+  // the device is strictly necessary. The same information stays reachable from
+  // Settings > Storage & Privacy. A compile-time constant, so this branch is
+  // folded away in the website bundle and the banner's markup is unreachable in
+  // the app's.
+  if (IS_MOBILE_BUILD || hasAcknowledged) return null;
 
   return (
     <div className={styles.bannerBackdrop} role="region" aria-label="Privacy notice">
@@ -171,8 +185,8 @@ export default function CookieBanner() {
         </div>
 
         <p className={styles.bannerDesc}>
-          Meetifyy uses essential and functional browser storage to keep your account secure
-          and remember your preferences. We do not use advertising tracking, and our analytics
+          Meetifyy uses essential cookies and browser storage to keep you signed in and
+          remember your preferences. We do not use advertising tracking, and our analytics
           are cookieless.{' '}
           <button
             type="button"

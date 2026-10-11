@@ -181,6 +181,19 @@ function resetClientStateForNewUser(queryClient) {
   idbClearAll().catch((e) => console.error('Failed to clear local cache', e));
 
   /**
+   * Cached conversations.
+   *
+   * A separate database (`meetifyy_messages`) from the one `idbClearAll` empties,
+   * and nothing cleared it on sign-out, so the message bodies of the previous
+   * account stayed on disk for the next person to use the device. Imported
+   * lazily: it is only needed on this exit path, and the entry chunk should not
+   * carry the messaging cache for it.
+   */
+  import('../../features/messages/shared/utils/idbMessages')
+    .then(({ idbClearMessages }) => idbClearMessages())
+    .catch(() => {});
+
+  /**
    * Private media.
    *
    * `mediaCache` holds the previous account's signed URLs in memory (and a

@@ -1,7 +1,10 @@
 import { createContext, useContext, useState, useCallback } from 'react';
 
 const CONSENT_KEY = 'meetifyy_consent';
-const CONSENT_VERSION = '1.0';
+// Bump when what the notice says changes materially (a new kind of storage or a
+// new service), so people who acknowledged the old wording are told once more.
+// 1.1: error monitoring (Sentry) and the sign-in cookies are now disclosed.
+const CONSENT_VERSION = '1.1';
 
 const CookieConsentContext = createContext(null);
 
