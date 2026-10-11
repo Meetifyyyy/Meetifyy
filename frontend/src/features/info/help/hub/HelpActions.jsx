@@ -1,12 +1,14 @@
 import { Link } from 'react-router-dom';
 import { Bug, Inbox, Lightbulb, ShieldAlert } from '@shared/components/icons';
+import { useAuth } from '@shared/context/AuthContext';
 import { HELP_VIEWS } from './helpHub';
 import styles from './HelpHub.module.css';
 
 /** `modal` tiles open a form in place; `view` tiles go to a hub view. */
 const ACTIONS = [
   { modal: 'problem', label: 'Report a problem', hint: 'Something is not working', icon: Bug, tone: 'orange' },
-  { view: HELP_VIEWS.REQUESTS, label: 'Your requests', hint: 'Follow what you sent us', icon: Inbox, tone: 'blue' },
+  // Signed-in only: requests are listed by account, so a visitor has none to see.
+  { view: HELP_VIEWS.REQUESTS, label: 'Your requests', hint: 'Follow what you sent us', icon: Inbox, tone: 'blue', signedIn: true },
   { view: HELP_VIEWS.SAFETY, label: 'Safety centre', hint: 'Report, block, helplines', icon: ShieldAlert, tone: 'red' },
   { modal: 'idea', label: 'Share an idea', hint: 'Tell us what to build', icon: Lightbulb, tone: 'amber' },
 ];
@@ -20,9 +22,11 @@ const ACTIONS = [
  * @param {(kind: 'problem'|'idea') => void} p.onOpen  opens SupportRequestModal
  */
 export default function HelpActions({ linkFor, onOpen }) {
+  const { currentUser } = useAuth();
+  const actions = ACTIONS.filter((a) => !a.signedIn || currentUser);
   return (
-    <nav className={styles.actions} aria-label="Help actions">
-      {ACTIONS.map(({ view, modal, label, hint, icon: Icon, tone }) => {
+    <nav className={styles.actions} aria-label="Help actions" data-count={actions.length}>
+      {actions.map(({ view, modal, label, hint, icon: Icon, tone }) => {
         const inner = (
           <>
             <span className={styles.actionIcon} aria-hidden="true">

@@ -386,7 +386,7 @@ function HelpHome({ initialQuery, onOpen }) {
               Browse by topic
             </h2>
             <p className={styles.sectionIntro}>
-              Pick the area your question is about. Choosing a topic also fills it in on the support form.
+              Pick the area your question is about.
             </p>
           </div>
 

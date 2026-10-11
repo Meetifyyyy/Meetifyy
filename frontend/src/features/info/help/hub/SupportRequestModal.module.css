@@ -25,7 +25,7 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: var(--color-bg-surface, var(--color-bg-white));
+  background: var(--color-bg-white);
   color: var(--color-text-main);
   border: 1px solid var(--color-border);
   border-radius: 20px;
@@ -119,6 +119,11 @@
   margin: 0;
   padding: 0;
   border: none;
+}
+
+/* A <legend> takes no part in its fieldset's flex gap, so it spaces itself. */
+.fieldset > legend {
+  margin-bottom: 8px;
 }
 
 .labelRow {
@@ -372,12 +377,63 @@
 
 .diagnostics {
   margin: 0;
-  padding: 10px 12px;
   border-radius: 12px;
-  font-size: 0.78rem;
+  font-size: 0.8rem;
   line-height: 1.45;
   color: var(--color-text-muted);
   background: var(--color-bg-soft);
+}
+
+.diagnostics summary {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 8px;
+  row-gap: 2px;
+  padding: 10px 12px;
+  list-style: none;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.diagnostics summary::-webkit-details-marker {
+  display: none;
+}
+
+.diagIcon {
+  grid-row: span 2;
+  margin-top: 1px;
+}
+
+.diagMore {
+  font-weight: 600;
+  color: var(--color-primary);
+}
+
+.diagnostics[open] .diagMore {
+  display: none;
+}
+
+.diagList {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0 12px 12px 35px;
+}
+
+.diagList div {
+  display: flex;
+  gap: 10px;
+}
+
+.diagList dt {
+  flex: 0 0 72px;
+  color: var(--color-text-muted);
+}
+
+.diagList dd {
+  margin: 0;
+  min-width: 0;
+  color: var(--color-text-main);
   overflow-wrap: anywhere;
 }
 
@@ -400,7 +456,7 @@
   gap: 10px;
   margin: 0 -20px -20px;
   padding: 12px 20px 20px;
-  background: var(--color-bg-surface, var(--color-bg-white));
+  background: var(--color-bg-white);
   border-top: 1px solid var(--color-border-light);
 }
 

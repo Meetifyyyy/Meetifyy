@@ -43,9 +43,29 @@ export function collectDiagnostics() {
   };
 }
 
-/** One line telling the user exactly what is attached, e.g. "Android app 1.0+ab12 · Android · 1080x2400". */
-export function diagnosticsSummary() {
+/** "en-US" -> "English (United States)"; the code itself if the browser cannot name it. */
+function languageName(code) {
+  try {
+    return new Intl.DisplayNames([code], { type: 'language' }).of(code) || code;
+  } catch {
+    return code;
+  }
+}
+
+/**
+ * What is attached, in words a person can read. The raw values (including the
+ * exact build) are what is sent; see collectDiagnostics.
+ */
+export function diagnosticsRows() {
   const d = collectDiagnostics();
-  const where = APP_PLATFORM === 'web' ? `${d.browser} on ${d.os}` : d.os;
-  return [appVersionLabel(), where, d.screen].filter(Boolean).join(' · ');
+  const device =
+    APP_PLATFORM === 'web'
+      ? [d.browser, d.os].filter((v) => v && v !== 'Unknown').join(' on ') || 'Web browser'
+      : d.os && d.os !== 'Unknown' ? `${d.os} phone` : 'Phone';
+  return [
+    { label: 'App', value: appVersionLabel() },
+    { label: 'Device', value: device },
+    d.screen ? { label: 'Screen', value: d.screen.replace('x', ' × ') } : null,
+    d.language ? { label: 'Language', value: languageName(d.language) } : null,
+  ].filter(Boolean);
 }

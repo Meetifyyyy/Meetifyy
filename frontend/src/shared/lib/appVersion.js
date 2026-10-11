@@ -22,9 +22,13 @@ function stampedVersion() {
 
 export const APP_VERSION = stampedVersion();
 
-/** "Android app 1.0+1a2b3c4d5e6f", "Website build 1a2b3c4d5e6f", or "Website". */
+/**
+ * What a person sees: "Meetifyy for Android 1.0" or "Meetifyy website". The
+ * commit part of the build is left out on purpose - it means nothing to a
+ * reader - but it still travels in every support report (APP_VERSION).
+ */
 export function appVersionLabel() {
-  const name = IS_MOBILE_BUILD ? 'Android app' : 'Website';
-  if (!APP_VERSION) return name;
-  return IS_MOBILE_BUILD ? `${name} ${APP_VERSION}` : `${name} build ${APP_VERSION}`;
+  if (!IS_MOBILE_BUILD) return 'Meetifyy website';
+  const release = APP_VERSION.split('+')[0];
+  return release ? `Meetifyy for Android ${release}` : 'Meetifyy for Android';
 }

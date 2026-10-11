@@ -12,11 +12,12 @@ import {
   Bug,
   CheckCircle2,
   ImagePlus,
+  Info,
   Lightbulb,
   Loader2,
   X,
 } from '@shared/components/icons';
-import { collectDiagnostics, diagnosticsSummary } from './diagnostics';
+import { collectDiagnostics, diagnosticsRows } from './diagnostics';
 import { useSupportAttachments } from './useSupportAttachments';
 import styles from './SupportRequestModal.module.css';
 
@@ -437,9 +438,21 @@ function ModalBody({ kind, onClose, onViewRequests }) {
             </div>
 
             {kind === 'problem' && (
-              <p className={styles.diagnostics}>
-                <strong>Attached automatically:</strong> {diagnosticsSummary()}
-              </p>
+              <details className={styles.diagnostics}>
+                <summary>
+                  <Info size={15} aria-hidden="true" className={styles.diagIcon} />
+                  <span>Your app version and device details are included to help us fix this.</span>
+                  <span className={styles.diagMore}>What&rsquo;s included</span>
+                </summary>
+                <dl className={styles.diagList}>
+                  {diagnosticsRows().map((row) => (
+                    <div key={row.label}>
+                      <dt>{row.label}</dt>
+                      <dd>{row.value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </details>
             )}
 
             {/* Honeypot: hidden from people and assistive tech; bots fill it. */}

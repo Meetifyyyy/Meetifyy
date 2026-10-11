@@ -261,7 +261,10 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
-  margin: 0 6px 4px;
+  /* Same 12px rhythm as the search above and the tile grid's own gap, so the
+     next card ("Browse all help" or a question group) is not pressed up
+     against the tiles. */
+  margin: 0 6px 12px;
 }
 
 .viewTitle {
@@ -277,7 +280,7 @@
 }
 
 .footerWrap {
-  margin: 8px 6px 0;
+  margin: 16px 6px 0;
 }
 
 /* "Go to the setting" link under an answer. */
