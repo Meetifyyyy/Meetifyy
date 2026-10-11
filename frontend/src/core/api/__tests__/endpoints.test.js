@@ -203,3 +203,28 @@ describe('createEndpoints', () => {
     expect(spy.getBackendUrl).not.toHaveBeenCalled();
   });
 });
+
+describe('logoutSession', () => {
+  const make = (getRefreshToken) => {
+    const post = vi.fn().mockResolvedValue({});
+    const { authApi } = createEndpoints({
+      apiClient: { post, get: vi.fn() },
+      getToken: () => '',
+      getBackendUrl: () => 'https://api.test',
+      getRefreshToken,
+    });
+    return { post, authApi };
+  };
+
+  it('names the session by its refresh token when the client holds one (the app)', async () => {
+    const { post, authApi } = make(() => 'app-refresh');
+    await authApi.logoutSession();
+    expect(post).toHaveBeenCalledWith('/api/auth/session/logout', { refreshToken: 'app-refresh' });
+  });
+
+  it('sends no body on web, where the refresh token is an HttpOnly cookie', async () => {
+    const { post, authApi } = make(undefined);
+    await authApi.logoutSession();
+    expect(post).toHaveBeenCalledWith('/api/auth/session/logout', undefined);
+  });
+});

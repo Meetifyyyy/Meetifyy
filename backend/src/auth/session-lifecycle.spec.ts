@@ -50,6 +50,7 @@ describe('AuthController — session lifecycle', () => {
     issue: jest.Mock;
     hashRefreshToken: jest.Mock;
     revokeByRefreshHash: jest.Mock;
+    revokeOwnedByUser: jest.Mock;
   };
   let res: MockResponse;
 
@@ -91,6 +92,7 @@ describe('AuthController — session lifecycle', () => {
       }),
       hashRefreshToken: jest.fn((t: string) => `hash:${t}`),
       revokeByRefreshHash: jest.fn().mockResolvedValue(undefined),
+      revokeOwnedByUser: jest.fn().mockResolvedValue(true),
     };
     res = createMockResponse();
     controller = makeController();
@@ -221,6 +223,34 @@ describe('AuthController — session lifecycle', () => {
     });
   });
 
+  describe('signing in again from a device that still holds a session', () => {
+    it('ends the previous session instead of listing the device twice', async () => {
+      await controller.login(
+        { identifier: 'a', password: 'p' },
+        req({ cookies: { mf_sid: 'old-session' } }),
+        res,
+      );
+      expect(sessions.revokeOwnedByUser).toHaveBeenCalledWith(
+        'u1',
+        'old-session',
+        UserSessionRevokedReason.USER_LOGOUT,
+      );
+    });
+
+    it('records an app login as the app', async () => {
+      await controller.login(
+        { identifier: 'a', password: 'p' },
+        req({ headers: { origin: 'https://localhost' } }),
+        res,
+      );
+      expect(sessions.issue).toHaveBeenCalledWith(
+        'u1',
+        expect.objectContaining({ native: true }),
+        'provider-refresh',
+      );
+    });
+  });
+
   describe('logout', () => {
     it('revokes the session named by the refresh cookie', async () => {
       await controller.logoutSession(
@@ -231,6 +261,32 @@ describe('AuthController — session lifecycle', () => {
         'hash:our-refresh',
         UserSessionRevokedReason.USER_LOGOUT,
       );
+    });
+
+    it('revokes the session an installed app names by its refresh token', async () => {
+      // The app has no cookie, so before this its sign-out revoked nothing.
+      await controller.logoutSession(
+        req({
+          headers: { origin: 'https://localhost' },
+          body: { refreshToken: 'app-refresh' },
+        }),
+        res,
+      );
+      expect(sessions.revokeByRefreshHash).toHaveBeenCalledWith(
+        'hash:app-refresh',
+        UserSessionRevokedReason.USER_LOGOUT,
+      );
+    });
+
+    it('ignores a body token from anything but the app origin', async () => {
+      await controller.logoutSession(
+        req({
+          headers: { origin: 'https://evil.example' },
+          body: { refreshToken: 'stolen' },
+        }),
+        res,
+      );
+      expect(sessions.revokeByRefreshHash).not.toHaveBeenCalled();
     });
 
     it('clears every session cookie', async () => {

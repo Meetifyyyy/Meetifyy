@@ -35,8 +35,15 @@
  * @param {() => string} transport.getToken                  current access token, may be ''
  * @param {() => string} transport.getBackendUrl             absolute API origin
  * @param {() => string} [transport.getSessionId]            the installed app's session id, '' on web
+ * @param {() => string} [transport.getRefreshToken]         the installed app's refresh token, '' on web (it is an HttpOnly cookie there)
  */
-export function createEndpoints({ apiClient, getToken, getBackendUrl, getSessionId = () => '' }) {
+export function createEndpoints({
+  apiClient,
+  getToken,
+  getBackendUrl,
+  getSessionId = () => '',
+  getRefreshToken = () => '',
+}) {
   const authApi = {
     /**
      * Sync the current user's Supabase profile to the Postgres database.
@@ -69,7 +76,13 @@ export function createEndpoints({ apiClient, getToken, getBackendUrl, getSession
      * the cookies stayed in the browser, so the next reload signed the person
      * back in — and on a shared machine, signed the next person in as them.
      */
-    logoutSession: () => apiClient.post('/api/auth/session/logout'),
+    logoutSession: () => {
+      // The installed app has no cookie for the server to read, so it names its
+      // session by the refresh token it holds. On web this is '' and the body
+      // is empty, exactly as before.
+      const refreshToken = getRefreshToken();
+      return apiClient.post('/api/auth/session/logout', refreshToken ? { refreshToken } : undefined);
+    },
   };
 
   const postsApi = {

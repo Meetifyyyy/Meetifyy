@@ -152,7 +152,30 @@ export class AuthController {
     return {
       ip: clientIp(req) || null,
       userAgent: (req.headers['user-agent'] as string) || null,
+      native: this.isNativeAppClient(req),
     };
+  }
+
+  /**
+   * Ends the session this device was holding before it signed in again.
+   *
+   * Without it, signing in twice from one browser (or from an app that was
+   * signed out only locally) leaves the first row live beside the second, and
+   * the device list shows one device twice for up to thirty days. The previous
+   * id comes from the request's own session cookie / header — unauthenticated
+   * input — so the revocation is scoped to the account that has just proved who
+   * it is: naming another user's session here matches nothing.
+   */
+  private async supersedePreviousSession(
+    req: Request,
+    userId: string,
+    keepSessionId: string,
+  ): Promise<void> {
+    const previous = this.currentSessionId(req);
+    if (!previous || previous === keepSessionId) return;
+    await this.sessions
+      .revokeOwnedByUser(userId, previous, UserSessionRevokedReason.USER_LOGOUT)
+      .catch(() => false);
   }
 
   /**
@@ -288,6 +311,7 @@ export class AuthController {
       this.deviceOf(req),
       body.refreshToken,
     );
+    await this.supersedePreviousSession(req, user.id, issued.sessionId);
 
     const { csrfToken } = issueUserSessionCookies(
       res,
@@ -396,6 +420,7 @@ export class AuthController {
       this.deviceOf(req),
       result.session.refresh_token,
     );
+    await this.supersedePreviousSession(req, result.user.id, issued.sessionId);
     const { csrfToken } = issueUserSessionCookies(
       res,
       result.session.access_token,
@@ -591,7 +616,20 @@ export class AuthController {
       }
     }
 
-    const refreshToken = readCookie(req, USER_REFRESH_COOKIE);
+    /*
+     * The installed app has no cookie to present, so it names its session by the
+     * refresh token it holds, in the body — the same rule `session/refresh`
+     * applies: only when there is no cookie AND the caller is the native origin.
+     * Possession of the token is the proof of ownership. Before this, the app's
+     * sign-out revoked nothing: the row stayed live, still listed under
+     * Devices, and the thirty-day refresh token still worked.
+     */
+    const cookieToken = readCookie(req, USER_REFRESH_COOKIE);
+    const bodyToken =
+      !cookieToken && this.isNativeAppClient(req)
+        ? (req.body as { refreshToken?: unknown } | undefined)?.refreshToken
+        : undefined;
+    const refreshToken = cookieToken || bodyToken;
     if (typeof refreshToken === 'string' && refreshToken) {
       await this.sessions.revokeByRefreshHash(
         this.sessions.hashRefreshToken(refreshToken),

@@ -174,6 +174,7 @@ const endpoints = createEndpoints({
   getToken: transport.getToken,
   getBackendUrl: transport.getBackendUrl,
   getSessionId: () => session.getSessionId?.() || '',
+  getRefreshToken: () => session.getRefreshToken?.() || '',
 });
 
 /**

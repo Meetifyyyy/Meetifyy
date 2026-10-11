@@ -172,6 +172,67 @@ describe('UserSessionService', () => {
     expect([...rows.values()][0].deviceName).toBe('Chrome on Windows');
   });
 
+  it('labels a session from the installed app as the app, not as Chrome', async () => {
+    const androidWebView =
+      'Mozilla/5.0 (Linux; Android 14; K) AppleWebKit/537.36 Chrome/126 Mobile Safari/537.36';
+    await service.issue('u1', { userAgent: androidWebView, native: true });
+    const row = [...rows.values()][0];
+    expect(row.deviceName).toBe('Meetifyy app on Android');
+    expect(row.browser).toBe('Meetifyy app');
+
+    rows.clear();
+    await service.issue('u1', { userAgent: androidWebView });
+    expect([...rows.values()][0].deviceName).toBe('Chrome on Android');
+  });
+
+  it('keeps the app label across a refresh rotation', async () => {
+    const ua =
+      'Mozilla/5.0 (Linux; Android 14) Chrome/126 Mobile Safari/537.36';
+    const issued = await service.issue('u1', { userAgent: ua, native: true });
+    const rotated = await service.rotate(issued.refreshToken, {
+      userAgent: ua,
+      native: true,
+    });
+    expect(rotated.ok).toBe(true);
+    const live = [...rows.values()].find((r) => !r.revoked);
+    expect(live?.deviceName).toBe('Meetifyy app on Android');
+  });
+
+  it('never returns an IP address in the device list', async () => {
+    await service.issue('u1', { ...device, native: false });
+    const select: Record<string, boolean> = {};
+    const listMany = (service as unknown as { prisma: PrismaService }).prisma
+      .userSession.findMany as jest.Mock;
+    listMany.mockImplementationOnce(
+      (args: { select: Record<string, boolean> }) => {
+        Object.assign(select, args.select);
+        return Promise.resolve([...rows.values()]);
+      },
+    );
+    await service.listForUser('u1');
+    expect(select.ip).toBeUndefined();
+    expect(select.userAgent).toBeUndefined();
+    expect(select.refreshHash).toBeUndefined();
+  });
+
+  it('tells app sessions from website sessions in the list', async () => {
+    await service.issue('u1', { ...device, native: true });
+    await service.issue('u1', device);
+    const list = await service.listForUser('u1');
+    expect(list.map((l) => l.client).sort()).toEqual(['app', 'web']);
+  });
+
+  it('revokes the live successor when sign-out presents a rotated token', async () => {
+    const issued = await service.issue('u1', device);
+    const rotated = await service.rotate(issued.refreshToken, device);
+    expect(rotated.ok).toBe(true);
+    await service.revokeByRefreshHash(
+      service.hashRefreshToken(issued.refreshToken),
+      UserSessionRevokedReason.USER_LOGOUT,
+    );
+    expect([...rows.values()].every((r) => r.revoked)).toBe(true);
+  });
+
   it('rotates: the old token stops working and a new one takes over', async () => {
     const first = await service.issue('u1', device);
 

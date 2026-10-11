@@ -61,7 +61,8 @@
 .name {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 4px 8px;
+  flex-wrap: wrap;
   font-family: var(--font-family-sans);
   font-size: 0.9rem;
   font-weight: 600;

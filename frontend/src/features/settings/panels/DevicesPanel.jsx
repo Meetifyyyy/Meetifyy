@@ -2,7 +2,7 @@ import { useState, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { sessionsApi } from '@shared/api/apiClient';
 import { showToast } from '@shared/utils/toast';
-import { Devices, LogOut, Check } from '@shared/components/icons';
+import { Devices, Phone, LogOut, Check } from '@shared/components/icons';
 import styles from './DevicesPanel.module.css';
 import RowSkeleton from '@shared/components/skeletons/RowSkeleton';
 
@@ -30,6 +30,20 @@ function relativeTime(value) {
   const days = Math.round(hours / 24);
   if (days < 30) return `${days} day${days === 1 ? '' : 's'} ago`;
   return new Date(value).toLocaleDateString();
+}
+
+/**
+ * What the second line of a row says.
+ *
+ * Platform and recency only. The server no longer sends an address and this
+ * page must not show one; what identifies a device to its owner is what it is
+ * (the app or a browser) and when it was last used.
+ */
+function describeRow(session) {
+  const where = session.client === 'app' ? 'Meetifyy app' : 'Website';
+  if (session.current) return `${where} · Active now`;
+  const when = relativeTime(session.lastActiveAt);
+  return when ? `${where} · Last active ${when}` : where;
 }
 
 export default function DevicesPanel() {
@@ -62,6 +76,9 @@ export default function DevicesPanel() {
     },
     onError: (err) => {
       showToast(err?.message || "Couldn't sign out that device", 'error');
+      // Already gone (signed out elsewhere, or expired) answers 404; either way
+      // the list on screen is wrong, so refresh it.
+      invalidate();
     },
   });
 
@@ -130,7 +147,11 @@ export default function DevicesPanel() {
         {list.map((session) => (
           <div key={session.id} className={styles.row}>
             <span className={styles.icon} aria-hidden="true">
-              <Devices size={20} strokeWidth={2} />
+              {session.client === 'app' ? (
+                <Phone size={20} strokeWidth={2} />
+              ) : (
+                <Devices size={20} strokeWidth={2} />
+              )}
             </span>
 
             <span className={styles.info}>
@@ -142,10 +163,7 @@ export default function DevicesPanel() {
                   </span>
                 )}
               </span>
-              <span className={styles.meta}>
-                Last active {relativeTime(session.lastActiveAt)}
-                {session.ip ? ` · ${session.ip}` : ''}
-              </span>
+              <span className={styles.meta}>{describeRow(session)}</span>
             </span>
 
             {!session.current && (
@@ -154,8 +172,11 @@ export default function DevicesPanel() {
                 className={styles.revokeBtn}
                 disabled={revokeOne.isPending}
                 onClick={() => revokeOne.mutate(session.id)}
+                aria-label={`Sign out ${session.deviceName || 'this device'}`}
               >
-                Sign out
+                {revokeOne.isPending && revokeOne.variables === session.id
+                  ? 'Signing out…'
+                  : 'Sign out'}
               </button>
             )}
           </div>
@@ -163,7 +184,7 @@ export default function DevicesPanel() {
 
         {list.length === 0 && (
           <div className={styles.row}>
-            <span className={styles.meta}>No active sessions found.</span>
+            <span className={styles.meta}>No signed-in devices found.</span>
           </div>
         )}
       </div>

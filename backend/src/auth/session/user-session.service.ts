@@ -38,7 +38,17 @@ export const REFRESH_REUSE_GRACE_MS = 60 * 1000;
 export interface DeviceInfo {
   ip?: string | null;
   userAgent?: string | null;
+  /**
+   * True when the request came from the installed app. Decided by the caller
+   * from the request's Origin, which a page cannot forge, never from the user
+   * agent: an Android WebView presents itself as Chrome on Android, so the UA
+   * cannot tell the app from a phone's browser.
+   */
+  native?: boolean;
 }
+
+/** The `browser` value recorded for sessions held by the installed app. */
+export const APP_CLIENT_LABEL = 'Meetifyy app';
 
 /** What a rotation hands back to the caller, including the provider token. */
 export interface RotatedSession extends IssuedSession {
@@ -91,7 +101,10 @@ export class UserSessionService {
    * theirs, so "Chrome on Windows" answers the question; anything finer starts
    * to look like tracking and is not more useful for the decision.
    */
-  private describe(userAgent?: string | null): {
+  private describe(
+    userAgent?: string | null,
+    native = false,
+  ): {
     deviceName: string;
     browser: string;
     os: string;
@@ -122,6 +135,17 @@ export class UserSessionService {
               ? 'Linux'
               : 'Unknown device';
 
+    if (native) {
+      return {
+        deviceName:
+          os === 'Unknown device'
+            ? APP_CLIENT_LABEL
+            : `${APP_CLIENT_LABEL} on ${os}`,
+        browser: APP_CLIENT_LABEL,
+        os,
+      };
+    }
+
     return { deviceName: `${browser} on ${os}`, browser, os };
   }
 
@@ -134,7 +158,7 @@ export class UserSessionService {
     const refreshToken = this.newRefreshToken();
     const familyId = crypto.randomUUID();
     const expiresAt = new Date(Date.now() + REFRESH_TOKEN_TTL_MS);
-    const described = this.describe(device.userAgent);
+    const described = this.describe(device.userAgent, device.native);
 
     const session = await this.prisma.userSession.create({
       data: {
@@ -202,7 +226,7 @@ export class UserSessionService {
 
     const nextToken = this.newRefreshToken();
     const expiresAt = new Date(Date.now() + REFRESH_TOKEN_TTL_MS);
-    const described = this.describe(device.userAgent);
+    const described = this.describe(device.userAgent, device.native);
 
     // The successor is created first so that, if anything fails between the two
     // writes, the worst outcome is an orphaned row rather than a session whose
@@ -383,7 +407,7 @@ export class UserSessionService {
         expiresAt,
         ip: device.ip ?? null,
         userAgent: device.userAgent?.slice(0, 512) ?? null,
-        ...this.describe(device.userAgent),
+        ...this.describe(device.userAgent, device.native),
       },
       select: { id: true },
     });
@@ -523,19 +547,22 @@ export class UserSessionService {
     const sessions = await this.prisma.userSession.findMany({
       where: { userId, revoked: false, expiresAt: { gt: new Date() } },
       orderBy: { lastActiveAt: 'desc' },
+      // No `ip`, and no `createdAt`: the address is not something the device
+      // list shows, and `createdAt` is the time of the latest token rotation,
+      // not of the sign-in, so presenting it as one would be wrong.
       select: {
         id: true,
         deviceName: true,
         browser: true,
         os: true,
-        ip: true,
-        createdAt: true,
         lastActiveAt: true,
       },
     });
 
     return sessions.map((s) => ({
       ...s,
+      client:
+        s.browser === APP_CLIENT_LABEL ? ('app' as const) : ('web' as const),
       current: s.id === currentSessionId,
     }));
   }
@@ -549,22 +576,24 @@ export class UserSessionService {
     return session && !session.revoked ? session.id : null;
   }
 
+  /**
+   * Ends the whole login (family) a refresh token belongs to.
+   *
+   * The family rather than the single row: a refresh token is replaced on every
+   * rotation, and a sign-out can present one that was rotated moments earlier
+   * (the client renewed an expired access token just before calling this). The
+   * row for that token is already revoked, so revoking only it would leave the
+   * live successor — the one in the device list — signed in.
+   */
   async revokeByRefreshHash(
     refreshHash: string,
     reason: UserSessionRevokedReason,
   ): Promise<void> {
     const existing = await this.prisma.userSession
-      .findUnique({ where: { refreshHash }, select: { id: true } })
+      .findUnique({ where: { refreshHash }, select: { familyId: true } })
       .catch(() => null);
-
-    await this.prisma.userSession
-      .updateMany({
-        where: { refreshHash, revoked: false },
-        data: { revoked: true, revokedAt: new Date(), revokedReason: reason },
-      })
-      .catch(() => undefined);
-
-    if (existing) JwtGuard.forgetSession(existing.id);
+    if (!existing) return;
+    await this.revokeFamily(existing.familyId, reason);
   }
 
   /**
