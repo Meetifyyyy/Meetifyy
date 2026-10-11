@@ -8,7 +8,7 @@ import {
   Signoff,
 } from './components/Blocks';
 import { SITE_CONFIG } from '../../config/site.config';
-import { color } from './components/tokens';
+import { cls, color } from './components/tokens';
 
 interface NewLoginEmailProps {
   name?: string;
@@ -51,7 +51,7 @@ export const NewLoginEmail = ({
 
       <Callout tone="warn" title="Do not recognize this activity?">
         Change your password immediately to protect your account. Reach out to{' '}
-        <a href={supportLink} style={supportAnchor}>
+        <a className={cls.ink} href={supportLink} style={supportAnchor}>
           support
         </a>{' '}
         if you need assistance.

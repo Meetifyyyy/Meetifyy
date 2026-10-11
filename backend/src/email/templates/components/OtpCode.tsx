@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { color, font } from './tokens';
+import { cls, color, font } from './tokens';
 
 interface OtpCodeProps {
   otp: string;
@@ -33,16 +33,22 @@ export const OtpCode: React.FC<OtpCodeProps> = ({ otp, footnote }) => {
           <td align="center" style={panel}>
             <div style={digitsRow}>
               {isTemplateVar ? (
-                <span style={templateBox}>{code}</span>
+                <span className={cls.ink} style={templateBox}>
+                  {code}
+                </span>
               ) : (
                 code.split('').map((digit, i) => (
-                  <span key={i} className="digit" style={digitBox}>
+                  <span key={i} className={`digit ${cls.ink}`} style={digitBox}>
                     {digit}
                   </span>
                 ))
               )}
             </div>
-            {footnote && <div style={note}>{footnote}</div>}
+            {footnote && (
+              <div className={cls.muted} style={note}>
+                {footnote}
+              </div>
+            )}
           </td>
         </tr>
       </tbody>
@@ -73,8 +79,8 @@ const digitBox = {
   width: '46px',
   height: '56px',
   margin: '0 3px',
-  backgroundColor: '#FFFFFF',
-  border: '1px solid #D5D2F5',
+  backgroundColor: 'transparent',
+  border: `1px solid ${color.tintBorder}`,
   borderRadius: '10px',
   boxSizing: 'border-box' as const,
   fontFamily: font.sans,
@@ -89,8 +95,8 @@ const digitBox = {
 const templateBox = {
   display: 'inline-block',
   padding: '0 24px',
-  backgroundColor: '#FFFFFF',
-  border: '1px solid #D5D2F5',
+  backgroundColor: 'transparent',
+  border: `1px solid ${color.tintBorder}`,
   borderRadius: '10px',
   fontFamily: font.sans,
   fontSize: '26px',

@@ -91,7 +91,7 @@ export default function LandingFooter() {
             <h2 className={styles.colTitle}>Follow us</h2>
             <div className={styles.socials}>
               <a
-                href="https://www.instagram.com/meetifyy.in?igsi=YzVoZ3drN29id2tn"
+                href="https://www.instagram.com/meetifyy.app"
                 target="_blank"
                 rel="noopener noreferrer"
                 className={styles.social}

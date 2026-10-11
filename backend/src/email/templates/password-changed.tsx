@@ -2,7 +2,7 @@ import * as React from 'react';
 import { BaseLayout } from './components/BaseLayout';
 import { Callout, DetailList, Headline, Signoff } from './components/Blocks';
 import { SITE_CONFIG } from '../../config/site.config';
-import { color } from './components/tokens';
+import { cls, color } from './components/tokens';
 
 interface PasswordChangedEmailProps {
   name?: string;
@@ -38,7 +38,7 @@ export const PasswordChangedEmail = ({
 
       <Callout tone="warn" title="Did not make this change?">
         Please reset your password immediately or contact our{' '}
-        <a href={supportLink} style={supportAnchor}>
+        <a className={cls.ink} href={supportLink} style={supportAnchor}>
           support team
         </a>{' '}
         to secure your account.

@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { BaseLayout } from './components/BaseLayout';
+import { cls, color } from './components/tokens';
 import {
   Callout,
   Headline,
@@ -52,7 +53,10 @@ export const AccountRecoveryOtpEmail = ({
         footnote={
           <>
             This code will expire in{' '}
-            <strong style={{ color: '#0A0F1D' }}>{expiryTime}</strong>.
+            <strong className={cls.ink} style={{ color: color.ink }}>
+              {expiryTime}
+            </strong>
+            .
           </>
         }
       />

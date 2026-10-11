@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { Heading, Section, Text } from '@react-email/components';
-import { color, font, type } from './tokens';
+import { cls, color, font, type } from './tokens';
 
 /** Eyebrow + serif headline + lede: the opening of every email. */
 export const Headline: React.FC<{
@@ -9,32 +9,50 @@ export const Headline: React.FC<{
   children?: React.ReactNode;
 }> = ({ eyebrow, title, children }) => (
   <>
-    {eyebrow && <Text style={type.eyebrow}>{eyebrow}</Text>}
-    <Heading as="h1" className="headline" style={type.headline}>
+    {eyebrow && (
+      <Text className={cls.accent} style={type.eyebrow}>
+        {eyebrow}
+      </Text>
+    )}
+    <Heading as="h1" className={`headline ${cls.ink}`} style={type.headline}>
       {title}
     </Heading>
-    {children && <Text style={type.lede}>{children}</Text>}
+    {children && (
+      <Text className={cls.body} style={type.lede}>
+        {children}
+      </Text>
+    )}
   </>
 );
 
 /** A paragraph of body copy. */
 export const Paragraph: React.FC<{ children: React.ReactNode }> = ({
   children,
-}) => <Text style={type.body}>{children}</Text>;
+}) => (
+  <Text className={cls.body} style={type.body}>
+    {children}
+  </Text>
+);
 
 /** Small automated-mail notice. */
 export const Notice: React.FC<{ children: React.ReactNode }> = ({
   children,
-}) => <Text style={type.small}>{children}</Text>;
+}) => (
+  <Text className={cls.muted} style={type.small}>
+    {children}
+  </Text>
+);
 
 /** Sign-off at the foot of a message. */
 export const Signoff: React.FC<{ team?: string }> = ({
   team = 'The Meetifyy Team',
 }) => (
-  <Text style={signoff}>
+  <Text className={cls.body} style={signoff}>
     Thanks,
     <br />
-    <span style={signoffName}>{team}</span>
+    <span className={cls.ink} style={signoffName}>
+      {team}
+    </span>
   </Text>
 );
 
@@ -52,7 +70,9 @@ export const DetailList: React.FC<{
   rows: DetailRowItem[];
 }> = ({ title, rows }) => (
   <Section style={detailWrap}>
-    <Text style={detailTitle}>{title}</Text>
+    <Text className={cls.ink} style={detailTitle}>
+      {title}
+    </Text>
     <table
       role="presentation"
       border={0}
@@ -64,7 +84,7 @@ export const DetailList: React.FC<{
         {rows.map((row, i) => (
           <tr key={row.label}>
             <td
-              className="stack stack-label"
+              className={`stack stack-label ${cls.muted}`}
               style={{
                 ...detailLabel,
                 borderBottom:
@@ -76,7 +96,7 @@ export const DetailList: React.FC<{
               {row.label}
             </td>
             <td
-              className="stack stack-value"
+              className={`stack stack-value ${cls.ink}`}
               style={{
                 ...detailValue,
                 borderBottom:
@@ -100,9 +120,24 @@ const tones: Record<
   CalloutTone,
   { bg: string; title: string; text: string; rule: string }
 > = {
-  info: { bg: '#F0EEFF', title: '#3A2BB8', text: '#3B3866', rule: '#DAD5FF' },
-  warn: { bg: '#FFF6E8', title: '#8A4B00', text: '#5F4218', rule: '#F6DFB8' },
-  danger: { bg: '#FDEFEF', title: '#A3202F', text: '#5E2A30', rule: '#F6CFD3' },
+  info: {
+    bg: 'rgba(92,71,250,0.10)',
+    title: '#3A2BB8',
+    text: '#3B3866',
+    rule: 'rgba(92,71,250,0.30)',
+  },
+  warn: {
+    bg: 'rgba(245,158,11,0.12)',
+    title: '#8A4B00',
+    text: '#5F4218',
+    rule: 'rgba(245,158,11,0.38)',
+  },
+  danger: {
+    bg: 'rgba(239,68,68,0.10)',
+    title: '#A3202F',
+    text: '#5E2A30',
+    rule: 'rgba(239,68,68,0.34)',
+  },
 };
 
 /** A tinted panel for something the reader must not miss. */
@@ -123,6 +158,7 @@ export const Callout: React.FC<{
       }}
     >
       <Text
+        className={`co-${tone}-t`}
         style={{
           fontFamily: font.sans,
           fontSize: '14px',
@@ -135,6 +171,7 @@ export const Callout: React.FC<{
         {title}
       </Text>
       <Text
+        className={`co-${tone}-x`}
         style={{
           fontFamily: font.sans,
           fontSize: '14px',
@@ -155,7 +192,9 @@ export const Steps: React.FC<{ title: string; items: string[] }> = ({
   items,
 }) => (
   <Section style={detailWrap}>
-    <Text style={detailTitle}>{title}</Text>
+    <Text className={cls.ink} style={detailTitle}>
+      {title}
+    </Text>
     <table
       role="presentation"
       border={0}
@@ -169,10 +208,18 @@ export const Steps: React.FC<{ title: string; items: string[] }> = ({
             i === items.length - 1 ? 'none' : `1px solid ${color.hairline}`;
           return (
             <tr key={item}>
-              <td style={{ ...stepNumber, borderBottom: rule }}>
+              <td
+                className={cls.accent}
+                style={{ ...stepNumber, borderBottom: rule }}
+              >
                 {String(i + 1).padStart(2, '0')}
               </td>
-              <td style={{ ...stepText, borderBottom: rule }}>{item}</td>
+              <td
+                className={cls.ink}
+                style={{ ...stepText, borderBottom: rule }}
+              >
+                {item}
+              </td>
             </tr>
           );
         })}

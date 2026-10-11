@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { BaseLayout } from './components/BaseLayout';
+import { cls, color } from './components/tokens';
 import { Headline, Notice, Paragraph, Signoff } from './components/Blocks';
 import { OtpCode } from './components/OtpCode';
 
@@ -28,7 +29,10 @@ export const VerificationOtpEmail = ({
         footnote={
           <>
             This code will expire in{' '}
-            <strong style={{ color: '#0A0F1D' }}>{expiryTime}</strong>.
+            <strong className={cls.ink} style={{ color: color.ink }}>
+              {expiryTime}
+            </strong>
+            .
           </>
         }
       />

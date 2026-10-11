@@ -119,7 +119,7 @@ export const SITE = {
    * social accounts. Only add an account that genuinely belongs to Meetifyy.
    */
   sameAs: [
-    'https://www.instagram.com/meetifyy.in',
+    'https://www.instagram.com/meetifyy.app',
     'https://www.linkedin.com/company/meetifyy/',
   ],
 };

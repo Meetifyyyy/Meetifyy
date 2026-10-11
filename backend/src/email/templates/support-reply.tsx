@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { Section, Text } from '@react-email/components';
 import { BaseLayout } from './components/BaseLayout';
-import { color, font, type } from './components/tokens';
+import { cls, color, font, type } from './components/tokens';
 import { SupportFooterNotice } from './components/SupportDetails';
 import { SITE_CONFIG } from '../../config/site.config';
 
@@ -19,9 +19,12 @@ export const SupportReplyEmail: React.FC<SupportReplyEmailProps> = ({
 }) => {
   return (
     <BaseLayout previewText={`Update on your support request #${ticketNumber}`}>
-      <Text style={type.eyebrow}>Reply to request #{ticketNumber}</Text>
+      <Text className={cls.accent} style={type.eyebrow}>
+        Reply to request #{ticketNumber}
+      </Text>
       <Section style={replyContainer}>
         <div
+          className={cls.body}
           style={replyBody}
           dangerouslySetInnerHTML={{ __html: replyHtml }}
         />

@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { Hr, Link, Section, Text } from '@react-email/components';
-import { color, font, type } from './tokens';
+import { cls, color, font, type } from './tokens';
 
 export interface DetailRow {
   label: string;
@@ -35,8 +35,12 @@ export const SupportIdPill: React.FC<{ ticketNumber: string }> = ({
     >
       <tbody>
         <tr>
-          <td style={idLabelCell}>Your Support ID:</td>
-          <td style={idValueCell}>#{ticketNumber}</td>
+          <td className={cls.muted} style={idLabelCell}>
+            Your Support ID:
+          </td>
+          <td className={cls.accent} style={idValueCell}>
+            #{ticketNumber}
+          </td>
         </tr>
       </tbody>
     </table>
@@ -59,7 +63,9 @@ export const SupportSummaryCard: React.FC<{
   return (
     <Section style={summaryBox}>
       <div style={summaryHeader}>
-        <Text style={summaryTitle}>Support request summary</Text>
+        <Text className={cls.ink} style={summaryTitle}>
+          Support request summary
+        </Text>
       </div>
 
       <table
@@ -72,14 +78,22 @@ export const SupportSummaryCard: React.FC<{
         <tbody>
           {rows.map((row) => (
             <tr key={row.label} style={rowBorder}>
-              <td style={summaryLabel}>{row.label}</td>
-              <td style={summaryValue}>{row.value}</td>
+              <td className={cls.muted} style={summaryLabel}>
+                {row.label}
+              </td>
+              <td className={cls.ink} style={summaryValue}>
+                {row.value}
+              </td>
             </tr>
           ))}
           <tr>
-            <td style={summaryLabelLast}>Description</td>
-            <td style={summaryValueLast}>
-              <div style={descriptionContent}>{description}</div>
+            <td className={cls.muted} style={summaryLabelLast}>
+              Description
+            </td>
+            <td className={cls.ink} style={summaryValueLast}>
+              <div className={cls.body} style={descriptionContent}>
+                {description}
+              </div>
             </td>
           </tr>
         </tbody>
@@ -97,7 +111,7 @@ export const SupportAttachmentsSection: React.FC<{
   return (
     <Section style={attachmentsBox}>
       <div style={attachmentsHeader}>
-        <Text style={attachmentsTitle}>
+        <Text className={cls.ink} style={attachmentsTitle}>
           {attachments.length === 1
             ? 'Attachment'
             : `Attachments (${attachments.length})`}
@@ -125,18 +139,31 @@ export const SupportAttachmentsSection: React.FC<{
                     <span style={attachmentIconBadge} />
                   </td>
                   <td style={attachmentInfoCell}>
-                    <div style={attachmentNameText}>{item.filename}</div>
+                    <div className={cls.ink} style={attachmentNameText}>
+                      {item.filename}
+                    </div>
                     {formattedSize && (
-                      <div style={attachmentSizeText}>{formattedSize}</div>
+                      <div className={cls.muted} style={attachmentSizeText}>
+                        {formattedSize}
+                      </div>
                     )}
                   </td>
                   <td style={attachmentActionCell}>
                     {item.url ? (
-                      <Link href={item.url} style={attachmentViewButton}>
+                      <Link
+                        className={cls.accent}
+                        href={item.url}
+                        style={attachmentViewButton}
+                      >
                         View File
                       </Link>
                     ) : (
-                      <span style={attachmentAttachedLabel}>Attached</span>
+                      <span
+                        className={cls.muted}
+                        style={attachmentAttachedLabel}
+                      >
+                        Attached
+                      </span>
                     )}
                   </td>
                 </tr>
@@ -156,14 +183,18 @@ export const SupportFooterNotice: React.FC<{
 }> = ({ helpCentreUrl, isAutomatedConfirmation = false }) => (
   <Section style={footerSection}>
     <Hr style={subtleDivider} />
-    <Text style={footerNoticeText}>
+    <Text className={cls.muted} style={footerNoticeText}>
       {isAutomatedConfirmation ? (
         <>
           This is an automated confirmation email. Please do not reply directly
           to this email.
           <br />
           For further assistance, please contact us through our{' '}
-          <Link href={helpCentreUrl} style={footerNoticeLink}>
+          <Link
+            className={cls.ink}
+            href={helpCentreUrl}
+            style={footerNoticeLink}
+          >
             Help and Support page
           </Link>
           .
@@ -172,7 +203,11 @@ export const SupportFooterNotice: React.FC<{
         <>
           Please do not reply directly to this email. If you need further
           assistance, please contact us through our{' '}
-          <Link href={helpCentreUrl} style={footerNoticeLink}>
+          <Link
+            className={cls.ink}
+            href={helpCentreUrl}
+            style={footerNoticeLink}
+          >
             Help and Support page
           </Link>
           .

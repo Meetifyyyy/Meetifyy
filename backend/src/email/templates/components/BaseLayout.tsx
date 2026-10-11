@@ -11,7 +11,7 @@ import {
   Text,
 } from '@react-email/components';
 import { SITE_CONFIG } from '../../../config/site.config';
-import { color, font } from './tokens';
+import { cls, color, font, themeCss } from './tokens';
 
 interface BaseLayoutProps {
   previewText?: string;
@@ -24,7 +24,7 @@ interface BaseLayoutProps {
  */
 const responsiveCss = `
   @media only screen and (max-width: 620px) {
-    .px { padding-left: 24px !important; padding-right: 24px !important; }
+    .px { padding-left: 18px !important; padding-right: 18px !important; }
     .headline { font-size: 28px !important; line-height: 34px !important; }
     .digit { width: 40px !important; height: 50px !important; line-height: 48px !important; font-size: 23px !important; margin: 0 2px !important; }
     .stack { display: block !important; width: 100% !important; }
@@ -40,9 +40,9 @@ export const BaseLayout: React.FC<BaseLayoutProps> = ({
   return (
     <Html lang="en">
       <Head>
-        <meta name="color-scheme" content="light only" />
-        <meta name="supported-color-schemes" content="light only" />
-        <style>{responsiveCss}</style>
+        <meta name="color-scheme" content="light dark" />
+        <meta name="supported-color-schemes" content="light dark" />
+        <style>{themeCss + responsiveCss}</style>
       </Head>
       {previewText && <Preview>{previewText}</Preview>}
       <Body style={main}>
@@ -63,24 +63,46 @@ export const BaseLayout: React.FC<BaseLayoutProps> = ({
           </Section>
 
           <Section style={footer}>
-            <Text style={footerLinks}>
-              <Link href={SITE_CONFIG.instagramUrl} style={footerLink}>
+            <Text className={cls.muted} style={footerLinks}>
+              <Link
+                className={cls.muted}
+                href={SITE_CONFIG.instagramUrl}
+                style={footerLink}
+              >
                 Instagram
               </Link>
-              <span style={dot}>·</span>
-              <Link href={SITE_CONFIG.linkedinUrl} style={footerLink}>
+              <span className={cls.faint} style={dot}>
+                ·
+              </span>
+              <Link
+                className={cls.muted}
+                href={SITE_CONFIG.linkedinUrl}
+                style={footerLink}
+              >
                 LinkedIn
               </Link>
-              <span style={dot}>·</span>
-              <Link href={SITE_CONFIG.privacyUrl} style={footerLink}>
+              <span className={cls.faint} style={dot}>
+                ·
+              </span>
+              <Link
+                className={cls.muted}
+                href={SITE_CONFIG.privacyUrl}
+                style={footerLink}
+              >
                 Privacy
               </Link>
-              <span style={dot}>·</span>
-              <Link href={SITE_CONFIG.termsUrl} style={footerLink}>
+              <span className={cls.faint} style={dot}>
+                ·
+              </span>
+              <Link
+                className={cls.muted}
+                href={SITE_CONFIG.termsUrl}
+                style={footerLink}
+              >
                 Terms
               </Link>
             </Text>
-            <Text style={footerCopy}>
+            <Text className={cls.faint} style={footerCopy}>
               &copy; {new Date().getFullYear()} {SITE_CONFIG.appName}. All
               rights reserved.
             </Text>
@@ -92,10 +114,10 @@ export const BaseLayout: React.FC<BaseLayoutProps> = ({
 };
 
 const main = {
-  backgroundColor: color.page,
+  backgroundColor: 'transparent',
   fontFamily: font.sans,
   margin: 0,
-  padding: '40px 12px',
+  padding: '24px 4px',
 };
 
 const container = {
@@ -105,14 +127,13 @@ const container = {
 };
 
 const sheet = {
-  backgroundColor: color.sheet,
   border: `1px solid ${color.hairline}`,
   borderRadius: '20px',
   overflow: 'hidden',
 };
 
 const masthead = {
-  padding: '28px 44px 24px',
+  padding: '24px 24px 20px',
   textAlign: 'center' as const,
   borderBottom: `1px solid ${color.hairline}`,
 };
@@ -124,11 +145,11 @@ const logo = {
 };
 
 const content = {
-  padding: '40px 44px 44px',
+  padding: '32px 24px 36px',
 };
 
 const footer = {
-  padding: '28px 12px 0',
+  padding: '24px 4px 0',
   textAlign: 'center' as const,
 };
 

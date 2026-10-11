@@ -39,7 +39,7 @@ export const siteConfigValues = {
   }),
 
   instagramUrl: url('INSTAGRAM_URL', {
-    default: 'https://www.instagram.com/meetifyy.in?igsi=YzVoZ3drN29id2tn',
+    default: 'https://www.instagram.com/meetifyy.app',
   }),
   linkedinUrl: url('LINKEDIN_URL', {
     default: 'https://www.linkedin.com/company/meetifyy/',
