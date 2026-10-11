@@ -12,6 +12,8 @@ import { apiRequest } from '../../api/apiClient';
 export interface TicketFilters {
   status?: string;
   category?: string;
+  /** PROBLEM or IDEA. */
+  type?: string;
   priority?: string;
   assignedAdminId?: string;
   search?: string;

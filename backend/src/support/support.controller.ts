@@ -13,10 +13,14 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 
+import { JwtGuard } from '../common/guards/jwt.guard';
 import { OptionalJwtGuard } from '../common/guards/optional-jwt.guard';
 import { SupportRateLimitGuard } from '../common/guards/support-ratelimit.guard';
 import { StorageService } from '../uploads/uploads.service';
-import { CreateSupportRequestDto } from './dto/create-support-request.dto';
+import {
+  CreateAccountSupportRequestDto,
+  CreateSupportRequestDto,
+} from './dto/create-support-request.dto';
 import { HelpService } from './help.service';
 import { SupportService } from './support.service';
 import {
@@ -39,6 +43,10 @@ import { clientIp } from '../common/rate-limit/client-ip.util';
  * enough to enumerate, and the tickets contain personal information. Ticket
  * content is reachable only through the authenticated admin API; the user's
  * copy reaches them by email, which proves control of the address.
+ *
+ * The exceptions are the `requests/mine` routes: signed-in only, and every
+ * read is scoped to the session's own account id, never to an address the
+ * caller supplies. A ticket number on its own reaches nothing.
  */
 // `api/` prefix to match every other public controller - main.ts sets no
 // global prefix, so each one declares its own.
@@ -113,6 +121,45 @@ export class SupportController {
       );
     }
     return this.storage.uploadSupportAttachment(file);
+  }
+
+  /**
+   * The signed-in user's own requests, newest first, for "Your requests".
+   * Guest tickets (no account) are not listed: matching on email would let a
+   * changed or shared address surface someone else's ticket.
+   */
+  @UseGuards(JwtGuard)
+  @Get('requests/mine')
+  listMyRequests(@Req() req: AuthenticatedRequest) {
+    return this.support.listRequestsForUser(req.user.id);
+  }
+
+  /** One of the user's own requests, with the team's replies (never internal notes). */
+  @UseGuards(JwtGuard)
+  @Get('requests/mine/:ticketNumber')
+  getMyRequest(
+    @Req() req: AuthenticatedRequest,
+    @Param('ticketNumber') ticketNumber: string,
+  ) {
+    return this.support.getRequestForUser(req.user.id, ticketNumber);
+  }
+
+  /**
+   * Files a problem or an idea as the signed-in user. See
+   * `SupportService.createRequestForUser` for why this is separate from the
+   * public `POST requests`.
+   */
+  @UseGuards(SupportRateLimitGuard, JwtGuard)
+  @Post('requests/mine')
+  createMyRequest(
+    @Body() dto: CreateAccountSupportRequestDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.support.createRequestForUser(req.user.id, dto, {
+      ip: clientIp(req) || req.ip || 'unknown',
+      userAgent: (req.headers['user-agent'] as string) ?? null,
+      userId: req.user.id,
+    });
   }
 
   @UseGuards(SupportRateLimitGuard, OptionalJwtGuard)

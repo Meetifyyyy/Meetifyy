@@ -183,6 +183,7 @@ export const TicketDetail: React.FC<{
         <h3 style={subjectStyle}>{ticket.subject}</h3>
 
         <div style={requesterLine}>
+          {ticket.type === 'IDEA' ? 'Idea · ' : ''}
           {categoryLabel(ticket.category)} ·{' '}
           <a href={`mailto:${ticket.email}`} style={{ color: 'inherit' }}>
             {ticket.name ? `${ticket.name} <${ticket.email}>` : ticket.email}

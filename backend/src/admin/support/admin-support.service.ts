@@ -84,6 +84,7 @@ export class AdminSupportService {
     const where: Prisma.SupportTicketWhereInput = {};
     if (query.status) where.status = query.status;
     if (query.category) where.category = query.category;
+    if (query.type) where.type = query.type;
     if (query.priority) where.priority = query.priority;
 
     // "unassigned" is a real filter - it is the queue an admin picks work from
@@ -123,6 +124,7 @@ export class AdminSupportService {
           email: true,
           name: true,
           category: true,
+          type: true,
           subject: true,
           status: true,
           priority: true,

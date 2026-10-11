@@ -91,6 +91,7 @@ export const TicketQueue: React.FC<{
     if (filters.category && !lockedCategory) {
       chips.push({ key: 'category', label: categoryLabel(filters.category) });
     }
+    if (filters.type) chips.push({ key: 'type', label: filters.type === 'IDEA' ? 'Ideas' : 'Problems' });
     if (filters.assignedAdminId === 'unassigned') chips.push({ key: 'assignedAdminId', label: 'Unassigned' });
     return chips;
   }, [filters, lockedCategory]);
@@ -188,6 +189,16 @@ export const TicketQueue: React.FC<{
             />
           )}
           <FilterSelect
+            label="Kind"
+            value={filters.type ?? ''}
+            onChange={(v) => setFilter('type', v)}
+            options={[
+              { value: '', label: 'Problems and ideas' },
+              { value: 'PROBLEM', label: 'Problems' },
+              { value: 'IDEA', label: 'Ideas' },
+            ]}
+          />
+          <FilterSelect
             label="Assignment"
             value={filters.assignedAdminId ?? ''}
             onChange={(v) => setFilter('assignedAdminId', v)}
@@ -283,6 +294,7 @@ export const TicketQueue: React.FC<{
                   <span className={`badge ${STATUS_BADGE[ticket.status] ?? 'badge-neutral'}`}>
                     {statusLabel(ticket.status)}
                   </span>
+                  {ticket.type === 'IDEA' && <span className="badge badge-info">Idea</span>}
                   {(ticket.priority === 'HIGH' || ticket.priority === 'URGENT') && (
                     <span className={`badge ${PRIORITY_BADGE[ticket.priority]}`}>{priorityLabel(ticket.priority)}</span>
                   )}

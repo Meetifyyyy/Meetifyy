@@ -1099,6 +1099,9 @@ model SupportTicket {
   email           String
   name            String?
   category        SupportCategory
+  /// What the user is sending: a problem to fix or an idea to consider. The
+  /// category says which part of Meetifyy it is about, for either kind.
+  type            SupportRequestType  @default(PROBLEM)
   subject         String              @db.VarChar(200)
   description     String              @db.VarChar(10000)
   attachments     Json?
@@ -1133,6 +1136,7 @@ model SupportTicket {
   // The admin queue's default view is "open tickets, newest first"; the pair
   // index serves both the filter and the sort from one scan.
   @@index([status, createdAt])
+  @@index([type, createdAt])
 }
 
 model SupportMessage {
@@ -1544,6 +1548,11 @@ enum SupportStatus {
 
 /// Backend-enforced triage levels. The frontend may request a value but the
 /// server only ever accepts one of these.
+enum SupportRequestType {
+  PROBLEM
+  IDEA
+}
+
 enum SupportPriority {
   LOW
   NORMAL

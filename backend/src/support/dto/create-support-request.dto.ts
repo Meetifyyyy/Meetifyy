@@ -10,7 +10,7 @@ import {
   MinLength,
   ValidateNested,
 } from 'class-validator';
-import { SupportCategory } from '@prisma/client';
+import { SupportCategory, SupportRequestType } from '@prisma/client';
 import { PUBLIC_SUPPORT_CATEGORIES } from '../support.constants';
 
 const trim = ({ value }: { value: unknown }) =>
@@ -28,6 +28,10 @@ export class SupportBrowserInfoDto {
   @IsOptional() @IsString() @MaxLength(40) screen?: string;
   @IsOptional() @IsString() @MaxLength(40) language?: string;
   @IsOptional() @IsString() @MaxLength(60) timezone?: string;
+  /** Which client: `web` or `android`. */
+  @IsOptional() @IsString() @MaxLength(20) platform?: string;
+  /** The client build, e.g. `1.0+1a2b3c4d5e6f` or a short commit. */
+  @IsOptional() @IsString() @MaxLength(80) appVersion?: string;
 }
 
 export class SupportAttachmentRefDto {
@@ -54,18 +58,15 @@ export class SupportAttachmentRefDto {
   filename?: string;
 }
 
-export class CreateSupportRequestDto {
-  @Transform(trim)
-  @IsString({ message: 'Name must be a string' })
-  @IsNotEmpty({ message: 'Enter your name' })
-  @MinLength(2, { message: 'Name must be at least 2 characters' })
-  @MaxLength(100, { message: 'Name cannot exceed 100 characters' })
-  name!: string;
-
-  @Transform(trim)
-  @IsEmail({}, { message: 'Enter a valid email address' })
-  @MaxLength(254, { message: 'Email address cannot exceed 254 characters' })
-  email!: string;
+/**
+ * What every support request carries, however it is filed. The two entry
+ * points below differ only in who the request is from.
+ */
+export class SupportRequestFieldsDto {
+  /** Problem or idea. Omitted by older clients, which only ever filed problems. */
+  @IsOptional()
+  @IsEnum(SupportRequestType, { message: 'Invalid request type' })
+  type?: SupportRequestType;
 
   // Restricted to the public list rather than the whole enum: the legacy
   // members exist only so old rows still parse, and `OTHER` already covers
@@ -110,6 +111,24 @@ export class CreateSupportRequestDto {
   @IsString()
   @MaxLength(500)
   pageContext?: string;
+}
+
+/**
+ * The public form: anyone, signed in or not. The reply address is whatever
+ * the submitter types, because a locked-out user has no account to read it from.
+ */
+export class CreateSupportRequestDto extends SupportRequestFieldsDto {
+  @Transform(trim)
+  @IsString({ message: 'Name must be a string' })
+  @IsNotEmpty({ message: 'Enter your name' })
+  @MinLength(2, { message: 'Name must be at least 2 characters' })
+  @MaxLength(100, { message: 'Name cannot exceed 100 characters' })
+  name!: string;
+
+  @Transform(trim)
+  @IsEmail({}, { message: 'Enter a valid email address' })
+  @MaxLength(254, { message: 'Email address cannot exceed 254 characters' })
+  email!: string;
 
   /**
    * Honeypot. A real form leaves it empty because the field is hidden; the
@@ -120,3 +139,10 @@ export class CreateSupportRequestDto {
   @MaxLength(200)
   website?: string;
 }
+
+/**
+ * Filed from inside the app by a signed-in user (`POST requests/mine`). Name
+ * and reply address come from the account, so the request is always linked to
+ * it and always appears in "Your requests".
+ */
+export class CreateAccountSupportRequestDto extends SupportRequestFieldsDto {}

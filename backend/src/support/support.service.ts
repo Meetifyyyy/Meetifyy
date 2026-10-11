@@ -1,20 +1,99 @@
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import {
   EmailDeliveryStatus,
   Prisma,
   SupportAuthorType,
+  SupportCategory,
   SupportPriority,
+  SupportRequestType,
+  SupportStatus,
 } from '@prisma/client';
 import { createHash } from 'crypto';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
 import { config } from '../config';
-import { CreateSupportRequestDto } from './dto/create-support-request.dto';
+import {
+  CreateAccountSupportRequestDto,
+  CreateSupportRequestDto,
+  SupportRequestFieldsDto,
+} from './dto/create-support-request.dto';
 import {
   DEFAULT_PRIORITY_BY_CATEGORY,
   SUPPORT_ATTACHMENT_LIMITS,
+  SUPPORT_CATEGORY_LABELS,
 } from './support.constants';
+
+/** "Your requests" shows recent history, not an archive. */
+const MY_REQUESTS_LIMIT = 50;
+
+const MY_REQUEST_SELECT = {
+  ticketNumber: true,
+  type: true,
+  subject: true,
+  category: true,
+  status: true,
+  createdAt: true,
+  updatedAt: true,
+} satisfies Prisma.SupportTicketSelect;
+
+export interface MyRequestSummary {
+  ticketNumber: string;
+  type: SupportRequestType;
+  subject: string;
+  category: SupportCategory;
+  categoryLabel: string;
+  status: SupportStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MyRequestDetail extends MyRequestSummary {
+  description: string;
+  resolvedAt: string | null;
+  messages: {
+    id: string;
+    from: SupportAuthorType;
+    body: string;
+    createdAt: string;
+  }[];
+}
+
+function toSummary(
+  row: Prisma.SupportTicketGetPayload<{ select: typeof MY_REQUEST_SELECT }>,
+): MyRequestSummary {
+  return {
+    ticketNumber: row.ticketNumber,
+    type: row.type,
+    subject: row.subject,
+    category: row.category,
+    categoryLabel: SUPPORT_CATEGORY_LABELS[row.category],
+    status: row.status,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+/**
+ * Where to reply to an account: the verified college address first, then the
+ * sign-in address, never the internal `@meetifyy.user` placeholder that some
+ * accounts carry in place of a real one.
+ */
+export function replyAddressFor(user: {
+  email: string;
+  collegeEmail: string | null;
+}): string | null {
+  for (const candidate of [user.collegeEmail, user.email]) {
+    const email = candidate?.trim().toLowerCase();
+    if (email && !email.endsWith('@meetifyy.user')) return email;
+  }
+  return null;
+}
 import { generateTicketNumber } from './utils/ticket-number.util';
 import { sanitizeFilename } from '../uploads/attachment-inspection.util';
 
@@ -89,23 +168,87 @@ export class SupportService {
       };
     }
 
+    return this.fileTicket(
+      dto,
+      {
+        name: dto.name.trim(),
+        email: dto.email.trim().toLowerCase(),
+        // Only trusted when the caller actually presented a valid session. An
+        // anonymous submitter cannot claim to be an account by filling a field.
+        userId: context.userId,
+      },
+      context,
+    );
+  }
+
+  /**
+   * A request filed from inside the app by a signed-in user. The name and the
+   * reply address are the account's own, read here rather than taken from the
+   * body, so the ticket is always linked to the account that filed it.
+   *
+   * This exists because the public route cannot guarantee that link: it treats
+   * an expired access token as "anonymous" (it must, for the locked-out case),
+   * so a signed-in user whose token had lapsed filed an unlinked ticket that
+   * never appeared in "Your requests". Behind `JwtGuard`, a lapsed token is a
+   * 401 that the client renews and retries.
+   */
+  async createRequestForUser(
+    userId: string,
+    dto: CreateAccountSupportRequestDto,
+    context: RequestContext,
+  ) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { displayName: true, email: true, collegeEmail: true },
+    });
+    if (!user) throw new NotFoundException('Account not found');
+
+    const email = replyAddressFor(user);
+    if (!email) {
+      throw new BadRequestException(
+        'Your account has no email address we can reply to. Use the form on the Help & Support page instead.',
+      );
+    }
+
+    return this.fileTicket(
+      dto,
+      { name: user.displayName.trim() || 'Meetifyy user', email, userId },
+      { ...context, userId },
+    );
+  }
+
+  /**
+   * Stores the ticket and queues the confirmation. Ticket creation and email
+   * delivery are deliberately independent: the ticket is committed first, so a
+   * mail problem downgrades to a tracked `emailStatus`, never to a failed
+   * submission - telling the user otherwise would only make them file it again.
+   */
+  private async fileTicket(
+    dto: SupportRequestFieldsDto,
+    from: { name: string; email: string; userId: string | null },
+    context: RequestContext,
+  ) {
     const { text: description, redacted } = redactCredentials(dto.description);
     const { text: subject } = redactCredentials(dto.subject);
+    const type = dto.type ?? SupportRequestType.PROBLEM;
 
     const attachments = await this.resolveAttachments(dto.attachments ?? []);
 
     const ticket = await this.createTicketWithUniqueNumber({
-      email: dto.email.trim().toLowerCase(),
-      name: dto.name.trim(),
+      email: from.email,
+      name: from.name,
       category: dto.category,
+      type,
       subject,
       description,
       attachments: attachments.length ? attachments : Prisma.DbNull,
+      // An idea is never urgent, whatever area it is about.
       priority:
-        DEFAULT_PRIORITY_BY_CATEGORY[dto.category] ?? SupportPriority.NORMAL,
-      // Only trusted when the caller actually presented a valid session. An
-      // anonymous submitter cannot claim to be an account by filling a field.
-      userId: context.userId,
+        type === SupportRequestType.IDEA
+          ? SupportPriority.LOW
+          : (DEFAULT_PRIORITY_BY_CATEGORY[dto.category] ??
+            SupportPriority.NORMAL),
+      userId: from.userId,
       browserInfo: this.buildBrowserInfo(dto, context),
       pageContext: dto.pageContext ?? null,
       ipHash: this.hashIp(context.ip),
@@ -115,9 +258,10 @@ export class SupportService {
       `support.request_created ${JSON.stringify({
         // Never the description or the subject: both are user text.
         ticketNumber: ticket.ticketNumber,
+        type,
         category: ticket.category,
         priority: ticket.priority,
-        authenticated: Boolean(context.userId),
+        authenticated: Boolean(from.userId),
         attachments: attachments.length,
         credentialsRedacted: redacted,
       })}`,
@@ -129,9 +273,65 @@ export class SupportService {
     // admin metadata. The ticket number is the user's whole handle on this.
     return {
       ticketNumber: ticket.ticketNumber,
+      type,
       status: ticket.status,
       createdAt: ticket.createdAt.toISOString(),
       redactedSensitiveContent: redacted,
+    };
+  }
+
+  /**
+   * The account's own tickets for the "Your requests" list. A narrow select:
+   * no description, messages, priority, assignment or diagnostics.
+   */
+  async listRequestsForUser(
+    userId: string,
+  ): Promise<{ requests: MyRequestSummary[] }> {
+    const rows = await this.prisma.supportTicket.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+      take: MY_REQUESTS_LIMIT,
+      select: MY_REQUEST_SELECT,
+    });
+    return { requests: rows.map(toSummary) };
+  }
+
+  /**
+   * One of the account's own tickets, with what the user wrote and every reply
+   * the team sent them. Looked up by number AND owner in one query, so another
+   * account's number is indistinguishable from one that does not exist.
+   * Internal notes are excluded in the query, not filtered afterwards.
+   */
+  async getRequestForUser(
+    userId: string,
+    ticketNumber: string,
+  ): Promise<MyRequestDetail> {
+    const row = await this.prisma.supportTicket.findFirst({
+      where: { userId, ticketNumber },
+      select: {
+        ...MY_REQUEST_SELECT,
+        description: true,
+        resolvedAt: true,
+        messages: {
+          where: { isInternal: false },
+          orderBy: { createdAt: 'asc' },
+          select: { id: true, authorType: true, body: true, createdAt: true },
+        },
+      },
+    });
+    if (!row) throw new NotFoundException('Request not found');
+
+    return {
+      ...toSummary(row),
+      description: row.description,
+      resolvedAt: row.resolvedAt?.toISOString() ?? null,
+      messages: row.messages.map((m) => ({
+        id: m.id,
+        // The user sees "you", "Meetifyy support" or a status note, never which admin.
+        from: m.authorType,
+        body: m.body,
+        createdAt: m.createdAt.toISOString(),
+      })),
     };
   }
 
@@ -278,7 +478,7 @@ export class SupportService {
   }
 
   private buildBrowserInfo(
-    dto: CreateSupportRequestDto,
+    dto: SupportRequestFieldsDto,
     context: RequestContext,
   ): Prisma.InputJsonValue {
     return {

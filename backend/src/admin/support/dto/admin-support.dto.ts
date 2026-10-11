@@ -15,6 +15,7 @@ import {
 } from 'class-validator';
 import {
   SupportCategory,
+  SupportRequestType,
   SupportPriority,
   SupportStatus,
 } from '@prisma/client';
@@ -35,6 +36,8 @@ const toInt = ({ value }: { value: unknown }) =>
 export class ListSupportTicketsDto {
   @IsOptional() @IsEnum(SupportStatus) status?: SupportStatus;
   @IsOptional() @IsEnum(SupportCategory) category?: SupportCategory;
+  /** Problems or ideas only. */
+  @IsOptional() @IsEnum(SupportRequestType) type?: SupportRequestType;
   @IsOptional() @IsEnum(SupportPriority) priority?: SupportPriority;
 
   /** `unassigned` is a distinct filter, not the absence of one. */
