@@ -238,11 +238,18 @@ function AuthShellMaster({
   );
 
   // The auth canvas runs edge to edge, behind both system bars.
+  //
+  // Light status icons only over the login page's dark header image (phones,
+  // see .mobileHero). Everywhere else the page under the bars is the plain
+  // surface, so the icons follow the theme; forcing them light put white icons
+  // on the white signup page, where they vanished.
+  const darkHeroUnderStatusBar = isLogin
+    && typeof window !== 'undefined'
+    && Boolean(window.matchMedia?.('(max-width: 560px)').matches);
   useSystemBars({
     status: 'transparent',
-    statusIcons: 'light',
+    statusIcons: darkHeroUnderStatusBar ? 'light' : null,
     navigation: 'transparent',
-    navigationIcons: 'light',
   });
 
   useLayoutEffect(() => {
