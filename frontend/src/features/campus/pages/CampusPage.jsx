@@ -22,7 +22,8 @@ import CrewCardSkeleton from '@features/crew/components/cards/CrewCardSkeleton';
 import Skeleton from '@shared/components/skeletons/Skeleton';
 import { mapActivity } from '@shared/utils/mapActivity';
 import VerificationGate from '@shared/components/VerificationGate/VerificationGate';
-import CommunityAvatar from '@features/communities/components/directory/CommunityAvatar';
+import CommunityRow from '@features/communities/components/directory/CommunityRow';
+import listStyles from '@features/communities/components/directory/CommunityList.module.css';
 
 /**
  * Both are creation surfaces reachable only from the "+" menu, and between them
@@ -104,37 +105,11 @@ function partialShuffle(items, wanted, rand) {
   return pool;
 }
 
-const MIN_COMMUNITY_CARD_WIDTH_PX = 170;
+// The Communities page's card width (21rem, CommunityList.module.css), so the
+// row shows only whole cards.
+const MIN_COMMUNITY_CARD_WIDTH_PX = 336;
 const MAX_COMMUNITY_CARDS = 4;
 
-const CampusCommunityItem = memo(function CampusCommunityItem({ comm, onSelect }) {
-  const count = comm?.memberCount ?? comm?.membersCount ?? (Array.isArray(comm?.members) ? comm.members.length : (typeof comm?.members === 'number' ? comm.members : 1));
-
-  const handleClick = useCallback(() => onSelect(comm.id), [onSelect, comm.id]);
-  const handleKeyDown = useCallback((e) => {
-    if (e.key === 'Enter') onSelect(comm.id);
-  }, [onSelect, comm.id]);
-
-  return (
-    <div
-      className={styles.communityCardItem}
-      onClick={handleClick}
-      onKeyDown={handleKeyDown}
-      role="link"
-      tabIndex={0}
-    >
-      <CommunityAvatar community={comm} size={52} />
-      <div className={styles.communityInfo}>
-        <h4 className={styles.communityCardName} title={comm.name}>
-          {comm.name}
-        </h4>
-        <span className={styles.communityCardSubtitle}>
-          {count} {count === 1 ? 'member' : 'members'}
-        </span>
-      </div>
-    </div>
-  );
-});
 
 /**
  * Returns `[count, ref]` — how many cards of at least `itemWidth` fit across
@@ -295,10 +270,8 @@ export default function CampusPage() {
     signal: campusUsers.length,
   });
 
-  // Same treatment for the communities row. No `itemSelector` here: those cards
-  // are `flex: 1 1 0`, so measuring one back would report the width it was
-  // stretched to, not the width it needs — the answer would depend on the
-  // question. The minimum is the input instead.
+  // Same treatment for the communities row, measured against the card's fixed
+  // width. On phones the grid is one full-width column, so one card shows.
   const [visibleCommunityCount, communityListRef] = useFittingCount({
     min: 1,
     max: MAX_COMMUNITY_CARDS,
@@ -504,13 +477,10 @@ export default function CampusPage() {
             )}
             {hasCommunities && (
               <div className={styles.communitiesSectionWrapper}>
-                <div className={styles.communitiesScrollContainer} ref={communityListRef}>
+                {/* The same card as the Communities page. */}
+                <div className={listStyles.list} ref={communityListRef}>
                   {visibleCommunities.map(comm => (
-                    <CampusCommunityItem
-                      key={comm.id}
-                      comm={comm}
-                      onSelect={openCommunity}
-                    />
+                    <CommunityRow key={comm.id} community={comm} from="/campus" showMembership={false} />
                   ))}
                 </div>
               </div>

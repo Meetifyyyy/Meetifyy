@@ -13,17 +13,30 @@
 }
 
 .list {
-  display: flex;
-  flex-direction: column;
-  /* Narrower than the column, centred: a row reads as one card instead of a
-     line stretched edge to edge. */
+  /* A grid of fixed-width cards, as many across as the width holds, packed
+     from the left. A single centred column left wide screens mostly empty. */
+  display: grid;
+  grid-template-columns: repeat(auto-fill, var(--community-card-width));
+  justify-content: start;
+  gap: 0.75rem;
   width: 100%;
-  max-width: 36rem;
-  margin: 0 auto;
+  --community-card-width: 21rem;
 }
 
-.list > * + * {
-  border-top: 1px solid var(--color-border-light);
+/* Each community is its own card. */
+.list > * {
+  min-width: 0;
+  background: var(--color-bg-white);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-lg);
+}
+
+/* Phones: one card per row, the full width. */
+@media (max-width: 768px) {
+  .list {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.5rem;
+  }
 }
 
 .stale {
