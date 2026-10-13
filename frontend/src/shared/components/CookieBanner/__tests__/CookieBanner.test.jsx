@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 
 /**
@@ -46,5 +46,41 @@ describe('CookieBanner', { timeout: 20_000 }, () => {
   it('never shows in the installed app', async () => {
     await renderBanner({ mobile: true });
     expect(screen.queryByRole('region', { name: /privacy notice/i })).toBeNull();
+  });
+});
+
+describe('CookiePreferencesModal links', () => {
+  afterEach(() => cleanup());
+
+  async function openModal(mobile) {
+    vi.resetModules();
+    vi.doMock('@config', async (orig) => ({ ...(await orig()), IS_MOBILE_BUILD: mobile }));
+    localStorage.clear();
+    const { CookiePreferencesModal } = await import('../CookieBanner');
+    const { CookieConsentProvider, useCookieConsent } = await import('@shared/context/CookieConsentContext');
+    const Opener = () => {
+      const { openPreferences } = useCookieConsent();
+      return <button onClick={openPreferences}>open</button>;
+    };
+    render(
+      <MemoryRouter>
+        <CookieConsentProvider>
+          <Opener />
+          <CookiePreferencesModal />
+        </CookieConsentProvider>
+      </MemoryRouter>,
+    );
+    fireEvent.click(screen.getByText('open'));
+  }
+
+  it('points the website at the Cookie Policy', { timeout: 20_000 }, async () => {
+    await openModal(false);
+    expect(screen.getAllByRole('link', { name: 'Cookie Policy' }).length).toBeGreaterThan(0);
+  });
+
+  it('never links the app to a Cookie Policy', { timeout: 20_000 }, async () => {
+    await openModal(true);
+    expect(screen.queryByRole('link', { name: 'Cookie Policy' })).toBeNull();
+    expect(screen.getAllByRole('link', { name: 'Privacy Policy' }).length).toBeGreaterThan(0);
   });
 });

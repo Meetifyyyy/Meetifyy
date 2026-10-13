@@ -122,9 +122,14 @@ export function CookiePreferencesModal() {
           </div>
 
           <p className={styles.policyNote}>
-            Learn more about the specific technologies and storage we use in our{' '}
-            <Link to="/cookie-policy" onClick={closePreferences}>
-              Cookie Policy
+            {IS_MOBILE_BUILD
+              ? 'Learn more about how we handle your data in our '
+              : 'Learn more about the specific technologies and storage we use in our '}
+            <Link
+              to={IS_MOBILE_BUILD ? '/privacy-policy' : '/cookie-policy'}
+              onClick={closePreferences}
+            >
+              {IS_MOBILE_BUILD ? 'Privacy Policy' : 'Cookie Policy'}
             </Link>
             .
           </p>
@@ -134,8 +139,13 @@ export function CookiePreferencesModal() {
         <div className={styles.modalFooter}>
           <div className={styles.footerLinks}>
             <Link to="/privacy-policy" onClick={closePreferences}>Privacy Policy</Link>
-            <span className={styles.footerDot} aria-hidden="true">·</span>
-            <Link to="/cookie-policy" onClick={closePreferences}>Cookie Policy</Link>
+            {/* The app sets no cookies, so it has no cookie policy to point at. */}
+            {!IS_MOBILE_BUILD && (
+              <>
+                <span className={styles.footerDot} aria-hidden="true">·</span>
+                <Link to="/cookie-policy" onClick={closePreferences}>Cookie Policy</Link>
+              </>
+            )}
           </div>
           <button type="button" className={styles.gotItBtn} onClick={closePreferences}>
             Got it

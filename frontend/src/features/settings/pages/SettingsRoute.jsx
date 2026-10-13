@@ -215,7 +215,9 @@ function SettingsWelcomePanel() {
         <Link to="/privacy-policy" className={styles.welcomeLink}>Privacy Policy</Link>
         <Link to="/terms-and-conditions" className={styles.welcomeLink}>Terms of Service</Link>
         <Link to="/community-guidelines" className={styles.welcomeLink}>Community Guidelines</Link>
-        <Link to="/cookie-policy" className={styles.welcomeLink}>Cookie Policy</Link>
+        {!IS_MOBILE_BUILD && (
+          <Link to="/cookie-policy" className={styles.welcomeLink}>Cookie Policy</Link>
+        )}
       </nav>
 
       <p className={styles.version}>Meetifyy · v1.0.0</p>
