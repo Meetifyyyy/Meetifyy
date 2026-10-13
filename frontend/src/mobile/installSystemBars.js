@@ -262,8 +262,14 @@ export function installSystemBars(systemBars, { readEdges } = {}) {
   let settle = 0;
   // The route the strips were last sampled on.
   let sampledPath = typeof location !== 'undefined' ? location.pathname : '';
+  // When the route last changed. The new page's DOM usually lands a frame or
+  // more after the URL does (route transitions, lazy chunks), so the first
+  // sample can still read the page being left.
+  let routeChangedAt = -Infinity;
+  const ROUTE_SETTLE_MS = 600;
   const run = () => {
     frame = 0;
+    if (location.pathname !== sampledPath) routeChangedAt = performance.now();
     sampledPath = location.pathname;
     sample();
   };
@@ -275,7 +281,12 @@ export function installSystemBars(systemBars, { readEdges } = {}) {
     // Unless the ROUTE changed: Home's search field hands off to /search with
     // the keyboard up, and the status strip kept Home's colour (the blue page
     // gradient) over Search's white header until the keyboard closed.
-    if (root.hasAttribute('data-text-entry') && location.pathname === sampledPath) return;
+    // The same holds for a short while after the route changed: closing Search
+    // with the keyboard up, the route-change sample still read Search's page,
+    // and Home's DOM arriving a frame later was skipped, so the status bar kept
+    // Search's colour until the keyboard had finished closing.
+    if (root.hasAttribute('data-text-entry') && location.pathname === sampledPath
+      && performance.now() - routeChangedAt > ROUTE_SETTLE_MS) return;
     if (!frame) frame = requestAnimationFrame(run);
   };
   /**
@@ -348,6 +359,8 @@ export function installSystemBars(systemBars, { readEdges } = {}) {
   document.addEventListener('animationend', onTransitionEnd, true);
   // From MainActivity once the splash is removed.
   window.addEventListener('meetifyy:system-bars-reset', scheduleWithSettle);
+  // An overlay outside #root (the media viewer) beginning to leave.
+  window.addEventListener('meetifyy:system-bars-resample', scheduleWithSettle);
 
   /**
    * A theme change made in the OS while the app was away arrives as a resume
@@ -373,6 +386,7 @@ export function installSystemBars(systemBars, { readEdges } = {}) {
     document.removeEventListener('transitionend', onTransitionEnd, true);
     document.removeEventListener('animationend', onTransitionEnd, true);
     window.removeEventListener('meetifyy:system-bars-reset', scheduleWithSettle);
+    window.removeEventListener('meetifyy:system-bars-resample', scheduleWithSettle);
     document.removeEventListener('visibilitychange', onVisible);
   };
 }

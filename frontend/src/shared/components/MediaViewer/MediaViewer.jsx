@@ -176,6 +176,12 @@ function MediaViewerSession() {
   // when it opens. Its own registry would only refuse NEW lower-priority plays;
   // something already running has to be told.
   useEffect(() => {
+  // The viewer is portalled outside #root, so the bars' DOM observers do not
+  // see it start closing; tell them, once the attribute above is in the DOM.
+  useEffect(() => {
+    if (closing) window.dispatchEvent(new Event('meetifyy:system-bars-resample'));
+  }, [closing]);
+
     if (open) feedVideoRegistry.pauseAll(PLAYBACK_PRIORITY.VIEWER);
   }, [open]);
 
@@ -817,6 +823,9 @@ function MediaViewerSession() {
     <div
       ref={overlayRef}
       data-media-viewer="true"
+      // Closing, the system bars read the page through the fading viewer, so
+      // they take the page's colours as the fade starts rather than after it.
+      data-bars-ignore={closing ? '' : undefined}
       data-theme="dark"
       className={`${styles.overlay} ${visible ? styles.visible : ''} ${closing ? styles.closing : ''}`}
       inert={closing ? '' : undefined}
