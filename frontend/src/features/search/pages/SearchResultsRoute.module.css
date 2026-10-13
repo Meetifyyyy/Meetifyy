@@ -404,7 +404,7 @@
 .communityIconBox {
   width: 46px;
   height: 46px;
-  border-radius: 50%;
+  border-radius: var(--community-avatar-radius);
   background: linear-gradient(135deg, var(--color-primary), var(--color-secondary));
   color: #ffffff;
   font-weight: 700;
@@ -419,7 +419,7 @@
 .communityAvatarImg {
   width: 100%;
   height: 100%;
-  border-radius: 50%;
+  border-radius: inherit;
   object-fit: cover;
 }
 

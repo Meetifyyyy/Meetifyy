@@ -37,6 +37,7 @@ function describe(content) {
       return {
         image: content.avatar,
         round: false,
+        community: true,
         initial: content.name,
         title: content.name,
         subtitle: `${compactCount(content.memberCount)} ${content.memberCount === 1 ? 'member' : 'members'}`,
@@ -63,11 +64,11 @@ export default function SubjectPreview({ content }) {
         <img
           src={d.image}
           alt=""
-          className={`${styles.subjectThumb} ${d.round ? styles.round : ''}`}
+          className={`${styles.subjectThumb} ${d.round ? styles.round : ''} ${d.community ? styles.community : ''}`}
           onError={(e) => { e.currentTarget.style.visibility = 'hidden'; }}
         />
       ) : (
-        <span className={`${styles.subjectThumb} ${styles.subjectInitial} ${d.round ? styles.round : ''}`} aria-hidden="true">
+        <span className={`${styles.subjectThumb} ${styles.subjectInitial} ${d.round ? styles.round : ''} ${d.community ? styles.community : ''}`} aria-hidden="true">
           {(d.initial || '?').trim().charAt(0).toUpperCase()}
         </span>
       )}

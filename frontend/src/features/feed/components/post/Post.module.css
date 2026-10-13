@@ -467,14 +467,6 @@
   margin-left: auto;
 }
 
-.postCollegeIcon {
-  width: 16px;
-  height: 16px;
-  border-radius: 4px;
-  object-fit: contain;
-  vertical-align: middle;
-}
-
 .postAvatarImg {
   composes: ui-avatar-img from global;
   border-radius: 50%;
@@ -606,6 +598,7 @@
   composes: ui-avatar from global;
   width: 18px;
   height: 18px;
+  border-radius: var(--community-avatar-radius);
   font-size: 0.55rem;
   font-weight: 800;
   color: #FFFFFF;
@@ -643,7 +636,7 @@
 .communityMetadataAvatar {
   width: 13px;
   height: 13px;
-  border-radius: 2px;
+  border-radius: var(--community-avatar-radius);
   overflow: hidden;
   display: flex;
   align-items: center;
@@ -683,7 +676,7 @@
   right: -3px;
   width: 17px;
   height: 17px;
-  border-radius: 50%;
+  border-radius: var(--community-avatar-radius);
   border: 1px solid var(--color-bg-white);
   overflow: hidden;
   display: flex;

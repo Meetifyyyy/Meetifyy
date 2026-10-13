@@ -22,7 +22,7 @@ import CrewCardSkeleton from '@features/crew/components/cards/CrewCardSkeleton';
 import Skeleton from '@shared/components/skeletons/Skeleton';
 import { mapActivity } from '@shared/utils/mapActivity';
 import VerificationGate from '@shared/components/VerificationGate/VerificationGate';
-import { resolveCommunityAvatar } from '@shared/utils/avatar';
+import CommunityAvatar from '@features/communities/components/directory/CommunityAvatar';
 
 /**
  * Both are creation surfaces reachable only from the "+" menu, and between them
@@ -108,35 +108,22 @@ const MIN_COMMUNITY_CARD_WIDTH_PX = 170;
 const MAX_COMMUNITY_CARDS = 4;
 
 const CampusCommunityItem = memo(function CampusCommunityItem({ comm, onSelect }) {
-  const [imgError, setImgError] = useState(false);
-  const avatarUrl = resolveCommunityAvatar(comm);
-  const initial = comm?.name ? comm.name.charAt(0).toUpperCase() : '';
   const count = comm?.memberCount ?? comm?.membersCount ?? (Array.isArray(comm?.members) ? comm.members.length : (typeof comm?.members === 'number' ? comm.members : 1));
 
   const handleClick = useCallback(() => onSelect(comm.id), [onSelect, comm.id]);
-  const handleImgError = useCallback(() => setImgError(true), []);
+  const handleKeyDown = useCallback((e) => {
+    if (e.key === 'Enter') onSelect(comm.id);
+  }, [onSelect, comm.id]);
 
   return (
-    <div className={styles.communityCardItem} onClick={handleClick}>
-      <div
-        className={styles.communityAvatarWrapper}
-        style={{ background: (!avatarUrl || imgError) ? (comm.color || 'var(--color-primary, #8f0c13)') : 'var(--color-bg-white)' }}
-      >
-        {avatarUrl && !imgError ? (
-          <img
-            src={avatarUrl}
-            alt={comm.name}
-            className={styles.communityAvatarImg}
-            width={52}
-            height={52}
-            loading="lazy"
-            decoding="async"
-            onError={handleImgError}
-          />
-        ) : (
-          <span className={styles.communityAvatarLetter}>{initial}</span>
-        )}
-      </div>
+    <div
+      className={styles.communityCardItem}
+      onClick={handleClick}
+      onKeyDown={handleKeyDown}
+      role="link"
+      tabIndex={0}
+    >
+      <CommunityAvatar community={comm} size={52} />
       <div className={styles.communityInfo}>
         <h4 className={styles.communityCardName} title={comm.name}>
           {comm.name}

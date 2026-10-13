@@ -189,12 +189,16 @@ function ReplyEntityAvatar({ kind, entityId, fallbackAvatar, fallbackColor, name
         disableHover
         className={className}
         onError={() => setImageFailed(true)}
-        // Communities and profiles are forced circular so a community WITH a
-        // picture looks the same as the circle the picture-less fallback draws.
-        // Group invites are intentionally NOT forced circular — they must show
-        // the rounded-square shape that group avatars use everywhere else in the
-        // product.
-        style={kind !== 'group_invite' ? { borderRadius: '50%' } : undefined}
+        // A profile is a circle; a community is the rounded square communities
+        // use everywhere (--community-avatar-radius), matching the picture-less
+        // fallback below. Group invites keep Avatar's own group shape.
+        style={
+          kind === 'profile'
+            ? { borderRadius: '50%' }
+            : kind === 'group_invite'
+              ? undefined
+              : { borderRadius: 'var(--community-avatar-radius, 28%)' }
+        }
       />
     );
   }
@@ -213,10 +217,10 @@ function ReplyEntityAvatar({ kind, entityId, fallbackAvatar, fallbackColor, name
       style={{
         width: 26,
         height: 26,
-        // Group invites get the rounded-square shape group avatars use everywhere
-        // else in the product. Communities and profiles stay circular, matching
-        // .avatarFallback's border-radius: 50%.
-        borderRadius: kind === 'group_invite' ? 8 : '50%',
+        // Group invites get the rounded-square shape group avatars use; a
+        // community gets the community rounded square; a profile stays a circle.
+        borderRadius:
+          kind === 'group_invite' ? 8 : kind === 'profile' ? '50%' : 'var(--community-avatar-radius, 28%)',
         flexShrink: 0,
         display: 'inline-flex',
         alignItems: 'center',

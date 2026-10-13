@@ -4,7 +4,7 @@
   justify-content: center;
   flex-shrink: 0;
   overflow: hidden;
-  border-radius: 28%;
+  border-radius: var(--community-avatar-radius);
   background: var(--color-bg-soft);
   color: #fff;
   font-weight: 700;

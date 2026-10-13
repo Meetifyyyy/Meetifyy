@@ -1000,7 +1000,7 @@ export default function CommunityView({ communityId, onBack, onPostClick, onComm
             <div className={styles.desktopHeroLayout}>
               <div className={styles.heroTopRow}>
                 <div className={styles.avatarWrapper}>
-                  <Skeleton type="circle" width="var(--hero-avatar-size, 88px)" height="var(--hero-avatar-size, 88px)" />
+                  <Skeleton type="rect" width="var(--hero-avatar-size, 88px)" height="var(--hero-avatar-size, 88px)" style={{ borderRadius: 'var(--community-avatar-radius)' }} />
                 </div>
                 <div className={styles.heroMeta} style={{ marginTop: '1rem', gap: '0.6rem' }}>
                   <Skeleton type="text" width="220px" height="2rem" style={{ borderRadius: '8px' }} />
@@ -1012,7 +1012,7 @@ export default function CommunityView({ communityId, onBack, onPostClick, onComm
             {/* MOBILE HERO SKELETON */}
             <div className={styles.mobileHeroLayout} style={{ padding: '0.75rem 12px 1rem 12px', gap: '0.75rem' }}>
               <div className={styles.mobileHeroTopRow}>
-                <Skeleton type="circle" width="56px" height="56px" style={{ flexShrink: 0 }} />
+                <Skeleton type="rect" width="56px" height="56px" style={{ flexShrink: 0, borderRadius: 'var(--community-avatar-radius)' }} />
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', flex: 1 }}>
                   <Skeleton type="text" width="60%" height="1.2rem" style={{ borderRadius: '6px' }} />
                   <Skeleton type="text" width="40%" height="0.8rem" style={{ borderRadius: '4px' }} />

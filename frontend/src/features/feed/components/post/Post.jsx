@@ -2,7 +2,7 @@ import { useState, memo, useMemo, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { resolveCommunityAvatarThumb } from '@shared/utils/avatar';
 import { sanitizeUrl } from '@shared/utils/urlSanitize';
-import Avatar, { getProcessedAvatarUrl } from '@shared/components/avatar/Avatar';
+import Avatar from '@shared/components/avatar/Avatar';
 import { CollegeRepresentativeBadge } from '@shared/components/badges/CollegeRepresentativeBadge';
 import { getCollegeName } from '@shared/utils/user';
 import RichText from '@shared/components/mentions/RichText';
@@ -124,6 +124,35 @@ function PollCard({ poll, postId }) {
   );
 }
 
+
+/**
+ * The community's icon in the corner of the author's avatar.
+ *
+ * A picture that fails to load falls back to the community's letter on its
+ * colour - the same fallback as a community with no picture - rather than to
+ * `/default_avatar.svg`, which is a person and made the community look like a
+ * user. Its own component so the failure can be remembered in state (Post has
+ * an early return before its hooks could go).
+ */
+function CommunityBadge({ community, src }) {
+  const [failedSrc, setFailedSrc] = useState(null);
+  const showImage = Boolean(src) && failedSrc !== src;
+  return (
+    <Link
+      to={`/communities/${community.id}`}
+      className={styles.communityBadgeOverlay}
+      onClick={(e) => e.stopPropagation()}
+      title={community.name}
+      style={{ background: showImage ? 'var(--color-bg-white)' : (community.color || 'var(--color-primary)') }}
+    >
+      {showImage ? (
+        <img src={src} alt="" loading="lazy" decoding="async" onError={() => setFailedSrc(src)} />
+      ) : (
+        <span>{community.name?.charAt(0).toUpperCase()}</span>
+      )}
+    </Link>
+  );
+}
 
 function Post({ postData, onClick, onCommentClick, onDeleted, isDetailed = false, hideCommunityTag = false }) {
   const { currentUser } = useAuth();
@@ -264,8 +293,7 @@ function Post({ postData, onClick, onCommentClick, onDeleted, isDetailed = false
    * went out by hearing about it from the author.
    */
   const isModeratingOthers = canDeletePost && !isOwnPost;
-  const authorCollege = (author.collegeId && communitiesById) ? communitiesById[author.collegeId] : null;
-  const authorCollegeName = getCollegeName(author, '') || authorCollege?.name || '';
+  const authorCollegeName = getCollegeName(author, '');
 
   const formatExactDate = (timestamp) => {
     if (!timestamp) return '';
@@ -340,36 +368,13 @@ function Post({ postData, onClick, onCommentClick, onDeleted, isDetailed = false
             </div>
           </Link>
           {postCommunity && (
-            <Link 
-              to={`/communities/${postCommunity.id}`} 
-              className={styles.communityBadgeOverlay}
-              onClick={(e) => e.stopPropagation()}
-              title={postCommunity.name}
-              style={{ background: postCommunityAvatar ? 'var(--color-bg-white)' : (postCommunity.color || 'var(--color-primary)') }}
-            >
-              {postCommunityAvatar ? (
-                <img src={postCommunityAvatar} alt="" loading="lazy" decoding="async" onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.svg'; }} />
-              ) : (
-                <span>{postCommunity.name?.charAt(0).toUpperCase()}</span>
-              )}
-            </Link>
+            <CommunityBadge community={postCommunity} src={postCommunityAvatar} />
           )}
         </div>
         <div className={styles.postUser}>
           <Link to={`/profile/${author.username}`} style={{ textDecoration: 'none', color: 'inherit', display: 'inline-flex', alignItems: 'center', gap: '0.2rem' }} onClick={(e) => e.stopPropagation()}>
             <div className={`hover-underline ${styles.postName}`}>{author.displayName}</div>
             <CollegeRepresentativeBadge isCampusRep={author.isCampusRep} collegeName={authorCollegeName} user={author} size="md" />
-
-            {authorCollege && (
-              <img
-                src={getProcessedAvatarUrl(authorCollege.avatar)}
-                alt={authorCollege.name}
-                loading="lazy"
-                className={styles.postCollegeIcon}
-                title={authorCollege.name}
-                onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.svg'; }}
-              />
-            )}
           </Link>
           <div className={styles.postTime} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
             {postCommunity ? (

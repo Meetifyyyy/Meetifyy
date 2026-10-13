@@ -128,6 +128,7 @@ export default function ProfileRightSidebar({ embedded = false }) {
                   style={{
                     width: '38px',
                     height: '38px',
+                    borderRadius: 'var(--community-avatar-radius)',
                     flexShrink: 0,
                     ...(avatarUrl ? { background: 'var(--color-bg-white)' } : (c.color ? { background: c.color } : { background: 'linear-gradient(135deg, #2563EB, #7C3AED)' }))
                   }}

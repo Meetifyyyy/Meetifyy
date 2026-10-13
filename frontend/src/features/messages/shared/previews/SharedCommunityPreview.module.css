@@ -50,7 +50,7 @@
 .avatar {
   width: 40px;
   height: 40px;
-  border-radius: 50%;
+  border-radius: var(--community-avatar-radius, 28%);
   object-fit: cover;
   display: block;
 }
@@ -58,7 +58,7 @@
 .avatarFallback {
   width: 40px;
   height: 40px;
-  border-radius: 50%;
+  border-radius: var(--community-avatar-radius, 28%);
   display: flex;
   align-items: center;
   justify-content: center;

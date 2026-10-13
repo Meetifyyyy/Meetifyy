@@ -26,7 +26,7 @@ function CommunityRow({ community, variant = 'explore', from }) {
 
   return (
     <article className={styles.row}>
-      <CommunityAvatar community={community} size={52} />
+      <CommunityAvatar community={community} size={64} />
 
       <div className={styles.body}>
         <div className={styles.titleLine}>
@@ -37,6 +37,8 @@ function CommunityRow({ community, variant = 'explore', from }) {
           >
             {community.name}
           </Link>
+          {/* Beside the name; the name gives way (ellipsis) before this does. */}
+          <span className={styles.members}>{memberLabel(community)}</span>
           {community.isPrivate && (
             <span className={styles.privateTag}>
               <Lock size={12} strokeWidth={2} aria-hidden="true" />
@@ -47,11 +49,12 @@ function CommunityRow({ community, variant = 'explore', from }) {
 
         {description && <p className={styles.description}>{description}</p>}
 
-        <p className={styles.meta}>
-          <span>{memberLabel(community)}</span>
-          {role && <span>{role}</span>}
-          {activity && <span>{activity}</span>}
-        </p>
+        {(role || activity) && (
+          <p className={styles.meta}>
+            {role && <span>{role}</span>}
+            {activity && <span>{activity}</span>}
+          </p>
+        )}
       </div>
 
       {variant === 'explore' && (

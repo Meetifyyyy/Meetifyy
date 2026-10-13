@@ -94,7 +94,7 @@
   width: 56px;
   height: 56px;
   margin-top: 0.35rem;
-  border-radius: 28%;
+  border-radius: var(--community-avatar-radius);
 }
 
 .ghostName {

@@ -127,6 +127,9 @@
   --radius-lg: 16px;
   --radius-xl: 20px;
   --radius-full: 9999px;
+  /* Every community icon - rounded square, never a circle (people stay round).
+     A percentage so it scales with the icon: 28% of 52px is ~14.5px, of 17px ~4.8px. */
+  --community-avatar-radius: 28%;
 
   /* === Shadows === */
   --shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.05);

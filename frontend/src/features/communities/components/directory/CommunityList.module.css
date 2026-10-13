@@ -15,6 +15,11 @@
 .list {
   display: flex;
   flex-direction: column;
+  /* Narrower than the column, centred: a row reads as one card instead of a
+     line stretched edge to edge. */
+  width: 100%;
+  max-width: 36rem;
+  margin: 0 auto;
 }
 
 .list > * + * {
@@ -28,6 +33,7 @@
 
 .skeletonRow {
   display: flex;
+  align-items: center;
   gap: 0.875rem;
   padding: 0.875rem 1rem;
 }

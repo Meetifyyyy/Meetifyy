@@ -278,9 +278,9 @@ export default function CommunityAdminModal({ community, onClose, onDeleteCommun
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
               <label style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--color-text-main)' }}>Avatar Image</label>
               <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-                <div style={{ position: 'relative', width: '80px', height: '80px', borderRadius: '50%', background: isImageUrl(avatar) ? 'var(--color-bg-white)' : (community.color || 'var(--color-primary)'), overflow: 'hidden', border: '2px solid var(--color-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <div style={{ position: 'relative', width: '80px', height: '80px', borderRadius: 'var(--community-avatar-radius)', background: isImageUrl(avatar) ? 'var(--color-bg-white)' : (community.color || 'var(--color-primary)'), overflow: 'hidden', border: '2px solid var(--color-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                   {isUploading && uploadingType === 'avatar' && (
-                    <div style={{ position: 'absolute', inset: 0, background: 'rgba(0, 0, 0, 0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10, borderRadius: '50%' }}>
+                    <div style={{ position: 'absolute', inset: 0, background: 'rgba(0, 0, 0, 0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10, borderRadius: 'var(--community-avatar-radius)' }}>
                       <div className="spinner" style={{ width: '22px', height: '22px', borderWidth: '2.5px', borderColor: '#ffffff', borderTopColor: 'transparent' }} />
                     </div>
                   )}

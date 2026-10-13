@@ -115,6 +115,7 @@ function NotificationItem({
             src={getMediaUrl(notif.metadata?.communityAvatar) || null}
             name={notif.metadata?.communityName || 'Community'}
             size="40px"
+            style={{ borderRadius: 'var(--community-avatar-radius)' }}
           />
         ) : (
           <Avatar

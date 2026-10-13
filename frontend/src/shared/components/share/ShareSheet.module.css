@@ -138,6 +138,11 @@
   border-radius: 50%;
 }
 
+/* A community's icon is a rounded square, matching CommunityAvatar. */
+.subjectThumb.community {
+  border-radius: var(--community-avatar-radius);
+}
+
 .subjectInitial {
   display: flex;
   align-items: center;

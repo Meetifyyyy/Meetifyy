@@ -38,3 +38,10 @@
   border-color: var(--color-border);
   color: var(--color-text-muted);
 }
+
+/* Phones: the pill stays visually small but the hit area reaches 44px. */
+@media (pointer: coarse) {
+  .btn {
+    min-height: 44px;
+  }
+}

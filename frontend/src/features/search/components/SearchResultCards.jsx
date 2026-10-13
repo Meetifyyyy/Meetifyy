@@ -81,11 +81,11 @@ export function CommunityResult({ result, isSelected, onClick }) {
       onClick={() => onClick(`/communities/${item.id}`)}
     >
       <div 
-        className={styles.avatar} 
+        className={`${styles.avatar} ${styles.communityAvatar}`} 
         style={item.color ? { background: item.color } : { background: 'linear-gradient(135deg, #2563EB, #7C3AED)' }}
       >
         {isImageUrl(item.avatar) ? (
-           <img src={getProcessedAvatarUrl(item.avatar)} alt={item.name} className={styles.avatar}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.svg'; }} />
+           <img src={getProcessedAvatarUrl(item.avatar)} alt={item.name} className={`${styles.avatar} ${styles.communityAvatar}`}  onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.svg'; }} />
         ) : (
           <span style={{ fontWeight: 700, color: '#FFFFFF' }}>{item.avatar || item.name?.charAt(0).toUpperCase()}</span>
         )}
