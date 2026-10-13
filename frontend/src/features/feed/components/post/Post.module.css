@@ -54,20 +54,22 @@
 
 .postTime {
   font-size: 0.72rem;
-  color: var(--color-text-light);
+  /* The line under the author's name reads as one subtitle: handle, dot and
+     time share the app's subtitle colour and weight. */
+  color: var(--color-text-muted);
   font-weight: 400;
   margin-top: 1px;
   text-align: left !important;
 }
 
 .postUsername {
-  font-weight: 500;
-  color: var(--color-text-muted, #64748b);
+  font-weight: inherit;
+  color: inherit;
 }
 
 .postTimeDot {
-  color: var(--color-text-light);
-  font-weight: 600;
+  color: inherit;
+  font-weight: inherit;
 }
 
 .postCommTag {
@@ -481,8 +483,9 @@
 .menuBtn {
   background: none;
   border: none;
-  /* The same icon colour as the chat header's menu: black on light, white on dark. */
-  color: var(--color-icon-base);
+  /* Faded well below the subtitle line beside it: the menu is there when
+     wanted without drawing the eye, in either theme. */
+  color: color-mix(in srgb, var(--color-text-light) 85%, transparent);
   padding: 0.35rem;
   cursor: pointer;
   border-radius: 50%;

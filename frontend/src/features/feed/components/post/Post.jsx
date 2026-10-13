@@ -7,7 +7,7 @@ import { CollegeRepresentativeBadge } from '@shared/components/badges/CollegeRep
 import { getCollegeName } from '@shared/utils/user';
 import RichText from '@shared/components/mentions/RichText';
 import Menu, { MenuItem, useMenu } from '@shared/components/ui/Menu';
-import { MoreHorizontal, Trash2, Flag } from '@shared/components/icons';
+import { Trash2, Flag } from '@shared/components/icons';
 import { normalizeBodyText, truncateBodyText, clipMentions, POST_LIMITS } from '@shared/utils/bodyText';
 import { useAuth } from '@shared/context/AuthContext';
 import { useCommunities } from '@shared/hooks/useCommunities';
@@ -399,7 +399,12 @@ function Post({ postData, onClick, onCommentClick, onDeleted, isDetailed = false
             aria-label="Post options"
             className={styles.menuBtn}
           >
-            <MoreHorizontal size={20} strokeWidth={2.25} />
+            {/* Two lines, the lower one shorter: a quiet menu glyph, faded so
+                it does not compete with the post (Post.module.css). */}
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+              <line x1="3" y1="7" x2="17" y2="7" />
+              <line x1="3" y1="13" x2="11" y2="13" />
+            </svg>
           </button>
 
           <Menu {...menu.menuProps} size="sm" ariaLabel="Post options">
