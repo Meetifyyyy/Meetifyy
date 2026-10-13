@@ -1,0 +1,61 @@
+/* Profile skeleton: the page's outline only, never its detail.
+   Shapes sit on the page's own boxes (cover, avatar, card) so the real page
+   lands without a jump; everything inside is a few soft bars. */
+
+.identity {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1.25rem;
+}
+
+/* Followers / Following / Posts: three short bars, the stats row's height. */
+.stats {
+  display: flex;
+  justify-content: center;
+  gap: clamp(1.5rem, 5vw, 3rem);
+  margin-bottom: 1.25rem;
+  height: 2.6rem;
+  align-items: center;
+}
+
+/* The action buttons arrive with the profile; their row is held as two pills. */
+.actions {
+  display: flex;
+  justify-content: center;
+  gap: 0.75rem;
+  width: 100%;
+  margin-bottom: 0.5rem;
+}
+
+.actions > * {
+  flex: 1 1 0;
+  max-width: 200px;
+}
+
+/* A post: who wrote it, then one block for its body. */
+.post {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem 1.25rem;
+  background: var(--color-bg-white);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-lg);
+}
+
+.postHead {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+@media (max-width: 768px) {
+  .post {
+    border-left: none;
+    border-right: none;
+    border-radius: 0;
+    padding: 0.875rem 1rem;
+  }
+}

@@ -1,26 +1,39 @@
 import Skeleton from '@shared/components/skeletons/Skeleton';
 import Avatar from '@shared/components/avatar/Avatar';
 import CoverImage from '@shared/components/ui/CoverImage';
-import PostSkeleton from '@features/feed/components/skeletons/PostSkeleton';
 import panelStyles from '@layout/RightPanel.module.css';
 import s from '../../pages/ProfilePage.module.css';
+import k from './ProfilePageSkeleton.module.css';
 
 /**
- * ProfilePage while it loads, built from the page's own classes so the real
- * page lands on the same boxes: cover, avatar, name + handle, one bio line,
- * one block for the stats row, then two posts.
+ * ProfilePage while it loads: the outline of the page, not a copy of it.
+ *
+ * Phones get the card edge to edge (the page's own mobile rules) and post
+ * outlines that run full width; wide screens get the card in the centre column
+ * and the right panel as two plain blocks. The cover and avatar use the page's
+ * own classes so the real page lands on the same boxes.
  *
  * `user` is the signed-in user when the page is their own profile. Their
- * cover, avatar, name, handle and bio are already known, so those render for
- * real and only the parts that come from the profile request (stats, posts)
- * are placeholders.
+ * cover, avatar, name and handle are already known, so those render for real.
  */
+function PostOutline() {
+  return (
+    <div className={k.post}>
+      <div className={k.postHead}>
+        <Skeleton type="circle" width="36px" height="36px" />
+        <Skeleton type="text" width="40%" height="0.85rem" />
+      </div>
+      <Skeleton type="rect" height="140px" style={{ borderRadius: 'var(--radius-md, 12px)' }} />
+    </div>
+  );
+}
+
 export default function ProfilePageSkeleton({ user = null }) {
   const name = user ? (user.displayName || user.name || user.username) : null;
 
   return (
     <>
-      <main className={`centre ${s.profileMain}`} aria-busy="true">
+      <main className={`centre ${s.profileMain}`} aria-busy="true" aria-label="Loading profile">
         <div className={s.centerColumn}>
           <div className={s.profileCard}>
             <div className={s.coverWrap}>
@@ -43,38 +56,37 @@ export default function ProfilePageSkeleton({ user = null }) {
                 <>
                   <h1 className={s.name}>{name}</h1>
                   {user.username && <p className={s.username}>@{user.username}</p>}
-                  {user.bio && <p className={s.bio}>{user.bio}</p>}
                 </>
               ) : (
-                <>
-                  {/* Name + handle, then one bio line. */}
-                  <Skeleton type="text" width="180px" height="1.6rem" style={{ marginBottom: '0.35rem' }} />
-                  <Skeleton type="text" width="110px" height="1rem" style={{ marginBottom: '0.8rem' }} />
-                  <Skeleton type="text" width="240px" height="0.9rem" style={{ maxWidth: '100%', marginBottom: '1.25rem' }} />
-                </>
+                <div className={k.identity}>
+                  <Skeleton type="text" width="160px" height="1.4rem" />
+                  <Skeleton type="text" width="96px" height="0.9rem" />
+                </div>
               )}
 
-              {/* The stats row: one block, the row's height. */}
-              <div className={s.statsContainer}>
-                <Skeleton type="rect" width="240px" height="3rem" style={{ maxWidth: '100%' }} />
+              <div className={k.stats}>
+                <Skeleton type="text" width="56px" height="2.2rem" />
+                <Skeleton type="text" width="56px" height="2.2rem" />
+                <Skeleton type="text" width="56px" height="2.2rem" />
               </div>
 
-              {/* The action buttons arrive with the profile (they depend on
-                  whether you follow this person); hold their row open. */}
-              <div className={s.actionButtons} style={{ height: '42px' }} />
+              <div className={k.actions}>
+                <Skeleton type="rect" height="40px" style={{ borderRadius: '999px' }} />
+                <Skeleton type="rect" height="40px" style={{ borderRadius: '999px' }} />
+              </div>
             </div>
           </div>
           <div className={s.postsContainer}>
-            <PostSkeleton />
-            <PostSkeleton />
+            <PostOutline />
+            <PostOutline />
           </div>
         </div>
       </main>
 
       {/* Right panel (hidden below 1100px by its own CSS). */}
       <aside className={panelStyles.rightPanel} aria-hidden="true">
-        <Skeleton type="rect" height="220px" style={{ display: 'block', borderRadius: 'var(--radius-lg)' }} />
-        <Skeleton type="rect" height="160px" style={{ display: 'block', borderRadius: 'var(--radius-lg)' }} />
+        <Skeleton type="rect" height="200px" style={{ display: 'block', borderRadius: 'var(--radius-lg)' }} />
+        <Skeleton type="rect" height="140px" style={{ display: 'block', borderRadius: 'var(--radius-lg)' }} />
       </aside>
     </>
   );
