@@ -6,6 +6,7 @@ import {
   Optional,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { isSafeCoverCss, looksLikeCoverCss } from './cover-css.util';
 import { Prisma, UserRole, VerificationStatus } from '@prisma/client';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationFactory } from '../notifications/notification.factory';
@@ -1601,6 +1602,10 @@ export class UsersService {
     const avatarMedia = mediaRelationWrite(avatarRef, userId);
 
     const coverRef = mediaRefInput(cover, 'cover');
+    // A gradient/pattern cover is CSS every viewer paints; see cover-css.util.
+    if (coverRef && looksLikeCoverCss(coverRef) && !isSafeCoverCss(coverRef)) {
+      throw new BadRequestException('cover is not a supported design');
+    }
     if (coverRef !== undefined) updateData.cover = coverRef;
     const coverMedia = mediaRelationWrite(coverRef, userId);
 

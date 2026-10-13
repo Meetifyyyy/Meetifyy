@@ -1,6 +1,6 @@
 import { useParams, useNavigate } from 'react-router-dom';
 import { useUrlState } from '@shared/hooks/useUrlState';
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
 import { postsApi } from '@shared/api/apiClient';
 import { useAuth } from '@shared/context/AuthContext';
@@ -24,6 +24,7 @@ import {
   MAX_COVERED_IMAGE_SIZE_BYTES,
   COVERED_IMAGE_SIZE_ERROR_MESSAGE,
   ALLOWED_IMAGE_ACCEPT,
+  ALLOWED_IMAGE_TYPES as COVER_PHOTO_TYPES,
 } from '@shared/constants/mediaLimits';
 import FollowButton from '@shared/components/ui/FollowButton';
 import ProfileRightSidebar from '../components/ProfileRightSidebar';
@@ -31,7 +32,6 @@ import ShareProfileModal from '../components/ShareProfileModal';
 import AvatarPickerModal from '@features/auth/signup/components/AvatarPickerModal';
 import ProfilePageSkeleton from '../components/skeletons/ProfilePageSkeleton';
 import PostSkeleton from '@features/feed/components/skeletons/PostSkeleton';
-import { createPortal } from 'react-dom';
 import ReportModal from '@shared/components/modals/ReportModal/LazyReportModal';
 import { getCollegeName } from '@shared/utils/user';
 
@@ -74,7 +74,8 @@ INTERESTS_BY_CATEGORY.forEach(category => {
 });
 
 
-import CoverImage from '@shared/components/ui/CoverImage';
+import CoverImage, { warmCover } from '@shared/components/ui/CoverImage';
+import CoverEditorSheet from '../components/CoverEditorSheet';
 import BlurredCover from '@shared/components/ui/BlurredCover';
 import CollapsingHeader from '@shared/components/CollapsingHeader/CollapsingHeader';
 import { Bookmark, Lock, MoreVertical, Settings, Share2, Flag } from '@shared/components/icons';
@@ -127,55 +128,96 @@ export default function ProfilePage() {
   const [restrictedModalOpen, setRestrictedModalOpen] = useState(false);
   const [showCoverEditor, setShowCoverEditor] = useState(false);
   const [isAvatarPickerOpen, setIsAvatarPickerOpen] = useState(false);
-  const [savingCover, setSavingCover] = useState(false);
+  const [savingAvatar, setSavingAvatar] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
   const [hasReported, setHasReported] = useState(false);
   const [cropFile, setCropFile] = useState(null);
   const [cropType, setCropType] = useState(null); // 'avatar' or 'cover'
-  const coverFileRef = useRef(null);
   const coverRef = useRef(null);
   const collapsingHeaderRef = useRef(null);
   const avatarFileRef = useRef(null);
 
-  // Gradient presets for the cover editor
-  const GRADIENT_PRESETS = [
-    'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-    'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
-    'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',
-    'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)',
-    'linear-gradient(135deg, #fa709a 0%, #fee140 100%)',
-    'linear-gradient(135deg, #a18cd1 0%, #fbc2eb 100%)',
-  ];
+  /*
+   * Cover changes are optimistic. `pendingCover` is what the profile shows
+   * while one is on its way: a chosen design, or the local preview of a photo
+   * being uploaded, with its progress. The sheet closes at once and the page
+   * stays usable; a failure puts the previous cover back.
+   */
+  const [pendingCover, setPendingCover] = useState(null); // { value, progress: number|null }
+  const coverUploadRef = useRef(null); // AbortController of the upload in flight
+  useEffect(() => () => coverUploadRef.current?.abort(), []);
 
-  const handleCoverGradient = useCallback(async (gradient) => {
-    setSavingCover(true);
+  const saveCover = useCallback(async (value) => {
+    // A newer choice supersedes a photo still uploading.
+    coverUploadRef.current?.abort();
+    setShowCoverEditor(false);
+    setPendingCover({ value, progress: null });
     try {
-      // updateProfile() already PATCHes via usersApi; calling both sent the same
-      // request twice.
-      // updateProfile() propagates the new image into every cached payload.
-      await updateProfile({ cover: gradient });
+      // updateProfile() PATCHes and propagates the cover into every cached payload.
+      await updateProfile({ cover: value });
       queryClient.invalidateQueries({ queryKey: PROFILE_KEYS.byUsername(targetUsername) });
-      showToast('Cover updated', 'success');
-      setShowCoverEditor(false);
     } catch {
       showToast("Couldn't update cover", 'error');
     } finally {
-      setSavingCover(false);
+      setPendingCover((cur) => (cur?.value === value ? null : cur));
     }
   }, [queryClient, targetUsername, updateProfile]);
 
-  const handleCoverImageUpload = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    if (file.size > MAX_COVERED_IMAGE_SIZE_BYTES) {
-      showToast(COVERED_IMAGE_SIZE_ERROR_MESSAGE, 'error');
-      e.target.value = '';
+  /**
+   * A cropped cover photo: shown at once from the local file, uploaded in the
+   * background with progress, then swapped for the stored image once that has
+   * decoded, so it never blinks. Cropping already bounded it to 1920px WebP, and
+   * the pipeline compresses it once more; nothing full-resolution is uploaded.
+   */
+  const uploadCover = useCallback(async (file) => {
+    coverUploadRef.current?.abort();
+    const controller = new AbortController();
+    coverUploadRef.current = controller;
+    setShowCoverEditor(false);
+    const preview = file.previewUrl || URL.createObjectURL(file);
+    setPendingCover({ value: preview, progress: 0 });
+    try {
+      const { publicUrl } = await processAndUploadImage(
+        file,
+        'profile-covers',
+        { maxWidthOrHeight: 1920 },
+        (percent) => setPendingCover((cur) => (cur?.value === preview ? { ...cur, progress: percent } : cur)),
+        controller.signal,
+      );
+      if (controller.signal.aborted) return;
+      await updateProfile({ cover: publicUrl });
+      // Fetched and decoded before the preview is dropped.
+      await warmCover(publicUrl).catch(() => {});
+      queryClient.invalidateQueries({ queryKey: PROFILE_KEYS.byUsername(targetUsername) });
+    } catch (e) {
+      if (e?.name !== 'AbortError' && !controller.signal.aborted) {
+        showToast("Couldn't upload the cover. Check your connection and try again.", 'error');
+      }
+    } finally {
+      if (coverUploadRef.current === controller) coverUploadRef.current = null;
+      setPendingCover((cur) => (cur?.value === preview ? null : cur));
+      URL.revokeObjectURL(preview);
+    }
+  }, [queryClient, targetUsername, updateProfile]);
+
+  const handleCoverPhoto = useCallback((file) => {
+    // Some Android pickers report no type at all; the extension decides then.
+    const typeOk = file.type
+      ? COVER_PHOTO_TYPES.includes(file.type)
+      : /\.(jpe?g|png|webp|gif)$/i.test(file.name || '');
+    if (!typeOk) {
+      showToast('Choose a JPG, PNG, WebP or GIF image', 'error');
       return;
     }
+    if (file.size > MAX_COVERED_IMAGE_SIZE_BYTES) {
+      showToast(COVERED_IMAGE_SIZE_ERROR_MESSAGE, 'error');
+      return;
+    }
+    // The sheet stays open under the cropper: cancelling a crop goes back to
+    // it, and confirming closes both (uploadCover).
     setCropFile(file);
     setCropType('cover');
-    e.target.value = '';
-  };
+  }, []);
 
   const handleAvatarUpload = (e) => {
     const file = e.target.files[0];
@@ -192,14 +234,18 @@ export default function ProfilePage() {
 
   const handleCropComplete = async (croppedFile) => {
     setCropFile(null);
-    setSavingCover(true); // Reusing for both to show loading state
+    if (cropType === 'cover') {
+      setCropType(null);
+      uploadCover(croppedFile);
+      return;
+    }
+    setSavingAvatar(true);
     try {
-      const folder = cropType === 'avatar' ? 'avatars' : 'profile-covers';
-      const { publicUrl } = await processAndUploadImage(croppedFile, folder, {
-        maxWidthOrHeight: cropType === 'avatar' ? 512 : 1920
+      const { publicUrl } = await processAndUploadImage(croppedFile, 'avatars', {
+        maxWidthOrHeight: 512
       });
-      
-      const updateData = cropType === 'avatar' ? { avatar: publicUrl } : { cover: publicUrl };
+
+      const updateData = { avatar: publicUrl };
       // updateProfile() performs the PATCH itself and updates the auth user, so
       // the previous extra usersApi.updateProfile() call was a duplicate request.
       // updateProfile() pushes the new image into every cached payload that
@@ -209,20 +255,19 @@ export default function ProfilePage() {
       await updateProfile(updateData);
 
       queryClient.invalidateQueries({ queryKey: PROFILE_KEYS.byUsername(targetUsername) });
-      showToast(`${cropType === 'avatar' ? 'Avatar' : 'Cover'} updated`, 'success');
-      if (cropType === 'cover') setShowCoverEditor(false);
+      showToast('Avatar updated', 'success');
     } catch (e) {
       console.error(e);
       showToast('Upload failed', 'error');
     } finally {
-      setSavingCover(false);
+      setSavingAvatar(false);
       setCropType(null);
     }
   };
 
   const handleSelectDicebearAvatar = async (url) => {
     try {
-      setSavingCover(true);
+      setSavingAvatar(true);
       await updateProfile({ avatar: url });
       queryClient.invalidateQueries({ queryKey: PROFILE_KEYS.byUsername(targetUsername) });
       showToast('Avatar updated', 'success');
@@ -230,7 +275,7 @@ export default function ProfilePage() {
       console.error(e);
       showToast('Failed to update avatar', 'error');
     } finally {
-      setSavingCover(false);
+      setSavingAvatar(false);
     }
   };
 
@@ -410,8 +455,24 @@ export default function ProfilePage() {
     handlePostClick(post, { focusComment: true });
   };
 
+  const shownCover = pendingCover?.value ?? effectiveUser.cover;
+  const coverProgress = pendingCover?.progress;
+
   const profileCover = (
-    <CoverImage cover={effectiveUser.cover} className={s.coverPhoto}>
+    <CoverImage cover={shownCover} className={s.coverPhoto}>
+      {/* A thin bar along the bottom while a cover photo uploads. */}
+      {coverProgress != null && (
+        <div
+          className={s.coverProgress}
+          role="progressbar"
+          aria-label="Uploading cover"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={coverProgress}
+        >
+          <span style={{ transform: `scaleX(${Math.max(0.04, coverProgress / 100)})` }} />
+        </div>
+      )}
       {isOwnProfile && (
         <button
           className={s.editCoverBtn}
@@ -487,10 +548,10 @@ export default function ProfilePage() {
                 /* The same cover, blurred: faded in by scrolling and by a pull. */
                 <>
                   <div className={`${s.coverPullBlur} ${s.coverScrollBlur}`} data-cover-blur aria-hidden="true">
-                    <BlurredCover cover={effectiveUser.cover} />
+                    <BlurredCover cover={shownCover} />
                   </div>
                   <div className={s.coverPullBlur} aria-hidden="true">
-                    <BlurredCover cover={effectiveUser.cover} />
+                    <BlurredCover cover={shownCover} />
                   </div>
                 </>
               )}
@@ -541,7 +602,7 @@ export default function ProfilePage() {
                       onClick={() => setIsAvatarPickerOpen(true)}
                       title="Edit avatar"
                       aria-label="Edit avatar"
-                      disabled={savingCover}
+                      disabled={savingAvatar}
                     >
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                         <path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
@@ -712,70 +773,19 @@ export default function ProfilePage() {
         <MessagingRestrictedModal onClose={() => setRestrictedModalOpen(false)} />
       )}
 
-      {/* Cover editor bottom sheet */}
-      {showCoverEditor && createPortal(
-        <div
-          style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', background: 'rgba(0,0,0,0.4)' }}
-          onClick={() => !savingCover && setShowCoverEditor(false)}
-        >
-          <div
-            style={{ background: 'var(--color-bg-white)', borderRadius: '20px 20px 0 0', width: '100%', maxWidth: '520px', padding: '1.5rem 1.5rem 2.5rem', boxShadow: '0 -8px 40px rgba(0,0,0,0.2)' }}
-            onClick={e => e.stopPropagation()}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem' }}>
-              <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, color: 'var(--color-text-main)' }}>Edit Cover</h3>
-              <button onClick={() => setShowCoverEditor(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-muted)' }}>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-              </button>
-            </div>
-
-            <p style={{ margin: '0 0 1rem', fontSize: '0.8rem', color: 'var(--color-text-muted)', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Gradients</p>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.6rem', marginBottom: '1.25rem' }}>
-              {GRADIENT_PRESETS.map((g, i) => (
-                <button
-                  key={i}
-                  onClick={() => handleCoverGradient(g)}
-                  disabled={savingCover}
-                  style={{
-                    height: '56px',
-                    borderRadius: '12px',
-                    background: g,
-                    border: 'none',
-                    outline: 'none',
-                    padding: 0,
-                    overflow: 'hidden',
-                    cursor: 'pointer',
-                    transition: 'transform 0.15s ease, box-shadow 0.15s ease',
-                    opacity: savingCover ? 0.5 : 1,
-                    boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)'
-                  }}
-                  onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.04)'}
-                  onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
-                />
-              ))}
-            </div>
-
-            <p style={{ margin: '0 0 0.75rem', fontSize: '0.8rem', color: 'var(--color-text-muted)', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Photo</p>
-            <input
-              ref={coverFileRef}
-              type="file"
-              accept={ALLOWED_IMAGE_ACCEPT}
-              style={{ display: 'none' }}
-              onChange={handleCoverImageUpload}
-            />
-            <button
-              onClick={() => coverFileRef.current?.click()}
-              disabled={savingCover}
-              style={{ width: '100%', padding: '0.85rem', borderRadius: '10px', border: '1.5px dashed var(--color-border)', background: 'var(--color-bg-soft)', cursor: 'pointer', color: 'var(--color-text-muted)', fontWeight: 600, fontSize: '0.9rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>
-              {savingCover ? 'Uploading…' : 'Upload photo'}
-            </button>
-          </div>
-        </div>,
-        document.body
+      {showCoverEditor && (
+        <CoverEditorSheet
+          isOpen
+          onClose={() => setShowCoverEditor(false)}
+          cover={shownCover}
+          avatar={effectiveUser.avatar}
+          name={effectiveUser.displayName || effectiveUser.username}
+          upload={coverProgress ?? null}
+          onSave={saveCover}
+          onPhoto={handleCoverPhoto}
+        />
       )}
-      
+
       {cropFile && (
         <MediaCropper
           imageFile={cropFile}
@@ -785,6 +795,11 @@ export default function ProfilePage() {
           onCancel={() => {
             setCropFile(null);
             setCropType(null);
+          }}
+          onError={() => {
+            setCropFile(null);
+            setCropType(null);
+            showToast("Couldn't open that image. Try another JPG, PNG or WebP.", 'error');
           }}
         />
       )}

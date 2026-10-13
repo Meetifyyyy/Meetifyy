@@ -1,0 +1,201 @@
+/* Edit cover sheet. Same frame as the share sheet (ShareSheet.module.css):
+   a bottom sheet on phones with the shared drag handle, a centred card on
+   wider screens. Theme tokens only. */
+
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20000;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+  animation: fadeIn 0.18s ease;
+}
+
+.sheet {
+  width: 100%;
+  max-width: 480px;
+  max-height: min(88dvh, calc(100dvh - var(--status-bar-inset, 0px) - 1rem));
+  display: flex;
+  flex-direction: column;
+  background: var(--color-bg-white);
+  color: var(--color-text-main);
+  border-radius: 28px 28px 0 0;
+  box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.12);
+  animation: slideUp 0.32s cubic-bezier(0.16, 1, 0.3, 1);
+  overflow: hidden;
+}
+
+@media (min-width: 769px) {
+  .backdrop { align-items: center; }
+  .sheet {
+    max-height: min(720px, 90vh);
+    border-radius: 28px;
+  }
+}
+
+.header {
+  flex-shrink: 0;
+  padding: 8px 12px 4px;
+}
+
+.header > :global(.sheet-handle) {
+  margin: 0 auto 6px;
+}
+
+.headerRow {
+  display: grid;
+  grid-template-columns: 36px 1fr 36px;
+  align-items: center;
+  min-height: 40px;
+}
+
+.title {
+  grid-column: 2;
+  margin: 0;
+  text-align: center;
+  font-size: 1.02rem;
+  font-weight: 700;
+}
+
+.closeBtn {
+  grid-column: 3;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 50%;
+  background: var(--color-bg-soft);
+  color: var(--color-text-main);
+  cursor: pointer;
+}
+
+/* Phones close by dragging, the backdrop or Back. */
+@media (max-width: 768px) {
+  .closeBtn { visibility: hidden; }
+}
+
+/* Scrolls on its own; useSheetDrag only starts a drag from the handle or when
+   this is already at the top, so reading the grid never closes the sheet. */
+.body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 4px 16px 12px;
+}
+
+.preview {
+  position: relative;
+  margin-bottom: 30px;
+}
+
+.previewCover {
+  aspect-ratio: 3 / 1;
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+.previewAvatar {
+  position: absolute;
+  left: 16px;
+  bottom: -26px;
+  padding: 3px;
+  border-radius: 50%;
+  background: var(--color-bg-white);
+  line-height: 0;
+}
+
+.sectionLabel {
+  margin: 14px 0 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+@media (min-width: 420px) {
+  .grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
+/* A miniature cover: same 3:1 frame, so a pattern reads as it will on the
+   profile. Selection is a ring in the accent colour with a gap to the tile. */
+.tile {
+  aspect-ratio: 3 / 1;
+  min-height: 0;
+  padding: 0;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.06);
+  transition: box-shadow 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.tile[aria-pressed='true'] {
+  box-shadow: 0 0 0 2px var(--color-bg-white), 0 0 0 4px var(--color-primary);
+}
+
+.tile:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.uploadBtn {
+  width: 100%;
+  padding: 0.8rem;
+  border-radius: 12px;
+  border: 1.5px dashed var(--color-border);
+  background: var(--color-bg-soft);
+  color: var(--color-text-muted);
+  font-weight: 600;
+  font-size: 0.9rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  cursor: pointer;
+}
+
+.uploadBtn:disabled {
+  cursor: default;
+  opacity: 0.75;
+}
+
+.footer {
+  flex-shrink: 0;
+  padding: 10px 16px calc(12px + max(env(safe-area-inset-bottom, 0px), var(--navigation-bar-inset, 0px)));
+  border-top: 1px solid var(--color-border-light);
+}
+
+.saveBtn {
+  width: 100%;
+  height: 46px;
+  border: none;
+  border-radius: 999px;
+  background: var(--color-primary);
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.95rem;
+  cursor: pointer;
+}
+
+.saveBtn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .backdrop, .sheet { animation: none; }
+}

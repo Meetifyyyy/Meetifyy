@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { getMediaUrl } from '@shared/api/apiClient';
 import { IS_MOBILE_BUILD } from '@config';
 import { isImageReady, markImageReady, warmImage } from '@shared/utils/imageWarmup';
+import { isSafeCoverCss, looksLikeCoverCss } from '@shared/lib/covers/coverCss';
 import styles from './CoverImage.module.css';
 
 /**
@@ -21,8 +22,11 @@ export function getCleanCoverUrl(cover) {
   if (clean.includes('/api/media/defaults/')) {
     return { isEmpty: true };
   }
-  if (clean.startsWith('linear-gradient') || clean.startsWith('radial-gradient') || clean.startsWith('conic-gradient')) {
-    return { isGradient: true, gradient: clean };
+  // Gradient and pattern covers are stored as their CSS (see
+  // shared/lib/covers/profileCovers.js). Anything that is not plainly a
+  // gradient is not painted: the value came from someone's profile.
+  if (looksLikeCoverCss(clean)) {
+    return isSafeCoverCss(clean) ? { isGradient: true, gradient: clean } : { isEmpty: true };
   }
   if (clean.startsWith('data:image/') || clean.startsWith('blob:')) {
     return { isEmpty: false, url: clean };

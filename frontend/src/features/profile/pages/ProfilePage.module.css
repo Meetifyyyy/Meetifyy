@@ -897,6 +897,27 @@
     display: contents;
   }
 
+
+/* Cover photo upload progress: a thin bar on the cover's bottom edge. Scaled,
+   not resized, so each step is a compositor-only change. */
+.coverProgress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  background: rgba(0, 0, 0, 0.18);
+  z-index: 2;
+  pointer-events: none;
+}
+
+.coverProgress > span {
+  display: block;
+  height: 100%;
+  background: #fff;
+  transform-origin: left center;
+  transition: transform 0.2s ease;
+}
   :global(html[data-collapsing-header]) .profileInfo {
     background: var(--color-bg-white);
     border-radius: 0 0 24px 24px;

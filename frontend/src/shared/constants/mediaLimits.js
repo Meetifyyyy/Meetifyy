@@ -13,6 +13,9 @@ export const MAX_MEDIA_UPLOAD_SIZE_BYTES = 50 * 1024 * 1024;
 export const COVERED_IMAGE_SIZE_ERROR_MESSAGE = 'File size limit is 10 MB';
 
 /** Allowed file accept strings for native file picker dialogs */
+/** Image MIME types the upload pipeline accepts (validateFile). */
+export const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+
 export const ALLOWED_IMAGE_ACCEPT = 'image/jpeg,image/png,image/webp,image/gif,.jpg,.jpeg,.png,.webp,.gif';
 export const ALLOWED_MEDIA_ACCEPT = 'image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime,.jpg,.jpeg,.png,.webp,.gif,.mp4,.webm,.mov';
 
