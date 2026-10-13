@@ -13,6 +13,8 @@ import { useAutoHideChrome } from '@shared/hooks/useAutoHideChrome';
 import { useKeyboardInset } from '@shared/hooks/useKeyboardInset';
 import { VerificationModal } from '@shared/components/VerificationGate';
 import { warmCover } from '@shared/components/ui/CoverImage';
+import { useQueryClient } from '@tanstack/react-query';
+import { notificationsQueryOptions } from '@shared/hooks/useNotifications';
 
 /**
  * Both are overlays: the search sheet the FAB opens, and the popup that appears
@@ -102,6 +104,24 @@ export default function DashboardLayoutWrapper() {
   // post's context, and hiding it while reading comments left no way back.
   const isPostView = matches.some((m) => m.pathname.startsWith('/post/'));
   useAutoHideChrome({ enabled: !isMessages && !isPostView });
+
+  // The first page of notifications, fetched in idle time once the first screen
+  // has settled, so opening Notifications shows the list at once instead of a
+  // spinner. Same options (key, request, staleTime) the page itself uses; a
+  // fresh entry is not refetched.
+  const queryClient = useQueryClient();
+  const signedInId = currentUser?.id;
+  useEffect(() => {
+    if (!signedInId) return undefined;
+    const warm = () => {
+      queryClient.prefetchInfiniteQuery(notificationsQueryOptions()).catch(() => {});
+    };
+    const timer = setTimeout(() => {
+      if ('requestIdleCallback' in window) window.requestIdleCallback(warm, { timeout: 3000 });
+      else warm();
+    }, 3000);
+    return () => clearTimeout(timer);
+  }, [queryClient, signedInId]);
 
   // Your own cover is the slowest thing on your profile and it is known from
   // sign-in, so it is fetched and decoded now, in idle time, rather than when

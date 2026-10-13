@@ -10,10 +10,11 @@ import { timeAgo } from '@shared/utils/time';
 import { ErrorState } from '@shared/components/ui/StateViews';
 import PageHeader from '@layout/PageHeader';
 import PullToRefresh from '@shared/components/PullToRefresh';
+import { useSystemBars } from '@shared/hooks/useSystemBars';
 
 import NotificationList from '../components/NotificationList';
 import InvitationList from '../components/InvitationList';
-import NotificationRowsSkeleton from '../components/skeletons/NotificationRowsSkeleton';
+import NotificationsLoading from '../components/NotificationsLoading';
 import styles from './NotificationsRoute.module.css';
 import { useUsersMap } from '@shared/hooks/useUsersMap';
 
@@ -41,6 +42,9 @@ export default function NotificationsRoute() {
     push: true,
   });
   const { currentUser } = useAuth();
+  // No bottom navigation on this page, so nothing is painted under the
+  // device's navigation bar: the list runs through it (no-op on the website).
+  useSystemBars({ navigation: 'transparent' });
   const {
     notifications,
     markAsRead,
@@ -58,7 +62,11 @@ export default function NotificationsRoute() {
   const navigate = useNavigate();
   const loadMoreRef = useRef(null);
   const hasMarkedReadRef = useRef(false);
-  const pageRef = useRef(null);
+  // State, not a ref: the list's virtualizer needs this element, and a ref is
+  // attached AFTER the list's own layout effects have run (children commit
+  // first). With cached data nothing re-rendered the list afterwards, so it
+  // kept no scroll element and rendered zero rows: the empty screen.
+  const [pageEl, setPageEl] = useState(null);
 
   // Automatically mark all notifications as read once when opening notifications page
   useEffect(() => {
@@ -496,7 +504,7 @@ export default function NotificationsRoute() {
   return (
     <PullToRefresh onRefresh={handleRefresh}>
       <main className="centre centre-wide animate-in">
-        <div className={styles.page} ref={pageRef}>
+        <div className={styles.page} ref={setPageEl}>
         <div className={styles.headerArea}>
           <PageHeader
             title="Notifications"
@@ -509,7 +517,7 @@ export default function NotificationsRoute() {
 
         <div className={styles.list}>
           {(activeTab === 'invitations' ? inviteFeed.isLoading : isLoading) ? (
-            <NotificationRowsSkeleton
+            <NotificationsLoading
               label={activeTab === 'invitations' ? 'Loading invitations' : 'Loading notifications'}
             />
           ) : error ? (
@@ -537,7 +545,7 @@ export default function NotificationsRoute() {
               timeAgo={timeAgo}
               onNotifClick={handleClick}
               pageStyles={styles}
-              scrollRef={pageRef}
+              scrollElement={pageEl}
             />
           )}
           {activeTab === 'invitations' && inviteFeed.hasNextPage && (

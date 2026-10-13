@@ -59,7 +59,7 @@ import ProfilePageSkeleton from './features/profile/components/skeletons/Profile
 import CampusSkeleton from './features/campus/components/skeletons/CampusSkeleton';
 import CrewSkeleton from './features/crew/components/skeletons/CrewSkeleton';
 import CommunitiesPageSkeleton from './features/communities/components/directory/CommunitiesPageSkeleton';
-import NotificationsSkeleton from './features/notifications/components/skeletons/NotificationsSkeleton';
+import NotificationsPageFallback from './features/notifications/components/NotificationsPageFallback';
 import SearchSkeleton from './features/search/components/skeletons/SearchSkeleton';
 import SettingsSkeleton from './features/settings/components/skeletons/SettingsSkeleton';
 import SavedPageSkeleton from './features/feed/components/skeletons/SavedPageSkeleton';
@@ -517,7 +517,7 @@ export default function App({ homeElement, rootExtras = null }) {
             { path: '/profile/:profileUsername?',  element: withBoundary(<ProfilePage />, <ProfilePageSkeleton />) },
             { path: '/settings',                   element: withBoundary(<SettingsRoute />, <SettingsSkeleton />), handle: { wide: true } },
             { path: '/settings/:panel',            element: withBoundary(<SettingsRoute />, <SettingsSkeleton />), handle: { wide: true } },
-            { path: '/notifications',              element: withBoundary(<NotificationsRoute />, <NotificationsSkeleton />), handle: { wide: true } },
+            { path: '/notifications',              element: withBoundary(<NotificationsRoute />, <NotificationsPageFallback />), handle: { wide: true } },
             { path: '/campus',                     element: withBoundary(<CampusPage />, <CampusSkeleton />), handle: { wide: true } },
             { path: '/campus/directory',           element: withBoundary(<DirectoryPage />, null), handle: { wide: true } },
             { path: '/campus/communities',         element: withBoundary(<CampusCommunitiesPage />, null), handle: { wide: true } },

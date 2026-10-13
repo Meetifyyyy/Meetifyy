@@ -1,5 +1,5 @@
-import { useCallback, useMemo } from 'react';
-import { useVirtualizer } from '@tanstack/react-virtual';
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useVirtualizer, useWindowVirtualizer } from '@tanstack/react-virtual';
 import { EmptyState } from '@shared/components/ui/StateViews';
 import NotificationItem from './NotificationItem';
 import { useUsersMap } from '@shared/hooks/useUsersMap';
@@ -9,7 +9,7 @@ export default function NotificationList({
   timeAgo,
   onNotifClick,
   pageStyles,
-  scrollRef
+  scrollElement
 }) {
   const users = useUsersMap();
 
@@ -120,13 +120,6 @@ export default function NotificationList({
     return map;
   }, [flatItems, resolveActor]);
 
-  const virtualizer = useVirtualizer({
-    count: flatItems.length,
-    getScrollElement: () => scrollRef?.current,
-    estimateSize: (index) => (flatItems[index]?.type === 'header' ? (index === 0 ? 38 : 52) : 68),
-    overscan: 6,
-  });
-
   if (groupedNotifications.length === 0) {
     return (
       <EmptyState
@@ -143,8 +136,73 @@ export default function NotificationList({
     );
   }
 
+  const rowProps = { flatItems, actorsById, formatTimeStr, onNotifClick, pageStyles };
+
+  // Which element scrolls decides the virtualizer. On a desktop the page card
+  // is its own scroller; on a phone (and in the app) it is not, and the window
+  // scrolls instead. Virtualising against a non-scrolling element never sees a
+  // scroll, so rows past the first screen were never rendered.
+  if (!scrollElement) return null;
+  return isScrollContainer(scrollElement) ? (
+    <ElementRows scrollElement={scrollElement} {...rowProps} />
+  ) : (
+    <WindowRows {...rowProps} />
+  );
+}
+
+function isScrollContainer(el) {
+  return /(auto|scroll|overlay)/.test(window.getComputedStyle(el).overflowY);
+}
+
+const estimateSizeFor = (flatItems) => (index) =>
+  flatItems[index]?.type === 'header' ? (index === 0 ? 38 : 52) : 68;
+
+function ElementRows({ scrollElement, flatItems, ...rest }) {
+  const virtualizer = useVirtualizer({
+    count: flatItems.length,
+    getScrollElement: () => scrollElement,
+    estimateSize: estimateSizeFor(flatItems),
+    overscan: 6,
+  });
+  return <Rows virtualizer={virtualizer} flatItems={flatItems} offset={0} {...rest} />;
+}
+
+function WindowRows({ flatItems, ...rest }) {
+  const listRef = useRef(null);
+  // The list's distance from the top of the document: the window virtualizer
+  // counts from there.
+  const [scrollMargin, setScrollMargin] = useState(0);
+  useLayoutEffect(() => {
+    const el = listRef.current;
+    if (!el) return undefined;
+    const measure = () => {
+      const top = Math.round(el.getBoundingClientRect().top + window.scrollY);
+      setScrollMargin((prev) => (prev === top ? prev : top));
+    };
+    measure();
+    const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(measure) : null;
+    observer?.observe(document.body);
+    return () => observer?.disconnect();
+  }, []);
+
+  const virtualizer = useWindowVirtualizer({
+    count: flatItems.length,
+    estimateSize: estimateSizeFor(flatItems),
+    overscan: 6,
+    scrollMargin,
+    // Rows mount while the user scrolls; a synchronous flush made each one a
+    // layout inside the scroll frame.
+    useFlushSync: false,
+  });
+  return (
+    <Rows virtualizer={virtualizer} flatItems={flatItems} offset={scrollMargin} listRef={listRef} {...rest} />
+  );
+}
+
+function Rows({ virtualizer, flatItems, offset, listRef, actorsById, formatTimeStr, onNotifClick, pageStyles }) {
   return (
     <div
+      ref={listRef}
       className={pageStyles.groupItems}
       style={{
         height: `${virtualizer.getTotalSize()}px`,
@@ -165,7 +223,7 @@ export default function NotificationList({
               top: 0,
               left: 0,
               width: '100%',
-              transform: `translateY(${virtualItem.start}px)`,
+              transform: `translateY(${virtualItem.start - offset}px)`,
             }}
           >
             {item.type === 'header' ? (

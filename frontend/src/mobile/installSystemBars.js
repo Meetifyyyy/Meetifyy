@@ -199,8 +199,11 @@ export function installSystemBars(systemBars, { readEdges } = {}) {
 
   let frame = 0;
   let settle = 0;
+  // The route the strips were last sampled on.
+  let sampledPath = typeof location !== 'undefined' ? location.pathname : '';
   const run = () => {
     frame = 0;
+    sampledPath = location.pathname;
     sample();
   };
   /** At most one sample per frame, in the frame the change lands in. */
@@ -208,7 +211,10 @@ export function installSystemBars(systemBars, { readEdges } = {}) {
     // Sampling reads computed styles and elementsFromPoint, each a forced
     // layout. During text entry the page's edge colours do not change, and the
     // keyboard is animating, so wait: a keyboard-hidden event samples afterwards.
-    if (root.hasAttribute('data-text-entry')) return;
+    // Unless the ROUTE changed: Home's search field hands off to /search with
+    // the keyboard up, and the status strip kept Home's colour (the blue page
+    // gradient) over Search's white header until the keyboard closed.
+    if (root.hasAttribute('data-text-entry') && location.pathname === sampledPath) return;
     if (!frame) frame = requestAnimationFrame(run);
   };
   /**
@@ -221,6 +227,7 @@ export function installSystemBars(systemBars, { readEdges } = {}) {
     settle = setTimeout(schedule, SETTLE_MS);
   };
 
+  sampledPath = location.pathname;
   sample();
 
   const observer = new MutationObserver(scheduleWithSettle);

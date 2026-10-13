@@ -7,6 +7,23 @@ import { useAuth } from '../context/AuthContext';
 const UNREAD_COUNT_KEY = ['notifications', 'unreadCount'];
 
 /**
+ * The notification feed query, shared by the page and the idle prefetch in
+ * DashboardLayoutWrapper, so a warmed cache entry is exactly the one the page
+ * reads (same key, same request, same page size).
+ */
+export function notificationsQueryOptions(type) {
+  return {
+    queryKey: type ? ['notifications', { type }] : ['notifications'],
+    queryFn: ({ pageParam = undefined }) => notificationsApi.getAll(15, pageParam, type),
+    getNextPageParam: (lastPage) => lastPage?.nextCursor || undefined,
+    // Stated rather than left to the `pageParam = undefined` default in the
+    // queryFn signature. Same first request either way; v5 expects it declared.
+    initialPageParam: undefined,
+    staleTime: 1000 * 60, // 1 minute
+  };
+}
+
+/**
  * Every cached notification LIST, and not the unread count.
  *
  * `['notifications']` prefix-matches the count entry too, so the blanket
@@ -64,17 +81,11 @@ export function useNotifications({ type } = {}) {
   // A filtered feed is its own cache entry so the Invitations tab can page
   // through invite history without disturbing (or being truncated by) the main
   // list. Both are server-backed, so neither can drift from the database.
-  const queryKey = useMemo(() => (type ? ['notifications', { type }] : ['notifications']), [type]);
+  const options = useMemo(() => notificationsQueryOptions(type), [type]);
 
   const { data, isLoading, error, fetchNextPage, hasNextPage, isFetchingNextPage } = useInfiniteQuery({
-    queryKey,
-    queryFn: ({ pageParam = undefined }) => notificationsApi.getAll(15, pageParam, type),
-    getNextPageParam: (lastPage) => lastPage?.nextCursor || undefined,
-    // Stated rather than left to the `pageParam = undefined` default in the
-    // queryFn signature. Same first request either way; v5 expects it declared.
-    initialPageParam: undefined,
+    ...options,
     enabled: Boolean(currentUser?.id),
-    staleTime: 1000 * 60, // 1 minute
   });
 
   const { data: unreadCountData } = useQuery({
