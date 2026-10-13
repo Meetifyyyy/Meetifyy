@@ -1,9 +1,11 @@
 import { memo } from 'react';
 import { Link } from 'react-router-dom';
 import { Lock } from '@shared/components/icons';
+import { useAuth } from '@shared/context/AuthContext';
+import { isCommunityMember, isCommunityOwner } from '@shared/utils/community';
 import CommunityAvatar from './CommunityAvatar';
 import JoinAction from './JoinAction';
-import { activityLabel, memberLabel } from './communityMeta';
+import { memberLabel } from './communityMeta';
 import styles from './CommunityRow.module.css';
 
 const ROLE_LABEL = { OWNER: 'Owner', MODERATOR: 'Moderator' };
@@ -14,12 +16,15 @@ const ROLE_LABEL = { OWNER: 'Owner', MODERATOR: 'Moderator' };
  * The name is the link, stretched over the whole row, so the row is one
  * target without nesting the Join button inside another interactive element.
  *
- * `variant="mine"` shows the viewer's role and recent activity; `"explore"`
- * shows the join control.
+ * Shows the join control. `showMembership={false}` (the Communities and Campus
+ * Communities pages) drops what only restates membership - the role line and
+ * the settled "Owner" / "Joined" chip - so a joined community shows no action.
  */
-function CommunityRow({ community, variant = 'explore', from }) {
-  const role = ROLE_LABEL[community.userRole];
-  const activity = variant === 'mine' ? activityLabel(community) : null;
+function CommunityRow({ community, from, showMembership = true }) {
+  const { currentUser } = useAuth();
+  const role = showMembership ? ROLE_LABEL[community.userRole] : null;
+  const joined = isCommunityOwner(community, currentUser) || isCommunityMember(community, currentUser);
+  const showAction = showMembership || !joined;
   const description = community.description && community.description !== community.name
     ? community.description
     : null;
@@ -49,15 +54,14 @@ function CommunityRow({ community, variant = 'explore', from }) {
 
         {description && <p className={styles.description}>{description}</p>}
 
-        {(role || activity) && (
+        {role && (
           <p className={styles.meta}>
-            {role && <span>{role}</span>}
-            {activity && <span>{activity}</span>}
+            <span>{role}</span>
           </p>
         )}
       </div>
 
-      {variant === 'explore' && (
+      {showAction && (
         <div className={styles.action}>
           <JoinAction community={community} />
         </div>

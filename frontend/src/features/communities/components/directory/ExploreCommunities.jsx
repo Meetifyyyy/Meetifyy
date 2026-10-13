@@ -39,10 +39,12 @@ export default function ExploreCommunities() {
 
       {!isLoading && communities.length > 0 && (
         <>
-          <div className={listStyles.list}>
-            {communities.map((c) => (
-              <CommunityRow key={c.id} community={c} variant="explore" />
-            ))}
+          <div className={listStyles.mobileCard}>
+            <div className={listStyles.list}>
+              {communities.map((c) => (
+                <CommunityRow key={c.id} community={c} showMembership={false} />
+              ))}
+            </div>
           </div>
           {hasNextPage && (
             <div className={listStyles.more}>

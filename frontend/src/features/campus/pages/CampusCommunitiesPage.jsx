@@ -122,17 +122,18 @@ export default function CampusCommunitiesPage() {
         <div className={styles.campusBody} style={{ flex: 1, display: 'flex', flexDirection: 'column', width: '100%', boxSizing: 'border-box' }}>
           {collegeCommunities.length === 0 && isLoading ? (
             // Loading is not "No Community": rows the size of the real ones.
-            <section className={listStyles.surface} aria-busy="true">
+            <section className={`${listStyles.surface} ${styles.listSurface}`} aria-busy="true">
               <CommunityRowSkeleton count={5} />
             </section>
           ) : collegeCommunities.length > 0 ? (
-            <section className={listStyles.surface}>
+            <section className={`${listStyles.surface} ${styles.listSurface}`}>
               <div className={listStyles.list}>
                 {collegeCommunities.map(community => (
                   <CommunityRow
                     key={community.id}
                     community={community}
                     from={location.pathname}
+                    showMembership={false}
                   />
                 ))}
               </div>

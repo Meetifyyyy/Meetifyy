@@ -102,7 +102,7 @@ export function useCollapsingHeader({
     const previousCoverH = root.style.getPropertyValue('--profile-cover-h');
 
     let frame = 0;
-    let lastLight = null;
+    let lastIcons = null;
     let lastCoverHeight = -1;
     let lastHeaderHeight = -1;
     /*
@@ -214,11 +214,20 @@ export function useCollapsingHeader({
         }
       }
       const dark = root.getAttribute('data-theme') === 'dark';
-      const lightIcons = coverBackground || progress < 0.5 || dark;
-      if (lightIcons !== lastLight) {
-        lastLight = lightIcons;
-        root.setAttribute('data-status-bar-icons', lightIcons ? 'light' : 'dark');
+      const wanted = coverBackground || progress < 0.5 || dark ? 'light' : 'dark';
+      /*
+       * Yields to anyone else's preference. A sheet over the cover (the
+       * community's details page) asks for the icons ITS background needs
+       * through useSystemBars; overwriting that left white icons on a white
+       * sheet. The header writes only while the value is unset or still the
+       * one it wrote itself, and takes over again once the other request is
+       * gone (the observer below).
+       */
+      const current = root.getAttribute('data-status-bar-icons');
+      if ((current === null || current === lastIcons) && current !== wanted) {
+        root.setAttribute('data-status-bar-icons', wanted);
       }
+      if (current === null || current === lastIcons) lastIcons = wanted;
     };
     const schedule = () => {
       if (frame) return;
@@ -258,12 +267,14 @@ export function useCollapsingHeader({
       if (coverRef.current) resizeObserver.observe(coverRef.current);
       for (const t of trackers) resizeObserver.observe(t.el);
     }
-    // A theme change flips which icons the solid header needs.
+    // A theme change flips which icons the solid header needs, and another
+    // owner of the icon preference letting go (it removes the attribute) hands
+    // it back to the header.
     const themeObserver = new MutationObserver(() => {
-      lastLight = null;
+      if (!root.hasAttribute('data-status-bar-icons')) lastIcons = null;
       schedule();
     });
-    themeObserver.observe(root, { attributes: true, attributeFilter: ['data-theme'] });
+    themeObserver.observe(root, { attributes: true, attributeFilter: ['data-theme', 'data-status-bar-icons'] });
 
     return () => {
       if (frame) cancelAnimationFrame(frame);

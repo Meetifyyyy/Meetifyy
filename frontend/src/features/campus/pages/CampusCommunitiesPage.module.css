@@ -109,3 +109,13 @@
   outline: 2px solid var(--color-primary);
   outline-offset: 2px;
 }
+
+/* The list's box. Centred and capped on wide screens so rows read as one card
+   rather than lines stretched across the whole column. Doubled class: wins over
+   the shared .surface rules whatever order the two stylesheets load in. */
+.listSurface.listSurface {
+  width: 100%;
+  max-width: 40rem;
+  margin: 0 auto;
+  box-sizing: border-box;
+}

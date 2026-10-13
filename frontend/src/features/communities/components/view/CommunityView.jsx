@@ -12,6 +12,7 @@ import CollapsingHeader from '@shared/components/CollapsingHeader/CollapsingHead
 import PullToRefresh from '@shared/components/PullToRefresh';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 import { useSystemBars } from '@shared/hooks/useSystemBars';
+import { useTheme } from '@shared/context/ThemeContext';
 import BlurredCover from '@shared/components/ui/BlurredCover';
 import { IS_MOBILE_BUILD } from '@config';
 import { isCommunityMember, isCommunityOwner, resolveCommunityCover } from '@shared/utils/community';
@@ -75,30 +76,45 @@ function HeroSection({ coverRef, comm, onlineNow, joined, joining, onToggleJoin,
   const coverInputRef = useRef(null);
   const avatarInputRef = useRef(null);
   const menu = useMenu();
-  const [imgError, setImgError] = useState(false);
   
   const [cropFile, setCropFile] = useState(null);
   const [cropType, setCropType] = useState(null); // 'avatar' or 'coverImage'
   const [isUploading, setIsUploading] = useState(false);
 
-  const [coverLoading, setCoverLoading] = useState(true);
-  const [coverError, setCoverError] = useState(false);
   // One resolved URL for every avatar slot on this page. `comm.avatar` was
   // being used raw: it is an object key, so it resolved relative to the current
   // route and 404'd, and it also missed communities whose image is stored under
   // `avatarKey` — which is where the server actually puts it.
   const avatarUrl = resolveCommunityAvatar(comm);
-  const [avatarLoading, setAvatarLoading] = useState(Boolean(avatarUrl));
+  // `coverKey` is the column; reading `coverImage` found nothing for most
+  // communities, and the raw value is a storage key rather than a URL.
+  const resolvedCover = resolveCommunityCover(comm);
 
-  useEffect(() => {
-    setCoverLoading(true);
-    setCoverError(false);
-  }, [comm.coverImage]);
-
-  useEffect(() => {
-    setImgError(false);
-    setAvatarLoading(Boolean(avatarUrl));
-  }, [avatarUrl]);
+  /*
+   * Which URL has finished loading (or failed), not a loading flag.
+   *
+   * The flags used to be reset by an effect when the URL changed. Effects run
+   * after the new <img> is already in the page, and a freshly uploaded image
+   * is often in the browser's cache, so its load event could fire BEFORE the
+   * reset - which then switched the shimmer back on with no load left to clear
+   * it, until the community was reopened. (The cover's reset also watched
+   * `coverImage`, which the cover is not read from.) Keyed by URL there is
+   * nothing to reset: a new image is "loading" exactly until its own load or
+   * error event names it. Every upload is stored under a new key, so the URL
+   * always changes and the cache can never serve the old picture.
+   */
+  const [loadedAvatar, setLoadedAvatar] = useState(null);
+  const [failedAvatar, setFailedAvatar] = useState(null);
+  const [loadedCover, setLoadedCover] = useState(null);
+  const [failedCover, setFailedCover] = useState(null);
+  const imgError = Boolean(avatarUrl) && failedAvatar === avatarUrl;
+  const avatarLoading = Boolean(avatarUrl) && loadedAvatar !== avatarUrl && !imgError;
+  const coverError = Boolean(resolvedCover) && failedCover === resolvedCover;
+  const coverLoading = loadedCover !== resolvedCover && !coverError;
+  const avatarEvents = {
+    onLoad: () => setLoadedAvatar(avatarUrl),
+    onError: () => setFailedAvatar(avatarUrl),
+  };
 
   const handleImageUpload = (e, field) => {
     const file = e.target.files[0];
@@ -123,9 +139,6 @@ function HeroSection({ coverRef, comm, onlineNow, joined, joining, onToggleJoin,
       });
       const fieldKey = cropType === 'avatar' ? 'avatarKey' : 'coverKey';
       await onUpdateCommunity(comm.id, { [fieldKey]: publicUrl });
-      // A fresh image at a new key: clear the error latch, or a previously
-      // failed cover would keep rendering the default over the new upload.
-      setCoverError(false);
       showToast(cropType === 'avatar' ? 'Icon updated' : 'Cover updated', 'success');
     } catch (err) {
       // Surface what actually went wrong. The bare `catch {}` here reported
@@ -138,9 +151,6 @@ function HeroSection({ coverRef, comm, onlineNow, joined, joining, onToggleJoin,
     }
   };
 
-  // `coverKey` is the column; reading `coverImage` found nothing for most
-  // communities, and the raw value is a storage key rather than a URL.
-  const resolvedCover = resolveCommunityCover(comm);
   // The pull zooms the cover by (height + pull) / height, so the CSS needs the
   // cover's own height as a number. Profile gets it from useCollapsingHeader
   // (cover header); this page has none, and without it the divisor fell back to
@@ -176,11 +186,8 @@ function HeroSection({ coverRef, comm, onlineNow, joined, joining, onToggleJoin,
             src={resolvedCover}
             alt=""
             className={`${styles.heroCoverImg} ${coverLoading ? styles.imgHidden : styles.imgVisible}`}
-            onLoad={() => setCoverLoading(false)}
-            onError={() => {
-              setCoverError(true);
-              setCoverLoading(false);
-            }}
+            onLoad={() => setLoadedCover(resolvedCover)}
+            onError={() => setFailedCover(resolvedCover)}
             draggable={false}
             style={{ cursor: 'default', userSelect: 'none', pointerEvents: 'none' }}
           />
@@ -228,11 +235,7 @@ function HeroSection({ coverRef, comm, onlineNow, joined, joining, onToggleJoin,
                     src={avatarUrl} 
                     alt={comm.name} 
                     className={`${styles.heroAvatarImg} ${avatarLoading ? styles.imgHidden : styles.imgVisible}`} 
-                    onLoad={() => setAvatarLoading(false)}
-                    onError={() => {
-                      setImgError(true);
-                      setAvatarLoading(false);
-                    }} 
+                    {...avatarEvents}
                   />
                 ) : (
                   <span className={styles.heroLetter}>
@@ -436,11 +439,7 @@ function HeroSection({ coverRef, comm, onlineNow, joined, joining, onToggleJoin,
                   src={avatarUrl} 
                   alt={comm.name} 
                   className={`${styles.heroAvatarImg} ${avatarLoading ? styles.imgHidden : styles.imgVisible}`} 
-                  onLoad={() => setAvatarLoading(false)}
-                  onError={() => {
-                    setImgError(true);
-                    setAvatarLoading(false);
-                  }} 
+                  {...avatarEvents}
                 />
               ) : (
                 <span className={styles.heroLetter}>
@@ -781,6 +780,14 @@ export default function CommunityView({ communityId, onBack, onPostClick, onComm
   // Back (hardware, gesture, browser) closes the details page only, leaving the
   // community underneath; without this it popped the community's route too.
   useOverlayBack(showMobileAbout && !isMobileAboutClosing, handleCloseMobileAbout);
+
+  // The details page is a solid sheet over the cover: its status-bar icons
+  // follow the theme, not the cover photo the page's header set them for.
+  const theme = useTheme()?.theme;
+  useSystemBars(
+    { statusIcons: theme === 'dark' ? 'light' : 'dark' },
+    showMobileAbout && !isMobileAboutClosing,
+  );
 
   const handleMobileAboutAnimationEnd = () => {
     if (isMobileAboutClosing) {
@@ -1151,6 +1158,7 @@ export default function CommunityView({ communityId, onBack, onPostClick, onComm
         title={comm.name}
         subtitle={`${memberTotal} ${memberTotal === 1 ? 'member' : 'members'}`}
         onBack={onBack}
+        backVariant="profile"
         headerRef={collapsingHeaderRef}
       />
       {/*

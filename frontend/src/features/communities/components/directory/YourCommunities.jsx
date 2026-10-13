@@ -49,10 +49,12 @@ export default function YourCommunities() {
   return (
     <section className={styles.section} aria-label="Your communities">
       <SectionHeading title={YOURS_TITLE} subtitle={YOURS_SUBTITLE} />
-      <div className={styles.list}>
-        {sorted.map((c) => (
-          <CommunityRow key={c.id} community={c} variant="mine" from="/communities" />
-        ))}
+      <div className={styles.mobileCard}>
+        <div className={styles.list}>
+          {sorted.map((c) => (
+            <CommunityRow key={c.id} community={c} from="/communities" showMembership={false} />
+          ))}
+        </div>
       </div>
     </section>
   );

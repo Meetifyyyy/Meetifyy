@@ -143,7 +143,7 @@ export default function CommunitySearchRoute() {
           {!isLoading && list.length > 0 && (
             <div className={`${listStyles.list} ${isUpdating ? listStyles.stale : ''}`}>
               {list.map((c) => (
-                <CommunityRow key={c.id} community={c} variant="explore" />
+                <CommunityRow key={c.id} community={c} />
               ))}
             </div>
           )}
