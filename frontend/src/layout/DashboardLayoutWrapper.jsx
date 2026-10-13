@@ -10,7 +10,6 @@ import { InstantMatchProvider } from '@features/instant-match/context/InstantMat
 import InstantMatchFAB from '@features/instant-match/components/InstantMatchFAB';
 import InstantMatchChat from '@features/instant-match/components/chat/InstantMatchChat';
 import { useAutoHideChrome } from '@shared/hooks/useAutoHideChrome';
-import { useKeyboardInset } from '@shared/hooks/useKeyboardInset';
 import { VerificationModal } from '@shared/components/VerificationGate';
 import { warmCover } from '@shared/components/ui/CoverImage';
 import { useQueryClient } from '@tanstack/react-query';
@@ -45,24 +44,9 @@ export default function DashboardLayoutWrapper() {
     // /communities paints its own full-bleed surface (and gutter) on phones.
     /^\/communities(\/.+)?$/.test(match.pathname)
   );
-  /**
-   * Publishes the keyboard geometry (`--kb-layout-shift`, `--kb-inset`) that
-   * the BottomNav's transform reads.
-   *
-   * Mounted HERE, at the layout that renders the nav, rather than on a route.
-   * It used to be called only by MessagesRoute, so the variable existed only
-   * while /messages was open — and `.bottomNav`'s `translateY(var(...))` fell
-   * back to `0px` everywhere else. On Android the keyboard shrinks the layout
-   * viewport, which makes `bottom: 0` mean "the top of the keyboard", so on
-   * every other screen the nav was lifted up and parked on top of the keyboard.
-   * Writing a comment on a post was where that was most obvious: the nav
-   * covered the composer the moment the keyboard opened.
-   *
-   * One instance, not one per route: the hook zeroes the variables in its
-   * cleanup, so a second copy unmounting would blank them underneath the one
-   * still running.
-   */
-  useKeyboardInset();
+  // The keyboard geometry (--kb-*, data-text-entry, --app-vh) is published
+  // once for the whole app by `useKeyboardInset` in App.jsx, so the sign-in
+  // and onboarding screens outside this layout have it too.
 
   // The BottomNav stays visible with a conversation open: the messages layout
   // reserves a 60px bottom row for it (see `.centre--messages` in global.css),

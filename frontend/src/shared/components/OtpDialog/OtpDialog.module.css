@@ -10,9 +10,13 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  /* Bottom: the keyboard too. It overlays the page in the app (--kb-inset,
+     useKeyboardInset) rather than shrinking it, so the dialog is centred in
+     the space left above it — and scrolls here if it does not fit. It covers
+     the home-indicator area, so the larger of the two, never both. */
   padding: max(1.25rem, env(safe-area-inset-top))
            max(1rem, env(safe-area-inset-right))
-           max(1.25rem, env(safe-area-inset-bottom))
+           max(1.25rem, env(safe-area-inset-bottom), var(--kb-inset, 0px))
            max(1rem, env(safe-area-inset-left));
   overflow-y: auto;
   overscroll-behavior: contain;

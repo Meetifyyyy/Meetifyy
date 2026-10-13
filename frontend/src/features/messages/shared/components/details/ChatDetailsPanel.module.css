@@ -69,6 +69,17 @@
   min-width: 0;
 }
 
+/* Android app (`.chat-pans-keyboard`, MessagesRoute), keyboard up: the
+   keyboard overlays these pages (Edit group's name and description, ...), so
+   the bottom clearance has to reach its top for a field near the end to be
+   scrollable above it — the app-wide focus pass (keyboardFocus) scrolls this
+   box by the overlap, and can only scroll as far as there is room. A max()
+   with the navigation-bar inset, not a sum: --kb-inset already includes the
+   bar's area, which the keyboard covers. Once per keyboard transition. */
+:global(html[data-keyboard-open] .chat-pans-keyboard) .scrollBody {
+  padding-bottom: calc(1rem + max(env(safe-area-inset-bottom, 0px), var(--kb-inset, 0px)));
+}
+
 .scrollBody::-webkit-scrollbar {
   display: none;
   width: 0;

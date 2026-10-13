@@ -7,6 +7,7 @@ import { showToast } from '@shared/utils/toast';
 import Skeleton from '@shared/components/skeletons/Skeleton';
 import Post from './Post';
 import ReplyDock from './ReplyDock';
+import { KEYBOARD_OVERLAYS_PAGE } from '@shared/utils/keyboardOverlay';
 import { CommentTreeRoot } from './CommentNode';
 import styles from './PostView.module.css';
 import { useAuth } from '@shared/context/AuthContext';
@@ -161,9 +162,10 @@ export default function PostView({ post, onBack, autoFocusComment = false }) {
   const hasAutoFocusedRef = useRef(false);
 
   // The reply bar's field is always there (see ReplyDock): "open the composer"
-  // is just "put the caret in it".
+  // is just "put the caret in it". `preventScroll`: the bar is docked and rises
+  // with the keyboard by itself, so the page under it must not move.
   const focusComposer = useCallback(() => {
-    composerRef.current?.focus();
+    composerRef.current?.focus({ preventScroll: true });
   }, []);
 
   // Commenting on the post itself drops any reply target.
@@ -306,7 +308,11 @@ export default function PostView({ post, onBack, autoFocusComment = false }) {
   };
 
   return (
-    <div ref={columnRef} className={styles.postViewContainer}>
+    <div
+      ref={columnRef}
+      className={styles.postViewContainer}
+      data-keyboard-overlay={KEYBOARD_OVERLAYS_PAGE && !isWide ? '' : undefined}
+    >
 
       {/* Top Bar — always renders instantly, never gated on post data */}
       <div className={styles.postViewTopbar}>

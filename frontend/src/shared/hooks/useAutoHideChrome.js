@@ -47,8 +47,9 @@ export const MIN_SCROLLABLE_PX = 240;
 export function nextChromeState(prev, { y, scrollable, keyboardOpen = false }) {
   // The soft keyboard is not a scroll gesture.
   //
-  // Opening it shrinks the layout viewport and makes the browser scroll the
-  // focused field into view, which arrives here as a large sudden delta — big
+  // Opening it can scroll the focused field into view (the browser does when
+  // the viewport shrinks for it; in the app, ensureFocusedVisible does when the
+  // keyboard would cover the field), which arrives here as a sudden delta — big
   // enough to cross the hide threshold. The chrome then hid, the keyboard
   // settled, the counter-scroll read as an upward flick and it revealed again:
   // the bottom nav flickering in and out while the keyboard animated, which is

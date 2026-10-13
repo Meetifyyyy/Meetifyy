@@ -122,6 +122,10 @@
   width: 100vw;
   height: 100vh;
   height: 100dvh;
+  /* In the app, the keyboard-free height (--app-vh, useKeyboardInset): a
+     backdrop that shrank with the keyboard re-laid out its gradients and
+     changed shade as the keyboard opened. The website keeps 100dvh. */
+  height: calc(100 * var(--app-vh, 1dvh));
   z-index: 0;
   overflow: hidden;
   pointer-events: none;
@@ -2615,7 +2619,13 @@
   height: 100vh;
   height: 100dvh;
   min-height: 0;
-  padding-bottom: max(env(safe-area-inset-bottom, 0px), var(--navigation-bar-inset, 0px));
+  /* The keyboard too. In the app it overlays the page (--kb-inset,
+     useKeyboardInset) instead of shrinking this full-height scroller, so the
+     shell gives its content the same space the old resize did: the form lays
+     out in the area above the keyboard, and the last field and the submit
+     button can be scrolled clear of it. One layout change per keyboard
+     transition; it covers the navigation bar, so the largest, never a sum. */
+  padding-bottom: max(env(safe-area-inset-bottom, 0px), var(--navigation-bar-inset, 0px), var(--kb-inset, 0px));
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior-y: contain;

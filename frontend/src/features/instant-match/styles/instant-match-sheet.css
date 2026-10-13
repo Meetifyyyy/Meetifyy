@@ -17,6 +17,15 @@
   backdrop-filter: blur(7px);
   -webkit-backdrop-filter: blur(7px);
   animation: im-scrim-in 0.24s var(--im-ease-out) both;
+  /*
+   * The keyboard overlays the page in the app (--kb-inset, useKeyboardInset)
+   * instead of shrinking it. The Details step focuses its field on arrival,
+   * so the sheet stands on the keyboard's top edge (and is capped to the
+   * space above it, below) with the field and the Find button in reach. A
+   * layout change once per keyboard transition, not a transform: the sheet's
+   * rise animation holds `transform` with `fill-mode: both`. 0 elsewhere.
+   */
+  padding-bottom: var(--kb-inset, 0px);
 }
 
 @keyframes im-scrim-in { from { opacity: 0; } to { opacity: 1; } }
@@ -33,7 +42,7 @@
    * first as the fallback for browsers without `dvh`.
    */
   max-height: min(88vh, 780px);
-  max-height: min(88dvh, 780px);
+  max-height: min(88dvh, 780px, calc(100dvh - var(--kb-inset, 0px) - var(--status-bar-inset, 0px) - 1rem));
   display: flex;
   flex-direction: column;
   background: var(--im-paper);
@@ -61,7 +70,9 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
-  padding: 18px 20px calc(18px + env(safe-area-inset-bottom));
+  /* The keyboard covers the home-indicator area while it is up: that inset
+     gives way to it rather than adding to the overlay's padding. */
+  padding: 18px 20px calc(18px + max(0px, env(safe-area-inset-bottom) - var(--kb-inset, 0px)));
   gap: 14px;
 }
 

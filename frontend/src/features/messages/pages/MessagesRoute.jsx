@@ -5,6 +5,7 @@ import MessagesLayout from '../components/layout/MessagesLayout';
 
 import PullToRefresh from '@shared/components/PullToRefresh';
 import VerificationGate from '@shared/components/VerificationGate/VerificationGate';
+import { KEYBOARD_OVERLAYS_PAGE } from '@shared/utils/keyboardOverlay';
 
 export default function MessagesRoute() {
   // The keyboard geometry this layout depends on (`--kb-inset`, used by
@@ -52,7 +53,13 @@ export default function MessagesRoute() {
      * zero — so this flag only has to handle the case the DOM cannot express.
      */
     <PullToRefresh onRefresh={handleRefresh} disabled={isChatOpen} surface="sheet">
-      <main className={`centre centre-wide centre--messages animate-in ${isChatOpen ? 'chat-is-open' : ''}`}>
+      {/* `chat-pans-keyboard`: where the keyboard overlays the page (Android
+          app), an open chat keeps its full height and slides its thread and
+          composer up with the keyboard instead of being shortened by it. See
+          `.centre--messages` in global.css. */}
+      <main
+        className={`centre centre-wide centre--messages animate-in ${isChatOpen ? 'chat-is-open' : ''} ${KEYBOARD_OVERLAYS_PAGE ? 'chat-pans-keyboard' : ''}`}
+      >
         <VerificationGate message="Verify your student ID to send and receive messages." fullPage>
           <MessagesLayout />
         </VerificationGate>

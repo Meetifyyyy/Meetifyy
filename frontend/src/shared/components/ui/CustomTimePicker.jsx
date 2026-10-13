@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Clock } from '@shared/components/icons';
+import { visibleViewportBottom } from '@shared/utils/visibleViewport';
 import styles from './CustomTimePicker.module.css';
 
 const HOURS = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12'];
@@ -96,7 +97,9 @@ export default function CustomTimePicker({
       const rect = containerRef.current.getBoundingClientRect();
       const popoverWidth = 200;
       const popoverHeight = 190;
-      const vh = window.visualViewport?.height || window.innerHeight;
+      // Above the keyboard: in the app it overlays the page and shrinks no
+      // viewport, so `visualViewport.height` alone would open this under it.
+      const vh = visibleViewportBottom() || window.innerHeight;
       const spaceBelow = vh - rect.bottom;
 
       let top = rect.bottom + 6;

@@ -1100,6 +1100,12 @@ export default function CommunityView({ communityId, onBack, onPostClick, onComm
       // false in this branch — so the shortcut that is supposed to join the
       // community was calling leave on it instead.
       toggleJoin({ communityId, isJoined: true, currentUser });
+    } else if (composerRef.current?.focus) {
+      // Already a member: the composer is on screen, so focus it inside the
+      // tap. A focus from a timer cannot raise the keyboard on iOS, and on
+      // Android it started the keyboard a beat after the press.
+      composerRef.current.focus();
+      return;
     }
     setTimeout(() => {
       if (composerRef.current?.focus) {

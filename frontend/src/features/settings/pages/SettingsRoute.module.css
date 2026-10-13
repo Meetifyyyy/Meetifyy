@@ -1514,10 +1514,13 @@ input:checked + .slider::before {
 
   /* No bottom navigation on settings (DashboardLayoutWrapper hides it), so the
      80px reserved for one was dead scroll past the last row. Only the phone's
-     own navigation-bar inset and a little breathing room remain. */
+     own navigation-bar inset and a little breathing room remain — or the
+     keyboard, which overlays the page in the app (--kb-inset) and covers that
+     bar while it is up: the larger of the two, so the last field of a form
+     (Edit profile, Help) can be scrolled clear of it. */
   .body {
     padding-top: 6px;
-    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 16px);
+    padding-bottom: calc(max(env(safe-area-inset-bottom, 0px), var(--kb-inset, 0px)) + 16px);
   }
 
   .sectionHeader,

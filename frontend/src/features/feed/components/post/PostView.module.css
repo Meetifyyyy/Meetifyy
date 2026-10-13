@@ -177,6 +177,16 @@
     border-radius: 0;
   }
 
+  /* Android app, keyboard up: the keyboard overlays the page and the reply bar
+     rides on top of it, so the room kept under the last comment grows by the
+     keyboard's height. A max() with the navigation-bar term, not a sum:
+     --kb-inset already includes the bar's area, which the keyboard covers.
+     Only adds room under the content, so nothing on screen moves.
+     Set once per keyboard transition. */
+  :global(html[data-keyboard-open]) .postViewContainer[data-keyboard-overlay] {
+    padding-bottom: calc(64px + max(env(safe-area-inset-bottom, 0px), var(--navigation-bar-inset, 0px), var(--kb-inset, 0px)));
+  }
+
   .postViewTopbar,
   .postViewMain {
     padding-left: 1rem;

@@ -1,4 +1,3 @@
-import { IS_MOBILE_BUILD } from '@config';
 import { useState, useRef, useEffect, useMemo, memo, forwardRef, useImperativeHandle } from 'react';
 import LazyEmojiPicker from '@shared/components/ui/LazyEmojiPicker';
 import { useAuth } from '@shared/context/AuthContext';
@@ -12,9 +11,6 @@ import { showToast } from '@shared/utils/toast';
 import { useSmoothHeight } from '@shared/hooks/useSmoothHeight';
 import { normalizeBodyText } from '@shared/utils/bodyText';
 import { ALLOWED_IMAGE_ACCEPT } from '@shared/constants/mediaLimits';
-
-/** Matches the expand transition in PostComposer.module.css (220ms) plus a frame. */
-const EXPAND_MS = 240;
 
 
 /**
@@ -403,40 +399,14 @@ const PostComposer = forwardRef(function PostComposer({ onSubmit }, ref) {
 
   const expandedState = isExpanded || hasContent;
 
-  // Expand first, THEN raise the keyboard. A tap focuses the field at once (so
-  // the caret is there), but with inputmode="none" no keyboard comes up; once
-  // the composer has finished opening the mode is switched to text, and the
-  // keyboard slides in over an already-settled layout instead of resizing the
-  // window in the middle of the expand animation.
-  // The app only: on the website (and iOS, where a keyboard can be raised only
-  // from inside the tap itself) the field takes focus normally.
-  const [keyboardReady, setKeyboardReady] = useState(!IS_MOBILE_BUILD);
-  useEffect(() => {
-    if (!IS_MOBILE_BUILD) return undefined;
-    if (!expandedState) {
-      setKeyboardReady(false);
-      return undefined;
-    }
-    const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-    const t = setTimeout(() => setKeyboardReady(true), reduced ? 0 : EXPAND_MS);
-    return () => clearTimeout(t);
-  }, [expandedState]);
-
-  // The mode switch alone does not make Android raise the keyboard for a field
-  // that already has focus, so ask for it once the composer has settled.
-  useEffect(() => {
-    if (!IS_MOBILE_BUILD || !keyboardReady) return;
-    const el = document.activeElement;
-    if (
-      el && composerRef.current?.contains(el) && el.isContentEditable &&
-      !document.documentElement.hasAttribute('data-keyboard-open')
-    ) {
-      el.blur();
-      // The platform focus, not the editor's own override, which moves the caret
-      // to the end and would discard where the user already put it.
-      HTMLElement.prototype.focus.call(el, { preventScroll: true });
-    }
-  }, [keyboardReady]);
+  // The keyboard is raised by the tap itself, while the composer expands.
+  // It used to be held back (inputmode="none", then a blur and re-focus once
+  // the 220ms expand had finished) so the window would not resize mid-expand.
+  // That cost ~250ms before the keyboard even started, a focus/blur/focus
+  // cycle on every open, and on iOS - where a keyboard can only be raised from
+  // inside the tap - a keyboard that never came. In the app the keyboard now
+  // overlays the page without resizing the WebView (SystemUiPlugin), so the
+  // expand runs undisturbed while it slides in.
 
   // A new array on every render made MediaGrid redo its URL resolution on each
   // keystroke and each upload-progress tick. Only url/type matter to it.
@@ -445,7 +415,9 @@ const PostComposer = forwardRef(function PostComposer({ onSubmit }, ref) {
   const gridMedia = useMemo(() => media.map((m) => ({ url: m.previewUrl, type: m.type })), [gridKey]);
 
   return (
-    <div className={styles.postComposerWrapper} ref={composerRef}>
+    // data-bars-transition-ignore: its expand/collapse never changes the
+    // screen's edges, so the system-bar sampler skips its transitionend.
+    <div className={styles.postComposerWrapper} ref={composerRef} data-bars-transition-ignore="">
       {/* Popups rendered above the composer */}
       {showEmoji && (
         <div className={styles.emojiPicker} ref={emojiPanelRef}>
@@ -492,7 +464,6 @@ const PostComposer = forwardRef(function PostComposer({ onSubmit }, ref) {
                 if (!isExpanded) setIsExpanded(true);
               }}
               onFocus={() => setIsExpanded(true)}
-              inputMode={keyboardReady ? undefined : 'none'}
               onSubmit={() => { if (!showPoll) handlePost(); }}
               singleLine={false}
             />

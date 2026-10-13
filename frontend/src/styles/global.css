@@ -529,6 +529,19 @@ nav a.active {
   overflow: hidden !important;
 }
 
+/* How far an open chat's thread and composer rise while the keyboard is up, in
+   the Android app (see `.centre--messages.chat-pans-keyboard` below):
+   --kb-inset (the whole keyboard, the navigation bar's area included,
+   useKeyboardInset) minus that bar's inset. The composer keeps its own
+   navigation-bar padding, so after the rise that padding is behind the
+   keyboard and its content sits on the keyboard's top edge: no gap, no
+   overlap, the bar counted once.
+   0 with the keyboard down. Not inside the phone media query: a chat on an
+   Android tablet is covered by the keyboard just the same. */
+.centre--messages.chat-pans-keyboard {
+  --chat-kb-lift: max(0px, calc(var(--kb-inset, 0px) - env(safe-area-inset-bottom, 0px)));
+}
+
 @media (max-width: 1024px) {
   .centre {
     padding: 0 0rem;
@@ -574,13 +587,20 @@ nav a.active {
        largest wins:
 
          clearance - kb-layout-shift  the attached BottomNav and home-area
-                                 inset. Normally the bar height; on Android the keyboard shrinks
-                                 the layout viewport and the nav translates down
-                                 out of it by exactly that much, so its claim on
-                                 this box shrinks to nothing. Floored at 0 so it
-                                 can never subtract.
+                                 inset. Normally the bar height; where the keyboard shrinks
+                                 the layout viewport (the website on Android)
+                                 the nav translates down out of it by exactly
+                                 that much, so its claim on this box shrinks to
+                                 nothing. Floored at 0 so it can never subtract.
          kb-inset                the keyboard, where it overlaps the layout
-                                 viewport instead of shrinking it (iOS).
+                                 viewport instead of shrinking it (iOS; the
+                                 Android app has its own rules below, because
+                                 there the chat pans with the keyboard rather
+                                 than shrinking).
+
+       Each keyboard is counted once whichever platform it is on: it is either a
+       layout shift (and kb-inset is 0) or an overlap (and the shift is 0), and
+       the two meet in a max(), never a sum.
 
        Reserving the larger of the two is what keeps the nav's real position and
        the space kept for it in agreement — reserve too little and the nav sits
@@ -593,6 +613,26 @@ nav a.active {
   .centre--messages.chat-is-open {
     height: calc(100dvh - var(--status-bar-inset, 0px) - var(--kb-inset, 0px)) !important;
     max-height: calc(100dvh - var(--status-bar-inset, 0px) - var(--kb-inset, 0px)) !important;
+  }
+
+  /* Android app (MessagesRoute adds the class): an open chat does NOT shrink
+     for the keyboard. It keeps its full height and slides the thread and the
+     composer up with it instead (ChatAreaLayout's .chatBody, the composer's
+     .msgChatInputWrap, both by --chat-kb-lift, defined above), which moves with the
+     keyboard's own animation on the compositor. Shrinking the box as well
+     would lift the composer twice; shrinking it alone would snap the composer
+     to its final place in one frame and leave it waiting for the keyboard. */
+  .centre--messages.chat-is-open.chat-pans-keyboard {
+    height: calc(100dvh - var(--status-bar-inset, 0px)) !important;
+    max-height: calc(100dvh - var(--status-bar-inset, 0px)) !important;
+  }
+
+  /* The inbox in the Android app: --kb-inset is the space the keyboard takes
+     from the bottom edge, the navigation bar's area included. A max() against
+     the BottomNav clearance, which the keyboard covers. */
+  .centre--messages.chat-pans-keyboard:not(.chat-is-open) {
+    height: calc(100dvh - var(--status-bar-inset, 0px) - max(var(--bottom-nav-clearance), var(--kb-inset, 0px))) !important;
+    max-height: calc(100dvh - var(--status-bar-inset, 0px) - max(var(--bottom-nav-clearance), var(--kb-inset, 0px))) !important;
   }
 
   /* The BottomNav is NOT hidden when the keyboard opens — it stays exactly

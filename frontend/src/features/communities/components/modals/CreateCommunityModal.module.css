@@ -592,8 +592,14 @@
 }
 
 @media (max-width: 640px) {
+  /* The keyboard overlays the page in the app (--kb-inset, useKeyboardInset)
+     instead of shrinking it. While a field is being typed into, the sheet
+     stands on the keyboard's top edge and is capped to the space above it, so
+     the step scrolls inside `.stepWrapper` and the Back/Next footer stays in
+     reach. One layout change per keyboard transition. */
   .overlay {
     padding: 0;
+    padding-bottom: var(--kb-inset, 0px);
     justify-content: flex-end;
     scrollbar-width: none;
     -ms-overflow-style: none;
@@ -606,9 +612,9 @@
   .modal {
     width: 100%;
     max-width: 100%;
-    height: 85dvh;
-    min-height: 85dvh;
-    max-height: 85dvh;
+    height: min(85dvh, calc(100dvh - var(--kb-inset, 0px) - var(--status-bar-inset, 0px) - 1rem));
+    min-height: min(85dvh, calc(100dvh - var(--kb-inset, 0px) - var(--status-bar-inset, 0px) - 1rem));
+    max-height: min(85dvh, calc(100dvh - var(--kb-inset, 0px) - var(--status-bar-inset, 0px) - 1rem));
     margin: 0;
     border-bottom-left-radius: 0;
     border-bottom-right-radius: 0;
@@ -619,8 +625,9 @@
        navigation bar. The footer buttons live at that edge, so the sheet's own
        bottom padding clears the bar. (The mobile build's PostCSS pairs
        env(safe-area-inset-bottom) with the native bar height; the site and PWA
-       get the home-indicator inset from env() itself.) */
-    padding: 1.5rem 1.25rem calc(1.25rem + env(safe-area-inset-bottom, 0px)) 1.25rem;
+       get the home-indicator inset from env() itself.) The keyboard covers that
+       bar while it is up, so the bar's share gives way to it, never adds. */
+    padding: 1.5rem 1.25rem calc(1.25rem + max(0px, env(safe-area-inset-bottom, 0px) - var(--kb-inset, 0px))) 1.25rem;
     animation: slideUpMobile 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   }
 

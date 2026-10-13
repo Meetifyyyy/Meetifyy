@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import Avatar from '@shared/components/avatar/Avatar';
 import MentionInput from '@shared/components/mentions/MentionInput';
+import { KEYBOARD_OVERLAYS_PAGE } from '@shared/utils/keyboardOverlay';
 import styles from './ReplyDock.module.css';
 
 /**
@@ -19,11 +20,17 @@ import styles from './ReplyDock.module.css';
  * WHERE IT SITS
  * Fixed to the bottom of the visible viewport, in a portal so no ancestor's
  * overflow or transform can clip or re-anchor it. On a phone the native shell
- * shrinks the WebView to the space above the keyboard, so `bottom: 0` is the
- * top of the keyboard; when there is no keyboard the navigation bar's height
- * (`--navigation-bar-inset`, folded into `env(safe-area-inset-bottom)` by the
- * mobile build) keeps it clear of the phone's buttons. On a wide screen it
- * follows the post column instead of spanning the window.
+ * lets the keyboard overlay the page (Android): the bar stays at `bottom: 0`
+ * and rises with the keyboard by a transform (ReplyDock.module.css,
+ * `data-keyboard-overlay`); when there is no keyboard the navigation bar's
+ * height (`--navigation-bar-inset`, folded into `env(safe-area-inset-bottom)`
+ * by the mobile build) keeps it clear of the phone's buttons. On a wide screen
+ * it follows the post column instead of spanning the window.
+ *
+ * `data-keyboard-dock` tells the app-wide "keep the focused field visible"
+ * pass (shared/utils/keyboardFocus) that this field moves itself: scrolling the
+ * page for it as well would move the comments by a keyboard's height on every
+ * tap of the bar. The page under the bar stays exactly where it is.
  */
 export default function ReplyDock({
   currentUser,
@@ -68,6 +75,8 @@ export default function ReplyDock({
     <div
       ref={dockRef}
       className={`${styles.dock} ${inline ? styles.inline : ''}`}
+      data-keyboard-dock={inline ? undefined : ''}
+      data-keyboard-overlay={!inline && KEYBOARD_OVERLAYS_PAGE ? '' : undefined}
       data-focused={focused ? 'true' : 'false'}
       data-replying={replyingTo ? 'true' : 'false'}
       data-send={hasText || isPosting ? 'open' : 'closed'}

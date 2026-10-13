@@ -36,6 +36,7 @@ import SettingsHelpPanel from '../panels/SettingsHelpPanel';
 import DevicesPanel from '../panels/DevicesPanel';
 import { IS_DEV_BUILD, IS_MOBILE_BUILD } from '@config';
 import { useCookieConsent } from '@shared/context/CookieConsentContext';
+import { visibleViewportBottom } from '@shared/utils/visibleViewport';
 
 // Large-device split layout only kicks in at this width — tablets and phones
 // keep the existing single-pane list/detail swap untouched.
@@ -247,7 +248,9 @@ function CustomSelect({ value, onChange, options = [], disabled, placeholder, se
       if (el) {
         const r = el.getBoundingClientRect();
         const vw = window.innerWidth;
-        const vh = window.visualViewport?.height ?? window.innerHeight;
+        // Space below ends at the keyboard: in the app it overlays the page
+        // and shrinks no viewport, and a searchable menu raises it on open.
+        const vh = visibleViewportBottom() || window.innerHeight;
         const key = `${Math.round(r.top)}:${Math.round(r.left)}:${Math.round(r.width)}:${vw}:${Math.round(vh)}`;
         if (key !== last) {
           last = key;
@@ -265,7 +268,8 @@ function CustomSelect({ value, onChange, options = [], disabled, placeholder, se
           const left = Math.min(Math.max(r.left, EDGE), vw - EDGE - width);
           const maxHeight = Math.max(120, Math.min(IDEAL, up ? above : below));
           setMenuBox(up
-            ? { up, left, width, maxHeight, bottom: vh - r.top + GAP }
+            // A fixed-position offset, from the layout viewport's bottom edge.
+            ? { up, left, width, maxHeight, bottom: window.innerHeight - r.top + GAP }
             : { up, left, width, maxHeight, top: r.bottom + GAP });
         }
       }

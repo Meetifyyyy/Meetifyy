@@ -306,17 +306,23 @@
 
 /* ── Mobile: bottom sheet ─────────────────────────────────── */
 @media (max-width: 640px) {
+  /* The keyboard overlays the page in the app (--kb-inset, useKeyboardInset)
+     instead of shrinking it: the sheet stands on its top edge, capped to the
+     space left above it, so the search field and the results under it stay
+     reachable. One layout change per keyboard transition. The home-indicator
+     padding gives way to the keyboard, which covers that area. */
   .overlay {
     /* align to bottom, no side padding */
     align-items: flex-end;
     justify-content: stretch;
     padding: 0;
+    padding-bottom: var(--kb-inset, 0px);
   }
 
   .modal {
     /* fill full width, slide up from bottom */
     max-width: 100%;
-    max-height: 90dvh;
+    max-height: min(90dvh, calc(100dvh - var(--kb-inset, 0px) - var(--status-bar-inset, 0px) - 1rem));
     border-radius: 24px 24px 0 0;
     border-bottom: none;
     animation: slideUp 0.32s cubic-bezier(0.16, 1, 0.3, 1);

@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useId, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronDown, Check } from '@shared/components/icons';
+import { visibleViewportBottom } from '@shared/utils/visibleViewport';
 import styles from './CustomSelect.module.css';
 
 /**
@@ -43,15 +44,18 @@ export default function CustomSelect({
   const updatePosition = useCallback(() => {
     if (!triggerRef.current) return;
     const rect = triggerRef.current.getBoundingClientRect();
-    const vh = window.visualViewport?.height || window.innerHeight;
+    // Space below ends at the keyboard (which overlays the page in the app and
+    // shrinks no viewport there); `bottom` is a fixed-position offset, so it
+    // is measured from the layout viewport's bottom edge.
+    const visibleBottom = visibleViewportBottom() || window.innerHeight;
     const vw = window.visualViewport?.width || window.innerWidth;
-    const spaceBelow = vh - rect.bottom;
+    const spaceBelow = visibleBottom - rect.bottom;
     const isTop = spaceBelow < 240 && rect.top > 240;
 
     setDropdownStyle({
       position: 'fixed',
       top: isTop ? 'auto' : `${Math.round(rect.bottom + 4)}px`,
-      bottom: isTop ? `${Math.round(vh - rect.top + 4)}px` : 'auto',
+      bottom: isTop ? `${Math.round(window.innerHeight - rect.top + 4)}px` : 'auto',
       left: `${Math.max(8, Math.min(rect.left, vw - rect.width - 8))}px`,
       width: `${Math.round(rect.width)}px`,
       zIndex: 99999,
@@ -124,14 +128,27 @@ export default function CustomSelect({
       closeDropdown();
     };
 
+    // A keyboard showing or hiding resizes nothing in the app (it overlays the
+    // page), so it is not a reason to close. Opening this select usually blurs
+    // a text field, and the keyboard then slides away under an open menu that
+    // was placed above it: re-place against the new visible area instead.
+    let keyboardRaf = 0;
+    const handleKeyboard = () => {
+      cancelAnimationFrame(keyboardRaf);
+      keyboardRaf = requestAnimationFrame(updatePosition);
+    };
+
     document.addEventListener('mousedown', handleOutsideClick, true);
     document.addEventListener('touchstart', handleOutsideClick, true);
     window.addEventListener('scroll', handleExternalScroll, true);
     window.addEventListener('wheel', handleWheel, { capture: true, passive: true });
     window.addEventListener('resize', handleExternalScroll);
     window.visualViewport?.addEventListener('resize', handleExternalScroll);
+    window.addEventListener('meetifyy:ime', handleKeyboard);
 
     return () => {
+      cancelAnimationFrame(keyboardRaf);
+      window.removeEventListener('meetifyy:ime', handleKeyboard);
       document.removeEventListener('mousedown', handleOutsideClick, true);
       document.removeEventListener('touchstart', handleOutsideClick, true);
       window.removeEventListener('scroll', handleExternalScroll, true);
@@ -139,7 +156,7 @@ export default function CustomSelect({
       window.removeEventListener('resize', handleExternalScroll);
       window.visualViewport?.removeEventListener('resize', handleExternalScroll);
     };
-  }, [isOpen]);
+  }, [isOpen, updatePosition]);
 
   // Keyboard navigation
   const handleKeyDown = (e) => {

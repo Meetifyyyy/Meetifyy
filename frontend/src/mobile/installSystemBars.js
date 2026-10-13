@@ -273,9 +273,18 @@ export function installSystemBars(systemBars, { readEdges } = {}) {
     scrollTimer = setTimeout(schedule, 160);
   };
   window.addEventListener('scroll', onScroll, { passive: true });
-  // Slides and fades that end without any DOM change.
-  document.addEventListener('transitionend', schedule, true);
-  document.addEventListener('animationend', schedule, true);
+  // Slides and fades that end without any DOM change. Not those inside a
+  // keyboard dock or an element that opts out (`data-bars-transition-ignore`,
+  // e.g. the post composer): their transitions run with the keyboard and never
+  // change what is at the screen's edges, and each sample is a forced layout
+  // plus bridge calls in the middle of that motion.
+  const onTransitionEnd = (e) => {
+    const t = e.target;
+    if (t instanceof Element && t.closest('[data-keyboard-dock], [data-bars-transition-ignore]')) return;
+    schedule();
+  };
+  document.addEventListener('transitionend', onTransitionEnd, true);
+  document.addEventListener('animationend', onTransitionEnd, true);
   // From MainActivity once the splash is removed.
   window.addEventListener('meetifyy:system-bars-reset', scheduleWithSettle);
 
@@ -298,8 +307,8 @@ export function installSystemBars(systemBars, { readEdges } = {}) {
     window.removeEventListener('resize', schedule);
     window.removeEventListener('scroll', onScroll);
     clearTimeout(scrollTimer);
-    document.removeEventListener('transitionend', schedule, true);
-    document.removeEventListener('animationend', schedule, true);
+    document.removeEventListener('transitionend', onTransitionEnd, true);
+    document.removeEventListener('animationend', onTransitionEnd, true);
     window.removeEventListener('meetifyy:system-bars-reset', scheduleWithSettle);
     document.removeEventListener('visibilitychange', onVisible);
   };

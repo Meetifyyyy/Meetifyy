@@ -29,16 +29,21 @@
 }
 
 @media (max-width: 640px) {
+  /* The keyboard overlays the page in the app (--kb-inset, useKeyboardInset)
+     instead of shrinking it: the sheet stands on its top edge, capped to the
+     space above it, and its form scrolls inside. One layout change per
+     keyboard transition. */
   .overlay {
     padding: 0;
+    padding-bottom: var(--kb-inset, 0px);
     align-items: flex-end;
   }
 
   .modal {
     width: 100% !important;
     max-width: 100% !important;
-    height: 85dvh !important;
-    max-height: 85dvh !important;
+    height: min(85dvh, calc(100dvh - var(--kb-inset, 0px) - var(--status-bar-inset, 0px) - 1rem)) !important;
+    max-height: min(85dvh, calc(100dvh - var(--kb-inset, 0px) - var(--status-bar-inset, 0px) - 1rem)) !important;
     border-radius: 24px 24px 0 0 !important;
     margin: 0 !important;
     padding: 1.5rem 1.25rem !important;

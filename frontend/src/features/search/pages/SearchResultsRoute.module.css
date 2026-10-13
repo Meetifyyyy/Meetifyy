@@ -560,9 +560,13 @@
     padding: 0 0.9rem;
   }
 
+  /* The keyboard overlays the page in the app (--kb-inset, useKeyboardInset)
+     instead of shrinking it, and covers the home-indicator area while it is
+     up: the larger of the two, so the last result can be scrolled clear of
+     the keyboard while the query is still being typed. */
   .resultsList {
     padding: 0.5rem 0.6rem;
-    padding-bottom: calc(0.5rem + env(safe-area-inset-bottom));
+    padding-bottom: calc(0.5rem + max(env(safe-area-inset-bottom), var(--kb-inset, 0px)));
   }
 
   .body {

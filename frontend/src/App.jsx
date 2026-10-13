@@ -5,6 +5,7 @@ import { isKnownAppRoute, normalisePathname } from '@config/seo';
 import { createBrowserRouter, RouterProvider, Navigate, Outlet, ScrollRestoration, useLocation } from 'react-router-dom';
 import { QueryErrorResetBoundary } from '@tanstack/react-query';
 import { SmartBackTracker } from './shared/hooks/useSmartBack';
+import { useKeyboardInset } from './shared/hooks/useKeyboardInset';
 import { useAuth, AUTH_STATUS } from './shared/context/AuthContext';
 import DashboardLayoutWrapper from './layout/DashboardLayoutWrapper';
 import ErrorBoundary, { RouteErrorBoundary } from './shared/components/ErrorBoundary';
@@ -348,6 +349,17 @@ function NotFound() {
  *   router's `navigate`; the website passes nothing.
  */
 export default function App({ homeElement, rootExtras = null }) {
+  /*
+   * The keyboard geometry (`--kb-inset`, `--kb-layout-shift`, `--app-vh`,
+   * `data-text-entry`, `data-keyboard-open`), published for every screen.
+   *
+   * At the root, not in DashboardLayoutWrapper where it used to be: sign-in,
+   * sign-up and onboarding render outside that layout and had none of it, so
+   * their full-height backdrops re-laid out under the keyboard. One instance
+   * only: the hook zeroes the variables in its cleanup, so a second copy
+   * unmounting would blank them underneath the one still running.
+   */
+  useKeyboardInset();
   // NOTE: This router is created inside the App component using useMemo so that
   // nested route elements and hooks (like ProtectedRoute, SocketManager) can
   // safely consume context from AuthProvider, which wraps App in main.jsx.

@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Calendar, ChevronLeft, ChevronRight } from '@shared/components/icons';
+import { visibleViewportBottom } from '@shared/utils/visibleViewport';
 import styles from './CustomDatePicker.module.css';
 
 const MONTH_NAMES = [
@@ -54,7 +55,9 @@ export default function CustomDatePicker({
       const rect = containerRef.current.getBoundingClientRect();
       const popoverWidth = 230;
       const popoverHeight = 250;
-      const vh = window.visualViewport?.height || window.innerHeight;
+      // Above the keyboard: in the app it overlays the page and shrinks no
+      // viewport, so `visualViewport.height` alone would open this under it.
+      const vh = visibleViewportBottom() || window.innerHeight;
       const spaceBelow = vh - rect.bottom;
 
       let top = rect.bottom + 6;

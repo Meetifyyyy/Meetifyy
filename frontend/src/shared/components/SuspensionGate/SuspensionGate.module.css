@@ -149,6 +149,11 @@
   align-items: center;
   justify-content: center;
   padding: 1.5rem;
+  /* The appeal textarea focuses on open, and the keyboard overlays the page
+     in the app (--kb-inset, useKeyboardInset) rather than shrinking it: the
+     dialog is placed in the space left above the keyboard, and this backdrop
+     scrolls if it does not fit. One layout change per keyboard transition. */
+  padding-bottom: max(1.5rem, var(--kb-inset, 0px));
   overflow-y: auto;
   background: rgba(15, 23, 42, 0.45);
   box-sizing: border-box;
@@ -273,6 +278,7 @@
 
   .modalBackdrop {
     padding: 0;
+    padding-bottom: var(--kb-inset, 0px);
     align-items: flex-end;
   }
 

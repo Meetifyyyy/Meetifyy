@@ -26,8 +26,16 @@
 }
 
 @media (max-width: 640px) {
-  .overlay { padding: 0; align-items: flex-end; }
+  /* The keyboard overlays the page in the app (--kb-inset, useKeyboardInset)
+     instead of shrinking it: the sheet stands on its top edge, capped to the
+     space above it, so `.body` scrolls the field being typed in and the footer
+     stays in reach. One layout change per keyboard transition. */
+  .overlay { padding: 0; padding-bottom: var(--kb-inset, 0px); align-items: flex-end; }
   .modal { max-width: 100%; border-radius: 18px 18px 0 0; max-height: 94vh; }
+  /* Only while a keyboard is up, so the sheet's resting height is untouched. */
+  :global(html[data-keyboard-open]) .modal {
+    max-height: min(94vh, calc(100dvh - var(--kb-inset, 0px) - var(--status-bar-inset, 0px) - 1rem));
+  }
 }
 
 .header {

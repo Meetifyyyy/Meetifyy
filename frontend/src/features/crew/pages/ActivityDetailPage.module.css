@@ -814,10 +814,15 @@
     overflow: visible !important;
   }
 
+  /* 13rem clears the sticky Join button. The discussion box's reply field is
+     the last field on the page, and the keyboard overlays this fixed page in
+     the app (--kb-inset, useKeyboardInset) rather than shrinking it, so while
+     it is up the page needs at least the keyboard's height below that field
+     to scroll it clear. The Join button stays put behind the keyboard. */
   .detailsCol {
     overflow-y: visible !important;
     height: auto !important;
-    padding-bottom: 13rem !important;
+    padding-bottom: max(13rem, calc(var(--kb-inset, 0px) + 1rem)) !important;
   }
 
   .mapOverlay {

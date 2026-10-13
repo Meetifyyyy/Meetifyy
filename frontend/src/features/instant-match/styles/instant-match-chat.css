@@ -8,8 +8,15 @@
   display: flex;
   flex-direction: column;
   background: var(--im-paper, var(--color-bg-page, #fff));
-  /* Respect the notch and the software keyboard's inset. */
-  padding-bottom: env(safe-area-inset-bottom);
+  /* Respect the notch and the software keyboard's inset. The keyboard
+     overlays the page in the app (--kb-inset, useKeyboardInset) rather than
+     shrinking this fixed root, so the root makes room for it itself: the
+     composer stands on the keyboard and the thread above it gets shorter,
+     once per keyboard transition (ChatMessageList's ResizeObserver keeps the
+     latest message pinned). The keyboard covers the home-indicator area, so
+     the larger of the two, never both. Messages lifts the same composer its
+     own way (`.chat-pans-keyboard`); that class is never set here. */
+  padding-bottom: max(env(safe-area-inset-bottom), var(--kb-inset, 0px));
 }
 
 /* On a phone the window IS the root — it adds nothing and simply passes its

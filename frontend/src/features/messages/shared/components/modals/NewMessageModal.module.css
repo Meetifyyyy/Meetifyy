@@ -564,3 +564,25 @@
     transition: none;
   }
 }
+
+/*
+ * Android app (`data-keyboard-overlay`, set only there), keyboard up: the
+ * keyboard overlays the page instead of shrinking it, so this bottom sheet
+ * would sit behind it with its search results and buttons out of reach. The
+ * scrim is padded by the keyboard, which stands the sheet on top of it, and
+ * the sheet gives up height so its top stays on screen. A layout change, but
+ * one per keyboard transition, never per frame. (The sheet's own transform is
+ * taken by its entry animation and its drag-to-dismiss, so it cannot be the lift.)
+ */
+@media (max-width: 768px) {
+  /* --kb-inset is the whole keyboard, the navigation bar's area included, so
+     standing the sheet on it puts the sheet's bottom on the keyboard's top
+     edge (this sheet has no navigation-bar padding of its own). */
+  :global(html[data-keyboard-open]) .overlay[data-keyboard-overlay] {
+    padding-bottom: var(--kb-inset, 0px);
+  }
+
+  :global(html[data-keyboard-open]) .overlay[data-keyboard-overlay] .panel {
+    height: min(88dvh, 720px, calc(100dvh - var(--kb-inset, 0px) - max(env(safe-area-inset-top, 0px), var(--status-bar-inset, 0px)) - 12px));
+  }
+}

@@ -1,4 +1,5 @@
 import { useLayoutEffect, useState } from 'react';
+import { onVisibleViewportChange, visibleViewportBottom } from '@shared/utils/visibleViewport';
 
 /** Gap between the anchor (or press point) and the menu. */
 export const MENU_GAP = 6;
@@ -70,9 +71,10 @@ function pointFromAnchor(el, align) {
  * it invisible — without it the menu is visibly painted in the wrong place and
  * then moves, which is the flicker this exists to avoid.
  *
- * `visualViewport.height` rather than `innerHeight`: with a keyboard open on
- * Android the two differ by the height of the keyboard, and a menu clamped to
- * `innerHeight` is clamped to a region partly behind it.
+ * Clamped to the area above the keyboard (`visibleViewportBottom`), not to
+ * `innerHeight`: a menu clamped to `innerHeight` is clamped to a region partly
+ * behind the keyboard. In the Android app the keyboard overlays the page and
+ * resizes neither viewport, so `visualViewport.height` no longer sees it.
  *
  * @param {object}  opts
  * @param {boolean} opts.open
@@ -101,7 +103,7 @@ export function useMenuPosition({ open, menuRef, anchorRef, point, align = 'end'
       };
       const viewport = {
         width: window.innerWidth,
-        height: window.visualViewport?.height || window.innerHeight,
+        height: visibleViewportBottom() || window.innerHeight,
       };
 
       let target = point;
@@ -136,13 +138,12 @@ export function useMenuPosition({ open, menuRef, anchorRef, point, align = 'end'
      */
     const onMove = () => place();
     window.addEventListener('scroll', onMove, { passive: true, capture: true });
-    window.addEventListener('resize', onMove, { passive: true });
-    window.visualViewport?.addEventListener('resize', onMove);
+    // Resizes, and the keyboard showing or hiding (which resizes nothing).
+    const stopViewport = onVisibleViewportChange(onMove);
 
     return () => {
       window.removeEventListener('scroll', onMove, { capture: true });
-      window.removeEventListener('resize', onMove);
-      window.visualViewport?.removeEventListener('resize', onMove);
+      stopViewport();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `deps` is the caller's opaque "my size may have changed" signal
   }, [open, anchorRef, point?.x, point?.y, align, deps, menuRef]);

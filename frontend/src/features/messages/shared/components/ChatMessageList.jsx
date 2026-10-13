@@ -441,6 +441,16 @@ export default function ChatMessageList({
   // ── RESIZE OBSERVER: compensate when the VIEWPORT changes size ───────────
   // Keyboard open/close, window resize, pane resize. Content growth is handled
   // by the load listener above, for the reason given there.
+  //
+  // In the Android app the keyboard changes neither the window nor this box:
+  // the thread slides up under the header instead and adds the same amount to
+  // its top padding (ChatMessageList.module.css), so its first message stays
+  // reachable. That shrinks the CONTENT box, which is what a ResizeObserver
+  // reports by default, so the keyboard arrives here once per open or close,
+  // in the frame the padding changes, after layout and before paint. There the
+  // thread is bottom-anchored, so the padding pushes content down by exactly
+  // the growth of scrollHeight, and the shift below cancels it: nothing moves
+  // inside the thread, and the only motion is the slide.
   useLayoutEffect(() => {
     if (!bodyRef.current) return;
     const container = bodyRef.current;

@@ -11,6 +11,12 @@
   justify-content: center;
   background: rgba(0, 0, 0, 0.45);
   animation: fadeIn 0.18s ease;
+  /* The keyboard overlays the page in the app (--kb-inset, useKeyboardInset)
+     instead of shrinking it. While the chat search is typed into, the sheet
+     stands on the keyboard's top edge, capped to the space above it, so the
+     results and the Send button stay reachable. One layout change per
+     keyboard transition; 0 everywhere without an overlaying keyboard. */
+  padding-bottom: var(--kb-inset, 0px);
 }
 
 .sheet {
@@ -18,6 +24,7 @@
   max-width: 480px;
   height: 78vh;
   height: 78dvh;
+  height: min(78dvh, calc(100dvh - var(--kb-inset, 0px) - var(--status-bar-inset, 0px) - 1rem));
   display: flex;
   flex-direction: column;
   background: var(--color-bg-white);
@@ -304,7 +311,8 @@
 .footer {
   flex-shrink: 0;
   margin: 0 -12px;
-  padding: 6px 12px calc(8px + env(safe-area-inset-bottom));
+  /* The keyboard covers the home-indicator area: give way to it, never add. */
+  padding: 6px 12px calc(8px + max(0px, env(safe-area-inset-bottom) - var(--kb-inset, 0px)));
   display: flex;
   flex-direction: column;
   justify-content: center;

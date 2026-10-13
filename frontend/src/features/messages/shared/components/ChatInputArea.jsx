@@ -18,6 +18,7 @@ export default function ChatInputArea({
   onJoinGroup,
   onBlockUser,
   onTyping,
+  keyboardDock = false,
   stopTypingNow,
   disabled,
   disabledReason,
@@ -58,7 +59,7 @@ export default function ChatInputArea({
     if (replyingTo) {
       requestAnimationFrame(() => {
         if (inputRef.current) {
-          inputRef.current.focus();
+          inputRef.current.focus({ preventScroll: true });
           try {
             const sel = window.getSelection();
             if (sel && inputRef.current.childNodes.length > 0) {
@@ -170,7 +171,7 @@ export default function ChatInputArea({
 
     // Retain cursor inside textbox on mobile and desktop after sending
     requestAnimationFrame(() => {
-      inputRef.current?.focus();
+      inputRef.current?.focus({ preventScroll: true });
     });
   };
 
@@ -202,7 +203,10 @@ export default function ChatInputArea({
   }
 
   return (
-    <div className={styles.msgChatInputWrap}>
+    /* `data-keyboard-dock` (Messages in the Android app, see ChatAreaLayout):
+       this composer rises with the keyboard by itself, so the app-wide "keep
+       the focused field visible" pass (keyboardFocus) leaves it alone. */
+    <div className={styles.msgChatInputWrap} data-keyboard-dock={keyboardDock ? '' : undefined}>
       {/* Reply preview bar */}
       {replyingTo && (
         <div className={styles.msgReplyPreview}>
@@ -368,7 +372,7 @@ export default function ChatInputArea({
                         const curText = typeof prev === 'string' ? prev : (prev?.text || '');
                         return typeof prev === 'string' ? curText + emoji.native : { ...prev, text: curText + emoji.native };
                       });
-                      inputRef.current?.focus();
+                      inputRef.current?.focus({ preventScroll: true });
                     }
                   }}
                 />

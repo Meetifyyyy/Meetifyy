@@ -116,6 +116,13 @@
   will-change: transform;
 }
 
+/* Held still while the keyboard is up (data-text-entry, useKeyboardInset): a
+   shimmer ticking in every frame of the keyboard's slide is work the slide
+   pays for, and nothing is loading that the user is looking at then. */
+:global(html[data-text-entry]) .skeleton::after {
+  animation-play-state: paused;
+}
+
 [data-theme="dark"] .skeleton {
   --skeleton-base: rgba(20, 24, 35, 0.9);
   --skeleton-edge: rgba(32, 38, 54, 0.9);

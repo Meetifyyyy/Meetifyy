@@ -21,6 +21,36 @@
   position: relative;
 }
 
+/*
+ * Android app (`.chat-pans-keyboard`): the thread is bottom-anchored, so the
+ * latest message sits directly above the composer even when the thread is too
+ * short to fill the screen (the space goes above the first message, as in any
+ * chat app). That is also what makes the keyboard below exact.
+ *
+ * Keyboard up: the thread is slid up under the chat header by --chat-kb-lift
+ * (ChatAreaLayout's .chatBody), so the same amount is added to its top,
+ * keeping its first message reachable below the header. In a bottom-anchored
+ * thread that padding first uses up the free space above the messages and
+ * then pushes them down by exactly the growth of scrollHeight, which the
+ * list's ResizeObserver scrolls back in the same frame, before paint, so
+ * nothing inside the thread moves. (Top-anchored, a short thread could not
+ * scroll far enough to cancel it: the messages dropped by the empty space
+ * below them, then rose with the slide.) Once per keyboard transition, never
+ * per frame. Scroll anchoring is off here so the browser does not apply that
+ * same correction a second time on top of the observer's.
+ */
+:global(.chat-pans-keyboard) .msgChatBody {
+  overflow-anchor: none;
+}
+
+:global(.chat-pans-keyboard) .msgChatBody > :first-child {
+  margin-top: auto;
+}
+
+:global(html[data-keyboard-open] .chat-pans-keyboard) .msgChatBody {
+  padding-top: calc(0.75rem + var(--chat-kb-lift, 0px));
+}
+
 .msgChatBody::-webkit-scrollbar {
   display: none;
 }

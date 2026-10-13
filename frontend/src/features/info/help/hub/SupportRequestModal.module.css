@@ -560,10 +560,16 @@
   }
 }
 
-/* Phones: bottom sheet, full width, single-column fields. */
+/* Phones: bottom sheet, full width, single-column fields.
+   The keyboard overlays the page in the app (--kb-inset, useKeyboardInset)
+   instead of shrinking it, so the sheet stands on the keyboard's top edge and
+   is capped to the space above it: the form scrolls inside and the sticky
+   Send row stays in reach. One layout change per keyboard transition; the
+   home-indicator padding gives way to the keyboard, which covers that area. */
 @media (max-width: 768px) {
   .overlay {
     padding: 0;
+    padding-bottom: var(--kb-inset, 0px);
     align-items: flex-end;
   }
 
@@ -572,8 +578,13 @@
     max-height: 92dvh;
     border-radius: 24px 24px 0 0;
     border-bottom: none;
-    padding-bottom: env(safe-area-inset-bottom, 0px);
+    padding-bottom: max(0px, calc(env(safe-area-inset-bottom, 0px) - var(--kb-inset, 0px)));
     animation: slide 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  /* Only while a keyboard is up, so the sheet's resting height is untouched. */
+  :global(html[data-keyboard-open]) .sheet {
+    max-height: min(92dvh, calc(100dvh - var(--kb-inset, 0px) - var(--status-bar-inset, 0px) - 1rem));
   }
 
   .sheet > :global(.sheet-handle) {

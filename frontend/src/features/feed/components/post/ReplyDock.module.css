@@ -23,6 +23,28 @@
   pointer-events: none;
 }
 
+/*
+ * Android app (`data-keyboard-overlay`, set only there): the keyboard overlays
+ * the page and the bar rises with it. A transform, written once when the
+ * keyboard starts to move and run over the keyboard's own duration and curve,
+ * so it travels with the keyboard on the compositor.
+ *
+ * It rises by --kb-inset (the whole keyboard, the navigation bar's area
+ * included) minus that bar's inset, which its own bottom padding already
+ * clears: the bar's share of the padding ends up behind the keyboard and the
+ * pill sits `--dock-gap` above the keyboard's top edge, as it normally sits
+ * above the bar. Nothing changes size. Elsewhere the attribute is absent and nothing here
+ * applies (iOS pans the visual viewport to the field itself; the website on
+ * Android resizes the layout viewport, which carries `bottom: 0` with it).
+ */
+.dock[data-keyboard-overlay] {
+  transition: transform var(--kb-duration, 0ms) var(--kb-easing, ease-out) var(--kb-delay, 0ms);
+}
+
+:global(html[data-keyboard-open]) .dock[data-keyboard-overlay] {
+  transform: translate3d(0, calc(-1 * max(0px, calc(var(--kb-inset, 0px) - env(safe-area-inset-bottom, 0px)))), 0);
+}
+
 /* From the bottom edge up to half a one-line pill. The pill grows upward and
    its bottom never moves, so this stays under its lower half as it grows. */
 .strip {

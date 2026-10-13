@@ -9,6 +9,7 @@ import { useDialogFocus } from '@shared/hooks/useDialogFocus';
 import RowSkeleton from '@shared/components/skeletons/RowSkeleton';
 import { filterForwardTargets, forwardEmptyMessage, forwardListState } from '../../utils/forwardTargets';
 import { ForwardPartialError, newForwardOperationId } from '../../utils/forwardDelivery';
+import { KEYBOARD_OVERLAYS_PAGE } from '@shared/utils/keyboardOverlay';
 
 /**
  * Pick chats to forward something to.
@@ -123,7 +124,7 @@ export default function ForwardMessageModal({
   };
 
   return createPortal(
-    <div className={styles.modalOverlay} data-scroll-lock-ignore onClick={onClose}>
+    <div className={styles.modalOverlay} data-scroll-lock-ignore data-keyboard-overlay={KEYBOARD_OVERLAYS_PAGE ? '' : undefined} onClick={onClose}>
       <div
         ref={dialogRef}
         className={styles.modalContent}

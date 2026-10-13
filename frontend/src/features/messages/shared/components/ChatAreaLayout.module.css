@@ -54,6 +54,29 @@
   overflow: hidden;
 }
 
+/*
+ * Android app, keyboard up (see `.chat-pans-keyboard` in global.css): the
+ * thread rises with the composer by the same amount and on the same curve, so
+ * the latest message stays directly above the composer for the whole slide
+ * instead of jumping first and leaving a gap for the composer to close.
+ *
+ * Its top edge slides under the chat header, which is opaque and stacked above
+ * it (ChatHeader.module.css: sticky, z-index 100); the thread adds the same
+ * amount to its top padding (ChatMessageList.module.css), so its first message
+ * can still be scrolled clear of the header.
+ *
+ * The transform exists only while the keyboard is open: at rest it would make
+ * this box the containing block for anything fixed inside the thread. Removing
+ * it still animates (`translate` to `none`), so the close slides too.
+ */
+:global(.chat-pans-keyboard) .chatBody {
+  transition: transform var(--kb-duration, 0ms) var(--kb-easing, ease-out) var(--kb-delay, 0ms);
+}
+
+:global(html[data-keyboard-open] .chat-pans-keyboard) .chatBody {
+  transform: translate3d(0, calc(-1 * var(--chat-kb-lift, 0px)), 0);
+}
+
 .loadingState {
   display: flex;
   align-items: center;

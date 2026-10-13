@@ -18,6 +18,7 @@ import { useScrollLock } from '@shared/hooks/useScrollLock';
 import { getProcessedAvatarUrl } from '@shared/components/avatar/Avatar';
 import { filterCompatibleUsers } from '@shared/lib/studentYearPolicy';
 import { publicOrigin } from '@shared/utils/publicOrigin';
+import { KEYBOARD_OVERLAYS_PAGE } from '@shared/utils/keyboardOverlay';
 
 export default function InviteModal({ isOpen, onClose, group }) {
   // Back dismisses this dialog rather than navigating the page behind it.
@@ -210,6 +211,7 @@ export default function InviteModal({ isOpen, onClose, group }) {
   return createPortal(
     <div
       className={styles.overlay}
+      data-keyboard-overlay={KEYBOARD_OVERLAYS_PAGE ? '' : undefined}
       onClick={(e) => {
         e.stopPropagation();
         e.preventDefault();

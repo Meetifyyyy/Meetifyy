@@ -13,6 +13,7 @@ import NotFoundState from '@shared/components/ui/NotFoundState';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 import { chatMediaItem } from '../utils/chatMediaItem';
 import { forwardToTargets } from '../utils/forwardDelivery';
+import { KEYBOARD_OVERLAYS_PAGE } from '@shared/utils/keyboardOverlay';
 import styles from './ChatAreaLayout.module.css';
 
 const ForwardMessageModal = lazy(() => import('./modals/ForwardMessageModal'));
@@ -261,6 +262,7 @@ export default function ChatAreaLayout({
         disabled={inputDisabled}
         disabledReason={inputDisabledReason}
         onBlockUser={onBlockUser}
+        keyboardDock={KEYBOARD_OVERLAYS_PAGE}
       />
 
       {contextMenuState && (

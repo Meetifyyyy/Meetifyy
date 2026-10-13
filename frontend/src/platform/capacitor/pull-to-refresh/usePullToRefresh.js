@@ -287,6 +287,17 @@ export function usePullToRefresh({ onRefresh, disabled = false, getScrollTop, on
     const onTouchEnd = () => {
       if (!activeRef.current) return;
 
+      // A touch that never pulled (every tap at the top of the page) has
+      // nothing to settle. Settling anyway repainted the whole screen: it wrote
+      // a transform onto the content wrapper and took it off again 360ms later,
+      // each a style recalc of every element on the page and, because a
+      // transform changes the containing block of fixed descendants, a full
+      // relayout - in the frames where a tapped field raises the keyboard.
+      if (distanceRef.current === 0) {
+        activeRef.current = false;
+        return;
+      }
+
       if (distanceRef.current >= TRIGGER_DISTANCE) {
         runRefresh();
       } else {

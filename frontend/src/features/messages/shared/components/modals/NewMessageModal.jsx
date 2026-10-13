@@ -14,6 +14,7 @@ import styles from './NewMessageModal.module.css';
 import { useUsersMap } from '@shared/hooks/useUsersMap';
 import { getProcessedAvatarUrl } from '@shared/components/avatar/Avatar';
 import { filterCompatibleUsers } from '@shared/lib/studentYearPolicy';
+import { KEYBOARD_OVERLAYS_PAGE } from '@shared/utils/keyboardOverlay';
 
 const RECENT_LIMIT = 10;
 const GROUP_NAME_MAX = 120;
@@ -224,7 +225,7 @@ export default function NewMessageModal({ onClose, onStartChat, onCreateGroup })
    * the whole screen down behind it.
    */
   return createPortal(
-    <div className={styles.overlay} data-scroll-lock-ignore onClick={onClose}>
+    <div className={styles.overlay} data-scroll-lock-ignore data-keyboard-overlay={KEYBOARD_OVERLAYS_PAGE ? '' : undefined} onClick={onClose}>
       <div
         ref={sheetRef}
         className={styles.panel}

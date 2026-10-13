@@ -6,13 +6,16 @@ import Post from './post/Post';
 /**
  * The window height the virtualizer measures, kept steady while a keyboard is up.
  *
- * It watches the window and, on Android, the keyboard shrinks the WebView by
+ * It watches the window, and a keyboard that resizes the page (the website on
+ * Android; the app before its keyboard overlaid the page) shrinks it by
  * ~330px. The shorter window changed which rows count as visible, so a row
  * unmounted as the keyboard opened and remounted when it closed (a flicker, and
  * a flushSync render mid-animation). The keyboard covers the bottom of the
  * screen; it does not make fewer rows relevant, so while text entry is active
  * (`data-text-entry`, see useKeyboardInset) the last height without a keyboard
- * is reported instead.
+ * is reported instead. In the Android app the window no longer changes for
+ * the keyboard, so this is a no-op there; it stays as the guard for any
+ * platform or WebView that does still resize.
  */
 function observeStableWindowRect(instance, cb) {
   let steady = 0;

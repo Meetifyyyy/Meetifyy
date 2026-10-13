@@ -189,8 +189,8 @@ public final class SystemUiHelper {
         window.setNavigationBarColor(Color.TRANSPARENT);
 
         // Replacing a view's background can reset its padding, and the decor's
-        // padding is where the keyboard inset lives. Carried across the swap so
-        // the window never lays out without it for a frame.
+        // padding holds the side insets (landscape cutout / side navigation).
+        // Carried across the swap so the window never lays out without it.
         final int padLeft = decor.getPaddingLeft();
         final int padTop = decor.getPaddingTop();
         final int padRight = decor.getPaddingRight();
@@ -203,8 +203,8 @@ public final class SystemUiHelper {
     }
 
     /**
-     * Paints the window and decor view, keeping the decor's padding (which is
-     * where the keyboard inset lives — replacing a background can reset it).
+     * Paints the window and decor view, keeping the decor's padding (the side
+     * insets; replacing a background can reset it).
      */
     public static void setWindowColor(Activity activity, int color) {
         if (activity == null || activity.isFinishing()) return;

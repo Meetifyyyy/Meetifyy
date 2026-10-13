@@ -3,6 +3,7 @@ import { useMentionSuggestions } from '../../hooks/useMentionSuggestions';
 import MentionDropdown from './MentionDropdown';
 import { cleanUrlDisplay } from '@shared/utils/linkPreview';
 import { sanitizeUrl } from '@shared/utils/urlSanitize';
+import { visibleViewportBottom } from '@shared/utils/visibleViewport';
 import styles from './MentionInput.module.css';
 
 function escapeHtml(str) {
@@ -250,13 +251,15 @@ export default function MentionInput({
           // Fall back to editor element rect when caret rect collapses to zero (empty field)
           const refRect = (rect.height > 0) ? rect : editorRef.current?.getBoundingClientRect();
           if (refRect) {
-            const vh = window.visualViewport?.height || window.innerHeight;
-            const spaceBelow = vh - refRect.bottom;
+            // Space below ends at the keyboard, which overlays the page in the
+            // app (no viewport shrinks for it). `bottom` is a fixed-position
+            // offset, so it is measured from the layout viewport's bottom.
+            const spaceBelow = (visibleViewportBottom() || window.innerHeight) - refRect.bottom;
             const shouldOpenUpwards = singleLine || spaceBelow < 250;
 
             if (shouldOpenUpwards) {
               setDropdownPos({
-                bottom: vh - refRect.top + 6,
+                bottom: window.innerHeight - refRect.top + 6,
                 left: Math.max(16, refRect.left),
                 top: 'auto',
                 fixed: true

@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronDown, Check } from '@shared/components/icons';
+import { visibleViewportBottom } from '@shared/utils/visibleViewport';
 import styles from '../SignupFlow.module.css';
 
 // Damerau-Levenshtein distance to calculate spelling edit distance (tolerates insertions, deletions, substitutions, transpositions)
@@ -181,7 +182,9 @@ export default function CustomSelect({
     if (!el) return;
     const r = el.getBoundingClientRect();
     const vw = window.innerWidth;
-    const vh = window.visualViewport?.height ?? window.innerHeight;
+    // Space below ends at the keyboard. In the app it overlays the page and
+    // shrinks no viewport, and a searchable menu raises it as soon as it opens.
+    const vh = visibleViewportBottom() || window.innerHeight;
     const GAP = 6;
     const EDGE = 8;
     const IDEAL = searchable ? 320 : 280;
@@ -201,7 +204,9 @@ export default function CustomSelect({
     setIsUpward(up);
     setMenuBox(
       up
-        ? { left, width, maxHeight, bottom: vh - r.top + GAP }
+        // `bottom` is a fixed-position offset: from the layout viewport's
+        // bottom edge, which the keyboard does not move.
+        ? { left, width, maxHeight, bottom: window.innerHeight - r.top + GAP }
         : { left, width, maxHeight, top: r.bottom + GAP },
     );
   }, [placement, searchable]);
@@ -226,7 +231,7 @@ export default function CustomSelect({
       const el = containerRef.current;
       if (el) {
         const r = el.getBoundingClientRect();
-        const vh = window.visualViewport?.height ?? window.innerHeight;
+        const vh = visibleViewportBottom();
         const key = `${Math.round(r.top)}:${Math.round(r.left)}:${Math.round(r.width)}:${window.innerWidth}:${Math.round(vh)}`;
         if (key !== last) {
           last = key;

@@ -263,21 +263,28 @@
 
 /* Mobile Bottom Sheet Adaptation */
 @media (max-width: 768px) {
+  /* The keyboard overlays the page in the app (--kb-inset, useKeyboardInset)
+     instead of shrinking it, so the sheet is stood on the keyboard's top edge
+     and capped to the space left above it. One layout change per keyboard
+     transition, and the details field then scrolls inside `.form`. The
+     home-indicator padding gives way to the keyboard, which covers that area,
+     rather than being added on top of it. */
   .overlay {
     padding: 0;
+    padding-bottom: var(--kb-inset, 0px);
     align-items: flex-end;
   }
 
   .container {
     max-width: 100%;
-    height: 65dvh;
-    max-height: 65dvh;
+    height: min(65dvh, calc(100dvh - var(--kb-inset, 0px) - var(--status-bar-inset, 0px) - 1rem));
+    max-height: min(65dvh, calc(100dvh - var(--kb-inset, 0px) - var(--status-bar-inset, 0px) - 1rem));
     border-bottom-left-radius: 0;
     border-bottom-right-radius: 0;
     border-top-left-radius: 24px;
     border-top-right-radius: 24px;
     animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-    padding-bottom: env(safe-area-inset-bottom, 1rem);
+    padding-bottom: max(0px, calc(env(safe-area-inset-bottom, 1rem) - var(--kb-inset, 0px)));
   }
 
   @keyframes slideUp {

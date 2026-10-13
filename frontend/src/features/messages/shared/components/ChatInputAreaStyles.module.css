@@ -11,6 +11,24 @@
   box-sizing: border-box;
 }
 
+/*
+ * Android app: the keyboard overlays the page, so the composer rises with it —
+ * a transform, set once when the keyboard starts to move and animated over the
+ * keyboard's own duration and curve (--kb-duration / --kb-easing), so it moves
+ * with the keyboard on the compositor rather than being laid out per frame.
+ * Scoped to Messages (`.chat-pans-keyboard`, MessagesRoute): Instant Match uses
+ * this composer too and keeps its own handling. The thread rises by the same
+ * amount, see ChatAreaLayout's .chatBody. Present only while the keyboard is
+ * open, for the containing-block reason given there.
+ */
+:global(.chat-pans-keyboard) .msgChatInputWrap {
+  transition: transform var(--kb-duration, 0ms) var(--kb-easing, ease-out) var(--kb-delay, 0ms);
+}
+
+:global(html[data-keyboard-open] .chat-pans-keyboard) .msgChatInputWrap {
+  transform: translate3d(0, calc(-1 * var(--chat-kb-lift, 0px)), 0);
+}
+
 .msgReplyPreview {
   position: absolute;
   bottom: 100%;
@@ -436,6 +454,14 @@
 
   :global(html[data-keyboard-open]) .msgChatInputWrap {
     padding-bottom: 0.6rem;
+  }
+
+  /* Android app: the composer keeps its navigation-bar padding with the
+     keyboard up and rises by --chat-kb-lift (--kb-inset minus that bar,
+     global.css), so the padding ends up behind the keyboard's top edge, the
+     content sits on it, and nothing changes size. */
+  :global(html[data-keyboard-open] .chat-pans-keyboard) .msgChatInputWrap {
+    padding-bottom: calc(0.6rem + env(safe-area-inset-bottom, 0px));
   }
 
   .msgChatHeader {

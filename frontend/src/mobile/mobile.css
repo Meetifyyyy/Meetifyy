@@ -108,9 +108,9 @@ html::after {
    backgrounds underneath the bars. Keep the strip clear only while one of those
    screens has explicitly asked. */
 /* A full-screen page that opts in (see useSystemBars `canvas`): the document
-   behind it is the colour it paints at its bottom edge. While the keyboard
-   opens or closes the WebView is resized, and the strip that resize exposes is
-   the document — the light theme's canvas behind a dark screen. */
+   behind it is the colour it paints at its bottom edge, so anything that
+   exposes the document (a resize, an overscroll) shows that colour rather
+   than the light theme's canvas behind a dark screen. */
 html[data-bars-canvas] {
   background: var(--sys-window-bg, #000) !important;
 }
@@ -209,31 +209,54 @@ select,
 
 
 /* ----------------------------------------------------------------------------
-   Bottom chrome stays on the physical bottom edge while the keyboard is up.
+   The keyboard overlays the page.
 
-   The keyboard shrinks the WebView, and `position: fixed; bottom: N` follows
-   the shrunken viewport, so the bottom nav and the Instant Match button were
-   lifted onto the keyboard for the frames before JS could react (and hiding
-   them from JS left them vanishing before the keyboard arrived, then sliding
-   back after). 100vh is the layout viewport and --app-vh the keyboard-free one
-   (see useKeyboardInset), so `100vh - 100 * --app-vh` is exactly how far the
-   viewport has shrunk: 0 normally, about -330px with the keyboard. Adding it to
-   `bottom` puts both back on the screen's real bottom edge, in the same layout
-   pass as the resize and with nothing to time. They sit behind the keyboard.
-   (Nothing hides them from JS; there is no state to get stuck.)
+   On Android the WebView no longer resizes for the soft keyboard: the keyboard
+   slides over the page and the native side reports it once, at the start of
+   its animation (useKeyboardInset): --kb-inset (how much of the bottom of
+   the page it covers, the navigation bar's area included, as on iOS),
+   --kb-duration (its animation) and data-keyboard-open. The
+   bottom navigation and the Instant Match button stay where they are, behind
+   the keyboard, with nothing to do. (They used to be pinned there against the
+   resize with a `bottom` offset computed from 100vh and --app-vh.)
+
+   Anything that must stay above the keyboard lifts itself with a compositor
+   transform on the keyboard's own timing:
+     transform: translate3d(0, calc(-1 * var(--kb-inset, 0px)), 0);
+     transition: transform var(--kb-duration, 0ms) var(--kb-easing, ease-out) var(--kb-delay, 0ms);
+   (minus env(safe-area-inset-bottom) for a bar that already pads for the
+   navigation bar, so it lands on the keyboard rather than a bar's height
+   above it).
+
+   --kb-easing approximates the platform's IME curve (InsetsController's
+   synchronized IME interpolator, PathInterpolator(0.2, 0, 0, 1), used for
+   both showing and hiding). --kb-duration is 0ms until the first keyboard,
+   and on iOS, which reports no duration. --kb-delay is negative: how far the
+   keyboard has already moved by the time the page hears of it, so the
+   transition starts in step with it (useKeyboardInset).
+
+   scroll-padding-bottom makes the browser's own focus scrolling (and
+   scrollIntoView) treat the area under the keyboard as off screen.
 ---------------------------------------------------------------------------- */
+html {
+  --kb-easing: cubic-bezier(0.2, 0, 0, 1);
+  --kb-duration: 0ms;
+  --kb-delay: 0ms;
+  scroll-padding-bottom: var(--kb-inset, 0px);
+}
+
+/* A page that scrolls the WINDOW (Directory, Campus Communities, Help...) needs
+   room below its last row to scroll it above the keyboard: the keyboard's top
+   edge is --kb-inset above the bottom, more than the
+   bottom-nav clearance the page normally keeps. One layout change per keyboard
+   transition, and only while it is up. Sheets and Messages own their own
+   bottom clearance and are left alone. */
 @media (max-width: 768px) {
-  html {
-    --nav-kb-shift: 0px;
-    --kb-viewport-shrink: calc(100vh - 100 * var(--app-vh, 1vh));
-  }
-
-  html .app-bottom-nav {
-    bottom: var(--kb-viewport-shrink);
-  }
-
-  html .im-fab-dock {
-    bottom: calc(60px + var(--bottom-nav-gap, 12px) + env(safe-area-inset-bottom) + 16px + var(--kb-viewport-shrink));
+  html[data-keyboard-open] .centre:not(.centre--messages):not(.centre--sheet) {
+    padding-bottom: max(
+      calc(var(--bottom-nav-clearance, 0px) + 12px),
+      calc(var(--kb-inset, 0px) + 12px)
+    ) !important;
   }
 }
 
@@ -241,9 +264,9 @@ select,
    The page background does not change shade when the keyboard opens.
 
    The app background is a radial gradient centred on the viewport (global.css:
-   html, body and #root). The keyboard shrinks the WebView, so the viewport
-   gets shorter and the gradient is recomputed for it: its centre moves up and
-   every colour stop with it, which showed as the whole background shifting
+   html, body and #root). A keyboard that shrinks the viewport (iOS's visual
+   viewport aside, any resizing keyboard) recomputed it: its centre moved up
+   and every colour stop with it, which showed as the whole background shifting
    shade the moment the keyboard appeared and again when it left. Sized to the
    keyboard-free viewport (--app-vh, see useKeyboardInset) and anchored to the
    top, the gradient is the same picture with or without the keyboard; the part

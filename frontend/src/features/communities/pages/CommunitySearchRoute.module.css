@@ -70,7 +70,10 @@
     border: none;
     border-radius: 0;
     background: inherit;
-    padding: 0 0 env(safe-area-inset-bottom, 0px);
+    /* The keyboard overlays the page in the app (--kb-inset) rather than
+       shrinking it, and covers the home-indicator area while up: the larger of
+       the two, so the results scroller ends at the keyboard while typing. */
+    padding: 0 0 max(env(safe-area-inset-bottom, 0px), var(--kb-inset, 0px));
     margin: 0;
     overflow: hidden;
   }
