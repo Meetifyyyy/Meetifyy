@@ -500,6 +500,7 @@
     top: var(--status-bar-inset, 0px);
     left: 0;
     right: 0;
+    height: var(--home-header-h, 56px);
     background-position: 0 calc(-1 * var(--status-bar-inset, 0px));
   }
 
@@ -1073,6 +1074,7 @@
   :global(html[data-chrome-hidden]) .homeHeader {
     transform: translateY(calc(-100% - var(--status-bar-inset, 0px)));
   }
+
 
   /* Set by BottomNav around a route change: chrome is placed, not slid. */
   :global(html[data-nav-instant]) .header {

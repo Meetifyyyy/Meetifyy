@@ -112,7 +112,11 @@ function Feed({ onPostClick, onCommentClick }) {
 
   return (
     <PullToRefresh onRefresh={handlePullToRefresh}>
-      <div className={styles.feed}>
+      {/* data-bars-ignore: the status bar continues the page behind the feed,
+          never a post card. With Home's header slid away the card under the
+          bar was all a sample could see, and the header then slid back in
+          wearing the card's colour (and the photo's, for a frame). */}
+      <div className={styles.feed} data-bars-ignore="">
         {/* `gap` matches `.feed`'s own, so this occupies no layout space. */}
         <HeaderScrollEdge gap="0.5rem" />
 

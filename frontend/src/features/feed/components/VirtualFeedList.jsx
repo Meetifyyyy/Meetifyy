@@ -72,6 +72,15 @@ function VirtualFeedList({ posts, onPostClick, onCommentClick }) {
       return height;
     },
     overscan: 5,
+    // Start from where the window really is. With the defaults (offset 0, no
+    // viewport) the first render after arriving on an already-scrolled Home
+    // (back from a scrolled Profile) had no rows in view: for ~4 frames the
+    // feed was a blank white band under the header, then the rounded post
+    // cards popped in once the virtualizer had measured.
+    initialOffset: () => (typeof window !== 'undefined' ? window.scrollY : 0),
+    initialRect: typeof window !== 'undefined'
+      ? { width: window.innerWidth, height: window.innerHeight }
+      : undefined,
     // App only (data-text-entry exists only there); the website is unchanged.
     ...(IS_MOBILE_BUILD
       ? {

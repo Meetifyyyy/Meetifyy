@@ -185,8 +185,23 @@ export function installSystemBars(systemBars, { readEdges } = {}) {
     }
     chromeWasHidden = hidden;
     if (!root.hasAttribute('data-bars-scroll-through')) return false;
+    // Holding keeps the colours of the last sample, and those belong to the
+    // page and the bar requests they were sampled under. Leaving a scrolled
+    // Profile for Home, the last sample still had Profile's cover-page request
+    // (a see-through strip); held while Home's chrome slid back, the status bar
+    // showed the feed underneath it for ~360ms. When either has changed since,
+    // sample now.
+    if (stripsBasis() !== sampledBasis) return false;
     return hidden || performance.now() - chromeShownAt < CHROME_SLIDE_MS;
   };
+  // What the strips' colours were last sampled under (see edgeInMotion).
+  const stripsBasis = () => [
+    location.pathname,
+    root.hasAttribute('data-collapsing-header'),
+    root.getAttribute('data-bars'),
+    root.getAttribute('data-navigation-bar'),
+  ].join('|');
+  let sampledBasis = null;
 
   const sample = () => {
     if (edgeInMotion()) {
@@ -194,8 +209,17 @@ export function installSystemBars(systemBars, { readEdges } = {}) {
       // screen) the icons sit on the page itself, so they follow the theme.
       if (root.hasAttribute('data-bars-scroll-through') && root.hasAttribute('data-chrome-hidden')
         && !root.hasAttribute('data-pull-active')) {
+        // A screen's own hint still wins, as it does in the settled path below.
+        // Profile is scroll-through AND sets light icons for its cover header;
+        // taking the theme alone here sent dark icons whenever the chrome hid
+        // and light ones when it came back, so the status icons flickered
+        // with every scroll direction change.
         const darkTheme = root.getAttribute('data-theme') === 'dark';
-        systemBars.setIcons?.({ status: darkTheme, navigation: darkTheme });
+        const fromHint = (hint) => (hint === 'light' ? true : hint === 'dark' ? false : darkTheme);
+        systemBars.setIcons?.({
+          status: fromHint(root.getAttribute('data-status-bar-icons')),
+          navigation: fromHint(root.getAttribute('data-navigation-bar-icons')),
+        });
       }
       return;
     }
@@ -209,6 +233,7 @@ export function installSystemBars(systemBars, { readEdges } = {}) {
     const top = toHexColor(edges.top) || chrome;
     const bottom = toHexColor(edges.bottom) || chrome;
 
+    sampledBasis = stripsBasis();
     lastTop = setStrip('--sys-top-bg', topTransparent || !top ? 'transparent' : top, lastTop);
     // What the document behind a `canvas` screen is painted (see mobile.css).
     lastWindow = setStrip('--sys-window-bg', bottom || 'transparent', lastWindow);

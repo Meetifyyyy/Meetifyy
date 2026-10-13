@@ -103,7 +103,12 @@ function paintedColorAt(x, probeY, barY, gradientY = barY, key = `${barY}`) {
   for (const el of [...stack, document.body]) {
     if (el.closest?.('[data-bars-ignore]')) continue;
     const style = getComputedStyle(el);
-    if (isPageGradient(style) && (el === document.body || style.position === 'fixed')) {
+    // <html> carries the page gradient too (over a pale solid fallback colour),
+    // and is the last element hit wherever nothing else covers the probe -
+    // Home with its header slid away. Read as a plain colour it gave that pale
+    // fallback, which the strip then wore when the header came back.
+    if (isPageGradient(style)
+      && (el === document.body || el === document.documentElement || style.position === 'fixed')) {
       return pageGradientColorAt(x, gradientY, width, height, readVar);
     }
     // Only a surface as wide as the screen can be what the bar continues;

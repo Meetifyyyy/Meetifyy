@@ -151,12 +151,25 @@ html[data-bars-scroll-through][data-chrome-hidden]::after {
    slides back in with it. The header is taller and starts lower, so it always
    covers whatever the strip has uncovered; nothing is ever shown behind the
    clock except the feed once both have gone. */
+/* The strip and Home's header move as ONE block: the same distance (the
+   header's height plus the status bar's, --home-header-h), on the same curve,
+   so the strip stays glued to the header's top edge and the two slide in and
+   out together, gradient and all. The strip's colour is the header's top edge
+   (installSystemBars samples it), so the block has no seam.
+
+   It used to slide only its own height while the header travelled further, so
+   on the way back the clock showed the feed, then part of the header, then the
+   strip: the status bar and header looked like two separate animations. */
+:root {
+  --home-header-h: 56px;
+}
+
 html[data-bars-scroll-through]::before {
   transition: transform 0.26s cubic-bezier(0.22, 0.9, 0.3, 1);
 }
 
 html[data-bars-scroll-through][data-chrome-hidden]::before {
-  transform: translateY(-100%);
+  transform: translateY(calc(-1 * (var(--home-header-h) + 100%)));
 }
 
 /* Chrome placed rather than slid on a route change (see BottomNav), so the

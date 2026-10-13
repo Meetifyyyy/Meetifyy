@@ -96,6 +96,19 @@ describe('scroll-through screen (Home)', () => {
     await settleDom();
     expect(bars.setIcons).toHaveBeenLastCalledWith({ status: true, navigation: true });
   });
+
+  it("keeps a screen's own icon hint when the chrome hides (Profile's cover header)", async () => {
+    root.setAttribute('data-theme', 'light');
+    root.setAttribute('data-bars-scroll-through', '');
+    root.setAttribute('data-status-bar-icons', 'light');
+    await settleDom();
+    expect(bars.setIcons).toHaveBeenLastCalledWith(expect.objectContaining({ status: true }));
+    root.setAttribute('data-chrome-hidden', 'true');
+    await settleDom();
+    // Not the light theme's dark icons: the cover header's light ones.
+    expect(bars.setIcons).toHaveBeenLastCalledWith(expect.objectContaining({ status: true }));
+    root.removeAttribute('data-status-bar-icons');
+  });
 });
 
 describe('every other screen', () => {
@@ -171,5 +184,54 @@ describe('where the strip colours are written', () => {
     expect(document.querySelector('style[data-system-bars]')).toBeNull();
     expect(root.hasAttribute('data-system-bars')).toBe(false);
     uninstall = () => {};
+  });
+});
+
+describe('leaving a cover page for a scroll-through one', () => {
+  afterEach(() => {
+    root.removeAttribute('data-collapsing-header');
+    history.replaceState({}, '', '/');
+  });
+
+  it("does not hold the cover page's see-through strip on the next route", async () => {
+    history.replaceState({}, '', '/profile/someone');
+    root.setAttribute('data-bars-scroll-through', '');
+    root.setAttribute('data-collapsing-header', '');
+    root.setAttribute('data-chrome-hidden', 'true');
+    await settleDom();
+    root.removeAttribute('data-chrome-hidden');
+    await settleDom();
+    vi.advanceTimersByTime(400);
+    flushFrames();
+    expect(top()).toBe('transparent');
+
+    // Home: the chrome slides back in (inside the hold window) on a new route.
+    edges = { top: '#dae8f9', bottom: '#222222' };
+    history.replaceState({}, '', '/home');
+    root.setAttribute('data-chrome-hidden', 'true');
+    root.removeAttribute('data-collapsing-header');
+    await settleDom();
+    root.removeAttribute('data-chrome-hidden');
+    await settleDom();
+    expect(top()).toBe('#dae8f9');
+  });
+
+  it('samples once the cover request goes, even if the route changed before it', async () => {
+    history.replaceState({}, '', '/profile/someone');
+    root.setAttribute('data-bars-scroll-through', '');
+    root.setAttribute('data-collapsing-header', '');
+    await settleDom();
+    expect(top()).toBe('transparent');
+
+    // Home renders while Profile's request is still on <html>...
+    edges = { top: '#dae8f9', bottom: '#222222' };
+    history.replaceState({}, '', '/home');
+    root.setAttribute('data-chrome-hidden', 'true');
+    await settleDom();
+    // ...then it goes, as the chrome slides back in (inside the hold window).
+    root.removeAttribute('data-collapsing-header');
+    root.removeAttribute('data-chrome-hidden');
+    await settleDom();
+    expect(top()).toBe('#dae8f9');
   });
 });
