@@ -4934,3 +4934,44 @@
   margin-top: 0;
   align-self: center;
 }
+
+/* ── Field border: thin ───────────────────────────────────────────────────
+   Every input box gets a 1px outline over its fill (text fields and the OTP
+   boxes here; the dropdown triggers in SignupFlow.module.css match it).
+   Width is the same in every state, so nothing shifts: hover darkens it,
+   focus turns it brand (with the ring above), invalid turns it red. */
+.shell {
+  --auth-field-border: #dcdee4;
+  --auth-field-border-hover: #c6c9d1;
+}
+
+:global([data-theme='dark']) .shell {
+  --auth-field-border: rgba(255, 255, 255, 0.1);
+  --auth-field-border-hover: rgba(255, 255, 255, 0.18);
+}
+
+.input,
+.otpInput {
+  border: 1px solid var(--auth-field-border);
+}
+
+.input.valid {
+  border-color: var(--auth-field-border);
+}
+
+.input:hover:not(:focus):not(:disabled),
+.otpInput:hover:not(:focus):not(:disabled) {
+  border-color: var(--auth-field-border-hover);
+}
+
+.input:focus,
+.input.valid:focus,
+.otpInput:focus {
+  border-color: var(--color-brand-primary);
+}
+
+.input.invalid,
+.otpInput.invalid,
+.input.invalid:focus {
+  border-color: var(--color-danger);
+}
