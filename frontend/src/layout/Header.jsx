@@ -21,6 +21,9 @@ import styles from './Header.module.css';
 import wordmark from '@assets/images/meetifyy_wordmark.svg';
 import dashboardStyles from './DashboardLayout.module.css';
 
+/** Matches the .mobileDrawer transform transition in Header.module.css. */
+const DRAWER_SLIDE_MS = 320;
+
 export default function Header({ variant = 'dashboard', wide = false }) {
   const { loading, logout, currentUser } = useAuth();
   const { theme, choice, toggleTheme } = useTheme();
@@ -31,7 +34,19 @@ export default function Header({ variant = 'dashboard', wide = false }) {
   // Freeze the page while the drawer is open. Without this, scrolling over
   // the drawer scrolled the feed behind it — and closing the drawer left the
   // user somewhere else entirely on the page they started from.
-  useScrollLock(drawerOpen);
+  //
+  // The lock follows the drawer one slide later, in both directions. Engaging
+  // it walks every element under #root with getComputedStyle, and releasing it
+  // restyles every scroll container it froze; done on the same frame as the
+  // class change, either one stalled the first frames of the slide on the APK.
+  // During the 300ms in between the scrim already covers the page.
+  const [scrollLocked, setScrollLocked] = useState(false);
+  useEffect(() => {
+    if (drawerOpen === scrollLocked) return undefined;
+    const timer = setTimeout(() => setScrollLocked(drawerOpen), DRAWER_SLIDE_MS);
+    return () => clearTimeout(timer);
+  }, [drawerOpen, scrollLocked]);
+  useScrollLock(scrollLocked);
 
   // Back closes the drawer instead of leaving the page it was opened over.
   // The drawer is portalled to <body> and holds a scroll lock, so a Back press
