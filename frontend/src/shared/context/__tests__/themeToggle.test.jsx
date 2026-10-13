@@ -28,19 +28,19 @@ afterEach(() => {
 });
 
 describe('toggleTheme', () => {
-  it('treats presses under 50ms apart as one', () => {
+  it('treats presses under 150ms apart as one', () => {
     act(() => ctx.toggleTheme());
-    now += 30;
+    now += 120;
     act(() => ctx.toggleTheme());
     expect(calls).toEqual(['dark']);
     expect(ctx.choice).toBe('dark');
   });
 
-  it('honours presses 50ms or more apart, alternating', () => {
+  it('honours presses 150ms or more apart, alternating', () => {
     act(() => ctx.toggleTheme());
-    now += 50;
+    now += 150;
     act(() => ctx.toggleTheme());
-    now += 120;
+    now += 200;
     act(() => ctx.toggleTheme());
     expect(calls).toEqual(['dark', 'light', 'dark']);
     expect(ctx.choice).toBe('dark');

@@ -7,7 +7,7 @@ import { getThemeTransitionDriver } from '@shared/theme/themeTransition';
 const ThemeContext = createContext();
 
 /** Presses closer together than this count as one (see toggleTheme). */
-const MIN_PRESS_GAP_MS = 50;
+const MIN_PRESS_GAP_MS = 150;
 
 /**
  * Dynamically resolves the origin coordinate (x, y) for the radial theme reveal.
