@@ -101,7 +101,7 @@ describe('Messages chat with an overlaying keyboard', () => {
 
   it('stands the bottom sheets on the keyboard, Android only', () => {
     const base = 'src/features/messages/shared/components/modals/';
-    for (const name of ['ForwardMessageModal', 'InviteModal', 'NewMessageModal']) {
+    for (const name of ['InviteModal', 'NewMessageModal']) {
       expect(read(`${base}${name}.jsx`)).toMatch(/data-keyboard-overlay=\{KEYBOARD_OVERLAYS_PAGE \? '' : undefined\}/);
       expect(squash(read(`${base}${name}.module.css`))).toMatch(
         /:global\(html\[data-keyboard-open\]\) \.\w+\[data-keyboard-overlay\] \{ padding-bottom: [^;]*--kb-inset/,

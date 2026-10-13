@@ -19,7 +19,7 @@ vi.mock('../MessageContextMenu', () => ({ default: () => null }));
 vi.mock('../details/ChatDetailsPanel', () => ({ default: (props) => { h.details = props; return <div data-testid="details" />; } }));
 vi.mock('@shared/components/modals/ConfirmModal', () => ({ default: () => null }));
 vi.mock('@shared/components/ui/NotFoundState', () => ({ default: () => null }));
-vi.mock('../modals/ForwardMessageModal', () => ({ default: (props) => { h.forward = props; return <div data-testid="forward" />; } }));
+vi.mock('@shared/components/share/ShareSheet', () => ({ default: (props) => { h.forward = props; return <div data-testid="forward" />; } }));
 
 const { default: ChatAreaLayout } = await import('../ChatAreaLayout');
 
@@ -71,8 +71,7 @@ describe('ChatAreaLayout wiring', () => {
     expect(h.openViewer).toHaveBeenCalledWith([{ url: '/api/media/chat/a.png', type: 'image' }], 0);
   });
 
-  it('forwards under the modal\'s operation id so a retry is recognised by the server', async () => {
-    h.send.mockImplementation(async (id) => { if (id === 'b') throw new Error('down'); });
+  it('forwards the message under the client id the sheet gives', async () => {
     render(
       <ChatAreaLayout
         {...base}
@@ -81,11 +80,8 @@ describe('ChatAreaLayout wiring', () => {
       />,
     );
     await waitFor(() => expect(h.forward).not.toBeNull());
-    const error = await h.forward.onConfirmForward(['a', 'b'], { operationId: 'op' }).catch((e) => e);
-    expect(error.name).toBe('ForwardPartialError');
-    expect(error.failedIds).toEqual(['b']);
-    expect(h.send.mock.calls[0][8]).toEqual({ tempId: 'fwd_op_a' });
-    expect(h.send.mock.calls[1][8]).toEqual({ tempId: 'fwd_op_b' });
+    await h.forward.forward.send('a', 'fwd_op_a');
     expect(h.send.mock.calls[0][1]).toEqual({ text: 'hi', mediaUrl: '/api/media/chat/a.png', mediaType: 'image' });
+    expect(h.send.mock.calls[0][8]).toEqual({ tempId: 'fwd_op_a' });
   });
 });

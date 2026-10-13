@@ -2,8 +2,6 @@ import { Suspense, lazy, useCallback, useRef, useEffect } from 'react';
 import { Plus, Search, Send, X } from '@shared/components/icons';
 import { useMediaViewerActions } from '@shared/context/MediaViewerContext';
 import { useMessageActions } from '@shared/hooks/useMessageActions';
-import { useForwardRecipients } from '../hooks/useForwardRecipients';
-import { showToast } from '@shared/utils/toast';
 import ChatMessageList from './ChatMessageList';
 import ChatInputArea from './ChatInputArea';
 import MessageContextMenu from './MessageContextMenu';
@@ -12,11 +10,10 @@ import ConfirmModal from '@shared/components/modals/ConfirmModal';
 import NotFoundState from '@shared/components/ui/NotFoundState';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 import { chatMediaItem } from '../utils/chatMediaItem';
-import { forwardToTargets } from '../utils/forwardDelivery';
 import { KEYBOARD_OVERLAYS_PAGE } from '@shared/utils/keyboardOverlay';
 import styles from './ChatAreaLayout.module.css';
 
-const ForwardMessageModal = lazy(() => import('./modals/ForwardMessageModal'));
+const ShareSheet = lazy(() => import('@shared/components/share/ShareSheet'));
 
 export default function ChatAreaLayout({
   conversation,
@@ -79,26 +76,6 @@ export default function ChatAreaLayout({
   const { openViewer } = useMediaViewerActions();
   const { sendDirectMessage } = useMessageActions();
 
-  /**
-   * Recipients for the Forward modal, fetched here rather than accepted as a
-   * prop.
-   *
-   * `conversations` was a prop that NOTHING passed: neither DMChatArea nor
-   * GroupChatArea supplied it, and it was forwarded to ChatMessageList, which
-   * does not accept it. So the in-chat Forward modal was always handed
-   * `undefined`, fell back to its `= []` default, and rendered "No
-   * conversations found" every time. The prop is gone; the list is fetched
-   * where it is used.
-   *
-   * Gated on the modal being open, so opening a chat does not pay for a request
-   * that most sessions never need. It is the same eligibility-filtered query the
-   * Share modals use, so Forward cannot offer a recipient the send would refuse.
-   */
-  const {
-    conversations: forwardTargets,
-    isLoading: isLoadingForwardTargets,
-    onSearchChange: onForwardSearchChange,
-  } = useForwardRecipients(Boolean(forwardingMsg));
   const searchInputRef = useRef(null);
 
   const handleCloseSearch = useCallback(() => {
@@ -294,58 +271,23 @@ export default function ChatAreaLayout({
 
       {forwardingMsg && (
         <Suspense fallback={null}>
-          <ForwardMessageModal
-            isOpen={Boolean(forwardingMsg)}
-            msg={forwardingMsg}
-            conversations={forwardTargets}
-            isLoading={isLoadingForwardTargets}
-            onSearchChange={onForwardSearchChange}
+          <ShareSheet
+            isOpen
             onClose={() => setForwardingMsg(null)}
-            onConfirmForward={async (targetIds, { operationId }) => {
-              const text = forwardingMsg.text || forwardingMsg.payload?.text || '';
-              const mediaUrl = forwardingMsg.mediaUrl || forwardingMsg.payload?.mediaUrl || null;
-              const mediaType = forwardingMsg.mediaType || forwardingMsg.payload?.mediaType || null;
-
-              /*
-               * Every target is attempted even after one fails, so a single bad
-               * recipient does not silently cancel the rest of the selection.
-               *
-               * This used to be `catch (e) { // ignore }` with an unconditional
-               * close in `finally`, so a forward that sent nothing at all looked
-               * exactly like one that worked. Then it threw, which kept the modal
-               * open but kept the WHOLE selection too: the retry re-sent to the
-               * people who already had it, under fresh client ids the server could
-               * not recognise as repeats.
-               *
-               * Now each recipient's client id comes from the modal's operation
-               * id, so a repeat is recognised and delivers nothing new, and a
-               * partial failure throws a ForwardPartialError naming who is left —
-               * the modal narrows its selection to exactly those.
-               */
-              try {
-                await forwardToTargets({
-                  targetIds,
-                  operationId,
-                  // Nine positional arguments: the last is the options bag, and
-                  // `tempId` is how a client id reaches the request (it is also the
-                  // optimistic message's id, so a retry merges rather than duplicates).
-                  send: (id, clientId) => sendDirectMessage(
-                    id,
-                    { text, mediaUrl, mediaType },
-                    undefined, undefined, undefined, undefined, undefined, undefined,
-                    { tempId: clientId },
-                  ),
-                });
-              } catch (error) {
-                const sent = error?.sentCount ?? 0;
-                showToast(
-                  sent > 0
-                    ? `Forwarded to ${sent} of ${targetIds.length} chats`
-                    : 'Could not forward the message',
-                  'error',
-                );
-                throw error;
-              }
+            forward={{
+              // Same send as before: the client id comes from the sheet's
+              // operation id, so a retry is recognised by the server rather
+              // than delivered twice.
+              send: (id, clientId) => sendDirectMessage(
+                id,
+                {
+                  text: forwardingMsg.text || forwardingMsg.payload?.text || '',
+                  mediaUrl: forwardingMsg.mediaUrl || forwardingMsg.payload?.mediaUrl || null,
+                  mediaType: forwardingMsg.mediaType || forwardingMsg.payload?.mediaType || null,
+                },
+                undefined, undefined, undefined, undefined, undefined, undefined,
+                { tempId: clientId },
+              ),
             }}
           />
         </Suspense>

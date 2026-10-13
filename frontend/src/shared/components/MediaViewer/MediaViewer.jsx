@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { Suspense, lazy, useEffect, useRef, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useMediaViewer } from '@shared/context/MediaViewerContext';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
@@ -11,14 +11,11 @@ import { mediaCache } from '@shared/utils/MediaCacheManager';
 import { feedVideoRegistry } from '@shared/utils/feedVideoRegistry';
 import { PLAYBACK_PRIORITY } from '@shared/utils/playbackPriority';
 import { hasReportedTarget, markTargetReported, reportKey } from '@shared/utils/reportedTargets';
-import { forwardToTargets } from '@features/messages/shared/utils/forwardDelivery';
 import { forwardableMediaUrl } from './forwardSource';
 import { useViewerFocus } from './useViewerFocus';
 import { motionTransition, prefersReducedMotion } from './viewerMotion';
 import styles from './MediaViewer.module.css';
 import ReportModal from '@shared/components/modals/ReportModal/LazyReportModal';
-import ForwardMessageModal from '@features/messages/shared/components/modals/ForwardMessageModal';
-import { useForwardRecipients } from '@features/messages/shared/hooks/useForwardRecipients';
 import { useMessageActions } from '@shared/hooks/useMessageActions';
 import {
   X,
@@ -176,14 +173,14 @@ function MediaViewerSession() {
   // when it opens. Its own registry would only refuse NEW lower-priority plays;
   // something already running has to be told.
   useEffect(() => {
+    if (open) feedVideoRegistry.pauseAll(PLAYBACK_PRIORITY.VIEWER);
+  }, [open]);
+
   // The viewer is portalled outside #root, so the bars' DOM observers do not
   // see it start closing; tell them, once the attribute above is in the DOM.
   useEffect(() => {
     if (closing) window.dispatchEvent(new Event('meetifyy:system-bars-resample'));
   }, [closing]);
-
-    if (open) feedVideoRegistry.pauseAll(PLAYBACK_PRIORITY.VIEWER);
-  }, [open]);
 
   useOverlayBack(open, handleClose);
   useScrollLock(open);
@@ -823,12 +820,12 @@ function MediaViewerSession() {
     <div
       ref={overlayRef}
       data-media-viewer="true"
-      // Closing, the system bars read the page through the fading viewer, so
-      // they take the page's colours as the fade starts rather than after it.
-      data-bars-ignore={closing ? '' : undefined}
       data-theme="dark"
       className={`${styles.overlay} ${visible ? styles.visible : ''} ${closing ? styles.closing : ''}`}
       inert={closing ? '' : undefined}
+      // Closing, the system bars read the page through the fading viewer, so
+      // they take the page's colours as the fade starts rather than after it.
+      data-bars-ignore={closing ? '' : undefined}
       onClick={handleOverlayClick}
       tabIndex={-1}
       role="dialog"
@@ -1070,65 +1067,33 @@ function MediaViewerSession() {
 }
 
 /**
- * Lazy component that only subscribes to conversations and message action hooks
- * when the forward modal is actually opened.
+ * Forwarding the photo or video on screen. The share sheet's picker, in its
+ * forward mode, loaded only when Forward is tapped.
  *
  * `mediaUrl` is already vetted by `forwardableMediaUrl` - stored, not local, not
  * signed - so it is safe to persist into new messages.
  */
+const ShareSheet = lazy(() => import('@shared/components/share/ShareSheet'));
+
 function LazyForwardModal({ isOpen, mediaUrl, mediaType, onClose }) {
-  // The picker's list, not the inbox's. Forward is a recipient choice, so it
-  // must exclude threads that cannot be sent into; useConversations would have
-  // offered every thread the user has.
-  const { conversations, isLoading, onSearchChange } = useForwardRecipients(isOpen);
   const { sendDirectMessage } = useMessageActions();
-
   if (!isOpen) return null;
-
   return (
-    <ForwardMessageModal
-      isOpen={isOpen}
-      msg={{ mediaUrl, mediaType }}
-      conversations={conversations || []}
-      isLoading={isLoading}
-      onSearchChange={onSearchChange}
-      onClose={onClose}
-      onConfirmForward={async (targetIds, { operationId }) => {
-        /*
-         * Same contract as the in-chat forward: attempt every target, report
-         * honestly, and throw so the modal keeps the selection for a retry. This
-         * used to be `catch (_) {}` with an unconditional close, so a forward that
-         * sent nothing looked exactly like one that worked; and then it kept the
-         * whole selection, so a retry re-sent to everyone who already had it.
-         *
-         * Each recipient's client id comes from the modal's operation id, so a
-         * repeat is recognised by the server and the thrown ForwardPartialError
-         * tells the modal exactly who is left.
-         */
-        try {
-          await forwardToTargets({
-            targetIds,
-            operationId,
-            // The ninth positional argument is the options bag; `tempId` is how a
-            // client id reaches the request (see useMessageActions.sendDirectMessage).
-            send: (id, clientId) => sendDirectMessage(
-              id,
-              { text: '', mediaUrl, mediaType },
-              undefined, undefined, undefined, undefined, undefined, undefined,
-              { tempId: clientId },
-            ),
-          });
-        } catch (error) {
-          const sent = error?.sentCount ?? 0;
-          showToast(
-            sent > 0
-              ? `Forwarded to ${sent} of ${targetIds.length} chats`
-              : 'Could not forward the media',
-            'error',
-          );
-          throw error;
-        }
-      }}
-    />
+    <Suspense fallback={null}>
+      <ShareSheet
+        isOpen
+        onClose={onClose}
+        forward={{
+          // The ninth positional argument is the options bag; `tempId` is how a
+          // client id reaches the request (see useMessageActions.sendDirectMessage).
+          send: (id, clientId) => sendDirectMessage(
+            id,
+            { text: '', mediaUrl, mediaType },
+            undefined, undefined, undefined, undefined, undefined, undefined,
+            { tempId: clientId },
+          ),
+        }}
+      />
+    </Suspense>
   );
 }

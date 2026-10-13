@@ -8,7 +8,6 @@
  *
  *   ┌──────────────── ▔▔▔ ────────────────┐   drag handle (phones)
  *   │            Share post               │
- *   │ [what is being shared]              │
  *   │ ( search                          ) │
  *   │  ◯    ◯    ◯    ◯                  │   tap to select, many at once
  *   │ name name name name                 │
@@ -16,6 +15,10 @@
  *   │ Story · Copy · Share via · WhatsApp │   …or, once someone is picked,
  *   │ [ Send to 2 ]                       │   one Send button in its place
  *   └─────────────────────────────────────┘
+ *
+ * Forwarding a chat message or a viewed photo/video uses the same sheet with a
+ * `forward` prop: the same picker and Send button, with no app row or copy
+ * link, since a chat attachment has no public link to hand to another app.
  *
  * The Instagram Story tile exists only in the installed app. It is loaded
  * behind `IS_MOBILE_BUILD`, which Vite folds to a literal, so the panel, its
@@ -46,7 +49,7 @@ import {
   buildPostShare,
   buildProfileShare,
 } from '@shared/lib/share/sharePayload';
-import SubjectPreview from './SubjectPreview';
+import { forwardClientId, newForwardOperationId } from '@features/messages/shared/utils/forwardDelivery';
 import styles from './ShareSheet.module.css';
 
 const InstagramStoryPanel = IS_MOBILE_BUILD
@@ -71,21 +74,22 @@ function webPayload(kind, entity, author) {
 /**
  * Sending to the picked chats. Per conversation: 'sending' | 'sent' | 'failed'.
  * A chat that already received this share is never sent it twice.
+ *
+ * `sendOne(convId)` delivers to one chat; null while there is nothing to send.
  */
-function useChatSend(invite) {
-  const { sendDirectMessage } = useMessageActions();
+function useChatSend(sendOne) {
   const [status, setStatus] = useState({});
   const inFlight = useRef(false);
 
   const sendAll = useCallback(
     async (convIds) => {
-      if (!invite || inFlight.current) return false;
+      if (!sendOne || inFlight.current) return false;
       const targets = convIds.filter((id) => status[id] !== 'sent');
       if (targets.length === 0) return true;
       inFlight.current = true;
       setStatus((prev) => ({ ...prev, ...Object.fromEntries(targets.map((id) => [id, 'sending'])) }));
       const results = await Promise.allSettled(
-        targets.map((id) => sendDirectMessage(id, { text: '', inviteData: invite })),
+        targets.map((id) => sendOne(id)),
       );
       const next = {};
       results.forEach((r, i) => {
@@ -95,7 +99,7 @@ function useChatSend(invite) {
       inFlight.current = false;
       return results.every((r) => r.status === 'fulfilled');
     },
-    [invite, sendDirectMessage, status],
+    [sendOne, status],
   );
 
   return { status, sendAll };
@@ -104,7 +108,12 @@ function useChatSend(invite) {
 /** How long the "Sent" confirmation shows before the sheet closes itself. */
 const SENT_CLOSE_MS = 900;
 
-export default function ShareSheet({ isOpen, onClose, kind, entity, author }) {
+/**
+ * @param {object} [props.forward] forward mode instead of sharing an entity:
+ *   `{ send(convId, clientId) }`. Each recipient's client id is derived from one
+ *   operation id per opening, so the server recognises a retry as a repeat.
+ */
+export default function ShareSheet({ isOpen, onClose, kind, entity, author, forward }) {
   useOverlayBack(Boolean(isOpen), onClose);
   useScrollLock(Boolean(isOpen));
   const sheetRef = useSheetDrag(onClose, { enabled: Boolean(isOpen) });
@@ -118,14 +127,22 @@ export default function ShareSheet({ isOpen, onClose, kind, entity, author }) {
   const [searching, setSearching] = useState(false);
 
   const content = useMemo(
-    () => normalizeShareContent(kind, entity, { author }),
-    [kind, entity, author],
+    () => (forward ? null : normalizeShareContent(kind, entity, { author })),
+    [forward, kind, entity, author],
   );
   const invite = useMemo(() => (content ? toChatInvite(content, entity) : null), [content, entity]);
   const payload = useMemo(() => webPayload(kind, entity, author), [kind, entity, author]);
 
   const { conversations } = useRecipientConversations(isOpen, searchTerm);
-  const { status, sendAll } = useChatSend(invite);
+  const { sendDirectMessage } = useMessageActions();
+  const [operationId] = useState(() => (forward ? newForwardOperationId() : null));
+  const forwardSend = forward?.send;
+  const sendOne = useMemo(() => {
+    if (forwardSend) return (id) => forwardSend(id, forwardClientId(operationId, id));
+    if (!invite) return null;
+    return (id) => sendDirectMessage(id, { text: '', inviteData: invite });
+  }, [forwardSend, operationId, invite, sendDirectMessage]);
+  const { status, sendAll } = useChatSend(sendOne);
 
   const recipients = useMemo(() => {
     if (!conversations) return [];
@@ -162,7 +179,8 @@ export default function ShareSheet({ isOpen, onClose, kind, entity, author }) {
 
   if (!isOpen) return null;
 
-  const label = SHARE_KIND_LABEL[kind] || 'Item';
+  const label = forward ? 'Message' : SHARE_KIND_LABEL[kind] || 'Item';
+  const title = forward ? 'Forward' : `Share ${label.toLowerCase()}`;
   const close = (e) => {
     e?.stopPropagation();
     e?.preventDefault();
@@ -183,13 +201,13 @@ export default function ShareSheet({ isOpen, onClose, kind, entity, author }) {
         <div className={styles.header}>
           <div className="sheet-handle" data-sheet-handle aria-hidden="true" />
           <div className={styles.headerRow}>
-            {/* No visible title on the main view — the subject card says what
-                is being shared. The dialog keeps its name for screen readers. */}
+            {/* No visible title on the main view. The dialog keeps its name
+                for screen readers. */}
             <h2
               id="share-sheet-title"
               className={view === 'story' ? styles.title : `${styles.title} ${styles.srOnly}`}
             >
-              {view === 'story' ? 'Instagram Story' : `Share ${label.toLowerCase()}`}
+              {view === 'story' ? 'Instagram Story' : title}
             </h2>
             <button type="button" className={styles.closeBtn} onClick={close} aria-label="Close">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
@@ -200,7 +218,7 @@ export default function ShareSheet({ isOpen, onClose, kind, entity, author }) {
           </div>
         </div>
 
-        {!content ? (
+        {!content && !forward ? (
           <p className={styles.unavailable} role="alert">
             This {label.toLowerCase()} can’t be shared right now.
           </p>
@@ -212,8 +230,6 @@ export default function ShareSheet({ isOpen, onClose, kind, entity, author }) {
           </div>
         ) : (
           <div className={styles.body}>
-            <SubjectPreview content={content} />
-
             <label className={styles.search}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
                 <circle cx="11" cy="11" r="7" />
@@ -284,7 +300,7 @@ export default function ShareSheet({ isOpen, onClose, kind, entity, author }) {
                           : `Send to ${selected.length}`}
                 </button>
               ) : (
-                payload?.url && <ShareTargets payload={payload} leadingTargets={storyTargets} />
+                !forward && payload?.url && <ShareTargets payload={payload} leadingTargets={storyTargets} />
               )}
             </div>
             )}

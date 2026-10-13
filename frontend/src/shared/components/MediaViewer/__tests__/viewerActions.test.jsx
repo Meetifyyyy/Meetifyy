@@ -35,7 +35,7 @@ vi.mock('../VideoViewer', () => ({
 vi.mock('@shared/components/modals/ReportModal/LazyReportModal', () => ({
   default: (props) => { h.report = props; return props.isOpen ? <div data-testid="report-open" /> : null; },
 }));
-vi.mock('@features/messages/shared/components/modals/ForwardMessageModal', () => ({
+vi.mock('@shared/components/share/ShareSheet', () => ({
   default: (props) => { h.forward = props; return <div data-testid="forward-open" />; },
 }));
 vi.mock('@shared/hooks/useRecipientConversations', () => ({ useRecipientConversations: () => ({ conversations: [] }) }));
@@ -46,7 +46,6 @@ vi.mock('@shared/utils/MediaCacheManager', () => ({ mediaCache: { getUrl: h.getU
 vi.mock('@shared/utils/toast', () => ({ showToast: vi.fn() }));
 
 const { default: MediaViewer } = await import('../MediaViewer');
-const { ForwardPartialError } = await import('@features/messages/shared/utils/forwardDelivery');
 const { clearReportedTargets } = await import('@shared/utils/reportedTargets');
 
 const IMG = (extra = {}) => ({ url: 'https://api.test/api/media/chat/a.png', rawUrl: '/api/media/chat/a.png', type: 'image', slideKey: '0:a', ...extra });
@@ -128,12 +127,12 @@ describe('already reported is per target (MV-011)', () => {
 });
 
 describe('per-open session (MV-012)', () => {
-  it('drops an open Forward sheet and report flow when the next open starts', () => {
+  it('drops an open Forward sheet and report flow when the next open starts', async () => {
     setState({ meta: { report: { targetType: 'MESSAGE', targetId: 'm1' } } });
     const { rerender } = render(<MediaViewer />);
     fireEvent.click(screen.getByRole('button', { name: 'Forward' }));
     fireEvent.click(screen.getByRole('button', { name: 'Report' }));
-    expect(screen.getByTestId('forward-open')).toBeTruthy();
+    expect(await screen.findByTestId('forward-open')).toBeTruthy();
     expect(screen.getByTestId('report-open')).toBeTruthy();
 
     setState({ ...h.state, sessionId: 2, items: [IMG({ rawUrl: '/api/media/chat/z.png' })] });
@@ -144,31 +143,16 @@ describe('per-open session (MV-012)', () => {
 });
 
 describe('forwarding (MV-013 viewer side)', () => {
-  it('forwards the stored url, not the resolved absolute one, with a stable client id per recipient', async () => {
+  it('forwards the stored url, not the resolved absolute one, under the client id the sheet gives', async () => {
     render(<MediaViewer />);
     fireEvent.click(screen.getByRole('button', { name: 'Forward' }));
-    expect(h.forward.msg).toEqual({ mediaUrl: '/api/media/chat/a.png', mediaType: 'image' });
+    await screen.findByTestId('forward-open');
 
-    await h.forward.onConfirmForward(['a', 'b'], { operationId: 'op1' });
-    expect(h.send).toHaveBeenCalledTimes(2);
-    expect(h.send).toHaveBeenNthCalledWith(
-      1, 'a', { text: '', mediaUrl: '/api/media/chat/a.png', mediaType: 'image' },
+    await h.forward.forward.send('a', 'fwd_op1_a');
+    expect(h.send).toHaveBeenCalledWith(
+      'a', { text: '', mediaUrl: '/api/media/chat/a.png', mediaType: 'image' },
       undefined, undefined, undefined, undefined, undefined, undefined, { tempId: 'fwd_op1_a' },
     );
-    expect(h.send.mock.calls[1][8]).toEqual({ tempId: 'fwd_op1_b' });
-  });
-
-  it('throws a partial error naming who is left, and a retry reuses the same client ids', async () => {
-    h.send.mockImplementation(async (id) => { if (id === 'b') throw new Error('down'); });
-    render(<MediaViewer />);
-    fireEvent.click(screen.getByRole('button', { name: 'Forward' }));
-    const error = await h.forward.onConfirmForward(['a', 'b'], { operationId: 'op1' }).catch((e) => e);
-    expect(error).toBeInstanceOf(ForwardPartialError);
-    expect(error.failedIds).toEqual(['b']);
-    h.send.mockResolvedValue({});
-    await h.forward.onConfirmForward(['b'], { operationId: 'op1' });
-    const bIds = h.send.mock.calls.filter((c) => c[0] === 'b').map((c) => c[8].tempId);
-    expect(new Set(bIds).size).toBe(1);
   });
 
   it.each([
@@ -186,7 +170,9 @@ describe('forwarding (MV-013 viewer side)', () => {
     setState({ items: [IMG({ type: undefined, url: 'https://api.test/api/media/chat/v.mp4', rawUrl: '/api/media/chat/v.mp4' })] });
     render(<MediaViewer />);
     fireEvent.click(screen.getByRole('button', { name: 'Forward' }));
-    expect(h.forward.msg.mediaType).toBe('video');
+    await screen.findByTestId('forward-open');
+    await h.forward.forward.send('a', 'id');
+    expect(h.send.mock.calls[0][1].mediaType).toBe('video');
   });
 });
 
