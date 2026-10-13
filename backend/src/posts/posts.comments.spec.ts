@@ -78,8 +78,13 @@ describe('PostsService — comments', () => {
         deleteMany: jest.fn(() => Promise.resolve({ count: 0 })),
         findMany: jest.fn(() => Promise.resolve([])),
       },
-      $transaction: jest.fn((fn: (tx: unknown) => unknown): Promise<unknown> =>
-        Promise.resolve(fn(prisma)),
+      // Both forms Prisma accepts: an interactive callback, or a batch of
+      // already-built operations.
+      $transaction: jest.fn(
+        (
+          arg: ((tx: unknown) => unknown) | Promise<unknown>[],
+        ): Promise<unknown> =>
+          Array.isArray(arg) ? Promise.all(arg) : Promise.resolve(arg(prisma)),
       ),
     };
     return prisma;

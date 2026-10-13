@@ -122,11 +122,11 @@ export function useAddComment() {
         });
       }
 
-      // Reconcile against the server afterwards. The count was already moved by
-      // exactly one, matching the backend's unconditional increment, so ['feed']
-      // is deliberately left alone — invalidating it would refetch every loaded
-      // feed page on every comment for a number that is already right.
-      queryClient.invalidateQueries({ queryKey: context?.queryKey ?? ['post'] });
+      // No refetch of the post afterwards. The server's row has just replaced
+      // the placeholder, the count moved by exactly one (matching the backend's
+      // increment), and other people's activity arrives over the post's realtime
+      // room - so reloading the whole post and its comment threads after every
+      // comment fetched nothing new.
     },
   });
 }

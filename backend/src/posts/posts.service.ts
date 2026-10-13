@@ -1586,19 +1586,23 @@ export class PostsService {
     parentId?: string,
     mentions?: MentionDto[],
   ) {
-    // Independent reads — run them in one parallel round-trip instead of two.
-    const [post, excludedUserIds] = await Promise.all([
-      this.prisma.post.findUnique({ where: { id: postId } }),
-      this.blocksService.getExcludedUserIds(authorId),
-    ]);
+    // Every read the write depends on is independent of the others, so they go
+    // out together: the post, the blocks, the parent comment and the mention
+    // lookup used to be three sequential round-trips before the insert.
+    const [post, excludedUserIds, parentComment, sanitizedMentions] =
+      await Promise.all([
+        this.prisma.post.findUnique({ where: { id: postId } }),
+        this.blocksService.getExcludedUserIds(authorId),
+        parentId
+          ? this.prisma.comment.findUnique({ where: { id: parentId } })
+          : Promise.resolve(null),
+        // Re-derive the true mention set from the actual comment text before persisting.
+        this.mentionsService.sanitize(text, mentions, authorId),
+      ]);
     if (!post || post.deletedAt || excludedUserIds.includes(post.authorId))
       throw new NotFoundException('Post not found');
 
-    let parentComment: Comment | null = null;
     if (parentId) {
-      parentComment = await this.prisma.comment.findUnique({
-        where: { id: parentId },
-      });
       // The parent was accepted on trust: an id for a comment on a *different*
       // post was stored happily, producing a reply that belongs to a thread it
       // can never be rendered in (the tree builder finds no parent and promotes
@@ -1612,15 +1616,11 @@ export class PostsService {
       }
     }
 
-    // Re-derive the true mention set from the actual comment text before persisting.
-    const sanitizedMentions = await this.mentionsService.sanitize(
-      text,
-      mentions,
-      authorId,
-    );
-
-    const comment = await this.prisma.$transaction(async (tx) => {
-      const createdComment = await tx.comment.create({
+    // A batch transaction rather than an interactive one: the two writes do not
+    // depend on each other, and an interactive transaction holds a connection
+    // across separate BEGIN / insert / update / COMMIT round-trips.
+    const [comment] = await this.prisma.$transaction([
+      this.prisma.comment.create({
         data: {
           postId,
           authorId,
@@ -1630,15 +1630,13 @@ export class PostsService {
             sanitizedMentions.length > 0 ? sanitizedMentions : undefined,
         },
         include: { author: { select: PostsService.COMMENT_AUTHOR_SELECT } },
-      });
-
-      await tx.post.update({
+      }),
+      this.prisma.post.update({
         where: { id: postId },
         data: { commentCount: { increment: 1 } },
-      });
-
-      return createdComment;
-    });
+        select: { id: true },
+      }),
+    ]);
 
     // The created row already carries the author, so reuse it for notifications
     // (one fewer query) and for the realtime payload below.

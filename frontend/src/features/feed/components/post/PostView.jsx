@@ -286,22 +286,27 @@ export default function PostView({ post, onBack, autoFocusComment = false }) {
 
   // Adding a comment: on the post, or — with a reply target — under that comment.
   //
-  // The composer is cleared only once the server has accepted it. It used to
-  // clear synchronously right after firing the mutation, so a comment that
-  // failed to post took the user's text with it and left an error toast with
-  // nothing to retry from.
+  // The comment appears in the list at once (useAddComment's optimistic row),
+  // so the composer clears at once too. Waiting for the server left the text
+  // sitting in the box under a comment that was already showing. If the post
+  // fails, the optimistic row is rolled back and the draft is put back — unless
+  // the user has started typing something else in the meantime.
   const handleMainReplySubmit = async (e) => {
     if (e?.preventDefault) e.preventDefault();
     if (!replyContent.text.trim() || !livePost || isPostingComment) return;
+    const draft = replyContent;
+    const target = replyTarget;
     setIsPostingComment(true);
+    setReplyContent({ text: '', mentions: [] });
+    setReplyTarget(null);
+    // Posted: the bar goes back to its resting state and the keyboard drops.
+    composerRef.current?.blur();
     try {
-      await addComment({ postId: livePost.id, text: replyContent.text, parentId: replyTarget?.id ?? null, mentions: replyContent.mentions, currentUser });
-      setReplyContent({ text: '', mentions: [] });
-      setReplyTarget(null);
-      // Posted: the bar goes back to its resting state and the keyboard drops.
-      composerRef.current?.blur();
+      await addComment({ postId: livePost.id, text: draft.text, parentId: target?.id ?? null, mentions: draft.mentions, currentUser });
     } catch {
-      // useAddComment surfaces its own toast; the draft stays put.
+      // useAddComment surfaces its own toast; the draft comes back to retry.
+      setReplyContent((cur) => (cur.text.trim() ? cur : draft));
+      setReplyTarget((cur) => cur ?? target);
     } finally {
       setIsPostingComment(false);
     }
