@@ -81,6 +81,15 @@ body::-webkit-scrollbar,
    (100), which paints its own strip under the navigation bar. That is what lets
    the navigation bar slide away in one motion with the bar under it.
 ---------------------------------------------------------------------------- */
+/* Read only by <html> itself (below); without this it would inherit into every
+   element, and each change of the strip colours restyled the whole page
+   (installSystemBars writes it, with the strips' own colours, in rules of its
+   own). */
+@property --sys-window-bg {
+  syntax: '*';
+  inherits: false;
+}
+
 html::before,
 html::after {
   content: '';

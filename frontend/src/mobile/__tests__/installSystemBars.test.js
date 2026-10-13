@@ -11,8 +11,17 @@ let bars;
 const flushFrames = () => { frames.splice(0).forEach((cb) => cb(0)); };
 /** Let the MutationObserver deliver, then run the frame it scheduled. */
 const settleDom = async () => { await Promise.resolve(); flushFrames(); };
-const top = () => root.style.getPropertyValue('--sys-top-bg');
-const bottom = () => root.style.getPropertyValue('--sys-bottom-bg');
+// The strips' colours live in rules of their own (see installSystemBars).
+const stripValue = (name) => {
+  const sheet = document.querySelector('style[data-system-bars]')?.sheet;
+  for (const rule of sheet?.cssRules || []) {
+    const value = rule.style?.getPropertyValue(name);
+    if (value) return value.trim();
+  }
+  return '';
+};
+const top = () => stripValue('--sys-top-bg');
+const bottom = () => stripValue('--sys-bottom-bg');
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -96,5 +105,71 @@ describe('every other screen', () => {
     await settleDom();
     expect(top()).toBe('#abcdef');
     expect(bottom()).toBe('#fedcba');
+  });
+});
+
+describe('text entry', () => {
+  afterEach(() => {
+    root.removeAttribute('data-text-entry');
+    history.replaceState({}, '', '/');
+  });
+
+  it('holds the strips while typing on the same page', () => {
+    root.setAttribute('data-text-entry', '');
+    edges = { top: '#555555', bottom: '#666666' };
+    window.dispatchEvent(new Event('resize'));
+    flushFrames();
+    expect(top()).toBe('#111111');
+  });
+
+  it('samples a new route even with the keyboard up (Home search -> /search)', () => {
+    root.setAttribute('data-text-entry', '');
+    history.pushState({}, '', '/search');
+    edges = { top: '#ffffff', bottom: '#ffffff' };
+    window.dispatchEvent(new Event('resize'));
+    flushFrames();
+    expect(top()).toBe('#ffffff');
+  });
+});
+
+describe('transitions', () => {
+  it('ignores transitions inside a keyboard dock or an opted-out element, samples others', () => {
+    const before = top();
+    const dock = document.createElement('div');
+    dock.setAttribute('data-keyboard-dock', '');
+    const composer = document.createElement('div');
+    composer.setAttribute('data-bars-transition-ignore', '');
+    const inner = document.createElement('span');
+    composer.appendChild(inner);
+    const other = document.createElement('div');
+    document.body.append(dock, composer, other);
+
+    edges = { top: '#121212', bottom: '#343434' };
+    dock.dispatchEvent(new Event('transitionend', { bubbles: true }));
+    inner.dispatchEvent(new Event('transitionend', { bubbles: true }));
+    flushFrames();
+    expect(top()).toBe(before);
+
+    other.dispatchEvent(new Event('transitionend', { bubbles: true }));
+    flushFrames();
+    expect(top()).toBe('#121212');
+    dock.remove(); composer.remove(); other.remove();
+  });
+});
+
+describe('where the strip colours are written', () => {
+  it('never on <html> itself, where they would restyle the whole page', () => {
+    expect(top()).toBe('#111111');
+    expect(bottom()).toBe('#222222');
+    for (const name of ['--sys-top-bg', '--sys-bottom-bg', '--sys-window-bg']) {
+      expect(root.style.getPropertyValue(name)).toBe('');
+    }
+  });
+
+  it('removes its rules when uninstalled', () => {
+    uninstall();
+    expect(document.querySelector('style[data-system-bars]')).toBeNull();
+    expect(root.hasAttribute('data-system-bars')).toBe(false);
+    uninstall = () => {};
   });
 });

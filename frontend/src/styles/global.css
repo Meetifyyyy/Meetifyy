@@ -1098,6 +1098,10 @@ button .spinner,
   inset: 0 !important;
   width: 100vw !important;
   height: 100vh !important;
+  /* The overlay sits over the whole page for the 800ms reveal and took every
+     tap: a second press of the toggle landed on <html> and did nothing. Taps
+     go through to the page, so pressing again turns the circle round. */
+  pointer-events: none;
 }
 
 ::view-transition-group(root) {
@@ -1130,14 +1134,20 @@ button .spinner,
 ::view-transition-new(root) {
   z-index: 9999 !important;
   will-change: clip-path;
-  clip-path: circle(0px at var(--vt-origin-x, -9999px) var(--vt-origin-y, -9999px));
+  /* Hidden until the reveal's own keyframes (which carry the origin) take
+     over. A zero radius draws nothing wherever it is centred, so no origin is
+     needed here - the custom properties that used to carry it were written to
+     <html> and restyled every element before each capture. */
+  clip-path: circle(0px);
 }
 
 ::view-transition-image-pair(root) {
   isolation: auto !important;
 }
 
-/* Disable element-level CSS transitions during View Transition to prevent double fading/flashing */
+/* Disable element-level CSS transitions during View Transition to prevent double fading/flashing.
+   Added inside the transition's update callback, together with the theme, so it
+   costs no restyle of its own (themeTransition.js). */
 html.theme-transitioning,
 html.theme-transitioning *,
 html.theme-transitioning *::before,

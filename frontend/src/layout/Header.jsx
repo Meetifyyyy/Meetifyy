@@ -23,7 +23,7 @@ import dashboardStyles from './DashboardLayout.module.css';
 
 export default function Header({ variant = 'dashboard', wide = false }) {
   const { loading, logout, currentUser } = useAuth();
-  const { theme, toggleTheme } = useTheme();
+  const { theme, choice, toggleTheme } = useTheme();
   const menu = useMenu();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const closeDrawer = useCallback(() => setDrawerOpen(false), []);
@@ -292,13 +292,17 @@ export default function Header({ variant = 'dashboard', wide = false }) {
               toggleTheme({ originElement: btn });
             }}
             aria-label="Toggle theme"
-            title={theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'}
+            title={choice === 'light' ? 'Switch to dark mode' : 'Switch to light mode'}
           >
-            {/* Keyed on the theme so the icon genuinely remounts and replays
-                its swap animation on every switch. A CSS transition alone
-                cannot animate one icon component being replaced by another. */}
-            <span key={theme} className={styles.themeToggleIcon}>
-              {theme === 'light' ? <Moon size={20} /> : <Sun size={20} />}
+            {/* Both icons stay mounted and turn through each other with CSS
+                transitions, following the latest press (`choice`), not the
+                page's theme. A transition can be turned round mid-way, so
+                rapid presses swing the icon back and forth smoothly; the old
+                remount replayed its animation from the start on every switch
+                and lagged a press whenever the page's circle reversed. */}
+            <span className={styles.themeToggleIcon} data-choice={choice}>
+              <span className={styles.themeIconMoon}><Moon size={20} /></span>
+              <span className={styles.themeIconSun}><Sun size={20} /></span>
             </span>
           </button>
         </div>

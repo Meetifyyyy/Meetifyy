@@ -115,6 +115,13 @@ public final class SystemUiHelper {
      * its first frame. Set only when it differs: each call is a configuration
      * change for the running activity.
      *
+     * Called at cold start (applyNightModeAndLaunchTheme) and when the app goes
+     * to the background (MainActivity.onStop) — NOT when the user picks a
+     * theme. A configuration change on the visible activity re-tints the bars'
+     * icons and tells the WebView the colour scheme changed, in the middle of
+     * the theme reveal; nothing on screen needs it, only the next cold start's
+     * splash does, and that is always preceded by onStop.
+     *
      * @param themeMode "light", "dark" or "system"
      */
     public static void syncSystemNightMode(Context context, String themeMode) {
@@ -221,9 +228,173 @@ public final class SystemUiHelper {
         decor.setPadding(l, t, r, b);
     }
 
+    /*
+     * ── Bar icons: the page's choice, and the reveal's hold on it ──────────
+     *
+     * The page decides the icons (SystemUiPlugin.setIcons), because only the
+     * page knows what is drawn under each bar. Normally its choice is applied
+     * at once. During a native theme reveal (ThemeRevealPlugin) it is not: the
+     * page has already switched to the NEW theme underneath a screenshot of the
+     * OLD one, and asks for the new theme's icons straight away — but on screen
+     * each bar still shows the old theme until the growing circle reaches it.
+     * Applying the request immediately put white icons over a still-white
+     * status bar for most of the 800 ms.
+     *
+     * So while a reveal holds the icons, a request is only REMEMBERED (it is
+     * the reveal's "target"), and the reveal applies old or target per bar as
+     * the circle crosses it. When the hold is released, the latest request is
+     * applied. One place records the page's choice and one decides what is
+     * applied, so a request that arrives mid-reveal is never lost and never
+     * shown early.
+     */
+
+    /** Implemented by the reveal while it decides the icons. UI thread only. */
+    public interface IconHold {
+        /**
+         * The page asked for new icons (now in {@link #pageStatusLightIcons()}
+         * / {@link #pageNavLightIcons()}), or the system reset them.
+         *
+         * @param force true when the system may have re-tinted the icons behind
+         *              our back (a configuration change), so whatever the hold
+         *              last applied must be applied again even if unchanged
+         */
+        void onPageIconsChanged(boolean force);
+    }
+
+    /** The icons the page last asked for (SystemUiPlugin.setIcons); null until it has. UI thread only. */
+    private static Boolean pageStatusLightIcons = null;
+    private static Boolean pageNavLightIcons = null;
+    /** Non-null while a reveal decides the icons. UI thread only. */
+    private static IconHold iconHold = null;
+
+    public static void rememberPageIcons(boolean statusLightIcons, boolean navLightIcons) {
+        pageStatusLightIcons = statusLightIcons;
+        pageNavLightIcons = navLightIcons;
+    }
+
+    /** The page's latest status-bar request, or null if it has never sent one. */
+    public static Boolean pageStatusLightIcons() {
+        return pageStatusLightIcons;
+    }
+
+    /** The page's latest navigation-bar request, or null if it has never sent one. */
+    public static Boolean pageNavLightIcons() {
+        return pageNavLightIcons;
+    }
+
+    /**
+     * The page's request (SystemUiPlugin.setIcons): remembered always, applied
+     * unless a reveal holds the icons, in which case the reveal is told and
+     * applies it when the circle reaches each bar.
+     */
+    public static void setPageIcons(Activity activity, boolean statusLightIcons, boolean navLightIcons) {
+        rememberPageIcons(statusLightIcons, navLightIcons);
+        if (iconHold != null) {
+            iconHold.onPageIconsChanged(false);
+            return;
+        }
+        setBarIcons(activity, statusLightIcons, navLightIcons);
+    }
+
+    /** A reveal takes over the icons. A second hold replaces the first (there is one reveal). */
+    public static void holdIcons(IconHold hold) {
+        iconHold = hold;
+    }
+
+    /**
+     * Ends the hold and applies the page's latest request, so the bars settle
+     * on what is actually under them now that the overlay is gone. A no-op if
+     * {@code hold} no longer holds (a stale release must not end a newer one).
+     */
+    public static void releaseIcons(Activity activity, IconHold hold) {
+        if (iconHold != hold) return;
+        iconHold = null;
+        reapplyPageIcons(activity);
+        if (!afterReveal.isEmpty()) {
+            final java.util.ArrayList<Runnable> pending = new java.util.ArrayList<>(afterReveal.values());
+            afterReveal.clear();
+            for (Runnable r : pending) r.run();
+        }
+    }
+
+    /**
+     * Window work deferred while a reveal is on screen, latest per key.
+     *
+     * Changing the window's background relayouts the window (relayoutWindow,
+     * and a frame of UI-thread work), and the page asks for it in the middle of
+     * the reveal, when it samples the new theme's colours. Measured on the
+     * I2208 that cost three frames of the circle. Nothing behind the overlay
+     * and the WebView can show the window colour anyway, so it is applied once
+     * the reveal has ended. UI thread only.
+     */
+    private static final java.util.LinkedHashMap<String, Runnable> afterReveal = new java.util.LinkedHashMap<>();
+
+    /** Runs {@code work} now, or - while a reveal holds the bars - once it ends. */
+    public static void runWhenRevealEnds(String key, Runnable work) {
+        if (iconHold == null) {
+            work.run();
+            return;
+        }
+        afterReveal.remove(key);
+        afterReveal.put(key, work);
+    }
+
+    public static boolean iconsHeld() {
+        return iconHold != null;
+    }
+
+    /**
+     * Puts the page's icon choice back after the system has reset it.
+     *
+     * A night-mode change (the app's own, syncSystemNightMode, or the device's)
+     * is a configuration change, and the system answers it by re-tinting the
+     * bars' icons to the new theme's default. That is not always what is under
+     * them - and measured on a device it left white icons over a white bar
+     * after a switch to Light until the next change came along.
+     *
+     * During a reveal the page's choice is not what should be on screen (see
+     * above), so the reveal re-applies its own per-bar decision instead.
+     */
+    public static void reapplyPageIcons(Activity activity) {
+        if (iconHold != null) {
+            iconHold.onPageIconsChanged(true);
+            return;
+        }
+        if (pageStatusLightIcons == null || pageNavLightIcons == null) return;
+        setBarIcons(activity, pageStatusLightIcons, pageNavLightIcons);
+    }
+
+    /**
+     * Whether the status bar's icons are light right now, read back from the
+     * window rather than from what the page last asked for: the reveal needs
+     * what is ON SCREEN (the "old" icons), and something other than the page
+     * (applySystemBars at launch, a configuration change) may have set it.
+     */
+    public static boolean statusLightIconsApplied(Activity activity) {
+        final WindowInsetsControllerCompat controller = controllerFor(activity);
+        return controller != null && !controller.isAppearanceLightStatusBars();
+    }
+
+    /** As {@link #statusLightIconsApplied}, for the navigation bar. */
+    public static boolean navLightIconsApplied(Activity activity) {
+        final WindowInsetsControllerCompat controller = controllerFor(activity);
+        return controller != null && !controller.isAppearanceLightNavigationBars();
+    }
+
+    private static WindowInsetsControllerCompat controllerFor(Activity activity) {
+        if (activity == null) return null;
+        final Window window = activity.getWindow();
+        if (window == null) return null;
+        final View decor = window.getDecorView();
+        if (decor == null) return null;
+        return WindowCompat.getInsetsController(window, decor);
+    }
+
     /**
      * Sets whether each bar's icons are drawn light (over a dark surface) or
      * dark. This is the one part of the bars the page cannot paint itself.
+     * Applies unconditionally: callers that must respect a reveal's hold go
+     * through {@link #setPageIcons} / {@link #reapplyPageIcons}.
      */
     public static void setBarIcons(Activity activity, boolean statusLightIcons, boolean navLightIcons) {
         if (activity == null || activity.isFinishing()) return;

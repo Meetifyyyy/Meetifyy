@@ -100,12 +100,48 @@ export function installSystemBars(systemBars, { readEdges } = {}) {
     return chromeColour;
   };
 
+  /**
+   * Where the strip colours are written: a rule of their own, not <html>.
+   *
+   * Custom properties inherit, so writing one on <html>'s inline style restyled
+   * every element on the page - measured on the I2208, 591 elements and 18-46ms
+   * per sample, and a sample runs on every navigation and after every theme
+   * switch. Only <html> and its two pseudo-elements read these, so each lives
+   * in a rule that matches exactly the element that reads it (`--sys-window-bg`
+   * is registered non-inheriting in mobile.css so its rule on <html> stops
+   * there too). Changing a declaration in one of these rules restyles what the
+   * rule matches and nothing else.
+   */
+  let stripStyle = null;
+  const stripRules = (() => {
+    try {
+      const style = document.createElement('style');
+      stripStyle = style;
+      style.setAttribute('data-system-bars', '');
+      document.head.appendChild(style);
+      const sheet = style.sheet;
+      const rule = (selector) => sheet.cssRules[sheet.insertRule(`${selector} {}`, sheet.cssRules.length)];
+      // An attribute in each selector gives the engine something narrower than
+      // a bare type selector to scope the restyle to when a rule changes.
+      root.setAttribute('data-system-bars', '');
+      return {
+        '--sys-top-bg': rule('html[data-system-bars]::before'),
+        '--sys-bottom-bg': rule('html[data-system-bars]::after'),
+        '--sys-window-bg': rule('html[data-system-bars]'),
+      };
+    } catch (_) {
+      return null;
+    }
+  })();
+
   let lastTop;
   let lastBottom;
   let lastWindow;
   const setStrip = (name, value, last) => {
     if (value === last) return last;
-    root.style.setProperty(name, value);
+    const rule = stripRules && stripRules[name];
+    if (rule) rule.style.setProperty(name, value);
+    else root.style.setProperty(name, value);
     return value;
   };
 
@@ -299,6 +335,8 @@ export function installSystemBars(systemBars, { readEdges } = {}) {
 
   return () => {
     if (frame) cancelAnimationFrame(frame);
+    stripStyle?.remove();
+    root.removeAttribute('data-system-bars');
     clearTimeout(settle);
     clearTimeout(afterSlide);
     observer.disconnect();

@@ -1096,20 +1096,63 @@
    Nothing here touches the reveal itself. */
 
 .themeToggleIcon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  /* Sun and moon rise from opposite sides, so the swap reads as one rotating
-     through to the other rather than a straight cross-fade. Matched to the
-     page reveal's 1.2s so the button is not finished and sitting still while
-     the rest of the screen is still turning over. */
-  animation: themeIconSwap 0.8s cubic-bezier(0.22, 0.9, 0.3, 1) both;
+  display: inline-grid;
+  place-items: center;
 }
 
-@keyframes themeIconSwap {
-  from { transform: rotate(-120deg) scale(0.55); opacity: 0; }
-  60%  { opacity: 1; }
-  to   { transform: rotate(0deg) scale(1); opacity: 1; }
+/* Sun and moon share one cell and turn through each other: the one leaving
+   rotates out and shrinks while the one arriving rotates in from the other
+   side. Transitions rather than a keyframe animation, so a press mid-swap
+   turns the motion round from wherever it is.
+
+   The fades do NOT overlap: the leaving icon is gone in 120ms and the
+   arriving one only starts to appear after that. A cross-fade showed both
+   icons on top of each other for a moment, which read as a glitch. */
+.themeIconMoon,
+.themeIconSun {
+  grid-area: 1 / 1;
+  display: inline-flex;
+  /* Arriving: fade in once the other has gone. */
+  transition:
+    transform 0.6s cubic-bezier(0.22, 0.9, 0.3, 1),
+    opacity 0.18s ease-out 0.12s;
+}
+
+/* Light theme chosen: the moon offers dark. */
+.themeToggleIcon[data-choice='light'] .themeIconSun,
+.themeToggleIcon[data-choice='dark'] .themeIconMoon {
+  opacity: 0;
+  /* Leaving: fade out at once. */
+  transition:
+    transform 0.6s cubic-bezier(0.22, 0.9, 0.3, 1),
+    opacity 0.12s ease-in;
+}
+.themeToggleIcon[data-choice='light'] .themeIconSun {
+  transform: rotate(120deg) scale(0.55);
+}
+.themeToggleIcon[data-choice='dark'] .themeIconMoon {
+  transform: rotate(-120deg) scale(0.55);
+}
+
+/* `html.theme-transitioning *` switches transitions off for the whole page
+   during a switch (global.css). The toggle is the one thing that must keep
+   moving then: it is what is being pressed. */
+:global(html.theme-transitioning) .themeIconMoon,
+:global(html.theme-transitioning) .themeIconSun {
+  transition:
+    transform 0.6s cubic-bezier(0.22, 0.9, 0.3, 1),
+    opacity 0.18s ease-out 0.12s !important;
+}
+
+:global(html.theme-transitioning) .themeToggleIcon[data-choice='light'] .themeIconSun,
+:global(html.theme-transitioning) .themeToggleIcon[data-choice='dark'] .themeIconMoon {
+  transition:
+    transform 0.6s cubic-bezier(0.22, 0.9, 0.3, 1),
+    opacity 0.12s ease-in !important;
+}
+
+:global(html.theme-transitioning) .drawerThemeToggleBtn {
+  transition: transform 0.18s cubic-bezier(0.22, 0.9, 0.3, 1) !important;
 }
 
 /* A quick inward press, then a settle. `:active` alone is not enough on
@@ -1134,7 +1177,12 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .themeToggleIcon { animation: none; }
+  .themeIconMoon,
+  .themeIconSun,
+  :global(html.theme-transitioning) .themeIconMoon,
+  :global(html.theme-transitioning) .themeIconSun,
+  :global(html.theme-transitioning) .themeToggleIcon[data-choice] .themeIconMoon,
+  :global(html.theme-transitioning) .themeToggleIcon[data-choice] .themeIconSun { transition: none !important; }
   .drawerThemeToggleBtn { transition: none; }
   .drawerThemeToggleBtn:active { transform: none; }
 }

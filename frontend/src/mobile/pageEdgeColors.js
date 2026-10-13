@@ -68,10 +68,35 @@ function isPageGradient(style) {
 }
 
 /** The colour painted at viewport point (x, probeY), or null if undecidable. */
-function paintedColorAt(x, probeY, barY, gradientY = barY) {
+/*
+ * The elements last found at each probe, for when hit-testing is unavailable.
+ *
+ * During a view transition (the theme switch's circular reveal) the page is
+ * drawn by the transition's snapshots and elementsFromPoint returns only
+ * <html>, whose inline background is the launch colour - white. Sampled then,
+ * a switch to Dark read every edge as white: the strips turned light inside the
+ * revealed dark area and the bars got dark icons over black. Nothing MOVES in
+ * a theme switch, only colours change, so the elements found by the last real
+ * hit-test are still the ones at the edges; their computed styles already
+ * carry the new theme.
+ */
+const lastStacks = new Map();
+
+function stackAt(key, x, y) {
+  const stack = document.elementsFromPoint(x, y);
+  const blind = stack.every((el) => el === document.documentElement);
+  if (!blind) {
+    lastStacks.set(key, stack);
+    return stack;
+  }
+  const cached = lastStacks.get(key);
+  return cached && cached.every((el) => el.isConnected) ? cached : stack;
+}
+
+function paintedColorAt(x, probeY, barY, gradientY = barY, key = `${barY}`) {
   const root = document.documentElement;
   const readVar = (name) => getComputedStyle(root).getPropertyValue(name);
-  const stack = document.elementsFromPoint(x, probeY);
+  const stack = stackAt(key, x, probeY);
   const width = window.innerWidth;
   const height = window.innerHeight;
 
@@ -110,7 +135,7 @@ export function readPageEdgeColors() {
   // Evaluated AT the seam, not at the middle of each bar: a flat bar is judged
   // against the pixels it touches, and the gradient's value half a bar further
   // out read as a visibly different shade.
-  const top = paintedColorAt(x, topProbe, contentTop);
+  const top = paintedColorAt(x, topProbe, contentTop, contentTop, 'top');
   // The bottom is probed just ABOVE the navigation bar, the mirror of the top:
   // the strip continues the last surface the page painted before the bar, so a
   // page whose sheet stops a few pixels short of the screen's edge (padding
@@ -120,7 +145,7 @@ export function readPageEdgeColors() {
     getComputedStyle(document.documentElement).getPropertyValue('--navigation-bar-inset'),
   ) || 0;
   const bottomProbe = Math.max(0, h - navInset - 1);
-  const bottom = paintedColorAt(x, bottomProbe, h);
+  const bottom = paintedColorAt(x, bottomProbe, h, h, 'bottom');
   /*
    * What the window behind the WebView should be. When the keyboard opens the
    * WebView shrinks before the keyboard has drawn, and this colour is all that
@@ -130,7 +155,7 @@ export function readPageEdgeColors() {
    * edge lands (about 60% down) is what the page looks like there. Pages that
    * paint an opaque colour at the bottom are unaffected: it is the same colour.
    */
-  const windowColor = paintedColorAt(x, bottomProbe, h, h * 0.6);
+  const windowColor = paintedColorAt(x, bottomProbe, h, h * 0.6, 'bottom');
   return {
     top: top && toHex(top),
     bottom: bottom && toHex(bottom),

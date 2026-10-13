@@ -52,6 +52,7 @@ public class MainActivity extends BridgeActivity {
         // 3. Register the app's own plugins before super.onCreate
         registerPlugin(SystemUiPlugin.class);
         registerPlugin(InstagramStoriesPlugin.class);
+        registerPlugin(ThemeRevealPlugin.class);
 
         super.onCreate(savedInstanceState);
 
@@ -364,8 +365,15 @@ public class MainActivity extends BridgeActivity {
     public void onConfigurationChanged(Configuration newConfig) {
         super.onConfigurationChanged(newConfig);
         // Same as onResume: rotation and device theme changes reach the page
-        // (resize, prefers-color-scheme), which repaints the bars itself.
-        if (contentPainted) return;
+        // (resize, prefers-color-scheme), which repaints the bars itself. The
+        // icons are the exception: a night-mode change re-tints them to the
+        // theme's default, so the page's choice is put back, now and once the
+        // change has finished being dispatched.
+        if (contentPainted) {
+            SystemUiHelper.reapplyPageIcons(this);
+            handler.post(() -> SystemUiHelper.reapplyPageIcons(this));
+            return;
+        }
         final SystemUiHelper.ResolvedTheme currentTheme = SystemUiHelper.resolveTheme(this);
 
         // If the user explicitly chose Light or Dark, device changes must NOT override the app
@@ -381,6 +389,41 @@ public class MainActivity extends BridgeActivity {
             applyTransparentLaunchNavigationBar();
             applyLaunchBackground(deviceIsDark);
         }
+    }
+
+    /**
+     * Hands the user's theme to the system as the app leaves the screen.
+     *
+     * The system draws the next cold start's splash from the night mode it
+     * holds for the app (SystemUiHelper.syncSystemNightMode), so that has to
+     * follow the user's choice — but setting it is a configuration change on
+     * the running activity, and doing it when the user picked the theme landed
+     * in the middle of the theme reveal (icons re-tinted by the system, the
+     * WebView re-evaluating its colour scheme while the circle grew). Nothing
+     * visible needs it; only the next cold start does, and every ordinary path
+     * to one passes through here first: Home, Back, the recents screen (an
+     * app swiped away from recents was already stopped when recents opened),
+     * the system killing a backgrounded process.
+     *
+     * The edge: a process that dies while in the FOREGROUND (a crash, a force
+     * stop from settings, adb) never reaches onStop after a theme change. The
+     * next cold start's SYSTEM splash is then drawn in the previous night mode
+     * — one launch with the old flicker. Everything after it is still right:
+     * onCreate resolves the theme from the preferences, which setColors
+     * commits synchronously at the moment of the choice, applies the matching
+     * launch theme and window colour, and syncs the system night mode itself
+     * (applyNightModeAndLaunchTheme), so the launch after that is clean too.
+     */
+    @Override
+    public void onStop() {
+        super.onStop();
+        final android.content.SharedPreferences prefs =
+            getSharedPreferences(SystemUiHelper.PREFS, MODE_PRIVATE);
+        final boolean chosen = prefs.getBoolean(SystemUiHelper.KEY_PREFERENCE_SET, false);
+        final String theme = prefs.getString(SystemUiHelper.KEY_THEME, "system");
+        // No-op when unchanged (the common case: it remembers what it last
+        // handed the system), so this costs a preference read per onStop.
+        SystemUiHelper.syncSystemNightMode(this, chosen ? theme : "system");
     }
 
     @Override

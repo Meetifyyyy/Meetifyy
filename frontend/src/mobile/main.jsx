@@ -51,6 +51,8 @@ import { createCapacitorBackButton } from '../platform/capacitor/backButton';
 import { installNativeBackButton } from './nativeBackButton';
 import UpdateGate from './UpdateGate';
 import { createCapacitorSystemBars } from '../platform/capacitor/systemBars';
+import { createNativeThemeRevealDriver } from '../platform/capacitor/themeReveal';
+import { setThemeTransitionDriver } from '@shared/theme/themeTransition';
 import { installSystemBars } from './installSystemBars';
 import { readPageEdgeColors } from './pageEdgeColors';
 import { createCapacitorDeepLinks } from '../platform/capacitor/deepLinks';
@@ -149,6 +151,10 @@ installNativeBackButton(createCapacitorBackButton());
  */
 const systemBars = createCapacitorSystemBars();
 installSystemBars(systemBars, { readEdges: readPageEdgeColors });
+
+// The theme switch's reveal, drawn by the shell where it can be (see
+// platform/capacitor/themeReveal.js); the same circle as the website's.
+setThemeTransitionDriver(createNativeThemeRevealDriver());
 
 // Before the app renders: AuthContext may call ready() on its first effect.
 // The release is pushed to native as it happens (see SystemUiPlugin.appReady).

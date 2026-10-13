@@ -2,8 +2,12 @@ import { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { flushSync } from 'react-dom';
 
 import { resolveInitialTheme, shouldFollowSystem } from '@core/theme/resolveTheme';
+import { getThemeTransitionDriver } from '@shared/theme/themeTransition';
 
 const ThemeContext = createContext();
+
+/** Presses closer together than this count as one (see toggleTheme). */
+const MIN_PRESS_GAP_MS = 50;
 
 /**
  * Dynamically resolves the origin coordinate (x, y) for the radial theme reveal.
@@ -151,7 +155,9 @@ export function ThemeProvider({ children }) {
         preferenceSet = localStorage.getItem('theme_preference_set') === 'true';
       } catch (_) {}
       if (!shouldFollowSystem({ preferenceSet })) return;
-      setTheme(event.matches ? 'dark' : 'light');
+      wantedRef.current = event.matches ? 'dark' : 'light';
+      setChoice(wantedRef.current);
+      setTheme(wantedRef.current);
     };
 
     query.addEventListener('change', onChange);
@@ -159,37 +165,29 @@ export function ThemeProvider({ children }) {
   }, []);
 
   /**
-   * The live theme, for `toggleTheme` to read.
+   * The theme the user has asked for most recently.
    *
-   * Reading the `theme` state variable inside the handler reads whatever it
-   * was when that closure was created. Two clicks in quick succession both
-   * saw 'light' and both set 'dark', so the second toggle silently did
-   * nothing — the deeper half of "fast clicking does not work", underneath
-   * the in-flight guard that was dropping the click outright.
+   * Not the `theme` state: a switch that is reversing still shows the theme it
+   * was heading to until its circle has closed, and a third press must turn it
+   * round again rather than read that and ask for the same thing twice. Kept in
+   * step with the state whenever the theme changes for any other reason (the
+   * device's setting, while the user has not chosen).
    */
-  const themeRef = useRef(theme);
-  themeRef.current = theme;
-
-  /** The transition currently playing, so a new click can cut it short
-   *  instead of being discarded. */
-  const activeTransitionRef = useRef(null);
+  const wantedRef = useRef(theme);
 
   /**
-   * The clip-path animation currently playing.
-   *
-   * Held so it can be cancelled. Each toggle starts a WAAPI animation with
-   * `fill: 'forwards'` on `::view-transition-new(root)`; left alone, those
-   * accumulate. A finished one keeps applying its end value — the fully
-   * revealed `circle(200vmax)` — and re-applies it to the pseudo-element the
-   * *next* transition creates, so every switch after the first appeared
-   * already complete and the 800ms reveal was only ever seen once, on the
-   * first click of a page load.
+   * The same, as state, for the toggle's own icon. The page's theme can lag a
+   * press (it changes when the circle allows it, and not at all when a second
+   * press turns the circle back), but the control must answer every press at
+   * once or rapid presses look ignored.
    */
-  const activeAnimationRef = useRef(null);
+  const [choice, setChoice] = useState(theme);
 
   useEffect(() => {
     try {
-      document.documentElement.setAttribute('data-theme', theme);
+      if (document.documentElement.getAttribute('data-theme') !== theme) {
+        document.documentElement.setAttribute('data-theme', theme);
+      }
       /*
        * Hand `color-scheme` back to CSS.
        *
@@ -205,190 +203,49 @@ export function ThemeProvider({ children }) {
     } catch (_) {}
   }, [theme]);
 
+  /** When the last press was taken (see toggleTheme). */
+  const lastPressRef = useRef(-Infinity);
+
   const toggleTheme = (options) => {
     /*
-     * Rapid clicks are honoured rather than dropped.
-     *
-     * This used to return early for the full length of the animation, so
-     * anything faster than one click per 800ms was thrown away and the button
-     * felt dead. Now an in-flight transition is cut short — `skipTransition`
-     * settles it immediately, which is exactly what the API exists for — and
-     * the new one starts from the state the user just asked for. The reveal
-     * itself is unchanged; only its lifetime is interruptible.
+     * Presses closer together than this are one press. A tap that registers
+     * twice (a bounce, a touch that also fires a click) or a frantic double
+     * hit would otherwise turn the circle round within a frame or two, which
+     * reads as a flicker rather than a decision. Deliberate rapid presses are
+     * well over this apart and are all honoured.
      */
-    if (activeTransitionRef.current) {
-      try {
-        activeTransitionRef.current.skipTransition?.();
-      } catch (_) { /* already finished */ }
-      activeTransitionRef.current = null;
-    }
-    // Drop the previous reveal's forwards-fill before starting another, or
-    // the new snapshot inherits its end state and skips straight to done.
-    if (activeAnimationRef.current) {
-      try {
-        activeAnimationRef.current.cancel();
-      } catch (_) { /* already gone */ }
-      activeAnimationRef.current = null;
-    }
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    if (now - lastPressRef.current < MIN_PRESS_GAP_MS) return;
+    lastPressRef.current = now;
 
     try {
       localStorage.setItem('theme_preference_set', 'true');
     } catch (_) {}
-    // From the ref, never the closure — see themeRef.
-    const newTheme = themeRef.current === 'light' ? 'dark' : 'light';
-    themeRef.current = newTheme;
-
-    // Measure live source element coordinates immediately at the moment of click
-    const origin = getThemeOrigin(options);
-    const viewportWidth = window.innerWidth;
-    const viewportHeight = window.visualViewport?.height || window.innerHeight;
+    const next = wantedRef.current === 'light' ? 'dark' : 'light';
+    wantedRef.current = next;
+    setChoice(next);
 
     /*
-     * `::view-transition-new(root)` is a replaced snapshot. Some Chromium
-     * configurations resolve a pixel clip-path against that snapshot's raster
-     * box, rather than the CSS viewport that `getBoundingClientRect()` uses.
-     * Normalize the measured CSS-pixel point to its viewport fraction before
-     * handing it to the snapshot. Percentages are then resolved against the
-     * snapshot's own reference box, preserving the same visual location at
-     * every browser zoom and display scale.
+     * Puts a theme on the page, synchronously. The transition driver calls it
+     * only at a moment the change cannot be seen (behind a snapshot, or under a
+     * closed circle), so the attribute, React's state and storage all move in
+     * that one moment.
      */
-    const transitionOrigin = {
-      x: `${(origin.x / viewportWidth) * 100}%`,
-      y: `${(origin.y / viewportHeight) * 100}%`,
+    const apply = (value) => {
+      const root = document.documentElement;
+      if (root.getAttribute('data-theme') !== value) root.setAttribute('data-theme', value);
+      try {
+        localStorage.setItem('theme', value);
+      } catch (_) {}
+      flushSync(() => setTheme(value));
     };
 
-    const prefersReducedMotion =
-      typeof window !== 'undefined' &&
-      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-    if (!document.startViewTransition || prefersReducedMotion) {
-      document.documentElement.setAttribute('data-theme', newTheme);
-      localStorage.setItem('theme', newTheme);
-      setTheme(newTheme);
-      return;
-    }
-
-    // Pre-bind origin coordinates to CSS custom properties before transition begins
-    // to guarantee frame 0 renders at the exact origin before WAAPI executes
-    document.documentElement.style.setProperty('--vt-origin-x', transitionOrigin.x);
-    document.documentElement.style.setProperty('--vt-origin-y', transitionOrigin.y);
-
-    document.documentElement.classList.add('theme-transitioning');
-
-    try {
-      const transition = document.startViewTransition(() => {
-        flushSync(() => {
-          document.documentElement.setAttribute('data-theme', newTheme);
-          localStorage.setItem('theme', newTheme);
-          setTheme(newTheme);
-        });
-      });
-
-      activeTransitionRef.current = transition;
-
-      transition.ready
-        .then(() => {
-          const clipPathFrames = [
-            `circle(0px at ${transitionOrigin.x} ${transitionOrigin.y})`,
-            /*
-             * A percentage radius, not a viewport unit.
-             *
-             * `vmax` was the whole problem. The snapshot does not resolve it
-             * against the CSS viewport the way the page does — it behaves as
-             * though the short side were the reference. On a laptop that is
-             * survivable: 200vmax landed at ~1640px against ~1594px needed,
-             * so it just covered. On a phone, which is far taller than it is
-             * wide, the same 200vmax landed at ~824px against ~864px needed
-             * — about 95% of the way. The last sliver then appeared in a
-             * single frame when the snapshot was torn down, which is why the
-             * snap showed up on mobile and never on desktop.
-             *
-             * A percentage inside `circle()` resolves against the reference
-             * box as sqrt(w^2 + h^2) / sqrt(2), so 141.4% always reaches the
-             * farthest corner whatever the aspect ratio — no measuring, no
-             * assumption about which side is longer. It also rides the exact
-             * mechanism the origin coordinates already use successfully, and
-             * those have always landed in the right place on both devices.
-             *
-             * 160% carries ~13% margin over the geometric worst case.
-             */
-            `circle(160% at ${transitionOrigin.x} ${transitionOrigin.y})`,
-          ];
-
-          const anim = document.documentElement.animate(
-            {
-              clipPath: clipPathFrames,
-            },
-            {
-              // Linear, and deliberately so.
-              //
-              // The radius overshoots the screen by design (see above), so
-              // the visible part of the reveal is the early portion of the
-              // timeline. Any front-loaded curve spends that portion at its
-              // fastest — the previous cubic-bezier(0.22, 0.9, 0.3, 1)
-              // crossed the entire screen in about an eighth of the
-              // duration, which is what read as the circle snapping to fill.
-              //
-              // Linear means the boundary sweeps at a constant speed for
-              // every pixel of its visible travel, so it cannot accelerate
-              // into the edges. An easing curve on a clipped-off animation
-              // shapes the part nobody sees.
-              duration: 800,
-              easing: 'linear',
-              fill: 'forwards',
-              pseudoElement: '::view-transition-new(root)',
-            }
-          );
-
-          activeAnimationRef.current = anim;
-
-          /*
-           * The forwards-fill is deliberately NOT released here.
-           *
-           * Cancelling on `finished` reverts clip-path to its CSS value —
-           * `circle(0px)` — which blanks the new snapshot entirely for the
-           * frames between the animation ending and the browser tearing the
-           * pseudo-element down. The old snapshot shows through underneath,
-           * so the switch ended with a flash of the previous theme.
-           *
-           * The fill is released at the start of the *next* toggle instead,
-           * by which point this pseudo-element no longer exists. That still
-           * stops a stale animation contaminating the next reveal, which is
-           * what the cancellation was for, without the flash.
-           */
-          return anim.finished;
-        })
-        .catch(() => {
-          // A skipped transition rejects `ready`; that is the normal path
-          // when a fast second click supersedes this one, not an error.
-        });
-
-      transition.finished
-        .catch(() => {})
-        .finally(() => {
-          // Only clear if this is still the current transition: a faster
-          // click has already replaced it, and its own cleanup owns the
-          // origin variables now.
-          if (activeTransitionRef.current !== transition) return;
-          activeTransitionRef.current = null;
-          document.documentElement.classList.remove('theme-transitioning');
-          document.documentElement.style.removeProperty('--vt-origin-x');
-          document.documentElement.style.removeProperty('--vt-origin-y');
-        });
-    } catch (err) {
-      console.error('startViewTransition error:', err);
-      activeTransitionRef.current = null;
-      document.documentElement.classList.remove('theme-transitioning');
-      document.documentElement.style.removeProperty('--vt-origin-x');
-      document.documentElement.style.removeProperty('--vt-origin-y');
-      // The DOM update inside startViewTransition may not have run.
-      document.documentElement.setAttribute('data-theme', newTheme);
-      setTheme(newTheme);
-    }
+    // Measured at the moment of the click, from the control that was pressed.
+    getThemeTransitionDriver().switchTo(next, { origin: getThemeOrigin(options), apply });
   };
 
   return (
-    <ThemeContext.Provider value={{ theme, toggleTheme }}>
+    <ThemeContext.Provider value={{ theme, choice, toggleTheme }}>
       {children}
     </ThemeContext.Provider>
   );

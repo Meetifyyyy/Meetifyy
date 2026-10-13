@@ -113,16 +113,25 @@ public class SystemUiPlugin extends Plugin {
             } else if ("system".equalsIgnoreCase(theme)) {
                 editor.putBoolean(SystemUiHelper.KEY_PREFERENCE_SET, false);
             }
-            editor.commit();
+            // commit() is an fsync on the UI thread. During a theme reveal that
+            // stalled the circle for frames; apply() writes in the background
+            // (the values are in memory at once, and Android flushes pending
+            // writes before the app is stopped).
+            if (SystemUiHelper.iconsHeld()) {
+                editor.apply();
+            } else {
+                editor.commit();
+            }
 
             // The next cold start's splash is drawn by the system, from the night
-            // mode it holds for the app; keep that in step with the choice now
-            // (SystemUiHelper.syncSystemNightMode). After the commit, so the
-            // configuration change this causes reads the new preferences.
-            if (theme != null) {
-                final boolean chosen = prefs.getBoolean(SystemUiHelper.KEY_PREFERENCE_SET, false);
-                SystemUiHelper.syncSystemNightMode(activity, chosen ? theme : "system");
-            }
+            // mode it holds for the app (SystemUiHelper.syncSystemNightMode).
+            // That is NOT synced here any more: it is a configuration change
+            // on the running activity, and this call arrives in the middle of
+            // the theme reveal (ThemeRevealPlugin) — the system re-tinted the
+            // bars' icons and the WebView re-evaluated its colour scheme while
+            // the circle was growing. Only the next cold start needs it, so
+            // MainActivity.onStop syncs it from the preferences committed
+            // above when the app leaves the screen.
 
             // Persisting only. Neither the window's colour (it follows the
             // page's bottom edge: setWindowColor) nor the bars' icons (they
@@ -131,9 +140,7 @@ public class SystemUiPlugin extends Plugin {
 
             // No AppCompatDelegate.setDefaultNightMode() here: the UI is the
             // WebView, which already has the theme. The system's night mode for
-            // the app is synced above, after the commit, so the configuration
-            // change it causes reads the NEW preferences (MainActivity ignores
-            // it anyway once the page has painted).
+            // the app follows in onStop (above).
 
             call.resolve();
         });
@@ -143,14 +150,14 @@ public class SystemUiPlugin extends Plugin {
      * Keeps the window (and the WebView's own background) the colour of the
      * page's bottom edge.
      *
-     * The window shows in exactly one situation once the page is up: the soft
-     * keyboard. The WebView is shrunk to the space above it at once, and the
-     * keyboard then slides in over roughly a quarter of a second, so for that
-     * long a strip above the keyboard is window rather than page. In the
-     * theme's colour it was a white patch flashing across a dark screen. In the
-     * colour of the page's bottom edge it reads as the page continuing down
-     * behind the keyboard. Not persisted: this follows the page, and the theme
-     * colour for the next cold start is `setColors`'.
+     * The window used to show while the soft keyboard resized the WebView: a
+     * strip above the sliding keyboard was window rather than page, and in the
+     * theme's colour it was a white patch flashing across a dark screen. The
+     * keyboard now overlays the page and the WebView never resizes for it, so
+     * that strip is gone; this is kept so anything that does expose the window
+     * (a WebView relayout, an OEM quirk) reads as the page continuing. Not
+     * persisted: this follows the page, and the theme colour for the next cold
+     * start is `setColors`'.
      *
      * @param call `color`: CSS hex colour
      */
@@ -170,10 +177,14 @@ public class SystemUiPlugin extends Plugin {
             return;
         }
         activity.runOnUiThread(() -> {
-            SystemUiHelper.setWindowColor(activity, color);
-            if (getBridge() != null && getBridge().getWebView() != null) {
-                getBridge().getWebView().setBackgroundColor(color);
-            }
+            // Held until a theme reveal has finished (SystemUiHelper.runWhenRevealEnds).
+            SystemUiHelper.runWhenRevealEnds("windowColor", () -> {
+                if (activity.isFinishing()) return;
+                SystemUiHelper.setWindowColor(activity, color);
+                if (getBridge() != null && getBridge().getWebView() != null) {
+                    getBridge().getWebView().setBackgroundColor(color);
+                }
+            });
             call.resolve();
         });
     }
@@ -181,6 +192,11 @@ public class SystemUiPlugin extends Plugin {
     /**
      * Icon appearance only. Called on every change of the page's edge colours,
      * so it does nothing else: no preferences, no window repaint.
+     *
+     * While a theme reveal is on screen the request is remembered but not
+     * applied: the reveal applies it to each bar as its circle reaches that
+     * bar, and applies the latest one when it ends (SystemUiHelper.setPageIcons).
+     * The page does not need to know; it calls this exactly as before.
      *
      * @param call `statusLightIcons`: light status-bar icons (over a dark edge)
      *             `navLightIcons`: light navigation-bar icons
@@ -195,7 +211,7 @@ public class SystemUiPlugin extends Plugin {
             return;
         }
         activity.runOnUiThread(() -> {
-            SystemUiHelper.setBarIcons(activity, statusLight, navLight);
+            SystemUiHelper.setPageIcons(activity, statusLight, navLight);
             call.resolve();
         });
     }
