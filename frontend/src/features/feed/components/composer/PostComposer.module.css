@@ -67,10 +67,14 @@
   /* Named properties rather than `all`: `all` also animates layout and colour
      changes that should be instant, which is what made the controls feel
      slightly laggy instead of responsive. */
+  /* Opacity and visibility too, so it fades in the way it fades out
+     (.composerEmojiBtnHidden); without them it popped in on expand. */
   transition:
     color var(--transition-fast),
     background var(--transition-fast),
-    transform var(--transition-fast);
+    transform var(--transition-fast),
+    opacity 0.18s ease,
+    visibility 0s;
   flex-shrink: 0;
 }
 
@@ -101,25 +105,22 @@
   background: rgba(var(--color-primary-rgb), 0.15);
 }
 
-/* Expands and collapses downward by animating the row track, so the feed below
-   follows smoothly. This is affordable because nothing else competes for the
-   frames any more: the feed rows are absolutely positioned (moving the list
-   container does not re-lay them out), the virtualizer ignores the keyboard
-   shrink, the system-bar colour sampler is paused during text entry, and media
-   is sized from --app-vh. (An earlier one-step version of this snapped; the
-   jank it was meant to cure came from those other sources, not from this.) */
+/* Expand / collapse. The size changes in ONE step and useExpandFlip draws the
+   in-between frames with clip-path and transform only: animating
+   grid-template-rows re-laid out the card and the whole feed under it on every
+   frame, which on the phone coincided with the tap, the focus render and the
+   keyboard starting, and showed as uneven steps however the curve was tuned.
+   `.expanded` is the size and lags while the collapse animates;
+   `.contentShown` is the content's fade, which starts at once. */
 .composerExpandContainer {
   display: grid;
   grid-template-rows: 0fr;
   visibility: hidden;
-  /* Stay visible while the track closes. */
-  transition: grid-template-rows 220ms cubic-bezier(0.2, 0.8, 0.2, 1), visibility 0s linear 220ms;
 }
 
 .composerExpandContainer.expanded {
   grid-template-rows: 1fr;
   visibility: visible;
-  transition: grid-template-rows 220ms cubic-bezier(0.2, 0.8, 0.2, 1), visibility 0s;
 }
 
 .composerExpandClip {
@@ -134,19 +135,23 @@
   padding-top: 0.25rem;
   opacity: 0;
   transform: translateY(-6px);
-  transition: opacity 160ms ease-out, transform 160ms ease-out;
+  /* Closing: the content fades out first, so it is gone before the clip
+     reaches it. */
+  transition: opacity 110ms ease-in, transform 110ms ease-in;
 }
 
-.composerExpandContainer.expanded .composerExpandInner {
+.composerExpandContainer.contentShown .composerExpandInner {
   opacity: 1;
   transform: translateY(0);
+  /* Opening: the content fades in as the clip uncovers it. */
+  transition: opacity 180ms ease-out 60ms, transform 180ms ease-out 60ms;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .composerExpandContainer,
   .composerExpandContainer.expanded,
   .composerExpandInner,
-  .composerExpandContainer.expanded .composerExpandInner,
+  .composerExpandContainer.contentShown .composerExpandInner,
   .composerEmojiBtnHidden {
     transition: none;
   }

@@ -11,6 +11,8 @@ import { showToast } from '@shared/utils/toast';
 import { useSmoothHeight } from '@shared/hooks/useSmoothHeight';
 import { normalizeBodyText } from '@shared/utils/bodyText';
 import { ALLOWED_IMAGE_ACCEPT } from '@shared/constants/mediaLimits';
+import { useExpandFlip } from './useExpandFlip';
+
 
 
 /**
@@ -84,6 +86,7 @@ const PostComposer = forwardRef(function PostComposer({ onSubmit }, ref) {
   }, [media.length]);
 
   const composerRef = useRef(null);
+  const cardRef = useRef(null);
   const inputRef = useRef(null);
   const imageFileRef = useRef(null);
   const videoFileRef = useRef(null);
@@ -398,6 +401,9 @@ const PostComposer = forwardRef(function PostComposer({ onSubmit }, ref) {
   };
 
   const expandedState = isExpanded || hasContent;
+  // The expand area's SIZE follows this, which lags expandedState while the
+  // collapse animates; its content fades with expandedState itself.
+  const layoutExpanded = useExpandFlip({ expanded: expandedState, cardRef, anchorRef: composerRef });
 
   // The keyboard is raised by the tap itself, while the composer expands.
   // It used to be held back (inputmode="none", then a blur and re-focus once
@@ -429,6 +435,7 @@ const PostComposer = forwardRef(function PostComposer({ onSubmit }, ref) {
       )}
 
       <div
+        ref={cardRef}
         className={`${styles.postComposer}${showPoll ? ` ${styles.hasPoll}` : ''}${expandedState ? ` ${styles.expanded}` : ''}`}
         onClick={(e) => {
           if (!expandedState) setIsExpanded(true);
@@ -495,7 +502,7 @@ const PostComposer = forwardRef(function PostComposer({ onSubmit }, ref) {
         </div>
 
         <div
-          className={`${styles.composerExpandContainer}${expandedState ? ` ${styles.expanded}` : ''}`}
+          className={`${styles.composerExpandContainer}${layoutExpanded ? ` ${styles.expanded}` : ''}${expandedState ? ` ${styles.contentShown}` : ''}`}
           aria-hidden={!expandedState}
           inert={expandedState ? undefined : ''}
         >
