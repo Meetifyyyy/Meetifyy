@@ -4,7 +4,6 @@ import { createBlocksServiceMock } from './testing/blocks.service.mock';
 import { stub } from '../common/testing/stub';
 import type { PrismaService } from '../prisma/prisma.service';
 import type { PresenceService } from '../presence/presence.service';
-import type { StudentYearPolicyService } from '../common/student-year/student-year-policy.service';
 
 /**
  * Blocking a profile is DIRECTIONAL.
@@ -65,12 +64,6 @@ describe('UsersService — directional profile access', () => {
     Object.assign(service, {
       prisma,
       blocksService,
-      studentYearPolicy: stub<StudentYearPolicyService>({
-        visibleUserWhere: () => ({}),
-        getBatchYearFor: () => Promise.resolve(null),
-        canIdsInteract: () => Promise.resolve(true),
-        canCreateMessage: () => true,
-      }),
       // Presence is resolved separately and is not the subject here.
       presenceService: stub<PresenceService>({
         getPresence: () => Promise.resolve(null),

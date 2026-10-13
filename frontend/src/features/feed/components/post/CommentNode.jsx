@@ -492,7 +492,7 @@ function CommentItemImpl({ postId, comment, threadId, replyTo = null, isReply })
 
           <div className={styles.text}>
             {showReplyTo && <span className={styles.replyTo}>@{replyTo} </span>}
-            <RichText content={displayedText} mentions={displayedMentions} urlLimit={30} />
+            <RichText content={displayedText} mentions={displayedMentions} urlLimit={30} linkHashtags />
             {/* See the note in Post.jsx: the space lets this read as part of
                 the sentence and lets the line wrap here. */}
             {textClip.needsTruncation && ' '}

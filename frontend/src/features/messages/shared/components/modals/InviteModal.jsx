@@ -16,7 +16,6 @@ import { generateConversationUrl } from '@shared/utils/conversationUrl';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 import { useScrollLock } from '@shared/hooks/useScrollLock';
 import { getProcessedAvatarUrl } from '@shared/components/avatar/Avatar';
-import { filterCompatibleUsers } from '@shared/lib/studentYearPolicy';
 import { publicOrigin } from '@shared/utils/publicOrigin';
 import { KEYBOARD_OVERLAYS_PAGE } from '@shared/utils/keyboardOverlay';
 
@@ -173,12 +172,7 @@ export default function InviteModal({ isOpen, onClose, group }) {
       // `selectableUsers` drops deleted accounts. The server already excludes
       // them; this covers the window where a cached response (20s server-side,
       // 30s here) still carries somebody who has since deleted.
-      // `filterCompatibleUsers` is the first-year isolation counterpart of
-      // `selectableUsers` above, and is here for the same reason: the server
-      // already excludes restricted accounts and refuses them on the add, but
-      // a response cached either side (20s server, 30s here) can outlive the
-      // moment the viewer's batch resolved.
-      return filterCompatibleUsers(currentUser, selectableUsers(list)).filter(
+      return selectableUsers(list).filter(
         (u) => String(u.id) !== String(currentUser?.id)
       );
     },
@@ -198,7 +192,7 @@ export default function InviteModal({ isOpen, onClose, group }) {
    * invite. The set is small and entirely in memory (group details plus the
    * conversation row), which is why this one is a client-side exclusion: it is
    * a property of the group being invited to, not an eligibility rule. Every
-   * eligibility rule -- blocks, verification, first-year isolation -- is
+   * eligibility rule -- blocks, verification -- is
    * applied by the database inside `getConnections`, before the limit.
    */
   const filteredUsers = useMemo(

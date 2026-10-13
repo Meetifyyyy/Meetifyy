@@ -3,7 +3,6 @@ import {
   type CreateNotificationDto,
 } from '../notifications/notification.factory';
 import { PostsService } from './posts.service';
-import { createStudentYearPolicyMock } from '../common/student-year/testing/student-year-policy.mock';
 import { stub } from '../common/testing/stub';
 import type { PrismaService } from '../prisma/prisma.service';
 import type { NotificationsService } from '../notifications/notifications.service';
@@ -146,7 +145,6 @@ describe('Content removal notifications', () => {
         stub<MentionsService>(),
         stub<StorageService>(),
         stub<ContentDeletionAuthorizer>(authorizer),
-        createStudentYearPolicyMock(),
       );
       return { service, created, notifications, authorizer };
     };

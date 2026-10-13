@@ -120,3 +120,19 @@ describe('the expand control is inline', () => {
     expect(after).toBe(before);
   });
 });
+
+describe('hashtags rendered in a real post', () => {
+  const tagLinks = (container) =>
+    [...container.querySelectorAll('[class*="postBody"] [class*="hashtagLink"]')].map((el) => el.textContent);
+
+  it('turns each hashtag into a link, keeping what the author typed', () => {
+    const { container } = renderPost('Jam tonight #Music and #art_walk!');
+    expect(tagLinks(container)).toEqual(['#Music', '#art_walk']);
+  });
+
+  it('leaves a URL fragment, a number and C# alone', () => {
+    const { container } = renderPost('See https://shop.example.com/p#reviews room #1 in C#');
+    expect(tagLinks(container)).toEqual([]);
+    expect(bodyLinks(container)[0].getAttribute('href')).toBe('https://shop.example.com/p#reviews');
+  });
+});

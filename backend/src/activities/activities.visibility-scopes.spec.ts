@@ -9,7 +9,6 @@ import { DomainEventService } from '../events/domain-event.service';
 import { RedisService } from '../redis/redis.service';
 import { getQueueToken } from '@nestjs/bullmq';
 import { NOTIFICATIONS_QUEUE } from '../notifications/notifications.processor';
-import { studentYearPolicyMockProvider } from '../common/student-year/testing/student-year-policy.mock';
 
 /**
  * The College and Campus surfaces are COLLEGE_ONLY surfaces, and that has to be
@@ -53,7 +52,6 @@ describe('Activity feed scopes', () => {
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
-        studentYearPolicyMockProvider(),
         ActivitiesService,
         ActivityAuthorizationService,
         { provide: PrismaService, useValue: prisma },

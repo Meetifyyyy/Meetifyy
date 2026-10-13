@@ -23,7 +23,6 @@ import { MessageResponseDto } from './dto/message-response.dto';
 import { MentionsService } from '../../mentions/mentions.service';
 import { buildReplyToSnapshot, REPLY_TO_SELECT } from '../reply-preview.util';
 import { VerificationAccessService } from '../../common/verification/verification-access.service';
-import { StudentYearPolicyService } from '../../common/student-year/student-year-policy.service';
 import { RateLimitService } from '../../common/rate-limit/rate-limit.service';
 import {
   isUnavailableUser,
@@ -74,12 +73,6 @@ export class MessagingCoreService {
     // its own — an optional dependency would let that protection vanish
     // silently instead of failing at boot.
     protected verificationAccess: VerificationAccessService,
-    // First-year isolation. Required for the same reason the three around it
-    // are: this is the only thing standing between a restricted pair and a
-    // message insert on the socket path, which has no guard of its own, and an
-    // optional dependency would let that protection vanish silently instead of
-    // failing at boot.
-    protected studentYearPolicy: StudentYearPolicyService,
     // Required for the same reason as the two above: the send rate limit runs
     // through it on every path, and an optional dependency would let that
     // protection disappear silently instead of failing at boot.
@@ -99,10 +92,7 @@ export class MessagingCoreService {
     realConvId: string,
     senderId: string,
   ): Promise<void> {
-    const enforcingVerification =
-      this.verificationAccess.isEnforcementEnabled();
-    const enforcingYearPolicy = this.studentYearPolicy.isEnforcementEnabled();
-    if (!enforcingVerification && !enforcingYearPolicy) return;
+    if (!this.verificationAccess.isEnforcementEnabled()) return;
 
     const conv = await this.prisma.conversation.findUnique({
       where: { id: realConvId },
@@ -122,37 +112,6 @@ export class MessagingCoreService {
       senderId,
       participantIds,
       conv.type === 'GROUP',
-    );
-    await this.assertYearPolicyForParticipants(senderId, participantIds);
-  }
-
-  /**
-   * First-year isolation for an existing conversation.
-   *
-   * Deliberately alongside the verification gate rather than inside it: the
-   * two rules answer different questions ("is this account trusted?" vs "are
-   * these two people in the same population?") and have independent kill
-   * switches, so folding one into the other would make disabling verification
-   * silently disable isolation too.
-   *
-   * An OLD THREAD IS NOT AN EXEMPTION. A DM opened before the policy existed,
-   * or before a participant's batch was resolved, is refused here like any
-   * other -- which is the whole point of putting the check on the send path
-   * rather than only on conversation creation. A group needs only the sender
-   * checked against the other members present; members are separately gated
-   * when they are added.
-   */
-  protected async assertYearPolicyForParticipants(
-    senderId: string,
-    participantUserIds: string[],
-  ): Promise<void> {
-    if (!this.studentYearPolicy.isEnforcementEnabled()) return;
-    const others = (participantUserIds || []).filter((id) => id !== senderId);
-    if (others.length === 0) return;
-    await this.studentYearPolicy.assertCanInteract(
-      senderId,
-      others,
-      'messaging',
     );
   }
 
@@ -330,16 +289,6 @@ export class MessagingCoreService {
       senderId,
       conv.participants.map((p) => p.userId),
       conv.type === 'GROUP',
-    );
-
-    // First-year isolation, on the same participant set. This sits below every
-    // transport -- REST, the socket `message:send` handler, offline replay,
-    // attachment sends, reply actions -- so a stale tab, a replayed request or
-    // a hand-built API call is refused at the insert, exactly like a client
-    // that still shows an enabled composer.
-    await this.assertYearPolicyForParticipants(
-      senderId,
-      conv.participants.map((p) => p.userId),
     );
 
     const otherParticipants = conv.participants.filter(

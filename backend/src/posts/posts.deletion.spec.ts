@@ -1,6 +1,5 @@
 import { NotFoundException } from '@nestjs/common';
 import { PostsService } from './posts.service';
-import { createStudentYearPolicyMock } from '../common/student-year/testing/student-year-policy.mock';
 import { stub } from '../common/testing/stub';
 import type { PrismaService } from '../prisma/prisma.service';
 import type { NotificationsService } from '../notifications/notifications.service';
@@ -139,8 +138,6 @@ describe('PostsService — deletion lifecycle & data cleanup', () => {
       stub<MentionsService>(),
       stub<StorageService>(storageService),
       stub<ContentDeletionAuthorizer>(authorizer),
-      // First-year isolation — not what the deletion lifecycle is about.
-      createStudentYearPolicyMock(),
       stub<MediaCleanupService>(mediaCleanupService),
     );
   });

@@ -13,7 +13,6 @@ import { DomainEventService } from '../events/domain-event.service';
 import { RedisService } from '../redis/redis.service';
 import { getQueueToken } from '@nestjs/bullmq';
 import { NOTIFICATIONS_QUEUE } from '../notifications/notifications.processor';
-import { studentYearPolicyMockProvider } from '../common/student-year/testing/student-year-policy.mock';
 
 /**
  * Joining an activity is direct — there is no approval queue — and the host is
@@ -115,7 +114,6 @@ describe('Activity join → host notification', () => {
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
-        studentYearPolicyMockProvider(),
         ActivitiesService,
         ActivityDiscussionService,
         ActivityAuthorizationService,

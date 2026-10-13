@@ -606,6 +606,9 @@ export function createEndpoints({
   };
 
   const searchApi = {
+    // Rising hashtags on the viewer's campus, or across every college when the
+    // campus is quiet: `{ scope: 'campus' | 'everywhere', tags: [{ name, posts, authors }] }`.
+    trendingHashtags: () => apiClient.get('/api/trending/hashtags'),
     globalSearch: (query, limit = 15, type = 'all', signal, cursor) => {
       const params = new URLSearchParams({ q: query, limit: String(limit) });
       if (type && type !== 'all') params.set('type', type);

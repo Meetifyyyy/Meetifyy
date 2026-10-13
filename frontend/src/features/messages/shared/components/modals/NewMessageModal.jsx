@@ -13,7 +13,6 @@ import { useSheetDrag } from '@shared/hooks/useSheetDrag';
 import styles from './NewMessageModal.module.css';
 import { useUsersMap } from '@shared/hooks/useUsersMap';
 import { getProcessedAvatarUrl } from '@shared/components/avatar/Avatar';
-import { filterCompatibleUsers } from '@shared/lib/studentYearPolicy';
 import { KEYBOARD_OVERLAYS_PAGE } from '@shared/utils/keyboardOverlay';
 
 const RECENT_LIMIT = 10;
@@ -95,9 +94,9 @@ export default function NewMessageModal({ onClose, onStartChat, onCreateGroup })
    * Typing used to filter a small preloaded map in JavaScript, so anyone
    * outside those few dozen rows could not be found. `/api/users/connections`
    * is the recipient picker's source for every Share and Invite surface and
-   * applies -- in the QUERY -- the block filter, the verification filter and
-   * first-year isolation, so the rules cannot drift between pickers and a
-   * restricted account is never in the payload to begin with.
+   * applies -- in the QUERY -- the block filter and the verification filter,
+   * so the rules cannot drift between pickers and a restricted account is
+   * never in the payload to begin with.
    */
   const { data: searchedUsers = [], isFetching } = useQuery({
     queryKey: ['new-message-recipients', debouncedQuery],
@@ -109,13 +108,12 @@ export default function NewMessageModal({ onClose, onStartChat, onCreateGroup })
     placeholderData: keepPreviousData,
   });
 
-  // Picker rules as a SECOND line, for rows still sitting in the React Query
-  // cache from before the viewer's batch resolved. A no-op when the payload
-  // lacks the flag, so it can only remove a row the server would also remove;
-  // `startDM` and the group create refuse a restricted recipient regardless.
+  // Picker rules as a SECOND line (unavailable/unverified rows, and the
+  // viewer themselves); `startDM` and the group create refuse an ineligible
+  // recipient regardless.
   const eligible = useCallback(
     (list) =>
-      filterCompatibleUsers(currentUser, selectableUsers(list)).filter(
+      selectableUsers(list).filter(
         (u) => String(u.id) !== String(currentUser?.id) && u.username !== currentUser?.username,
       ),
     [currentUser],

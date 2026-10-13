@@ -16,8 +16,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
  *      the query key.
  *
  * The search itself was already server-side and stays that way: the term goes
- * to `/api/users/connections`, which applies blocks, verification and
- * first-year isolation IN THE QUERY, before the limit. Excluding current
+ * to `/api/users/connections`, which applies blocks and verification IN THE
+ * QUERY, before the limit. Excluding current
  * members is a property of the group rather than an eligibility rule, which is
  * why that one is done on the client -- the set is small and already loaded.
  */
@@ -44,7 +44,7 @@ vi.mock('@shared/api/apiClient', () => ({
   getMediaUrl: (v) => v,
 }));
 
-let currentUser = { id: 'me', username: 'me', displayName: 'Me', isFirstYearStudent: false };
+let currentUser = { id: 'me', username: 'me', displayName: 'Me' };
 vi.mock('@shared/context/AuthContext', () => ({
   useAuth: () => ({ currentUser, updateCurrentUser: vi.fn(), isLoggedIn: true }),
 }));
@@ -112,7 +112,7 @@ beforeEach(() => {
   vi.useFakeTimers({ shouldAdvanceTime: true });
   getConnectionsMock.mockReset().mockResolvedValue([]);
   getGroupDetailsMock.mockReset().mockResolvedValue({ ownerId: 'owner', members: [] });
-  currentUser = { id: 'me', username: 'me', displayName: 'Me', isFirstYearStudent: false };
+  currentUser = { id: 'me', username: 'me', displayName: 'Me' };
 });
 
 afterEach(() => {
@@ -175,10 +175,9 @@ describe('Invite modal — who is offered', () => {
     expect(getConnectionsMock.mock.calls.map((c) => c[0])).toEqual(['anita']);
   });
 
-  it('never offers a senior to a first-year viewer', async () => {
+  it('ignores the retired first-year cohort markers', async () => {
+    // First-year isolation has been removed; a stale marker filters nobody.
     currentUser = { ...currentUser, isFirstYearStudent: true };
-    // The server would not return the senior. This covers a row still held in
-    // either cache from before the viewer's batch resolved.
     getConnectionsMock.mockResolvedValue([
       { id: 'u1', username: 'senior', displayName: 'Senior', isFirstYearStudent: false },
       { id: 'u2', username: 'fresher', displayName: 'Fresher', isFirstYearStudent: true },
@@ -189,23 +188,7 @@ describe('Invite modal — who is offered', () => {
     await type('e');
 
     await waitFor(() => {
-      expect(renderedHandles()).toEqual(['@fresher']);
-    });
-  });
-
-  it('never offers a first-year to a senior viewer', async () => {
-    currentUser = { ...currentUser, isFirstYearStudent: false };
-    getConnectionsMock.mockResolvedValue([
-      { id: 'u1', username: 'senior', displayName: 'Senior', isFirstYearStudent: false },
-      { id: 'u2', username: 'fresher', displayName: 'Fresher', isFirstYearStudent: true },
-    ]);
-
-    renderModal();
-    await settle();
-    await type('e');
-
-    await waitFor(() => {
-      expect(renderedHandles()).toEqual(['@senior']);
+      expect(renderedHandles()).toEqual(['@senior', '@fresher']);
     });
   });
 

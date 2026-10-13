@@ -1,10 +1,11 @@
 /**
  * The conversation-list cache's keys, in one place.
  *
- * The list is cached per viewer under a `v2` prefix (v1 entries predate the
- * first-year isolation filter). The evictors were never updated when that
- * prefix was added: they deleted `user:conversations:<id>:<limit>:0` and
- * scanned `user:conversations:<id>:*`, neither of which matches a `v2` key. So
+ * The list is cached per viewer under a versioned prefix (`v3`: v2 entries
+ * were written while the since-removed first-year isolation filter applied,
+ * v1 before it). The evictors were once not updated when a prefix was added:
+ * they deleted `user:conversations:<id>:<limit>:0` and scanned
+ * `user:conversations:<id>:*`, neither of which matches a versioned key. So
  * nothing was ever evicted — a send, a block or an account deletion left every
  * participant's list stale for the full TTL, and a client refetching right
  * after sending could be handed the list from before it.
@@ -12,7 +13,7 @@
  * Writer and evictors now build keys from the same functions, so they cannot
  * drift apart again.
  */
-export const CONVERSATION_LIST_CACHE_PREFIX = 'user:conversations:v2:';
+export const CONVERSATION_LIST_CACHE_PREFIX = 'user:conversations:v3:';
 
 /** The key one cached page of a viewer's conversation list is stored under. */
 export function conversationListCacheKey(

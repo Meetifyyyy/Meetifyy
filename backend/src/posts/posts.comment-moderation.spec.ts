@@ -1,6 +1,5 @@
 import { PostsService } from './posts.service';
 import { ContentDeletionAuthorizer } from './content-deletion.authorizer';
-import { createStudentYearPolicyMock } from '../common/student-year/testing/student-year-policy.mock';
 import { stub } from '../common/testing/stub';
 import type { PrismaService } from '../prisma/prisma.service';
 import type { NotificationsService } from '../notifications/notifications.service';
@@ -127,7 +126,6 @@ describe('comment page — deleted comment with replies, moderator viewer', () =
       stub<MentionsService>(),
       stub<StorageService>(),
       new ContentDeletionAuthorizer(prisma),
-      createStudentYearPolicyMock(),
     );
     return { service, memberFindMany };
   };

@@ -158,18 +158,14 @@ model User {
   avatar                     String?
   avatarMediaId              String?
   collegeEmail               String?
-  // ── First-year isolation (see StudentYearPolicyService) ──────────────────
   // The student's JOINING batch, derived server-side from the verified
   // institutional address (`sarthak.saini_cs25@gla.ac.in` -> 2025). Never
   // accepted from a client: no /api/* endpoint reads it from a request body,
   // and it is re-derived from the address on every sign-in, so a wrong or
-  // missing value self-heals.
-  //
-  // This is the batch, NOT a first-year flag. "First year" is derived per
-  // request as `batchYear === currentAcademicYear`, so the cohort rolls over
-  // on its own and no row ever has to be corrected when the year changes.
-  // NULL means the address carried no recognisable batch — treated as NOT
-  // first-year, never as first-year.
+  // missing value self-heals. NULL means the address carried no recognisable
+  // batch. Profile data only: the first-year isolation policy that once read
+  // it has been removed (the column and its indexes are kept, since dropping
+  // them would not be backward-compatible with the previous release).
   batchYear                  Int?
   collegeId                  String?
   cover                      String?
@@ -221,6 +217,8 @@ model User {
   deletedMessages            DeletedMessage[]
   following                  Follow[]                    @relation("follower")
   followers                  Follow[]                    @relation("following")
+  affinities                 UserAffinity[]              @relation("affinityFrom")
+  affinityTargets            UserAffinity[]              @relation("affinityTo")
   matchQueueEntry            MatchQueueEntry?
   matchesAsA                 MatchSession[]              @relation("MatchUserA")
   matchesAsB                 MatchSession[]              @relation("MatchUserB")
@@ -268,9 +266,8 @@ model User {
   @@index([accountStatus, scheduledPurgeAt])
   // Speeds up the signup email-availability check (OR email/collegeEmail).
   @@index([collegeEmail])
-  // First-year isolation. Every user-producing query gains a `batchYear = ?`
-  // or `batchYear <> ? OR IS NULL` predicate, so this is on the hot path of
-  // search, recommendations, the directory and every recipient picker.
+  // Added for the since-removed first-year isolation filters; kept so no
+  // migration is needed to remove the feature.
   @@index([batchYear])
   // The directory/campus lists filter by college first, then batch.
   @@index([collegeId, batchYear])
@@ -433,6 +430,22 @@ model Follow {
   @@index([followingId])
   @@index([followingId, createdAt(sort: Desc)])
   @@index([followerId, createdAt(sort: Desc)])
+}
+
+/// How much a user interacts with another, recomputed by the ranking worker
+/// (src/ranking). 0..1 per user, where 1 is the person they interact with
+/// most. Derived data: deleting every row is safe, the next run rebuilds it.
+model UserAffinity {
+  userId    String
+  targetId  String
+  score     Float
+  updatedAt DateTime @default(now())
+  user      User     @relation("affinityFrom", fields: [userId], references: [id], onDelete: Cascade)
+  target    User     @relation("affinityTo", fields: [targetId], references: [id], onDelete: Cascade)
+
+  @@id([userId, targetId])
+  @@index([updatedAt])
+  @@index([targetId])
 }
 
 model Conversation {

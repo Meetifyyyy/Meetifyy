@@ -1,5 +1,6 @@
 import RightPanel, { UpcomingEvents } from '@layout/RightPanel';
 import ProfileRightSidebar from '@features/profile/components/ProfileRightSidebar';
+import TrendingHashtags from '@layout/TrendingHashtags';
 
 /**
  * The frame every search page renders in: the results column, and on large
@@ -23,6 +24,8 @@ export default function SearchLayout({ section = 'all', mainRef, mainClassName =
       </main>
       <RightPanel className="animate-in">
         {eventsFirst && <UpcomingEvents />}
+        {/* What people search for most is what is happening right now. */}
+        {!eventsFirst && <TrendingHashtags />}
         <ProfileRightSidebar embedded />
         {!eventsFirst && <UpcomingEvents />}
       </RightPanel>

@@ -8,7 +8,6 @@ import { DomainEventService } from '../events/domain-event.service';
 import { ConfigService } from '@nestjs/config';
 import { RedisService } from '../redis/redis.service';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { studentYearPolicyMockProvider } from '../common/student-year/testing/student-year-policy.mock';
 
 /**
  * The invitation row is the authority on what an invite notification says.
@@ -77,7 +76,6 @@ describe('invite notification reconciliation on read', () => {
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
-        studentYearPolicyMockProvider(),
         NotificationsService,
         EventEmitter2,
         { provide: PrismaService, useValue: mockPrisma },

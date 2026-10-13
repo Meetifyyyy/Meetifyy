@@ -12,7 +12,6 @@ import { stub } from '../common/testing/stub';
 import type { MessagesService } from '../messages/messages.service';
 import type { MatchSession } from '@prisma/client';
 import { createVerificationAccessMock } from '../common/verification/testing/verification-access.mock';
-import { createStudentYearPolicyMock } from '../common/student-year/testing/student-year-policy.mock';
 
 /**
  * The dedicated 24h Instant Match chat.
@@ -78,7 +77,6 @@ describe('Instant Match chat lifecycle', () => {
       stub<MessagesService>(messages),
       blocksStubFor(prisma),
       createVerificationAccessMock(),
-      createStudentYearPolicyMock(),
     );
   });
 

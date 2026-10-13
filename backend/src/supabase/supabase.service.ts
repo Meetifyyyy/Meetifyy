@@ -7,7 +7,7 @@ import { config } from '../config';
  * Supabase is this backend's identity provider and nothing else: every row is
  * read and written through Prisma. Exposing only `auth` makes a Supabase data
  * query (`.from()`, `.rpc()`, storage), which would bypass Prisma, the
- * migrations and the isolation filters, a compile error rather than a review
+ * migrations and the access filters, a compile error rather than a review
  * comment. It also means no generated `Database` type is needed, which is the
  * only reason `createClient` returned `SupabaseClient<any>`.
  */

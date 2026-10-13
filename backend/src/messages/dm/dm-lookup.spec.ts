@@ -6,7 +6,6 @@ import { DomainEventService } from '../../events/domain-event.service';
 import { MentionsService } from '../../mentions/mentions.service';
 import { blocksServiceMockProvider } from '../../users/testing/blocks.service.mock';
 import { verificationAccessMockProvider } from '../../common/verification/testing/verification-access.mock';
-import { studentYearPolicyMockProvider } from '../../common/student-year/testing/student-year-policy.mock';
 import { allowAllRateLimitProvider } from '../../common/rate-limit/testing/rate-limit.mock';
 
 /**
@@ -69,7 +68,6 @@ describe('DmService — lookupExistingDM', () => {
       providers: [
         allowAllRateLimitProvider(),
         verificationAccessMockProvider(),
-        studentYearPolicyMockProvider(),
         blocksServiceMockProvider(),
         DmService,
         { provide: PrismaService, useValue: prisma },

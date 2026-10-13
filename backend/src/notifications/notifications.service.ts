@@ -21,7 +21,6 @@ import { ConfigService } from '@nestjs/config';
 import { RedisService } from '../redis/redis.service';
 import { BlocksService } from '../users/blocks.service';
 import Redis from 'ioredis';
-import { StudentYearPolicyService } from '../common/student-year/student-year-policy.service';
 import { detach } from '../common/utils/detach.util';
 import { stringField } from '../common/utils/type-guards.util';
 import { isJsonObject } from '../common/utils/json.util';
@@ -62,43 +61,12 @@ export class NotificationsService implements OnModuleInit {
     OR: [{ actorId: null }, { actor: { deletedAt: null } }],
   };
 
-  /**
-   * First-year isolation, as a notification filter on the ACTOR.
-   *
-   * Shared between the list and the unread count for exactly the reason
-   * AVAILABLE_ACTOR is, and the trap is the same one this file has already
-   * been bitten by twice: two hand-copied clauses drift, and the moment they
-   * do the bell shows a number the list can never clear.
-   *
-   * Creation is guarded too (see `createNotification`), so in steady state
-   * nothing this filter hides should exist. It is here for the rows that
-   * predate the policy, and for the window while a batch is being resolved.
-   *
-   * A null actor is a SYSTEM notification and is always kept: a moderation
-   * outcome must reach its recipient whatever cohort the acting admin is in.
-   */
-  private visibleActorWhere(
-    viewerBatchYear: number | null,
-  ): Prisma.NotificationWhereInput {
-    if (!this.studentYearPolicy.isEnforcementEnabled()) return {};
-    return {
-      OR: [
-        { actorId: null },
-        { actor: this.studentYearPolicy.visibleUserWhere(viewerBatchYear) },
-      ],
-    };
-  }
-
   private readonly logger = new Logger('NOTIF');
   private redis: Redis | null = null;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly domainEventService: DomainEventService,
-    // First-year isolation. Notifications are a deep-link surface -- a tap
-    // routes straight to a profile, a thread or an activity -- so they carry
-    // the same rule those destinations do.
-    private readonly studentYearPolicy: StudentYearPolicyService,
     private readonly configService: ConfigService,
     private readonly redisService: RedisService,
     private readonly eventEmitter: EventEmitter2,
@@ -283,26 +251,6 @@ export class NotificationsService implements OnModuleInit {
     if (dto.actorId && dto.type !== NotificationType.SYSTEM) {
       if (await this.blocksService.isBlocked(dto.recipientId, dto.actorId))
         return null;
-
-      // First-year isolation, at the point of creation rather than only at
-      // read time. Dropping the row here is what keeps the unread COUNT
-      // honest: the count is cached in Redis and moved by incr/decr, so a
-      // notification that exists but is filtered out of the list would leave a
-      // badge nobody can clear.
-      //
-      // In steady state the actions that would produce one are already refused
-      // upstream, so this fires only for a path that reaches the factory by
-      // some route the audit has not closed -- which is precisely when a
-      // backstop earns its place.
-      if (
-        !(await this.studentYearPolicy.canIdsInteract(
-          dto.recipientId,
-          dto.actorId,
-          'notifications',
-        ))
-      ) {
-        return null;
-      }
     }
 
     // Fix BUG-29: Deduplicate system notifications (where actorId is null)
@@ -562,12 +510,7 @@ export class NotificationsService implements OnModuleInit {
       where: {
         recipientId: userId,
         deletedAt: null,
-        AND: [
-          NotificationsService.AVAILABLE_ACTOR,
-          this.visibleActorWhere(
-            await this.studentYearPolicy.getBatchYearFor(userId),
-          ),
-        ],
+        AND: [NotificationsService.AVAILABLE_ACTOR],
         // MESSAGE has its own unread surface and is never listed here, so an
         // explicit `type` still cannot be used to pull one into this feed.
         ...(type && type !== NotificationType.MESSAGE
@@ -743,12 +686,7 @@ export class NotificationsService implements OnModuleInit {
         // deleted-actor filter below, which is why both are shared constants
         // rather than two hand-copied clauses.
         type: { notIn: [NotificationType.MESSAGE] },
-        AND: [
-          NotificationsService.AVAILABLE_ACTOR,
-          this.visibleActorWhere(
-            await this.studentYearPolicy.getBatchYearFor(userId),
-          ),
-        ],
+        AND: [NotificationsService.AVAILABLE_ACTOR],
       },
     });
 

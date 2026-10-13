@@ -451,7 +451,7 @@ function Post({ postData, onClick, onCommentClick, onDeleted, isDetailed = false
 
         return (
           <div className={`${styles.postBody} ${isDetailed ? styles.selectableText : ''}`}>
-            <RichText content={displayedText} mentions={displayedMentions} urlLimit={isDetailed ? 50 : 35} />
+            <RichText content={displayedText} mentions={displayedMentions} urlLimit={isDetailed ? 50 : 35} linkHashtags />
             {needsTruncation && (
               <>
                 {/*

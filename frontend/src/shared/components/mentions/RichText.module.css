@@ -16,6 +16,18 @@
   text-decoration: underline;
 }
 
+/* Same treatment as a mention: colour marks it, underline confirms on hover. */
+.hashtagLink {
+  color: var(--link-color, var(--color-primary, #3b82f6));
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.hashtagLink:hover,
+.hashtagLink:focus-visible {
+  text-decoration: underline;
+}
+
 .plainText {
   display: inline;
 }

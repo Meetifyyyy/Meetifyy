@@ -14,7 +14,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
  *
  * The term now goes to the server, which matches the group's name or the DM
  * partner's display name / username before applying the limit. The eligibility
- * filters -- verification and first-year isolation -- sit in the same `AND`,
+ * filters -- verification among them -- sit in the same `AND`,
  * so searching can only narrow what they already allow.
  *
  * SharePostModal stands in for all four share modals here: they share the hook
@@ -191,7 +191,7 @@ describe('Share picker — search reaches the server', () => {
 
   it('never offers a thread the viewer may not send into', async () => {
     // `canSendMessages: false` is the server's own answer, computed from every
-    // rule it will apply on the send -- first-year isolation included. A
+    // rule it will apply on the send. A
     // restricted thread must not become selectable just because it matched.
     getConversationsMock.mockResolvedValue([
       conv({ id: 'c1', name: 'Senior Student', canSendMessages: false }),

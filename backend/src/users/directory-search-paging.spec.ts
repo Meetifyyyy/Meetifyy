@@ -1,7 +1,5 @@
 import type { Prisma } from '@prisma/client';
 import { UsersService } from './users.service';
-import { stub } from '../common/testing/stub';
-import type { StudentYearPolicyService } from '../common/student-year/student-year-policy.service';
 import { createBlocksServiceMock } from './testing/blocks.service.mock';
 
 /**
@@ -81,8 +79,7 @@ describe('UsersService — directory search across pages (A18)', () => {
     Object.assign(service, {
       prisma: {
         user: {
-          findUnique: () =>
-            Promise.resolve({ collegeId: 'college-1', batchYear: null }),
+          findUnique: () => Promise.resolve({ collegeId: 'college-1' }),
           findMany: (args: Prisma.UserFindManyArgs) =>
             Promise.resolve(
               college
@@ -97,10 +94,6 @@ describe('UsersService — directory search across pages (A18)', () => {
         },
       },
       blocksService: createBlocksServiceMock([]),
-      studentYearPolicy: stub<StudentYearPolicyService>({
-        injectUserFilter: jest.fn((where: unknown) => where),
-        getUserBatchYear: () => null,
-      }),
       getFollowingSet: () => Promise.resolve(new Set()),
     });
     return service;

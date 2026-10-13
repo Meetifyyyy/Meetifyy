@@ -14,7 +14,6 @@ import { DomainEventService } from '../events/domain-event.service';
 import { RedisService } from '../redis/redis.service';
 import { BlocksService } from './blocks.service';
 import { VerificationAccessService } from '../common/verification/verification-access.service';
-import { StudentYearPolicyService } from '../common/student-year/student-year-policy.service';
 import { PresenceService } from '../presence/presence.service';
 import {
   checkPresenceVisibility,
@@ -27,7 +26,15 @@ import {
   FollowNotifJob,
 } from '../notifications/notifications.processor';
 import { clearAuthSyncCache } from '../auth/auth.service';
-import { sampleRandom } from '../common/utils/sample-random.util';
+import { pickReason } from './follow-recommendation.scoring';
+import {
+  PickerSocial,
+  closestIds,
+  matchTier,
+  rankPickerCandidates,
+  startsWithWhere,
+} from './people-picker';
+import { weightedSample } from '../common/utils/weighted-sample.util';
 import { validateBirthday } from '../common/utils/birthday-validation.util';
 import { AcademicsService } from '../academics/academics.service';
 import { MediaCleanupService } from '../uploads/media-cleanup.service';
@@ -88,6 +95,12 @@ interface RecommendationRow {
   mutualCount: number;
   followerCount: number;
   sameCollege: boolean;
+  sameBranch: boolean;
+  followsMe: boolean;
+  sharedCommunities: number;
+  sharedInterests: number;
+  score: number;
+  mutualSampleName: string | null;
 }
 
 /** Columns of the share/invite "people" picker (see getConnections). */
@@ -101,10 +114,16 @@ const CONNECTION_SELECT = {
   avatar: true,
 } satisfies Prisma.UserSelect;
 
+/** First occurrence of each id, in order. */
+function uniqueById<T extends { id: string }>(rows: T[]): T[] {
+  const seen = new Set<string>();
+  return rows.filter((r) => (seen.has(r.id) ? false : (seen.add(r.id), true)));
+}
+
 /** A getConnections entry, as served and as cached for 20 s. */
 type ConnectionUser = Prisma.UserGetPayload<{
   select: typeof CONNECTION_SELECT;
-}> & { isFirstYearStudent: boolean };
+}>;
 
 /** A body value as a log line shows it: '-' when absent, JSON when not a primitive. */
 function logValue(value: unknown): string {
@@ -252,10 +271,6 @@ export class UsersService {
     private readonly presenceService: PresenceService,
     private readonly academicsService: AcademicsService,
     private readonly verificationAccess: VerificationAccessService,
-    // First-year isolation. Required, not optional: every list this service
-    // produces is a discovery or recipient surface the policy covers, so an
-    // unwired instance must fail at boot rather than quietly stop filtering.
-    private readonly studentYearPolicy: StudentYearPolicyService,
     @InjectQueue(NOTIFICATIONS_QUEUE) private readonly notifQueue: Queue,
     @Optional() private readonly mediaCleanupService?: MediaCleanupService,
   ) {}
@@ -294,34 +309,13 @@ export class UsersService {
     return new Set(rows.map((r) => r.followingId));
   }
 
-  /**
-   * The viewer's batch year, for the first-year isolation filters below.
-   *
-   * One cached lookup per request (StudentYearPolicyService memoises it for
-   * ten minutes and the value is effectively immutable), so adding the policy
-   * to a list endpoint costs at most one extra indexed read on a cold cache
-   * and nothing at all on a warm one -- never a query per row.
-   */
-  private async viewerBatchYear(
-    userId: string | null | undefined,
-  ): Promise<number | null> {
-    return this.studentYearPolicy.getBatchYearFor(userId);
-  }
-
   async getAllUsers(limit: number, offset: number, currentUserId?: string) {
-    // First-year isolation, in the query rather than after it. This list feeds
-    // the New Message modal's recipient map, so a row that reached the client
-    // here would be selectable there.
-    const batchYear = await this.viewerBatchYear(currentUserId);
     const where = await this.blocksService.injectBlockFilter(
       currentUserId,
-      this.studentYearPolicy.injectUserFilter(
-        {
-          accountStatus: 'ACTIVE',
-          deletedAt: null,
-        },
-        batchYear,
-      ),
+      {
+        accountStatus: 'ACTIVE',
+        deletedAt: null,
+      } satisfies Prisma.UserWhereInput,
       'id',
     );
     const users = await this.prisma.user.findMany({
@@ -379,13 +373,6 @@ export class UsersService {
       const isOnline = canSee && pres?.status === 'online';
       return {
         ...u,
-        // First-year isolation. Every row here is already in the viewer's own
-        // cohort -- the query guarantees it -- so this discloses nothing new.
-        // It exists as a MARKER: it tells the client "this row came from a
-        // policy-aware payload", which is what lets a recipient picker drop
-        // rows left in a client-side cache from before the viewer's batch
-        // resolved. See `filterCompatibleUsers` on the frontend.
-        isFirstYearStudent: this.studentYearPolicy.isFirstYearBatch(batchYear),
         // Authoritative, from the `Follow` table, for every row on the page.
         // This field did not exist on the payload before, so every consumer
         // that rendered a follow button from this list read `undefined` and
@@ -411,7 +398,7 @@ export class UsersService {
     // Check if the argument is a userId by performing a database lookup
     const targetUser = await this.prisma.user.findUnique({
       where: { id: userIdOrCollegeId },
-      select: { collegeId: true, batchYear: true, email: true },
+      select: { collegeId: true },
     });
     if (targetUser) {
       if (!targetUser.collegeId) return [];
@@ -419,25 +406,12 @@ export class UsersService {
       excludeUserId = userIdOrCollegeId;
     }
 
-    // First-year isolation. This is the second source the New Message modal
-    // builds its recipient map from, so it needs the same filter getAllUsers
-    // has -- and it is applied only when the caller identified themselves as a
-    // user; a bare collegeId caller has no viewer to judge against, and
-    // returns the college's non-first-year population (the safe default for an
-    // unidentified viewer).
-    const viewerBatch = targetUser
-      ? this.studentYearPolicy.getUserBatchYear(targetUser)
-      : null;
-
-    const where = this.studentYearPolicy.injectUserFilter(
-      {
-        collegeId,
-        accountStatus: 'ACTIVE',
-        deletedAt: null,
-        ...(excludeUserId ? { id: { not: excludeUserId } } : {}),
-      },
-      viewerBatch,
-    );
+    const where: Prisma.UserWhereInput = {
+      collegeId,
+      accountStatus: 'ACTIVE',
+      deletedAt: null,
+      ...(excludeUserId ? { id: { not: excludeUserId } } : {}),
+    };
 
     const users = await this.prisma.user.findMany({
       where,
@@ -485,14 +459,9 @@ export class UsersService {
       excludeUserId,
       users.map((u) => u.id),
     );
-    // `isFirstYearStudent` is the same cohort marker getAllUsers emits -- see
-    // the comment there. This list is the New Message modal's other source.
-    const campusIsFirstYear =
-      this.studentYearPolicy.isFirstYearBatch(viewerBatch);
     return users.map((u) => ({
       ...u,
       isFollowing: followingSet.has(u.id),
-      isFirstYearStudent: campusIsFirstYear,
     }));
   }
 
@@ -520,10 +489,9 @@ export class UsersService {
     if (!userId) return { users: [], nextCursor: undefined };
     const me = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { collegeId: true, batchYear: true, email: true },
+      select: { collegeId: true },
     });
     if (!me?.collegeId) return { users: [], nextCursor: undefined };
-    const viewerBatch = this.studentYearPolicy.getUserBatchYear(me);
 
     const limit = Math.min(Math.max(Number(opts.limit) || 30, 1), 50);
     const search = (opts.search || '').trim();
@@ -608,16 +576,8 @@ export class UsersService {
      * What they lose is everything past the name. The row is stripped below and
      * marked so the card does not link anywhere, and the profile routes enforce
      * the real rule: the blocker may open the profile, the blocked user may not.
-     *
-     * First-year isolation still filters the query, through `injectUserFilter`
-     * rather than a spread: `where` already carries an `AND` (the search
-     * clause) and an `OR` (the keyset cursor), so assigning either would drop
-     * one of them.
      */
-    const directoryWhere = this.studentYearPolicy.injectUserFilter(
-      where,
-      viewerBatch,
-    );
+    const directoryWhere = where;
 
     // Exactly the columns a directory card paints: the avatar, the name it is
     // labelled with, the username the card links to, and the three academic
@@ -719,10 +679,6 @@ export class UsersService {
         passingYear: true,
         profileCompleted: true,
         deletedAt: true,
-        // Read for the first-year isolation flag below, and stripped from the
-        // response with `settings` -- a viewer must never receive another
-        // account's batch year, only the yes/no the button needs.
-        batchYear: true,
         settings: { select: { showOnlineStatus: true, whoCanSeeOnline: true } },
       },
     });
@@ -762,27 +718,16 @@ export class UsersService {
       : null;
     const isOnline = canSeeOnline && pres?.status === 'online';
 
-    // The by-id twin of getProfileByUsername must report the same lock state,
-    // or a client that resolved a profile by id would draw an unlocked
-    // Message button for a pair the server refuses.
-    const messagingRestricted =
-      currentUserId && currentUserId !== id
-        ? !this.studentYearPolicy.canCreateMessage(
-            {
-              id: currentUserId,
-              batchYear: await this.viewerBatchYear(currentUserId),
-            },
-            user,
-          )
-        : false;
-
-    const { settings: _settings, batchYear: _batchYear, ...publicUser } = user;
+    const { settings: _settings, ...publicUser } = user;
     return {
       ...publicUser,
       isOnline,
       online: isOnline,
       lastActive: canSeeOnline ? pres?.lastSeen || null : null,
-      messagingRestricted,
+      // First-year isolation has been removed. Kept, always `false`, because
+      // installed apps ship a frozen frontend that reads it to decide whether
+      // to draw a locked Message button.
+      messagingRestricted: false,
       // Same flag the username route emits, for the same reason: only the
       // blocker ever sees it, and it tells them something they did themselves.
       blockedByMe: blockDirection.blockedByMe,
@@ -795,14 +740,9 @@ export class UsersService {
     // Resolved up front so the follower/following counts below can be built
     // from exactly what `getFollowers`/`getFollowing` will return. Both are
     // cheap and cached; keeping them here leaves the profile a single query.
-    const [blockedIds, viewerBatchYear] = await Promise.all([
-      currentUserId
-        ? this.blocksService.getExcludedUserIds(currentUserId)
-        : Promise.resolve([] as string[]),
-      this.viewerBatchYear(currentUserId),
-    ]);
-    const socialGraphVisibleWhere =
-      this.studentYearPolicy.visibleUserWhere(viewerBatchYear);
+    const blockedIds = currentUserId
+      ? await this.blocksService.getExcludedUserIds(currentUserId)
+      : [];
 
     // 1. Find user by exact username (case-insensitive), or ID, or email prefix, or handle prefix, or displayName
     const targetUser = await this.prisma.user.findFirst({
@@ -832,10 +772,7 @@ export class UsersService {
              * They used to differ, and the difference was visible: a profile
              * read "1 Following" above a list that said "No following yet",
              * because the count included an account the viewer is not allowed
-             * to see and the list — correctly — did not. Blocks cause it
-             * immediately; first-year isolation causes it on 1 January, when a
-             * cohort rolls over and accounts a senior already followed become
-             * invisible to them.
+             * to see and the list — correctly — did not. Blocks cause it.
              *
              * The consequence is that these numbers are viewer-relative: two
              * people can see different follower counts on the same profile.
@@ -848,7 +785,6 @@ export class UsersService {
                 follower: {
                   deletedAt: null,
                   accountStatus: 'ACTIVE',
-                  ...socialGraphVisibleWhere,
                   ...(blockedIds.length > 0
                     ? { id: { notIn: blockedIds } }
                     : {}),
@@ -860,7 +796,6 @@ export class UsersService {
                 following: {
                   deletedAt: null,
                   accountStatus: 'ACTIVE',
-                  ...socialGraphVisibleWhere,
                   ...(blockedIds.length > 0
                     ? { id: { notIn: blockedIds } }
                     : {}),
@@ -881,23 +816,6 @@ export class UsersService {
     if (!targetUser || targetUser.deletedAt) {
       throw new NotFoundException("This profile isn't available.");
     }
-
-    // The viewer's own batch, for the `messagingRestricted` flag below.
-    //
-    // Resolved through the policy (one cached lookup; see `viewerBatchYear`)
-    // rather than from a row, because this method never loads the VIEWER --
-    // only the profile being read. The policy's own lookup does the address
-    // fallback internally, so a batch is returned even for an account whose
-    // column has not been written yet.
-    //
-    // Null when the viewer is anonymous or is looking at themselves: neither
-    // is a restricted pair.
-    const hasDistinctViewer = Boolean(
-      currentUserId && currentUserId !== targetUser.id,
-    );
-    const viewerBatchForPolicy = hasDistinctViewer
-      ? await this.viewerBatchYear(currentUserId)
-      : null;
 
     let isFollowing = false;
     let isFollowedBy = false;
@@ -1032,30 +950,10 @@ export class UsersService {
        * button would go, and following is refused server-side regardless.
        */
       blockedByMe: blockDirection.blockedByMe,
-      // First-year isolation, as a flag rather than a hidden profile.
-      //
-      // The profile itself stays reachable on purpose: the product decision is
-      // that the Message button remains VISIBLE and shows a lock, so the
-      // client needs to be told which state to draw. Everything the flag gates
-      // is separately enforced server-side -- getOrCreateDM, every send path
-      // and every recipient selector refuse the same pair -- so a client that
-      // ignores it gains nothing.
-      //
-      // Computed from the row already in hand, so it costs no extra query.
-      //
-      // `false` unless there is a DISTINCT viewer to judge against. Without
-      // that guard an anonymous reader — and, worse, a first-year student
-      // looking at their OWN profile — has a null viewer batch compared
-      // against the target's 2026, which is "incompatible", and the API would
-      // report your own profile as restricted from you. The client happens to
-      // guard this with `!isOwnProfile`, but the flag has to be true on its
-      // own terms; the by-id twin already did this and the two must agree.
-      messagingRestricted: hasDistinctViewer
-        ? !this.studentYearPolicy.canCreateMessage(
-            { id: currentUserId ?? null, batchYear: viewerBatchForPolicy },
-            targetUser,
-          )
-        : false,
+      // First-year isolation has been removed. Kept, always `false`, because
+      // installed apps ship a frozen frontend that reads it to decide whether
+      // to draw a locked Message button.
+      messagingRestricted: false,
     };
   }
 
@@ -1064,11 +962,6 @@ export class UsersService {
     const cleanUsername = followingUsername.trim().toLowerCase();
 
     // Resolved before the CTE below so the whole thing stays one round trip.
-    const followerBatch = await this.viewerBatchYear(followerId);
-    const followPolicyFilter = Prisma.raw(
-      this.studentYearPolicy.visibleUserSqlPredicate('u', followerBatch),
-    );
-
     // Single atomic CTE query combining: user lookup + block check + follow insert + count calculation
     // Reduces database network round-trips from 4 down to 1!
     const rows = await this.prisma.$queryRaw<FollowCteRow[]>`
@@ -1076,14 +969,6 @@ export class UsersService {
         SELECT "id", "username", "displayName", "avatar"
         FROM "User" u
         WHERE ("username" = ${cleanUsername} OR "id" = ${cleanUsername})
-          -- First-year isolation. Following is an interaction: it seeds
-          -- recommendations, opens the follower/following lists to each other
-          -- and raises a notification. Every surface that offers a Follow
-          -- button already hides restricted accounts, so reaching here means
-          -- a direct API call or a stale client -- and the CTE simply finds no
-          -- target, which returns the same neutral "user not found" as a
-          -- typo'd username rather than confirming the account exists.
-          AND ${followPolicyFilter}
           -- Unavailable accounts are not followable. During the 30-day
           -- deletion window the username is still the real one, so anybody
           -- who already knew it could otherwise follow an account that is
@@ -1346,28 +1231,9 @@ export class UsersService {
         ? Prisma.sql`AND u."verificationStatus"::text = ${VerificationStatus.VERIFIED}`
         : Prisma.empty;
 
-    // First-year isolation. Unlike the verification filter above this is NOT
-    // conditional on `eligibleOnly`, because it is not a recipient-picker
-    // nicety -- it is a visibility boundary. A first-year student must not
-    // appear in a senior's follower list at all, and vice versa, whether that
-    // list is being read to pick an invitee or simply to browse a profile's
-    // social graph.
-    //
-    // The counts beside this list are built from the same rules -- see the
-    // `_count` in getProfileByUsername. They were not, and the mismatch was
-    // visible: a profile read "1 Following" above a list that said "No
-    // following yet". Any filter added here has to be added there too, or the
-    // contradiction comes back.
-    //
-    // In SQL, before LIMIT/OFFSET, for the reason the two filters above are.
-    const followersViewerBatch = await this.viewerBatchYear(currentUserId);
-    const followerPolicyFilter = Prisma.raw(
-      `AND ${this.studentYearPolicy.visibleUserSqlPredicate('u', followersViewerBatch)}`,
-    );
-
     // A deleted or suspended account is not part of anyone's social graph. The
     // counts beside this list have always excluded them; this list did not, so
-    // the two disagreed in the opposite direction to the policy filter above.
+    // the two disagreed.
     const activeOnlyFilter = Prisma.sql`AND u."deletedAt" IS NULL AND u."accountStatus"::text = 'ACTIVE'`;
 
     const rows = await this.prisma.$queryRaw<FollowListRow[]>`
@@ -1389,7 +1255,6 @@ export class UsersService {
       WHERE f."followingId" = ${targetUser.id}
       ${followerBlockFilter}
       ${eligibilityFilter}
-      ${followerPolicyFilter}
       ${activeOnlyFilter}
       ${this.followListSearchFilter(search)}
       ORDER BY f."createdAt" DESC
@@ -1459,13 +1324,6 @@ export class UsersService {
         ? Prisma.sql`AND u."verificationStatus"::text = ${VerificationStatus.VERIFIED}`
         : Prisma.empty;
 
-    // First-year isolation. Unconditional, for the reason spelled out in
-    // getFollowers: this is a visibility boundary rather than a picker filter.
-    const followingViewerBatch = await this.viewerBatchYear(currentUserId);
-    const followingPolicyFilter = Prisma.raw(
-      `AND ${this.studentYearPolicy.visibleUserSqlPredicate('u', followingViewerBatch)}`,
-    );
-
     // Same as getFollowers: gone or suspended accounts leave the social graph,
     // and the counts beside this list already treated them that way.
     const followingActiveOnlyFilter = Prisma.sql`AND u."deletedAt" IS NULL AND u."accountStatus"::text = 'ACTIVE'`;
@@ -1489,7 +1347,6 @@ export class UsersService {
       WHERE f."followerId" = ${targetUser.id}
       ${followingBlockFilter}
       ${eligibilityFilter}
-      ${followingPolicyFilter}
       ${followingActiveOnlyFilter}
       ${this.followListSearchFilter(search)}
       ORDER BY f."createdAt" DESC
@@ -2067,18 +1924,11 @@ export class UsersService {
     // instantly instead of leaving a 20-second window where the rule does not
     // apply.
     //
-    // `v3` retires every v2 entry the moment this build deploys, for the same
-    // reason v2 retired v1: the value shape changed MEANING, not structure.
-    // A v2 entry was written before first-year isolation applied and holds
-    // recipients this viewer may no longer contact; serving one for the rest
-    // of its TTL would be a 20-second hole in the policy on the exact surface
-    // (share/invite recipients) the policy is meant to close.
-    //
-    // The key is scoped by `userId`, so a cached list can never be handed to a
-    // viewer in a different cohort. That was already true and is what makes
-    // caching safe here at all -- a list keyed by query alone would leak
-    // across the isolation boundary.
-    const cacheKey = `connections:v3:${userId}:${cleanQuery}:${limit}`;
+    // `v4` retired the v3 entries written while the (since removed) first-year
+    // isolation filter applied; `v5` retires the newest-first order this list
+    // had before it was ranked by closeness. The key is scoped by `userId`, which is what
+    // makes caching a block-filtered list safe at all.
+    const cacheKey = `connections:v5:${userId}:${cleanQuery}:${limit}`;
     if (redis) {
       try {
         const cached = await redis.get(cacheKey);
@@ -2088,7 +1938,6 @@ export class UsersService {
       }
     }
 
-    const viewerBatch = await this.viewerBatchYear(userId);
     const baseWhere: Prisma.UserWhereInput = {
       id: { not: userId },
       accountStatus: 'ACTIVE',
@@ -2121,36 +1970,70 @@ export class UsersService {
       'id',
     );
 
-    // First-year isolation, for exactly the reasons stated above about
-    // verification: this list IS the recipient picker for every Share and
-    // Invite modal, the send it feeds is refused server-side for a restricted
-    // recipient anyway, and offering one would both present a choice that can
-    // only end in an error and disclose the handle of an account the viewer is
-    // not allowed to reach.
-    //
-    // ANDed rather than spread because the search clause above is an `OR`.
-    const policyWhereClause = this.studentYearPolicy.injectUserFilter(
-      whereClause,
-      viewerBatch,
-    );
-
-    const users = await this.prisma.user.findMany({
-      where: policyWhereClause,
-      take: limit,
-      select: CONNECTION_SELECT,
-      orderBy: { createdAt: 'desc' },
-    });
-
-    // The cohort marker, for the share/invite pickers this list feeds. Same
-    // reasoning as getAllUsers: every row is already in the viewer's cohort,
-    // so this adds no disclosure and lets the client drop rows held over from
-    // a pre-policy cache.
-    const connectionsIsFirstYear =
-      this.studentYearPolicy.isFirstYearBatch(viewerBatch);
-    const payload = users.map((u) => ({
-      ...u,
-      isFirstYearStudent: connectionsIsFirstYear,
-    }));
+    // Who the viewer is close to, and candidates that respect that: see
+    // people-picker.ts. Every query below is intersected with `whereClause`,
+    // so the verification and block rules above still decide eligibility.
+    const social = await this.pickerSocial(userId);
+    const POOL = 100;
+    let candidates: ConnectionUser[];
+    if (cleanQuery) {
+      // Three pools: the viewer's own people who match (so a friend with the
+      // text mid-name is never crowded out by strangers), starts-with
+      // matches, and everyone else who contains it.
+      const known = closestIds(social, 500);
+      const [mine, startsWith, contains] = await Promise.all([
+        known.length > 0
+          ? this.prisma.user.findMany({
+              where: { AND: [whereClause, { id: { in: known } }] },
+              take: POOL,
+              select: CONNECTION_SELECT,
+            })
+          : Promise.resolve([]),
+        this.prisma.user.findMany({
+          where: { AND: [whereClause, startsWithWhere(cleanQuery)] },
+          take: POOL,
+          select: CONNECTION_SELECT,
+          orderBy: { createdAt: 'desc' },
+        }),
+        this.prisma.user.findMany({
+          where: whereClause,
+          take: POOL,
+          select: CONNECTION_SELECT,
+          orderBy: { createdAt: 'desc' },
+        }),
+      ]);
+      candidates = uniqueById([...mine, ...startsWith, ...contains]);
+    } else {
+      const closest = closestIds(social, POOL);
+      const [known, campus] = await Promise.all([
+        closest.length > 0
+          ? this.prisma.user.findMany({
+              where: { AND: [whereClause, { id: { in: closest } }] },
+              select: CONNECTION_SELECT,
+            })
+          : Promise.resolve([]),
+        // Fill from the viewer's campus, so a new account with nobody to
+        // talk to yet still sees classmates rather than an empty list.
+        this.prisma.user.findMany({
+          where: {
+            AND: [
+              whereClause,
+              { id: { notIn: closest } },
+              social.collegeId ? { collegeId: social.collegeId } : {},
+            ],
+          },
+          take: limit,
+          select: CONNECTION_SELECT,
+          orderBy: { createdAt: 'desc' },
+        }),
+      ]);
+      candidates = uniqueById([...known, ...campus]);
+    }
+    const payload: ConnectionUser[] = rankPickerCandidates(
+      candidates,
+      cleanQuery,
+      social,
+    ).slice(0, limit);
 
     if (redis) {
       // 20s TTL — long enough to make a modal session feel instant, short
@@ -2159,6 +2042,108 @@ export class UsersService {
     }
 
     return payload;
+  }
+
+  /** The viewer's closeness signals for the people pickers. */
+  private async pickerSocial(userId: string): Promise<PickerSocial> {
+    const [me, following, followers, recentConvs] = await Promise.all([
+      this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { collegeId: true },
+      }),
+      this.prisma.follow.findMany({
+        where: { followerId: userId },
+        select: { followingId: true },
+        orderBy: { createdAt: 'desc' },
+        take: 1000,
+      }),
+      this.prisma.follow.findMany({
+        where: { followingId: userId },
+        select: { followerId: true },
+        orderBy: { createdAt: 'desc' },
+        take: 1000,
+      }),
+      this.prisma.conversationParticipant.findMany({
+        where: { userId, deletedAt: null, conversation: { type: 'DM' } },
+        select: { conversationId: true },
+        orderBy: { conversation: { updatedAt: 'desc' } },
+        take: 30,
+      }),
+    ]);
+    const convOrder = recentConvs.map((c) => c.conversationId);
+    const partners =
+      convOrder.length > 0
+        ? await this.prisma.conversationParticipant.findMany({
+            where: {
+              conversationId: { in: convOrder },
+              userId: { not: userId },
+            },
+            select: { conversationId: true, userId: true },
+          })
+        : [];
+    const recentChat = new Map<string, number>();
+    for (const p of partners) {
+      const rank = convOrder.indexOf(p.conversationId);
+      const prev = recentChat.get(p.userId);
+      if (prev === undefined || rank < prev) recentChat.set(p.userId, rank);
+    }
+    return {
+      recentChat,
+      following: new Set(following.map((f) => f.followingId)),
+      followers: new Set(followers.map((f) => f.followerId)),
+      collegeId: me?.collegeId ?? null,
+    };
+  }
+
+  /**
+   * @mention candidates, from three pools so a crowd of newer accounts that
+   * merely contain the query can push out neither an exact @username nor
+   * someone the viewer knows: the viewer's own people, starts-with matches,
+   * and the newest contains-matches.
+   */
+  private async mentionCandidates(
+    whereClause: Prisma.UserWhereInput,
+    cleanQuery: string,
+    knownIds: string[],
+  ) {
+    const select = {
+      id: true,
+      username: true,
+      displayName: true,
+      avatar: true,
+      isCampusRep: true,
+      collegeId: true,
+      college: { select: { id: true, name: true } },
+    } satisfies Prisma.UserSelect;
+    const pool = UsersService.MENTION_CANDIDATE_POOL;
+    const known = [...new Set(knownIds)].slice(0, 500);
+    const [mine, first, rest] = await Promise.all([
+      // The viewer's own people who match: never crowded out by strangers.
+      // With no query this is simply "people you know", which is what a bare
+      // "@" should open with.
+      known.length > 0
+        ? this.prisma.user.findMany({
+            where: { AND: [whereClause, { id: { in: known } }] },
+            take: pool,
+            select,
+          })
+        : Promise.resolve([]),
+      cleanQuery
+        ? this.prisma.user.findMany({
+            where: { AND: [whereClause, startsWithWhere(cleanQuery)] },
+            take: pool,
+            select,
+            orderBy: { createdAt: 'desc' },
+          })
+        : Promise.resolve([]),
+      this.prisma.user.findMany({
+        where: whereClause,
+        take: pool,
+        select,
+        orderBy: { createdAt: 'desc' },
+      }),
+    ]);
+    return uniqueById([...mine, ...first, ...rest]);
   }
 
   // Candidate pool pulled from the DB before scoring — bounded regardless of
@@ -2218,57 +2203,38 @@ export class UsersService {
 
     const excludeSet = new Set([...excludedUserIds, userId]);
 
-    // First-year isolation. A mention is a way to reach someone -- it renders
-    // a link and raises a notification -- so the candidate pool is filtered on
-    // the same rule as every other recipient surface, and in the query, before
-    // `take: MENTION_CANDIDATE_POOL` is applied.
-    const mentionViewerBatch = await this.viewerBatchYear(userId);
-
-    const whereClause = this.studentYearPolicy.injectUserFilter(
-      {
-        id: { notIn: Array.from(excludeSet) },
-        accountStatus: 'ACTIVE',
-        ...(cleanQuery
-          ? {
-              OR: [
-                { username: { contains: cleanQuery, mode: 'insensitive' } },
-                { displayName: { contains: cleanQuery, mode: 'insensitive' } },
-              ],
-            }
-          : {}),
-      },
-      mentionViewerBatch,
-    );
+    const whereClause: Prisma.UserWhereInput = {
+      id: { notIn: Array.from(excludeSet) },
+      accountStatus: 'ACTIVE',
+      ...(cleanQuery
+        ? {
+            OR: [
+              { username: { contains: cleanQuery, mode: 'insensitive' } },
+              { displayName: { contains: cleanQuery, mode: 'insensitive' } },
+            ],
+          }
+        : {}),
+    };
 
     const recentConvIds = recentConvs.map((c) => c.conversationId);
 
-    // Stage 2 — the candidate pool (needs the exclusion set) and the
-    // recent-chat partners (needs the conversation ids) both become available
-    // at the same moment, so they run together instead of one after the other.
-    const [candidates, recentParticipants] = await Promise.all([
-      this.prisma.user.findMany({
-        where: whereClause,
-        take: UsersService.MENTION_CANDIDATE_POOL,
-        select: {
-          id: true,
-          username: true,
-          displayName: true,
-          avatar: true,
-          isCampusRep: true,
-          collegeId: true,
-          college: { select: { id: true, name: true } },
-        },
-        orderBy: { createdAt: 'desc' },
-      }),
+    // Stage 2 — recent-chat partners first: they are part of "the viewer's
+    // own people", which the candidate pool has to include so someone just
+    // messaged is never crowded out by newer accounts with a similar name.
+    const recentParticipants =
       recentConvIds.length > 0
-        ? this.prisma.conversationParticipant.findMany({
+        ? await this.prisma.conversationParticipant.findMany({
             where: {
               conversationId: { in: recentConvIds },
               userId: { not: userId },
             },
             select: { userId: true },
           })
-        : Promise.resolve([] as { userId: string }[]),
+        : [];
+    const candidates = await this.mentionCandidates(whereClause, cleanQuery, [
+      ...recentParticipants.map((p) => p.userId),
+      ...followingRows.map((f) => f.followingId),
+      ...followerRows.map((f) => f.followerId),
     ]);
 
     if (candidates.length === 0) return [];
@@ -2307,16 +2273,10 @@ export class UsersService {
     );
 
     const scored = candidates.map((u) => {
-      const uname = u.username.toLowerCase();
-      const dname = (u.displayName || '').toLowerCase();
-      let score = 0;
-
-      if (
-        cleanQuery &&
-        (uname.startsWith(cleanQuery) || dname.startsWith(cleanQuery))
-      ) {
-        score += 500;
-      }
+      // Match quality first (see people-picker.ts): the tier is worth more
+      // than every relationship signal combined, so "@ash" puts "ashley"
+      // above a close friend who merely has "ash" in the middle of a name.
+      let score = matchTier(u, cleanQuery) * 100000;
 
       const isFollowing = followingSet.has(u.id);
       const isFollower = followerSet.has(u.id);
@@ -2364,20 +2324,12 @@ export class UsersService {
     // "follows me AND I follow them" as two relation filters lets Postgres do
     // the intersection with the existing Follow indexes and hands back the
     // hydrated rows directly.
-    //
-    // First-year isolation. A mutual follow predating the policy does not
-    // exempt the pair from it: the widget is a messaging entry point, and the
-    // messaging layer would refuse the conversation it offers.
-    const onlineViewerBatch = await this.viewerBatchYear(userId);
     const candidates = await this.prisma.user.findMany({
-      where: this.studentYearPolicy.injectUserFilter(
-        {
-          accountStatus: 'ACTIVE',
-          followers: { some: { followerId: userId } }, // I follow them
-          following: { some: { followingId: userId } }, // they follow me
-        },
-        onlineViewerBatch,
-      ),
+      where: {
+        accountStatus: 'ACTIVE',
+        followers: { some: { followerId: userId } }, // I follow them
+        following: { some: { followingId: userId } }, // they follow me
+      },
       select: {
         id: true,
         username: true,
@@ -2500,21 +2452,17 @@ export class UsersService {
     // college, or one that has already followed its whole campus.
     const POOL = 120;
 
-    // First-year isolation, inside the CANDIDATE GENERATION rather than after
-    // it. Placed in `eligible`, which every arm and every scoring join reads
-    // from, so an incompatible account is never ranked, never counted towards
-    // a mutual total, and never enters the pool the random draw samples from.
-    // Filtering the final `sampleRandom` instead would leave the panel
-    // silently short -- and would still have paid for scoring rows nobody may
-    // see.
-    const recommendationBatch = await this.viewerBatchYear(userId);
-    const recommendationPolicyFilter = Prisma.raw(
-      `AND ${this.studentYearPolicy.visibleUserSqlPredicate('u', recommendationBatch)}`,
-    );
+    // How many of the viewer's own follows seed the friends-of-friends arm.
+    // Their most recent ones: a bound, so a viewer following thousands pays
+    // the same as one following two hundred.
+    const SEED_FOLLOWS = 200;
 
     const rows = await this.prisma.$queryRaw<RecommendationRow[]>`
       WITH me AS (
-        SELECT "id", "collegeId" FROM "User" WHERE "id" = ${userId} LIMIT 1
+        SELECT
+          "id", "collegeId", "branch", "batchYear",
+          ARRAY(SELECT DISTINCT lower(trim(i)) FROM unnest("interests") i) AS "interests"
+        FROM "User" WHERE "id" = ${userId} LIMIT 1
       ),
       eligible AS (
         SELECT u."id", u."collegeId", u."createdAt"
@@ -2522,7 +2470,6 @@ export class UsersService {
         WHERE u."id" <> me."id"
           AND u."accountStatus" = 'ACTIVE'
           AND u."deletedAt" IS NULL
-          ${recommendationPolicyFilter}
           -- Already-followed accounts are excluded from GENERATION only. Once
           -- a row has been handed to the client it stays on screen and its
           -- button flips to "Following"; the exclusion applies the next time
@@ -2538,6 +2485,35 @@ export class UsersService {
                OR (b."blockerId" = u."id" AND b."blockedId" = me."id")
           )
       ),
+      my_follows AS (
+        SELECT f."followingId" AS "id"
+        FROM "Follow" f, me
+        WHERE f."followerId" = me."id"
+        ORDER BY f."createdAt" DESC
+        LIMIT ${SEED_FOLLOWS}
+      ),
+      -- Four arms. The two recency arms were all there was before, which
+      -- meant an older account with five mutual friends could never enter the
+      -- pool at all: mutuals were scored, but only among the newest sign-ups.
+      -- The graph arms bring in the people the viewer is most likely to know.
+      fof_arm AS (
+        SELECT f2."followingId" AS "id"
+        FROM my_follows mf
+        JOIN "Follow" f2 ON f2."followerId" = mf."id"
+        JOIN eligible e ON e."id" = f2."followingId"
+        GROUP BY f2."followingId"
+        ORDER BY COUNT(*) DESC
+        LIMIT ${POOL}
+      ),
+      follows_me_arm AS (
+        SELECT f."followerId" AS "id"
+        FROM "Follow" f
+        CROSS JOIN me
+        JOIN eligible e ON e."id" = f."followerId"
+        WHERE f."followingId" = me."id"
+        ORDER BY f."createdAt" DESC
+        LIMIT ${POOL}
+      ),
       campus_arm AS (
         SELECT e."id" FROM eligible e, me
         WHERE me."collegeId" IS NOT NULL AND e."collegeId" = me."collegeId"
@@ -2550,19 +2526,22 @@ export class UsersService {
         LIMIT ${POOL}
       ),
       pool AS (
-        SELECT "id" FROM campus_arm
-        UNION
-        SELECT "id" FROM platform_arm
+        SELECT "id" FROM fof_arm
+        UNION SELECT "id" FROM follows_me_arm
+        UNION SELECT "id" FROM campus_arm
+        UNION SELECT "id" FROM platform_arm
       ),
       -- People the viewer follows who also follow the candidate. One grouped
       -- join over the bounded pool, not a lookup per row.
       mutuals AS (
-        SELECT f2."followingId" AS "id", COUNT(*)::int AS "mutualCount"
-        FROM "Follow" f1
-        JOIN "Follow" f2 ON f2."followerId" = f1."followingId"
+        SELECT
+          f2."followingId" AS "id",
+          COUNT(*)::int AS "mutualCount",
+          -- One of them, by name, for "Followed by X + 2 others".
+          (array_agg(mf."id" ORDER BY mf."id"))[1] AS "mutualSampleId"
+        FROM my_follows mf
+        JOIN "Follow" f2 ON f2."followerId" = mf."id"
         JOIN pool p ON p."id" = f2."followingId"
-        CROSS JOIN me
-        WHERE f1."followerId" = me."id"
         GROUP BY f2."followingId"
       ),
       follower_counts AS (
@@ -2570,6 +2549,83 @@ export class UsersService {
         FROM "Follow" f
         JOIN pool p ON p."id" = f."followingId"
         GROUP BY f."followingId"
+      ),
+      shared_communities AS (
+        SELECT cm2."userId" AS "id", COUNT(*)::int AS "sharedCommunities"
+        FROM "CommunityMember" cm1
+        CROSS JOIN me
+        JOIN "CommunityMember" cm2 ON cm2."communityId" = cm1."communityId"
+        JOIN pool p ON p."id" = cm2."userId"
+        JOIN "Community" c ON c."id" = cm1."communityId" AND c."deletedAt" IS NULL
+        WHERE cm1."userId" = me."id"
+        GROUP BY cm2."userId"
+      ),
+      signals AS (
+        SELECT
+          u."id",
+          COALESCE(m."mutualCount", 0) AS "mutualCount",
+          m."mutualSampleId",
+          COALESCE(fc."followerCount", 0) AS "followerCount",
+          COALESCE(sc."sharedCommunities", 0) AS "sharedCommunities",
+          EXISTS (
+            SELECT 1 FROM "Follow" fb
+            WHERE fb."followerId" = u."id" AND fb."followingId" = me."id"
+          ) AS "followsMe",
+          -- COALESCE, not a bare comparison: the equality is NULL (not false)
+          -- when either side has no value, and NULL sorts FIRST under DESC.
+          COALESCE(me."collegeId" IS NOT NULL AND u."collegeId" = me."collegeId", false) AS "sameCollege",
+          COALESCE(
+            me."collegeId" IS NOT NULL AND u."collegeId" = me."collegeId"
+            AND me."branch" IS NOT NULL AND lower(u."branch") = lower(me."branch"),
+            false
+          ) AS "sameBranch",
+          COALESCE(
+            me."collegeId" IS NOT NULL AND u."collegeId" = me."collegeId"
+            AND me."batchYear" IS NOT NULL AND u."batchYear" = me."batchYear",
+            false
+          ) AS "sameBatch",
+          (
+            SELECT COUNT(*)::int FROM (
+              SELECT DISTINCT lower(trim(i)) FROM unnest(u."interests") i
+              INTERSECT SELECT unnest(me."interests")
+            ) x
+          ) AS "sharedInterests",
+          GREATEST(
+            cardinality(me."interests") + (
+              SELECT COUNT(DISTINCT lower(trim(i)))::int FROM unnest(u."interests") i
+            ),
+            1
+          ) AS "interestTotal",
+          COALESCE(u."lastSeenAt" > now() - interval '7 days', false) AS "activeRecently"
+        FROM pool p
+        JOIN "User" u ON u."id" = p."id"
+        CROSS JOIN me
+        LEFT JOIN mutuals m ON m."id" = u."id"
+        LEFT JOIN follower_counts fc ON fc."id" = u."id"
+        LEFT JOIN shared_communities sc ON sc."id" = u."id"
+      ),
+      scored AS (
+        SELECT
+          s.*,
+          -- Each term is about how likely the viewer is to KNOW this person,
+          -- which is what a follow suggestion is for. Graph signals dominate;
+          -- popularity is a log-damped tiebreaker so a campus celebrity does
+          -- not outrank someone from the viewer's own class.
+          (
+            CASE WHEN s."followsMe" THEN 4.0 ELSE 0 END
+            + 3.0 * ln(1 + s."mutualCount")
+            + CASE WHEN s."sameBranch" THEN 1.5 ELSE 0 END
+            + CASE WHEN s."sameBatch" THEN 1.0 ELSE 0 END
+            + CASE WHEN s."sameCollege" THEN 1.0 ELSE 0 END
+            + 1.2 * ln(1 + s."sharedCommunities")
+            -- Jaccard: shared / (|A| + |B| - shared). Shared/union, so a
+            -- profile listing every interest does not match everyone.
+            + 2.5 * s."sharedInterests"::float
+                / GREATEST(s."interestTotal" - s."sharedInterests", 1)
+            + CASE WHEN s."activeRecently" THEN 0.5 ELSE 0 END
+            + 0.3 * ln(1 + s."followerCount")
+          )::float AS "score"
+        FROM signals s
       )
       SELECT
         u."id",
@@ -2581,39 +2637,30 @@ export class UsersService {
         u."collegeId",
         c."name" AS "collegeName",
         u."verificationStatus",
-        COALESCE(m."mutualCount", 0) AS "mutualCount",
-        COALESCE(fc."followerCount", 0) AS "followerCount",
-        -- COALESCE, not a bare comparison. The equality is NULL (not false)
-        -- for a candidate with no college, and in Postgres a NULL sorts FIRST
-        -- under ORDER BY ... DESC. Verified against the dev database, where
-        -- without this it put a college-less account above same-college ones
-        -- at equal mutual count -- the opposite of the intended ranking.
-        COALESCE(
-          me."collegeId" IS NOT NULL AND u."collegeId" = me."collegeId",
-          false
-        ) AS "sameCollege"
-      FROM pool p
-      JOIN "User" u ON u."id" = p."id"
-      CROSS JOIN me
+        sc."mutualCount",
+        sc."followerCount",
+        sc."sameCollege",
+        sc."sameBranch",
+        sc."followsMe",
+        sc."sharedCommunities",
+        sc."sharedInterests",
+        sc."score",
+        COALESCE(NULLIF(mu."displayName", ''), mu."username") AS "mutualSampleName"
+      FROM scored sc
+      JOIN "User" u ON u."id" = sc."id"
       LEFT JOIN "College" c ON c."id" = u."collegeId"
-      LEFT JOIN mutuals m ON m."id" = u."id"
-      LEFT JOIN follower_counts fc ON fc."id" = u."id"
-      ORDER BY
-        COALESCE(m."mutualCount", 0) DESC,
-        COALESCE(
-          me."collegeId" IS NOT NULL AND u."collegeId" = me."collegeId",
-          false
-        ) DESC,
-        u."isCampusRep" DESC,
-        COALESCE(fc."followerCount", 0) DESC,
-        u."id" ASC
+      LEFT JOIN "User" mu ON mu."id" = sc."mutualSampleId"
+      ORDER BY sc."score" DESC, u."isCampusRep" DESC, u."id" ASC
       LIMIT ${sampleFrom};
     `;
 
     // A pool smaller than `limit` is returned whole — a new account, or one
     // that has already followed most of its campus, still gets whatever is
     // left rather than an empty panel.
-    return sampleRandom(rows, limit).map((r) => ({
+    return weightedSample(
+      rows.map((r) => ({ ...r, score: Number(r.score || 0) })),
+      limit,
+    ).map((r) => ({
       id: r.id,
       username: r.username,
       displayName: r.displayName || r.username,
@@ -2625,6 +2672,18 @@ export class UsersService {
       verified: r.verificationStatus === 'VERIFIED',
       mutualCount: Number(r.mutualCount || 0),
       followersCount: Number(r.followerCount || 0),
+      // Additive: a client that predates these fields ignores them.
+      mutualSampleName: r.mutualSampleName,
+      // Additive: a client that predates it ignores the field.
+      reason: pickReason({
+        score: r.score,
+        followsMe: !!r.followsMe,
+        mutualCount: Number(r.mutualCount || 0),
+        sameBranch: !!r.sameBranch,
+        sharedCommunities: Number(r.sharedCommunities || 0),
+        sharedInterests: Number(r.sharedInterests || 0),
+        sameCollege: !!r.sameCollege,
+      }),
       // Always false by construction — the query excludes what the viewer
       // already follows. Emitted explicitly all the same, so this payload is
       // self-describing and a consumer never has to infer follow state from

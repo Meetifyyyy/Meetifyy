@@ -1,11 +1,17 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
 import { buildPollView, withMediaUrl } from '../posts/post-view';
 import { PrismaService } from '../prisma/prisma.service';
-import { StudentYearPolicyService } from '../common/student-year/student-year-policy.service';
 import { Prisma } from '@prisma/client';
 import { BlocksService } from '../users/blocks.service';
 import { RedisService } from '../redis/redis.service';
 import { ActivityAuthorizationService } from '../activities/activity-authorization.service';
+import { hashtagQuery } from '../posts/hashtags.util';
+import {
+  CommunitySearchRow,
+  UserSearchRow,
+  communitySearchSql,
+  userSearchSql,
+} from './search-ranking';
 
 /** How long (seconds) search results are cached per (query, userId) pair. */
 const SEARCH_CACHE_TTL = 15;
@@ -43,24 +49,13 @@ export class SearchService {
     private readonly prisma: PrismaService,
     private readonly blocksService: BlocksService,
     private readonly activityPolicy: ActivityAuthorizationService,
-    // First-year isolation. Search is a discovery surface that can lead
-    // straight to a follow or a message, so it enforces the same rule as the
-    // recipient pickers.
-    private readonly studentYearPolicy: StudentYearPolicyService,
     @Optional() private readonly redisService?: RedisService,
   ) {
     this.redis = this.redisService?.getClient() ?? null;
   }
 
   /**
-   * Trusted viewer context (id + collegeId + batch year) straight from the
-   * database.
-   *
-   * `batchYear` joins the other two here rather than being fetched separately
-   * because every consumer of this context needs it, and this lookup already
-   * runs once per search. Both policies -- activity visibility and first-year
-   * isolation -- then read the same trusted row, so they cannot disagree about
-   * who is asking.
+   * Trusted viewer context (id + collegeId) straight from the database.
    */
   private async resolveViewer(userId?: string) {
     if (!userId) return null;
@@ -69,17 +64,10 @@ export class SearchService {
       select: {
         id: true,
         collegeId: true,
-        batchYear: true,
-        email: true,
-        collegeEmail: true,
       },
     });
     if (!u) return null;
-    return {
-      id: u.id,
-      collegeId: u.collegeId,
-      batchYear: this.studentYearPolicy.getUserBatchYear(u),
-    };
+    return { id: u.id, collegeId: u.collegeId };
   }
 
   async globalSearch(
@@ -91,11 +79,10 @@ export class SearchService {
   ): Promise<GlobalSearchResult> {
     const searchQuery = (query || '').trim();
     const cleanQuery = searchQuery.toLowerCase();
-    // `v2` retires every entry written before first-year isolation applied.
-    // The key is already scoped by viewer, which is what makes caching a
-    // policy-filtered result safe -- a key shared across viewers would hand a
-    // senior's result set to a first-year student.
-    const cacheKey = `search:v2:${cleanQuery || 'discovery'}:${type || 'all'}:${currentUserId ?? 'anon'}:${limit}:${cursorParam || 'first'}`;
+    // `v4`: results are now ranked in SQL and carry a different user shape
+    // (no `followers` array). The key is scoped by viewer, which is what
+    // makes caching a block-filtered result safe.
+    const cacheKey = `search:v4:${cleanQuery || 'discovery'}:${type || 'all'}:${currentUserId ?? 'anon'}:${limit}:${cursorParam || 'first'}`;
 
     // 1. Cache read
     if (this.redis) {
@@ -142,8 +129,10 @@ export class SearchService {
     cursorParam?: string,
   ) {
     const searchQuery = (query || '').trim();
-    const cleanQuery = searchQuery.toLowerCase();
     const isDiscovery = searchQuery.length === 0;
+    // "#music" (what a tapped hashtag opens) searches the tag itself: posts
+    // indexed with it, exactly. A text search would also match "#musical".
+    const tag = hashtagQuery(searchQuery);
     const now = new Date();
     const cursor = decodeCursor(cursorParam);
     const isPaginating = Boolean(cursor.p || cursor.a);
@@ -181,12 +170,16 @@ export class SearchService {
 
     // Users/communities aren't paginated (small, relevance-capped lists) — only re-fetched on the first page.
     const fetchUsers =
+      !tag &&
       !isPaginating &&
       (!type || type === 'all' || type === 'people' || type === 'users');
     const fetchCommunities =
-      !isPaginating && (!type || type === 'all' || type === 'communities');
+      !tag &&
+      !isPaginating &&
+      (!type || type === 'all' || type === 'communities');
     const fetchPosts = !type || type === 'all' || type === 'posts';
-    const fetchActivities = !type || type === 'all' || type === 'activities';
+    const fetchActivities =
+      !tag && (!type || type === 'all' || type === 'activities');
     const postFetchLimit = (isDiscovery ? 6 : limit) + 1;
     const activityFetchLimit = (isDiscovery ? 6 : limit) + 1;
 
@@ -266,93 +259,30 @@ export class SearchService {
     const [users, communities, rawPostsPage, activitiesPage] =
       await Promise.all([
         fetchUsers
-          ? this.prisma.user.findMany({
-              where: this.studentYearPolicy.injectUserFilter(
-                {
-                  ...(isDiscovery
-                    ? {}
-                    : {
-                        OR: [
-                          {
-                            username: {
-                              contains: searchQuery,
-                              mode: 'insensitive',
-                            },
-                          },
-                          {
-                            displayName: {
-                              contains: searchQuery,
-                              mode: 'insensitive',
-                            },
-                          },
-                          {
-                            bio: { contains: searchQuery, mode: 'insensitive' },
-                          },
-                        ],
-                      }),
-                  deletedAt: null,
-                  ...(searchExcludedUserIds.length > 0
-                    ? { id: { notIn: searchExcludedUserIds } }
-                    : {}),
-                },
-                // First-year isolation. ANDed in (not spread) because the
-                // search clause above is itself an `OR`, and applied in the
-                // query so a restricted account is never fetched, never
-                // written into the Redis entry below, and never counted
-                // against `take`.
-                viewer?.batchYear ?? null,
-              ),
-              select: {
-                id: true,
-                username: true,
-                displayName: true,
-                avatar: true,
-                bio: true,
-                isCampusRep: true,
-                collegeId: true,
-                college: { select: { id: true, name: true } },
-                followers: { select: { followerId: true } },
-              },
-              take: isDiscovery ? 6 : limit * 2,
-              orderBy: { createdAt: 'desc' },
-            })
+          ? isDiscovery
+            ? this.discoveryUsers(searchExcludedUserIds, currentUserId)
+            : this.prisma.$queryRaw<UserSearchRow[]>(
+                userSearchSql({
+                  query: searchQuery,
+                  viewerId: currentUserId ?? null,
+                  excludedIds: searchExcludedUserIds,
+                  includeBio: true,
+                  take: limit,
+                }),
+              )
           : Promise.resolve([]),
 
         fetchCommunities
-          ? this.prisma.community.findMany({
-              where: {
-                ...(isDiscovery
-                  ? {}
-                  : {
-                      OR: [
-                        {
-                          name: { contains: searchQuery, mode: 'insensitive' },
-                        },
-                        {
-                          slug: { contains: searchQuery, mode: 'insensitive' },
-                        },
-                        {
-                          description: {
-                            contains: searchQuery,
-                            mode: 'insensitive',
-                          },
-                        },
-                      ],
-                    }),
-                deletedAt: null,
-              },
-              select: {
-                id: true,
-                name: true,
-                slug: true,
-                avatarKey: true,
-                description: true,
-                memberCount: true,
-                isPrivate: true,
-              },
-              take: isDiscovery ? 6 : limit * 2,
-              orderBy: { memberCount: 'desc' },
-            })
+          ? isDiscovery
+            ? this.discoveryCommunities(viewer?.collegeId ?? null)
+            : this.prisma.$queryRaw<CommunitySearchRow[]>(
+                communitySearchSql({
+                  query: searchQuery,
+                  viewerId: currentUserId ?? null,
+                  includeDescription: true,
+                  take: limit,
+                }),
+              )
           : Promise.resolve([]),
 
         // Main feed posts: public posts or public community posts
@@ -367,12 +297,14 @@ export class SearchService {
                 author: { deletedAt: null },
                 ...(isDiscovery
                   ? {}
-                  : {
-                      text: {
-                        contains: searchQuery,
-                        mode: 'insensitive' as Prisma.QueryMode,
-                      },
-                    }),
+                  : tag
+                    ? { hashtags: { some: { hashtag: { name: tag } } } }
+                    : {
+                        text: {
+                          contains: searchQuery,
+                          mode: 'insensitive',
+                        },
+                      }),
                 ...(searchExcludedUserIds.length > 0
                   ? { authorId: { notIn: searchExcludedUserIds } }
                   : {}),
@@ -493,42 +425,28 @@ export class SearchService {
         nextActivityCursor = `${new Date(extra.startDate).toISOString()}__${extra.id}`;
     }
 
-    // Rank Users
-    const rankedUsers = users
-      .map((u) => {
-        const uName = u.username.toLowerCase();
-        const dName = u.displayName.toLowerCase();
-        let score = 0;
-        if (!isDiscovery) {
-          if (uName === cleanQuery || dName === cleanQuery) score += 100;
-          else if (uName.startsWith(cleanQuery) || dName.startsWith(cleanQuery))
-            score += 50;
-          else score += 10;
-        }
-        return {
-          ...u,
-          isFollowing:
-            u.followers?.some((f) => f.followerId === currentUserId) || false,
-          score,
-        };
-      })
-      .sort((a, b) => b.score - a.score)
-      .slice(0, isDiscovery ? 6 : limit);
-
-    // Rank Communities
-    const rankedCommunities = communities
-      .map((c) => {
-        const name = c.name.toLowerCase();
-        let score = 0;
-        if (!isDiscovery) {
-          if (name === cleanQuery) score += 100;
-          else if (name.startsWith(cleanQuery)) score += 50;
-          else score += 10;
-        }
-        return { ...c, score };
-      })
-      .sort((a, b) => b.score - a.score)
-      .slice(0, isDiscovery ? 6 : limit);
+    // Already ranked by the query (see search-ranking.ts): match quality
+    // first, the viewer's relationship to the result only within a tier.
+    const rankedUsers = users.map((u) => ({
+      id: u.id,
+      username: u.username,
+      displayName: u.displayName,
+      avatar: u.avatar,
+      bio: u.bio,
+      isCampusRep: u.isCampusRep,
+      collegeId: u.collegeId,
+      college:
+        u.collegeId && u.collegeName
+          ? { id: u.collegeId, name: u.collegeName }
+          : null,
+      isFollowing: !!u.isFollowing,
+      score: Number(u.score) || 0,
+    }));
+    const rankedCommunities = communities.map((c) => ({
+      ...c,
+      memberCount: Number(c.memberCount) || 0,
+      score: Number(c.score) || 0,
+    }));
 
     // Fetch Likes and Bookmarks for Posts
     const searchPostIds = rawPosts.map((p) => p.id);
@@ -617,6 +535,80 @@ export class SearchService {
     return result;
   }
 
+  /**
+   * The empty-query people strip: the newest available accounts. Not ranked by
+   * relevance (there is no query); kept to the shape of a ranked search row.
+   * `isFollowing` is read for the viewer only — this used to load every
+   * follower of every account to answer one yes/no.
+   */
+  private async discoveryUsers(
+    excludedIds: string[],
+    viewerId?: string,
+  ): Promise<UserSearchRow[]> {
+    const rows = await this.prisma.user.findMany({
+      where: {
+        deletedAt: null,
+        accountStatus: 'ACTIVE',
+        ...(excludedIds.length > 0 ? { id: { notIn: excludedIds } } : {}),
+      },
+      select: {
+        id: true,
+        username: true,
+        displayName: true,
+        avatar: true,
+        bio: true,
+        isCampusRep: true,
+        collegeId: true,
+        college: { select: { name: true } },
+        followers: viewerId
+          ? { where: { followerId: viewerId }, select: { followerId: true } }
+          : false,
+      },
+      take: 6,
+      orderBy: { createdAt: 'desc' },
+    });
+    return rows.map((u) => ({
+      id: u.id,
+      username: u.username,
+      displayName: u.displayName,
+      avatar: u.avatar,
+      bio: u.bio,
+      isCampusRep: u.isCampusRep,
+      collegeId: u.collegeId,
+      collegeName: u.college?.name ?? null,
+      isFollowing: Array.isArray(u.followers) && u.followers.length > 0,
+      score: 0,
+    }));
+  }
+
+  /** The empty-query community strip: largest first, campus-only communities
+   *  of other colleges excluded as they are everywhere else. */
+  private async discoveryCommunities(
+    collegeId: string | null,
+  ): Promise<CommunitySearchRow[]> {
+    const rows = await this.prisma.community.findMany({
+      where: {
+        deletedAt: null,
+        OR: [
+          { isCampusCommunity: false },
+          ...(collegeId ? [{ isCampusCommunity: true, collegeId }] : []),
+        ],
+      },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        avatarKey: true,
+        description: true,
+        memberCount: true,
+        isPrivate: true,
+      },
+      take: 6,
+      orderBy: { memberCount: 'desc' },
+    });
+    return rows.map((c) => ({ ...c, score: 0 }));
+  }
+
   async getSuggestions(
     query: string,
     currentUserId?: string,
@@ -625,8 +617,8 @@ export class SearchService {
     // Too short to search: answered without touching the cache, as before.
     if (searchQuery.length < 2)
       return this.runSuggestions(query, currentUserId);
-    // `v2` for the same reason as the full-search key above.
-    const cacheKey = `search:suggestions:v2:${searchQuery.toLowerCase()}:${currentUserId ?? 'anon'}`;
+    // `v3` for the same reason as the full-search key above.
+    const cacheKey = `search:suggestions:v3:${searchQuery.toLowerCase()}:${currentUserId ?? 'anon'}`;
 
     if (this.redis) {
       try {
@@ -673,44 +665,27 @@ export class SearchService {
       ? [...excludedUserIds, currentUserId]
       : excludedUserIds;
 
+    // Typeahead is the most "I mean this exact thing" surface of all, so it
+    // uses the same tiered ranking as the full search, without the bio and
+    // description matches that only make sense on a results page.
     const [users, communities, activities] = await Promise.all([
-      this.prisma.user.findMany({
-        // Same first-year isolation filter the full search applies -- the
-        // typeahead is a discovery surface in its own right and would
-        // otherwise disclose the handle of an account the viewer may not
-        // reach.
-        where: this.studentYearPolicy.injectUserFilter(
-          {
-            OR: [
-              { username: { contains: searchQuery, mode: 'insensitive' } },
-              { displayName: { contains: searchQuery, mode: 'insensitive' } },
-            ],
-            deletedAt: null,
-            ...(suggestionExcludedUserIds.length > 0
-              ? { id: { notIn: suggestionExcludedUserIds } }
-              : {}),
-          },
-          suggestionViewer?.batchYear ?? null,
-        ),
-        select: {
-          id: true,
-          username: true,
-          displayName: true,
-          avatar: true,
-          isCampusRep: true,
-          collegeId: true,
-          college: { select: { id: true, name: true } },
-        },
-        take: 5,
-      }),
-      this.prisma.community.findMany({
-        where: {
-          name: { contains: searchQuery, mode: 'insensitive' },
-          deletedAt: null,
-        },
-        select: { id: true, name: true, avatarKey: true, memberCount: true },
-        take: 5,
-      }),
+      this.prisma.$queryRaw<UserSearchRow[]>(
+        userSearchSql({
+          query: searchQuery,
+          viewerId: currentUserId ?? null,
+          excludedIds: suggestionExcludedUserIds,
+          includeBio: false,
+          take: 5,
+        }),
+      ),
+      this.prisma.$queryRaw<CommunitySearchRow[]>(
+        communitySearchSql({
+          query: searchQuery,
+          viewerId: currentUserId ?? null,
+          includeDescription: false,
+          take: 5,
+        }),
+      ),
       this.prisma.crewActivity.findMany({
         // Autocomplete leaks titles, so it runs the same discovery policy as the
         // full search rather than a looser "public only" heuristic.
@@ -732,7 +707,28 @@ export class SearchService {
       }),
     ]);
 
-    const result = { users, communities, activities, keywords: [] };
+    const result = {
+      users: users.map((u) => ({
+        id: u.id,
+        username: u.username,
+        displayName: u.displayName,
+        avatar: u.avatar,
+        isCampusRep: u.isCampusRep,
+        collegeId: u.collegeId,
+        college:
+          u.collegeId && u.collegeName
+            ? { id: u.collegeId, name: u.collegeName }
+            : null,
+      })),
+      communities: communities.map((c) => ({
+        id: c.id,
+        name: c.name,
+        avatarKey: c.avatarKey,
+        memberCount: Number(c.memberCount) || 0,
+      })),
+      activities,
+      keywords: [],
+    };
 
     return result;
   }

@@ -153,7 +153,6 @@ function build<T extends object>(proto: T, prisma: unknown): T {
     resolveConversationId: (id: string) => Promise.resolve(id),
     invalidateUserConversationsCache: () => Promise.resolve(),
     verificationAccess: { assertUsersEligible: () => Promise.resolve() },
-    studentYearPolicy: { assertCanInteract: () => Promise.resolve() },
     blocksService: { isBlocked: () => Promise.resolve(false) },
   });
   return service;

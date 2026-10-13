@@ -41,7 +41,6 @@ import { ActivityAuthorizationService } from '../activities/activity-authorizati
 import { JwtGuard } from '../common/guards/jwt.guard';
 import { VerifiedOnly } from '../common/decorators/verified-only.decorator';
 import { VerificationAccessService } from '../common/verification/verification-access.service';
-import { StudentYearPolicyService } from '../common/student-year/student-year-policy.service';
 import { LegalConsentService } from '../common/legal/legal-consent.service';
 import { LEGAL_ACKNOWLEDGEMENT_REQUIRED_CODE } from '../common/legal/legal.constants';
 import { socketCorsOrigin } from './socket-cors';
@@ -188,9 +187,6 @@ export class RealtimeGateway
     // The same policy the HTTP guard and the messaging services use, so a
     // socket cannot become the one path with a looser rule.
     private readonly verificationAccess: VerificationAccessService,
-    // First-year isolation: only to resolve the viewer's batch onto the
-    // activity auth context below. The decision belongs to the two policies.
-    private readonly studentYearPolicy: StudentYearPolicyService,
     // Redis-backed limits for the durable socket actions. The in-process
     // InstantMatchRateLimiter it replaces counted per PROCESS, so the real
     // ceiling was silently multiplied by the replica count and reset on every
@@ -1207,7 +1203,7 @@ export class RealtimeGateway
     // its author — plus like and poll activity. Joining it took the post id on
     // the client's word, so any authenticated socket could name any post id and
     // receive its comments live, including posts the REST route answers with a
-    // 404: a blocked author's, or one hidden by first-year isolation. The
+    // 404, such as a blocked author's. The
     // policy below is the one `getPostById` applies, so the two paths agree.
     const allowed = await this.checkPostRoomAccess(userId, postId);
     if (!allowed) {
@@ -1222,8 +1218,8 @@ export class RealtimeGateway
    * Server-side authorization for the `post_<id>` realtime room.
    *
    * Deliberately mirrors `PostsService.getPostById`'s denial set — deleted post,
-   * deleted community, unavailable author, a block in either direction, and
-   * first-year isolation judged on the author — because a viewer who cannot
+   * deleted community, unavailable author, and a block in either direction —
+   * because a viewer who cannot
    * open the post must not be able to subscribe to it either. It answers a bare
    * boolean for the same reason that route answers a neutral 404: the caller
    * must not be able to tell "no such post" from "not for you".
@@ -1247,13 +1243,7 @@ export class RealtimeGateway
       if (post.authorId === userId) return true;
 
       const excluded = await this.blocksService.getExcludedUserIds(userId);
-      if (excluded.includes(post.authorId)) return false;
-
-      return await this.studentYearPolicy.canIdsInteract(
-        userId,
-        post.authorId,
-        'activity_visibility',
-      );
+      return !excluded.includes(post.authorId);
     } catch (err) {
       // Fail closed: an error resolving the policy must not grant the room.
       this.logger.error('Failed to authorize post room join', err);
@@ -1335,11 +1325,6 @@ export class RealtimeGateway
                 expiresAt: true,
               },
             },
-            // The host's batch, for first-year isolation. The realtime room is
-            // the activity's live surface; the socket must apply the same rule
-            // the REST detail endpoint does, or a restricted viewer could
-            // subscribe to updates for an activity they cannot open.
-            creator: { select: { batchYear: true } },
           },
         }),
         this.prisma.user.findUnique({
@@ -1347,11 +1332,6 @@ export class RealtimeGateway
           select: {
             id: true,
             collegeId: true,
-            // First-year isolation: the viewer's batch, resolved on the
-            // lookup this path already performs.
-            batchYear: true,
-            email: true,
-            collegeEmail: true,
           },
         }),
       ]);
@@ -1368,7 +1348,6 @@ export class RealtimeGateway
           ? {
               id: user.id,
               collegeId: user.collegeId,
-              batchYear: this.studentYearPolicy.getUserBatchYear(user),
             }
           : null,
         activity,

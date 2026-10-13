@@ -23,42 +23,48 @@ import type { NotificationFactory } from '../notifications/notification.factory'
  * top-N.
  */
 describe('CommunitiesService — discovery recommendations', () => {
-  /** The pool query, as far as these assertions read it. */
-  type PoolQuery = {
-    where: {
-      members?: unknown;
-      deletedAt?: unknown;
-      isCampusCommunity?: unknown;
-    };
-    orderBy?: unknown;
-    take?: number;
+  /** One scored row out of the ranking query (see CommunityScoreRow). */
+  type Scored = {
+    id: string;
+    friendCount: number;
+    friendSampleName: string | null;
+    campusMemberCount: number;
+    interestMatch: boolean;
+    recentPosts: number;
+    score: number;
   };
 
   let service: CommunitiesService;
-  let prisma: { community: { findMany: jest.Mock } };
-  let findManyArgs: PoolQuery[];
+  let queryRaw: jest.Mock;
+  let findMany: jest.Mock;
 
-  const makePool = (n: number) =>
+  const scoredPool = (n: number, over: Partial<Scored> = {}): Scored[] =>
     Array.from({ length: n }, (_, i) => ({
       id: `c${i}`,
-      name: `Community ${i}`,
-      memberCount: 100 - i,
-      ownerId: 'someone',
+      friendCount: 0,
+      friendSampleName: null,
+      campusMemberCount: 0,
+      interestMatch: false,
+      recentPosts: 0,
+      score: n - i,
+      ...over,
     }));
 
-  const setup = (rows: ReturnType<typeof makePool>) => {
-    findManyArgs = [];
-    prisma = {
-      community: {
-        findMany: jest.fn((args: PoolQuery) => {
-          findManyArgs.push(args);
-          return Promise.resolve(rows);
-        }),
-      },
-    };
-
+  const setup = (rows: Scored[]) => {
+    queryRaw = jest.fn(() => Promise.resolve(rows));
+    // The full rows are loaded by id after the draw; echo back what was asked
+    // for in a different order, as Postgres may.
+    findMany = jest.fn((args: { where: { id: { in: string[] } } }) =>
+      Promise.resolve(
+        [...args.where.id.in].reverse().map((id) => ({
+          id,
+          name: `Community ${id}`,
+          memberCount: 10,
+        })),
+      ),
+    );
     service = new CommunitiesService(
-      stub<PrismaService>(prisma),
+      stub<PrismaService>({ $queryRaw: queryRaw, community: { findMany } }),
       stub<DomainEventService>({ emit: jest.fn() }),
       stub<RedisService>({ getClient: () => null }),
       stub<PresenceService>(),
@@ -78,33 +84,30 @@ describe('CommunitiesService — discovery recommendations', () => {
     );
   };
 
-  it('excludes joined communities in the query rather than after it', async () => {
-    setup(makePool(10));
+  it('scores in one query and loads the chosen rows in one more', async () => {
+    setup(scoredPool(10));
 
     await service.getCommunityRecommendations('me', 3);
 
-    expect(prisma.community.findMany).toHaveBeenCalledTimes(1);
-    const { where, orderBy } = findManyArgs[0];
-    // The anti-join is what keeps the pool full: filtering in JS afterwards
-    // would shrink the panel as the viewer joined more communities.
-    expect(where.members).toEqual({ none: { userId: 'me' } });
-    expect(where.deletedAt).toBeNull();
-    // Campus communities are a separate, verification-gated surface.
-    expect(where.isCampusCommunity).toBe(false);
-    expect(orderBy).toEqual({ memberCount: 'desc' });
+    // Membership, pending requests, campus-only and deleted communities are
+    // excluded inside the ranking SQL (verified against a real database);
+    // nothing is filtered afterwards, so the panel never comes back short.
+    expect(queryRaw).toHaveBeenCalledTimes(1);
+    expect(findMany).toHaveBeenCalledTimes(1);
   });
 
-  it('asks for a wider pool than it returns, so there is something to draw from', async () => {
-    setup(makePool(40));
+  it('returns the requested number, distinct, from the ranked pool', async () => {
+    setup(scoredPool(40));
 
-    const results = await service.getCommunityRecommendations('me', 3);
-
-    expect(findManyArgs[0].take).toBeGreaterThan(3);
-    expect(results).toHaveLength(3);
+    for (let i = 0; i < 20; i++) {
+      const picked = await service.getCommunityRecommendations('me', 3);
+      expect(picked).toHaveLength(3);
+      expect(new Set(picked.map((c) => c.id)).size).toBe(3);
+    }
   });
 
   it('produces a different selection across requests', async () => {
-    setup(makePool(40));
+    setup(scoredPool(40));
 
     const seen = new Set<string>();
     for (let i = 0; i < 20; i++) {
@@ -115,40 +118,42 @@ describe('CommunitiesService — discovery recommendations', () => {
     expect(seen.size).toBeGreaterThan(1);
   });
 
-  it('never repeats a community within one selection', async () => {
-    setup(makePool(40));
+  it('keeps the drawn order, not the order the rows were loaded in', async () => {
+    setup(scoredPool(2));
 
-    for (let i = 0; i < 20; i++) {
-      const picked = await service.getCommunityRecommendations('me', 3);
-      expect(new Set(picked.map((c) => c.id)).size).toBe(3);
-    }
+    const picked = await service.getCommunityRecommendations('me', 3);
+
+    // A pool no larger than the request is returned in rank order.
+    expect(picked.map((c) => c.id)).toEqual(['c0', 'c1']);
   });
 
-  it('marks every suggestion as not joined, explicitly', async () => {
-    setup(makePool(5));
+  it('marks every suggestion as not joined and says why it is there', async () => {
+    setup(
+      scoredPool(1, {
+        friendCount: 2,
+        friendSampleName: 'Asha',
+        campusMemberCount: 5,
+      }),
+    );
 
     const [first] = await service.getCommunityRecommendations('me', 3);
 
     // True by construction — the query excluded members — but emitted anyway
-    // so the payload is self-describing and no consumer has to infer
-    // membership from a missing field.
+    // so the payload is self-describing.
     expect(first.isJoined).toBe(false);
     expect(first.userRole).toBeNull();
-    expect(first.name).toMatch(/^Community /);
+    expect(first).toMatchObject({
+      name: 'Community c0',
+      reason: 'friends_joined',
+      friendCount: 2,
+      friendSampleName: 'Asha',
+    });
   });
 
-  it('returns a short list rather than an empty one when few are eligible', async () => {
-    setup(makePool(2));
-
-    const results = await service.getCommunityRecommendations('me', 3);
-
-    expect(results).toHaveLength(2);
-  });
-
-  it('returns nothing, and asks nothing, without a viewer', async () => {
-    setup(makePool(10));
+  it('returns nothing without a viewer, and asks nothing', async () => {
+    setup(scoredPool(5));
 
     expect(await service.getCommunityRecommendations('', 3)).toEqual([]);
-    expect(prisma.community.findMany).not.toHaveBeenCalled();
+    expect(queryRaw).not.toHaveBeenCalled();
   });
 });

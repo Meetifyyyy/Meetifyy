@@ -1,6 +1,5 @@
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { PostsService } from './posts.service';
-import { createStudentYearPolicyMock } from '../common/student-year/testing/student-year-policy.mock';
 import { stub } from '../common/testing/stub';
 import type { PrismaService } from '../prisma/prisma.service';
 import type { NotificationsService } from '../notifications/notifications.service';
@@ -85,8 +84,6 @@ describe('PostsService — community post authorization', () => {
       stub<StorageService>(),
       // Deletion authorizer — unused by the write-path guard under test.
       stub<ContentDeletionAuthorizer>(),
-      // First-year isolation — not what this guard is about.
-      createStudentYearPolicyMock(),
     );
   };
 

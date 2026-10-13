@@ -14,7 +14,6 @@ import { AcademicsService } from '../academics/academics.service';
 import { VerificationAccessService } from '../common/verification/verification-access.service';
 import { createBlocksServiceMock } from './testing/blocks.service.mock';
 import { clearAuthSyncCache } from '../auth/auth.service';
-import { studentYearPolicyMockProvider } from '../common/student-year/testing/student-year-policy.mock';
 
 // Only `clearAuthSyncCache` is imported from the auth module by the code under
 // test, and it is a module-level function rather than an injectable, so it can
@@ -82,7 +81,6 @@ describe('Follow state', () => {
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
-        studentYearPolicyMockProvider(),
         UsersService,
         { provide: PrismaService, useValue: prisma },
         {
@@ -310,6 +308,12 @@ describe('Follow state', () => {
       mutualCount: 3,
       followerCount: 12,
       sameCollege: true,
+      sameBranch: false,
+      followsMe: false,
+      sharedCommunities: 0,
+      sharedInterests: 0,
+      score: 4.2,
+      mutualSampleName: 'Asha',
     };
 
     it('builds the list in a single database round-trip', async () => {
@@ -338,6 +342,8 @@ describe('Follow state', () => {
         followersCount: 12,
         college: 'Example College',
         verified: true,
+        reason: 'mutuals',
+        mutualSampleName: 'Asha',
       });
     });
 

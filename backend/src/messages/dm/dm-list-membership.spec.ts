@@ -1,6 +1,5 @@
 import { DmService } from './dm.service';
 import { createVerificationAccessMock } from '../../common/verification/testing/verification-access.mock';
-import { createStudentYearPolicyMock } from '../../common/student-year/testing/student-year-policy.mock';
 
 /**
  * The DM list reports whether the viewer is still in each thread (A12).
@@ -110,7 +109,6 @@ describe('DmService.getUserDMConversations — isMember', () => {
         getBlockedByUserIds: () => Promise.resolve([]),
       },
       verificationAccess: createVerificationAccessMock(),
-      studentYearPolicy: createStudentYearPolicyMock(),
     });
     return service;
   };

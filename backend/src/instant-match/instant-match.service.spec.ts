@@ -13,7 +13,6 @@ import { stub } from '../common/testing/stub';
 import type { MessagesService } from '../messages/messages.service';
 import type { JoinQueueDto } from './dto/join-queue.dto';
 import { createVerificationAccessMock } from '../common/verification/testing/verification-access.mock';
-import { createStudentYearPolicyMock } from '../common/student-year/testing/student-year-policy.mock';
 
 /**
  * Instant Match is a two-party state machine driven entirely by socket events,
@@ -85,7 +84,6 @@ describe('InstantMatchService', () => {
       stub<MessagesService>(messages),
       blocksStubFor(prisma),
       verificationAccess,
-      createStudentYearPolicyMock(),
     );
     built.rankingOptions = { deterministic: true };
     return built;

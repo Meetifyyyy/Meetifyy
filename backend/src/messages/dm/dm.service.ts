@@ -7,7 +7,6 @@ import { DomainEventService } from '../../events/domain-event.service';
 import { generatePublicId } from '../../common/utils/public-id.util';
 import { MentionsService } from '../../mentions/mentions.service';
 import { VerificationAccessService } from '../../common/verification/verification-access.service';
-import { StudentYearPolicyService } from '../../common/student-year/student-year-policy.service';
 
 import { resolvePresenceVisibilityForViewer } from '../../users/privacy.helper';
 import {
@@ -44,10 +43,6 @@ export class DmService extends MessagingCoreService {
     mentionsService: MentionsService,
     blocksService: BlocksService,
     verificationAccess: VerificationAccessService,
-    // Required for the same reason as verificationAccess: first-year
-    // isolation is enforced on every send path through the base class, so
-    // it must fail at boot rather than silently disappear.
-    studentYearPolicy: StudentYearPolicyService,
     rateLimit: RateLimitService,
   ) {
     super(
@@ -57,7 +52,6 @@ export class DmService extends MessagingCoreService {
       mentionsService,
       blocksService,
       verificationAccess,
-      studentYearPolicy,
       rateLimit,
     );
   }
@@ -70,47 +64,11 @@ export class DmService extends MessagingCoreService {
     // NOTE: expired instant-match cleanup is handled by the 15-min cron in
     // MessagesService.onModuleInit — a read endpoint must not issue a write
     // (and its row lock) on every list load.
-    const viewerBatch = await this.studentYearPolicy.getBatchYearFor(userId);
     const participants = await this.prisma.conversationParticipant.findMany({
       where: {
         userId,
         deletedAt: null,
-        conversation: {
-          type: 'DM',
-          // First-year isolation, in the query rather than after it.
-          //
-          // A DM with a restricted partner is dropped from the list entirely:
-          // leaving it visible would offer a thread that every send, reply and
-          // reaction path refuses, and would keep the other account's name and
-          // avatar on screen -- which is the disclosure the policy exists to
-          // prevent, in the one place a pre-existing thread would otherwise
-          // preserve it. The history is not deleted; it is simply not listed
-          // while the restriction applies, and returns intact if it lifts.
-          //
-          // Filtering here keeps `take`/`skip` honest. Dropping rows after the
-          // page was fetched would return short pages and let the offset
-          // cursor skip conversations that were never shown.
-          //
-          // `none` over the INCOMPATIBLE set, not `every` over the compatible
-          // one. Prisma compiles `every` to `NOT EXISTS (row WHERE NOT
-          // <predicate>)`, and `NOT ("batchYear" = 2026)` is NULL — not TRUE —
-          // for a partner whose batch never resolved, so the inner EXISTS
-          // matched nothing and the thread stayed listed. `none` never negates
-          // the predicate, and `incompatibleUserWhere` spells out its NULL
-          // arm, so an unresolved partner is excluded like any other.
-          ...(this.studentYearPolicy.isEnforcementEnabled()
-            ? {
-                participants: {
-                  none: {
-                    userId: { not: userId },
-                    user: this.studentYearPolicy.incompatibleUserWhere(
-                      viewerBatch,
-                    ),
-                  },
-                },
-              }
-            : {}),
-        },
+        conversation: { type: 'DM' },
       },
       // Without an explicit order, `take`/`skip` paginate an unordered set:
       // rows can repeat or vanish between pages, and a brand-new instant-match
@@ -168,13 +126,6 @@ export class DmService extends MessagingCoreService {
                     // eligibility travels with the row so the composer can
                     // render its unavailable state on first paint.
                     verificationStatus: true,
-                    // The partner's batch travels with the row for the same
-                    // reason their verification status does: the composer's
-                    // enabled/disabled state is decided from it on first
-                    // paint, without a second query per conversation. Server
-                    // side only -- the response below is built field by field
-                    // and never emits it.
-                    batchYear: true,
                     // Same reason, for the deletion lifecycle: without these
                     // the list would render a deleted partner's real name and
                     // avatar, and offer a composer that the server refuses.
@@ -446,16 +397,6 @@ export class DmService extends MessagingCoreService {
             !otherUser ||
             this.verificationAccess.isEligibleStatus(
               otherUser.verificationStatus,
-            )) &&
-          // First-year isolation. Belt-and-braces: the query above already
-          // excludes a restricted partner, so this only fires for a row that
-          // slipped through (a partner whose batch resolved between the two
-          // steps). Mirrors the rule the send path enforces, so the composer
-          // is never offered for a pair the server refuses.
-          (!otherUser ||
-            this.studentYearPolicy.areBatchYearsCompatible(
-              viewerBatch,
-              this.studentYearPolicy.getUserBatchYear(otherUser),
             )),
         // Distinct from `canSendMessages` on purpose: the client renders a
         // different, specific notice for "this user is no longer available"
@@ -519,22 +460,6 @@ export class DmService extends MessagingCoreService {
   async lookupExistingDM(currentUserId: string, targetUserId: string) {
     if (!targetUserId || targetUserId === currentUserId) return null;
 
-    // First-year isolation. An OLD THREAD IS NOT A BACK DOOR: this endpoint
-    // exists so the client can jump straight into an existing conversation,
-    // which for a restricted pair would hand back a live conversation id and
-    // route the user into a composer the send path then refuses. Reporting
-    // "no such thread" is both the honest answer -- the pair may not converse
-    // -- and the one that leaks nothing about the other account.
-    if (
-      !(await this.studentYearPolicy.canIdsInteract(
-        currentUserId,
-        targetUserId,
-        'messaging',
-      ))
-    ) {
-      return null;
-    }
-
     const existing = await this.prisma.conversation.findFirst({
       where: {
         type: 'DM',
@@ -564,20 +489,6 @@ export class DmService extends MessagingCoreService {
         'Cannot start a conversation with a blocked user',
       );
     }
-
-    // First-year isolation, BEFORE the existing-thread branch below.
-    //
-    // The verification gate deliberately sits after it, so that reviving an
-    // old conversation with an account whose verification lapsed still works
-    // -- history stays reachable. This rule is different: the two people must
-    // not converse at all, so reviving a thread that predates the policy is
-    // exactly the bypass being closed, and the check has to run before
-    // `existing` short-circuits.
-    await this.studentYearPolicy.assertCanInteract(
-      currentUserId,
-      [targetUserId],
-      'messaging',
-    );
 
     return await this.prisma.$transaction(async (tx) => {
       const existing = await tx.conversation.findFirst({

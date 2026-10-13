@@ -29,8 +29,8 @@ export type RequiredLegalVersion = PublishedLegalVersion;
  * Meetifyy".
  *
  * Every surface that asks the question — `JwtGuard`, the realtime gateway, the
- * profile sync, the consent API — asks this service, for the same reason the
- * first-year policy has exactly one owner: two implementations of "has this
+ * profile sync, the consent API — asks this service, because two
+ * implementations of "has this
  * user accepted the current Terms" will eventually disagree, and the one that
  * says yes is the one that lets someone past.
  *

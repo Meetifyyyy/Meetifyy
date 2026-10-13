@@ -58,7 +58,6 @@ import {
 } from './conversation-media.util';
 import { MediaCleanupService } from '../uploads/media-cleanup.service';
 import { VerificationAccessService } from '../common/verification/verification-access.service';
-import { StudentYearPolicyService } from '../common/student-year/student-year-policy.service';
 import {
   isUnavailableUser,
   presentUserName,
@@ -145,10 +144,6 @@ export class MessagesService
     // Same reasoning as blocksService: verification gating on every send runs
     // through this, so it must fail at boot rather than silently disappear.
     verificationAccess: VerificationAccessService,
-    // Required for the same reason as verificationAccess: first-year
-    // isolation is enforced on every send path through the base class, so
-    // it must fail at boot rather than silently disappear.
-    studentYearPolicy: StudentYearPolicyService,
     // Required, and ahead of the optional params because a required parameter
     // cannot follow one: the send rate limit runs through this on every path.
     rateLimit: RateLimitService,
@@ -162,7 +157,6 @@ export class MessagesService
       mentionsService,
       blocksService,
       verificationAccess,
-      studentYearPolicy,
       rateLimit,
     );
     this.redis = this.redisService?.getClient() ?? null;
@@ -1386,10 +1380,8 @@ export class MessagesService
     // sharing one entry would let whichever call happened first decide what the
     // other saw, which in the wrong order means the inbox silently loses
     // threads.
-    // `v2` retires every entry written before first-year isolation applied --
-    // a v1 entry can hold a restricted thread, and serving one would be a hole
-    // in the policy for the length of its TTL. The key is scoped by viewer,
-    // which is what makes caching a policy-filtered list safe at all.
+    // The key is versioned (see conversation-list-cache.ts) and scoped by
+    // viewer, which is what makes caching a filtered list safe at all.
     const cacheKey = conversationListCacheKey(
       userId,
       limit,
@@ -1408,9 +1400,6 @@ export class MessagesService
         // A cache miss and an unreachable Redis are the same thing here: rebuild the list.
       }
     }
-
-    const conversationViewerBatch =
-      await this.studentYearPolicy.getBatchYearFor(userId);
 
     const [participants, excludedUserIds, blockedByMeIds] = await Promise.all([
       this.prisma.conversationParticipant.findMany({
@@ -1470,54 +1459,6 @@ export class MessagesService
                   ]
                 : []),
               /**
-               * First-year isolation, on BOTH shapes -- unlike the
-               * verification split above, which applies to pickers only.
-               *
-               * The reasoning that keeps an unverified partner's thread in the
-               * inbox ("history belongs to both people") does not carry over.
-               * Verification is a property of one account that may lapse and
-               * return; isolation says these two people are not in each
-               * other's world at all, and a listed thread would keep the other
-               * student's name, avatar and last message on screen -- which is
-               * precisely what the policy exists to prevent, in the one place a
-               * pre-existing conversation would otherwise preserve it. Nothing
-               * is deleted; the thread is unlisted while the restriction holds
-               * and returns intact when it lifts (a batch leaving first year).
-               *
-               * Groups are judged on the sender alone, exactly as the send path
-               * is: a group does not go silent for everyone because one member
-               * is in a different cohort.
-               *
-               * Nested so the database applies it before skip/take -- dropping
-               * rows afterwards would return short pages and let the offset
-               * cursor skip threads that were never shown.
-               */
-              ...(this.studentYearPolicy.isEnforcementEnabled()
-                ? [
-                    {
-                      OR: [
-                        { type: 'GROUP' as const },
-                        {
-                          // `none` over the INCOMPATIBLE set rather than
-                          // `every` over the compatible one -- see the same
-                          // filter in DmService for why. `every` is not
-                          // NULL-safe here: Prisma negates the predicate, and
-                          // negating a NULL comparison yields NULL, so a
-                          // partner whose batch never resolved slipped through.
-                          participants: {
-                            none: {
-                              userId: { not: userId },
-                              user: this.studentYearPolicy.incompatibleUserWhere(
-                                conversationViewerBatch,
-                              ),
-                            },
-                          },
-                        },
-                      ],
-                    },
-                  ]
-                : []),
-              /**
                * The picker's search box, answered by the database.
                *
                * A thread is matched on the name the list actually shows: a
@@ -1525,14 +1466,13 @@ export class MessagesService
                * person's display name or username (a DM row has no stored
                * name of its own).
                *
-               * `some` rather than `every`, and a positive predicate, so the
-               * NULL trap described above does not apply -- nothing here is
-               * negated.
+               * `some` rather than `every`, and a positive predicate, so
+               * nothing here is negated.
                *
-               * Sits inside the same `AND` as the two filters above, so a
-               * search can only ever narrow what those already allow. A user
-               * restricted by isolation or verification stays unreachable no
-               * matter what is typed.
+               * Sits inside the same `AND` as the filters above, so a search
+               * can only ever narrow what those already allow. A user
+               * restricted by verification stays unreachable no matter what
+               * is typed.
                */
               ...(cleanSearch
                 ? [
@@ -1665,13 +1605,6 @@ export class MessagesService
                   // list payload so the chat can render its unavailable state
                   // on first paint rather than after a second round-trip.
                   verificationStatus: true,
-                  // The partner's batch travels with the row for the same
-                  // reason their verification status does: the composer's
-                  // enabled/disabled state is decided from it on first
-                  // paint, without a second query per conversation. Server
-                  // side only -- the response below is built field by field
-                  // and never emits it.
-                  batchYear: true,
                   // Same, for the deletion lifecycle. Omitting these renders a
                   // deleted partner's real name and avatar in the chat list.
                   accountStatus: true,
@@ -1887,15 +1820,6 @@ export class MessagesService
               !otherUser ||
               verificationAccess.isEligibleStatus(
                 otherUser.verificationStatus,
-              )) &&
-            // First-year isolation. The query above already excludes a
-            // restricted DM; this covers the narrow window where a batch
-            // resolved between the two steps, and keeps this flag a faithful
-            // mirror of what the send path will do.
-            (!otherUser ||
-              this.studentYearPolicy.areBatchYearsCompatible(
-                conversationViewerBatch,
-                this.studentYearPolicy.getUserBatchYear(otherUser),
               )),
         targetUserUnavailable: targetUnavailable,
         targetUser: otherUser
@@ -1956,22 +1880,6 @@ export class MessagesService
         'Cannot start a conversation with a blocked user',
       );
     }
-
-    // First-year isolation, BEFORE the existing-conversation branch below.
-    //
-    // The verification gate further down deliberately sits AFTER it, because
-    // returning the id of a thread that already exists is how the UI opens its
-    // history and that must keep working when a partner's verification lapses.
-    // This rule is the opposite: the two people may not converse at all, so
-    // handing back an id for a thread that predates the policy is exactly the
-    // bypass being closed. Every send path refuses the pair independently, but
-    // routing a user into a composer that can only bounce is not an acceptable
-    // outcome either.
-    await this.studentYearPolicy.assertCanInteract(
-      currentUserId,
-      filteredUserIds,
-      'new_message_modal',
-    );
 
     if (filteredUserIds.length === 1 && !groupName) {
       const otherUserId = filteredUserIds[0];
@@ -2281,28 +2189,6 @@ export class MessagesService
     await this.verificationAccess.assertUsersEligible(
       [requesterId, targetUserId],
       requesterId,
-    );
-
-    // First-year isolation, checked against EVERY current member rather than
-    // just the requester.
-    //
-    // Compatibility is an equivalence relation, so in a group formed under
-    // this policy the requester alone would be sufficient. Groups that predate
-    // it are not guaranteed to be uniform, and "add them, then the two of us
-    // can talk in here" is exactly the flow the rule has to close -- a group
-    // must not become a room where a restricted pair can reach each other.
-    // Checking the whole roster costs one batched lookup and makes the
-    // guarantee hold for legacy threads too.
-    const currentMemberIds = (
-      await this.prisma.conversationParticipant.findMany({
-        where: { conversationId: realConvId, leftAt: null },
-        select: { userId: true },
-      })
-    ).map((m) => m.userId);
-    await this.studentYearPolicy.assertCanInteract(
-      targetUserId,
-      Array.from(new Set([requesterId, ...currentMemberIds])),
-      'messaging',
     );
 
     // Block enforcement: don't let a member pull someone they've blocked (or who

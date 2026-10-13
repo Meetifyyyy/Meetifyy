@@ -39,7 +39,15 @@ import { StorageService } from '../uploads/uploads.service';
 import { MediaCleanupService } from '../uploads/media-cleanup.service';
 import { MentionDto } from '../common/dto/mention.dto';
 import { ContentDeletionAuthorizer } from './content-deletion.authorizer';
-import { StudentYearPolicyService } from '../common/student-year/student-year-policy.service';
+import { randomUUID } from 'crypto';
+import { extractHashtags } from './hashtags.util';
+import type Redis from 'ioredis';
+import { config } from '../config';
+import {
+  arrangeRankedFeed,
+  parseRankedCursor,
+  rankedCursor,
+} from './feed-ranking';
 
 /**
  * The longest a single poll option may be.
@@ -77,6 +85,42 @@ interface FormattablePost {
   userVotedOptionId?: string | null;
   pollVotes?: Array<{ optionId: string }> | null;
 }
+
+/** One row of the For You ranking query in `buildRankedSession`. */
+interface RankedSqlRow {
+  id: string;
+  authorId: string;
+  createdAt: Date;
+  followsAuthor: boolean;
+  isOwn: boolean;
+  score: number;
+}
+
+/** A ranked order cached in Redis for one feed session. */
+interface RankedSession {
+  ids: string[];
+  /** Chronological cursor the feed continues from after the last id. */
+  continueFrom: string | null;
+}
+
+function parseRankedSession(raw: string): RankedSession | null {
+  try {
+    const value: unknown = JSON.parse(raw);
+    if (
+      isRecord(value) &&
+      Array.isArray(value.ids) &&
+      value.ids.every((id) => typeof id === 'string') &&
+      (value.continueFrom === null || typeof value.continueFrom === 'string')
+    ) {
+      return { ids: value.ids, continueFrom: value.continueFrom };
+    }
+  } catch {
+    // Unreadable entry: treated as expired, a new ranking is built.
+  }
+  return null;
+}
+
+type FeedPage = Awaited<ReturnType<PostsService['getChronologicalFeed']>>;
 
 /** One row of the raw-SQL feed query in `getFeed` (see its SELECT list). */
 interface FeedSqlRow {
@@ -146,10 +190,6 @@ export class PostsService {
     private readonly mentionsService: MentionsService,
     private readonly storageService: StorageService,
     private readonly contentDeletionAuthorizer: ContentDeletionAuthorizer,
-    // First-year isolation. A post is content authored by a student, so the
-    // feed applies the same rule the activity feed does -- judged on the
-    // AUTHOR, in the query.
-    private readonly studentYearPolicy: StudentYearPolicyService,
     @Optional() private readonly mediaCleanupService?: MediaCleanupService,
   ) {}
 
@@ -375,6 +415,8 @@ export class PostsService {
         },
       },
     });
+
+    await this.saveHashtags(post.id, text);
 
     if (allMediaKeys.length > 0) {
       await Promise.all(
@@ -764,11 +806,288 @@ export class PostsService {
     }
   }
 
+  /**
+   * Indexes a new post's hashtags. Nothing wrote `PostHashtag` before this,
+   * so the tables trending and hashtag search read were always empty.
+   *
+   * A failure here is logged, never thrown: the post is already committed,
+   * and losing its tags is better than telling the author it failed.
+   */
+  private async saveHashtags(postId: string, text: string): Promise<void> {
+    const names = extractHashtags(text);
+    if (names.length === 0) return;
+    try {
+      await this.prisma.hashtag.createMany({
+        data: names.map((name) => ({ name })),
+        skipDuplicates: true,
+      });
+      const tags = await this.prisma.hashtag.findMany({
+        where: { name: { in: names } },
+        select: { id: true },
+      });
+      const ids = tags.map((t) => t.id);
+      await this.prisma.$transaction([
+        this.prisma.postHashtag.createMany({
+          data: ids.map((hashtagId) => ({ postId, hashtagId })),
+          skipDuplicates: true,
+        }),
+        this.prisma.hashtag.updateMany({
+          where: { id: { in: ids } },
+          data: { postCount: { increment: 1 } },
+        }),
+      ]);
+    } catch (err: unknown) {
+      this.logger.error(
+        `saveHashtags failed for post ${postId}: ${errorMessage(err)}`,
+      );
+    }
+  }
+
+  /**
+   * The home and community feeds.
+   *
+   * The home feed is ranked ("For You") when `config.features.feedRanking` is
+   * on and Redis is reachable; every other case — a community feed, no
+   * viewer, the flag off, Redis down, or a chronological cursor — is the
+   * chronological feed, unchanged. The response shape is the same either way,
+   * so an installed app needs no update to receive the ranked order.
+   */
   async getFeed(
     userId: string,
     limit = 10,
     cursor?: string,
     communityId?: string,
+  ): Promise<FeedPage> {
+    const redis = this.redisService.getClient();
+    const ranked = parseRankedCursor(cursor);
+    if (
+      !communityId &&
+      userId &&
+      redis &&
+      config.features.feedRanking &&
+      (cursor === undefined || cursor === '' || ranked)
+    ) {
+      return this.getRankedFeed(redis, userId, limit, ranked);
+    }
+    return this.getChronologicalFeed(userId, limit, cursor, communityId);
+  }
+
+  /**
+   * How far back the ranked window reaches, and how many posts it may hold.
+   * Past either bound the feed continues chronologically from the oldest
+   * ranked post, so nothing in or beyond the window is skipped.
+   */
+  private static readonly RANK_WINDOW_DAYS = 7;
+  private static readonly RANK_CANDIDATES = 300;
+  /** How long a ranked order is kept for paging through. */
+  private static readonly RANK_SESSION_TTL_S = 30 * 60;
+  /** A first-page request this soon after the last one reuses its order, so
+   *  React Query refetching every loaded page in sequence (page 1 with no
+   *  cursor, then the stored ranked cursors) sees one consistent list. */
+  private static readonly RANK_REUSE_TTL_S = 120;
+
+  private async getRankedFeed(
+    redis: Redis,
+    userId: string,
+    limit: number,
+    cursor: { sessionId: string; offset: number } | null,
+  ): Promise<FeedPage> {
+    const pointerKey = `feed:ranked:v1:${userId}:current`;
+    const sessionKey = (sid: string) => `feed:ranked:v1:${userId}:${sid}`;
+
+    let sessionId = cursor?.sessionId;
+    let offset = cursor?.offset ?? 0;
+    let order: RankedSession | null = null;
+
+    if (!sessionId) sessionId = (await redis.get(pointerKey)) ?? undefined;
+    if (sessionId) {
+      const raw = await redis.get(sessionKey(sessionId));
+      order = raw ? parseRankedSession(raw) : null;
+    }
+    if (!order || !sessionId) {
+      if (cursor) {
+        // Mid-scroll, the session expired. Starting a new ranking here would
+        // repeat what the viewer already saw, so continue chronologically
+        // from the top of the window instead. Rare: the TTL is 30 minutes.
+        return this.getChronologicalFeed(userId, limit, undefined, undefined);
+      }
+      order = await this.buildRankedSession(userId);
+      sessionId = randomUUID();
+      offset = 0;
+      await redis.set(
+        sessionKey(sessionId),
+        JSON.stringify(order),
+        'EX',
+        PostsService.RANK_SESSION_TTL_S,
+      );
+    }
+    const sid: string = sessionId;
+    if (!cursor) {
+      await redis.set(pointerKey, sid, 'EX', PostsService.RANK_REUSE_TTL_S);
+    }
+
+    const pageIds = order.ids.slice(offset, offset + limit);
+    const nextOffset = offset + pageIds.length;
+    let nextCursor: string | undefined;
+    if (nextOffset < order.ids.length) {
+      nextCursor = rankedCursor(sid, nextOffset);
+    } else if (order.continueFrom) {
+      // The chronological cursor format getChronologicalFeed parses.
+      nextCursor = order.continueFrom;
+    }
+
+    if (pageIds.length === 0) {
+      return nextCursor
+        ? this.getChronologicalFeed(userId, limit, nextCursor, undefined)
+        : { posts: [], nextCursor: undefined };
+    }
+
+    // Loaded through the chronological query restricted to these ids, so a
+    // post deleted or hidden since the ranking was built simply drops out, and
+    // every visibility rule is applied exactly as it is everywhere else.
+    const page = await this.getChronologicalFeed(
+      userId,
+      pageIds.length,
+      undefined,
+      undefined,
+      pageIds,
+    );
+    const position = new Map(pageIds.map((id, i) => [id, i]));
+    page.posts.sort(
+      (a, b) => (position.get(a.id) ?? 0) - (position.get(b.id) ?? 0),
+    );
+    return { posts: page.posts, nextCursor };
+  }
+
+  /**
+   * Scores the viewer's ranked window in one query.
+   *
+   *   score = freshness × (1 + relationship + interest + engagement)
+   *
+   * Freshness multiplies rather than adds, so no amount of engagement keeps a
+   * week-old post above today's. Engagement is log-damped so one viral post
+   * cannot flood every feed. The candidate filters mirror the chronological
+   * feed's; the page load re-applies them all regardless (see above).
+   */
+  private async buildRankedSession(userId: string): Promise<RankedSession> {
+    const excludedUserIds = await this.blocksService.getExcludedUserIds(userId);
+    const since = new Date(
+      Date.now() - PostsService.RANK_WINDOW_DAYS * 24 * 60 * 60 * 1000,
+    );
+    const rows = await this.prisma.$queryRaw<RankedSqlRow[]>`
+      WITH me AS (
+        SELECT "id", "collegeId",
+          ARRAY(SELECT DISTINCT lower(trim(i)) FROM unnest("interests") i) AS "interests"
+        FROM "User" WHERE "id" = ${userId} LIMIT 1
+      ),
+      candidates AS (
+        SELECT p.id, p."authorId", p."communityId", p."createdAt",
+               p."likeCount", p."commentCount"
+        FROM "Post" p
+        JOIN "User" u ON u.id = p."authorId"
+        LEFT JOIN "Community" c ON c.id = p."communityId"
+        WHERE p."deletedAt" IS NULL
+          AND p."createdAt" >= ${since}
+          AND u."deletedAt" IS NULL
+          AND (p."communityId" IS NULL OR (
+            c."deletedAt" IS NULL AND EXISTS (
+              SELECT 1 FROM "CommunityMember" cm
+              WHERE cm."communityId" = p."communityId" AND cm."userId" = ${userId}
+            )
+          ))
+          ${excludedUserIds.length > 0 ? Prisma.sql`AND p."authorId" NOT IN (${Prisma.join(excludedUserIds)})` : Prisma.empty}
+        ORDER BY p."createdAt" DESC, p.id DESC
+        LIMIT ${PostsService.RANK_CANDIDATES}
+      )
+      SELECT
+        cd.id,
+        cd."authorId",
+        cd."createdAt",
+        EXISTS (
+          SELECT 1 FROM "Follow" f
+          WHERE f."followerId" = me.id AND f."followingId" = cd."authorId"
+        ) AS "followsAuthor",
+        (cd."authorId" = me.id) AS "isOwn",
+        (
+          1.0 / power(EXTRACT(EPOCH FROM (now() - cd."createdAt")) / 3600.0 + 2, 1.5)
+        ) * (
+          1
+          -- Relationship: whose post it is.
+          + CASE WHEN EXISTS (
+              SELECT 1 FROM "Follow" f
+              WHERE f."followerId" = me.id AND f."followingId" = cd."authorId"
+            ) THEN 3.0 ELSE 0 END
+          + CASE WHEN cd."communityId" IS NOT NULL THEN 1.5 ELSE 0 END
+          + CASE WHEN me."collegeId" IS NOT NULL AND au."collegeId" = me."collegeId"
+              THEN 1.0 ELSE 0 END
+          -- How much the viewer actually interacts with the author (0..1,
+          -- precomputed by the ranking worker). The close-friends signal: the
+          -- people you like, comment on and message rise above the people you
+          -- merely follow. Absent until the first rebuild, which is fine.
+          + 3.0 * COALESCE(ua."score", 0)
+          -- Interest: the post's hashtags against the viewer's interests,
+          -- then the author's interests against the viewer's.
+          + 1.5 * LEAST((
+              SELECT COUNT(*) FROM "PostHashtag" ph
+              JOIN "Hashtag" h ON h.id = ph."hashtagId"
+              WHERE ph."postId" = cd.id AND lower(h.name) = ANY(me."interests")
+            ), 2) / 2.0
+          + 1.0 * LEAST((
+              SELECT COUNT(*) FROM (
+                SELECT DISTINCT lower(trim(i)) FROM unnest(au."interests") i
+                INTERSECT SELECT unnest(me."interests")
+              ) x
+            ), 3) / 3.0
+          -- Engagement, log-damped and capped; comments are worth more than
+          -- likes. The cap is what keeps "friends first": no amount of
+          -- popularity outweighs the 3.0 a close friend's post carries.
+          + LEAST(0.35 * ln(1 + cd."likeCount" + 2 * cd."commentCount"), 1.5)
+        ) * 100 AS "score"
+      FROM candidates cd
+      JOIN "User" au ON au.id = cd."authorId"
+      CROSS JOIN me
+      LEFT JOIN "UserAffinity" ua
+        ON ua."userId" = me.id AND ua."targetId" = cd."authorId"
+    `;
+
+    const ids = arrangeRankedFeed(
+      rows.map((r) => ({
+        id: r.id,
+        authorId: r.authorId,
+        createdAt: new Date(r.createdAt),
+        score: Number(r.score) || 0,
+        followsAuthor: !!r.followsAuthor,
+        isOwn: !!r.isOwn,
+      })),
+    );
+
+    // Continue chronologically below the oldest candidate. When the window
+    // was full that is its oldest post (nothing in the window is skipped);
+    // otherwise it is the window's start.
+    let continueFrom: string;
+    if (rows.length >= PostsService.RANK_CANDIDATES) {
+      const oldest = rows.reduce((a, b) =>
+        new Date(a.createdAt) < new Date(b.createdAt) ||
+        (new Date(a.createdAt).getTime() === new Date(b.createdAt).getTime() &&
+          a.id < b.id)
+          ? a
+          : b,
+      );
+      continueFrom = `${new Date(oldest.createdAt).toISOString()}|${oldest.id}`;
+    } else {
+      continueFrom = `${since.toISOString()}|`;
+    }
+    return { ids, continueFrom };
+  }
+
+  /** The chronological feed, and the loader the ranked feed pages through
+   *  (`restrictToIds`). Public only so `FeedPage` can name its return type. */
+  async getChronologicalFeed(
+    userId: string,
+    limit = 10,
+    cursor?: string,
+    communityId?: string,
+    restrictToIds?: string[],
   ) {
     if (communityId) {
       const community = await this.prisma.community.findUnique({
@@ -810,15 +1129,6 @@ export class PostsService {
     const excludedUserIds = userId
       ? await this.blocksService.getExcludedUserIds(userId)
       : [];
-
-    // First-year isolation, resolved once per page and pushed into the SQL
-    // below. The feed already joins "User" for the author card, so the
-    // predicate costs an index lookup, not a join.
-    const feedViewerBatch =
-      await this.studentYearPolicy.getBatchYearFor(userId);
-    const feedPolicyFilter = Prisma.raw(
-      `AND ${this.studentYearPolicy.visibleUserSqlPredicate('u', feedViewerBatch)}`,
-    );
 
     // Compound keyset cursor: "<iso>__<postId>". The trailing post id is a
     // stable tiebreaker so two posts sharing an exact createdAt (same
@@ -932,12 +1242,6 @@ export class PostsService {
       LEFT JOIN "College" col ON u."collegeId" = col.id
       LEFT JOIN "Community" c ON p."communityId" = c.id
       WHERE p."deletedAt" IS NULL
-        -- First-year isolation, judged on the post's AUTHOR. Applied here, in
-        -- the same WHERE as the availability and community rules, so a
-        -- restricted post is never fetched and the keyset page size stays
-        -- honest -- dropping rows afterwards would return short pages and let
-        -- the cursor skip posts that were never shown.
-        ${feedPolicyFilter}
         -- The author must still be an available account. A user inside their
         -- 30-day deletion window is hidden from everyone, so their posts go
         -- with them; the posts themselves are deliberately NOT soft-deleted at
@@ -967,6 +1271,7 @@ export class PostsService {
             : Prisma.empty
         }
         ${excludedUserIds.length > 0 ? Prisma.sql`AND p."authorId" NOT IN (${Prisma.join(excludedUserIds)})` : Prisma.empty}
+        ${restrictToIds ? Prisma.sql`AND p.id IN (${Prisma.join(restrictToIds)})` : Prisma.empty}
       ORDER BY p."createdAt" DESC, p.id DESC
       LIMIT ${fetchLimit};
     `;
@@ -1051,22 +1356,6 @@ export class PostsService {
     if (
       userId &&
       (await this.blocksService.isBlocked(userId, targetAuthor.id))
-    ) {
-      return { posts: [], nextCursor: undefined };
-    }
-
-    // First-year isolation, decided once for the whole author rather than
-    // per post: every row here has the same author, so an incompatible pair
-    // means the entire profile activity section is empty. Returning the same
-    // shape as the block case above keeps the two indistinguishable, so the
-    // endpoint cannot be used to tell "restricted" apart from "no posts".
-    if (
-      userId &&
-      !(await this.studentYearPolicy.canIdsInteract(
-        userId,
-        targetAuthor.id,
-        'activity_visibility',
-      ))
     ) {
       return { posts: [], nextCursor: undefined };
     }
@@ -2053,19 +2342,6 @@ export class PostsService {
       if (await this.blocksService.isBlocked(userId, post.authorId)) {
         throw new NotFoundException('Post not found');
       }
-      // First-year isolation, judged on the post's author and answering the
-      // same neutral 404 the block rule does. The feed already excludes the
-      // post; this closes the direct route to its comment thread, which is
-      // reachable by id from a deep link or a hand-built request.
-      if (
-        !(await this.studentYearPolicy.canIdsInteract(
-          userId,
-          post.authorId,
-          'activity_visibility',
-        ))
-      ) {
-        throw new NotFoundException('Post not found');
-      }
     }
 
     // Compound keyset cursor "<iso>|<commentId>" or legacy "<iso>__<commentId>"
@@ -2183,22 +2459,6 @@ export class PostsService {
       post.deletedAt ||
       (post.community && post.community.deletedAt) ||
       (excludedUserIds.length > 0 && excludedUserIds.includes(post.authorId))
-    ) {
-      throw new NotFoundException('Post not found');
-    }
-
-    // First-year isolation on the post DETAIL route, judged on the author.
-    // The feed filter keeps a restricted post out of every list; this closes
-    // the by-id route a deep link, a shared URL or a hand-built request takes.
-    // Same neutral 404 as the block case above, so the two are
-    // indistinguishable.
-    if (
-      userId &&
-      !(await this.studentYearPolicy.canIdsInteract(
-        userId,
-        post.authorId,
-        'activity_visibility',
-      ))
     ) {
       throw new NotFoundException('Post not found');
     }

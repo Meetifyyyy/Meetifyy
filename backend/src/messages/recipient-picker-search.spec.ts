@@ -7,7 +7,6 @@ import { MentionsService } from '../mentions/mentions.service';
 import { RedisService } from '../redis/redis.service';
 import { BlocksService } from '../users/blocks.service';
 import { verificationAccessMockProvider } from '../common/verification/testing/verification-access.mock';
-import { studentYearPolicyMockProvider } from '../common/student-year/testing/student-year-policy.mock';
 import { allowAllRateLimitProvider } from '../common/rate-limit/testing/rate-limit.mock';
 
 /**
@@ -17,7 +16,7 @@ import { allowAllRateLimitProvider } from '../common/rate-limit/testing/rate-lim
  * the browser, so a thread past that page could not be found however exactly
  * its name was typed. The fix moves the match into the database, and this
  * suite asserts on the emitted `where` rather than on the returned array —
- * for the same reason the isolation suites do. A service that fetched a page
+ * deliberately. A service that fetched a page
  * and filtered it in JavaScript would satisfy an assertion on the result and
  * still be wrong.
  */
@@ -57,15 +56,12 @@ describe('getUserConversations — picker search', () => {
   let service: MessagesService;
   let prisma: ReturnType<typeof makePrisma>;
 
-  const buildModule = async (
-    batchYears: Record<string, number | null> = {},
-  ) => {
+  const buildModule = async () => {
     const prismaFake = makePrisma();
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         allowAllRateLimitProvider(),
         verificationAccessMockProvider(),
-        studentYearPolicyMockProvider(batchYears),
         MessagesService,
         { provide: PrismaService, useValue: prismaFake },
         {
@@ -176,31 +172,20 @@ describe('getUserConversations — picker search', () => {
     expect(JSON.stringify(searchClause())).toContain('"hike"');
   });
 
-  it('keeps isolation and verification alongside the search, never instead', async () => {
-    // A first-year viewer searching: the search narrows, it must not replace
-    // the filters that decide who is reachable at all. Both live in the same
-    // `AND`, so neither can overwrite the other.
-    await buildModule({ viewer: 2026 });
+  it('keeps verification alongside the search, never instead', async () => {
+    // The search narrows, it must not replace the filters that decide who is
+    // reachable at all. Both live in the same `AND`, so neither can overwrite
+    // the other.
+    await buildModule();
     await service.getUserConversations('viewer', 50, 0, true, 'senior');
 
     const and = emittedAnd();
     const serialised = JSON.stringify(and);
 
     expect(serialised).toContain('verificationStatus');
-    expect(serialised).toContain('batchYear');
     expect(serialised).toContain('senior');
-
-    // Isolation is expressed as `none` over the incompatible set — never
-    // `every` over the compatible one, which is not NULL-safe.
-    expect(serialised).toContain('"none"');
-    expect(serialised).not.toContain('"every"');
-  });
-
-  it('still filters a first-year viewer when the search box is empty', async () => {
-    await buildModule({ viewer: 2026 });
-    await service.getUserConversations('viewer', 50, 0, false);
-
-    expect(JSON.stringify(emittedAnd())).toContain('batchYear');
+    // A first-year isolation clause no longer exists.
+    expect(serialised).not.toContain('batchYear');
   });
 
   it('scopes the cache entry by term, so two searches are two lists', async () => {

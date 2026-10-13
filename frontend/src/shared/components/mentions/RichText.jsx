@@ -7,6 +7,7 @@ import {
   splitTrailingPunctuation,
   truncateUrlLabel,
 } from '@shared/utils/postLinks';
+import { hashtagSearchPath, splitHashtags } from '@shared/utils/hashtags';
 import styles from './RichText.module.css';
 import { useUsersMap } from '@shared/hooks/useUsersMap';
 
@@ -41,7 +42,7 @@ export function markMatches(text, term, keyPrefix, markClass) {
   return out;
 }
 
-export default function RichText({ content = '', mentions = [], className = '', urlLimit = 50, highlight = '' }) {
+export default function RichText({ content = '', mentions = [], className = '', urlLimit = 50, highlight = '', linkHashtags = false }) {
   const navigate = useNavigate();
   // useUsersMap() always returns an object, so the `= {}` default is no longer needed.
   const users = useUsersMap();
@@ -60,6 +61,43 @@ export default function RichText({ content = '', mentions = [], className = '', 
     if (username) {
       navigate(`/profile/${username}`);
     }
+  };
+
+  /**
+   * Plain text, with search hits marked and — where `linkHashtags` is on —
+   * each #hashtag turned into a link to the posts carrying it. Runs only on
+   * text outside URLs, so a URL's `#fragment` stays part of the URL.
+   */
+  const renderPlain = (text, keyPrefix) => {
+    if (!linkHashtags) return markMatches(text, highlight, keyPrefix, styles.searchHit);
+    const parts = splitHashtags(text);
+    if (parts.length === 1 && !parts[0].tag) {
+      return markMatches(text, highlight, keyPrefix, styles.searchHit);
+    }
+    return parts.map((part, i) =>
+      part.tag ? (
+        <span
+          key={`${keyPrefix}-tag-${i}`}
+          className={styles.hashtagLink}
+          role="link"
+          tabIndex={0}
+          onClick={(e) => {
+            e.stopPropagation();
+            navigate(hashtagSearchPath(part.tag));
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.stopPropagation();
+              navigate(hashtagSearchPath(part.tag));
+            }
+          }}
+        >
+          {markMatches(part.text, highlight, `${keyPrefix}-tag-${i}`, styles.searchHit)}
+        </span>
+      ) : (
+        markMatches(part.text, highlight, `${keyPrefix}-txt-${i}`, styles.searchHit)
+      )
+    );
   };
 
   /**
@@ -90,7 +128,7 @@ export default function RichText({ content = '', mentions = [], className = '', 
       const href = resolveHref(url);
 
       if (match.index > cursor) {
-        out.push(markMatches(text.slice(cursor, match.index), highlight, `${keyPrefix}-${cursor}`, styles.searchHit));
+        out.push(renderPlain(text.slice(cursor, match.index), `${keyPrefix}-${cursor}`));
       }
 
       if (href) {
@@ -123,9 +161,9 @@ export default function RichText({ content = '', mentions = [], className = '', 
       cursor = match.index + raw.length;
     }
 
-    if (cursor === 0) return markMatches(text, highlight, keyPrefix, styles.searchHit);
+    if (cursor === 0) return renderPlain(text, keyPrefix);
     if (cursor < text.length) {
-      out.push(markMatches(text.slice(cursor), highlight, `${keyPrefix}-${cursor}-tail`, styles.searchHit));
+      out.push(renderPlain(text.slice(cursor), `${keyPrefix}-${cursor}-tail`));
     }
     return out;
   };

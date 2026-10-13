@@ -6,6 +6,7 @@ import CalendarIcon from '@shared/components/ui/CalendarIcon';
 import styles from './NotificationItem.module.css';
 import { getMediaUrl } from '@shared/api/apiClient';
 import { DEFAULT_ACTIVITY_COVERS, getDefaultActivityCover } from '@shared/utils/activityCover';
+import { othersLabel } from '../utils/groupNotifications';
 
 function NotificationItem({
   notif,
@@ -72,6 +73,8 @@ function NotificationItem({
     systemKind === 'content_removed' || systemKind === 'moderator_promotion';
 
   const isRead = notif.read === true || !!notif.readAt;
+  // "and 4 others", for a row standing in for several notifications.
+  const others = othersLabel(notif.groupCount);
 
   let avatarSrc;
   if (actor?.isLive || actor?.hasActor) {
@@ -146,7 +149,9 @@ function NotificationItem({
               >
                 {actorName}
               </span>
-              <span className={styles.text}>{isActivityInvite ? 'invited you to join.' : 'joined the activity.'}</span>
+              <span className={styles.text}>
+                {others && `${others} `}{isActivityInvite ? 'invited you to join.' : 'joined the activity.'}
+              </span>
             </div>
           </>
         ) : (
@@ -167,7 +172,7 @@ function NotificationItem({
                 >
                   {actorName}
                 </span>
-                <span className={styles.text}>{displayText}</span>
+                <span className={styles.text}>{others && `${others} `}{displayText}</span>
               </>
             )}
             <span className={styles.time}>• {timeStr}</span>

@@ -2,6 +2,7 @@ import {
   extractBatchYearFromEmail,
   extractProgrammeFromEmail,
   isPlausibleBatchYear,
+  deriveBatchYearForStorage,
 } from './batch-year.util';
 
 describe('extractBatchYearFromEmail', () => {
@@ -141,5 +142,17 @@ describe('isPlausibleBatchYear', () => {
     expect(isPlausibleBatchYear(null, 2026)).toBe(false);
     expect(isPlausibleBatchYear(undefined, 2026)).toBe(false);
     expect(isPlausibleBatchYear(2026.5, 2026)).toBe(false);
+  });
+});
+
+describe('deriveBatchYearForStorage', () => {
+  it('stores a plausible parsed batch', () => {
+    expect(deriveBatchYearForStorage('a.b_cs25@gla.ac.in', 2026)).toBe(2025);
+  });
+
+  it('stores null for an unparseable or implausible address', () => {
+    expect(deriveBatchYearForStorage('someone@gmail.com', 2026)).toBeNull();
+    expect(deriveBatchYearForStorage('a.b_cs99@gla.ac.in', 2026)).toBeNull();
+    expect(deriveBatchYearForStorage(null, 2026)).toBeNull();
   });
 });

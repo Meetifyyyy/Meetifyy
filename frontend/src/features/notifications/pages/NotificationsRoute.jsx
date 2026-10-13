@@ -20,6 +20,7 @@ import { useUsersMap } from '@shared/hooks/useUsersMap';
 
 import { requestOpenInstantMatchChat } from '@features/instant-match/context/InstantMatchContext';
 import { isInstantChatNotification } from '@shared/utils/instantChatRouting';
+import { groupNotifications } from '../utils/groupNotifications';
 import {
   INVITE_STATUS,
   inviteFromNotification,
@@ -310,7 +311,16 @@ export default function NotificationsRoute() {
   const retry = () => {};
 
   const handleClick = useCallback((notif) => {
-    markAsRead(notif.id);
+    // A grouped row stands for several notifications; opening it reads them
+    // all. Only the unread ones are sent, so re-opening costs nothing.
+    if (Array.isArray(notif.groupIds)) {
+      for (const id of notif.groupIds) {
+        const member = loadedNotifications?.find((m) => m.id === id);
+        if (!member || !(member.read === true || member.readAt)) markAsRead(id);
+      }
+    } else {
+      markAsRead(notif.id);
+    }
 
     const type = (notif.type || '').toUpperCase();
     const actorUsername = notif.actor?.username || notif.metadata?.username || notif.targetUsername;
@@ -413,7 +423,7 @@ export default function NotificationsRoute() {
         }
         break;
     }
-  }, [markAsRead, navigate, setActiveTab]);
+  }, [markAsRead, navigate, setActiveTab, loadedNotifications]);
 
   const groupedNotifications = useMemo(() => {
     if (!loadedNotifications) return [];
@@ -444,11 +454,13 @@ export default function NotificationsRoute() {
       }
     });
 
+    // Within each section, likes on one post, follows, etc. collapse into one
+    // row ("Asha and 4 others liked your post"). See groupNotifications.
     return [
-      { title: 'Today', key: 'today', items: groups.today },
-      { title: 'Yesterday', key: 'yesterday', items: groups.yesterday },
-      { title: 'This week', key: 'thisWeek', items: groups.thisWeek },
-      { title: 'Earlier', key: 'earlier', items: groups.earlier }
+      { title: 'Today', key: 'today', items: groupNotifications(groups.today) },
+      { title: 'Yesterday', key: 'yesterday', items: groupNotifications(groups.yesterday) },
+      { title: 'This week', key: 'thisWeek', items: groupNotifications(groups.thisWeek) },
+      { title: 'Earlier', key: 'earlier', items: groupNotifications(groups.earlier) }
     ].filter(g => g.items.length > 0);
   }, [loadedNotifications]);
 

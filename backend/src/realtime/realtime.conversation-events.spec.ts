@@ -3,7 +3,6 @@ import { ValidationPipe } from '@nestjs/common';
 import { RealtimeGateway } from './realtime.gateway';
 import { SendMessageDto } from '../messages/core/dto/send-message.dto';
 import { createVerificationAccessMock } from '../common/verification/testing/verification-access.mock';
-import { createStudentYearPolicyMock } from '../common/student-year/testing/student-year-policy.mock';
 import { createLegalConsentMock } from '../common/legal/testing/legal-consent.mock';
 import { allowAllRateLimit } from '../common/rate-limit/testing/rate-limit.mock';
 import { stub } from '../common/testing/stub';
@@ -77,7 +76,6 @@ function build() {
       getExcludedUserIds: jest.fn().mockResolvedValue([]),
     }),
     createVerificationAccessMock(),
-    createStudentYearPolicyMock(),
     allowAllRateLimit(),
     createLegalConsentMock(),
     undefined,

@@ -3,7 +3,6 @@ import type { PrismaService } from '../prisma/prisma.service';
 import type { SupabaseService } from '../supabase/supabase.service';
 import type { DomainValidatorService } from '../common/services/domain-validator.service';
 import type { DefaultAssetsService } from '../uploads/default-assets.service';
-import { createStudentYearPolicyMock } from '../common/student-year/testing/student-year-policy.mock';
 import { createLegalConsentMock } from '../common/legal/testing/legal-consent.mock';
 import { stub } from '../common/testing/stub';
 
@@ -11,9 +10,7 @@ import { stub } from '../common/testing/stub';
  * The first sync of a brand-new account.
  *
  * It used to answer with the Prisma row it had just written: every column,
- * purge bookkeeping included, and none of `meta` or `isFirstYearStudent`. A
- * new first-year student was therefore drawn as unrestricted until the next
- * sync. It now reads the row back through the same query and builder every
+ * purge bookkeeping included, and none of `meta`. It now reads the row back through the same query and builder every
  * later sync uses, so the two responses cannot drift apart.
  */
 const USER_ID = 'user-new';
@@ -101,7 +98,6 @@ describe('AuthService.syncProfile — a new account', () => {
         }),
       }),
       stub<DefaultAssetsService>({ refFor: () => null }),
-      createStudentYearPolicyMock(),
       createLegalConsentMock(),
     );
   };
@@ -127,7 +123,8 @@ describe('AuthService.syncProfile — a new account', () => {
   it('answers with the curated profile, not the database row', async () => {
     const profile = await build().syncProfile(VERIFIED_SIGNUP);
 
-    expect(profile).toHaveProperty('isFirstYearStudent');
+    // Kept, always false, for installed apps' frozen frontends.
+    expect(profile.isFirstYearStudent).toBe(false);
     expect(profile.meta).toEqual({
       postBookmarkIds: [],
       activityBookmarkIds: [],

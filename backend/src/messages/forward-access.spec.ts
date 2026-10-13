@@ -10,7 +10,6 @@ import { MentionsService } from '../mentions/mentions.service';
 import { RedisService } from '../redis/redis.service';
 import { BlocksService } from '../users/blocks.service';
 import { verificationAccessMockProvider } from '../common/verification/testing/verification-access.mock';
-import { studentYearPolicyMockProvider } from '../common/student-year/testing/student-year-policy.mock';
 import { allowAllRateLimitProvider } from '../common/rate-limit/testing/rate-limit.mock';
 
 /**
@@ -106,7 +105,6 @@ describe.each(services)('forwardMessage access — %s', (_name, ServiceClass) =>
       providers: [
         allowAllRateLimitProvider(),
         verificationAccessMockProvider(),
-        studentYearPolicyMockProvider({}),
         ServiceClass,
         { provide: PrismaService, useValue: prisma },
         {

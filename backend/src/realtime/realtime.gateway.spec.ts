@@ -1,6 +1,5 @@
 import { RealtimeGateway } from './realtime.gateway';
 import { createVerificationAccessMock } from '../common/verification/testing/verification-access.mock';
-import { createStudentYearPolicyMock } from '../common/student-year/testing/student-year-policy.mock';
 import { createLegalConsentMock } from '../common/legal/testing/legal-consent.mock';
 import type { Stub } from '../common/testing/stub';
 import type { MessagesService } from '../messages/messages.service';
@@ -113,7 +112,6 @@ describe('RealtimeGateway — Authentication', () => {
       communities: communitiesService,
       blocks: blocksService,
       verificationAccess,
-      studentYearPolicy: createStudentYearPolicyMock(),
       // The socket applies the same mandatory-acknowledgement gate the REST
       // routes do. Defaults to satisfied, which is this suite's subject.
       legalConsent: createLegalConsentMock(),
@@ -254,7 +252,6 @@ describe('RealtimeGateway — Authentication', () => {
       communities: communitiesService,
       blocks: blocksService,
       verificationAccess,
-      studentYearPolicy: createStudentYearPolicyMock(),
       legalConsent: createLegalConsentMock({ satisfied: false }),
       jwtGuard,
     });
@@ -296,7 +293,7 @@ describe('RealtimeGateway — Authentication', () => {
  * `comment.created`, which includes the comment body and its author, so any
  * authenticated socket could name any post id and read its comments live —
  * including posts whose REST route answers a neutral 404 because the author is
- * blocked or hidden by first-year isolation.
+ * blocked.
  */
 describe('RealtimeGateway — room join authorization', () => {
   let gateway: RealtimeGateway;
@@ -308,7 +305,6 @@ describe('RealtimeGateway — room join authorization', () => {
     conversationParticipant: { findMany: jest.Mock };
   };
   let blocksService: { getExcludedUserIds: jest.Mock };
-  let yearPolicy: ReturnType<typeof createStudentYearPolicyMock>;
 
   const socket = () =>
     fakeSocket({
@@ -327,8 +323,6 @@ describe('RealtimeGateway — room join authorization', () => {
       conversationParticipant: { findMany: jest.fn().mockResolvedValue([]) },
     };
     blocksService = { getExcludedUserIds: jest.fn().mockResolvedValue([]) };
-    yearPolicy = createStudentYearPolicyMock();
-    yearPolicy.canIdsInteract = jest.fn().mockResolvedValue(true);
 
     gateway = buildGateway({
       supabase: {
@@ -344,7 +338,6 @@ describe('RealtimeGateway — room join authorization', () => {
       communities: { countOnlineMembers: jest.fn().mockResolvedValue(0) },
       blocks: blocksService,
       verificationAccess: createVerificationAccessMock(),
-      studentYearPolicy: yearPolicy,
       legalConsent: createLegalConsentMock(),
       jwtGuard: { validateToken: jest.fn() },
     });
@@ -367,17 +360,6 @@ describe('RealtimeGateway — room join authorization', () => {
         community: null,
       });
       blocksService.getExcludedUserIds.mockResolvedValue(['author']);
-      const client = socket();
-      await gateway.handlePostJoin(client, { postId: 'p1' });
-      expect(client.join).not.toHaveBeenCalled();
-    });
-
-    it('refuses a post hidden by first-year isolation', async () => {
-      prisma.post.findFirst.mockResolvedValue({
-        authorId: 'author',
-        community: null,
-      });
-      yearPolicy.canIdsInteract.mockResolvedValue(false);
       const client = socket();
       await gateway.handlePostJoin(client, { postId: 'p1' });
       expect(client.join).not.toHaveBeenCalled();
@@ -499,7 +481,6 @@ describe('RealtimeGateway — cookie handshake', () => {
       },
       redis: { getClient: jest.fn() },
       verificationAccess: createVerificationAccessMock(),
-      studentYearPolicy: createStudentYearPolicyMock(),
       legalConsent: createLegalConsentMock(),
       jwtGuard,
     });
@@ -585,7 +566,6 @@ describe('RealtimeGateway — session binding on the handshake', () => {
       },
       redis: { getClient: jest.fn() },
       verificationAccess: createVerificationAccessMock(),
-      studentYearPolicy: createStudentYearPolicyMock(),
       legalConsent: createLegalConsentMock(),
       jwtGuard,
     });

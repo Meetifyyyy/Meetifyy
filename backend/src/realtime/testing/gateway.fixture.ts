@@ -11,20 +11,18 @@ import type { ActivityAuthorizationService } from '../../activities/activity-aut
 import type { CommunitiesService } from '../../communities/communities.service';
 import type { BlocksService } from '../../users/blocks.service';
 import type { VerificationAccessService } from '../../common/verification/verification-access.service';
-import type { StudentYearPolicyService } from '../../common/student-year/student-year-policy.service';
 import type { RateLimitService } from '../../common/rate-limit/rate-limit.service';
 import type { LegalConsentService } from '../../common/legal/legal-consent.service';
 import type { JwtGuard } from '../../common/guards/jwt.guard';
 import { stub, type Stub } from '../../common/testing/stub';
 import { createVerificationAccessMock } from '../../common/verification/testing/verification-access.mock';
-import { createStudentYearPolicyMock } from '../../common/student-year/testing/student-year-policy.mock';
 import { createLegalConsentMock } from '../../common/legal/testing/legal-consent.mock';
 import { allowAllRateLimit } from '../../common/rate-limit/testing/rate-limit.mock';
 
 /**
- * The gateway's fifteen constructor dependencies, by name. Any left out is an
- * empty stand-in, except the four shared policies, which default to their
- * permissive testing mocks (verified, same cohort, unlimited, consented).
+ * The gateway's fourteen constructor dependencies, by name. Any left out is an
+ * empty stand-in, except the three shared policies, which default to their
+ * permissive testing mocks (verified, unlimited, consented).
  */
 export interface GatewayDependencies {
   supabase?: Stub<SupabaseService>;
@@ -38,7 +36,6 @@ export interface GatewayDependencies {
   communities?: Stub<CommunitiesService>;
   blocks?: Stub<BlocksService>;
   verificationAccess?: VerificationAccessService;
-  studentYearPolicy?: StudentYearPolicyService;
   rateLimit?: RateLimitService;
   legalConsent?: LegalConsentService;
   jwtGuard?: Stub<JwtGuard>;
@@ -57,7 +54,6 @@ export function buildGateway(deps: GatewayDependencies = {}): RealtimeGateway {
     stub<CommunitiesService>(deps.communities),
     stub<BlocksService>(deps.blocks),
     deps.verificationAccess ?? createVerificationAccessMock(),
-    deps.studentYearPolicy ?? createStudentYearPolicyMock(),
     deps.rateLimit ?? allowAllRateLimit(),
     deps.legalConsent ?? createLegalConsentMock(),
     stub<JwtGuard>(deps.jwtGuard),

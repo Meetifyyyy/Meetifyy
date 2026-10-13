@@ -1,4 +1,8 @@
 import {
+  MIN_INTEREST_LENGTH,
+  countInterestMatches,
+} from '../common/utils/interest-match.util';
+import {
   Injectable,
   NotFoundException,
   BadRequestException,
@@ -19,7 +23,6 @@ import {
   ActivityAuthorizationService,
   UserAuthContext,
 } from './activity-authorization.service';
-import { StudentYearPolicyService } from '../common/student-year/student-year-policy.service';
 import type { UserIdentityLike } from '../common/users/deleted-user';
 import {
   isUnavailableUser,
@@ -153,11 +156,6 @@ export class ActivitiesService implements OnModuleInit {
     private readonly blocksService: BlocksService,
     private readonly domainEventService: DomainEventService,
     private readonly activityAuthorizationService: ActivityAuthorizationService,
-    // First-year isolation. Required, not optional: the activity feed is the
-    // surface the policy is strictest about, and the filters run through
-    // ActivityAuthorizationService, which needs this viewer context to be
-    // resolved correctly or it silently widens.
-    private readonly studentYearPolicy: StudentYearPolicyService,
     @Optional() private readonly redisService?: RedisService,
     @Optional()
     @InjectQueue(NOTIFICATIONS_QUEUE)
@@ -432,21 +430,9 @@ export class ActivitiesService implements OnModuleInit {
       select: {
         id: true,
         collegeId: true,
-        // First-year isolation. Selected here, on the one lookup that already
-        // runs per request, so the activity policy never has to resolve it per
-        // activity -- which is what an N+1 would look like on a feed page.
-        batchYear: true,
-        email: true,
-        collegeEmail: true,
       },
     });
-    return u
-      ? {
-          id: u.id,
-          collegeId: u.collegeId,
-          batchYear: this.studentYearPolicy.getUserBatchYear(u),
-        }
-      : null;
+    return u ? { id: u.id, collegeId: u.collegeId } : null;
   }
 
   /**
@@ -535,21 +521,7 @@ export class ActivitiesService implements OnModuleInit {
 
     // The audience tag pins every SHARED page to the college allowed to see it,
     // so a page built for one college can never be served to another.
-    //
-    // It carries the ISOLATION BUCKET as well as the college, because
-    // `sharedAudienceWhere` now filters on the viewer's batch too. Without
-    // this half of the tag, the first page a first-year student requested
-    // would be written under their college's key and then served to the whole
-    // campus -- handing every senior a feed of first-year activities, and
-    // vice versa. The bucket, not the batch year, is what the query actually
-    // discriminates on, so two seniors from different intakes still share a
-    // page and the cache stays effective.
-    const isolationTag = this.studentYearPolicy.isEnforcementEnabled()
-      ? this.studentYearPolicy.isFirstYearBatch(viewer?.batchYear ?? null)
-        ? 'fy'
-        : 'nfy'
-      : 'off';
-    const audienceTag = `aud:${viewer?.collegeId || 'none'}:${isolationTag}`;
+    const audienceTag = `aud:${viewer?.collegeId || 'none'}`;
     const scopeTag = isCollegeScope ? `${scope}:${scopeCollegeId}` : scope;
 
     // A shared page is only sound for viewers with the same audience tag, no
@@ -880,6 +852,9 @@ export class ActivitiesService implements OnModuleInit {
     startsSoonMax: 800,
     startsSoonWindowDays: 14,
     hasRoom: 300,
+    // Larger than every positive weight combined, so an answered activity
+    // always sorts after every unanswered one.
+    alreadyAnswered: -100000,
   };
 
   /**
@@ -941,33 +916,100 @@ export class ActivitiesService implements OnModuleInit {
         )?.interests ?? [])
       : [];
 
-    const candidates = await this.prisma.crewActivity.findMany({
-      where: {
-        AND: [
-          {
-            deletedAt: null,
-            status: 'OPEN',
-            startDate: { gt: now },
-            ...(excludedUserIds.length > 0
-              ? { creatorId: { notIn: excludedUserIds } }
-              : {}),
-          },
-          this.activityAuthorizationService.discoveryWhere(viewer),
-        ],
-      },
-      take: ActivitiesService.FOR_YOU_POOL,
-      orderBy: { startDate: 'asc' },
-      select: {
-        id: true,
-        creatorId: true,
-        collegeId: true,
-        title: true,
-        description: true,
-        location: true,
-        startDate: true,
-        maxMembers: true,
-        _count: { select: { members: true } },
-      },
+    const followingIdsForPool = followingRows.map((f) => f.followingId);
+    // The viewer's own activities are not something to discover.
+    const notCreatedBy = [...excludedUserIds, userId];
+    const candidateWhere = (
+      extra: Prisma.CrewActivityWhereInput,
+    ): Prisma.CrewActivityWhereInput => ({
+      AND: [
+        {
+          deletedAt: null,
+          status: 'OPEN',
+          startDate: { gt: now },
+          creatorId: { notIn: notCreatedBy },
+          ...extra,
+        },
+        this.activityAuthorizationService.discoveryWhere(viewer),
+      ],
+    });
+    const candidateSelect = {
+      id: true,
+      creatorId: true,
+      collegeId: true,
+      title: true,
+      description: true,
+      location: true,
+      startDate: true,
+      maxMembers: true,
+      // MEMBER rows only: that is what the join CTE counts against
+      // `maxMembers`. Counting every row (PENDING and DECLINED included) made
+      // an activity with spare places look full, and vice versa.
+      _count: { select: { members: { where: { status: 'MEMBER' } } } },
+      // The viewer's own row, if any, to tell joined and declined apart.
+      members: { where: { userId }, select: { status: true } },
+    } satisfies Prisma.CrewActivitySelect;
+
+    // Three arms. The soonest-starting pool alone meant an activity hosted
+    // or joined by a friend, or matching the viewer's interests, never
+    // entered the ranking once enough sooner ones existed — the strongest
+    // signals were only scored among whatever happened to start first.
+    // The interest arm matches substrings; scoring then keeps only
+    // start-of-word matches (countInterestMatches).
+    const poolInterests = interests
+      .map((i) => (i || '').trim())
+      .filter((i) => i.length >= MIN_INTEREST_LENGTH)
+      .slice(0, 10);
+    const [soonest, social, interesting] = await Promise.all([
+      this.prisma.crewActivity.findMany({
+        where: candidateWhere({}),
+        take: ActivitiesService.FOR_YOU_POOL,
+        orderBy: { startDate: 'asc' },
+        select: candidateSelect,
+      }),
+      followingIdsForPool.length > 0
+        ? this.prisma.crewActivity.findMany({
+            where: candidateWhere({
+              OR: [
+                { creatorId: { in: followingIdsForPool } },
+                {
+                  members: {
+                    some: {
+                      userId: { in: followingIdsForPool },
+                      status: 'MEMBER',
+                    },
+                  },
+                },
+              ],
+            }),
+            take: ActivitiesService.FOR_YOU_POOL,
+            orderBy: { startDate: 'asc' },
+            select: candidateSelect,
+          })
+        : Promise.resolve([]),
+      poolInterests.length > 0
+        ? this.prisma.crewActivity.findMany({
+            where: candidateWhere({
+              OR: poolInterests.flatMap((i) => [
+                { title: { contains: i, mode: 'insensitive' as const } },
+                { description: { contains: i, mode: 'insensitive' as const } },
+              ]),
+            }),
+            take: ActivitiesService.FOR_YOU_POOL,
+            orderBy: { startDate: 'asc' },
+            select: candidateSelect,
+          })
+        : Promise.resolve([]),
+    ]);
+    const seenCandidate = new Set<string>();
+    const candidates = [...soonest, ...social, ...interesting].filter((a) => {
+      if (seenCandidate.has(a.id)) return false;
+      seenCandidate.add(a.id);
+      // Full, and the viewer is not in it: the join would be refused, so it
+      // is not a suggestion, it is a dead end.
+      const isMember = a.members[0]?.status === 'MEMBER';
+      const full = !!a.maxMembers && (a._count?.members ?? 0) >= a.maxMembers;
+      return isMember || !full;
     });
 
     if (candidates.length === 0) {
@@ -988,30 +1030,43 @@ export class ActivitiesService implements OnModuleInit {
     const historyIds = historyRows.map((h) => h.activityId);
 
     // Remaining signals, all batched over the bounded candidate set.
-    const [chatPartners, friendsAttending, pastHosts] = await Promise.all([
-      convIds.length > 0
-        ? this.prisma.conversationParticipant.findMany({
-            where: { conversationId: { in: convIds }, userId: { not: userId } },
-            select: { userId: true },
-          })
-        : Promise.resolve([] as { userId: string }[]),
-      followingIds.length > 0
-        ? this.prisma.crewActivityMember.findMany({
-            where: {
-              activityId: { in: candidateIds },
-              userId: { in: followingIds },
-              status: 'MEMBER',
-            },
-            select: { activityId: true, userId: true },
-          })
-        : Promise.resolve([] as { activityId: string; userId: string }[]),
-      historyIds.length > 0
-        ? this.prisma.crewActivity.findMany({
-            where: { id: { in: historyIds } },
-            select: { creatorId: true },
-          })
-        : Promise.resolve([] as { creatorId: string }[]),
-    ]);
+    const [chatPartners, friendsAttending, pastHosts, declinedInvites] =
+      await Promise.all([
+        convIds.length > 0
+          ? this.prisma.conversationParticipant.findMany({
+              where: {
+                conversationId: { in: convIds },
+                userId: { not: userId },
+              },
+              select: { userId: true },
+            })
+          : Promise.resolve([] as { userId: string }[]),
+        followingIds.length > 0
+          ? this.prisma.crewActivityMember.findMany({
+              where: {
+                activityId: { in: candidateIds },
+                userId: { in: followingIds },
+                status: 'MEMBER',
+              },
+              select: { activityId: true, userId: true },
+            })
+          : Promise.resolve([] as { activityId: string; userId: string }[]),
+        historyIds.length > 0
+          ? this.prisma.crewActivity.findMany({
+              where: { id: { in: historyIds } },
+              select: { creatorId: true },
+            })
+          : Promise.resolve([] as { creatorId: string }[]),
+        this.prisma.activityInvitation.findMany({
+          where: {
+            inviteeId: userId,
+            status: 'DECLINED',
+            activityId: { in: candidateIds },
+          },
+          select: { activityId: true },
+        }),
+      ]);
+    const declinedSet = new Set(declinedInvites.map((d) => d.activityId));
 
     const chatPartnerSet = new Set(chatPartners.map((p) => p.userId));
     const pastHostSet = new Set(pastHosts.map((h) => h.creatorId));
@@ -1022,10 +1077,6 @@ export class ActivitiesService implements OnModuleInit {
         (friendCountByActivity.get(row.activityId) || 0) + 1,
       );
     }
-
-    const normalizedInterests = interests
-      .map((i) => (i || '').trim().toLowerCase())
-      .filter((i) => i.length >= 3);
 
     const W = ActivitiesService.FOR_YOU_WEIGHTS;
     const soonWindowMs = W.startsSoonWindowDays * 24 * 60 * 60 * 1000;
@@ -1057,16 +1108,12 @@ export class ActivitiesService implements OnModuleInit {
         score += W.sameCollege;
       }
 
-      if (normalizedInterests.length > 0) {
-        const haystack =
-          `${a.title || ''} ${a.description || ''} ${a.location || ''}`.toLowerCase();
-        let matches = 0;
-        for (const interest of normalizedInterests) {
-          if (haystack.includes(interest)) matches += 1;
-          if (matches >= W.interestMatchCap) break;
-        }
-        score += matches * W.interestMatch;
-      }
+      score +=
+        countInterestMatches(
+          `${a.title || ''} ${a.description || ''} ${a.location || ''}`,
+          interests,
+          W.interestMatchCap,
+        ) * W.interestMatch;
 
       // A small freshness term so an empty signal profile still yields a sane,
       // soonest-first ordering rather than an arbitrary one.
@@ -1081,6 +1128,18 @@ export class ActivitiesService implements OnModuleInit {
 
       const memberCount = a._count?.members ?? 0;
       if (!a.maxMembers || memberCount < a.maxMembers) score += W.hasRoom;
+
+      // Already answered: joined, or turned down (as a member row or an
+      // invitation). Kept in the list — a joined activity vanishing from the
+      // page would look like a bug — but below everything still undecided.
+      const myStatus = a.members[0]?.status;
+      if (
+        myStatus === 'MEMBER' ||
+        myStatus === 'DECLINED' ||
+        declinedSet.has(a.id)
+      ) {
+        score += W.alreadyAnswered;
+      }
 
       return {
         id: a.id,
@@ -1241,11 +1300,6 @@ export class ActivitiesService implements OnModuleInit {
         select: {
           id: true,
           collegeId: true,
-          // See getViewer: the batch travels with the viewer lookup that this
-          // path already performs.
-          batchYear: true,
-          email: true,
-          collegeEmail: true,
           college: { select: { name: true } },
         },
       }),
@@ -1254,11 +1308,7 @@ export class ActivitiesService implements OnModuleInit {
     ]);
 
     const viewer: UserAuthContext | null = user
-      ? {
-          id: user.id,
-          collegeId: user.collegeId,
-          batchYear: this.studentYearPolicy.getUserBatchYear(user),
-        }
+      ? { id: user.id, collegeId: user.collegeId }
       : null;
     const now = new Date();
     const creatorFilter =
@@ -1426,11 +1476,6 @@ export class ActivitiesService implements OnModuleInit {
           creator: {
             select: {
               id: true,
-              // First-year isolation reads the host's batch straight off the
-              // creator row this query already embeds -- see
-              // ActivityAuthTarget.creatorBatchYear. Server side only; every
-              // response below is built field by field.
-              batchYear: true,
               username: true,
               displayName: true,
               avatar: true,
@@ -1603,10 +1648,6 @@ export class ActivitiesService implements OnModuleInit {
               expiresAt: true,
             },
           },
-          // The host's batch, for first-year isolation. Selected on every
-          // path that runs `assertCanView`/`canJoin`, so the runtime check has
-          // a value to judge rather than falling through to allow.
-          creator: { select: { batchYear: true } },
         },
       }),
       this.getViewer(userId),
@@ -1654,31 +1695,6 @@ export class ActivitiesService implements OnModuleInit {
           baseAttendeeWhere,
           'userId',
         );
-
-    // First-year isolation on the ATTENDEE LIST.
-    //
-    // The activity itself is already restricted to one cohort, so in steady
-    // state every attendee is in it. This covers a membership taken before the
-    // policy applied, which would otherwise put a restricted student's name and
-    // photograph in front of a viewer on a page they are allowed to open. In
-    // the query, before `take`, so the page size and the `hasMore` cursor stay
-    // honest.
-    //
-    // The host is exempt, exactly as they are from the block filter: they must
-    // see their own guest list in full.
-    if (!isHost && this.studentYearPolicy.isEnforcementEnabled()) {
-      const attendeeViewerBatch =
-        await this.studentYearPolicy.getBatchYearFor(userId);
-      const existingAnd = Array.isArray(attendeeWhere.AND)
-        ? attendeeWhere.AND
-        : attendeeWhere.AND
-          ? [attendeeWhere.AND]
-          : [];
-      attendeeWhere.AND = [
-        ...existingAnd,
-        { user: this.studentYearPolicy.visibleUserWhere(attendeeViewerBatch) },
-      ];
-    }
 
     const rows = await this.prisma.crewActivityMember.findMany({
       where: attendeeWhere,
@@ -2006,10 +2022,6 @@ export class ActivitiesService implements OnModuleInit {
             },
           },
           _count: { select: { members: true } },
-          // The host's batch, for first-year isolation. Selected on every
-          // path that runs `assertCanView`/`canJoin`, so the runtime check has
-          // a value to judge rather than falling through to allow.
-          creator: { select: { batchYear: true } },
         },
       }),
       this.getViewer(userId),
@@ -2340,10 +2352,6 @@ export class ActivitiesService implements OnModuleInit {
               expiresAt: true,
             },
           },
-          // The host's batch, for first-year isolation. Saving is a
-          // read-granting action -- getSavedActivities re-serves the row later
-          // -- so the check here needs a value to judge.
-          creator: { select: { batchYear: true } },
         },
       }),
       this.getViewer(userId),
@@ -2400,27 +2408,6 @@ export class ActivitiesService implements OnModuleInit {
     // outcome the detail route gives a non-attendee.
     const excludedUserIds = await this.blocksService.getExcludedUserIds(userId);
 
-    // First-year isolation, on the same terms as the block rule above and for
-    // the same reason. A membership that predates the policy would otherwise
-    // keep an activity on this list whose detail page now answers 404 -- a card
-    // that goes nowhere. The viewer's own activities are exempt by
-    // construction: a host is always in their own cohort.
-    const myActivitiesBatch =
-      await this.studentYearPolicy.getBatchYearFor(userId);
-    const hostVisibility = this.studentYearPolicy.isEnforcementEnabled()
-      ? [
-          {
-            OR: [
-              { creatorId: userId },
-              {
-                creator:
-                  this.studentYearPolicy.visibleUserWhere(myActivitiesBatch),
-              },
-            ],
-          },
-        ]
-      : [];
-
     const activities = await this.prisma.crewActivity.findMany({
       where: {
         deletedAt: null,
@@ -2431,7 +2418,6 @@ export class ActivitiesService implements OnModuleInit {
           { creatorId: userId },
           { members: { some: { userId, status: 'MEMBER' } } },
         ],
-        AND: hostVisibility,
       },
       include: {
         _count: { select: { members: true } },
@@ -2664,27 +2650,6 @@ export class ActivitiesService implements OnModuleInit {
     );
     const excludedSet = new Set(excludedUserIds);
 
-    // First-year isolation for the INVITE MODAL, server-side.
-    //
-    // The recipient picker already hides restricted users, but this endpoint
-    // takes a list of ids straight from a request body, so a hand-built call,
-    // a replayed one, or a stale client holding pre-policy search results
-    // would otherwise create the invitation, the notification and the join
-    // path in one go. Resolved as a set, in one batched lookup, so a 50-person
-    // invite costs one query rather than fifty.
-    //
-    // The refusal is reported per invitee under the same neutral `BLOCKED`
-    // status the block rule uses, rather than failing the whole call: the
-    // response already reports a mixed outcome per recipient, and using a
-    // distinct status here would tell the inviter which of the people they
-    // picked is in the other cohort.
-    const yearRestrictedSet = new Set(
-      await this.studentYearPolicy.getIncompatibleUserIds(
-        inviterId,
-        cleanInviteeIds,
-      ),
-    );
-
     const results: Array<{
       inviteeId: string;
       status:
@@ -2747,7 +2712,7 @@ export class ActivitiesService implements OnModuleInit {
         }
       }
 
-      if (excludedSet.has(inviteeId) || yearRestrictedSet.has(inviteeId)) {
+      if (excludedSet.has(inviteeId)) {
         results.push({
           inviteeId,
           status: 'BLOCKED',

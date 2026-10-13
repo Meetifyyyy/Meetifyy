@@ -8,7 +8,6 @@ import {
   InvitationAuthShape,
   UserAuthContext,
 } from './activity-authorization.service';
-import { createStudentYearPolicyMock } from '../common/student-year/testing/student-year-policy.mock';
 
 /**
  * The §15 access matrix, expressed as executable expectations. Every row is a
@@ -17,13 +16,7 @@ import { createStudentYearPolicyMock } from '../common/student-year/testing/stud
  * but permitted the API.
  */
 describe('ActivityAuthorizationService', () => {
-  // The existing matrix is about visibility MODES, not batch years, so the
-  // isolation policy is wired to "everyone is compatible" here. First-year
-  // isolation of activities has its own coverage in
-  // common/student-year/first-year-isolation.spec.ts.
-  const policy = new ActivityAuthorizationService(
-    createStudentYearPolicyMock(),
-  );
+  const policy = new ActivityAuthorizationService();
 
   const GLA = 'college-gla';
   const OTHER = 'college-other';

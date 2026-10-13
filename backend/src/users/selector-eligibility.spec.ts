@@ -12,7 +12,6 @@ import { PresenceService } from '../presence/presence.service';
 import { AcademicsService } from '../academics/academics.service';
 import { NOTIFICATIONS_QUEUE } from '../notifications/notifications.processor';
 import { VerificationAccessService } from '../common/verification/verification-access.service';
-import { studentYearPolicyMockProvider } from '../common/student-year/testing/student-year-policy.mock';
 
 /**
  * `/api/users/connections` is the recipient list behind every Invite selector
@@ -28,14 +27,15 @@ import { studentYearPolicyMockProvider } from '../common/student-year/testing/st
  * not.
  */
 /** The connections query, as far as these assertions read it. */
+type EligibilityWhere = {
+  verificationStatus?: unknown;
+  accountStatus?: unknown;
+  id?: unknown;
+  OR?: unknown;
+};
 type ConnectionsQuery = {
   take?: number;
-  where: {
-    verificationStatus?: unknown;
-    accountStatus?: unknown;
-    id?: unknown;
-    OR?: unknown;
-  };
+  where: EligibilityWhere & { AND?: EligibilityWhere[] };
 };
 
 describe('UsersService — selector eligibility', () => {
@@ -49,11 +49,17 @@ describe('UsersService — selector eligibility', () => {
 
     const moduleRef = await Test.createTestingModule({
       providers: [
-        studentYearPolicyMockProvider(),
         UsersService,
         {
           provide: PrismaService,
-          useValue: { user: { findMany, findUnique: jest.fn() } },
+          useValue: {
+            user: { findMany, findUnique: jest.fn() },
+            // The closeness signals the picker ranks by; none for this viewer.
+            follow: { findMany: jest.fn().mockResolvedValue([]) },
+            conversationParticipant: {
+              findMany: jest.fn().mockResolvedValue([]),
+            },
+          },
         },
         {
           provide: BlocksService,
@@ -88,7 +94,23 @@ describe('UsersService — selector eligibility', () => {
     delete process.env.FEATURE_VERIFICATION_ENABLED;
   });
 
-  const whereOf = () => findMany.mock.calls[0][0].where;
+  /**
+   * The eligibility predicate of a candidate query. A picker query either IS
+   * the predicate (the plain search pool) or narrows it as the first member
+   * of an AND (starts-with pool, campus fill) — both keep it outside any OR,
+   * which is the property that matters.
+   */
+  const eligibilityOf = (q: ConnectionsQuery): EligibilityWhere =>
+    q.where.AND ? q.where.AND[0] : q.where;
+  const whereOf = () => {
+    // Every candidate query must carry the rule, not just the first.
+    for (const [q] of findMany.mock.calls) {
+      expect(eligibilityOf(q)).toEqual(
+        eligibilityOf(findMany.mock.calls[0][0]),
+      );
+    }
+    return eligibilityOf(findMany.mock.calls[0][0]);
+  };
 
   it('restricts the default list to verified accounts', () => {
     return service.getConnections('me').then(() => {
@@ -127,7 +149,9 @@ describe('UsersService — selector eligibility', () => {
     // take and the predicate are in the same call: the database applies the
     // limit to already-eligible rows.
     expect(args.take).toBe(50);
-    expect(args.where.verificationStatus).toBe(VerificationStatus.VERIFIED);
+    expect(eligibilityOf(args).verificationStatus).toBe(
+      VerificationStatus.VERIFIED,
+    );
   });
 
   it('lifts the restriction when enforcement is disabled', async () => {
@@ -153,11 +177,19 @@ describe('UsersService — connections cache', () => {
 
     const moduleRef = await Test.createTestingModule({
       providers: [
-        studentYearPolicyMockProvider(),
         UsersService,
         {
           provide: PrismaService,
-          useValue: { user: { findMany: jest.fn().mockResolvedValue([]) } },
+          useValue: {
+            user: {
+              findMany: jest.fn().mockResolvedValue([]),
+              findUnique: jest.fn().mockResolvedValue(null),
+            },
+            follow: { findMany: jest.fn().mockResolvedValue([]) },
+            conversationParticipant: {
+              findMany: jest.fn().mockResolvedValue([]),
+            },
+          },
         },
         {
           provide: BlocksService,
@@ -188,8 +220,9 @@ describe('UsersService — connections cache', () => {
     // The prefix is bumped whenever the MEANING of a cached entry changes, so
     // entries written by the previous build are retired instantly rather than
     // being served for the rest of their TTL under a rule that no longer
-    // applies. v2 was the verification filter; v3 is first-year isolation.
-    expect(get).toHaveBeenCalledWith('connections:v3:me:john:50');
-    expect(setex.mock.calls[0][0]).toBe('connections:v3:me:john:50');
+    // applies. v2 was the verification filter; v3 was first-year isolation;
+    // v4 is its removal.
+    expect(get).toHaveBeenCalledWith('connections:v5:me:john:50');
+    expect(setex.mock.calls[0][0]).toBe('connections:v5:me:john:50');
   });
 });

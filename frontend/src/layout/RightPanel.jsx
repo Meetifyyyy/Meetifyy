@@ -14,6 +14,7 @@ import { useAuth } from '@shared/context/AuthContext';
 import { useUsersMap } from '@shared/hooks/useUsersMap';
 import { useMediaQuery } from '@shared/hooks/useMediaQuery';
 import { useCrewActivities } from '@shared/hooks/useCrew';
+import { groupNotifications, othersLabel } from '@features/notifications/utils/groupNotifications';
 import {
   DEFAULT_ACTIVITY_COVERS,
   getDefaultActivityCover,
@@ -47,7 +48,12 @@ export function NotificationsActivity() {
   const navigate = useNavigate();
 
 
-  const displayNotifs = notifications.slice(0, 4);
+  // Grouped the same way as the Notifications page, so four likes on one post
+  // take one of these four slots instead of all of them.
+  const displayNotifs = useMemo(
+    () => groupNotifications(notifications).slice(0, 4),
+    [notifications],
+  );
 
   return (
     <div className={styles.panelCard}>
@@ -208,7 +214,7 @@ export function NotificationsActivity() {
                       </div>
                       <div style={{ fontSize: '0.79rem', color: 'var(--color-text-muted)', marginTop: '1px' }}>
                         <strong style={{ color: 'var(--color-text-main)', fontWeight: 600 }}>{actorName}</strong>
-                        {' '}{isActivityInvite ? 'invited you to join.' : 'joined the activity.'}
+                        {' '}{othersLabel(n.groupCount) && `${othersLabel(n.groupCount)} `}{isActivityInvite ? 'invited you to join.' : 'joined the activity.'}
                       </div>
                     </>
                   ) : (
@@ -216,7 +222,7 @@ export function NotificationsActivity() {
                       <strong style={{ color: 'var(--color-text-main)', fontWeight: 600 }}>
                         {actorName}
                       </strong>{' '}
-                      <span>{bodyText}</span>{' '}
+                      <span>{othersLabel(n.groupCount) && `${othersLabel(n.groupCount)} `}{bodyText}</span>{' '}
                       <span style={{ fontSize: '0.75rem', color: 'var(--color-text-light)', whiteSpace: 'nowrap' }}>• {timeStr}</span>
                     </div>
                   )}

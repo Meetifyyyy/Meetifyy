@@ -13,7 +13,6 @@ import { PresenceService } from '../presence/presence.service';
 import { AcademicsService } from '../academics/academics.service';
 import { VerificationAccessService } from '../common/verification/verification-access.service';
 import { NOTIFICATIONS_QUEUE } from '../notifications/notifications.processor';
-import { studentYearPolicyMockProvider } from '../common/student-year/testing/student-year-policy.mock';
 
 /** One row of the blocked-contacts page, exactly as BlocksService returns it. */
 type BlockRow = Awaited<
@@ -85,7 +84,6 @@ describe('UsersService — blocking', () => {
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
-        studentYearPolicyMockProvider(),
         UsersService,
         { provide: PrismaService, useValue: mockPrisma },
         {

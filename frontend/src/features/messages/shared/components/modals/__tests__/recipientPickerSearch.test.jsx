@@ -17,10 +17,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
  * row cached would satisfy a render assertion and still be broken for
  * everybody else.
  *
- * The eligibility rules are asserted in both directions -- a first-year viewer
- * must not be shown a senior, and a senior must not be shown a first-year --
- * because the point of moving search to the server is that it widens the
- * reachable set without widening the ALLOWED set.
+ * The point of moving search to the server is that it widens the reachable
+ * set without widening the ALLOWED set.
  */
 
 const getConnectionsMock = vi.fn();
@@ -43,7 +41,7 @@ vi.mock('@shared/api/apiClient', () => ({
   getMediaUrl: (v) => v,
 }));
 
-let currentUser = { id: 'me', username: 'me', displayName: 'Me', isFirstYearStudent: false };
+let currentUser = { id: 'me', username: 'me', displayName: 'Me' };
 vi.mock('@shared/context/AuthContext', () => ({
   useAuth: () => ({ currentUser, updateCurrentUser: vi.fn(), isLoggedIn: true }),
 }));
@@ -106,7 +104,7 @@ beforeEach(() => {
   vi.useFakeTimers({ shouldAdvanceTime: true });
   getConnectionsMock.mockReset().mockResolvedValue([]);
   usersMap = {};
-  currentUser = { id: 'me', username: 'me', displayName: 'Me', isFirstYearStudent: false };
+  currentUser = { id: 'me', username: 'me', displayName: 'Me' };
 });
 
 afterEach(() => {
@@ -178,10 +176,10 @@ describe('New Message modal — search reaches the server', () => {
     });
   });
 
-  it('never lists a senior for a first-year viewer', async () => {
+  it('ignores the retired first-year cohort markers', async () => {
+    // First-year isolation has been removed. A stale payload (or a cached
+    // viewer) may still carry the old marker; it must not filter anybody.
     currentUser = { ...currentUser, isFirstYearStudent: true };
-    // A row held over in the cache from before the viewer's batch resolved.
-    // The server would not return it; the client drops it anyway.
     usersMap = {
       u5: { id: 'u5', username: 'senior', displayName: 'Senior', isFirstYearStudent: false },
     };
@@ -195,21 +193,7 @@ describe('New Message modal — search reaches the server', () => {
     await waitFor(() => {
       expect(renderedHandles()).toContain('@fresher');
     });
-    expect(renderedHandles()).not.toContain('@senior');
-  });
-
-  it('never lists a first-year for a senior viewer', async () => {
-    // The rule is symmetric, and a picker that enforced it in one direction
-    // only would leak the other way round.
-    currentUser = { ...currentUser, isFirstYearStudent: false };
-    usersMap = {
-      u7: { id: 'u7', username: 'fresher', displayName: 'Fresher', isFirstYearStudent: true },
-    };
-
-    renderModal();
-    await type('f');
-
-    expect(renderedHandles()).not.toContain('@fresher');
+    expect(renderedHandles()).toContain('@senior');
   });
 
   it('never lists a deleted or unverified account', async () => {

@@ -23,7 +23,6 @@ import { NotificationFactory } from '../../notifications/notification.factory';
 import { SendMessageDto } from '../core/dto/send-message.dto';
 import { emitMessageNew } from '../message-alert.util';
 import { VerificationAccessService } from '../../common/verification/verification-access.service';
-import { StudentYearPolicyService } from '../../common/student-year/student-year-policy.service';
 
 @Controller('api/dm')
 export class DmController {
@@ -34,7 +33,6 @@ export class DmController {
     private readonly notificationFactory: NotificationFactory,
     private readonly blocksService: BlocksService,
     private readonly verificationAccess: VerificationAccessService,
-    private readonly studentYearPolicy: StudentYearPolicyService,
   ) {}
 
   @Get()
@@ -89,31 +87,14 @@ export class DmController {
         ? selfEligible
         : map.get(targetUserId) !== false;
 
-    // First-year isolation. This endpoint is the client's "may I message this
-    // person?" oracle, so it has to answer with EVERY rule the send path
-    // applies -- otherwise it would report `canMessage: true` for a pair the
-    // server then refuses, which is exactly the disagreement the flag exists
-    // to prevent.
-    //
-    // Reported as its own field as well as folded into `canMessage`, because
-    // the two states need different UI: an unverified counterpart gets the
-    // "not available" notice, a restricted one gets the locked Message button
-    // and the Messaging Restricted dialog.
-    const yearAllowed =
-      !targetUserId ||
-      targetUserId === userId ||
-      (await this.studentYearPolicy.canIdsInteract(
-        userId,
-        targetUserId,
-        'messaging',
-      ));
-
     return {
       targetUserId,
       selfEligible,
       targetEligible,
-      messagingRestricted: !yearAllowed,
-      canMessage: selfEligible && targetEligible && yearAllowed,
+      // First-year isolation has been removed. Kept, always `false`, because
+      // installed apps ship a frozen frontend that may read it.
+      messagingRestricted: false,
+      canMessage: selfEligible && targetEligible,
     };
   }
 

@@ -5,6 +5,7 @@ import FollowButton from '@shared/components/ui/FollowButton';
 import { useNavigate, useLocation } from 'react-router-dom';
 import s from './ProfileRightSidebar.module.css';
 import { useFollowSuggestions } from '@shared/hooks/useFollowSuggestions';
+import { communityReasonText, suggestionReasonText } from '@shared/utils/suggestionReason';
 import { useCommunityRecommendations } from '@shared/hooks/useCommunityRecommendations';
 import { useJoinCommunity } from '@features/communities/hooks/useJoinCommunity';
 import { toggleRegistry } from '@shared/utils/mutationRegistry';
@@ -91,7 +92,7 @@ export default function ProfileRightSidebar({ embedded = false }) {
                   {u.displayName || u.username}
                   <CollegeRepresentativeBadge isCampusRep={u.isCampusRep} user={u} size="sm" />
                 </div>
-                <div className={s.personSub}>@{u.username}</div>
+                <div className={s.personSub}>{suggestionReasonText(u) || `@${u.username}`}</div>
               </div>
               {/* Passed through unchanged, NOT `|| false`: the payload's
                   `isFollowing` is read from the Follow table, and coercing a
@@ -146,7 +147,7 @@ export default function ProfileRightSidebar({ embedded = false }) {
                 </div>
                 <div className={s.personInfo}>
                   <div className={s.personName}>{c.name}</div>
-                  <div className={s.personSub}>{communityMemberCount(c)} {communityMemberCount(c) === 1 ? 'member' : 'members'}</div>
+                  <div className={s.personSub}>{communityReasonText(c) || `${communityMemberCount(c)} ${communityMemberCount(c) === 1 ? 'member' : 'members'}`}</div>
                 </div>
                 {isOwner ? (
                   <span className={`${s.joinBtn} ${s.joinedBtn}`} aria-label="You own this community">Owner</span>

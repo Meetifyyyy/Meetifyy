@@ -5,13 +5,13 @@ import { ActivityAuthorizationService } from '../activities/activity-authorizati
 import { PrismaService } from '../prisma/prisma.service';
 import { BlocksService } from '../users/blocks.service';
 import { RedisService } from '../redis/redis.service';
-import { studentYearPolicyMockProvider } from '../common/student-year/testing/student-year-policy.mock';
 
 /** A mock that resolves to `value`, typed by it. */
 const resolves = <T>(value: T) =>
   jest.fn<() => Promise<T>>().mockResolvedValue(value);
 
 const makePrisma = () => ({
+  $queryRaw: resolves([]),
   user: {
     findMany: resolves([]),
     findUnique: resolves(null),
@@ -37,7 +37,6 @@ describe('SearchService', () => {
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
-        studentYearPolicyMockProvider(),
         SearchService,
         ActivityAuthorizationService,
         { provide: PrismaService, useValue: prismaMock },

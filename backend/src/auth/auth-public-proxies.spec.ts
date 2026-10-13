@@ -13,7 +13,6 @@ import type {
 } from '../supabase/supabase.service';
 import type { DefaultAssetsService } from '../uploads/default-assets.service';
 import type { DomainValidatorService } from '../common/services/domain-validator.service';
-import type { StudentYearPolicyService } from '../common/student-year/student-year-policy.service';
 import type { LegalConsentService } from '../common/legal/legal-consent.service';
 
 /**
@@ -91,7 +90,6 @@ describe('the public auth proxies', () => {
       supabaseService,
       stub<DomainValidatorService>(),
       stub<DefaultAssetsService>(),
-      stub<StudentYearPolicyService>(),
       stub<LegalConsentService>(),
     );
   };

@@ -7,7 +7,6 @@ import { PresenceService } from '../presence/presence.service';
 import { DomainEventService } from '../events/domain-event.service';
 import { MentionsService } from '../mentions/mentions.service';
 import { blocksServiceMockProvider } from '../users/testing/blocks.service.mock';
-import { studentYearPolicyMockProvider } from '../common/student-year/testing/student-year-policy.mock';
 import { VerificationAccessService } from '../common/verification/verification-access.service';
 import { allowAllRateLimitProvider } from '../common/rate-limit/testing/rate-limit.mock';
 
@@ -74,7 +73,6 @@ describe('messaging — both participants must be verified', () => {
       providers: [
         allowAllRateLimitProvider(),
         VerificationAccessService,
-        studentYearPolicyMockProvider(),
         blocksServiceMockProvider(),
         DmService,
         { provide: PrismaService, useValue: prisma },
@@ -186,7 +184,6 @@ describe('conversation history carries the send verdict', () => {
       providers: [
         allowAllRateLimitProvider(),
         VerificationAccessService,
-        studentYearPolicyMockProvider(),
         blocksServiceMockProvider(),
         DmService,
         { provide: PrismaService, useValue: prisma },

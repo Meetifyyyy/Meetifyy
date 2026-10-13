@@ -14,7 +14,8 @@ import { PresenceService } from '../presence/presence.service';
 import type { UserPresence } from '../presence/presence.service';
 import { BlocksService } from '../users/blocks.service';
 import { DefaultAssetsService } from '../uploads/default-assets.service';
-import { sampleRandom } from '../common/utils/sample-random.util';
+import { weightedSample } from '../common/utils/weighted-sample.util';
+import { pickCommunityReason } from './community-recommendation.scoring';
 import { errorMessage } from '../common/utils/error.util';
 import { stringField } from '../common/utils/type-guards.util';
 import type {
@@ -160,6 +161,17 @@ function communityMediaLink(ref: string, ownerId: string) {
     };
   }
   return undefined;
+}
+
+/** One scored candidate out of getCommunityRecommendations' ranking query. */
+interface CommunityScoreRow {
+  id: string;
+  friendCount: number;
+  friendSampleName: string | null;
+  campusMemberCount: number;
+  interestMatch: boolean;
+  recentPosts: number;
+  score: number;
 }
 
 @Injectable()
@@ -641,29 +653,190 @@ export class CommunitiesService implements OnModuleInit {
 
     const sampleFrom = Math.min(Math.max(limit * 8, 24), 60);
 
-    // One query. `members: { none: … }` is an anti-join Postgres resolves with
-    // the CommunityMember primary key (userId, communityId) — no per-row
-    // membership lookup, and no second pass to filter joined ones out.
-    const pool = await this.prisma.community.findMany({
-      where: {
-        deletedAt: null,
-        // Campus communities are a separate, verification-gated surface with
-        // its own endpoint; discovery here mirrors getAllCommunities.
-        isCampusCommunity: false,
-        members: { none: { userId } },
-      },
-      orderBy: { memberCount: 'desc' },
-      take: sampleFrom,
+    // Scored in one query over a bounded pool, then the full rows are loaded
+    // by id so the payload keeps exactly the shape it always had.
+    //
+    // The pool is four arms, each answering a different "worth joining?":
+    // where the viewer's friends are, what matches their interests, what is
+    // alive right now, and what is big. Popularity alone (the old ORDER BY
+    // memberCount) showed every viewer the same large, often dormant groups.
+    //
+    // Excluded in `eligible`: deleted, campus-only (a separate gated surface),
+    // already joined, and anything the viewer has a pending join request for
+    // — suggesting it again would only offer a button that does nothing.
+    const POOL = 120;
+    const ACTIVE_DAYS = 14;
+    const since = new Date(Date.now() - ACTIVE_DAYS * 24 * 60 * 60 * 1000);
+    const scored = await this.prisma.$queryRaw<CommunityScoreRow[]>`
+      WITH me AS (
+        SELECT "id", "collegeId",
+          ARRAY(
+            SELECT DISTINCT lower(trim(i)) FROM unnest("interests") i
+            WHERE length(trim(i)) >= 3
+          ) AS "interests"
+        FROM "User" WHERE "id" = ${userId} LIMIT 1
+      ),
+      eligible AS (
+        SELECT c."id", c."name", c."description", c."memberCount", c."createdAt"
+        FROM "Community" c, me
+        WHERE c."deletedAt" IS NULL
+          AND c."isCampusCommunity" = false
+          AND NOT EXISTS (
+            SELECT 1 FROM "CommunityMember" cm
+            WHERE cm."communityId" = c."id" AND cm."userId" = me."id"
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM "CommunityJoinRequest" jr
+            WHERE jr."communityId" = c."id" AND jr."userId" = me."id"
+              AND jr."status" = 'PENDING'
+          )
+      ),
+      my_follows AS (
+        SELECT f."followingId" AS "id"
+        FROM "Follow" f, me
+        WHERE f."followerId" = me."id"
+        ORDER BY f."createdAt" DESC
+        LIMIT 200
+      ),
+      friends_arm AS (
+        SELECT cm."communityId" AS "id"
+        FROM my_follows mf
+        JOIN "CommunityMember" cm ON cm."userId" = mf."id"
+        JOIN eligible e ON e."id" = cm."communityId"
+        GROUP BY cm."communityId"
+        ORDER BY COUNT(*) DESC
+        LIMIT ${POOL}
+      ),
+      interest_arm AS (
+        SELECT e."id" FROM eligible e, me
+        WHERE cardinality(me."interests") > 0
+          AND EXISTS (
+            SELECT 1 FROM unnest(me."interests") i
+            WHERE e."name" ILIKE '%' || i || '%'
+               OR e."description" ILIKE '%' || i || '%'
+          )
+        ORDER BY e."memberCount" DESC
+        LIMIT ${POOL}
+      ),
+      active_arm AS (
+        SELECT p."communityId" AS "id"
+        FROM "Post" p
+        JOIN eligible e ON e."id" = p."communityId"
+        WHERE p."deletedAt" IS NULL AND p."createdAt" >= ${since}
+        GROUP BY p."communityId"
+        ORDER BY COUNT(*) DESC
+        LIMIT ${POOL}
+      ),
+      popular_arm AS (
+        SELECT e."id" FROM eligible e
+        ORDER BY e."memberCount" DESC
+        LIMIT ${POOL}
+      ),
+      pool AS (
+        SELECT "id" FROM friends_arm
+        UNION SELECT "id" FROM interest_arm
+        UNION SELECT "id" FROM active_arm
+        UNION SELECT "id" FROM popular_arm
+      ),
+      signals AS (
+        SELECT
+          e."id",
+          e."memberCount",
+          (
+            SELECT COUNT(*)::int FROM my_follows mf
+            JOIN "CommunityMember" cm
+              ON cm."userId" = mf."id" AND cm."communityId" = e."id"
+          ) AS "friendCount",
+          (
+            SELECT u."displayName" FROM my_follows mf
+            JOIN "CommunityMember" cm
+              ON cm."userId" = mf."id" AND cm."communityId" = e."id"
+            JOIN "User" u ON u."id" = mf."id"
+            ORDER BY cm."joinedAt" DESC
+            LIMIT 1
+          ) AS "friendSampleName",
+          CASE WHEN me."collegeId" IS NULL THEN 0 ELSE (
+            SELECT COUNT(*)::int FROM "CommunityMember" cm
+            JOIN "User" u ON u."id" = cm."userId"
+            WHERE cm."communityId" = e."id" AND u."collegeId" = me."collegeId"
+          ) END AS "campusMemberCount",
+          COALESCE(EXISTS (
+            SELECT 1 FROM unnest(me."interests") i
+            WHERE e."name" ILIKE '%' || i || '%'
+               OR e."description" ILIKE '%' || i || '%'
+          ), false) AS "interestMatch",
+          (
+            SELECT COUNT(*)::int FROM "Post" p
+            WHERE p."communityId" = e."id" AND p."deletedAt" IS NULL
+              AND p."createdAt" >= ${since}
+          ) AS "recentPosts",
+          EXTRACT(EPOCH FROM (now() - e."createdAt")) / 86400.0 AS "ageDays"
+        FROM pool
+        JOIN eligible e ON e."id" = pool."id"
+        CROSS JOIN me
+      )
+      SELECT
+        s."id",
+        s."friendCount",
+        s."friendSampleName",
+        s."campusMemberCount",
+        s."interestMatch",
+        s."recentPosts",
+        (
+          -- Friends inside is the strongest "worth joining" evidence there is.
+          3.0 * ln(1 + s."friendCount")
+          + CASE WHEN s."interestMatch" THEN 2.0 ELSE 0 END
+          -- Local presence: the viewer's campus is in it.
+          + 1.0 * ln(1 + s."campusMemberCount")
+          -- Alive now, not just big. A community with no posts in the window
+          -- gets nothing here, which is what lets a dormant giant sink.
+          + 1.5 * ln(1 + s."recentPosts")
+          + 0.4 * ln(1 + s."memberCount")
+          -- A new community has had no time to gather members or posts;
+          -- a small lift for its first two weeks gives it a chance to be seen.
+          + CASE WHEN s."ageDays" < 14 THEN 0.5 ELSE 0 END
+        )::float AS "score"
+      FROM signals s
+      ORDER BY "score" DESC, s."id"
+      LIMIT ${sampleFrom}
+    `;
+
+    const picked = weightedSample(
+      scored.map((r) => ({ ...r, score: Number(r.score) || 0 })),
+      limit,
+    );
+    if (picked.length === 0) return [];
+
+    const rows = await this.prisma.community.findMany({
+      where: { id: { in: picked.map((p) => p.id) } },
     });
+    const byId = new Map(rows.map((c) => [c.id, c]));
 
     // Every row is one the viewer is not in, so the membership fields are
     // known without asking. Emitted explicitly all the same, so the payload is
     // self-describing and no consumer has to infer state from a missing field.
-    return sampleRandom(pool, limit).map((c) => ({
-      ...c,
-      isJoined: false,
-      userRole: null,
-    }));
+    return picked.flatMap((p) => {
+      const c = byId.get(p.id);
+      if (!c) return [];
+      const friendCount = Number(p.friendCount) || 0;
+      return [
+        {
+          ...c,
+          isJoined: false,
+          userRole: null,
+          // Additive: clients that predate these fields ignore them.
+          reason: pickCommunityReason({
+            friendCount,
+            campusMemberCount: Number(p.campusMemberCount) || 0,
+            interestMatch: !!p.interestMatch,
+            recentPosts: Number(p.recentPosts) || 0,
+          }),
+          friendCount,
+          friendSampleName: p.friendSampleName,
+          campusMemberCount: Number(p.campusMemberCount) || 0,
+        },
+      ];
+    });
   }
 
   async getCampusCommunities(

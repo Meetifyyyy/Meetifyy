@@ -25,6 +25,11 @@ export const featuresConfigValues = {
   enableExperimentalFeatures: bool('FEATURE_EXPERIMENTAL', {
     default: 'false',
   }),
+  /**
+   * The ranked For You home feed. Off falls back to the chronological feed
+   * with no client change, which is the escape hatch if ranking misbehaves.
+   */
+  feedRanking: bool('FEATURE_FEED_RANKING', { default: 'true' }),
   // NOTE: `relaxedRateLimits` was removed deliberately. It defaulted to true
   // outside production, so every rate limit in the application was inert in
   // local development, dev, staging and CI — production was the only

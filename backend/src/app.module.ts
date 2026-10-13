@@ -53,6 +53,7 @@ import { ModerationModule } from './moderation/moderation.module';
 import { ObservabilityModule } from './observability/observability.module';
 import { SuspensionModule } from './suspension/suspension.module';
 import { AccountDeletionModule } from './account-deletion/account-deletion.module';
+import { RankingModule } from './ranking/ranking.module';
 import { AdminModule } from './admin/admin.module';
 import { VerificationModule } from './verification/verification.module';
 import { RedisModule } from './redis/redis.module';
@@ -60,7 +61,6 @@ import { RateLimitModule } from './common/rate-limit/rate-limit.module';
 import { EventsModule } from './events/events.module';
 import { DomainValidatorModule } from './common/services/domain-validator.module';
 import { VerificationAccessModule } from './common/verification/verification-access.module';
-import { StudentYearPolicyModule } from './common/student-year/student-year-policy.module';
 import { LegalConsentModule } from './common/legal/legal-consent.module';
 import { AcademicsModule } from './academics/academics.module';
 import { SupportModule } from './support/support.module';
@@ -71,7 +71,6 @@ import { randomUUID } from 'node:crypto';
   imports: [
     DomainValidatorModule,
     VerificationAccessModule,
-    StudentYearPolicyModule,
     // The mandatory legal-acknowledgement gate. Global, and listed here beside
     // the other cross-cutting policies for the same reason: JwtGuard resolves
     // it in whichever feature module applies the guard.
@@ -285,6 +284,7 @@ import { randomUUID } from 'node:crypto';
     // The only surface a suspended account may use.
     SuspensionModule,
     AccountDeletionModule,
+    RankingModule,
     EventsModule,
   ],
   controllers: [AppController],

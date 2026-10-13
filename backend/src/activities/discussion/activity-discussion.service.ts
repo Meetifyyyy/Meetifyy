@@ -7,7 +7,6 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { DomainEventService } from '../../events/domain-event.service';
 import { ActivityAuthorizationService } from '../activity-authorization.service';
-import { StudentYearPolicyService } from '../../common/student-year/student-year-policy.service';
 import type { UserIdentityLike } from '../../common/users/deleted-user';
 import {
   isUnavailableUser,
@@ -34,9 +33,6 @@ export class ActivityDiscussionService {
     private readonly prisma: PrismaService,
     private readonly domainEventService: DomainEventService,
     private readonly activityAuthorizationService: ActivityAuthorizationService,
-    // First-year isolation: only to resolve the viewer's batch onto the auth
-    // context. The decision itself belongs to ActivityAuthorizationService.
-    private readonly studentYearPolicy: StudentYearPolicyService,
   ) {}
 
   private static readonly messageSelect = {
@@ -131,10 +127,6 @@ export class ActivityDiscussionService {
                 },
               }
             : false,
-          // The host's batch, for first-year isolation. A discussion room is
-          // an activity's inside; a viewer who may not see the activity must
-          // not be able to read or post in it.
-          creator: { select: { batchYear: true } },
         },
       }),
       userId
@@ -143,11 +135,6 @@ export class ActivityDiscussionService {
             select: {
               id: true,
               collegeId: true,
-              // First-year isolation: the viewer's batch, resolved on the
-              // lookup this path already performs.
-              batchYear: true,
-              email: true,
-              collegeEmail: true,
             },
           })
         : Promise.resolve(null),
@@ -158,7 +145,6 @@ export class ActivityDiscussionService {
         ? {
             id: user.id,
             collegeId: user.collegeId,
-            batchYear: this.studentYearPolicy.getUserBatchYear(user),
           }
         : null,
       activity,

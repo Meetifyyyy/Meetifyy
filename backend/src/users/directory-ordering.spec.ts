@@ -1,7 +1,5 @@
 import type { Prisma } from '@prisma/client';
 import { UsersService } from './users.service';
-import { stub } from '../common/testing/stub';
-import type { StudentYearPolicyService } from '../common/student-year/student-year-policy.service';
 import { createBlocksServiceMock } from './testing/blocks.service.mock';
 
 /**
@@ -56,15 +54,7 @@ describe('UsersService — directory ordering', () => {
     Object.assign(service, {
       prisma,
       blocksService: createBlocksServiceMock([]),
-      studentYearPolicy: stub<StudentYearPolicyService>({
-        injectUserFilter: jest.fn((where: unknown) => where),
-        getBatchYearFor: () => Promise.resolve(null),
-        getUserBatchYear: () => null,
-        isEnforcementEnabled: () => false,
-        visibleUserWhere: () => ({}),
-      }),
       getFollowingSet: () => Promise.resolve(new Set()),
-      viewerBatchYear: () => Promise.resolve(null),
     });
   });
 

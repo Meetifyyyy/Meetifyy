@@ -1,10 +1,10 @@
 /**
  * Batch-year parsing for institutional email addresses.
  *
- * PURE FUNCTIONS ONLY. Nothing here reads the database, the clock or the
- * environment, so the parse is deterministic and testable on its own, and the
- * *policy* built on top of it (StudentYearPolicyService) is the only place
- * that knows what "first year" means right now.
+ * PURE FUNCTIONS ONLY. Nothing here reads the database or the environment.
+ * The result is stored on `User.batchYear` at sign-in as profile data; no
+ * access-control rule is derived from it (the first-year isolation policy that
+ * once was has been removed).
  *
  * -- The address shape ------------------------------------------------------
  *
@@ -23,12 +23,10 @@
  * reading a digit out of somebody's name: `arjun.kumar2@example.com` has
  * trailing digits and no programme, and parses to nothing.
  *
- * -- Why it fails closed ----------------------------------------------------
+ * -- Unresolved addresses ---------------------------------------------------
  *
  * Every unrecognised address returns `null` -- "unresolved", never a guess and
- * never a default. A user whose batch cannot be read is NOT first-year (see
- * StudentYearPolicyService.isFirstYearBatch), because the alternative would
- * hand anyone with an unparseable address a first-year student's audience.
+ * never a default.
  */
 
 /** The parse could not identify a batch year for this address. */
@@ -147,4 +145,19 @@ export function isPlausibleBatchYear(
     batchYear >= currentYear - MAX_BATCH_AGE_YEARS &&
     batchYear <= currentYear + 1
   );
+}
+
+/**
+ * The batch year an account should have, computed from its address alone.
+ * This is what the sign-in path stamps onto `User.batchYear`; it ignores any
+ * existing stored value, so a wrong one self-heals on the user's next login.
+ * An implausible parse is stored as unresolved (`null`).
+ */
+export function deriveBatchYearForStorage(
+  email: string | null | undefined,
+  currentYear: number = new Date().getFullYear(),
+): number | null {
+  const parsed = extractBatchYearFromEmail(email);
+  if (parsed === null) return null;
+  return isPlausibleBatchYear(parsed, currentYear) ? parsed : null;
 }

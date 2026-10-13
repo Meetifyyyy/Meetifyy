@@ -12,7 +12,6 @@ import { BlocksService } from './blocks.service';
 import { PresenceService } from '../presence/presence.service';
 import { AcademicsService } from '../academics/academics.service';
 import { VerificationAccessService } from '../common/verification/verification-access.service';
-import { studentYearPolicyMockProvider } from '../common/student-year/testing/student-year-policy.mock';
 
 describe('Follow / Unfollow High Concurrency Stress Test', () => {
   let service: UsersService;
@@ -68,7 +67,6 @@ describe('Follow / Unfollow High Concurrency Stress Test', () => {
     jest.clearAllMocks();
     const module: TestingModule = await Test.createTestingModule({
       providers: [
-        studentYearPolicyMockProvider(),
         UsersService,
         { provide: PrismaService, useValue: mockPrisma },
         {

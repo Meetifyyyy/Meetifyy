@@ -7,7 +7,6 @@ import type { DomainEventService } from '../events/domain-event.service';
 import type { MentionsService } from '../mentions/mentions.service';
 import type { BlocksService } from '../users/blocks.service';
 import type { VerificationAccessService } from '../common/verification/verification-access.service';
-import type { StudentYearPolicyService } from '../common/student-year/student-year-policy.service';
 import type { RateLimitService } from '../common/rate-limit/rate-limit.service';
 
 /**
@@ -79,11 +78,6 @@ describe('MessagingCoreService — messaging an unavailable recipient', () => {
         isEnforcementEnabled: () => false,
         assertCanMessageInConversation: jest.fn(() => Promise.resolve()),
         isEligibleStatus: () => true,
-      }),
-      // First-year isolation is not what this fixture exercises; always allow.
-      stub<StudentYearPolicyService>({
-        isEnforcementEnabled: () => false,
-        assertCanInteract: jest.fn(() => Promise.resolve()),
       }),
       // Rate limiting is not what this fixture exercises; always allow.
       stub<RateLimitService>({

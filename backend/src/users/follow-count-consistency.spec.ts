@@ -13,10 +13,6 @@ import { PresenceService } from '../presence/presence.service';
 import { AcademicsService } from '../academics/academics.service';
 import { VerificationAccessService } from '../common/verification/verification-access.service';
 import { createBlocksServiceMock } from './testing/blocks.service.mock';
-import {
-  studentYearPolicyMockProvider,
-  type createStudentYearPolicyMock,
-} from '../common/student-year/testing/student-year-policy.mock';
 
 /** The profile query's `_count.select`, as far as these assertions read it. */
 type CountSelect = {
@@ -33,9 +29,7 @@ jest.mock('../auth/auth.service', () => ({ clearAuthSyncCache: jest.fn() }));
  *
  * The bug: they were not. A profile read "1 Following" above a modal that said
  * "No following yet", because the count included an account the viewer is not
- * allowed to see and the list — correctly — did not. Blocks cause it at once;
- * first-year isolation causes it on 1 January, when a cohort rolls over and
- * accounts a senior already followed become invisible to them.
+ * allowed to see and the list — correctly — did not. Blocks cause it.
  *
  * These tests assert the rules are actually pushed into the count query rather
  * than asserting a number, because a fixture returning the right total says
@@ -84,7 +78,6 @@ describe('Follower counts and the lists behind them', () => {
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
-        studentYearPolicyMockProvider(),
         UsersService,
         { provide: PrismaService, useValue: prisma },
         {
@@ -159,26 +152,6 @@ describe('Follower counts and the lists behind them', () => {
     expect(countArgs!.following.where.following.id.notIn).toContain(
       'blocked-1',
     );
-  });
-
-  /**
-   * The exact case that produced "1 Following" over an empty list: the viewer
-   * follows someone on the other side of the first-year boundary.
-   */
-  it('applies the first-year visibility rule to both counts', async () => {
-    await service.getProfileByUsername('target', VIEWER);
-
-    // The policy double returns a marker `where`; what matters is that the
-    // count query carries whatever the policy produced, on both sides.
-    const policy = service['studentYearPolicy'] as ReturnType<
-      typeof createStudentYearPolicyMock
-    >;
-    expect(policy.visibleUserWhere).toHaveBeenCalled();
-    const produced = policy.visibleUserWhere.mock.results[0].value as object;
-    for (const key of Object.keys(produced)) {
-      expect(countArgs!.followers.where.follower).toHaveProperty(key);
-      expect(countArgs!.following.where.following).toHaveProperty(key);
-    }
   });
 
   it('leaves the post count alone — it is not a per-viewer social edge', async () => {

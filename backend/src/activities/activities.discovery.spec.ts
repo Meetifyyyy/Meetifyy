@@ -9,7 +9,6 @@ import { DomainEventService } from '../events/domain-event.service';
 import { RedisService } from '../redis/redis.service';
 import { getQueueToken } from '@nestjs/bullmq';
 import { NOTIFICATIONS_QUEUE } from '../notifications/notifications.processor';
-import { studentYearPolicyMockProvider } from '../common/student-year/testing/student-year-policy.mock';
 
 /**
  * Crew discovery: the personalized "For You" ranking and the three-section
@@ -41,6 +40,8 @@ describe('Crew discovery', () => {
     _count: { members: number };
     deletedAt: Date | null;
     status: string;
+    /** The viewer's own membership row, when the test needs one. */
+    members?: { status: string }[];
   };
 
   const act = (id: string, over: Partial<ActivityRow> = {}): ActivityRow => ({
@@ -73,7 +74,7 @@ describe('Crew discovery', () => {
           // The hydration query asks for CARD_SELECT (which includes members);
           // the ranking query does not. Both just echo the pool here.
           return Promise.resolve(
-            select?.members ? rows.map((r) => ({ ...r, members: [] })) : rows,
+            select?.members ? rows.map((r) => ({ members: [], ...r })) : rows,
           );
         },
       ),
@@ -121,7 +122,10 @@ describe('Crew discovery', () => {
       ),
     },
     conversationParticipant: { findMany: jest.fn(() => Promise.resolve([])) },
-    activityInvitation: { count: jest.fn(() => Promise.resolve(0)) },
+    activityInvitation: {
+      count: jest.fn(() => Promise.resolve(0)),
+      findMany: jest.fn(() => Promise.resolve([] as { activityId: string }[])),
+    },
   });
 
   beforeEach(async () => {
@@ -134,7 +138,6 @@ describe('Crew discovery', () => {
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
-        studentYearPolicyMockProvider(),
         ActivitiesService,
         ActivityAuthorizationService,
         { provide: PrismaService, useValue: prisma },
@@ -265,6 +268,65 @@ describe('Crew discovery', () => {
       );
       expect(hydrationWhere).toContain('blocked-host');
       expect(hydrationWhere).toContain('notIn');
+    });
+
+    it('never suggests the viewer their own activities', async () => {
+      pool = [act('a')];
+      await service.getForYouFeed(ME, 20);
+      const where = JSON.stringify(
+        prisma.crewActivity.findMany.mock.calls[0][0].where,
+      );
+      expect(where).toContain(`"creatorId":{"notIn":["${ME}"]}`);
+    });
+
+    it('drops a full activity the viewer is not in, keeps one they are', async () => {
+      pool = [
+        act('full', { maxMembers: 2, _count: { members: 2 } }),
+        act('fullMine', {
+          maxMembers: 2,
+          _count: { members: 2 },
+          members: [{ status: 'MEMBER' }],
+        }),
+        act('room', { maxMembers: 3, _count: { members: 2 } }),
+      ];
+      const ids = (await service.getForYouFeed(ME, 20)).activities.map(
+        (a) => a.id,
+      );
+      expect(ids).not.toContain('full');
+      expect(ids).toContain('fullMine');
+      expect(ids).toContain('room');
+    });
+
+    it('counts only MEMBER rows towards capacity, as joining does', async () => {
+      pool = [act('a', { maxMembers: 2 })];
+      await service.getForYouFeed(ME, 20);
+      const select = JSON.stringify(
+        prisma.crewActivity.findMany.mock.calls[0][0].select,
+      );
+      expect(select).toContain('"members":{"where":{"status":"MEMBER"}}');
+    });
+
+    it('sorts an activity already joined or declined below every undecided one', async () => {
+      pool = [
+        act('joined', {
+          creatorId: 'mutual',
+          members: [{ status: 'MEMBER' }],
+        }),
+        act('declined', {
+          creatorId: 'mutual',
+          members: [{ status: 'DECLINED' }],
+        }),
+        act('plain'),
+      ];
+      follows = [
+        { followerId: ME, followingId: 'mutual' },
+        { followerId: 'mutual', followingId: ME },
+      ];
+      const ids = (await service.getForYouFeed(ME, 20)).activities.map(
+        (a) => a.id,
+      );
+      expect(ids[0]).toBe('plain');
+      expect(ids).toContain('joined');
     });
 
     it('caps the candidate pool', async () => {

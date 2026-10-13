@@ -32,7 +32,7 @@ import {
 import type { AuthenticatedUser } from '../common/types/authenticated-request';
 import { randomInt } from 'crypto';
 import { NotificationType } from '@prisma/client';
-import { StudentYearPolicyService } from '../common/student-year/student-year-policy.service';
+import { deriveBatchYearForStorage } from '../common/student-year/batch-year.util';
 import { LegalConsentService } from '../common/legal/legal-consent.service';
 import { stripTags } from '../common/utils/strip-tags.util';
 
@@ -189,7 +189,6 @@ function buildExistingProfile(
   row: ProfileRow,
   college: { id: string; name: string | null } | null,
   settings: ProfileSettings | null,
-  isFirstYearStudent: boolean,
 ) {
   return {
     id: row.id,
@@ -200,14 +199,12 @@ function buildExistingProfile(
     course: row.course,
     branch: row.branch,
     passingYear: row.passingYear,
-    // The viewer's OWN batch, and the first-year flag derived from it.
-    // The client uses these only to decide whether to draw a Message
-    // button in its locked state -- every actual restriction is enforced
-    // by the server. Emitting the derived flag as well as the raw year
-    // means the client never has to know what "first year" means, so the
-    // year rollover needs no client deploy.
+    // The viewer's OWN batch (profile data only).
     batchYear: row.batchYear ?? null,
-    isFirstYearStudent,
+    // First-year isolation has been removed. Kept, always `false`, because
+    // installed apps ship a frozen frontend that reads this marker; `false`
+    // on every account means every pair is "compatible" to an old client.
+    isFirstYearStudent: false,
     location: row.location,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
@@ -336,10 +333,6 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     private readonly supabaseService: SupabaseService,
     private readonly domainValidatorService: DomainValidatorService,
     private readonly defaultAssets: DefaultAssetsService,
-    // First-year isolation. Sign-in is the one moment the server holds the
-    // verified institutional address AND is already writing the row, so it is
-    // where `batchYear` is derived and kept honest -- see the write below.
-    private readonly studentYearPolicy: StudentYearPolicyService,
     // Records what a new account agreed to at signup. Account creation is the
     // only moment that agreement happens, and it is the only place that can
     // write it down.
@@ -558,14 +551,11 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     // runs for every account, holds the address, and is already touching the
     // row. It covers accounts created before the backfill, accounts whose
     // address an admin corrected, and any row the backfill's SQL and the
-    // TypeScript parser would disagree about -- the parser wins, because it
-    // is what every runtime check uses.
+    // TypeScript parser would disagree about -- the parser wins.
     //
     // Fire-and-forget, and only when the value actually differs, so the
-    // normal login pays nothing. Even if the write never lands, enforcement
-    // is unaffected: `getUserBatchYear` re-parses the address whenever the
-    // column is absent or implausible.
-    const derivedBatchYear = this.studentYearPolicy.deriveBatchYearForStorage(
+    // normal login pays nothing.
+    const derivedBatchYear = deriveBatchYearForStorage(
       row.email ?? row.collegeEmail,
     );
     if (derivedBatchYear !== (row.batchYear ?? null)) {
@@ -575,7 +565,6 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
           where: { id: row.id },
           data: { batchYear: derivedBatchYear },
         })
-        .then(() => this.studentYearPolicy.invalidate(row.id))
         .catch((err) =>
           this.logger.error(`Failed to heal batchYear: ${errorMessage(err)}`),
         );
@@ -681,16 +670,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
       }
     }
 
-    const result = buildExistingProfile(
-      row,
-      college,
-      settings,
-      this.studentYearPolicy.isFirstYearStudent({
-        batchYear: row.batchYear,
-        email: row.email,
-        collegeEmail: row.collegeEmail,
-      }),
-    );
+    const result = buildExistingProfile(row, college, settings);
     this.syncCache.set(user.id, { data: result, timestamp: Date.now() });
     return result;
   }
@@ -863,11 +843,8 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
           cover: null,
           collegeId: collegeId,
           collegeEmail: email,
-          // Derived here, never accepted from the client. A brand-new account
-          // is therefore correctly bucketed by the isolation policy on its
-          // very first request, before the backfill or a later login could
-          // have run.
-          batchYear: this.studentYearPolicy.deriveBatchYearForStorage(email),
+          // Derived here, never accepted from the client.
+          batchYear: deriveBatchYearForStorage(email),
           birthday: userBirthday,
           settings: {
             create: {},
@@ -902,8 +879,8 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
 
     // Read back through the same query and builder an existing account uses.
     // This call used to return the Prisma row itself: every column (purge
-    // bookkeeping included) and none of `meta` or `isFirstYearStudent`, so a
-    // new first-year student was drawn as unrestricted until the next sync.
+    // bookkeeping included) and none of `meta`, so a new account was drawn
+    // differently until the next sync.
     const created = await this.queryProfileRow(userRecord.id);
     if (!created) {
       throw new InternalServerErrorException(

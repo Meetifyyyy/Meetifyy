@@ -2,6 +2,7 @@ import { useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Feed from '../components/Feed';
 import RightPanel, { NotificationsActivity, OnlineFriends, UpcomingEvents } from '@layout/RightPanel';
+import TrendingHashtags from '@layout/TrendingHashtags';
 import { useSystemBars } from '@shared/hooks/useSystemBars';
 
 export default function FeedRoute() {
@@ -37,6 +38,7 @@ export default function FeedRoute() {
       </main>
       <RightPanel className="animate-in">
         <OnlineFriends />
+        <TrendingHashtags />
         <NotificationsActivity />
         <UpcomingEvents />
       </RightPanel>

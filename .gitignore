@@ -216,7 +216,6 @@ docs/*
 !docs/azure-setup.md
 !docs/operations.md
 !docs/rate-limiting.md
-!docs/first-year-isolation.md
 !docs/testing-log.md
 !docs/mobile-auth-decision.md
 

@@ -9,7 +9,6 @@ import { MentionsService } from '../mentions/mentions.service';
 import { RedisService } from '../redis/redis.service';
 import { BlocksService } from '../users/blocks.service';
 import { verificationAccessMockProvider } from '../common/verification/testing/verification-access.mock';
-import { studentYearPolicyMockProvider } from '../common/student-year/testing/student-year-policy.mock';
 import { allowAllRateLimitProvider } from '../common/rate-limit/testing/rate-limit.mock';
 import {
   MEDIA_PAGE_DEFAULT,
@@ -169,7 +168,6 @@ describe('MessagesService.getConversationMedia', () => {
       providers: [
         allowAllRateLimitProvider(),
         verificationAccessMockProvider(),
-        studentYearPolicyMockProvider({}),
         MessagesService,
         { provide: PrismaService, useValue: prisma },
         {
