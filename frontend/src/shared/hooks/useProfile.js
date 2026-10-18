@@ -9,7 +9,7 @@ import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { usersApi } from '@shared/api/apiClient';
 import { idbGet, idbSet } from '@shared/lib/idb';
 import { useAuth } from '@shared/context/AuthContext';
-import { useIsVerified } from './useIsVerified';
+import { useHasCampusAccess, useCampusDeniedHandler } from './useCampusAffiliation';
 import { warmCover } from '@shared/components/ui/CoverImage';
 
 // ── Query keys ───────────────────────────────────────────────────────────────
@@ -124,18 +124,25 @@ export function useProfile(username, { enabled = true } = {}) {
 export function useCampusUsers(limit = 50, { enabled = true } = {}) {
   const queryClient = useQueryClient();
   const { isLoggedIn } = useAuth();
-  // The campus surfaces are verification-gated server-side. Without this the
-  // locked page still fired the request on every render pass — a guaranteed
-  // 403 per mount, and previously a successful one that filled the cache with
-  // content the lock was supposed to withhold.
-  const isVerified = useIsVerified();
+  // The campus surfaces are gated server-side by a verified college email
+  // (campus affiliation). Without this the locked page still fired the request
+  // on every render pass — a guaranteed 403 per mount, and previously a
+  // successful one that filled the cache with content the lock was supposed to
+  // withhold.
+  const isVerified = useHasCampusAccess();
+  const onDenied = useCampusDeniedHandler();
 
   const query = useQuery({
     queryKey: [...PROFILE_KEYS.campusUsers, limit],
     queryFn: async () => {
-      const data = await usersApi.getCampusUsers(limit, 0);
-      idbSet('profiles', 'campus_users', data);
-      return data;
+      try {
+        const data = await usersApi.getCampusUsers(limit, 0);
+        idbSet('profiles', 'campus_users', data);
+        return data;
+      } catch (err) {
+        onDenied(err);
+        throw err;
+      }
     },
     enabled: Boolean(isLoggedIn) && isVerified && enabled,
     staleTime: 10 * 60 * 1000,
@@ -173,13 +180,19 @@ export function useCampusUsers(limit = 50, { enabled = true } = {}) {
  */
 export function useDirectory({ search = '', course = 'All', branch = 'All', year = 'All' } = {}) {
   const { isLoggedIn } = useAuth();
-  const isVerified = useIsVerified();
+  const isVerified = useHasCampusAccess();
+  const onDenied = useCampusDeniedHandler();
   const normSearch = (search || '').trim();
 
   const query = useInfiniteQuery({
     queryKey: ['directory', { search: normSearch, course, branch, year }],
     queryFn: ({ pageParam }) =>
-      usersApi.getDirectory({ search: normSearch, course, branch, year, limit: 30, cursor: pageParam }),
+      usersApi
+        .getDirectory({ search: normSearch, course, branch, year, limit: 30, cursor: pageParam })
+        .catch((err) => {
+          onDenied(err);
+          throw err;
+        }),
     enabled: Boolean(isLoggedIn) && isVerified,
     initialPageParam: undefined,
     getNextPageParam: (lastPage) => lastPage?.nextCursor ?? undefined,

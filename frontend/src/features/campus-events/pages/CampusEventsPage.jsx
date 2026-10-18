@@ -7,7 +7,7 @@ import { useCampusEvents, useDeleteCampusEvent } from '@shared/hooks/useCampusEv
 import CampusEventSection from '../components/CampusEventSection';
 import ConfirmModal from '@shared/components/modals/ConfirmModal';
 import sharedStyles from '@features/campus/components/skeletons/CampusShared.module.css';
-import VerificationGate from '@shared/components/VerificationGate/VerificationGate';
+import CampusAffiliationGate from '@features/campus/components/affiliation/CampusAffiliationGate';
 
 /**
  * Only ever opened by a campus representative, from the "+" button or a card's
@@ -58,7 +58,7 @@ export default function CampusEventsPage() {
 
   return (
     <main className={`centre centre-wide ${sharedStyles.hubContainer}`}>
-      <VerificationGate message="Verify your student ID to access the campus directory, events, and communities." fullPage>
+      <CampusAffiliationGate>
         <div className={`${sharedStyles.headerBanner} ${sharedStyles.compactHeader}`}>
           <header className={sharedStyles.header}>
             <div className={sharedStyles.headerLeftGroup}>
@@ -147,7 +147,7 @@ export default function CampusEventsPage() {
           onConfirm={handleDeleteEvent}
           onCancel={clearDeleteCandidate}
         />
-      </VerificationGate>
+      </CampusAffiliationGate>
     </main>
   );
 }

@@ -574,6 +574,43 @@ export function createEndpoints({
     discard: (key) => apiClient.post('/api/media/discard', { key }),
   };
 
+  // ── College affiliation (Campus access via a verified college email) ───────
+  //
+  // Separate from the selfie check (`verificationStatus`): this is what proves
+  // a person belongs to a college, and it is the only thing Campus reads.
+  const campusAffiliationApi = {
+    /** `{ affiliation, pending }` — both may be null. Restores a pending code across reloads. */
+    get: () => apiClient.get('/api/campus/affiliation'),
+    /** `{ sent, emailMasked, expiresAt, resendAvailableAt }` */
+    sendOtp: ({ collegeId, email }) =>
+      apiClient.post('/api/campus/affiliation/otp', { collegeId, email }),
+    /** `{ affiliation }` */
+    verify: ({ code }) => apiClient.post('/api/campus/affiliation/verify', { code }),
+    /** Releases the college email. The password is re-confirmed server side. */
+    remove: ({ password }) =>
+      apiClient.delete('/api/campus/affiliation', { body: { password } }),
+    /** Public college list (`{ colleges: [{ id, name, logoUrl, ... }] }`). */
+    listColleges: () => apiClient.get('/api/academics/colleges'),
+    /**
+     * Ask for a college that is not listed yet. The existing public route
+     * (AuthController.requestCollege, rate limited per IP and per address);
+     * its DTO forbids unknown fields, so only these four are sent.
+     */
+    requestCollege: ({ name, collegeName, collegeEmail, personalEmail }) =>
+      apiClient.post('/api/auth/request-college', { name, collegeName, collegeEmail, personalEmail }),
+  };
+
+  // ── Account email (the login address) ─────────────────────────────────────
+  const accountEmailApi = {
+    /** `{ email, collegeEmail, needsPersonalEmail }` */
+    get: () => apiClient.get('/api/account/email'),
+    /** `{ sent, emailMasked, expiresAt, resendAvailableAt }` */
+    sendOtp: ({ email }) => apiClient.post('/api/account/email/otp', { email }),
+    /** `{ email }` */
+    verify: ({ code, currentPassword }) =>
+      apiClient.post('/api/account/email/verify', { code, currentPassword }),
+  };
+
   // ── Campus Events (official campus event discovery) ────────────────────────────
   const campusEventsApi = {
     list: (scope = 'upcoming', { limit = 20, cursor, campusId } = {}) => {
@@ -663,6 +700,17 @@ export function createEndpoints({
     /** One published document, in full. */
     getDocument: (type, { signal } = {}) =>
       apiClient.get(`/api/legal/documents/${encodeURIComponent(type)}`, { signal }),
+
+    /** Every published or archived version of one document, without bodies. */
+    listVersions: (type, { signal } = {}) =>
+      apiClient.get(`/api/legal/documents/${encodeURIComponent(type)}/versions`, { signal }),
+
+    /** One published or archived version in full, read-only. */
+    getVersion: (type, versionNumber, { signal } = {}) =>
+      apiClient.get(
+        `/api/legal/documents/${encodeURIComponent(type)}/versions/${encodeURIComponent(String(versionNumber))}`,
+        { signal },
+      ),
 
     /**
      * Whether this user may continue, and what is outstanding if not.
@@ -773,6 +821,8 @@ export function createEndpoints({
     healthApi,
     uploadsApi,
     campusEventsApi,
+    campusAffiliationApi,
+    accountEmailApi,
     notificationsApi,
     searchApi,
     reportsApi,

@@ -1,7 +1,7 @@
 import { useState, useMemo, useLayoutEffect, useRef, useCallback, lazy, Suspense, memo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@shared/context/AuthContext';
-import { useIsVerified } from '@shared/hooks/useIsVerified';
+import { useCampusAffiliation } from '@shared/hooks/useCampusAffiliation';
 import { useCampusUsers } from '@shared/hooks/useProfile';
 import { useCampusCommunities } from '@shared/hooks/useCommunities';
 import { useCampusEvents, useDeleteCampusEvent } from '@shared/hooks/useCampusEvents';
@@ -21,7 +21,8 @@ import CrewCard from '@features/crew/components/cards/CrewCard';
 import CrewCardSkeleton from '@features/crew/components/cards/CrewCardSkeleton';
 import Skeleton from '@shared/components/skeletons/Skeleton';
 import { mapActivity } from '@shared/utils/mapActivity';
-import VerificationGate from '@shared/components/VerificationGate/VerificationGate';
+import CampusJoinFlow from '../components/affiliation/CampusJoinFlow';
+import CampusVerifiedBadge from '../components/affiliation/CampusVerifiedBadge';
 import CommunityRow from '@features/communities/components/directory/CommunityRow';
 import listStyles from '@features/communities/components/directory/CommunityList.module.css';
 
@@ -213,11 +214,20 @@ export default function CampusPage() {
   const navigate = useNavigate();
   const { currentUser, collegeName: authCollegeName } = useAuth();
   const isCampusRep = Boolean(currentUser?.isCampusRep);
-  // Every section below sits behind <VerificationGate>, but the hooks run
-  // whether or not the gate lets its children render. useCampusUsers,
-  // useCampusEvents and useCampusCommunities each own that decision; only the
-  // activities feed had no gate of its own and loaded behind the locked page.
-  const isVerified = useIsVerified();
+  // Campus opens on a verified college email (campus affiliation), not on the
+  // selfie check. Without one the page is the verification flow instead; a
+  // code sent before a reload is restored from the server (`withPending`).
+  // The hooks below run either way, and useCampusUsers, useCampusEvents and
+  // useCampusCommunities each gate themselves on the same affiliation; only
+  // the activities feed has no gate of its own, hence `enabled` below.
+  const campus = useCampusAffiliation({ withPending: true });
+  const isVerified = campus.isActive;
+  // Settings -> Email -> "Change college email" lands here with ?verify=change:
+  // the verification flow over an existing affiliation. Verifying a new
+  // address replaces the old one in place on the server.
+  const [searchParams] = useSearchParams();
+  const isChangingCollege = campus.isActive && searchParams.get('verify') === 'change';
+  const finishCollegeChange = useCallback(() => navigate('/campus', { replace: true }), [navigate]);
 
   const { campusUsers, isLoading: campusUsersLoading } = useCampusUsers(50);
   const { campusCommunities, isLoading: campusCommunitiesLoading } = useCampusCommunities();
@@ -254,7 +264,7 @@ export default function CampusPage() {
 
   // Outside-click and Escape both belong to `Menu` now.
 
-  const collegeName = authCollegeName;
+  const collegeName = (campus.isActive && campus.affiliation?.collegeName) || authCollegeName;
 
   // A fresh set of faces on every visit rather than the same head of the list.
   // The seed is fixed for the lifetime of the page, so a background refetch of
@@ -359,14 +369,20 @@ export default function CampusPage() {
 
   return (
     <main className={`centre centre-wide ${styles.hubContainer}`}>
-      <VerificationGate message="Verify your student ID to access the campus directory, events, and communities." fullPage>
+      {isChangingCollege ? (
+        <CampusJoinFlow onVerified={finishCollegeChange} onCancel={finishCollegeChange} />
+      ) : campus.isActive ? (
+      <>
       {/* HEADER SECTION */}
       <div className={styles.headerBanner}>
         <header className={styles.header}>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '6px', minWidth: 0 }}>
           <h1 className={styles.collegeTitle} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', lineHeight: 1 }}>
             <span>{collegeName}</span>
             <CollegeRepresentativeBadge isCampusRep={isCampusRep} collegeName={collegeName} size="inherit" />
           </h1>
+          <CampusVerifiedBadge affiliation={campus.affiliation} fallbackName={collegeName} />
+          </div>
 
           <div className={`${styles.headerActions} ${styles.headerActionsRelative}`}>
             <button
@@ -584,7 +600,10 @@ export default function CampusPage() {
             />
           </Suspense>
         )}
-      </VerificationGate>
+      </>
+      ) : campus.isLoading ? null : (
+        <CampusJoinFlow pending={campus.pending} pendingLoading={campus.isPendingLoading} />
+      )}
 
       {eventFormState && (
         <Suspense fallback={null}>

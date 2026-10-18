@@ -1,0 +1,552 @@
+/* College-email verification for Campus: picker, verify screen, gate card,
+   verified badge. Theme tokens only, so light and dark both follow the app. */
+
+.wrap {
+  width: 100%;
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 1.25rem 1rem 2rem;
+  box-sizing: border-box;
+}
+
+.card {
+  background: var(--color-bg-white, #ffffff);
+  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
+  border-radius: var(--radius-xl, 20px);
+  padding: 1.5rem;
+  box-sizing: border-box;
+}
+
+:global([data-theme="dark"]) .card {
+  background: var(--color-bg-alt, #1e293b);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.eyebrow {
+  margin: 0 0 0.35rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-light, #64748b);
+}
+
+.title {
+  margin: 0 0 0.4rem;
+  font-size: 1.35rem;
+  font-weight: 700;
+  line-height: 1.25;
+  color: var(--color-text-main, #0f172a);
+}
+
+.lead {
+  margin: 0 0 1.25rem;
+  font-size: 0.92rem;
+  line-height: 1.55;
+  color: var(--color-text-light, #64748b);
+}
+
+/* ── Picker ── */
+.search {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0 0.85rem;
+  height: 44px;
+  margin-bottom: 1rem;
+  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
+  border-radius: var(--radius-md, 12px);
+  background: var(--color-bg-soft, #f8fafc);
+  color: var(--color-text-light, #64748b);
+}
+
+:global([data-theme="dark"]) .search {
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.search input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 16px;
+  color: var(--color-text-main, #0f172a);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr));
+  gap: 0.6rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.collegeCard {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.75rem;
+  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
+  border-radius: var(--radius-lg, 16px);
+  background: var(--color-bg-white, #ffffff);
+  color: var(--color-text-main, #0f172a);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+
+:global([data-theme="dark"]) .collegeCard {
+  background: var(--color-bg-soft, #0f172a);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .collegeCard:hover {
+    border-color: var(--color-primary, #2563eb);
+  }
+}
+
+.collegeCard:active {
+  transform: scale(0.99);
+}
+
+.collegeCard:focus-visible {
+  outline: 2px solid var(--color-primary, #2563eb);
+  outline-offset: 2px;
+}
+
+.collegeName {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.92rem;
+  font-weight: 600;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.logo {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-md, 12px);
+  overflow: hidden;
+  background: var(--color-bg-soft, #f1f5f9);
+  color: var(--color-text-light, #64748b);
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+:global([data-theme="dark"]) .logo {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.logoLarge {
+  width: 56px;
+  height: 56px;
+  font-size: 1.05rem;
+}
+
+.state {
+  padding: 1.5rem 0.5rem;
+  text-align: center;
+  font-size: 0.9rem;
+  color: var(--color-text-light, #64748b);
+}
+
+.skeletonCard {
+  height: 66px;
+  border-radius: var(--radius-lg, 16px);
+  background: var(--color-bg-soft, #f1f5f9);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+:global([data-theme="dark"]) .skeletonCard {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+@keyframes pulse {
+  50% { opacity: 0.55; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeletonCard { animation: none; }
+}
+
+/* ── Verify screen ── */
+.selected {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  margin-bottom: 1.25rem;
+}
+
+.selectedText {
+  flex: 1;
+  min-width: 0;
+}
+
+.selectedName {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--color-text-main, #0f172a);
+  overflow-wrap: anywhere;
+}
+
+.linkBtn {
+  padding: 0;
+  border: none;
+  background: none;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-primary, #2563eb);
+  cursor: pointer;
+}
+
+.linkBtn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-bottom: 0.75rem;
+}
+
+.label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--color-text-main, #0f172a);
+}
+
+.input {
+  height: 46px;
+  padding: 0 0.85rem;
+  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.12));
+  border-radius: var(--radius-md, 12px);
+  background: var(--color-bg-soft, #f8fafc);
+  color: var(--color-text-main, #0f172a);
+  font-size: 16px;
+  box-sizing: border-box;
+  width: 100%;
+}
+
+:global([data-theme="dark"]) .input {
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.input:focus {
+  outline: none;
+  border-color: var(--color-primary, #2563eb);
+}
+
+.hint {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: var(--color-text-light, #64748b);
+}
+
+.sentTo {
+  margin: 0 0 0.85rem;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: var(--color-text-light, #64748b);
+}
+
+.sentTo strong {
+  color: var(--color-text-main, #0f172a);
+}
+
+.error {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.4rem;
+  min-height: 1.4rem;
+  margin: 0.6rem 0;
+  font-size: 0.84rem;
+  line-height: 1.4;
+  color: var(--color-danger, #ef4444);
+}
+
+.meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin: 0.25rem 0 1rem;
+  font-size: 0.84rem;
+  color: var(--color-text-light, #64748b);
+}
+
+.actions {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.primaryBtn,
+.secondaryBtn {
+  composes: action-btn from global;
+}
+
+.primaryBtn {
+  composes: action-btn--primary from global;
+}
+
+.secondaryBtn {
+  composes: action-btn--secondary from global;
+}
+
+.primaryBtn:disabled,
+.secondaryBtn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.note {
+  margin: 1rem 0 0;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--color-text-light, #64748b);
+}
+
+/* ── Verified badge on the Campus header ── */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  max-width: 100%;
+  padding: 0.25rem 0.6rem 0.25rem 0.3rem;
+  border-radius: 999px;
+  /* Sits on the college's own header colour, which can be any hue: an opaque
+     light chip keeps the green readable on all of them, in both themes. */
+  background: rgba(255, 255, 255, 0.94);
+  color: #15803d;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.badge .logo {
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  font-size: 0.6rem;
+}
+
+.badgeText {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Request a college (card + dialog) ── */
+.requestCard {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  flex-wrap: wrap;
+  margin-top: 1rem;
+  padding: 0.9rem 1rem;
+  border: 1px dashed var(--color-border, rgba(0, 0, 0, 0.16));
+  border-radius: var(--radius-lg, 16px);
+  background: var(--color-bg-soft, #f8fafc);
+}
+
+:global([data-theme="dark"]) .requestCard {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+.requestCardCompact {
+  margin: 0.75rem auto 0;
+  max-width: 460px;
+  text-align: left;
+}
+
+.requestText {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+.requestTitle {
+  margin: 0;
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--color-text-main, #0f172a);
+}
+
+.requestBody {
+  margin: 0.2rem 0 0;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: var(--color-text-light, #64748b);
+}
+
+.requestCard .secondaryBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-shrink: 0;
+}
+
+.sheetBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 2100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Bottom: the keyboard too. In the app it overlays the page (--kb-inset),
+     so the dialog sits in the space above it and scrolls here if needed. */
+  padding: max(1.25rem, env(safe-area-inset-top), var(--status-bar-inset, 0px))
+           max(1rem, env(safe-area-inset-right))
+           max(1.25rem, env(safe-area-inset-bottom), var(--kb-inset, 0px))
+           max(1rem, env(safe-area-inset-left));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: rgba(15, 23, 42, 0.6);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  box-sizing: border-box;
+}
+
+:global([data-theme="dark"]) .sheetBackdrop {
+  background: rgba(0, 0, 0, 0.75);
+}
+
+.sheet {
+  width: 100%;
+  max-width: 460px;
+  margin: auto 0;
+  padding: 1.35rem 1.35rem 1.25rem;
+  box-sizing: border-box;
+  background: var(--color-bg-white, #ffffff);
+  border-radius: var(--radius-xl, 20px);
+  box-shadow: var(--shadow-lg, 0 12px 32px rgba(15, 23, 42, 0.18));
+}
+
+:global([data-theme="dark"]) .sheet {
+  background: var(--color-bg-alt, #1e293b);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.sheetHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.4rem;
+}
+
+.sheetTitle {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--color-text-main, #0f172a);
+}
+
+.sheetClose {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 999px;
+  background: var(--color-bg-soft, #f1f5f9);
+  color: var(--color-text-light, #64748b);
+  cursor: pointer;
+}
+
+:global([data-theme="dark"]) .sheetClose {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.readonlyRow {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  margin-bottom: 0.75rem;
+}
+
+.readonlyValue {
+  padding: 0.6rem 0.85rem;
+  border-radius: var(--radius-md, 12px);
+  background: var(--color-bg-soft, #f1f5f9);
+  color: var(--color-text-main, #0f172a);
+  font-size: 0.92rem;
+  overflow-wrap: anywhere;
+}
+
+:global([data-theme="dark"]) .readonlyValue {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.fieldError {
+  font-size: 0.8rem;
+  line-height: 1.4;
+  color: var(--color-danger, #ef4444);
+}
+
+.input[aria-invalid="true"] {
+  border-color: var(--color-danger, #ef4444);
+}
+
+.sheetActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin-top: 0.5rem;
+}
+
+.sheetActions .primaryBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.sheetDone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 0.25rem;
+  padding-top: 0.5rem;
+}
+
+.sheetDone .lead strong {
+  color: var(--color-text-main, #0f172a);
+  overflow-wrap: anywhere;
+}
+
+.doneIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  margin-bottom: 0.75rem;
+  border-radius: 999px;
+  background: rgba(34, 197, 94, 0.14);
+  color: var(--color-success, #16a34a);
+}

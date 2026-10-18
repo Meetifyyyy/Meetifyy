@@ -57,6 +57,8 @@ const EXPECTED_NAMESPACES = [
   'healthApi',
   'uploadsApi',
   'campusEventsApi',
+  'campusAffiliationApi',
+  'accountEmailApi',
   'notificationsApi',
   'searchApi',
   'reportsApi',
@@ -93,7 +95,7 @@ describe('createEndpoints', () => {
     const { transport } = stubTransport();
     const api = createEndpoints(transport);
     const total = Object.values(api).reduce((n, ns) => n + Object.keys(ns).length, 0);
-    expect(total).toBe(198); // 193 + messagesApi.getConversationMedia (shared-media gallery) + supportApi.getMyRequests/getMyRequest/submitMyRequest + searchApi.trendingHashtags
+    expect(total).toBe(209); // 198 + campusAffiliationApi (get/sendOtp/verify/remove/listColleges/requestCollege) + accountEmailApi (get/sendOtp/verify) + legalApi (listVersions/getVersion)
   });
 
   it('is a factory, not a singleton — two calls yield independent objects', () => {
@@ -118,6 +120,34 @@ describe('createEndpoints', () => {
       { method: 'GET', path: '/api/communities', rest: [] },
       { method: 'GET', path: '/api/communities/abc', rest: [] },
       { method: 'POST', path: '/api/communities/abc/join', rest: [undefined, { signal: undefined }] },
+    ]);
+  });
+
+  it('maps the college-affiliation and account-email calls onto the contract', () => {
+    const { calls, transport } = stubTransport();
+    const api = createEndpoints(transport);
+    api.campusAffiliationApi.get();
+    api.campusAffiliationApi.sendOtp({ collegeId: 'c1', email: 'a@uni.edu' });
+    api.campusAffiliationApi.verify({ code: '123456' });
+    api.campusAffiliationApi.remove({ password: 'pw' });
+    api.campusAffiliationApi.requestCollege({
+      name: 'Asha', collegeName: 'New College', collegeEmail: 'a@new.edu', personalEmail: 'a@mail.com', city: 'x',
+    });
+    api.accountEmailApi.sendOtp({ email: 'me@mail.com' });
+    api.accountEmailApi.verify({ code: '654321', currentPassword: 'pw' });
+    expect(calls).toEqual([
+      { method: 'GET', path: '/api/campus/affiliation', rest: [] },
+      { method: 'POST', path: '/api/campus/affiliation/otp', rest: [{ collegeId: 'c1', email: 'a@uni.edu' }] },
+      { method: 'POST', path: '/api/campus/affiliation/verify', rest: [{ code: '123456' }] },
+      { method: 'DELETE', path: '/api/campus/affiliation', rest: [{ body: { password: 'pw' } }] },
+      // Only the DTO's four fields: the server forbids unknown ones.
+      {
+        method: 'POST',
+        path: '/api/auth/request-college',
+        rest: [{ name: 'Asha', collegeName: 'New College', collegeEmail: 'a@new.edu', personalEmail: 'a@mail.com' }],
+      },
+      { method: 'POST', path: '/api/account/email/otp', rest: [{ email: 'me@mail.com' }] },
+      { method: 'POST', path: '/api/account/email/verify', rest: [{ code: '654321', currentPassword: 'pw' }] },
     ]);
   });
 

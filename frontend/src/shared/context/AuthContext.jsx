@@ -293,6 +293,18 @@ export function AuthProvider({ children }) {
    * one.
    */
   const [authStatus, setAuthStatus] = useState(AUTH_STATUS.INITIALIZING);
+  /**
+   * True while the signed-in user is the profile this device saved last time
+   * and the server has not yet answered for it (the boot check was 'unknown':
+   * offline, rate-limited, a deploy in progress — or the installed app opening
+   * on its cached account before the probe returns).
+   *
+   * Most of the app is fine rendering from that copy. Fields whose staleness
+   * shows somebody content they may no longer be entitled to — the campus
+   * affiliation is the one that matters — read this and wait for the server.
+   * Any server-supplied user (adoptUser) clears it.
+   */
+  const [profileFromCache, setProfileFromCache] = useState(false);
 
   const loading = authStatus === AUTH_STATUS.INITIALIZING;
   const isLoggedIn = authStatus === AUTH_STATUS.AUTHENTICATED;
@@ -367,6 +379,8 @@ export function AuthProvider({ children }) {
     setCurrentUser(user);
     setSession({ user: { id: user.id, email: user.email || '' } });
     setAuthStatus(AUTH_STATUS.AUTHENTICATED);
+    // Callers adopting the device's saved copy mark it again straight after.
+    setProfileFromCache(false);
     // Error reports name the account by internal id only — never email or name.
     setMonitoringUser(user.id);
     addBreadcrumb({ category: 'auth', message: 'signed in', level: 'info' });
@@ -548,6 +562,7 @@ export function AuthProvider({ children }) {
       setSession(null);
       setCurrentUser(null);
       setAuthStatus(AUTH_STATUS.UNAUTHENTICATED);
+      setProfileFromCache(false);
       try { localStorage.removeItem('currentUser'); } catch (_) {}
       try { localStorage.removeItem('loggedIn'); } catch (_) {}
     };
@@ -568,7 +583,10 @@ export function AuthProvider({ children }) {
         const raw = localStorage.getItem('currentUser');
         cached = raw ? JSON.parse(raw) : null;
       } catch (_) {}
-      if (isValidUser(cached) && adoptUser(cached)) return;
+      if (isValidUser(cached) && adoptUser(cached)) {
+        setProfileFromCache(true);
+        return;
+      }
       signedOut();
     };
 
@@ -645,6 +663,7 @@ export function AuthProvider({ children }) {
           cached = JSON.parse(localStorage.getItem('currentUser') || 'null');
         } catch (_) {}
         if (isValidUser(cached) && adoptUser(cached)) {
+          setProfileFromCache(true);
           const result = await restoreSession();
           if (cancelled) return;
           if (result?.outcome === 'signed-in') {
@@ -825,7 +844,7 @@ export function AuthProvider({ children }) {
     }
 
     if (!userData.email || !userData.email.trim()) {
-      throw new Error('College email is required to sign up. Please check your details.');
+      throw new Error('Email is required to sign up. Please check your details.');
     }
     if (!userData.birthday) {
       throw new Error('Date of birth is required.');
@@ -862,23 +881,39 @@ export function AuthProvider({ children }) {
      * unconfirmed, and the browser gets its session from `verifyOtp` once the
      * emailed code is entered.
      */
+    const signupBody = {
+      email: userData.email.trim().toLowerCase(),
+      password: userData.password,
+      displayName: computedDisplayName,
+      username: userData.username,
+      birthday: userData.birthday,
+      firstName: userData.firstName,
+      lastName: userData.lastName,
+      // Academic info is NOT sent to Supabase user_metadata: Prisma is the
+      // source of truth for it, and metadata is writable by the user it
+      // belongs to, so a copy there could disagree with the validated
+      // record. The backend drops anything else this object carries.
+      ...(userData.gender ? { gender: userData.gender } : {}),
+    };
     try {
-      await withTimeout(
-        apiClient.post('/api/auth/signup', {
-          email: userData.email.trim().toLowerCase(),
-          password: userData.password,
-          displayName: computedDisplayName,
-          username: userData.username,
-          birthday: userData.birthday,
-          firstName: userData.firstName,
-          lastName: userData.lastName,
-          // Academic info is NOT sent to Supabase user_metadata: Prisma is the
-          // source of truth for it, and metadata is writable by the user it
-          // belongs to, so a copy there could disagree with the validated
-          // record. The backend drops anything else this object carries.
-        }),
-        SIGNUP_TIMEOUT_MS,
-      );
+      try {
+        await withTimeout(apiClient.post('/api/auth/signup', signupBody), SIGNUP_TIMEOUT_MS);
+      } catch (err) {
+        /*
+         * TRANSITIONAL. An API that predates `gender` rejects the unknown
+         * property outright (the validation pipe forbids non-whitelisted
+         * fields), and the frontend can deploy before it. Retry once without
+         * it: gender is also sent with the profile sync after verification,
+         * and the completion prompt asks again if it never lands.
+         */
+        const message = Array.isArray(err?.message) ? err.message.join(' ') : String(err?.message || '');
+        if (err?.status === 400 && signupBody.gender && /gender/i.test(message)) {
+          const { gender: _dropped, ...withoutGender } = signupBody;
+          await withTimeout(apiClient.post('/api/auth/signup', withoutGender), SIGNUP_TIMEOUT_MS);
+        } else {
+          throw err;
+        }
+      }
     } catch (err) {
       /*
        * An error carrying a status reached the server and came back — a weak
@@ -1309,6 +1344,53 @@ export function AuthProvider({ children }) {
     }
   }, []);
 
+  /**
+   * Re-reads the signed-in user from the server and adopts it.
+   *
+   * For state that changes out of band and that the app has to stop guessing
+   * at — a campus route refusing with `campus_affiliation_required` means the
+   * cached `campusAffiliation` is stale. Never signs anyone out: a refusal or a
+   * network failure leaves the current user as it is.
+   */
+  const refreshCurrentUser = useCallback(async () => {
+    const result = await restoreSession();
+    if (
+      result?.outcome === 'signed-in' &&
+      result.user &&
+      currentUserIdRef.current &&
+      result.user.id === currentUserIdRef.current
+    ) {
+      adoptUser(result.user);
+      return result.user;
+    }
+    return null;
+  }, [restoreSession, adoptUser]);
+
+  /**
+   * The boot could not reach the server, so the user on screen is the saved
+   * copy. Ask again when the device comes back online or the page is looked at
+   * again, so whatever waits for confirmation (Campus) does not wait forever.
+   * Never signs anyone out: refreshCurrentUser leaves the user alone on any
+   * answer but a matching one.
+   */
+  useEffect(() => {
+    if (!profileFromCache || typeof window === 'undefined') return undefined;
+    let last = 0;
+    const retry = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      const now = Date.now();
+      if (now - last < 5000) return;
+      last = now;
+      void Promise.resolve(refreshCurrentUser()).catch(() => {});
+    };
+    window.addEventListener('online', retry);
+    document.addEventListener('visibilitychange', retry);
+    return () => {
+      window.removeEventListener('online', retry);
+      document.removeEventListener('visibilitychange', retry);
+    };
+  }, [profileFromCache, refreshCurrentUser]);
+
   const changePassword = useCallback(async (currentPassword, newPassword) => {
     if (!isSupabaseConfigured) {
       console.error('Auth provider is not configured for this build.');
@@ -1518,6 +1600,8 @@ export function AuthProvider({ children }) {
     updateProfile,
     updateSettings,
     updateCurrentUser,
+    refreshCurrentUser,
+    profileFromCache,
     changePassword,
     logout,
     isSupabaseConfigured,
@@ -1525,7 +1609,7 @@ export function AuthProvider({ children }) {
     isLoggedIn, session, authStatus, loading, currentUser, username, displayName, initial,
     collegeName, login, initiateSignup, resendSignupOtp, verifySignupOtp,
     completeSignup, updateProfile, updateSettings, updateCurrentUser,
-    changePassword, logout,
+    refreshCurrentUser, profileFromCache, changePassword, logout,
   ]);
 
   return (
@@ -1559,6 +1643,8 @@ const NO_AUTH = Object.freeze({
   updateProfile: async () => {},
   updateSettings: async () => {},
   updateCurrentUser: () => {},
+  refreshCurrentUser: async () => null,
+  profileFromCache: false,
   changePassword: async () => {},
   logout: async () => {},
   isSupabaseConfigured: true,

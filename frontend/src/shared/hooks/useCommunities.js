@@ -10,6 +10,7 @@ import { useQuery, useInfiniteQuery, useMutation, useQueryClient } from '@tansta
 import { useCallback, useEffect, useMemo } from 'react';
 import { communitiesApi } from '@shared/api/apiClient';
 import { idbGet, idbSet, idbDelete } from '@shared/lib/idb';
+import { useHasCampusAccess, useCampusDeniedHandler } from './useCampusAffiliation';
 import { useAuth } from '@shared/context/AuthContext';
 import { toggleRegistry } from '@shared/utils/mutationRegistry';
 
@@ -204,16 +205,23 @@ export function useCampusCommunities(search = '', { enabled = true } = {}) {
   // Filtered searches are cached under their own key; only the unfiltered list
   // is IDB-hydrated for instant first paint.
   const qk = normSearch ? [...COMMUNITY_KEYS.campus, { search: normSearch }] : COMMUNITY_KEYS.campus;
-  const { isLoggedIn, currentUser } = useAuth();
-  const hasCollege = Boolean(currentUser?.collegeId);
-  const isEnabled = Boolean(isLoggedIn) && hasCollege && enabled;
+  const { isLoggedIn } = useAuth();
+  // Campus affiliation (a verified college email), not merely a collegeId.
+  const hasCampusAccess = useHasCampusAccess();
+  const onDenied = useCampusDeniedHandler();
+  const isEnabled = Boolean(isLoggedIn) && hasCampusAccess && enabled;
 
   const query = useQuery({
     queryKey: qk,
     queryFn: async () => {
-      const data = await communitiesApi.getCampusCommunities(normSearch || undefined);
-      if (!normSearch) idbSet('communities', 'campus', data);
-      return data;
+      try {
+        const data = await communitiesApi.getCampusCommunities(normSearch || undefined);
+        if (!normSearch) idbSet('communities', 'campus', data);
+        return data;
+      } catch (err) {
+        onDenied(err);
+        throw err;
+      }
     },
     enabled: isEnabled,
     staleTime: normSearch ? 60 * 1000 : 10 * 60 * 1000,

@@ -74,7 +74,7 @@ export const PUBLIC_PATHS = [
    */
   '/api/app/version',
   '/api/legal/documents',
-  // "Bring Meetifyy to your campus" on the landing page. The person asking for
+  // "Bring Campus to your college" on the landing page. The person asking for
   // their college to be added has, by definition, no account yet — that is the
   // entire point of the form. The server treats this route as public too (see
   // AuthController.requestCollege: rate limiting only, no JwtGuard), so

@@ -1,0 +1,61 @@
+/* Inline six-digit code entry. Same boxes as OtpDialog, without the dialog. */
+.digits {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 0.5rem;
+  align-items: center;
+  max-width: 360px;
+}
+
+.digit {
+  width: 100%;
+  aspect-ratio: 1;
+  height: auto;
+  min-height: 44px;
+  line-height: 1;
+  padding: 0;
+  text-align: center;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--color-text-main, #0f172a);
+  background: var(--color-bg-soft, #f8fafc);
+  border: 1.5px solid var(--color-border, rgba(0, 0, 0, 0.08));
+  border-radius: var(--radius-md, 12px);
+  box-sizing: border-box;
+  transition: border-color 0.15s ease, background 0.15s ease;
+  -webkit-text-size-adjust: 100%;
+}
+
+:global([data-theme="dark"]) .digit {
+  background: var(--color-bg-soft, #0f172a);
+  color: var(--color-text-main, #f8fafc);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.digit:focus {
+  outline: none;
+  border-color: var(--color-primary, #2563eb);
+  background: var(--color-bg-white, #ffffff);
+}
+
+:global([data-theme="dark"]) .digit:focus {
+  background: var(--color-bg-alt, #1e293b);
+}
+
+.digit:focus-visible {
+  outline: 2px solid var(--color-primary, #2563eb);
+  outline-offset: 2px;
+}
+
+.digitError {
+  border-color: var(--color-danger, #ef4444);
+}
+
+.digit:disabled {
+  opacity: 0.6;
+}
+
+@media (max-width: 420px) {
+  .digits { gap: 0.375rem; }
+  .digit { font-size: 1.1rem; }
+}

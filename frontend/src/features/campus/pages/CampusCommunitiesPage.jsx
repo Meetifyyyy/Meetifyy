@@ -11,7 +11,7 @@ import CommunityRowSkeleton from '@features/communities/components/directory/Com
 import listStyles from '@features/communities/components/directory/CommunityList.module.css';
 import { useCampusCommunities } from '@shared/hooks/useCommunities';
 import { useDebounce } from '@shared/hooks/useDebounce';
-import VerificationGate from '@shared/components/VerificationGate/VerificationGate';
+import CampusAffiliationGate from '../components/affiliation/CampusAffiliationGate';
 
 /**
  * Reachable only from the "+" button or the empty state's CTA. Imported
@@ -75,7 +75,7 @@ export default function CampusCommunitiesPage() {
 
   return (
     <main className={`centre centre-wide ${styles.hubContainer}`}>
-      <VerificationGate message="Verify your student ID to access the campus directory, events, and communities." fullPage>
+      <CampusAffiliationGate>
         <div className={`${styles.headerBanner} ${styles.compactHeader}`}>
           <header className={styles.header}>
             {showSearch ? (
@@ -152,7 +152,7 @@ export default function CampusCommunitiesPage() {
             />
           </Suspense>
         )}
-      </VerificationGate>
+      </CampusAffiliationGate>
     </main>
   );
 }

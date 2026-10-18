@@ -26,20 +26,15 @@ export const MESSAGING_SELF_UNVERIFIED_TEXT =
   'Verify your account to send messages.';
 
 /**
- * The verification-gated surfaces whose cached data must be dropped the moment
- * the viewer stops being eligible.
+ * The campus surfaces whose cached data must be dropped the moment the viewer
+ * loses access to Campus.
  *
- * Locking a page only hides it. These caches — React Query's, and the
- * IndexedDB mirror behind the campus directory — outlive the lock and would
- * otherwise keep serving campus content to an account that just lost access,
- * including across a reload.
+ * Campus is gated by a verified college email now (see `@shared/lib/campusAccess`),
+ * so the list lives there as `CAMPUS_GATED_QUERY_KEYS`. This name is kept for
+ * the legacy path: against an API that predates affiliations, Campus still
+ * follows the selfie status, and losing it must still drop these caches.
  */
-export const VERIFICATION_GATED_QUERY_KEYS = [
-  ['campusUsers'],
-  ['directory'],
-  ['campus-events'],
-  ['communities', 'campus'],
-];
+export { CAMPUS_GATED_QUERY_KEYS as VERIFICATION_GATED_QUERY_KEYS } from '@shared/lib/campusAccess';
 
 /**
  * Which composer state a conversation should render, and why.

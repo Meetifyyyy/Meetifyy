@@ -964,7 +964,9 @@ export function createTransport({
     post: (path, body, { signal, timeoutMs, bearer } = {}) => request('POST', path, body, signal, timeoutMs, bearer),
     patch: (path, body, { signal, timeoutMs, bearer } = {}) => request('PATCH', path, body, signal, timeoutMs, bearer),
     put: (path, body, { signal, timeoutMs } = {}) => request('PUT', path, body, signal, timeoutMs),
-    delete: (path, { signal, timeoutMs } = {}) => request('DELETE', path, undefined, signal, timeoutMs),
+    // `body` is optional and rare: removing a college email re-confirms the
+    // account password, which is sent in the body rather than the URL.
+    delete: (path, { signal, timeoutMs, body } = {}) => request('DELETE', path, body, signal, timeoutMs),
   };
   return {
     apiClient,

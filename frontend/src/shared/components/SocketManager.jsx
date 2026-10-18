@@ -15,9 +15,11 @@ import { requestOpenInstantMatchChat } from '../../features/instant-match/contex
 import { patchInviteNotification } from '@features/notifications/utils/inviteLifecycle';
 import { VERIFICATION_GATED_QUERY_KEYS } from '../utils/messagingEligibility';
 import { idbDelete } from '../lib/idb';
+import { applyAffiliationToUser, hasAffiliationField } from '../lib/campusAccess';
+import { dropCampusCaches } from '../lib/campusCache';
 
 export default function SocketManager() {
-  const { session, isLoggedIn, currentUser, updateCurrentUser } = useAuth();
+  const { session, isLoggedIn, currentUser, updateCurrentUser, refreshCurrentUser } = useAuth();
   // One field each: a whole-store read re-rendered on every write (each
   // reconnect, each flag), and this component wraps the app.
   const connect = useGlobalSocketStore((s) => s.connect);
@@ -44,10 +46,12 @@ export default function SocketManager() {
   // verification handler has to read and write the *current* user.
   const currentUserRef = useRef(currentUser);
   const updateCurrentUserRef = useRef(updateCurrentUser);
+  const refreshCurrentUserRef = useRef(refreshCurrentUser);
   useEffect(() => {
     currentUserRef.current = currentUser;
     updateCurrentUserRef.current = updateCurrentUser;
-  }, [currentUser, updateCurrentUser]);
+    refreshCurrentUserRef.current = refreshCurrentUser;
+  }, [currentUser, updateCurrentUser, refreshCurrentUser]);
 
   useEffect(() => {
     // Being signed in is the condition, not holding a token.
@@ -1020,7 +1024,11 @@ export default function SocketManager() {
         // already sitting in the query cache (and in the IndexedDB mirror
         // behind it) would otherwise survive the revocation and outlive a
         // reload.
-        if (!canMessage) {
+        //
+        // Only against an API that predates college affiliations: Campus now
+        // follows the verified college email (`user:campus_changed` below),
+        // and a selfie decision says nothing about it.
+        if (!canMessage && !hasAffiliationField(self)) {
           for (const key of VERIFICATION_GATED_QUERY_KEYS) {
             queryClient.removeQueries({ queryKey: key });
           }
@@ -1056,6 +1064,21 @@ export default function SocketManager() {
       queryClient.invalidateQueries({ queryKey: ['conversations'] });
     };
 
+    // The viewer's college affiliation changed (verified, switched, removed in
+    // another tab, or revoked by an admin). Campus reads it straight off
+    // currentUser, so patching it is what opens or closes the page; the
+    // cached campus content belongs to the previous state and goes with it.
+    const handleCampusChanged = (payload) => {
+      const self = currentUserRef.current;
+      if (!self || !payload || !Object.prototype.hasOwnProperty.call(payload, 'campusAffiliation')) return;
+      updateCurrentUserRef.current?.(applyAffiliationToUser(self, payload.campusAffiliation || null));
+      dropCampusCaches(queryClient);
+      // The event carries only the affiliation; fields derived from it on the
+      // server (profileCompletion among them) are re-read in the background.
+      // Fire-and-forget: the patch above already opened or closed Campus.
+      void Promise.resolve(refreshCurrentUserRef.current?.()).catch(() => {});
+    };
+
     socket.on('notification:new', handleNewNotification);
     socket.on('notification:updated', handleNotificationUpdated);
     socket.on('notification:count', handleNotificationCount);
@@ -1063,6 +1086,7 @@ export default function SocketManager() {
     socket.on('user:blocked', handleBlockStateChange);
     socket.on('user:unblocked', handleBlockStateChange);
     socket.on('user:verification_changed', handleVerificationChanged);
+    socket.on('user:campus_changed', handleCampusChanged);
     socket.on('conversation:updated', handleConversationUpdated);
     socket.on('message:new', handleGlobalMessageNew);
     socket.on('message:updated', handleMessageUpdated);
@@ -1088,6 +1112,7 @@ export default function SocketManager() {
       socket.off('user:blocked', handleBlockStateChange);
       socket.off('user:unblocked', handleBlockStateChange);
       socket.off('user:verification_changed', handleVerificationChanged);
+      socket.off('user:campus_changed', handleCampusChanged);
       socket.off('conversation:updated', handleConversationUpdated);
       socket.off('message:new', handleGlobalMessageNew);
       socket.off('message:updated', handleMessageUpdated);

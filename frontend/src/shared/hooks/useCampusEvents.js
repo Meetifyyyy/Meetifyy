@@ -10,7 +10,7 @@ import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from '@tansta
 import { useMemo } from 'react';
 import { campusEventsApi } from '@shared/api/apiClient';
 import { useAuth } from '@shared/context/AuthContext';
-import { useIsVerified } from './useIsVerified';
+import { useHasCampusAccess, useCampusDeniedHandler } from './useCampusAffiliation';
 
 export const CAMPUS_EVENT_KEYS = {
   all: ['campus-events'],
@@ -22,12 +22,17 @@ export const CAMPUS_EVENT_KEYS = {
 /** Paginated events for one discovery scope: 'upcoming' | 'ongoing' | 'past'. */
 export function useCampusEvents(scope = 'upcoming') {
   const { isLoggedIn } = useAuth();
-  // Verification-gated server-side; see useCampusUsers.
-  const isVerified = useIsVerified();
+  // Gated server-side by campus affiliation; see useCampusUsers.
+  const isVerified = useHasCampusAccess();
+  const onDenied = useCampusDeniedHandler();
 
   const query = useInfiniteQuery({
     queryKey: CAMPUS_EVENT_KEYS.scope(scope),
-    queryFn: ({ pageParam }) => campusEventsApi.list(scope, { cursor: pageParam }),
+    queryFn: ({ pageParam }) =>
+      campusEventsApi.list(scope, { cursor: pageParam }).catch((err) => {
+        onDenied(err);
+        throw err;
+      }),
     enabled: Boolean(isLoggedIn) && isVerified,
     initialPageParam: undefined,
     getNextPageParam: (lastPage) => lastPage?.nextCursor ?? undefined,

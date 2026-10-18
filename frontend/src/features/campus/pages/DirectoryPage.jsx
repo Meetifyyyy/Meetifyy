@@ -13,7 +13,7 @@ import { useAcademicCatalog } from '@shared/academics/useAcademicCatalog';
 import { yearLabel, validPassingYears, formatAcademic } from '@shared/academics/academicCatalog';
 import { useDirectory } from '@shared/hooks/useProfile';
 import { useDebounce } from '@shared/hooks/useDebounce';
-import VerificationGate from '@shared/components/VerificationGate/VerificationGate';
+import CampusAffiliationGate from '../components/affiliation/CampusAffiliationGate';
 
 const SearchableMajorSelect = ({ value, onChange, courses }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -261,7 +261,7 @@ export default function DirectoryPage() {
 
   return (
     <main className={`centre centre-wide ${styles.hubContainer}`}>
-      <VerificationGate message="Verify your student ID to access the campus directory, events, and communities." fullPage>
+      <CampusAffiliationGate>
         <div className={`${styles.headerBanner} ${styles.compactHeader}`}>
           <header className={styles.header}>
             {showSearch ? (
@@ -344,7 +344,7 @@ export default function DirectoryPage() {
             )}
           </div>
         </div>
-      </VerificationGate>
+      </CampusAffiliationGate>
     </main>
   );
 }
