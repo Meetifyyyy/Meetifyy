@@ -85,6 +85,52 @@ export class EmailService {
   }
 
   /**
+   * A code proving control of a college address (Campus page). Sent only to
+   * that address, from the security sender. The code is never logged.
+   */
+  async sendCollegeEmailOtp(
+    email: string,
+    name: string,
+    otp: string,
+    collegeName?: string,
+  ) {
+    this.logger.log('Queuing college-email OTP email');
+    await this.emailQueue.add('send-college-email-otp', {
+      email,
+      name,
+      otp,
+      collegeName,
+      from: config.email.securityFrom,
+    });
+  }
+
+  /** A code proving control of a new personal sign-in address. */
+  async sendPersonalEmailOtp(email: string, name: string, otp: string) {
+    this.logger.log('Queuing personal-email OTP email');
+    await this.emailQueue.add('send-personal-email-otp', {
+      email,
+      name,
+      otp,
+      from: config.email.securityFrom,
+    });
+  }
+
+  /** Tells the PREVIOUS sign-in address that it was replaced. */
+  async sendSignInEmailChangedNotice(
+    previousEmail: string,
+    name: string,
+    newEmailMasked: string,
+  ) {
+    this.logger.log('Queuing sign-in email changed notice');
+    await this.emailQueue.add('send-signin-email-changed', {
+      email: previousEmail,
+      name,
+      newEmailMasked,
+      from: config.email.securityFrom,
+    });
+  }
+
+  /**
    * Confirms a request to delete an account.
    *
    * `from` is the security sender, matching the admin access-code email: this

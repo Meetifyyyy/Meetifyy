@@ -18,10 +18,10 @@ export const VerificationOtpEmail = ({
   const greeting = name?.trim() ? `Hi ${name.trim()},` : 'Hi there,';
 
   return (
-    <BaseLayout previewText="Verify your college email address">
-      <Headline eyebrow="Almost there" title="Verify your college email">
-        {greeting} welcome to Meetifyy! To complete your signup and access your
-        college community, please verify your college email address.
+    <BaseLayout previewText="Verify your email address">
+      <Headline eyebrow="Almost there" title="Verify your email">
+        {greeting} welcome to Meetifyy! To complete your signup, please verify
+        your email address.
       </Headline>
 
       <OtpCode

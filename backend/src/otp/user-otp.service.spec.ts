@@ -6,7 +6,11 @@ import type { PrismaService } from '../prisma/prisma.service';
 import type { RedisService } from '../redis/redis.service';
 
 /** A stored code. `requestIp` is only present when the service passed one. */
-type OtpRow = Omit<UserOtp, 'requestIp'> & { requestIp?: string | null };
+type OtpRow = Omit<UserOtp, 'requestIp' | 'target' | 'collegeId'> & {
+  requestIp?: string | null;
+  target?: string | null;
+  collegeId?: string | null;
+};
 type UserPurposeKey = { userId: string; purpose: UserOtpPurpose };
 import {
   OTP_MAX_ATTEMPTS,
@@ -395,6 +399,100 @@ describe('UserOtpService', () => {
       const { code } = await service.issue(USER, DELETION);
       await service.verify(USER, DELETION, code);
       expect(await service.getChallengeState(USER, DELETION)).toBeNull();
+    });
+  });
+  describe('bound codes (college and personal email)', () => {
+    const COLLEGE = UserOtpPurpose.COLLEGE_EMAIL;
+    const bound = () => rows.get(key(USER, COLLEGE))!;
+    const errorCode = (e: HttpException) =>
+      (e.getResponse() as { code: string }).code;
+
+    it('returns the address and college the code was bound to, once', async () => {
+      const { code } = await service.issue(USER, COLLEGE, {
+        target: 'a@college.edu',
+        collegeId: 'c1',
+      });
+      await expect(service.verifyBound(USER, COLLEGE, code)).resolves.toEqual({
+        target: 'a@college.edu',
+        collegeId: 'c1',
+      });
+      // Replay of a consumed code.
+      const replay = await service
+        .verifyBound(USER, COLLEGE, code)
+        .catch((e: HttpException) => e);
+      expect(errorCode(replay as HttpException)).toBe('invalid_code');
+    });
+
+    it('rebinds on reissue, so an old code cannot apply a new address or vice versa', async () => {
+      const first = await service.issue(USER, COLLEGE, {
+        target: 'a@college.edu',
+        collegeId: 'c1',
+      });
+      clearCooldown(USER, COLLEGE);
+      const second = await service.issue(USER, COLLEGE, {
+        target: 'b@college.edu',
+        collegeId: 'c1',
+      });
+      await expect(
+        service.verifyBound(USER, COLLEGE, first.code),
+      ).rejects.toThrow(BadRequestException);
+      await expect(
+        service.verifyBound(USER, COLLEGE, second.code),
+      ).resolves.toMatchObject({ target: 'b@college.edu' });
+    });
+
+    it('names an expired code', async () => {
+      const { code } = await service.issue(USER, COLLEGE, {
+        target: 'a@x.edu',
+      });
+      bound().expiresAt = new Date(Date.now() - 1000);
+      const err = await service
+        .verifyBound(USER, COLLEGE, code)
+        .catch((e: HttpException) => e);
+      expect(errorCode(err as HttpException)).toBe('expired_code');
+    });
+
+    it('names a wrong code, then the exhausted budget', async () => {
+      const { code } = await service.issue(USER, COLLEGE, {
+        target: 'a@x.edu',
+      });
+      const wrong = code === '000000' ? '111111' : '000000';
+      const first = await service
+        .verifyBound(USER, COLLEGE, wrong)
+        .catch((e: HttpException) => e);
+      expect(errorCode(first as HttpException)).toBe('invalid_code');
+      for (let i = 1; i < OTP_MAX_ATTEMPTS - 1; i++) {
+        await service.verifyBound(USER, COLLEGE, wrong).catch(() => {});
+      }
+      const last = await service
+        .verifyBound(USER, COLLEGE, wrong)
+        .catch((e: HttpException) => e);
+      expect(errorCode(last as HttpException)).toBe('too_many_attempts');
+      // Even the right code is refused now.
+      const after = await service
+        .verifyBound(USER, COLLEGE, code)
+        .catch((e: HttpException) => e);
+      expect(errorCode(after as HttpException)).toBe('too_many_attempts');
+    });
+
+    it('keeps the deletion flow uniform: no binding, OTP_INVALID only', async () => {
+      const { code } = await service.issue(USER, DELETION);
+      issued().expiresAt = new Date(Date.now() - 1000);
+      const err = await service
+        .verify(USER, DELETION, code)
+        .catch((e: HttpException) => e);
+      expect(errorCode(err as HttpException)).toBe('OTP_INVALID');
+      expect(issued().target ?? null).toBeNull();
+    });
+
+    it('exposes a live bound challenge without the code', async () => {
+      await service.issue(USER, COLLEGE, {
+        target: 'a@college.edu',
+        collegeId: 'c1',
+      });
+      const state = await service.getBoundChallenge(USER, COLLEGE);
+      expect(state).toMatchObject({ target: 'a@college.edu', collegeId: 'c1' });
+      expect(JSON.stringify(state)).not.toContain(bound().codeHash);
     });
   });
 });

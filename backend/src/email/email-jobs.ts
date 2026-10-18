@@ -23,6 +23,10 @@ export interface EmailJobData {
   resetLink?: string;
   otp?: string;
   scheduledDeletionDate?: string;
+  /** College-email OTP: the college being linked, for the copy. */
+  collegeName?: string;
+  /** Sign-in email changed notice: the new address, masked. */
+  newEmailMasked?: string;
   /** Support jobs: the ticket or reply the worker loads and renders. */
   ticketId?: string;
   messageId?: string;

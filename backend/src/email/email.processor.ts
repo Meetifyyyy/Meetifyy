@@ -15,6 +15,8 @@ import { PasswordChangedEmail } from './templates/password-changed';
 import { AccountDeletionOtpEmail } from './templates/account-deletion-otp';
 import { AccountRecoveryOtpEmail } from './templates/account-recovery-otp';
 import { AdminOtpEmail } from './templates/admin-otp';
+import { EmailAddressOtpEmail } from './templates/email-address-otp';
+import { SignInEmailChangedEmail } from './templates/signin-email-changed';
 import { config } from '../config';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmailUsageService } from './email-usage.service';
@@ -250,7 +252,7 @@ export class EmailProcessor extends WorkerHost implements OnModuleInit {
           break;
 
         case 'send-verification-otp':
-          subject = 'Verify your college email';
+          subject = 'Verify your email';
           html = await render(
             createElement(VerificationOtpEmail, {
               name: job.data.name,
@@ -275,6 +277,39 @@ export class EmailProcessor extends WorkerHost implements OnModuleInit {
             createElement(AccountDeletionOtpEmail, {
               name: job.data.name,
               otp: job.data.otp,
+            }),
+          );
+          break;
+
+        case 'send-college-email-otp':
+          subject = 'Verify your college email';
+          html = await render(
+            createElement(EmailAddressOtpEmail, {
+              name: job.data.name,
+              otp: job.data.otp,
+              kind: 'college',
+              collegeName: job.data.collegeName,
+            }),
+          );
+          break;
+
+        case 'send-personal-email-otp':
+          subject = 'Confirm your new Meetifyy email';
+          html = await render(
+            createElement(EmailAddressOtpEmail, {
+              name: job.data.name,
+              otp: job.data.otp,
+              kind: 'personal',
+            }),
+          );
+          break;
+
+        case 'send-signin-email-changed':
+          subject = 'Your Meetifyy sign-in email was changed';
+          html = await render(
+            createElement(SignInEmailChangedEmail, {
+              name: job.data.name,
+              newEmailMasked: job.data.newEmailMasked,
             }),
           );
           break;

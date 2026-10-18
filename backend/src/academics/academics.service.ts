@@ -1,4 +1,5 @@
 import { Injectable, BadRequestException, Optional } from '@nestjs/common';
+import { collegeLogoUrl } from '../common/campus/campus-affiliation.util';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   ACADEMIC_CATALOG,
@@ -43,6 +44,7 @@ export class AcademicsService {
       name: string;
       shortName?: string | null;
       domains: string[];
+      logoUrl: string | null;
     }>
   > {
     if (!this.prisma) return [];
@@ -56,6 +58,7 @@ export class AcademicsService {
         id: true,
         name: true,
         shortName: true,
+        logoKey: true,
         domains: {
           where: { status: 'ACTIVE' },
           select: { domain: true, isPrimary: true },
@@ -69,6 +72,7 @@ export class AcademicsService {
       name: c.name,
       shortName: c.shortName,
       domains: c.domains.map((d) => d.domain),
+      logoUrl: collegeLogoUrl(c.logoKey),
     }));
   }
 

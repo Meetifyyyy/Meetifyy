@@ -25,9 +25,9 @@ export const WelcomeEmail = ({
         title="What you can do next"
         items={[
           'Complete your profile setup and add your interests',
-          'Explore activities happening near your campus',
+          'Explore activities happening around you',
           'Join communities matching your passions',
-          'Connect with classmates and make lasting friendships',
+          'Student? Verify your college email on the Campus page to meet classmates',
         ]}
       />
 

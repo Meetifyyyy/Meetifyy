@@ -8,6 +8,7 @@ import { DevEmailController } from './dev-email.controller';
 import { SupportEmailBuilder } from './support-email.builder';
 import { PrismaModule } from '../prisma/prisma.module';
 import { ACCOUNT_MAILER } from '../otp/account-mailer';
+import { ADDRESS_MAILER } from '../otp/address-mailer';
 
 import { config } from '../config';
 
@@ -34,9 +35,11 @@ import { config } from '../config';
     // on a two-method interface instead of importing this class, which would
     // drag `sanitize-html` (ESM) into its module graph — see account-mailer.ts.
     { provide: ACCOUNT_MAILER, useExisting: EmailService },
+    // Same alias, for the college- and personal-email verification flows.
+    { provide: ADDRESS_MAILER, useExisting: EmailService },
   ],
   // EmailUsageModule is re-exported rather than the service itself: this
   // module no longer provides it, it imports it.
-  exports: [EmailUsageModule, EmailService, ACCOUNT_MAILER],
+  exports: [EmailUsageModule, EmailService, ACCOUNT_MAILER, ADDRESS_MAILER],
 })
 export class EmailModule {}

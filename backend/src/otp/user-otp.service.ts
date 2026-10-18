@@ -27,6 +27,33 @@ export interface IssuedOtp {
   expiresAt: Date;
 }
 
+/** What a code was bound to when it was issued. */
+export interface OtpBinding {
+  /** Normalized address the code was sent to. */
+  target?: string | null;
+  /** College selected when the code was sent. */
+  collegeId?: string | null;
+}
+
+/** A live, bound challenge, for the caller's own status view. */
+export interface BoundChallenge {
+  target: string | null;
+  collegeId: string | null;
+  expiresAt: Date;
+  resendAvailableAt: Date;
+}
+
+/**
+ * How a failed verification is reported.
+ *
+ *  'uniform'  — every failure is `OTP_INVALID` (account deletion/recovery:
+ *               the endpoint must not reveal whether a deletion is pending).
+ *  'detailed' — `invalid_code`, `expired_code`, `too_many_attempts` (address
+ *               verification: the caller started the challenge and already
+ *               knows it exists, so naming the failure leaks nothing).
+ */
+export type OtpErrorStyle = 'uniform' | 'detailed';
+
 /** What a client is allowed to know about a live code. */
 export interface OtpChallengeState {
   expiresAt: string;
@@ -119,7 +146,7 @@ export class UserOtpService {
   async issue(
     userId: string,
     purpose: UserOtpPurpose,
-    context: { ip?: string | null } = {},
+    context: { ip?: string | null } & OtpBinding = {},
   ): Promise<IssuedOtp> {
     await this.assertCanSend(userId, purpose);
 
@@ -137,6 +164,8 @@ export class UserOtpService {
         codeHash: this.hashCode(code),
         expiresAt,
         requestIp: context.ip ?? null,
+        target: context.target ?? null,
+        collegeId: context.collegeId ?? null,
       },
       update: {
         codeHash: this.hashCode(code),
@@ -146,6 +175,10 @@ export class UserOtpService {
         attempts: 0,
         consumedAt: null,
         requestIp: context.ip ?? null,
+        // Rebound on every issue: a new code for a new address must never be
+        // redeemable against the previous one.
+        target: context.target ?? null,
+        collegeId: context.collegeId ?? null,
         createdAt: new Date(),
       },
     });
@@ -171,6 +204,77 @@ export class UserOtpService {
     code: string,
     context: { ip?: string | null } = {},
   ): Promise<void> {
+    await this.consume(userId, purpose, code, context, 'uniform');
+  }
+
+  /**
+   * Verifies and consumes a code, and returns what it was bound to.
+   *
+   * The caller applies the returned `target` / `collegeId` — never a value
+   * from the request — so a code sent to one address cannot be redeemed to
+   * apply another. Consumption is the same conditional update as `verify`,
+   * committed before this returns, so a replay of the same code fails.
+   */
+  async verifyBound(
+    userId: string,
+    purpose: UserOtpPurpose,
+    code: string,
+    context: { ip?: string | null } = {},
+  ): Promise<{ target: string | null; collegeId: string | null }> {
+    return this.consume(userId, purpose, code, context, 'detailed');
+  }
+
+  private otpError(
+    style: OtpErrorStyle,
+    kind: 'invalid' | 'expired' | 'exhausted',
+    attemptsRemaining?: number,
+  ): BadRequestException {
+    if (style === 'uniform') {
+      if (attemptsRemaining !== undefined) {
+        return new BadRequestException({
+          code: 'OTP_INVALID',
+          message: attemptsRemaining
+            ? `That code is not correct. ${attemptsRemaining} attempt${attemptsRemaining === 1 ? '' : 's'} remaining.`
+            : 'Too many incorrect attempts. Request a new code to continue.',
+          attemptsRemaining,
+        });
+      }
+      return new BadRequestException({
+        code: 'OTP_INVALID',
+        message:
+          'That code is not valid or has expired. Request a new one to continue.',
+      });
+    }
+    if (kind === 'expired') {
+      return new BadRequestException({
+        code: 'expired_code',
+        message: 'That code has expired. Request a new one to continue.',
+      });
+    }
+    if (kind === 'exhausted') {
+      return new BadRequestException({
+        code: 'too_many_attempts',
+        message: 'Too many incorrect attempts. Request a new code to continue.',
+        attemptsRemaining: 0,
+      });
+    }
+    return new BadRequestException({
+      code: 'invalid_code',
+      message:
+        attemptsRemaining !== undefined
+          ? `That code is not correct. ${attemptsRemaining} attempt${attemptsRemaining === 1 ? '' : 's'} remaining.`
+          : 'That code is not valid. Request a new one to continue.',
+      ...(attemptsRemaining !== undefined ? { attemptsRemaining } : {}),
+    });
+  }
+
+  private async consume(
+    userId: string,
+    purpose: UserOtpPurpose,
+    code: string,
+    context: { ip?: string | null },
+    style: OtpErrorStyle,
+  ): Promise<{ target: string | null; collegeId: string | null }> {
     if (context.ip) {
       await this.enforceRateLimit(
         `otp-verify:ip:${context.ip}`,
@@ -185,18 +289,14 @@ export class UserOtpService {
 
     const now = new Date();
 
-    // No row, already used, or expired — all answered identically.
-    if (
-      !record ||
-      record.consumedAt !== null ||
-      record.expiresAt <= now ||
-      record.attempts >= OTP_MAX_ATTEMPTS
-    ) {
-      throw new BadRequestException({
-        code: 'OTP_INVALID',
-        message:
-          'That code is not valid or has expired. Request a new one to continue.',
-      });
+    // In the uniform style, no row, already used, expired and exhausted are
+    // all answered identically.
+    if (!record || record.consumedAt !== null) {
+      throw this.otpError(style, 'invalid');
+    }
+    if (record.expiresAt <= now) throw this.otpError(style, 'expired');
+    if (record.attempts >= OTP_MAX_ATTEMPTS) {
+      throw this.otpError(style, 'exhausted');
     }
 
     if (!this.matches(code, record.codeHash)) {
@@ -208,13 +308,10 @@ export class UserOtpService {
         select: { attempts: true },
       });
       const remaining = Math.max(0, OTP_MAX_ATTEMPTS - updated.attempts);
-      throw new BadRequestException({
-        code: 'OTP_INVALID',
-        message: remaining
-          ? `That code is not correct. ${remaining} attempt${remaining === 1 ? '' : 's'} remaining.`
-          : 'Too many incorrect attempts. Request a new code to continue.',
-        attemptsRemaining: remaining,
-      });
+      if (style === 'detailed' && remaining === 0) {
+        throw this.otpError(style, 'exhausted');
+      }
+      throw this.otpError(style, 'invalid', remaining);
     }
 
     // Single-use, enforced by the database rather than by this process: the
@@ -226,12 +323,50 @@ export class UserOtpService {
     });
 
     if (consumed.count === 0) {
-      throw new BadRequestException({
-        code: 'OTP_INVALID',
-        message:
-          'That code is not valid or has expired. Request a new one to continue.',
-      });
+      throw this.otpError(style, 'invalid');
     }
+
+    return {
+      target: record.target ?? null,
+      collegeId: record.collegeId ?? null,
+    };
+  }
+
+  /**
+   * The live bound challenge for a purpose, for the owner's own status view.
+   * Never the code. Null when there is none, or it is used or expired.
+   */
+  async getBoundChallenge(
+    userId: string,
+    purpose: UserOtpPurpose,
+  ): Promise<BoundChallenge | null> {
+    const record = await this.prisma.userOtp.findUnique({
+      where: { userId_purpose: { userId, purpose } },
+      select: {
+        expiresAt: true,
+        createdAt: true,
+        consumedAt: true,
+        attempts: true,
+        target: true,
+        collegeId: true,
+      },
+    });
+    if (
+      !record ||
+      record.consumedAt ||
+      record.expiresAt <= new Date() ||
+      record.attempts >= OTP_MAX_ATTEMPTS
+    ) {
+      return null;
+    }
+    return {
+      target: record.target,
+      collegeId: record.collegeId,
+      expiresAt: record.expiresAt,
+      resendAvailableAt: new Date(
+        record.createdAt.getTime() + OTP_RESEND_COOLDOWN_MS,
+      ),
+    };
   }
 
   /** Live-challenge state for the client's countdown. Never reveals the code. */

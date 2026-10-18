@@ -29,6 +29,8 @@ import { AppService } from './app.service';
 import { CommunitiesModule } from './communities/communities.module';
 import { ActivitiesModule } from './activities/activities.module';
 import { CampusEventsModule } from './campus-events/campus-events.module';
+import { CampusAffiliationModule } from './campus-affiliation/campus-affiliation.module';
+import { AccountEmailModule } from './account-email/account-email.module';
 import { UsersModule } from './users/users.module';
 import { MessagesModule } from './messages/messages.module';
 import { MessagingCoreModule } from './messages/core/messaging-core.module';
@@ -61,6 +63,7 @@ import { RateLimitModule } from './common/rate-limit/rate-limit.module';
 import { EventsModule } from './events/events.module';
 import { DomainValidatorModule } from './common/services/domain-validator.module';
 import { VerificationAccessModule } from './common/verification/verification-access.module';
+import { CampusAccessModule } from './common/campus/campus-access.module';
 import { LegalConsentModule } from './common/legal/legal-consent.module';
 import { AcademicsModule } from './academics/academics.module';
 import { SupportModule } from './support/support.module';
@@ -71,6 +74,8 @@ import { randomUUID } from 'node:crypto';
   imports: [
     DomainValidatorModule,
     VerificationAccessModule,
+    // Campus authorization: a verified college email, not the selfie status.
+    CampusAccessModule,
     // The mandatory legal-acknowledgement gate. Global, and listed here beside
     // the other cross-cutting policies for the same reason: JwtGuard resolves
     // it in whichever feature module applies the guard.
@@ -191,6 +196,8 @@ import { randomUUID } from 'node:crypto';
     CommunitiesModule,
     ActivitiesModule,
     CampusEventsModule,
+    CampusAffiliationModule,
+    AccountEmailModule,
     UsersModule,
     MessagesModule,
     MessagingCoreModule,

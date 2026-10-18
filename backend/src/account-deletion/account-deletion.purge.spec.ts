@@ -241,6 +241,9 @@ describe('AccountDeletionPurgeService — permanent deletion', () => {
       verificationRequest: {
         deleteMany: record('verificationRequest', 'deleteMany'),
       },
+      collegeAffiliation: {
+        deleteMany: record('collegeAffiliation', 'deleteMany'),
+      },
       // Deliberately absent: conversation, conversationParticipant, message.
       // Touching any of those would take the other participant's history with
       // it, so a purge that reached for one should fail this suite loudly.
@@ -380,6 +383,12 @@ describe('AccountDeletionPurgeService — permanent deletion', () => {
         /^(conversation|conversationParticipant|message)\./.test(k),
       );
       expect(touched).toEqual([]);
+    });
+
+    it('releases the verified college email so another account can claim it', () => {
+      expect(calls['collegeAffiliation.deleteMany'][0][0]).toEqual({
+        where: { userId: USER_ID },
+      });
     });
 
     it('hard-deletes the user’s posts', () => {

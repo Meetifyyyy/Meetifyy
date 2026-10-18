@@ -235,6 +235,7 @@ export class AccountDeletionPurgeService {
             email: anonEmail,
             collegeEmail: null,
             collegeId: null,
+            gender: null,
             avatar: null,
             avatarMediaId: null,
             cover: null,
@@ -560,6 +561,10 @@ export class AccountDeletionPurgeService {
     await tx.notificationPreferences.deleteMany({ where: { userId } });
     await tx.userSettings.deleteMany({ where: { userId } });
     await tx.verificationRequest.deleteMany({ where: { userId } });
+    // Releases the verified college address so another account can claim it.
+    // The FK cascades on a hard delete, but a purge keeps the row as a
+    // tombstone, so the affiliation has to go explicitly.
+    await tx.collegeAffiliation.deleteMany({ where: { userId } });
     // Detach remaining media rows from the purged owner. The objects
     // themselves are queued for storage deletion post-commit; the rows are
     // kept only where something still references them.
