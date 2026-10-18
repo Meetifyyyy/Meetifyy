@@ -108,9 +108,7 @@ describe('LegalUpdateGate', { timeout: 20_000 }, () => {
     expect(desc).toBe(
       "We've updated our Terms of Service and Privacy Policy. Please take a moment to review them before you continue.",
     );
-    expect(
-      screen.getByText('By selecting Got it, you agree to the updated Terms of Service and Privacy Policy.'),
-    ).toBeTruthy();
+    expect(screen.queryByText(/By selecting Got it/)).toBeNull();
 
     cleanup();
     serverPending([PRIVACY]);
@@ -211,14 +209,17 @@ describe('LegalUpdateGate', { timeout: 20_000 }, () => {
     fireEvent.click(
       Array.from(desc.querySelectorAll('button')).find((b) => b.textContent === 'Privacy Policy'),
     );
-    expect(screen.getByRole('heading', { name: 'Privacy Policy · v2' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Privacy Policy' })).toBeTruthy();
     expect(screen.getByText('Body of the privacy policy.')).toBeTruthy();
     const d = screen.getByRole('dialog');
     expect(d.getAttribute('aria-labelledby')).toBe('legal-reader-title');
-    // Got it stays reachable from the reader.
-    expect(screen.getByRole('button', { name: 'Got it' })).toBeTruthy();
+    // The reader is for reading: the actions return with the summary.
+    expect(screen.queryByRole('button', { name: 'Got it' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Sign out' })).toBeNull();
+    expect(screen.getByRole('button', { name: /back/i }).textContent.trim()).toBe('');
     fireEvent.click(screen.getByRole('button', { name: /back/i }));
     expect(screen.getByRole('heading', { level: 1 })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Got it' })).toBeTruthy();
   });
 
   it('the reader shows the version text from the API, not the bundled copy', async () => {
@@ -240,35 +241,21 @@ describe('LegalUpdateGate', { timeout: 20_000 }, () => {
     expect(await screen.findByText(/Welcome to Meetifyy/)).toBeTruthy();
   });
 
-  it('shows the change summary and effective date when the API returns them', async () => {
-    serverPending([TERMS]);
-    await renderGate();
-    await dialog();
-    expect(screen.getByText('Clarified how events are moderated.')).toBeTruthy();
-    expect(screen.getByText(/Version 3 · Effective/)).toBeTruthy();
-  });
-
-  it('on the website, links each document to its full page in a new tab', async () => {
+  it('lists no document cards: the subtitle links are the way in', async () => {
     serverPending([TERMS, PRIVACY]);
     await renderGate({ mobile: false });
     await dialog();
-    const links = screen.getAllByRole('link', { name: /open full page/i });
-    expect(links.map((a) => a.getAttribute('href'))).toEqual([
-      '/terms-and-conditions',
-      '/privacy-policy',
-    ]);
-    for (const a of links) {
-      expect(a.getAttribute('target')).toBe('_blank');
-      expect(a.getAttribute('rel')).toContain('noopener');
-    }
+    expect(screen.queryByRole('list', { name: /updated documents/i })).toBeNull();
+    expect(screen.queryByText('Clarified how events are moderated.')).toBeNull();
+    expect(screen.queryAllByRole('link')).toHaveLength(0);
   });
 
-  it('in the app, never navigates away: the reader is the full text', async () => {
+  it('in the app, never navigates away: the subtitle links open the reader', async () => {
     serverPending([TERMS, PRIVACY]);
     await renderGate({ mobile: true });
     await dialog();
     expect(screen.queryAllByRole('link')).toHaveLength(0);
-    fireEvent.click(screen.getAllByRole('button', { name: /read the full text/i })[0]);
+    fireEvent.click(document.getElementById('legal-update-desc').querySelector('button'));
     expect(screen.getByText('Body of the terms.')).toBeTruthy();
   });
 

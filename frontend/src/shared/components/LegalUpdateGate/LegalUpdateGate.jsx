@@ -8,7 +8,6 @@ import { IS_MOBILE_BUILD } from '@config';
 import {
   AlertCircle,
   ArrowLeft,
-  ExternalLink,
   Loader2,
 } from '@shared/components/icons';
 import {
@@ -63,16 +62,6 @@ export function legalUpdateTitle(docs) {
 const FOCUSABLE =
   'a[href], button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
-function formatDate(value) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-  return date.toLocaleDateString(undefined, {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  });
-}
-
 /**
  * Blocking dialog shown when Meetifyy has published a policy update whose
  * acceptance is mandatory.
@@ -90,8 +79,8 @@ function formatDate(value) {
  * dismiss and no "remind me later": there is nothing for one to do except
  * mislead.
  *
- * Consent is the explicit "Got it" button plus the small print directly above
- * it, which names the documents being agreed to.
+ * Consent is the explicit "Got it" button, on a screen whose subtitle names
+ * the updated documents and links each one.
  *
  * Layout: a centred card over a dimmed backdrop from 768px up; below that, and
  * always in the installed app, the same content as an opaque full-screen sheet
@@ -410,8 +399,6 @@ export default function LegalUpdateGate({ children }) {
   }
 
   const docs = sortDocs(pending);
-  const names = docs.map(legalDocName);
-  const docsPhrase = joinNames(names);
   const single = docs.length === 1;
 
   const readingDoc = reading
@@ -455,11 +442,10 @@ export default function LegalUpdateGate({ children }) {
                 onClick={() => setReading(null)}
                 aria-label="Back to the summary"
               >
-                <ArrowLeft size={16} />
-                Back
+                <ArrowLeft size={18} aria-hidden="true" />
               </button>
               <h2 id="legal-reader-title" className={styles.readerTitle}>
-                {readingDoc.title} · v{readingDoc.versionNumber}
+                {readingDoc.title}
               </h2>
             </div>
             {/* Server-sanitized on write (the same sanitizer the admin save
@@ -496,95 +482,49 @@ export default function LegalUpdateGate({ children }) {
               review {single ? 'it' : 'them'} before you continue.
             </p>
 
-            <ul className={styles.docList} aria-label="Updated documents">
-              {docs.map((doc) => {
-                const effective = doc.effectiveAt ? formatDate(doc.effectiveAt) : null;
-                return (
-                  <li key={doc.versionId} className={styles.doc}>
-                    <div className={styles.docHead}>
-                      <span className={styles.docName}>{legalDocName(doc)}</span>
-                      <span className={styles.docMeta}>
-                        Version {doc.versionNumber}
-                        {effective && ` · Effective ${effective}`}
-                      </span>
-                    </div>
-                    {doc.changeSummary && (
-                      <p className={styles.docSummary}>{doc.changeSummary}</p>
-                    )}
-                    <div className={styles.docActions}>
-                      <button
-                        type="button"
-                        className={styles.docLink}
-                        onClick={() => setReading(doc.versionId)}
-                      >
-                        Read {IS_MOBILE_BUILD ? 'the full text' : 'here'}
-                      </button>
-                      {/* The full page, on the website only, and in a new tab so
-                          this dialog is still here when they come back. The app
-                          has no tabs: navigating would hide the gate, so there
-                          the reader above is the full text. */}
-                      {!IS_MOBILE_BUILD && doc.path && (
-                        <a
-                          className={styles.docLink}
-                          href={doc.path}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                        >
-                          Open full page
-                          <ExternalLink size={13} aria-hidden="true" />
-                          <span className={styles.srOnly}> (opens in a new tab)</span>
-                        </a>
-                      )}
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
           </div>
         )}
 
-        <div className={styles.footer}>
-          {error && (
-            <div className={styles.error} role="alert">
-              <AlertCircle size={16} />
-              <span>{error}</span>
-            </div>
-          )}
-
-          <p className={styles.smallPrint}>
-            By selecting Got it, you agree to the updated {docsPhrase}.
-          </p>
-
-          <button
-            type="button"
-            className={styles.primaryBtn}
-            onClick={handleAccept}
-            disabled={submitting}
-            aria-busy={submitting || undefined}
-          >
-            {submitting ? (
-              <>
-                <Loader2 size={16} className={styles.spin} />
-                Saving…
-              </>
-            ) : (
-              'Got it'
+        {!readingDoc && (
+          <div className={styles.footer}>
+            {error && (
+              <div className={styles.error} role="alert">
+                <AlertCircle size={16} />
+                <span>{error}</span>
+              </div>
             )}
-          </button>
-
-          {/* Sign-out is not an escape from the requirement — the gate is
-              waiting again on the next sign-in. It is here because a shared
-              machine is a real situation and being unable to leave an account
-              would be worse. */}
-          <button
-            type="button"
-            className={styles.secondaryBtn}
-            onClick={logout}
-            disabled={submitting}
-          >
-            Sign out
-          </button>
-        </div>
+  
+            <button
+              type="button"
+              className={styles.primaryBtn}
+              onClick={handleAccept}
+              disabled={submitting}
+              aria-busy={submitting || undefined}
+            >
+              {submitting ? (
+                <>
+                  <Loader2 size={16} className={styles.spin} />
+                  Saving…
+                </>
+              ) : (
+                'Got it'
+              )}
+            </button>
+  
+            {/* Sign-out is not an escape from the requirement — the gate is
+                waiting again on the next sign-in. It is here because a shared
+                machine is a real situation and being unable to leave an account
+                would be worse. */}
+            <button
+              type="button"
+              className={styles.secondaryBtn}
+              onClick={logout}
+              disabled={submitting}
+            >
+              Sign out
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

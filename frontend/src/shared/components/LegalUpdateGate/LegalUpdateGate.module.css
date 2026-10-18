@@ -74,6 +74,16 @@
   text-align: center;
 }
 
+/* Equal flexible space above and below centres the summary vertically on a
+   full-screen phone layout. Unlike justify-content: center, spacers collapse
+   to nothing when the content is taller than the area, so it still scrolls
+   from the top instead of being clipped. */
+.scroll::before,
+.scroll::after {
+  content: '';
+  flex: 1 1 0;
+}
+
 /* The mark sits in a 512px square with generous transparent padding, so the
    image box is larger than the visible logo; the negative margin takes the
    padding back out of the layout. */
@@ -108,8 +118,8 @@
 .subtitle {
   margin: 0;
   max-width: 34rem;
-  font-size: var(--font-size-md, 0.9375rem);
-  line-height: var(--leading-relaxed, 1.6);
+  font-size: var(--font-size-sm, 0.8125rem);
+  line-height: var(--leading-normal, 1.5);
   color: var(--color-text-muted, #334155);
   text-wrap: pretty;
 }
@@ -134,81 +144,6 @@
   text-decoration-thickness: 2px;
 }
 
-/* ── The documents ── */
-.docList {
-  list-style: none;
-  margin: 1.5rem 0 0;
-  padding: 0;
-  width: 100%;
-  max-width: 34rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.625rem;
-  text-align: left;
-}
-
-.doc {
-  padding: 0.875rem 1rem;
-  border-radius: var(--radius-md, 12px);
-  border: 1px solid var(--color-border, #e2e8f0);
-  background: var(--color-bg-soft, #f1f5f9);
-}
-
-.docHead {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 0.25rem 0.75rem;
-}
-
-.docName {
-  font-size: var(--font-size-base, 0.875rem);
-  font-weight: 600;
-  color: var(--color-text-main, #0f172a);
-}
-
-.docMeta {
-  font-size: var(--font-size-xs, 0.75rem);
-  color: var(--color-text-light, #475569);
-}
-
-.docSummary {
-  margin: 0.5rem 0 0;
-  font-size: var(--font-size-sm, 0.8125rem);
-  line-height: var(--leading-normal, 1.5);
-  color: var(--color-text-muted, #334155);
-}
-
-.docActions {
-  margin-top: 0.5rem;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.25rem 1.25rem;
-}
-
-.docLink {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-  min-height: 32px;
-  padding: 0;
-  border: none;
-  background: none;
-  font: inherit;
-  font-size: var(--font-size-sm, 0.8125rem);
-  font-weight: 600;
-  color: var(--lg-link);
-  text-decoration: none;
-  cursor: pointer;
-  border-radius: 4px;
-}
-
-.docLink:hover {
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-
 /* ── Reader: the full document, inside the dialog ── */
 .reader {
   flex: 1 1 auto;
@@ -231,8 +166,11 @@
 
 .backBtn {
   flex-shrink: 0;
-  min-height: 36px;
-  padding: 0.35rem 0.75rem 0.35rem 0.55rem;
+  width: 38px;
+  height: 38px;
+  min-height: 38px;
+  padding: 0;
+  justify-content: center;
   font: inherit;
   font-size: var(--font-size-sm, 0.8125rem);
   font-weight: 600;
@@ -363,7 +301,7 @@
   font-weight: 600;
 }
 
-/* ── Footer: small print and the two actions, pinned ── */
+/* ── Footer: the two actions, pinned ── */
 .footer {
   flex-shrink: 0;
   display: flex;
@@ -374,16 +312,7 @@
     calc(var(--safe-r) + var(--gutter))
     calc(var(--safe-b) + 1rem)
     calc(var(--safe-l) + var(--gutter));
-  border-top: 1px solid var(--color-border, #e2e8f0);
   background: var(--lg-surface);
-}
-
-.smallPrint {
-  margin: 0 0 0.25rem;
-  font-size: var(--font-size-xs, 0.75rem);
-  line-height: var(--leading-normal, 1.5);
-  text-align: center;
-  color: var(--color-text-light, #475569);
 }
 
 .primaryBtn,
@@ -432,8 +361,7 @@
 .primaryBtn:focus-visible,
 .secondaryBtn:focus-visible,
 .backBtn:focus-visible,
-.inlineLink:focus-visible,
-.docLink:focus-visible {
+.inlineLink:focus-visible {
   outline: 2px solid var(--lg-focus);
   outline-offset: 2px;
 }
