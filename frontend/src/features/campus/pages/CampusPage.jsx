@@ -22,7 +22,6 @@ import CrewCardSkeleton from '@features/crew/components/cards/CrewCardSkeleton';
 import Skeleton from '@shared/components/skeletons/Skeleton';
 import { mapActivity } from '@shared/utils/mapActivity';
 import CampusJoinFlow from '../components/affiliation/CampusJoinFlow';
-import CampusVerifiedBadge from '../components/affiliation/CampusVerifiedBadge';
 import CommunityRow from '@features/communities/components/directory/CommunityRow';
 import listStyles from '@features/communities/components/directory/CommunityList.module.css';
 
@@ -376,13 +375,10 @@ export default function CampusPage() {
       {/* HEADER SECTION */}
       <div className={styles.headerBanner}>
         <header className={styles.header}>
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '6px', minWidth: 0 }}>
           <h1 className={styles.collegeTitle} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', lineHeight: 1 }}>
             <span>{collegeName}</span>
             <CollegeRepresentativeBadge isCampusRep={isCampusRep} collegeName={collegeName} size="inherit" />
           </h1>
-          <CampusVerifiedBadge affiliation={campus.affiliation} fallbackName={collegeName} />
-          </div>
 
           <div className={`${styles.headerActions} ${styles.headerActionsRelative}`}>
             <button
