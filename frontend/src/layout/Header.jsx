@@ -7,6 +7,8 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@shared/context/AuthContext';
 import { Bookmark, Moon, Sun, MenuSquare, X, Settings, LogOut } from '@shared/components/icons';
 import Menu, { MenuItem, MenuSeparator, useMenu } from '@shared/components/ui/Menu';
+import ActionDot from '@shared/components/ActionDot';
+import { useProfileActionNeeded } from '@shared/hooks/useProfileActionNeeded';
 import CommunitiesBox from './CommunitiesBox';
 
 import Avatar from '@shared/components/avatar/Avatar';
@@ -21,13 +23,15 @@ import styles from './Header.module.css';
 import wordmark from '@assets/images/meetifyy_wordmark.svg';
 import dashboardStyles from './DashboardLayout.module.css';
 
-/** Matches the .mobileDrawer transform transition in Header.module.css. */
-const DRAWER_SLIDE_MS = 320;
+/** Match the .mobileDrawer transform transitions in Header.module.css. */
+const DRAWER_ENTER_MS = 340;
+const DRAWER_EXIT_MS = 250;
 
 export default function Header({ variant = 'dashboard', wide = false }) {
   const { loading, logout, currentUser } = useAuth();
   const { theme, choice, toggleTheme } = useTheme();
   const menu = useMenu();
+  const profileAction = useProfileActionNeeded();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const closeDrawer = useCallback(() => setDrawerOpen(false), []);
 
@@ -43,7 +47,10 @@ export default function Header({ variant = 'dashboard', wide = false }) {
   const [scrollLocked, setScrollLocked] = useState(false);
   useEffect(() => {
     if (drawerOpen === scrollLocked) return undefined;
-    const timer = setTimeout(() => setScrollLocked(drawerOpen), DRAWER_SLIDE_MS);
+    const timer = setTimeout(
+      () => setScrollLocked(drawerOpen),
+      drawerOpen ? DRAWER_ENTER_MS : DRAWER_EXIT_MS,
+    );
     return () => clearTimeout(timer);
   }, [drawerOpen, scrollLocked]);
   useScrollLock(scrollLocked);
@@ -130,9 +137,26 @@ export default function Header({ variant = 'dashboard', wide = false }) {
    * the URL has moved on. Closing first and navigating later lets that pop
    * land after the push and take the user straight back out of Settings.
    */
+  //
+  // It starts once the slide has finished (and the browser is idle), not as
+  // the drawer opens: opened early, the chunk's fetch, parse and evaluation
+  // landed inside the first 300ms of the slide and stalled it. A tap on
+  // Settings still warms it immediately (`onPointerDown`).
+  const warmSettings = useCallback(() => {
+    import('@features/settings/pages/SettingsRoute').catch(() => {});
+  }, []);
   useEffect(() => {
-    if (drawerOpen) import('@features/settings/pages/SettingsRoute').catch(() => {});
-  }, [drawerOpen]);
+    if (!drawerOpen) return undefined;
+    let idle = null;
+    const timer = setTimeout(() => {
+      if ('requestIdleCallback' in window) idle = window.requestIdleCallback(warmSettings, { timeout: 1000 });
+      else warmSettings();
+    }, DRAWER_ENTER_MS);
+    return () => {
+      clearTimeout(timer);
+      if (idle !== null) window.cancelIdleCallback(idle);
+    };
+  }, [drawerOpen, warmSettings]);
   const openSettingsFromDrawer = useCallback(() => {
     navigate('/settings');
     setDrawerOpen(false);
@@ -142,8 +166,10 @@ export default function Header({ variant = 'dashboard', wide = false }) {
   useEffect(() => {
     if (profileWanted) return undefined;
     if (drawerOpen) {
-      setProfileWanted(true);
-      return undefined;
+      // After the slide: the fetch and the re-render when the counts arrive
+      // used to land mid-slide.
+      const t = setTimeout(() => setProfileWanted(true), DRAWER_ENTER_MS);
+      return () => clearTimeout(t);
     }
     let idle = null;
     const timer = setTimeout(() => {
@@ -293,6 +319,7 @@ export default function Header({ variant = 'dashboard', wide = false }) {
             type="button"
             className={styles.drawerSettingsBtn}
             onClick={openSettingsFromDrawer}
+            onPointerDown={warmSettings}
           >
             <SettingsIcon className={styles.settingsIcon} aria-hidden="true" />
             <span>Settings</span>
@@ -427,6 +454,7 @@ export default function Header({ variant = 'dashboard', wide = false }) {
 
               <MenuItem icon={Settings} onSelect={() => navigate('/settings')} onClose={menu.close}>
                 Settings
+                {profileAction.any && <ActionDot />}
               </MenuItem>
 
               <MenuItem

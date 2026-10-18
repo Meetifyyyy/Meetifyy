@@ -673,8 +673,11 @@
   box-shadow: var(--shadow-lg);
   z-index: 1000;
   transform: translateX(-100%);
-  transition: transform 0.3s cubic-bezier(0.32, 0.72, 0, 1),
-              visibility 0.3s linear;
+  /* Leaving: accelerate off the screen. 250ms; keep DRAWER_EXIT_MS in
+     Header.jsx in step. `visibility` flips at the end so the panel stays
+     painted for the whole exit. */
+  transition: transform 0.25s cubic-bezier(0.4, 0, 1, 1),
+              visibility 0s linear 0.25s;
   display: flex;
   flex-direction: column;
   visibility: hidden;
@@ -689,9 +692,16 @@
   touch-action: pan-y;
 }
 
+/* Entering: 340ms (DRAWER_ENTER_MS in Header.jsx). The old curve,
+   cubic-bezier(0.32, 0.72, 0, 1), had covered 85% of the 300px by 90ms (about
+   five frames) and spent the remaining 200ms creeping the last 40px, which
+   reads as a snap rather than a slide. This one starts gently and covers about
+   70% at the one-third mark, so the whole motion is visible. */
 .mobileDrawer.drawerOpen {
   transform: translateX(0);
   visibility: visible;
+  transition: transform 0.34s cubic-bezier(0.2, 0, 0, 1),
+              visibility 0s linear 0s;
 }
 
 .drawerOverlay {
@@ -707,8 +717,8 @@
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
-  transition: opacity 0.3s cubic-bezier(0.32, 0.72, 0, 1),
-              visibility 0.3s linear;
+  transition: opacity 0.25s linear,
+              visibility 0s linear 0.25s;
   -webkit-tap-highlight-color: transparent;
 }
 
@@ -721,6 +731,8 @@
   opacity: 1;
   visibility: visible;
   pointer-events: auto;
+  transition: opacity 0.34s cubic-bezier(0.2, 0, 0, 1),
+              visibility 0s linear 0s;
 }
 
 /* Touch devices (the APK, phone browsers): no blur behind the scrim. A
@@ -1105,8 +1117,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .mobileDrawer { transition: none; }
-  .drawerOverlay { animation: none; }
+  .mobileDrawer, .mobileDrawer.drawerOpen { transition: none; }
+  .drawerOverlay, .drawerOverlayOpen { transition: none; animation: none; }
 }
 
 /* ── Theme toggle ─────────────────────────────────────────────────────────
