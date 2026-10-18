@@ -31,7 +31,7 @@ export default function LandingFooter() {
               See you on <span className={styles.highlight}>campus</span>.
             </p>
             <p className={styles.cardSub}>
-              Join 300+ verified students already finding their people.
+              Join 300+ students already finding their people.
             </p>
             <div className={styles.cardActions}>
               <Link to="/signup" className={styles.cta}>Create account</Link>
@@ -58,7 +58,7 @@ export default function LandingFooter() {
           <div className={styles.about}>
             <img src={wordmarkImg} alt="Meetifyy" className={styles.aboutWordmark} />
             <p className={styles.aboutText}>
-              The campus social app for verified college students. Circles,
+              The social app for college life. Circles,
               plans and chats with the people around you.
             </p>
           </div>

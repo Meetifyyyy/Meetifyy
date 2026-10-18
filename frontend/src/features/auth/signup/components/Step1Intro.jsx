@@ -1,5 +1,4 @@
 import { useState, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { ArrowRight } from '@shared/components/icons';
 import { useSignup } from '../../context/SignupContext';
 import AnimatedStep from './AnimatedStep';
@@ -8,10 +7,14 @@ import { checkEmailFormat, EMAIL_FORMAT, normalizeEmail } from '@shared/utils/em
 import { useAvailabilityCheck } from '../hooks/useAvailabilityCheck';
 import { AuthHeading, AuthField, AuthButton, styles as s } from '../../shared/ui';
 
-// Reason string the backend returns when the email domain is not linked to any
-// registered college. We detect this to show a domain-specific error with a
-// "request college" link rather than a generic "invalid email" message.
-const DOMAIN_NOT_REGISTERED_REASON = 'Please select your college first.';
+// What an API that predates personal-email signup says for an address outside
+// every college domain. Signup no longer requires a college email (Campus is
+// verified separately, on the Campus page), so that wording would send people
+// looking for a college picker that no longer exists. Seen only while the
+// frontend is ahead of its backend; replaced with a neutral sentence.
+const LEGACY_COLLEGE_REQUIRED_REASON = 'Please select your college first.';
+const LEGACY_COLLEGE_REQUIRED_MESSAGE =
+  "This email can't be used to sign up right now. Please try another address.";
 
 /** Same rules the old identity step used, now asked alongside the email. */
 function validateName(name) {
@@ -24,16 +27,15 @@ function validateName(name) {
 }
 
 /**
- * Step 1 — name and college email.
+ * Step 1 — name and email.
  *
- * The two things anyone expects to give first, and the email is also the
- * student check: its domain must belong to an approved college, and the
- * college is read from it here so the College step never has to ask for it.
- * The email gate below is unchanged from when it lived on the academic step.
+ * Any email works: personal or college. Signing up with a college address does
+ * NOT verify a college; Campus asks for that separately, on the Campus page.
+ * The server still has to confirm the address is usable (well-formed, not
+ * already registered, not a blocked domain) before the step advances.
  */
 export default function Step1Intro() {
-  const navigate = useNavigate();
-  const { signupData, updateData, nextStep, setCollegeName } = useSignup();
+  const { signupData, updateData, nextStep } = useSignup();
 
   const [name, setName] = useState(
     signupData.firstName ? `${signupData.firstName} ${signupData.lastName || ''}`.trim() : '',
@@ -56,17 +58,15 @@ export default function Step1Intro() {
   const emailFormatError = emailFormat.valid
     ? null
     : emailFormat.code === EMAIL_FORMAT.REQUIRED
-      ? 'College email is required.'
+      ? 'Email is required.'
       : 'Please enter a valid email address.';
 
   const normalizedEmail = normalizeEmail(email);
 
-  // No collegeId needed — the backend resolves college from the email domain.
   const {
     status: emailStatus,
     reason: emailReason,
     code: emailCode,
-    collegeName,
   } = useAvailabilityCheck(normalizedEmail, {
     endpoint: '/api/auth/check-email',
     field: 'email',
@@ -75,19 +75,13 @@ export default function Step1Intro() {
 
   const isChecking = emailStatus === 'checking';
 
-  // True when the domain isn't linked to any registered college in the admin portal.
-  const isDomainNotRegistered =
-    emailStatus === 'rejected' &&
-    emailCode === 'domain_not_allowed' &&
-    emailReason === DOMAIN_NOT_REGISTERED_REASON;
-
   /**
    * One message per state, and every non-success state blocks.
    *
    * The four cases the old code collapsed into two:
    *
    *   format invalid       the user has not finished typing an address
-   *   domain not allowed   a real address, but not an approved college domain
+   *   domain not allowed   a real address on a domain the server refuses
    *   already registered   sign in instead
    *   technical failure    we do not know; the user must retry, not proceed
    *
@@ -105,9 +99,9 @@ export default function Step1Intro() {
     if (emailFormatError) return null;
 
     if (emailStatus === 'rejected') {
-      if (isDomainNotRegistered) return null; // rendered below with the request link
       if (emailCode === 'domain_not_allowed') {
-        return emailReason || "This email domain isn't allowed. Please use your institution email.";
+        if (!emailReason || emailReason === LEGACY_COLLEGE_REQUIRED_REASON) return LEGACY_COLLEGE_REQUIRED_MESSAGE;
+        return emailReason;
       }
       if (emailCode === 'invalid_email') return 'Please enter a valid email address.';
       return emailReason || 'This email is already registered. Please sign in.';
@@ -167,7 +161,9 @@ export default function Step1Intro() {
           setHardBlockReason(
             res?.code === 'invalid_email'
               ? 'Please enter a valid email address.'
-              : res?.reason || "This email domain isn't allowed. Please use your institution email.",
+              : res?.reason && res.reason !== LEGACY_COLLEGE_REQUIRED_REASON
+                ? res.reason
+                : LEGACY_COLLEGE_REQUIRED_MESSAGE,
           );
           setIsSubmitting(false);
           return;
@@ -201,25 +197,22 @@ export default function Step1Intro() {
     if (!emailFormat.valid) return;
 
     // Persist the exact ids the backend validates against — no display strings,
-    // and no `year`/`major` legacy keys. College is resolved server-side from
-    // the email domain, so we do not store collegeId here.
+    // and no `year`/`major` legacy keys. No college here: signup never decides
+    // one, whatever the domain.
     const parts = name.trim().split(/\s+/);
     updateData({
       firstName: parts[0],
       lastName: parts.slice(1).join(' '),
       email: normalizedEmail,
     });
-    if (collegeName) setCollegeName(collegeName);
     nextStep();
   };
-
-  const emailOk = emailStatus === 'available' && !emailError;
 
   return (
     <AnimatedStep className={s.stepWrapper}>
       <AuthHeading
         title="Let's get you started"
-        subtitle="Use your college email. It's how we know you're a student."
+        subtitle="Use any email you check. You can verify your college email later, on Campus."
       />
 
       <form onSubmit={handleSubmit} className={s.form} noValidate>
@@ -237,28 +230,14 @@ export default function Step1Intro() {
 
         <AuthField
           id="signup-email"
-          label="College email"
+          label="Email"
           type="email"
           autoComplete="email"
           inputMode="email"
           value={email}
-          status={isDomainNotRegistered ? 'rejected' : emailStatus}
-          error={
-            isDomainNotRegistered ? (
-              <>
-                Your college isn&apos;t on Meetifyy yet.{' '}
-                <button
-                  type="button"
-                  className={s.inlineAction}
-                  onClick={() => navigate('/?request=college#join')}
-                >
-                  Request to add it
-                  <ArrowRight size={12} aria-hidden="true" />
-                </button>
-              </>
-            ) : emailError
-          }
-          hint={emailOk && collegeName ? `${collegeName} · verified college domain` : emailHint}
+          status={emailStatus}
+          error={emailError}
+          hint={emailHint}
           onChange={(e) => {
             setEmail(e.target.value);
             if (hardBlockReason) setHardBlockReason('');

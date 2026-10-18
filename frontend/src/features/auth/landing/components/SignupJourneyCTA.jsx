@@ -196,14 +196,18 @@ export default function SignupJourneyCTA() {
         console.error('[campus-request] email availability check failed', checkErr);
       }
 
-      // If available is true, or if it says it's already registered, it means the domain IS whitelisted.
-      if (checkData && (checkData.available === true || checkData.reason === 'This email is already registered. Please sign in.')) {
-        setErrorMsg('Your college is already added to Meetifyy! You can sign up directly.');
+      // Signup takes any address now, so `available` says nothing about the
+      // college. A known college domain comes back as a hint (`collegeName`
+      // / `collegeId`); only that means the college is already here.
+      if (checkData && (checkData.collegeId || checkData.collegeName)) {
+        setErrorMsg(
+          `${checkData.collegeName || 'Your college'} is already on Meetifyy. Sign up, then verify your college email on Campus.`,
+        );
         setIsSubmitting(false);
         return;
       }
 
-      // If domain is not whitelisted, submit the request
+      // Not a known college domain: file the request
       await apiClient.post('/api/auth/request-college', {
         name: name.trim(),
         collegeName: collegeName.trim(),
@@ -239,26 +243,26 @@ export default function SignupJourneyCTA() {
         </div>
 
         <motion.h2 variants={titleVariants} className={styles.edTitle}>
-          Is your college on Meetifyy<span className={styles.edDot}>?</span>
+          Ready to join<span className={styles.edDot}>?</span>
         </motion.h2>
 
         <div className={styles.joinGrid}>
           <motion.div variants={subtitleVariants} className={`${styles.joinCard} ${styles.joinYes}`}>
-            <span className={styles.joinTag}>Yes, it is</span>
-            <h3 className={styles.joinTitle}>Sign up with your college email.</h3>
+            <span className={styles.joinTag}>Anyone</span>
+            <h3 className={styles.joinTitle}>Sign up with any email.</h3>
             <p className={styles.joinText}>
-              Verify your address, set up your profile and you are in. It takes
-              about a minute.
+              Personal or college, set up your profile and you are in. Verify
+              your college email later to open your Campus.
             </p>
             <Link to="/signup" className={styles.joinBtn}>Create your account</Link>
           </motion.div>
 
           <motion.div variants={subtitleVariants} className={`${styles.joinCard} ${styles.joinNo}`}>
-            <span className={styles.joinTag}>Not yet</span>
-            <h3 className={styles.joinTitle}>Tell us where you study.</h3>
+            <span className={styles.joinTag}>Optional</span>
+            <h3 className={styles.joinTitle}>Want your college&apos;s Campus on Meetifyy?</h3>
             <p className={styles.joinText}>
-              We verify your college&apos;s email domain and open it up. You hear
-              from us the moment it is live.
+              Tell us where you study. We verify the college&apos;s email domain
+              and let you know when its Campus is live.
             </p>
         {/* Add College Call-To-Action Form Container */}
             <motion.div
@@ -290,7 +294,7 @@ export default function SignupJourneyCTA() {
               </form>
 
               <p className={styles.disclaimer}>
-                Don&apos;t see your institution listed? Request your college domain to get instant access.
+                You can sign up today either way. This only adds your college&apos;s Campus.
               </p>
             </motion.div>
           </motion.div>
@@ -319,10 +323,10 @@ export default function SignupJourneyCTA() {
               <div className={styles.modalHeader}>
                 <div>
                   <span className={styles.modalEyebrow}>Campus request</span>
-                  <h3 className={styles.modalTitle}>Bring Meetifyy to your campus</h3>
+                  <h3 className={styles.modalTitle}>Bring Campus to your college</h3>
                   <p className={styles.modalSubtitle}>
                     Tell us where you study. We verify the college&apos;s email
-                    domain and email you as soon as it is open.
+                    domain and email you when its Campus opens.
                   </p>
                 </div>
                 <button type="button" onClick={handleCloseModal} className={styles.closeBtn} aria-label="Close">
@@ -337,7 +341,7 @@ export default function SignupJourneyCTA() {
                   </div>
                   <h4 className={styles.successTitle}>You&apos;re on the list</h4>
                   <p className={styles.successText}>
-                    We will verify your institutional details and notify you at <strong>{personalEmail}</strong> as soon as there is any update.
+                    We will verify your college&apos;s details and email <strong>{personalEmail}</strong> when its Campus is live.
                   </p>
                   <button type="button" onClick={handleCloseModal} className={styles.modalSubmitBtn}>
                     Done
@@ -397,7 +401,7 @@ export default function SignupJourneyCTA() {
                       placeholder="you@gmail.com"
                       className={styles.fieldInput}
                     />
-                    <span className={styles.fieldHint}>We will tell you here when your campus is live.</span>
+                    <span className={styles.fieldHint}>We will tell you here when your Campus is live.</span>
                   </div>
 
                   <div className={styles.fieldGroup}>

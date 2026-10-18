@@ -24,8 +24,8 @@ import styles from './EditorialLanding.module.css';
 
 const STEPS = [
   {
-    title: 'Verify your college email',
-    text: 'Sign up with your institutional address. Everyone here is a verified student — no outsiders, no fake profiles.',
+    title: 'Sign up with any email',
+    text: 'Personal or college, any address works. Verify your college email later to open your Campus.',
   },
   {
     title: 'Join circles',
@@ -43,7 +43,7 @@ const FEATURES = [
   ['Instant match', 'Get paired with someone nearby who wants to do the same thing, right now.'],
   ['Chats', 'Direct messages and a group chat for every circle and plan.'],
   ['Campus feed', 'Posts, events and moments from your own campus, not the whole internet.'],
-  ['Verified only', 'Every account is tied to a college email. You know who you are talking to.'],
+  ['Real people', 'A live selfie check before anyone can message or post. Campus is college-verified.'],
 ];
 
 const CIRCLES = [

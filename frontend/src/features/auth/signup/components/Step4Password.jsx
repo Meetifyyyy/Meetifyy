@@ -80,7 +80,7 @@ export default function Step4Password() {
 
   return (
     <AnimatedStep className={s.stepWrapper}>
-      <AuthHeading title="Create a password" subtitle="You'll log in with your username or college email and this password." />
+      <AuthHeading title="Create a password" subtitle="You'll log in with your username or email and this password." />
 
       <form onSubmit={handleSubmit} className={s.form} noValidate>
         <PasswordField

@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { ArrowRight, GraduationCap } from '@shared/components/icons';
+import { ArrowRight } from '@shared/components/icons';
 import { useSignup } from '../../context/SignupContext';
 import AnimatedStep from './AnimatedStep';
 import CustomSelect from './CustomSelect';
@@ -9,14 +9,14 @@ import { validateAcademicSelection, ACADEMIC_ERRORS } from '@shared/academics/ac
 import { AuthHeading, AuthButton, styles as s } from '../../shared/ui';
 
 /**
- * Step 3 — what they study.
+ * Step 3 — what they study: course, branch and year.
  *
- * The college is not asked: the email's domain already decided it, so it is
- * shown as a fact at the top and only course, branch and year are chosen.
+ * No college here. Signup never decides one (the email may be personal);
+ * the college is proven later with a college email on the Campus page.
  * The ids saved are the exact ones the backend validates against.
  */
 export default function Step3College() {
-  const { signupData, updateData, nextStep, collegeName } = useSignup();
+  const { signupData, updateData, nextStep } = useSignup();
 
   // One controlled object, so course/branch/year cannot drift apart.
   const [academic, setAcademic] = useState(() => ({
@@ -56,18 +56,6 @@ export default function Step3College() {
   return (
     <AnimatedStep className={s.stepWrapper}>
       <AuthHeading title="What are you studying?" subtitle="We use this to show you classmates and your batch." />
-
-      {collegeName ? (
-        <div className={s.collegeChip}>
-          <span className={s.collegeChipIcon} aria-hidden="true">
-            <GraduationCap size={18} />
-          </span>
-          <span className={s.collegeChipText}>
-            <span className={s.collegeChipLabel}>College</span>
-            <span className={s.collegeChipName}>{collegeName}</span>
-          </span>
-        </div>
-      ) : null}
 
       <form onSubmit={handleSubmit} className={s.form} noValidate>
         <AcademicSelection

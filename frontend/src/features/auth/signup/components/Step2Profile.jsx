@@ -4,13 +4,14 @@ import { useSignup } from '../../context/SignupContext';
 import AnimatedStep from './AnimatedStep';
 import CustomSelect from './CustomSelect';
 import { validateDOB } from '../../../../shared/utils/dateValidation';
+import { GENDER_OPTIONS, isValidGender } from '@shared/constants/gender';
 import { useAvailabilityCheck } from '../hooks/useAvailabilityCheck';
 import { AuthHeading, AuthField, AuthButton, styles as s } from '../../shared/ui';
 
 /**
- * Step 2 — username and birthday: the two things that make up the person's
- * public identity on Meetifyy. The username is checked as they type, so the
- * answer is usually there before they reach the birthday.
+ * Step 2 — username, birthday and gender. The username is checked as they
+ * type, so the answer is usually there before they reach the rest. Gender is
+ * required here (it is optional for the API, which old app builds call).
  */
 export default function Step2Profile() {
   const { signupData, updateData, nextStep } = useSignup();
@@ -25,6 +26,7 @@ export default function Step2Profile() {
   const [year, setYear] = useState(initialYear);
   const [month, setMonth] = useState(initialMonth);
   const [day, setDay] = useState(initialDay);
+  const [gender, setGender] = useState(isValidGender(signupData.gender) ? signupData.gender : '');
   const [attempted, setAttempted] = useState(false);
 
   // ── Validation ────────────────────────────────────────────────────────────
@@ -46,6 +48,7 @@ export default function Step2Profile() {
 
   const dobValidation = useMemo(() => validateDOB(year, month, day), [year, month, day]);
   const dobError = dobValidation.error;
+  const genderError = isValidGender(gender) ? null : 'Please select your gender.';
 
   const isChecking = usernameStatus === 'checking';
   /**
@@ -59,7 +62,7 @@ export default function Step2Profile() {
    */
   const isUsernameBlocked =
     !!usernameFormatError || (usernameStatus !== null && usernameStatus !== 'available');
-  const isValid = !isUsernameBlocked && !dobError && !isChecking;
+  const isValid = !isUsernameBlocked && !dobError && !genderError && !isChecking;
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -69,6 +72,7 @@ export default function Step2Profile() {
       updateData({
         username: normalizedUsername,
         birthday: dobValidation.dobString,
+        gender,
       });
       nextStep();
     }
@@ -92,7 +96,7 @@ export default function Step2Profile() {
     <AnimatedStep className={s.stepWrapper}>
       <AuthHeading
         title={signupData.firstName ? `Nice to meet you, ${signupData.firstName}` : 'Your profile'}
-        subtitle="Pick a username and add your birthday. Your username is how other students find you."
+        subtitle="Pick a username and tell us a little about you. Your username is how people find you."
       />
 
       <form onSubmit={handleSubmit} className={s.form} noValidate>
@@ -170,6 +174,27 @@ export default function Step2Profile() {
               <div className={`${s.message} ${s.messageError}`} role="alert">
                 <AlertCircle size={14} aria-hidden="true" />
                 <span>{dobError}</span>
+              </div>
+            ) : null}
+          </div>
+        </div>
+
+        <div className={`${s.selectGroup} ${attempted && genderError ? s.isInvalid : ''}`}>
+          <span className={s.selectLabel} id="signup-gender-label">Gender</span>
+          <div role="group" aria-labelledby="signup-gender-label">
+            <CustomSelect
+              value={gender}
+              onChange={setGender}
+              placeholder="Select gender"
+              isInvalid={attempted && !!genderError}
+              options={GENDER_OPTIONS}
+            />
+          </div>
+          <div className={s.messageSlot}>
+            {attempted && genderError ? (
+              <div className={`${s.message} ${s.messageError}`} role="alert">
+                <AlertCircle size={14} aria-hidden="true" />
+                <span>{genderError}</span>
               </div>
             ) : null}
           </div>

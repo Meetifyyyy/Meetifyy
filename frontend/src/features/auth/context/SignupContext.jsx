@@ -9,6 +9,7 @@ const initialData = {
   lastName: '',
   username: '',
   birthday: '',
+  gender: '',
   course: '',
   branch: '',
   passingYear: null,
@@ -24,15 +25,17 @@ const initialData = {
 const SESSION_KEY = 'meetifyy_signup_data';
 const STEP_KEY = 'meetifyy_signup_step';
 const TIMESTAMP_KEY = 'meetifyy_signup_time';
+// No longer written (signup does not decide a college); still removed on
+// reset so a draft from an older build leaves nothing behind.
 const COLLEGE_KEY = 'meetifyy_signup_college';
 const PENDING_KEY = 'meetifyy_signup_pending_email';
 const MAX_SESSION_AGE_MS = 30 * 60 * 1000; // 30 minutes TTL
 
 /*
  * Six steps, in the order the backend needs them:
- *   1 Say hello   name + college email   (email gate: approved college domain)
- *   2 Profile     username + birthday
- *   3 College     course, branch, year   (the college itself comes from the email)
+ *   1 Say hello   name + email         (any email; the server checks it is usable)
+ *   2 Profile     username + birthday + gender
+ *   3 Studies     course, branch, year (no college: that is verified on Campus)
  *   4 Password    password + consent     → POST /signup, which sends the code
  *   5 Verify      emailed code           → signed in, profile synced
  *   6 Photo       optional avatar        → completeSignup
@@ -46,7 +49,7 @@ export const TOTAL_SIGNUP_STEPS = 6;
  */
 function firstIncompleteStep(data) {
   if (!data.firstName || !data.email) return 1;
-  if (!data.username || !data.birthday) return 2;
+  if (!data.username || !data.birthday || !data.gender) return 2;
   if (!data.course || !data.branch || !Number.isInteger(data.passingYear)) return 3;
   return TOTAL_SIGNUP_STEPS;
 }
@@ -92,19 +95,6 @@ export const SignupProvider = ({ children }) => {
     : (!isNaN(urlStep) && urlStep >= 1 && urlStep <= TOTAL_SIGNUP_STEPS
         ? urlStep
         : (savedStep && savedStep >= 1 && savedStep <= TOTAL_SIGNUP_STEPS ? savedStep : 1));
-
-  // Shown on the College step; derived from the email, never sent anywhere.
-  // Kept out of `signupData` because that object is posted to sync-profile.
-  const [collegeName, setCollegeNameState] = useState(() => {
-    try { return sessionStorage.getItem(COLLEGE_KEY) || ''; } catch { return ''; }
-  });
-  const setCollegeName = useCallback((name) => {
-    setCollegeNameState(name || '');
-    try {
-      if (name) sessionStorage.setItem(COLLEGE_KEY, name);
-      else sessionStorage.removeItem(COLLEGE_KEY);
-    } catch { /* storage blocked: the label is cosmetic */ }
-  }, []);
 
   /*
    * The address a code has already been sent to, if any.
@@ -276,8 +266,6 @@ export const SignupProvider = ({ children }) => {
         prevStep,
         goToStep,
         totalSteps: TOTAL_SIGNUP_STEPS,
-        collegeName,
-        setCollegeName,
         finishing,
         setFinishing,
         pendingEmail,

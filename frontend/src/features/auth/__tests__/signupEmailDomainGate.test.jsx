@@ -3,7 +3,14 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, act, cleanup, fireEvent } from '@testing-library/react';
 
 /**
- * The email gate on the Academic Details step.
+ * The email gate on signup step 1.
+ *
+ * POLICY CHANGE (college affiliation): signup accepts ANY email, personal or
+ * college. A college domain is no longer required and grants nothing; Campus
+ * is verified separately with a college email on the Campus page. So the
+ * "unapproved domain" case below is now only a domain the server refuses
+ * outright (e.g. disposable), and the old "select your college / request it"
+ * gating is gone. The format and failure states are unchanged.
  *
  * These encode the four states the step must keep apart. It previously kept
  * apart only two, and the collapse had a specific, reachable consequence:
@@ -13,8 +20,8 @@ import { render, screen, act, cleanup, fireEvent } from '@testing-library/react'
  * client — whose catch block mapped every throw to "network error" — told the
  * user "Couldn't verify, you can still continue" and let them through.
  *
- *   valid + allowed domain  -> may continue
- *   valid + wrong domain    -> blocked, told which
+ *   valid address           -> may continue (personal or college)
+ *   refused by the server   -> blocked, told why
  *   malformed / incomplete  -> blocked, told to fix the address
  *   check could not run     -> blocked, told to retry
  *
@@ -103,16 +110,46 @@ describe('Signup email gate (step 1)', () => {
     expect(continueButton().disabled).toBe(false);
   });
 
-  it('blocks an address on an unapproved domain and names the problem', async () => {
+  it('allows a personal address: no college domain is required', async () => {
+    postMock.mockResolvedValue({ available: true, collegeId: null });
+    render(<Step1Intro />);
+    await typeEmail('someone@gmail.com');
+
+    expect(continueButton().disabled).toBe(false);
+    await act(async () => {
+      fireEvent.change(document.getElementById('signup-name'), { target: { value: 'Asha Rao' } });
+    });
+    await act(async () => {
+      fireEvent.submit(document.querySelector('form'));
+      await Promise.resolve();
+    });
+    expect(updateDataMock).toHaveBeenCalledWith({
+      firstName: 'Asha',
+      lastName: 'Rao',
+      email: 'someone@gmail.com',
+    });
+    expect(nextStepMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('never mentions colleges or offers to request one', async () => {
+    postMock.mockResolvedValue({ available: true });
+    render(<Step1Intro />);
+    await typeEmail('someone@gmail.com');
+    expect(screen.queryByText(/request to add it/i)).toBeNull();
+    expect(screen.queryByText(/isn't on Meetifyy/i)).toBeNull();
+    expect(screen.queryByLabelText(/college email/i)).toBeNull();
+  });
+
+  it('blocks an address on a domain the server refuses and names the problem', async () => {
     postMock.mockResolvedValue({
       available: false,
       code: 'domain_not_allowed',
-      reason: 'Please use your official GLA email.',
+      reason: 'Disposable email addresses are not allowed.',
     });
     render(<Step1Intro />);
-    await typeEmail('student@gmail.com');
+    await typeEmail('someone@mailinator.com');
 
-    expect(screen.getByText(/official GLA email/i)).toBeTruthy();
+    expect(screen.getByText(/disposable email addresses/i)).toBeTruthy();
     expect(continueButton().disabled).toBe(true);
   });
 
@@ -155,7 +192,10 @@ describe('Signup email gate (step 1)', () => {
     expect(continueButton().disabled).toBe(true);
   });
 
-  it('never advances the step while the email is unverified', async () => {
+  // An API that predates personal-email signup still answers this for a
+  // non-college domain. It must block (the old server would refuse the signup
+  // anyway) without pointing at a college picker that no longer exists.
+  it('never advances the step while the email is refused, even by an older API', async () => {
     postMock.mockResolvedValue({
       available: false,
       code: 'domain_not_allowed',
@@ -163,6 +203,8 @@ describe('Signup email gate (step 1)', () => {
     });
     render(<Step1Intro />);
     await typeEmail('student@gmail.com');
+    expect(screen.queryByText(/select your college/i)).toBeNull();
+    expect(screen.getByText(/can't be used to sign up right now/i)).toBeTruthy();
 
     await act(async () => {
       fireEvent.submit(document.querySelector('form'));

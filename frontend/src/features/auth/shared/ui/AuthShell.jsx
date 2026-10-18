@@ -11,7 +11,7 @@ import { AUTH_STORIES } from './authStories';
 import s from './authKit.module.css';
 
 const DEFAULT_HEADLINE = "Your campus,\n*finally connected.*";
-const DEFAULT_SUBTEXT = 'Meetifyy is where verified students meet, plan, and belong.';
+const DEFAULT_SUBTEXT = 'Meetifyy is where students meet, plan, and belong.';
 
 const AuthShellContext = createContext(null);
 
@@ -148,7 +148,7 @@ const SignupRail = memo(function SignupRail({ current, leaving = false }) {
           );
         })}
       </ol>
-      <p className={s.railFoot}>About two minutes. Verified students only; your college email is never shown to others.</p>
+      <p className={s.railFoot}>About two minutes. Any email works; verify your college later, on Campus.</p>
     </aside>
   );
 });

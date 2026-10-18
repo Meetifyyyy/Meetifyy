@@ -119,6 +119,39 @@ describe('the Next button on the password step', () => {
     expect(postMock.mock.calls[0][1].email).toBe('student@college.edu');
   });
 
+  it('sends the chosen gender with the signup', async () => {
+    postMock.mockResolvedValue({ pending: true });
+    const out = {};
+    function Probe() {
+      const { initiateSignup } = useAuth();
+      out.run = () => initiateSignup({ ...VALID, email: 'someone@gmail.com', gender: 'NON_BINARY' });
+      return null;
+    }
+    render(<AuthProvider><Probe /></AuthProvider>);
+    await act(async () => { await out.run(); });
+    expect(postMock.mock.calls[0][1].gender).toBe('NON_BINARY');
+    expect(postMock.mock.calls[0][1].email).toBe('someone@gmail.com');
+  });
+
+  // TRANSITIONAL: an API that predates `gender` rejects unknown properties.
+  it('retries once without gender when an older API refuses the field', async () => {
+    postMock
+      .mockRejectedValueOnce(httpErr('property gender should not exist', 400))
+      .mockResolvedValueOnce({ pending: true });
+    const out = {};
+    function Probe() {
+      const { initiateSignup } = useAuth();
+      out.run = () => initiateSignup({ ...VALID, gender: 'FEMALE' });
+      return null;
+    }
+    render(<AuthProvider><Probe /></AuthProvider>);
+    let result;
+    await act(async () => { result = await out.run(); });
+    expect(result).toBe(true);
+    expect(postMock).toHaveBeenCalledTimes(2);
+    expect(postMock.mock.calls[1][1]).not.toHaveProperty('gender');
+  });
+
   it('sends no academic detail, which Prisma owns', async () => {
     postMock.mockResolvedValue({ pending: true });
     const t = runSignup();

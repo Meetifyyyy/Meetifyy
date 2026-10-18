@@ -224,4 +224,26 @@ describe('campus access request — error presentation', () => {
       thrown,
     );
   });
+
+  it('files the request when signup would accept the address but no college matches it', async () => {
+    // Signup takes any address, so `available: true` alone says nothing about
+    // whether the college is on Meetifyy.
+    apiClient.post
+      .mockResolvedValueOnce({ available: true, collegeId: null })
+      .mockResolvedValueOnce({ success: true });
+
+    openFormAndSubmit();
+
+    await waitFor(() => expect(apiClient.post).toHaveBeenCalledTimes(2));
+    expect(apiClient.post.mock.calls[1][0]).toBe('/api/auth/request-college');
+  });
+
+  it('points to Campus instead of filing when the domain is a known college', async () => {
+    apiClient.post.mockResolvedValueOnce({ available: true, collegeId: 'c1', collegeName: 'Test College' });
+
+    openFormAndSubmit();
+
+    expect(await screen.findByText(/Test College is already on Meetifyy/)).toBeTruthy();
+    expect(apiClient.post).toHaveBeenCalledTimes(1);
+  });
 });

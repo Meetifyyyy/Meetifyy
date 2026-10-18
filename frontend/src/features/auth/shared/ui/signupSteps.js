@@ -8,8 +8,8 @@
  * is asked before the account exists.
  */
 export const SIGNUP_STEPS = Object.freeze([
-  { title: 'Say hello', caption: 'Name and college email' },
-  { title: 'Your profile', caption: 'Username and birthday' },
+  { title: 'Say hello', caption: 'Name and email' },
+  { title: 'Your profile', caption: 'Username, birthday and gender' },
   { title: 'College', caption: 'Course, branch and year' },
   { title: 'Password', caption: 'Create your account' },
   { title: 'Verify', caption: 'Code from your inbox' },
