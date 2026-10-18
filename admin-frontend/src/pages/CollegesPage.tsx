@@ -7,23 +7,15 @@ import { parseDomains } from '../utils/domain';
 import { useDebounced } from '../hooks/useDebounced';
 import { Pagination } from '../components/Pagination';
 import { useConfirm } from '../components/ConfirmProvider';
+import { LogoCropDialog } from '../components/LogoCropDialog';
+import { LOGO_TYPES, formatBytes, validateLogoSource, type LogoResult } from '../utils/logoImage';
 
 /**
- * Logo upload limits. Mirror the API's: PNG, JPEG or WebP, 2 MB. No SVG: the
- * API refuses it (400) because /api/media/* serves from the API's own origin
- * with no SVG sanitizer, so an SVG logo would be stored XSS.
+ * Logos: PNG, JPEG or WebP picked up to 15 MB, cropped to a square in
+ * LogoCropDialog and compressed to a small WebP before upload. No SVG: the API
+ * refuses it (400) because /api/media/* serves from the API's own origin with
+ * no SVG sanitizer, so an SVG logo would be stored XSS.
  */
-const LOGO_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
-const LOGO_MAX_BYTES = 2 * 1024 * 1024;
-
-/** Returns an error message for a file the API would refuse, else null. */
-function validateLogo(file: File): string | null {
-  if (!LOGO_TYPES.includes(file.type)) return 'Logo must be a PNG, JPEG or WebP image.';
-  if (file.size > LOGO_MAX_BYTES) {
-    return `Logo is ${(file.size / 1024 / 1024).toFixed(1)} MB; the limit is 2 MB.`;
-  }
-  return null;
-}
 
 /** Up to two initials, used where a college has no logo. */
 function collegeInitials(college: { name?: string; shortName?: string }): string {
@@ -39,7 +31,7 @@ const CollegeLogo: React.FC<{ college: any; size?: number; src?: string | null }
   const [failed, setFailed] = useState(false);
   useEffect(() => { setFailed(false); }, [url]);
   const box: React.CSSProperties = {
-    width: size, height: size, borderRadius: 8, flexShrink: 0,
+    width: size, height: size, aspectRatio: '1 / 1', borderRadius: 8, flexShrink: 0,
     border: '1px solid var(--color-border)', background: 'var(--color-bg-soft)',
     display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
   };
@@ -50,7 +42,7 @@ const CollegeLogo: React.FC<{ college: any; size?: number; src?: string | null }
           src={url}
           alt=""
           onError={() => setFailed(true)}
-          style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+          style={{ width: '100%', height: '100%', aspectRatio: '1 / 1', objectFit: 'cover' }}
         />
       </div>
     );
@@ -90,6 +82,9 @@ export const CollegesPage: React.FC = () => {
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
   const [removeLogo, setRemoveLogo] = useState(false);
+  // File just chosen, waiting in the crop dialog; and the stats of the cropped one.
+  const [cropSource, setCropSource] = useState<File | null>(null);
+  const [logoStats, setLogoStats] = useState<LogoResult | null>(null);
   const logoInputRef = useRef<HTMLInputElement>(null);
   // Set when the Add-College modal was opened to fulfil a student campus
   // request. The request is only marked ADDED once the college actually exists.
@@ -216,6 +211,8 @@ export const CollegesPage: React.FC = () => {
     setLogoFile(null);
     setLogoPreview(null);
     setRemoveLogo(false);
+    setCropSource(null);
+    setLogoStats(null);
     if (logoInputRef.current) logoInputRef.current.value = '';
   };
 
@@ -231,14 +228,20 @@ export const CollegesPage: React.FC = () => {
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file) return;
-    const problem = validateLogo(file);
+    const problem = validateLogoSource(file);
     if (problem) {
       setFormError(problem);
       return;
     }
     setFormError(null);
+    setCropSource(file);
+  };
+
+  const handleCropApplied = (processed: File, result: LogoResult) => {
+    setCropSource(null);
     setRemoveLogo(false);
-    setLogoFile(file);
+    setLogoFile(processed);
+    setLogoStats(result);
   };
 
   const handleOpenAdd = () => {
@@ -954,6 +957,7 @@ export const CollegesPage: React.FC = () => {
                             style={{ fontSize: '0.72rem', padding: '0.25rem 0.6rem', color: 'var(--color-danger)' }}
                             onClick={() => {
                               setLogoFile(null);
+                              setLogoStats(null);
                               if (logoInputRef.current) logoInputRef.current.value = '';
                               if (editingCollege?.logoUrl) setRemoveLogo(true);
                             }}
@@ -964,10 +968,10 @@ export const CollegesPage: React.FC = () => {
                       </div>
                       <div style={{ fontSize: '0.68rem', color: 'var(--color-text-light)' }}>
                         {logoFile
-                          ? `${logoFile.name}: uploads when you save.`
+                          ? `${logoStats ? `${logoStats.width}×${logoStats.height}px, ${formatBytes(logoFile.size)}` : logoFile.name}. Uploads when you save.`
                           : removeLogo
                           ? 'The logo is removed when you save.'
-                          : 'PNG, JPEG or WebP, up to 2 MB. Shown with initials until set.'}
+                          : 'PNG, JPEG or WebP up to 15 MB; you crop it to a square. Shown with initials until set.'}
                       </div>
                     </div>
                     <input
@@ -977,6 +981,13 @@ export const CollegesPage: React.FC = () => {
                       onChange={handlePickLogo}
                       style={{ display: 'none' }}
                     />
+                    {cropSource && (
+                      <LogoCropDialog
+                        file={cropSource}
+                        onCancel={() => setCropSource(null)}
+                        onApply={handleCropApplied}
+                      />
+                    )}
                   </div>
                 </div>
 

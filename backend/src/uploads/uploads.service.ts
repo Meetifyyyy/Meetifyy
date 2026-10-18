@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import type { StorageProvider } from './providers/storage-provider.interface';
 import { randomBytes } from 'node:crypto';
+import sharp from 'sharp';
 import { PrismaService } from '../prisma/prisma.service';
 import { ConfigService } from '@nestjs/config';
 import { config } from '../config';
@@ -20,6 +21,12 @@ import {
 
 /** Upper bound for a college logo upload. */
 export const COLLEGE_LOGO_MAX_BYTES = 2 * 1024 * 1024;
+/** Logos are stored as a square of this many pixels per side (at most). */
+export const COLLEGE_LOGO_SIZE_PX = 512;
+/** Smallest accepted logo edge; anything below is too blurry to show. */
+export const COLLEGE_LOGO_MIN_PX = 64;
+/** Decode ceiling (pixels) so a tiny file cannot expand into a huge bitmap. */
+const COLLEGE_LOGO_MAX_INPUT_PIXELS = 40_000_000;
 
 /** Extensions an original can have when a `_thumb` variant derives from it. */
 const VARIANT_BASE_EXTENSIONS = [
@@ -796,7 +803,10 @@ export class StorageService {
    *
    * Owner-less (admins are not user accounts), public (logos are shown before
    * sign-in), PNG / JPEG / WEBP only, at most 2 MB, and the bytes must match
-   * the declared type.
+   * the declared type. The image must be square (1:1); anything else is a 400.
+   * It is then re-encoded server-side to WebP, at most 512x512, with all
+   * metadata (EXIF, GPS, ICC) dropped and transparency kept, so what is stored
+   * never depends on what the client claimed to have produced.
    *
    * SVG is refused on purpose: media is served from this API's own origin by
    * `/api/media/*`, and an SVG is a document that can carry script. Without a
@@ -819,9 +829,9 @@ export class StorageService {
       );
     }
 
-    const ext = this.extensionForMime(file.mimetype);
-    const key = `colleges/${randomBytes(16).toString('hex')}.${ext}`;
-    await this.storageProvider.upload(key, file.buffer, file.mimetype);
+    const output = await this.normaliseCollegeLogo(file.buffer);
+    const key = `colleges/${randomBytes(16).toString('hex')}.webp`;
+    await this.storageProvider.upload(key, output, 'image/webp');
 
     const media = await this.prisma.media.create({
       data: {
@@ -831,12 +841,53 @@ export class StorageService {
         bucket: this.bucketName,
         storageKey: key,
         type: 'IMAGE',
-        mimeType: file.mimetype,
-        fileSize: file.size,
+        mimeType: 'image/webp',
+        fileSize: output.length,
         visibility: 'public',
       },
     });
     return { key, mediaId: media.id };
+  }
+
+  /**
+   * Checks a logo is a decodable square image and returns it as a 512px (or
+   * smaller, never enlarged) WebP with metadata stripped.
+   */
+  private async normaliseCollegeLogo(input: Buffer): Promise<Buffer> {
+    const invalid = new BadRequestException('That image could not be read.');
+    try {
+      const image = sharp(input, {
+        limitInputPixels: COLLEGE_LOGO_MAX_INPUT_PIXELS,
+      }).rotate(); // apply EXIF orientation before measuring
+      const meta = await image.metadata();
+      // Orientations 5-8 swap the stored width and height.
+      const swapped = (meta.orientation ?? 1) >= 5;
+      const width = (swapped ? meta.height : meta.width) ?? 0;
+      const height = (swapped ? meta.width : meta.height) ?? 0;
+      if (!width || !height) throw invalid;
+      if (width !== height) {
+        throw new BadRequestException(
+          `Logos must be square (1:1); this image is ${width}x${height}px.`,
+        );
+      }
+      if (width < COLLEGE_LOGO_MIN_PX) {
+        throw new BadRequestException(
+          `Logos must be at least ${COLLEGE_LOGO_MIN_PX}x${COLLEGE_LOGO_MIN_PX}px.`,
+        );
+      }
+      // withoutEnlargement: a 256px logo stays 256px. No withMetadata(), so
+      // EXIF/GPS/ICC are not carried into the output.
+      return await image
+        .resize(COLLEGE_LOGO_SIZE_PX, COLLEGE_LOGO_SIZE_PX, {
+          fit: 'cover',
+          withoutEnlargement: true,
+        })
+        .webp({ quality: 85 })
+        .toBuffer();
+    } catch (err) {
+      if (err instanceof BadRequestException) throw err;
+      throw invalid;
+    }
   }
 
   private isAllowedMimeType(contentType: string): boolean {

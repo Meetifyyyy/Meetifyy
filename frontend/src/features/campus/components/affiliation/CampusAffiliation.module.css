@@ -149,7 +149,9 @@
 .logo img {
   width: 100%;
   height: 100%;
-  object-fit: contain;
+  aspect-ratio: 1 / 1;
+  /* Logos are stored square; cover keeps older non-square ones looking right. */
+  object-fit: cover;
 }
 
 .logoLarge {
@@ -325,36 +327,6 @@
   font-size: 0.8rem;
   line-height: 1.5;
   color: var(--color-text-light, #64748b);
-}
-
-/* ── Verified badge on the Campus header ── */
-.badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  max-width: 100%;
-  padding: 0.25rem 0.6rem 0.25rem 0.3rem;
-  border-radius: 999px;
-  /* Sits on the college's own header colour, which can be any hue: an opaque
-     light chip keeps the green readable on all of them, in both themes. */
-  background: rgba(255, 255, 255, 0.94);
-  color: #15803d;
-  font-size: 0.75rem;
-  font-weight: 600;
-  line-height: 1.2;
-}
-
-.badge .logo {
-  width: 20px;
-  height: 20px;
-  border-radius: 999px;
-  font-size: 0.6rem;
-}
-
-.badgeText {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 /* ── Request a college (card + dialog) ── */
