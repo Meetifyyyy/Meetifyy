@@ -39,6 +39,8 @@ export function createLegalConsentMock(
     markSatisfied: jest.fn(),
     recordSignupConsent: jest.fn(() => Promise.resolve()),
     invalidatePublished: jest.fn(),
+    invalidatePublishedEverywhere: jest.fn(() => Promise.resolve()),
+    publishedCacheGeneration: jest.fn(() => 0),
     invalidateUser: jest.fn(),
   } satisfies Stub<LegalConsentService>;
   return mock as typeof mock & LegalConsentService;

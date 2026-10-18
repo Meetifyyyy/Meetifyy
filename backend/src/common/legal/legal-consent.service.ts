@@ -1,6 +1,20 @@
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleDestroy,
+  OnModuleInit,
+  Optional,
+} from '@nestjs/common';
 import { LegalDocumentType } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { RedisService } from '../../redis/redis.service';
+
+/**
+ * Cross-instance invalidation channel for the published-version cache. An
+ * admin notify lands on one replica; every other replica must drop its copy
+ * too, or its users keep being let through for up to the TTL.
+ */
+export const LEGAL_INVALIDATE_CHANNEL = 'meetifyy:legal_invalidate';
 
 /**
  * A currently published version, exactly as the public pages and the consent
@@ -54,19 +68,31 @@ export type RequiredLegalVersion = PublishedLegalVersion;
  *      coordinate, and no way for a stale "satisfied" to survive a new
  *      requirement.
  *
- * Both are in-process. Multiple instances therefore converge within the TTL
- * rather than instantly, which is the correct trade for a gate that is checked
- * on every request: the failure mode of a few seconds' lag is that a user is
- * asked to accept a moment later than they might have been, never that an
- * acknowledgement is lost or a requirement skipped.
+ * Both are in-process. `invalidatePublishedEverywhere()` clears this
+ * instance's copy and broadcasts on `LEGAL_INVALIDATE_CHANNEL`, so every other
+ * replica drops its copy too (the same Redis pub/sub pattern BlocksService and
+ * the auth sync cache use). Without Redis, or if a broadcast is lost, the TTL
+ * is the backstop: the failure mode is that a user is asked to accept a moment
+ * later than they might have been, never that an acknowledgement is lost or a
+ * requirement skipped.
  */
 @Injectable()
-export class LegalConsentService {
+export class LegalConsentService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(LegalConsentService.name);
 
   private published: PublishedLegalVersion[] | null = null;
   private publishedExpireAt = 0;
   private publishedInFlight: Promise<PublishedLegalVersion[]> | null = null;
+  /**
+   * Bumped by every invalidation. A query that started before the bump must
+   * not store its (now stale) result, or a read racing a notify would put the
+   * old list back for a whole TTL.
+   */
+  private publishedGeneration = 0;
+  private subscribed = false;
+  private readonly onInvalidateMessage = (channel: string): void => {
+    if (channel === LEGAL_INVALIDATE_CHANNEL) this.invalidatePublished();
+  };
   /**
    * A backstop only — publish and rollback invalidate explicitly. It exists so
    * a second instance that did not handle the publish still converges, and so a
@@ -81,7 +107,28 @@ export class LegalConsentService {
   private static readonly SATISFIED_TTL_MS = 5 * 60 * 1000;
   private static readonly MAX_SATISFIED_ENTRIES = 20000;
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly redisService?: RedisService,
+  ) {}
+
+  /** Listens for invalidations published by other backend instances. */
+  onModuleInit(): void {
+    if (this.subscribed) return;
+    const subClient = this.redisService?.getSubClient();
+    if (!subClient) return;
+    void subClient.subscribe(LEGAL_INVALIDATE_CHANNEL, () => {
+      // Subscribe errors are non-fatal: the TTL still bounds staleness.
+    });
+    subClient.on('message', this.onInvalidateMessage);
+    this.subscribed = true;
+  }
+
+  onModuleDestroy(): void {
+    if (!this.subscribed) return;
+    this.redisService?.getSubClient()?.off('message', this.onInvalidateMessage);
+    this.subscribed = false;
+  }
 
   /**
    * Every currently published version whose acceptance is mandatory.
@@ -99,7 +146,8 @@ export class LegalConsentService {
     // per concurrent reader.
     if (this.publishedInFlight) return this.publishedInFlight;
 
-    this.publishedInFlight = this.prisma.legalDocumentVersion
+    const generation = this.publishedGeneration;
+    const query = this.prisma.legalDocumentVersion
       .findMany({
         where: { isCurrent: true },
         select: {
@@ -117,9 +165,13 @@ export class LegalConsentService {
         orderBy: { documentType: 'asc' },
       })
       .then((rows) => {
-        this.published = rows;
-        this.publishedExpireAt =
-          Date.now() + LegalConsentService.PUBLISHED_TTL_MS;
+        // Invalidated while in flight: serve the rows to this caller, but do
+        // not cache them — the next reader re-queries.
+        if (generation === this.publishedGeneration) {
+          this.published = rows;
+          this.publishedExpireAt =
+            Date.now() + LegalConsentService.PUBLISHED_TTL_MS;
+        }
         return rows;
       })
       .catch((error) => {
@@ -132,10 +184,11 @@ export class LegalConsentService {
         return this.published ?? [];
       })
       .finally(() => {
-        this.publishedInFlight = null;
+        if (this.publishedInFlight === query) this.publishedInFlight = null;
       });
 
-    return this.publishedInFlight;
+    this.publishedInFlight = query;
+    return query;
   }
 
   /** The published version of one document, or null. Served from cache. */
@@ -277,8 +330,40 @@ export class LegalConsentService {
   invalidatePublished(): void {
     this.published = null;
     this.publishedExpireAt = 0;
+    this.publishedGeneration += 1;
+    this.publishedInFlight = null;
     // The per-user entries carry the OLD signature and can never match the new
     // list, so they do not need clearing — they expire on their own.
+  }
+
+  /**
+   * Increments on every invalidation of the published cache (local or
+   * broadcast). Other caches derived from the version rows — the public
+   * version history in LegalService — compare against it, so a publish
+   * invalidates them too without a second pub/sub channel.
+   */
+  publishedCacheGeneration(): number {
+    return this.publishedGeneration;
+  }
+
+  /**
+   * `invalidatePublished()` on this instance and on every other one, via Redis
+   * pub/sub. Used after an admin notify, so signed-in users on any replica
+   * meet the update screen on their next request rather than a TTL later.
+   * The local clear comes first, so this instance is correct even if Redis is
+   * down; a failed broadcast never fails the caller.
+   */
+  async invalidatePublishedEverywhere(): Promise<void> {
+    this.invalidatePublished();
+    const pub = this.redisService?.getPubClient();
+    if (!pub) return;
+    try {
+      await pub.publish(LEGAL_INVALIDATE_CHANNEL, 'reload');
+    } catch (error) {
+      this.logger.warn(
+        `legal cache broadcast failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
   }
 
   /** Drops one user's cached answer. Used when their acknowledgements change. */

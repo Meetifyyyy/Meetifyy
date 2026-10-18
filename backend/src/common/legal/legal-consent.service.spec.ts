@@ -1,7 +1,11 @@
 import type { LegalDocumentType } from '@prisma/client';
-import { LegalConsentService } from './legal-consent.service';
+import {
+  LEGAL_INVALIDATE_CHANNEL,
+  LegalConsentService,
+} from './legal-consent.service';
 import { stub } from '../testing/stub';
 import type { PrismaService } from '../../prisma/prisma.service';
+import type { RedisService } from '../../redis/redis.service';
 
 /** An acknowledgement row as the fake stores it. */
 type AckRow = { userId: string; versionId: string; versionNumber?: number };
@@ -330,6 +334,92 @@ describe('LegalConsentService', () => {
     it('serves the body, so a reader needs no second query for the text', async () => {
       const terms = await service.getPublishedVersion('TERMS_OF_SERVICE');
       expect(terms?.content).toBe('<p>Terms text.</p>');
+    });
+
+    /**
+     * A read that started before an invalidation must not put the old list
+     * back into the cache when it lands, or a notify racing a request would be
+     * undone for a whole TTL.
+     */
+    it('does not cache a read that was in flight when it was invalidated', async () => {
+      const pending = service.getPublishedVersions();
+      service.invalidatePublished();
+      await pending;
+      await service.getPublishedVersions();
+      expect(prisma.legalDocumentVersion.findMany).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('invalidating every instance', () => {
+    type MessageHandler = (channel: string, message: string) => void;
+
+    const makeRedis = () => {
+      const handlers: MessageHandler[] = [];
+      const sub = {
+        subscribe: jest.fn(() => Promise.resolve(1)),
+        on: jest.fn((event: string, handler: MessageHandler): void => {
+          if (event === 'message') handlers.push(handler);
+        }),
+        off: jest.fn((): void => undefined),
+      };
+      const pub = { publish: jest.fn(() => Promise.resolve(1)) };
+      const redis = stub<RedisService>({
+        getSubClient: () => sub,
+        getPubClient: () => pub,
+      });
+      return { redis, sub, pub, handlers };
+    };
+
+    beforeEach(() => {
+      required = [TERMS_V4];
+    });
+
+    it('clears locally and broadcasts on the legal channel', async () => {
+      const { redis, pub } = makeRedis();
+      service = new LegalConsentService(stub<PrismaService>(prisma), redis);
+      await service.getPublishedVersions();
+      await service.invalidatePublishedEverywhere();
+      await service.getPublishedVersions();
+      expect(pub.publish).toHaveBeenCalledWith(
+        LEGAL_INVALIDATE_CHANNEL,
+        'reload',
+      );
+      expect(prisma.legalDocumentVersion.findMany).toHaveBeenCalledTimes(2);
+    });
+
+    it('drops its cache when another instance broadcasts', async () => {
+      const { redis, sub, handlers } = makeRedis();
+      service = new LegalConsentService(stub<PrismaService>(prisma), redis);
+      service.onModuleInit();
+      expect(sub.subscribe).toHaveBeenCalledWith(
+        LEGAL_INVALIDATE_CHANNEL,
+        expect.any(Function),
+      );
+      await service.getPublishedVersions();
+      handlers.forEach((h) => h('some:other_channel', 'x'));
+      await service.getPublishedVersions();
+      expect(prisma.legalDocumentVersion.findMany).toHaveBeenCalledTimes(1);
+      handlers.forEach((h) => h(LEGAL_INVALIDATE_CHANNEL, 'reload'));
+      await service.getPublishedVersions();
+      expect(prisma.legalDocumentVersion.findMany).toHaveBeenCalledTimes(2);
+    });
+
+    it('still clears locally when there is no Redis, and does not throw', async () => {
+      await service.getPublishedVersions();
+      await expect(
+        service.invalidatePublishedEverywhere(),
+      ).resolves.toBeUndefined();
+      await service.getPublishedVersions();
+      expect(prisma.legalDocumentVersion.findMany).toHaveBeenCalledTimes(2);
+    });
+
+    it('never fails the caller when the broadcast fails', async () => {
+      const { redis, pub } = makeRedis();
+      pub.publish.mockImplementation(() => Promise.reject(new Error('down')));
+      service = new LegalConsentService(stub<PrismaService>(prisma), redis);
+      await expect(
+        service.invalidatePublishedEverywhere(),
+      ).resolves.toBeUndefined();
     });
   });
 });

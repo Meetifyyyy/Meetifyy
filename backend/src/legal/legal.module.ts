@@ -3,8 +3,9 @@ import { LegalController } from './legal.controller';
 import { LegalService } from './legal.service';
 
 /**
- * Published legal versions and each user's consent record. The documents are no
- * longer edited in the Admin Portal; their text is static website content.
+ * The public half of the legal-document system: published versions, their
+ * history, and each user's consent record. The admin half (drafts, publish,
+ * notify) is `AdminLegalModule`, behind `AdminJwtGuard`.
  */
 @Module({
   controllers: [LegalController],

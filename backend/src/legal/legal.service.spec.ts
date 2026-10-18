@@ -224,3 +224,107 @@ describe('LegalService — acknowledgement', () => {
     });
   });
 });
+
+/**
+ * The public "Previous versions" list and a single past version. The query
+ * itself must exclude drafts — an unpublished draft reaching a public page is
+ * the one failure here that matters.
+ */
+describe('LegalService — public version history', () => {
+  type HistoryWhere = {
+    documentType: string;
+    versionNumber?: number;
+    status?: { not?: string };
+  };
+  const row = (versionNumber: number, status: string, isCurrent = false) => ({
+    id: `v-${versionNumber}`,
+    documentType: 'TERMS_OF_SERVICE',
+    versionNumber,
+    title: 'Terms of Service',
+    subtitle: null,
+    content: `<p>Text ${versionNumber}.</p>`,
+    status,
+    isCurrent,
+    effectiveAt: new Date('2026-09-01'),
+    publishedAt: status === 'DRAFT' ? null : new Date('2026-09-01'),
+    changeSummary: `Change ${versionNumber}`,
+  });
+
+  let rows: ReturnType<typeof row>[];
+  let findMany: jest.Mock;
+  let findFirst: jest.Mock;
+  let consent: ReturnType<typeof makeConsent>;
+  let service: LegalService;
+
+  const filter = (where: HistoryWhere) =>
+    rows.filter(
+      (r) =>
+        r.documentType === where.documentType &&
+        (where.versionNumber === undefined ||
+          r.versionNumber === where.versionNumber) &&
+        (where.status?.not === undefined || r.status !== where.status.not),
+    );
+
+  const makeConsent = () => {
+    let generation = 0;
+    return {
+      publishedCacheGeneration: jest.fn(() => generation),
+      bump: () => {
+        generation += 1;
+      },
+    };
+  };
+
+  beforeEach(() => {
+    rows = [row(1, 'ARCHIVED'), row(2, 'PUBLISHED', true), row(3, 'DRAFT')];
+    findMany = jest.fn(({ where }: { where: HistoryWhere }) =>
+      Promise.resolve(
+        [...filter(where)].sort((a, b) => b.versionNumber - a.versionNumber),
+      ),
+    );
+    findFirst = jest.fn(({ where }: { where: HistoryWhere }) =>
+      Promise.resolve(filter(where)[0] ?? null),
+    );
+    consent = makeConsent();
+    service = new LegalService(
+      stub<PrismaService>({ legalDocumentVersion: { findMany, findFirst } }),
+      stub<LegalConsentService>({
+        publishedCacheGeneration: consent.publishedCacheGeneration,
+      }),
+    );
+  });
+
+  it('lists published and archived versions newest first, never drafts', async () => {
+    const list = await service.listVersions('TERMS_OF_SERVICE');
+    expect(list.map((v) => [v.versionNumber, v.isCurrent])).toEqual([
+      [2, true],
+      [1, false],
+    ]);
+    const [args] = findMany.mock.calls[0] as [{ where: HistoryWhere }];
+    expect(args.where.status).toEqual({ not: 'DRAFT' });
+    expect(list[0]).not.toHaveProperty('content');
+  });
+
+  it('serves one archived version in full', async () => {
+    const v = await service.getVersion('TERMS_OF_SERVICE', 1);
+    expect(v).toMatchObject({ versionNumber: 1, content: '<p>Text 1.</p>' });
+  });
+
+  it('404s for a draft, as for a version that does not exist', async () => {
+    await expect(service.getVersion('TERMS_OF_SERVICE', 3)).rejects.toThrow(
+      'That version does not exist.',
+    );
+    await expect(service.getVersion('TERMS_OF_SERVICE', 99)).rejects.toThrow(
+      'That version does not exist.',
+    );
+  });
+
+  it('caches the list, and drops it when a publish bumps the generation', async () => {
+    await service.listVersions('TERMS_OF_SERVICE');
+    await service.listVersions('TERMS_OF_SERVICE');
+    expect(findMany).toHaveBeenCalledTimes(1);
+    consent.bump();
+    await service.listVersions('TERMS_OF_SERVICE');
+    expect(findMany).toHaveBeenCalledTimes(2);
+  });
+});

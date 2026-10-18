@@ -133,14 +133,24 @@ export class AuditInterceptor implements NestInterceptor {
         // without a separate action name.
         else if (targetType === 'LEGAL_DOCUMENT') {
           if (url.includes('/publish')) action = 'LEGAL_VERSION_PUBLISH';
-          else if (url.includes('/rollback')) action = 'LEGAL_VERSION_ROLLBACK';
-          else if (url.includes('/draft')) {
+          else if (url.includes('/notify')) {
+            // Several documents at once and no route param, so the entry
+            // names them itself.
+            action = 'LEGAL_UPDATE_NOTIFY';
+            if (Array.isArray(body.documentTypes)) {
+              targetId = body.documentTypes
+                .filter((t): t is string => typeof t === 'string')
+                .join(',');
+            }
+          } else if (url.includes('/draft')) {
             action =
               method === 'DELETE'
                 ? 'LEGAL_DRAFT_DELETE'
                 : method === 'PUT'
                   ? 'LEGAL_DRAFT_EDIT'
-                  : 'LEGAL_DRAFT_CREATE';
+                  : typeof body.fromVersionId === 'string'
+                    ? 'LEGAL_DRAFT_RESTORE'
+                    : 'LEGAL_DRAFT_CREATE';
           } else if (url.includes('/preview')) {
             // Renders nothing and stores nothing. Logging it would bury the
             // decisions under keystrokes.

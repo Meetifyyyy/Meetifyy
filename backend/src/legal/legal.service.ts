@@ -1,5 +1,5 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { LegalDocumentType } from '@prisma/client';
+import { LegalDocumentStatus, LegalDocumentType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   LegalConsentService,
@@ -26,13 +26,40 @@ export interface PublicLegalDocument {
   requiresAcknowledgement: boolean;
 }
 
+/** One entry in a document's public version history. Never a draft. */
+export interface PublicLegalVersionSummary {
+  versionId: string;
+  versionNumber: number;
+  title: string;
+  effectiveAt: Date | null;
+  publishedAt: Date | null;
+  changeSummary: string | null;
+  isCurrent: boolean;
+}
+
+/** One past (or the current) published version, with its text. */
+export interface PublicLegalVersion extends PublicLegalVersionSummary {
+  documentType: LegalDocumentType;
+  label: string;
+  path: string;
+  subtitle: string | null;
+  content: string;
+}
+
+/** Cached derived reads: valid while the consent cache generation matches. */
+interface CacheEntry<T> {
+  value: T;
+  generation: number;
+  expiresAt: number;
+}
+
 /**
- * The read side of the legal-document system: what is published, and what the
- * signed-in user still has to accept.
+ * The read side of the legal-document system: what is published, its public
+ * history, and what the signed-in user still has to accept.
  *
- * Nothing here can change a document. The public text is static website content
- * (frontend `legalDocuments.js`); the rows here are the version record that
- * consent is tracked against, and there is no longer an admin editor for them.
+ * Writes live in `AdminLegalService`, behind `AdminJwtGuard`. Nothing here can
+ * change a document. The frontend's `legalDocuments.js` is only a fallback the
+ * website shows if this API cannot be reached.
  *
  * Every read here is served from `LegalConsentService`'s in-process cache of the
  * currently published versions rather than from the database. These four
@@ -46,10 +73,134 @@ export interface PublicLegalDocument {
 export class LegalService {
   private readonly logger = new Logger(LegalService.name);
 
+  /** Bounded: four documents, a handful of versions each. */
+  private static readonly HISTORY_TTL_MS = 5 * 60 * 1000;
+  private static readonly MAX_VERSION_ENTRIES = 64;
+  private readonly historyCache = new Map<
+    LegalDocumentType,
+    CacheEntry<PublicLegalVersionSummary[]>
+  >();
+  private readonly versionCache = new Map<
+    string,
+    CacheEntry<PublicLegalVersion | null>
+  >();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly consent: LegalConsentService,
   ) {}
+
+  private fresh<T>(entry: CacheEntry<T> | undefined): entry is CacheEntry<T> {
+    return (
+      !!entry &&
+      entry.expiresAt > Date.now() &&
+      entry.generation === this.consent.publishedCacheGeneration()
+    );
+  }
+
+  private entry<T>(value: T, generation: number): CacheEntry<T> {
+    return {
+      value,
+      generation,
+      expiresAt: Date.now() + LegalService.HISTORY_TTL_MS,
+    };
+  }
+
+  /**
+   * Every published or archived version of one document, newest first,
+   * without bodies. Drafts are excluded by the query, never filtered later.
+   *
+   * Cached per document and dropped whenever a publish invalidates the
+   * consent cache (on any instance), so a new version appears at once.
+   */
+  async listVersions(
+    documentType: LegalDocumentType,
+  ): Promise<PublicLegalVersionSummary[]> {
+    const cached = this.historyCache.get(documentType);
+    if (this.fresh(cached)) return cached.value;
+
+    const generation = this.consent.publishedCacheGeneration();
+    const rows = await this.prisma.legalDocumentVersion.findMany({
+      where: { documentType, status: { not: LegalDocumentStatus.DRAFT } },
+      orderBy: { versionNumber: 'desc' },
+      select: {
+        id: true,
+        versionNumber: true,
+        title: true,
+        effectiveAt: true,
+        publishedAt: true,
+        changeSummary: true,
+        isCurrent: true,
+      },
+    });
+    const value = rows.map((r) => ({
+      versionId: r.id,
+      versionNumber: r.versionNumber,
+      title: r.title,
+      effectiveAt: r.effectiveAt,
+      publishedAt: r.publishedAt,
+      changeSummary: r.changeSummary,
+      isCurrent: r.isCurrent,
+    }));
+    this.historyCache.set(documentType, this.entry(value, generation));
+    return value;
+  }
+
+  /** One published or archived version in full. 404 for a draft or unknown. */
+  async getVersion(
+    documentType: LegalDocumentType,
+    versionNumber: number,
+  ): Promise<PublicLegalVersion> {
+    const key = `${documentType}:${versionNumber}`;
+    const cached = this.versionCache.get(key);
+    let value: PublicLegalVersion | null;
+    if (this.fresh(cached)) {
+      value = cached.value;
+    } else {
+      const generation = this.consent.publishedCacheGeneration();
+      const row = await this.prisma.legalDocumentVersion.findFirst({
+        where: {
+          documentType,
+          versionNumber,
+          status: { not: LegalDocumentStatus.DRAFT },
+        },
+        select: {
+          id: true,
+          versionNumber: true,
+          title: true,
+          subtitle: true,
+          content: true,
+          effectiveAt: true,
+          publishedAt: true,
+          changeSummary: true,
+          isCurrent: true,
+        },
+      });
+      value = row
+        ? {
+            documentType,
+            label: LEGAL_DOCUMENT_LABELS[documentType],
+            path: LEGAL_DOCUMENT_PATHS[documentType],
+            versionId: row.id,
+            versionNumber: row.versionNumber,
+            title: row.title,
+            subtitle: row.subtitle,
+            content: row.content,
+            effectiveAt: row.effectiveAt,
+            publishedAt: row.publishedAt,
+            changeSummary: row.changeSummary,
+            isCurrent: row.isCurrent,
+          }
+        : null;
+      if (this.versionCache.size >= LegalService.MAX_VERSION_ENTRIES) {
+        const oldest = this.versionCache.keys().next().value;
+        if (oldest !== undefined) this.versionCache.delete(oldest);
+      }
+      this.versionCache.set(key, this.entry(value, generation));
+    }
+    if (!value) throw new NotFoundException('That version does not exist.');
+    return value;
+  }
 
   private toPublic(row: PublishedLegalVersion): PublicLegalDocument {
     return {

@@ -129,3 +129,118 @@ describe('AuditInterceptor — verification reviews', () => {
     expect(prisma.auditLog.create).not.toHaveBeenCalled();
   });
 });
+
+describe('AuditInterceptor — legal documents', () => {
+  let prisma: {
+    auditLog: { create: jest.Mock<Promise<object>, [{ data: AuditRow }]> };
+  };
+  let interceptor: AuditInterceptor;
+
+  const run = async (req: Record<string, unknown>) => {
+    const ctx = stub<ExecutionContext>({
+      switchToHttp: () => ({ getRequest: () => req }),
+    });
+    const next: CallHandler = { handle: () => of({ id: 'v-uuid' }) };
+    await new Promise<void>((resolve) =>
+      interceptor.intercept(ctx, next).subscribe({ complete: () => resolve() }),
+    );
+    return prisma.auditLog.create.mock.calls[0]?.[0]?.data;
+  };
+
+  const legalRequest = (
+    method: string,
+    url: string,
+    body: Record<string, unknown> = {},
+    params: Record<string, string> = {},
+  ) => ({
+    method,
+    originalUrl: url,
+    admin: { id: 'super-admin-7' },
+    params,
+    body,
+    headers: {},
+    ip: '10.0.0.1',
+  });
+
+  beforeEach(() => {
+    prisma = {
+      auditLog: {
+        create: jest
+          .fn<Promise<object>, [{ data: AuditRow }]>()
+          .mockResolvedValue({}),
+      },
+    };
+    interceptor = new AuditInterceptor(stub<PrismaService>(prisma));
+  });
+
+  it('names a notify and the documents it covered', async () => {
+    const data = await run(
+      legalRequest('POST', '/admin/legal/notify', {
+        documentTypes: ['TERMS_OF_SERVICE', 'PRIVACY_POLICY'],
+        changeSummary: 'We changed things.',
+      }),
+    );
+    expect(data).toMatchObject({
+      action: 'LEGAL_UPDATE_NOTIFY',
+      targetType: 'LEGAL_DOCUMENT',
+      targetId: 'TERMS_OF_SERVICE,PRIVACY_POLICY',
+    });
+  });
+
+  it('records a publish with the notify choice, against the document type', async () => {
+    const data = await run(
+      legalRequest(
+        'POST',
+        '/admin/legal/documents/PRIVACY_POLICY/publish',
+        { notifyUsers: true, changeSummary: 'We changed retention.' },
+        { type: 'PRIVACY_POLICY' },
+      ),
+    );
+    expect(data).toMatchObject({
+      action: 'LEGAL_VERSION_PUBLISH',
+      targetId: 'PRIVACY_POLICY',
+      newValue: { notifyUsers: true, changeSummary: 'We changed retention.' },
+    });
+  });
+
+  it('records draft saves without copying the document body', async () => {
+    const data = await run(
+      legalRequest(
+        'PUT',
+        '/admin/legal/documents/TERMS_OF_SERVICE/draft',
+        { title: 'Terms', content: '<p>Long body</p>' },
+        { type: 'TERMS_OF_SERVICE' },
+      ),
+    );
+    expect(data?.action).toBe('LEGAL_DRAFT_EDIT');
+    expect(data?.newValue).toEqual({ title: 'Terms' });
+  });
+
+  it('distinguishes restore-as-draft and discard', async () => {
+    const restored = await run(
+      legalRequest(
+        'POST',
+        '/admin/legal/documents/TERMS_OF_SERVICE/draft',
+        { fromVersionId: 'v-1' },
+        { type: 'TERMS_OF_SERVICE' },
+      ),
+    );
+    expect(restored?.action).toBe('LEGAL_DRAFT_RESTORE');
+    prisma.auditLog.create.mockClear();
+    const discarded = await run(
+      legalRequest(
+        'DELETE',
+        '/admin/legal/documents/TERMS_OF_SERVICE/draft',
+        {},
+        { type: 'TERMS_OF_SERVICE' },
+      ),
+    );
+    expect(discarded?.action).toBe('LEGAL_DRAFT_DELETE');
+  });
+
+  it('does not log a preview', async () => {
+    expect(
+      await run(legalRequest('POST', '/admin/legal/preview', { content: 'x' })),
+    ).toBeUndefined();
+  });
+});

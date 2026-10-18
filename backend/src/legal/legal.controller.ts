@@ -4,6 +4,7 @@ import {
   Get,
   Param,
   ParseEnumPipe,
+  ParseIntPipe,
   Post,
   Req,
   UseGuards,
@@ -62,6 +63,30 @@ export class LegalController {
     type: LegalDocumentType,
   ) {
     return this.legal.getPublished(type);
+  }
+
+  /**
+   * Every published or archived version of one document, without bodies —
+   * the "Previous versions" list on the public page. Never a draft.
+   */
+  @Get('documents/:type/versions')
+  @CacheControl('public, max-age=60')
+  listVersions(
+    @Param('type', new ParseEnumPipe(LegalDocumentType))
+    type: LegalDocumentType,
+  ) {
+    return this.legal.listVersions(type);
+  }
+
+  /** One published or archived version in full, read-only. */
+  @Get('documents/:type/versions/:versionNumber')
+  @CacheControl('public, max-age=300')
+  getVersion(
+    @Param('type', new ParseEnumPipe(LegalDocumentType))
+    type: LegalDocumentType,
+    @Param('versionNumber', ParseIntPipe) versionNumber: number,
+  ) {
+    return this.legal.getVersion(type, versionNumber);
   }
 
   /**
