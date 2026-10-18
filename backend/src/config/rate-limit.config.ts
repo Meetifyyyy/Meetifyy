@@ -444,6 +444,18 @@ export const RATE_LIMIT_POLICIES = {
     message: 'Too many attempts. Please try again later.',
   },
 
+  /**
+   * "Later" on the Complete-your-profile prompt. One tiny idempotent write; a
+   * person taps it once per sign-in, so 10/hour is far above real use.
+   */
+  'users.profilePromptLater': {
+    points: 10,
+    duration: 3600,
+    dimension: 'user',
+    onRedisFailure: 'open',
+    message: 'Too many attempts. Please try again later.',
+  },
+
   'auth.session.refresh': {
     points: 60,
     duration: 300,

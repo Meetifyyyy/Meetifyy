@@ -127,20 +127,56 @@ export function presentAffiliation(
   };
 }
 
+/** How long "Later" on the Complete-your-profile prompt lasts at most. */
+export const PROFILE_PROMPT_SNOOZE_MS = 10 * 24 * 60 * 60 * 1000;
+
+/** The stored "Later" press: when, and from which session. */
+export interface ProfilePromptSnooze {
+  laterAt: Date | null | undefined;
+  laterSessionId: string | null | undefined;
+}
+
+/**
+ * Whether "Later" is still in force: pressed less than 10 days ago AND from
+ * the session making this request. A different session id means the account
+ * signed in again since (on any device), which ends the snooze. A request with
+ * no resolvable session id is never snoozed, so the prompt can only re-show,
+ * never stay hidden wrongly.
+ */
+export function isProfilePromptSnoozed(
+  snooze: ProfilePromptSnooze | null | undefined,
+  currentSessionId: string | null | undefined,
+  now: Date = new Date(),
+): boolean {
+  if (!snooze?.laterAt || !snooze.laterSessionId || !currentSessionId) {
+    return false;
+  }
+  if (snooze.laterSessionId !== currentSessionId) return false;
+  const age = now.getTime() - new Date(snooze.laterAt).getTime();
+  return age >= 0 && age < PROFILE_PROMPT_SNOOZE_MS;
+}
+
 /** `profileCompletion` on the session/sync payload. */
 export interface ProfileCompletion {
   needsPersonalEmail: boolean;
   needsGender: boolean;
+  /** Additive: older installed apps ignore it. */
+  promptSnoozed: boolean;
 }
 
 /**
  * `needsPersonalEmail`: the account has an affiliation and still signs in with
  * that same college address. `needsGender`: no gender recorded.
+ * `promptSnoozed`: see `isProfilePromptSnoozed`; `false` unless a snooze and
+ * the caller's session id are both supplied.
  */
 export function profileCompletion(input: {
   email: string | null | undefined;
   gender: string | null | undefined;
   affiliationEmailNormalized: string | null | undefined;
+  snooze?: ProfilePromptSnooze | null;
+  currentSessionId?: string | null;
+  now?: Date;
 }): ProfileCompletion {
   const login = normalizeEmail(input.email ?? '');
   return {
@@ -150,5 +186,10 @@ export function profileCompletion(input: {
       login === input.affiliationEmailNormalized,
     ),
     needsGender: !input.gender,
+    promptSnoozed: isProfilePromptSnoozed(
+      input.snooze,
+      input.currentSessionId,
+      input.now,
+    ),
   };
 }

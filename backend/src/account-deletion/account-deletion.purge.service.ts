@@ -236,6 +236,8 @@ export class AccountDeletionPurgeService {
             collegeEmail: null,
             collegeId: null,
             gender: null,
+            profilePromptLaterAt: null,
+            profilePromptLaterSessionId: null,
             avatar: null,
             avatarMediaId: null,
             cover: null,

@@ -1,0 +1,31 @@
+/* A small, non-numeric "something here needs you" marker. Theme tokens only,
+   so it reads in light and dark; the ring is the surface colour, which keeps it
+   distinct when it sits on a tinted (hover/active) row. */
+.dot {
+  display: inline-block;
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin-inline-start: 8px;
+  border-radius: 50%;
+  vertical-align: middle;
+  background: var(--color-primary, #2563eb);
+  box-shadow: 0 0 0 2px var(--color-bg-white, #ffffff);
+}
+
+:global([data-theme="dark"]) .dot {
+  box-shadow: 0 0 0 2px var(--color-bg-alt, #1e293b);
+}
+
+/* Colour alone is not a signal: this is what a screen reader gets. */
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

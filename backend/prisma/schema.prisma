@@ -201,6 +201,10 @@ model User {
   // Optional for the API (old installed apps never send it); the new signup UI
   // requires it.
   gender                     Gender?
+  // "Later" on the Complete-your-profile prompt: snoozed until 10 days pass or
+  // the account signs in again (a new session id). Both null when never snoozed.
+  profilePromptLaterAt DateTime?
+  profilePromptLaterSessionId String?
   // The verified college email. `collegeId` / `collegeEmail` above mirror it;
   // only CampusAffiliationService writes either. See docs/college-affiliation.md.
   collegeAffiliation         CollegeAffiliation?

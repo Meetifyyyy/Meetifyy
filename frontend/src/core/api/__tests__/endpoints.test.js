@@ -95,7 +95,7 @@ describe('createEndpoints', () => {
     const { transport } = stubTransport();
     const api = createEndpoints(transport);
     const total = Object.values(api).reduce((n, ns) => n + Object.keys(ns).length, 0);
-    expect(total).toBe(209); // 198 + campusAffiliationApi (get/sendOtp/verify/remove/listColleges/requestCollege) + accountEmailApi (get/sendOtp/verify) + legalApi (listVersions/getVersion)
+    expect(total).toBe(210); // +usersApi.snoozeProfilePrompt; 198 + campusAffiliationApi (get/sendOtp/verify/remove/listColleges/requestCollege) + accountEmailApi (get/sendOtp/verify) + legalApi (listVersions/getVersion)
   });
 
   it('is a factory, not a singleton — two calls yield independent objects', () => {

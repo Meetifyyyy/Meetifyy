@@ -7,6 +7,8 @@ import { CampusOutline, CampusSolid } from './CampusIcon';
 import { CrewOutline, CrewSolid } from './CrewIcon';
 import { MessagesOutline, MessagesSolid } from './MessageIcon';
 import CommunitiesBox from './CommunitiesBox';
+import ActionDot from '@shared/components/ActionDot';
+import { useProfileActionNeeded } from '@shared/hooks/useProfileActionNeeded';
 import styles from './Sidebar.module.css';
 import {
   HomeIcon as HomeOutline,
@@ -27,6 +29,7 @@ export default function Sidebar() {
   const { total: unreadMessagesCount } = useUnreadCounts();
   const { smartNavigate: navigate } = useSmartNavigation();
   const location = useLocation();
+  const profileAction = useProfileActionNeeded();
 
   const username = currentUser?.username || '';
 
@@ -151,6 +154,7 @@ export default function Sidebar() {
               solid={<SettingsSolid />}
             />
             <span className={styles.linkText}>Settings</span>
+            {profileAction.any && <ActionDot />}
           </a>
         </nav>
       </div>

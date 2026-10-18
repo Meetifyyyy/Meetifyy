@@ -97,6 +97,8 @@ import BlurredCover from '@shared/components/ui/BlurredCover';
 import CollapsingHeader from '@shared/components/CollapsingHeader/CollapsingHeader';
 import { Bookmark, MoreVertical, Settings, Share2, Flag } from '@shared/components/icons';
 import Menu, { MenuItem, useMenu } from '@shared/components/ui/Menu';
+import ActionDot from '@shared/components/ActionDot';
+import { useProfileActionNeeded } from '@shared/hooks/useProfileActionNeeded';
 
 
 export default function ProfilePage() {
@@ -138,6 +140,7 @@ export default function ProfilePage() {
   }, [goBack, targetUsername]);
 
   const profileMenu = useMenu();
+  const profileAction = useProfileActionNeeded();
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [showCoverEditor, setShowCoverEditor] = useState(false);
   const [isAvatarPickerOpen, setIsAvatarPickerOpen] = useState(false);
@@ -511,6 +514,7 @@ export default function ProfilePage() {
             <Menu {...profileMenu.menuProps} size="md" ariaLabel="Profile options">
               <MenuItem icon={Settings} onSelect={() => navigate('/settings')} onClose={profileMenu.close}>
                 Settings
+                {profileAction.any && <ActionDot />}
               </MenuItem>
               <MenuItem icon={Share2} onSelect={() => setShareModalOpen(true)} onClose={profileMenu.close}>
                 Share profile
@@ -564,6 +568,7 @@ export default function ProfilePage() {
                   <Menu {...profileMenu.menuProps} size="md" ariaLabel="Profile options">
                     <MenuItem icon={Settings} onSelect={() => navigate('/settings')} onClose={profileMenu.close}>
                       Settings
+                      {profileAction.any && <ActionDot />}
                     </MenuItem>
                     <MenuItem icon={Share2} onSelect={() => setShareModalOpen(true)} onClose={profileMenu.close}>
                       Share profile

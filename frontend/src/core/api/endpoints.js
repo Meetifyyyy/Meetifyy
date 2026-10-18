@@ -387,6 +387,9 @@ export function createEndpoints({
     updateProfile: (data, { bearer } = {}) => apiClient.patch('/api/users/me', data, { bearer }),
     getSettings: () => apiClient.get('/api/users/me/settings'),
     updateSettings: (data) => apiClient.patch('/api/users/me/settings', data),
+    // "Later" on the Complete-your-profile prompt: snoozed server-side until 10 days
+    // pass or the account signs in again. No body.
+    snoozeProfilePrompt: () => apiClient.post('/api/users/me/profile-prompt/later'),
     blockUser: (targetUserId) => apiClient.post(`/api/users/block/${targetUserId}`),
     unblockUser: (targetUserId) => apiClient.delete(`/api/users/block/${targetUserId}`),
   };

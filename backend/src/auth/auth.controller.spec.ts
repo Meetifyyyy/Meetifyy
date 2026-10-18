@@ -514,7 +514,7 @@ describe('AuthController — refresh can carry the profile', () => {
       stub<Response>(res),
     );
     await new Promise((r) => setImmediate(r));
-    expect(authService.syncProfile).toHaveBeenCalledWith({ id: 'u1' });
+    expect(authService.syncProfile).toHaveBeenCalledWith({ id: 'u1' }, 's2');
     release();
 
     const body = await pending;

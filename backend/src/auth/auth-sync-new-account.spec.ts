@@ -222,6 +222,7 @@ describe('AuthService — signup without a college', () => {
     expect(profile.profileCompletion).toEqual({
       needsPersonalEmail: false,
       needsGender: false,
+      promptSnoozed: false,
     });
   });
 
@@ -279,6 +280,7 @@ describe('AuthService — signup without a college', () => {
     expect(profile.profileCompletion).toEqual({
       needsPersonalEmail: true,
       needsGender: true,
+      promptSnoozed: false,
     });
   });
 });

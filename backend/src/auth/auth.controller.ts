@@ -34,14 +34,13 @@ import { clientIp } from '../common/rate-limit/client-ip.util';
 import { RateLimitPolicyGuard } from '../common/rate-limit/rate-limit-policy.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { UserSessionService } from './session/user-session.service';
+import { currentSessionId } from './session/current-session-id';
 import {
   issueUserSessionCookies,
   clearUserSessionCookies,
   readCookie,
   USER_CSRF_COOKIE,
   USER_REFRESH_COOKIE,
-  USER_SESSION_ID_COOKIE,
-  USER_SESSION_ID_HEADER,
 } from './session/user-session-cookies';
 import { config } from '../config';
 import { UserSessionRevokedReason } from '@prisma/client';
@@ -83,23 +82,8 @@ export class AuthController {
    * "none", which made every session look like somebody else's.
    */
   private currentSessionId(req: Request): string | null {
-    const cookie = readCookie(req, USER_SESSION_ID_COOKIE);
-    if (cookie) return cookie;
-
-    /*
-     * The installed app has no cookie: a WebView refuses the SameSite=Strict
-     * ones, so it names its session in `x-session-id` beside a bearer token.
-     * Without this every native caller looked sessionless here, and "sign out
-     * other devices" and a password change revoked ALL sessions — including
-     * the one making the request, which signed the app out of itself.
-     *
-     * The cookie wins whenever there is one, so a cookie session cannot be
-     * pointed at another id by adding a header. On these routes JwtGuard has
-     * already resolved the header id and matched it to the token's own user,
-     * so it is the caller's own session by the time it is read here.
-     */
-    const header = req.headers?.[USER_SESSION_ID_HEADER];
-    return typeof header === 'string' && header.trim() ? header.trim() : null;
+    // Cookie first, then the app's `x-session-id`; see the shared helper.
+    return currentSessionId(req);
   }
 
   /**
@@ -226,8 +210,14 @@ export class AuthController {
   @UseGuards(JwtGuard)
   @AllowSuspended()
   @AllowPendingDeletion()
-  async syncProfile(@CurrentUser() user: AuthenticatedUser) {
-    const syncedUser = await this.authService.syncProfile(user);
+  async syncProfile(
+    @CurrentUser() user: AuthenticatedUser,
+    @Req() req: Request,
+  ) {
+    const syncedUser = await this.authService.syncProfile(
+      user,
+      this.currentSessionId(req),
+    );
     return {
       message: 'Profile synchronized successfully',
       user: syncedUser,
@@ -263,12 +253,13 @@ export class AuthController {
     @CurrentUser() user: AuthenticatedUser,
     @Req() req: Request,
   ) {
-    const syncedUser = await this.authService.syncProfile(user);
+    const sessionId = this.currentSessionId(req);
+    const syncedUser = await this.authService.syncProfile(user, sessionId);
     const csrf = readCookie(req, USER_CSRF_COOKIE);
     return {
       user: syncedUser,
       meta: syncedUser.meta,
-      sessionId: this.currentSessionId(req),
+      sessionId,
       csrfToken: csrf ?? null,
     };
   }
@@ -536,7 +527,9 @@ export class AuthController {
       (req.body as { includeProfile?: unknown } | undefined)?.includeProfile ===
       true;
     const profilePromise = includeProfile
-      ? this.authService.syncProfile({ id: rotated.userId }).catch(() => null)
+      ? this.authService
+          .syncProfile({ id: rotated.userId }, rotated.session.sessionId)
+          .catch(() => null)
       : Promise.resolve(null);
 
     const refreshed =

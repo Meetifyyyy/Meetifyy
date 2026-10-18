@@ -9,6 +9,8 @@ import {
   UseGuards,
   Req,
   Query,
+  HttpCode,
+  HttpStatus,
 } from '@nestjs/common';
 import type { AuthenticatedRequest } from '../common/types/authenticated-request';
 import { UsersService } from './users.service';
@@ -18,6 +20,9 @@ import { CacheControl } from '../common/decorators/cache-control.decorator';
 import { AllowBearerToken } from '../common/decorators/allow-bearer-token.decorator';
 import { clampPageParam } from '../common/pagination.util';
 import { CampusAccessService } from '../common/campus/campus-access.service';
+import { RateLimit } from '../common/rate-limit/rate-limit.decorator';
+import { RateLimitPolicyGuard } from '../common/rate-limit/rate-limit-policy.guard';
+import { currentSessionId } from '../auth/session/current-session-id';
 import { clientIp } from '../common/rate-limit/client-ip.util';
 
 @Controller('api/users')
@@ -212,6 +217,21 @@ export class UsersController {
   @UseGuards(JwtGuard)
   async getSettings(@Req() req: AuthenticatedRequest) {
     return this.usersService.getSettings(req.user.id);
+  }
+
+  /**
+   * "Later" on the Complete-your-profile prompt. No body. Registered with the
+   * other literal `me/...` routes, before the `:username` catch-alls.
+   */
+  @Post('me/profile-prompt/later')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtGuard, RateLimitPolicyGuard)
+  @RateLimit('users.profilePromptLater')
+  async profilePromptLater(@Req() req: AuthenticatedRequest) {
+    return this.usersService.snoozeProfilePrompt(
+      req.user.id,
+      currentSessionId(req),
+    );
   }
 
   @Patch('me/settings')

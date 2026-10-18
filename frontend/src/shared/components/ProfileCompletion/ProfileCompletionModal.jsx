@@ -4,6 +4,7 @@ import { useAuth } from '@shared/context/AuthContext';
 import { useScrollLock } from '@shared/hooks/useScrollLock';
 import { GENDER_OPTIONS } from '@shared/constants/gender';
 import { showToast } from '@shared/utils/toast';
+import { usersApi } from '@shared/api/apiClient';
 import PersonalEmailForm from '@shared/components/AccountEmail/PersonalEmailForm';
 import { isSignupInProgress } from '@features/auth/context/SignupContext';
 import styles from './ProfileCompletionModal.module.css';
@@ -31,8 +32,11 @@ function writeDismissed(userId) {
  * and a personal login email when the account still signs in with its college
  * address. Driven by the server's `profileCompletion` flags.
  *
- * Never blocks: "Later" closes it for the rest of the browser session, and it
- * does not open during signup (the signup flow collects gender itself).
+ * Never blocks. "Later" asks the server to snooze it (`promptSnoozed`: until 10
+ * days pass or the account signs in again, on any device), and also remembers
+ * it in sessionStorage so it stays closed this session even if that call fails
+ * or the backend predates `promptSnoozed`. It does not open during signup (the
+ * signup flow collects gender itself).
  */
 export default function ProfileCompletionModal() {
   const { currentUser, updateProfile, updateCurrentUser } = useAuth();
@@ -40,6 +44,7 @@ export default function ProfileCompletionModal() {
   const userId = currentUser?.id;
   const needsGender = Boolean(currentUser?.profileCompletion?.needsGender);
   const needsPersonalEmail = Boolean(currentUser?.profileCompletion?.needsPersonalEmail);
+  const snoozed = Boolean(currentUser?.profileCompletion?.promptSnoozed);
 
   const [dismissed, setDismissed] = useState(() => (userId ? readDismissed(userId) : false));
   const [gender, setGender] = useState('');
@@ -50,14 +55,29 @@ export default function ProfileCompletionModal() {
   }, [userId]);
 
   const inSignup = location.pathname.startsWith('/signup') || isSignupInProgress();
-  const open = Boolean(userId) && !dismissed && !inSignup && (needsGender || needsPersonalEmail);
+  const open = Boolean(userId) && !dismissed && !snoozed && !inSignup && (needsGender || needsPersonalEmail);
 
   useScrollLock(open);
 
   const later = useCallback(() => {
     if (userId) writeDismissed(userId);
     setDismissed(true);
-  }, [userId]);
+    // Optimistic: closed now, whatever the server says. A failed call (offline,
+    // older backend) leaves the sessionStorage hide above to keep it closed.
+    if (currentUser?.profileCompletion) {
+      updateCurrentUser({
+        ...currentUser,
+        profileCompletion: { ...currentUser.profileCompletion, promptSnoozed: true },
+      });
+    }
+    try {
+      Promise.resolve(usersApi.snoozeProfilePrompt()).catch(() => {
+        /* fallback above applies */
+      });
+    } catch {
+      /* fallback above applies */
+    }
+  }, [userId, currentUser, updateCurrentUser]);
 
   useEffect(() => {
     if (!open) return undefined;

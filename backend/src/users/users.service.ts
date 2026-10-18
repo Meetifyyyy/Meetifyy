@@ -1721,6 +1721,31 @@ export class UsersService {
     });
   }
 
+  /**
+   * "Later" on the Complete-your-profile prompt: snoozes it for this session,
+   * for at most 10 days. Idempotent (pressing again just restamps). The snooze
+   * is tied to `sessionId`, so a new sign-in ends it; a caller with no
+   * resolvable session id records nothing and is reported as not snoozed,
+   * which only means the prompt may show again.
+   */
+  async snoozeProfilePrompt(
+    userId: string,
+    sessionId: string | null,
+  ): Promise<{ snoozed: boolean }> {
+    if (!sessionId) return { snoozed: false };
+    await this.prisma.user.updateMany({
+      where: { id: userId },
+      data: {
+        profilePromptLaterAt: new Date(),
+        profilePromptLaterSessionId: sessionId,
+      },
+    });
+    // The cached sync payload carries the old snooze state for up to 60s, on
+    // every replica.
+    clearAuthSyncCache(userId);
+    return { snoozed: true };
+  }
+
   async updateSettings(userId: string, data: Record<string, unknown>) {
     const payload: {
       emailNotifs?: boolean;

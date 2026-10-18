@@ -9,6 +9,8 @@ import {
 import { useNavigate, useParams, Navigate, Link } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@shared/context/AuthContext';
+import ActionDot from '@shared/components/ActionDot';
+import { useProfileActionNeeded } from '@shared/hooks/useProfileActionNeeded';
 import { showToast } from '@shared/utils/toast';
 import { apiClient } from '@shared/api/apiClient';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
@@ -406,6 +408,7 @@ export default function SettingsRoute() {
   const notificationLabEnabled = useDevToolsStore((s) => s.notificationLabEnabled);
   const setNotificationLabEnabled = useDevToolsStore((s) => s.setNotificationLabEnabled);
   const { currentUser, updateProfile, updateSettings, updateCurrentUser, changePassword, logout } = useAuth();
+  const profileAction = useProfileActionNeeded();
   const { openPreferences: openCookiePreferences } = useCookieConsent();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -785,7 +788,7 @@ export default function SettingsRoute() {
    * cannot drift apart. `to` is only for highlighting the active panel in the
    * desktop split, where the list stays on screen beside the detail.
    */
-  const settingsRow = ({ key, icon: Icon, label, onClick, active, danger, chevron = true }) => (
+  const settingsRow = ({ key, icon: Icon, label, description, dot, onClick, active, danger, chevron = true }) => (
     <button
       key={key}
       className={`${styles.row} ${active ? styles.rowActive : ''} ${danger ? styles.rowDanger : ''}`}
@@ -795,13 +798,24 @@ export default function SettingsRoute() {
         <Icon size={20} strokeWidth={2} />
       </span>
       <span className={styles.rowText}>
-        <span className={styles.rowLabel}>{label}</span>
+        <span className={styles.rowLabel}>
+          {label}
+          {dot && <ActionDot />}
+        </span>
+        {description && <span className={styles.rowDesc}>{description}</span>}
       </span>
       {chevron && (
         <span className={styles.rowChev}><ChevronRight size={18} strokeWidth={2.25} /></span>
       )}
     </button>
   );
+
+  /** The one-line prompt under a row inside Account, or null. */
+  const rowAction = (panel) => {
+    if (panel === 'email' && profileAction.needsPersonalEmail) return 'Add a personal email';
+    if (panel === 'profile' && profileAction.needsGender) return 'Add your gender';
+    return null;
+  };
 
   const runItemAction = (action) => {
     if (action === 'cookies') return openCookiePreferences();
@@ -827,6 +841,8 @@ export default function SettingsRoute() {
               key: entry.slug,
               icon: entry.icon,
               label: entry.label,
+              // Account carries the dot when anything inside it is waiting.
+              dot: entry.slug === 'account' && profileAction.any,
               // A leaf opens its panel; a category opens its list.
               onClick: () => openPanel(entry.slug),
               // A leaf is "open" when its panel is showing; a category when
@@ -896,6 +912,8 @@ export default function SettingsRoute() {
                 key: item.panel || item.action,
                 icon: item.icon,
                 label: item.label,
+                dot: Boolean(rowAction(item.panel)),
+                description: rowAction(item.panel),
                 onClick: () => (item.panel ? openPanel(item.panel) : runItemAction(item.action)),
                 active: isLargeScreen && item.panel && activePanel === item.panel,
               })}

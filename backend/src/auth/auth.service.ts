@@ -35,6 +35,8 @@ import { Gender, NotificationType } from '@prisma/client';
 import {
   presentAffiliation,
   profileCompletion,
+  isProfilePromptSnoozed,
+  type ProfilePromptSnooze,
 } from '../common/campus/campus-affiliation.util';
 import { deriveBatchYearForStorage } from '../common/student-year/batch-year.util';
 import { LegalConsentService } from '../common/legal/legal-consent.service';
@@ -167,6 +169,8 @@ interface ProfileRow {
   canActivity: boolean | null;
   isCampusRep: boolean | null;
   gender: string | null;
+  profilePromptLaterAt: Date | null;
+  profilePromptLaterSessionId: string | null;
   // The verified college email, LEFT JOINed; all null without one.
   aff_college_id: string | null;
   aff_email: string | null;
@@ -293,6 +297,38 @@ function buildExistingProfile(
 /** What `syncProfile` returns, for a new account and an existing one alike. */
 export type SyncedProfile = ReturnType<typeof buildExistingProfile>;
 
+/**
+ * The stored "Later" press behind each cached profile.
+ *
+ * Kept beside the profile rather than in it: the profile object is the
+ * response body, and a session id has no business in it. Keyed by the object
+ * itself so a cached profile and its snooze can never drift apart, and an
+ * evicted profile takes its entry with it.
+ */
+const profileSnoozes = new WeakMap<SyncedProfile, ProfilePromptSnooze>();
+
+/**
+ * The cached profile is shared by every session of the account for 60s, but
+ * `promptSnoozed` depends on which session is asking. The cached copy always
+ * carries `false`; this returns a per-caller copy with the real answer. With
+ * no session id (a caller that cannot name one) the answer is `false`, which
+ * can only make the prompt show again, never hide it wrongly.
+ */
+function forSession(
+  profile: SyncedProfile,
+  sessionId: string | null | undefined,
+): SyncedProfile {
+  const snoozed = isProfilePromptSnoozed(
+    profileSnoozes.get(profile),
+    sessionId,
+  );
+  if (!snoozed) return profile;
+  return {
+    ...profile,
+    profileCompletion: { ...profile.profileCompletion, promptSnoozed: true },
+  };
+}
+
 /** The fields of an AuthenticatedUser that `syncProfile` reads. */
 export type SyncIdentity = Pick<AuthenticatedUser, 'id'> &
   Partial<
@@ -394,7 +430,20 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     @Optional() private readonly redisService?: RedisService,
   ) {}
 
-  async syncProfile(user: SyncIdentity): Promise<SyncedProfile> {
+  /**
+   * `sessionId` is the caller's current session (web cookie `mf_sid`, or the
+   * app's `x-session-id`). It only decides `profileCompletion.promptSnoozed`.
+   * Omit it where the session is new or unknown (login, signup handover, a
+   * background read): the answer is then `false`.
+   */
+  async syncProfile(
+    user: SyncIdentity,
+    sessionId?: string | null,
+  ): Promise<SyncedProfile> {
+    return forSession(await this.syncProfileShared(user), sessionId);
+  }
+
+  private async syncProfileShared(user: SyncIdentity): Promise<SyncedProfile> {
     if (!this.supabaseService.isConfigured) {
       throw new UnauthorizedException('Supabase is not configured');
     }
@@ -458,6 +507,8 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
         u."canActivity",
         u."isCampusRep",
         u."gender",
+        u."profilePromptLaterAt",
+        u."profilePromptLaterSessionId",
         ca."collegeId" AS "aff_college_id",
         ca."email" AS "aff_email",
         ca."emailNormalized" AS "aff_email_normalized",
@@ -711,6 +762,10 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     }
 
     const result = buildExistingProfile(row, college, settings);
+    profileSnoozes.set(result, {
+      laterAt: row.profilePromptLaterAt,
+      laterSessionId: row.profilePromptLaterSessionId,
+    });
     this.syncCache.set(user.id, { data: result, timestamp: Date.now() });
     return result;
   }
