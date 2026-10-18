@@ -1248,7 +1248,7 @@ export default function CreateActivityPage() {
   // run on every render, and it previously sat after that return.
   useEffect(() => {
     if (currentUser && currentUser.verificationStatus !== 'VERIFIED') {
-      openVerificationModal('Verify your account to create activities.');
+      openVerificationModal('Verify with a live selfie to create activities.');
       navigate(returnTo || '/crew', { replace: true });
     }
   }, [currentUser, navigate, returnTo]);

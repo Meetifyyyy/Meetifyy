@@ -26,7 +26,7 @@ export function useCommunityActions() {
       if (savedUser) {
         const parsed = JSON.parse(savedUser);
         if (parsed?.verificationStatus !== 'VERIFIED') {
-          openVerificationModal('Verify your account to create communities.');
+          openVerificationModal('Verify with a live selfie to create a community.');
           throw new Error('Verify your account to create communities');
         }
       }

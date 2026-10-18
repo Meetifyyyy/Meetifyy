@@ -536,6 +536,33 @@ export function applyGroupRoleChange(queryClient, convId, targetUserId, newRole)
 
 
 /**
+ * Drops one pending join request from the cached group, in the conversation
+ * list and in its details. Used when the server refuses to accept it
+ * (`JOIN_REQUEST_INELIGIBLE`): the server has already deleted the request, so
+ * the row must go rather than wait for a refetch with a dead Accept button.
+ */
+export function removeGroupJoinRequest(queryClient, convId, targetUserId) {
+  if (!queryClient || !convId || !targetUserId) return;
+  const uid = String(targetUserId);
+  const requestUid = (r) => (typeof r === 'string' ? r : r?.userId || r?.user?.id);
+  const without = (list) =>
+    Array.isArray(list) ? list.filter((r) => String(requestUid(r)) !== uid) : list;
+
+  queryClient.setQueryData(['conversations'], (old) => {
+    if (!Array.isArray(old)) return old;
+    return old.map((c) => (matchesConversationId(c, convId) && Array.isArray(c.pendingRequests)
+      ? { ...c, pendingRequests: without(c.pendingRequests) }
+      : c));
+  });
+
+  queryClient.setQueriesData({ queryKey: ['groupDetails'] }, (old) => {
+    if (!old || !matchesConversationId(old, convId) || !Array.isArray(old.pendingRequests)) return old;
+    return { ...old, pendingRequests: without(old.pendingRequests) };
+  });
+}
+
+
+/**
  * The conversation-list row preview.
  *
  * Three fields can carry it, and they are checked in order of how specific

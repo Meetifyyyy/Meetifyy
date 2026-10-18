@@ -2,7 +2,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { messagesApi, groupApi, communitiesApi } from '../api/apiClient';
 import { useAuth } from '../context/AuthContext';
 import { showToast } from '../utils/toast';
-import { applyGroupRoleChange } from '../../features/messages/shared/utils/cacheUtils';
+import { applyGroupRoleChange, removeGroupJoinRequest } from '../../features/messages/shared/utils/cacheUtils';
 import { scheduleConversationWrite } from '../utils/conversationWriteQueue';
 
 /**
@@ -11,6 +11,10 @@ import { scheduleConversationWrite } from '../utils/conversationWriteQueue';
  * Extracted verbatim -- same optimistic cache writes, same rollbacks, same
  * toasts and invalidations, carried over from the former `useData` mega-hook.
  */
+export const JOIN_REQUEST_INELIGIBLE = 'JOIN_REQUEST_INELIGIBLE';
+export const JOIN_REQUEST_INELIGIBLE_MESSAGE =
+  'This person needs to verify with a live selfie before they can join.';
+
 export function useGroupActions() {
   const queryClient = useQueryClient();
   const { currentUser } = useAuth();
@@ -289,9 +293,25 @@ export function useGroupActions() {
   };
 
   const acceptGroupJoinRequest = async (convId, targetUserId) => {
-    await groupApi.acceptJoinRequest(convId, targetUserId);
+    try {
+      await groupApi.acceptJoinRequest(convId, targetUserId);
+    } catch (err) {
+      // The requester cannot join (not selfie-verified, or no longer
+      // reachable). The server has removed the request already; take it off
+      // the list too, and say why in words an admin can act on.
+      if (err?.status === 403 && err?.code === JOIN_REQUEST_INELIGIBLE) {
+        removeGroupJoinRequest(queryClient, convId, targetUserId);
+        showToast(JOIN_REQUEST_INELIGIBLE_MESSAGE, 'error');
+        queryClient.invalidateQueries({ queryKey: ['conversations'] });
+        queryClient.invalidateQueries({ queryKey: ['groupDetails'] });
+        return false;
+      }
+      showToast("Couldn't accept the request", 'error');
+      return false;
+    }
     queryClient.invalidateQueries({ queryKey: ['conversations'] });
     queryClient.invalidateQueries({ queryKey: ['groupDetails'] });
+    return true;
   };
 
   const declineGroupJoinRequest = async (convId, targetUserId) => {

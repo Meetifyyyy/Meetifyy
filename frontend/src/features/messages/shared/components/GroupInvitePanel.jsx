@@ -10,6 +10,8 @@ import {
   useJoinGroup,
   inviteErrorCode,
   inviteErrorMessage,
+  isVerificationRequiredError,
+  JOIN_NEEDS_VERIFICATION,
 } from '@features/messages/hooks/useGroupInvite';
 import styles from './GroupInvitePanel.module.css';
 // The panel stands in for the chat pane, so it reuses that pane's container
@@ -92,7 +94,8 @@ export default function GroupInvitePanel({ groupId, onBack, showChatOnMobile }) 
 
   const handleJoin = async () => {
     try {
-      const result = await join(groupId);
+      const result = await join(groupId, preview);
+      if (result?.status === JOIN_NEEDS_VERIFICATION) return;
       if (result?.status === 'JOINED') {
         showToast(result.alreadyMember ? 'Already joined' : `Joined ${preview.name}`, 'success');
         openGroup(result);
@@ -101,7 +104,8 @@ export default function GroupInvitePanel({ groupId, onBack, showChatOnMobile }) 
         refetch();
       }
     } catch (err) {
-      showToast(inviteErrorMessage(err), 'error');
+      // The verification prompt is already open for a selfie 403.
+      if (!isVerificationRequiredError(err)) showToast(inviteErrorMessage(err), 'error');
       // A join that failed because the state moved on (group closed, user
       // blocked) should leave the panel showing the new truth.
       refetch();

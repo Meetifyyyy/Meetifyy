@@ -1,6 +1,5 @@
 import { useAuth } from '@shared/context/AuthContext';
 import { isCommunityMember, isCommunityOwner } from '@shared/utils/community';
-import { openVerificationModal } from '@shared/stores/verificationModalStore';
 import { useJoinCommunity, useRequestToJoin } from '../../hooks/useJoinCommunity';
 import styles from './JoinAction.module.css';
 
@@ -28,10 +27,6 @@ export default function JoinAction({ community }) {
   }
 
   const handleClick = () => {
-    if (currentUser?.verificationStatus !== 'VERIFIED') {
-      openVerificationModal('Verify your student ID to join communities.');
-      return;
-    }
     if (community.isPrivate) {
       request.mutate({ communityId: community.id });
     } else {

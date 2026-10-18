@@ -8,7 +8,7 @@ import styles from './VerificationGate.module.css';
 
 export default function VerificationGate({
   children,
-  message = "Verify your account to unlock full access to Meetifyy. This helps us maintain a safe and trusted community.",
+  message = "Verify with a live selfie to message people, post, and create communities or activities. It keeps Meetifyy safe and trusted.",
   fallback,
   fullPage = false,
   backTo,
@@ -69,7 +69,7 @@ export default function VerificationGate({
               <div>
                 <div className={styles.pendingHeading}>Verification Under Review</div>
                 <div className={styles.pendingDesc}>
-                  Your student ID is currently being reviewed by our campus moderators.
+                  Your live selfie is being reviewed by our moderators.
                 </div>
               </div>
             </div>
@@ -80,7 +80,7 @@ export default function VerificationGate({
               to="/settings/verification"
               className={styles.primaryActionBtn}
             >
-              {isPending ? 'Check Verification Status' : 'Verify Account'}
+              {isPending ? 'Check Verification Status' : 'Verify with live selfie'}
             </Link>
             <button
               type="button"
@@ -120,7 +120,7 @@ export default function VerificationGate({
           to="/settings/verification"
           className={styles.compactVerifyBtn}
         >
-          Verify Now
+          Verify with selfie
         </Link>
       )}
     </div>

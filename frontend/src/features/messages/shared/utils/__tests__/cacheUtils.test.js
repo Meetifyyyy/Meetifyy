@@ -5,6 +5,7 @@ import {
   purgeConversationFromCaches,
   applyGroupRoleChange,
   derivePreviewText,
+  removeGroupJoinRequest,
 } from '../cacheUtils';
 
 const msg = (id, text = 'hi') => ({ id, text, createdAt: new Date().toISOString() });
@@ -186,5 +187,22 @@ describe('derivePreviewText', () => {
   it('tolerates a missing conversation', () => {
     expect(derivePreviewText(null)).toBe('');
     expect(derivePreviewText({})).toBe('');
+  });
+});
+
+describe('removeGroupJoinRequest', () => {
+  it('drops the refused request from the list row and the group details', () => {
+    qc.setQueryData(['conversations'], [
+      { id: 'g1', pendingRequests: ['u1', { userId: 'u2' }] },
+      { id: 'g2', pendingRequests: ['u1'] },
+    ]);
+    qc.setQueryData(['groupDetails', 'g1'], { id: 'g1', pendingRequests: [{ user: { id: 'u1' } }, 'u3'] });
+
+    removeGroupJoinRequest(qc, 'g1', 'u1');
+
+    const list = qc.getQueryData(['conversations']);
+    expect(list[0].pendingRequests).toEqual([{ userId: 'u2' }]);
+    expect(list[1].pendingRequests).toEqual(['u1']);
+    expect(qc.getQueryData(['groupDetails', 'g1']).pendingRequests).toEqual(['u3']);
   });
 });

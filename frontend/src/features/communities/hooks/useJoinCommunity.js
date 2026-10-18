@@ -6,7 +6,6 @@ import { COMMUNITY_KEYS } from '@shared/hooks/useCommunities';
 import { idbDelete } from '@shared/lib/idb';
 import { isCommunityOwner } from '@shared/utils/community';
 import { showToast } from '@shared/utils/toast';
-import { openVerificationModal } from '@shared/stores/verificationModalStore';
 
 /**
  * Apply `update` to every community in a cached list, whichever shape the list
@@ -174,11 +173,6 @@ export function useJoinCommunity() {
    * list and decremented the count, producing a visible flip-back.
    */
   const mutate = useCallback((variables) => {
-    const { currentUser, isJoined } = variables || {};
-    if (isJoined && currentUser?.verificationStatus !== 'VERIFIED') {
-      openVerificationModal('Verify your student ID to join communities.');
-      return;
-    }
     if (variables?.isJoined === false && isOwner(queryClient, variables)) {
       showToast('Transfer ownership before leaving your own community', 'error');
       return;

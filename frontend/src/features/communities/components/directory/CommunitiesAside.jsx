@@ -47,7 +47,7 @@ export default function CommunitiesAside({ onCreate }) {
           <School size={20} className={styles.linkIcon} aria-hidden="true" />
           <span>
             <span className={styles.linkTitle}>Campus communities</span>
-            <span className={styles.linkText}>Groups open only to verified students of your college.</span>
+            <span className={styles.linkText}>Groups open only to people who verified your college email.</span>
           </span>
         </Link>
       )}

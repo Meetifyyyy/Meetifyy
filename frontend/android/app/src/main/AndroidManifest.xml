@@ -68,4 +68,17 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+
+    <!--
+        The live-selfie check runs getUserMedia inside the WebView. Capacitor's
+        BridgeWebChromeClient answers the page's camera request by asking for
+        this runtime permission, and Android refuses a runtime request for a
+        permission the manifest does not declare: without this line the camera
+        was denied instantly and the selfie step could never start in the app.
+        The camera is not required to install the app (no camera, no selfie,
+        everything else still works), so Play does not filter devices on it.
+    -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.camera.front" android:required="false" />
 </manifest>

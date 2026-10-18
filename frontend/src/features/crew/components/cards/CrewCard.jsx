@@ -11,8 +11,6 @@ import { useSavedActivitiesStore } from '@shared/stores/savedActivitiesStore';
 import { getMediaUrl } from '@shared/api/apiClient';
 import { Bookmark } from '@shared/components/icons';
 
-import { useAuth } from '@shared/context/AuthContext';
-import { openVerificationModal } from '@shared/stores/verificationModalStore';
 import {
   DEFAULT_ACTIVITY_COVERS,
   getDefaultActivityCover as getDefaultCover,
@@ -133,7 +131,6 @@ function deriveAttendees(activity) {
 }
 
 function CrewCard({ activity, onClick, onMouseEnter }) {
-  const { currentUser } = useAuth();
   const menu = useMenu();
   const [showShareModal, setShowShareModal] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
@@ -164,13 +161,11 @@ function CrewCard({ activity, onClick, onMouseEnter }) {
     if (activityId) toggleSaveActivity(activityId);
   }, [activityId, toggleSaveActivity]);
 
+  // Viewing and joining an activity need no live-selfie verification; only
+  // creating one does.
   const handleCardClick = useCallback(() => {
-    if (currentUser?.verificationStatus !== 'VERIFIED') {
-      openVerificationModal('Verify your account to view activity details.');
-      return;
-    }
     if (activityId) onClick?.(activityId);
-  }, [activityId, currentUser?.verificationStatus, onClick]);
+  }, [activityId, onClick]);
 
   // Hover prefetch: the callers have always passed this, but the card never
   // attached it, so the detail page was never warmed before the click.

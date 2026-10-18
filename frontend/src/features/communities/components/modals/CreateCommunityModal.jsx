@@ -116,7 +116,7 @@ export default function CreateCommunityModal({ onClose, onCreated, isCampusCommu
 
   useEffect(() => {
     if (currentUser?.verificationStatus !== 'VERIFIED') {
-      openVerificationModal('Verify your student ID to create a community.');
+      openVerificationModal('Verify with a live selfie to create a community.');
       onClose();
     }
   }, [currentUser?.verificationStatus, onClose]);

@@ -22,6 +22,8 @@ import {
   useJoinGroup,
   inviteErrorCode,
   inviteErrorMessage,
+  isVerificationRequiredError,
+  JOIN_NEEDS_VERIFICATION,
 } from '@features/messages/hooks/useGroupInvite';
 import { useUsersMap } from '@shared/hooks/useUsersMap';
 import { checkIsMe, getMsgTimestamp } from '../utils/cacheUtils';
@@ -533,7 +535,8 @@ function GroupInviteCard({ msg, currentUser, navigate, isMe }) {
     }
 
     try {
-      const result = await join(targetGroupId);
+      const result = await join(targetGroupId, preview);
+      if (result?.status === JOIN_NEEDS_VERIFICATION) return;
       if (result?.status === 'JOINED') {
         showToast(result.alreadyMember ? 'Already joined' : `Joined ${groupName}`, 'success');
         // The conversation list and history caches were invalidated by the
@@ -543,7 +546,8 @@ function GroupInviteCard({ msg, currentUser, navigate, isMe }) {
         showToast('Join request sent', 'success');
       }
     } catch (err) {
-      showToast(inviteErrorMessage(err), 'error');
+      // The verification prompt is already open for a selfie 403.
+      if (!isVerificationRequiredError(err)) showToast(inviteErrorMessage(err), 'error');
     }
   };
 

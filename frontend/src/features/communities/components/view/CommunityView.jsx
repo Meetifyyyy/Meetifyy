@@ -38,7 +38,6 @@ import styles from './CommunityView.module.css';
 import { useJoinCommunity } from '../../hooks/useJoinCommunity';
 import { useCommunityById } from '@shared/hooks/useCommunities';
 import { toggleRegistry } from '@shared/utils/mutationRegistry';
-import { openVerificationModal } from '@shared/stores/verificationModalStore';
 import ShareCommunityModal from '../modals/ShareCommunityModal';
 import { useGlobalSocketStore } from '@shared/stores/useGlobalSocketStore';
 
@@ -1075,11 +1074,8 @@ export default function CommunityView({ communityId, onBack, onPostClick, onComm
     const entityKey = `joinCommunity:${communityId}`;
     const nextJoined = toggleRegistry.getNextToggleIntent(entityKey, rawJoined);
 
-    if (nextJoined && currentUser?.verificationStatus !== 'VERIFIED') {
-      openVerificationModal('Verify your account to join communities.');
-      return;
-    }
-
+    // Joining needs no live-selfie verification; posting does (the composer
+    // below stays behind the gate, and the server refuses unverified posts).
     // Private communities require admin approval — send a join request instead of directly joining
     if (!joined && (comm.isPrivate || comm.privacy === 'private')) {
       try {
@@ -1099,10 +1095,6 @@ export default function CommunityView({ communityId, onBack, onPostClick, onComm
 
   const handleCreatePostClick = () => {
     if (!joined) {
-      if (currentUser?.verificationStatus !== 'VERIFIED') {
-        openVerificationModal('Verify your account to join communities.');
-        return;
-      }
       // `isJoined` is the DESIRED next state. This passed `joined`, which is
       // false in this branch — so the shortcut that is supposed to join the
       // community was calling leave on it instead.
@@ -1249,7 +1241,7 @@ export default function CommunityView({ communityId, onBack, onPostClick, onComm
                   You're not eligible to join this community.
                 </h3>
                 <p style={{ fontSize: '0.92rem', color: 'var(--color-text-muted)', margin: 0, lineHeight: 1.5, maxWidth: '420px', marginLeft: 'auto', marginRight: 'auto' }}>
-                  This community is limited to verified students of {comm.college?.name || 'this college'}.
+                  This community is limited to people with a verified {comm.college?.name || 'college'} email.
                 </p>
               </div>
             ) : (

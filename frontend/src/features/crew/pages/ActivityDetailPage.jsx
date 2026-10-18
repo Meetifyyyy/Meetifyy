@@ -30,7 +30,6 @@ const ActivityDiscussion = lazy(() =>
 );
 import ActivityDetailSkeleton from '../components/ActivityDetailSkeleton';
 import NotFoundState from '@shared/components/ui/NotFoundState';
-import { openVerificationModal } from '@shared/stores/verificationModalStore';
 import { activitiesApi, getMediaUrl } from '@shared/api/apiClient';
 
 /* ── Access denied ─────────────────────────────────────────────
@@ -361,15 +360,6 @@ export default function ActivityDetailPage() {
 
 
 
-  // Hoisted above the early returns below: as a hook it must run on every
-  // render, and it previously sat after them.
-  useEffect(() => {
-    if (currentUser && currentUser.verificationStatus !== 'VERIFIED') {
-      openVerificationModal('Verify your account to view activity details.');
-      navigate('/crew', { replace: true });
-    }
-  }, [currentUser, navigate]);
-
   if (isAccessDenied) {
     const denied = ACCESS_DENIED_COPY[accessDeniedCode] || ACCESS_DENIED_COPY.DEFAULT;
     return (
@@ -470,10 +460,6 @@ export default function ActivityDetailPage() {
   const coverColor = activity?.coverColor || null;
   const coverImgUrl = activity?.coverImage ? getMediaUrl(activity.coverImage) : getDefaultCover(title || cleanId);
 
-
-  if (currentUser?.verificationStatus !== 'VERIFIED') {
-    return null;
-  }
 
   return (
     <div ref={containerRef} data-theme="dark" className={styles.root}>

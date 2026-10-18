@@ -66,7 +66,7 @@ export default function CommunitiesRoute() {
 
   const openCreate = useCallback(() => {
     if (currentUser?.verificationStatus !== 'VERIFIED') {
-      openVerificationModal('Verify your student ID to create a community.');
+      openVerificationModal('Verify with a live selfie to create a community.');
       return;
     }
     setShowCreate(true);

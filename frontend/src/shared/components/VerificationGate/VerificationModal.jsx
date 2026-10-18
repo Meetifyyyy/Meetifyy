@@ -50,7 +50,7 @@ export default function VerificationModal() {
         </h2>
 
         <p className={styles.message}>
-          {message || 'Verify your account to unlock full access to Meetifyy. This helps us maintain a safe and trusted community.'}
+          {message || 'A quick live selfie confirms you are a real person. It is needed to message people, post, and create communities or activities.'}
         </p>
 
         {isPending && (
@@ -59,7 +59,7 @@ export default function VerificationModal() {
             <div>
               <div className={styles.pendingHeading}>Verification Under Review</div>
               <div className={styles.pendingDesc}>
-                Your student ID is currently being reviewed by our campus moderators.
+                Your live selfie is being reviewed by our moderators.
               </div>
             </div>
           </div>
@@ -71,7 +71,7 @@ export default function VerificationModal() {
             onClick={handleVerifyClick}
             className={styles.primaryBtn}
           >
-            {isPending ? 'Check Verification Status' : 'Verify Account'}
+            {isPending ? 'Check Verification Status' : 'Verify with live selfie'}
           </button>
           <button
             type="button"

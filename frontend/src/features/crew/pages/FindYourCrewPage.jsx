@@ -310,20 +310,16 @@ export default function FindYourCrewPage() {
 
   const handleCreateActivity = useCallback(() => {
     if (currentUser?.verificationStatus !== 'VERIFIED') {
-      openVerificationModal('Verify your account to create activities.');
+      openVerificationModal('Verify with a live selfie to create activities.');
       return;
     }
     navigate('/crew/create');
   }, [currentUser?.verificationStatus, navigate]);
 
   const handleActivityClick = useCallback((activityId) => {
-    if (currentUser?.verificationStatus !== 'VERIFIED') {
-      openVerificationModal('Verify your account to view and join activities.');
-      return;
-    }
     const activity = activitiesById.current.get(activityId);
     navigate(`/crew/${activityId}`, { state: { activity, from: '/crew' } });
-  }, [currentUser?.verificationStatus, navigate]);
+  }, [navigate]);
 
   const handleActivityHover = useCallback((activityId) => {
     prefetchActivity(queryClient, activityId);

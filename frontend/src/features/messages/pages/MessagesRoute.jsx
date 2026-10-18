@@ -60,7 +60,7 @@ export default function MessagesRoute() {
       <main
         className={`centre centre-wide centre--messages animate-in ${isChatOpen ? 'chat-is-open' : ''} ${KEYBOARD_OVERLAYS_PAGE ? 'chat-pans-keyboard' : ''}`}
       >
-        <VerificationGate message="Verify your student ID to send and receive messages." fullPage>
+        <VerificationGate message="Verify with a live selfie to send and receive messages." fullPage>
           <MessagesLayout />
         </VerificationGate>
       </main>

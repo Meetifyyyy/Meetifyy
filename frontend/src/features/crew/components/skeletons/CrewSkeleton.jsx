@@ -46,7 +46,7 @@ export default function CrewSkeleton() {
 
   const handleCreateActivity = useCallback(() => {
     if (currentUser?.verificationStatus !== 'VERIFIED') {
-      openVerificationModal('Verify your account to create activities.');
+      openVerificationModal('Verify with a live selfie to create activities.');
       return;
     }
     navigate('/crew/create');

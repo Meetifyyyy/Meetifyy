@@ -5,7 +5,7 @@ import {
   MessageSquare,
   Calendar,
   Users,
-  Search,
+  Send,
 } from '@shared/components/icons';
 import { resolveVerificationCelebration } from '@shared/lib/verificationCelebration';
 import { useSheetDrag } from '@shared/hooks/useSheetDrag';
@@ -18,23 +18,23 @@ const STORAGE_PREFIX = 'meetifyy:verification-seen:';
 const BENEFITS = [
   {
     Icon: MessageSquare,
-    title: 'Message anyone on campus',
+    title: 'Message people',
     body: 'Start conversations and reply to people who message you.',
   },
   {
-    Icon: Calendar,
-    title: 'Discover campus events',
-    body: 'See what your campus is running, and turn up to the ones you like.',
+    Icon: Send,
+    title: 'Share posts',
+    body: 'Post to your feed and to the communities you are in.',
   },
   {
     Icon: Users,
-    title: 'Explore communities',
-    body: 'Join the groups built around what you actually care about.',
+    title: 'Start communities',
+    body: 'Create groups built around what you actually care about.',
   },
   {
-    Icon: Search,
-    title: 'Browse the student directory',
-    body: 'Find people from your course, branch and year.',
+    Icon: Calendar,
+    title: 'Plan activities and Instant Match',
+    body: 'Create activities and meet someone new in a quick match.',
   },
 ];
 

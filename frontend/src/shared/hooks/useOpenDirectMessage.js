@@ -4,6 +4,8 @@ import { dmApi } from '@shared/api/apiClient';
 import { useAuth } from '@shared/context/AuthContext';
 import { useConversations } from './useMessages';
 import { generateConversationUrl } from '@shared/utils/conversationUrl';
+import { openVerificationModal } from '@shared/stores/verificationModalStore';
+import { isMessagingEligibleStatus } from '@shared/utils/messagingEligibility';
 
 /**
  * Opens the direct-message thread with a user, from anywhere.
@@ -44,6 +46,12 @@ export function useOpenDirectMessage() {
     // Messaging yourself is not a thing; callers also guard, but a shared entry
     // point should not depend on every one of them remembering.
     if (currentUser?.id && String(currentUser.id) === String(targetId)) return;
+    // Starting a chat is one of the few actions behind the live-selfie check.
+    // The server refuses it regardless; this explains why before a draft opens.
+    if (currentUser && !isMessagingEligibleStatus(currentUser.verificationStatus)) {
+      openVerificationModal('Verify with a live selfie to message people.');
+      return;
+    }
 
     const from = location.pathname;
     const openConversation = (conversation) =>
@@ -69,5 +77,5 @@ export function useOpenDirectMessage() {
     }
 
     navigate(`/messages/new?user=${targetId}`, { state: { from, targetUser: user } });
-  }, [navigate, location.pathname, currentUser?.id, conversations]);
+  }, [navigate, location.pathname, currentUser, conversations]);
 }

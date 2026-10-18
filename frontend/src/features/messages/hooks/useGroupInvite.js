@@ -2,6 +2,23 @@ import { useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { groupApi } from '@shared/api/apiClient';
 import { MESSAGE_KEYS } from '@shared/hooks/useMessages';
+import { useAuth } from '@shared/context/AuthContext';
+import { openVerificationModal } from '@shared/stores/verificationModalStore';
+import { isMessagingEligibleStatus } from '@shared/utils/messagingEligibility';
+
+/** What `join` resolves with when the live-selfie check stopped it client side. */
+export const JOIN_NEEDS_VERIFICATION = 'VERIFICATION_REQUIRED';
+const JOIN_VERIFY_MESSAGE = 'Verify with a live selfie to join group chats.';
+
+/**
+ * The server's selfie guard answers 403 with this sentence (no code). Matched
+ * so a stale client-side status still ends in the verification prompt.
+ */
+export function isVerificationRequiredError(err) {
+  if (err?.status !== 403) return false;
+  const raw = String(err?.code || err?.message || '');
+  return /verification.*required|VERIFICATION_REQUIRED/i.test(raw);
+}
 
 /**
  * Group-invite data layer.
@@ -30,6 +47,7 @@ export function inviteErrorCode(err) {
     'UNAUTHENTICATED',
   ];
   if (known.includes(raw)) return raw;
+  if (isVerificationRequiredError(err)) return 'VERIFICATION_REQUIRED';
   if (err?.status === 404) return 'GROUP_NOT_FOUND';
   if (err?.status === 403) return 'FORBIDDEN';
   if (err?.status === 401) return 'UNAUTHENTICATED';
@@ -46,6 +64,8 @@ export function inviteErrorMessage(err) {
       return 'This group has ended and is no longer accepting members.';
     case 'BLOCKED':
       return "You can't join this group.";
+    case 'VERIFICATION_REQUIRED':
+      return JOIN_VERIFY_MESSAGE;
     case 'FORBIDDEN':
       return "You don't have permission to join this group.";
     case 'UNAUTHENTICATED':
@@ -87,6 +107,8 @@ export function useGroupInvitePreview(groupId, { enabled = true } = {}) {
  */
 export function useJoinGroup() {
   const queryClient = useQueryClient();
+  const { currentUser } = useAuth();
+  const verificationStatus = currentUser?.verificationStatus;
 
   const mutation = useMutation({
     mutationFn: (groupId) => groupApi.joinGroup(groupId),
@@ -111,7 +133,32 @@ export function useJoinGroup() {
   });
 
   const { mutateAsync } = mutation;
-  const join = useCallback((groupId) => mutateAsync(groupId), [mutateAsync]);
+  /**
+   * Joining a group chat is behind the live-selfie check (the server answers
+   * 403 too). Unverified accounts get the verification prompt instead of the
+   * request, and callers receive `{ status: JOIN_NEEDS_VERIFICATION }`. A 403
+   * from a client whose status was stale opens the same prompt and rethrows.
+   */
+  const join = useCallback(
+    async (groupId, preview) => {
+      // The account's own status decides; the preview's optional flag only
+      // stands in when there is no signed-in user object to read.
+      const blocked = currentUser
+        ? !isMessagingEligibleStatus(verificationStatus)
+        : preview?.requiresVerification === true;
+      if (blocked) {
+        openVerificationModal(JOIN_VERIFY_MESSAGE);
+        return { status: JOIN_NEEDS_VERIFICATION };
+      }
+      try {
+        return await mutateAsync(groupId);
+      } catch (err) {
+        if (isVerificationRequiredError(err)) openVerificationModal(JOIN_VERIFY_MESSAGE);
+        throw err;
+      }
+    },
+    [mutateAsync, currentUser, verificationStatus],
+  );
 
   return { ...mutation, join };
 }
