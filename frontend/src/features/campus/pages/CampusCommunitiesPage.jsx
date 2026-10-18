@@ -5,7 +5,7 @@ import { useSmartBack } from '@shared/hooks/useSmartBack';
 import sharedStyles from '../components/skeletons/CampusShared.module.css';
 import pageStyles from './CampusCommunitiesPage.module.css';
 const styles = { ...sharedStyles, ...pageStyles };
-import { Plus, Search, ArrowLeft } from '@shared/components/icons';
+import { Plus, Search, ArrowLeft, Users } from '@shared/components/icons';
 import CommunityRow from '@features/communities/components/directory/CommunityRow';
 import CommunityRowSkeleton from '@features/communities/components/directory/CommunityRowSkeleton';
 import listStyles from '@features/communities/components/directory/CommunityList.module.css';
@@ -28,14 +28,17 @@ const CreateCommunityModal = lazy(() => import('@features/communities/components
  * not the answer to a typo).
  */
 export function EmptyCommunities({ searching, query, onCreate }) {
+  const Icon = searching ? Search : Users;
   return (
     <div className={styles.emptyState}>
-      <p className={styles.emptyEyebrow}>{searching ? 'Search' : 'Campus communities'}</p>
+      <span className={styles.emptyIcon} aria-hidden="true">
+        <Icon size={22} />
+      </span>
       <h2 className={styles.emptyTitle}>{searching ? 'No matches' : 'No communities yet'}</h2>
       <p className={styles.emptyText}>
         {searching
           ? <>Nothing on campus matches <span className={styles.emptyQuery}>{query}</span>.</>
-          : 'Be the first to start one for your campus.'}
+          : 'Start one for people at your college.'}
       </p>
       {!searching && (
         <button type="button" className={styles.emptyAction} onClick={onCreate}>
