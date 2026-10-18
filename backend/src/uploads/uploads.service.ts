@@ -18,6 +18,9 @@ import {
   isCoveredImageFolder,
 } from './uploads.constants';
 
+/** Upper bound for a college logo upload. */
+export const COLLEGE_LOGO_MAX_BYTES = 2 * 1024 * 1024;
+
 /** Extensions an original can have when a `_thumb` variant derives from it. */
 const VARIANT_BASE_EXTENSIONS = [
   'webp',
@@ -786,6 +789,54 @@ export class StorageService {
       mimeType: file.mimetype,
       size: file.size,
     };
+  }
+
+  /**
+   * Stores a college logo uploaded from the Super Admin console.
+   *
+   * Owner-less (admins are not user accounts), public (logos are shown before
+   * sign-in), PNG / JPEG / WEBP only, at most 2 MB, and the bytes must match
+   * the declared type.
+   *
+   * SVG is refused on purpose: media is served from this API's own origin by
+   * `/api/media/*`, and an SVG is a document that can carry script. Without a
+   * sanitizer in the storage path, accepting one would be stored XSS against
+   * anyone who opens the logo URL directly.
+   */
+  async uploadCollegeLogo(file: Express.Multer.File) {
+    const allowed = ['image/png', 'image/jpeg', 'image/webp'];
+    if (!allowed.includes(file.mimetype)) {
+      throw new BadRequestException(
+        'Logos must be PNG, JPEG or WEBP images (SVG is not accepted).',
+      );
+    }
+    if (file.size > COLLEGE_LOGO_MAX_BYTES) {
+      throw new BadRequestException('Logos must be 2 MB or smaller.');
+    }
+    if (sniffMimeType(file.buffer) !== file.mimetype) {
+      throw new BadRequestException(
+        "That file's contents do not match its type.",
+      );
+    }
+
+    const ext = this.extensionForMime(file.mimetype);
+    const key = `colleges/${randomBytes(16).toString('hex')}.${ext}`;
+    await this.storageProvider.upload(key, file.buffer, file.mimetype);
+
+    const media = await this.prisma.media.create({
+      data: {
+        ownerId: null,
+        objectKey: key,
+        provider: this.providerName,
+        bucket: this.bucketName,
+        storageKey: key,
+        type: 'IMAGE',
+        mimeType: file.mimetype,
+        fileSize: file.size,
+        visibility: 'public',
+      },
+    });
+    return { key, mediaId: media.id };
   }
 
   private isAllowedMimeType(contentType: string): boolean {

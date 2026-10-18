@@ -7,8 +7,12 @@ import {
   Body,
   Param,
   Query,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { COLLEGE_LOGO_MAX_BYTES } from '../../uploads/uploads.service';
 import { AdminCollegesService } from './admin-colleges.service';
 import { AdminJwtGuard } from '../../common/guards/admin-jwt.guard';
 import {
@@ -50,6 +54,26 @@ export class AdminCollegesController {
   @Patch(':id')
   async updateCollege(@Param('id') id: string, @Body() dto: UpdateCollegeDto) {
     return this.collegesService.updateCollege(id, dto);
+  }
+
+  /**
+   * Multipart field `file`: PNG, JPEG or WEBP, at most 2 MB. SVG is refused
+   * (see StorageService.uploadCollegeLogo). Returns `{ logoUrl }`.
+   */
+  @Post(':id/logo')
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: COLLEGE_LOGO_MAX_BYTES } }),
+  )
+  async uploadLogo(
+    @Param('id') id: string,
+    @UploadedFile() file: Express.Multer.File | undefined,
+  ) {
+    return this.collegesService.setLogo(id, file);
+  }
+
+  @Delete(':id/logo')
+  async removeLogo(@Param('id') id: string) {
+    return this.collegesService.removeLogo(id);
   }
 
   @Patch(':id/status')

@@ -9,12 +9,18 @@ import { parseEnumFilter } from '../../common/utils/enum-filter.util';
 import { PrismaService } from '../../prisma/prisma.service';
 import { JwtGuard } from '../../common/guards/jwt.guard';
 import { SupabaseService } from '../../supabase/supabase.service';
+import { CampusAffiliationService } from '../../campus-affiliation/campus-affiliation.service';
+import {
+  ACTIVE_AFFILIATION_SELECT,
+  activeAffiliationCollegeId,
+} from '../../common/campus/campus-access.service';
 
 @Injectable()
 export class AdminUsersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly supabaseService: SupabaseService,
+    private readonly affiliations: CampusAffiliationService,
   ) {}
 
   async listUsers(query: {
@@ -140,7 +146,18 @@ export class AdminUsersService {
       throw new NotFoundException(`User with ID ${id} not found`);
     }
 
-    return user;
+    // Additive: the verified college email, or null.
+    const collegeAffiliation = await this.affiliations.getAdminView(id);
+    return { ...user, collegeAffiliation };
+  }
+
+  async revokeCollegeAffiliation(id: string, reason: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+    if (!user) throw new NotFoundException('User not found');
+    return this.affiliations.revoke(id, reason);
   }
 
   async suspendUser(id: string, reason?: string) {
@@ -208,10 +225,10 @@ export class AdminUsersService {
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) throw new NotFoundException('User not found');
 
-    await this.prisma.user.update({
-      where: { id },
-      data: { collegeId: null, collegeEmail: null },
-    });
+    // Deletes the affiliation (releasing the address) together with its
+    // mirror, so the two never disagree. Clearing only the mirror would leave
+    // campus access in place.
+    await this.affiliations.adminRelease(id);
 
     return { success: true };
   }
@@ -236,13 +253,21 @@ export class AdminUsersService {
     const updated = await this.prisma.$transaction(async (tx) => {
       const user = await tx.user.findUnique({
         where: { id },
-        select: { id: true, collegeId: true, isCampusRep: true },
+        select: {
+          id: true,
+          isCampusRep: true,
+          collegeAffiliation: { select: ACTIVE_AFFILIATION_SELECT },
+        },
       });
       if (!user) throw new NotFoundException('User not found');
+      // The campus is the ACTIVE affiliation (a verified college email), the
+      // same scope campus-event writes use; the `User.collegeId` mirror
+      // survives removal and revocation and must not qualify anyone.
+      const campusId = activeAffiliationCollegeId(user.collegeAffiliation);
 
       if (isCampusRep) {
         // A representative must belong to a campus (their event scope).
-        if (!user.collegeId) {
+        if (!campusId) {
           throw new BadRequestException(
             'User has no verified campus. Cannot assign Campus Representative.',
           );
@@ -251,7 +276,9 @@ export class AdminUsersService {
         if (!user.isCampusRep) {
           const existing = await tx.user.findFirst({
             where: {
-              collegeId: user.collegeId,
+              collegeAffiliation: {
+                is: { collegeId: campusId, revokedAt: null },
+              },
               isCampusRep: true,
               deletedAt: null,
               NOT: { id },

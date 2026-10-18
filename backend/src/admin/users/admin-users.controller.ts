@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Patch,
   Delete,
   Param,
   Query,
@@ -10,6 +11,7 @@ import {
 } from '@nestjs/common';
 import { AdminUsersService } from './admin-users.service';
 import { AdminJwtGuard } from '../../common/guards/admin-jwt.guard';
+import { RevokeAffiliationDto } from '../../campus-affiliation/dto/campus-affiliation.dto';
 
 @UseGuards(AdminJwtGuard)
 @Controller('admin/users')
@@ -83,6 +85,18 @@ export class AdminUsersController {
   @Post(':id/reset-college')
   async resetCollege(@Param('id') id: string) {
     return this.usersService.resetCollegeVerification(id);
+  }
+
+  /**
+   * Ends a user's campus access. The address stays reserved (audit) until the
+   * affiliation is deleted via reset-college.
+   */
+  @Patch(':id/college-affiliation/revoke')
+  async revokeCollegeAffiliation(
+    @Param('id') id: string,
+    @Body() dto: RevokeAffiliationDto,
+  ) {
+    return this.usersService.revokeCollegeAffiliation(id, dto.reason);
   }
 
   @Post(':id/force-logout')

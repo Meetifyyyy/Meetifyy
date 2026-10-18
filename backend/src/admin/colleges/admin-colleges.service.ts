@@ -7,6 +7,8 @@ import {
 import { PrismaService } from '../../prisma/prisma.service';
 import { DomainValidatorService } from '../../common/services/domain-validator.service';
 import { MediaCleanupService } from '../../uploads/media-cleanup.service';
+import { StorageService } from '../../uploads/uploads.service';
+import { collegeLogoUrl } from '../../common/campus/campus-affiliation.util';
 import { Optional } from '@nestjs/common';
 import { CollegeStatus, Prisma } from '@prisma/client';
 import { CreateCollegeDto, UpdateCollegeDto } from './dto/college.dto';
@@ -22,7 +24,67 @@ export class AdminCollegesService {
     private readonly prisma: PrismaService,
     private readonly domainValidatorService: DomainValidatorService,
     @Optional() private readonly mediaCleanupService?: MediaCleanupService,
+    @Optional() private readonly storage?: StorageService,
   ) {}
+
+  /** Sets a college's logo from an uploaded image. Returns its URL. */
+  async setLogo(
+    id: string,
+    file: Express.Multer.File | undefined,
+  ): Promise<{ logoUrl: string | null }> {
+    if (!file) throw new BadRequestException('No file provided');
+    if (!this.storage) {
+      throw new BadRequestException('Storage is not configured.');
+    }
+    const existing = await this.prisma.college.findUnique({
+      where: { id },
+      select: { id: true, logoKey: true, deletedAt: true },
+    });
+    if (!existing || existing.deletedAt) {
+      throw new NotFoundException(`College ${id} not found`);
+    }
+    const { key, mediaId } = await this.storage.uploadCollegeLogo(file);
+    let updated: { logoKey: string | null };
+    try {
+      updated = await this.prisma.college.update({
+        where: { id },
+        data: { logoKey: key, logoMediaId: mediaId },
+        select: { logoKey: true },
+      });
+    } catch (err) {
+      this.mediaCleanupService?.discardFailedNewUpload(key).catch(() => {});
+      throw err;
+    }
+    this.mediaCleanupService?.replaceEntityMedia({
+      entityType: 'COLLEGE_LOGO',
+      entityId: id,
+      previous: existing.logoKey,
+      next: updated.logoKey,
+    });
+    return { logoUrl: collegeLogoUrl(updated.logoKey) };
+  }
+
+  /** Removes a college's logo. */
+  async removeLogo(id: string): Promise<{ success: true }> {
+    const existing = await this.prisma.college.findUnique({
+      where: { id },
+      select: { id: true, logoKey: true, deletedAt: true },
+    });
+    if (!existing || existing.deletedAt) {
+      throw new NotFoundException(`College ${id} not found`);
+    }
+    await this.prisma.college.update({
+      where: { id },
+      data: { logoKey: null, logoMediaId: null },
+    });
+    this.mediaCleanupService?.replaceEntityMedia({
+      entityType: 'COLLEGE_LOGO',
+      entityId: id,
+      previous: existing.logoKey,
+      next: null,
+    });
+    return { success: true };
+  }
 
   private async notifyCacheChange() {
     await this.domainValidatorService.invalidateCache().catch(() => {});
@@ -143,7 +205,7 @@ export class AdminCollegesService {
     );
 
     return {
-      data: colleges,
+      data: colleges.map((c) => ({ ...c, logoUrl: collegeLogoUrl(c.logoKey) })),
       meta: {
         total,
         counts: {
@@ -176,7 +238,7 @@ export class AdminCollegesService {
       throw new NotFoundException(`College with ID ${id} not found`);
     }
 
-    return college;
+    return { ...college, logoUrl: collegeLogoUrl(college.logoKey) };
   }
 
   async createCollege(dto: CreateCollegeDto) {
