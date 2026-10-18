@@ -248,7 +248,9 @@
   position: absolute;
   top: calc(100% + 0.5rem);
   left: 0;
-  width: 280px;
+  /* Exactly the trigger's width (the wrap sizes to it); long labels wrap. */
+  width: 100%;
+  box-sizing: border-box;
   background: var(--color-bg-white);
   border: 1px solid var(--color-border);
   border-radius: 12px;
@@ -313,6 +315,8 @@
 .customDropdownOption {
   padding: 0.6rem 1rem;
   font-size: 0.9rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
   color: var(--color-text-main);
   cursor: pointer;
   transition: background 0.15s;

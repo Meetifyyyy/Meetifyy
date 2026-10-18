@@ -197,15 +197,30 @@ function useFittingCount({ min, max, itemWidth, itemSelector, signal }) {
 
 const SuggestedUserCard = memo(function SuggestedUserCard({ user, onSelect }) {
   const handleClick = useCallback(() => onSelect(user.username), [onSelect, user.username]);
+  // A held press state rather than CSS :active, which the Android WebView
+  // applies for a single frame on a quick tap, so the shrink never shows.
+  const [pressed, setPressed] = useState(false);
+  const press = useCallback(() => setPressed(true), []);
+  const release = useCallback(() => setPressed(false), []);
   return (
-    <div className={styles.knowCard} data-know-card onClick={handleClick} style={{ cursor: 'pointer' }}>
+    <button
+      type="button"
+      className={`${styles.knowCard} ${styles.knowCardButton}`}
+      data-know-card
+      data-pressed={pressed || undefined}
+      onClick={handleClick}
+      onPointerDown={press}
+      onPointerUp={release}
+      onPointerCancel={release}
+      onPointerLeave={release}
+    >
       <Avatar
         src={user.avatar}
         name={user.displayName || user.username}
         size="88px"
       />
       <span className={styles.knowName}>{user.displayName}</span>
-    </div>
+    </button>
   );
 });
 

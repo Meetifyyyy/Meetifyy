@@ -9,15 +9,40 @@
   transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-@media (max-width: 768px) {
-  .knowCard:active {
-    transform: scale(0.97) !important;
-  }
+/* The tappable card: a reset button, no tap flash, focus ring for keyboards. */
+.knowCardButton {
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  /* Release eases out a little slower than the press, so it settles. */
+  transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-@media (max-width: 768px) and (prefers-reduced-motion: reduce) {
-  .knowCard:active {
-    transform: none !important;
+.knowCardButton[data-pressed] {
+  transform: scale(0.95);
+  transition-duration: 0.12s;
+}
+
+.knowCardButton:focus:not(:focus-visible) {
+  outline: none;
+}
+
+.knowCardButton:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 4px;
+  border-radius: 12px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .knowCardButton,
+  .knowCardButton[data-pressed] {
+    transition: none;
+    transform: none;
   }
 }
 

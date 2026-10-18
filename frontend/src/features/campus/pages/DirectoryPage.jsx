@@ -109,7 +109,7 @@ const CustomClassYearSelect = ({ value, onChange, years }) => {
       </button>
 
       {isOpen && (
-        <div className={styles.customDropdownMenu} style={{ width: '180px' }}>
+        <div className={styles.customDropdownMenu}>
           <div className={styles.customDropdownList}>
             {years.map(y => (
               <div
