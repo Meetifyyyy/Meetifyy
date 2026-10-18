@@ -192,7 +192,12 @@
   flex-direction: column;
   gap: 0.15rem;
   flex: 1;
-  scrollbar-width: thin;
+  /* Scrolls without a visible bar. */
+  scrollbar-width: none;
+}
+
+.body::-webkit-scrollbar {
+  display: none;
 }
 
 .empty {
