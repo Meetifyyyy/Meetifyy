@@ -1270,17 +1270,6 @@ export default function SettingsRoute() {
           </label>
         </div>
       </div>
-      <div className={styles.sectionLabel}>Blocked</div>
-      <div className={styles.group}>
-        <button className={styles.row} onClick={() => openPanel('blocked-contacts')}>
-          <span className={styles.rowIcon}>
-            <Ban size={20} strokeWidth={2} />
-          </span>
-          <span className={styles.rowLabel}>Blocked Contacts</span>
-          <span className={styles.rowChev}><ChevronRight size={18} strokeWidth={2.25} /></span>
-        </button>
-      </div>
-
       <button className={styles.saveBtn} onClick={handleSave}>Save Visibility Settings</button>
     </div>
   );
