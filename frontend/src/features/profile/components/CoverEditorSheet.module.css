@@ -1,6 +1,10 @@
 /* Edit cover sheet. Same frame as the share sheet (ShareSheet.module.css):
    a bottom sheet on phones with the shared drag handle, a centred card on
-   wider screens. Theme tokens only. */
+   wider screens. Theme tokens only.
+
+   On phones the sheet is laid out at full height, top at the status-bar
+   inset, and useExpandableCoverSheet translates it down to its opening
+   height; growing to full screen is then a transform, never a relayout. */
 
 .backdrop {
   position: fixed;
@@ -10,13 +14,16 @@
   align-items: flex-end;
   justify-content: center;
   background: rgba(0, 0, 0, 0.45);
+  overflow: hidden;
   animation: fadeIn 0.18s ease;
 }
 
 .sheet {
+  --sheet-top: max(env(safe-area-inset-top, 0px), var(--status-bar-inset, 0px));
   width: 100%;
   max-width: 480px;
-  max-height: min(88dvh, calc(100dvh - var(--status-bar-inset, 0px) - 1rem));
+  height: calc(100vh - var(--sheet-top));
+  height: calc(100dvh - var(--sheet-top));
   display: flex;
   flex-direction: column;
   background: var(--color-bg-white);
@@ -25,11 +32,19 @@
   box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.12);
   animation: slideUp 0.32s cubic-bezier(0.16, 1, 0.3, 1);
   overflow: hidden;
+  transition: border-radius 0.2s ease;
+}
+
+/* Full screen: the top corners meet the screen edge. */
+.sheet[data-expanded='true'] {
+  border-radius: 0;
 }
 
 @media (min-width: 769px) {
   .backdrop { align-items: center; }
   .sheet {
+    height: auto;
+    max-width: 520px;
     max-height: min(720px, 90vh);
     border-radius: 28px;
   }
@@ -38,6 +53,8 @@
 .header {
   flex-shrink: 0;
   padding: 8px 12px 4px;
+  /* The header is the sheet's drag area on phones. */
+  touch-action: none;
 }
 
 .header > :global(.sheet-handle) {
@@ -78,8 +95,9 @@
   .closeBtn { visibility: hidden; }
 }
 
-/* Scrolls on its own; useSheetDrag only starts a drag from the handle or when
-   this is already at the top, so reading the grid never closes the sheet. */
+/* Scrolls natively; the first scroll at the opening height expands the sheet,
+   and a drag here moves the sheet only down from the top of the list, so
+   reading the grid never closes it. */
 .body {
   flex: 1 1 auto;
   min-height: 0;
@@ -118,22 +136,27 @@
 
 .grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
 }
 
-@media (min-width: 420px) {
+@media (min-width: 480px) {
+  .grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+@media (min-width: 769px) {
   .grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
 
-/* A miniature cover: same 3:1 frame, so a pattern reads as it will on the
-   profile. Selection is a ring in the accent colour with a gap to the tile. */
+/* A miniature cover, framed a little taller than the profile's so the
+   pattern reads at this size. Selection is a ring in the accent colour with a
+   gap to the tile. */
 .tile {
-  aspect-ratio: 3 / 1;
+  aspect-ratio: 16 / 7;
   min-height: 0;
   padding: 0;
   border: none;
-  border-radius: 10px;
+  border-radius: 12px;
   cursor: pointer;
   box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.06);
   transition: box-shadow 0.15s ease;
@@ -149,15 +172,28 @@
   outline-offset: 2px;
 }
 
+.footer {
+  flex-shrink: 0;
+  display: flex;
+  gap: 10px;
+  padding: 10px 16px calc(12px + max(env(safe-area-inset-bottom, 0px), var(--navigation-bar-inset, 0px)));
+  border-top: 1px solid var(--color-border-light);
+  background: var(--color-bg-white);
+}
+
+/* Secondary beside Save: same height and shape, quieter fill. */
 .uploadBtn {
-  width: 100%;
-  padding: 0.8rem;
-  border-radius: 12px;
-  border: 1.5px dashed var(--color-border);
+  flex: 1 1 0;
+  min-width: 0;
+  height: 46px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
   background: var(--color-bg-soft);
-  color: var(--color-text-muted);
-  font-weight: 600;
-  font-size: 0.9rem;
+  color: var(--color-text-main);
+  font-weight: 700;
+  font-size: 0.95rem;
+  white-space: nowrap;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -170,14 +206,9 @@
   opacity: 0.75;
 }
 
-.footer {
-  flex-shrink: 0;
-  padding: 10px 16px calc(12px + max(env(safe-area-inset-bottom, 0px), var(--navigation-bar-inset, 0px)));
-  border-top: 1px solid var(--color-border-light);
-}
-
 .saveBtn {
-  width: 100%;
+  flex: 1 1 0;
+  min-width: 0;
   height: 46px;
   border: none;
   border-radius: 999px;
@@ -198,4 +229,5 @@
 
 @media (prefers-reduced-motion: reduce) {
   .backdrop, .sheet { animation: none; }
+  .sheet { transition: none; }
 }
