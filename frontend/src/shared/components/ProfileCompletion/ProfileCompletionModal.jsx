@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useAuth } from '@shared/context/AuthContext';
 import { useScrollLock } from '@shared/hooks/useScrollLock';
@@ -68,11 +68,17 @@ export default function ProfileCompletionModal() {
     return () => window.removeEventListener('keydown', onKey);
   }, [open, later]);
 
+  const steps = [needsGender && 'gender', needsPersonalEmail && 'email'].filter(Boolean);
+  // Remembered from when the modal opened: once gender is saved `steps` shrinks
+  // to one, and the dots must still read "second of two".
+  const totalStepsRef = useRef(0);
+  totalStepsRef.current = Math.max(totalStepsRef.current, steps.length);
+
   if (!open) return null;
 
-  const steps = [needsGender && 'gender', needsPersonalEmail && 'email'].filter(Boolean);
   const step = steps[0];
-  const stepLabel = steps.length > 1 ? `Step 1 of ${steps.length}` : 'One more thing';
+  const totalSteps = totalStepsRef.current;
+  const stepIndex = totalSteps - steps.length;
 
   const saveGender = async () => {
     if (!gender || savingGender) return;
@@ -96,7 +102,13 @@ export default function ProfileCompletionModal() {
   return (
     <div className={styles.backdrop} role="dialog" aria-modal="true" aria-labelledby="profile-completion-title">
       <div className={styles.dialog}>
-        <p className={styles.step}>{stepLabel}</p>
+        {totalSteps > 1 ? (
+          <div className={styles.dots} role="img" aria-label={`Step ${stepIndex + 1} of ${totalSteps}`}>
+            {Array.from({ length: totalSteps }, (_, i) => (
+              <span key={i} className={`${styles.dot} ${i === stepIndex ? styles.dotActive : ''}`} />
+            ))}
+          </div>
+        ) : null}
         {step === 'gender' ? (
           <>
             <h2 id="profile-completion-title" className={styles.title}>
@@ -118,6 +130,9 @@ export default function ProfileCompletionModal() {
               ))}
             </div>
             <div className={styles.actions}>
+              <button type="button" className={styles.secondaryBtn} onClick={later}>
+                Later
+              </button>
               <button type="button" className={styles.primaryBtn} onClick={saveGender} disabled={!gender || savingGender}>
                 {savingGender ? 'Saving…' : 'Save'}
               </button>
@@ -134,15 +149,15 @@ export default function ProfileCompletionModal() {
             </p>
             <PersonalEmailForm
               submitLabel="Add personal email"
+              onCancel={later}
+              cancelLabel="Later"
+              alignActionsEnd
               onDone={(email) => {
                 showToast(email ? `You now sign in with ${email}` : 'Email updated', 'success');
               }}
             />
           </>
         )}
-        <button type="button" className={styles.later} onClick={later}>
-          Later
-        </button>
       </div>
     </div>
   );

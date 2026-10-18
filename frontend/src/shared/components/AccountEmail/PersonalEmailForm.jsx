@@ -20,7 +20,7 @@ import styles from './AccountEmail.module.css';
  *
  * `onDone(email)` runs after a successful change; `onCancel` is optional.
  */
-export default function PersonalEmailForm({ onDone, onCancel, submitLabel = 'Change email' }) {
+export default function PersonalEmailForm({ onDone, onCancel, submitLabel = 'Change email', cancelLabel = 'Cancel', alignActionsEnd = false }) {
   const { currentUser, updateCurrentUser } = useAuth();
   const [email, setEmail] = useState('');
   const [challenge, setChallenge] = useState(null);
@@ -138,7 +138,12 @@ export default function PersonalEmailForm({ onDone, onCancel, submitLabel = 'Cha
           for Campus.
         </p>
         {errorRow}
-        <div className={styles.actions}>
+        <div className={`${styles.actions} ${alignActionsEnd ? styles.actionsEnd : ''}`}>
+          {onCancel ? (
+            <button type="button" className={styles.secondaryBtn} onClick={onCancel} disabled={busy}>
+              {cancelLabel}
+            </button>
+          ) : null}
           <button type="submit" className={styles.primaryBtn} disabled={busy || !email.trim()}>
             {sending ? (
               <>
@@ -149,11 +154,6 @@ export default function PersonalEmailForm({ onDone, onCancel, submitLabel = 'Cha
               <span>Send code</span>
             )}
           </button>
-          {onCancel ? (
-            <button type="button" className={styles.secondaryBtn} onClick={onCancel} disabled={busy}>
-              Cancel
-            </button>
-          ) : null}
         </div>
       </form>
     );
@@ -223,7 +223,12 @@ export default function PersonalEmailForm({ onDone, onCancel, submitLabel = 'Cha
       </div>
       <p className={styles.note}>From now on you sign in with this new email.</p>
       {errorRow}
-      <div className={styles.actions}>
+      <div className={`${styles.actions} ${alignActionsEnd ? styles.actionsEnd : ''}`}>
+        {onCancel ? (
+          <button type="button" className={styles.secondaryBtn} onClick={onCancel} disabled={busy}>
+            {cancelLabel}
+          </button>
+        ) : null}
         <button type="submit" className={styles.primaryBtn} disabled={busy || code.length !== 6 || !password}>
           {verifying ? (
             <>
@@ -234,11 +239,6 @@ export default function PersonalEmailForm({ onDone, onCancel, submitLabel = 'Cha
             <span>{submitLabel}</span>
           )}
         </button>
-        {onCancel ? (
-          <button type="button" className={styles.secondaryBtn} onClick={onCancel} disabled={busy}>
-            Cancel
-          </button>
-        ) : null}
       </div>
     </form>
   );
