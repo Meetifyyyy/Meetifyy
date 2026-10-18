@@ -23,10 +23,10 @@ datasource db {
 }
 
 model College {
-  id            String          @id @default(uuid())
+  id            String               @id @default(uuid())
   name          String
   shortName     String?
-  slug          String?         @unique
+  slug          String?              @unique
   logoKey       String?
   logoMediaId   String?
   bannerKey     String?
@@ -34,20 +34,21 @@ model College {
   city          String?
   state         String?
   country       String?
-  isActive      Boolean         @default(true)
-  isVerified    Boolean         @default(false)
-  isPrivate     Boolean         @default(false)
-  status        CollegeStatus   @default(APPROVED)
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
+  isActive      Boolean              @default(true)
+  isVerified    Boolean              @default(false)
+  isPrivate     Boolean              @default(false)
+  status        CollegeStatus        @default(APPROVED)
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
   deletedAt     DateTime?
-  bannerMedia   Media?          @relation("CollegeBanner", fields: [bannerMediaId], references: [id])
-  logoMedia     Media?          @relation("CollegeLogo", fields: [logoMediaId], references: [id])
+  bannerMedia   Media?               @relation("CollegeBanner", fields: [bannerMediaId], references: [id])
+  logoMedia     Media?               @relation("CollegeLogo", fields: [logoMediaId], references: [id])
   domains       CollegeDomain[]
-  communities   Community[]     @relation("CommunityCollege")
-  activities    CrewActivity[]  @relation("ActivityCollege")
+  communities   Community[]          @relation("CommunityCollege")
+  activities    CrewActivity[]       @relation("ActivityCollege")
   campusEvents  CampusEvent[]
   users         User[]
+  affiliations  CollegeAffiliation[]
 
   @@index([status])
   @@index([isActive])
@@ -197,6 +198,12 @@ model User {
   // Campus Representative flag. Assignable ONLY by a Super Admin (admin portal);
   // never accepted by any /api/* user-facing endpoint or profile update.
   isCampusRep                Boolean                     @default(false)
+  // Optional for the API (old installed apps never send it); the new signup UI
+  // requires it.
+  gender                     Gender?
+  // The verified college email. `collegeId` / `collegeEmail` above mirror it;
+  // only CampusAffiliationService writes either. See docs/college-affiliation.md.
+  collegeAffiliation         CollegeAffiliation?
   activityBookmarks          ActivityBookmark[]
   campusEventsCreated        CampusEvent[]               @relation("CampusEventCreator")
   invitationsReceived        ActivityInvitation[]        @relation("ActivityInvitationsReceived")
@@ -274,6 +281,40 @@ model User {
   // Empty-query recipient pickers: WHERE accountStatus='ACTIVE' AND batchYear=?
   // ORDER BY createdAt DESC.
   @@index([accountStatus, batchYear, createdAt(sort: Desc)])
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  NON_BINARY
+  PREFER_NOT_TO_SAY
+}
+
+enum CollegeAffiliationMethod {
+  LEGACY_PRIMARY_EMAIL
+  CAMPUS_OTP
+}
+
+/// A user's verified college email, and the only thing that authorizes campus
+/// features. See docs/college-affiliation.md.
+model CollegeAffiliation {
+  id              String                   @id @default(uuid())
+  userId          String                   @unique
+  collegeId       String
+  email           String
+  /// UNIQUE across every row, revoked ones included: an address stays reserved
+  /// until the row is deleted (user removal, account purge, admin delete).
+  emailNormalized String                   @unique
+  method          CollegeAffiliationMethod
+  verifiedAt      DateTime                 @default(now())
+  revokedAt       DateTime?
+  revokedReason   String?                  @db.VarChar(300)
+  createdAt       DateTime                 @default(now())
+  updatedAt       DateTime                 @updatedAt
+  user            User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  college         College                  @relation(fields: [collegeId], references: [id])
+
+  @@index([collegeId])
 }
 
 model Post {
@@ -994,6 +1035,10 @@ model SuperAdminSession {
 enum UserOtpPurpose {
   ACCOUNT_DELETION
   ACCOUNT_RECOVERY
+  /// Proves control of a college address on the Campus page.
+  COLLEGE_EMAIL
+  /// Proves control of a new personal (login) address.
+  PERSONAL_EMAIL
 }
 
 /// One-time codes for the account-deletion lifecycle.
@@ -1017,6 +1062,11 @@ model UserOtp {
   createdAt  DateTime       @default(now())
   /// Coarse audit metadata. Never the code itself, and never a full user agent.
   requestIp  String?
+  /// The normalized address the code was sent to (COLLEGE_EMAIL, PERSONAL_EMAIL),
+  /// so a verify can never be redirected to a different address.
+  target     String?
+  /// The college selected when a COLLEGE_EMAIL code was sent.
+  collegeId  String?
   user       User           @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   /// One live code per purpose per user — the upsert target.
