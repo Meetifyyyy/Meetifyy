@@ -124,4 +124,34 @@ describe('UsersService.updateProfile', () => {
       expect(upsert).not.toHaveBeenCalled();
     },
   );
+  describe('gender', () => {
+    it('accepts an enum value and clearing it', async () => {
+      const { service, upsert } = build();
+      await service.updateProfile(USER, { gender: 'NON_BINARY' });
+      expect(update(upsert)).toEqual({ gender: 'NON_BINARY' });
+
+      const second = build();
+      await second.service.updateProfile(USER, { gender: null });
+      expect(update(second.upsert)).toEqual({ gender: null });
+    });
+
+    it.each([['robot'], [3], [{}]])('refuses %j', async (gender) => {
+      const { service, upsert } = build();
+      await expect(
+        service.updateProfile(USER, { gender }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(upsert).not.toHaveBeenCalled();
+    });
+  });
+
+  it("never writes an email from the body: that is the OTP flow's job", async () => {
+    const { service, upsert } = build();
+    await service.updateProfile(
+      USER,
+      { email: 'attacker@evil.com', bio: 'hi' },
+      'sam@college.edu',
+    );
+    expect(update(upsert)).toEqual({ bio: 'hi' });
+    expect(JSON.stringify(upsert.mock.calls[0][0])).not.toContain('evil.com');
+  });
 });

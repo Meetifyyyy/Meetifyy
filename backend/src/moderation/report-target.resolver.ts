@@ -1,4 +1,8 @@
 import { Injectable } from '@nestjs/common';
+import {
+  ACTIVE_AFFILIATION_SELECT,
+  activeAffiliationCollegeId,
+} from '../common/campus/campus-access.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ReportTargetType } from '@prisma/client';
 import { ActivityAuthorizationService } from '../activities/activity-authorization.service';
@@ -48,11 +52,24 @@ export class ReportTargetResolver {
         return !!comm;
       }
       case ReportTargetType.ACTIVITY: {
-        const viewer = reporterId
+        // COLLEGE_ONLY visibility follows the ACTIVE affiliation, as on the
+        // detail endpoint, not the `User.collegeId` mirror.
+        const reporter = reporterId
           ? await this.prisma.user.findUnique({
               where: { id: reporterId },
-              select: { id: true, collegeId: true },
+              select: {
+                id: true,
+                collegeAffiliation: { select: ACTIVE_AFFILIATION_SELECT },
+              },
             })
+          : null;
+        const viewer = reporter
+          ? {
+              id: reporter.id,
+              collegeId: activeAffiliationCollegeId(
+                reporter.collegeAffiliation,
+              ),
+            }
           : null;
         const activity = await this.prisma.crewActivity.findFirst({
           where: {

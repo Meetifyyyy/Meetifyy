@@ -9,6 +9,7 @@ import {
 import type Redis from 'ioredis';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { CampusAccessService } from '../common/campus/campus-access.service';
 import { RedisService } from '../redis/redis.service';
 import {
   CreateCampusEventDto,
@@ -128,6 +129,7 @@ export class CampusEventsService {
 
   constructor(
     private readonly prisma: PrismaService,
+    private readonly campusAccess: CampusAccessService,
     @Optional() private readonly redisService?: RedisService,
     @Optional() private readonly mediaCleanupService?: MediaCleanupService,
   ) {
@@ -185,9 +187,12 @@ export class CampusEventsService {
   /** Loads the acting user and asserts they hold the Campus Representative role. */
   private async requireCampusRep(userId: string) {
     if (!userId) throw new ForbiddenException('Authentication required.');
+    // The campus is the affiliation's (a verified college email), never the
+    // user row's or the request's. 403 campus_affiliation_required without one.
+    const { collegeId } = await this.campusAccess.requireAffiliation(userId);
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, collegeId: true, isCampusRep: true, role: true },
+      select: { id: true, isCampusRep: true, role: true },
     });
     if (!user) throw new ForbiddenException('User not found.');
     if (!user.isCampusRep) {
@@ -195,12 +200,7 @@ export class CampusEventsService {
         'Only Campus Representatives can manage campus events.',
       );
     }
-    if (!user.collegeId) {
-      throw new ForbiddenException(
-        'Campus Representative is not associated with a campus.',
-      );
-    }
-    return user;
+    return { ...user, collegeId };
   }
 
   /**
@@ -256,15 +256,12 @@ export class CampusEventsService {
   ) {
     const limit = Math.min(Math.max(opts.limit || 20, 1), 50);
 
-    // Resolve campus: explicit param, else the caller's campus.
-    let campusId = opts.campusId;
-    if (!campusId) {
-      const user = await this.prisma.user.findUnique({
-        where: { id: userId },
-        select: { collegeId: true },
-      });
-      campusId = user?.collegeId || undefined;
-    }
+    // Resolve campus: the controller passes the caller's affiliation; any
+    // other caller falls back to the affiliation lookup itself.
+    const campusId =
+      opts.campusId ??
+      (await this.campusAccess.getActiveCollegeId(userId)) ??
+      undefined;
     if (!campusId) return { events: [], nextCursor: undefined };
 
     const cacheKey = this.listCacheKey(campusId, scope, limit, opts.cursor);
@@ -400,11 +397,9 @@ export class CampusEventsService {
      * 404 rather than 403 on purpose: a 403 would confirm that an event with
      * this id exists on some other campus.
      */
-    const viewer = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: { collegeId: true },
-    });
-    if (!viewer?.collegeId || viewer.collegeId !== event.campusId) {
+    const { collegeId: viewerCollegeId } =
+      await this.campusAccess.requireAffiliation(userId);
+    if (viewerCollegeId !== event.campusId) {
       throw new NotFoundException('Campus event not found.');
     }
 
@@ -471,7 +466,7 @@ export class CampusEventsService {
     try {
       created = await this.prisma.campusEvent.create({
         data: {
-          campusId: user.collegeId!,
+          campusId: user.collegeId,
           title: dto.title,
           description: dto.description ?? null,
           posterUrl: posterKey,
@@ -515,7 +510,7 @@ export class CampusEventsService {
       throw err;
     }
 
-    await this.invalidateCampus(user.collegeId!);
+    await this.invalidateCampus(user.collegeId);
     return created;
   }
 

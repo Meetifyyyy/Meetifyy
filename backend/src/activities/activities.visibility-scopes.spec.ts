@@ -9,6 +9,7 @@ import { DomainEventService } from '../events/domain-event.service';
 import { RedisService } from '../redis/redis.service';
 import { getQueueToken } from '@nestjs/bullmq';
 import { NOTIFICATIONS_QUEUE } from '../notifications/notifications.processor';
+import { affiliatedWith } from '../common/campus/testing/affiliation.fixture';
 
 /**
  * The College and Campus surfaces are COLLEGE_ONLY surfaces, and that has to be
@@ -44,7 +45,11 @@ describe('Activity feed scopes', () => {
       crewActivityMember: { findMany: jest.fn(() => Promise.resolve([])) },
       user: {
         findUnique: jest.fn(() =>
-          Promise.resolve({ id: ME, collegeId: MY_COLLEGE }),
+          Promise.resolve({
+            id: ME,
+            collegeId: MY_COLLEGE,
+            collegeAffiliation: affiliatedWith(MY_COLLEGE),
+          }),
         ),
       },
       activityInvitation: { count: jest.fn(() => Promise.resolve(0)) },
@@ -109,10 +114,37 @@ describe('Activity feed scopes', () => {
 
   it('returns nothing for the college surfaces when the viewer has no college', async () => {
     prisma.user.findUnique = jest.fn(() =>
-      Promise.resolve({ id: ME, collegeId: null }),
+      Promise.resolve({ id: ME, collegeId: null, collegeAffiliation: null }),
     );
     const res = await service.getAllActivities(ME, 20, undefined, 'campus');
     expect(res).toEqual({ activities: [], nextCursor: undefined });
     expect(prisma.crewActivity.findMany).not.toHaveBeenCalled();
+  });
+  it('treats a legacy college on the user row without a verified college email as no college', async () => {
+    // Campus is gated by the affiliation, not the `User.collegeId` mirror.
+    prisma.user.findUnique = jest.fn(() =>
+      Promise.resolve({
+        id: ME,
+        collegeId: MY_COLLEGE,
+        collegeAffiliation: null,
+      }),
+    );
+    const res = await service.getAllActivities(ME, 20, undefined, 'campus');
+    expect(res).toEqual({ activities: [], nextCursor: undefined });
+    expect(prisma.crewActivity.findMany).not.toHaveBeenCalled();
+  });
+
+  it('treats a revoked affiliation as no college', async () => {
+    prisma.user.findUnique = jest.fn(() =>
+      Promise.resolve({
+        id: ME,
+        collegeId: MY_COLLEGE,
+        collegeAffiliation: affiliatedWith(MY_COLLEGE, {
+          revokedAt: new Date(),
+        }),
+      }),
+    );
+    const res = await service.getAllActivities(ME, 20, undefined, 'campus');
+    expect(res).toEqual({ activities: [], nextCursor: undefined });
   });
 });

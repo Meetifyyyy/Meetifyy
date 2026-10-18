@@ -10,7 +10,6 @@ import {
 import { ActivityDiscussionService } from './activity-discussion.service';
 import { JwtGuard } from '../../common/guards/jwt.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { VerifiedOnly } from '../../common/decorators/verified-only.decorator';
 import type { AuthenticatedUser } from '../../common/types/authenticated-request';
 
 @Controller('api/activities/:activityId/discussion')
@@ -36,14 +35,12 @@ export class ActivityDiscussionController {
   }
 
   /**
-   * Every other write on an activity is `@VerifiedOnly()`; this one was not,
-   * which left a messaging surface open to an account whose verification had
-   * been revoked after it joined. Joining is gated, so the gap only showed up
-   * on exactly the case the gate exists for: someone who was eligible when
-   * they joined and is not any more.
+   * Not selfie-gated: posting in an activity's discussion is participation in
+   * an activity the caller already belongs to, not messaging. The selfie gate
+   * is kept only on messaging, creating posts/communities/activities and
+   * Instant Match (docs/college-affiliation.md → Selfie gate).
    */
   @Post()
-  @VerifiedOnly()
   async sendMessage(
     @Param('activityId') activityId: string,
     @Body('text') text: string,

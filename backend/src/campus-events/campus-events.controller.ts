@@ -14,7 +14,6 @@ import { CampusEventsService } from './campus-events.service';
 import { JwtGuard } from '../common/guards/jwt.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../common/types/authenticated-request';
-import { VerifiedOnly } from '../common/decorators/verified-only.decorator';
 import {
   CreateCampusEventDto,
   UpdateCampusEventDto,
@@ -22,16 +21,21 @@ import {
   CAMPUS_EVENT_SCOPES,
 } from './dto/campus-event.dto';
 import { clampPageParam, singleQueryValue } from '../common/pagination.util';
+import { CampusAccessService } from '../common/campus/campus-access.service';
 
 @Controller('api/campus-events')
 @UseGuards(JwtGuard)
 export class CampusEventsController {
-  constructor(private readonly service: CampusEventsService) {}
+  constructor(
+    private readonly service: CampusEventsService,
+    private readonly campusAccess: CampusAccessService,
+  ) {}
 
-  // Campus events sit behind the same verification gate as the rest of the
-  // campus surfaces; see the note on GET /api/users/campus.
+  // Campus events are gated on a verified college email (403
+  // `campus_affiliation_required` without one), like the rest of the campus
+  // surfaces; see the note on GET /api/users/campus. Writes additionally need
+  // `isCampusRep`, checked in the service against the affiliation's college.
   @Get()
-  @VerifiedOnly()
   async list(
     @CurrentUser() user: AuthenticatedUser,
     @Query('scope') scope?: string,
@@ -47,8 +51,10 @@ export class CampusEventsController {
     // `campusId` used to be accepted here and passed straight through, which
     // let any verified account list any college's events by supplying someone
     // else's campus id. No client ever sent it. The campus is now resolved from
-    // the caller alone, which is the only campus they are entitled to read.
+    // the caller's affiliation alone, the only campus they may read.
+    const { collegeId } = await this.campusAccess.requireAffiliation(user?.id);
     return this.service.listByScope(user?.id, s, {
+      campusId: collegeId,
       limit: clampPageParam(limit, { def: 20, max: 50, min: 1 }),
       cursor: singleQueryValue(cursor),
     });
@@ -56,7 +62,6 @@ export class CampusEventsController {
 
   // Static routes before `:id`.
   @Get('mine')
-  @VerifiedOnly()
   async listMine(
     @CurrentUser() user: AuthenticatedUser,
     @Query('limit') limit?: string,
@@ -69,7 +74,6 @@ export class CampusEventsController {
   }
 
   @Get(':id')
-  @VerifiedOnly()
   async getById(
     @Param('id') id: string,
     @CurrentUser() user: AuthenticatedUser,
@@ -78,7 +82,6 @@ export class CampusEventsController {
   }
 
   @Post()
-  @VerifiedOnly()
   async create(
     @Body() dto: CreateCampusEventDto,
     @CurrentUser() user: AuthenticatedUser,
@@ -87,7 +90,6 @@ export class CampusEventsController {
   }
 
   @Patch(':id')
-  @VerifiedOnly()
   async update(
     @Param('id') id: string,
     @Body() dto: UpdateCampusEventDto,
@@ -97,7 +99,6 @@ export class CampusEventsController {
   }
 
   @Post(':id/publish')
-  @VerifiedOnly()
   async publish(
     @Param('id') id: string,
     @CurrentUser() user: AuthenticatedUser,
@@ -106,7 +107,6 @@ export class CampusEventsController {
   }
 
   @Delete(':id')
-  @VerifiedOnly()
   async remove(
     @Param('id') id: string,
     @CurrentUser() user: AuthenticatedUser,

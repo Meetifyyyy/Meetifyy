@@ -6,6 +6,8 @@ import {
   OnModuleInit,
   Optional,
 } from '@nestjs/common';
+import { activeAffiliationCollegeIdSql } from '../common/campus/campus-affiliation.sql';
+import { CampusAccessService } from '../common/campus/campus-access.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma, type Community } from '@prisma/client';
 import { DomainEventService } from '../events/domain-event.service';
@@ -193,6 +195,7 @@ export class CommunitiesService implements OnModuleInit {
     private readonly blocksService: BlocksService,
     private readonly notificationsService: NotificationsService,
     private readonly notificationFactory: NotificationFactory,
+    private readonly campusAccess: CampusAccessService,
     @Optional() private readonly mediaCleanupService?: MediaCleanupService,
   ) {
     this.redis = this.redisService.getClient();
@@ -327,66 +330,18 @@ export class CommunitiesService implements OnModuleInit {
     }
   }
 
-  /** Backing store for the in-process collegeId cache (see below). */
-  private static readonly collegeIdCache = new Map<
-    string,
-    { collegeId: string; expiresAt: number }
-  >();
-  private static readonly COLLEGE_ID_TTL_MS = 10 * 60 * 1000;
-  private static readonly COLLEGE_ID_CACHE_MAX = 10_000;
-
   /**
-   * Cache a user's collegeId so getCampusCommunities does not need a DB
-   * round-trip on every request. TTL: 10 minutes (college affiliation rarely changes).
+   * The college a user is a campus member of: their ACTIVE affiliation
+   * (CampusAccessService), never the `User.collegeId` mirror.
    *
-   * PERF: this cache is in-process, not in Redis. A Redis round-trip from the
-   * app server measures ~67ms while the single-column lookup it replaces costs
-   * ~33ms, so the Redis version was slower than the query on a hit and cost
-   * ~167ms (GET + query + SET) on a miss. Nothing ever invalidated the Redis
-   * key either — it was pure TTL — so an in-process map has identical staleness
-   * semantics at ~0ms.
+   * Deliberately uncached. This used to read the mirror through a 10-minute
+   * in-process cache, so a removed or revoked college email kept granting
+   * campus-community access until the entry expired on every replica. The
+   * affiliation lookup is one unique-index read, and an uncached answer needs
+   * no cross-instance invalidation to get wrong.
    */
-  private getCachedCollegeId(userId: string): string | null {
-    const hit = CommunitiesService.collegeIdCache.get(userId);
-    if (hit && hit.expiresAt > Date.now()) return hit.collegeId;
-    if (hit) CommunitiesService.collegeIdCache.delete(userId);
-    return null;
-  }
-
-  private setCachedCollegeId(userId: string, collegeId: string): void {
-    const cache = CommunitiesService.collegeIdCache;
-    if (cache.size >= CommunitiesService.COLLEGE_ID_CACHE_MAX) {
-      const now = Date.now();
-      for (const [k, v] of cache) if (v.expiresAt <= now) cache.delete(k);
-      if (cache.size >= CommunitiesService.COLLEGE_ID_CACHE_MAX) {
-        const oldest = cache.keys().next().value;
-        if (oldest) cache.delete(oldest);
-      }
-    }
-    cache.set(userId, {
-      collegeId,
-      expiresAt: Date.now() + CommunitiesService.COLLEGE_ID_TTL_MS,
-    });
-  }
-
-  /**
-   * A user's collegeId, from the in-process cache or the database.
-   *
-   * The same six lines were written out three times — in getCampusCommunities,
-   * in getCommunityById and in joinCommunity — and only two of the three wrote
-   * the value back into the cache, so the join path re-queried it every time.
-   */
-  private async resolveCollegeId(userId: string): Promise<string | null> {
-    if (!userId) return null;
-    const cached = this.getCachedCollegeId(userId);
-    if (cached) return cached;
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: { collegeId: true },
-    });
-    if (!user?.collegeId) return null;
-    this.setCachedCollegeId(userId, user.collegeId);
-    return user.collegeId;
+  private resolveCollegeId(userId: string): Promise<string | null> {
+    return this.campusAccess.getActiveCollegeId(userId);
   }
 
   /**
@@ -669,12 +624,14 @@ export class CommunitiesService implements OnModuleInit {
     const since = new Date(Date.now() - ACTIVE_DAYS * 24 * 60 * 60 * 1000);
     const scored = await this.prisma.$queryRaw<CommunityScoreRow[]>`
       WITH me AS (
-        SELECT "id", "collegeId",
+        -- "collegeId" = the viewer's ACTIVE affiliation college, not the mirror.
+        SELECT vu."id",
+          ${activeAffiliationCollegeIdSql(Prisma.raw('vu."id"'))} AS "collegeId",
           ARRAY(
-            SELECT DISTINCT lower(trim(i)) FROM unnest("interests") i
+            SELECT DISTINCT lower(trim(i)) FROM unnest(vu."interests") i
             WHERE length(trim(i)) >= 3
           ) AS "interests"
-        FROM "User" WHERE "id" = ${userId} LIMIT 1
+        FROM "User" vu WHERE vu."id" = ${userId} LIMIT 1
       ),
       eligible AS (
         SELECT c."id", c."name", c."description", c."memberCount", c."createdAt"
@@ -756,9 +713,11 @@ export class CommunitiesService implements OnModuleInit {
             LIMIT 1
           ) AS "friendSampleName",
           CASE WHEN me."collegeId" IS NULL THEN 0 ELSE (
+            -- Verified members of the viewer's campus (active affiliation).
             SELECT COUNT(*)::int FROM "CommunityMember" cm
-            JOIN "User" u ON u."id" = cm."userId"
-            WHERE cm."communityId" = e."id" AND u."collegeId" = me."collegeId"
+            JOIN "CollegeAffiliation" ca
+              ON ca."userId" = cm."userId" AND ca."revokedAt" IS NULL
+            WHERE cm."communityId" = e."id" AND ca."collegeId" = me."collegeId"
           ) END AS "campusMemberCount",
           COALESCE(EXISTS (
             SELECT 1 FROM unnest(me."interests") i
@@ -844,10 +803,14 @@ export class CommunitiesService implements OnModuleInit {
     limit = 30,
     offset = 0,
     search?: string,
+    // The caller's campus from their affiliation (CampusAccessService). Falls
+    // back to the user row only for callers that do not pass it.
+    affiliationCollegeId?: string,
   ) {
     if (!userId) return [];
 
-    const collegeId = await this.resolveCollegeId(userId);
+    const collegeId =
+      affiliationCollegeId ?? (await this.resolveCollegeId(userId));
     if (!collegeId) return [];
 
     const searchTerm = (search || '').trim();
@@ -1089,7 +1052,7 @@ export class CommunitiesService implements OnModuleInit {
       if (!viewerCollegeId || viewerCollegeId !== community.collegeId) {
         isEligibleToJoin = false;
         const collegeName = community.college?.name || 'this college';
-        eligibilityMessage = `You're not eligible to join this community. This community is limited to verified students of ${collegeName}.`;
+        eligibilityMessage = `You're not eligible to join this community. This community is limited to people who verified ${collegeName}'s email.`;
       }
     }
 
@@ -1228,31 +1191,21 @@ export class CommunitiesService implements OnModuleInit {
   }
 
   async joinCommunity(communityId: string, userId: string) {
-    // The verification check and the community read are independent; the
-    // join used to wait for the first before starting the second. The
-    // community is also projected now — the `include` pulled every column of
-    // the row, of which this method reads six.
-    const [user, community] = await Promise.all([
-      this.prisma.user.findUnique({
-        where: { id: userId },
-        select: { verificationStatus: true },
-      }),
-      this.prisma.community.findUnique({
-        where: { id: communityId },
-        select: {
-          deletedAt: true,
-          isPrivate: true,
-          isCampusCommunity: true,
-          collegeId: true,
-          ownerId: true,
-          memberCount: true,
-          college: { select: { name: true } },
-        },
-      }),
-    ]);
-    if (!user || user.verificationStatus !== 'VERIFIED') {
-      throw new ForbiddenException('Verify your account to join communities');
-    }
+    // Joining is NOT selfie-gated (docs/college-affiliation.md: only creating
+    // a community is). A campus community still requires the active
+    // affiliation to its college, checked below.
+    const community = await this.prisma.community.findUnique({
+      where: { id: communityId },
+      select: {
+        deletedAt: true,
+        isPrivate: true,
+        isCampusCommunity: true,
+        collegeId: true,
+        ownerId: true,
+        memberCount: true,
+        college: { select: { name: true } },
+      },
+    });
     if (!community || community.deletedAt)
       throw new NotFoundException('Community not found');
 
@@ -1262,7 +1215,7 @@ export class CommunitiesService implements OnModuleInit {
       if (!userCollegeId || userCollegeId !== community.collegeId) {
         const collegeName = community.college?.name || 'this college';
         throw new ForbiddenException(
-          `You're not eligible to join this community. This community is limited to verified students of ${collegeName}.`,
+          `You're not eligible to join this community. This community is limited to people who verified ${collegeName}'s email.`,
         );
       }
     }
@@ -1393,7 +1346,7 @@ export class CommunitiesService implements OnModuleInit {
       }),
       this.prisma.community.findUnique({
         where: { id: communityId },
-        select: { ownerId: true, collegeId: true },
+        select: { ownerId: true, collegeId: true, isCampusCommunity: true },
       }),
     ]);
 
@@ -1413,12 +1366,17 @@ export class CommunitiesService implements OnModuleInit {
       throw new NotFoundException('Join request not found');
     }
 
-    const targetUser = await this.prisma.user.findUnique({
-      where: { id: joinReq.userId },
-      select: { verificationStatus: true },
-    });
-    if (!targetUser || targetUser.verificationStatus !== 'VERIFIED') {
-      throw new ForbiddenException('The requesting user is not verified');
+    // Joining is not selfie-gated, so neither is approving a request. A
+    // campus community does require the requester's ACTIVE affiliation to its
+    // college at approval time: the email may have been removed or revoked
+    // since the request was made.
+    if (community?.isCampusCommunity && community.collegeId) {
+      const requesterCollegeId = await this.resolveCollegeId(joinReq.userId);
+      if (requesterCollegeId !== community.collegeId) {
+        throw new ForbiddenException(
+          "The requesting user no longer holds this college's verified email",
+        );
+      }
     }
 
     let newMemberCount = 0;
@@ -1641,13 +1599,13 @@ export class CommunitiesService implements OnModuleInit {
     };
 
     if (data.isCampusCommunity || data.privacy === 'campus') {
-      const user = await this.prisma.user.findUnique({
-        where: { id: creatorId },
-        select: { collegeId: true },
-      });
-      if (user?.collegeId) {
+      // A campus community belongs to the creator's ACTIVE affiliation
+      // college, never the `User.collegeId` mirror: a removed or revoked
+      // college email must not let anyone found a community for that campus.
+      const creatorCollegeId = await this.resolveCollegeId(creatorId);
+      if (creatorCollegeId) {
         createData.isCampusCommunity = true;
-        createData.college = { connect: { id: user.collegeId } };
+        createData.college = { connect: { id: creatorCollegeId } };
       }
     }
 

@@ -1,3 +1,4 @@
+import type { Prisma } from '@prisma/client';
 import { Test, TestingModule } from '@nestjs/testing';
 import { UsersService } from './users.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -14,6 +15,7 @@ import { AcademicsService } from '../academics/academics.service';
 import { VerificationAccessService } from '../common/verification/verification-access.service';
 import { createBlocksServiceMock } from './testing/blocks.service.mock';
 import { clearAuthSyncCache } from '../auth/auth.service';
+import { affiliatedWith } from '../common/campus/testing/affiliation.fixture';
 
 // Only `clearAuthSyncCache` is imported from the auth module by the code under
 // test, and it is a module-level function rather than an injectable, so it can
@@ -71,7 +73,10 @@ describe('Follow state', () => {
         },
       ),
     },
-    $queryRaw: jest.fn(),
+    $queryRaw: jest.fn<
+      Promise<unknown>,
+      [Prisma.Sql | TemplateStringsArray, ...unknown[]]
+    >(),
   });
 
   const makeModule = async (
@@ -199,7 +204,9 @@ describe('Follow state', () => {
 
   describe('getCampusUsers', () => {
     it('carries follow state for the campus list', async () => {
-      prisma.user.findUnique.mockResolvedValue({ collegeId: 'college-1' });
+      prisma.user.findUnique.mockResolvedValue({
+        collegeAffiliation: affiliatedWith('college-1'),
+      });
       prisma.user.findMany.mockResolvedValue([
         { id: 'a', username: 'ann' },
         { id: 'b', username: 'bob' },
@@ -213,6 +220,19 @@ describe('Follow state', () => {
         expect.objectContaining({ id: 'b', isFollowing: true }),
       ]);
       expect(prisma.follow.findMany).toHaveBeenCalledTimes(1);
+    });
+
+    it('lists nothing for a viewer with only the User.collegeId mirror', async () => {
+      prisma.user.findUnique.mockResolvedValue({
+        collegeId: 'college-1',
+        collegeAffiliation: affiliatedWith('college-1', {
+          revokedAt: new Date(),
+        }),
+      });
+      await expect(service.getCampusUsers('viewer', 50, 0)).resolves.toEqual(
+        [],
+      );
+      expect(prisma.user.findMany).not.toHaveBeenCalled();
     });
 
     it('omits follow state when called with a college id rather than a viewer', async () => {
@@ -325,6 +345,20 @@ describe('Follow state', () => {
       // together. The scoring inputs are joined in SQL rather than looked up
       // per candidate.
       expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
+    });
+
+    it('ranks the campus by active affiliation, not the User.collegeId mirror', async () => {
+      prisma.$queryRaw.mockResolvedValue([row]);
+
+      await service.getFollowRecommendations('me', 3);
+
+      const sql = (prisma.$queryRaw.mock.calls[0][0] as Prisma.Sql).sql;
+      // Viewer side, campus arm and candidate side all read the affiliation.
+      expect(sql).toContain('"CollegeAffiliation" a');
+      expect(sql).toContain('JOIN "CollegeAffiliation" ca');
+      expect(sql).toContain('cand_aff."collegeId" = me."collegeId"');
+      expect(sql).not.toContain('u."collegeId" = me."collegeId"');
+      expect(sql).not.toContain('e."collegeId" = me."collegeId"');
     });
 
     it('marks every suggestion as not followed, explicitly', async () => {

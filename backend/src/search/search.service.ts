@@ -7,6 +7,10 @@ import { RedisService } from '../redis/redis.service';
 import { ActivityAuthorizationService } from '../activities/activity-authorization.service';
 import { hashtagQuery } from '../posts/hashtags.util';
 import {
+  ACTIVE_AFFILIATION_SELECT,
+  activeAffiliationCollegeId,
+} from '../common/campus/campus-access.service';
+import {
   CommunitySearchRow,
   UserSearchRow,
   communitySearchSql,
@@ -55,7 +59,10 @@ export class SearchService {
   }
 
   /**
-   * Trusted viewer context (id + collegeId) straight from the database.
+   * Trusted viewer context straight from the database. `collegeId` is the
+   * college of the viewer's ACTIVE affiliation (campus access), read in the
+   * same query — not the `User.collegeId` mirror — so campus-only results
+   * (COLLEGE_ONLY activities, campus communities) follow the campus gate.
    */
   private async resolveViewer(userId?: string) {
     if (!userId) return null;
@@ -63,11 +70,14 @@ export class SearchService {
       where: { id: userId },
       select: {
         id: true,
-        collegeId: true,
+        collegeAffiliation: { select: ACTIVE_AFFILIATION_SELECT },
       },
     });
     if (!u) return null;
-    return { id: u.id, collegeId: u.collegeId };
+    return {
+      id: u.id,
+      collegeId: activeAffiliationCollegeId(u.collegeAffiliation),
+    };
   }
 
   async globalSearch(

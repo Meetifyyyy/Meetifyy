@@ -11,6 +11,7 @@ import type { BlocksService } from '../users/blocks.service';
 import type { NotificationsService } from '../notifications/notifications.service';
 import type { NotificationFactory } from '../notifications/notification.factory';
 import type { MediaCleanupService } from '../uploads/media-cleanup.service';
+import type { CampusAccessService } from '../common/campus/campus-access.service';
 
 describe('CommunitiesService — deletion lifecycle & data cleanup', () => {
   const COMMUNITY_ID = 'comm-123';
@@ -140,6 +141,7 @@ describe('CommunitiesService — deletion lifecycle & data cleanup', () => {
       stub<BlocksService>(),
       stub<NotificationsService>(),
       stub<NotificationFactory>(),
+      stub<CampusAccessService>(),
       stub<MediaCleanupService>(mediaCleanupService),
     );
   });

@@ -16,8 +16,8 @@ import { AccountDeletionService } from '../account-deletion/account-deletion.ser
 import { JwtGuard } from '../common/guards/jwt.guard';
 import { CacheControl } from '../common/decorators/cache-control.decorator';
 import { AllowBearerToken } from '../common/decorators/allow-bearer-token.decorator';
-import { VerifiedOnly } from '../common/decorators/verified-only.decorator';
 import { clampPageParam } from '../common/pagination.util';
+import { CampusAccessService } from '../common/campus/campus-access.service';
 import { clientIp } from '../common/rate-limit/client-ip.util';
 
 @Controller('api/users')
@@ -25,6 +25,7 @@ export class UsersController {
   constructor(
     private readonly usersService: UsersService,
     private readonly accountDeletionService: AccountDeletionService,
+    private readonly campusAccess: CampusAccessService,
   ) {}
 
   @Get()
@@ -110,14 +111,12 @@ export class UsersController {
     return this.usersService.getFollowRecommendations(req.user.id, limitNum);
   }
 
-  // The campus surfaces are verification-gated. The frontend already renders a
-  // locked page for them, but that gate wrapped only the JSX — the page's
-  // queries still ran, so an unverified account fetched the whole campus
-  // directory into its client cache and the lock was decoration. The read has
-  // to be refused here for the restriction to mean anything.
+  // The campus surfaces are gated on a verified college email (an active
+  // CollegeAffiliation), refused here rather than only in the UI — a locked
+  // page whose queries still ran would put the directory in the client cache
+  // anyway. The college listed is the affiliation's, never a request value.
   @Get('campus')
   @UseGuards(JwtGuard)
-  @VerifiedOnly()
   @CacheControl('private, no-cache')
   async getCampusUsers(
     @Req() req: AuthenticatedRequest,
@@ -128,14 +127,18 @@ export class UsersController {
     // caller omits it. Only the cap is new.
     const limitNum = clampPageParam(limit, { def: 100, max: 100, min: 1 });
     const offsetNum = clampPageParam(offset, { def: 0, max: 5000 });
-    return this.usersService.getCampusUsers(req.user.id, limitNum, offsetNum);
+    const { collegeId } = await this.campusAccess.requireAffiliation(
+      req.user.id,
+    );
+    return this.usersService.getCampusUsers(req.user.id, limitNum, offsetNum, {
+      collegeId,
+    });
   }
 
   // Server-side campus directory: search + course/branch/currentYear, keyset pagination.
   // Registered before the catch-all `:username` route below.
   @Get('directory')
   @UseGuards(JwtGuard)
-  @VerifiedOnly()
   @CacheControl('private, no-cache')
   async getDirectory(
     @Req() req: AuthenticatedRequest,
@@ -151,7 +154,11 @@ export class UsersController {
     const limitNum = limit
       ? Math.min(Math.max(parseInt(limit, 10) || 30, 1), 50)
       : 30;
+    const { collegeId } = await this.campusAccess.requireAffiliation(
+      req.user.id,
+    );
     return this.usersService.getDirectory(req.user.id, {
+      collegeId,
       search: search || undefined,
       course: course && course !== 'All' ? course : undefined,
       branch: branch && branch !== 'All' ? branch : undefined,
@@ -303,7 +310,6 @@ export class UsersController {
 
   @Post(':username/follow')
   @UseGuards(JwtGuard)
-  @VerifiedOnly()
   async follow(
     @Param('username') username: string,
     @Req() req: AuthenticatedRequest,
@@ -314,7 +320,6 @@ export class UsersController {
 
   @Post(':username/unfollow')
   @UseGuards(JwtGuard)
-  @VerifiedOnly()
   async unfollow(
     @Param('username') username: string,
     @Req() req: AuthenticatedRequest,

@@ -9,6 +9,7 @@ import type { DefaultAssetsService } from '../uploads/default-assets.service';
 import type { BlocksService } from '../users/blocks.service';
 import type { NotificationsService } from '../notifications/notifications.service';
 import type { NotificationFactory } from '../notifications/notification.factory';
+import type { CampusAccessService } from '../common/campus/campus-access.service';
 
 /** A member-strip row as the detail query returns it. */
 type StripRow = {
@@ -45,12 +46,8 @@ describe('CommunitiesService — community detail', () => {
     user: { findUnique: jest.Mock };
   };
 
-  // The collegeId cache is a static map shared by every instance of the
-  // service, with a 10-minute TTL — so without this, one test's viewer college
-  // is still cached for the next one.
-  beforeEach(() => {
-    CommunitiesService['collegeIdCache'].clear();
-  });
+  /** The viewer's ACTIVE affiliation college (CampusAccessService). */
+  let getActiveCollegeId: jest.Mock<Promise<string | null>, [string]>;
 
   /**
    * `viewerMembership` is placed in the loaded member strip by default, which
@@ -118,12 +115,15 @@ describe('CommunitiesService — community detail', () => {
       communityJoinRequest: {
         findUnique: jest.fn(() => Promise.resolve(joinRequest)),
       },
+      // The `User.collegeId` mirror. Campus eligibility must never read it,
+      // so it always claims college-a to catch a regression to the mirror.
       user: {
-        findUnique: jest.fn(() =>
-          Promise.resolve({ collegeId: viewerCollegeId }),
-        ),
+        findUnique: jest.fn(() => Promise.resolve({ collegeId: 'college-a' })),
       },
     };
+    getActiveCollegeId = jest.fn<Promise<string | null>, [string]>(() =>
+      Promise.resolve(viewerCollegeId),
+    );
 
     service = new CommunitiesService(
       stub<PrismaService>(prisma),
@@ -145,6 +145,7 @@ describe('CommunitiesService — community detail', () => {
         createNotification: jest.fn(() => Promise.resolve({})),
       }),
       stub<NotificationFactory>({ createModeratorPromotion: () => null }),
+      stub<CampusAccessService>({ getActiveCollegeId }),
     );
     return service;
   };
@@ -239,6 +240,7 @@ describe('CommunitiesService — community detail', () => {
 
       await service.getCommunityById(ID, VIEWER);
 
+      expect(getActiveCollegeId).not.toHaveBeenCalled();
       expect(prisma.user.findUnique).not.toHaveBeenCalled();
     });
   });
@@ -343,6 +345,38 @@ describe('CommunitiesService — community detail', () => {
 
       expect(result.isEligibleToJoin).toBe(false);
       expect(result.eligibilityMessage).toContain('College A');
+    });
+
+    it('refuses a viewer with no active affiliation even when the mirror matches', async () => {
+      // Removed or revoked college email: the mirror (college-a) survives.
+      build({
+        community: { isCampusCommunity: true, collegeId: 'college-a' },
+        viewerCollegeId: null,
+      });
+
+      const result = await service.getCommunityById(ID, VIEWER);
+
+      expect(result.isEligibleToJoin).toBe(false);
+      expect(result.eligibilityMessage).toContain(
+        'limited to people who verified',
+      );
+      expect(getActiveCollegeId).toHaveBeenCalledWith(VIEWER);
+      expect(prisma.user.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('re-reads the affiliation on every request (no stale cache)', async () => {
+      build({
+        community: { isCampusCommunity: true, collegeId: 'college-a' },
+        viewerCollegeId: 'college-a',
+      });
+      expect(
+        (await service.getCommunityById(ID, VIEWER)).isEligibleToJoin,
+      ).toBe(true);
+      // The affiliation is removed between two requests.
+      getActiveCollegeId.mockResolvedValue(null);
+      expect(
+        (await service.getCommunityById(ID, VIEWER)).isEligibleToJoin,
+      ).toBe(false);
     });
 
     it('admits a viewer from the same college', async () => {

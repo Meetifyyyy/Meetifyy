@@ -1,4 +1,8 @@
 import { Prisma } from '@prisma/client';
+import {
+  activeAffiliationCollegeIdSql,
+  affiliatedToCollegeSql,
+} from '../common/campus/campus-affiliation.sql';
 
 /**
  * Search ranking. The rule for this surface is different from every other
@@ -68,7 +72,7 @@ export interface CommunitySearchRow {
  * contained in either; contained only in the bio (when `includeBio`).
  *
  * Ties break on: you follow them, they follow you, mutual follows, same
- * college, recently active. Unavailable accounts — deleted, suspended,
+ * college (both hold an active affiliation to it), recently active. Unavailable accounts — deleted, suspended,
  * blocked either way, and the viewer — never match.
  */
 export function userSearchSql(opts: {
@@ -85,7 +89,11 @@ export function userSearchSql(opts: {
   const viewer = opts.viewerId ?? '';
   return Prisma.sql`
     WITH me AS (
-      SELECT "id", "collegeId" FROM "User" WHERE "id" = ${viewer}
+      -- The viewer's campus is their ACTIVE affiliation, not the
+      -- User.collegeId mirror (legacy rows the backfill skipped keep it).
+      SELECT mu."id",
+        ${activeAffiliationCollegeIdSql(Prisma.raw('mu."id"'))} AS "collegeId"
+      FROM "User" mu WHERE mu."id" = ${viewer}
     ),
     candidates AS (
       SELECT u."id",
@@ -138,7 +146,8 @@ export function userSearchSql(opts: {
           )))
           + CASE WHEN EXISTS (
             SELECT 1 FROM me
-            WHERE me."collegeId" IS NOT NULL AND me."collegeId" = u."collegeId"
+            WHERE me."collegeId" IS NOT NULL
+              AND ${affiliatedToCollegeSql(Prisma.raw('u."id"'), Prisma.raw('me."collegeId"'))}
           ) THEN 4 ELSE 0 END
           + CASE WHEN u."lastSeenAt" > now() - interval '7 days' THEN 1 ELSE 0 END
         )
@@ -173,7 +182,11 @@ export function communitySearchSql(opts: {
   const since = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
   return Prisma.sql`
     WITH me AS (
-      SELECT "id", "collegeId" FROM "User" WHERE "id" = ${viewer}
+      -- The viewer's campus is their ACTIVE affiliation, not the
+      -- User.collegeId mirror (legacy rows the backfill skipped keep it).
+      SELECT mu."id",
+        ${activeAffiliationCollegeIdSql(Prisma.raw('mu."id"'))} AS "collegeId"
+      FROM "User" mu WHERE mu."id" = ${viewer}
     ),
     candidates AS (
       SELECT c."id",

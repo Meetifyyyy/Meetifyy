@@ -9,6 +9,8 @@ import type { ActivityAuthorizationService } from '../activities/activity-author
 import type { CommunitiesService } from '../communities/communities.service';
 import type { BlocksService } from '../users/blocks.service';
 import { buildGateway, fakeSocket } from './testing/gateway.fixture';
+import { ActivityAuthorizationService as ActivityPolicy } from '../activities/activity-authorization.service';
+import { affiliatedWith } from '../common/campus/testing/affiliation.fixture';
 
 /** A session row as the handshake reads it. */
 type SessionRow = { revoked: boolean; expiresAt: Date; userId: string };
@@ -688,5 +690,90 @@ describe('RealtimeGateway — session binding on the handshake', () => {
       await gateway.handleConnection(c);
       expect(c.data.sessionId).toBe('sess-1');
     });
+  });
+});
+
+/**
+ * `activity:join` authorizes the COLLEGE_ONLY slice from the viewer's ACTIVE
+ * affiliation, the same context ActivitiesService.getViewer builds. It used to
+ * pass `User.collegeId` (the mirror), so a user whose college email was
+ * removed or revoked kept subscribing to that college's activity rooms.
+ */
+describe('RealtimeGateway — activity:join campus scope', () => {
+  const collegeOnly = {
+    id: 'a1',
+    creatorId: 'host',
+    collegeId: 'college-a',
+    visibility: 'COLLEGE_ONLY',
+    deletedAt: null,
+    members: [],
+    invitations: [],
+  };
+
+  const build = (user: Record<string, unknown> | null) => {
+    const findUser = jest.fn(() => Promise.resolve(user));
+    const gateway = buildGateway({
+      presence: {
+        registerSocketValidator: jest.fn(),
+        onStatusChange: jest.fn(),
+      },
+      redis: { getClient: jest.fn() },
+      prisma: {
+        crewActivity: {
+          findUnique: jest.fn(() => Promise.resolve(collegeOnly)),
+        },
+        user: { findUnique: findUser },
+      },
+      activityPolicy: new ActivityPolicy(),
+    });
+    const client = fakeSocket({
+      join: jest.fn(),
+      leave: jest.fn(),
+      emit: jest.fn(),
+      data: { userId: 'viewer' },
+    });
+    return { gateway, client, findUser };
+  };
+
+  it('admits a viewer whose active affiliation is the activity college', async () => {
+    const { gateway, client, findUser } = build({
+      id: 'viewer',
+      collegeAffiliation: affiliatedWith('college-a'),
+    });
+    await gateway.handleActivityJoin(client, { activityId: 'a1' });
+    expect(client.join).toHaveBeenCalledWith('activity_a1');
+    expect(findUser).toHaveBeenCalledWith(
+      expect.objectContaining({
+        select: expect.objectContaining({
+          collegeAffiliation: expect.anything() as unknown,
+        }) as unknown,
+      }),
+    );
+  });
+
+  it('refuses a viewer whose mirror matches but whose affiliation is revoked', async () => {
+    const { gateway, client } = build({
+      id: 'viewer',
+      collegeId: 'college-a',
+      collegeAffiliation: affiliatedWith('college-a', {
+        revokedAt: new Date(),
+      }),
+    });
+    await gateway.handleActivityJoin(client, { activityId: 'a1' });
+    expect(client.join).not.toHaveBeenCalled();
+    expect(client.emit).toHaveBeenCalledWith(
+      'activity:access_denied',
+      expect.objectContaining({ code: 'COLLEGE_RESTRICTED' }),
+    );
+  });
+
+  it('refuses a viewer with only the User.collegeId mirror and no affiliation', async () => {
+    const { gateway, client } = build({
+      id: 'viewer',
+      collegeId: 'college-a',
+      collegeAffiliation: null,
+    });
+    await gateway.handleActivityJoin(client, { activityId: 'a1' });
+    expect(client.join).not.toHaveBeenCalled();
   });
 });

@@ -8,6 +8,7 @@ import type { DefaultAssetsService } from '../uploads/default-assets.service';
 import type { BlocksService } from '../users/blocks.service';
 import type { NotificationsService } from '../notifications/notifications.service';
 import type { NotificationFactory } from '../notifications/notification.factory';
+import type { CampusAccessService } from '../common/campus/campus-access.service';
 
 /**
  * "Discover Communities" — the profile sidebar's suggestion panel.
@@ -81,6 +82,7 @@ describe('CommunitiesService — discovery recommendations', () => {
         createNotification: jest.fn(() => Promise.resolve({})),
       }),
       stub<NotificationFactory>({ createModeratorPromotion: () => null }),
+      stub<CampusAccessService>(),
     );
   };
 

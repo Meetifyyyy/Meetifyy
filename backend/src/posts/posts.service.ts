@@ -6,6 +6,11 @@ import {
   Logger,
   Optional,
 } from '@nestjs/common';
+import { activeAffiliationCollegeIdSql } from '../common/campus/campus-affiliation.sql';
+import {
+  ACTIVE_AFFILIATION_SELECT,
+  activeAffiliationCollegeId,
+} from '../common/campus/campus-access.service';
 import {
   Prisma,
   MentionSource,
@@ -192,6 +197,22 @@ export class PostsService {
     private readonly contentDeletionAuthorizer: ContentDeletionAuthorizer,
     @Optional() private readonly mediaCleanupService?: MediaCleanupService,
   ) {}
+
+  /**
+   * The college a user is a campus member of: their ACTIVE affiliation
+   * (same rule as CampusAccessService.getActiveCollegeId), never the
+   * `User.collegeId` mirror, which survives removal and revocation.
+   */
+  private async activeCollegeId(
+    userId: string | null | undefined,
+  ): Promise<string | null> {
+    if (!userId) return null;
+    const row = await this.prisma.collegeAffiliation.findUnique({
+      where: { userId },
+      select: ACTIVE_AFFILIATION_SELECT,
+    });
+    return activeAffiliationCollegeId(row);
+  }
 
   /**
    * Stamp `canDelete` on posts on their way to a client.
@@ -794,13 +815,10 @@ export class PostsService {
     // Campus communities are restricted to their college even for members —
     // a membership row predating a college change must not grant access.
     if (community.isCampusCommunity && community.collegeId) {
-      const user = await this.prisma.user.findUnique({
-        where: { id: userId },
-        select: { collegeId: true },
-      });
-      if (!user || user.collegeId !== community.collegeId) {
+      const viewerCollegeId = await this.activeCollegeId(userId);
+      if (viewerCollegeId !== community.collegeId) {
         throw new ForbiddenException(
-          'This community is limited to verified students of its college',
+          "This community is limited to people who verified this college's email",
         );
       }
     }
@@ -976,9 +994,11 @@ export class PostsService {
     );
     const rows = await this.prisma.$queryRaw<RankedSqlRow[]>`
       WITH me AS (
-        SELECT "id", "collegeId",
-          ARRAY(SELECT DISTINCT lower(trim(i)) FROM unnest("interests") i) AS "interests"
-        FROM "User" WHERE "id" = ${userId} LIMIT 1
+        -- "collegeId" = the viewer's ACTIVE affiliation college, not the mirror.
+        SELECT vu."id",
+          ${activeAffiliationCollegeIdSql(Prisma.raw('vu."id"'))} AS "collegeId",
+          ARRAY(SELECT DISTINCT lower(trim(i)) FROM unnest(vu."interests") i) AS "interests"
+        FROM "User" vu WHERE vu."id" = ${userId} LIMIT 1
       ),
       candidates AS (
         SELECT p.id, p."authorId", p."communityId", p."createdAt",
@@ -1018,8 +1038,12 @@ export class PostsService {
               WHERE f."followerId" = me.id AND f."followingId" = cd."authorId"
             ) THEN 3.0 ELSE 0 END
           + CASE WHEN cd."communityId" IS NOT NULL THEN 1.5 ELSE 0 END
-          + CASE WHEN me."collegeId" IS NOT NULL AND au."collegeId" = me."collegeId"
-              THEN 1.0 ELSE 0 END
+          -- Same campus: the author holds an active affiliation to it.
+          + CASE WHEN me."collegeId" IS NOT NULL AND EXISTS (
+              SELECT 1 FROM "CollegeAffiliation" aa
+              WHERE aa."userId" = cd."authorId" AND aa."revokedAt" IS NULL
+                AND aa."collegeId" = me."collegeId"
+            ) THEN 1.0 ELSE 0 END
           -- How much the viewer actually interacts with the author (0..1,
           -- precomputed by the ranking worker). The close-friends signal: the
           -- people you like, comment on and message rise above the people you
@@ -1102,13 +1126,8 @@ export class PostsService {
       });
       if (community) {
         if (community.isCampusCommunity && community.collegeId) {
-          const user = userId
-            ? await this.prisma.user.findUnique({
-                where: { id: userId },
-                select: { collegeId: true },
-              })
-            : null;
-          if (!user || user.collegeId !== community.collegeId) {
+          const viewerCollegeId = await this.activeCollegeId(userId);
+          if (viewerCollegeId !== community.collegeId) {
             return { posts: [], nextCursor: undefined };
           }
         }

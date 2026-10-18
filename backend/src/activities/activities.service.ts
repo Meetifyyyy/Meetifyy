@@ -15,6 +15,10 @@ import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import Redis from 'ioredis';
 import { PrismaService } from '../prisma/prisma.service';
+import {
+  ACTIVE_AFFILIATION_SELECT,
+  activeAffiliationCollegeId,
+} from '../common/campus/campus-access.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationFactory } from '../notifications/notification.factory';
 import { BlocksService } from '../users/blocks.service';
@@ -422,6 +426,12 @@ export class ActivitiesService implements OnModuleInit {
   /**
    * Resolves the trusted viewer context (id + collegeId straight from the DB).
    * Never trust a college id supplied by the client.
+   *
+   * The college is the viewer's verified college email (an active
+   * CollegeAffiliation), not `User.collegeId`: the COLLEGE_ONLY slice is a
+   * campus surface, gated like the rest of them. Without an active
+   * affiliation the viewer sees PUBLIC activities plus the personal clauses
+   * (host / member / invited).
    */
   private async getViewer(userId?: string): Promise<UserAuthContext | null> {
     if (!userId) return null;
@@ -429,10 +439,15 @@ export class ActivitiesService implements OnModuleInit {
       where: { id: userId },
       select: {
         id: true,
-        collegeId: true,
+        collegeAffiliation: { select: ACTIVE_AFFILIATION_SELECT },
       },
     });
-    return u ? { id: u.id, collegeId: u.collegeId } : null;
+    return u
+      ? {
+          id: u.id,
+          collegeId: activeAffiliationCollegeId(u.collegeAffiliation),
+        }
+      : null;
   }
 
   /**
@@ -1299,8 +1314,9 @@ export class ActivitiesService implements OnModuleInit {
         where: { id: userId },
         select: {
           id: true,
-          collegeId: true,
           college: { select: { name: true } },
+          // Campus slice comes from the verified college email; see getViewer.
+          collegeAffiliation: { select: ACTIVE_AFFILIATION_SELECT },
         },
       }),
       this.blocksService.getExcludedUserIds(userId),
@@ -1308,14 +1324,17 @@ export class ActivitiesService implements OnModuleInit {
     ]);
 
     const viewer: UserAuthContext | null = user
-      ? { id: user.id, collegeId: user.collegeId }
+      ? {
+          id: user.id,
+          collegeId: activeAffiliationCollegeId(user.collegeAffiliation),
+        }
       : null;
     const now = new Date();
     const creatorFilter =
       excludedUserIds.length > 0
         ? { creatorId: { notIn: excludedUserIds } }
         : {};
-    const collegeId = user?.collegeId ?? null;
+    const collegeId = viewer?.collegeId ?? null;
 
     // Every section is intersected with the same discovery policy, so PUBLIC
     // ("Anyone") activities are eligible everywhere while COLLEGE_ONLY ones only
@@ -1486,12 +1505,10 @@ export class ActivitiesService implements OnModuleInit {
           },
         },
       }),
-      userId
-        ? this.prisma.user.findUnique({
-            where: { id: userId },
-            select: { id: true, collegeId: true },
-          })
-        : Promise.resolve(null),
+      // The viewer's ACTIVE affiliation college (getViewer), not the
+      // `User.collegeId` mirror: COLLEGE_ONLY view/join follow the verified
+      // college email, as in every other activity read.
+      this.getViewer(userId),
       userId
         ? this.blocksService.getExcludedUserIds(userId)
         : Promise.resolve([]),
@@ -1800,17 +1817,21 @@ export class ActivitiesService implements OnModuleInit {
     // forbids unlisted fields, so a body carrying it is refused with a 400
     // before it reaches this method; those branches could never run.
 
-    const user = await this.prisma.user.findUnique({
+    // The host's campus is their verified college email (see getViewer).
+    const creatorRow = await this.prisma.user.findUnique({
       where: { id: creatorId },
-      select: { collegeId: true },
+      select: { collegeAffiliation: { select: ACTIVE_AFFILIATION_SELECT } },
     });
+    const user = creatorRow
+      ? { collegeId: activeAffiliationCollegeId(creatorRow.collegeAffiliation) }
+      : null;
 
     // A COLLEGE_ONLY activity whose host has no college can never satisfy its own
     // restriction — it would be silently unreachable for everyone but the host.
     // Reject it rather than publish something invisible.
     if (visibility === 'COLLEGE_ONLY' && !user?.collegeId) {
       throw new BadRequestException(
-        'Add your college to your profile before creating a college-only activity',
+        'Verify your college email on the Campus page before creating a college-only activity',
       );
     }
 
@@ -1944,10 +1965,22 @@ export class ActivitiesService implements OnModuleInit {
           collegeId: true,
         },
       }),
-      this.prisma.user.findUnique({
-        where: { id: hostId },
-        select: { id: true, collegeId: true },
-      }),
+      this.prisma.user
+        .findUnique({
+          where: { id: hostId },
+          select: {
+            id: true,
+            collegeAffiliation: { select: ACTIVE_AFFILIATION_SELECT },
+          },
+        })
+        .then((h) =>
+          h
+            ? {
+                id: h.id,
+                collegeId: activeAffiliationCollegeId(h.collegeAffiliation),
+              }
+            : null,
+        ),
     ]);
 
     if (!activity || activity.deletedAt) {
@@ -1958,7 +1991,7 @@ export class ActivitiesService implements OnModuleInit {
 
     if (next === 'COLLEGE_ONLY' && !activity.collegeId && !host?.collegeId) {
       throw new BadRequestException(
-        'Add your college to your profile before restricting this activity to your college',
+        'Verify your college email on the Campus page before restricting this activity to your college',
       );
     }
 

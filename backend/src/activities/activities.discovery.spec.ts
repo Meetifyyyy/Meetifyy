@@ -9,6 +9,7 @@ import { DomainEventService } from '../events/domain-event.service';
 import { RedisService } from '../redis/redis.service';
 import { getQueueToken } from '@nestjs/bullmq';
 import { NOTIFICATIONS_QUEUE } from '../notifications/notifications.processor';
+import { affiliatedWith } from '../common/campus/testing/affiliation.fixture';
 
 /**
  * Crew discovery: the personalized "For You" ranking and the three-section
@@ -107,6 +108,7 @@ describe('Crew discovery', () => {
         Promise.resolve({
           id: ME,
           collegeId: GLA,
+          collegeAffiliation: affiliatedWith(GLA),
           interests: [] as string[],
           college: { name: 'GLA' },
         }),
@@ -206,6 +208,7 @@ describe('Crew discovery', () => {
       prisma.user.findUnique.mockResolvedValue({
         id: ME,
         collegeId: GLA,
+        collegeAffiliation: affiliatedWith(GLA),
         interests: ['badminton'],
         college: { name: 'GLA' },
       });

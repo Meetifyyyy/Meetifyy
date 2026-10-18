@@ -10,6 +10,8 @@ import type { RedisService } from '../redis/redis.service';
 import type { MentionsService } from '../mentions/mentions.service';
 import type { StorageService } from '../uploads/uploads.service';
 import type { ContentDeletionAuthorizer } from './content-deletion.authorizer';
+import type { AffiliationGateRow } from '../common/campus/campus-access.service';
+import { affiliatedWith } from '../common/campus/testing/affiliation.fixture';
 
 /**
  * Who may write a post into a community.
@@ -54,25 +56,32 @@ describe('PostsService — community post authorization', () => {
   const makePrisma = (
     comm: CommunityRow | null,
     membership: { role: string } | null,
-    user: { collegeId: string } | null,
+    affiliation: AffiliationGateRow | null,
   ) => ({
     community: { findUnique: jest.fn(() => Promise.resolve(comm)) },
     communityMember: {
       findUnique: jest.fn(() => Promise.resolve(membership)),
     },
-    user: { findUnique: jest.fn(() => Promise.resolve(user)) },
+    // The campus check reads the ACTIVE affiliation. `user.findUnique` is
+    // answered with a matching mirror on purpose: it must never be consulted.
+    collegeAffiliation: {
+      findUnique: jest.fn(() => Promise.resolve(affiliation)),
+    },
+    user: {
+      findUnique: jest.fn(() => Promise.resolve({ collegeId: 'col-1' })),
+    },
   });
 
   const setup = ({
     comm = community(),
     membership = null,
-    user = { collegeId: 'col-1' },
+    affiliation = affiliatedWith('col-1'),
   }: {
     comm?: CommunityRow | null;
     membership?: { role: string } | null;
-    user?: { collegeId: string } | null;
+    affiliation?: AffiliationGateRow | null;
   } = {}) => {
-    prisma = makePrisma(comm, membership, user);
+    prisma = makePrisma(comm, membership, affiliation);
     service = new PostsService(
       stub<PrismaService>(prisma),
       stub<NotificationsService>(),
@@ -135,7 +144,7 @@ describe('PostsService — community post authorization', () => {
       setup({
         comm: campus,
         membership: { role: 'MEMBER' },
-        user: { collegeId: 'col-1' },
+        affiliation: affiliatedWith('col-1'),
       });
       await expect(attempt('member')).resolves.toBeUndefined();
     });
@@ -145,16 +154,60 @@ describe('PostsService — community post authorization', () => {
       setup({
         comm: campus,
         membership: { role: 'MEMBER' },
-        user: { collegeId: 'col-2' },
+        affiliation: affiliatedWith('col-2'),
       });
       await expect(attempt('member')).rejects.toThrow(
-        /limited to verified students/i,
+        /limited to people who verified this college's email/i,
       );
     });
 
-    it('refuses a member with no college at all', async () => {
-      setup({ comm: campus, membership: { role: 'MEMBER' }, user: null });
+    it('refuses a member with no affiliation, even with a matching mirror', async () => {
+      // User.collegeId says col-1 (see makePrisma); the affiliation is gone.
+      setup({
+        comm: campus,
+        membership: { role: 'MEMBER' },
+        affiliation: null,
+      });
       await expect(attempt('member')).rejects.toThrow(ForbiddenException);
+      expect(prisma.user.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('refuses a member whose affiliation was revoked', async () => {
+      setup({
+        comm: campus,
+        membership: { role: 'MEMBER' },
+        affiliation: affiliatedWith('col-1', { revokedAt: new Date() }),
+      });
+      await expect(attempt('member')).rejects.toThrow(ForbiddenException);
+    });
+
+    describe('the campus community feed', () => {
+      const feed = () =>
+        service.getChronologicalFeed('member', 10, undefined, COMMUNITY);
+
+      it('is empty for a viewer whose affiliation is revoked, despite the mirror', async () => {
+        setup({
+          comm: campus,
+          membership: { role: 'MEMBER' },
+          affiliation: affiliatedWith('col-1', { revokedAt: new Date() }),
+        });
+        await expect(feed()).resolves.toEqual({
+          posts: [],
+          nextCursor: undefined,
+        });
+        expect(prisma.collegeAffiliation.findUnique).toHaveBeenCalledWith(
+          expect.objectContaining({ where: { userId: 'member' } }),
+        );
+        expect(prisma.user.findUnique).not.toHaveBeenCalled();
+      });
+
+      it('is empty for a viewer affiliated with another college', async () => {
+        setup({ comm: campus, affiliation: affiliatedWith('col-2') });
+        await expect(feed()).resolves.toEqual({
+          posts: [],
+          nextCursor: undefined,
+        });
+      });
     });
   });
 

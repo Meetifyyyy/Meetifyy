@@ -17,6 +17,7 @@ import { DomainEventService } from '../events/domain-event.service';
 import { RedisService } from '../redis/redis.service';
 import { getQueueToken } from '@nestjs/bullmq';
 import { NOTIFICATIONS_QUEUE } from '../notifications/notifications.processor';
+import { affiliatedWith } from '../common/campus/testing/affiliation.fixture';
 
 /**
  * Endpoint-level enforcement: the same matrix as the policy spec, but driven
@@ -89,10 +90,38 @@ describe('Activity access enforcement (service level)', () => {
   const GLA = 'college-gla';
   const OTHER = 'college-other';
 
-  const USERS: Record<string, { id: string; collegeId: string | null }> = {
-    'host-1': { id: 'host-1', collegeId: GLA },
-    'user-same': { id: 'user-same', collegeId: GLA },
-    'user-other': { id: 'user-other', collegeId: OTHER },
+  // Campus membership (and so COLLEGE_ONLY access) follows the verified
+  // college email, so every fixture user carries an affiliation.
+  const USERS: Record<
+    string,
+    {
+      id: string;
+      collegeId: string | null;
+      collegeAffiliation: ReturnType<typeof affiliatedWith>;
+    }
+  > = {
+    'host-1': {
+      id: 'host-1',
+      collegeId: GLA,
+      collegeAffiliation: affiliatedWith(GLA),
+    },
+    'user-same': {
+      id: 'user-same',
+      collegeId: GLA,
+      collegeAffiliation: affiliatedWith(GLA),
+    },
+    'user-other': {
+      id: 'user-other',
+      collegeId: OTHER,
+      collegeAffiliation: affiliatedWith(OTHER),
+    },
+    // The `User.collegeId` mirror says GLA, but the college email was
+    // revoked: no campus access.
+    'user-revoked': {
+      id: 'user-revoked',
+      collegeId: GLA,
+      collegeAffiliation: affiliatedWith(GLA, { revokedAt: new Date() }),
+    },
   };
 
   let service: ActivitiesService;
@@ -428,6 +457,14 @@ describe('Activity access enforcement (service level)', () => {
       activityRow = baseActivity('COLLEGE_ONLY');
       await expectDenied(
         () => service.getActivityById('act-1', 'user-other'),
+        'COLLEGE_RESTRICTED',
+      );
+    });
+
+    it('denies a College activity to a revoked affiliation despite the mirror', async () => {
+      activityRow = baseActivity('COLLEGE_ONLY');
+      await expectDenied(
+        () => service.getActivityById('act-1', 'user-revoked'),
         'COLLEGE_RESTRICTED',
       );
     });

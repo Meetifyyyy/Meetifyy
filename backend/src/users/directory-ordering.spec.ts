@@ -1,6 +1,7 @@
 import type { Prisma } from '@prisma/client';
 import { UsersService } from './users.service';
 import { createBlocksServiceMock } from './testing/blocks.service.mock';
+import { affiliatedWith } from '../common/campus/testing/affiliation.fixture';
 
 /**
  * The campus directory is alphabetical, and you are at the top of your own.
@@ -15,6 +16,7 @@ describe('UsersService — directory ordering', () => {
   let prisma: ReturnType<typeof makePrisma>;
   let service: UsersService;
   let lastArgs: Prisma.UserFindManyArgs;
+  let viewerCollege: string | null;
 
   const row = (id: string, displayName: string) => ({
     id,
@@ -28,6 +30,15 @@ describe('UsersService — directory ordering', () => {
   });
 
   const makePrisma = () => ({
+    // The viewer's campus is their ACTIVE affiliation; the `collegeId` on the
+    // user row below is the mirror and is not consulted.
+    collegeAffiliation: {
+      findUnique: jest.fn(({ where }: { where: { userId: string } }) =>
+        Promise.resolve(
+          where.userId === ME ? affiliatedWith(viewerCollege) : null,
+        ),
+      ),
+    },
     user: {
       findUnique: jest.fn(({ where }: { where: { id: string } }) =>
         Promise.resolve(
@@ -48,6 +59,7 @@ describe('UsersService — directory ordering', () => {
   });
 
   beforeEach(() => {
+    viewerCollege = 'college-1';
     prisma = makePrisma();
 
     service = Object.create(UsersService.prototype) as UsersService;
@@ -56,6 +68,17 @@ describe('UsersService — directory ordering', () => {
       blocksService: createBlocksServiceMock([]),
       getFollowingSet: () => Promise.resolve(new Set()),
     });
+  });
+
+  it('without a caller-supplied campus, lists nothing for a mirror-only viewer', async () => {
+    // The mirror (collegeId: college-1 on the user row) must not grant the
+    // directory; only an active affiliation does.
+    viewerCollege = null;
+    await expect(service.getDirectory(ME, {})).resolves.toEqual({
+      users: [],
+      nextCursor: undefined,
+    });
+    expect(prisma.user.findMany).not.toHaveBeenCalled();
   });
 
   it('orders by display name, with id as the tie-break', async () => {

@@ -22,6 +22,7 @@ import {
 } from './dto/community.dto';
 import { moderatorPermissions } from './moderator-permissions';
 import { clampPageParam } from '../common/pagination.util';
+import { CampusAccessService } from '../common/campus/campus-access.service';
 import type { AuthenticatedUser } from '../common/types/authenticated-request';
 
 @Controller('api/communities')
@@ -29,7 +30,10 @@ import type { AuthenticatedUser } from '../common/types/authenticated-request';
 export class CommunitiesController {
   private readonly logger = new Logger('CommunitiesController');
 
-  constructor(private readonly communitiesService: CommunitiesService) {}
+  constructor(
+    private readonly communitiesService: CommunitiesService,
+    private readonly campusAccess: CampusAccessService,
+  ) {}
 
   @Get()
   async getAllCommunities(
@@ -92,11 +96,16 @@ export class CommunitiesController {
     const t0 = performance.now();
     const limitNum = clampPageParam(limit, { def: 30, max: 50, min: 1 });
     const offsetNum = clampPageParam(offset, { def: 0, max: 5000 });
+    // Campus is gated on a verified college email. This endpoint has always
+    // answered [] for an account with no campus, so it still does.
+    const collegeId = await this.campusAccess.getActiveCollegeId(user?.id);
+    if (!collegeId) return [];
     const result = await this.communitiesService.getCampusCommunities(
       user?.id,
       limitNum,
       offsetNum,
       search,
+      collegeId,
     );
     this.logger.debug(
       `GET /communities/campus [userId=${user?.id}] ${Math.round(performance.now() - t0)}ms`,
@@ -132,7 +141,6 @@ export class CommunitiesController {
   }
 
   @Post(':id/join')
-  @VerifiedOnly()
   async joinCommunity(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: AuthenticatedUser,
@@ -157,7 +165,6 @@ export class CommunitiesController {
   }
 
   @Post(':id/requests/:requestId/accept')
-  @VerifiedOnly()
   async acceptJoinRequest(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('requestId', ParseUUIDPipe) requestId: string,
@@ -167,7 +174,6 @@ export class CommunitiesController {
   }
 
   @Post(':id/requests/:requestId/decline')
-  @VerifiedOnly()
   async declineJoinRequest(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('requestId', ParseUUIDPipe) requestId: string,
@@ -186,7 +192,6 @@ export class CommunitiesController {
   }
 
   @Patch(':id')
-  @VerifiedOnly()
   async updateCommunity(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() data: UpdateCommunityDto,
@@ -215,7 +220,6 @@ export class CommunitiesController {
   }
 
   @Patch(':id/members/:userId/role')
-  @VerifiedOnly()
   async updateMemberRole(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('userId', ParseUUIDPipe) memberId: string,
@@ -231,7 +235,6 @@ export class CommunitiesController {
   }
 
   @Delete(':id/members/:userId')
-  @VerifiedOnly()
   async removeMember(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('userId', ParseUUIDPipe) memberId: string,
@@ -241,7 +244,6 @@ export class CommunitiesController {
   }
 
   @Delete(':id')
-  @VerifiedOnly()
   async deleteCommunity(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: AuthenticatedUser,

@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { isSafeCoverCss, looksLikeCoverCss } from './cover-css.util';
-import { Prisma, UserRole, VerificationStatus } from '@prisma/client';
+import { Gender, Prisma, UserRole, VerificationStatus } from '@prisma/client';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationFactory } from '../notifications/notification.factory';
 import { DomainEventService } from '../events/domain-event.service';
@@ -43,6 +43,11 @@ import {
   RESERVED_USERNAME_MESSAGE,
 } from '../common/users/reserved-usernames';
 import { conversationListFirstPageKeys } from '../messages/conversation-list-cache';
+import {
+  ACTIVE_AFFILIATION_SELECT,
+  activeAffiliationCollegeId,
+} from '../common/campus/campus-access.service';
+import { activeAffiliationCollegeIdSql } from '../common/campus/campus-affiliation.sql';
 
 /** The follow CTE's single row (see followUser). */
 interface FollowCteRow {
@@ -151,6 +156,7 @@ const PROFILE_UPDATE_SELECT = {
   location: true,
   interests: true,
   profileCompleted: true,
+  gender: true,
   createdAt: true,
   updatedAt: true,
 } satisfies Prisma.UserSelect;
@@ -169,7 +175,7 @@ type ProfileScalarWrite = {
   location?: string | null;
   profileCompleted?: boolean;
   interests?: string[];
-  email?: string;
+  gender?: Gender | null;
 };
 
 /**
@@ -251,11 +257,23 @@ function mediaRelationWrite(
  * one: the body's `email` if it sent a usable one, else a placeholder. Only
  * read in that case, so an odd value elsewhere is never looked at.
  */
-function bodyEmailOrFallback(email: unknown, userId: string): string {
+/**
+ * People who are members of a college for listing purposes: an active (not
+ * revoked) CollegeAffiliation to that college. The college itself is open by
+ * construction — the caller reached here through CampusAccessService, which
+ * checked that same college.
+ */
+function campusMemberWhere(collegeId: string): Prisma.UserWhereInput {
+  return { collegeAffiliation: { is: { collegeId, revokedAt: null } } };
+}
+
+/**
+ * A body `email` is type-checked and otherwise ignored. See updateProfile.
+ */
+function assertBodyEmailType(email: unknown): void {
   if (email !== undefined && email !== null && typeof email !== 'string') {
     throw new BadRequestException('email must be a string');
   }
-  return email || `${userId}@meetifyy.user`;
 }
 
 @Injectable()
@@ -390,24 +408,41 @@ export class UsersService {
     userIdOrCollegeId: string,
     limit: number,
     offset: number,
+    // The caller's campus, already resolved from their affiliation by the
+    // controller (CampusAccessService). Takes precedence over any lookup.
+    scope: { collegeId?: string } = {},
   ) {
     if (!userIdOrCollegeId) return [];
     let collegeId = userIdOrCollegeId;
     let excludeUserId: string | undefined = undefined;
 
-    // Check if the argument is a userId by performing a database lookup
-    const targetUser = await this.prisma.user.findUnique({
-      where: { id: userIdOrCollegeId },
-      select: { collegeId: true },
-    });
-    if (targetUser) {
-      if (!targetUser.collegeId) return [];
-      collegeId = targetUser.collegeId;
+    if (scope.collegeId) {
+      collegeId = scope.collegeId;
       excludeUserId = userIdOrCollegeId;
+    } else {
+      // Check if the argument is a userId by performing a database lookup.
+      // A user's campus is their ACTIVE affiliation, never the mirror.
+      const targetUser = await this.prisma.user.findUnique({
+        where: { id: userIdOrCollegeId },
+        select: { collegeAffiliation: { select: ACTIVE_AFFILIATION_SELECT } },
+      });
+      if (targetUser) {
+        const active = activeAffiliationCollegeId(
+          targetUser.collegeAffiliation,
+        );
+        if (!active) return [];
+        collegeId = active;
+        excludeUserId = userIdOrCollegeId;
+      }
     }
 
     const where: Prisma.UserWhereInput = {
       collegeId,
+      // Listed only with a verified college email for THIS college. The
+      // `collegeId` mirror alone is not enough: legacy rows the backfill
+      // skipped keep it (it is never nulled, for the previous release), and
+      // an admin-revoked affiliation keeps its row. See campusMemberWhere.
+      ...campusMemberWhere(collegeId),
       accountStatus: 'ACTIVE',
       deletedAt: null,
       ...(excludeUserId ? { id: { not: excludeUserId } } : {}),
@@ -477,6 +512,8 @@ export class UsersService {
   async getDirectory(
     userId: string,
     opts: {
+      /** The caller's campus, from their affiliation (CampusAccessService). */
+      collegeId?: string;
       search?: string;
       course?: string;
       branch?: string;
@@ -487,11 +524,19 @@ export class UsersService {
     } = {},
   ) {
     if (!userId) return { users: [], nextCursor: undefined };
-    const me = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: { collegeId: true },
-    });
-    if (!me?.collegeId) return { users: [], nextCursor: undefined };
+    // The caller's campus: the controller's affiliation lookup, or the same
+    // ACTIVE affiliation read here (never the `User.collegeId` mirror).
+    const me = {
+      collegeId:
+        opts.collegeId ??
+        activeAffiliationCollegeId(
+          await this.prisma.collegeAffiliation.findUnique({
+            where: { userId },
+            select: ACTIVE_AFFILIATION_SELECT,
+          }),
+        ),
+    };
+    if (!me.collegeId) return { users: [], nextCursor: undefined };
 
     const limit = Math.min(Math.max(Number(opts.limit) || 30, 1), 50);
     const search = (opts.search || '').trim();
@@ -529,6 +574,8 @@ export class UsersService {
     const yearFilter = opts.passingYear ?? opts.currentYear;
     const where: Prisma.UserWhereInput = {
       collegeId: me.collegeId,
+      // Verified members of this college only; see getCampusUsers.
+      ...campusMemberWhere(me.collegeId),
       id: { not: userId },
       accountStatus: 'ACTIVE',
       deletedAt: null,
@@ -1390,6 +1437,7 @@ export class UsersService {
       profileCompleted,
       interests,
       birthday,
+      gender,
     } = data;
     // Scalar columns only. The two media relations are kept apart (below)
     // because the update and the create branch must write them differently.
@@ -1499,6 +1547,21 @@ export class UsersService {
       );
     }
 
+    if (gender !== undefined) {
+      if (
+        gender !== null &&
+        !(
+          typeof gender === 'string' &&
+          (Object.values(Gender) as string[]).includes(gender)
+        )
+      ) {
+        throw new BadRequestException(
+          `gender must be one of ${Object.values(Gender).join(', ')}`,
+        );
+      }
+      updateData.gender = gender as Gender | null;
+    }
+
     if (location !== undefined) {
       if (location !== null && typeof location !== 'string') {
         throw new BadRequestException('location must be a string');
@@ -1516,10 +1579,16 @@ export class UsersService {
         (i): i is string => typeof i === 'string',
       );
 
+    // The sign-in address comes from the verified token only. A body `email`
+    // is still type-checked (old clients send whole forms, and a wrongly typed
+    // one has always been a 400) but its value is NEVER stored: the only path
+    // that changes an existing account's email is the OTP-verified
+    // /api/account/email flow.
+    assertBodyEmailType(data.email);
     const realEmail =
       userEmail && !userEmail.endsWith('@meetifyy.user')
         ? userEmail.trim().toLowerCase()
-        : bodyEmailOrFallback(data.email, userId);
+        : `${userId}@meetifyy.user`;
 
     const existingUserRecord = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -1536,16 +1605,10 @@ export class UsersService {
       existingUserRecord?.displayName ||
       fallbackUsername;
 
-    // Auto-heal email if existing record has fallback
-    if (
-      existingUserRecord &&
-      (existingUserRecord.email.endsWith('@meetifyy.user') ||
-        !existingUserRecord.email) &&
-      realEmail &&
-      !realEmail.endsWith('@meetifyy.user')
-    ) {
-      updateData.email = realEmail;
-    }
+    // No email "auto-heal" here any more. Changing an existing account's
+    // sign-in email happens only through the OTP-verified /api/account/email
+    // flow; `realEmail` is used solely for the create branch below (a row that
+    // does not exist yet).
 
     clearAuthSyncCache(userId);
 
@@ -2019,7 +2082,7 @@ export class UsersService {
             AND: [
               whereClause,
               { id: { notIn: closest } },
-              social.collegeId ? { collegeId: social.collegeId } : {},
+              social.collegeId ? campusMemberWhere(social.collegeId) : {},
             ],
           },
           take: limit,
@@ -2029,10 +2092,27 @@ export class UsersService {
       ]);
       candidates = uniqueById([...known, ...campus]);
     }
+    // Which candidates share the viewer's campus: one batched lookup on the
+    // affiliation table (indexed by userId), not the User.collegeId mirror.
+    const campusPeers = new Set<string>(
+      social.collegeId && candidates.length > 0
+        ? (
+            await this.prisma.collegeAffiliation.findMany({
+              where: {
+                userId: { in: candidates.map((c) => c.id) },
+                collegeId: social.collegeId,
+                revokedAt: null,
+              },
+              select: { userId: true },
+            })
+          ).map((a) => a.userId)
+        : [],
+    );
     const payload: ConnectionUser[] = rankPickerCandidates(
       candidates,
       cleanQuery,
       social,
+      campusPeers,
     ).slice(0, limit);
 
     if (redis) {
@@ -2049,7 +2129,7 @@ export class UsersService {
     const [me, following, followers, recentConvs] = await Promise.all([
       this.prisma.user.findUnique({
         where: { id: userId },
-        select: { collegeId: true },
+        select: { collegeAffiliation: { select: ACTIVE_AFFILIATION_SELECT } },
       }),
       this.prisma.follow.findMany({
         where: { followerId: userId },
@@ -2091,7 +2171,7 @@ export class UsersService {
       recentChat,
       following: new Set(following.map((f) => f.followingId)),
       followers: new Set(followers.map((f) => f.followerId)),
-      collegeId: me?.collegeId ?? null,
+      collegeId: activeAffiliationCollegeId(me?.collegeAffiliation),
     };
   }
 
@@ -2445,9 +2525,9 @@ export class UsersService {
     // pool of 8, and a limit of 30 does not pull the whole table.
     const sampleFrom = Math.min(Math.max(limit * 8, 24), 60);
 
-    // Two index-backed arms — `[collegeId, createdAt DESC]` and
-    // `[accountStatus, createdAt DESC]` — rather than one ORDER BY over the
-    // whole table. The campus arm is what makes the suggestions feel local;
+    // Bounded arms rather than one ORDER BY over the whole table: the campus
+    // arm walks the viewer's college's affiliations (`CollegeAffiliation
+    // [collegeId]`), the platform arm `[accountStatus, createdAt DESC]`. The campus arm is what makes the suggestions feel local;
     // the platform arm keeps the panel populated for an account with no
     // college, or one that has already followed its whole campus.
     const POOL = 120;
@@ -2457,12 +2537,16 @@ export class UsersService {
     // the same as one following two hundred.
     const SEED_FOLLOWS = 200;
 
-    const rows = await this.prisma.$queryRaw<RecommendationRow[]>`
+    const rows = await this.prisma.$queryRaw<RecommendationRow[]>(Prisma.sql`
       WITH me AS (
+        -- "collegeId" is the viewer's ACTIVE affiliation college (campus
+        -- access), not the User.collegeId mirror.
         SELECT
-          "id", "collegeId", "branch", "batchYear",
-          ARRAY(SELECT DISTINCT lower(trim(i)) FROM unnest("interests") i) AS "interests"
-        FROM "User" WHERE "id" = ${userId} LIMIT 1
+          vu."id",
+          ${activeAffiliationCollegeIdSql(Prisma.raw('vu."id"'))} AS "collegeId",
+          vu."branch", vu."batchYear",
+          ARRAY(SELECT DISTINCT lower(trim(i)) FROM unnest(vu."interests") i) AS "interests"
+        FROM "User" vu WHERE vu."id" = ${userId} LIMIT 1
       ),
       eligible AS (
         SELECT u."id", u."collegeId", u."createdAt"
@@ -2514,9 +2598,15 @@ export class UsersService {
         ORDER BY f."createdAt" DESC
         LIMIT ${POOL}
       ),
+      -- Verified members of the viewer's campus: through the affiliation
+      -- table (indexed on collegeId), so a legacy row that only carries the
+      -- User.collegeId mirror is not presented as a classmate.
       campus_arm AS (
-        SELECT e."id" FROM eligible e, me
-        WHERE me."collegeId" IS NOT NULL AND e."collegeId" = me."collegeId"
+        SELECT e."id"
+        FROM me
+        JOIN "CollegeAffiliation" ca
+          ON ca."collegeId" = me."collegeId" AND ca."revokedAt" IS NULL
+        JOIN eligible e ON e."id" = ca."userId"
         ORDER BY e."createdAt" DESC
         LIMIT ${POOL}
       ),
@@ -2573,14 +2663,16 @@ export class UsersService {
           ) AS "followsMe",
           -- COALESCE, not a bare comparison: the equality is NULL (not false)
           -- when either side has no value, and NULL sorts FIRST under DESC.
-          COALESCE(me."collegeId" IS NOT NULL AND u."collegeId" = me."collegeId", false) AS "sameCollege",
+          -- Same college = both hold an active affiliation to it (cand_aff
+          -- is a unique-index join, one row per candidate at most).
+          COALESCE(me."collegeId" IS NOT NULL AND cand_aff."collegeId" = me."collegeId", false) AS "sameCollege",
           COALESCE(
-            me."collegeId" IS NOT NULL AND u."collegeId" = me."collegeId"
+            me."collegeId" IS NOT NULL AND cand_aff."collegeId" = me."collegeId"
             AND me."branch" IS NOT NULL AND lower(u."branch") = lower(me."branch"),
             false
           ) AS "sameBranch",
           COALESCE(
-            me."collegeId" IS NOT NULL AND u."collegeId" = me."collegeId"
+            me."collegeId" IS NOT NULL AND cand_aff."collegeId" = me."collegeId"
             AND me."batchYear" IS NOT NULL AND u."batchYear" = me."batchYear",
             false
           ) AS "sameBatch",
@@ -2603,6 +2695,8 @@ export class UsersService {
         LEFT JOIN mutuals m ON m."id" = u."id"
         LEFT JOIN follower_counts fc ON fc."id" = u."id"
         LEFT JOIN shared_communities sc ON sc."id" = u."id"
+        LEFT JOIN "CollegeAffiliation" cand_aff
+          ON cand_aff."userId" = u."id" AND cand_aff."revokedAt" IS NULL
       ),
       scored AS (
         SELECT
@@ -2652,7 +2746,7 @@ export class UsersService {
       LEFT JOIN "User" mu ON mu."id" = sc."mutualSampleId"
       ORDER BY sc."score" DESC, u."isCampusRep" DESC, u."id" ASC
       LIMIT ${sampleFrom};
-    `;
+    `);
 
     // A pool smaller than `limit` is returned whole — a new account, or one
     // that has already followed most of its campus, still gets whatever is

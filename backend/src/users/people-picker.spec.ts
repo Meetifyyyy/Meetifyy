@@ -79,8 +79,22 @@ describe('rankPickerCandidates', () => {
       ],
       '',
       s,
+      new Set(['c']),
     );
     expect(ranked.map((r) => r.id)).toEqual(['f', 'c', 'x']);
+  });
+
+  it('boosts only verified campus peers, never the collegeId mirror alone', () => {
+    const s = social({ collegeId: 'c1' });
+    const ranked = rankPickerCandidates(
+      // `mirror` carries the viewer's college on User.collegeId but holds no
+      // active affiliation; `peer` holds one.
+      [u('mirror', 'ana', '', 'c1'), u('peer', 'anz', '', null)],
+      '',
+      s,
+      new Set(['peer']),
+    );
+    expect(ranked.map((r) => r.id)).toEqual(['peer', 'mirror']);
   });
 });
 

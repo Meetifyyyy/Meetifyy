@@ -1,4 +1,5 @@
 import type { Prisma } from '@prisma/client';
+import { affiliatedWith } from '../common/campus/testing/affiliation.fixture';
 import { UsersService } from './users.service';
 import { createBlocksServiceMock } from './testing/blocks.service.mock';
 
@@ -24,6 +25,8 @@ type Row = {
   branch: null;
   passingYear: null;
   createdAt: Date;
+  /** The verified college email, as the relation filter sees it. */
+  collegeAffiliation: { collegeId: string; revokedAt: Date | null } | null;
 };
 
 /** The subset of Prisma's filter language the directory query uses. */
@@ -37,7 +40,14 @@ function matches(row: Row, where: Prisma.UserWhereInput | undefined): boolean {
       return ([] as Prisma.UserWhereInput[])
         .concat(cond as Prisma.UserWhereInput[])
         .every((w) => matches(row, w));
-    const value = row[key as keyof Row];
+    if (key === 'collegeAffiliation') {
+      const is = (cond as { is: { collegeId: string; revokedAt: null } }).is;
+      const a = row.collegeAffiliation;
+      return Boolean(
+        a && a.collegeId === is.collegeId && a.revokedAt === is.revokedAt,
+      );
+    }
+    const value = row[key as Exclude<keyof Row, 'collegeAffiliation'>];
     if (cond === null || typeof cond !== 'object' || cond instanceof Date)
       return value === cond;
     const c = cond as { not?: unknown; gt?: string; contains?: string };
@@ -63,6 +73,7 @@ describe('UsersService — directory search across pages (A18)', () => {
     branch: null,
     passingYear: null,
     createdAt: new Date('2026-01-01'),
+    collegeAffiliation: { collegeId: 'college-1', revokedAt: null },
   });
   const college = [
     person('u1', 'Aanya'),
@@ -74,15 +85,30 @@ describe('UsersService — directory search across pages (A18)', () => {
     person('u7', 'Gita'),
   ];
 
+  /**
+   * Same college on the mirror, but no verified college email: a legacy row
+   * the backfill skipped, and one an admin revoked. Neither is listed.
+   */
+  const unverified: Row[] = [
+    { ...person('u8', 'Harsh'), collegeAffiliation: null },
+    {
+      ...person('u9', 'Isha'),
+      collegeAffiliation: { collegeId: 'college-1', revokedAt: new Date() },
+    },
+  ];
+
   const build = () => {
     const service = Object.create(UsersService.prototype) as UsersService;
     Object.assign(service, {
       prisma: {
+        // The viewer's campus is their ACTIVE affiliation.
+        collegeAffiliation: {
+          findUnique: () => Promise.resolve(affiliatedWith('college-1')),
+        },
         user: {
-          findUnique: () => Promise.resolve({ collegeId: 'college-1' }),
           findMany: (args: Prisma.UserFindManyArgs) =>
             Promise.resolve(
-              college
+              [...college, ...unverified]
                 .filter((r) => matches(r, args.where))
                 .sort(
                   (a, b) =>
@@ -121,5 +147,23 @@ describe('UsersService — directory search across pages (A18)', () => {
   it('still pages the whole college when there is no search', async () => {
     const pages = await allPages('');
     expect(pages.flat()).toEqual(college.map((p) => p.displayName));
+  });
+
+  it('never lists a collegeId-only (legacy) or revoked user', async () => {
+    const names = (await allPages('')).flat();
+    expect(names).not.toContain('Harsh');
+    expect(names).not.toContain('Isha');
+    expect(await allPages('Harsh')).toEqual([[]]);
+  });
+
+  it('applies the same rule to GET /api/users/campus', async () => {
+    const service = build();
+    const users = (await service.getCampusUsers(ME, 50, 0, {
+      collegeId: 'college-1',
+    })) as Array<{ id: string }>;
+    const ids = users.map((u) => u.id);
+    expect(ids).toEqual(expect.arrayContaining(['u1', 'u7']));
+    expect(ids).not.toContain('u8');
+    expect(ids).not.toContain('u9');
   });
 });

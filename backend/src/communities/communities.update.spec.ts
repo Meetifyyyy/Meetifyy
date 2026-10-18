@@ -8,6 +8,7 @@ import type { DefaultAssetsService } from '../uploads/default-assets.service';
 import type { BlocksService } from '../users/blocks.service';
 import type { NotificationsService } from '../notifications/notifications.service';
 import type { NotificationFactory } from '../notifications/notification.factory';
+import type { CampusAccessService } from '../common/campus/campus-access.service';
 
 /**
  * Saving a community edit (pending item A16).
@@ -51,6 +52,7 @@ describe('CommunitiesService.updateCommunity', () => {
       stub<BlocksService>(),
       stub<NotificationsService>(),
       stub<NotificationFactory>(),
+      stub<CampusAccessService>(),
     );
     return { service, update };
   };

@@ -37,6 +37,10 @@ import { PrismaService } from '../prisma/prisma.service';
 import { checkPresenceVisibilityBatch } from '../users/privacy.helper';
 import { RedisService } from '../redis/redis.service';
 import { CommunitiesService } from '../communities/communities.service';
+import {
+  ACTIVE_AFFILIATION_SELECT,
+  activeAffiliationCollegeId,
+} from '../common/campus/campus-access.service';
 import { ActivityAuthorizationService } from '../activities/activity-authorization.service';
 import { JwtGuard } from '../common/guards/jwt.guard';
 import { VerifiedOnly } from '../common/decorators/verified-only.decorator';
@@ -450,6 +454,11 @@ export class RealtimeGateway
       const changedUserId = inData('userId') || top('targetUserId');
       if (changedUserId) this.verificationAccess.invalidate(changedUserId);
     }
+
+    // `user:campus_changed` needs no server-side invalidation: campus
+    // membership is read from the affiliation on every request
+    // (CampusAccessService, deliberately uncached). The communities collegeId
+    // cache that used to need evicting here is gone.
 
     if (type === 'user.settings_updated') {
       const uId = top('targetUserId') || inData('userId');
@@ -1329,9 +1338,12 @@ export class RealtimeGateway
         }),
         this.prisma.user.findUnique({
           where: { id: userId },
+          // The COLLEGE_ONLY slice is gated on the ACTIVE affiliation, the
+          // same viewer context ActivitiesService.getViewer builds, never the
+          // `User.collegeId` mirror.
           select: {
             id: true,
-            collegeId: true,
+            collegeAffiliation: { select: ACTIVE_AFFILIATION_SELECT },
           },
         }),
       ]);
@@ -1347,7 +1359,7 @@ export class RealtimeGateway
         user
           ? {
               id: user.id,
-              collegeId: user.collegeId,
+              collegeId: activeAffiliationCollegeId(user.collegeAffiliation),
             }
           : null,
         activity,

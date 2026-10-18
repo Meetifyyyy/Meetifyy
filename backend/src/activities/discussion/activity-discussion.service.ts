@@ -5,6 +5,10 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import {
+  ACTIVE_AFFILIATION_SELECT,
+  activeAffiliationCollegeId,
+} from '../../common/campus/campus-access.service';
 import { DomainEventService } from '../../events/domain-event.service';
 import { ActivityAuthorizationService } from '../activity-authorization.service';
 import type { UserIdentityLike } from '../../common/users/deleted-user';
@@ -134,7 +138,8 @@ export class ActivityDiscussionService {
             where: { id: userId },
             select: {
               id: true,
-              collegeId: true,
+              // COLLEGE_ONLY access follows the verified college email.
+              collegeAffiliation: { select: ACTIVE_AFFILIATION_SELECT },
             },
           })
         : Promise.resolve(null),
@@ -144,7 +149,7 @@ export class ActivityDiscussionService {
       user
         ? {
             id: user.id,
-            collegeId: user.collegeId,
+            collegeId: activeAffiliationCollegeId(user.collegeAffiliation),
           }
         : null,
       activity,

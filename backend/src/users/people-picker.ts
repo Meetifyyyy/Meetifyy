@@ -25,6 +25,7 @@ export interface PickerSocial {
   recentChat: Map<string, number>;
   following: Set<string>;
   followers: Set<string>;
+  /** The viewer's ACTIVE affiliation college (campus access), or null. */
   collegeId: string | null;
 }
 
@@ -68,21 +69,30 @@ export function socialScore(userId: string, s: PickerSocial): number {
   return score;
 }
 
-/** Sorts picker candidates: match tier, then closeness, then campus, then name. */
+/**
+ * Sorts picker candidates: match tier, then closeness, then campus, then name.
+ *
+ * `campusPeers` is the subset of candidate ids holding an active affiliation
+ * to the viewer's college (one batched lookup by the caller). The
+ * `User.collegeId` mirror is not consulted: a legacy row the backfill skipped
+ * keeps it without being a verified member of that campus.
+ */
 export function rankPickerCandidates<
   T extends {
     id: string;
     username: string;
     displayName: string | null;
-    collegeId: string | null;
   },
->(candidates: readonly T[], query: string, social: PickerSocial): T[] {
+>(
+  candidates: readonly T[],
+  query: string,
+  social: PickerSocial,
+  campusPeers: ReadonlySet<string> = new Set(),
+): T[] {
   const keyed = candidates.map((u) => ({
     u,
     tier: matchTier(u, query),
-    close:
-      socialScore(u.id, social) +
-      (social.collegeId && u.collegeId === social.collegeId ? 5 : 0),
+    close: socialScore(u.id, social) + (campusPeers.has(u.id) ? 5 : 0),
   }));
   keyed.sort(
     (a, b) =>

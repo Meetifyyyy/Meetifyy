@@ -17,6 +17,7 @@ import {
   roleCan,
   COMMUNITY_CAPABILITIES,
 } from './moderator-permissions';
+import type { CampusAccessService } from '../common/campus/campus-access.service';
 
 describe('Moderator permission registry', () => {
   it('is the same table the code enforces with', () => {
@@ -148,6 +149,7 @@ describe('CommunitiesService — moderator promotion notice', () => {
       stub<BlocksService>(),
       stub<NotificationsService>(notifications),
       new NotificationFactory(),
+      stub<CampusAccessService>(),
     );
     Object.assign(service, {
       invalidateCommunityCache: jest.fn(() => Promise.resolve()),

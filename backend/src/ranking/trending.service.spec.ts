@@ -2,6 +2,7 @@ import { TrendingService } from './trending.service';
 import { stub } from '../common/testing/stub';
 import type { PrismaService } from '../prisma/prisma.service';
 import type { RedisService } from '../redis/redis.service';
+import type { CampusAccessService } from '../common/campus/campus-access.service';
 
 /**
  * The SQL is verified against a real database; these pin the campus →
@@ -23,13 +24,11 @@ describe('TrendingService', () => {
           [],
       );
     });
+    const getActiveCollegeId = jest.fn<Promise<string | null>, [string]>(() =>
+      Promise.resolve(collegeId),
+    );
     const service = new TrendingService(
-      stub<PrismaService>({
-        $queryRaw: queryRaw,
-        user: {
-          findUnique: jest.fn(() => Promise.resolve({ collegeId })),
-        },
-      }),
+      stub<PrismaService>({ $queryRaw: queryRaw }),
       stub<RedisService>({
         getClient: () =>
           ({
@@ -40,8 +39,10 @@ describe('TrendingService', () => {
             },
           }) as never,
       }),
+      // The campus comes from the active affiliation, not User.collegeId.
+      stub<CampusAccessService>({ getActiveCollegeId }),
     );
-    return { service, queryRaw, store };
+    return { service, queryRaw, store, getActiveCollegeId };
   };
 
   it('returns the campus list when the campus has trends', async () => {
@@ -75,6 +76,18 @@ describe('TrendingService', () => {
     await new Promise((r) => setImmediate(r));
     await service.forUser('someone-else');
     expect(queryRaw).toHaveBeenCalledTimes(1);
-    expect([...store.keys()]).toEqual(['trending:v1:c1']);
+    expect([...store.keys()]).toEqual(['trending:v2:c1']);
+  });
+
+  it('reads the campus from the affiliation and counts affiliated authors', async () => {
+    const { service, queryRaw, getActiveCollegeId } = build(
+      { c1: [tag('hackathon')] },
+      'c1',
+    );
+    await service.forUser('me');
+    expect(getActiveCollegeId).toHaveBeenCalledWith('me');
+    const sql = (queryRaw.mock.calls[0][0] as readonly string[]).join('?');
+    expect(sql).toContain('"CollegeAffiliation"');
+    expect(sql).not.toContain('u."collegeId" =');
   });
 });

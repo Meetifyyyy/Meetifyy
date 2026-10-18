@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
+import { CampusAccessService } from '../common/campus/campus-access.service';
 
 export interface TrendingTag {
   name: string;
@@ -56,14 +57,13 @@ export class TrendingService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly redisService: RedisService,
+    private readonly campusAccess: CampusAccessService,
   ) {}
 
   async forUser(userId: string): Promise<TrendingResult> {
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: { collegeId: true },
-    });
-    const collegeId = user?.collegeId ?? null;
+    // The viewer's campus is their ACTIVE affiliation (one unique-index
+    // lookup), not the User.collegeId mirror.
+    const collegeId = await this.campusAccess.getActiveCollegeId(userId);
     if (collegeId) {
       const campus = await this.cached(collegeId);
       if (campus.length > 0) return { scope: 'campus', tags: campus };
@@ -73,7 +73,8 @@ export class TrendingService {
 
   private async cached(collegeId: string | null): Promise<TrendingTag[]> {
     const redis = this.redisService.getClient();
-    const key = `trending:v1:${collegeId ?? 'everywhere'}`;
+    // v2: campus authors are counted by affiliation, not the mirror.
+    const key = `trending:v2:${collegeId ?? 'everywhere'}`;
     if (redis) {
       try {
         const hit = await redis.get(key);
@@ -116,7 +117,16 @@ export class TrendingService {
           AND p."createdAt" <= ${now}
           AND u."deletedAt" IS NULL
           AND u."accountStatus" = 'ACTIVE'
-          AND (${collegeId}::text IS NULL OR u."collegeId" = ${collegeId})
+          -- A campus's authors are its verified members (active affiliation).
+          AND (
+            ${collegeId}::text IS NULL
+            OR EXISTS (
+              SELECT 1 FROM "CollegeAffiliation" a
+              WHERE a."userId" = u."id"
+                AND a."revokedAt" IS NULL
+                AND a."collegeId" = ${collegeId}
+            )
+          )
           AND (
             p."communityId" IS NULL
             OR (
