@@ -40,9 +40,19 @@ import { useAcademicCatalog } from '@shared/academics/useAcademicCatalog';
 import { IS_MOBILE_BUILD } from '@config';
 import { useSystemBars } from '@shared/hooks/useSystemBars';
 
+// Rough width budget, in characters, for one centred row on a phone. Below it
+// the tags sit side by side; above it they are balanced over two rows that
+// scroll sideways together.
+const ONE_ROW_CHAR_BUDGET = 40;
+
+function tagWidth(tag) {
+  return (tag.label || '').length + 6;
+}
+
 function balanceTagsIntoTwoRows(tags) {
   if (!tags || tags.length === 0) return [[], []];
-  if (tags.length === 1) return [tags, []];
+  const total = tags.reduce((sum, tag) => sum + tagWidth(tag), 0);
+  if (tags.length === 1 || total <= ONE_ROW_CHAR_BUDGET) return [tags, []];
 
   const row1 = [];
   const row2 = [];
@@ -50,7 +60,7 @@ function balanceTagsIntoTwoRows(tags) {
   let len2 = 0;
 
   tags.forEach(tag => {
-    const tagLen = (tag.label || '').length + 6;
+    const tagLen = tagWidth(tag);
     if (len1 <= len2) {
       row1.push(tag);
       len1 += tagLen;
@@ -61,6 +71,15 @@ function balanceTagsIntoTwoRows(tags) {
   });
 
   return [row1, row2];
+}
+
+function renderProfileTag(tag, key) {
+  return (
+    <div key={key} className={s.tag}>
+      <span>{tag.icon}</span>
+      <span>{tag.label}</span>
+    </div>
+  );
 }
 
 // Build emoji lookup map
@@ -392,7 +411,7 @@ export default function ProfilePage() {
   const userTags = [];
   const universityName = getCollegeName(effectiveUser);
   if (universityName) {
-    userTags.push({ icon: '🎓', label: universityName });
+    userTags.push({ icon: '🏫', label: universityName });
   }
 
   // Just the course, e.g. "B.Tech". Null for accounts with no academic data yet
@@ -610,21 +629,11 @@ export default function ProfilePage() {
                 return (
                   <div className={s.tagsScrollWrapper}>
                     <div className={s.tagsRow}>
-                      {row1Tags.map((tag, idx) => (
-                        <div key={`tag-row1-${idx}`} className={s.tag}>
-                          <span>{tag.icon}</span>
-                          <span>{tag.label}</span>
-                        </div>
-                      ))}
+                      {row1Tags.map((tag, idx) => renderProfileTag(tag, `tag-row1-${idx}`))}
                     </div>
                     {row2Tags.length > 0 && (
                       <div className={s.tagsRow}>
-                        {row2Tags.map((tag, idx) => (
-                          <div key={`tag-row2-${idx}`} className={s.tag}>
-                            <span>{tag.icon}</span>
-                            <span>{tag.label}</span>
-                          </div>
-                        ))}
+                        {row2Tags.map((tag, idx) => renderProfileTag(tag, `tag-row2-${idx}`))}
                       </div>
                     )}
                   </div>
