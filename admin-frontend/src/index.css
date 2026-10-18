@@ -195,6 +195,25 @@ h1, h2, h3, h4, h5, h6 {
   border-color: var(--color-danger);
 }
 
+/* The final "yes" of a destructive confirmation: solid, so the one button that
+   actually does the damage never looks like the tinted row buttons that only
+   open the question. */
+.btn-danger.btn-danger-solid {
+  background: var(--color-danger);
+  color: #FFFFFF;
+  border-color: var(--color-danger);
+}
+
+.btn-danger.btn-danger-solid:hover {
+  background: var(--color-danger-hover);
+  border-color: var(--color-danger-hover);
+}
+
+.btn-danger.btn-danger-solid:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 /* Badges */
 .badge {
   display: inline-flex;
@@ -267,6 +286,35 @@ h1, h2, h3, h4, h5, h6 {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior-x: contain;
+  /*
+   * Scroll-shadow cue: a soft shade at whichever edge has more table behind
+   * it. The two `local` covers scroll with the content and hide the shade
+   * once that edge is reached; the two `scroll` shades stay put. CSS-only, so
+   * every table that sits in this wrapper gets it.
+   */
+  background:
+    linear-gradient(to right, var(--color-bg-white) 30%, rgba(255, 255, 255, 0)) left center / 32px 100% no-repeat local,
+    linear-gradient(to left, var(--color-bg-white) 30%, rgba(255, 255, 255, 0)) right center / 32px 100% no-repeat local,
+    radial-gradient(farthest-side at 0 50%, rgba(15, 23, 42, 0.16), rgba(15, 23, 42, 0)) left center / 12px 100% no-repeat scroll,
+    radial-gradient(farthest-side at 100% 50%, rgba(15, 23, 42, 0.16), rgba(15, 23, 42, 0)) right center / 12px 100% no-repeat scroll;
+  /* A visible scrollbar: an overlay one that only appears mid-gesture is not a
+     cue that there is more table to the right. */
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border-dark) transparent;
+}
+
+.table-responsive::-webkit-scrollbar {
+  height: 6px;
+}
+
+.table-responsive::-webkit-scrollbar-thumb {
+  background: var(--color-border-dark);
+  border-radius: 3px;
+}
+
+.table-responsive:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
 }
 
 /* Accessible and smooth mobile tabs */
@@ -493,6 +541,32 @@ h1, h2, h3, h4, h5, h6 {
     font-size: 0.58rem;
     padding: 1px 4px;
     letter-spacing: 0.01em;
+  }
+
+  /*
+   * The actions column stays pinned to the right edge while the rest of a
+   * wide table scrolls under it, so Edit / Suspend / Delete are always one
+   * tap away instead of past the end of the scroll.
+   */
+  .admin-table th.col-actions,
+  .admin-table:has(th.col-actions) td:last-child {
+    position: sticky;
+    right: 0;
+    z-index: 1;
+    background: var(--color-bg-white);
+    box-shadow: -8px 0 8px -8px rgba(15, 23, 42, 0.25);
+  }
+
+  .admin-table th.col-actions {
+    background: var(--color-bg-alt);
+  }
+
+  .admin-table:has(th.col-actions) td:last-child button {
+    white-space: nowrap;
+  }
+
+  .admin-table:has(th.col-actions) tr:hover td:last-child {
+    background: var(--color-bg-soft);
   }
 
   /* A dialog on a phone should use the width it has and scroll gracefully */

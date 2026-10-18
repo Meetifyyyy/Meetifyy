@@ -1,5 +1,11 @@
 import React from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import {
+  createBrowserRouter,
+  createRoutesFromElements,
+  Navigate,
+  Route,
+  RouterProvider,
+} from 'react-router-dom';
 import { QueryClient, QueryClientProvider, MutationCache } from '@tanstack/react-query';
 import './App.css';
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -19,6 +25,9 @@ import { VerificationPage } from './pages/VerificationPage';
 import { AuditPage } from './pages/AuditPage';
 import { SessionsPage } from './pages/SessionsPage';
 import { AccountDeletionPage } from './pages/AccountDeletionPage';
+import { LegalPage } from './pages/LegalPage';
+import { LegalDocumentPage } from './pages/legal/LegalDocumentPage';
+import { LegalEditorPage } from './pages/legal/LegalEditorPage';
 
 const queryClient = new QueryClient({
   /**
@@ -89,6 +98,51 @@ const PublicRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   return <>{children}</>;
 };
 
+/**
+ * A data router rather than <BrowserRouter>: the Legal editor's unsaved-changes
+ * guard needs `useBlocker`, which only a data router provides. The routes are
+ * the same tree as before; the providers that never used the router (auth,
+ * toasts, the shared confirm dialog) still sit above it.
+ */
+const router = createBrowserRouter(
+  createRoutesFromElements(
+    <>
+      <Route
+        path="/login"
+        element={
+          <PublicRoute>
+            <LoginPage />
+          </PublicRoute>
+        }
+      />
+
+      <Route
+        element={
+          <ProtectedRoute>
+            <AdminLayout />
+          </ProtectedRoute>
+        }
+      >
+        <Route path="/dashboard" element={<DashboardPage />} />
+        <Route path="/colleges" element={<CollegesPage />} />
+        <Route path="/users" element={<UsersPage />} />
+        <Route path="/campus-reps" element={<CampusRepsPage />} />
+        <Route path="/reports" element={<ReportsPage />} />
+        <Route path="/support" element={<SupportPage />} />
+        <Route path="/analytics" element={<AnalyticsPage />} />
+        <Route path="/verification" element={<VerificationPage />} />
+        <Route path="/audit" element={<AuditPage />} />
+        <Route path="/sessions" element={<SessionsPage />} />
+        <Route path="/account-deletion" element={<AccountDeletionPage />} />
+        <Route path="/legal" element={<LegalPage />} />
+        <Route path="/legal/:type" element={<LegalDocumentPage />} />
+        <Route path="/legal/:type/edit" element={<LegalEditorPage />} />
+        <Route path="*" element={<Navigate to="/dashboard" replace />} />
+      </Route>
+    </>,
+  ),
+);
+
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
@@ -97,39 +151,7 @@ export default function App() {
         {/* Mounted once, above the router, so any page can raise the shared
             confirmation dialog without owning modal state of its own. */}
         <ConfirmProvider>
-        <BrowserRouter>
-          <Routes>
-            <Route
-              path="/login"
-              element={
-                <PublicRoute>
-                  <LoginPage />
-                </PublicRoute>
-              }
-            />
-
-            <Route
-              element={
-                <ProtectedRoute>
-                  <AdminLayout />
-                </ProtectedRoute>
-              }
-            >
-              <Route path="/dashboard" element={<DashboardPage />} />
-              <Route path="/colleges" element={<CollegesPage />} />
-              <Route path="/users" element={<UsersPage />} />
-              <Route path="/campus-reps" element={<CampusRepsPage />} />
-              <Route path="/reports" element={<ReportsPage />} />
-              <Route path="/support" element={<SupportPage />} />
-              <Route path="/analytics" element={<AnalyticsPage />} />
-              <Route path="/verification" element={<VerificationPage />} />
-              <Route path="/audit" element={<AuditPage />} />
-              <Route path="/sessions" element={<SessionsPage />} />
-              <Route path="/account-deletion" element={<AccountDeletionPage />} />
-              <Route path="*" element={<Navigate to="/dashboard" replace />} />
-            </Route>
-          </Routes>
-        </BrowserRouter>
+          <RouterProvider router={router} />
         </ConfirmProvider>
       </AuthProvider>
     </QueryClientProvider>

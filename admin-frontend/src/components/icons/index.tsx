@@ -30,6 +30,7 @@ import {
   FloppyDiskIcon,
   GlobalIcon,
   HelpCircleIcon,
+  InformationCircleIcon,
   InboxIcon,
   Key01Icon,
   Key02Icon,
@@ -61,6 +62,15 @@ import {
   UserIcon,
   ViewIcon,
   ViewOffSlashIcon,
+  PencilEdit01Icon,
+  Link01Icon,
+  Unlink01Icon,
+  LeftToRightListNumberIcon,
+  SourceCodeIcon,
+  Heading02Icon,
+  Heading03Icon,
+  TextClearIcon,
+  ParagraphIcon,
 } from '@hugeicons/core-free-icons';
 
 /**
@@ -126,6 +136,7 @@ export const CheckCircle = /*#__PURE__*/ icon(CheckmarkCircle02Icon, 'CheckCircl
 export const AlertCircle = /*#__PURE__*/ icon(AlertCircleIcon, 'AlertCircle');
 export const AlertTriangle = /*#__PURE__*/ icon(Alert02Icon, 'AlertTriangle');
 export const HelpCircle = /*#__PURE__*/ icon(HelpCircleIcon, 'HelpCircle');
+export const Info = /*#__PURE__*/ icon(InformationCircleIcon, 'Info');
 export const Loader2 = /*#__PURE__*/ icon(Loading03Icon, 'Loader2');
 export const RefreshCw = /*#__PURE__*/ icon(RefreshIcon, 'RefreshCw');
 export const Sparkles = /*#__PURE__*/ icon(SparklesIcon, 'Sparkles');
@@ -186,3 +197,14 @@ export const Monitor = /*#__PURE__*/ icon(ComputerIcon, 'Monitor');
 // -- Rich-text controls in the reply composer
 export const Bold = /*#__PURE__*/ icon(TextBoldIcon, 'Bold');
 export const Italic = /*#__PURE__*/ icon(TextItalicIcon, 'Italic');
+
+// -- Legal document editor
+export const Pencil = /*#__PURE__*/ icon(PencilEdit01Icon, 'Pencil');
+export const LinkIcon = /*#__PURE__*/ icon(Link01Icon, 'LinkIcon');
+export const Unlink = /*#__PURE__*/ icon(Unlink01Icon, 'Unlink');
+export const ListOrdered = /*#__PURE__*/ icon(LeftToRightListNumberIcon, 'ListOrdered');
+export const Code = /*#__PURE__*/ icon(SourceCodeIcon, 'Code');
+export const Heading2 = /*#__PURE__*/ icon(Heading02Icon, 'Heading2');
+export const Heading3 = /*#__PURE__*/ icon(Heading03Icon, 'Heading3');
+export const RemoveFormatting = /*#__PURE__*/ icon(TextClearIcon, 'RemoveFormatting');
+export const Pilcrow = /*#__PURE__*/ icon(ParagraphIcon, 'Pilcrow');

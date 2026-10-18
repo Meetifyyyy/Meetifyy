@@ -160,7 +160,7 @@ export const CampusRepsPage: React.FC = () => {
                   <th>User</th>
                   <th>College</th>
                   <th style={{ textAlign: 'center' }}>Role</th>
-                  <th style={{ textAlign: 'right' }}>Action</th>
+                  <th className="col-actions" style={{ textAlign: 'right' }}>Action</th>
                 </tr>
               </thead>
               <tbody>

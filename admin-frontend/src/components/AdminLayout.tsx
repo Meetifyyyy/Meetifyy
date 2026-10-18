@@ -19,10 +19,14 @@ import {
   X,
   CheckCircle,
   Trash2,
+  BookOpen,
 } from './icons';
 
 export const AdminLayout: React.FC = () => {
   const { admin, logout } = useAuth();
+  // The signed-in admin as a person: their name, or their email when the
+  // account has none.
+  const adminIdentity = admin?.name?.trim() || admin?.email || '';
   const location = useLocation();
   const [isHovered, setIsHovered] = useState(false);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
@@ -72,6 +76,9 @@ export const AdminLayout: React.FC = () => {
     // deadline the platform has committed to, which is a different job from
     // moderating an account.
     { label: 'Account Deletion', path: '/account-deletion', icon: Trash2 },
+    // Terms, Privacy, Cookies, Community Guidelines: drafts, publishing and
+    // the update screen. Active for the document and editor sub-pages too.
+    { label: 'Legal', path: '/legal', icon: BookOpen },
     { label: 'Audit Logs', path: '/audit', icon: FileText },
     { label: 'Sessions', path: '/sessions', icon: ShieldCheck },
   ];
@@ -250,7 +257,10 @@ export const AdminLayout: React.FC = () => {
                 }}
               >
                 <h1 style={{ fontSize: '1rem', fontWeight: 800, margin: 0, color: 'var(--color-text-main)' }}>Meetifyy</h1>
+                {/* Who is signed in, under a role caption. This used to be a
+                    hard-coded "SUPER ADMIN" whoever the account was. */}
                 <span
+                  title={admin?.email || undefined}
                   style={{
                     fontSize: '0.62rem',
                     fontWeight: 700,
@@ -259,9 +269,13 @@ export const AdminLayout: React.FC = () => {
                     padding: '1px 5px',
                     borderRadius: '4px',
                     display: 'inline-block',
+                    maxWidth: '100%',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    verticalAlign: 'bottom',
                   }}
                 >
-                  SUPER ADMIN
+                  Admin{adminIdentity ? ` · ${adminIdentity}` : ''}
                 </span>
               </div>
             </div>
@@ -293,7 +307,9 @@ export const AdminLayout: React.FC = () => {
           <nav style={{ padding: isMobile ? '0.6rem 0.5rem' : '0.75rem 0.5rem', flex: 1, overflowY: 'auto' }}>
             {navItems.map((item) => {
               const Icon = item.icon;
-              const isActive = location.pathname === item.path;
+              const isActive =
+                location.pathname === item.path ||
+                (item.path === '/legal' && location.pathname.startsWith('/legal/'));
               const showText = isMobile || isHovered;
 
               return (
@@ -400,7 +416,7 @@ export const AdminLayout: React.FC = () => {
                   flexShrink: 0,
                 }}
               >
-                {(admin?.name || 'A').charAt(0).toUpperCase()}
+                {(adminIdentity || 'A').charAt(0).toUpperCase()}
               </div>
 
               {(isMobile || isHovered) && (
@@ -413,10 +429,10 @@ export const AdminLayout: React.FC = () => {
                   }}
                 >
                   <p style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--color-text-main)', margin: 0, textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
-                    {admin?.name || 'Super Admin'}
+                    {adminIdentity || 'Signed in'}
                   </p>
                   <p style={{ fontSize: '0.68rem', color: 'var(--color-text-light)', margin: 0, textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
-                    {admin?.email || ''}
+                    {admin?.name && admin.email ? admin.email : 'Admin'}
                   </p>
                 </div>
               )}

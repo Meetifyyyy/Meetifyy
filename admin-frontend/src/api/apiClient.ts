@@ -156,6 +156,11 @@ function buildHeaders(options: RequestInit): Record<string, string> {
     'Content-Type': 'application/json',
     ...(options.headers as Record<string, string>),
   };
+  // A multipart body must not carry our JSON content type: the browser has to
+  // write its own, with the boundary, or the server cannot parse the parts.
+  if (typeof FormData !== 'undefined' && options.body instanceof FormData) {
+    delete headers['Content-Type'];
+  }
   if (isMutation(options)) {
     const token = currentCsrfToken();
     if (token) headers['X-CSRF-Token'] = token;

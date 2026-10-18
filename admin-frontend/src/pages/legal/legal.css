@@ -1,0 +1,626 @@
+/* Legal section. Light palette, matching the rest of the portal. */
+.legal-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));
+  gap: 1rem;
+}
+.legal-card {
+  padding: 1.15rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+.legal-card-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.8rem;
+}
+.legal-icon-tile {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-primary-tint);
+  color: var(--color-primary);
+  flex-shrink: 0;
+}
+.legal-card-title {
+  font-size: 0.98rem;
+  font-weight: 700;
+  color: var(--color-text-main);
+}
+.legal-badges {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  margin-top: 0.3rem;
+}
+.legal-meta {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+  padding: 0.7rem 0.8rem;
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-alt);
+  border: 1px solid var(--color-border-light);
+}
+.legal-meta dt {
+  font-size: 0.66rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-dim);
+}
+.legal-meta dd {
+  margin: 0.15rem 0 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--color-text-main);
+}
+.legal-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.legal-progress-label {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.76rem;
+  color: var(--color-text-light);
+}
+.legal-progress-label strong {
+  color: var(--color-text-main);
+}
+.legal-progress-track {
+  height: 6px;
+  border-radius: 9999px;
+  background: var(--color-bg-soft);
+  overflow: hidden;
+}
+.legal-progress-fill {
+  height: 100%;
+  border-radius: 9999px;
+  background: linear-gradient(90deg, var(--color-primary), var(--color-brand-accent));
+  transition: width 0.4s ease;
+}
+.legal-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-top: auto;
+}
+.legal-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--color-primary);
+  text-decoration: none;
+}
+.legal-link:hover {
+  text-decoration: underline;
+}
+.legal-callout {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+  padding: 0.85rem 1rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.82rem;
+  line-height: 1.55;
+}
+.legal-callout-warn {
+  background: var(--color-warning-tint);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  color: #92400E;
+}
+.legal-callout-info {
+  background: var(--color-info-tint);
+  border: 1px solid rgba(59, 130, 246, 0.25);
+  color: #1E3A8A;
+}
+
+/* Version history timeline */
+.legal-timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.legal-timeline-item {
+  position: relative;
+  padding: 0 0 1.1rem 1.6rem;
+}
+.legal-timeline-item::before {
+  content: '';
+  position: absolute;
+  left: 6px;
+  top: 14px;
+  bottom: 0;
+  width: 2px;
+  background: var(--color-border);
+}
+.legal-timeline-item:last-child::before {
+  display: none;
+}
+.legal-timeline-dot {
+  position: absolute;
+  left: 0;
+  top: 4px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--color-bg-white);
+  border: 3px solid var(--color-border-dark);
+}
+.legal-timeline-item.is-live .legal-timeline-dot {
+  border-color: var(--color-success);
+}
+.legal-timeline-card {
+  padding: 0.9rem 1rem;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+.legal-timeline-meta {
+  display: flex;
+  gap: 0.35rem 1rem;
+  flex-wrap: wrap;
+  margin-top: 0.4rem;
+  font-size: 0.75rem;
+  color: var(--color-text-light);
+}
+
+/* Editor */
+.legal-editor-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 1rem;
+  align-items: start;
+}
+@media (max-width: 1100px) {
+  .legal-editor-layout {
+    grid-template-columns: 1fr;
+  }
+}
+.legal-toolbar {
+  display: flex;
+  gap: 0.2rem;
+  flex-wrap: wrap;
+  align-items: center;
+  padding: 0.4rem;
+  border: 1px solid var(--color-border);
+  border-bottom: none;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  background: var(--color-bg-alt);
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+.legal-tool {
+  min-width: 32px;
+  height: 30px;
+  padding: 0 0.5rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.legal-tool:hover {
+  background: var(--color-bg-white);
+  border-color: var(--color-border);
+  color: var(--color-text-main);
+}
+.legal-tool.is-active {
+  background: var(--color-primary-tint);
+  color: var(--color-primary);
+  border-color: rgba(37, 99, 235, 0.25);
+}
+.legal-tool-sep {
+  width: 1px;
+  height: 18px;
+  background: var(--color-border-dark);
+  margin: 0 0.25rem;
+}
+.legal-editable {
+  min-height: 520px;
+  max-height: 70vh;
+  overflow-y: auto;
+  padding: 1.1rem 1.25rem;
+  border: 1px solid var(--color-border);
+  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+  background: var(--color-bg-white);
+  outline: none;
+}
+.legal-editable:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+.legal-source {
+  min-height: 520px;
+  border-radius: 0 0 var(--radius-sm) var(--radius-sm) !important;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace !important;
+  font-size: 0.76rem !important;
+  line-height: 1.6;
+}
+.legal-preview-frame {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: #ffffff;
+  max-height: calc(70vh + 46px);
+  overflow-y: auto;
+  position: sticky;
+  top: 0.5rem;
+}
+.legal-preview-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.55rem 0.9rem;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg-alt);
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-light);
+  position: sticky;
+  top: 0;
+}
+.legal-savebar {
+  position: sticky;
+  bottom: 0;
+  margin-top: 1rem;
+  padding: 0.75rem 1rem;
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(6px);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  z-index: 5;
+}
+
+/* The document as the public page renders it (light palette of the site). */
+.legal-doc {
+  padding: 1.5rem 1.75rem 2rem;
+  color: #1c1917;
+  font-family: 'Inter', system-ui, sans-serif;
+}
+.legal-doc-title {
+  font-size: 1.9rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: #0c0a09;
+  margin-bottom: 0.4rem;
+}
+.legal-doc-subtitle {
+  font-size: 0.95rem;
+  color: #57534e;
+  margin-bottom: 1.5rem;
+}
+.legal-doc-body h2,
+.legal-editable h2 {
+  font-size: 1.35rem;
+  font-weight: 800;
+  color: #0c0a09;
+  margin: 1.75rem 0 0.45rem;
+  letter-spacing: -0.01em;
+}
+.legal-doc-body h2:first-child,
+.legal-editable h2:first-child {
+  margin-top: 0;
+}
+.legal-doc-body h3,
+.legal-editable h3 {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #1c1917;
+  margin: 1.2rem 0 0.35rem;
+}
+.legal-doc-body p,
+.legal-editable p {
+  font-size: 0.92rem;
+  line-height: 1.75;
+  color: #44403c;
+  margin: 0 0 0.75rem;
+}
+.legal-doc-body ul,
+.legal-doc-body ol {
+  list-style: none;
+  padding: 0;
+  margin: 0.75rem 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+.legal-doc-body li {
+  position: relative;
+  padding-left: 1.25rem;
+  font-size: 0.9rem;
+  line-height: 1.65;
+  color: #44403c;
+}
+.legal-doc-body li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.55rem;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #ea580c;
+}
+.legal-editable ul,
+.legal-editable ol {
+  margin: 0.5rem 0 0.75rem 1.25rem;
+}
+.legal-editable li {
+  font-size: 0.9rem;
+  line-height: 1.65;
+  color: #44403c;
+}
+.legal-doc-body a,
+.legal-editable a {
+  color: #ea580c;
+  font-weight: 500;
+}
+.legal-doc-body strong,
+.legal-editable strong {
+  color: #1c1917;
+  font-weight: 600;
+}
+.legal-doc-body table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0;
+  font-size: 0.85rem;
+}
+.legal-doc-body th,
+.legal-doc-body td {
+  padding: 0.5rem 0.65rem;
+  border: 1px solid #e7e5e4;
+  text-align: left;
+  color: #44403c;
+}
+.legal-doc-body th {
+  background: #f5f5f4;
+  font-weight: 600;
+}
+/* The visual editor shows tables the way the preview does: ruled cells with
+   room in them, so an empty cell is still a target to click into. */
+.legal-editable table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0;
+  font-size: 0.85rem;
+}
+.legal-editable th,
+.legal-editable td {
+  min-width: 3rem;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid #e7e5e4;
+  text-align: left;
+  vertical-align: top;
+  color: #44403c;
+}
+.legal-editable th {
+  background: #f5f5f4;
+  font-weight: 600;
+}
+
+/* Header actions: right-aligned beside the title; a full-width row on a phone. */
+.legal-header-actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  justify-content: flex-end;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+/* Small print under a section heading or beside a disabled control. */
+.legal-helper-text {
+  margin: -0.35rem 0 0.75rem;
+  font-size: 0.76rem;
+  line-height: 1.5;
+  color: var(--color-text-light);
+}
+.legal-silent-note {
+  margin: 0.6rem 0 0;
+  font-size: 0.76rem;
+  color: var(--color-text-light);
+}
+.legal-card .legal-silent-note {
+  margin: 0;
+}
+
+/* A dialog footer's "why is this disabled", left of the buttons. */
+.legal-footer-reason {
+  margin-right: auto;
+  align-self: center;
+  font-size: 0.76rem;
+  color: var(--color-text-light);
+}
+
+/* The confirm step repeats what was entered, so it is checked once more. */
+.legal-confirm-summary {
+  display: grid;
+  gap: 0.6rem;
+  margin: 0 0 1rem;
+  padding: 0.8rem 0.95rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-alt);
+}
+.legal-confirm-summary dt {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-light);
+}
+.legal-confirm-summary dd {
+  margin: 0.15rem 0 0;
+  font-size: 0.84rem;
+  line-height: 1.5;
+  color: var(--color-text-main);
+  overflow-wrap: anywhere;
+}
+
+.legal-savebar-spacer {
+  flex: 1;
+}
+
+/* Dialog choices */
+.legal-choice {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+  padding: 0.85rem 0.95rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+.legal-choice:hover {
+  border-color: var(--color-border-dark);
+}
+.legal-choice.is-selected {
+  border-color: var(--color-primary);
+  background: var(--color-primary-tint);
+}
+.legal-choice input {
+  margin-top: 0.2rem;
+  accent-color: var(--color-primary);
+}
+.legal-choice-title {
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: var(--color-text-main);
+}
+.legal-choice-desc {
+  font-size: 0.78rem;
+  color: var(--color-text-light);
+  margin-top: 0.15rem;
+}
+.legal-field-label {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  margin-bottom: 0.35rem;
+}
+.legal-field-hint {
+  margin-top: 0.3rem;
+  font-size: 0.74rem;
+  color: var(--color-text-dim);
+}
+.legal-skeleton {
+  height: 160px;
+  border-radius: var(--radius-md);
+  background: linear-gradient(90deg, var(--color-bg-soft) 25%, var(--color-bg-white) 37%, var(--color-bg-soft) 63%);
+  background-size: 400% 100%;
+  animation: legalShimmer 1.4s ease infinite;
+}
+@keyframes legalShimmer {
+  0% { background-position: 100% 50%; }
+  100% { background-position: 0 50%; }
+}
+@media (max-width: 640px) {
+  .legal-meta {
+    grid-template-columns: 1fr 1fr;
+  }
+  .legal-doc {
+    padding: 1.1rem;
+  }
+
+  /* Header: the actions become one full-width row under the title, the
+     primary action taking the room and the icon-only link a square. */
+  .page-header > .legal-header-actions {
+    width: 100%;
+    margin: 0.5rem 0 0;
+  }
+  .legal-header-actions > .btn-primary {
+    flex: 1 1 auto;
+    justify-content: center;
+    min-height: 36px;
+  }
+  .legal-header-actions > .legal-header-icon-btn {
+    flex: 0 0 auto;
+    width: 36px;
+    min-height: 36px;
+    padding: 0;
+    justify-content: center;
+  }
+  .legal-header-actions:not(:has(.btn-primary)) {
+    justify-content: flex-start;
+  }
+
+  /* Notify sits under the page title as a full-width action. */
+  .page-header > .legal-notify-btn {
+    width: 100%;
+    justify-content: center;
+    min-height: 36px;
+    margin-top: 0.5rem;
+    white-space: normal;
+  }
+
+  /* Editor bar: Publish is a full-width first row of actions, the two draft
+     actions share the row below, the save state is a caption above them. */
+  .legal-savebar {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-areas:
+      'status status'
+      'publish publish'
+      'discard save';
+    gap: 0.45rem;
+    padding: 0.6rem 0.7rem;
+  }
+  .legal-savebar-status {
+    grid-area: status;
+    font-size: 0.72rem !important;
+  }
+  .legal-savebar-spacer {
+    display: none;
+  }
+  .legal-savebar-publish {
+    grid-area: publish;
+  }
+  .legal-savebar-discard {
+    grid-area: discard;
+  }
+  .legal-savebar-save {
+    grid-area: save;
+  }
+  .legal-savebar > button {
+    justify-content: center;
+    min-height: 38px;
+  }
+
+  /* Dialog footers: the reason takes its own line above the buttons. */
+  .legal-footer-reason {
+    flex: 1 1 100%;
+    margin: 0;
+  }
+}

@@ -103,7 +103,7 @@ export const ReportsPage: React.FC = () => {
                   <th>Reporter</th>
                   <th>Priority</th>
                   <th>Status</th>
-                  <th style={{ textAlign: 'right' }}>Actions</th>
+                  <th className="col-actions" style={{ textAlign: 'right' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>

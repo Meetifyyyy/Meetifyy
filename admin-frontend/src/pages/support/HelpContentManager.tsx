@@ -187,7 +187,7 @@ export const HelpContentManager: React.FC = () => {
                   <th>Category</th>
                   <th>Articles</th>
                   <th>Status</th>
-                  <th style={{ textAlign: 'right' }}>Actions</th>
+                  <th className="col-actions" style={{ textAlign: 'right' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -375,7 +375,7 @@ export const HelpContentManager: React.FC = () => {
                   <th>Category</th>
                   <th>Status</th>
                   <th>Updated</th>
-                  <th style={{ textAlign: 'right' }}>Actions</th>
+                  <th className="col-actions" style={{ textAlign: 'right' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>

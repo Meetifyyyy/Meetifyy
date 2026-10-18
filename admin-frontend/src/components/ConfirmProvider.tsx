@@ -50,6 +50,12 @@ export interface ConfirmOptions {
    * a resolution closes it.
    */
   onConfirm: () => Promise<unknown> | unknown;
+  /**
+   * Runs when the dialog is dismissed without confirming (Cancel, the X,
+   * Escape, the backdrop). For a caller holding something open until it hears
+   * back — a blocked navigation that has to be reset.
+   */
+  onCancel?: () => void;
 }
 
 type ConfirmFn = (options: ConfirmOptions) => void;
@@ -70,7 +76,7 @@ const SEVERITY = {
     tone: 'var(--color-danger)',
     tint: 'var(--color-danger-tint)',
     label: 'Irreversible',
-    confirmClass: 'btn-danger',
+    confirmClass: 'btn-danger btn-danger-solid',
     defaultConfirmLabel: 'Delete',
   },
   high: {
@@ -78,7 +84,7 @@ const SEVERITY = {
     tone: 'var(--color-danger)',
     tint: 'var(--color-danger-tint)',
     label: 'High impact',
-    confirmClass: 'btn-danger',
+    confirmClass: 'btn-danger btn-danger-solid',
     defaultConfirmLabel: 'Confirm',
   },
   moderate: {
@@ -107,17 +113,24 @@ export const ConfirmProvider: React.FC<{ children: React.ReactNode }> = ({ child
    */
   const inFlight = useRef(false);
 
+  // The open request, readable synchronously by `close`.
+  const requestRef = useRef<ConfirmOptions | null>(null);
+
   const confirm = useCallback<ConfirmFn>((options) => {
     setError(null);
     setPending(false);
     inFlight.current = false;
+    requestRef.current = options;
     setRequest(options);
   }, []);
 
   const close = useCallback(() => {
     if (inFlight.current) return; // never abandon a request that is running
+    const dismissed = requestRef.current;
+    requestRef.current = null;
     setRequest(null);
     setError(null);
+    dismissed?.onCancel?.();
   }, []);
 
   const run = useCallback(async () => {
@@ -127,6 +140,7 @@ export const ConfirmProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setError(null);
     try {
       await request.onConfirm();
+      requestRef.current = null;
       setRequest(null);
     } catch (err: any) {
       // Reported here rather than as a toast: the dialog is where the decision
@@ -185,6 +199,9 @@ const ConfirmDialog: React.FC<{
   return (
     <div
       className="modal-backdrop"
+      // Above other modals, so a confirmation raised from inside one (e.g. the
+      // revoke-affiliation reason form) is never covered by it.
+      style={{ zIndex: 110 }}
       onClick={() => { if (!pending) onCancel(); }}
       role="presentation"
     >

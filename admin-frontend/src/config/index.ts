@@ -80,6 +80,15 @@ export const config = {
     /** Whether a localhost/LAN page should talk to a backend on the same host. */
     preferLocalBackend: bool('VITE_API_PREFER_LOCAL', { fallback: IS_DEV_BUILD }),
   },
+
+  site: {
+    /**
+     * The public website origin, for "View on website" links in the Legal
+     * section. Not a secret. Set it per environment so the dev portal links
+     * to the dev site.
+     */
+    publicUrl: urlValue('VITE_PUBLIC_SITE_URL', { fallback: 'https://meetifyy.app' }),
+  },
 };
 
 if (problems.length > 0) {

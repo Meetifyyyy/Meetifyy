@@ -57,7 +57,7 @@ export const DashboardPage: React.FC = () => {
     { label: 'Total Users', value: stats?.totalUsers || 0, icon: Users, color: '#2563EB' },
     { label: 'Active Today', value: stats?.activeToday || 0, icon: TrendingUp, color: '#10B981' },
     { label: 'New Registrations', value: stats?.newToday || 0, icon: Zap, color: '#F59E0B' },
-    { label: 'Verified Students', value: stats?.verifiedStudents || 0, icon: UserCheck, color: '#3B82F6' },
+    { label: 'Selfie-verified users', value: stats?.verifiedStudents || 0, icon: UserCheck, color: '#3B82F6' },
     { label: 'Colleges', value: stats?.totalColleges || 0, icon: Building2, color: '#7C3AED' },
     { label: 'Total Posts', value: stats?.totalPosts || 0, icon: FileText, color: '#EC4899' },
     { label: 'Pending Reports', value: stats?.pendingReports || 0, icon: ShieldAlert, color: '#EF4444' },
