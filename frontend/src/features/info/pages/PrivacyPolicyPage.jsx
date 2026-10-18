@@ -1,6 +1,6 @@
 import LegalDocumentPage from './LegalDocumentPage';
 
-/** The published Privacy Policy. The text is in legalDocuments.js. */
+/** The Privacy Policy: the current published version (see LegalDocumentPage). */
 export default function PrivacyPolicyPage() {
   return (
     <LegalDocumentPage

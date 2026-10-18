@@ -709,7 +709,38 @@
   padding: 0.6rem 0.75rem;
   border: 1px solid var(--doc-border);
   text-align: left;
+  vertical-align: top;
   color: var(--doc-body);
+}
+
+/* Each table sits in a horizontal scroller (wrapTablesForScroll). On a phone a
+   column floor keeps a wide table legible and lets it scroll, rather than
+   squeezing every column to a word per line. */
+.docHtml [data-doc-table-scroller] {
+  margin: 1rem 0;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+}
+
+.docHtml [data-doc-table-scroller] table {
+  margin: 0;
+}
+
+.docHtml [data-doc-table-scroller]:focus-visible {
+  outline: 2px solid var(--doc-border);
+  outline-offset: 2px;
+}
+
+@media (max-width: 640px) {
+  .docHtml table {
+    font-size: 0.875rem;
+  }
+
+  .docHtml th,
+  .docHtml td {
+    min-width: 7.5rem;
+    padding: 0.55rem 0.65rem;
+  }
 }
 
 .docHtml th {
@@ -761,4 +792,143 @@
 /* The website reserves room under its fixed navbar; the app bar is in flow. */
 .appTopBar + .mainContent {
   padding-top: 1.25rem;
+}
+
+/* ── Older version view and the "Previous versions" list ── */
+.olderBanner {
+  margin: 0 0 2rem;
+  padding: 0.9rem 1.1rem;
+  border: 1px solid var(--doc-accent);
+  border-left-width: 4px;
+  border-radius: 12px;
+  background: var(--doc-surface-alt);
+  color: var(--doc-text);
+  font-family: 'Inter', sans-serif;
+  font-size: 0.95rem;
+  line-height: 1.6;
+}
+
+.olderBannerLink {
+  color: var(--doc-accent);
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.olderBannerLink:hover {
+  text-decoration: underline;
+}
+
+.docState {
+  padding: 2rem 0;
+  font-family: 'Inter', sans-serif;
+  font-size: 0.95rem;
+  color: var(--doc-muted);
+}
+
+.docStateTitle {
+  font-family: 'Changa One', sans-serif;
+  font-size: 1.35rem;
+  font-weight: 400;
+  color: var(--doc-heading);
+  margin: 0 0 0.5rem;
+}
+
+.docSkeletonLine {
+  height: 0.9rem;
+  margin: 0 0 0.85rem;
+  max-width: 34rem;
+  border-radius: 6px;
+  background: linear-gradient(90deg, var(--doc-surface-alt) 25%, var(--doc-border) 37%, var(--doc-surface-alt) 63%);
+  background-size: 400% 100%;
+  animation: docSkeleton 1.4s ease infinite;
+}
+
+@keyframes docSkeleton {
+  0% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0 50%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .docSkeletonLine {
+    animation: none;
+  }
+}
+
+.versionsSection {
+  margin-top: 3.5rem;
+  padding-top: 2rem;
+  border-top: 1px solid var(--doc-border);
+}
+
+.versionsTitle {
+  font-family: 'Changa One', sans-serif;
+  font-size: clamp(1.25rem, 3vw, 1.6rem);
+  font-weight: 400;
+  color: var(--doc-heading);
+  margin: 0 0 1rem;
+}
+
+.versionList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.versionItem {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--doc-border);
+  border-radius: 12px;
+  background: var(--doc-surface);
+  color: var(--doc-text);
+  text-decoration: none;
+  font-family: 'Inter', sans-serif;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.versionItem:hover,
+.versionItem:focus-visible {
+  border-color: var(--doc-accent);
+  background: var(--doc-surface-alt);
+}
+
+.versionHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.4rem 0.75rem;
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--doc-heading);
+}
+
+.versionDate {
+  font-weight: 400;
+  font-size: 0.85rem;
+  color: var(--doc-faint);
+}
+
+.versionBadge {
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  color: var(--doc-accent-strong);
+  border: 1px solid var(--doc-accent);
+}
+
+.versionSummary {
+  font-size: 0.875rem;
+  line-height: 1.55;
+  color: var(--doc-body);
 }

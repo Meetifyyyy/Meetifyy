@@ -1,6 +1,6 @@
 import LegalDocumentPage from './LegalDocumentPage';
 
-/** The Terms of Service. The text is in legalDocuments.js. */
+/** The Terms of Service: the current published version (see LegalDocumentPage). */
 export default function TermsPage() {
   return (
     <LegalDocumentPage

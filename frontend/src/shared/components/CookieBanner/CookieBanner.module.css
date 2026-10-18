@@ -16,6 +16,16 @@
   display: flex;
 }
 
+/* The legal-update gate (z-index 2000) blocks the app until new Terms are
+   accepted; the banner (9998) used to draw on top of it on phones, covering its
+   buttons. Keyed on the gate wrapper's `data-legal-gate` attribute, which every
+   state of the gate carries, including the 'confirming' skeleton that has no
+   dialog labels yet; the label selectors stay as a backstop. The banner comes
+   back once the gate closes. */
+:global(body:has([data-legal-gate], [aria-labelledby="legal-update-title"], [aria-labelledby="legal-reader-title"])) .bannerBackdrop {
+  display: none;
+}
+
 .banner {
   pointer-events: auto;
   width: 360px;

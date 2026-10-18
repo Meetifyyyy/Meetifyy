@@ -1,146 +1,215 @@
 /* ── Mandatory legal-acknowledgement gate ──
-   Covers the viewport on every authenticated route, built the same way as
-   SuspensionGate and AccountDeletionGate: the app shell is not rendered behind
-   it, because there is nothing to navigate to until the update is accepted.
+   Phone-first: below 768px, and always in the installed app (`.app`), the gate
+   is an opaque full-screen sheet. It paints edge to edge — under the status and
+   navigation bars, which are transparent and page-painted in the app, so the
+   bars sample this surface and match it — and pads its content by the safe-area
+   insets. The buttons are pinned to the bottom; the body scrolls.
 
-   Deliberately NOT alarming. This is a policy update, not a penalty, and a red
-   full-bleed warning would misrepresent what has happened. */
+   From 768px up on the website it becomes a centred card over a dimmed
+   backdrop. The app shell is not rendered behind it (see the component), so the
+   backdrop is the app's own page gradient under a scrim rather than a blur of
+   real content.
+
+   Deliberately NOT alarming. This is a policy update, not a penalty. */
+
 .wrapper {
+  /* Safe-area insets: the native shell publishes the bar heights as
+     `--status-bar-inset` / `--navigation-bar-inset`; browsers use env(). */
+  --safe-t: max(env(safe-area-inset-top, 0px), var(--status-bar-inset, 0px));
+  --safe-b: max(env(safe-area-inset-bottom, 0px), var(--navigation-bar-inset, 0px));
+  --safe-l: env(safe-area-inset-left, 0px);
+  --safe-r: env(safe-area-inset-right, 0px);
+  --gutter: 1.25rem;
+
+  /* Local roles, all from the app's tokens. Links and the focus ring get a
+     lighter blue in dark mode: the brand blue on near-black is under 4.5:1 for
+     small text. */
+  --lg-surface: var(--color-surface-screen, var(--color-bg-white, #ffffff));
+  --lg-link: var(--color-primary, #2563eb);
+  --lg-focus: var(--color-primary, #2563eb);
+
   position: fixed;
   inset: 0;
   z-index: 2000;
   display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 1.5rem;
-  overflow-y: auto;
-  background: var(--color-bg-main, #f4f6fb);
   box-sizing: border-box;
-}
-
-.card {
-  width: 100%;
-  max-width: 620px;
-  margin: auto;
-  display: flex;
-  flex-direction: column;
-  max-height: calc(100dvh - 3rem);
-  box-sizing: border-box;
-  background: var(--color-bg-white, #ffffff);
-  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
-  border-radius: var(--radius-xl, 20px);
-  box-shadow: var(--shadow-md, 0 4px 16px rgba(15, 23, 42, 0.06));
-  overflow: hidden;
-}
-
-.header {
-  padding: 2rem 2rem 1.25rem;
-  text-align: center;
-}
-
-.iconBadge {
-  width: 56px;
-  height: 56px;
-  margin: 0 auto 1.25rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  color: var(--color-primary, #2563eb);
-  background: var(--color-primary-tint, rgba(37, 99, 235, 0.1));
-}
-
-.title {
-  margin: 0 0 0.5rem;
-  font-size: 1.35rem;
-  font-weight: 700;
+  background: var(--lg-surface);
   color: var(--color-text-main, #0f172a);
 }
 
-.body {
-  margin: 0;
-  font-size: 0.95rem;
-  line-height: 1.6;
-  color: var(--color-text-light, #64748b);
+:global([data-theme='dark']) .wrapper {
+  --lg-link: #7cb0ff;
+  --lg-focus: #7cb0ff;
 }
 
-/* ── The list of documents awaiting acceptance ── */
-.docList {
+/* The dialog itself. On a phone it IS the screen. */
+.card {
+  position: relative;
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  background: var(--lg-surface);
+  outline: none;
+}
+
+/* ── The scrolling body ── */
+.scroll {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
-  padding: 0 2rem;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding:
+    calc(var(--safe-t) + 2rem)
+    calc(var(--safe-r) + var(--gutter))
+    1.25rem
+    calc(var(--safe-l) + var(--gutter));
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  align-items: center;
+  text-align: center;
+}
+
+/* The mark sits in a 512px square with generous transparent padding, so the
+   image box is larger than the visible logo; the negative margin takes the
+   padding back out of the layout. */
+.logo {
+  width: 88px;
+  height: 88px;
+  margin: -14px 0 0.5rem;
+  display: block;
+  flex-shrink: 0;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.title {
+  margin: 0 0 0.75rem;
+  font-family: var(--font-family-display, inherit);
+  font-size: var(--font-size-2xl, 1.5rem);
+  font-weight: 700;
+  line-height: var(--leading-tight, 1.2);
+  letter-spacing: var(--tracking-tight, -0.02em);
+  color: var(--color-text-main, #0f172a);
+  text-wrap: balance;
+  outline: none;
+}
+
+.title:focus-visible {
+  outline: 2px solid var(--lg-focus);
+  outline-offset: 4px;
+  border-radius: 4px;
+}
+
+.subtitle {
+  margin: 0;
+  max-width: 34rem;
+  font-size: var(--font-size-md, 0.9375rem);
+  line-height: var(--leading-relaxed, 1.6);
+  color: var(--color-text-muted, #334155);
+  text-wrap: pretty;
+}
+
+.inlineLink {
+  display: inline;
+  padding: 0;
+  margin: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-weight: 600;
+  color: var(--lg-link);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  cursor: pointer;
+  border-radius: 3px;
+}
+
+.inlineLink:hover {
+  text-decoration-thickness: 2px;
+}
+
+/* ── The documents ── */
+.docList {
+  list-style: none;
+  margin: 1.5rem 0 0;
+  padding: 0;
+  width: 100%;
+  max-width: 34rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  text-align: left;
 }
 
 .doc {
-  padding: 1rem 1.1rem;
-  text-align: left;
+  padding: 0.875rem 1rem;
   border-radius: var(--radius-md, 12px);
-  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
-  background: var(--color-bg-soft, #f8fafc);
+  border: 1px solid var(--color-border, #e2e8f0);
+  background: var(--color-bg-soft, #f1f5f9);
 }
 
 .docHead {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: space-between;
-  gap: 0.75rem;
   flex-wrap: wrap;
+  gap: 0.25rem 0.75rem;
 }
 
-.docTitle {
-  margin: 0;
-  font-size: 0.98rem;
+.docName {
+  font-size: var(--font-size-base, 0.875rem);
   font-weight: 600;
   color: var(--color-text-main, #0f172a);
 }
 
-.docVersion {
-  font-size: 0.75rem;
-  font-weight: 600;
-  padding: 0.15rem 0.5rem;
-  border-radius: 9999px;
-  color: var(--color-text-light, #64748b);
-  background: var(--color-bg-white, #ffffff);
-  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
+.docMeta {
+  font-size: var(--font-size-xs, 0.75rem);
+  color: var(--color-text-light, #475569);
 }
 
 .docSummary {
-  margin: 0.6rem 0 0;
-  font-size: 0.87rem;
-  line-height: 1.55;
-  color: var(--color-text-light, #64748b);
+  margin: 0.5rem 0 0;
+  font-size: var(--font-size-sm, 0.8125rem);
+  line-height: var(--leading-normal, 1.5);
+  color: var(--color-text-muted, #334155);
 }
 
-.docMeta {
-  margin: 0.6rem 0 0;
-  font-size: 0.78rem;
-  color: var(--color-text-light, #64748b);
+.docActions {
+  margin-top: 0.5rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1.25rem;
 }
 
-.readBtn {
-  margin-top: 0.75rem;
-  padding: 0.45rem 0.8rem;
-  font-size: 0.82rem;
-  font-weight: 600;
+.docLink {
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: 0.3rem;
+  min-height: 32px;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: var(--font-size-sm, 0.8125rem);
+  font-weight: 600;
+  color: var(--lg-link);
+  text-decoration: none;
   cursor: pointer;
-  border-radius: var(--radius-sm, 8px);
-  color: var(--color-primary, #2563eb);
-  background: transparent;
-  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
+  border-radius: 4px;
 }
 
-.readBtn:hover {
-  background: var(--color-bg-white, #ffffff);
+.docLink:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
-/* ── Reader: the full document, in the flow ── */
+/* ── Reader: the full document, inside the dialog ── */
 .reader {
   flex: 1 1 auto;
   min-height: 0;
@@ -151,42 +220,58 @@
 .readerHead {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
-  padding: 0 2rem 0.85rem;
-  border-bottom: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
+  gap: 0.75rem;
+  padding:
+    calc(var(--safe-t) + 0.75rem)
+    calc(var(--safe-r) + var(--gutter))
+    0.75rem
+    calc(var(--safe-l) + var(--gutter));
+  border-bottom: 1px solid var(--color-border, #e2e8f0);
 }
 
 .backBtn {
-  padding: 0.35rem 0.65rem;
-  font-size: 0.82rem;
+  flex-shrink: 0;
+  min-height: 36px;
+  padding: 0.35rem 0.75rem 0.35rem 0.55rem;
+  font: inherit;
+  font-size: var(--font-size-sm, 0.8125rem);
   font-weight: 600;
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
   cursor: pointer;
-  border-radius: var(--radius-sm, 8px);
+  border-radius: var(--radius-full, 9999px);
   color: var(--color-text-main, #0f172a);
   background: transparent;
-  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
+  border: 1px solid var(--color-border-dark, #cbd5e1);
 }
 
 .backBtn:hover {
-  background: var(--color-bg-soft, #f8fafc);
+  background: var(--color-bg-soft, #f1f5f9);
 }
 
 .readerTitle {
   margin: 0;
-  font-size: 0.95rem;
+  min-width: 0;
+  font-size: var(--font-size-md, 0.9375rem);
   font-weight: 600;
   color: var(--color-text-main, #0f172a);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .readerBody {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
-  padding: 1.25rem 2rem;
-  font-size: 0.9rem;
+  overscroll-behavior: contain;
+  padding:
+    1.25rem
+    calc(var(--safe-r) + var(--gutter))
+    1.25rem
+    calc(var(--safe-l) + var(--gutter));
+  font-size: var(--font-size-base, 0.875rem);
   line-height: 1.7;
   color: var(--color-text-main, #0f172a);
   overflow-wrap: anywhere;
@@ -223,118 +308,192 @@
 }
 
 .readerBody a {
-  color: var(--color-primary, #2563eb);
+  color: var(--lg-link);
 }
 
-/* ── Footer: the consent control and the primary action ── */
+/* Tables, matching the public legal page (StaticDocLayout .docHtml): ruled
+   cells with padding, a tinted header row. The reader wraps each table in a
+   horizontal scroller (wrapTablesForScroll), so a wide table scrolls inside
+   the reader at 375px instead of crushing its columns or the page. */
+.readerBody [data-doc-table-scroller] {
+  margin: 1rem 0;
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: var(--radius-md, 8px);
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+}
+
+.readerBody [data-doc-table-scroller]:focus-visible {
+  outline: 2px solid var(--lg-focus);
+  outline-offset: 2px;
+}
+
+.readerBody table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.readerBody [data-doc-table-scroller] table {
+  margin: 0;
+}
+
+.readerBody th,
+.readerBody td {
+  min-width: 7.5rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--color-border, #e2e8f0);
+  text-align: left;
+  vertical-align: top;
+  /* The body breaks anywhere so a long URL cannot widen the sheet; inside a
+     scrolling table that turns words into letter columns instead. */
+  overflow-wrap: break-word;
+}
+
+/* The scroller draws the outer frame; the cells draw only the inner rules. */
+.readerBody [data-doc-table-scroller] tr > :first-child { border-left: 0; }
+.readerBody [data-doc-table-scroller] tr > :last-child { border-right: 0; }
+.readerBody [data-doc-table-scroller] tr:first-child > * { border-top: 0; }
+.readerBody [data-doc-table-scroller] tr:last-child > * { border-bottom: 0; }
+
+.readerBody th {
+  background: var(--color-bg-alt, #f1f5f9);
+  font-weight: 600;
+}
+
+/* ── Footer: small print and the two actions, pinned ── */
 .footer {
   flex-shrink: 0;
-  padding: 1.25rem 2rem 2rem;
-  border-top: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
-  background: var(--color-bg-white, #ffffff);
-}
-
-.consentRow {
   display: flex;
-  align-items: flex-start;
-  gap: 0.6rem;
-  margin-bottom: 1rem;
-  font-size: 0.88rem;
-  line-height: 1.55;
-  color: var(--color-text-main, #0f172a);
-  cursor: pointer;
+  flex-direction: column;
+  gap: 0.625rem;
+  padding:
+    1rem
+    calc(var(--safe-r) + var(--gutter))
+    calc(var(--safe-b) + 1rem)
+    calc(var(--safe-l) + var(--gutter));
+  border-top: 1px solid var(--color-border, #e2e8f0);
+  background: var(--lg-surface);
 }
 
-.consentRow input {
-  margin-top: 0.15rem;
-  width: 1rem;
-  height: 1rem;
-  flex-shrink: 0;
-  cursor: pointer;
-  accent-color: var(--color-primary, #2563eb);
+.smallPrint {
+  margin: 0 0 0.25rem;
+  font-size: var(--font-size-xs, 0.75rem);
+  line-height: var(--leading-normal, 1.5);
+  text-align: center;
+  color: var(--color-text-light, #475569);
 }
 
-.requiredNote {
-  margin: 0 0 1rem;
-  font-size: 0.8rem;
-  line-height: 1.5;
-  color: var(--color-text-light, #64748b);
-}
-
-.primaryBtn {
+.primaryBtn,
+.secondaryBtn {
   width: 100%;
-  padding: 0.85rem 1.25rem;
-  font-size: 0.95rem;
+  min-height: 48px;
+  padding: 0.75rem 1.25rem;
+  font: inherit;
+  font-size: var(--font-size-md, 0.9375rem);
   font-weight: 600;
-  border: none;
-  border-radius: var(--radius-md, 12px);
+  border-radius: var(--radius-full, 9999px);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
+  transition: background-color var(--transition-fast, 0.15s ease), opacity var(--transition-fast, 0.15s ease);
+}
+
+.primaryBtn {
+  border: none;
   color: #ffffff;
   background: var(--color-primary, #2563eb);
-  transition: background 0.15s ease, opacity 0.15s ease;
 }
 
 .primaryBtn:hover:not(:disabled) {
   background: var(--color-primary-hover, #1d4ed8);
 }
 
-.primaryBtn:disabled {
-  opacity: 0.55;
+.secondaryBtn {
+  color: var(--color-text-main, #0f172a);
+  background: transparent;
+  border: 1px solid var(--color-border-dark, #cbd5e1);
+}
+
+.secondaryBtn:hover:not(:disabled) {
+  background: var(--color-bg-soft, #f1f5f9);
+}
+
+.primaryBtn:disabled,
+.secondaryBtn:disabled {
+  opacity: 0.6;
   cursor: not-allowed;
 }
 
 .primaryBtn:focus-visible,
-.readBtn:focus-visible,
+.secondaryBtn:focus-visible,
 .backBtn:focus-visible,
-.signOutBtn:focus-visible,
-.consentRow input:focus-visible {
-  outline: 2px solid var(--color-primary, #2563eb);
+.inlineLink:focus-visible,
+.docLink:focus-visible {
+  outline: 2px solid var(--lg-focus);
   outline-offset: 2px;
 }
 
 .error {
-  margin: 0 0 0.85rem;
   padding: 0.7rem 0.9rem;
-  font-size: 0.85rem;
+  font-size: var(--font-size-sm, 0.8125rem);
   line-height: 1.5;
+  text-align: left;
   border-radius: var(--radius-md, 12px);
   color: var(--color-danger, #ef4444);
-  background: var(--color-danger-tint, rgba(239, 68, 68, 0.1));
+  background: rgba(var(--color-danger-rgb, 239, 68, 68), 0.1);
   display: flex;
   align-items: flex-start;
   gap: 0.5rem;
 }
 
-/* Sign-out is not an escape from the requirement — the gate is waiting again on
-   the next sign-in. It is here because a shared machine is a real situation and
-   being unable to leave an account would be worse. */
-.signOutBtn {
-  display: block;
-  width: 100%;
-  margin-top: 0.85rem;
-  padding: 0.4rem;
-  font-size: 0.82rem;
-  font-weight: 500;
-  text-align: center;
-  cursor: pointer;
-  border: none;
-  background: transparent;
-  color: var(--color-text-light, #64748b);
-  text-decoration: underline;
+/* ── Confirming: a skeleton of the card ── */
+.skeletonCard .scroll {
+  justify-content: flex-start;
 }
 
-.loading {
+.skeletonStack {
+  width: 100%;
+  max-width: 26rem;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  padding: 2rem;
-  font-size: 0.9rem;
-  color: var(--color-text-light, #64748b);
+  gap: 0.6rem;
+  margin-top: 0.25rem;
+}
+
+.bone {
+  display: block;
+  border-radius: var(--radius-full, 9999px);
+  background: var(--color-bg-soft, #f1f5f9);
+  animation: legal-gate-pulse 1.4s ease-in-out infinite;
+}
+
+.boneTitle { width: 85%; height: 1.4rem; }
+.boneTitleShort { width: 55%; height: 1.4rem; margin-bottom: 0.5rem; }
+.boneLine { width: 95%; height: 0.8rem; }
+.boneLineShort { width: 70%; height: 0.8rem; }
+.boneSmall { width: 70%; height: 0.7rem; align-self: center; margin-bottom: 0.25rem; }
+.boneButton { width: 100%; height: 48px; }
+
+@keyframes legal-gate-pulse {
+  50% { opacity: 0.5; }
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .spin {
@@ -348,40 +507,106 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .spin {
+  .spin,
+  .bone {
     animation: none;
   }
 }
 
-@media (max-width: 560px) {
-  .wrapper {
-    padding: 0;
+/* ── Large screens, website only: a centred card over a dimmed backdrop ── */
+@media (min-width: 768px) {
+  .wrapper:not(.app) {
+    --gutter: 2rem;
+    --lg-surface: var(--color-bg-white, #ffffff);
+    align-items: center;
+    justify-content: center;
+    padding: 2rem;
+    overflow-y: auto;
+    background:
+      linear-gradient(rgba(15, 23, 42, 0.38), rgba(15, 23, 42, 0.38)),
+      radial-gradient(
+        circle at center,
+        var(--bg-gradient-center, #ffffff) 0%,
+        var(--bg-gradient-mid, #f0f5fc) 45%,
+        var(--bg-gradient-edge, #d1e3f8) 100%
+      );
   }
 
-  .card {
-    max-width: none;
-    max-height: 100dvh;
-    height: 100dvh;
-    border: none;
-    border-radius: 0;
+  :global([data-theme='dark']) .wrapper:not(.app) {
+    background:
+      linear-gradient(rgba(0, 0, 0, 0.55), rgba(0, 0, 0, 0.55)),
+      radial-gradient(
+        circle at center,
+        var(--bg-gradient-center, #1e1e1e) 0%,
+        var(--bg-gradient-mid, #121212) 45%,
+        var(--bg-gradient-edge, #000000) 100%
+      );
   }
 
-  .header {
-    padding: 1.5rem 1.25rem 1rem;
+  .wrapper:not(.app) .card {
+    flex: 0 1 auto;
+    width: 100%;
+    max-width: 480px;
+    height: auto;
+    max-height: min(760px, calc(100dvh - 4rem));
+    border: 1px solid var(--color-border, #e2e8f0);
+    border-radius: var(--radius-xl, 20px);
+    box-shadow: var(--shadow-lg, 0 12px 32px rgba(15, 23, 42, 0.08));
+    overflow: hidden;
+    animation: legal-gate-in 0.2s ease-out;
   }
 
-  .docList,
-  .readerHead {
-    padding-left: 1.25rem;
-    padding-right: 1.25rem;
+  /* Dark mode: the card was the same near-black as the dimmed backdrop and
+     read as a hole rather than a surface. The raised-surface token, a lighter
+     edge and the stronger shadow lift it off the page. */
+  :global([data-theme='dark']) .wrapper:not(.app) .card {
+    --lg-surface: var(--color-bg-elevated, #202020);
+    border-color: var(--color-border-dark, #4d4d4d);
+    box-shadow: var(--shadow-premium, 0 16px 40px rgba(0, 0, 0, 0.6)),
+      0 0 0 1px rgba(255, 255, 255, 0.04);
   }
 
-  .readerBody {
-    padding: 1rem 1.25rem;
+  /* The insets are a phone's concern; inside a floating card they would only
+     add stray space on a notched laptop. */
+  .wrapper:not(.app) .scroll {
+    padding: 2rem var(--gutter) 1.25rem;
   }
 
-  .footer {
-    padding: 1rem 1.25rem 1.5rem;
-    padding-bottom: max(1.5rem, env(safe-area-inset-bottom));
+  .wrapper:not(.app) .readerHead {
+    padding: 1rem var(--gutter) 0.875rem;
+  }
+
+  .wrapper:not(.app) .readerBody {
+    padding: 1.25rem var(--gutter);
+  }
+
+  .wrapper:not(.app) .footer {
+    padding: 1rem var(--gutter) 1.5rem;
+  }
+
+  .wrapper:not(.app) .readerHead + .readerBody {
+    min-height: 320px;
+  }
+
+  .wrapper:not(.app) .title {
+    font-size: var(--font-size-2xl, 1.5rem);
+  }
+
+  .wrapper:not(.app) .primaryBtn,
+  .wrapper:not(.app) .secondaryBtn {
+    min-height: 44px;
+  }
+}
+
+@keyframes legal-gate-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+}
+
+@media (min-width: 768px) and (prefers-reduced-motion: reduce) {
+  .wrapper:not(.app) .card {
+    animation: none;
   }
 }

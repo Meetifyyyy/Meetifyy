@@ -2,16 +2,14 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
 import { useAuth } from '../../context/AuthContext';
 import { legalApi } from '@shared/api/apiClient';
-import { hardenExternalLinks } from '@shared/utils/legalHtmlLinks';
+import { hardenExternalLinks, wrapTablesForScroll } from '@shared/utils/legalHtmlLinks';
 import { useScrollLock } from '@shared/hooks/useScrollLock';
+import { IS_MOBILE_BUILD } from '@config';
 import {
   AlertCircle,
   ArrowLeft,
-  Check,
-  FileText,
+  ExternalLink,
   Loader2,
-  LogOut,
-  ShieldCheck,
 } from '@shared/components/icons';
 import {
   LEGAL_CONSENT_EVENT,
@@ -23,24 +21,88 @@ import {
 import styles from './LegalUpdateGate.module.css';
 
 /**
- * Full-screen flow shown when Meetifyy has published a policy update whose
+ * The display name for each document type, used when the server's `label` is
+ * missing. Kept in step with the backend's LEGAL_DOCUMENT_LABELS.
+ */
+const TYPE_LABELS = {
+  TERMS_OF_SERVICE: 'Terms of Service',
+  PRIVACY_POLICY: 'Privacy Policy',
+  COOKIE_POLICY: 'Cookie Policy',
+  COMMUNITY_GUIDELINES: 'Community Guidelines',
+};
+
+/** Terms first, then Privacy, then anything else in the server's order. */
+const TYPE_ORDER = ['TERMS_OF_SERVICE', 'PRIVACY_POLICY'];
+
+export function legalDocName(doc) {
+  return doc?.label || TYPE_LABELS[doc?.documentType] || doc?.title || 'document';
+}
+
+function sortDocs(docs) {
+  const rank = (d) => {
+    const i = TYPE_ORDER.indexOf(d.documentType);
+    return i === -1 ? TYPE_ORDER.length : i;
+  };
+  return docs
+    .map((d, i) => [d, i])
+    .sort(([a, ai], [b, bi]) => rank(a) - rank(b) || ai - bi)
+    .map(([d]) => d);
+}
+
+/** "A", "A and B", "A, B and C". */
+export function joinNames(names) {
+  if (names.length <= 1) return names[0] ?? '';
+  return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+}
+
+/** "Updates to our Terms of Service and Privacy Policy", etc. */
+export function legalUpdateTitle(docs) {
+  return `Updates to our ${joinNames(sortDocs(docs).map(legalDocName))}`;
+}
+
+const FOCUSABLE =
+  'a[href], button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+function formatDate(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleDateString(undefined, {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  });
+}
+
+/**
+ * Blocking dialog shown when Meetifyy has published a policy update whose
  * acceptance is mandatory.
  *
  * Built the same way as `SuspensionGate` and `AccountDeletionGate`, for the same
  * reason: the session stays valid on purpose — the user has to be able to read
  * the update and accept it — so this screen is what they get instead of the app.
+ * The app shell is not rendered behind it (the backdrop is painted, not the
+ * product): every request the shell made would be refused anyway.
  *
  * It is presentation only. `JwtGuard` refuses every route not marked
  * `@AllowPendingLegalAck()`, so unmounting this component, opening a second tab,
  * navigating with the back button or driving the API by hand gains nobody
- * anything. That is also why there is no dismiss, skip, or "remind me later"
- * control: there is nothing for one to do except mislead.
+ * anything. That is also why there is no close button, no Escape, no backdrop
+ * dismiss and no "remind me later": there is nothing for one to do except
+ * mislead.
+ *
+ * Consent is the explicit "Got it" button plus the small print directly above
+ * it, which names the documents being agreed to.
+ *
+ * Layout: a centred card over a dimmed backdrop from 768px up; below that, and
+ * always in the installed app, the same content as an opaque full-screen sheet
+ * that pads for the status and navigation bars and pins its buttons to the
+ * bottom.
  *
  * ── One flow, however many documents ──────────────────────────────────────
  * The server returns every outstanding version in a single list, and the whole
  * list is accepted in a single request. Terms-only, Privacy-only and both-at-
- * once are therefore the same code path with a different number of cards — no
- * stacked modals, and no way to accept one and be asked about the next.
+ * once are therefore the same code path with a different title — no stacked
+ * modals, and no way to accept one and be asked about the next.
  */
 export default function LegalUpdateGate({ children }) {
   const { isLoggedIn, logout } = useAuth();
@@ -56,10 +118,12 @@ export default function LegalUpdateGate({ children }) {
     readLegalPendingHint() ? 'confirming' : 'checking',
   ); // checking | confirming | clear | pending
   const [pending, setPending] = useState([]);
-  const [agreed, setAgreed] = useState(false);
   const [reading, setReading] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const readerRef = useRef(null);
+  const dialogRef = useRef(null);
+  const titleRef = useRef(null);
+  const backRef = useRef(null);
   const [error, setError] = useState(null);
 
   // Guards against a response from a check that was superseded (a sign-out, or
@@ -164,24 +228,107 @@ export default function LegalUpdateGate({ children }) {
   useEffect(() => {
     if (!reading) return;
     hardenExternalLinks(readerRef.current);
+    // Wide tables scroll sideways inside the reader instead of crushing
+    // their columns on a phone.
+    wrapTablesForScroll(readerRef.current);
   }, [reading]);
 
   const confirming = isLoggedIn && state === 'confirming';
   const blocking =
     isLoggedIn && ((state === 'pending' && pending.length > 0) || confirming);
+  const showingDocs = blocking && !confirming;
 
   // The page behind must not scroll while the gate is up, and on iOS a body
   // that keeps scrolling is how a "blocking" overlay ends up scrolled off.
   useScrollLock(blocking);
 
+  // Initial focus: the title when the summary is showing (so a screen reader
+  // starts at the headline, not at a button that would consent), the Back
+  // button inside the reader.
+  useEffect(() => {
+    if (!showingDocs) return;
+    if (reading) backRef.current?.focus();
+    else titleRef.current?.focus();
+  }, [showingDocs, reading]);
+
+  // Focus stays inside the dialog: Tab wraps, and Escape does nothing — there
+  // is nothing to dismiss to.
+  const onDialogKeyDown = (e) => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+    if (e.key !== 'Tab') return;
+    const root = dialogRef.current;
+    if (!root) return;
+    const items = Array.from(root.querySelectorAll(FOCUSABLE));
+    if (items.length === 0) {
+      e.preventDefault();
+      return;
+    }
+    const first = items[0];
+    const last = items[items.length - 1];
+    const active = document.activeElement;
+    const inside = root.contains(active);
+    if (e.shiftKey && (active === first || !inside || active === titleRef.current)) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && (active === last || !inside)) {
+      e.preventDefault();
+      first.focus();
+    }
+  };
+
+  // Focus that leaves the dialog (a click on the backdrop, a programmatic
+  // blur) is brought back.
+  useEffect(() => {
+    if (!blocking) return undefined;
+    const onFocusIn = (e) => {
+      const root = dialogRef.current;
+      if (root && !root.contains(e.target)) {
+        (titleRef.current ?? root).focus();
+      }
+    };
+    document.addEventListener('focusin', onFocusIn);
+    return () => document.removeEventListener('focusin', onFocusIn);
+  }, [blocking]);
+
+  /*
+   * The reader shows the version's own text from the API — that is the exact
+   * wording being accepted. Only if a version arrives with an empty body does
+   * it fall back to the bundled website copy, loaded on demand so the gate
+   * does not carry every document's text in the main bundle.
+   */
+  const [fallbackContent, setFallbackContent] = useState({});
+  const readingEmpty = pending.find((d) => d.versionId === reading && !d.content);
+  const readingEmptyType = readingEmpty?.documentType ?? null;
+  useEffect(() => {
+    if (!readingEmptyType) return undefined;
+    let cancelled = false;
+    import('@features/info/pages/legalDocuments')
+      .then(({ LEGAL_DOCUMENTS }) => {
+        if (cancelled) return;
+        setFallbackContent((prev) => ({
+          ...prev,
+          [readingEmptyType]: LEGAL_DOCUMENTS[readingEmptyType]?.content ?? '',
+        }));
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [readingEmptyType]);
+
   const handleAccept = async () => {
-    if (!agreed || submitting) return;
+    if (submitting) return;
     setSubmitting(true);
     setError(null);
     try {
       const res = await legalApi.acknowledge(pending.map((d) => d.versionId));
       if (res?.satisfied) {
         setPending([]);
+        setReading(null);
         setState('clear');
         writeLegalPendingHint(false);
         // Tells the other tabs to re-ask the server. They do not take this as
@@ -190,8 +337,10 @@ export default function LegalUpdateGate({ children }) {
       } else {
         // The server accepted some but not all — most likely because another
         // document started requiring acknowledgement between render and click.
+        // The re-check shows the new list; nothing is accepted on the user's
+        // behalf until they press the button again against it.
+        setReading(null);
         await check();
-        setAgreed(false);
       }
     } catch (err) {
       /**
@@ -226,46 +375,90 @@ export default function LegalUpdateGate({ children }) {
 
   if (!blocking) return children;
 
-  // Blocking, but the documents have not arrived yet. Deliberately says nothing
-  // about what changed — it does not know yet, and inventing a headline that
-  // the next render replaces reads as a glitch.
+  const wrapperClass = `${styles.wrapper}${IS_MOBILE_BUILD ? ` ${styles.app}` : ''}`;
+
+  // Blocking, but the documents have not arrived yet. A skeleton of the card:
+  // it deliberately says nothing about what changed — it does not know yet, and
+  // inventing a headline that the next render replaces reads as a glitch.
   if (confirming) {
     return (
-      <div className={styles.wrapper} role="status" aria-live="polite">
-        <div className={styles.card}>
-          <div className={styles.loading}>
-            <Loader2 size={18} className={styles.spin} />
-            <span>Checking for policy updates…</span>
+      <div className={wrapperClass} data-legal-gate="">
+        <div
+          className={`${styles.card} ${styles.skeletonCard}`}
+          role="status"
+          aria-live="polite"
+          aria-busy="true"
+        >
+          <div className={styles.scroll}>
+            <img className={styles.logo} src="/logo-mark.png" alt="" />
+            <span className={styles.srOnly}>Checking for policy updates…</span>
+            <div className={styles.skeletonStack} aria-hidden="true">
+              <span className={`${styles.bone} ${styles.boneTitle}`} />
+              <span className={`${styles.bone} ${styles.boneTitleShort}`} />
+              <span className={`${styles.bone} ${styles.boneLine}`} />
+              <span className={`${styles.bone} ${styles.boneLineShort}`} />
+            </div>
+          </div>
+          <div className={styles.footer} aria-hidden="true">
+            <span className={`${styles.bone} ${styles.boneSmall}`} />
+            <span className={`${styles.bone} ${styles.boneButton}`} />
+            <span className={`${styles.bone} ${styles.boneButton}`} />
           </div>
         </div>
       </div>
     );
   }
 
+  const docs = sortDocs(pending);
+  const names = docs.map(legalDocName);
+  const docsPhrase = joinNames(names);
+  const single = docs.length === 1;
+
   const readingDoc = reading
     ? pending.find((d) => d.versionId === reading)
     : null;
 
+  // The document names inside running text: each opens the in-dialog reader,
+  // which works the same on the website and in the app.
+  const inlineDocLinks = docs.map((doc, i) => (
+    <span key={doc.versionId}>
+      {i > 0 && (i === docs.length - 1 ? ' and ' : ', ')}
+      <button
+        type="button"
+        className={styles.inlineLink}
+        onClick={() => setReading(doc.versionId)}
+      >
+        {legalDocName(doc)}
+      </button>
+    </span>
+  ));
+
   return (
-    <div
-      className={styles.wrapper}
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="legal-update-title"
-    >
-      <div className={styles.card}>
+    <div className={wrapperClass} data-legal-gate="">
+      <div
+        ref={dialogRef}
+        className={styles.card}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={readingDoc ? 'legal-reader-title' : 'legal-update-title'}
+        aria-describedby={readingDoc ? undefined : 'legal-update-desc'}
+        tabIndex={-1}
+        onKeyDown={onDialogKeyDown}
+      >
         {readingDoc ? (
           <div className={styles.reader}>
-            <div className={styles.readerHead} style={{ paddingTop: '1.25rem' }}>
+            <div className={styles.readerHead}>
               <button
+                ref={backRef}
                 type="button"
                 className={styles.backBtn}
                 onClick={() => setReading(null)}
+                aria-label="Back to the summary"
               >
-                <ArrowLeft size={14} />
+                <ArrowLeft size={16} />
                 Back
               </button>
-              <h2 className={styles.readerTitle}>
+              <h2 id="legal-reader-title" className={styles.readerTitle}>
                 {readingDoc.title} · v{readingDoc.versionNumber}
               </h2>
             </div>
@@ -279,62 +472,75 @@ export default function LegalUpdateGate({ children }) {
             <div
               ref={readerRef}
               className={styles.readerBody}
-              dangerouslySetInnerHTML={{ __html: readingDoc.content }}
+              dangerouslySetInnerHTML={{
+                __html:
+                  readingDoc.content ||
+                  fallbackContent[readingDoc.documentType] ||
+                  '',
+              }}
             />
           </div>
         ) : (
-          <>
-            <div className={styles.header}>
-              <div className={styles.iconBadge}>
-                <ShieldCheck size={26} />
-              </div>
-              <h1 id="legal-update-title" className={styles.title}>
-                We&apos;ve updated our policies
-              </h1>
-              <p className={styles.body}>
-                {pending.length === 1
-                  ? 'We have made changes to the document below. Please review it and confirm to carry on using Meetifyy.'
-                  : `We have made changes to ${pending.length} documents. Please review them and confirm to carry on using Meetifyy.`}
-              </p>
-            </div>
+          <div className={styles.scroll}>
+            <img className={styles.logo} src="/logo-mark.png" alt="" />
+            <h1
+              id="legal-update-title"
+              ref={titleRef}
+              tabIndex={-1}
+              className={styles.title}
+            >
+              {legalUpdateTitle(docs)}
+            </h1>
+            <p id="legal-update-desc" className={styles.subtitle}>
+              We&apos;ve updated our {inlineDocLinks}. Please take a moment to
+              review {single ? 'it' : 'them'} before you continue.
+            </p>
 
-            <div className={styles.docList}>
-              {pending.map((doc) => (
-                <div key={doc.versionId} className={styles.doc}>
-                  <div className={styles.docHead}>
-                    <h2 className={styles.docTitle}>{doc.title}</h2>
-                    <span className={styles.docVersion}>
-                      Version {doc.versionNumber}
-                    </span>
-                  </div>
-
-                  {doc.changeSummary && (
-                    <p className={styles.docSummary}>{doc.changeSummary}</p>
-                  )}
-
-                  {doc.effectiveAt && (
-                    <p className={styles.docMeta}>
-                      Effective{' '}
-                      {new Date(doc.effectiveAt).toLocaleDateString(undefined, {
-                        day: 'numeric',
-                        month: 'long',
-                        year: 'numeric',
-                      })}
-                    </p>
-                  )}
-
-                  <button
-                    type="button"
-                    className={styles.readBtn}
-                    onClick={() => setReading(doc.versionId)}
-                  >
-                    <FileText size={14} />
-                    Read the full {doc.label ?? 'document'}
-                  </button>
-                </div>
-              ))}
-            </div>
-          </>
+            <ul className={styles.docList} aria-label="Updated documents">
+              {docs.map((doc) => {
+                const effective = doc.effectiveAt ? formatDate(doc.effectiveAt) : null;
+                return (
+                  <li key={doc.versionId} className={styles.doc}>
+                    <div className={styles.docHead}>
+                      <span className={styles.docName}>{legalDocName(doc)}</span>
+                      <span className={styles.docMeta}>
+                        Version {doc.versionNumber}
+                        {effective && ` · Effective ${effective}`}
+                      </span>
+                    </div>
+                    {doc.changeSummary && (
+                      <p className={styles.docSummary}>{doc.changeSummary}</p>
+                    )}
+                    <div className={styles.docActions}>
+                      <button
+                        type="button"
+                        className={styles.docLink}
+                        onClick={() => setReading(doc.versionId)}
+                      >
+                        Read {IS_MOBILE_BUILD ? 'the full text' : 'here'}
+                      </button>
+                      {/* The full page, on the website only, and in a new tab so
+                          this dialog is still here when they come back. The app
+                          has no tabs: navigating would hide the gate, so there
+                          the reader above is the full text. */}
+                      {!IS_MOBILE_BUILD && doc.path && (
+                        <a
+                          className={styles.docLink}
+                          href={doc.path}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          Open full page
+                          <ExternalLink size={13} aria-hidden="true" />
+                          <span className={styles.srOnly}> (opens in a new tab)</span>
+                        </a>
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
         )}
 
         <div className={styles.footer}>
@@ -345,33 +551,16 @@ export default function LegalUpdateGate({ children }) {
             </div>
           )}
 
-          <label className={styles.consentRow}>
-            <input
-              type="checkbox"
-              checked={agreed}
-              onChange={(e) => setAgreed(e.target.checked)}
-            />
-            <span>
-              I have read and agree to the updated{' '}
-              {pending.map((d, i) => (
-                <span key={d.versionId}>
-                  {i > 0 && (i === pending.length - 1 ? ' and ' : ', ')}
-                  <strong>{d.label ?? d.title}</strong>
-                </span>
-              ))}
-              .
-            </span>
-          </label>
-
-          <p className={styles.requiredNote}>
-            Accepting is required to continue using Meetifyy.
+          <p className={styles.smallPrint}>
+            By selecting Got it, you agree to the updated {docsPhrase}.
           </p>
 
           <button
             type="button"
             className={styles.primaryBtn}
             onClick={handleAccept}
-            disabled={!agreed || submitting}
+            disabled={submitting}
+            aria-busy={submitting || undefined}
           >
             {submitting ? (
               <>
@@ -379,21 +568,21 @@ export default function LegalUpdateGate({ children }) {
                 Saving…
               </>
             ) : (
-              <>
-                <Check size={16} />
-                I Agree &amp; Continue
-              </>
+              'Got it'
             )}
           </button>
 
+          {/* Sign-out is not an escape from the requirement — the gate is
+              waiting again on the next sign-in. It is here because a shared
+              machine is a real situation and being unable to leave an account
+              would be worse. */}
           <button
             type="button"
-            className={styles.signOutBtn}
+            className={styles.secondaryBtn}
             onClick={logout}
             disabled={submitting}
           >
-            <LogOut size={12} style={{ verticalAlign: '-2px' }} /> Sign out
-            instead
+            Sign out
           </button>
         </div>
       </div>
