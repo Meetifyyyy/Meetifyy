@@ -40,10 +40,17 @@
 .notice {
   margin: 0;
   padding: 12px var(--settings-gutter);
-  background: rgba(var(--color-primary-rgb), 0.06);
+  background: var(--color-bg-soft);
   font-size: 0.82rem;
   line-height: 1.5;
   color: var(--color-text-light);
+}
+
+/* Dark: a neutral step above the #2A2A2A card, matching the fields; the blue
+   tint it had read as a muddy slate on dark grey. */
+:global([data-theme="dark"]) .notice {
+  background: #303033;
+  color: rgba(255, 255, 255, 0.62);
 }
 
 .formWrap {

@@ -1487,9 +1487,30 @@ input:checked + .slider::before {
   --field-fill-hover: #eceef2;
 }
 
+/* Dark: neutral greys a step above the #2A2A2A card (the old values were
+   tinted purple and clashed with it), a hairline edge so a field never melts
+   into the card, and a focus ring in the app's blue rather than violet. */
 :global([data-theme='dark']) .page {
-  --field-fill: #35333f;
-  --field-fill-hover: #3c3a47;
+  --field-fill: #343437;
+  --field-fill-hover: #3b3b3f;
+  --field-ring: 0 0 0 1.5px rgba(var(--color-primary-rgb), 0.75);
+}
+
+:global([data-theme='dark']) .page .input,
+:global([data-theme='dark']) .page .selectButton,
+:global([data-theme='dark']) .page .dobInput {
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+:global([data-theme='dark']) .page .input:focus:not(:disabled),
+:global([data-theme='dark']) .page .dobInput:focus {
+  border-color: transparent;
+  background: var(--color-bg-white);
+}
+
+:global([data-theme='dark']) .page .input::placeholder,
+:global([data-theme='dark']) .page .selectPlaceholder {
+  color: rgba(255, 255, 255, 0.42);
 }
 
 .selectPortal {
@@ -1498,8 +1519,17 @@ input:checked + .slider::before {
 }
 
 :global([data-theme='dark']) .selectPortal {
-  background: #35333f;
-  --menu-row-hover: #423f4d;
+  background: #343437;
+  --menu-row-hover: #414145;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.08),
+    0 14px 32px -8px rgba(0, 0, 0, 0.7);
+}
+
+/* The chosen row: the brand blue, lifted so it reads on the dark menu. */
+:global([data-theme='dark']) .selectPortal .selectOptionActive,
+:global([data-theme='dark']) .selectPortal .selectOption:hover {
+  color: #9db8ff;
 }
 
 /* ── Phones: tighter page ──────────────────────────────────────────────────
