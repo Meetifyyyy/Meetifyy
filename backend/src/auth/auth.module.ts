@@ -11,6 +11,8 @@ import { UserSessionRetentionService } from './session/user-session-retention.se
   controllers: [AuthController],
   // The guard resolves session state, and the account-deletion and
   // password-change paths revoke sessions, so the service leaves this module.
-  exports: [UserSessionService],
+  // AuthService leaves for `verifyPassword`: removing a college email and
+  // changing the sign-in email both re-prove the current password.
+  exports: [UserSessionService, AuthService],
 })
 export class AuthModule {}

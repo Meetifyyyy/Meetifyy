@@ -31,7 +31,11 @@ import {
 } from '../common/validation/email-format.util';
 import type { AuthenticatedUser } from '../common/types/authenticated-request';
 import { randomInt } from 'crypto';
-import { NotificationType } from '@prisma/client';
+import { Gender, NotificationType } from '@prisma/client';
+import {
+  presentAffiliation,
+  profileCompletion,
+} from '../common/campus/campus-affiliation.util';
 import { deriveBatchYearForStorage } from '../common/student-year/batch-year.util';
 import { LegalConsentService } from '../common/legal/legal-consent.service';
 import { stripTags } from '../common/utils/strip-tags.util';
@@ -162,6 +166,19 @@ interface ProfileRow {
   canMessage: boolean | null;
   canActivity: boolean | null;
   isCampusRep: boolean | null;
+  gender: string | null;
+  // The verified college email, LEFT JOINed; all null without one.
+  aff_college_id: string | null;
+  aff_email: string | null;
+  aff_email_normalized: string | null;
+  aff_method: string | null;
+  aff_verified_at: Date | null;
+  aff_revoked_at: Date | null;
+  aff_college_name: string | null;
+  aff_college_logo_key: string | null;
+  aff_college_is_active: boolean | null;
+  aff_college_status: string | null;
+  aff_college_deleted_at: Date | null;
   college_id: string | null;
   college_name: string | null;
   settings_id: string | null;
@@ -178,6 +195,35 @@ interface ProfileRow {
   postBookmarkIds: string[] | null;
   activityBookmarkIds: string[] | null;
   unreadNotifCount: number | null;
+}
+
+/** The `campusAffiliation` of a profile row, from its joined columns. */
+function affiliationFromRow(row: ProfileRow) {
+  if (!row.aff_college_id || !row.aff_email || !row.aff_verified_at) {
+    return null;
+  }
+  return presentAffiliation({
+    collegeId: row.aff_college_id,
+    email: row.aff_email,
+    method: row.aff_method ?? '',
+    verifiedAt: row.aff_verified_at,
+    revokedAt: row.aff_revoked_at ?? null,
+    college: {
+      name: row.aff_college_name ?? '',
+      logoKey: row.aff_college_logo_key ?? null,
+      isActive: row.aff_college_is_active ?? false,
+      status: row.aff_college_status ?? '',
+      deletedAt: row.aff_college_deleted_at ?? null,
+    },
+  });
+}
+
+/** A gender value from identity-provider metadata, if it is a real one. */
+function metaGender(value: unknown): Gender | null {
+  return typeof value === 'string' &&
+    (Object.values(Gender) as string[]).includes(value)
+    ? (value as Gender)
+    : null;
 }
 
 /**
@@ -224,6 +270,14 @@ function buildExistingProfile(
     canMessage: row.canMessage,
     canActivity: row.canActivity,
     isCampusRep: row.isCampusRep,
+    gender: row.gender ?? null,
+    // Null without a verified college email. See docs/college-affiliation.md.
+    campusAffiliation: affiliationFromRow(row),
+    profileCompletion: profileCompletion({
+      email: row.email,
+      gender: row.gender,
+      affiliationEmailNormalized: row.aff_email_normalized ?? null,
+    }),
     college,
     settings,
     followingList: row.followingList || [],
@@ -403,6 +457,18 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
         u."canMessage",
         u."canActivity",
         u."isCampusRep",
+        u."gender",
+        ca."collegeId" AS "aff_college_id",
+        ca."email" AS "aff_email",
+        ca."emailNormalized" AS "aff_email_normalized",
+        ca."method" AS "aff_method",
+        ca."verifiedAt" AS "aff_verified_at",
+        ca."revokedAt" AS "aff_revoked_at",
+        cac."name" AS "aff_college_name",
+        cac."logoKey" AS "aff_college_logo_key",
+        cac."isActive" AS "aff_college_is_active",
+        cac."status" AS "aff_college_status",
+        cac."deletedAt" AS "aff_college_deleted_at",
         c."id" AS "college_id",
         c."name" AS "college_name",
         s."id" AS "settings_id",
@@ -453,6 +519,8 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
       FROM "User" u
       LEFT JOIN "College" c ON u."collegeId" = c."id"
       LEFT JOIN "UserSettings" s ON s."userId" = u."id"
+      LEFT JOIN "CollegeAffiliation" ca ON ca."userId" = u."id"
+      LEFT JOIN "College" cac ON cac."id" = ca."collegeId"
       WHERE u."id" = ${userId}
       LIMIT 1;
     `;
@@ -490,16 +558,10 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     // `accountStatus` travels in the payload below, which is what the client
     // keys the suspension screen off.
 
-    // Perform domain lookup for college auto-linking, but DO NOT block existing accounts
-    // if their domain was later deactivated/removed from admin portal.
-    const domainCheck = await this.domainValidatorService.validateDomain(
-      row.email ?? '',
-    );
-    if (!domainCheck.isValid) {
-      this.logger.log(
-        `Existing user ${row.id} (${row.email}) logged in with unapproved/removed domain`,
-      );
-    }
+    // No college is derived from the sign-in address any more: campus
+    // membership comes only from a verified college email (CollegeAffiliation),
+    // whose service maintains `collegeId` on the row. See
+    // docs/college-affiliation.md.
 
     const settings: ProfileSettings | null = row.settings_id
       ? {
@@ -516,33 +578,9 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
         }
       : null;
 
-    let college = row.college_id
+    const college = row.college_id
       ? { id: row.college_id, name: row.college_name }
       : null;
-
-    // If user has no collegeId assigned or domain mapping changed, auto-link to active matching college
-    if (
-      domainCheck.isValid &&
-      domainCheck.info?.collegeId &&
-      row.college_id !== domainCheck.info.collegeId
-    ) {
-      row.college_id = domainCheck.info.collegeId;
-      row.college_name = domainCheck.info.collegeName;
-      college = {
-        id: domainCheck.info.collegeId,
-        name: domainCheck.info.collegeName,
-      };
-      this.prisma.user
-        .update({
-          where: { id: row.id },
-          data: { collegeId: domainCheck.info.collegeId },
-        })
-        .catch((err) =>
-          this.logger.error(
-            `Failed to auto-link user collegeId: ${errorMessage(err)}`,
-          ),
-        );
-    }
 
     // Auto-heal `batchYear` from the verified institutional address.
     //
@@ -555,9 +593,11 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     //
     // Fire-and-forget, and only when the value actually differs, so the
     // normal login pays nothing.
-    const derivedBatchYear = deriveBatchYearForStorage(
-      row.email ?? row.collegeEmail,
-    );
+    // Only from the verified college address. Without one the stored value
+    // is left alone: a personal sign-in address says nothing about a batch.
+    const derivedBatchYear = row.aff_email
+      ? deriveBatchYearForStorage(row.aff_email)
+      : (row.batchYear ?? null);
     if (derivedBatchYear !== (row.batchYear ?? null)) {
       row.batchYear = derivedBatchYear;
       this.prisma.user
@@ -763,15 +803,10 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
         : username);
 
     const email = sbUser.email || '';
-    const domainValidation =
-      await this.domainValidatorService.validateDomain(email);
-    if (!domainValidation.isValid) {
-      this.logger.warn(
-        `Account creation rejected for ${email}: ${domainValidation.reason}`,
-      );
-      throw new UnauthorizedException(domainValidation.reason);
-    }
-    const collegeId = domainValidation.info?.collegeId || null;
+    // Any confirmed address may sign up. The sign-in address never grants a
+    // college, even on a college domain: campus access comes only from
+    // verifying a college email on the Campus page (CollegeAffiliation).
+    const gender = metaGender(sbUser.user_metadata?.gender);
 
     // Run email and username conflict checks in parallel — they are independent queries
     const [existingUserByEmail, existingUserByUsername] = await Promise.all([
@@ -841,10 +876,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
             metaString(sbUser.user_metadata?.avatar) ??
             this.defaultAssets.refFor('profile-avatar'),
           cover: null,
-          collegeId: collegeId,
-          collegeEmail: email,
-          // Derived here, never accepted from the client.
-          batchYear: deriveBatchYearForStorage(email),
+          ...(gender ? { gender } : {}),
           birthday: userBirthday,
           settings: {
             create: {},
@@ -1085,6 +1117,32 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     return { success: true };
   }
 
+  /**
+   * The address the account signs in with right now: the auth provider's
+   * record first (it is what `signInWithPassword` checks against), then the
+   * user row, and the token's claim only when neither can be read.
+   */
+  private async currentSignInEmail(user: AuthenticatedUser): Promise<string> {
+    try {
+      const { data } = await this.supabaseService.client.auth.admin.getUserById(
+        user.id,
+      );
+      if (data?.user?.email) return data.user.email;
+    } catch {
+      // Fall through to the row.
+    }
+    try {
+      const row = await this.prisma.user.findUnique({
+        where: { id: user.id },
+        select: { email: true },
+      });
+      if (row?.email) return row.email;
+    } catch {
+      // Fall through to the token.
+    }
+    return user?.email || '';
+  }
+
   async verifyPassword(
     user: AuthenticatedUser,
     password: string,
@@ -1093,7 +1151,11 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
       throw new UnauthorizedException('Authentication is not configured.');
     }
 
-    const email = (user?.email || '').trim().toLowerCase();
+    // The CURRENT sign-in address, never the token's claim: after a
+    // personal-email change (/api/account/email) a live token still carries
+    // the previous address until it refreshes, and checking against it would
+    // fail every password check in between.
+    const email = (await this.currentSignInEmail(user)).trim().toLowerCase();
     // A placeholder address means the account has no password identity to
     // verify against; treating that as "wrong password" is the safe answer.
     if (!email || email.endsWith('@meetifyy.user') || !password) {
@@ -1158,6 +1220,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     birthday?: string;
     firstName?: string;
     lastName?: string;
+    gender?: Gender;
   }): Promise<{ pending: boolean }> {
     if (!this.supabaseService.isAnonConfigured) {
       throw new UnauthorizedException('Authentication is not configured.');
@@ -1182,6 +1245,8 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
           birthday: input.birthday,
           firstName: input.firstName,
           lastName: input.lastName,
+          // Validated against the enum by SignUpDto; re-checked on read.
+          gender: input.gender,
         },
       },
     });
@@ -1345,7 +1410,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     code?: 'invalid_email' | 'domain_not_allowed' | 'email_taken';
     reason?: string;
     collegeName?: string;
-    collegeId?: string;
+    collegeId?: string | null;
   }> {
     // Cheapest check first — reject malformed input before any DB / domain work.
     //
@@ -1366,6 +1431,33 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
       };
     }
     const trimmed = normalizeEmail(email);
+
+    // Signup (no college named): any well-formed address that is not already
+    // someone's sign-in email. The signup email never grants a college, so the
+    // domain is not a gate here; it is reported only as a hint. A personal
+    // address equal to another account's verified college email is allowed
+    // as a login (see docs/college-affiliation.md), hence `email` alone.
+    if (!collegeId) {
+      const taken = await this.prisma.user.findUnique({
+        where: { email: trimmed },
+        select: { id: true },
+      });
+      if (taken) {
+        return {
+          available: false,
+          code: 'email_taken',
+          reason: 'This email is already registered. Please sign in.',
+        };
+      }
+      const hint = await this.domainValidatorService.validateDomain(trimmed);
+      return {
+        available: true,
+        collegeId: hint.isValid ? (hint.info?.collegeId ?? null) : null,
+        ...(hint.isValid && hint.info?.collegeName
+          ? { collegeName: hint.info.collegeName }
+          : {}),
+      };
+    }
 
     // If collegeId is provided, get target college name for clearer error messaging
     let targetCollegeName: string | undefined;

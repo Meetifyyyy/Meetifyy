@@ -2,10 +2,12 @@ import {
   IsString,
   IsNotEmpty,
   IsEmail,
+  IsEnum,
   IsOptional,
   Length,
   MaxLength,
 } from 'class-validator';
+import { Gender } from '@prisma/client';
 
 export class CheckUsernameDto {
   @IsString()
@@ -120,6 +122,11 @@ export class SignUpDto {
   @IsString()
   @MaxLength(100)
   lastName?: string;
+
+  /** Required by the new signup UI; optional here because old apps never send it. */
+  @IsOptional()
+  @IsEnum(Gender)
+  gender?: Gender;
 }
 
 /** Re-send the signup confirmation code to an address mid-signup. */

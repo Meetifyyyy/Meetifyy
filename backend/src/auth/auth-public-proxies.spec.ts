@@ -47,12 +47,19 @@ const makeAdminAuth = () => ({
     signOut: jest.fn<Promise<unknown>, [string, string?]>().mockResolvedValue({
       error: null,
     }),
+    // No auth record by default, so the token claim is what gets checked.
+    getUserById: jest
+      .fn<Promise<unknown>, [string]>()
+      .mockResolvedValue({ data: { user: null }, error: null }),
   },
 });
 
 describe('the public auth proxies', () => {
   let prisma: {
-    user: { findFirst: jest.Mock<Promise<{ id: string } | null>, [unknown]> };
+    user: {
+      findFirst: jest.Mock<Promise<{ id: string } | null>, [unknown]>;
+      findUnique: jest.Mock<Promise<{ email: string } | null>, [unknown]>;
+    };
   };
   let anonAuth: ReturnType<typeof makeAnonAuth>;
   let adminAuth: ReturnType<typeof makeAdminAuth>;
@@ -67,6 +74,9 @@ describe('the public auth proxies', () => {
         findFirst: jest
           .fn<Promise<{ id: string } | null>, [unknown]>()
           .mockResolvedValue({ id: 'u1' }),
+        findUnique: jest
+          .fn<Promise<{ email: string } | null>, [unknown]>()
+          .mockResolvedValue(null),
       },
     };
     const supabaseService = stub<SupabaseService>({
@@ -281,6 +291,36 @@ describe('the public auth proxies', () => {
         service.verifyPassword(placeholder, 'anything'),
       ).resolves.toEqual({ valid: false });
       expect(adminAuth.signInWithPassword).not.toHaveBeenCalled();
+    });
+
+    it('checks against the CURRENT auth email, not the token claim (after a personal-email change)', async () => {
+      adminAuth.admin.getUserById.mockResolvedValue({
+        data: { user: { email: 'new.personal@gmail.com' } },
+        error: null,
+      });
+      adminAuth.signInWithPassword.mockResolvedValue({
+        data: { session: { access_token: 'minted' } },
+        error: null,
+      });
+      await service.verifyPassword(caller, 'right-password');
+      expect(adminAuth.signInWithPassword).toHaveBeenCalledWith({
+        email: 'new.personal@gmail.com',
+        password: 'right-password',
+      });
+    });
+
+    it('falls back to the user row when the auth record cannot be read', async () => {
+      adminAuth.admin.getUserById.mockRejectedValue(new Error('down'));
+      prisma.user.findUnique.mockResolvedValue({ email: 'row@gmail.com' });
+      adminAuth.signInWithPassword.mockResolvedValue({
+        data: null,
+        error: { message: 'Invalid login credentials' },
+      });
+      await service.verifyPassword(caller, 'pw');
+      expect(adminAuth.signInWithPassword).toHaveBeenCalledWith({
+        email: 'row@gmail.com',
+        password: 'pw',
+      });
     });
 
     it('never verifies an empty password', async () => {
