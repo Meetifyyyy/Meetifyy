@@ -3,6 +3,7 @@ import { HugeiconsIcon } from '@hugeicons/react';
 import {
   Add01Icon,
   ComputerPhoneSyncIcon,
+  SmartPhone01Icon,
   Alert02Icon,
   AlertCircleIcon,
   ArrowDown01Icon,
@@ -249,6 +250,7 @@ const GLYPHS = {
   ShieldCheck: ShieldCheckIcon,
   ShieldAlert: ShieldAlertIcon,
   Phone: Call02Icon,
+  Smartphone: SmartPhone01Icon,
   Lightbulb: BulbIcon,
   Inbox: InboxIcon,
   Bug: Bug01Icon,
@@ -395,6 +397,7 @@ export const Shield = /*#__PURE__*/ icon(GLYPHS.Shield, 'Shield');
 export const ShieldCheck = /*#__PURE__*/ icon(GLYPHS.ShieldCheck, 'ShieldCheck');
 export const ShieldAlert = /*#__PURE__*/ icon(GLYPHS.ShieldAlert, 'ShieldAlert');
 export const Phone = /*#__PURE__*/ icon(GLYPHS.Phone, 'Phone');
+export const Smartphone = /*#__PURE__*/ icon(GLYPHS.Smartphone, 'Smartphone');
 export const Lightbulb = /*#__PURE__*/ icon(GLYPHS.Lightbulb, 'Lightbulb');
 export const Inbox = /*#__PURE__*/ icon(GLYPHS.Inbox, 'Inbox');
 export const Bug = /*#__PURE__*/ icon(GLYPHS.Bug, 'Bug');

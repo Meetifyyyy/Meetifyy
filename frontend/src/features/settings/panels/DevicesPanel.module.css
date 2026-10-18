@@ -39,6 +39,7 @@
 }
 
 .icon {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -71,18 +72,33 @@
 
 /* The row the person is looking at. Marked rather than hidden — knowing which
    one is "here" is what makes the rest of the list actionable. */
-.currentTag {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  padding: 2px 7px;
-  border-radius: 100px;
-  background: rgba(var(--color-primary-rgb), 0.1);
-  color: var(--color-primary);
-  font-size: 0.66rem;
-  font-weight: 700;
-  letter-spacing: 0.01em;
+/* The device you're using: a status dot on its icon, ringed in the row's
+   own surface so it reads as a bubble sitting on the corner. */
+.currentDot {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--color-success, #10b981);
+  box-shadow: 0 0 0 2.5px var(--color-bg-white);
+}
+
+:global([data-theme="dark"]) .currentDot {
+  box-shadow: 0 0 0 2.5px var(--color-bg-alt);
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
   white-space: nowrap;
+  border: 0;
 }
 
 .meta {

@@ -2,7 +2,7 @@ import { useState, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { sessionsApi } from '@shared/api/apiClient';
 import { showToast } from '@shared/utils/toast';
-import { Devices, Phone, LogOut, Check } from '@shared/components/icons';
+import { Devices, Smartphone, LogOut } from '@shared/components/icons';
 import styles from './DevicesPanel.module.css';
 import RowSkeleton from '@shared/components/skeletons/RowSkeleton';
 
@@ -103,7 +103,7 @@ export default function DevicesPanel() {
   const intro = (
     <p className={styles.intro}>
       You&apos;re signed in on these devices. If you don&apos;t recognise one,
-      sign it out — it stops working straight away.
+      sign it out. It stops working straight away.
     </p>
   );
 
@@ -148,20 +148,17 @@ export default function DevicesPanel() {
           <div key={session.id} className={styles.row}>
             <span className={styles.icon} aria-hidden="true">
               {session.client === 'app' ? (
-                <Phone size={20} strokeWidth={2} />
+                <Smartphone size={20} strokeWidth={2} />
               ) : (
                 <Devices size={20} strokeWidth={2} />
               )}
+              {session.current && <span className={styles.currentDot} />}
             </span>
 
             <span className={styles.info}>
               <span className={styles.name}>
                 {session.deviceName || 'Unknown device'}
-                {session.current && (
-                  <span className={styles.currentTag}>
-                    <Check size={12} strokeWidth={3} /> This device
-                  </span>
-                )}
+                {session.current && <span className={styles.srOnly}> (This device)</span>}
               </span>
               <span className={styles.meta}>{describeRow(session)}</span>
             </span>
