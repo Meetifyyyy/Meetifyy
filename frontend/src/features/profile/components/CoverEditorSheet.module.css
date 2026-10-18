@@ -1,10 +1,6 @@
 /* Edit cover sheet. Same frame as the share sheet (ShareSheet.module.css):
    a bottom sheet on phones with the shared drag handle, a centred card on
-   wider screens. Theme tokens only.
-
-   On phones the sheet is laid out at full height, top at the status-bar
-   inset, and useExpandableCoverSheet translates it down to its opening
-   height; growing to full screen is then a transform, never a relayout. */
+   wider screens. Theme tokens only. */
 
 .backdrop {
   position: fixed;
@@ -14,16 +10,13 @@
   align-items: flex-end;
   justify-content: center;
   background: rgba(0, 0, 0, 0.45);
-  overflow: hidden;
   animation: fadeIn 0.18s ease;
 }
 
 .sheet {
-  --sheet-top: max(env(safe-area-inset-top, 0px), var(--status-bar-inset, 0px));
   width: 100%;
   max-width: 480px;
-  height: calc(100vh - var(--sheet-top));
-  height: calc(100dvh - var(--sheet-top));
+  max-height: min(88dvh, calc(100dvh - var(--status-bar-inset, 0px) - 1rem));
   display: flex;
   flex-direction: column;
   background: var(--color-bg-white);
@@ -32,18 +25,11 @@
   box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.12);
   animation: slideUp 0.32s cubic-bezier(0.16, 1, 0.3, 1);
   overflow: hidden;
-  transition: border-radius 0.2s ease;
-}
-
-/* Full screen: the top corners meet the screen edge. */
-.sheet[data-expanded='true'] {
-  border-radius: 0;
 }
 
 @media (min-width: 769px) {
   .backdrop { align-items: center; }
   .sheet {
-    height: auto;
     max-width: 520px;
     max-height: min(720px, 90vh);
     border-radius: 28px;
@@ -53,8 +39,6 @@
 .header {
   flex-shrink: 0;
   padding: 8px 12px 4px;
-  /* The header is the sheet's drag area on phones. */
-  touch-action: none;
 }
 
 .header > :global(.sheet-handle) {
@@ -95,9 +79,8 @@
   .closeBtn { visibility: hidden; }
 }
 
-/* Scrolls natively; the first scroll at the opening height expands the sheet,
-   and a drag here moves the sheet only down from the top of the list, so
-   reading the grid never closes it. */
+/* Scrolls on its own; useSheetDrag only starts a drag from the handle or when
+   this is already at the top, so reading the grid never closes the sheet. */
 .body {
   flex: 1 1 auto;
   min-height: 0;
@@ -182,9 +165,11 @@
 }
 
 /* Secondary beside Save: same height and shape, quieter fill. */
+/* Upload and Save split the footer exactly in half. */
 .uploadBtn {
   flex: 1 1 0;
   min-width: 0;
+  box-sizing: border-box;
   height: 46px;
   padding: 0 14px;
   border-radius: 999px;
@@ -209,8 +194,10 @@
 .saveBtn {
   flex: 1 1 0;
   min-width: 0;
+  box-sizing: border-box;
   height: 46px;
-  border: none;
+  padding: 0 14px;
+  border: 1px solid transparent;
   border-radius: 999px;
   background: var(--color-primary);
   color: #fff;

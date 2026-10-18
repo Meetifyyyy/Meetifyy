@@ -1,7 +1,6 @@
 /** @vitest-environment jsdom */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, within } from '@testing-library/react';
-import { initialOffset, resolveSheetSnap, snapOffset } from '../components/coverSheetSnap';
 
 vi.mock('@shared/components/avatar/Avatar', () => ({ default: () => <span data-testid="avatar" /> }));
 vi.mock('@shared/components/ui/CoverImage', () => ({ default: () => <div data-testid="cover" /> }));
@@ -89,59 +88,5 @@ describe('CoverEditorSheet', () => {
     const gradients = within(dialog).getByRole('group', { name: 'Gradients' });
     expect(within(patterns).getAllByRole('button')).toHaveLength(selectable(COVER_PATTERNS).length);
     expect(within(gradients).getAllByRole('button')).toHaveLength(selectable(COVER_GRADIENTS).length);
-  });
-
-  it('on phones the sheet is placed by transform, not a CSS entrance', () => {
-    phone = true;
-    const { dialog } = renderSheet();
-    expect(dialog.style.transform).toMatch(/translate3d/);
-    expect(dialog.style.animation).toBe('none');
-  });
-
-  it('on wider screens no inline transform is applied', () => {
-    const { dialog } = renderSheet();
-    expect(dialog.style.transform).toBe('');
-  });
-});
-
-describe('resolveSheetSnap', () => {
-  const base = { initial: 100, visible: 700 };
-
-  it('settles to the nearer of full and initial on a slow release', () => {
-    expect(resolveSheetSnap({ ...base, y: 30 })).toBe('full');
-    expect(resolveSheetSnap({ ...base, y: 70 })).toBe('initial');
-    expect(resolveSheetSnap({ ...base, y: 150, from: 'full' })).toBe('initial');
-  });
-
-  it('closes a quarter of the visible height below the opening height', () => {
-    expect(resolveSheetSnap({ ...base, y: 100 + 176 })).toBe('close');
-    expect(resolveSheetSnap({ ...base, y: 100 + 170 })).toBe('initial');
-  });
-
-  it('a downward flick closes from the opening height, but only collapses from full', () => {
-    expect(resolveSheetSnap({ ...base, y: 120, velocity: 1 })).toBe('close');
-    expect(resolveSheetSnap({ ...base, y: 120, velocity: 1, from: 'full' })).toBe('initial');
-    expect(resolveSheetSnap({ ...base, y: 20, velocity: 1, from: 'full' })).toBe('initial');
-  });
-
-  it('an upward flick expands', () => {
-    expect(resolveSheetSnap({ ...base, y: 90, velocity: -1 })).toBe('full');
-  });
-
-  it('a sheet whose content fits never expands', () => {
-    expect(resolveSheetSnap({ initial: 0, visible: 500, y: 0, velocity: -2 })).toBe('initial');
-    expect(resolveSheetSnap({ initial: 0, visible: 500, y: 200 })).toBe('close');
-  });
-
-  it('snapOffset and initialOffset', () => {
-    expect(snapOffset('full', { initial: 100, height: 800 })).toBe(0);
-    expect(snapOffset('initial', { initial: 100, height: 800 })).toBe(100);
-    expect(snapOffset('close', { initial: 100, height: 800 })).toBe(824);
-    // Tall content opens at the 88% cap.
-    expect(initialOffset({ height: 820, natural: 2000, viewport: 844 })).toBe(Math.round(820 - 844 * 0.88));
-    // Short content opens at its own height.
-    expect(initialOffset({ height: 820, natural: 500, viewport: 844 })).toBe(320);
-    // Never higher than 16px below the top inset.
-    expect(initialOffset({ height: 600, natural: 2000, viewport: 900 })).toBe(16);
   });
 });

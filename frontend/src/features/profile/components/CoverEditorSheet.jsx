@@ -4,6 +4,7 @@ import CoverImage from '@shared/components/ui/CoverImage';
 import Avatar from '@shared/components/avatar/Avatar';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 import { useScrollLock } from '@shared/hooks/useScrollLock';
+import { useSheetDrag } from '@shared/hooks/useSheetDrag';
 import { ALLOWED_IMAGE_ACCEPT } from '@shared/constants/mediaLimits';
 import {
   COVER_GRADIENTS,
@@ -11,7 +12,6 @@ import {
   isSameCover,
   selectable,
 } from '@shared/lib/covers/profileCovers';
-import { useExpandableCoverSheet } from './useExpandableCoverSheet';
 import styles from './CoverEditorSheet.module.css';
 
 const PATTERNS = selectable(COVER_PATTERNS);
@@ -44,16 +44,13 @@ const Tile = memo(function Tile({ design, selected, onPick }) {
  * cropper, whose confirm is its own Save. Upload sits beside Save in the
  * footer, so both actions stay in reach while the grid scrolls.
  *
- * On phones the sheet opens at its usual height and grows to full screen as
- * the grid is scrolled or the header dragged up (useExpandableCoverSheet).
- *
  * `cover` is what the profile shows now, including an upload still in flight;
  * `upload` is that upload's progress (0-100) or null.
  */
 export default function CoverEditorSheet({ isOpen, onClose, cover, avatar, name, upload, onSave, onPhoto }) {
   useOverlayBack(Boolean(isOpen), onClose);
   useScrollLock(Boolean(isOpen));
-  const { sheetRef, headerRef, bodyRef, footerRef } = useExpandableCoverSheet(onClose, { enabled: Boolean(isOpen) });
+  const sheetRef = useSheetDrag(onClose, { enabled: Boolean(isOpen) });
   const fileRef = useRef(null);
 
   // Mounted per opening (ProfilePage renders it only while open), so each
@@ -96,7 +93,7 @@ export default function CoverEditorSheet({ isOpen, onClose, cover, avatar, name,
         aria-labelledby="cover-sheet-title"
         onClick={(e) => e.stopPropagation()}
       >
-        <div ref={headerRef} className={styles.header}>
+        <div className={styles.header}>
           <div className="sheet-handle" data-sheet-handle aria-hidden="true" />
           <div className={styles.headerRow}>
             <h2 id="cover-sheet-title" className={styles.title}>Edit cover</h2>
@@ -109,7 +106,7 @@ export default function CoverEditorSheet({ isOpen, onClose, cover, avatar, name,
           </div>
         </div>
 
-        <div ref={bodyRef} className={styles.body}>
+        <div className={styles.body}>
           {/* Roughly the profile: the cover, with the avatar over its lower edge. */}
           <div className={styles.preview} aria-hidden="true">
             <CoverImage cover={draft} className={styles.previewCover} />
@@ -125,7 +122,7 @@ export default function CoverEditorSheet({ isOpen, onClose, cover, avatar, name,
           {grid(GRADIENTS, 'Gradients')}
         </div>
 
-        <div ref={footerRef} className={styles.footer}>
+        <div className={styles.footer}>
           <input ref={fileRef} type="file" accept={ALLOWED_IMAGE_ACCEPT} hidden onChange={onFile} />
           <button
             type="button"
