@@ -1,0 +1,62 @@
+/* Settings → Email. Layout comes from SettingsRoute's body/group/row
+   scaffolding so the gutter and rows match every other panel; this only adds
+   the pieces those don't have: a static info row, the inline notice and form,
+   the Verified chip and the footnote. */
+
+/* Hairline between the rows of one card, like a native settings list. */
+.group > * + * {
+  border-top: 1px solid var(--color-border-light);
+}
+
+.infoRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px var(--settings-gutter);
+  min-width: 0;
+}
+
+.value {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--color-text-main);
+  overflow-wrap: anywhere;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  padding: 3px 9px;
+  border-radius: var(--radius-full, 999px);
+  /* --color-success is #10B981; no -rgb twin exists for it. */
+  background: rgba(16, 185, 129, 0.12);
+  color: var(--color-success);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.notice {
+  margin: 0;
+  padding: 12px var(--settings-gutter);
+  background: rgba(var(--color-primary-rgb), 0.06);
+  font-size: 0.82rem;
+  line-height: 1.5;
+  color: var(--color-text-light);
+}
+
+.formWrap {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px var(--settings-gutter);
+}
+
+.footnote {
+  margin: -4px 0 12px;
+  padding: 0 calc(var(--settings-gutter) + 4px);
+  font-size: 0.76rem;
+  line-height: 1.5;
+  color: var(--color-text-muted);
+}
