@@ -12,38 +12,13 @@
   box-shadow: var(--shadow-sm, 0 1px 3px rgba(0, 0, 0, 0.04));
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
-  scrollbar-width: thin;
-  scrollbar-color: var(--color-border-dark, rgba(0, 0, 0, 0.2)) transparent;
+  /* Scrolls without a visible bar, like the right panel beside it. */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
 
 .page::-webkit-scrollbar {
-  width: 6px;
-  display: block;
-}
-
-.page::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.page::-webkit-scrollbar-thumb {
-  background: var(--color-border-dark, rgba(0, 0, 0, 0.2));
-  border-radius: var(--radius-full, 9999px);
-}
-
-.page::-webkit-scrollbar-thumb:hover {
-  background: var(--color-text-light, rgba(0, 0, 0, 0.4));
-}
-
-:global([data-theme="dark"]) .page {
-  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
-}
-
-:global([data-theme="dark"]) .page::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.2);
-}
-
-:global([data-theme="dark"]) .page::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.35);
+  display: none;
 }
 
 .headerArea {
