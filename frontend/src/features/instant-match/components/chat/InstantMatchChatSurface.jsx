@@ -9,6 +9,7 @@ import { useChatManager } from '@features/messages/shared/hooks/useChatManager';
 import ChatMessageList from '@features/messages/shared/components/ChatMessageList';
 import { chatMediaItem } from '@features/messages/shared/utils/chatMediaItem';
 import ChatInputArea from '@features/messages/shared/components/ChatInputArea';
+import { KEYBOARD_OVERLAYS_PAGE } from '@shared/utils/keyboardOverlay';
 import { useTypingIndicator } from '@features/messages/shared/hooks/useTypingIndicator';
 import { useCountdown } from '../../hooks/useCountdown';
 import { getActivity, getActivityVerb, accentVars } from '../../constants/matchConstants';
@@ -226,7 +227,7 @@ export default function InstantMatchChatSurface({
 
   return createPortal(
     <div
-      className="im-scope im-chat-root"
+      className={`im-scope im-chat-root${KEYBOARD_OVERLAYS_PAGE ? ' chat-pans-keyboard' : ''}`}
       style={accentStyle}
       role="dialog"
       aria-modal="true"
@@ -338,6 +339,7 @@ export default function InstantMatchChatSurface({
             onCancelReply={() => setReplyingTo(null)}
             onTyping={handleKeystroke}
             stopTypingNow={stopTypingNow}
+            keyboardDock={KEYBOARD_OVERLAYS_PAGE}
           />
         </div>
       ) : (

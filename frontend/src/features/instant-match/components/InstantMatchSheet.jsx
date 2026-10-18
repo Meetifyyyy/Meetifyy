@@ -10,6 +10,7 @@ import { useAnimatedHeight } from '../hooks/useAnimatedHeight';
 import { useSearchingNow } from '../hooks/useSearchingNow';
 import { useScrollLock } from '@shared/hooks/useScrollLock';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
+import { KEYBOARD_OVERLAYS_PAGE } from '@shared/utils/keyboardOverlay';
 import PeopleStep from './steps/PeopleStep';
 import ActivityStep from './steps/ActivityStep';
 import TimeStep from './steps/TimeStep';
@@ -228,7 +229,7 @@ export default function InstantMatchSheet() {
 
   return createPortal(
     <div
-      className="im-scope im-sheet-overlay"
+      className={`im-scope im-sheet-overlay${KEYBOARD_OVERLAYS_PAGE ? ' im-kb-overlay' : ''}`}
       style={accentStyle}
       onMouseDown={(e) => {
         // Only a click that starts *and* ends on the scrim dismisses, so a
@@ -243,6 +244,9 @@ export default function InstantMatchSheet() {
         aria-modal="true"
         aria-labelledby={titleId}
         tabIndex={-1}
+        // Lifts itself with the keyboard (instant-match-sheet.css), so the
+        // app-wide focus pass must not scroll for a field inside it.
+        data-keyboard-dock={KEYBOARD_OVERLAYS_PAGE ? '' : undefined}
         onMouseDown={(e) => e.stopPropagation()}
       >
         <PosterBackdrop tone={searching ? 'b' : 'a'} />

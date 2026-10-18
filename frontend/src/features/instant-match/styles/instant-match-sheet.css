@@ -22,8 +22,9 @@
    * instead of shrinking it. The Details step focuses its field on arrival,
    * so the sheet stands on the keyboard's top edge (and is capped to the
    * space above it, below) with the field and the Find button in reach. A
-   * layout change once per keyboard transition, not a transform: the sheet's
-   * rise animation holds `transform` with `fill-mode: both`. 0 elsewhere.
+   * layout change once per keyboard transition where the keyboard resizes or
+   * pans the page (iOS, the website). 0 elsewhere. In the Android app the
+   * sheet lifts by `translate` instead, see the end of this file.
    */
   padding-bottom: var(--kb-inset, 0px);
 }
@@ -1271,4 +1272,37 @@
   width: 100%;
   max-width: 300px;
   margin-top: 6px;
+}
+
+/* ── Keyboard, Android app ───────────────────────────────────────────────────
+   InstantMatchSheet adds `im-kb-overlay` (and marks the sheet a keyboard dock)
+   where the keyboard overlays the page (KEYBOARD_OVERLAYS_PAGE). The sheet then
+   rises with it by its own `translate`, a compositor-only property on the
+   keyboard's curve (--kb-duration, --kb-easing, --kb-delay), instead of the
+   overlay's padding snapping it up in one frame ahead of the keyboard. `translate`
+   is separate from `transform`, which the rise animation holds. The lift is
+   --kb-inset minus the navigation-bar inset the sheet already pads for, so that
+   padding ends up behind the keyboard and the content stands on its top edge.
+   The height cap keeps the sheet's top on screen and snaps (max-height does not
+   transition here): animating it would lay out every frame of the slide. */
+.im-sheet-overlay.im-kb-overlay {
+  --im-kb-lift: max(0px, calc(var(--kb-inset, 0px) - env(safe-area-inset-bottom, 0px)));
+  padding-bottom: 0;
+}
+
+.im-sheet-overlay.im-kb-overlay .im-sheet {
+  max-height: min(88dvh, 780px, calc(100dvh - var(--im-kb-lift) - var(--status-bar-inset, 0px) - 1rem));
+  transition: translate var(--kb-duration, 0ms) var(--kb-easing, ease-out) var(--kb-delay, 0ms);
+}
+
+html[data-keyboard-open] .im-sheet-overlay.im-kb-overlay .im-sheet {
+  translate: 0 calc(-1 * var(--im-kb-lift));
+}
+
+.im-sheet-overlay.im-kb-overlay .im-sheet-content {
+  padding-bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .im-sheet-overlay.im-kb-overlay .im-sheet { transition: none; }
 }

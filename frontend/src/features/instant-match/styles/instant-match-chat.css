@@ -8,15 +8,61 @@
   display: flex;
   flex-direction: column;
   background: var(--im-paper, var(--color-bg-page, #fff));
-  /* Respect the notch and the software keyboard's inset. The keyboard
-     overlays the page in the app (--kb-inset, useKeyboardInset) rather than
-     shrinking this fixed root, so the root makes room for it itself: the
-     composer stands on the keyboard and the thread above it gets shorter,
-     once per keyboard transition (ChatMessageList's ResizeObserver keeps the
-     latest message pinned). The keyboard covers the home-indicator area, so
-     the larger of the two, never both. Messages lifts the same composer its
-     own way (`.chat-pans-keyboard`); that class is never set here. */
+  /* Respect the notch and the home-indicator / navigation-bar inset.
+     Where something else makes room for the keyboard (iOS: the visual viewport
+     shrinks; the website on Android: the browser resizes the layout viewport)
+     the root also keeps clear of --kb-inset, the larger of the two, never both.
+     In the Android app the keyboard overlays the page and the root never
+     resizes for it; see `.chat-pans-keyboard` below. */
   padding-bottom: max(env(safe-area-inset-bottom), var(--kb-inset, 0px));
+}
+
+/* ── Keyboard, Android app ───────────────────────────────────────────────────
+   InstantMatchChatSurface adds `chat-pans-keyboard` where the keyboard overlays
+   the page (KEYBOARD_OVERLAYS_PAGE), the same class Messages uses. The shared
+   Messages rules key off it too: the composer (.msgChatInputWrap) rises with a
+   transform and the thread (.msgChatBody) is bottom-anchored and gains the lift
+   as top padding, see ChatInputAreaStyles / ChatMessageList. This file lifts
+   the rest of the column the same way (the composer lifts itself, so
+   `.im-chat-foot` is left alone: lifting it too would count the keyboard
+   twice), so the thread, the starters and the composer move as one on the keyboard's own curve (--kb-duration,
+   --kb-easing, --kb-delay), on the compositor, with no layout per frame and no
+   resize of the root. The lift is --kb-inset minus the navigation-bar inset the
+   root already pads for, so that padding ends up behind the keyboard and the
+   composer stands on its top edge. */
+.im-chat-root.chat-pans-keyboard {
+  --chat-kb-lift: max(0px, calc(var(--kb-inset, 0px) - env(safe-area-inset-bottom, 0px)));
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.im-chat-root.chat-pans-keyboard .im-chat-body,
+.im-chat-root.chat-pans-keyboard .im-chat-starters,
+.im-chat-root.chat-pans-keyboard .im-chat-ended {
+  transition: transform var(--kb-duration, 0ms) var(--kb-easing, ease-out) var(--kb-delay, 0ms);
+}
+
+html[data-keyboard-open] .im-chat-root.chat-pans-keyboard .im-chat-body,
+html[data-keyboard-open] .im-chat-root.chat-pans-keyboard .im-chat-starters,
+html[data-keyboard-open] html[data-keyboard-open] .im-chat-root.chat-pans-keyboard .im-chat-ended {
+  transform: translate3d(0, calc(-1 * var(--chat-kb-lift, 0px)), 0);
+}
+
+/* The thread slides up under the header and the "why you matched" strip, so
+   both stay opaque and above it (the thread adds the same lift to its top
+   padding, so its first message remains reachable below them). */
+.im-chat-root.chat-pans-keyboard .im-chat-head,
+.im-chat-root.chat-pans-keyboard .im-chat-reason {
+  position: relative;
+  z-index: 2;
+}
+.im-chat-root.chat-pans-keyboard .im-chat-reason {
+  background: color-mix(in srgb, var(--im-sun) 22%, var(--im-paper, var(--color-bg-page, #fff)));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .im-chat-root.chat-pans-keyboard .im-chat-body,
+  .im-chat-root.chat-pans-keyboard .im-chat-starters,
+    .im-chat-root.chat-pans-keyboard .im-chat-ended { transition: none; }
 }
 
 /* On a phone the window IS the root — it adds nothing and simply passes its
