@@ -8,6 +8,16 @@ import { stub } from '../testing/stub';
 import type { PrismaService } from '../../prisma/prisma.service';
 import type { DomainEventService } from '../../events/domain-event.service';
 import { IS_VERIFIED_ONLY_KEY } from '../decorators/verified-only.decorator';
+import { PostsController } from '../../posts/posts.controller';
+import { CommunitiesController } from '../../communities/communities.controller';
+import { ActivitiesController } from '../../activities/activities.controller';
+import { ActivityDiscussionController } from '../../activities/discussion/activity-discussion.controller';
+import { UsersController } from '../../users/users.controller';
+import { CampusEventsController } from '../../campus-events/campus-events.controller';
+import { DmController } from '../../messages/dm/dm.controller';
+import { MessagesController } from '../../messages/messages.controller';
+import { GroupChatsController } from '../../messages/group-chats/group-chats.controller';
+import { RealtimeGateway } from '../../realtime/realtime.gateway';
 
 /**
  * The access-control matrix: every account state against a gated action, over
@@ -141,4 +151,150 @@ describe('verification access matrix', () => {
       guard.canActivate(context({ type: 'http', userId: 'u1' })),
     ).resolves.toBe(true);
   });
+});
+
+/**
+ * Which routes carry the selfie gate (`@VerifiedOnly()`).
+ *
+ * Policy, not plumbing: docs/college-affiliation.md narrowed the gate to
+ * messaging, creating posts / communities / activities and Instant Match.
+ * Everything else a signed-in account does (likes, comments, follows, joins,
+ * bookmarks, community and activity management, discussion posts) is open,
+ * and campus surfaces are gated by a verified college email instead
+ * (CampusAccessService). Listing both sides means a route that silently gains
+ * or loses the gate fails here.
+ */
+describe('selfie gate route matrix', () => {
+  type Ctor = { prototype: object; name: string };
+
+  const gated = (ctor: Ctor, method: string): boolean => {
+    const handler: unknown = Reflect.get(ctor.prototype, method);
+    if (typeof handler !== 'function') {
+      throw new Error(`${ctor.name}.${method} does not exist`);
+    }
+    return Reflect.getMetadata(IS_VERIFIED_ONLY_KEY, handler) === true;
+  };
+
+  const MATRIX: Array<[Ctor, string[], string[]]> = [
+    [
+      PostsController,
+      ['createPost'],
+      [
+        'deletePost',
+        'like',
+        'unlike',
+        'addComment',
+        'likeComment',
+        'unlikeComment',
+        'deleteComment',
+        'bookmark',
+        'unbookmark',
+        'voteInPoll',
+      ],
+    ],
+    [
+      CommunitiesController,
+      ['createCommunity'],
+      [
+        'joinCommunity',
+        'acceptJoinRequest',
+        'declineJoinRequest',
+        'updateCommunity',
+        'updateMemberRole',
+        'removeMember',
+        'deleteCommunity',
+        'getCampusCommunities',
+      ],
+    ],
+    [
+      ActivitiesController,
+      ['createActivity'],
+      [
+        'acceptInvitation',
+        'declineInvitation',
+        'bookmarkActivity',
+        'unbookmarkActivity',
+        'updateVisibility',
+        'joinActivity',
+        'leaveActivity',
+        'declineCrewInvitation',
+        'cancelCrewActivity',
+        'endCrewActivity',
+        'inviteFriends',
+        'revokeInvitation',
+      ],
+    ],
+    [ActivityDiscussionController, [], ['sendMessage']],
+    [
+      UsersController,
+      [],
+      ['getCampusUsers', 'getDirectory', 'follow', 'unfollow'],
+    ],
+    [
+      CampusEventsController,
+      [],
+      ['list', 'listMine', 'getById', 'create', 'update', 'publish', 'remove'],
+    ],
+    [DmController, ['startDM', 'sendMessage', 'forwardMessage'], []],
+    [
+      MessagesController,
+      [
+        'sendMessage',
+        'forwardMessage',
+        // Joining a group by invite (or requesting to) is messaging; so is
+        // approving a request, which adds a member.
+        'joinGroup',
+        'requestJoinGroup',
+        'acceptJoinRequest',
+      ],
+      ['declineJoinRequest', 'getInvitePreview'],
+    ],
+    [
+      GroupChatsController,
+      [
+        'createGroup',
+        'sendMessage',
+        'addMember',
+        'acceptJoinRequest',
+        'joinGroup',
+        'requestJoin',
+      ],
+      [
+        'getInvitePreview',
+        'updateGroupInfo',
+        'removeMember',
+        'changeOwner',
+        'promoteAdmin',
+        'demoteAdmin',
+        'declineJoinRequest',
+      ],
+    ],
+    [
+      RealtimeGateway,
+      [
+        'handleQueueJoin',
+        'handleMatchRespond',
+        'handleQueueSync',
+        'handleQueueList',
+        'handleInstantMatchChatState',
+        'handleInstantMatchLeave',
+      ],
+      [],
+    ],
+  ];
+
+  describe.each(MATRIX.map(([c, k, o]) => [c.name, c, k, o] as const))(
+    '%s',
+    (_name, ctor, keep, open) => {
+      it.each(keep.length ? keep : ['(none)'])('keeps the gate on %s', (m) => {
+        if (m === '(none)') return;
+        expect(gated(ctor, m)).toBe(true);
+      });
+
+      it.each(open.length ? open : ['(none)'])('has no gate on %s', (m) => {
+        if (m === '(none)') return;
+        expect(gated(ctor, m)).toBe(false);
+      });
+    },
+  );
 });

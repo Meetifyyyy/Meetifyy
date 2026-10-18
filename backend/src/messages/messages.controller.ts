@@ -860,6 +860,7 @@ export class MessagesController {
 
   @Post(':id/requests/:targetUserId/accept')
   @UseGuards(JwtGuard)
+  @VerifiedOnly()
   async acceptJoinRequest(
     @Req() req: AuthenticatedRequest,
     @Param('id') conversationId: string,
@@ -901,6 +902,7 @@ export class MessagesController {
 
   @Post(':id/join')
   @UseGuards(JwtGuard)
+  @VerifiedOnly()
   async joinGroup(
     @Req() req: AuthenticatedRequest,
     @Param('id') conversationId: string,
@@ -923,6 +925,7 @@ export class MessagesController {
 
   @Post(':id/request')
   @UseGuards(JwtGuard)
+  @VerifiedOnly()
   async requestJoinGroup(
     @Req() req: AuthenticatedRequest,
     @Param('id') conversationId: string,

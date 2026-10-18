@@ -1059,6 +1059,11 @@ export class GroupChatsService extends MessagingCoreService {
       throw new BadRequestException('Join request has expired');
     }
 
+    // Approving adds a member: the approver and the requester must both pass
+    // the selfie gate, exactly as for addMember.
+    await this.assertMayJoinGroup(userId);
+    await this.assertJoinRequesterEligible(realConvId, targetUserId);
+
     await this.prisma.$transaction([
       this.prisma.conversationJoinRequest.delete({
         where: {

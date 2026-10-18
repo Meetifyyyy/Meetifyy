@@ -115,6 +115,55 @@ export class MessagingCoreService {
     );
   }
 
+  /**
+   * Joining a group is messaging, so the joiner must pass the selfie gate.
+   * `@VerifiedOnly()` covers the HTTP routes; this covers every other caller
+   * of the join path (and any route that forgets the decorator).
+   */
+  protected async assertMayJoinGroup(userId: string): Promise<void> {
+    if (!this.verificationAccess.isEnforcementEnabled()) return;
+    if (await this.verificationAccess.isUserEligible(userId)) return;
+    throw new ForbiddenException(
+      'Account verification is required to perform this action.',
+    );
+  }
+
+  /**
+   * Approving a join request adds the requester as a member, so the requester
+   * must be eligible at approval time — a request may have been made before
+   * the selfie gate covered invite joins, or the account may have lapsed since.
+   * An ineligible requester's request is removed so it stops showing to admins.
+   * The wording is the neutral one `assertUsersEligible` uses for a
+   * counterparty: it does not disclose the requester's verification state.
+   */
+  protected async assertJoinRequesterEligible(
+    realConvId: string,
+    targetUserId: string,
+  ): Promise<void> {
+    if (!this.verificationAccess.isEnforcementEnabled()) return;
+    const ineligible = await this.verificationAccess.getIneligibleUserIds([
+      targetUserId,
+    ]);
+    if (ineligible.length === 0) return;
+    await this.prisma.conversationJoinRequest
+      .delete({
+        where: {
+          conversationId_userId: {
+            conversationId: realConvId,
+            userId: targetUserId,
+          },
+        },
+      })
+      // Already gone (declined or expired concurrently): the refusal stands.
+      .catch(() => undefined);
+    throw new ForbiddenException({
+      statusCode: 403,
+      code: 'JOIN_REQUEST_INELIGIBLE',
+      message:
+        'This user is not available for messaging. Their request was removed.',
+    });
+  }
+
   async getBatchUnblockedAndUnmutedParticipants(
     conversationId: string,
     senderId: string,
@@ -1661,6 +1710,12 @@ export class MessagingCoreService {
     const isBlocked = isMember
       ? false
       : await this.isBlockedFromGroup(conv.ownerId, userId);
+    // Joining needs the selfie verification; the client shows the verify
+    // prompt instead of a Join button that would answer 403. Cached lookup.
+    const requiresVerification =
+      !isMember &&
+      this.verificationAccess.isEnforcementEnabled() &&
+      !(await this.verificationAccess.isUserEligible(userId));
 
     // A single reason code the client switches on, instead of re-deriving the
     // same precedence from six separate fields.
@@ -1689,6 +1744,7 @@ export class MessagingCoreService {
       myRole: isMember ? participant?.role || 'MEMBER' : null,
       hasPendingRequest: requestActive,
       joinState,
+      requiresVerification,
     };
   }
 
@@ -1749,6 +1805,10 @@ export class MessagingCoreService {
         ...identity,
       };
     }
+
+    // Both joining and requesting to join are refused: a request from an
+    // unverified account could never be approved (see acceptGroupJoinRequest).
+    await this.assertMayJoinGroup(userId);
 
     if (this.isConversationClosed(conversation.status)) {
       throw new BadRequestException('GROUP_CLOSED');

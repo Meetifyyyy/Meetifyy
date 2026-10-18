@@ -299,7 +299,6 @@ export class GroupChatsController {
 
   @Patch(':id/info')
   @UseGuards(JwtGuard)
-  @VerifiedOnly()
   async updateGroupInfo(
     @Req() req: AuthenticatedRequest,
     @Param('id') conversationId: string,
@@ -440,7 +439,6 @@ export class GroupChatsController {
 
   @Delete(':id/members/:targetUserId')
   @UseGuards(JwtGuard)
-  @VerifiedOnly()
   async removeMember(
     @Req() req: AuthenticatedRequest,
     @Param('id') conversationId: string,
@@ -635,7 +633,6 @@ export class GroupChatsController {
 
   @Post(':id/owner')
   @UseGuards(JwtGuard)
-  @VerifiedOnly()
   async changeOwner(
     @Req() req: AuthenticatedRequest,
     @Param('id') conversationId: string,
@@ -697,7 +694,6 @@ export class GroupChatsController {
 
   @Post(':id/admins')
   @UseGuards(JwtGuard)
-  @VerifiedOnly()
   async promoteAdmin(
     @Req() req: AuthenticatedRequest,
     @Param('id') conversationId: string,
@@ -740,7 +736,6 @@ export class GroupChatsController {
 
   @Delete(':id/admins/:targetUserId')
   @UseGuards(JwtGuard)
-  @VerifiedOnly()
   async demoteAdmin(
     @Req() req: AuthenticatedRequest,
     @Param('id') conversationId: string,
@@ -830,7 +825,6 @@ export class GroupChatsController {
 
   @Post(':id/requests/:targetUserId/decline')
   @UseGuards(JwtGuard)
-  @VerifiedOnly()
   async declineJoinRequest(
     @Req() req: AuthenticatedRequest,
     @Param('id') conversationId: string,
@@ -865,6 +859,7 @@ export class GroupChatsController {
 
   @Post(':id/join')
   @UseGuards(JwtGuard)
+  @VerifiedOnly()
   async joinGroup(
     @Req() req: AuthenticatedRequest,
     @Param('id') conversationId: string,
@@ -914,6 +909,7 @@ export class GroupChatsController {
   // Same handler as /join. Kept because the invite card has always posted here.
   @Post(':id/request')
   @UseGuards(JwtGuard)
+  @VerifiedOnly()
   async requestJoin(
     @Req() req: AuthenticatedRequest,
     @Param('id') conversationId: string,
