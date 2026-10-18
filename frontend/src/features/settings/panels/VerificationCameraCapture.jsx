@@ -9,6 +9,7 @@ import {
   CheckCircle2,
 } from '@shared/components/icons';
 import styles from './VerificationCameraCapture.module.css';
+import { IS_MOBILE_BUILD } from '@config';
 import {
   getCameraErrorMessage,
   isCameraBlockedByPermissionsPolicy,
@@ -183,7 +184,7 @@ export default function VerificationCameraCapture({
         if (!mountedRef.current || requestIdRef.current !== requestId) return;
 
         setErrorMessage(
-          getCameraErrorMessage(err, { permissionState, blockedByPolicy }),
+          getCameraErrorMessage(err, { permissionState, blockedByPolicy, nativeApp: IS_MOBILE_BUILD }),
         );
         setCameraState('error');
         stopCamera();

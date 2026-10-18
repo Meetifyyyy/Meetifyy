@@ -246,6 +246,9 @@ function ProtectedRoute({ children }) {
           {/* Sits inside the gates on purpose: an account that is suspended or
               being deleted should not be congratulated on being verified. */}
           <VerifiedWelcome />
+          {/* Same gates, same reason. Asks for gender / a personal login
+              email when the server flags them; dismissible, never blocking. */}
+          <ProfileCompletionModal />
         </LegalUpdateGate>
       </SuspensionGate>
     </AccountDeletionGate>
@@ -291,6 +294,7 @@ import SuspensionGate from './shared/components/SuspensionGate';
 import AccountDeletionGate from './shared/components/AccountDeletionGate';
 import LegalUpdateGate from './shared/components/LegalUpdateGate';
 import VerifiedWelcome from './shared/components/VerifiedWelcome';
+import ProfileCompletionModal from './shared/components/ProfileCompletion';
 import NotFoundState from './shared/components/ui/NotFoundState';
 /*
  * Lazy: the public 404 brings the landing page's navbar, and with it

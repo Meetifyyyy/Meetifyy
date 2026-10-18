@@ -64,7 +64,8 @@ const NOT_FOR_IDEAS = new Set(['SAFETY_REPORTING']);
 
 /** A real address to reply to; never the internal `@meetifyy.user` placeholder. */
 function accountAddress(user) {
-  const email = user?.collegeEmail || user?.email || '';
+  // The sign-in address: it may be personal, and it outlives a college email.
+  const email = user?.email || user?.collegeEmail || '';
   return email.endsWith('@meetifyy.user') ? '' : email;
 }
 

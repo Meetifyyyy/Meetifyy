@@ -24,7 +24,7 @@ import {
   Pencil, Lock, AlertCircle, Trash2,
   User, GraduationCap, Shield, Bell, HelpCircle, LogOut,
   ChevronRight, ChevronDown, Check, Ban,
-  LockKeyhole, Cookie, Sparkles, Eye, Devices,
+  LockKeyhole, Cookie, Sparkles, Eye, Devices, Mail,
 } from '@shared/components/icons';
 import wordmark from '@assets/images/meetifyy_wordmark.svg';
 import PasswordToggle, { usePasswordVisibility } from '@shared/components/forms/PasswordToggle';
@@ -32,11 +32,14 @@ import styles from './SettingsRoute.module.css';
 import useDevToolsStore from '@shared/stores/devToolsStore';
 import BlockedContacts from '../panels/BlockedContacts';
 import SettingsVerificationPanel from '../panels/SettingsVerificationPanel';
+import SettingsEmailPanel from '../panels/SettingsEmailPanel';
+import { GENDER_OPTIONS } from '@shared/constants/gender';
 import SettingsHelpPanel from '../panels/SettingsHelpPanel';
 import DevicesPanel from '../panels/DevicesPanel';
 import { IS_DEV_BUILD, IS_MOBILE_BUILD } from '@config';
 import { useCookieConsent } from '@shared/context/CookieConsentContext';
 import { visibleViewportBottom } from '@shared/utils/visibleViewport';
+import { isAffiliationActive } from '@shared/lib/campusAccess';
 
 // Large-device split layout only kicks in at this width — tablets and phones
 // keep the existing single-pane list/detail swap untouched.
@@ -70,6 +73,7 @@ export const SETTINGS_TREE = [
     icon: User,
     items: [
       { panel: 'profile', label: 'Edit Profile', icon: Pencil },
+      { panel: 'email', label: 'Email', icon: Mail },
       { panel: 'academic', label: 'Academic Info', icon: GraduationCap },
       { panel: 'verification', label: 'Account Verification', icon: Shield },
     ],
@@ -401,7 +405,7 @@ function CustomSelect({ value, onChange, options = [], disabled, placeholder, se
 export default function SettingsRoute() {
   const notificationLabEnabled = useDevToolsStore((s) => s.notificationLabEnabled);
   const setNotificationLabEnabled = useDevToolsStore((s) => s.setNotificationLabEnabled);
-  const { currentUser, session, updateProfile, updateSettings, updateCurrentUser, changePassword, logout, collegeName } = useAuth();
+  const { currentUser, updateProfile, updateSettings, updateCurrentUser, changePassword, logout } = useAuth();
   const { openPreferences: openCookiePreferences } = useCookieConsent();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -438,6 +442,7 @@ export default function SettingsRoute() {
   // Account & Profile state
   const [displayName, setDisplayName] = useState(currentUser?.displayName || '');
   const [bio, setBio] = useState(currentUser?.bio || '');
+  const [gender, setGender] = useState(currentUser?.gender || '');
   
   // Birthday state broken down like signup (Month dropdown, Day input, Year input)
   const initialDobParts = (currentUser?.birthday || '').split('-');
@@ -533,6 +538,7 @@ export default function SettingsRoute() {
           if (user) {
             setDisplayName(user.displayName || '');
             setBio(user.bio || '');
+            setGender(user.gender || '');
             if (user.birthday) {
               const parts = user.birthday.split('-');
               setBirthYear(parts[0] || '');
@@ -589,13 +595,25 @@ export default function SettingsRoute() {
         }
         finalBirthday = dobRes.dobString;
       }
+      // Gender is only sent when chosen: clearing it is not offered, and an
+      // API that predates the field must not receive it unasked.
+      const genderPatch = gender ? { gender } : {};
       closePanel();
       showToast('Profile updated', 'success');
       if (updateCurrentUser) {
-        updateCurrentUser({ ...currentUser, displayName, bio, birthday: finalBirthday });
+        updateCurrentUser({
+          ...currentUser,
+          displayName,
+          bio,
+          birthday: finalBirthday,
+          ...genderPatch,
+          ...(gender && currentUser?.profileCompletion
+            ? { profileCompletion: { ...currentUser.profileCompletion, needsGender: false } }
+            : {}),
+        });
       }
       queryClient.invalidateQueries({ queryKey: ['profile'] });
-      updateProfile({ displayName, bio, birthday: finalBirthday }).catch(err => {
+      updateProfile({ displayName, bio, birthday: finalBirthday, ...genderPatch }).catch(err => {
         console.error('Failed to update profile:', err);
         showToast(err?.message || "Couldn't save profile", 'error');
       });
@@ -745,6 +763,7 @@ export default function SettingsRoute() {
   const panelTitle = {
     profile: 'Edit Profile',
     account: 'Edit Profile',
+    email: 'Email',
     academic: 'Academic Info',
     security: 'Change Password',
     privacy: 'Visibility Settings',
@@ -953,6 +972,16 @@ export default function SettingsRoute() {
           />
         </div>
         <div className={styles.inputRow}>
+          <label className={styles.inputLabel} htmlFor="settings-gender">Gender</label>
+          <CustomSelect
+            id="settings-gender"
+            value={gender}
+            onChange={setGender}
+            placeholder="Select gender"
+            options={GENDER_OPTIONS}
+          />
+        </div>
+        <div className={styles.inputRow}>
           <label className={styles.inputLabel} htmlFor="settings-dob-month">Birthday</label>
           <div className={styles.dobRow}>
             <div className={styles.dobMonthWrapper}>
@@ -1019,21 +1048,28 @@ export default function SettingsRoute() {
     </div>
   );
 
+  const campusActive = isAffiliationActive(currentUser?.campusAffiliation);
+
   const academicPanel = (
     <div className={`${styles.body} animate-in`}>
       <div className={styles.lockedInfoCard}>
         <div className={styles.lockedField}>
           <span className={styles.lockedLabel}>College Name</span>
-          <span className={styles.lockedValue}>{collegeName || 'Not specified'}</span>
+          {/* The college a verified college email ties this account to, and
+              only while that affiliation is active: a removed or revoked one,
+              or a college typed at signup, is not a verified college. */}
+          <span className={styles.lockedValue}>
+            {(campusActive && currentUser?.campusAffiliation?.collegeName) || 'Not verified'}
+          </span>
         </div>
         <div className={styles.lockedFieldDivider} />
         <div className={styles.lockedField}>
           <span className={styles.lockedLabel}>College Email</span>
           <span className={styles.lockedValue}>
-            {currentUser?.collegeEmail ||
-              (currentUser?.email && !currentUser.email.endsWith('@meetifyy.user') ? currentUser.email : null) ||
-              session?.user?.email ||
-              'Not specified'}
+            {/* The verified college email (masked by the server), never the
+                login email: since personal emails exist the two can differ. */}
+            {(campusActive && (currentUser?.campusAffiliation?.email || currentUser?.collegeEmail)) ||
+              'Not verified'}
           </span>
         </div>
       </div>
@@ -1253,6 +1289,7 @@ export default function SettingsRoute() {
   // settings form state around it.
   const blockedContactsPanel = <BlockedContacts />;
   const verificationPanel = <SettingsVerificationPanel />;
+  const emailPanel = <SettingsEmailPanel />;
   const helpPanel = <SettingsHelpPanel />;
 
   // Wrapped in the same body/group scaffolding every other panel uses, so it
@@ -1407,6 +1444,7 @@ export default function SettingsRoute() {
                 for the panel, with the root list on the left unmoved. */}
             {!activePanel && activeCategory && categoryPanel(activeCategory)}
             {activePanel === 'profile' && profilePanel}
+            {activePanel === 'email' && emailPanel}
             {activePanel === 'academic' && academicPanel}
             {activePanel === 'security' && securityPanel}
             {activePanel === 'privacy' && privacyPanel}
@@ -1430,6 +1468,7 @@ export default function SettingsRoute() {
           {!activePanel && !activeCategory && listPanel}
           {!activePanel && activeCategory && categoryPanel(activeCategory)}
           {activePanel === 'profile' && profilePanel}
+          {activePanel === 'email' && emailPanel}
           {activePanel === 'academic' && academicPanel}
           {activePanel === 'security' && securityPanel}
           {activePanel === 'privacy' && privacyPanel}

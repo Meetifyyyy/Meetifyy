@@ -92,7 +92,7 @@ export default function SettingsVerificationPanel() {
     e.preventDefault();
     if (isSubmitting) return;
     if (!selfieFile || !collegeIdFile) {
-      const missing = !selfieFile ? 'selfie' : 'college ID';
+      const missing = !selfieFile ? 'selfie' : 'photo ID';
       setFieldError({ label: missing, message: `Please provide your ${missing}.` });
       showToast(`Please provide your ${missing}.`, 'error');
       return;
@@ -115,7 +115,7 @@ export default function SettingsVerificationPanel() {
       // without anything having been stored.
       const [selfieUpload, collegeIdUpload] = await Promise.all([
         prepareVerificationDocument(selfieFile, 'selfie'),
-        prepareVerificationDocument(collegeIdFile, 'college ID'),
+        prepareVerificationDocument(collegeIdFile, 'photo ID'),
       ]);
 
       setStage('Uploading…');
@@ -131,7 +131,7 @@ export default function SettingsVerificationPanel() {
 
       const collegeIdRes = await uploadsApi.uploadMedia(collegeIdUpload, 'verification');
       if (collegeIdRes?.key) uploadedKeys.push(collegeIdRes.key);
-      const idCardMediaId = readUploadedMediaId(collegeIdRes, 'college ID');
+      const idCardMediaId = readUploadedMediaId(collegeIdRes, 'photo ID');
 
       setStage('Submitting for review…');
       await apiClient.post('/api/verification/request', {
@@ -202,7 +202,7 @@ export default function SettingsVerificationPanel() {
             </span>
           </div>
           <p style={{ fontSize: '0.815rem', color: 'var(--color-text-muted, var(--color-text-light))', margin: '0.35rem 0 0', lineHeight: 1.45 }}>
-            Verification unlocks campus features, messaging, and community access.
+            A live selfie unlocks messaging, posting, creating communities and activities, and Instant Match. Campus opens with your college email.
           </p>
         </div>
 
@@ -288,9 +288,9 @@ export default function SettingsVerificationPanel() {
             </div>
 
             <div>
-              <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 500, marginBottom: '0.5rem' }}>2. Upload your College ID</label>
-              <p style={{ fontSize: '0.75rem', color: 'var(--color-text-light)', marginBottom: '0.75rem' }}>We use this to confirm your student status. Only our review team can see it.</p>
-              <input type="file" accept={VERIFICATION_ACCEPT} onChange={(e) => handleFileChange(e, setCollegeIdFile, 'college ID')} style={{ display: 'none' }} id="id-upload" />
+              <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 500, marginBottom: '0.5rem' }}>2. Photo ID (college ID or government-issued ID)</label>
+              <p style={{ fontSize: '0.75rem', color: 'var(--color-text-light)', marginBottom: '0.75rem' }}>We use this to confirm you're a real person. Only our review team can see it.</p>
+              <input type="file" accept={VERIFICATION_ACCEPT} onChange={(e) => handleFileChange(e, setCollegeIdFile, 'photo ID')} style={{ display: 'none' }} id="id-upload" />
               <label htmlFor="id-upload" style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem',
                 padding: '1rem', background: 'var(--color-bg-panel)', border: '1px dashed var(--color-border)', borderRadius: '8px',
@@ -298,10 +298,10 @@ export default function SettingsVerificationPanel() {
               }}>
                 <Upload size={18} color="var(--color-text-light)" />
                 <span style={{ color: collegeIdFile ? 'var(--color-text)' : 'var(--color-text-light)', fontSize: '0.875rem' }}>
-                  {collegeIdFile ? collegeIdFile.name : 'Choose your College ID photo'}
+                  {collegeIdFile ? collegeIdFile.name : 'Choose your photo ID'}
                 </span>
               </label>
-              {fieldError?.label === 'college ID' && (
+              {fieldError?.label === 'photo ID' && (
                 <p role="alert" style={{ fontSize: '0.78rem', color: '#ef4444', margin: '0.5rem 0 0' }}>
                   {fieldError.message}
                 </p>

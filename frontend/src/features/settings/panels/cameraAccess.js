@@ -52,11 +52,16 @@ export function isCameraBlockedByPermissionsPolicy(doc) {
 
 export function getCameraErrorMessage(
   error,
-  { permissionState = 'unknown', blockedByPolicy = false } = {},
+  { permissionState = 'unknown', blockedByPolicy = false, nativeApp = false } = {},
 ) {
   switch (error?.name) {
     case 'NotAllowedError':
     case 'PermissionDeniedError':
+      // In the installed app the prompt is Android's, and a refusal is undone
+      // in the phone's app settings, not in any browser's site settings.
+      if (nativeApp) {
+        return 'Camera access is off for Meetifyy. Allow it in your phone’s Settings → Apps → Meetifyy → Permissions, then retry.';
+      }
       if (blockedByPolicy) {
         return 'Camera access is disabled by this page’s permissions policy. Open Meetifyy directly in a secure browser tab and try again.';
       }

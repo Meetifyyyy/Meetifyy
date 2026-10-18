@@ -81,3 +81,12 @@ describe('camera permission diagnosis', () => {
     expect(getCameraErrorMessage({ name: 'AbortError' })).toContain('interrupted');
   });
 });
+
+describe('getCameraErrorMessage in the installed app', () => {
+  it('points a refusal at the phone settings, not browser site settings', () => {
+    const error = { name: 'NotAllowedError' };
+    const message = getCameraErrorMessage(error, { permissionState: 'denied', nativeApp: true });
+    expect(message).toContain('Settings');
+    expect(message).not.toContain('site');
+  });
+});
