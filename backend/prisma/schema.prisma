@@ -83,6 +83,8 @@ model UserSettings {
   whoCanSeeOnline   String  @default("everyone")
   whoCanSeeLastSeen String  @default("everyone")
   readReceipts      Boolean @default(true)
+  /// Whether the profile shows the college and course tags. Presentation only.
+  showCollegeOnProfile Boolean @default(true)
   user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 

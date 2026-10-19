@@ -503,11 +503,17 @@ export default function SettingsRoute() {
 
   // Interests state
   const [selectedInterests, setSelectedInterests] = useState(currentUser?.interests || []);
+  const [showCollegeOnProfile, setShowCollegeOnProfile] = useState(
+    currentUser?.settings?.showCollegeOnProfile !== false,
+  );
   const [initialPanelInterests, setInitialPanelInterests] = useState(currentUser?.interests || []);
 
   useEffect(() => {
     if (activePanel === 'interests') {
       setInitialPanelInterests(selectedInterests);
+      // Re-read the saved value on opening, so a switch initialised before the
+      // account's settings arrived cannot overwrite them on the next save.
+      setShowCollegeOnProfile(currentUser?.settings?.showCollegeOnProfile !== false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally snapshot initial interests when switching to interests panel
   }, [activePanel]);
@@ -774,9 +780,19 @@ export default function SettingsRoute() {
       closePanel();
       showToast('Interests saved', 'success');
       if (updateCurrentUser) {
-        updateCurrentUser({ ...currentUser, interests: selectedInterests });
+        updateCurrentUser({
+          ...currentUser,
+          interests: selectedInterests,
+          settings: { ...(currentUser?.settings || {}), showCollegeOnProfile },
+        });
       }
       queryClient.invalidateQueries({ queryKey: ['profile'] });
+      if (currentUser?.settings?.showCollegeOnProfile !== showCollegeOnProfile) {
+        updateSettings({ showCollegeOnProfile }).catch(err => {
+          console.error('Failed to update college tag setting:', err);
+          showToast(err?.message || "Couldn't save the college tag setting", 'error');
+        });
+      }
       updateProfile({ interests: selectedInterests }).catch(err => {
         console.error('Failed to update interests:', err);
         showToast(err?.message || "Couldn't save interests", 'error');
@@ -1371,6 +1387,19 @@ export default function SettingsRoute() {
             Select up to 10 topics to customize your experience ({selectedInterests.length}/10)
           </p>
         </div>
+
+        <label className={styles.collegeTagToggle}>
+          <span className={styles.collegeTagText}>
+            <span className={styles.collegeTagTitle}>Show college and course</span>
+            <span className={styles.collegeTagHint}>Display them as tags on your profile</span>
+          </span>
+          <input
+            type="checkbox"
+            role="switch"
+            checked={showCollegeOnProfile}
+            onChange={(e) => setShowCollegeOnProfile(e.target.checked)}
+          />
+        </label>
 
         <div className={styles.categoriesWrapper}>
           {INTERESTS_BY_CATEGORY.map((category, catIndex) => {

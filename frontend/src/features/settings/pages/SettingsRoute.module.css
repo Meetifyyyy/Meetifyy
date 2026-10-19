@@ -1046,13 +1046,45 @@ input:checked + .slider::before {
   z-index: 60;
   box-sizing: border-box;
   flex-shrink: 0;
-  pointer-events: none; /* Let clicks pass through the invisible wrapper */
-  /* Fades the list out under the button instead of chips showing through it. */
-  background: linear-gradient(
-    to bottom,
-    transparent,
-    var(--bg-gradient-mid, var(--color-bg-white)) 28px
-  );
+  pointer-events: auto;
+  /* A solid bar, so chips never show through or beside the button. */
+  background: var(--color-bg-white);
+  border-top: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
+}
+
+.collegeTagToggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 0 var(--settings-gutter) 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
+  border-radius: var(--radius-lg, 16px);
+  cursor: pointer;
+}
+
+.collegeTagText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.collegeTagTitle {
+  font-weight: 600;
+}
+
+.collegeTagHint {
+  font-size: 0.8125rem;
+  color: var(--color-text-secondary, #64748b);
+}
+
+.collegeTagToggle input {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  accent-color: var(--color-primary);
 }
 
 @media (max-width: 768px) {
@@ -1066,7 +1098,7 @@ input:checked + .slider::before {
     position: fixed;
     /* BottomNav is hidden on /settings (DashboardLayoutWrapper), so sit on the edge. */
     bottom: 0;
-    padding-top: 20px;
+    padding-top: 12px;
     padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
     z-index: 90;
   }

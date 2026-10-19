@@ -807,6 +807,7 @@ export class UsersService {
           select: {
             privateProfile: true,
             showOnlineStatus: true,
+            showCollegeOnProfile: true,
             whoCanSeeOnline: true,
           },
         },
@@ -949,6 +950,8 @@ export class UsersService {
           privateProfile: !!targetUser.settings.privateProfile,
           showOnlineStatus: targetUser.settings.showOnlineStatus ?? true,
           whoCanSeeOnline: targetUser.settings.whoCanSeeOnline ?? 'everyone',
+          showCollegeOnProfile:
+            targetUser.settings.showCollegeOnProfile ?? true,
         }
       : null;
 
@@ -1753,6 +1756,7 @@ export class UsersService {
       privateProfile?: boolean;
       showOnlineStatus?: boolean;
       readReceipts?: boolean;
+      showCollegeOnProfile?: boolean;
       whoCanSeeOnline?: string;
     } = {};
     if (typeof data.emailNotifs === 'boolean')
@@ -1765,6 +1769,8 @@ export class UsersService {
       payload.showOnlineStatus = data.showOnlineStatus;
     if (typeof data.readReceipts === 'boolean')
       payload.readReceipts = data.readReceipts;
+    if (typeof data.showCollegeOnProfile === 'boolean')
+      payload.showCollegeOnProfile = data.showCollegeOnProfile;
 
     const validWho = ['everyone', 'following', 'mutual', 'nobody'];
     if (

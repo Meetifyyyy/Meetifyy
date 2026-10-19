@@ -32,6 +32,7 @@ import ProfilePageSkeleton from '../components/skeletons/ProfilePageSkeleton';
 import PostSkeleton from '@features/feed/components/skeletons/PostSkeleton';
 import ReportModal from '@shared/components/modals/ReportModal/LazyReportModal';
 import { getCollegeName } from '@shared/utils/user';
+import { hasAffiliationField, isAffiliationActive } from '@shared/lib/campusAccess';
 
 import RightPanel from '@layout/RightPanel';
 import { INTERESTS_BY_CATEGORY } from '@shared/constants/interestsData';
@@ -413,14 +414,25 @@ export default function ProfilePage() {
   // Build dynamic user tags list
   const userTags = [];
   const universityName = getCollegeName(effectiveUser);
-  if (universityName) {
-    userTags.push({ icon: '🏫', label: universityName });
+  // The college tag is for a verified college email only: `getCollegeName`
+  // falls back to the word "College", which is not a college. Own profile reads
+  // the live affiliation; another user's carries `collegeId`, which exists only
+  // while the affiliation does. Both the college and course tags can be hidden
+  // from Settings → Interests.
+  const hasVerifiedCollege = hasAffiliationField(effectiveUser)
+    ? isAffiliationActive(effectiveUser.campusAffiliation)
+    : Boolean(effectiveUser.collegeId);
+  const showAcademicTags = (isOwnProfile ? authUser?.settings : profileUser?.settings)
+    ?.showCollegeOnProfile !== false;
+  const collegeTagName = getCollegeName(effectiveUser, '');
+  if (showAcademicTags && hasVerifiedCollege && collegeTagName) {
+    userTags.push({ icon: '🏫', label: collegeTagName });
   }
 
   // Just the course, e.g. "B.Tech". Null for accounts with no academic data yet
   // (including legacy users cleared by the migration), in which case no tag is
   // rendered at all.
-  if (academicSummary) {
+  if (showAcademicTags && academicSummary) {
     userTags.push({ icon: '🎓', label: academicSummary });
   }
 

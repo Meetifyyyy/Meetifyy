@@ -136,6 +136,7 @@ export interface ProfileSettings {
   whoCanSeeOnline: string | null;
   whoCanSeeLastSeen: string | null;
   readReceipts: boolean | null;
+  showCollegeOnProfile: boolean | null;
 }
 
 interface ProfileRow {
@@ -194,6 +195,7 @@ interface ProfileRow {
   whoCanSeeOnline: string | null;
   whoCanSeeLastSeen: string | null;
   readReceipts: boolean | null;
+  showCollegeOnProfile: boolean | null;
   followingList: string[] | null;
   followersList: string[] | null;
   postBookmarkIds: string[] | null;
@@ -531,6 +533,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
         s."whoCanSeeOnline",
         s."whoCanSeeLastSeen",
         s."readReceipts",
+        s."showCollegeOnProfile",
         COALESCE(
           (SELECT JSON_AGG(u_fol."username") 
            FROM "Follow" f 
@@ -626,6 +629,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
           whoCanSeeOnline: row.whoCanSeeOnline,
           whoCanSeeLastSeen: row.whoCanSeeLastSeen,
           readReceipts: row.readReceipts,
+          showCollegeOnProfile: row.showCollegeOnProfile,
         }
       : null;
 
