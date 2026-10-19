@@ -97,17 +97,20 @@ export function userSearchSql(opts: {
     ),
     candidates AS (
       SELECT u."id",
+        -- Every branch is a bound parameter, so without ::int Postgres types the
+        -- CASE as text and "tier" + the personal score fails (42883,
+        -- text + double precision) -- every people/community search 500'd.
         CASE
           WHEN lower(u."username") = ${q} OR lower(u."displayName") = ${q}
-            THEN ${TIER.exact}
+            THEN ${TIER.exact}::int
           WHEN lower(u."username") LIKE ${prefix}
             OR lower(u."displayName") LIKE ${prefix}
             OR lower(u."displayName") LIKE ${wordPrefix}
-            THEN ${TIER.prefix}
+            THEN ${TIER.prefix}::int
           WHEN lower(u."username") LIKE ${contains}
             OR lower(u."displayName") LIKE ${contains}
-            THEN ${TIER.contains}
-          ELSE ${TIER.body}
+            THEN ${TIER.contains}::int
+          ELSE ${TIER.body}::int
         END AS "tier"
       FROM "User" u
       WHERE u."deletedAt" IS NULL
@@ -191,12 +194,12 @@ export function communitySearchSql(opts: {
     candidates AS (
       SELECT c."id",
         CASE
-          WHEN lower(c."name") = ${q} THEN ${TIER.exact}
+          WHEN lower(c."name") = ${q} THEN ${TIER.exact}::int
           WHEN lower(c."name") LIKE ${prefix} OR lower(c."name") LIKE ${wordPrefix}
-            THEN ${TIER.prefix}
-          WHEN lower(c."name") LIKE ${contains} THEN ${TIER.contains}
-          WHEN lower(c."slug") LIKE ${contains} THEN ${TIER.secondary}
-          ELSE ${TIER.body}
+            THEN ${TIER.prefix}::int
+          WHEN lower(c."name") LIKE ${contains} THEN ${TIER.contains}::int
+          WHEN lower(c."slug") LIKE ${contains} THEN ${TIER.secondary}::int
+          ELSE ${TIER.body}::int
         END AS "tier"
       FROM "Community" c
       LEFT JOIN me ON true

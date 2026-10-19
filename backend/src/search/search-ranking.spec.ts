@@ -8,6 +8,30 @@ import {
 } from './search-ranking';
 
 describe('search ranking', () => {
+  it('types every tier as an integer, or Postgres reads the CASE as text', () => {
+    // Production 500'd on every search (42883, text + double precision): each
+    // CASE branch is a bound parameter, Postgres typed the CASE as text, and
+    // "tier" + the personal score could not be added.
+    const user = userSearchSql({
+      query: 'asha',
+      viewerId: 'me',
+      excludedIds: [],
+      includeBio: true,
+      take: 10,
+    }).sql;
+    const community = communitySearchSql({
+      query: 'chess',
+      viewerId: 'me',
+      includeDescription: true,
+      take: 10,
+    }).sql;
+    for (const sql of [user, community]) {
+      const branches = sql.match(/(?:THEN|ELSE) (?:\?|\$\d+)(?:::int)?/g) ?? [];
+      expect(branches.length).toBeGreaterThan(0);
+      for (const branch of branches) expect(branch).toMatch(/::int$/);
+    }
+  });
+
   it('escapes LIKE metacharacters so they match literally', () => {
     expect(escapeLike('50%_off\\')).toBe('50\\%\\_off\\\\');
     expect(escapeLike('plain')).toBe('plain');
