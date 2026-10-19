@@ -1,4 +1,4 @@
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useCallback } from 'react';
 // Resolved by the bundler to the emitted asset's hashed URL — a short string in
 // the bundle, with the 424KB of JSON kept out of the JS graph entirely.
 import emojiDataUrl from '@emoji-mart/data/sets/15/native.json?url';
@@ -69,7 +69,37 @@ const EmojiMartPicker = lazy(async () => {
   };
 });
 
+/**
+ * The list scrolls inside emoji-mart's shadow tree, where this document's CSS
+ * cannot reach, so `overscroll-behavior` cannot be set on it. Without it, a
+ * wheel turn at either end of the list chains to the page behind and the whole
+ * screen scrolls. Stop that here: if the scroller under the pointer is already
+ * at the end it is being pushed towards, swallow the event.
+ */
+function containEmojiWheel(e) {
+  const scroller = e.composedPath().find(
+    (el) => el instanceof HTMLElement && el.scrollHeight > el.clientHeight
+      && ['auto', 'scroll'].includes(getComputedStyle(el).overflowY),
+  );
+  if (!scroller) {
+    // Nothing in the picker can scroll here (header, footer): do not let the
+    // wheel move the page behind it either.
+    e.preventDefault();
+    return;
+  }
+  const atTop = scroller.scrollTop <= 0;
+  const atBottom = scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 1;
+  if ((e.deltaY < 0 && atTop) || (e.deltaY > 0 && atBottom)) e.preventDefault();
+}
+
 export default function LazyEmojiPicker(props) {
+  // `display: contents` keeps the wrapper out of layout; the listener is native
+  // because React's wheel handlers are passive and cannot preventDefault.
+  const wrapRef = useCallback((node) => {
+    if (!node) return;
+    node.addEventListener('wheel', containEmojiWheel, { passive: false });
+  }, []);
+
   const isDark =
     typeof document !== 'undefined' &&
     document.documentElement.getAttribute('data-theme') === 'dark';
@@ -85,6 +115,7 @@ export default function LazyEmojiPicker(props) {
   };
 
   return (
+    <div ref={wrapRef} style={{ display: 'contents' }}>
     <Suspense
       fallback={
         /* Sized to the picker it replaces (see the `em-emoji-picker` rule in
@@ -109,5 +140,6 @@ export default function LazyEmojiPicker(props) {
     >
       <EmojiMartPicker {...mergedProps} />
     </Suspense>
+    </div>
   );
 }
