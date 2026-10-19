@@ -107,8 +107,8 @@ export default function BottomNav({ hidden }) {
           <NavIcon
             className={styles.navIcon}
             active={isCampusActive}
-            outline={<CampusOutline size={26} />}
-            solid={<CampusSolid size={26} />}
+            outline={<CampusOutline size={28} />}
+            solid={<CampusSolid size={28} />}
           />
         </div>
         <span>Campus</span>
@@ -144,8 +144,8 @@ export default function BottomNav({ hidden }) {
           <NavIcon
             className={styles.navIcon}
             active={isCrewActive}
-            outline={<CrewOutline size={26} />}
-            solid={<CrewSolid size={26} />}
+            outline={<CrewOutline size={28} />}
+            solid={<CrewSolid size={28} />}
           />
         </div>
         <span>Crew</span>
@@ -161,7 +161,7 @@ export default function BottomNav({ hidden }) {
             <Avatar
               src={currentUser.avatar}
               name={currentUser?.displayName}
-              size="26px"
+              size="28px"
               className={`${styles.bottomNavAvatar} ${isProfileActive ? styles.activeAvatarBorder : ''}`.trim()}
             />
           ) : (

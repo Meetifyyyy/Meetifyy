@@ -78,8 +78,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   flex-shrink: 0;
 }
 
@@ -90,14 +90,14 @@
 .iconWrapper > svg,
 .navIcon > svg,
 .navIcon {
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   flex-shrink: 0;
 }
 
 .bottomNavAvatar {
-  width: 26px !important;
-  height: 26px !important;
+  width: 28px !important;
+  height: 28px !important;
   flex-shrink: 0;
   box-shadow: 0 0 0 2px transparent;
   transition: box-shadow 180ms ease-out;
