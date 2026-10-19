@@ -106,11 +106,23 @@
     padding: 1.5rem 1.75rem 2.5rem;
   }
 
-  /* The code step is a short form: it keeps a readable measure inside the wide
-     container instead of stretching its field across it. */
+  /* Every step is one readable column centred in the wide container, rather
+     than hugging its left edge with empty space to the right. */
+  .screenBody {
+    align-items: center;
+  }
+
   .screenBody > :first-child {
     width: 100%;
-    max-width: 480px;
+    max-width: 600px;
+  }
+
+  /* The picker is the screen's own child (no screenBody), so it is centred
+     the same way here. */
+  .screen > .picker {
+    width: 100%;
+    max-width: 600px;
+    align-self: center;
   }
 }
 
