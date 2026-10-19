@@ -17,4 +17,10 @@ describe('cookie banner and the legal-update gate', () => {
   it('hides the banner whenever the gate wrapper is on the page', () => {
     expect(css).toMatch(/body:has\(\[data-legal-gate\][^)]*\)\)\s*\.bannerBackdrop\s*\{\s*display:\s*none/);
   });
+
+  it('also hides it while the Complete-your-profile prompt is open', () => {
+    // Fixed above every dialog, the banner covered the prompt's Save and Later
+    // buttons on a 667px-tall phone.
+    expect(css).toMatch(/body:has\([^)]*\[data-profile-prompt\][^)]*\)\)\s*\.bannerBackdrop\s*\{\s*display:\s*none/);
+  });
 });

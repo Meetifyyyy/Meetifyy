@@ -120,7 +120,16 @@ export default function ProfileCompletionModal() {
   };
 
   return (
-    <div className={styles.backdrop} role="dialog" aria-modal="true" aria-labelledby="profile-completion-title">
+    // data-profile-prompt: the cookie banner hides while this is open (it is
+    // fixed to the bottom above every dialog and covered Save/Later on short
+    // phones); see CookieBanner.module.css.
+    <div
+      className={styles.backdrop}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="profile-completion-title"
+      data-profile-prompt=""
+    >
       <div className={styles.dialog}>
         {totalSteps > 1 ? (
           <div className={styles.dots} role="img" aria-label={`Step ${stepIndex + 1} of ${totalSteps}`}>

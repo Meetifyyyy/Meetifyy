@@ -60,6 +60,12 @@
   background: var(--color-primary, #2563eb);
 }
 
+/* The dark-theme .dot rule above outranks .dotActive, which left the current
+   step's pill the same faded blue as the others in dark mode. */
+:global([data-theme="dark"]) .dotActive {
+  background: var(--color-primary, #2563eb);
+}
+
 .title {
   margin: 0 0 0.4rem;
   font-size: 1.15rem;
