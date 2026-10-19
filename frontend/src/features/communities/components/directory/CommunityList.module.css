@@ -189,16 +189,15 @@
   cursor: default;
 }
 
-/* Phones: the list stays a rounded card (Campus Communities, and the
-   Communities page's tabs through .mobileCard, which is no box on wider
-   screens where the page itself is the card). */
+/* Phones: no box around the list. Every community is already its own card
+   (.list > *), and a box around them all read as a card of cards. Applies to
+   Campus Communities (.surface) and the Communities page (.mobileCard). */
 @media (max-width: 768px) {
   .surface,
   .mobileCard {
-    background: var(--color-bg-white);
-    border: 1px solid var(--color-border-light);
-    border-radius: var(--radius-lg);
-    padding: 0.25rem;
+    background: none;
+    border: none;
+    padding: 0;
   }
 }
 

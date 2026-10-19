@@ -127,3 +127,14 @@
     padding: 0;
   }
 }
+
+/* Less space between the red header and the first community: the shared Campus
+   shell's 16px gap plus the body's top padding left a visible band here.
+   Doubled class: wins over the shared rules (some are !important on phones). */
+.tightHub.tightHub {
+  gap: 0.5rem;
+}
+
+.tightBody.tightBody {
+  padding-top: 0 !important;
+}

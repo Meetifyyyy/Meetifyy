@@ -77,7 +77,7 @@ export default function CampusCommunitiesPage() {
   const closeCreateModal = useCallback(() => setIsCreateModalOpen(false), []);
 
   return (
-    <main className={`centre centre-wide ${styles.hubContainer}`}>
+    <main className={`centre centre-wide ${styles.hubContainer} ${pageStyles.tightHub}`}>
       <CampusAffiliationGate>
         <div className={`${styles.headerBanner} ${styles.compactHeader}`}>
           <header className={styles.header}>
@@ -122,7 +122,7 @@ export default function CampusCommunitiesPage() {
           </header>
         </div>
 
-        <div className={styles.campusBody} style={{ flex: 1, display: 'flex', flexDirection: 'column', width: '100%', boxSizing: 'border-box' }}>
+        <div className={`${styles.campusBody} ${pageStyles.tightBody}`} style={{ flex: 1, display: 'flex', flexDirection: 'column', width: '100%', boxSizing: 'border-box' }}>
           {collegeCommunities.length === 0 && isLoading ? (
             // Loading is not "No Community": rows the size of the real ones.
             <section className={`${listStyles.surface} ${styles.listSurface}`} aria-busy="true">
