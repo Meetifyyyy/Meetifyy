@@ -157,6 +157,25 @@ export default function Header({ variant = 'dashboard', wide = false }) {
       if (idle !== null) window.cancelIdleCallback(idle);
     };
   }, [drawerOpen, warmSettings]);
+  /*
+   * Close the drawer first and open the profile once its slide-out has
+   * finished. Navigating in the same tap mounted the whole profile page in the
+   * frame the slide began, so the drawer stuttered on its way out.
+   *
+   * `list` opens Followers/Following as a second history entry on top of the
+   * profile (ProfilePage's `?tab=` is pushed state): Back then closes the list
+   * and leaves you on the profile. Going straight to `?tab=` was one entry, so
+   * Back skipped the profile altogether.
+   */
+  const openProfileFromDrawer = useCallback((list) => {
+    const from = location.pathname;
+    setDrawerOpen(false);
+    window.setTimeout(() => {
+      navigate(`/profile/${username}`, { state: { from } });
+      if (list) navigate(`/profile/${username}?tab=${list}`, { state: { from } });
+    }, DRAWER_EXIT_MS);
+  }, [navigate, username, location.pathname]);
+
   const openSettingsFromDrawer = useCallback(() => {
     navigate('/settings');
     setDrawerOpen(false);
@@ -263,7 +282,7 @@ export default function Header({ variant = 'dashboard', wide = false }) {
           {/* User Profile Card */}
           <div 
             className={styles.drawerProfile} 
-            onClick={() => { navigate(`/profile/${username}`, { state: { from: location.pathname } }); setDrawerOpen(false); }}
+            onClick={() => openProfileFromDrawer()}
             role="button"
             tabIndex={0}
             aria-label="View profile"
@@ -287,9 +306,8 @@ export default function Header({ variant = 'dashboard', wide = false }) {
               <div 
                 className={styles.statItem} 
                 onClick={(e) => { 
-                  e.stopPropagation(); 
-                  navigate(`/profile/${username}?tab=followers`, { state: { from: location.pathname } }); 
-                  setDrawerOpen(false); 
+                  e.stopPropagation();
+                  openProfileFromDrawer('followers');
                 }}
               >
                 <span className={styles.statNumber}>{followersCount.toLocaleString()}</span>
@@ -298,9 +316,8 @@ export default function Header({ variant = 'dashboard', wide = false }) {
               <div 
                 className={styles.statItem} 
                 onClick={(e) => { 
-                  e.stopPropagation(); 
-                  navigate(`/profile/${username}?tab=following`, { state: { from: location.pathname } }); 
-                  setDrawerOpen(false); 
+                  e.stopPropagation();
+                  openProfileFromDrawer('following');
                 }}
               >
                 <span className={styles.statNumber}>{followingCount.toLocaleString()}</span>
