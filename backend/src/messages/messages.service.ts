@@ -1270,10 +1270,10 @@ export class MessagesService
       where: { id: realConvId },
       select: { type: true, isInstantMatch: true },
     });
-    if (
-      conversation &&
-      (conversation.type === 'INSTANT_MATCH' || conversation.isInstantMatch)
-    ) {
+    // No conversation yet (e.g. opening the details of someone who cannot be
+    // messaged): there is no media, which is an empty gallery, not an error.
+    if (!conversation) return { items: [], nextCursor: null };
+    if (conversation.type === 'INSTANT_MATCH' || conversation.isInstantMatch) {
       const allowed = await this.instantMatchGuard?.canReadChat(
         currentUserId,
         realConvId,
