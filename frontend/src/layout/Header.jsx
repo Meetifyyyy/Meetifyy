@@ -172,7 +172,10 @@ export default function Header({ variant = 'dashboard', wide = false }) {
     setDrawerOpen(false);
     window.setTimeout(() => {
       navigate(`/profile/${username}`, { state: { from } });
-      if (list) navigate(`/profile/${username}?tab=${list}`, { state: { from } });
+      // A separate task, so the profile entry renders (and the back tracker
+      // records it) before the list is pushed on top. In the same tick the two
+      // were batched, the list had nothing behind it, and its close did nothing.
+      if (list) window.setTimeout(() => navigate(`/profile/${username}?tab=${list}`, { state: { from } }), 0);
     }, DRAWER_EXIT_MS);
   }, [navigate, username, location.pathname]);
 
