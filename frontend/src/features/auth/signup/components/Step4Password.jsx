@@ -1,11 +1,11 @@
-import { useState, useMemo } from 'react';
-import { Link } from 'react-router-dom';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { AlertCircle, ArrowRight } from '@shared/components/icons';
 import { useSignup } from '../../context/SignupContext';
 import { useAuth } from '@shared/context/AuthContext';
 import AnimatedStep from './AnimatedStep';
 import { AuthHeading, PasswordField, AuthButton, AuthAlert, styles as s } from '../../shared/ui';
 import { validatePassword, PASSWORD_MIN_LENGTH } from '../../shared/passwordRules';
+import LegalLink from './LegalLink';
 
 /**
  * Step 4 — password, and the agreement to the Terms.
@@ -15,15 +15,29 @@ import { validatePassword, PASSWORD_MIN_LENGTH } from '../../shared/passwordRule
  * rather than on the first screen before the person has decided anything.
  */
 export default function Step4Password() {
-  const { signupData, updateData, nextStep, pendingEmail, pendingPasswordRef, markCodeSent } = useSignup();
+  const { signupData, updateData, nextStep, pendingEmail, pendingPasswordRef, passwordDraftRef, markCodeSent } = useSignup();
   const { initiateSignup } = useAuth();
-  const [password, setPassword] = useState(signupData.password || '');
-  const [confirmPassword, setConfirmPassword] = useState('');
+  const draftIn = passwordDraftRef?.current || { password: '', confirmPassword: '', agreed: false };
+  const [password, setPassword] = useState(signupData.password || draftIn.password);
+  const [confirmPassword, setConfirmPassword] = useState(draftIn.confirmPassword);
   const [attempted, setAttempted] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState(null);
   // Carried through `signupData` so it survives stepping back and forth.
-  const [agreedToLegal, setAgreedToLegal] = useState(!!signupData.agreedToLegal);
+  const [agreedToLegal, setAgreedToLegal] = useState(!!signupData.agreedToLegal || draftIn.agreed);
+
+  // Mirror the fields into the provider's in-memory draft, so leaving this step
+  // (or the page) and coming back does not blank them. Memory only.
+  const fieldsRef = useRef({ password, confirmPassword, agreedToLegal });
+  fieldsRef.current = { password, confirmPassword, agreedToLegal };
+  useEffect(() => () => {
+    if (!passwordDraftRef) return;
+    passwordDraftRef.current = {
+      password: fieldsRef.current.password,
+      confirmPassword: fieldsRef.current.confirmPassword,
+      agreed: fieldsRef.current.agreedToLegal,
+    };
+  }, [passwordDraftRef]);
 
   // Shared with the reset screen, so the two cannot word the same rule
   // differently or drift apart on the limits.
@@ -114,13 +128,13 @@ export default function Step4Password() {
           />
           <span>
             I agree to the{' '}
-            <Link to="/terms-and-conditions" target="_blank" rel="noopener noreferrer" className={s.consentLink}>
+            <LegalLink path="/terms-and-conditions" className={s.consentLink}>
               Terms of Service
-            </Link>{' '}
+            </LegalLink>{' '}
             and have read the{' '}
-            <Link to="/privacy-policy" target="_blank" rel="noopener noreferrer" className={s.consentLink}>
+            <LegalLink path="/privacy-policy" className={s.consentLink}>
               Privacy Policy
-            </Link>
+            </LegalLink>
             .
           </span>
         </label>

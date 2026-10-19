@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useRef, useState, useEffect } from 'react';
 import { useSearchParams, useLocation } from 'react-router-dom';
 import { useAuth } from '@shared/context/AuthContext';
+import { clearSignupResume, saveSignupResume } from '../signupResume';
 
 const SignupContext = createContext();
 
@@ -77,6 +78,20 @@ export function isSignupInProgress() {
   }
 }
 
+/**
+ * Puts a restored draft (signupResume.js) where the provider reads its own: the
+ * tab's session storage. The password was never in it.
+ */
+export function seedSignupDraft({ step, data, pendingEmail }) {
+  try {
+    const { password: _omit, ...safe } = data || {};
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify(safe));
+    sessionStorage.setItem(STEP_KEY, String(step));
+    sessionStorage.setItem(TIMESTAMP_KEY, String(Date.now()));
+    if (pendingEmail) sessionStorage.setItem(PENDING_KEY, pendingEmail);
+  } catch { /* storage blocked: the person starts again */ }
+}
+
 export const SignupProvider = ({ children }) => {
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
@@ -113,6 +128,9 @@ export const SignupProvider = ({ children }) => {
     try { return sessionStorage.getItem(PENDING_KEY) || ''; } catch { return ''; }
   });
   const pendingPasswordRef = useRef(null);
+  // The password step's fields, in memory only: they survive stepping away and
+  // back (and the browser handoff to read the Terms), never storage.
+  const passwordDraftRef = useRef({ password: '', confirmPassword: '', agreed: false });
   const markCodeSent = useCallback((email, password) => {
     setPendingEmailState(email);
     pendingPasswordRef.current = password;
@@ -228,7 +246,30 @@ export const SignupProvider = ({ children }) => {
     setSignupData((prev) => ({ ...prev, ...newData }));
   };
 
+  // Going to the background mid-signup: keep a short-lived, non-sensitive copy
+  // for a cold start (signupResume.js). Not per keystroke; never the password.
+  const latestRef = useRef(null);
+  latestRef.current = { currentStep, signupData, pendingEmail, isLoggedIn };
+  useEffect(() => {
+    const save = () => {
+      const { currentStep: step, signupData: data, pendingEmail: pending, isLoggedIn: authed } = latestRef.current;
+      if (authed || !data.firstName) return;
+      saveSignupResume({ step, data, pendingEmail: pending });
+    };
+    const onVisibility = () => { if (document.visibilityState === 'hidden') save(); };
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('pagehide', save);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('pagehide', save);
+    };
+  }, []);
+  // Signed in (the account exists): the copy has no further use.
+  useEffect(() => { if (isLoggedIn) clearSignupResume(); }, [isLoggedIn]);
+
   const clearSignupData = () => {
+    clearSignupResume();
+    passwordDraftRef.current = { password: '', confirmPassword: '', agreed: false };
     sessionStorage.removeItem(SESSION_KEY);
     sessionStorage.removeItem(STEP_KEY);
     sessionStorage.removeItem(TIMESTAMP_KEY);
@@ -270,6 +311,7 @@ export const SignupProvider = ({ children }) => {
         setFinishing,
         pendingEmail,
         pendingPasswordRef,
+        passwordDraftRef,
         markCodeSent,
       }}
     >

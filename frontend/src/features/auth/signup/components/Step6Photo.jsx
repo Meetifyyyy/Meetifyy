@@ -14,6 +14,7 @@ import { normalizeDicebearUrl } from '@shared/api/apiClient';
 import { generateRandomAvatarSet } from '@shared/utils/dicebear';
 import { showToast } from '@shared/utils/toast';
 import { AuthHeading, AuthButton, styles as s } from '../../shared/ui';
+import { startAvatarHandoff } from '../avatarHandoff';
 
 /**
  * Step 6 — an optional photo. Required information is all behind us by now,
@@ -22,7 +23,7 @@ import { AuthHeading, AuthButton, styles as s } from '../../shared/ui';
  * finishing screen (SignupFinishing), which completes the account.
  */
 export default function Step6Photo() {
-  const { signupData, updateData, setFinishing } = useSignup();
+  const { signupData, updateData, finishing, setFinishing } = useSignup();
 
   const [avatar, setAvatar] = useState(signupData.avatar || '');
   const [isUploading, setIsUploading] = useState(false);
@@ -68,6 +69,11 @@ export default function Step6Photo() {
   };
 
   const finish = (chosen) => {
+    // Once. The step stays on screen for a moment while it fades, and a second
+    // tap in that window must not restart the finishing screen or its handoff.
+    if (finishing) return;
+    // The avatar on screen travels into the finishing screen (avatarHandoff.js).
+    startAvatarHandoff();
     setFinishing({ avatar: getProcessedAvatarUrl(chosen) || '' });
   };
 
@@ -77,7 +83,7 @@ export default function Step6Photo() {
 
       <div className={s.avatarStage}>
         <div className={s.avatarRing}>
-          <div className={s.avatarCircle}>
+          <div className={s.avatarCircle} data-avatar-handoff="source">
             {isUploading ? (
               <Loader2 size={32} className={s.btnSpin} style={{ color: 'var(--color-text-muted)' }} />
             ) : (
@@ -133,7 +139,7 @@ export default function Step6Photo() {
             onClick={() => finish(avatar)}
             loading={isUploading}
             loadingText="Uploading..."
-            disabled={!avatar}
+            disabled={!avatar || Boolean(finishing)}
             icon={<ArrowRight size={18} />}
           >
             Finish
@@ -142,7 +148,7 @@ export default function Step6Photo() {
             type="button"
             className={s.skipBtn}
             onClick={() => finish('')}
-            disabled={isUploading}
+            disabled={isUploading || Boolean(finishing)}
           >
             Skip for now
           </button>

@@ -89,7 +89,7 @@ export default function SignupFinishing({ avatar }) {
     <div className={s.finish} role="status" aria-live="polite" aria-busy={!done}>
       <div className={`${s.finishOrb} ${done ? s.finishOrbDone : ''}`}>
         <span className={s.finishRing} aria-hidden="true" />
-        <span className={s.finishAvatar}>
+        <span className={s.finishAvatar} data-avatar-handoff="target">
           {done ? (
             <Check size={34} strokeWidth={2.4} aria-hidden="true" />
           ) : (

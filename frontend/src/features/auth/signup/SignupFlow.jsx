@@ -39,7 +39,9 @@ function useDisplayed(target) {
 
   useEffect(() => {
     if (target === shown) return undefined;
-    setDir(orderOf(target) >= orderOf(shown) ? 'fwd' : 'back');
+    // Into the finishing screen the photo step does not slide away: the avatar
+    // travels (avatarHandoff.js) and the rest simply fades.
+    setDir(target === 'finish' ? 'handoff' : orderOf(target) >= orderOf(shown) ? 'fwd' : 'back');
     if (prefersReducedMotion()) {
       setShown(target);
       return undefined;

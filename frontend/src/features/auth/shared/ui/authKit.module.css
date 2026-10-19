@@ -4994,3 +4994,36 @@
 .input.invalid:focus {
   border-color: var(--color-danger);
 }
+
+/* ── Photo step -> finishing screen ─────────────────────────────────────────
+   The chosen avatar travels between the two (signup/avatarHandoff.js), so
+   nothing else in that area may move while it does: the old step only fades,
+   and the finishing screen only fades in, with no slide, no per-row rise and no
+   entrance of its own on top of the container's. The avatar's destination is
+   measured once the finishing screen is on the page; anything still sliding
+   would make the measurement a lie. */
+.stepOut[data-slide='handoff'] {
+  transform: none;
+}
+
+.stepIn[data-slide='handoff'] {
+  animation: kitFadeOnly 0.28s ease both;
+}
+
+.stepIn[data-slide='handoff'] > * > *,
+.stepIn[data-slide='handoff'] form > *,
+.stepIn[data-slide='handoff'] .finish {
+  animation: none;
+}
+
+@keyframes kitFadeOnly {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stepIn[data-slide='handoff'] {
+    animation: none;
+  }
+}
+

@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { takeSignupResume } from '../features/auth/signupResume';
+import { seedSignupDraft } from '../features/auth/context/SignupContext';
 import authBg from '../assets/images/auth_bg.webp';
 import { preloadAuthScreens } from '../features/auth/routes/authRoutes';
 import { useSystemBars } from '../shared/hooks/useSystemBars';
@@ -45,6 +47,16 @@ export default function AppOpenScreen() {
   const navigate = useNavigate();
   const [leaving, setLeaving] = useState(false);
   const [splashExited, setSplashExited] = useState(false);
+
+  // Android killed the app while it was in the background mid-signup (the
+  // browser for the Terms, the mail app for the code): put the person back on
+  // their step with their non-sensitive answers. Once, and only when fresh.
+  useEffect(() => {
+    const saved = takeSignupResume();
+    if (!saved) return;
+    seedSignupDraft(saved);
+    navigate(`/signup?step=${saved.step}`, { replace: true });
+  }, [navigate]);
 
   /**
    * Read once, not subscribed to.
