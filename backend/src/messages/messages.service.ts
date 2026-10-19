@@ -928,39 +928,17 @@ export class MessagesService
      * is to render the "this ended" panel. An error would turn an expected
      * ending into a broken screen.
      */
-    const instantConv = await this.prisma.conversation.findUnique({
-      where: { id: realConvId },
-      select: { type: true, isInstantMatch: true },
-    });
-    if (
-      instantConv &&
-      (instantConv.type === 'INSTANT_MATCH' || instantConv.isInstantMatch)
-    ) {
-      const allowed = currentUserId
-        ? await this.instantMatchGuard?.canReadChat(currentUserId, realConvId)
-        : false;
-      if (!allowed) {
-        return {
-          messages: [],
-          canSendMessages: false,
-          targetUserUnavailable: false,
-          participants: [],
-          nextCursor: null,
-        };
-      }
-    }
-
-    let clearedAt: Date | null = null;
-    const whereCondition: Prisma.MessageWhereInput = {
-      conversationId: realConvId,
-      deletedAt: null,
-    };
-    // Bounds on createdAt from three independent sources (the viewer leaving,
-    // clearing the chat, and the page cursor), merged into one filter.
-    const createdAtFilter: Prisma.DateTimeFilter<'Message'> = {};
-
-    const [deletedForUser, currentParticipant, participants] =
+    //
+    // Every lookup that does not depend on another runs in one round trip. An
+    // older page used to pay for four sequential stages (this lookup, the
+    // participant reads, the page, then the same conversation row again for
+    // its type); the conversation row is now read once, alongside the rest.
+    const [instantConv, deletedForUser, currentParticipant, participants] =
       await Promise.all([
+        this.prisma.conversation.findUnique({
+          where: { id: realConvId },
+          select: { type: true, isInstantMatch: true },
+        }),
         currentUserId
           ? this.prisma.deletedMessage.findMany({
               where: {
@@ -1009,6 +987,32 @@ export class MessagesService
           },
         }),
       ]);
+    if (
+      instantConv &&
+      (instantConv.type === 'INSTANT_MATCH' || instantConv.isInstantMatch)
+    ) {
+      const allowed = currentUserId
+        ? await this.instantMatchGuard?.canReadChat(currentUserId, realConvId)
+        : false;
+      if (!allowed) {
+        return {
+          messages: [],
+          canSendMessages: false,
+          targetUserUnavailable: false,
+          participants: [],
+          nextCursor: null,
+        };
+      }
+    }
+
+    let clearedAt: Date | null = null;
+    const whereCondition: Prisma.MessageWhereInput = {
+      conversationId: realConvId,
+      deletedAt: null,
+    };
+    // Bounds on createdAt from three independent sources (the viewer leaving,
+    // clearing the chat, and the page cursor), merged into one filter.
+    const createdAtFilter: Prisma.DateTimeFilter<'Message'> = {};
 
     if (deletedForUser && deletedForUser.length > 0) {
       whereCondition.id = { notIn: deletedForUser.map((d) => d.messageId) };
@@ -1199,11 +1203,7 @@ export class MessagesService
     // resolve the other participant and left the composer enabled until a send
     // came back refused. History is the one response every open thread fetches,
     // so it is the right place for the answer.
-    const conversationType = await this.prisma.conversation.findUnique({
-      where: { id: realConvId },
-      select: { type: true },
-    });
-    const isGroupConversation = conversationType?.type === 'GROUP';
+    const isGroupConversation = instantConv?.type === 'GROUP';
     const canSendMessages = currentUserId
       ? await this.verificationAccess
           .assertCanMessageInConversation(
