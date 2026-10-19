@@ -2390,24 +2390,6 @@
   :global(html[data-collapsing-header]) .heroCover {
     height: calc(clamp(100px, 15cqi, 155px) + var(--status-bar-inset, 0px));
     max-height: none;
-    /*
-     * The header shows this cover (CollapsingHeader with coverBackground, as on
-     * Profile): it scrolls away with the page and pins once only the header's
-     * height (56px + the status bar) of it is left. `top` is that height minus
-     * the cover's own; the status-bar inset cancels out. Sticky is done by the
-     * compositor in the scroll frame, so nothing trails the page.
-     */
-    position: sticky;
-    top: calc(56px - clamp(100px, 15cqi, 155px));
-    /* Above the content that scrolls beneath it, below the header (60). */
-    z-index: 5;
   }
 
-  /* The scroll's share of the blur, in step with the header band: written as
-     --cover-blur by useCollapsingHeader (`data-cover-blur`). */
-  :global(html[data-collapsing-header]) .coverPullBlur.coverScrollBlur {
-    opacity: var(--cover-blur, 0);
-    transition: none;
-    will-change: opacity;
-  }
 }

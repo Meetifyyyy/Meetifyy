@@ -192,16 +192,10 @@ function HeroSection({ coverRef, comm, onlineNow, joined, joining, onToggleJoin,
           />
         )}
         {IS_MOBILE_BUILD && hasCover && (
-          /* The same cover, blurred: one copy faded in by scrolling (it becomes
-             the header's background once the cover pins), one by a pull. */
-          <>
-            <div className={`${styles.coverPullBlur} ${styles.coverScrollBlur}`} data-cover-blur aria-hidden="true">
-              <BlurredCover cover={resolvedCover} />
-            </div>
-            <div className={styles.coverPullBlur} aria-hidden="true">
-              <BlurredCover cover={resolvedCover} />
-            </div>
-          </>
+          /* The same cover, blurred, faded in by a pull (see CommunityView.module.css). */
+          <div className={styles.coverPullBlur} aria-hidden="true">
+            <BlurredCover cover={resolvedCover} />
+          </div>
         )}
         <div className={styles.heroCoverOverlay} />
         {isAdmin && (
@@ -455,7 +449,8 @@ function HeroSection({ coverRef, comm, onlineNow, joined, joining, onToggleJoin,
             
             <div className={styles.mobileHeroMetaInfo}>
               <div className={styles.mobileHeroTitleRow} onClick={onTitleClick}>
-                <h2 className={styles.mobileHeroTitle}>{comm.name}</h2>
+                {/* The header's title fades in as this name reaches it (useCollapsingHeader). */}
+                <h2 className={styles.mobileHeroTitle} data-exit-track="name" data-exit-lead="70">{comm.name}</h2>
                 <div className={styles.mobileTitleArrow}>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
                     <polyline points="9 18 15 12 9 6"></polyline>
@@ -893,6 +888,10 @@ export default function CommunityView({ communityId, onBack, onPostClick, onComm
   );
 
   const comm = apiComm;
+  // The cover the app header shows; old platform-default keys count as none
+  // (see HeroSection's hasCover).
+  const headerCoverUrl = comm ? resolveCommunityCover(comm) : null;
+  const headerCover = headerCoverUrl && !headerCoverUrl.includes('/api/media/defaults/') ? headerCoverUrl : null;
 
   // The pending "you're now a moderator" notice, carried on the community.
   const moderatorNotice = comm?.moderatorNotice ?? null;
@@ -1157,10 +1156,15 @@ export default function CommunityView({ communityId, onBack, onPostClick, onComm
         subtitle={`${memberTotal} ${memberTotal === 1 ? 'member' : 'members'}`}
         onBack={onBack}
         backVariant="profile"
-        // As on Profile: the page's own cover pins under the header and blurs
-        // into its background. Without this the header faded in a plain themed
-        // surface, solid white or black, over the cover.
-        coverBackground
+        // The header carries its own copy of the cover, which scrolls away with
+        // the page, pins at the header's height and crossfades into a blurred
+        // copy (CollapsingHeader's coverContent/coverBackdrop). Without a cover
+        // the header faded in a plain themed surface, solid white or black.
+        // The page's own cover cannot pin itself as Profile's does: its parent
+        // is the short hero card, which a sticky element cannot outlive.
+        coverBackground={Boolean(headerCover)}
+        coverContent={headerCover ? <img src={headerCover} alt="" draggable={false} style={{ objectFit: 'cover' }} /> : undefined}
+        coverBackdrop={headerCover ? <BlurredCover cover={headerCover} /> : undefined}
         headerRef={collapsingHeaderRef}
       />
       {/*
