@@ -41,6 +41,13 @@ import DevicesPanel from '../panels/DevicesPanel';
 import { IS_DEV_BUILD, IS_MOBILE_BUILD } from '@config';
 import { useCookieConsent } from '@shared/context/CookieConsentContext';
 import { visibleViewportBottom } from '@shared/utils/visibleViewport';
+import {
+  captureTextFocus,
+  holdTextFocus,
+  holdTextFocusOutsideInputs,
+  restoreTextFocus,
+  shouldAutoFocusSearch,
+} from '@shared/utils/textFocus';
 import { isAffiliationActive } from '@shared/lib/campusAccess';
 
 // Large-device split layout only kicks in at this width — tablets and phones
@@ -237,6 +244,10 @@ function CustomSelect({ value, onChange, options = [], disabled, placeholder, se
   const containerRef = useRef(null);
   const menuRef = useRef(null);
   const [menuBox, setMenuBox] = useState(null);
+  // The text field being typed in when the menu opened, and whether the menu's
+  // own search box takes focus (see @shared/utils/textFocus).
+  const prevFocusRef = useRef(null);
+  const autoFocusSearchRef = useRef(false);
 
   /*
    * The menu is portalled to <body> and positioned `fixed` against the
@@ -287,6 +298,16 @@ function CustomSelect({ value, onChange, options = [], disabled, placeholder, se
     return () => cancelAnimationFrame(raf);
   }, [isOpen, placement, searchable]);
 
+  // Closed again: a text field that was being typed in gets its focus back (a
+  // search box that had it is gone, and focus would fall to <body> and drop the
+  // keyboard). A no-op when focus went somewhere else.
+  useEffect(() => {
+    if (isOpen) return;
+    const field = prevFocusRef.current;
+    prevFocusRef.current = null;
+    restoreTextFocus(field);
+  }, [isOpen]);
+
   useEffect(() => {
     if (!isOpen) return undefined;
     const onKey = (e) => {
@@ -329,7 +350,18 @@ function CustomSelect({ value, onChange, options = [], disabled, placeholder, se
         id={id}
         type="button"
         className={`${styles.selectButton} ${isOpen ? styles.selectButtonActive : ''}`} 
-        onClick={() => !disabled && setIsOpen(!isOpen)}
+        onClick={() => {
+          if (disabled) return;
+          if (!isOpen) {
+            prevFocusRef.current = captureTextFocus();
+            autoFocusSearchRef.current = shouldAutoFocusSearch();
+          }
+          setIsOpen(!isOpen);
+        }}
+        // A focused text field keeps focus (and the keyboard stays up): the
+        // blur is what used to move the page under the open menu.
+        onPointerDown={holdTextFocus}
+        onMouseDown={holdTextFocus}
         disabled={disabled}
         aria-haspopup="listbox"
         aria-expanded={isOpen}
@@ -351,6 +383,9 @@ function CustomSelect({ value, onChange, options = [], disabled, placeholder, se
           ref={menuRef}
           className={`${styles.selectDropdown} ${styles.selectPortal} ${menuBox.up ? styles.selectDropdownTop : ''}`}
           role="listbox"
+          // Choosing an option must not take focus from a text field either.
+          onPointerDown={holdTextFocusOutsideInputs}
+          onMouseDown={holdTextFocusOutsideInputs}
           style={{
             left: menuBox.left,
             width: menuBox.width,
@@ -368,7 +403,7 @@ function CustomSelect({ value, onChange, options = [], disabled, placeholder, se
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
                 onClick={e => e.stopPropagation()}
-                autoFocus
+                autoFocus={autoFocusSearchRef.current}
               />
             </div>
           )}

@@ -32,7 +32,16 @@ export default function AuthButton({
     .join(' ');
 
   return (
-    <button className={cls} disabled={disabled || loading} aria-busy={loading || undefined} {...rest}>
+    <button
+      className={cls}
+      disabled={disabled || loading}
+      aria-busy={loading || undefined}
+      // The primary action: with the keyboard up, the page scrolls far enough
+      // to show it along with the field being typed in, when both fit
+      // (keyboardFocus.js).
+      data-keyboard-reveal={variant === 'primary' ? '' : undefined}
+      {...rest}
+    >
       <span className={s.btnLabel} aria-hidden={loading || undefined}>
         {children}
         {icon ? <span className={s.btnIcon}>{icon}</span> : null}

@@ -80,3 +80,47 @@ describe('ensureFocusedVisible', () => {
     expect(ensureFocusedVisible({ inset: 330, duration: 285 })).toBe(0);
   });
 });
+
+describe('ensureFocusedVisible with a primary action in the form', () => {
+  /** An <input> and a submit button in one form; each with the rect given. */
+  function formWith(fieldRect, buttonRect, { marked = true } = {}) {
+    document.body.innerHTML = '';
+    const form = document.createElement('form');
+    const input = document.createElement('input');
+    const button = document.createElement('button');
+    button.type = 'submit';
+    if (marked) button.setAttribute('data-keyboard-reveal', '');
+    form.append(input, button);
+    document.body.appendChild(form);
+    input.getBoundingClientRect = () => fieldRect;
+    button.getBoundingClientRect = () => buttonRect;
+    input.focus();
+  }
+
+  it('shows the button too when the field and the button fit together', () => {
+    // Keyboard top 875 - 330 = 545, limit 533. Field is clear (bottom 480) but
+    // the button is not (bottom 600): scroll by the button's overlap.
+    formWith(rect(430, 480), rect(520, 600));
+    expect(ensureFocusedVisible({ inset: 330, duration: 285 })).toBe(67);
+    expect(window.scrollBy).toHaveBeenCalledWith({ top: 67, behavior: 'smooth' });
+  });
+
+  it('falls back to the field alone when both cannot be shown', () => {
+    // From the field's top (100) to the button's bottom (700) is 600px; only
+    // 533 - 12 are available above the keyboard.
+    formWith(rect(100, 150), rect(650, 700));
+    expect(ensureFocusedVisible({ inset: 330, duration: 285 })).toBe(0);
+    expect(window.scrollBy).not.toHaveBeenCalled();
+  });
+
+  it('ignores a button that is not marked as the primary action', () => {
+    formWith(rect(430, 480), rect(520, 600), { marked: false });
+    expect(ensureFocusedVisible({ inset: 330, duration: 285 })).toBe(0);
+  });
+
+  it('does not move for a button that is already above the keyboard', () => {
+    formWith(rect(300, 340), rect(360, 420));
+    expect(ensureFocusedVisible({ inset: 330, duration: 285 })).toBe(0);
+  });
+});
+

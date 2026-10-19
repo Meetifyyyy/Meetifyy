@@ -19,6 +19,11 @@
  *     docked at the bottom rises with the keyboard by its own transform, so
  *     it will be visible without the page moving (and its rect, read before
  *     that transition, would claim otherwise);
+ *   - when the field sits in a form with a primary action marked
+ *     `data-keyboard-reveal` (the auth screens' submit button), the part to
+ *     show is the field down to that button, provided both fit above the
+ *     keyboard together; if they do not, the field alone. A person typing the
+ *     last field of a short form should not have to scroll for the button;
  *   - smooth while the keyboard animates (the browser's compositor-driven
  *     smooth scroll, which runs off the main thread and lasts roughly as long
  *     as the IME slide), instant with reduced motion or no animation.
@@ -66,6 +71,20 @@ function targetRect(el) {
 }
 
 /**
+ * The field's rect, stretched down to the form's primary action when the two
+ * fit above the keyboard together (see the rules at the top of this file).
+ */
+function withPrimaryAction(el, rect, limit, margin) {
+  const action = el.closest?.('form')?.querySelector('[data-keyboard-reveal]');
+  if (!action || action === el) return rect;
+  const below = action.getBoundingClientRect();
+  if (below.bottom <= rect.bottom) return rect;
+  // Both must fit between the top of the screen and the keyboard.
+  if (below.bottom - rect.top > limit - margin) return rect;
+  return { top: rect.top, bottom: below.bottom, height: below.bottom - rect.top };
+}
+
+/**
  * @param {object} options
  * @param {number} options.inset     how far up from the bottom of the layout
  *                                   viewport the keyboard reaches, in CSS px
@@ -79,8 +98,8 @@ export function ensureFocusedVisible({ inset, duration = 0, margin = FOCUS_MARGI
   if (!isEditable(el)) return 0;
   if (el.closest?.('[data-keyboard-dock]')) return 0;
 
-  const rect = targetRect(el);
   const limit = window.innerHeight - inset - margin;
+  const rect = withPrimaryAction(el, targetRect(el), limit, margin);
   let overlap = Math.ceil(rect.bottom - limit);
   if (overlap <= 0) return 0;
   // Never past the field's top: in a field taller than the space left, its

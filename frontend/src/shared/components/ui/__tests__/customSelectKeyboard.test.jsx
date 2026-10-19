@@ -70,4 +70,56 @@ describe('CustomSelect with an overlaying keyboard', () => {
     });
     expect(screen.getByRole('listbox').style.top).toBe('464px');
   });
+
+  describe('with a text field being typed in', () => {
+    const renderWithField = () => {
+      render(
+        <>
+          <input aria-label="bio" />
+          <CustomSelect options={options} value="" onChange={() => {}} aria-label="Pick" />
+        </>,
+      );
+      const field = screen.getByLabelText('bio');
+      field.focus();
+      return field;
+    };
+
+    it('declines the focus move when the trigger is pressed, so the keyboard stays up', () => {
+      renderWithField();
+      expect(fireEvent.pointerDown(screen.getByRole('combobox', { name: /pick/i }))).toBe(false);
+    });
+
+    it('opens, and choosing an option leaves the field focused', () => {
+      const field = renderWithField();
+      fireEvent.click(screen.getByRole('combobox', { name: /pick/i }));
+      expect(document.activeElement).toBe(field);
+      const option = screen.getByRole('option', { name: /beta/i });
+      // Pressing an option must not take focus off the field either.
+      expect(fireEvent.pointerDown(option)).toBe(false);
+      fireEvent.click(option);
+      expect(screen.queryByRole('listbox')).toBeNull();
+      expect(document.activeElement).toBe(field);
+    });
+
+    it('does not move the menu when the keyboard does not change', () => {
+      root.style.setProperty('--kb-inset', '320px');
+      renderWithField();
+      fireEvent.click(screen.getByRole('combobox', { name: /pick/i }));
+      const { top, bottom } = screen.getByRole('listbox').style;
+      act(() => {
+        // Nothing resizes or hides: only frames pass.
+        frames.splice(0).forEach((cb) => cb());
+      });
+      const after = screen.getByRole('listbox').style;
+      expect(after.top).toBe(top);
+      expect(after.bottom).toBe(bottom);
+    });
+
+    it('still gives focus to the trigger when no text field had it', () => {
+      render(<CustomSelect options={options} value="" onChange={() => {}} aria-label="Pick" />);
+      fireEvent.click(screen.getByRole('combobox', { name: /pick/i }));
+      fireEvent.click(screen.getByRole('option', { name: /beta/i }));
+      expect(document.activeElement).toBe(screen.getByRole('combobox', { name: /pick/i }));
+    });
+  });
 });

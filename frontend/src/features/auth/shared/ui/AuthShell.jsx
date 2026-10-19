@@ -2,6 +2,8 @@ import { createContext, Fragment, memo, useCallback, useContext, useEffect, useL
 import { Link, useLocation } from 'react-router-dom';
 import { ArrowLeft, Check } from '@shared/components/icons';
 import { useSystemBars } from '@shared/hooks/useSystemBars';
+import { useKeyboardRoom } from '@shared/hooks/useKeyboardRoom';
+import { KEYBOARD_OVERLAYS_PAGE } from '@shared/utils/keyboardOverlay';
 import wordmark from '@assets/images/meetifyy_wordmark.svg';
 import wordmarkDark from '@assets/images/meetifyy_wordmark_dark.svg';
 import proofCards from '@assets/images/auth_proof_cards.webp';
@@ -172,6 +174,10 @@ function AuthShellMaster({
   const isSignup = routeKey.startsWith('/signup');
   const isLogin = routeKey === '/login';
   const panelInnerRef = useRef(null);
+  // The scroller every auth screen lives in: it gets scroll room (not padding)
+  // for an overlaying keyboard.
+  const shellRef = useRef(null);
+  useKeyboardRoom(shellRef);
   /*
    * Starts as null, not as the last mount's height.
    *
@@ -424,7 +430,12 @@ function AuthShellMaster({
 
   return (
     <AuthShellContext.Provider value={contextValue}>
-      <div className={`${s.shell} ${shouldShowRail || holding ? s.shellSignup : ''}`}>
+      <div
+        ref={shellRef}
+        className={`${s.shell} ${shouldShowRail || holding ? s.shellSignup : ''}`}
+        // The app's keyboard overlays the page: room to scroll, not padding.
+        data-keyboard-overlay={KEYBOARD_OVERLAYS_PAGE ? '' : undefined}
+      >
         <div
           className={s.ambient}
           aria-hidden="true"

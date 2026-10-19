@@ -2656,6 +2656,25 @@
 }
 
 
+/* The installed Android app: the keyboard overlays the page. Padding the shell
+   by --kb-inset (above) re-centred the whole screen in a single frame at the
+   start of the keyboard's slide, and again at the end, so here the room is
+   scroll room only: `--kb-room`, published by useKeyboardRoom, is occupied by a
+   box that extends what can scroll and takes no space in the layout (equal
+   negative bottom margin). Nothing moves when the keyboard does; a covered
+   field is brought into view by the app-wide smooth scroll. */
+.shell[data-keyboard-overlay] {
+  padding-bottom: max(env(safe-area-inset-bottom, 0px), var(--navigation-bar-inset, 0px));
+}
+
+.shell[data-keyboard-overlay]::after {
+  content: '';
+  flex: none;
+  height: var(--kb-room, 0px);
+  margin-bottom: calc(-1 * var(--kb-room, 0px));
+  pointer-events: none;
+}
+
 /* ── Page switching: quick and quiet ──────────────────────────────────────
    Login ⇄ signup ⇄ forgot-password swap the panel's contents in place. The
    incoming page fades and settles 6px in 0.22s, and the card's height follows
