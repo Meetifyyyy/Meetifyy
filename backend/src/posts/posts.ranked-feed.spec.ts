@@ -31,6 +31,9 @@ describe('PostsService ranked feed', () => {
 
   let store: Map<string, string>;
   let queryRaw: jest.Mock;
+  /** Newest post created after a given time, as `post.findFirst` sees it. */
+  let newestPost: { id: string } | null;
+  let findFirstPost: jest.Mock;
   let redisAvailable: boolean;
   let service: PostsService;
   let chrono: jest.SpyInstance;
@@ -39,6 +42,8 @@ describe('PostsService ranked feed', () => {
     store = new Map();
     redisAvailable = true;
     queryRaw = jest.fn(() => Promise.resolve(scored));
+    newestPost = null;
+    findFirstPost = jest.fn(() => Promise.resolve(newestPost));
     const redis = stub<Redis>({
       get: jest.fn((key: string) => Promise.resolve(store.get(key) ?? null)),
       set: jest.fn((key: string, value: string) => {
@@ -47,7 +52,10 @@ describe('PostsService ranked feed', () => {
       }),
     });
     service = new PostsService(
-      stub<PrismaService>({ $queryRaw: queryRaw }),
+      stub<PrismaService>({
+        $queryRaw: queryRaw,
+        post: stub<PrismaService['post']>({ findFirst: findFirstPost }),
+      }),
       stub<NotificationsService>(),
       stub<NotificationFactory>(),
       stub<BlocksService>({
@@ -105,6 +113,44 @@ describe('PostsService ranked feed', () => {
     const a = await service.getFeed('me', 10);
     const b = await service.getFeed('me', 10);
     expect(b.nextCursor).toBe(a.nextCursor);
+    expect(queryRaw).toHaveBeenCalledTimes(1);
+  });
+
+  it('re-ranks a first-page refetch once a post has been created since', async () => {
+    // The bug: Home was opened while the 7-day window was empty, so the cached
+    // ranking held no ids and continued from the window's start. Every refetch
+    // within the reuse window renewed that empty ranking, and posts made
+    // after it was built never appeared.
+    queryRaw.mockResolvedValueOnce([]);
+    const empty = await service.getFeed('me', 10);
+    expect(empty.posts).toHaveLength(0);
+
+    newestPost = { id: 'p00' };
+    const after = await service.getFeed('me', 10);
+    expect(after.posts.map((p) => p.id)).toEqual(
+      scored.slice(0, 10).map((r) => r.id),
+    );
+    expect(queryRaw).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps walking the same ranking mid-scroll even when newer posts exist', async () => {
+    const first = await service.getFeed('me', 10);
+    newestPost = { id: 'brand-new' };
+    const second = await service.getFeed('me', 10, first.nextCursor);
+    expect(second.posts.map((p) => p.id)).toEqual(
+      scored.slice(10, 20).map((r) => r.id),
+    );
+    expect(queryRaw).toHaveBeenCalledTimes(1);
+  });
+
+  it('rebuilds a ranking cached before it recorded when it was built', async () => {
+    store.set('feed:ranked:v1:me:current', 'old');
+    store.set(
+      'feed:ranked:v1:me:old',
+      JSON.stringify({ ids: [], continueFrom: '2026-01-01T00:00:00.000Z|' }),
+    );
+    const page = await service.getFeed('me', 10);
+    expect(page.posts).toHaveLength(10);
     expect(queryRaw).toHaveBeenCalledTimes(1);
   });
 

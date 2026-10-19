@@ -106,6 +106,12 @@ interface RankedSession {
   ids: string[];
   /** Chronological cursor the feed continues from after the last id. */
   continueFrom: string | null;
+  /**
+   * When the ranking was built (epoch ms). A first-page refetch reuses the
+   * ranking only while no post has been created since; absent on rankings
+   * cached before this field existed, which are therefore rebuilt.
+   */
+  builtAt?: number;
 }
 
 function parseRankedSession(raw: string): RankedSession | null {
@@ -117,7 +123,14 @@ function parseRankedSession(raw: string): RankedSession | null {
       value.ids.every((id) => typeof id === 'string') &&
       (value.continueFrom === null || typeof value.continueFrom === 'string')
     ) {
-      return { ids: value.ids, continueFrom: value.continueFrom };
+      return {
+        ids: value.ids,
+        continueFrom: value.continueFrom,
+        builtAt:
+          typeof value.builtAt === 'number' && Number.isFinite(value.builtAt)
+            ? value.builtAt
+            : undefined,
+      };
     }
   } catch {
     // Unreadable entry: treated as expired, a new ranking is built.
@@ -922,6 +935,16 @@ export class PostsService {
       const raw = await redis.get(sessionKey(sessionId));
       order = raw ? parseRankedSession(raw) : null;
     }
+    // A first-page request reuses the ranking only while it is still complete.
+    // One built before a post was created cannot contain that post, and its
+    // `continueFrom` points below its own window, so the new post would stay
+    // hidden for as long as refetches kept renewing the reuse pointer: the
+    // whole feed, if Home was opened while the window was empty. Mid-scroll
+    // (a cursor) keeps walking the same ranking so pages stay consistent.
+    if (order && !cursor && (await this.postedSince(order.builtAt))) {
+      order = null;
+      sessionId = undefined;
+    }
     if (!order || !sessionId) {
       if (cursor) {
         // Mid-scroll, the session expired. Starting a new ranking here would
@@ -987,7 +1010,24 @@ export class PostsService {
    * cannot flood every feed. The candidate filters mirror the chronological
    * feed's; the page load re-applies them all regardless (see above).
    */
+  /**
+   * Whether any post has been created after `builtAt` (or the time is
+   * unknown). Deliberately ignores who may see it: a needless rebuild costs one
+   * ranking query, a missed one hides a post.
+   */
+  private async postedSince(builtAt: number | undefined): Promise<boolean> {
+    if (builtAt === undefined) return true;
+    const newer = await this.prisma.post.findFirst({
+      where: { createdAt: { gt: new Date(builtAt) }, deletedAt: null },
+      select: { id: true },
+    });
+    return newer !== null;
+  }
+
   private async buildRankedSession(userId: string): Promise<RankedSession> {
+    // Taken before the candidates are read, so a post created while the query
+    // runs counts as "since" and triggers a rebuild rather than being missed.
+    const builtAt = Date.now();
     const excludedUserIds = await this.blocksService.getExcludedUserIds(userId);
     const since = new Date(
       Date.now() - PostsService.RANK_WINDOW_DAYS * 24 * 60 * 60 * 1000,
@@ -1101,7 +1141,7 @@ export class PostsService {
     } else {
       continueFrom = `${since.toISOString()}|`;
     }
-    return { ids, continueFrom };
+    return { ids, continueFrom, builtAt };
   }
 
   /** The chronological feed, and the loader the ranked feed pages through
