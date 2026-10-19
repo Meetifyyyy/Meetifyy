@@ -54,8 +54,8 @@ const gradleTask = isRelease ? 'assembleRelease' : 'assembleDebug';
  * that org, so its maps may be uploaded with it: fill in whatever the shell has
  * not set. A RELEASE build never does this — it reports to the production org,
  * and a dev token there would put production maps in the dev org — so it only
- * uploads when SENTRY_AUTH_TOKEN/SENTRY_ORG/SENTRY_PROJECT_ANDROID are exported
- * explicitly. See docs/sentry.md.
+ * uploads with SENTRY_AUTH_TOKEN/SENTRY_ORG/SENTRY_PROJECT_ANDROID exported, or
+ * read from local/sentry-release.env (sentryEnvForRelease). See docs/sentry.md.
  */
 function sentryEnvFromCliLogin() {
   if (isRelease) return {};
@@ -76,7 +76,39 @@ function sentryEnvFromCliLogin() {
   return fill.SENTRY_AUTH_TOKEN || process.env.SENTRY_AUTH_TOKEN ? fill : {};
 }
 
-const buildEnv = { ...process.env, ...sentryEnvFromCliLogin() };
+/**
+ * Sentry source-map credentials for RELEASE builds, from the git-ignored
+ * `local/sentry-release.env` (lines like `export SENTRY_AUTH_TOKEN=…`). Only the
+ * three Sentry variables are read, anything already exported in the shell wins,
+ * and the dev org is refused so production maps can never land there.
+ */
+const SENTRY_RELEASE_KEYS = ['SENTRY_AUTH_TOKEN', 'SENTRY_ORG', 'SENTRY_PROJECT_ANDROID'];
+const DEV_SENTRY_ORG = 'meetifyy-dev';
+
+function sentryEnvForRelease() {
+  if (!isRelease) return {};
+  let text = '';
+  try {
+    text = readFileSync(resolve(root, 'local/sentry-release.env'), 'utf8');
+  } catch {
+    return {};
+  }
+  const fill = {};
+  for (const line of text.split('\n')) {
+    const m = line.match(/^\s*(?:export\s+)?([A-Z_]+)\s*=\s*(.*?)\s*$/);
+    if (!m || !SENTRY_RELEASE_KEYS.includes(m[1]) || process.env[m[1]]) continue;
+    const value = m[2].replace(/^(['"])(.*)\1$/, '$2');
+    if (value) fill[m[1]] = value;
+  }
+  const org = process.env.SENTRY_ORG || fill.SENTRY_ORG;
+  if (org === DEV_SENTRY_ORG) {
+    console.error(`local/sentry-release.env names the DEV Sentry org (${DEV_SENTRY_ORG}); a release must report to production. Not uploading source maps.`);
+    return {};
+  }
+  return fill;
+}
+
+const buildEnv = { ...process.env, ...sentryEnvFromCliLogin(), ...sentryEnvForRelease() };
 if (buildEnv.SENTRY_AUTH_TOKEN && buildEnv.SENTRY_ORG) {
   console.log(`▸ Sentry: source maps will upload to ${buildEnv.SENTRY_ORG}/${buildEnv.SENTRY_PROJECT_ANDROID || '(no project set)'}`);
 } else {
