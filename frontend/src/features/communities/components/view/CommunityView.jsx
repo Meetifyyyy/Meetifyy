@@ -192,10 +192,16 @@ function HeroSection({ coverRef, comm, onlineNow, joined, joining, onToggleJoin,
           />
         )}
         {IS_MOBILE_BUILD && hasCover && (
-          /* The same cover, blurred, faded in by a pull (see CommunityView.module.css). */
-          <div className={styles.coverPullBlur} aria-hidden="true">
-            <BlurredCover cover={resolvedCover} />
-          </div>
+          /* The same cover, blurred: one copy faded in by scrolling (it becomes
+             the header's background once the cover pins), one by a pull. */
+          <>
+            <div className={`${styles.coverPullBlur} ${styles.coverScrollBlur}`} data-cover-blur aria-hidden="true">
+              <BlurredCover cover={resolvedCover} />
+            </div>
+            <div className={styles.coverPullBlur} aria-hidden="true">
+              <BlurredCover cover={resolvedCover} />
+            </div>
+          </>
         )}
         <div className={styles.heroCoverOverlay} />
         {isAdmin && (
@@ -1151,6 +1157,10 @@ export default function CommunityView({ communityId, onBack, onPostClick, onComm
         subtitle={`${memberTotal} ${memberTotal === 1 ? 'member' : 'members'}`}
         onBack={onBack}
         backVariant="profile"
+        // As on Profile: the page's own cover pins under the header and blurs
+        // into its background. Without this the header faded in a plain themed
+        // surface, solid white or black, over the cover.
+        coverBackground
         headerRef={collapsingHeaderRef}
       />
       {/*
