@@ -6,6 +6,8 @@ vi.mock('@shared/hooks/usePresenceVisibility', () => ({ useCanSeeOthersPresence:
 vi.mock('@shared/context/AuthContext', () => ({ useAuth: () => ({ currentUser: { id: 'me' } }) }));
 vi.mock('@shared/components/avatar/Avatar', () => ({ default: () => <span /> }));
 vi.mock('@shared/components/skeletons/Skeleton', () => ({ default: () => <span /> }));
+const navigate = vi.fn();
+vi.mock('react-router-dom', () => ({ useNavigate: () => navigate }));
 
 import DMChatHeader from '../../../direct-messages/components/chat/DMChatHeader';
 import GroupChatHeader from '../../../group-chats/components/chat/GroupChatHeader';
@@ -35,6 +37,24 @@ describe('chat header menu', () => {
     for (const removed of REMOVED) {
       expect(itemNames().some((name) => removed.test(name))).toBe(false);
     }
+  });
+
+  it('someone you cannot message gets only View profile', () => {
+    render(
+      <DMChatHeader
+        conversation={{ id: 'c1', name: 'Asha', type: 'DIRECT', targetUser: { id: 'u2', username: 'asha' } }}
+        onBack={vi.fn()}
+        onClearChat={vi.fn()}
+        onToggleSearch={vi.fn()}
+        onOpenDetails={vi.fn()}
+        profileOnly
+      />,
+    );
+    open();
+
+    expect(itemNames()).toEqual(['View profile']);
+    fireEvent.click(screen.getByRole('menuitem', { name: /view profile/i }));
+    expect(navigate).toHaveBeenCalledWith('/profile/asha', expect.anything());
   });
 
   it('a group header drops the same actions and keeps its group-only ones', () => {

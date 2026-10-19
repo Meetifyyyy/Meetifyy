@@ -1,4 +1,5 @@
-import { ArrowLeft, MoreVertical, Search, Trash2 } from '@shared/components/icons';
+import { useNavigate } from 'react-router-dom';
+import { ArrowLeft, MoreVertical, Search, Trash2, User } from '@shared/components/icons';
 import Menu, { MenuItem, useMenu } from '@shared/components/ui/Menu';
 import Avatar from '@shared/components/avatar/Avatar';
 import Skeleton from '@shared/components/skeletons/Skeleton';
@@ -11,7 +12,9 @@ export default function DMChatHeader({
   onClearChat, 
   onToggleSearch, 
   onOpenDetails,
+  profileOnly = false,
 }) {
+  const navigate = useNavigate();
   // Outside click, Escape and hardware Back all dismiss this menu — and
   // Back dismisses only the menu, not the chat underneath it.
   /*
@@ -34,6 +37,7 @@ export default function DMChatHeader({
   const blockedByMe = Boolean(conversation.isBlockedByMe);
 
   const isGroupConv = conversation.type === 'GROUP' || conversation.isGroup;
+  const profileUsername = conversation.targetUser?.username || conversation.otherUser?.username;
   const avatarSrc = isGroupConv
     ? (conversation.avatar || conversation.icon || conversation.coverImage || null)
     : (conversation.avatar || conversation.otherUser?.avatar || conversation.targetUser?.avatar || conversation.icon);
@@ -82,13 +86,25 @@ export default function DMChatHeader({
           </button>
           
           <Menu {...moreMenu.menuProps} size="md" ariaLabel="Chat options">
-            {onToggleSearch && (
+            {/* Someone you cannot message: the chat holds nothing to search or
+                clear, so the only useful action is their profile. */}
+            {profileOnly && profileUsername && (
+              <MenuItem
+                icon={User}
+                onSelect={() => navigate(`/profile/${profileUsername}`, { state: { from: window.location.pathname } })}
+                onClose={moreMenu.close}
+              >
+                View profile
+              </MenuItem>
+            )}
+
+            {!profileOnly && onToggleSearch && (
               <MenuItem icon={Search} onSelect={onToggleSearch} onClose={moreMenu.close}>
                 Find in chat
               </MenuItem>
             )}
 
-            {onClearChat && (
+            {!profileOnly && onClearChat && (
               <MenuItem icon={Trash2} tone="danger" onSelect={() => onClearChat(conversation.id)} onClose={moreMenu.close}>
                 Clear chat
               </MenuItem>

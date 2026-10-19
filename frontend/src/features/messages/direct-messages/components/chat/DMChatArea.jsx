@@ -92,6 +92,7 @@ export default function DMChatArea({
             }
           }}
           onOpenDetails={() => state.setShowDetails(true)}
+          profileOnly={!canSend}
         />
       }
     />
