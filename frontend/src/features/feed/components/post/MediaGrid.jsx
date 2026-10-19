@@ -763,11 +763,13 @@ export function MediaGrid({ media, onMediaClick, onRemove, authorName }) {
   const handleItemClick = (e, index) => {
     e.stopPropagation();
     if (onMediaClick) {
-      const formattedItems = mediaList.map((m) => ({
-        url: m.fullUrl || m.url || m.rawSrc,
-        type: m.type,
-        caption: '',
-      }));
+      const formattedItems = mediaList.map((m) => {
+        const url = m.fullUrl || m.url || m.rawSrc;
+        // The grid shows the derived thumbnail; handing it over lets the viewer
+        // open on those already-decoded pixels instead of an empty stage.
+        const thumb = !m.isVideo && m.url && m.url !== url ? m.url : undefined;
+        return { url, type: m.type, caption: '', ...(thumb ? { thumb } : {}) };
+      });
       onMediaClick(formattedItems, index);
     }
   };

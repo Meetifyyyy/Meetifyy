@@ -74,13 +74,24 @@ function applyTransform(imgEl, tx, ty, scale, animated = false) {
 // Component
 // ─────────────────────────────────────────────
 
-export default function ImageViewer({ src: rawSrc, label = 'Photo', mediaRef, zoomApiRef, onToggleControls, isCurrent = true, closing = false }) {
+export default function ImageViewer({ src: rawSrc, placeholder: rawPlaceholder = '', label = 'Photo', mediaRef, zoomApiRef, onToggleControls, isCurrent = true, closing = false }) {
   /*
    * Same reason as VideoViewer: a conversation attachment's `/api/media/` URL
    * cannot be authorized by an <img> tag inside the app, so it is signed first.
    * Non-conversation media passes through untouched.
    */
   const { src, failed: srcFailed, pending: srcPending, refresh: refreshSrc, recover: recoverSrc } = useSignedMediaSrc(rawSrc);
+  /*
+   * What the opener was already showing (a post's grid thumbnail, a chat
+   * bubble's thumbnail). Opening used to start from an empty stage: the full
+   * original is a different URL that nothing had fetched yet, so the viewer
+   * showed its grey skeleton for the whole download (measured ~420 ms on a
+   * chat image) and then popped the picture in. The thumbnail is already
+   * decoded - and, for a conversation key, already signed, so this resolves
+   * from the cache synchronously - so it is the first frame instead, and the
+   * original replaces it once decoded.
+   */
+  const { src: placeholderSrc } = useSignedMediaSrc(rawPlaceholder || '');
   const [retryAttempt, setRetryAttempt] = useState(0);
   const wrapRef = useRef(null);
   const imgRef = useRef(null);
@@ -567,13 +578,23 @@ export default function ImageViewer({ src: rawSrc, label = 'Photo', mediaRef, zo
   // ─────────────────────────────────────
 
   const handleLoad = useCallback(() => {
-    setLoaded(true);
-    requestAnimationFrame(() => {
-      setEntering(false);
-      measureVp();
-      measureImg();
-    });
-  }, [measureVp, measureImg]);
+    const img = imgRef.current;
+    const reveal = () => {
+      // A newer src (retry, re-sign) has taken over this element meanwhile.
+      if (img && imgRef.current !== img) return;
+      setLoaded(true);
+      requestAnimationFrame(() => {
+        setEntering(false);
+        measureVp();
+        measureImg();
+      });
+    };
+    // Over a placeholder, wait for the decode: `load` fires before an
+    // async-decoded image can paint, and revealing then swaps the thumbnail
+    // for an empty frame. With no placeholder there is nothing to protect.
+    if (placeholderSrc && img && typeof img.decode === 'function') img.decode().then(reveal, reveal);
+    else reveal();
+  }, [measureVp, measureImg, placeholderSrc]);
 
   const handleError = useCallback(() => {
     // A dead signature heals silently: the skeleton stays up while it re-signs.
@@ -774,7 +795,18 @@ export default function ImageViewer({ src: rawSrc, label = 'Photo', mediaRef, zo
         onDoubleClick={handleDoubleClick}
         onClick={handleClick}
       >
-        {!loaded && !error && !srcFailed && (
+        {!loaded && !error && !srcFailed && placeholderSrc && (
+          <img
+            className={styles.placeholderImage}
+            src={placeholderSrc}
+            alt=""
+            aria-hidden="true"
+            draggable={false}
+            data-viewer-placeholder=""
+          />
+        )}
+
+        {!loaded && !error && !srcFailed && !placeholderSrc && (
           <div className={styles.skeleton}>
             <div className={styles.skeletonRect} />
           </div>
@@ -813,7 +845,10 @@ export default function ImageViewer({ src: rawSrc, label = 'Photo', mediaRef, zo
             decoding="async"
             fetchpriority={isCurrent ? "high" : "auto"}
             className={`${styles.mediaImage} ${entering ? styles.entering : styles.entered}`}
-            style={{ opacity: loaded ? 1 : 0 }}
+            // Over a placeholder of the same picture the swap is instant (it was
+            // decoded first): fading it in would let the placeholder, removed
+            // in the same commit, dip to black for the length of the fade.
+            style={{ opacity: loaded ? 1 : 0, ...(placeholderSrc ? { transition: 'none' } : null) }}
             onLoad={handleLoad}
             onError={handleError}
             draggable={false}

@@ -89,7 +89,7 @@ function engage() {
   };
 
   /**
-   * The root and <body> are clipped, NOT hidden.
+   * The root is clipped, NOT hidden.
    *
    * `overflow: hidden` makes an element a scroll container. `<html>` is not one
    * — global.css goes out of its way to keep it that way, using `overflow-x:
@@ -112,10 +112,24 @@ function engage() {
    * does not understand `clip` drops the second declaration and keeps the
    * first, so the lock still holds there and only the sticky fix is lost.
    */
+  /*
+   * <body> is deliberately NOT frozen.
+   *
+   * In the app, #root is exactly one viewport tall (mobile.css) and the page
+   * scrolls the window by overflowing it. Clipping <body> cut that overflow
+   * off, the document shrank to one screen and the window's scroll position
+   * clamped to 0. Measured on the I2208 on Home: scrollY 300 -> 0 the moment
+   * body took `hidden` or `clip`, and still 0 after release. So every viewer
+   * open jumped the feed to its top under the fading overlay, Home's header
+   * (hidden while scrolled) came back, and closing - visibly mid swipe-dismiss
+   * - landed on a different page position with the header in another state.
+   * Clipping the root alone already stops the window scrolling (its overflow
+   * is the viewport's), and kept scrollY at 300 in the same test.
+   */
+  const scrollX = window.scrollX;
+  const scrollY = window.scrollY;
   freeze(document.documentElement, 'hidden');
   document.documentElement.style.overflow = 'clip';
-  freeze(document.body, 'hidden');
-  document.body.style.overflow = 'clip';
 
   const root = document.getElementById('root');
   if (root) {
@@ -131,6 +145,9 @@ function engage() {
       if (y || x) freeze(el, 'hidden');
     });
   }
+
+  // Backstop: whatever layout a page has, locking must never move it.
+  if (window.scrollY !== scrollY || window.scrollX !== scrollX) window.scrollTo(scrollX, scrollY);
 
   touchMoveHandler = handleTouchMove;
   document.addEventListener('touchmove', touchMoveHandler, { passive: false });

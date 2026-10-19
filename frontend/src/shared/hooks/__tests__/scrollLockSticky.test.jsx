@@ -36,17 +36,39 @@ describe('scroll lock and sticky positioning', () => {
   it('clips the root rather than hiding it, so sticky keeps its window anchor', () => {
     const { unmount } = renderHook(() => useScrollLock(true));
     expect(styleOf(document.documentElement)).toBe('clip');
-    expect(styleOf(document.body)).toBe('clip');
     unmount();
   });
 
-  it('restores exactly what was there before', () => {
-    document.documentElement.style.overflow = '';
+  it('never clips <body>: in the app that clamped the window scroll to 0', () => {
+    // #root is one viewport tall in the app and the window scrolls its
+    // overflow; clipping <body> removed that overflow and the feed jumped to
+    // its top under every viewer (measured on device: scrollY 300 -> 0).
     const { unmount } = renderHook(() => useScrollLock(true));
-    unmount();
-    // Back to the stylesheet's value, not to a value this hook invented.
-    expect(styleOf(document.documentElement)).toBe('');
     expect(styleOf(document.body)).toBe('');
+    unmount();
+  });
+
+  it('puts the window back if freezing moved it', () => {
+    // A layout in which clipping the root shrinks the document: the window
+    // reads 0 once the root is clipped, until something scrolls it back.
+    const root = document.documentElement;
+    let restoredTo = null;
+    const yDesc = Object.getOwnPropertyDescriptor(window, 'scrollY');
+    const original = window.scrollTo;
+    Object.defineProperty(window, 'scrollY', {
+      configurable: true,
+      get: () => (restoredTo ?? (root.style.overflow === 'clip' ? 0 : 300)),
+    });
+    window.scrollTo = (_x, y) => { restoredTo = y; };
+    try {
+      const { unmount } = renderHook(() => useScrollLock(true));
+      expect(restoredTo).toBe(300);
+      unmount();
+    } finally {
+      window.scrollTo = original;
+      if (yDesc) Object.defineProperty(window, 'scrollY', yDesc);
+      else delete window.scrollY;
+    }
   });
 
   it('still hides inner scroll containers, which must stay scroll containers', () => {

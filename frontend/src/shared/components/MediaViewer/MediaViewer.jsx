@@ -933,6 +933,7 @@ function MediaViewerSession() {
                     <ImageViewer
                       key={item.url}
                       src={item.url}
+                      placeholder={item.thumb}
                       label={hasMany ? `Photo ${i + 1} of ${items.length}` : 'Photo'}
                       mediaRef={isCurrent ? mediaElRef : null}
                       zoomApiRef={isCurrent ? zoomApiRef : null}

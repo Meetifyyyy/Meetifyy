@@ -508,6 +508,19 @@
   cursor: grabbing !important;
 }
 
+/* The opener's thumbnail, shown in the full image's place until the original
+   has decoded (see ImageViewer). Fills the stage the way the original will. */
+.placeholderImage {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
 /* Media itself is NEVER tinted — only surrounding UI adapts */
 .mediaImage {
   max-width: 100%;
