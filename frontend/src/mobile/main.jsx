@@ -202,6 +202,26 @@ warmSignedInLanding(queryClient);
 // Release the realtime socket while the app sits in the background; see the module.
 installBackgroundSocket();
 
+/**
+ * Load Changa once the first screen is up. Only Profile uses it (the name and
+ * the counters), so it is not preloaded at launch, but left to the first
+ * Profile render it arrived after the text had painted in the fallback font,
+ * which then visibly swapped. Loading it while the app is idle means it is
+ * ready before Profile opens, without costing launch anything.
+ */
+if (typeof document !== 'undefined' && document.fonts?.load) {
+  const warmChanga = () => {
+    void document.fonts.load('800 1em Changa').catch(() => {
+      // Nothing to do: the page still renders in the fallback font.
+    });
+  };
+  if (typeof window.requestIdleCallback === 'function') {
+    window.requestIdleCallback(warmChanga, { timeout: 3000 });
+  } else {
+    setTimeout(warmChanga, 1500);
+  }
+}
+
 createRoot(document.getElementById('root')).render(
   <QueryClientProvider client={queryClient}>
     <StrictMode>
