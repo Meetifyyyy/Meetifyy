@@ -146,6 +146,12 @@ export class LoginDto {
   @IsString()
   @IsNotEmpty()
   password!: string;
+
+  /** IANA zone of the device, so the sign-in email shows the user's own time. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  timezone?: string;
 }
 
 export class TriggerWelcomeEmailDto {
@@ -231,6 +237,11 @@ export class TriggerPasswordChangedEmailDto {
   @IsOptional()
   @IsString()
   ip?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  timezone?: string;
 }
 
 export class CreateCollegeRequestDto {

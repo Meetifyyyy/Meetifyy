@@ -774,7 +774,8 @@ export function AuthProvider({ children }) {
       // find nothing to recover and drop the user back at the login screen.
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ identifier: usernameOrEmail.trim(), password }),
+      // The device's zone, so the sign-in email shows the user's own time.
+      body: JSON.stringify({ identifier: usernameOrEmail.trim(), password, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone }),
     });
 
     if (!res.ok) {
@@ -1472,16 +1473,7 @@ export function AuthProvider({ children }) {
       // that actually owns the account.
       ...(currentUser?.email ? { email: currentUser.email } : {}),
       name: currentUser?.displayName || 'User',
-      time: new Date().toLocaleString('en-US', {
-        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-        weekday: 'short',
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: true,
-      }),
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       device: navigator.userAgent,
     }).catch(() => {
       // Non-fatal — password was still changed. Email failure must not surface

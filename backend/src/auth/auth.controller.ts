@@ -22,6 +22,7 @@ import { EmailService } from '../email/email.service';
 import { JwtGuard } from '../common/guards/jwt.guard';
 import { AllowSuspended } from '../common/decorators/allow-suspended.decorator';
 import { AllowPendingDeletion } from '../common/decorators/allow-pending-deletion.decorator';
+import { AllowPendingLegalAck } from '../common/decorators/allow-pending-legal-ack.decorator';
 import { AllowBearerToken } from '../common/decorators/allow-bearer-token.decorator';
 import { AuthRateLimitGuard } from '../common/guards/auth-ratelimit.guard';
 import {
@@ -62,6 +63,7 @@ import {
   ChangePasswordDto,
   AdoptSessionDto,
 } from './dto/auth.dto';
+import { formatEmailTime } from '../common/utils/email-time.util';
 
 @Controller('api/auth')
 export class AuthController {
@@ -210,6 +212,9 @@ export class AuthController {
   @UseGuards(JwtGuard)
   @AllowSuspended()
   @AllowPendingDeletion()
+  // A brand-new account must be able to get its User row (and so be able to
+  // post its consent) while an ack-required legal version is live.
+  @AllowPendingLegalAck()
   async syncProfile(
     @CurrentUser() user: AuthenticatedUser,
     @Req() req: Request,
@@ -249,6 +254,9 @@ export class AuthController {
   @UseGuards(JwtGuard)
   @AllowSuspended()
   @AllowPendingDeletion()
+  // A brand-new account must be able to get its User row (and so be able to
+  // post its consent) while an ack-required legal version is live.
+  @AllowPendingLegalAck()
   async currentSession(
     @CurrentUser() user: AuthenticatedUser,
     @Req() req: Request,
@@ -283,6 +291,7 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @UseGuards(JwtGuard, RateLimitPolicyGuard)
   @RateLimit('auth.session.adopt')
+  @AllowPendingLegalAck()
   // The bearer token IS the credential here — that is the whole call. There are
   // no cookies yet, and creating them is what this route does.
   @AllowBearerToken()
@@ -428,6 +437,7 @@ export class AuthController {
       result.user.email,
       result.user.displayName || result.user.email,
       req,
+      body.timezone,
     ).catch(() => {});
 
     /**
@@ -722,6 +732,7 @@ export class AuthController {
     email: string,
     name: string,
     req: Request,
+    timezone?: string,
   ) {
     const rawUA = (req.headers['user-agent'] as string) || '';
     const parser = new UAParser(rawUA);
@@ -752,16 +763,7 @@ export class AuthController {
     // display any address they liked.
     const ip = clientIp(req) || 'Unknown';
 
-    const loginTime = new Date().toLocaleString('en-US', {
-      weekday: 'short',
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: true,
-    });
+    const loginTime = formatEmailTime(new Date(), timezone);
 
     await this.emailService.sendNewLoginEmail(
       email,
@@ -958,39 +960,8 @@ export class AuthController {
     const ip =
       body.ip || clientIp(req) || req.socket?.remoteAddress || 'Unknown';
 
-    // Format login time in the user's local timezone sent from the browser
-    let loginTime: string;
-    if (body.time) {
-      loginTime = body.time;
-    } else {
-      const timezone = body.timezone || 'UTC';
-      const now = new Date();
-      try {
-        loginTime = now.toLocaleString('en-US', {
-          timeZone: timezone,
-          weekday: 'short',
-          year: 'numeric',
-          month: 'short',
-          day: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit',
-          second: '2-digit',
-          hour12: true,
-        });
-      } catch {
-        // Fallback if timezone string is invalid
-        loginTime = now.toLocaleString('en-US', {
-          weekday: 'short',
-          year: 'numeric',
-          month: 'short',
-          day: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit',
-          second: '2-digit',
-          hour12: true,
-        });
-      }
-    }
+    // Login time in the user's local timezone, as sent from the browser.
+    const loginTime = body.time || formatEmailTime(new Date(), body.timezone);
 
     await this.emailService.sendNewLoginEmail(
       recipientEmail,
@@ -1047,19 +1018,11 @@ export class AuthController {
     // display any address they liked.
     const ip = clientIp(req) || 'Unknown';
 
-    // Format timestamp if not provided by the client
-    const time =
-      body.time ||
-      new Date().toLocaleString('en-US', {
-        weekday: 'short',
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-        hour12: true,
-      });
+    // A zone from the client wins: the time it formats itself carries no zone
+    // label. Without either, Indian time.
+    const time = body.timezone
+      ? formatEmailTime(new Date(), body.timezone)
+      : body.time || formatEmailTime(new Date());
 
     await this.emailService.sendPasswordChangedEmail(
       recipientEmail,

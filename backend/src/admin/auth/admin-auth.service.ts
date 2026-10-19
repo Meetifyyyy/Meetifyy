@@ -9,6 +9,7 @@ import {
   OnModuleInit,
   Optional,
 } from '@nestjs/common';
+import { formatEmailTime } from '../../common/utils/email-time.util';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
 import { EmailService } from '../../email/email.service';
@@ -528,7 +529,7 @@ export class AdminAuthService implements OnModuleInit {
         admin.name,
         deviceName,
         ip,
-        new Date().toISOString(),
+        formatEmailTime(new Date()),
       )
       .catch((err) => {
         this.logger.warn('Failed to send login alert email', err);

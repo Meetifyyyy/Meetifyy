@@ -316,6 +316,7 @@ export default function ResetPasswordPage() {
               email: updatedUser.email,
               name: updatedUser.user_metadata?.displayName || 'User',
               device: navigator.userAgent,
+              timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
             }),
           }).catch(() => {}); // non-fatal
         }
