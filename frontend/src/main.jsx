@@ -32,8 +32,11 @@ bootWebSentry({
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 30_000,              // 30s default; real-time data overrides via sockets or per-query values
-      gcTime:    1000 * 60 * 15,       // cached for 15 min
+      // 5 min: switching screens or returning to the app reuses the cache instead
+      // of refetching every page. Live data arrives over sockets, and queries
+      // that must be current set their own staleTime / refetchOnMount.
+      staleTime: 5 * 60_000,
+      gcTime:    1000 * 60 * 30,       // cached for 30 min
       refetchOnWindowFocus: true,     // Refetch when switching back to tab
       refetchOnReconnect: true,
       // Retry transient failures only.

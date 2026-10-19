@@ -103,9 +103,11 @@ installCapacitorSentry({
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 30_000,
-      gcTime: 1000 * 60 * 15,
-      refetchOnWindowFocus: (query) => !Array.isArray(query.state.data?.pages),
+      staleTime: 5 * 60_000, // see src/main.jsx
+      gcTime: 1000 * 60 * 30,
+      // Resuming the app does not refetch every query; sockets reconnect and
+      // deliver what changed, and refetchOnReconnect covers a dropped network.
+      refetchOnWindowFocus: false,
       refetchOnReconnect: true,
       retry: (failureCount, error) => {
         const status = error?.status;

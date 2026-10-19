@@ -1,4 +1,4 @@
-import { useState, useMemo, useLayoutEffect, useRef, useCallback, lazy, Suspense, memo } from 'react';
+import { useState, useMemo, useLayoutEffect, useCallback, lazy, Suspense, memo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@shared/context/AuthContext';
 import { useCampusAffiliation } from '@shared/hooks/useCampusAffiliation';
@@ -78,6 +78,9 @@ const SUGGESTED_CARD_WIDTH_PX = 88;
  * background refetch, a resize or an auth refresh must not deal a new hand
  * under someone's cursor. `Math.random()` straight into a sort would.
  */
+// Only orders suggested faces; nothing secret depends on it.
+const SESSION_SHUFFLE_SEED = Math.floor(Math.random() * 2 ** 32);
+
 function makeRng(seed) {
   let state = seed >>> 0;
   return () => {
@@ -280,10 +283,9 @@ export default function CampusPage() {
 
   const collegeName = (campus.isActive && campus.affiliation?.collegeName) || authCollegeName;
 
-  // A fresh set of faces on every visit rather than the same head of the list.
-  // The seed is fixed for the lifetime of the page, so a background refetch of
-  // campusUsers reshuffles nothing under the user's cursor.
-  const shuffleSeed = useRef(Math.floor(Math.random() * 2 ** 32));
+  // A fresh set of faces per app session (a reload or relaunch), not per
+  // visit: the seed lives at module scope, so leaving Campus and coming back
+  // shows the same students, and a background refetch reshuffles nothing.
 
   // How many of them the row has room for, remeasured on resize and rotation.
   const [visibleSuggestedCount, knowListRef] = useFittingCount({
@@ -317,7 +319,7 @@ export default function CampusPage() {
     const shuffled = partialShuffle(
       pool,
       MAX_SUGGESTED_USERS,
-      makeRng(shuffleSeed.current),
+      makeRng(SESSION_SHUFFLE_SEED),
     );
     return shuffled.slice(0, MAX_SUGGESTED_USERS);
   }, [campusUsers, currentUserId]);
@@ -371,7 +373,7 @@ export default function CampusPage() {
       partialShuffle(
         campusCommunities,
         MAX_COMMUNITY_CARDS,
-        makeRng(shuffleSeed.current),
+        makeRng(SESSION_SHUFFLE_SEED),
       ),
     [campusCommunities],
   );
