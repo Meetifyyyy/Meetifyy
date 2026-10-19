@@ -1,3 +1,4 @@
+import { detach } from '../common/utils/detach.util';
 import {
   Injectable,
   NotFoundException,
@@ -1228,11 +1229,20 @@ export class CommunitiesService implements OnModuleInit {
       if (existingMember)
         return { success: true, status: 'MEMBER', isJoined: true };
 
+      const previous = await this.prisma.communityJoinRequest.findUnique({
+        where: { communityId_userId: { communityId, userId } },
+        select: { status: true },
+      });
       await this.prisma.communityJoinRequest.upsert({
         where: { communityId_userId: { communityId, userId } },
         create: { communityId, userId, status: 'PENDING' },
         update: { status: 'PENDING' },
       });
+      // Only a request that was not already waiting notifies: tapping Join
+      // again on a pending request must not re-alert the moderators.
+      if (previous?.status !== 'PENDING') {
+        this.notifyCommunityReviewers(communityId, userId, 'requested');
+      }
 
       if (community.ownerId) {
         void this.domainEventService.emit('community.joinRequested', {
@@ -1283,9 +1293,78 @@ export class CommunitiesService implements OnModuleInit {
           communityId,
           community.collegeId ?? undefined,
         );
+        // Campus communities are joined by a whole college as routine; only
+        // communities someone created and runs tell their admins.
+        if (!community.isCampusCommunity) {
+          this.notifyCommunityReviewers(communityId, userId, 'joined');
+        }
       }
 
       return { success: true, status: 'MEMBER', isJoined: true };
+    });
+  }
+
+  /**
+   * Tells the people who run a community that someone joined it, or asked to.
+   *
+   * Runs after the join (or the request) has committed, detached, so a
+   * notification failure can never fail the join. Recipients are the owner and
+   * the moderators whose role may review join requests - the same capability
+   * table the requests screen enforces - capped so a large moderator team
+   * cannot turn one join into an unbounded fan-out.
+   */
+  private notifyCommunityReviewers(
+    communityId: string,
+    actorId: string,
+    kind: 'joined' | 'requested',
+  ): void {
+    detach('community join notification', async () => {
+      // The actor is read through the row the join just wrote, which is
+      // also proof the join (or request) is really there.
+      const actorSelect = {
+        select: { id: true, username: true, displayName: true, avatar: true },
+      };
+      const [community, joinRow, staff] = await Promise.all([
+        this.prisma.community.findUnique({
+          where: { id: communityId },
+          select: { id: true, name: true, avatarKey: true, ownerId: true },
+        }),
+        kind === 'joined'
+          ? this.prisma.communityMember.findUnique({
+              where: { userId_communityId: { userId: actorId, communityId } },
+              select: { user: actorSelect },
+            })
+          : this.prisma.communityJoinRequest.findUnique({
+              where: { communityId_userId: { communityId, userId: actorId } },
+              select: { user: actorSelect },
+            }),
+        this.prisma.communityMember.findMany({
+          where: { communityId, role: { in: ['OWNER', 'MODERATOR'] } },
+          select: { userId: true, role: true },
+          take: 50,
+        }),
+      ]);
+      const actor = joinRow?.user;
+      if (!community || !actor) return;
+      const recipients = new Set<string>();
+      if (community.ownerId) recipients.add(community.ownerId);
+      for (const m of staff) {
+        if (roleCan(m.role, 'REVIEW_JOIN_REQUESTS')) recipients.add(m.userId);
+      }
+      recipients.delete(actorId);
+      for (const recipientId of [...recipients].slice(0, 25)) {
+        const dto = this.notificationFactory.createCommunityJoin(
+          actor,
+          {
+            id: community.id,
+            name: community.name,
+            avatar: community.avatarKey,
+          },
+          recipientId,
+          kind,
+        );
+        if (dto) await this.notificationsService.createNotification(dto);
+      }
     });
   }
 

@@ -4,6 +4,7 @@ import { authConfigValues } from './auth.config';
 import { databaseConfigValues } from './database.config';
 import { redisConfigValues } from './redis.config';
 import { storageConfigValues } from './storage.config';
+import { pushConfigValues } from './push.config';
 
 /**
  * Cross-environment isolation guard.
@@ -183,7 +184,10 @@ export function assertEnvironmentIsolation(): void {
     // Development: only the CORS check applies. Its resources are allowed to
     // be named anything, but its API must not answer production's pages.
     if (process.env.DEV_RESOURCE_CHECK_DISABLED === 'true') return;
-    return throwIfProblems(corsIsolationProblems());
+    return throwIfProblems([
+      ...corsIsolationProblems(),
+      ...pushIsolationProblems(['prod', 'production']),
+    ]);
   }
 
   if (process.env.DEV_RESOURCE_CHECK_DISABLED === 'true') {
@@ -243,8 +247,43 @@ export function assertEnvironmentIsolation(): void {
   }
 
   problems.push(...corsIsolationProblems());
+  problems.push(...pushIsolationProblems(forbidden));
 
   throwIfProblems(problems);
+}
+
+/**
+ * Push credentials named like another environment's.
+ *
+ * A Firebase project id and a service account email are the only identities a
+ * push credential carries (a VAPID keypair carries none), so they are what is
+ * checked: production must not hold a project named `...-dev`, and development
+ * must not hold one named `...-prod`. Like every check here it sees names
+ * only; docs/push-notifications.md sets the naming convention it relies on.
+ */
+export function pushIsolationProblems(forbiddenTokens: string[]): string[] {
+  const problems: string[] = [];
+  const candidates: Array<[string, string]> = [
+    ['FCM_PROJECT_ID', pushConfigValues.fcm.projectId],
+    [
+      'FCM_SERVICE_ACCOUNT_JSON (project_id)',
+      pushConfigValues.fcm.serviceAccount?.projectId ?? '',
+    ],
+    [
+      'FCM_SERVICE_ACCOUNT_JSON (client_email)',
+      pushConfigValues.fcm.serviceAccount?.clientEmail ?? '',
+    ],
+  ];
+  for (const [variable, value] of candidates) {
+    if (looksLikeDevResource(value, forbiddenTokens)) {
+      problems.push(
+        `Push credential ${variable} is "${value}", which is named like ` +
+          `another environment's Firebase project. Use a separate Firebase ` +
+          `project for "${APP_ENV}".`,
+      );
+    }
+  }
+  return problems;
 }
 
 function throwIfProblems(problems: string[]): void {

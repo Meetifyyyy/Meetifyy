@@ -20,6 +20,8 @@ describe('environment isolation guard', () => {
     CORS_ORIGINS: '',
     CORS_ORIGIN_PATTERNS: '',
     COOKIE_DOMAIN: '',
+    FCM_PROJECT_ID: '',
+    FCM_SERVICE_ACCOUNT_JSON: '',
   } as Record<string, string>;
 
   /**
@@ -160,6 +162,29 @@ describe('environment isolation guard', () => {
           }),
         ).not.toThrow();
       });
+    });
+  });
+
+  describe('push credentials', () => {
+    it('rejects a production boot holding a dev-named Firebase project', () => {
+      expect(load({ FCM_PROJECT_ID: 'meetifyy-dev' })).toThrow(
+        /FCM_PROJECT_ID/,
+      );
+    });
+
+    it('passes with a production-named Firebase project', () => {
+      expect(load({ FCM_PROJECT_ID: 'meetifyy-prod' })).not.toThrow();
+    });
+
+    it('rejects a development boot holding the production Firebase project', () => {
+      expect(
+        load({
+          APP_ENV: 'development',
+          FRONTEND_URL: 'http://localhost:5173',
+          ADMIN_URL: 'http://localhost:5174',
+          FCM_PROJECT_ID: 'meetifyy-prod',
+        }),
+      ).toThrow(/FCM_PROJECT_ID/);
     });
   });
 });

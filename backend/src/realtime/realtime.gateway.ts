@@ -42,6 +42,7 @@ import {
   activeAffiliationCollegeId,
 } from '../common/campus/campus-access.service';
 import { ActivityAuthorizationService } from '../activities/activity-authorization.service';
+import { PushDispatcherService } from '../push/push-dispatcher.service';
 import { JwtGuard } from '../common/guards/jwt.guard';
 import { VerifiedOnly } from '../common/decorators/verified-only.decorator';
 import { VerificationAccessService } from '../common/verification/verification-access.service';
@@ -201,6 +202,10 @@ export class RealtimeGateway
     // route, so a socket cannot become the one path that skips it.
     private readonly legalConsent: LegalConsentService,
     @Optional() private readonly jwtGuard?: JwtGuard,
+    // Device push for messages sent over the socket. The REST send paths
+    // reach it through NotificationsService.createNotification; this path
+    // never did, so it hands off directly. Never awaited, never throws.
+    @Optional() private readonly pushDispatcher?: PushDispatcherService,
   ) {}
 
   /**
@@ -1122,6 +1127,18 @@ export class RealtimeGateway
       // Multi-device sync: emit to sender's OTHER connected sockets/tabs.
       // Never alerted — the sender already knows.
       client.to(senderId).emit('message:new', { ...payload, alert: false });
+
+      // Device push, after the message committed, to the same unmuted set the
+      // alert flag above uses. Instant Match chats are never pushed.
+      if (!message.isInstantMatch && message.internalId) {
+        for (const rId of unmuted) {
+          this.pushDispatcher?.enqueueForMessage({
+            recipientId: rId,
+            conversationId: message.internalId,
+            senderId,
+          });
+        }
+      }
 
       // Return server ACK directly to sending client callback
       return {

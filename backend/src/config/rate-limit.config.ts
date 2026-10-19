@@ -456,6 +456,29 @@ export const RATE_LIMIT_POLICIES = {
     message: 'Too many attempts. Please try again later.',
   },
 
+  /**
+   * Registering or removing a push device (PUT /api/push/devices and
+   * devices/unregister). A client registers on sign-in, on app start and when
+   * the platform rotates its token, so a person uses a handful an hour; the
+   * budget stops a loop from churning PushDevice rows.
+   */
+  'push.register': {
+    points: 30,
+    duration: 3600,
+    dimension: 'user',
+    onRedisFailure: 'closed',
+    message: 'Too many notification setting changes. Please try again later.',
+  },
+
+  /** Push preference toggles: one write per tap. */
+  'push.preferences': {
+    points: 60,
+    duration: 3600,
+    dimension: 'user',
+    onRedisFailure: 'open',
+    message: 'Too many notification setting changes. Please try again later.',
+  },
+
   'auth.session.refresh': {
     points: 60,
     duration: 300,

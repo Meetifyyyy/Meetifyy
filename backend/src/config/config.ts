@@ -29,6 +29,7 @@ import { rateLimitConfigValues } from './rate-limit.config';
 import { featuresConfigValues, loggingConfigValues } from './features.config';
 import { siteConfigValues } from './site.config';
 import { supportConfigValues } from './support.config';
+import { pushConfigValues } from './push.config';
 import {
   analyticsConfigValues,
   observabilityConfigValues,
@@ -52,6 +53,7 @@ export const config = {
   logging: loggingConfigValues,
   site: siteConfigValues,
   support: supportConfigValues,
+  push: pushConfigValues,
   observability: observabilityConfigValues,
   analytics: analyticsConfigValues,
 } as const;

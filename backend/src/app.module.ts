@@ -39,6 +39,7 @@ import { GroupChatsModule } from './messages/group-chats/group-chats.module';
 
 import { SearchModule } from './search/search.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { PushModule } from './push/push.module';
 import { PresenceModule } from './presence/presence.module';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { BullModule } from '@nestjs/bullmq';
@@ -206,6 +207,7 @@ import { randomUUID } from 'node:crypto';
 
     SearchModule,
     NotificationsModule,
+    PushModule,
     PresenceModule,
     EventEmitterModule.forRoot(),
     BullModule.forRootAsync({

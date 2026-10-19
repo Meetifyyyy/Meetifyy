@@ -3,6 +3,7 @@ import {
   Logger,
   NotFoundException,
   OnModuleInit,
+  Optional,
 } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PrismaService } from '../prisma/prisma.service';
@@ -25,6 +26,25 @@ import { detach } from '../common/utils/detach.util';
 import { stringField } from '../common/utils/type-guards.util';
 import { isJsonObject } from '../common/utils/json.util';
 import { errorMessage } from '../common/utils/error.util';
+import { PushDispatcherService } from '../push/push-dispatcher.service';
+import { MessagePushJob } from '../push/push.types';
+
+/**
+ * The push job for a chat-message notification dto, or null.
+ *
+ * Reads the INTERNAL conversation id the factory records; an Instant Match
+ * message carries none and is never pushed.
+ */
+function messagePushJob(dto: CreateNotificationDto): MessagePushJob | null {
+  const conversationId = stringField(dto.metadata, 'internalId');
+  if (!dto.actorId || !conversationId) return null;
+  if (stringField(dto.metadata, 'chatType') === 'instant') return null;
+  return {
+    recipientId: dto.recipientId,
+    conversationId,
+    senderId: dto.actorId,
+  };
+}
 
 /** A notification row with the actor it is shown with, as it is emitted. */
 type PopulatedNotification = Notification & {
@@ -71,6 +91,9 @@ export class NotificationsService implements OnModuleInit {
     private readonly redisService: RedisService,
     private readonly eventEmitter: EventEmitter2,
     private readonly blocksService: BlocksService,
+    // Optional so a spec that builds this service by hand needs no push stub;
+    // in the app it is always provided by PushModule.
+    @Optional() private readonly pushDispatcher?: PushDispatcherService,
   ) {
     this.redis = this.redisService.getClient();
     if (this.redis) {
@@ -232,7 +255,12 @@ export class NotificationsService implements OnModuleInit {
     if (!dto) return null;
 
     if (dto.type === NotificationType.MESSAGE) {
-      return null; // Message updates are handled via real-time message:new flow, not notifications list
+      // Message updates are handled via real-time message:new flow, not the
+      // notifications list, so there is still no row. The device push is
+      // handed off here (never awaited, never throws): the message itself has
+      // already been committed by the caller.
+      this.pushDispatcher?.enqueueForMessage(messagePushJob(dto));
+      return null;
     }
 
     if (dto.recipientId === dto.actorId) {
@@ -352,6 +380,8 @@ export class NotificationsService implements OnModuleInit {
             void this.domainEventService.emit('notification:new', updated, [
               dto.recipientId,
             ]);
+            // After the row is written; a push failure cannot reach here.
+            this.pushDispatcher?.enqueueForNotification(updated);
             await this.incrementUnreadCount(dto.recipientId);
             await this.emitUnreadCount(dto.recipientId);
             return updated;
@@ -459,6 +489,10 @@ export class NotificationsService implements OnModuleInit {
       void this.domainEventService.emit('notification:new', populatedNotif, [
         dto.recipientId,
       ]);
+      // Device push for the committed row. Synchronous and self-contained:
+      // it neither awaits the queue nor throws, so the action that created
+      // this notification cannot be failed or slowed by push delivery.
+      this.pushDispatcher?.enqueueForNotification(notification);
       // Counted into the bell badge. This must mirror getNotifications() and
       // getUnreadCount()'s type filter, and it does because MESSAGE returned at
       // the top of this method: it has its own unread surface (the chat badge),

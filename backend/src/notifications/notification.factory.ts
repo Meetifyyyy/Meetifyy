@@ -359,6 +359,49 @@ export class NotificationFactory {
   }
 
   /**
+   * "<name> joined your community." / "<name> requested to join your community."
+   *
+   * Sent to the owner and to moderators allowed to review requests. New enum
+   * values rather than JOIN_REQUEST: installed clients render JOIN_REQUEST as
+   * "joined the activity", so reusing it would mislabel these on every build
+   * already in the wild. Clients that do not know these types fall back to the
+   * row's `body`, which is written to read correctly on its own.
+   */
+  createCommunityJoin(
+    actor: NotificationActor | null,
+    community: { id: string; name?: string | null; avatar?: string | null },
+    recipientId: string,
+    kind: 'joined' | 'requested',
+  ): CreateNotificationDto | null {
+    if (!recipientId || recipientId === actor?.id) return null;
+    const actorName = actor?.displayName || actor?.username || 'Someone';
+    const communityName = community.name || 'your community';
+    const requested = kind === 'requested';
+    return {
+      recipientId,
+      actorId: actor?.id,
+      type: requested
+        ? NotificationType.COMMUNITY_JOIN_REQUEST
+        : NotificationType.COMMUNITY_JOIN,
+      entityType: NotificationEntityType.COMMUNITY,
+      entityId: community.id,
+      title: requested ? 'Join request' : 'New member',
+      body: requested
+        ? `${actorName} requested to join ${communityName}.`
+        : `${actorName} joined ${communityName}.`,
+      metadata: {
+        version: 1,
+        actorName,
+        actorUsername: actor?.username || '',
+        actorAvatar: actor?.avatar || null,
+        communityId: community.id,
+        communityName: community.name || null,
+        communityAvatar: community.avatar || null,
+      },
+    };
+  }
+
+  /**
    * A chat-message notification.
    *
    * `metadata.chatType` is what tells the client which surface to open, and it

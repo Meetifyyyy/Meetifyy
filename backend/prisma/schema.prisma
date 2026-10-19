@@ -87,18 +87,28 @@ model UserSettings {
 }
 
 model NotificationPreferences {
-  id         String   @id @default(uuid())
-  userId     String   @unique
-  likes      Boolean  @default(true)
-  comments   Boolean  @default(true)
-  mentions   Boolean  @default(true)
-  messages   Boolean  @default(true)
-  activities Boolean  @default(true)
-  groups     Boolean  @default(true)
-  system     Boolean  @default(true)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id              String   @id @default(uuid())
+  userId          String   @unique
+  likes           Boolean  @default(true)
+  comments        Boolean  @default(true)
+  mentions        Boolean  @default(true)
+  messages        Boolean  @default(true)
+  activities      Boolean  @default(true)
+  groups          Boolean  @default(true)
+  system          Boolean  @default(true)
+  /// Push-only switches, one per category the user can see in Settings. They
+  /// never stop the in-app record: the flags above decide whether a row is
+  /// created at all, these only decide whether that row also reaches a device.
+  pushMessages    Boolean  @default(true)
+  pushLikes       Boolean  @default(true)
+  pushComments    Boolean  @default(true)
+  pushMentions    Boolean  @default(true)
+  pushFollows     Boolean  @default(true)
+  pushActivities  Boolean  @default(true)
+  pushCommunities Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Media {
@@ -257,6 +267,7 @@ model User {
   otps                       UserOtp[]
   legalAcknowledgements      LegalAcknowledgement[]
   sessions                   UserSession[]
+  pushDevices                PushDevice[]
 
   @@index([collegeId])
   @@index([collegeId, createdAt(sort: Desc)])
@@ -1434,6 +1445,10 @@ enum NotificationType {
   MESSAGE
   GROUP_INVITE
   ACTIVITY_INVITE
+  /// Someone joined a community the recipient owns or moderates.
+  COMMUNITY_JOIN
+  /// Someone asked to join a private community the recipient can review.
+  COMMUNITY_JOIN_REQUEST
 }
 
 enum ConversationType {
@@ -1997,4 +2012,40 @@ model UserSession {
   @@index([familyId])
   /// The expiry sweep.
   @@index([expiresAt])
+}
+
+/// Where a push registration delivers.
+enum PushPlatform {
+  WEB
+  ANDROID
+}
+
+/// One push registration: a browser's Web Push subscription or an installed
+/// app's FCM token. See docs/push-notifications.md.
+///
+/// Keyed to the LOGIN (UserSession.familyId), not to a session row: refresh
+/// rotates the row on every use, the family survives it. Revoking a login
+/// deletes its devices, which is what stops a signed-out phone receiving the
+/// previous user's notifications.
+model PushDevice {
+  id           String       @id @default(uuid())
+  userId       String
+  platform     PushPlatform
+  /// WEB: the subscription endpoint URL. ANDROID: the FCM registration token.
+  /// Unique: a token belongs to exactly one user at a time, so the same phone
+  /// registering for a second account moves it.
+  token        String       @unique
+  /// WEB only: the subscription's encryption keys.
+  p256dh       String?
+  auth         String?
+  familyId     String
+  appVersion   String?
+  createdAt    DateTime     @default(now())
+  lastSeenAt   DateTime     @default(now())
+  failureCount Int          @default(0)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([familyId])
+  @@index([lastSeenAt])
 }

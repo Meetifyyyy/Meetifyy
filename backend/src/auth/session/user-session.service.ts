@@ -503,6 +503,27 @@ export class UserSessionService {
       .catch(() => undefined);
 
     affected.forEach((s) => JwtGuard.forgetSession(s.id));
+    await this.forgetPushDevices([familyId]);
+  }
+
+  /**
+   * Push registrations die with the login they were made under.
+   *
+   * A device is keyed to the family (see PushDevice in schema.prisma), so this
+   * is what makes "sign out this device", "sign out everywhere", a password
+   * change and replay detection also stop that device receiving the account's
+   * notifications. Best effort: the sign-out has already happened, and the
+   * dispatcher re-checks ownership at send time anyway.
+   */
+  private async forgetPushDevices(familyIds: string[]): Promise<void> {
+    if (familyIds.length === 0) return;
+    try {
+      await this.prisma.pushDevice.deleteMany({
+        where: { familyId: { in: familyIds } },
+      });
+    } catch {
+      // Best effort; see above.
+    }
   }
 
   /**
@@ -525,8 +546,8 @@ export class UserSessionService {
     };
 
     const affected = await this.prisma.userSession
-      .findMany({ where, select: { id: true } })
-      .catch(() => [] as { id: string }[]);
+      .findMany({ where, select: { id: true, familyId: true } })
+      .catch(() => [] as { id: string; familyId: string }[]);
 
     const result = await this.prisma.userSession.updateMany({
       where,
@@ -534,6 +555,7 @@ export class UserSessionService {
     });
 
     affected.forEach((s) => JwtGuard.forgetSession(s.id));
+    await this.forgetPushDevices([...new Set(affected.map((s) => s.familyId))]);
     return result.count;
   }
 
@@ -612,6 +634,17 @@ export class UserSessionService {
       where: { id: sessionId, userId, revoked: false },
       data: { revoked: true, revokedAt: new Date(), revokedReason: reason },
     });
+    if (result.count > 0) {
+      try {
+        const family = await this.prisma.userSession.findFirst({
+          where: { id: sessionId, userId },
+          select: { familyId: true },
+        });
+        if (family) await this.forgetPushDevices([family.familyId]);
+      } catch {
+        // Best effort: the session itself is already revoked.
+      }
+    }
     // The guard caches liveness for a few seconds; dropping the entry makes the
     // revocation felt on the very next request rather than at the end of that
     // window. Correctness does not depend on it — the cache expires either way

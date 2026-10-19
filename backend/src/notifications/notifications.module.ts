@@ -10,11 +10,13 @@ import {
 } from './notifications.processor';
 import { RedisModule } from '../redis/redis.module';
 import { BlocksService } from '../users/blocks.service';
+import { PushModule } from '../push/push.module';
 
 @Module({
   imports: [
     PrismaModule,
     RedisModule,
+    PushModule,
     BullModule.registerQueue({ name: NOTIFICATIONS_QUEUE }),
   ],
   controllers: [NotificationsController],
