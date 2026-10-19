@@ -81,10 +81,7 @@ export default function CollegeEmailVerify({ college, initialChallenge = null, o
     <div className={styles.card}>
       <div className={styles.selected}>
         <CollegeLogo name={college.name} logoUrl={college.logoUrl} large />
-        <div className={styles.selectedText}>
-          <p className={styles.eyebrow}>Your college</p>
-          <p className={styles.selectedName}>{college.name}</p>
-        </div>
+        <p className={styles.selectedName}>{college.name}</p>
         <button type="button" className={styles.linkBtn} onClick={onChangeCollege} disabled={busy}>
           Change
         </button>

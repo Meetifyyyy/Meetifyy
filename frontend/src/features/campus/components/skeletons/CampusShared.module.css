@@ -19,6 +19,16 @@
   }
 }
 
+/* Someone without a verified college email: the pick-a-college flow fills the
+   content area itself (CampusAffiliation.module.css, .screen), including the
+   room above the bottom navigation, so the hub adds none of its own. */
+@media (max-width: 768px) {
+  .hubContainer.hubJoin {
+    padding-bottom: 0 !important;
+    gap: 0;
+  }
+}
+
 /* Header Banner Card */
 .headerBanner {
   background: #8f0c13;

@@ -381,8 +381,12 @@ export default function CampusPage() {
     [discoverCommunities, visibleCommunityCount],
   );
 
+  // The verification flow (pick a college, confirm its email) owns the whole
+  // content area, so the hub's own bottom padding gives way to it.
+  const showJoinFlow = isChangingCollege || (!campus.isActive && !campus.isLoading);
+
   return (
-    <main className={`centre centre-wide ${styles.hubContainer}`}>
+    <main className={`centre centre-wide ${styles.hubContainer} ${showJoinFlow ? styles.hubJoin : ''}`}>
       {isChangingCollege ? (
         <CampusJoinFlow onVerified={finishCollegeChange} onCancel={finishCollegeChange} />
       ) : campus.isActive ? (

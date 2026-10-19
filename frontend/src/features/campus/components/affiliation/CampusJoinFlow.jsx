@@ -11,6 +11,10 @@ import styles from './CampusAffiliation.module.css';
  *
  * `pending` / `pendingLoading` come from `useCampusAffiliation({ withPending })`
  * in the page, so the page and this flow read one query.
+ *
+ * LAYOUT: both steps live in one `.screen`. On a phone it is the whole content
+ * area above the bottom navigation (no card, no eyebrow); from 769px up it is
+ * the same bordered container the Notifications page uses.
  */
 export default function CampusJoinFlow({ pending = null, pendingLoading = false, onVerified, onCancel }) {
   const [college, setCollege] = useState(null);
@@ -34,8 +38,8 @@ export default function CampusJoinFlow({ pending = null, pendingLoading = false,
 
   if (pendingLoading && !restored) {
     return (
-      <div className={styles.wrap} aria-busy="true">
-        <div className={styles.card}>
+      <div className={styles.screen} aria-busy="true" data-step="loading">
+        <div className={styles.screenBody}>
           <div className={styles.skeletonCard} />
         </div>
       </div>
@@ -43,33 +47,36 @@ export default function CampusJoinFlow({ pending = null, pendingLoading = false,
   }
 
   return (
-    <div className={styles.wrap}>
+    <div className={styles.screen} data-step={college ? 'verify' : 'pick'}>
       {college ? (
-        <CollegeEmailVerify
-          key={college.id}
-          college={college}
-          initialChallenge={challenge}
-          onChangeCollege={() => {
-            setCollege(null);
-            setChallenge(null);
-          }}
-          onVerified={onVerified}
-        />
+        <div className={styles.screenBody}>
+          <CollegeEmailVerify
+            key={college.id}
+            college={college}
+            initialChallenge={challenge}
+            onChangeCollege={() => {
+              setCollege(null);
+              setChallenge(null);
+            }}
+            onVerified={onVerified}
+          />
+          {onCancel ? (
+            <p className={styles.note} style={{ textAlign: 'center' }}>
+              <button type="button" className={styles.linkBtn} onClick={onCancel}>
+                Keep my current college email
+              </button>
+            </p>
+          ) : null}
+        </div>
       ) : (
         <CollegePicker
+          onCancel={onCancel}
           onSelect={(c) => {
             setChallenge(null);
             setCollege(c);
           }}
         />
       )}
-      {onCancel ? (
-        <p className={styles.note} style={{ textAlign: 'center' }}>
-          <button type="button" className={styles.linkBtn} onClick={onCancel}>
-            Keep my current college email
-          </button>
-        </p>
-      ) : null}
     </div>
   );
 }

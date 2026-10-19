@@ -5,7 +5,7 @@ import { useAuth } from '@shared/context/AuthContext';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 import { useScrollLock } from '@shared/hooks/useScrollLock';
 import { isValidEmail } from '@shared/utils/emailValidation';
-import { Check, Loader2, Plus, X } from '@shared/components/icons';
+import { AlertCircle, Check, GraduationCap, Loader2, Plus, X } from '@shared/components/icons';
 import styles from './CampusAffiliation.module.css';
 
 /** The internal placeholder some accounts carry instead of a real address. */
@@ -159,12 +159,20 @@ export function RequestCollegeDialog({ initialName = '', onClose }) {
         aria-labelledby={titleId}
         onClick={(e) => e.stopPropagation()}
       >
+        <div className={styles.sheetGrip} aria-hidden="true" />
         <div className={styles.sheetHeader}>
-          <div>
-            <p className={styles.eyebrow}>Campus</p>
+          <span className={styles.sheetIcon} aria-hidden="true">
+            <GraduationCap size={20} />
+          </span>
+          <div className={styles.sheetHeading}>
             <h2 id={titleId} className={styles.sheetTitle}>
               {done ? 'Request sent' : 'Request your college'}
             </h2>
+            {done ? null : (
+              <p className={styles.sheetSub}>
+                Tell us where you study. We check the college&apos;s email domain, add it, and email you.
+              </p>
+            )}
           </div>
           <button
             type="button"
@@ -180,110 +188,118 @@ export function RequestCollegeDialog({ initialName = '', onClose }) {
         {done ? (
           <div className={styles.sheetDone} role="status">
             <span className={styles.doneIcon} aria-hidden="true">
-              <Check size={24} />
+              <Check size={26} />
             </span>
-            <p className={styles.lead}>
+            <p className={styles.doneText}>
               We&apos;ll let you know at <strong>{personalEmail.trim()}</strong> when{' '}
               {collegeName.trim() || 'your college'} is added.
             </p>
-            <button type="button" className={styles.primaryBtn} onClick={onClose}>
-              Done
-            </button>
+            <div className={styles.sheetFoot}>
+              <button type="button" className={`${styles.primaryBtn} ${styles.sheetFull}`} onClick={onClose}>
+                Done
+              </button>
+            </div>
           </div>
         ) : (
-          <form onSubmit={submit} noValidate>
-            <p className={styles.lead}>
-              Tell us where you study. We check the college&apos;s email domain, add it, and email you.
-            </p>
+          <form className={styles.sheetForm} onSubmit={submit} noValidate>
+            <div className={styles.sheetBody}>
+              {knownName || knownEmail ? (
+                <dl className={styles.account}>
+                  {knownName ? (
+                    <div className={styles.accountRow}>
+                      <dt className={styles.accountLabel}>Name</dt>
+                      <dd className={styles.accountValue}>{knownName}</dd>
+                    </div>
+                  ) : null}
+                  {knownEmail ? (
+                    <div className={styles.accountRow}>
+                      <dt className={styles.accountLabel}>We&apos;ll reply to</dt>
+                      <dd className={styles.accountValue}>{knownEmail}</dd>
+                    </div>
+                  ) : null}
+                </dl>
+              ) : null}
 
-            {knownName ? (
-              <div className={styles.readonlyRow}>
-                <span className={styles.label}>Name</span>
-                <span className={styles.readonlyValue}>{knownName}</span>
-              </div>
-            ) : (
+              {knownName ? null : (
+                <label className={styles.field}>
+                  <span className={styles.label}>Your name</span>
+                  <input
+                    className={styles.input}
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    autoComplete="name"
+                    maxLength={80}
+                    aria-invalid={Boolean(fieldErrors.name)}
+                    aria-describedby={fieldErrors.name ? `${titleId}-name-err` : undefined}
+                  />
+                  {fieldError('name')}
+                </label>
+              )}
+
+              {knownEmail ? null : (
+                <label className={styles.field}>
+                  <span className={styles.label}>Your email</span>
+                  <input
+                    className={styles.input}
+                    type="email"
+                    inputMode="email"
+                    value={personalEmail}
+                    onChange={(e) => setPersonalEmail(e.target.value)}
+                    autoComplete="email"
+                    maxLength={100}
+                    aria-invalid={Boolean(fieldErrors.personalEmail)}
+                    aria-describedby={fieldErrors.personalEmail ? `${titleId}-personalEmail-err` : undefined}
+                  />
+                  {fieldError('personalEmail')}
+                </label>
+              )}
+
               <label className={styles.field}>
-                <span className={styles.label}>Your name</span>
+                <span className={styles.label}>College name</span>
                 <input
                   className={styles.input}
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  autoComplete="name"
-                  maxLength={80}
-                  aria-invalid={Boolean(fieldErrors.name)}
-                  aria-describedby={fieldErrors.name ? `${titleId}-name-err` : undefined}
+                  value={collegeName}
+                  onChange={(e) => setCollegeName(e.target.value)}
+                  placeholder="e.g. Delhi University"
+                  autoComplete="organization"
+                  maxLength={120}
+                  aria-invalid={Boolean(fieldErrors.collegeName)}
+                  aria-describedby={fieldErrors.collegeName ? `${titleId}-collegeName-err` : undefined}
                 />
-                {fieldError('name')}
+                {fieldError('collegeName')}
               </label>
-            )}
 
-            {knownEmail ? (
-              <div className={styles.readonlyRow}>
-                <span className={styles.label}>We&apos;ll reply to</span>
-                <span className={styles.readonlyValue}>{knownEmail}</span>
-              </div>
-            ) : (
               <label className={styles.field}>
-                <span className={styles.label}>Your email</span>
+                <span className={styles.label}>Your college email</span>
                 <input
                   className={styles.input}
                   type="email"
                   inputMode="email"
-                  value={personalEmail}
-                  onChange={(e) => setPersonalEmail(e.target.value)}
-                  autoComplete="email"
+                  value={collegeEmail}
+                  onChange={(e) => setCollegeEmail(e.target.value)}
+                  placeholder="you@college.ac.in"
+                  autoComplete="off"
+                  autoCapitalize="none"
+                  spellCheck={false}
                   maxLength={100}
-                  aria-invalid={Boolean(fieldErrors.personalEmail)}
-                  aria-describedby={fieldErrors.personalEmail ? `${titleId}-personalEmail-err` : undefined}
+                  aria-invalid={Boolean(fieldErrors.collegeEmail)}
+                  aria-describedby={`${titleId}-collegeEmail-hint${fieldErrors.collegeEmail ? ` ${titleId}-collegeEmail-err` : ''}`}
                 />
-                {fieldError('personalEmail')}
+                <span className={styles.hint} id={`${titleId}-collegeEmail-hint`}>
+                  Used to find your college&apos;s email domain. It does not verify you or change your account.
+                </span>
+                {fieldError('collegeEmail')}
               </label>
-            )}
 
-            <label className={styles.field}>
-              <span className={styles.label}>College name</span>
-              <input
-                className={styles.input}
-                value={collegeName}
-                onChange={(e) => setCollegeName(e.target.value)}
-                placeholder="e.g. Delhi University"
-                autoComplete="organization"
-                maxLength={120}
-                aria-invalid={Boolean(fieldErrors.collegeName)}
-                aria-describedby={fieldErrors.collegeName ? `${titleId}-collegeName-err` : undefined}
-              />
-              {fieldError('collegeName')}
-            </label>
+              {error ? (
+                <p className={styles.sheetError} role="alert">
+                  <AlertCircle size={16} aria-hidden="true" />
+                  <span>{error}</span>
+                </p>
+              ) : null}
+            </div>
 
-            <label className={styles.field}>
-              <span className={styles.label}>Your college email</span>
-              <input
-                className={styles.input}
-                type="email"
-                inputMode="email"
-                value={collegeEmail}
-                onChange={(e) => setCollegeEmail(e.target.value)}
-                placeholder="you@college.ac.in"
-                autoComplete="off"
-                autoCapitalize="none"
-                spellCheck={false}
-                maxLength={100}
-                aria-invalid={Boolean(fieldErrors.collegeEmail)}
-                aria-describedby={`${titleId}-collegeEmail-hint${fieldErrors.collegeEmail ? ` ${titleId}-collegeEmail-err` : ''}`}
-              />
-              <span className={styles.hint} id={`${titleId}-collegeEmail-hint`}>
-                Used to find your college&apos;s email domain. It does not verify you or change your account.
-              </span>
-              {fieldError('collegeEmail')}
-            </label>
-
-            {error ? (
-              <p className={styles.error} role="alert">
-                {error}
-              </p>
-            ) : null}
-
-            <div className={styles.sheetActions}>
+            <div className={styles.sheetFoot}>
               <button type="button" className={styles.secondaryBtn} onClick={close} disabled={submitting}>
                 Cancel
               </button>
