@@ -21,8 +21,9 @@
  * There is NO write mode. Every statement runs inside a transaction declared
  * READ ONLY, so Postgres itself refuses any write this file could ever make.
  *
- * Usage (prints against whatever DATABASE_URL resolves to — development by
- * default, because importing @prisma/client loads backend/.env):
+ * Usage (prints against whatever DATABASE_URL is in the shell. Nothing loads
+ * it for you: development values live in backend/.env.development, which only
+ * src/config/env.ts reads, and @prisma/client finds no backend/.env):
  *   npx ts-node scripts/college-affiliation-report.ts
  */
 import { Prisma, PrismaClient } from '@prisma/client';

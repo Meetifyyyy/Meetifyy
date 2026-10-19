@@ -9,7 +9,7 @@ import * as dotenv from 'dotenv';
 import sharp from 'sharp';
 
 // Load backend environment variables
-dotenv.config({ path: path.resolve(__dirname, '../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../.env.development') });
 
 const R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID;
 const R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID;
@@ -21,7 +21,9 @@ const R2_PUBLIC_URL = (
 ).replace(/\/+$/, '');
 
 if (!R2_ACCOUNT_ID || !R2_ACCESS_KEY_ID || !R2_SECRET_ACCESS_KEY) {
-  console.error('Missing Cloudflare R2 credentials in backend/.env');
+  console.error(
+    'Missing Cloudflare R2 credentials in backend/.env.development',
+  );
   process.exit(1);
 }
 

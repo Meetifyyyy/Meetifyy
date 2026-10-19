@@ -152,9 +152,10 @@ The conventions that keep it at zero:
   `src/common/testing/stub.ts`, give `jest.fn` its signature, and reach private
   members as `service['member']`. Never change what a fake returns to satisfy a
   type.
-- **Scripts are TypeScript** (`npx ts-node scripts/<name>.ts`). Importing
-  `@prisma/client` loads `backend/.env`, so check a script with its variables
-  set to empty strings, and never with `--apply`.
+- **Scripts are TypeScript** (`npx ts-node scripts/<name>.ts`). Anything that
+  goes through `src/config` loads `backend/.env.local` and
+  `backend/.env.development`, so it is pointed at development. Check a script
+  with its variables set to empty strings, and never with `--apply`.
 
 Before opening a PR, run in `backend/`:
 

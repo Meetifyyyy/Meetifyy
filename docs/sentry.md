@@ -110,7 +110,7 @@ never exposes them to client code:
   `android/app/build.gradle` is a hand-edited "1.0", so the commit is what
   distinguishes builds. Bump `versionName` for store releases as usual.
 - Debug APK (`npm run mobile:apk`) builds in development mode and reads
-  `frontend/.env`; release (`npm run mobile:apk:release`) reads
+  `frontend/.env.development`; release (`npm run mobile:apk:release`) reads
   `.env.production`. Put the matching `meetifyy-android` DSN in each, as
   `VITE_SENTRY_ANDROID_DSN`.
 - Android minification is off (`minifyEnabled false`), so there is no

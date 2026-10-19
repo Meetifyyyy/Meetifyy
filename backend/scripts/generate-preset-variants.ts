@@ -9,7 +9,7 @@ import * as path from 'path';
 import * as dotenv from 'dotenv';
 import { createRequire } from 'module';
 
-dotenv.config({ path: path.join(__dirname, '../.env') });
+dotenv.config({ path: path.join(__dirname, '../.env.development') });
 
 const R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID;
 const R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID;
@@ -22,7 +22,7 @@ const R2_PUBLIC_URL = (
 
 if (!R2_ACCOUNT_ID || !R2_ACCESS_KEY_ID || !R2_SECRET_ACCESS_KEY) {
   console.error(
-    'Missing required Cloudflare R2 environment variables in backend/.env',
+    'Missing required Cloudflare R2 environment variables in backend/.env.development',
   );
   process.exit(1);
 }

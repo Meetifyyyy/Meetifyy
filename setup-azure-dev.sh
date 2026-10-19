@@ -61,10 +61,11 @@ if ! az containerapp env show --name "$ENV_NAME" --resource-group "$RESOURCE_GRO
     --logs-workspace-key "$WORKSPACE_KEY"
 fi
 
-# Load local backend .env values
-ENV_FILE="backend/.env"
+# Load the development values. backend/.env.development holds only hosted-dev
+# values; backend/.env.local (this machine's overrides) is deliberately NOT read.
+ENV_FILE="backend/.env.development"
 if [ ! -f "$ENV_FILE" ]; then
-  echo "Error: backend/.env not found!"
+  echo "Error: backend/.env.development not found!"
   exit 1
 fi
 
