@@ -173,6 +173,11 @@ export const VerificationPage: React.FC = () => {
 
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap', fontSize: '0.73rem', color: 'var(--color-text-light)' }}>
                     <span>Requested: {new Date(req.createdAt).toLocaleDateString()} {new Date(req.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                    {req.method && (
+                      <span style={{ background: 'var(--color-bg-soft)', border: '1px solid var(--color-border)', borderRadius: '4px', padding: '1px 6px', fontSize: '0.68rem', fontWeight: 600, color: 'var(--color-text-muted)' }}>
+                        {req.method === 'LIVE_GOVERNMENT_ID' ? 'Live government ID' : 'Live selfie'}
+                      </span>
+                    )}
                     {req.attemptNumber != null && (
                       <span style={{ background: 'var(--color-bg-soft)', border: '1px solid var(--color-border)', borderRadius: '4px', padding: '1px 6px', fontSize: '0.68rem', fontWeight: 600, color: 'var(--color-text-muted)' }}>
                         Attempt {req.attemptNumber}
@@ -182,17 +187,23 @@ export const VerificationPage: React.FC = () => {
                 </div>
               </div>
 
-              {/* Media Comparison (ID Card & Live Selfie) */}
+              {/* The submitted document(s). A live attempt (method set) carries
+                  exactly one: a selfie OR a photo of a government ID, both
+                  taken with the camera in the app. Legacy attempts (no method)
+                  carry an ID card and a selfie side by side. */}
               <div className="verification-media-grid">
+                {req.method !== 'LIVE_SELFIE' && (
                 <VerificationDocument
                   requestId={req.id}
                   kind="idCard"
-                  label="College ID Card"
-                  alt="College ID Card"
+                  label={req.method === 'LIVE_GOVERNMENT_ID' ? 'Government ID (live photo)' : 'College ID Card'}
+                  alt={req.method === 'LIVE_GOVERNMENT_ID' ? 'Government ID' : 'College ID Card'}
                   emptyText="No ID card uploaded"
                   media={req.idCardMedia}
                   issuedAt={dataUpdatedAt}
                 />
+                )}
+                {req.method !== 'LIVE_GOVERNMENT_ID' && (
                 <VerificationDocument
                   requestId={req.id}
                   kind="selfie"
@@ -202,6 +213,7 @@ export const VerificationPage: React.FC = () => {
                   media={req.selfieMedia}
                   issuedAt={dataUpdatedAt}
                 />
+                )}
               </div>
 
               {req.previousAttempts?.length > 0 && (

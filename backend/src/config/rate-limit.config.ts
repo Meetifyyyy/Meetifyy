@@ -345,6 +345,20 @@ export const RATE_LIMIT_POLICIES = {
     message: 'Please wait a moment before requesting another code.',
   },
 
+  /**
+   * Live verification captures per user. Each one is decoded and re-encoded
+   * server side and stored in the private bucket, so this bounds both the CPU
+   * and the storage one account can spend. 20 an hour covers several retakes
+   * of a blurry ID; nobody honest needs more.
+   */
+  'verification.capture.user': {
+    points: 20,
+    duration: 3600,
+    dimension: 'user',
+    onRedisFailure: 'open',
+    message: 'Too many photos taken. Please wait a while and try again.',
+  },
+
   /** OTP requests per address, to catch account rotation from one host. */
   'auth.otp.ip': {
     points: 20,

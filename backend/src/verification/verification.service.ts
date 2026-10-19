@@ -5,8 +5,15 @@ import {
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { Prisma, VerificationStatus } from '@prisma/client';
+import sharp from 'sharp';
+import { Prisma, VerificationMethod, VerificationStatus } from '@prisma/client';
 import { VerificationAccessService } from '../common/verification/verification-access.service';
+import {
+  LIVE_CAPTURE_KEY,
+  StorageService,
+  type VerificationCaptureKind,
+} from '../uploads/uploads.service';
+import { sniffMimeType } from '../uploads/attachment-inspection.util';
 
 /** The states from which a user may start (or restart) verification. */
 const SUBMITTABLE_FROM: VerificationStatus[] = [
@@ -14,6 +21,36 @@ const SUBMITTABLE_FROM: VerificationStatus[] = [
   VerificationStatus.REJECTED,
   VerificationStatus.RESUBMISSION_REQUIRED,
 ];
+
+/**
+ * Limits on one live capture. A camera frame from the app is a JPEG of a few
+ * hundred KB; anything far outside these is not one.
+ */
+export const LIVE_CAPTURE_LIMITS = {
+  maxBytes: 8 * 1024 * 1024,
+  /** Decoding bomb guard: ~40 MP. */
+  maxInputPixels: 40_000_000,
+  /** Shorter edge. Below this an ID is unreadable and a face unrecognisable. */
+  minEdgePx: 480,
+  /** Stored size: long edge scaled down to this. */
+  storedLongEdgePx: 2048,
+  /** A capture must be submitted within this long, or it is taken again. */
+  maxAgeMs: 30 * 60 * 1000,
+  acceptedTypes: ['image/jpeg', 'image/png', 'image/webp'] as const,
+} as const;
+
+/** Which capture each method needs, as stored in the key and the row. */
+const KIND_FOR_METHOD: Record<VerificationMethod, VerificationCaptureKind> = {
+  [VerificationMethod.LIVE_SELFIE]: 'selfie',
+  [VerificationMethod.LIVE_GOVERNMENT_ID]: 'id',
+};
+
+/** The upload as the multipart interceptor hands it over; nothing else is read. */
+export interface CaptureUpload {
+  buffer: Buffer;
+  mimetype: string;
+  size: number;
+}
 
 @Injectable()
 export class VerificationService {
@@ -38,7 +75,157 @@ export class VerificationService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly verificationAccess: VerificationAccessService,
+    private readonly storage: StorageService,
   ) {}
+
+  /**
+   * Stores one live camera capture for a later submission.
+   *
+   * What "live" can and cannot mean on a server: the bytes of a camera frame
+   * and of a saved photo look the same once they arrive, so no upload endpoint
+   * can prove a camera took them. The guarantee is built from the parts that
+   * can be enforced:
+   *
+   *   - the app only ever produces these from the camera (getUserMedia); it has
+   *     no file picker for verification at all;
+   *   - this is the only way to create a `verification/live-*` object, so a
+   *     submission can tell a live capture from a generic upload by its key;
+   *   - the image is decoded and RE-ENCODED here, so what a reviewer opens is a
+   *     plain JPEG the server wrote: no EXIF (location, device), no embedded
+   *     payload, nothing a crafted file could carry through;
+   *   - a capture must be submitted within LIVE_CAPTURE_LIMITS.maxAgeMs, so an
+   *     old capture cannot be held back and replayed later;
+   *   - the endpoint is rate limited per user.
+   *
+   * The reviewer's judgement remains the real check that the photo is a live
+   * person or a real ID; this makes sure they are judging a fresh capture.
+   */
+  async captureDocument(
+    userId: string,
+    kind: VerificationCaptureKind,
+    file: CaptureUpload | undefined,
+  ): Promise<{ mediaId: string }> {
+    const label = kind === 'selfie' ? 'selfie' : 'ID photo';
+    if (!file?.buffer?.length) {
+      throw new BadRequestException(`No ${label} was received`);
+    }
+    if (file.size > LIVE_CAPTURE_LIMITS.maxBytes) {
+      throw new BadRequestException(`That ${label} is too large`);
+    }
+    // The declared type comes from the same untrusted body as the bytes; both
+    // must agree and both must be an accepted image type.
+    const sniffed = sniffMimeType(file.buffer);
+    const accepted: readonly string[] = LIVE_CAPTURE_LIMITS.acceptedTypes;
+    if (!sniffed || !accepted.includes(sniffed) || sniffed !== file.mimetype) {
+      throw new BadRequestException(`That ${label} is not a valid photo`);
+    }
+
+    // Only an account that can submit may capture: otherwise a verified or
+    // pending account could fill the private bucket with captures that will
+    // never be reviewed.
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { verificationStatus: true },
+    });
+    if (!user) throw new BadRequestException('User not found');
+    if (!SUBMITTABLE_FROM.includes(user.verificationStatus)) {
+      throw new ConflictException(
+        `Cannot capture verification photos while status is ${user.verificationStatus}`,
+      );
+    }
+
+    let jpeg: Buffer;
+    let width: number;
+    let height: number;
+    try {
+      const image = sharp(file.buffer, {
+        limitInputPixels: LIVE_CAPTURE_LIMITS.maxInputPixels,
+        failOn: 'error',
+      }).rotate();
+      const { data, info } = await image
+        .resize({
+          width: LIVE_CAPTURE_LIMITS.storedLongEdgePx,
+          height: LIVE_CAPTURE_LIMITS.storedLongEdgePx,
+          fit: 'inside',
+          withoutEnlargement: true,
+        })
+        // sharp drops all metadata unless asked to keep it; nothing is kept.
+        .jpeg({ quality: 90, mozjpeg: true })
+        .toBuffer({ resolveWithObject: true });
+      jpeg = data;
+      width = info.width;
+      height = info.height;
+    } catch {
+      throw new BadRequestException(`That ${label} could not be read`);
+    }
+    if (Math.min(width, height) < LIVE_CAPTURE_LIMITS.minEdgePx) {
+      throw new BadRequestException(
+        `That ${label} is too small to review. Please take it again.`,
+      );
+    }
+
+    const stored = await this.storage.storeVerificationCapture(
+      userId,
+      kind,
+      jpeg,
+      width,
+      height,
+    );
+    this.logger.log(
+      `verification:captured user=${userId} kind=${kind} media=${stored.mediaId}`,
+    );
+    return { mediaId: stored.mediaId };
+  }
+
+  /**
+   * Submits ONE live capture for review: a selfie or a government ID.
+   *
+   * The document must be the caller's own, a live capture of the kind the
+   * method names (proven by its key, which only captureDocument writes), and
+   * fresh. Everything else (the atomic status claim, attempt numbering, the
+   * partial unique index on pending requests) is shared with the legacy path.
+   */
+  async submitLiveVerification(
+    userId: string,
+    method: VerificationMethod,
+    mediaId: string,
+  ) {
+    const kind = KIND_FOR_METHOD[method];
+    if (!kind) throw new BadRequestException('Unknown verification method');
+    const label = kind === 'selfie' ? 'selfie' : 'ID photo';
+
+    const media = await this.assertUsableDocument(mediaId, userId, label);
+    const match = LIVE_CAPTURE_KEY.exec(media.objectKey ?? '');
+    if (!match) {
+      throw new BadRequestException(
+        `Your ${label} must be taken with the camera in the app`,
+      );
+    }
+    if (match[1] !== kind) {
+      throw new BadRequestException(`That photo is not a ${label}`);
+    }
+    if (Date.now() - media.createdAt.getTime() > LIVE_CAPTURE_LIMITS.maxAgeMs) {
+      throw new BadRequestException(
+        `Your ${label} was taken too long ago. Please take it again.`,
+      );
+    }
+    // One capture backs one attempt. A document already attached to an
+    // earlier attempt (say, a rejected one) cannot be submitted again.
+    const reused = await this.prisma.verificationRequest.count({
+      where: { OR: [{ selfieMediaId: mediaId }, { idCardMediaId: mediaId }] },
+    });
+    if (reused > 0) {
+      throw new BadRequestException(
+        `That ${label} was already submitted. Please take a new one.`,
+      );
+    }
+
+    return this.createAttempt(userId, {
+      method,
+      selfieMediaId: kind === 'selfie' ? mediaId : null,
+      idCardMediaId: kind === 'id' ? mediaId : null,
+    });
+  }
 
   /**
    * Validates one of the two documents attached to a submission.
@@ -61,7 +248,13 @@ export class VerificationService {
     }
     const media = await this.prisma.media.findUnique({
       where: { id: mediaId },
-      select: { id: true, ownerId: true, mimeType: true, objectKey: true },
+      select: {
+        id: true,
+        ownerId: true,
+        mimeType: true,
+        objectKey: true,
+        createdAt: true,
+      },
     });
     if (!media || media.ownerId !== userId) {
       throw new BadRequestException(`Invalid ${label}`);
@@ -96,6 +289,30 @@ export class VerificationService {
       this.assertUsableDocument(idCardMediaId, userId, 'id card'),
     ]);
 
+    return this.createAttempt(userId, {
+      method: null,
+      selfieMediaId,
+      idCardMediaId,
+    });
+  }
+
+  /**
+   * The status claim, the attempt row and the announcement, shared by both
+   * submission paths once their documents have been checked.
+   */
+  private async createAttempt(
+    userId: string,
+    documents: {
+      method: VerificationMethod | null;
+      selfieMediaId: string | null;
+      idCardMediaId: string | null;
+    },
+  ): Promise<{ id: string; attemptNumber: number }> {
+    const { method, selfieMediaId, idCardMediaId } = documents;
+    const documentIds = [selfieMediaId, idCardMediaId].filter(
+      (id): id is string => Boolean(id),
+    );
+
     // Both writes go in one transaction. The account status and the attempt row
     // have to move together: claiming the status first and inserting afterwards
     // left a failed insert parked at PENDING with no request behind it —
@@ -128,7 +345,7 @@ export class VerificationService {
         // thing protecting the documents — the storage layer refuses the
         // whole prefix.
         await tx.media.updateMany({
-          where: { id: { in: [selfieMediaId, idCardMediaId] } },
+          where: { id: { in: documentIds } },
           data: { visibility: 'private' },
         });
 
@@ -148,6 +365,7 @@ export class VerificationService {
           data: {
             userId,
             attemptNumber: (previous?.attemptNumber ?? 0) + 1,
+            method,
             selfieMediaId,
             idCardMediaId,
             status: VerificationStatus.PENDING,
@@ -181,7 +399,7 @@ export class VerificationService {
 
     this.logger.log(
       `verification:submitted user=${userId} request=${request.id} ` +
-        `attempt=${request.attemptNumber}`,
+        `attempt=${request.attemptNumber} method=${method ?? 'LEGACY'}`,
     );
 
     return request;
@@ -213,6 +431,7 @@ export class VerificationService {
           id: true,
           attemptNumber: true,
           status: true,
+          method: true,
           rejectionReason: true,
           createdAt: true,
           reviewedAt: true,

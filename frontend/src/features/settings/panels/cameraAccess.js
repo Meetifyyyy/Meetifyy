@@ -3,7 +3,15 @@ const CONSTRAINT_ERROR_NAMES = new Set([
   'ConstraintNotSatisfiedError',
 ]);
 
-export function requestCameraStream(mediaDevices, facingMode = 'user') {
+/**
+ * @param {{ width: number, height: number }} [resolution] Ideal size. An ID
+ *   photo asks for more than a selfie so its small print stays readable.
+ */
+export function requestCameraStream(
+  mediaDevices,
+  facingMode = 'user',
+  resolution = { width: 1280, height: 720 },
+) {
   // Keep this as the first browser API call in the click path. In particular,
   // do not await Permissions API checks before requesting the stream: support
   // for the camera permission descriptor is inconsistent, and the media request
@@ -11,8 +19,8 @@ export function requestCameraStream(mediaDevices, facingMode = 'user') {
   const request = mediaDevices.getUserMedia({
     video: {
       facingMode: { ideal: facingMode },
-      width: { ideal: 1280 },
-      height: { ideal: 720 },
+      width: { ideal: resolution.width },
+      height: { ideal: resolution.height },
     },
     audio: false,
   });

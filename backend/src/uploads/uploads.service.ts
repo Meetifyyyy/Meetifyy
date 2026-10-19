@@ -41,6 +41,13 @@ const VARIANT_BASE_EXTENSIONS = [
   'mov',
 ];
 
+/** Which live capture a verification object holds; part of its storage key. */
+export type VerificationCaptureKind = 'selfie' | 'id';
+
+/** `verification/live-selfie-…` or `verification/live-id-…`, as only storeVerificationCapture writes. */
+export const LIVE_CAPTURE_KEY =
+  /^verification\/live-(selfie|id)-[0-9a-f]{32}\.jpg$/;
+
 @Injectable()
 export class StorageService {
   private readonly logger = new Logger(StorageService.name);
@@ -153,6 +160,44 @@ export class StorageService {
   }
 
   /**
+   * Stores one live verification capture that the verification service has
+   * already decoded, re-encoded and size-checked.
+   *
+   * The key is `verification/live-<kind>-<32 hex>.jpg`, and this is the only
+   * code that writes that shape: the generic upload names objects
+   * `<hex>.<ext>`, a thumbnail variant must end in `_thumb`, and the presign
+   * path refuses the folder. So a submission can prove a document came through
+   * the live flow by its key alone. Private bucket, private visibility.
+   */
+  async storeVerificationCapture(
+    userId: string,
+    kind: VerificationCaptureKind,
+    jpeg: Buffer,
+    width: number,
+    height: number,
+  ): Promise<{ mediaId: string; key: string }> {
+    const key = `verification/live-${kind}-${randomBytes(16).toString('hex')}.jpg`;
+    await this.storageProvider.upload(key, jpeg, 'image/jpeg');
+    const media = await this.prisma.media.create({
+      data: {
+        ownerId: userId,
+        objectKey: key,
+        provider: this.providerName,
+        bucket: this.bucketName,
+        storageKey: key,
+        type: 'IMAGE',
+        mimeType: 'image/jpeg',
+        fileSize: jpeg.length,
+        width,
+        height,
+        visibility: 'private',
+      },
+      select: { id: true },
+    });
+    return { mediaId: media.id, key };
+  }
+
+  /**
    * Validates a client-chosen thumbnail key, for the presign and the
    * pass-through alike.
    *
@@ -213,6 +258,16 @@ export class StorageService {
     duration?: number,
   ) {
     const safeFolder = this.normalizeFolder(folder);
+    // Identity documents never upload straight to storage. A presigned PUT
+    // bypasses the server entirely: the bytes are never checked against the
+    // declared type, and the recorded mimeType is whatever the client claimed.
+    // No client has ever used this path for verification; it is closed so a
+    // hand-written request cannot use it either.
+    if (this.isAlwaysPrivateKey(`${safeFolder}/x`)) {
+      throw new BadRequestException(
+        'Verification photos must be taken through the verification flow',
+      );
+    }
     if (typeof contentType !== 'string' || !this.isAllowedMimeType(contentType))
       throw new BadRequestException('Unsupported content type');
     const requestedFileSize = Number(fileSize || 0);

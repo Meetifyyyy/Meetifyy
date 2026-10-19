@@ -18,7 +18,35 @@ import {
 } from './cameraAccess';
 
 /**
+ * What each capture mode shows and how it starts. A selfie opens the front
+ * camera and is mirrored like a mirror; an ID photo opens the rear camera, is
+ * never mirrored (mirrored text is unreadable), asks for a higher resolution
+ * and draws a card-shaped guide to line the ID up in.
+ */
+const MODES = {
+  selfie: {
+    facingMode: 'user',
+    resolution: { width: 1280, height: 720 },
+    trigger: 'Take a live selfie',
+    done: 'Selfie taken',
+    alt: 'Your selfie',
+    fileName: 'verification-selfie',
+  },
+  id: {
+    facingMode: 'environment',
+    resolution: { width: 1920, height: 1080 },
+    trigger: 'Take a photo of your ID',
+    done: 'ID photo taken',
+    alt: 'Your ID photo',
+    fileName: 'verification-id',
+  },
+};
+
+/**
  * VerificationCameraCapture
+ *
+ * Camera only, by design: there is no file input anywhere in verification. The
+ * photo is a frame grabbed from the live viewfinder.
  *
  * A camera capture component with minimal, icon-only controls.
  * Features:
@@ -33,9 +61,11 @@ export default function VerificationCameraCapture({
   value,
   onChange,
   isSubmitting = false,
+  mode = 'selfie',
 }) {
+  const config = MODES[mode] ?? MODES.selfie;
   const [cameraState, setCameraState] = useState('idle'); // 'idle' | 'starting' | 'active' | 'captured' | 'error'
-  const [facingMode, setFacingMode] = useState('user'); // 'user' | 'environment'
+  const [facingMode, setFacingMode] = useState(config.facingMode); // 'user' | 'environment'
   const [capturedImage, setCapturedImage] = useState(null); // { file: File, previewUrl: string } | null
   const [confirmedPreviewUrl, setConfirmedPreviewUrl] = useState(null);
   const [errorMessage, setErrorMessage] = useState(null);
@@ -136,7 +166,7 @@ export default function VerificationCameraCapture({
   // Permissions API preflight: getUserMedia is deliberately invoked from this
   // user-click call stack before any awaited work.
   const startCamera = useCallback(
-    async (mode = facingMode) => {
+    async (cameraMode = facingMode) => {
       const requestId = requestIdRef.current + 1;
       requestIdRef.current = requestId;
       stopCamera();
@@ -160,7 +190,7 @@ export default function VerificationCameraCapture({
       }
 
       try {
-        const stream = await requestCameraStream(mediaDevices, mode);
+        const stream = await requestCameraStream(mediaDevices, cameraMode, config.resolution);
 
         if (!mountedRef.current || requestIdRef.current !== requestId) {
           stream.getTracks().forEach((track) => track.stop());
@@ -190,7 +220,7 @@ export default function VerificationCameraCapture({
         stopCamera();
       }
     },
-    [facingMode, stopCamera, checkMultipleCameras],
+    [facingMode, stopCamera, checkMultipleCameras, config.resolution],
   );
 
   // Switch between front and rear cameras
@@ -230,7 +260,7 @@ export default function VerificationCameraCapture({
             return;
           }
 
-          const file = new File([blob], `verification-selfie-${Date.now()}.jpg`, {
+          const file = new File([blob], `${config.fileName}-${Date.now()}.jpg`, {
             type: 'image/jpeg',
           });
           const previewUrl = URL.createObjectURL(blob);
@@ -252,7 +282,7 @@ export default function VerificationCameraCapture({
       setErrorMessage('Failed to capture photo. Please try again.');
       setCameraState('error');
     }
-  }, [facingMode, capturedImage, stopCamera]);
+  }, [facingMode, capturedImage, stopCamera, config.fileName]);
 
   // Discard captured photo and reopen camera
   const handleRetake = useCallback(() => {
@@ -286,8 +316,8 @@ export default function VerificationCameraCapture({
   // Retake from confirmed state
   const handleRetakeConfirmed = useCallback(() => {
     onChange(null);
-    startCamera('user');
-  }, [onChange, startCamera]);
+    startCamera(facingMode);
+  }, [onChange, startCamera, facingMode]);
 
   // 1. Confirmed State (Photo already captured & confirmed)
   if (value && cameraState === 'idle') {
@@ -298,7 +328,7 @@ export default function VerificationCameraCapture({
             {confirmedPreviewUrl ? (
               <img
                 src={confirmedPreviewUrl}
-                alt="Captured selfie preview"
+                alt={config.alt}
                 className={styles.confirmedThumbnail}
               />
             ) : (
@@ -307,9 +337,9 @@ export default function VerificationCameraCapture({
             <div className={styles.confirmedInfo}>
               <div className={styles.confirmedStatus}>
                 <CheckCircle2 size={16} />
-                <span>Selfie captured</span>
+                <span>{config.done}</span>
               </div>
-              <span className={styles.confirmedMeta}>Ready for verification</span>
+              <span className={styles.confirmedMeta}>Ready to submit</span>
             </div>
           </div>
 
@@ -376,6 +406,11 @@ export default function VerificationCameraCapture({
             }`}
             style={{ display: isLive ? 'block' : 'none' }}
           />
+
+          {/* Where to line the ID up. Purely a guide; the whole frame is kept. */}
+          {mode === 'id' && cameraState === 'active' && (
+            <div className={styles.idGuide} aria-hidden="true" />
+          )}
 
           {/* Captured Image Review */}
           {isCaptured && capturedImage?.previewUrl && (
@@ -479,7 +514,7 @@ export default function VerificationCameraCapture({
         className={styles.triggerButton}
       >
         <Camera size={18} color="var(--color-text-light)" />
-        <span>Take a selfie with camera</span>
+        <span>{config.trigger}</span>
       </button>
     </div>
   );
@@ -489,4 +524,5 @@ VerificationCameraCapture.propTypes = {
   value: PropTypes.any,
   onChange: PropTypes.func.isRequired,
   isSubmitting: PropTypes.bool,
+  mode: PropTypes.oneOf(['selfie', 'id']),
 };

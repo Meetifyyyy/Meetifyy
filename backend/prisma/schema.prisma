@@ -1702,6 +1702,15 @@ enum VerificationStatus {
   RESUBMISSION_REQUIRED
 }
 
+/// How an attempt proves the person is real: ONE live camera capture, either a
+/// selfie or a photo of a government ID. Null on attempts from before the
+/// choice existed, which carried both a selfie and an ID card (and on any still
+/// sent by an installed app that predates it).
+enum VerificationMethod {
+  LIVE_SELFIE
+  LIVE_GOVERNMENT_ID
+}
+
 /// One verification attempt. Attempts accumulate: a resubmission adds a row
 /// rather than replacing the previous one, so a user (and a reviewer) can see
 /// what was submitted before and why it was turned down.
@@ -1719,8 +1728,12 @@ model VerificationRequest {
   /// 1-based, per user. Displayed to the user as "Attempt 3".
   attemptNumber   Int
   status          VerificationStatus @default(PENDING)
-  selfieMediaId   String
-  idCardMediaId   String
+  /// Null for legacy two-document attempts. A CHECK constraint (migration 20)
+  /// ties it to which document is present: LIVE_SELFIE has only the selfie,
+  /// LIVE_GOVERNMENT_ID only the ID, null has both.
+  method          VerificationMethod?
+  selfieMediaId   String?
+  idCardMediaId   String?
   rejectionReason String?            @db.VarChar(500)
   reviewerId      String?
   /// When a reviewer decided. Null while the attempt is still pending.
@@ -1730,8 +1743,10 @@ model VerificationRequest {
 
   user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   reviewer    SuperAdmin? @relation("VerificationReviewer", fields: [reviewerId], references: [id])
-  selfieMedia Media       @relation("VerificationSelfie", fields: [selfieMediaId], references: [id])
-  idCardMedia Media       @relation("VerificationIdCard", fields: [idCardMediaId], references: [id])
+  // Restrict stated explicitly: on an optional relation Prisma would otherwise
+  // default to SetNull, and a submitted document must never be deletable.
+  selfieMedia Media?      @relation("VerificationSelfie", fields: [selfieMediaId], references: [id], onDelete: Restrict)
+  idCardMedia Media?      @relation("VerificationIdCard", fields: [idCardMediaId], references: [id], onDelete: Restrict)
 
   @@unique([userId, attemptNumber])
   @@index([status])

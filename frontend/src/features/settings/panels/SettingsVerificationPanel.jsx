@@ -1,34 +1,47 @@
 import { useState } from 'react';
 import { useAuth } from '@shared/context/AuthContext';
 import { showToast } from '@shared/utils/toast';
-import { Upload, Clock, CheckCircle2, AlertCircle } from '@shared/components/icons';
+import { Clock, CheckCircle2, AlertCircle, Camera, User } from '@shared/components/icons';
 import { apiClient } from '@shared/api/apiClient';
 import styles from '../pages/SettingsRoute.module.css';
-import { VERIFICATION_ALLOWED_TYPES } from '@shared/constants/mediaLimits';
+import methodStyles from './SettingsVerificationPanel.module.css';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Skeleton from '@shared/components/skeletons/Skeleton';
 import VerificationCameraCapture from './VerificationCameraCapture';
-import {
-  prepareVerificationDocument,
-  readUploadedMediaId,
-  validateVerificationDocument,
-  VerificationDocumentError,
-} from '@shared/utils/verificationMedia';
 
-// The picker filter matches the server allowlist exactly, so the dialog cannot
-// offer a format the upload will then refuse.
-const VERIFICATION_ACCEPT = VERIFICATION_ALLOWED_TYPES.join(',');
+/**
+ * The two ways to verify. Either one is enough on its own, and both are live:
+ * the photo comes from the camera, never from a file. The server enforces the
+ * same (see VerificationService.captureDocument / submitLiveVerification).
+ */
+const METHODS = [
+  {
+    method: 'LIVE_SELFIE',
+    kind: 'selfie',
+    icon: User,
+    title: 'Live selfie',
+    text: 'Take a photo of your face with the front camera.',
+  },
+  {
+    method: 'LIVE_GOVERNMENT_ID',
+    kind: 'id',
+    icon: Camera,
+    title: 'Live photo of a government ID',
+    text: 'Photograph your Aadhaar, PAN, passport or driving licence with the camera.',
+  },
+];
 
 export default function SettingsVerificationPanel() {
   const { currentUser } = useAuth();
   const queryClient = useQueryClient();
-  const [selfieFile, setSelfieFile] = useState(null);
-  const [collegeIdFile, setCollegeIdFile] = useState(null);
+  // Which of METHODS the person chose; null until they pick one.
+  const [method, setMethod] = useState(null);
+  const [photo, setPhoto] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  // Which document the last failure was about, so the error sits next to the
-  // input the user has to fix rather than only in a toast that scrolls away.
-  const [fieldError, setFieldError] = useState(null);
+  // Shown under the camera rather than only in a toast that scrolls away.
+  const [captureError, setCaptureError] = useState(null);
   const [stage, setStage] = useState(null);
+  const chosen = METHODS.find((m) => m.method === method) ?? null;
 
   /**
    * The persisted verification state, which is the authority here.
@@ -69,102 +82,53 @@ export default function SettingsVerificationPanel() {
         })
       : null;
 
-  // Validate at pick time, not at submit time. Catching an unsupported format or
-  // an unreadable file here means the user finds out while they are still
-  // looking at the picker, instead of after two uploads have already run.
-  const handleFileChange = async (e, setFile, label) => {
-    const file = e.target.files?.[0];
-    // Reset so re-picking the same file after an error fires onChange again.
-    e.target.value = '';
-    if (!file) return;
-    try {
-      await validateVerificationDocument(file, label);
-      setFieldError(null);
-      setFile(file);
-    } catch (err) {
-      setFile(null);
-      setFieldError({ label, message: err.message });
-      showToast(err.message, 'error');
-    }
+  const chooseMethod = (next) => {
+    if (isSubmitting) return;
+    setMethod(next);
+    setPhoto(null);
+    setCaptureError(null);
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (isSubmitting) return;
-    if (!selfieFile || !collegeIdFile) {
-      const missing = !selfieFile ? 'selfie' : 'photo ID';
-      setFieldError({ label: missing, message: `Please provide your ${missing}.` });
-      showToast(`Please provide your ${missing}.`, 'error');
+    if (isSubmitting || !chosen) return;
+    if (!photo) {
+      setCaptureError(`Take your ${chosen.kind === 'selfie' ? 'selfie' : 'ID photo'} first.`);
       return;
     }
 
     setIsSubmitting(true);
-    setFieldError(null);
-
-    // Keys of anything we successfully put in storage. If the submission does
-    // not complete, these are discarded — otherwise a failed attempt leaves the
-    // documents sitting in the bucket with no request referencing them. That is
-    // not hypothetical: the live bucket currently holds exactly two such orphans
-    // from a submission that failed before it ever reached the database.
-    const uploadedKeys = [];
-
+    setCaptureError(null);
     try {
-      setStage('Preparing your documents…');
-      // Converted to WebP with EXIF reset, at a quality that keeps ID text
-      // readable. Prepared before either upload starts so a bad image fails
-      // without anything having been stored.
-      const [selfieUpload, collegeIdUpload] = await Promise.all([
-        prepareVerificationDocument(selfieFile, 'selfie'),
-        prepareVerificationDocument(collegeIdFile, 'photo ID'),
-      ]);
-
       setStage('Uploading…');
-      const { uploadsApi, apiClient } = await import('@shared/api/apiClient');
-
-      // Sequential, and deliberately so: the two documents are told apart only
-      // by which field they land in, so the order they are prepared, uploaded
-      // and read back stays fixed and readable end to end. Two files is not a
-      // meaningful amount of parallelism to give up.
-      const selfieRes = await uploadsApi.uploadMedia(selfieUpload, 'verification');
-      if (selfieRes?.key) uploadedKeys.push(selfieRes.key);
-      const selfieMediaId = readUploadedMediaId(selfieRes, 'selfie');
-
-      const collegeIdRes = await uploadsApi.uploadMedia(collegeIdUpload, 'verification');
-      if (collegeIdRes?.key) uploadedKeys.push(collegeIdRes.key);
-      const idCardMediaId = readUploadedMediaId(collegeIdRes, 'photo ID');
+      // The server decodes and re-encodes the frame (no EXIF, no device or
+      // location data) and stores it privately; only reviewers can see it.
+      const form = new FormData();
+      form.append('kind', chosen.kind);
+      form.append('file', photo);
+      const { mediaId } = await apiClient.post('/api/verification/capture', form);
 
       setStage('Submitting for review…');
-      await apiClient.post('/api/verification/request', {
-        selfieMediaId,
-        idCardMediaId,
+      await apiClient.post('/api/verification/live-request', {
+        method: chosen.method,
+        mediaId,
       });
 
-      // Only now is anything referencing the uploads, so nothing is orphaned.
-      uploadedKeys.length = 0;
+      showToast('Verification request submitted', 'success');
+      setPhoto(null);
+      setMethod(null);
 
-      showToast('Verification request submitted successfully', 'success');
-      setSelfieFile(null);
-      setCollegeIdFile(null);
-
-      // Awaited, not fired and forgotten. The old code raced an un-awaited sync
-      // against a 1-second reload timer, so the page could reload before the
-      // status it was reloading to show had been fetched.
+      // Awaited so the "in review" card replaces the form only once the new
+      // status has actually been fetched.
       await apiClient.post('/api/auth/sync').catch(() => {});
-      // The panel keys off this query, so it has to be refetched before the
-      // "in review" state can replace the form.
       await queryClient.invalidateQueries({ queryKey: ['verificationStatus'] });
       await queryClient.invalidateQueries();
     } catch (err) {
-      if (uploadedKeys.length > 0) {
-        const { uploadsApi } = await import('@shared/api/apiClient');
-        await Promise.all(
-          uploadedKeys.map((key) => uploadsApi.discard(key).catch(() => {})),
-        );
-      }
-      if (err instanceof VerificationDocumentError) {
-        setFieldError({ label: err.label, message: err.message });
-      }
-      showToast(err?.message || 'Failed to submit verification request', 'error');
+      // An unsubmitted capture is collected by the server after a day
+      // (VerificationUploadCollectorService); nothing to clean up here.
+      const message = err?.message || 'Failed to submit verification request';
+      setCaptureError(message);
+      showToast(message, 'error');
     } finally {
       setStage(null);
       setIsSubmitting(false);
@@ -202,7 +166,7 @@ export default function SettingsVerificationPanel() {
             </span>
           </div>
           <p style={{ fontSize: '0.815rem', color: 'var(--color-text-muted, var(--color-text-light))', margin: '0.35rem 0 0', lineHeight: 1.45 }}>
-            A live selfie unlocks messaging, posting, creating communities and activities, and Instant Match. Campus opens with your college email.
+            Verifying with a live selfie or a live photo of your government ID unlocks messaging, posting, creating communities and activities, and Instant Match. Campus opens with your college email.
           </p>
         </div>
 
@@ -272,43 +236,56 @@ export default function SettingsVerificationPanel() {
               </div>
             )}
 
-            <div>
-              <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 500, marginBottom: '0.5rem' }}>1. Take a clear selfie</label>
-              <p style={{ fontSize: '0.75rem', color: 'var(--color-text-light)', marginBottom: '0.75rem' }}>This helps us verify you are a real person.</p>
-              <VerificationCameraCapture
-                value={selfieFile}
-                onChange={setSelfieFile}
-                isSubmitting={isSubmitting}
-              />
-              {fieldError?.label === 'selfie' && (
-                <p role="alert" style={{ fontSize: '0.78rem', color: '#ef4444', margin: '0.5rem 0 0' }}>
-                  {fieldError.message}
-                </p>
-              )}
-            </div>
+            <fieldset className={methodStyles.methods} disabled={isSubmitting}>
+              <legend className={methodStyles.legend}>Choose how to verify</legend>
+              {METHODS.map(({ method: value, icon: Icon, title, text }) => (
+                <label
+                  key={value}
+                  className={`${methodStyles.method} ${method === value ? methodStyles.methodChosen : ''}`}
+                >
+                  <input
+                    type="radio"
+                    name="verification-method"
+                    value={value}
+                    checked={method === value}
+                    onChange={() => chooseMethod(value)}
+                    className={methodStyles.radio}
+                  />
+                  <span className={methodStyles.methodIcon} aria-hidden="true">
+                    <Icon size={20} />
+                  </span>
+                  <span className={methodStyles.methodBody}>
+                    <span className={methodStyles.methodTitle}>{title}</span>
+                    <span className={methodStyles.methodText}>{text}</span>
+                  </span>
+                </label>
+              ))}
+            </fieldset>
 
-            <div>
-              <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 500, marginBottom: '0.5rem' }}>2. Photo ID (college ID or government-issued ID)</label>
-              <p style={{ fontSize: '0.75rem', color: 'var(--color-text-light)', marginBottom: '0.75rem' }}>We use this to confirm you're a real person. Only our review team can see it.</p>
-              <input type="file" accept={VERIFICATION_ACCEPT} onChange={(e) => handleFileChange(e, setCollegeIdFile, 'photo ID')} style={{ display: 'none' }} id="id-upload" />
-              <label htmlFor="id-upload" style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem',
-                padding: '1rem', background: 'var(--color-bg-panel)', border: '1px dashed var(--color-border)', borderRadius: '8px',
-                cursor: 'pointer', transition: 'border-color 0.2s'
-              }}>
-                <Upload size={18} color="var(--color-text-light)" />
-                <span style={{ color: collegeIdFile ? 'var(--color-text)' : 'var(--color-text-light)', fontSize: '0.875rem' }}>
-                  {collegeIdFile ? collegeIdFile.name : 'Choose your photo ID'}
-                </span>
-              </label>
-              {fieldError?.label === 'photo ID' && (
-                <p role="alert" style={{ fontSize: '0.78rem', color: '#ef4444', margin: '0.5rem 0 0' }}>
-                  {fieldError.message}
+            {chosen && (
+              <div>
+                <p className={methodStyles.hint}>
+                  {chosen.kind === 'selfie'
+                    ? 'Face the camera in good light, without sunglasses or a mask.'
+                    : 'Fit the whole ID inside the frame, flat and in good light, with the text readable. Only our review team can see it.'}
                 </p>
-              )}
-            </div>
+                <VerificationCameraCapture
+                  key={chosen.kind}
+                  mode={chosen.kind}
+                  value={photo}
+                  onChange={(file) => {
+                    setPhoto(file);
+                    setCaptureError(null);
+                  }}
+                  isSubmitting={isSubmitting}
+                />
+                {captureError && (
+                  <p role="alert" className={methodStyles.error}>{captureError}</p>
+                )}
+              </div>
+            )}
 
-            <button type="submit" disabled={isSubmitting || !selfieFile || !collegeIdFile} style={{
+            <button type="submit" disabled={isSubmitting || !photo} style={{
               marginTop: '0.5rem',
               padding: '0.875rem',
               borderRadius: '9999px',
@@ -317,8 +294,8 @@ export default function SettingsVerificationPanel() {
               fontWeight: 600,
               fontSize: '1rem',
               border: 'none',
-              cursor: (isSubmitting || !selfieFile || !collegeIdFile) ? 'not-allowed' : 'pointer',
-              opacity: (isSubmitting || !selfieFile || !collegeIdFile) ? 0.5 : 1,
+              cursor: (isSubmitting || !photo) ? 'not-allowed' : 'pointer',
+              opacity: (isSubmitting || !photo) ? 0.5 : 1,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',

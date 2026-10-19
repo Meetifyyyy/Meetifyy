@@ -175,4 +175,18 @@ describe('verification upload content validation', () => {
     expect(uploaded).toHaveLength(1);
     expect(result.media.visibility).toBe('public');
   });
+
+  it('refuses a presigned direct upload into the verification folder', async () => {
+    // A presigned PUT never passes the server, so the bytes could not be
+    // checked and the recorded type would be the client's claim.
+    await expect(
+      service.getPresignedUrl(
+        'u1',
+        'id.jpg',
+        'image/jpeg',
+        'verification',
+        1000,
+      ),
+    ).rejects.toThrow(/verification flow/);
+  });
 });
