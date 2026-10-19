@@ -81,33 +81,42 @@ describe('CustomSelect with an overlaying keyboard', () => {
       );
       const field = screen.getByLabelText('bio');
       field.focus();
+      // What useKeyboardInset sets while a keyboard is up.
+      root.setAttribute('data-keyboard-open', '');
       return field;
     };
+    const keyboardLeaves = () => {
+      root.removeAttribute('data-keyboard-open');
+      root.style.setProperty('--kb-inset', '0px');
+      act(() => {
+        window.dispatchEvent(new Event('meetifyy:keyboard-hidden'));
+        // Two frames for the page to settle, then the menu opens.
+        for (let i = 0; i < 3; i += 1) frames.splice(0).forEach((cb) => cb());
+      });
+    };
 
-    it('declines the focus move when the trigger is pressed, so the keyboard stays up', () => {
-      renderWithField();
-      expect(fireEvent.pointerDown(screen.getByRole('combobox', { name: /pick/i }))).toBe(false);
-    });
+    afterEach(() => root.removeAttribute('data-keyboard-open'));
 
-    it('opens, and choosing an option leaves the field focused', () => {
+    it('closes the keyboard and waits for it before opening the menu', () => {
+      root.style.setProperty('--kb-inset', '320px');
       const field = renderWithField();
       fireEvent.click(screen.getByRole('combobox', { name: /pick/i }));
-      expect(document.activeElement).toBe(field);
-      const option = screen.getByRole('option', { name: /beta/i });
-      // Pressing an option must not take focus off the field either.
-      expect(fireEvent.pointerDown(option)).toBe(false);
-      fireEvent.click(option);
-      expect(screen.queryByRole('listbox')).toBeNull();
-      expect(document.activeElement).toBe(field);
+      expect(document.activeElement).not.toBe(field); // keyboard asked to close
+      expect(screen.queryByRole('listbox')).toBeNull(); // not opened against the keyboard-up layout
+      keyboardLeaves();
+      const list = screen.getByRole('listbox');
+      // Placed once, against the full-height layout: below, never above.
+      expect(list.style.top).toBe('464px');
+      expect(list.style.bottom).toBe('auto');
     });
 
-    it('does not move the menu when the keyboard does not change', () => {
+    it('does not move the menu after it has opened', () => {
       root.style.setProperty('--kb-inset', '320px');
       renderWithField();
       fireEvent.click(screen.getByRole('combobox', { name: /pick/i }));
+      keyboardLeaves();
       const { top, bottom } = screen.getByRole('listbox').style;
       act(() => {
-        // Nothing resizes or hides: only frames pass.
         frames.splice(0).forEach((cb) => cb());
       });
       const after = screen.getByRole('listbox').style;
@@ -115,7 +124,20 @@ describe('CustomSelect with an overlaying keyboard', () => {
       expect(after.bottom).toBe(bottom);
     });
 
-    it('still gives focus to the trigger when no text field had it', () => {
+    it('opens anyway if the keyboard never reports leaving', () => {
+      vi.useFakeTimers();
+      renderWithField();
+      fireEvent.click(screen.getByRole('combobox', { name: /pick/i }));
+      expect(screen.queryByRole('listbox')).toBeNull();
+      act(() => {
+        vi.advanceTimersByTime(500);
+        for (let i = 0; i < 3; i += 1) frames.splice(0).forEach((cb) => cb());
+      });
+      expect(screen.getByRole('listbox')).toBeTruthy();
+      vi.useRealTimers();
+    });
+
+    it('gives focus to the trigger after choosing an option', () => {
       render(<CustomSelect options={options} value="" onChange={() => {}} aria-label="Pick" />);
       fireEvent.click(screen.getByRole('combobox', { name: /pick/i }));
       fireEvent.click(screen.getByRole('option', { name: /beta/i }));

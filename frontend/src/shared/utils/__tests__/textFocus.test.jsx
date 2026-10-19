@@ -104,3 +104,46 @@ describe('shouldAutoFocusSearch', () => {
     expect(shouldAutoFocusSearch()).toBe(true);
   });
 });
+
+describe('dismissKeyboardThen', () => {
+  afterEach(() => {
+    document.documentElement.removeAttribute('data-keyboard-open');
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it('runs at once when no keyboard is up', async () => {
+    const { dismissKeyboardThen } = await import('../textFocus');
+    const run = vi.fn();
+    dismissKeyboardThen(run);
+    expect(run).toHaveBeenCalledTimes(1);
+  });
+
+  it('blurs the field and waits for the keyboard to leave', async () => {
+    const { dismissKeyboardThen } = await import('../textFocus');
+    vi.stubGlobal('requestAnimationFrame', (cb) => { cb(); return 1; });
+    const input = document.createElement('input');
+    document.body.appendChild(input);
+    input.focus();
+    document.documentElement.setAttribute('data-keyboard-open', '');
+    const run = vi.fn();
+    dismissKeyboardThen(run);
+    expect(document.activeElement).not.toBe(input);
+    expect(run).not.toHaveBeenCalled();
+    window.dispatchEvent(new Event('meetifyy:keyboard-hidden'));
+    expect(run).toHaveBeenCalledTimes(1);
+    input.remove();
+    vi.unstubAllGlobals();
+  });
+
+  it('can be cancelled', async () => {
+    const { dismissKeyboardThen } = await import('../textFocus');
+    vi.useFakeTimers();
+    document.documentElement.setAttribute('data-keyboard-open', '');
+    const run = vi.fn();
+    const cancel = dismissKeyboardThen(run);
+    cancel();
+    vi.advanceTimersByTime(1000);
+    expect(run).not.toHaveBeenCalled();
+  });
+});

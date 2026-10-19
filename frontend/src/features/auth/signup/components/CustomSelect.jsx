@@ -2,13 +2,7 @@ import { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback } fr
 import { createPortal } from 'react-dom';
 import { ChevronDown, Check } from '@shared/components/icons';
 import { visibleViewportBottom } from '@shared/utils/visibleViewport';
-import {
-  captureTextFocus,
-  holdTextFocus,
-  holdTextFocusOutsideInputs,
-  restoreTextFocus,
-  shouldAutoFocusSearch,
-} from '@shared/utils/textFocus';
+import { dismissKeyboardThen, shouldAutoFocusSearch } from '@shared/utils/textFocus';
 import styles from '../SignupFlow.module.css';
 
 // Damerau-Levenshtein distance to calculate spelling edit distance (tolerates insertions, deletions, substitutions, transpositions)
@@ -172,10 +166,11 @@ export default function CustomSelect({
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
   const containerRef = useRef(null);
-  // The text field the person was typing in when the menu opened, and whether
-  // the menu's own search box takes focus (see @shared/utils/textFocus).
-  const prevFocusRef = useRef(null);
+  // Whether the menu's own search box takes focus (see @shared/utils/textFocus),
+  // and a pending open that is waiting for the keyboard to finish closing.
   const autoFocusSearchRef = useRef(false);
+  const cancelOpenRef = useRef(null);
+  useEffect(() => () => cancelOpenRef.current?.(), []);
 
   /**
    * Where the menu goes, in viewport coordinates.
@@ -223,23 +218,22 @@ export default function CustomSelect({
   }, [placement, searchable]);
 
   const toggleDropdown = () => {
-    if (!isOpen) {
-      prevFocusRef.current = captureTextFocus();
+    cancelOpenRef.current?.();
+    cancelOpenRef.current = null;
+    if (isOpen) {
+      setIsOpen(false);
+      return;
+    }
+    // Close the keyboard first, then place the menu: measured once against the
+    // layout it will keep, so it cannot open above and drop when the keyboard
+    // leaves.
+    cancelOpenRef.current = dismissKeyboardThen(() => {
+      cancelOpenRef.current = null;
       autoFocusSearchRef.current = shouldAutoFocusSearch();
       positionMenu();
-    }
-    setIsOpen(!isOpen);
+      setIsOpen(true);
+    });
   };
-
-  // When the menu has closed, a text field that was being typed in gets its
-  // focus back (the menu's search box, if it had focus, is gone and focus would
-  // fall to <body>, dropping the keyboard). A no-op when focus went elsewhere.
-  useEffect(() => {
-    if (isOpen) return;
-    const field = prevFocusRef.current;
-    prevFocusRef.current = null;
-    restoreTextFocus(field);
-  }, [isOpen]);
 
   /*
    * Follow the trigger while open, every frame. Listening for scroll and
@@ -358,10 +352,6 @@ export default function CustomSelect({
         type="button" 
         className={`${styles.dateSelect} ${isInvalid ? styles.invalid : ''} ${className}`.trim()} 
         onClick={toggleDropdown}
-        // A focused text field keeps focus (and the keyboard stays up): the
-        // blur is what used to move the page under the open menu.
-        onPointerDown={holdTextFocus}
-        onMouseDown={holdTextFocus}
         aria-haspopup="listbox"
         aria-expanded={isOpen}
         style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minWidth: 0, width: '100%' }}
@@ -389,9 +379,6 @@ export default function CustomSelect({
           ref={listRef}
           className={`${styles.customSelectList} ${styles.customSelectPortal} ${isUpward ? styles.openUpward : ''}`}
           style={{ padding: searchable ? 0 : '0.25rem', ...menuBox }}
-          // Choosing an option must not take focus from a text field either.
-          onPointerDown={holdTextFocusOutsideInputs}
-          onMouseDown={holdTextFocusOutsideInputs}
         >
           {searchable && (
             <div style={{ padding: '0.5rem', position: 'sticky', top: 0, background: 'var(--color-bg-white)', zIndex: 1, borderBottom: '1px solid var(--color-border)', display: 'flex', alignItems: 'center' }}>

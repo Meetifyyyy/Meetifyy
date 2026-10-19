@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useId, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronDown, Check } from '@shared/components/icons';
 import { visibleViewportBottom } from '@shared/utils/visibleViewport';
-import { holdTextFocus, holdTextFocusOutsideInputs, isTextFieldFocused } from '@shared/utils/textFocus';
+import { dismissKeyboardThen } from '@shared/utils/textFocus';
 import styles from './CustomSelect.module.css';
 
 /**
@@ -63,12 +63,22 @@ export default function CustomSelect({
     });
   }, []);
 
+  // A pending open, waiting for the keyboard to finish closing.
+  const cancelOpenRef = useRef(null);
+  useEffect(() => () => cancelOpenRef.current?.(), []);
+
   const openDropdown = () => {
     if (disabled) return;
-    updatePosition();
-    setIsOpen(true);
-    const selectedIdx = options.findIndex((opt) => String(opt.value) === String(value));
-    setHighlightedIndex(selectedIdx >= 0 ? selectedIdx : 0);
+    cancelOpenRef.current?.();
+    // Close the keyboard first and place the menu after, so it is measured once
+    // against the layout it will keep and never jumps when the keyboard leaves.
+    cancelOpenRef.current = dismissKeyboardThen(() => {
+      cancelOpenRef.current = null;
+      updatePosition();
+      setIsOpen(true);
+      const selectedIdx = options.findIndex((opt) => String(opt.value) === String(value));
+      setHighlightedIndex(selectedIdx >= 0 ? selectedIdx : 0);
+    });
   };
 
   const closeDropdown = () => {
@@ -95,10 +105,7 @@ export default function CustomSelect({
       });
     }
     closeDropdown();
-    // A text field that had focus when the menu opened still has it (the
-    // trigger declined it, see holdTextFocus), and the keyboard stays up.
-    // Otherwise focus returns to the trigger, as for any select.
-    if (!isTextFieldFocused()) triggerRef.current?.focus();
+    triggerRef.current?.focus();
   };
 
   // Outside click and window scroll/wheel/resize handlers
@@ -134,9 +141,8 @@ export default function CustomSelect({
 
     // A keyboard showing or hiding resizes nothing in the app (it overlays the
     // page), so it is not a reason to close: re-place against the new visible
-    // area. Opening this select no longer causes one itself (the trigger keeps
-    // a focused text field focused), so this is for a keyboard the person
-    // really raised or dismissed while the menu was open.
+    // area. Opening this select closes the keyboard first (see openDropdown),
+    // so this is for a keyboard the person raised while the menu was open.
     let keyboardRaf = 0;
     const handleKeyboard = () => {
       cancelAnimationFrame(keyboardRaf);
@@ -242,9 +248,6 @@ export default function CustomSelect({
         className={`${styles.trigger} ${isOpen ? styles.open : ''} ${isError ? styles.error : ''} ${triggerClassName}`}
         onClick={toggleDropdown}
         onKeyDown={handleKeyDown}
-        // Keeps a focused text field (and the keyboard) where it is.
-        onPointerDown={holdTextFocus}
-        onMouseDown={holdTextFocus}
       >
         <span
           className={`${styles.label} ${!selectedOption ? styles.placeholder : ''}`}
@@ -271,9 +274,6 @@ export default function CustomSelect({
             aria-labelledby={selectId}
             className={styles.dropdown}
             style={dropdownStyle}
-            // Choosing an option must not take focus from a text field either.
-            onPointerDown={holdTextFocusOutsideInputs}
-            onMouseDown={holdTextFocusOutsideInputs}
           >
             {options.map((opt, index) => {
               const isSelected = String(value) === String(opt.value);

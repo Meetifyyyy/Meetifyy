@@ -3,6 +3,10 @@ import { isTextFieldFocused } from '@shared/hooks/useKeyboardInset';
 export { isTextFieldFocused };
 
 /**
+ * NOTE: menus no longer use the hold/restore helpers below; they close the
+ * keyboard and open afterwards (`dismissKeyboardThen`, at the end of this file).
+ * The helpers remain for other popovers that must keep a field focused.
+ *
  * Keeping a text field focused while a popover (a select, a menu) is used.
  *
  * Tapping a <button> moves focus to it, so tapping a select's trigger while a
@@ -72,4 +76,58 @@ export function shouldAutoFocusSearch() {
   if (isTextFieldFocused()) return true;
   if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return true;
   return !window.matchMedia('(pointer: coarse)').matches;
+}
+
+/**
+ * Opening a menu with the keyboard up: close the keyboard first, then open.
+ *
+ * Keeping the keyboard up (the approach above) was the wrong trade: a menu
+ * opened over a raised keyboard sat in the squeezed space, and the person
+ * still has to dismiss it to see the whole page. This does the other thing.
+ * A focused text field is blurred, and `run` (which measures the trigger and
+ * shows the menu) waits until the keyboard has gone and the page has settled
+ * back into its full-height layout. The menu is therefore placed once, against
+ * the geometry it will keep, instead of opening against the keyboard-up
+ * layout and jumping when the keyboard leaves.
+ *
+ * With no keyboard up (desktop, or a field with a hardware keyboard) `run`
+ * happens at once. Returns a cancel function for an unmount or a second tap.
+ */
+const KEYBOARD_CLOSE_WAIT_MS = 450;
+
+export function dismissKeyboardThen(run) {
+  if (typeof document === 'undefined') {
+    run();
+    return () => {};
+  }
+  if (isTextFieldFocused()) document.activeElement.blur();
+  if (!document.documentElement.hasAttribute('data-keyboard-open')) {
+    run();
+    return () => {};
+  }
+
+  let finished = false;
+  let timer = 0;
+  let frame = 0;
+  const stop = () => {
+    finished = true;
+    window.removeEventListener('meetifyy:keyboard-hidden', go);
+    clearTimeout(timer);
+    cancelAnimationFrame(frame);
+  };
+  function go() {
+    if (finished) return;
+    window.removeEventListener('meetifyy:keyboard-hidden', go);
+    clearTimeout(timer);
+    finished = true;
+    // Two frames: the page's own reaction to the keyboard leaving (auth
+    // screens give back the room they made) has been applied and laid out.
+    frame = requestAnimationFrame(() => {
+      frame = requestAnimationFrame(run);
+    });
+  }
+  window.addEventListener('meetifyy:keyboard-hidden', go);
+  // A keyboard that never reports leaving must not leave the menu unopened.
+  timer = setTimeout(go, KEYBOARD_CLOSE_WAIT_MS);
+  return stop;
 }
