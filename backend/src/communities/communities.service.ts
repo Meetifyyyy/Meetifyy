@@ -395,11 +395,10 @@ export class CommunitiesService implements OnModuleInit {
         // write can have altered them.
         if (communityId) toDelete.push(`community:${communityId}`);
 
-        if (toDelete.length > 0) {
-          await this.redis.del(...toDelete);
-        }
-        // Clean the tag-Set itself so it is re-seeded cleanly
-        await this.redis.del(CommunitiesService.LIST_TAG);
+        // The tag-Set itself goes in the same DEL so it is re-seeded cleanly:
+        // one round trip instead of two, with the same keys removed.
+        toDelete.push(CommunitiesService.LIST_TAG);
+        await this.redis.del(...toDelete);
       } catch {
         /* ignore */
       }
@@ -1619,22 +1618,38 @@ export class CommunitiesService implements OnModuleInit {
   }
 
   async createCommunity(data: CreateCommunityDto, creatorId: string) {
-    const creator = await this.prisma.user.findUnique({
-      where: { id: creatorId },
-      select: { verificationStatus: true },
-    });
-    if (!creator || creator.verificationStatus !== 'VERIFIED') {
-      throw new ForbiddenException('Verify your account to create communities');
-    }
-
     const rawSlug = (data.name || 'community')
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/(^-|-$)/g, '');
     const slug = rawSlug || `community-${Date.now()}`;
-    const existing = await this.prisma.community.findUnique({
-      where: { slug },
-    });
+    const wantsCampus = Boolean(
+      data.isCampusCommunity || data.privacy === 'campus',
+    );
+
+    // The three reads are independent, so they run in one round of parallel
+    // queries rather than three sequential ones. The verification check is
+    // still decided before anything is written; the other two are plain reads
+    // whose results are simply discarded when it fails.
+    const [creator, existing, creatorCollegeId] = await Promise.all([
+      this.prisma.user.findUnique({
+        where: { id: creatorId },
+        select: { verificationStatus: true },
+      }),
+      this.prisma.community.findUnique({
+        where: { slug },
+        select: { id: true },
+      }),
+      // A campus community belongs to the creator's ACTIVE affiliation
+      // college, never the `User.collegeId` mirror: a removed or revoked
+      // college email must not let anyone found a community for that campus.
+      wantsCampus
+        ? this.resolveCollegeId(creatorId)
+        : Promise.resolve<string | null>(null),
+    ]);
+    if (!creator || creator.verificationStatus !== 'VERIFIED') {
+      throw new ForbiddenException('Verify your account to create communities');
+    }
     const finalSlug = existing ? `${slug}-${Date.now()}` : slug;
 
     // Every new community starts with the platform defaults, stored on the
@@ -1677,15 +1692,9 @@ export class CommunitiesService implements OnModuleInit {
       },
     };
 
-    if (data.isCampusCommunity || data.privacy === 'campus') {
-      // A campus community belongs to the creator's ACTIVE affiliation
-      // college, never the `User.collegeId` mirror: a removed or revoked
-      // college email must not let anyone found a community for that campus.
-      const creatorCollegeId = await this.resolveCollegeId(creatorId);
-      if (creatorCollegeId) {
-        createData.isCampusCommunity = true;
-        createData.college = { connect: { id: creatorCollegeId } };
-      }
+    if (wantsCampus && creatorCollegeId) {
+      createData.isCampusCommunity = true;
+      createData.college = { connect: { id: creatorCollegeId } };
     }
 
     if (avatarVal && typeof avatarVal === 'string') {
