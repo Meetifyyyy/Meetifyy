@@ -13,14 +13,14 @@
 }
 
 .list {
-  /* A grid of fixed-width cards, as many across as the width holds, packed
-     from the left. A single centred column left wide screens mostly empty. */
+  /* As many cards across as fit, each at least --community-card-min (16rem) wide and
+     sharing what is left, so two or three sit side by side as soon as there is
+     room. Fixed 21rem columns left one card and a wide gap on mid-size screens. */
   display: grid;
-  grid-template-columns: repeat(auto-fill, var(--community-card-width));
-  justify-content: start;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--community-card-min)), 1fr));
   gap: 0.75rem;
   width: 100%;
-  --community-card-width: 21rem;
+  --community-card-min: 16rem;
 }
 
 /* Each community is its own card. */

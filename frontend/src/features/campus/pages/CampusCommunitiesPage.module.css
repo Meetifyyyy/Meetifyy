@@ -111,12 +111,19 @@
   outline-offset: 2px;
 }
 
-/* The list's box. Centred and capped on wide screens so rows read as one card
-   rather than lines stretched across the whole column. Doubled class: wins over
-   the shared .surface rules whatever order the two stylesheets load in. */
+/* No box around the list on wider screens: each community is its own card and
+   the cards fill the page width side by side (CommunityList's grid). Doubled
+   class: wins over the shared .surface rules whatever order they load in.
+   Phones keep the shared surface below 769px. */
 .listSurface.listSurface {
   width: 100%;
-  max-width: 40rem;
-  margin: 0 auto;
   box-sizing: border-box;
+}
+
+@media (min-width: 769px) {
+  .listSurface.listSurface {
+    background: none;
+    border: none;
+    padding: 0;
+  }
 }

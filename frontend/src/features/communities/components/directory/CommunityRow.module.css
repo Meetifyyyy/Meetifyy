@@ -124,3 +124,26 @@
     gap: 0.75rem;
   }
 }
+
+/* Narrow cards (two or three across): the name gets the whole first line and
+   the member count drops just below it, instead of squeezing the name to a few
+   letters. Measured on the card itself, so it follows the grid, not the page. */
+.row {
+  container-type: inline-size;
+}
+
+@container (max-width: 22rem) {
+  .titleLine {
+    flex-wrap: wrap;
+    row-gap: 0.1rem;
+  }
+
+  .name {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+
+  .members::before {
+    display: none;
+  }
+}
