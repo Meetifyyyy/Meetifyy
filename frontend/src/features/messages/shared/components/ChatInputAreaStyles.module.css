@@ -452,6 +452,20 @@
     border-top: 1px solid var(--color-border-light);
   }
 
+  /* "You can't message this person" replaces the composer. The overlay used
+     to fill the whole bar, the navigation-bar padding included, so its text
+     was centred partly behind the Android navigation bar and looked empty.
+     It now stops above that padding, and the bar keeps its usual 60px of
+     content on top of it. */
+  .msgChatInputWrap:has(> .msgBlockedInputOverlay) {
+    min-height: calc(60px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .msgBlockedInputOverlay {
+    bottom: env(safe-area-inset-bottom, 0px);
+    border-radius: 0;
+  }
+
   :global(html[data-keyboard-open]) .msgChatInputWrap {
     padding-bottom: 0.6rem;
   }
