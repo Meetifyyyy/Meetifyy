@@ -14,7 +14,7 @@
     "format": "prettier --write \"src/**/*.{ts,tsx}\" \"test/**/*.ts\" \"scripts/**/*.{ts,js}\" \"prisma/*.ts\" \"*.ts\"",
     "start": "nest start",
     "_comment_start_dev": "Migrations run before the dev server for the same reason they run before the prod one (see the root `start` script). Without this a new migration is never applied locally: the generated Prisma client queries columns the database does not have, and every request touching that table 500s with a confusing `column does not exist`.",
-    "start:dev": "prisma migrate deploy && nest start --watch",
+    "start:dev": "node --env-file=.env.development --env-file-if-exists=.env.local node_modules/prisma/build/index.js migrate deploy && nest start --watch",
     "start:debug": "nest start --debug --watch",
     "start:prod": "node dist/main",
     "lint": "node --max-old-space-size=4096 node_modules/eslint/bin/eslint.js \"src/**/*.{ts,tsx}\" \"test/**/*.ts\" scripts prisma render-templates.ts send-all-mailpit.ts",
