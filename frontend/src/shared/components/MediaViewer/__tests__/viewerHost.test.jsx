@@ -20,6 +20,7 @@ function mockViewerModule(error) {
 }
 
 let Host;
+let preload;
 beforeEach(async () => {
   vi.clearAllMocks();
   vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -27,7 +28,7 @@ beforeEach(async () => {
   host.loads = 0;
   mockViewerModule(null);
   vi.resetModules();
-  ({ default: Host } = await import('../MediaViewerHost'));
+  ({ default: Host, preloadMediaViewer: preload } = await import('../MediaViewerHost'));
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
@@ -45,6 +46,24 @@ describe('media viewer host', () => {
     expect(screen.getByRole('status')).toBeTruthy();
     expect(await screen.findByTestId('viewer')).toBeTruthy();
     expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  it('the loading state starts transparent, like the viewer overlay it hands over to', () => {
+    host.open = true;
+    render(<Host />);
+    // An opaque scrim here followed by the viewer's transparent first frame was
+    // the open flicker: dark, clear, then the fade back to black.
+    expect(screen.getByRole('status').style.background).toBe('transparent');
+  });
+
+  it('once preloaded, the first open renders the viewer in the same commit (no fallback frame)', async () => {
+    preload();
+    await act(async () => { await vi.dynamicImportSettled(); });
+    expect(host.loads).toBe(1);
+    host.open = true;
+    render(<Host />);
+    expect(screen.queryByRole('status')).toBeNull();
+    expect(screen.getByTestId('viewer')).toBeTruthy();
   });
 
   it('offers Retry and Close instead of unmounting the app when the chunk fails', async () => {

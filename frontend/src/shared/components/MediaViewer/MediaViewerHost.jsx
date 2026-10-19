@@ -1,4 +1,4 @@
-import { Component, lazy, Suspense, useRef, useState } from 'react';
+import { Component, lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { useMediaViewerActions, useMediaViewerState } from '@shared/context/MediaViewerContext';
 import { recoverFromStaleChunk } from '@shared/lib/staleChunkRecovery';
 
@@ -25,8 +25,53 @@ import { recoverFromStaleChunk } from '@shared/lib/staleChunkRecovery';
  * the whole stylesheet into the entry chunk, which is what the lazy split
  * exists to avoid.
  */
+/*
+ * Why the first open used to flicker: the Suspense fallback was a scrim at 82%
+ * black, and the viewer that replaced it starts its open animation from a
+ * transparent overlay (MediaViewer.module.css `.overlay`). So the first tap of
+ * every session painted dark, then clear, then faded back to black - measured
+ * in the dev build as the scrim for ~95 ms followed by the overlay at alpha 0.
+ *
+ * Two changes remove it. The chunk is fetched while the app is idle, and once
+ * it has arrived the host renders it directly instead of through React.lazy -
+ * a lazy component suspends on its first render even when its promise has
+ * already settled, which would still commit the fallback for a frame. And the
+ * fallback itself now matches the viewer's first frame (transparent), so even
+ * on a slow network nothing darkens and then clears again.
+ */
+let loadedViewer = null;
+let viewerImport = null;
+
+function importViewer() {
+  if (!viewerImport) {
+    viewerImport = import('./MediaViewer').then(
+      (mod) => { loadedViewer = mod.default; return mod; },
+      (error) => { viewerImport = null; throw error; },
+    );
+  }
+  return viewerImport;
+}
+
+/** Fetches the viewer chunk ahead of the first tap. Safe to call repeatedly. */
+export function preloadMediaViewer() {
+  importViewer().catch(() => {
+    // A failed prefetch is not an error yet: the real open retries the import
+    // and reports through the boundary below.
+  });
+}
+
 function createViewer() {
-  return lazy(() => import('./MediaViewer'));
+  return lazy(importViewer);
+}
+
+function scheduleIdle(fn) {
+  if (typeof window === 'undefined') return () => {};
+  if (typeof window.requestIdleCallback === 'function') {
+    const id = window.requestIdleCallback(fn, { timeout: 4000 });
+    return () => window.cancelIdleCallback?.(id);
+  }
+  const id = window.setTimeout(fn, 1500);
+  return () => window.clearTimeout(id);
 }
 
 const scrim = {
@@ -65,9 +110,13 @@ const button = {
   cursor: 'pointer',
 };
 
+// The viewer's overlay starts transparent and fades to black on its own, so
+// the loading state must start from the same place or the hand-over flashes.
+const loadingScrim = { ...scrim, background: 'transparent' };
+
 function ViewerLoading() {
   return (
-    <div style={scrim} role="status" aria-live="polite" aria-label="Loading media viewer" />
+    <div style={loadingScrim} role="status" aria-live="polite" aria-label="Loading media viewer" />
   );
 }
 
@@ -114,10 +163,22 @@ export default function MediaViewerHost() {
   // component. The attempt number rebuilds it and remounts the boundary.
   const [{ attempt, Viewer }, setLoad] = useState(() => ({ attempt: 0, Viewer: createViewer() }));
 
+  // Fetch the chunk while the app is idle so the first tap does not wait on it.
+  useEffect(() => scheduleIdle(preloadMediaViewer), []);
+
+  // The component type is fixed at the first open and kept: switching from the
+  // lazy wrapper to the loaded module later would remount the viewer mid-close.
+  const viewerType = useRef(null);
+
   if (open) everOpened.current = true;
   if (!everOpened.current) return null;
+  if (!viewerType.current) viewerType.current = loadedViewer ?? Viewer;
+  const ActiveViewer = viewerType.current;
 
-  const retry = () => setLoad((prev) => ({ attempt: prev.attempt + 1, Viewer: createViewer() }));
+  const retry = () => {
+    viewerType.current = null;
+    setLoad((prev) => ({ attempt: prev.attempt + 1, Viewer: createViewer() }));
+  };
   const close = () => {
     closeViewer();
     retry();
@@ -129,7 +190,7 @@ export default function MediaViewerHost() {
       renderFailure={() => (open ? <ViewerLoadFailed onRetry={retry} onClose={close} /> : null)}
     >
       <Suspense fallback={open ? <ViewerLoading /> : null}>
-        <Viewer />
+        <ActiveViewer />
       </Suspense>
     </ViewerBoundary>
   );
