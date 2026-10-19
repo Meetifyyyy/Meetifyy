@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { renderHook, act, waitFor } from '@testing-library/react';
+import { renderHook, act, waitFor, cleanup } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 /**
@@ -80,7 +80,10 @@ describe('notification cache updates', () => {
     });
     seed();
   });
-  afterEach(() => queryClient.clear());
+  // Unmount first. Clearing the cache under a hook still mounted from this test
+  // let it refetch later, into the next test's freshly reset api.getAll, which
+  // failed "without refetching" on loaded CI runners.
+  afterEach(() => { cleanup(); queryClient.clear(); });
 
   it('marks one read in place, without refetching the list', async () => {
     const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
@@ -229,7 +232,10 @@ describe('the bell', () => {
     api.getUnreadCount.mockResolvedValue({ count: 7 });
     queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   });
-  afterEach(() => queryClient.clear());
+  // Unmount first. Clearing the cache under a hook still mounted from this test
+  // let it refetch later, into the next test's freshly reset api.getAll, which
+  // failed "without refetching" on loaded CI runners.
+  afterEach(() => { cleanup(); queryClient.clear(); });
 
   it('reads the count without fetching the notification feed', async () => {
     // The bell is in the header on every route. Through the full hook it also
