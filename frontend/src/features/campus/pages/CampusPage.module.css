@@ -345,3 +345,12 @@
    could ever fire: the component rendered exactly four children, so there was
    never a fifth to reveal, and the row simply left the rest of its width empty.
    A cap here now would clip cards the measurement had already made room for. */
+
+/* The college picker (join flow) sits on a plain page colour instead of the
+   app's blue radial gradient. html and body both paint that gradient (html
+   with !important), so both are overridden while this screen is mounted;
+   --color-bg-white is the dark surface in dark mode. */
+:global(html):has(.hubJoin),
+:global(html):has(.hubJoin) :global(body) {
+  background: var(--color-bg-white, #ffffff) !important;
+}
