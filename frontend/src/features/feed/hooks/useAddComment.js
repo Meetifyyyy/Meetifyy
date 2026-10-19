@@ -31,6 +31,17 @@ function bumpCommentCount(postId, delta) {
   };
 }
 
+/**
+ * The server's own sentence for a 400 (it is written for a person: "Comments
+ * can be at most 500 characters"). Anything else, including a body that is not a
+ * sentence, gets the caller's generic message.
+ */
+function validationMessage(err) {
+  if (err?.status !== 400) return '';
+  const msg = Array.isArray(err.message) ? err.message[0] : err.message;
+  return typeof msg === 'string' && msg.trim() && !/^API error\b/.test(msg) ? msg : '';
+}
+
 export function useAddComment() {
   const queryClient = useQueryClient();
 
@@ -90,12 +101,12 @@ export function useAddComment() {
       return { previousPost, queryKey, tempId, postId };
     },
 
-    onError: (_err, _variables, context) => {
+    onError: (err, _variables, context) => {
       if (context?.previousPost) {
         queryClient.setQueryData(context.queryKey, context.previousPost);
       }
       queryClient.setQueriesData({ predicate: isPostListQuery }, bumpCommentCount(context?.postId, -1));
-      showToast("Couldn't post comment", 'error');
+      showToast(validationMessage(err) || "Couldn't post comment", 'error');
     },
 
     onSuccess: (created, _variables, context) => {

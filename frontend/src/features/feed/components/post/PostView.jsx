@@ -14,6 +14,7 @@ import { useAuth } from '@shared/context/AuthContext';
 import { useGlobalSocketStore } from '@stores/useGlobalSocketStore';
 import { useAddComment } from '../../hooks/useAddComment';
 import { useMediaQuery } from '@shared/hooks/useMediaQuery';
+import { getCommentLimitState } from '@shared/utils/textLimit';
 
 /**
  * Flat comment list -> nested tree, reusing every node object that did not
@@ -294,6 +295,9 @@ export default function PostView({ post, onBack, autoFocusComment = false }) {
   const handleMainReplySubmit = async (e) => {
     if (e?.preventDefault) e.preventDefault();
     if (!replyContent.text.trim() || !livePost || isPostingComment) return;
+    // The composer disables Send past the limit; this is the same check for any
+    // other way in (a keyboard submit, a pasted draft restored after an error).
+    if (getCommentLimitState(replyContent.text).isOver) return;
     const draft = replyContent;
     const target = replyTarget;
     setIsPostingComment(true);

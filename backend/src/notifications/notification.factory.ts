@@ -258,7 +258,8 @@ export class NotificationFactory {
         actorAvatar: actor?.avatar || null,
         postId: post.id,
         commentId: comment.id,
-        commentText: comment.text,
+        // A preview only; comments can run to 500 words.
+        commentText: comment.text?.substring(0, 200) ?? '',
       },
     };
   }
@@ -286,7 +287,7 @@ export class NotificationFactory {
         actorAvatar: actor?.avatar || null,
         postId: post.id,
         commentId: comment.id,
-        commentText: comment.text,
+        commentText: comment.text?.substring(0, 200) ?? '',
         isReply: true,
       },
     };

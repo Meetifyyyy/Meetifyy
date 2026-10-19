@@ -11,11 +11,13 @@ vi.mock('@shared/components/avatar/Avatar', () => ({ default: () => <span data-t
 // The real editor pulls in the mention search; its contract here is just
 // "a textbox that reports { text, mentions }".
 vi.mock('@shared/components/mentions/MentionInput', () => ({
-  default: ({ placeholder, value, onChange, onFocus, inputRef }) => (
-    <input
+  default: ({ placeholder, value, onChange, onFocus, inputRef, ariaDescribedBy, ariaInvalid }) => (
+    <textarea
       ref={inputRef}
       role="textbox"
       placeholder={placeholder}
+      aria-describedby={ariaDescribedBy}
+      aria-invalid={ariaInvalid}
       value={value.text}
       onFocus={onFocus}
       onChange={(e) => onChange({ text: e.target.value, mentions: [] })}
@@ -101,6 +103,81 @@ describe('ReplyDock', () => {
     expect(dock().getAttribute('data-focused')).toBe('false');
     fireEvent.focus(document.querySelector('[role="textbox"]'));
     expect(dock().getAttribute('data-focused')).toBe('true');
+  });
+
+  describe('the 500-character limit', () => {
+    const chars = (n) => 'a'.repeat(n);
+    const type = (text) => fireEvent.change(document.querySelector('[role="textbox"]'), { target: { value: text } });
+    const limitLine = () => document.querySelector('p[data-over]');
+
+    it('shows no counter for a short comment', () => {
+      render(<Harness />);
+      type('nice one');
+      expect(limitLine()).toBeNull();
+    });
+
+    it('shows a quiet counter from 400 characters and still sends', () => {
+      render(<Harness />);
+      type(chars(412));
+      expect(limitLine().textContent).toBe('412 / 500');
+      expect(limitLine().getAttribute('data-over')).toBe('false');
+      expect(sendButton().disabled).toBe(false);
+    });
+
+    it('allows exactly 500 characters', () => {
+      const onSubmit = vi.fn();
+      render(<Harness onSubmit={onSubmit} />);
+      type(chars(500));
+      expect(limitLine().textContent).toBe('500 / 500');
+      expect(sendButton().disabled).toBe(false);
+      fireEvent.click(sendButton());
+      expect(onSubmit).toHaveBeenCalledTimes(1);
+    });
+
+    it('blocks 501 characters, says by how much, and does not submit', () => {
+      const onSubmit = vi.fn();
+      render(<Harness onSubmit={onSubmit} />);
+      type(chars(501));
+      expect(limitLine().textContent).toBe('1 character over. Shorten it to post.');
+      expect(limitLine().getAttribute('data-over')).toBe('true');
+      expect(sendButton().disabled).toBe(true);
+      expect(document.querySelector('[role="textbox"]').getAttribute('aria-invalid')).toBe('true');
+      fireEvent.click(sendButton());
+      expect(onSubmit).not.toHaveBeenCalled();
+    });
+
+    it('counts line breaks in a multiline paste', () => {
+      render(<Harness />);
+      type(`${chars(249)}\n\n${chars(249)}`);
+      expect(sendButton().disabled).toBe(false);
+      type(`${chars(249)}\n\n${chars(250)}`);
+      expect(sendButton().disabled).toBe(true);
+    });
+
+    it('a large paste cannot slip through: the whole draft is judged', () => {
+      render(<Harness />);
+      type(chars(600));
+      expect(limitLine().textContent).toBe('100 characters over. Shorten it to post.');
+      expect(sendButton().disabled).toBe(true);
+      // Editing back under the limit re-enables Send.
+      type(chars(480));
+      expect(sendButton().disabled).toBe(false);
+    });
+
+    it('treats whitespace alone as nothing to send', () => {
+      render(<Harness />);
+      type(' \n\n \t ');
+      expect(dock().getAttribute('data-send')).toBe('closed');
+      expect(limitLine()).toBeNull();
+    });
+
+    it('points the field at the count while it is showing', () => {
+      render(<Harness />);
+      type(chars(450));
+      const id = document.querySelector('[role="textbox"]').getAttribute('aria-describedby');
+      expect(id).toBeTruthy();
+      expect(document.getElementById(id)).toBe(limitLine());
+    });
   });
 
   describe('replying to a comment', () => {

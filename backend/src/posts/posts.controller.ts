@@ -18,7 +18,7 @@ import { VerifiedOnly } from '../common/decorators/verified-only.decorator';
 import {
   IsString,
   IsOptional,
-  MaxLength,
+  Matches,
   IsArray,
   IsObject,
   ValidateNested,
@@ -27,10 +27,22 @@ import {
 import type { AuthenticatedRequest } from '../common/types/authenticated-request';
 import { Type } from 'class-transformer';
 import { MentionDto } from '../common/dto/mention.dto';
+import { MaxChars } from '../common/validation/max-chars.validator';
+import {
+  COMMENT_MAX_CHARS,
+  POST_MAX_CHARS,
+} from '../common/validation/text-length.util';
 
 export class CreatePostDto {
+  /**
+   * At most 2,000 characters, counted as Postgres counts the VARCHAR(2000)
+   * column (see `countChars`). The cap was 5,000 here while the column held
+   * 2,000, so a longer post failed at the database with a 500 instead of a 400.
+   */
   @IsString()
-  @MaxLength(5000, { message: 'Max 5,000 characters' })
+  @MaxChars(POST_MAX_CHARS, {
+    message: `Posts can be at most ${POST_MAX_CHARS.toLocaleString('en-US')} characters`,
+  })
   text!: string;
 
   @IsString()
@@ -60,9 +72,17 @@ export class CreatePostDto {
   poll?: unknown;
 }
 
+/**
+ * A comment or a reply (a reply is a comment with a `parentId`). At most 500
+ * characters, counted as Postgres counts the VARCHAR(500) column (see
+ * `countChars`); the composer applies the same rule.
+ */
 export class CreateCommentDto {
   @IsString()
-  @MaxLength(500)
+  @Matches(/\S/, { message: 'Write something before posting' })
+  @MaxChars(COMMENT_MAX_CHARS, {
+    message: `Comments can be at most ${COMMENT_MAX_CHARS} characters`,
+  })
   text!: string;
 
   @IsString()

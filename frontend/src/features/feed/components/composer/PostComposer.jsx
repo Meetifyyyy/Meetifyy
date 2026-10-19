@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo, memo, forwardRef, useImperativeHandle } from 'react';
+import { useState, useRef, useEffect, useMemo, useId, memo, forwardRef, useImperativeHandle } from 'react';
 import LazyEmojiPicker from '@shared/components/ui/LazyEmojiPicker';
 import { useAuth } from '@shared/context/AuthContext';
 import Avatar from '@shared/components/avatar/Avatar';
@@ -10,6 +10,7 @@ import { uploadsApi } from '@shared/api/apiClient';
 import { showToast } from '@shared/utils/toast';
 import { useSmoothHeight } from '@shared/hooks/useSmoothHeight';
 import { normalizeBodyText } from '@shared/utils/bodyText';
+import { getPostLimitState, POST_WARN_AT_CHARS } from '@shared/utils/textLimit';
 import { ALLOWED_IMAGE_ACCEPT } from '@shared/constants/mediaLimits';
 import { useExpandFlip } from './useExpandFlip';
 
@@ -51,6 +52,10 @@ export function mediaLimitNotice({ selected, added, attachedBefore }) {
  * the end. Both are expressed as characters remaining so they stay meaningful
  * if the cap changes; keyed to the length, they silently stopped matching it.
  */
+/** The post length ring: radius in a 24-unit box, and its circumference. */
+const RING_RADIUS = 9;
+const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
+
 const POLL_OPTION_COUNT_VISIBLE_AT = 30;
 const POLL_OPTION_COUNT_WARNING_AT = 10;
 
@@ -132,6 +137,23 @@ const PostComposer = forwardRef(function PostComposer({ onSubmit }, ref) {
     showEmoji
   );
 
+  // Post text is at most 2,000 characters (the API and the column agree).
+  // Counted on the text as it will be sent, after normalizeBodyText, because
+  // that is what the server measures. The count shows from 1,800; past 2,000
+  // Post is disabled. A paste is never cut: the person sees the count and edits.
+  const rawDraftText = typeof value === 'string' ? value : (value?.text || '');
+  const textLimit = useMemo(() => getPostLimitState(normalizeBodyText(rawDraftText)), [rawDraftText]);
+  const textLimitId = useId();
+  const cannotPost = isPosting || !hasContent || textLimit.isOver;
+  // The ring fills with the draft; from the warning point it shifts towards
+  // the danger colour, reaching it at the limit.
+  const ringFill = Math.min(1, textLimit.chars / textLimit.max);
+  const ringRed = textLimit.isOver
+    ? 100
+    : textLimit.status === 'near'
+      ? Math.round(((textLimit.chars - POST_WARN_AT_CHARS) / (textLimit.max - POST_WARN_AT_CHARS)) * 100)
+      : 0;
+
   useEffect(() => {
     const handler = (e) => {
       if (showEmoji && emojiPanelRef.current && !emojiPanelRef.current.contains(e.target) && !emojiBtnRef.current?.contains(e.target)) {
@@ -180,6 +202,8 @@ const PostComposer = forwardRef(function PostComposer({ onSubmit }, ref) {
     const rawText = typeof value === 'string' ? value : (value?.text || '');
     const text = normalizeBodyText(rawText);
     const mentions = value?.mentions || [];
+    // Post is disabled past the limit; this covers the other ways in (Enter).
+    if (getPostLimitState(text).isOver) return;
 
     if (showPoll) {
       const opts = pollOptions.map((o) => o.trim()).filter(Boolean);
@@ -473,6 +497,8 @@ const PostComposer = forwardRef(function PostComposer({ onSubmit }, ref) {
               onFocus={() => setIsExpanded(true)}
               onSubmit={() => { if (!showPoll) handlePost(); }}
               singleLine={false}
+              ariaDescribedBy={textLimit.status !== 'ok' ? textLimitId : undefined}
+              ariaInvalid={textLimit.isOver || undefined}
             />
           </div>
           <button
@@ -696,6 +722,43 @@ const PostComposer = forwardRef(function PostComposer({ onSubmit }, ref) {
                 </span>
               )}
             </div>
+            {textLimit.chars > 0 && (
+              <span
+                className={styles.textCount}
+                data-over={textLimit.isOver ? 'true' : 'false'}
+                data-near={textLimit.status === 'near' ? 'true' : 'false'}
+                data-progress={ringFill.toFixed(3)}
+                style={{ '--limit-red': `${ringRed}%` }}
+                title={`${textLimit.chars.toLocaleString('en-US')} of ${textLimit.max.toLocaleString('en-US')} characters`}
+              >
+                <svg className={styles.textRing} viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false">
+                  <circle className={styles.textRingTrack} cx="12" cy="12" r={RING_RADIUS} />
+                  <circle
+                    className={styles.textRingFill}
+                    cx="12"
+                    cy="12"
+                    r={RING_RADIUS}
+                    strokeDasharray={RING_CIRCUMFERENCE}
+                    strokeDashoffset={RING_CIRCUMFERENCE * (1 - ringFill)}
+                  />
+                </svg>
+                {textLimit.status !== 'ok' && (
+                  <span id={textLimitId} className={styles.textCountNumber}>
+                    {textLimit.isOver
+                      ? `-${textLimit.overBy.toLocaleString('en-US')}`
+                      : textLimit.remaining.toLocaleString('en-US')}
+                  </span>
+                )}
+              </span>
+            )}
+            {/* Speaks only when the state changes, not on every keystroke. */}
+            <span className={styles.srOnly} role="status" aria-live="polite">
+              {textLimit.isOver
+                ? `${textLimit.overBy.toLocaleString('en-US')} characters over the ${textLimit.max.toLocaleString('en-US')}-character limit. Shorten your post to share it.`
+                : textLimit.status === 'near'
+                  ? `Approaching the ${textLimit.max.toLocaleString('en-US')}-character limit.`
+                  : ''}
+            </span>
             <button 
               type="button"
               className={styles.composerSendBtn} 
@@ -704,9 +767,9 @@ const PostComposer = forwardRef(function PostComposer({ onSubmit }, ref) {
                 e.preventDefault();
                 handlePost(e);
               }} 
-              disabled={isPosting || !hasContent}
+              disabled={cannotPost}
               title="Post"
-              style={{ opacity: isPosting || !hasContent ? 0.5 : 1, cursor: isPosting || !hasContent ? 'not-allowed' : 'pointer' }}
+              style={{ opacity: cannotPost ? 0.5 : 1, cursor: cannotPost ? 'not-allowed' : 'pointer' }}
             >
               {isPosting ? (
                 <div style={{ width: '16px', height: '16px', border: '2px solid rgba(255,255,255,0.4)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.6s linear infinite' }} />

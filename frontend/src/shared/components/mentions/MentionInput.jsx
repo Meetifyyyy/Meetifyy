@@ -95,7 +95,9 @@ export default function MentionInput({
   style = {},
   autoFocus = false,
   inputMode,
-  inputRef
+  inputRef,
+  ariaDescribedBy,
+  ariaInvalid,
 }) {
   const containerRef = useRef(null);
   const editorRef = useRef(null);
@@ -599,6 +601,8 @@ export default function MentionInput({
         role="textbox"
         aria-multiline={!singleLine}
         aria-label={placeholder}
+        aria-describedby={ariaDescribedBy}
+        aria-invalid={ariaInvalid}
       />
 
       {mentionActive && (

@@ -1,8 +1,9 @@
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import Avatar from '@shared/components/avatar/Avatar';
 import MentionInput from '@shared/components/mentions/MentionInput';
 import { KEYBOARD_OVERLAYS_PAGE } from '@shared/utils/keyboardOverlay';
+import { getCommentLimitState } from '@shared/utils/textLimit';
 import styles from './ReplyDock.module.css';
 
 /**
@@ -27,6 +28,13 @@ import styles from './ReplyDock.module.css';
  * by the mobile build) keeps it clear of the phone's buttons. On a wide screen
  * it follows the post column instead of spanning the window.
  *
+ * LENGTH
+ * A comment or reply is limited to 500 characters (shared/utils/textLimit,
+ * the same rule the server applies). A quiet "412 / 500" line appears above
+ * the bar from 400 characters and turns to the danger colour over the limit, where
+ * Send is disabled. Text is never cut or refused as it arrives, so a long
+ * paste is not silently trimmed: the person sees the count and edits.
+ *
  * `data-keyboard-dock` tells the app-wide "keep the focused field visible"
  * pass (shared/utils/keyboardFocus) that this field moves itself: scrolling the
  * page for it as well would move the comments by a keyboard's height on every
@@ -47,7 +55,9 @@ export default function ReplyDock({
   const dockRef = useRef(null);
   const [focused, setFocused] = useState(false);
   const hasText = value.text.trim().length > 0;
-  const canSend = hasText && !isPosting;
+  const limit = useMemo(() => getCommentLimitState(value.text), [value.text]);
+  const canSend = hasText && !isPosting && !limit.isOver;
+  const limitId = useId();
 
   // On a wide screen the bar sits in the post's column rather than spanning the
   // window. Fixed, so this only changes when the layout does.
@@ -106,6 +116,23 @@ export default function ReplyDock({
           </button>
         </div>
       )}
+      {/* The count is plain text the field points at (aria-describedby); the
+          polite region below speaks only when the state changes, not on every
+          character. */}
+      {limit.status !== 'ok' && (
+        <p id={limitId} className={styles.limit} data-over={limit.isOver ? 'true' : 'false'}>
+          {limit.isOver
+            ? `${limit.overBy} ${limit.overBy === 1 ? 'character' : 'characters'} over. Shorten it to post.`
+            : `${limit.chars} / ${limit.max}`}
+        </p>
+      )}
+      <span className={styles.srOnly} role="status" aria-live="polite">
+        {limit.isOver
+          ? `Over the ${limit.max}-character limit. Shorten your comment to post it.`
+          : limit.status === 'near'
+            ? `Approaching the ${limit.max}-character limit.`
+            : ''}
+      </span>
       <form
         className={styles.bar}
         onSubmit={onSubmit}
@@ -127,6 +154,8 @@ export default function ReplyDock({
             value={value}
             onChange={onChange}
             onFocus={() => setFocused(true)}
+            ariaDescribedBy={limit.status !== 'ok' ? limitId : undefined}
+            ariaInvalid={limit.isOver || undefined}
             className={styles.input}
             singleLine={false}
           />

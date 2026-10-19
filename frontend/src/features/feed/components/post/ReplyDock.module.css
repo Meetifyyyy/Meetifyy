@@ -148,6 +148,39 @@
   cursor: default;
 }
 
+/* ── Word count ──────────────────────────────────────────────────────────── */
+/* Quiet until it matters: muted at 400 words and over, danger colour past the
+   limit. Right-aligned over the bar so it never moves the field. */
+.limit {
+  pointer-events: auto;
+  position: relative;
+  margin: -4px 14px 6px;
+  text-align: right;
+  font-size: 0.78rem;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-muted);
+}
+
+.limit[data-over='true'] {
+  color: var(--color-danger);
+  font-weight: 600;
+}
+
+.inline .limit { margin: -4px 0 8px 48px; }
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 /* ── "Replying to @name" tag ─────────────────────────────────────────────── */
 .replyingTo {
   pointer-events: auto;

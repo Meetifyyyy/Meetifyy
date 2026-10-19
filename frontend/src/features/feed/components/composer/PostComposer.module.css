@@ -697,3 +697,76 @@
 [data-theme='dark'] .mediaCountFull {
   color: #fbbf24;
 }
+
+/* Post text length: a ring beside Post that fills as the draft grows. From
+   1,800 characters it blends towards the danger colour (--limit-red, 0-100%,
+   set inline) and shows what is left; past 2,000 it is fully red and shows how
+   far over. Only the dash offset and colour change, so typing is cheap. */
+.textCount {
+  /* The row is space-between; this keeps the ring against Post, not centred. */
+  margin-left: auto;
+  margin-right: 4px;
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--color-text-muted);
+  --limit-color: var(--color-primary);
+  --limit-color: color-mix(in srgb, var(--color-danger) var(--limit-red, 0%), var(--color-primary));
+}
+
+.textRing {
+  display: block;
+  flex: none;
+  /* Start the fill at twelve o'clock. */
+  transform: rotate(-90deg);
+}
+
+.textRingTrack,
+.textRingFill {
+  fill: none;
+  stroke-width: 2.5;
+}
+
+.textRingTrack {
+  stroke: var(--color-border, rgba(127, 127, 127, 0.25));
+}
+
+.textRingFill {
+  stroke: var(--limit-color);
+  stroke-linecap: round;
+  transition: stroke-dashoffset 120ms ease-out, stroke 120ms linear;
+}
+
+.textCount[data-near='true'] .textCountNumber {
+  color: var(--limit-color);
+}
+
+.textCount[data-over='true'] .textCountNumber {
+  color: var(--color-danger);
+  font-weight: 600;
+}
+
+.textCount[data-over='true'] .textRingFill {
+  stroke: var(--color-danger);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .textRingFill { transition: none; }
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
