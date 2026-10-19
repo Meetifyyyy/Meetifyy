@@ -14,6 +14,7 @@ import { useAuth } from '@shared/context/AuthContext';
 import { useUsersMap } from '@shared/hooks/useUsersMap';
 import { useMediaQuery } from '@shared/hooks/useMediaQuery';
 import { useCrewActivities } from '@shared/hooks/useCrew';
+import { useAppIdle } from '@shared/hooks/useAppIdle';
 import { groupNotifications, othersLabel } from '@features/notifications/utils/groupNotifications';
 import {
   DEFAULT_ACTIVITY_COVERS,
@@ -260,10 +261,13 @@ export function OnlineFriends() {
   // and re-deriving "is this a mutual, are they online" in JS — that scanned
   // the wrong population entirely and could show zero friends even when the
   // viewer had online mutuals outside that arbitrary recent-signup window.
+  // Loads after the first screen (useAppIdle), so it does not compete with the
+  // feed for the API on launch.
+  const appIdle = useAppIdle();
   const { data: friends = [], isLoading } = useQuery({
     queryKey: ['online-friends', currentUser?.id],
     queryFn: () => usersApi.getOnlineFriends(6),
-    enabled: !!currentUser?.id,
+    enabled: !!currentUser?.id && appIdle,
     staleTime: 15_000,
     // Presence changes in real time via sockets elsewhere in the app; a short
     // background refetch keeps this widget reasonably fresh without hammering

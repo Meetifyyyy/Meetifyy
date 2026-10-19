@@ -21,6 +21,12 @@ const api = {
   delete: vi.fn(),
 };
 
+import { markAppIdleForTests } from '../useAppIdle';
+
+// The unread count is fetched once the first screen is up (useAppIdle). Every
+// test here starts after that point.
+markAppIdleForTests();
+
 vi.mock('@shared/api/apiClient', () => ({
   // Added with the cookie migration: AuthContext reads these to decide whether
   // a cookie session is worth recovering, and to carry the CSRF token the

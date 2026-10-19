@@ -1,4 +1,5 @@
 import { useCallback, useMemo } from 'react';
+import { useAppIdle } from './useAppIdle';
 import { useQuery, useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { notificationsApi } from '../api/apiClient';
 
@@ -88,13 +89,15 @@ export function useNotifications({ type } = {}) {
     enabled: Boolean(currentUser?.id),
   });
 
+  const appIdle = useAppIdle();
   const { data: unreadCountData } = useQuery({
     queryKey: UNREAD_COUNT_KEY,
     queryFn: () => notificationsApi.getUnreadCount(),
     // No HTTP polling: the count is pushed over the socket, and the mutations
-    // below write the new value straight into this entry.
+    // below write the new value straight into this entry. Fetched once the
+    // first screen is up (useAppIdle): the badge can wait a moment.
     staleTime: Infinity,
-    enabled: Boolean(currentUser?.id),
+    enabled: Boolean(currentUser?.id) && appIdle,
   });
 
   /** Nudge the cached unread count without a round trip. */
@@ -273,12 +276,14 @@ export function useNotifications({ type } = {}) {
  */
 export function useUnreadNotificationCount() {
   const { currentUser } = useAuth();
+  const appIdle = useAppIdle();
 
   const { data } = useQuery({
     queryKey: UNREAD_COUNT_KEY,
     queryFn: () => notificationsApi.getUnreadCount(),
     staleTime: Infinity,
-    enabled: Boolean(currentUser?.id),
+    // After the first screen (useAppIdle); the socket keeps it current after.
+    enabled: Boolean(currentUser?.id) && appIdle,
   });
 
   return data?.count || 0;

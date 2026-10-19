@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { searchApi } from '@shared/api/apiClient';
 import { useAuth } from '@shared/context/AuthContext';
+import { useAppIdle } from './useAppIdle';
 
 const EMPTY = { scope: 'campus', tags: [] };
 
@@ -10,10 +11,12 @@ const EMPTY = { scope: 'campus', tags: [] };
  */
 export function useTrendingHashtags() {
   const { isLoggedIn, currentUser } = useAuth();
+  // A side panel: loads after the first screen (useAppIdle), not with it.
+  const appIdle = useAppIdle();
   const query = useQuery({
     queryKey: ['trending', 'hashtags'],
     queryFn: () => searchApi.trendingHashtags(),
-    enabled: Boolean(isLoggedIn && currentUser?.id),
+    enabled: Boolean(isLoggedIn && currentUser?.id) && appIdle,
     staleTime: 5 * 60 * 1000,
     gcTime: 15 * 60 * 1000,
     refetchOnWindowFocus: false,
