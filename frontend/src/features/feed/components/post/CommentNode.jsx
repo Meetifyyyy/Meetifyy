@@ -430,7 +430,7 @@ function CommentItemImpl({ postId, comment, threadId, replyTo = null, isReply })
           <div className={styles.header}>
             <div className={styles.identity}>
               <button type="button" onClick={handleProfileClick} className={`hover-underline ${styles.nameButton}`}>
-                <span className={styles.username}>{author.username}</span>
+                <span className={styles.username}>{author.displayName || author.username}</span>
                 <CollegeRepresentativeBadge isCampusRep={author.isCampusRep} collegeName={authorCollegeName} user={author} size="sm" />
                 {authorCollege && (
                   <img
@@ -442,6 +442,7 @@ function CommentItemImpl({ postId, comment, threadId, replyTo = null, isReply })
                   />
                 )}
               </button>
+              <span className={styles.handle}>@{author.username}</span>
               <span className={styles.timeDot} aria-hidden="true">·</span>
               <span className={styles.time}>{comment.createdAt ? timeAgo(comment.createdAt) : comment.time}</span>
             </div>
@@ -490,7 +491,7 @@ function CommentItemImpl({ postId, comment, threadId, replyTo = null, isReply })
             </div>
           </div>
 
-          <div className={styles.text}>
+          <div className={styles.text} data-comment-text="">
             {showReplyTo && <span className={styles.replyTo}>@{replyTo} </span>}
             <RichText content={displayedText} mentions={displayedMentions} urlLimit={30} linkHashtags />
             {/* See the note in Post.jsx: the space lets this read as part of
@@ -522,7 +523,7 @@ function CommentItemImpl({ postId, comment, threadId, replyTo = null, isReply })
                 width="15" height="15" viewBox="0 0 24 24" fill={localLiked ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3" />
               </svg>
-              {localLikesCount > 0 && <span>{localLikesCount}</span>}
+              <span>{localLikesCount}</span>
             </button>
             <button
               type="button"

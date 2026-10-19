@@ -62,7 +62,7 @@ describe('Instagram-style comment threads', () => {
     renderTree([thread()]);
     fireEvent.click(screen.getByRole('button', { name: /View 4 replies/ }));
     expect(rows()).toEqual(['root', 'a', 'b', 'c', 'd']);
-    const text = (id) => document.getElementById(`comment-${id}`).textContent;
+    const text = (id) => document.getElementById(`comment-${id}`).querySelector('[data-comment-text]').textContent;
     expect(text('a')).not.toContain('@'); // answers the top comment
     expect(text('b')).toContain('@ben');   // answers a reply
     expect(text('c')).toContain('@cat');

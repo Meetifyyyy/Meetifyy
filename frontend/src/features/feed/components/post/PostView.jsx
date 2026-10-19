@@ -368,14 +368,6 @@ export default function PostView({ post, onBack, autoFocusComment = false }) {
           <CommentsSkeleton />
         ) : (
           <>
-            {replies.length > 0 && (
-              <div className={styles.commentsHeader}>
-                <h3 className={styles.commentsTitle}>Comments</h3>
-                <span className={styles.commentsCount}>
-                  {Number(livePost.commentsCount ?? livePost.commentCount ?? livePost.comments?.length ?? 0).toLocaleString()}
-                </span>
-              </div>
-            )}
             <CommentTreeRoot
               postId={livePost.id}
               comments={replies}

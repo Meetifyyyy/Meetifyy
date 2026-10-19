@@ -16,10 +16,10 @@
  */
 
 .treeRoot {
-  --top-avatar: 36px;
-  --top-gap: 12px;
-  --reply-avatar: 24px;
-  --reply-gap: 10px;
+  --top-avatar: 40px;
+  --top-gap: 8px;
+  --reply-avatar: 32px;
+  --reply-gap: 8px;
   --thread-gap: 20px;
   --reply-spacing: 16px;
   max-width: 100%;
@@ -30,8 +30,8 @@
 
 @media (max-width: 768px) {
   .treeRoot {
-    --top-avatar: 32px;
-    --top-gap: 10px;
+    --top-avatar: 40px;
+    --top-gap: 8px;
     --reply-gap: 8px;
     --thread-gap: 18px;
     --reply-spacing: 14px;
@@ -124,13 +124,18 @@
   flex: 1;
   min-width: 0;
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 5px;
+  line-height: 1.25;
 }
+
+/* The name keeps its room; only the handle truncates first. */
+.identity > .nameButton { flex: 0 1 auto; }
 
 .nameButton {
   display: inline-flex;
   align-items: center;
+  line-height: 1.25;
   gap: 4px;
   min-width: 0;
   padding: 0;
@@ -144,7 +149,7 @@
 .username {
   font-family: var(--font-family-display);
   font-weight: 600;
-  font-size: 0.875rem;
+  font-size: 0.88rem;
   line-height: 1.25;
   color: var(--color-text-main);
   white-space: nowrap;
@@ -152,7 +157,20 @@
   text-overflow: ellipsis;
 }
 
-.reply .username { font-size: 0.85rem; }
+/* @handle: the post header's subtitle, which gives way (…) before the name
+   does; the time never shrinks. */
+.handle {
+  font-family: var(--font-family-sans);
+  font-weight: 400;
+  flex: 0 100 auto;
+  min-width: 0;
+  font-size: 0.72rem;
+  line-height: 1.25;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
 .collegeIcon {
   width: 14px;
@@ -163,16 +181,20 @@
 }
 
 .timeDot {
+  font-family: var(--font-family-sans);
+  font-weight: 400;
   flex-shrink: 0;
   color: var(--color-text-muted);
   opacity: 0.6;
-  font-size: 0.8rem;
+  font-size: 0.72rem;
   line-height: 1.25;
 }
 
 .time {
+  font-family: var(--font-family-sans);
+  font-weight: 400;
   flex-shrink: 0;
-  font-size: 0.78rem;
+  font-size: 0.72rem;
   font-variant-numeric: tabular-nums;
   line-height: 1.25;
   color: var(--color-text-muted);
@@ -217,13 +239,12 @@
 .text {
   margin-top: 3px;
   color: var(--color-text-main);
-  font-size: 0.9375rem;
+  font-size: 0.92rem;
   line-height: 1.5;
   overflow-wrap: anywhere;
   word-break: break-word;
 }
 
-.reply .text { font-size: 0.9rem; }
 
 /* Who a reply answers, when that is not the thread's top comment. */
 .replyTo {
