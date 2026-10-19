@@ -25,7 +25,7 @@
  * renderer and its native bridge are absent from the website's bundle rather
  * than merely hidden.
  */
-import { Suspense, lazy, useCallback, useMemo, useRef, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { IS_MOBILE_BUILD } from '@config';
 import ShareModalAvatar from '@shared/components/avatar/ShareModalAvatar';
@@ -52,9 +52,10 @@ import {
 import { forwardClientId, newForwardOperationId } from '@features/messages/shared/utils/forwardDelivery';
 import styles from './ShareSheet.module.css';
 
-const InstagramStoryPanel = IS_MOBILE_BUILD
-  ? lazy(() => import('../../../mobile/share/InstagramStoryPanel'))
+const loadStoryPanel = IS_MOBILE_BUILD
+  ? () => import('../../../mobile/share/InstagramStoryPanel')
   : null;
+const InstagramStoryPanel = loadStoryPanel ? lazy(loadStoryPanel) : null;
 
 function webPayload(kind, entity, author) {
   switch (kind) {
@@ -102,7 +103,12 @@ function useChatSend(sendOne) {
     [sendOne, status],
   );
 
-  return { status, sendAll };
+  const reset = useCallback(() => {
+    inFlight.current = false;
+    setStatus({});
+  }, []);
+
+  return { status, sendAll, reset };
 }
 
 /** How long the "Sent" confirmation shows before the sheet closes itself. */
@@ -142,7 +148,28 @@ export default function ShareSheet({ isOpen, onClose, kind, entity, author, forw
     if (!invite) return null;
     return (id) => sendDirectMessage(id, { text: '', inviteData: invite });
   }, [forwardSend, operationId, invite, sendDirectMessage]);
-  const { status, sendAll } = useChatSend(sendOne);
+  // App only: while the sheet is open, load the story panel's code and start
+  // its fonts and downloads, so tapping Story shows a finished card quickly.
+  useEffect(() => {
+    if (!isOpen || !loadStoryPanel || !content) return;
+    loadStoryPanel()
+      .then((m) => m.warmStory?.(content))
+      .catch(() => {});
+  }, [isOpen, content]);
+
+  const { status, sendAll, reset: resetSend } = useChatSend(sendOne);
+
+  // The parents keep this mounted while closed, so every opening starts from
+  // a clean slate rather than the previous one's picks, search and results.
+  useEffect(() => {
+    if (isOpen) return;
+    setView('main');
+    setSearchTerm('');
+    setSelected([]);
+    setPhase('idle');
+    setSearching(false);
+    resetSend();
+  }, [isOpen, resetSend]);
 
   const recipients = useMemo(() => {
     if (!conversations) return [];

@@ -9,7 +9,8 @@
  * is drawn without that picture.
  */
 
-const IMAGE_TIMEOUT_MS = 10_000;
+// A slow picture must not hold the whole card back: past this it is skipped.
+const IMAGE_TIMEOUT_MS = 6_000;
 const MAX_IMAGE_BYTES = 15 * 1024 * 1024;
 /** Pixel size SVG avatars are rasterised at before drawing. */
 const SVG_RASTER = 512;
@@ -50,10 +51,45 @@ async function decode(blob) {
   return createImageBitmap(blob);
 }
 
+/**
+ * Downloaded bytes, kept for the session (newest last). Opening the story
+ * panel twice for the same post, or warming it while the share sheet is still
+ * open, then costs no second download. Only successes are kept, so a failed
+ * picture is retried; the bound keeps memory small.
+ */
+const BYTE_CACHE_MAX = 16;
+const byteCache = new Map();
+
+function cachedBytes(url, fetcher) {
+  const hit = byteCache.get(url);
+  if (hit) {
+    byteCache.delete(url);
+    byteCache.set(url, hit); // most recent
+    return hit;
+  }
+  const pending = Promise.resolve(fetcher(url)).then((blob) => {
+    if (!blob?.size) byteCache.delete(url);
+    return blob;
+  }, (err) => {
+    byteCache.delete(url);
+    throw err;
+  });
+  byteCache.set(url, pending);
+  while (byteCache.size > BYTE_CACHE_MAX) byteCache.delete(byteCache.keys().next().value);
+  return pending;
+}
+
+/** Starts the downloads without decoding anything. Safe to call repeatedly. */
+export function prefetchStoryImages(urls, fetcher = fetchBytes) {
+  [...new Set((urls || []).filter(Boolean))].forEach((url) => {
+    cachedBytes(url, fetcher).catch(() => {});
+  });
+}
+
 async function loadOne(url, fetcher) {
   if (!url) return null;
   try {
-    const blob = await fetcher(url);
+    const blob = await cachedBytes(url, fetcher);
     if (!blob?.size || blob.size > MAX_IMAGE_BYTES) return null;
     if (blob.type && !/^image\//i.test(blob.type)) return null;
     return await decode(blob);

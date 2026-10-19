@@ -30,8 +30,8 @@ const W = 1000;
 const PAD = 64;
 const INNER = W - PAD * 2;
 const CARD_RADIUS = 72;
-/** Output pixels per layout unit: a 1500px-wide sticker. */
-const OUTPUT_SCALE = 1.5;
+/** Output pixels per layout unit: a 1200px-wide sticker; Instagram shows it at most phone-width (~1080px), and the PNG encode and the hand-off to the native layer both scale with the pixel count. */
+const OUTPUT_SCALE = 1.2;
 
 const INK = '#0F172A';
 const MUTED = '#64748B';
@@ -314,8 +314,10 @@ function identityLayout(ctx, model, images) {
   const coverH = 300;
   const avatarD = 168;
   const ring = 10;
+  const square = Boolean(model.squareAvatar);
   const avatarCx = EDGE + avatarD / 2;
-  const avatarCy = coverH;
+  // A community avatar sits lower, mostly below the cover edge.
+  const avatarCy = square ? coverH + 24 : coverH;
 
   steps.push(() => {
     // Cover, clipped to the card's top corners.
@@ -336,6 +338,25 @@ function identityLayout(ctx, model, images) {
     ctx.restore();
 
     // Avatar on a ring of card colour, half over the cover.
+    if (square) {
+      const x = avatarCx - avatarD / 2;
+      const y = avatarCy - avatarD / 2;
+      fillRoundRect(ctx, x - ring, y - ring, avatarD + ring * 2, avatarD + ring * 2, (avatarD + ring * 2) * 0.28, SURFACE);
+      const img = images.get(model.avatar);
+      if (img) {
+        drawImageCover(ctx, img, x, y, avatarD, avatarD, avatarD * 0.28);
+      } else {
+        fillRoundRect(ctx, x, y, avatarD, avatarD, avatarD * 0.28, model.avatarColor || BRAND);
+        ctx.font = font(700, Math.round(avatarD * 0.42));
+        ctx.fillStyle = '#FFFFFF';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText((String(model.name || '?').trim().charAt(0) || '?').toUpperCase(), avatarCx, avatarCy + avatarD * 0.02);
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'alphabetic';
+      }
+      return;
+    }
     ctx.beginPath();
     ctx.arc(avatarCx, avatarCy, avatarD / 2 + ring, 0, Math.PI * 2);
     ctx.fillStyle = SURFACE;
@@ -354,21 +375,24 @@ function identityLayout(ctx, model, images) {
   const nameLines = wrapLines(ctx, model.name, textW, 2);
   const nameLH = Math.round(nameSize * 1.2);
   const textTop = coverH + 26;
+  // Community: the member count is smaller than a handle, with a one-line
+  // description under it in the same size and font (ellipsised when long).
+  const metaSize = square ? 28 : HANDLE_SIZE;
+  const metaLines = [model.subtitle, square ? model.description : ''].filter(Boolean);
+  const metaBase = textTop + nameSize + (nameLines.length - 1) * nameLH + metaSize + 12;
   steps.push(() => {
     ctx.font = font(700, nameSize);
     ctx.fillStyle = INK;
     nameLines.forEach((line, i) => ctx.fillText(line, textX, textTop + nameSize + i * nameLH));
-    if (model.subtitle) {
-      ctx.font = font(400, HANDLE_SIZE);
-      ctx.fillStyle = MUTED;
-      ctx.fillText(
-        ellipsize(ctx, model.subtitle, textW),
-        textX,
-        textTop + nameSize + (nameLines.length - 1) * nameLH + 44,
-      );
-    }
+    ctx.font = font(400, metaSize);
+    ctx.fillStyle = MUTED;
+    metaLines.forEach((line, i) => {
+      ctx.fillText(ellipsize(ctx, line, textW), textX, metaBase + i * (metaSize + 10));
+    });
   });
-  const textBottom = textTop + nameSize + (nameLines.length - 1) * nameLH + (model.subtitle ? 54 : 10);
+  const textBottom = metaLines.length
+    ? metaBase + (metaLines.length - 1) * (metaSize + 10) + 10
+    : textTop + nameSize + (nameLines.length - 1) * nameLH + 10;
   let y = Math.max(avatarCy + avatarD / 2 + ring, textBottom) + 28;
 
   if (model.tags.length) y = tagsBlock(ctx, model.tags, y, steps) + 28;
@@ -564,13 +588,13 @@ const LAYOUTS = {
 };
 
 /** Waits for the card's typeface so text is measured with the real metrics. */
-async function ensureFonts() {
-  if (typeof document === 'undefined' || !document.fonts?.load) return;
-  try {
-    await Promise.all([400, 500, 600, 700, 800].map((w) => document.fonts.load(`${w} 40px ${FONT_FAMILY}`)));
-  } catch {
+let fontsReady = null;
+export function ensureFonts() {
+  if (typeof document === 'undefined' || !document.fonts?.load) return Promise.resolve();
+  fontsReady ??= Promise.all([400, 500, 600, 700, 800].map((w) => document.fonts.load(`${w} 40px ${FONT_FAMILY}`))).catch(() => {
     // The system fallback in FONT_FAMILY is measured consistently too.
-  }
+  });
+  return fontsReady;
 }
 
 export class StoryRenderError extends Error {
@@ -589,8 +613,11 @@ export async function renderStoryCard(model, { fetchImage } = {}) {
   const layout = LAYOUTS[model?.kind];
   if (!layout) throw new StoryRenderError('Nothing to draw for this content');
 
-  await ensureFonts();
-  const images = await loadStoryImages(model.imageUrls || [], fetchImage);
+  // Typeface and pictures load at the same time; neither waits for the other.
+  const [, images] = await Promise.all([
+    ensureFonts(),
+    loadStoryImages(model.imageUrls || [], fetchImage),
+  ]);
   try {
     const canvas = document.createElement('canvas');
     canvas.width = W;

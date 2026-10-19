@@ -11,7 +11,7 @@ import { CapacitorHttp } from '@capacitor/core';
  * drawn without them. A request made by the native layer is not subject to
  * CORS at all. Used only by the installed app's story renderer.
  */
-const TIMEOUT_MS = 10_000;
+const TIMEOUT_MS = 6_000;
 
 export async function fetchImageNatively(url) {
   try {
@@ -24,10 +24,10 @@ export async function fetchImageNatively(url) {
     if (response.status < 200 || response.status >= 300 || typeof response.data !== 'string') return null;
     const type =
       Object.entries(response.headers || {}).find(([k]) => k.toLowerCase() === 'content-type')?.[1] || '';
-    const binary = atob(response.data);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
-    return new Blob([bytes], { type: String(type).split(';')[0] });
+    // The browser's own base64 decoder, at native speed, instead of a
+    // character-by-character loop in JS over what can be several megabytes.
+    const mime = String(type).split(';')[0] || 'application/octet-stream';
+    return await (await fetch(`data:${mime};base64,${response.data}`)).blob();
   } catch {
     return null;
   }

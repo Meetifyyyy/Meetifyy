@@ -7,8 +7,11 @@
  * status line carries every state; there is no per-element skeleton.
  */
 import { STORY_BACKGROUND } from '@shared/lib/share/story/model';
-import { storyMessage, useInstagramStory } from './useInstagramStory';
+import { storyMessage, useInstagramStory, warmInstagramStory } from './useInstagramStory';
 import styles from './InstagramStoryPanel.module.css';
+
+/** Started by the share sheet before this panel opens. */
+export const warmStory = warmInstagramStory;
 
 const STATUS = {
   preparing: 'Generating story…',

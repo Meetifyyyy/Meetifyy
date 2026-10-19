@@ -18,7 +18,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { config } from '@config';
 import { buildStoryModel, STORY_BACKGROUND } from '@shared/lib/share/story/model';
-import { renderStoryCard } from '@shared/lib/share/story/renderer';
+import { ensureFonts, renderStoryCard } from '@shared/lib/share/story/renderer';
+import { prefetchStoryImages } from '@shared/lib/share/story/images';
 import { createCapacitorInstagramStories } from '../../platform/capacitor/instagramStories';
 import { fetchImageNatively } from '../../platform/capacitor/nativeImageFetch';
 
@@ -59,6 +60,47 @@ function blobToBase64(blob) {
   });
 }
 
+/**
+ * Cards already drawn, newest last. Reopening the panel for the same content
+ * within a few minutes shows the finished card at once instead of redrawing
+ * and re-encoding it. The key is the whole model, so any change in what the
+ * card says (a new like count, an edited bio) draws a fresh one.
+ */
+const CARD_TTL_MS = 5 * 60 * 1000;
+const CARD_CACHE_MAX = 3;
+const cardCache = new Map();
+
+function cachedCard(key) {
+  const hit = cardCache.get(key);
+  if (!hit) return null;
+  if (Date.now() - hit.at > CARD_TTL_MS) {
+    cardCache.delete(key);
+    return null;
+  }
+  return hit;
+}
+
+function rememberCard(key, entry) {
+  cardCache.set(key, { ...entry, at: Date.now() });
+  while (cardCache.size > CARD_CACHE_MAX) cardCache.delete(cardCache.keys().next().value);
+}
+
+/**
+ * Called while the share sheet is still open: loads the typeface and starts
+ * the picture downloads, so by the time the panel opens only drawing and
+ * encoding are left. Does no drawing, so it is cheap to run speculatively.
+ */
+export function warmInstagramStory(content) {
+  try {
+    const model = buildStoryModel(content);
+    if (!model) return;
+    void ensureFonts();
+    prefetchStoryImages(model.imageUrls, fetchImageNatively);
+  } catch {
+    /* a warm-up never surfaces an error */
+  }
+}
+
 export function useInstagramStory(content) {
   const [state, setState] = useState({ phase: 'preparing' });
   const card = useRef(null);
@@ -73,13 +115,21 @@ export function useInstagramStory(content) {
       const model = buildStoryModel(content);
       if (!model) throw Object.assign(new Error('nothing to share'), { code: 'RENDER_FAILED' });
 
+      const key = JSON.stringify(model);
       const [availability, rendered] = await Promise.all([
         instagram().availability(),
-        // Native download: the media bucket sends no CORS headers.
-        renderStoryCard(model, { fetchImage: fetchImageNatively }),
+        cachedCard(key) ||
+          // Native download: the media bucket sends no CORS headers.
+          renderStoryCard(model, { fetchImage: fetchImageNatively }),
       ]);
-      const base64 = await blobToBase64(rendered.blob);
       if (!current()) return;
+
+      // The preview shows as soon as the PNG exists. The base64 the native
+      // bridge needs is made alongside and only awaited when "Share" is
+      // pressed, so it never delays the card appearing.
+      const base64 = rendered.base64 || blobToBase64(rendered.blob);
+      base64.catch(() => {});
+      rememberCard(key, { blob: rendered.blob, width: rendered.width, height: rendered.height, base64 });
 
       if (card.current) URL.revokeObjectURL(card.current.previewUrl);
       card.current = {
@@ -117,7 +167,7 @@ export function useInstagramStory(content) {
     setState({ phase: 'opening' });
     try {
       await instagram().share({
-        stickerPngBase64: asset.base64,
+        stickerPngBase64: await asset.base64,
         backgroundTopColor: STORY_BACKGROUND.top,
         backgroundBottomColor: STORY_BACKGROUND.bottom,
       });

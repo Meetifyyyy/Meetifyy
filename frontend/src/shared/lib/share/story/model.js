@@ -25,8 +25,6 @@ export const STORY_BACKGROUND = { top: '#1D4ED8', bottom: '#0F172A' };
 const MAX_COLLAGE_IMAGES = 4;
 /** Most poll options drawn; the rest are summarised in one line. */
 const MAX_POLL_OPTIONS = 4;
-/** Most profile tags offered to the renderer, which may fit fewer. */
-const MAX_TAGS = 12;
 
 /** "12", "1.2K", "12.4K", "3.1M" — the same scale the chat preview uses. */
 export function compactCount(n) {
@@ -120,7 +118,8 @@ export function buildStoryModel(content) {
         subtitle: content.username ? `@${content.username}` : '',
         avatar: content.avatar,
         cover: content.cover,
-        tags: content.tags.slice(0, MAX_TAGS),
+        // A shared profile story carries no interest tags.
+        tags: [],
         imageUrls: [content.avatar, content.cover.type === 'image' ? content.cover.url : ''].filter(Boolean),
       };
     case SHARE_KIND.COMMUNITY:
@@ -130,6 +129,9 @@ export function buildStoryModel(content) {
         subtitle: `${compactCount(content.memberCount)} ${content.memberCount === 1 ? 'member' : 'members'}`,
         avatar: content.avatar,
         avatarColor: content.color,
+        // Communities use a rounded square, like their avatar in the app.
+        squareAvatar: true,
+        description: String(content.description || '').replace(/\s+/g, ' ').trim(),
         cover: content.cover,
         tags: [],
         imageUrls: [content.avatar, content.cover.type === 'image' ? content.cover.url : ''].filter(Boolean),

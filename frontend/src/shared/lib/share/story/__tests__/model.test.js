@@ -60,7 +60,7 @@ describe('story model', () => {
   it('gives a profile its handle and interests', () => {
     const model = buildStoryModel(normalizeShareContent(SHARE_KIND.PROFILE, { username: 'al', displayName: 'Al', interests: ['Chess', ' ', 'Run'] }));
     expect(model.subtitle).toBe('@al');
-    expect(model.tags).toEqual(['Chess', 'Run']);
+    expect(model.tags).toEqual([]); // the story carries no interest tags
   });
 
   it('words an activity like its chat card, with a fallback cover', () => {
