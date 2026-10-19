@@ -6,7 +6,7 @@ import { MemoryRouter } from 'react-router-dom';
 
 /**
  * When the Complete-your-profile prompt opens, and what "Later" does.
- * The server's `promptSnoozed` is the cross-device memory; sessionStorage is
+ * The server's `promptSnoozed` is the cross-device memory; localStorage (10 days) is
  * the fallback that keeps it closed for this session if the call fails.
  */
 
@@ -53,6 +53,7 @@ beforeEach(() => {
   signup.inProgress = false;
   usersApi.snoozeProfilePrompt.mockReset().mockResolvedValue({ snoozed: true });
   sessionStorage.clear();
+  localStorage.clear();
 });
 afterEach(cleanup);
 
@@ -95,7 +96,7 @@ describe('"Later"', () => {
 
     expect(usersApi.snoozeProfilePrompt).toHaveBeenCalledTimes(1);
     await waitFor(() => expect(dialog()).toBeNull());
-    expect(sessionStorage.getItem('meetifyy:profile-completion-later:u1')).toBe('1');
+    expect(Number(localStorage.getItem('meetifyy:profile-completion-later:u1'))).toBeGreaterThan(0);
   });
 
   it('stays closed when the call fails (offline or older backend)', async () => {

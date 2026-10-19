@@ -10,10 +10,21 @@ import { isSignupInProgress } from '@features/auth/context/SignupContext';
 import styles from './ProfileCompletionModal.module.css';
 
 const DISMISS_PREFIX = 'meetifyy:profile-completion-later:';
+const SNOOZE_MS = 10 * 24 * 60 * 60 * 1000;
 
+/**
+ * "Later" is remembered in localStorage with its time, per account, so it
+ * survives closing the tab or the app and lapses after 10 days. A new browser
+ * or device has no entry, so it asks again there. (sessionStorage, used
+ * before, forgot it the moment the tab closed; the server-side snooze only
+ * holds while the session id is unchanged, which a reopen does not guarantee.)
+ */
 function readDismissed(userId) {
   try {
-    return sessionStorage.getItem(`${DISMISS_PREFIX}${userId}`) === '1';
+    const at = Number(localStorage.getItem(`${DISMISS_PREFIX}${userId}`));
+    if (!Number.isFinite(at) || at <= 0) return false;
+    const age = Date.now() - at;
+    return age >= 0 && age < SNOOZE_MS;
   } catch {
     return false;
   }
@@ -21,7 +32,7 @@ function readDismissed(userId) {
 
 function writeDismissed(userId) {
   try {
-    sessionStorage.setItem(`${DISMISS_PREFIX}${userId}`, '1');
+    localStorage.setItem(`${DISMISS_PREFIX}${userId}`, String(Date.now()));
   } catch {
     /* storage blocked: "Later" still closes it for this page's lifetime */
   }
@@ -34,8 +45,8 @@ function writeDismissed(userId) {
  *
  * Never blocks. "Later" asks the server to snooze it (`promptSnoozed`: until 10
  * days pass or the account signs in again, on any device), and also remembers
- * it in sessionStorage so it stays closed this session even if that call fails
- * or the backend predates `promptSnoozed`. It does not open during signup (the
+ * it in localStorage for 10 days on this browser, so it stays closed across
+ * reopens even if that call fails or the backend predates `promptSnoozed`. It does not open during signup (the
  * signup flow collects gender itself).
  */
 export default function ProfileCompletionModal() {
