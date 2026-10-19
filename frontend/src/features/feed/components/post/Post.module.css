@@ -97,8 +97,8 @@
   composes: type-body from global;
   font-size: 0.92rem;
   margin-bottom: 0.5rem;
-  margin-left: 0.5rem;
-  margin-right: 0.5rem;
+  margin-left: 0;
+  margin-right: 0;
   text-align: left !important;
 }
 

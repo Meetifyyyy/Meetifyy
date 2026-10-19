@@ -238,8 +238,10 @@
     box-shadow: none;
     border-radius: 0;
     height: auto;
-    /* Full screen height: there is no BottomNav on this page. */
-    min-height: calc(100dvh - env(safe-area-inset-bottom, 0px));
+    /* No min-height of the whole screen: the page already sits below the
+       top bar, so a 100dvh floor made every short list scroll by the bar's
+       height. It is as tall as its content, and the layout fills the rest. */
+    min-height: 0;
     max-height: none;
     overflow: visible;
   }
