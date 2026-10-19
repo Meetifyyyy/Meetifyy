@@ -203,6 +203,7 @@ function MediaViewerSession() {
     closeTimerRef.current = null;
     if (open) {
       closingRef.current = false;
+      barsFollowPageRef.current = false;
       setClosing(false);
       setControlsVisible(true);
       if (trackRef.current) {
@@ -322,6 +323,27 @@ function MediaViewerSession() {
   }));
 
   /**
+   * While the backdrop is fading under a vertical drag it is translucent, and
+   * the system bars' sampler looks through it to the document's own gradient
+   * (the blue behind the app), painting the status bar with that for as long
+   * as the finger is down. Asking the sampler to ignore the viewer for the
+   * drag makes the bars read the page actually showing through - white in the
+   * light theme. Snapping back hands the bars to the viewer again. A no-op on
+   * the website, where nothing listens.
+   */
+  const barsFollowPageRef = useRef(false);
+  const setBarsFollowPage = useCallback((follow) => {
+    if (barsFollowPageRef.current === follow) return;
+    barsFollowPageRef.current = follow;
+    const el = overlayRef.current;
+    if (el) {
+      if (follow) el.setAttribute('data-bars-ignore', '');
+      else if (!closingRef.current) el.removeAttribute('data-bars-ignore');
+    }
+    window.dispatchEvent(new Event('meetifyy:system-bars-resample'));
+  }, []);
+
+  /**
    * Put the dragged media element and the backdrop back after a vertical drag.
    *
    * The animated form clears its inline styles once the transition has run, so
@@ -333,6 +355,7 @@ function MediaViewerSession() {
    */
   const resetGestureTransforms = useCallback((animated = true) => {
     cancelSnapbackCleanup();
+    setBarsFollowPage(false);
     const animate = animated && !prefersReducedMotion();
     const media = mediaElRef.current;
     const backdrop = overlayRef.current;
@@ -358,7 +381,7 @@ function MediaViewerSession() {
         }
       }, SNAPBACK_CLEANUP_MS);
     }
-  }, [cancelSnapbackCleanup]);
+  }, [cancelSnapbackCleanup, setBarsFollowPage]);
 
   /** Check whether the pointer-down target is inside a video control zone. */
   const isVideoControl = (target) => {
@@ -448,6 +471,7 @@ function MediaViewerSession() {
         overlayRef.current.style.transition      = 'none';
         overlayRef.current.style.backgroundColor = `rgba(0,0,0,${bgOpacity})`;
       }
+      if (bgOpacity < 1) setBarsFollowPage(true);
 
       // Fade controls as the user drags — one-shot ref flag (no React state in hot path)
       if (!controlsHiddenByGesture.current && Math.abs(dy) > 20) {
@@ -455,7 +479,7 @@ function MediaViewerSession() {
         setControlsVisible(false);
       }
     }
-  }, []);
+  }, [setBarsFollowPage]);
 
   /**
    * Abandon the gesture in progress WITHOUT deciding anything.
