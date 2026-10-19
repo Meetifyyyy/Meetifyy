@@ -85,6 +85,21 @@ try {
   /* sessionStorage unavailable (private mode / disabled) — run cacheless */
 }
 
+/**
+ * Where a history jump (a collapse) is supposed to land. A jump is a delta
+ * computed from the mirror, and the mirror is restored from sessionStorage:
+ * when the browser's own entries were replaced underneath it (a sign-in
+ * redirect such as Cloudflare Access, a reload partway through), the delta
+ * lands on some other page. Tapping Home then bounced to Crew. The tracker
+ * checks the landing against this and navigates to the real target if the
+ * jump missed.
+ */
+let pendingJump = null;
+
+function expectJump(key, to, state) {
+  pendingJump = { key, to, state };
+}
+
 function persist() {
   try {
     sessionStorage.setItem(SESSION_KEY, JSON.stringify(mirror.snapshot()));
@@ -151,6 +166,9 @@ export function SmartBackTracker() {
   const location = useLocation();
   const navType = useNavigationType();
   const navigate = useNavigate();
+  // Read inside the effect without re-running it on a state-only change.
+  const stateRef = useRef(location.state);
+  stateRef.current = location.state;
 
   useEffect(() => {
     const step = mirror.sync({
@@ -162,11 +180,24 @@ export function SmartBackTracker() {
 
     persist();
 
+    const landedKey = getMeaningfulPath(location.pathname, location.search);
+    if (pendingJump && navType === 'POP') {
+      const missed = pendingJump.key !== landedKey ? pendingJump : null;
+      pendingJump = null;
+      if (missed) {
+        navigate(missed.to, { state: missed.state });
+        return;
+      }
+    }
+
     // A collapse: the browser pushed an entry the stack refused. Stepping back
     // onto the entry that already exists targets the same URL, so nothing
     // visibly re-renders — the user simply ends up on the entry they walked,
     // scroll position and all, instead of a duplicate stacked on top of it.
-    if (step?.go) navigate(step.go);
+    if (step?.go) {
+      expectJump(landedKey, `${location.pathname}${location.search}`, stateRef.current);
+      navigate(step.go);
+    }
   }, [location.pathname, location.search, location.key, navType, navigate]);
 
   return null;
@@ -259,6 +290,7 @@ export function useSmartNavigation() {
         // why the entry the user returns to keeps its scroll position.
         const collapse = mirror.planCollapse({ idx: currentIdx(), key: targetKey });
         if (collapse?.go) {
+          expectJump(targetKey, to, options.state);
           navigate(collapse.go);
           return;
         }
