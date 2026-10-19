@@ -208,6 +208,7 @@ export const campusEventsApi = endpoints.campusEventsApi;
 export const campusAffiliationApi = endpoints.campusAffiliationApi;
 export const accountEmailApi = endpoints.accountEmailApi;
 export const notificationsApi = endpoints.notificationsApi;
+export const pushApi = endpoints.pushApi;
 export const searchApi = endpoints.searchApi;
 export const reportsApi = endpoints.reportsApi;
 export const legalApi = endpoints.legalApi;

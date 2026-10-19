@@ -405,7 +405,8 @@ export function AuthProvider({ children }) {
     clearMonitoringUser();
     addBreadcrumb({ category: 'auth', message: 'signed out', level: 'info' });
     // Only a session that existed can "end"; a failed boot probe is not one.
-    if (isLoggedInRef.current) suppressRedirectIntent();
+    const wasSignedIn = isLoggedInRef.current;
+    if (wasSignedIn) suppressRedirectIntent();
     setSession(null);
     setCurrentUser(null);
     setAuthStatus(AUTH_STATUS.UNAUTHENTICATED);
@@ -435,6 +436,18 @@ export function AuthProvider({ children }) {
     }
     clearSessionScopedStorage();
     resetClientStateForNewUser(queryClientRef.current);
+    /*
+     * Stop this browser/phone receiving the account's pushes: drop the local
+     * subscription or FCM token. The server deletes the device row itself
+     * when the login is revoked (or already has, on a 401), so this is local
+     * only and never blocks sign-out. Loaded lazily: push code is not on the
+     * sign-in path.
+     */
+    if (wasSignedIn) {
+      void import('@shared/push/pushRegistration')
+        .then((m) => m.forgetThisDevice({ server: false }))
+        .catch(() => {});
+    }
   }, []);
 
   /**

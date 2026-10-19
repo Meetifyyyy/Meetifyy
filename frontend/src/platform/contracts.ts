@@ -362,23 +362,60 @@ export interface DeviceInfo {
 /**
  * Push registration and delivery.
  *
- * Consumer: push registration and tap routing (Phase 6).
+ * Consumer: `shared/push/pushRegistration` (registration, permission state for
+ * Settings) and the tap routers (`mobile/navigation/DeepLinkNavigator`, web
+ * `shared/push/PushNavigator`). See docs/push-notifications.md.
  *
  * `onNotificationTap` yields an `Intent`, not a payload: the payload carries
  * routing data only — no message content, no email address, no user id, no
  * token — because it transits Google and Apple infrastructure and lands in OS
  * logs.
+ *
+ * OS permission is reported separately from anything the user chose in the
+ * app: `permissionState` never prompts, `requestPermission` is the only call
+ * that may, and only from a user gesture.
  */
+export type PushPermission = 'granted' | 'denied' | 'prompt' | 'unsupported';
+
+/** Why push cannot work here, when `permissionState` is 'unsupported'. */
+export type PushUnsupportedReason =
+  /** iOS Safari: only a site added to the Home Screen gets push. */
+  | 'install'
+  /** No service worker on this host or build (dev / preview deployments). */
+  | 'no-worker'
+  /** The installed app was built without its Firebase configuration. */
+  | 'not-configured'
+  | 'browser';
+
+/** The body of PUT /api/push/devices for this device. */
+export interface PushRegistration {
+  platform: 'WEB' | 'ANDROID';
+  token: string;
+  p256dh?: string;
+  auth?: string;
+}
+
 export interface PushService {
+  permissionState(): Promise<PushPermission>;
+  unsupportedReason(): Promise<PushUnsupportedReason | null>;
   requestPermission(): Promise<'granted' | 'denied' | 'unsupported'>;
-  getToken(): Promise<string | null>;
+  /**
+   * This device's registration, creating it when permission is already
+   * granted. Never prompts. Null when there is none to be had.
+   * `webPushPublicKey` is the server's VAPID public key (web only).
+   */
+  getRegistration(options: { webPushPublicKey?: string | null }): Promise<PushRegistration | null>;
   /** Tokens rotate silently; re-register whenever this fires. */
-  onToken(listener: (token: string) => void): () => void;
+  onToken(listener: () => void): () => void;
   onNotificationTap(
     listener: (intent: import('../core/navigation/intents').Intent) => void,
   ): () => void;
+  /** An intent from a tap that arrived before a listener (cold start). Drained once. */
+  takePendingTap(): import('../core/navigation/intents').Intent | null;
   /** Called on logout, alongside server-side revocation of the same token. */
   deleteToken(): Promise<void>;
+  /** Opens the OS notification settings for this app, where supported. */
+  openSystemSettings?(): Promise<void>;
 }
 
 /**

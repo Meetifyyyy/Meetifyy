@@ -38,6 +38,10 @@ const groupKey = (n) => {
       const activityId = n.entityId || meta.activityId;
       return activityId ? `JOIN:${activityId}` : null;
     }
+    case 'COMMUNITY_JOIN': {
+      const communityId = n.entityId || meta.communityId;
+      return communityId ? `COMMUNITY_JOIN:${communityId}` : null;
+    }
     default:
       return null;
   }

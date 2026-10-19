@@ -88,11 +88,31 @@ dependencies {
 
 apply from: 'capacitor.build.gradle'
 
-try {
-    def servicesJSON = file('google-services.json')
-    if (servicesJSON.text) {
-        apply plugin: 'com.google.gms.google-services'
+/*
+ * Firebase (push notifications), per build type. See docs/push-notifications.md.
+ *
+ * Debug builds talk to the development API and release builds to production,
+ * so each needs ITS OWN environment's Firebase project:
+ *   src/debug/google-services.json    the development Firebase project
+ *   src/release/google-services.json  the production Firebase project
+ * The google-services plugin reads the build-type directory first. A single
+ * app/google-services.json would serve both and is deliberately not looked
+ * for here.
+ *
+ * Absent files are fine: the build still succeeds, the plugin is either not
+ * applied or warns for that variant, and the app reports push as unavailable
+ * (PushSupportPlugin.status) instead of calling into an uninitialised Firebase.
+ */
+def googleServicesFiles = ['src/debug/google-services.json', 'src/release/google-services.json']
+    .collect { file(it) }
+    .findAll { it.exists() && it.text.trim() }
+if (!googleServicesFiles.isEmpty()) {
+    apply plugin: 'com.google.gms.google-services'
+    googleServices {
+        // A variant without its own file builds without Firebase rather than
+        // failing, or worse, borrowing the other environment's project.
+        missingGoogleServicesStrategy = 'WARN'
     }
-} catch(Exception e) {
-    logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
+} else {
+    logger.info("No google-services.json in src/debug or src/release: push notifications are not configured for this build")
 }

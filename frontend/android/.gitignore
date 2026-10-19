@@ -62,7 +62,10 @@ captures/
 .cxx/
 
 # Google Services (e.g. APIs or Firebase)
-# google-services.json
+# One per environment (app/src/debug = dev project, app/src/release = prod
+# project), kept on the build machine. Not a secret, but it carries a Google
+# API key that secret scans flag. See docs/push-notifications.md.
+google-services.json
 
 # Freeline
 freeline.py

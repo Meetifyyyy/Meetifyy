@@ -11,6 +11,7 @@ import DashboardLayoutWrapper from './layout/DashboardLayoutWrapper';
 import ErrorBoundary, { RouteErrorBoundary } from './shared/components/ErrorBoundary';
 import PageMetadata from './shared/seo/PageMetadata';
 import SocketManager from './shared/components/SocketManager';
+import PushSync from './shared/push/PushSync';
 import OverlayHistoryBridge from './shared/components/OverlayHistoryBridge';
 import LegacyPathRedirect from './shared/components/LegacyPathRedirect';
 import { setRedirectIntent, consumeRedirectIntent } from './shared/utils/redirectIntent';
@@ -378,6 +379,7 @@ export default function App({ homeElement, rootExtras = null }) {
           <OverlayHistoryBridge />
           <ScrollRestoration />
           <SocketManager />
+          <PushSync />
           <NotificationLabMount />
           <CookieBanner />
           <CookiePreferencesModal />

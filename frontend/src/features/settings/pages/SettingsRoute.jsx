@@ -38,6 +38,7 @@ import SettingsEmailPanel from '../panels/SettingsEmailPanel';
 import { GENDER_OPTIONS } from '@shared/constants/gender';
 import SettingsHelpPanel from '../panels/SettingsHelpPanel';
 import DevicesPanel from '../panels/DevicesPanel';
+import PushNotificationsSettings from '../panels/PushNotificationsSettings';
 import { IS_DEV_BUILD, IS_MOBILE_BUILD } from '@config';
 import { useCookieConsent } from '@shared/context/CookieConsentContext';
 import { visibleViewportBottom } from '@shared/utils/visibleViewport';
@@ -541,7 +542,6 @@ export default function SettingsRoute() {
   // Privacy & notifications state
   const settingsObj = currentUser?.settings || currentUser?.preferences || {};
   const [emailNotifs, setEmailNotifs] = useState(settingsObj.emailNotifs ?? true);
-  const [pushNotifs, setPushNotifs] = useState(settingsObj.pushNotifs ?? false);
   const [privateProfile, setPrivateProfile] = useState(settingsObj.privateProfile ?? false);
 
   // Presence settings
@@ -598,7 +598,6 @@ export default function SettingsRoute() {
           const s = settingsRes || user?.settings || user?.preferences;
           if (s) {
             setEmailNotifs(s.emailNotifs ?? true);
-            setPushNotifs(s.pushNotifs ?? false);
             setPrivateProfile(s.privateProfile ?? false);
             setShowOnlineStatus(s.showOnlineStatus ?? true);
             setReadReceipts(s.readReceipts ?? true);
@@ -760,13 +759,13 @@ export default function SettingsRoute() {
           settings: {
             ...(currentUser?.settings || {}),
             emailNotifs,
-            pushNotifs,
           }
         });
       }
+      // Push is not saved here: PushNotificationsSettings owns it, so this
+      // button can never overwrite a switch that row just changed.
       updateSettings({
         emailNotifs,
-        pushNotifs,
       }).catch(err => {
         console.error('Failed to update notification settings:', err);
         showToast(err?.message || "Couldn't save notification settings", 'error');
@@ -1357,16 +1356,8 @@ export default function SettingsRoute() {
           </label>
         </div>
         <div className={styles.nestedDivider} />
-        <div className={styles.toggleRow}>
-          <div className={styles.toggleInfo}>
-            <span className={styles.rowLabel}>Push Notifications</span>
-            <span className={styles.toggleDesc}>Browser push alerts</span>
-          </div>
-          <label className={styles.toggle}>
-            <input type="checkbox" checked={pushNotifs} onChange={e => setPushNotifs(e.target.checked)} />
-            <span className={styles.slider} />
-          </label>
-        </div>
+        {/* Saves itself as it changes; not part of the Save button below. */}
+        <PushNotificationsSettings />
       </div>
       <button className={styles.saveBtn} onClick={handleSave}>Save Notification Settings</button>
     </div>

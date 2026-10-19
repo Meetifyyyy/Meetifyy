@@ -4,6 +4,7 @@ import { CacheFirst, NetworkFirst, NetworkOnly } from 'workbox-strategies';
 import { ExpirationPlugin } from 'workbox-expiration';
 import { CacheableResponsePlugin } from 'workbox-cacheable-response';
 import { clientsClaim } from 'workbox-core';
+import { handleNotificationClick, handlePush } from './shared/push/serviceWorkerPush';
 
 // ─── Core Workbox Setup ─────────────────────────────────────────────────────
 
@@ -326,34 +327,50 @@ function openOutboxDB() {
 }
 
 // ─── Push Notifications ─────────────────────────────────────────────────────
+//
+// See docs/push-notifications.md and shared/push/serviceWorkerPush.js, which
+// holds (and tests) the logic: payloads carry an Intent, never a URL, and a
+// click can only open one of this site's own routes.
 
 self.addEventListener('push', (event) => {
-  if (!event.data) return;
+  let payload = null;
   try {
-    const data = event.data.json();
-    event.waitUntil(
-      self.registration.showNotification(data.title || 'Meetifyy', {
-        body: data.body || '',
-        icon: '/logo-192.png',
-        badge: '/favicon.png',
-        data: { url: data.url || '/' },
-        tag: data.tag || 'meetifyy',
-        renotify: !!data.tag,
-      })
-    );
+    payload = event.data ? event.data.json() : null;
   } catch {
-    // Malformed push payload — ignore
+    payload = null;
   }
+  event.waitUntil(
+    handlePush({ payload, clients: self.clients, registration: self.registration }).catch(() => {}),
+  );
 });
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const target = event.notification.data?.url || '/';
   event.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((wins) => {
-      const existing = wins.find((w) => w.url.includes(self.location.origin));
-      if (existing) return existing.focus().then(() => existing.navigate(target));
-      return clients.openWindow(target);
-    })
+    handleNotificationClick({
+      data: event.notification.data,
+      clients: self.clients,
+      origin: self.location.origin,
+    }).catch(() => {}),
+  );
+});
+
+/**
+ * The browser rotated or expired the subscription. Re-subscribe with the same
+ * options so this browser stays reachable, then let an open page register the
+ * new endpoint (the worker cannot: the API needs the page's CSRF token). With
+ * no page open, the next visit re-registers; the old endpoint answers 410 and
+ * the server deletes it.
+ */
+self.addEventListener('pushsubscriptionchange', (event) => {
+  event.waitUntil(
+    (async () => {
+      const options = event.oldSubscription?.options;
+      if (options?.applicationServerKey) {
+        await self.registration.pushManager.subscribe(options).catch(() => null);
+      }
+      const wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+      wins.forEach((w) => w.postMessage({ type: 'meetifyy:push-resubscribe' }));
+    })(),
   );
 });

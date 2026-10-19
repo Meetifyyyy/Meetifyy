@@ -46,6 +46,21 @@
 
         </activity>
 
+        <!--
+            Push notifications (FCM, see docs/push-notifications.md). Used for
+            a notification that names no channel or a channel this build does
+            not have; the server always names one of the four this app creates.
+        -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="social" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@drawable/ic_stat_notify" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_color"
+            android:resource="@color/notificationAccent" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
@@ -68,6 +83,13 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+
+    <!--
+        Android 13+ asks before an app may post notifications. Requested from
+        Settings or the opt-in card, never at launch. Declared here as well as
+        by the push plugin so the requirement is visible in this file.
+    -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!--
         The live-selfie check runs getUserMedia inside the WebView. Capacitor's

@@ -56,6 +56,8 @@ import { setThemeTransitionDriver } from '@shared/theme/themeTransition';
 import { installSystemBars } from './installSystemBars';
 import { readPageEdgeColors } from './pageEdgeColors';
 import { createCapacitorDeepLinks } from '../platform/capacitor/deepLinks';
+import { createCapacitorPush } from '../platform/capacitor/push';
+import { setPushService } from '../shared/push/pushPlatform';
 import DeepLinkNavigator from './navigation/DeepLinkNavigator';
 import { installBackgroundSocket } from './backgroundSocket';
 import { config } from '../config';
@@ -173,7 +175,15 @@ installLaunchReadiness({
 const deepLinks = createCapacitorDeepLinks({
   allowedHosts: [safeHost(config.app.siteUrl)],
 });
-const deepLinkNavigator = <DeepLinkNavigator deepLinks={deepLinks} />;
+/**
+ * Push (docs/push-notifications.md): created before the first render for the
+ * same reason, so a notification tap that cold-started the app is caught and
+ * held for the navigator. It registers listeners only; it never prompts and
+ * never registers a token on its own.
+ */
+const push = createCapacitorPush();
+setPushService(push);
+const deepLinkNavigator = <DeepLinkNavigator deepLinks={deepLinks} push={push} />;
 
 function safeHost(url) {
   try {

@@ -4,4 +4,6 @@
     <color name="launchBackground">#FFFFFF</color>
     <color name="colorWhite">#FFFFFF</color>
     <color name="colorBlack">#000000</color>
+    <!-- Tint of the push notification icon (brand blue). -->
+    <color name="notificationAccent">#2563EB</color>
 </resources>

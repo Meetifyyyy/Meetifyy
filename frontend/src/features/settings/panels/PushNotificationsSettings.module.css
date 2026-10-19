@@ -1,0 +1,21 @@
+/* Push notification rows reuse the Settings toggle rows; only these are new. */
+
+.categoryRow {
+  padding-left: calc(var(--settings-gutter) + 12px);
+}
+
+.inlineAction {
+  composes: type-secondary from global;
+  align-self: flex-start;
+  margin-top: 4px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--color-primary);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.inlineAction:hover {
+  text-decoration: underline;
+}

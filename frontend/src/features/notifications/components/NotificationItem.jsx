@@ -60,6 +60,14 @@ function NotificationItem({
     displayText = 'joined the activity.';
   } else if (isActivityInvite) {
     displayText = 'invited you to join.';
+  } else if (notifType === 'community_join') {
+    displayText = notif.metadata?.communityName
+      ? `joined ${notif.metadata.communityName}.`
+      : 'joined your community.';
+  } else if (notifType === 'community_join_request') {
+    displayText = notif.metadata?.communityName
+      ? `requested to join ${notif.metadata.communityName}.`
+      : 'requested to join your community.';
   } else if (displayText.startsWith(actorName)) {
     displayText = displayText.substring(actorName.length).trim();
   }

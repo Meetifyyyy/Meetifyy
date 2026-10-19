@@ -645,6 +645,18 @@ export function createEndpoints({
     delete: (id) => apiClient.delete(`/api/notifications/${id}`),
   };
 
+  /**
+   * Push notifications (docs/push-notifications.md). The server takes the
+   * caller from the session; nothing here names a user.
+   */
+  const pushApi = {
+    getConfig: () => apiClient.get('/api/push/config'),
+    registerDevice: (registration) => apiClient.put('/api/push/devices', registration),
+    unregisterDevice: (token) => apiClient.post('/api/push/devices/unregister', { token }),
+    getPreferences: () => apiClient.get('/api/push/preferences'),
+    updatePreferences: (patch) => apiClient.patch('/api/push/preferences', patch),
+  };
+
   const searchApi = {
     // Rising hashtags on the viewer's campus, or across every college when the
     // campus is quiet: `{ scope: 'campus' | 'everywhere', tags: [{ name, posts, authors }] }`.
@@ -827,6 +839,7 @@ export function createEndpoints({
     campusAffiliationApi,
     accountEmailApi,
     notificationsApi,
+    pushApi,
     searchApi,
     reportsApi,
     legalApi,

@@ -1,3 +1,4 @@
+import PushOptInCard from '@shared/push/PushOptInCard';
 import { useCallback, useMemo, useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useUrlState } from '@shared/hooks/useUrlState';
@@ -413,6 +414,18 @@ export default function NotificationsRoute() {
         setActiveTab('invitations');
         break;
 
+      // Someone joined, or asked to join, a community the recipient runs.
+      // The community page shows join requests to those allowed to review
+      // them, and its own not-found state if the community is gone.
+      case 'COMMUNITY_JOIN':
+      case 'COMMUNITY_JOIN_REQUEST': {
+        const communityId = safeId(notif.entityId || notif.metadata?.communityId);
+        if (communityId) {
+          navigate(`/communities/${communityId}`, { state: { from: '/notifications' } });
+        }
+        break;
+      }
+
       default:
         if (actorUsername) {
           navigate(`/profile/${actorUsername}`, { state: { from: '/notifications' } });
@@ -552,6 +565,9 @@ export default function NotificationsRoute() {
               pageStyles={styles}
             />
           ) : (
+            <>
+            {/* The contextual push opt-in: here, never on app load. */}
+            <PushOptInCard />
             <NotificationList
               groupedNotifications={groupedNotifications}
               timeAgo={timeAgo}
@@ -559,6 +575,7 @@ export default function NotificationsRoute() {
               pageStyles={styles}
               scrollElement={pageEl}
             />
+            </>
           )}
           {activeTab === 'invitations' && inviteFeed.hasNextPage && (
             <div style={{ padding: '0.5rem 0' }}>
