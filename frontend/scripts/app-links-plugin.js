@@ -22,14 +22,18 @@ export function assetLinksFor(config, siteUrl) {
   } catch {
     return null;
   }
-  const fingerprints = config?.hosts?.[host];
+  // A host is either a list of fingerprints (for the top-level packageName) or
+  // { packageName, fingerprints } when that environment's build has its own ID.
+  const entry = config?.hosts?.[host];
+  const fingerprints = Array.isArray(entry) ? entry : entry?.fingerprints;
+  const packageName = (!Array.isArray(entry) && entry?.packageName) || config?.packageName;
   if (!Array.isArray(fingerprints) || fingerprints.length === 0) return null;
   return [
     {
       relation: ['delegate_permission/common.handle_all_urls'],
       target: {
         namespace: 'android_app',
-        package_name: config.packageName,
+        package_name: packageName,
         sha256_cert_fingerprints: fingerprints,
       },
     },

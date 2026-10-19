@@ -55,6 +55,13 @@ android {
          * shared content against the development backend.
          */
         debug {
+            // Its own app ID and name, so the development app installs next to
+            // the production one instead of replacing it (they are signed with
+            // different keys, so one could never update the other anyway). The
+            // launcher name "DEV APP" comes from src/debug/res/values.
+            // Firebase: the meetifyy-dev project needs an Android app with this
+            // ID in src/debug/google-services.json, or dev push is unavailable.
+            applicationIdSuffix ".dev"
             manifestPlaceholders = [appLinkHost: "dev.meetifyy.app"]
         }
         release {
