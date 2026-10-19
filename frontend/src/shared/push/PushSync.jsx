@@ -4,17 +4,40 @@ import { IS_MOBILE_BUILD } from '@config';
 import { useAuth } from '@shared/context/AuthContext';
 import { pushApi } from '@shared/api/apiClient';
 import { getPushService } from './pushPlatform';
-import { syncPushRegistration } from './pushRegistration';
+import { enablePush, getPushStatus, syncPushRegistration } from './pushRegistration';
 import { intentPath } from './intentPath';
 
 /** Registration is refreshed off the critical path, after the app has settled. */
 const SYNC_DELAY_MS = 4000;
 
+/** Delay before the first-login permission request, so the app has painted. */
+const FIRST_PROMPT_DELAY_MS = 1500;
+const FIRST_PROMPT_KEY = 'meetifyy:push-first-prompt-done';
+
+function firstPromptDone() {
+  try {
+    return window.localStorage.getItem(FIRST_PROMPT_KEY) === '1';
+  } catch {
+    return true; // cannot remember it, so never risk asking on every load
+  }
+}
+
+function markFirstPromptDone() {
+  try {
+    window.localStorage.setItem(FIRST_PROMPT_KEY, '1');
+  } catch {
+    /* handled by firstPromptDone */
+  }
+}
+
 /**
  * Keeps this device's push registration in step with the signed-in account,
  * and (on the website) routes notification clicks inside the app.
  *
- * Mounted once at the router root. It never prompts: it only re-registers a
+ * Mounted once at the router root. The one time it prompts is the first
+ * sign-in on a device: once signed in, it asks for permission a single time
+ * (never at app load while signed out, and never again after that, whatever
+ * the answer). Otherwise it only re-registers a
  * device whose permission is ALREADY granted, for an account whose push
  * preference is on — on sign-in, on reload (the browser may have rotated the
  * subscription), and when the platform reports a new token. Signed out, it
@@ -52,6 +75,28 @@ export default function PushSync() {
       cancelled = true;
       clearTimeout(timer);
       unsubscribe();
+    };
+  }, [isLoggedIn, userId]);
+
+  useEffect(() => {
+    if (!isLoggedIn || !userId || firstPromptDone()) return undefined;
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      const status = await getPushStatus().catch(() => null);
+      if (cancelled) return;
+      // Decided already (granted/denied) or not offered here: nothing to ask.
+      if (!status?.available || status.permission !== 'prompt') {
+        if (status) markFirstPromptDone();
+        return;
+      }
+      const prefs = await pushApi.getPreferences().catch(() => null);
+      if (cancelled || !prefs || prefs.enabled) return;
+      markFirstPromptDone();
+      await enablePush({ userId }).catch(() => 'denied');
+    }, FIRST_PROMPT_DELAY_MS);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
     };
   }, [isLoggedIn, userId]);
 

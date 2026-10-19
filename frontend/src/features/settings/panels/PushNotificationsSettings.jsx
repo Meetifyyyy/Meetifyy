@@ -62,7 +62,7 @@ export default function PushNotificationsSettings() {
       if (checked) {
         const result = await enablePush({ userId });
         if (result === 'denied') {
-          showToast('Notifications are blocked for Meetifyy on this device', 'error');
+          showToast('Notifications are blocked', 'error');
         }
       } else {
         await disablePush();
