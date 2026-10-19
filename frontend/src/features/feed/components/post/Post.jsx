@@ -1,6 +1,5 @@
 import { useState, memo, useMemo, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { resolveCommunityAvatarThumb } from '@shared/utils/avatar';
 import { sanitizeUrl } from '@shared/utils/urlSanitize';
 import Avatar from '@shared/components/avatar/Avatar';
 import { CollegeRepresentativeBadge } from '@shared/components/badges/CollegeRepresentativeBadge';
@@ -124,35 +123,6 @@ function PollCard({ poll, postId }) {
   );
 }
 
-
-/**
- * The community's icon in the corner of the author's avatar.
- *
- * A picture that fails to load falls back to the community's letter on its
- * colour - the same fallback as a community with no picture - rather than to
- * `/default_avatar.svg`, which is a person and made the community look like a
- * user. Its own component so the failure can be remembered in state (Post has
- * an early return before its hooks could go).
- */
-function CommunityBadge({ community, src }) {
-  const [failedSrc, setFailedSrc] = useState(null);
-  const showImage = Boolean(src) && failedSrc !== src;
-  return (
-    <Link
-      to={`/communities/${community.id}`}
-      className={styles.communityBadgeOverlay}
-      onClick={(e) => e.stopPropagation()}
-      title={community.name}
-      style={{ background: showImage ? 'var(--color-bg-white)' : (community.color || 'var(--color-primary)') }}
-    >
-      {showImage ? (
-        <img src={src} alt="" loading="lazy" decoding="async" onError={() => setFailedSrc(src)} />
-      ) : (
-        <span>{community.name?.charAt(0).toUpperCase()}</span>
-      )}
-    </Link>
-  );
-}
 
 function Post({ postData, onClick, onCommentClick, onDeleted, isDetailed = false, hideCommunityTag = false }) {
   const { currentUser } = useAuth();
@@ -342,7 +312,6 @@ function Post({ postData, onClick, onCommentClick, onDeleted, isDetailed = false
   // cards and the community header. The badge below read `.avatar` raw and put
   // it through the *user* avatar helper, so a stored object key — which is
   // what the column actually holds — never resolved to an image.
-  const postCommunityAvatar = postCommunity ? resolveCommunityAvatarThumb(postCommunity) : null;
 
   return (
     <div
@@ -367,9 +336,6 @@ function Post({ postData, onClick, onCommentClick, onDeleted, isDetailed = false
               <Avatar src={author.avatar} name={author.displayName} size="100%" />
             </div>
           </Link>
-          {postCommunity && (
-            <CommunityBadge community={postCommunity} src={postCommunityAvatar} />
-          )}
         </div>
         <div className={styles.postUser}>
           <Link to={`/profile/${author.username}`} style={{ textDecoration: 'none', color: 'inherit', display: 'inline-flex', alignItems: 'center', gap: '0.2rem' }} onClick={(e) => e.stopPropagation()}>
