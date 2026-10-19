@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { ChevronDown, Users } from '@shared/components/icons';
 import { useMyCommunities } from '@shared/hooks/useCommunities';
+import { useAppIdle } from '@shared/hooks/useAppIdle';
 import CommunityAvatar from '@features/communities/components/directory/CommunityAvatar';
 import styles from './CommunitiesBox.module.css';
 
@@ -9,13 +10,19 @@ import styles from './CommunitiesBox.module.css';
  * The collapsible "Communities" list in the desktop sidebar and the mobile
  * drawer: the viewer's own communities, then a way into /communities.
  *
- * The list is fetched only once it is opened, and shares its cache with the
- * Communities page and Home.
+ * The list is fetched before it is opened: once the first screen is up
+ * (useAppIdle), or as soon as the pointer or focus reaches the header. It used
+ * to be fetched on the tap itself, so the box opened at the height of its last
+ * row and then jumped when the communities arrived. The cache is shared with
+ * the Communities page and Home.
  */
 export default function CommunitiesBox({ onItemClick, className = '' }) {
   const location = useLocation();
   const [isOpen, setIsOpen] = useState(false);
-  const { myCommunities, isLoading } = useMyCommunities({ enabled: isOpen });
+  const [primed, setPrimed] = useState(false);
+  const appIdle = useAppIdle();
+  const prime = () => setPrimed(true);
+  const { myCommunities, isLoading } = useMyCommunities({ enabled: isOpen || primed || appIdle });
   const toggle = () => setIsOpen((open) => !open);
 
   return (
@@ -24,6 +31,9 @@ export default function CommunitiesBox({ onItemClick, className = '' }) {
         type="button"
         className={styles.communitiesHeader}
         onClick={toggle}
+        onPointerEnter={prime}
+        onPointerDown={prime}
+        onFocus={prime}
         aria-expanded={isOpen}
       >
         <span>COMMUNITIES</span>
