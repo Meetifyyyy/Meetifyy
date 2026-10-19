@@ -102,5 +102,16 @@
     -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
+
+    <!--
+        Voice messages in chat use getUserMedia for audio. As with the camera,
+        BridgeWebChromeClient can only ask for RECORD_AUDIO if the manifest
+        declares it; without it the microphone was denied instantly and every
+        recording attempt showed "Microphone access denied". MODIFY_AUDIO_SETTINGS
+        lets the WebView route capture through the voice audio mode.
+    -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
     <uses-feature android:name="android.hardware.camera.front" android:required="false" />
 </manifest>

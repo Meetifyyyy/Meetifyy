@@ -47,7 +47,7 @@ const micErrorMessage = (err) => {
   switch (err?.name) {
     case 'NotAllowedError':
     case 'SecurityError':
-      return 'Microphone access denied. Enable it in your browser settings to record.';
+      return 'Microphone access denied';
     case 'NotFoundError':
     case 'OverconstrainedError':
       return 'No microphone found.';
