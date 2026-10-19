@@ -80,8 +80,15 @@
   margin-top: auto;
 }
 
-/* The pill button */
+/* The pill button.
+
+   Press feedback is a held state (data-pressed, set from pointer events in the
+   component), not :active: the Android WebView applies :active for a single
+   frame on a quick tap, so a shrink hung off it never shows. Only transform and
+   opacity ever animate, so the press and the hover cost no layout. The press is
+   a small, quick dip; the release is slower so it settles instead of snapping. */
 .createCardBtn {
+  position: relative;
   background: white;
   border: none;
   border-radius: 9999px;
@@ -93,23 +100,33 @@
   width: 100%;
   cursor: pointer;
   box-shadow: none;
-  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  transform: translateZ(0);
+  transition: transform 0.24s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.createCardBtn:hover {
-  box-shadow: none;
+.createCardBtn[data-pressed] {
+  transform: scale(0.975);
+  transition-duration: 0.1s;
 }
 
-@media (max-width: 768px) {
-  .createCardBtn:active {
-    transform: scale(0.97) !important;
-  }
+.createCardBtn:focus {
+  outline: none;
 }
 
-@media (max-width: 768px) and (prefers-reduced-motion: reduce) {
-  .createCardBtn:active {
-    transform: none !important;
-  }
+.createCardBtn:focus-visible {
+  outline: 2px solid #ffffff;
+  outline-offset: 3px;
+}
+
+.createCardBtn:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.createCardBtn:disabled[data-pressed] {
+  transform: none;
 }
 
 .createCardBtnIcon {
@@ -146,31 +163,37 @@
   flex: 1;
   text-align: center;
   margin-left: 12px;
-  transition: margin 0.25s ease;
+  transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
+/* Out of the flow, so revealing it never moves the label's box. */
 .createCardBtnArrow {
-  color: #003BFF;
+  position: absolute;
+  top: 50%;
+  right: 18px;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 0;
-  margin-right: 12px;
-  opacity: 0;
-  transform: translateX(-12px);
-  overflow: hidden;
-  transition: opacity 0.25s ease, transform 0.25s ease, width 0.25s ease, margin 0.25s ease;
-}
-
-.createCardBtn:hover .createCardBtnText {
-  margin-left: 0;
-}
-
-.createCardBtn:hover .createCardBtnArrow {
-  opacity: 1;
   width: 16px;
-  margin-right: 14px;
-  transform: translateX(0);
+  height: 16px;
+  margin-top: -8px;
+  color: #003BFF;
+  opacity: 0;
+  transform: translateX(-8px);
+  transition: opacity 0.2s ease, transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+  pointer-events: none;
+}
+
+/* Hover is a pointer affordance only. On touch it would stick after a tap. */
+@media (hover: hover) and (pointer: fine) {
+  .createCardBtn:hover:not(:disabled) .createCardBtnText {
+    transform: translateX(-8px);
+  }
+
+  .createCardBtn:hover:not(:disabled) .createCardBtnArrow {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }
 
 @media (max-width: 768px) {
@@ -192,28 +215,22 @@
 
   .createCardBtn {
     height: 44px;
-    transition: none !important;
   }
 
   .createCardBtnIcon {
     width: 36px;
     height: 36px;
   }
+}
 
+@media (prefers-reduced-motion: reduce) {
   .createCardBtn,
   .createCardBtnText,
   .createCardBtnArrow {
-    transition: none !important;
+    transition: none;
   }
 
-  .createCardBtn:hover .createCardBtnText {
-    margin-left: 12px !important;
-  }
-
-  .createCardBtn:hover .createCardBtnArrow {
-    opacity: 0 !important;
-    width: 0 !important;
-    margin-right: 12px !important;
-    transform: translateX(-12px) !important;
+  .createCardBtn[data-pressed] {
+    transform: none;
   }
 }

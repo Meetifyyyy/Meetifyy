@@ -1,7 +1,32 @@
+import { useCallback, useRef, useState } from 'react';
 import createActivityBackgroundCharacter from '@assets/images/createactivitybackgroundcharacter.webp';
 import styles from './CreateActivityCard.module.css';
 
-export default function CreateActivityCard({ onCreateActivity, className = '' }) {
+/**
+ * A second tap inside this window is the same intent arriving twice (a double
+ * tap, or a tap while the screen is still changing). Without it `navigate` ran
+ * twice and left a duplicate entry in the history.
+ */
+const REPEAT_TAP_MS = 700;
+
+export default function CreateActivityCard({ onCreateActivity, className = '', disabled = false }) {
+  // A held press state rather than CSS :active, which the Android WebView
+  // applies for a single frame on a quick tap, so the dip would never show.
+  const [pressed, setPressed] = useState(false);
+  const press = useCallback(() => setPressed(true), []);
+  const release = useCallback(() => setPressed(false), []);
+  const lastTapRef = useRef(0);
+
+  const handleClick = useCallback(
+    (event) => {
+      const now = Date.now();
+      if (disabled || now - lastTapRef.current < REPEAT_TAP_MS) return;
+      lastTapRef.current = now;
+      onCreateActivity?.(event);
+    },
+    [disabled, onCreateActivity],
+  );
+
   return (
     <div className={`${styles.createCard} ${className}`}>
       {/* Background Slash */}
@@ -33,7 +58,13 @@ export default function CreateActivityCard({ onCreateActivity, className = '' })
         <button 
           type="button"
           className={styles.createCardBtn} 
-          onClick={onCreateActivity} 
+          onClick={handleClick}
+          onPointerDown={press}
+          onPointerUp={release}
+          onPointerCancel={release}
+          onPointerLeave={release}
+          data-pressed={pressed || undefined}
+          disabled={disabled}
           aria-label="Create Activity"
         >
           <div className={styles.createCardBtnIcon}>
@@ -41,7 +72,7 @@ export default function CreateActivityCard({ onCreateActivity, className = '' })
           </div>
           <span className={styles.createCardBtnText}>CREATE ACTIVITY</span>
           <span className={styles.createCardBtnArrow}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <line x1="5" y1="12" x2="19" y2="12" />
               <polyline points="12 5 19 12 12 19" />
             </svg>

@@ -30,6 +30,17 @@
   animation: scaleUp 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
+/* On a desktop-sized window the list gets a little more room: enough to read
+   more of a long list at once without becoming a page. Phones and tablets keep
+   the sizes above (the phone sheet is set in the 640px query below). */
+@media (min-width: 769px) {
+  .modal {
+    max-width: 500px;
+    height: 600px;
+    max-height: min(85dvh, 680px);
+  }
+}
+
 .header {
   padding: 1.1rem 1rem 0.5rem 1.25rem;
   display: flex;

@@ -30,8 +30,8 @@
 @media (min-width: 769px) {
   .backdrop { align-items: center; }
   .sheet {
-    max-width: 520px;
-    max-height: min(720px, 90vh);
+    max-width: 600px;
+    max-height: min(800px, 90vh);
     border-radius: 28px;
   }
 }
