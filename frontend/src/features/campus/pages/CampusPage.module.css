@@ -349,8 +349,12 @@
 /* The college picker (join flow) sits on a plain page colour instead of the
    app's blue radial gradient. html and body both paint that gradient (html
    with !important), so both are overridden while this screen is mounted;
-   --color-bg-white is the dark surface in dark mode. */
-:global(html):has(.hubJoin),
-:global(html):has(.hubJoin) :global(body) {
-  background: var(--color-bg-white, #ffffff) !important;
+   --color-bg-white is the dark surface in dark mode.
+   Phones only: on large screens the picker is a card on the desktop layout,
+   whose header band and sidebar are built for the gradient. */
+@media (max-width: 768px) {
+  :global(html):has(.hubJoin),
+  :global(html):has(.hubJoin) :global(body) {
+    background: var(--color-bg-white, #ffffff) !important;
+  }
 }
