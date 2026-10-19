@@ -4,6 +4,7 @@ import Avatar from '@shared/components/avatar/Avatar';
 import Skeleton from '@shared/components/skeletons/Skeleton';
 import { showToast } from '@shared/utils/toast';
 import MessageBubble from './MessageBubble';
+import { captureScrollAnchor, restoreScrollAnchor } from '../utils/scrollAnchor';
 import styles from './ChatMessageList.module.css';
 
 /*
@@ -191,6 +192,10 @@ export default function ChatMessageList({
 
   // Scroll position tracking
   const prevScrollHeightRef = useRef(0);
+  // Where the topmost visible message sat before the last commit; see
+  // utils/scrollAnchor for why a prepend restores this instead of adding the
+  // scrollHeight growth (which double-counted the browser's own anchoring).
+  const scrollAnchorRef = useRef(null);
   const isAtBottomRef = useRef(true);
   const hasScrolledInitialRef = useRef(false);
   const prevConvIdRef = useRef(null);
@@ -345,15 +350,14 @@ export default function ChatMessageList({
       currentCount > prevCount;
 
     if (isPrepend) {
-      const newScrollHeight = container.scrollHeight;
-      const heightDiff = newScrollHeight - prevScrollHeightRef.current;
+      // Runs before paint. Restores the reader's message to the offset it had,
+      // whether or not the browser's scroll anchoring already moved it.
+      restoreScrollAnchor(container, scrollAnchorRef.current);
+      scrollAnchorRef.current = captureScrollAnchor(container);
+      isAtBottomRef.current =
+        container.scrollHeight - container.scrollTop - container.clientHeight < 180;
 
-      if (heightDiff > 0) {
-        // This runs synchronously before the browser paints — zero visible jump
-        container.scrollTop = container.scrollTop + heightDiff;
-      }
-
-      prevScrollHeightRef.current = newScrollHeight;
+      prevScrollHeightRef.current = container.scrollHeight;
       prevFirstMsgIdRef.current = firstMsgId;
       prevMessagesLengthRef.current = currentCount;
       isLoadingOlderRef.current = false;
@@ -389,6 +393,7 @@ export default function ChatMessageList({
     }
 
     // Update refs for cases that didn't match any scenario
+    scrollAnchorRef.current = captureScrollAnchor(container);
     prevFirstMsgIdRef.current = firstMsgId;
     prevMessagesLengthRef.current = currentCount;
     prevScrollHeightRef.current = container.scrollHeight;
@@ -604,6 +609,9 @@ export default function ChatMessageList({
 
     const distFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
     isAtBottomRef.current = distFromBottom < 180;
+    // Kept current on every scroll so a page that lands mid-fling (or one
+    // requested by a reply jump) restores against where the reader is now.
+    scrollAnchorRef.current = captureScrollAnchor(container);
 
     // Clear "new messages" badge once user scrolls to bottom
     if (isAtBottomRef.current && newMessagesRef.current > 0) {
@@ -615,9 +623,10 @@ export default function ChatMessageList({
     if (!hasMore || isLoadingOlderRef.current || loadMoreTriggeredRef.current) return;
     if (isLoading || isLoadingMore) return;
 
+    // Request the next page while about one screen of history is still above
+    // the viewport, so it is usually in place before the reader reaches it.
     const distFromTop = container.scrollTop;
-    if (distFromTop <= 150) {
-      // Capture scrollHeight BEFORE the new content is inserted
+    if (distFromTop <= Math.max(300, container.clientHeight)) {
       prevScrollHeightRef.current = container.scrollHeight;
       isLoadingOlderRef.current = true;
       loadMoreTriggeredRef.current = true;
@@ -631,7 +640,10 @@ export default function ChatMessageList({
       // Small delay to let the DOM settle before re-enabling
       const t = setTimeout(() => {
         isLoadingOlderRef.current = false;
-        // Don't reset loadMoreTriggeredRef here — it resets in the layout effect after prepend
+        // Also re-arm here: a page that adds nothing new (all duplicates, or a
+        // failed request) never reaches the prepend branch, and the trigger
+        // used to stay latched, so older history stopped loading for good.
+        loadMoreTriggeredRef.current = false;
       }, 100);
       return () => clearTimeout(t);
     }
