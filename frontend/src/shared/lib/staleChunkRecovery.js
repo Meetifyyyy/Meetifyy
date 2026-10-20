@@ -95,10 +95,22 @@ export function recoverFromStaleChunk(
   return true;
 }
 
-/** Clears the marker once the app has loaded successfully again. */
-export function clearStaleChunkMarker(storage = globalThis.sessionStorage) {
+/**
+ * Discard only expired reload markers at startup.
+ *
+ * Loading the entry bundle does not prove lazy route chunks can load. Keeping
+ * a recent marker across document loads is what makes the cooldown effective
+ * when a cached or blocked route chunk keeps failing after recovery.
+ */
+export function clearExpiredStaleChunkMarker(
+  storage = globalThis.sessionStorage,
+  now = () => Date.now(),
+) {
   try {
-    storage?.removeItem(RELOAD_MARKER);
+    const last = Number(storage?.getItem(RELOAD_MARKER)) || 0;
+    if (last && now() - last >= RELOAD_COOLDOWN_MS) {
+      storage.removeItem(RELOAD_MARKER);
+    }
   } catch {
     /* nothing to clean up */
   }
