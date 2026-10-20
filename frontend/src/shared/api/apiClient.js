@@ -20,6 +20,7 @@ import {
   announceLegalConsentChange,
   LEGAL_ACK_REQUIRED_CODE,
 } from '@shared/lib/legalConsent';
+import { handleVerificationRequired } from '@shared/lib/verificationRequired';
 import { config, IS_MOBILE_BUILD } from '@config';
 import { createTransport } from '@core/api/transport';
 import { createEndpoints } from '@core/api/endpoints';
@@ -93,6 +94,7 @@ const session = IS_MOBILE_BUILD
 const hooks = createWebTransportHooks({
   onApiErrorCode: (errorCode) => {
     applyAccountStatusCorrection(errorCode);
+    handleVerificationRequired(errorCode);
     if (errorCode === LEGAL_ACK_REQUIRED_CODE) {
       announceLegalConsentChange('required');
     }

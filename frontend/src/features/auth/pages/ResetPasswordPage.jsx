@@ -41,6 +41,35 @@ const consumeRecoveryErrorFlag = () => {
   try { sessionStorage.removeItem(RECOVERY_ERROR_FLAG); } catch {}
 };
 
+/**
+ * Asks the server to sign the account out everywhere and send the
+ * "password changed" email. One retry on failure; resolves to whether it
+ * worked. Never throws: the password is already changed.
+ */
+async function finalizePasswordReset(recoveryToken) {
+  const attempt = async () => {
+    const res = await fetch(`${API_URL}/api/auth/password-reset/finalize`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${recoveryToken}`,
+      },
+      body: JSON.stringify({
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      }),
+    });
+    return res.ok;
+  };
+  for (let n = 0; n < 2; n += 1) {
+    try {
+      if (await attempt()) return true;
+    } catch (err) {
+      console.warn('Password reset finalize failed', err);
+    }
+  }
+  return false;
+}
+
 // ─── UI State Machine ──────────────────────────────────────────────────────────
 // loading   → token validation in progress (spinner; form never shown here)
 // valid     → token confirmed; show New Password + Confirm Password form
@@ -55,6 +84,9 @@ export default function ResetPasswordPage() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [toastMsg, setToastMsg] = useState('');
   const [toastVisible, setToastVisible] = useState(false);
+  // True when the password changed but the server could not end the account's
+  // other sessions. Shown on the success screen, which then stays put.
+  const [finalizeFailed, setFinalizeFailed] = useState(false);
 
   // Holds the recovery session for use in the notification email request.
   const recoverySessionRef = useRef(null);
@@ -245,10 +277,11 @@ export default function ResetPasswordPage() {
 
   // ─── Auto-redirect after success ──────────────────────────────────────────
   useEffect(() => {
-    if (uiState !== 'success') return;
+    // Held back when the user has something to read and act on.
+    if (uiState !== 'success' || finalizeFailed) return;
     const t = setTimeout(() => navigate('/login', { replace: true }), 3000);
     return () => clearTimeout(t);
-  }, [uiState, navigate]);
+  }, [uiState, navigate, finalizeFailed]);
 
   // ─── Password update ───────────────────────────────────────────────────────
   const handleSubmit = async (e) => {
@@ -291,7 +324,7 @@ export default function ResetPasswordPage() {
     setUiState('updating');
 
     try {
-      const { data: updateData, error } = await supabase.auth.updateUser({
+      const { error } = await supabase.auth.updateUser({
         password,
       });
 
@@ -301,49 +334,31 @@ export default function ResetPasswordPage() {
       // of how long the async cleanup steps take.
       setUiState('success');
 
-      // ── Fire-and-forget: security notification email ──────────────────
-      const updatedUser = updateData?.user;
-      if (updatedUser?.email) {
-        const token = recoverySessionRef.current?.access_token;
-        if (token) {
-          fetch(`${API_URL}/api/auth/events/password-changed`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${token}`,
-            },
-            body: JSON.stringify({
-              email: updatedUser.email,
-              name: updatedUser.user_metadata?.displayName || 'User',
-              device: navigator.userAgent,
-              timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-            }),
-          }).catch(() => {}); // non-fatal
-        }
-      }
-
-      // ── Sign out every device, this one included ──────────────────────
+      // ── End every session of the account, then email the owner ────────
       //
-      // A reset through the emailed link is the flow someone uses when they
-      // think their account is compromised — so unlike a password change from
-      // Settings, which spares the device performing it, this one spares
-      // nothing. The device completing the reset may itself be the one they are
-      // worried about.
+      // ONE server call does both (`password-reset/finalize`). A reset through
+      // the emailed link is what someone does when they fear the account is
+      // compromised, so unlike a password change from Settings, which spares
+      // the device performing it, this spares nothing: every session the
+      // account holds is signed out.
       //
-      // Sent with the recovery token explicitly: apiClient refuses to attach it
-      // to anything, deliberately, so this is the one way to make an
-      // authenticated call from this page.
-      const revokeToken = recoverySessionRef.current?.access_token;
-      if (revokeToken) {
-        await fetch(`${API_URL}/api/auth/sessions/revoke-all`, {
-          method: 'POST',
-          credentials: 'include',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${revokeToken}`,
-          },
-          body: JSON.stringify({ scope: 'all' }),
-        }).catch(() => {}); // Non-fatal: the password is already changed.
+      // The recovery token is sent as a Bearer header because it is all this
+      // page has — no cookie, no session id. The server admits exactly this
+      // one route to a fresh recovery token. This used to be two calls
+      // (`events/password-changed` and `sessions/revoke-all`) that the server
+      // refused with 401/403 and that were swallowed, so a reset revoked
+      // nothing and sent no email without anyone noticing.
+      //
+      // Awaited BEFORE signing the recovery session out below: the sign-out
+      // invalidates the token this call authenticates with.
+      const recoveryToken = recoverySessionRef.current?.access_token;
+      const finalized = recoveryToken
+        ? await finalizePasswordReset(recoveryToken)
+        : false;
+      if (!finalized) {
+        console.error('Password reset: could not sign out the other sessions');
+        setFinalizeFailed(true);
+        showToast("Password updated, but we couldn't sign you out of your other devices.");
       }
 
       // ── Destroy the recovery session ──────────────────────────────────
@@ -404,7 +419,9 @@ export default function ResetPasswordPage() {
               icon={CheckCircle2}
               tone="success"
               title="Password updated"
-              description="Your password has been reset successfully. Redirecting to login in a moment…"
+              description={finalizeFailed
+                ? "Your password has been reset, but we couldn't sign you out of your other devices. Log in and use Settings to sign out of other devices."
+                : 'Your password has been reset successfully. Redirecting to login in a moment…'}
             >
               <Link to="/login" replace className={`${s.button} ${s.buttonGhost}`}>
                 Log in now

@@ -1,4 +1,5 @@
 import { SAFE_METHODS, isBearerPath, isPublicPath } from './paths';
+import { resolveForbiddenCode } from './verificationRequired';
 
 /**
  * The HTTP transport: how a request is made, and what happens when it fails.
@@ -853,6 +854,7 @@ export function createTransport({
       } catch {
         // Non-JSON error body
       }
+      errorCode = resolveForbiddenCode(res.status, errorCode, errorMessage);
       const err = new Error(errorMessage);
       err.status = res.status;
       if (errorCode) err.code = errorCode;

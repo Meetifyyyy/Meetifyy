@@ -731,3 +731,35 @@ describe('createTransport — a request that carries its own credential', () => 
     expect(onUnauthorized).not.toHaveBeenCalled();
   });
 });
+
+describe('createTransport — verification-required 403', () => {
+  const forbidden = (body) => vi.fn(async () => ({
+    ok: false, status: 403, headers: { get: () => null },
+    json: async () => body, text: async () => JSON.stringify(body),
+  }));
+
+  it('reports the code to the app hook and attaches it to the error', async () => {
+    globalThis.fetch = forbidden({
+      code: 'VERIFICATION_REQUIRED',
+      message: 'Account verification is required to perform this action.',
+    });
+    const onApiErrorCode = vi.fn();
+    const { t } = build({ hooks: { onApiErrorCode } });
+    await expect(t.apiClient.post('/api/posts', {})).rejects.toMatchObject({
+      status: 403, code: 'VERIFICATION_REQUIRED',
+    });
+    expect(onApiErrorCode).toHaveBeenCalledWith('VERIFICATION_REQUIRED');
+  });
+
+  it('recognises the plain-text 403 an older API sends', async () => {
+    globalThis.fetch = forbidden({
+      message: 'Account verification is required to perform this action.',
+    });
+    const onApiErrorCode = vi.fn();
+    const { t } = build({ hooks: { onApiErrorCode } });
+    await expect(t.apiClient.post('/api/posts', {})).rejects.toMatchObject({
+      code: 'VERIFICATION_REQUIRED',
+    });
+    expect(onApiErrorCode).toHaveBeenCalledWith('VERIFICATION_REQUIRED');
+  });
+});

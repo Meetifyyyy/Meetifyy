@@ -294,7 +294,9 @@ export const TicketDetail: React.FC<{
                 {attachments.map((file: any) => (
                   <a
                     key={file.key}
-                    href={`/api/media/${file.key}`}
+                    // Signed, expiring link from the API. There is no public
+                    // /api/media fallback: support files are private.
+                    href={file.url ?? undefined}
                     target="_blank"
                     rel="noopener noreferrer"
                     style={attachmentChip}
