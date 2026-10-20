@@ -238,6 +238,23 @@ means "no app origins", and every request from the app fails CORS.
 
 ## CSP
 
+### Failed asset loads and automatic reloads
+
+Do not apply a year-long immutable Cache-Control header to `/assets/*` by
+pathname alone. Vercel header rules also match requests for missing files, so
+that rule can give an error response the same cache lifetime as a valid bundle.
+Leave asset caching to Vercel's static-file defaults. Both deployment config
+copies must agree. Upstream Cloudflare cache rules can override origin policy;
+verify actual status and cache headers after deployment before attributing an
+incident to a particular cache layer. A code deployment cannot invalidate a
+response already stored by an upstream cache.
+
+The stale-chunk recovery marker must survive document startup for its full
+cooldown. Loading `main.jsx` does not prove a lazy route can load. Clearing the
+marker there allowed every subsequent lazy-import failure to reload the page
+again; startup now removes only expired markers. The regression test covers
+repeated startups followed by the same failed import.
+
 ### Inline scripts must be byte-identical across builds
 
 The report-only `script-src` allows each inline script in `index.html` by its

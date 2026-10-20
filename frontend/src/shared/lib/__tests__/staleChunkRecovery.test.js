@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   isStaleChunkError,
   recoverFromStaleChunk,
-  clearStaleChunkMarker,
+  clearExpiredStaleChunkMarker,
 } from '../staleChunkRecovery';
 
 const makeStorage = (initial = {}) => {
@@ -117,11 +117,50 @@ describe('recoverFromStaleChunk', () => {
     expect(reload).not.toHaveBeenCalled();
   });
 
-  it('clears its marker so a later deploy can recover cleanly', () => {
+  it('does not throw or reload when the browser blocks access to sessionStorage itself', () => {
+    const original = Object.getOwnPropertyDescriptor(globalThis, 'sessionStorage');
+    const reload = vi.fn();
+    Object.defineProperty(globalThis, 'sessionStorage', {
+      configurable: true,
+      get() { throw new Error('SecurityError'); },
+    });
+    try {
+      expect(() => clearExpiredStaleChunkMarker()).not.toThrow();
+      expect(recoverFromStaleChunk(staleError, { reload })).toBe(false);
+      expect(reload).not.toHaveBeenCalled();
+    } finally {
+      if (original) Object.defineProperty(globalThis, 'sessionStorage', original);
+      else delete globalThis.sessionStorage;
+    }
+  });
+
+  it('does not reload if the cooldown marker cannot be persisted', () => {
     const storage = makeStorage();
-    recoverFromStaleChunk(staleError, { storage, reload: () => {} });
-    expect(storage._size()).toBe(1);
-    clearStaleChunkMarker(storage);
+    storage.setItem = () => { throw new Error('QuotaExceededError'); };
+    const reload = vi.fn();
+    expect(recoverFromStaleChunk(staleError, { storage, reload })).toBe(false);
+    expect(reload).not.toHaveBeenCalled();
+  });
+
+  it('preserves the cooldown across repeated document startups and lazy-route failures', () => {
+    const storage = makeStorage();
+    const reload = vi.fn();
+    let clock = 1_000_000;
+    const now = () => clock;
+
+    expect(recoverFromStaleChunk(staleError, { storage, reload, now })).toBe(true);
+    for (let boot = 0; boot < 3; boot += 1) {
+      clock += 5_000;
+      // main.jsx runs this before the lazy route has finished loading.
+      clearExpiredStaleChunkMarker(storage, now);
+      expect(recoverFromStaleChunk(staleError, { storage, reload, now })).toBe(false);
+    }
+    expect(reload).toHaveBeenCalledTimes(1);
+
+    clock += 60_000;
+    clearExpiredStaleChunkMarker(storage, now);
     expect(storage._size()).toBe(0);
+    expect(recoverFromStaleChunk(staleError, { storage, reload, now })).toBe(true);
+    expect(reload).toHaveBeenCalledTimes(2);
   });
 });
