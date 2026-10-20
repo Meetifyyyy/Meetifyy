@@ -11,6 +11,7 @@ import { isImageUrl, resolveCommunityAvatar } from '@shared/utils/avatar';
 import CollapsingHeader from '@shared/components/CollapsingHeader/CollapsingHeader';
 import PullToRefresh from '@shared/components/PullToRefresh';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
+import { useScrollLock } from '@shared/hooks/useScrollLock';
 import { useSystemBars } from '@shared/hooks/useSystemBars';
 import { useTheme } from '@shared/context/ThemeContext';
 import BlurredCover from '@shared/components/ui/BlurredCover';
@@ -59,7 +60,7 @@ const POSTS_PAGE_SIZE = 15;
 const PENDING_LOCAL_POSTS = [];
 import ReportModal from '@shared/components/modals/ReportModal/LazyReportModal';
 import ModeratorWelcomeModal from '../moderation/ModeratorWelcomeModal';
-import { NotificationOff, NotificationOn, MoreVertical, Share2, Users, Settings, Flag } from '@shared/components/icons';
+import { NotificationOff, NotificationOn, MoreVertical, Share2, Users, Settings, Flag, LogOut } from '@shared/components/icons';
 import Menu, { MenuItem, useMenu } from '@shared/components/ui/Menu';
 
 function formatCount(n) {
@@ -768,6 +769,10 @@ export default function CommunityView({ communityId, onBack, onPostClick, onComm
   });
   const mobileMenu = useMenu();
   const [showMuteModal, setShowMuteModal] = useState(false);
+  const [showLeaveModal, setShowLeaveModal] = useState(false);
+  // The page behind a dialog stays put. Counted, so it composes with the
+  // other overlays this page opens.
+  useScrollLock(showMuteModal || showLeaveModal);
   const [showMobileAbout, setShowMobileAbout] = useState(false);
   const [isMobileAboutClosing, setIsMobileAboutClosing] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
@@ -1076,6 +1081,12 @@ export default function CommunityView({ communityId, onBack, onPostClick, onComm
 
   const handleToggleJoin = async (e) => {
     if (e) e.stopPropagation();
+    // Leaving is confirmed first. Checked before the toggle intent is taken, so
+    // cancelling the dialog leaves nothing recorded.
+    if (joined) {
+      setShowLeaveModal(true);
+      return;
+    }
     const entityKey = `joinCommunity:${communityId}`;
     const nextJoined = toggleRegistry.getNextToggleIntent(entityKey, rawJoined);
 
@@ -1095,6 +1106,13 @@ export default function CommunityView({ communityId, onBack, onPostClick, onComm
     // Joining is not a request to post: focusing the composer here yanked the
     // page down and opened the keyboard on mobile. The composer is focused only
     // when the user actually taps it (see handleCreatePostClick).
+    toggleJoin({ communityId, isJoined: nextJoined, currentUser });
+  };
+
+  const handleConfirmLeave = () => {
+    setShowLeaveModal(false);
+    const entityKey = `joinCommunity:${communityId}`;
+    const nextJoined = toggleRegistry.getNextToggleIntent(entityKey, rawJoined);
     toggleJoin({ communityId, isJoined: nextJoined, currentUser });
   };
 
@@ -1148,6 +1166,31 @@ export default function CommunityView({ communityId, onBack, onPostClick, onComm
 
   const memberTotal = typeof comm.memberCount === 'number' ? comm.memberCount : 0;
 
+  const communityMenu = (
+    <Menu {...mobileMenu.menuProps} size="md" ariaLabel="Community options">
+      <MenuItem icon={Share2} onSelect={() => setShowShareModal(true)} onClose={mobileMenu.close}>
+        Share
+      </MenuItem>
+      <MenuItem icon={Users} onSelect={() => setShowMembersModal(true)} onClose={mobileMenu.close}>
+        Members
+      </MenuItem>
+      {isAdmin ? (
+        <MenuItem icon={Settings} onSelect={() => setShowAdminModal(true)} onClose={mobileMenu.close}>
+          Settings
+        </MenuItem>
+      ) : (
+        <MenuItem
+          icon={Flag}
+          disabled={hasReported}
+          onSelect={() => setShowReportModal(true)}
+          onClose={mobileMenu.close}
+        >
+          {hasReported ? 'Reported' : 'Report'}
+        </MenuItem>
+      )}
+    </Menu>
+  );
+
   return (
     <div className={styles.wrapper}>
       <CollapsingHeader
@@ -1166,6 +1209,16 @@ export default function CommunityView({ communityId, onBack, onPostClick, onComm
         coverContent={headerCover ? <img src={headerCover} alt="" draggable={false} style={{ objectFit: 'cover' }} /> : undefined}
         coverBackdrop={headerCover ? <BlurredCover cover={headerCover} /> : undefined}
         headerRef={collapsingHeaderRef}
+        // The installed app's fixed header paints over the page's own menu
+        // button, so there the menu lives in the header (as Profile's does).
+        rightAction={IS_MOBILE_BUILD ? (
+          <div className={styles.menuWrap}>
+            <button {...mobileMenu.triggerProps} className={styles.headerMenuBtn} aria-label="Menu">
+              <MoreVertical size={20} />
+            </button>
+            {communityMenu}
+          </div>
+        ) : null}
       />
       {/*
         Wraps the page content only, NOT the modals below it: a pull translates
@@ -1185,33 +1238,14 @@ export default function CommunityView({ communityId, onBack, onPostClick, onComm
             <polyline points="12 19 5 12 12 5"></polyline>
           </svg>
         </button>
-        <div style={{ position: 'relative' }}>
-          <button {...mobileMenu.triggerProps} className={styles.backBtn} aria-label="Menu">
-            <MoreVertical size={20} />
-          </button>
-          <Menu {...mobileMenu.menuProps} size="md" ariaLabel="Community options">
-            <MenuItem icon={Share2} onSelect={() => setShowShareModal(true)} onClose={mobileMenu.close}>
-              Share
-            </MenuItem>
-            <MenuItem icon={Users} onSelect={() => setShowMembersModal(true)} onClose={mobileMenu.close}>
-              Members
-            </MenuItem>
-            {isAdmin ? (
-              <MenuItem icon={Settings} onSelect={() => setShowAdminModal(true)} onClose={mobileMenu.close}>
-                Settings
-              </MenuItem>
-            ) : (
-              <MenuItem
-                icon={Flag}
-                disabled={hasReported}
-                onSelect={() => setShowReportModal(true)}
-                onClose={mobileMenu.close}
-              >
-                {hasReported ? 'Reported' : 'Report'}
-              </MenuItem>
-            )}
-          </Menu>
-        </div>
+        {!IS_MOBILE_BUILD && (
+          <div style={{ position: 'relative' }}>
+            <button {...mobileMenu.triggerProps} className={styles.backBtn} aria-label="Menu">
+              <MoreVertical size={20} />
+            </button>
+            {communityMenu}
+          </div>
+        )}
       </div>
 
       <HeroSection
@@ -1512,6 +1546,44 @@ export default function CommunityView({ communityId, onBack, onPostClick, onComm
         </div>
       )}
 
+
+      {showLeaveModal && (
+        <div className={styles.muteModalOverlay} onClick={() => setShowLeaveModal(false)}>
+          <div
+            className={styles.muteModal}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="leave-community-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className={styles.muteModalHeader}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', minWidth: 0, flex: 1 }}>
+                <LogOut size={20} style={{ flexShrink: 0, color: 'var(--color-primary)' }} />
+                <h3 id="leave-community-title" className={styles.muteModalTitle}>Leave this community?</h3>
+              </div>
+              <button onClick={() => setShowLeaveModal(false)} className={styles.muteModalClose} aria-label="Close">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+            </div>
+            <p className={styles.muteModalDesc}>
+              {(comm.isPrivate || comm.privacy === 'private')
+                ? `You'll lose access to "${comm.name}" and its posts. You'll need to request to join again to come back.`
+                : `You'll stop seeing posts from "${comm.name}" in your Home feed. You can rejoin any time.`}
+            </p>
+            <div className={styles.leaveModalActions}>
+              <button type="button" className={`${styles.leaveBtn} action-btn action-btn--secondary`} onClick={() => setShowLeaveModal(false)}>
+                Stay
+              </button>
+              <button type="button" className={`${styles.leaveBtn} action-btn action-btn--danger`} onClick={handleConfirmLeave}>
+                Leave
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {comm && (
         <ReportModal

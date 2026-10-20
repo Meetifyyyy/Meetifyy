@@ -1,13 +1,17 @@
 /* InstantNotificationCard.module.css */
 
 .card {
-  background: rgba(255, 255, 255, 0.94);
+  /* A cool white with a faint brand wash, an accent edge and a tinted border:
+     reads as the app's own surface rather than a generic grey toast. */
+  background:
+    linear-gradient(135deg, rgba(var(--color-primary-rgb, 37, 99, 235), 0.08) 0%, rgba(255, 255, 255, 0) 60%),
+    rgba(255, 255, 255, 0.96);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(226, 232, 240, 0.85);
-  box-shadow: 0 10px 28px -6px rgba(15, 23, 42, 0.12), 0 0 0 1px rgba(0, 0, 0, 0.04), 0 3px 8px rgba(0, 0, 0, 0.04);
+  border: 1px solid rgba(var(--color-primary-rgb, 37, 99, 235), 0.16);
+  box-shadow: 0 12px 30px -8px rgba(30, 58, 138, 0.22), 0 0 0 1px rgba(255, 255, 255, 0.6) inset, 0 3px 8px rgba(15, 23, 42, 0.05);
   border-radius: 16px;
-  padding: 11px 15px;
+  padding: 11px 15px 11px 18px;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -23,18 +27,34 @@
               background-color 0.22s ease;
 }
 
+.card::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 10px;
+  bottom: 10px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--color-primary, #2563EB);
+}
+
 @media (hover: hover) and (pointer: fine) {
   .card:hover {
-    box-shadow: 0 16px 36px -6px rgba(15, 23, 42, 0.2), 0 0 0 1px rgba(0, 0, 0, 0.08), 0 6px 16px rgba(0, 0, 0, 0.08);
-    border-color: rgba(203, 213, 225, 0.98);
-    background: rgba(255, 255, 255, 0.98);
+    box-shadow: 0 18px 38px -8px rgba(30, 58, 138, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.6) inset, 0 6px 16px rgba(15, 23, 42, 0.08);
+    border-color: rgba(var(--color-primary-rgb, 37, 99, 235), 0.34);
   }
 }
 
 :global([data-theme="dark"]) .card {
-  background: rgba(15, 23, 42, 0.90);
-  border-color: rgba(255, 255, 255, 0.12);
-  box-shadow: 0 14px 34px -6px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.08), 0 4px 10px rgba(0, 0, 0, 0.3);
+  background:
+    linear-gradient(135deg, rgba(var(--color-primary-rgb, 37, 99, 235), 0.2) 0%, rgba(26, 31, 46, 0) 65%),
+    rgba(24, 28, 42, 0.94);
+  border-color: rgba(143, 176, 255, 0.2);
+  box-shadow: 0 14px 34px -6px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.04) inset, 0 4px 10px rgba(0, 0, 0, 0.3);
+}
+
+:global([data-theme="dark"]) .card::before {
+  background: #7ea3ff;
 }
 
 /* The at-rule has to be the outer one. Written the other way round
@@ -42,9 +62,8 @@
    whole block at build time and the dark-mode hover state never applied. */
 @media (hover: hover) and (pointer: fine) {
   :global([data-theme="dark"]) .card:hover {
-    border-color: rgba(255, 255, 255, 0.24);
-    background: rgba(15, 23, 42, 0.96);
-    box-shadow: 0 18px 40px -6px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(255, 255, 255, 0.15), 0 6px 16px rgba(0, 0, 0, 0.45);
+    border-color: rgba(143, 176, 255, 0.42);
+    box-shadow: 0 18px 40px -6px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(255, 255, 255, 0.06) inset, 0 6px 16px rgba(0, 0, 0, 0.45);
   }
 }
 
@@ -91,7 +110,7 @@
 }
 
 .title {
-  color: #0f172a;
+  color: #0b1220;
   font-weight: 700;
   font-size: 0.86rem;
   overflow: hidden;
@@ -101,23 +120,23 @@
 }
 
 :global([data-theme="dark"]) .title {
-  color: #f8fafc;
+  color: #f5f7ff;
 }
 
 .time {
   font-size: 0.7rem;
-  color: #94a3b8;
-  font-weight: 500;
+  color: var(--color-primary, #2563EB);
+  font-weight: 600;
   flex-shrink: 0;
 }
 
 :global([data-theme="dark"]) .time {
-  color: #64748b;
+  color: #8fb0ff;
 }
 
 .body {
   font-size: 0.81rem;
-  color: #475569;
+  color: #3b4a63;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -125,29 +144,29 @@
 }
 
 :global([data-theme="dark"]) .body {
-  color: #cbd5e1;
+  color: #c3cbe0;
 }
 
 .actorPrefix {
   font-weight: 600;
-  color: #0f172a;
+  color: #0b1220;
 }
 
 :global([data-theme="dark"]) .actorPrefix {
-  color: #f8fafc;
+  color: #f5f7ff;
 }
 
 .subText {
   font-size: 0.74rem;
   font-weight: 600;
-  color: #64748b;
+  color: #5a6b86;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 :global([data-theme="dark"]) .subText {
-  color: #94a3b8;
+  color: #9fb0d0;
 }
 
 .thumbnail {

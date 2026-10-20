@@ -47,6 +47,14 @@ body {
 
 [data-sonner-toaster][data-y-position="top"] {
   top: 1.25rem !important;
+  /* Centred on the viewport at every width. Sonner switches to a full-width
+     left/right layout below 600px, and the cards (a fixed width of their own)
+     then started at the left offset and overran the right one, sitting off
+     centre. One rule for both: a centred column no wider than the card. */
+  left: 50% !important;
+  right: auto !important;
+  transform: translateX(-50%) !important;
+  width: min(var(--width, 380px), calc(100vw - 24px)) !important;
 }
 
 /* Below the status bar, not under it.
@@ -68,8 +76,10 @@ body {
   box-shadow: none !important;
   outline: none !important;
   padding: 0 !important;
-  width: var(--width, 380px) !important;
-  max-width: calc(100vw - 24px) !important;
+  left: 0 !important;
+  right: 0 !important;
+  width: 100% !important;
+  max-width: 100% !important;
   box-sizing: border-box !important;
   /* Ultra-smooth cubic-bezier for expand and collapse physics */
   transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1),

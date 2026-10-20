@@ -2393,3 +2393,54 @@
   }
 
 }
+
+
+/* ── Leave-community dialog: the mute dialog's frame with two actions ── */
+.leaveModalActions {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.leaveBtn {
+  flex: 1;
+}
+
+/* ── Installed app: the menu rides in the fixed header ─────────────────────
+   The header (z-index 60) paints over the page's own menu button, so the menu
+   lives in the header's right slot, positioned the way Profile's is. */
+.headerMenuBtn {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .menuWrap {
+    display: none;
+  }
+
+  :global(html[data-collapsing-header]) .menuWrap {
+    display: block;
+    position: absolute;
+    top: calc(12px + var(--status-bar-inset, 0px));
+    right: 12px;
+    z-index: 63;
+    pointer-events: auto;
+  }
+
+  .headerMenuBtn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+    border: none;
+    background: rgba(0, 0, 0, 0.4);
+    color: #FFFFFF;
+    cursor: pointer;
+    transition: background 0.18s;
+  }
+
+  .headerMenuBtn:hover {
+    background: rgba(0, 0, 0, 0.55);
+  }
+}
