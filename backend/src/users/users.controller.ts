@@ -47,8 +47,8 @@ export class UsersController {
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
   ) {
-    const limitNum = limit ? parseInt(limit, 10) : 20;
-    const offsetNum = offset ? parseInt(offset, 10) : 0;
+    const limitNum = clampPageParam(limit, { def: 20, min: 1, max: 100 });
+    const offsetNum = clampPageParam(offset, { def: 0, max: 5000 });
     return this.usersService.getAllUsers(limitNum, offsetNum, req.user?.id);
   }
 
@@ -60,7 +60,7 @@ export class UsersController {
     @Query('q') query?: string,
     @Query('limit') limit?: string,
   ) {
-    const limitNum = limit ? Math.min(parseInt(limit, 10), 100) : 50;
+    const limitNum = clampPageParam(limit, { def: 50, min: 1, max: 100 });
     return this.usersService.getConnections(req.user.id, query, limitNum);
   }
 
@@ -288,8 +288,8 @@ export class UsersController {
     @Query('eligibleOnly') eligibleOnly?: string,
     @Query('search') search?: string,
   ) {
-    const limitNum = limit ? parseInt(limit, 10) : 50;
-    const offsetNum = offset ? parseInt(offset, 10) : 0;
+    const limitNum = clampPageParam(limit, { def: 50, min: 1, max: 100 });
+    const offsetNum = clampPageParam(offset, { def: 0, max: 5000 });
     return this.usersService.getFollowers(
       username,
       req.user?.id,
@@ -315,8 +315,8 @@ export class UsersController {
     @Query('eligibleOnly') eligibleOnly?: string,
     @Query('search') search?: string,
   ) {
-    const limitNum = limit ? parseInt(limit, 10) : 50;
-    const offsetNum = offset ? parseInt(offset, 10) : 0;
+    const limitNum = clampPageParam(limit, { def: 50, min: 1, max: 100 });
+    const offsetNum = clampPageParam(offset, { def: 0, max: 5000 });
     return this.usersService.getFollowing(
       username,
       req.user?.id,

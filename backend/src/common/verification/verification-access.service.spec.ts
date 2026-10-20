@@ -1,5 +1,5 @@
 import { ForbiddenException } from '@nestjs/common';
-import { VerificationStatus } from '@prisma/client';
+import { AccountStatus, VerificationStatus } from '@prisma/client';
 import { VerificationAccessService } from './verification-access.service';
 import { stub } from '../testing/stub';
 import type { PrismaService } from '../../prisma/prisma.service';
@@ -20,8 +20,19 @@ describe('VerificationAccessService', () => {
   let service: VerificationAccessService;
 
   const seed = (
-    rows: { id: string; verificationStatus: VerificationStatus }[],
+    input: {
+      id: string;
+      verificationStatus: VerificationStatus;
+      accountStatus?: AccountStatus;
+      deletedAt?: Date | null;
+    }[],
   ) => {
+    // Rows default to a live account, as the select returns them.
+    const rows = input.map((r) => ({
+      accountStatus: AccountStatus.ACTIVE,
+      deletedAt: null,
+      ...r,
+    }));
     prisma.user.findMany.mockImplementation(
       ({ where }: { where: { id: { in: string[] } } }) =>
         Promise.resolve(rows.filter((r) => where.id.in.includes(r.id))),
@@ -61,6 +72,40 @@ describe('VerificationAccessService', () => {
       expect(service.isEligibleStatus(s)).toBe(false);
     }
     expect(service.isEligibleStatus(null)).toBe(false);
+  });
+
+  it.each([
+    AccountStatus.SUSPENDED,
+    AccountStatus.BANNED,
+    AccountStatus.PENDING_DELETION,
+  ])('a VERIFIED account that is %s is not eligible', async (accountStatus) => {
+    seed([
+      {
+        id: 'm',
+        verificationStatus: VerificationStatus.VERIFIED,
+        accountStatus,
+      },
+    ]);
+    await expect(service.isUserEligible('m')).resolves.toBe(false);
+    service.invalidateAll();
+    const map = await service.getEligibilityMap(['m']);
+    expect(map.get('m')).toBe(false);
+  });
+
+  it('a VERIFIED account with deletedAt set is not eligible', async () => {
+    seed([
+      {
+        id: 'd',
+        verificationStatus: VerificationStatus.VERIFIED,
+        deletedAt: new Date(),
+      },
+    ]);
+    await expect(service.isUserEligible('d')).resolves.toBe(false);
+  });
+
+  it('a VERIFIED, ACTIVE, undeleted account is still eligible', async () => {
+    seed([{ id: 'ok', verificationStatus: VerificationStatus.VERIFIED }]);
+    await expect(service.isUserEligible('ok')).resolves.toBe(true);
   });
 
   it('reports an id with no user row as ineligible rather than omitting it', async () => {
@@ -105,6 +150,12 @@ describe('VerificationAccessService', () => {
     ).rejects.toThrow(
       'Account verification is required to perform this action.',
     );
+    await expect(
+      service.assertUsersEligible(['sender', 'recipient'], 'sender'),
+    ).rejects.toMatchObject({
+      response: { code: 'VERIFICATION_REQUIRED' },
+      status: 403,
+    });
   });
 
   it('gates a group on the sender only, so one lapsed member does not silence it', async () => {
@@ -160,9 +211,16 @@ describe('VerificationAccessService — status cache', () => {
     prisma.user.findUnique.mockResolvedValue({
       id: 'u1',
       verificationStatus: status,
+      accountStatus: 'ACTIVE',
+      deletedAt: null,
     });
     prisma.user.findMany.mockResolvedValue([
-      { id: 'u1', verificationStatus: status },
+      {
+        id: 'u1',
+        verificationStatus: status,
+        accountStatus: 'ACTIVE',
+        deletedAt: null,
+      },
     ]);
   };
 
@@ -212,7 +270,12 @@ describe('VerificationAccessService — status cache', () => {
     await service.isUserEligible('u1');
 
     prisma.user.findMany.mockResolvedValue([
-      { id: 'u2', verificationStatus: VerificationStatus.VERIFIED },
+      {
+        id: 'u2',
+        verificationStatus: VerificationStatus.VERIFIED,
+        accountStatus: 'ACTIVE',
+        deletedAt: null,
+      },
     ]);
     const map = await service.getEligibilityMap(['u1', 'u2']);
 
@@ -222,7 +285,12 @@ describe('VerificationAccessService — status cache', () => {
     // one row rather than re-reading the sender the guard just resolved.
     expect(prisma.user.findMany).toHaveBeenCalledWith({
       where: { id: { in: ['u2'] } },
-      select: { id: true, verificationStatus: true },
+      select: {
+        id: true,
+        verificationStatus: true,
+        accountStatus: true,
+        deletedAt: true,
+      },
     });
   });
 

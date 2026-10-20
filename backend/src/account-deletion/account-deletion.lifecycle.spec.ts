@@ -69,6 +69,19 @@ describe('AccountDeletionService — 30-day recovery window', () => {
   };
   let row: UserRow;
 
+  /** A live challenge whose resend cooldown ends `cooldownMsLeft` from now. */
+  const liveChallenge = ({
+    cooldownMsLeft = 45_000,
+    attemptsRemaining,
+  }: {
+    cooldownMsLeft?: number;
+    attemptsRemaining: number;
+  }) => ({
+    expiresAt: new Date(Date.now() + 540_000).toISOString(),
+    resendAvailableAt: new Date(Date.now() + cooldownMsLeft).toISOString(),
+    attemptsRemaining,
+  });
+
   beforeEach(() => {
     row = {
       id: USER_ID,
@@ -315,20 +328,17 @@ describe('AccountDeletionService — 30-day recovery window', () => {
       // A refresh during the code step, a second tab, or a double-click. The
       // old behaviour hit the resend cooldown and stranded the user on an error
       // for a minute while a perfectly good code sat in their inbox.
-      otpService.getChallengeState.mockResolvedValueOnce({
-        expiresAt: '2026-09-01T10:10:00.000Z',
-        resendAvailableAt: '2026-09-01T10:01:00.000Z',
-        attemptsRemaining: 5,
-      });
+      const live = liveChallenge({ attemptsRemaining: 5 });
+      otpService.getChallengeState.mockResolvedValueOnce(live);
 
       const res = await service.requestDeletionOtp(USER_ID);
 
       expect(res).toMatchObject({
         otpRequired: true,
-        expiresAt: '2026-09-01T10:10:00.000Z',
+        expiresAt: live.expiresAt,
         // Taken from the stored row, not recomputed — otherwise a refresh
         // would quietly reset the cooldown.
-        resendAvailableAt: '2026-09-01T10:01:00.000Z',
+        resendAvailableAt: live.resendAvailableAt,
       });
       expect(otpService.issue).not.toHaveBeenCalled();
       expect(emailService.sendAccountDeletionOtpEmail).not.toHaveBeenCalled();
@@ -336,14 +346,80 @@ describe('AccountDeletionService — 30-day recovery window', () => {
 
     it('resumes a live recovery challenge the same way', async () => {
       await service.requestDeletion(USER_ID);
-      otpService.getChallengeState.mockResolvedValueOnce({
-        expiresAt: '2026-09-01T10:10:00.000Z',
-        resendAvailableAt: '2026-09-01T10:01:00.000Z',
-        attemptsRemaining: 3,
-      });
+      otpService.getChallengeState.mockResolvedValueOnce(
+        liveChallenge({ attemptsRemaining: 3 }),
+      );
 
       await service.requestRecoveryOtp(USER_ID);
       expect(emailService.sendAccountRecoveryOtpEmail).not.toHaveBeenCalled();
+    });
+
+    describe('a live challenge is resumed only while it is still useful', () => {
+      it('issues a fresh code once the resend cooldown has passed', async () => {
+        otpService.getChallengeState.mockResolvedValueOnce(
+          liveChallenge({ cooldownMsLeft: -1000, attemptsRemaining: 5 }),
+        );
+
+        await service.requestDeletionOtp(USER_ID);
+
+        expect(otpService.issue).toHaveBeenCalledTimes(1);
+        expect(emailService.sendAccountDeletionOtpEmail).toHaveBeenCalledTimes(
+          1,
+        );
+      });
+
+      it('issues a fresh code when the attempts are spent', async () => {
+        otpService.getChallengeState.mockResolvedValueOnce(
+          liveChallenge({ attemptsRemaining: 0 }),
+        );
+
+        await service.requestDeletionOtp(USER_ID);
+
+        expect(otpService.issue).toHaveBeenCalledTimes(1);
+      });
+
+      it('applies the same rule to recovery', async () => {
+        await service.requestDeletion(USER_ID);
+        otpService.getChallengeState.mockResolvedValueOnce(
+          liveChallenge({ cooldownMsLeft: -1000, attemptsRemaining: 5 }),
+        );
+
+        await service.requestRecoveryOtp(USER_ID);
+
+        expect(otpService.issue).toHaveBeenCalledTimes(1);
+        expect(emailService.sendAccountRecoveryOtpEmail).toHaveBeenCalledTimes(
+          1,
+        );
+      });
+
+      it('drops the code row when the deletion email cannot be sent', async () => {
+        emailService.sendAccountDeletionOtpEmail.mockRejectedValueOnce(
+          new Error('smtp down'),
+        );
+
+        await expect(service.requestDeletionOtp(USER_ID)).rejects.toThrow(
+          'smtp down',
+        );
+        expect(otpService.invalidate).toHaveBeenCalledWith(
+          USER_ID,
+          'ACCOUNT_DELETION',
+        );
+      });
+
+      it('drops the code row when the recovery email cannot be sent', async () => {
+        await service.requestDeletion(USER_ID);
+        emailService.sendAccountRecoveryOtpEmail.mockRejectedValueOnce(
+          new Error('smtp down'),
+        );
+
+        await expect(service.requestRecoveryOtp(USER_ID)).rejects.toThrow(
+          'smtp down',
+        );
+        expect(otpService.invalidate).toHaveBeenCalledWith(
+          USER_ID,
+          'ACCOUNT_RECOVERY',
+        );
+      });
     });
 
     it('confirming with a valid code schedules the deletion', async () => {

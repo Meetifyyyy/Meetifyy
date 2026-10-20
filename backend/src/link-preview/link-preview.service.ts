@@ -11,6 +11,12 @@ import { BlockList, isIP, type LookupFunction } from 'net';
 import * as http from 'http';
 import * as https from 'https';
 
+/** The `{ all: true }` form of the dns.lookup callback. */
+type AllAddressesCallback = (
+  err: NodeJS.ErrnoException | null,
+  addresses: Array<{ address: string; family: number }>,
+) => void;
+
 @Injectable()
 export class LinkPreviewService {
   async getPreview(url: string) {
@@ -81,6 +87,47 @@ export class LinkPreviewService {
   }
 
   /**
+   * A `lookup` for http(s).request that refuses private addresses at connect
+   * time (DNS pinning).
+   *
+   * Node 20+ calls `lookup` with `{ all: true }` when autoSelectFamily is on
+   * (the default) and then expects an ARRAY of `{ address, family }`. Handing
+   * back a bare string there fails with ERR_INVALID_IP_ADDRESS, which broke
+   * every link preview of a hostname URL. Both shapes are honoured.
+   */
+  private createSafeLookup(): LookupFunction {
+    return (hostname, options, callback) => {
+      lookup(hostname, { all: true })
+        .then((entries) => {
+          const addrs = Array.isArray(entries) ? entries : [entries];
+          if (
+            addrs.length === 0 ||
+            addrs.some((e) => this.isPrivateAddress(e.address))
+          ) {
+            return callback(
+              new ForbiddenException('Forbidden target host'),
+              '',
+              4,
+            );
+          }
+          if (options.all) {
+            return (callback as AllAddressesCallback)(
+              null,
+              addrs.map((e) => ({ address: e.address, family: e.family })),
+            );
+          }
+          const first = addrs[0];
+          callback(null, first.address, first.family);
+        })
+        // dns.lookup rejects with an Error; anything else is wrapped so the
+        // socket still receives one.
+        .catch((err: unknown) =>
+          callback(err instanceof Error ? err : new Error(String(err)), '', 4),
+        );
+    };
+  }
+
+  /**
    * Fetches the target HTML document with socket-level DNS verification (DNS pinning).
    * Verifies the target IP at connection time before the TCP handshake to eliminate
    * DNS rebinding / TOCTOU SSRF attacks.
@@ -90,33 +137,7 @@ export class LinkPreviewService {
       const transport = parsedUrl.protocol === 'https:' ? https : http;
       let settled = false;
 
-      const safeLookup: LookupFunction = (hostname, _options, callback) => {
-        lookup(hostname, { all: true })
-          .then((entries) => {
-            const addrs = Array.isArray(entries) ? entries : [entries];
-            if (
-              addrs.length === 0 ||
-              addrs.some((e) => this.isPrivateAddress(e.address))
-            ) {
-              return callback(
-                new ForbiddenException('Forbidden target host'),
-                '',
-                4,
-              );
-            }
-            const first = addrs[0];
-            callback(null, first.address, first.family);
-          })
-          // dns.lookup rejects with an Error; anything else is wrapped so the
-          // socket still receives one.
-          .catch((err: unknown) =>
-            callback(
-              err instanceof Error ? err : new Error(String(err)),
-              '',
-              4,
-            ),
-          );
-      };
+      const safeLookup = this.createSafeLookup();
 
       const req = transport.request(
         parsedUrl,

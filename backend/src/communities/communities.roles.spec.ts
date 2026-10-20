@@ -27,6 +27,8 @@ describe('CommunitiesService — member roles', () => {
 
   /** A membership row, or its absence. */
   type MemberRow = { role: string } | null;
+  /** The conditional the role write carries. */
+  type RoleWhere = { role: { not: string } };
   /** A role write, as far as these assertions read it. */
   type RoleUpdate = {
     data: { role?: string; moderatorPromotedAt?: Date };
@@ -50,9 +52,13 @@ describe('CommunitiesService — member roles', () => {
               where.userId_communityId.userId === OWNER ? requester : target,
             ),
         ),
-        update: jest.fn((args: RoleUpdate) => {
-          updates.push(args);
-          return Promise.resolve({ ...target, ...args.data });
+        // The role write is conditional on the role differing (see
+        // updateMemberRole): it matches the row only when it is not already
+        // `newRole`, which is what makes a repeat a no-op.
+        updateMany: jest.fn((args: RoleUpdate & { where: RoleWhere }) => {
+          updates.push({ data: args.data });
+          const matches = !!target && target.role !== args.where.role.not;
+          return Promise.resolve({ count: matches ? 1 : 0 });
         }),
       },
     });

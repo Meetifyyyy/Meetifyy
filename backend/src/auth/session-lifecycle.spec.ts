@@ -335,6 +335,21 @@ describe('AuthController — session lifecycle', () => {
       expect(sessions.revokeByRefreshHash).not.toHaveBeenCalled();
     });
 
+    it('answers 403, not a 500, for a multibyte CSRF header of the same character count', async () => {
+      // 6 UTF-16 units each, but 6 vs 18 bytes: `timingSafeEqual` on the raw
+      // Buffers used to throw a RangeError here.
+      await expect(
+        controller.logoutSession(
+          req({
+            cookies: { mf_refresh: 'our-refresh', mf_csrf: 'secret' },
+            headers: { 'x-csrf-token': '€€€€€€' },
+          }),
+          res,
+        ),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(sessions.revokeByRefreshHash).not.toHaveBeenCalled();
+    });
+
     it('accepts the matching double-submit token', async () => {
       await expect(
         controller.logoutSession(

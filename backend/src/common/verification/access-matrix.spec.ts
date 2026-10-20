@@ -1,4 +1,8 @@
-import { ExecutionContext, ForbiddenException } from '@nestjs/common';
+import {
+  ExecutionContext,
+  ForbiddenException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { WsException } from '@nestjs/websockets';
 import { VerificationStatus } from '@prisma/client';
@@ -64,10 +68,26 @@ describe('verification access matrix', () => {
   const asUser = (status: VerificationStatus | null) => {
     access.invalidateAll();
     prisma.user.findUnique.mockResolvedValue(
-      status ? { id: 'u1', verificationStatus: status } : null,
+      status
+        ? {
+            id: 'u1',
+            verificationStatus: status,
+            accountStatus: 'ACTIVE',
+            deletedAt: null,
+          }
+        : null,
     );
     prisma.user.findMany.mockResolvedValue(
-      status ? [{ id: 'u1', verificationStatus: status }] : [],
+      status
+        ? [
+            {
+              id: 'u1',
+              verificationStatus: status,
+              accountStatus: 'ACTIVE',
+              deletedAt: null,
+            },
+          ]
+        : [],
     );
   };
 
@@ -134,14 +154,14 @@ describe('verification access matrix', () => {
     ).rejects.toThrow(ForbiddenException);
   });
 
-  it('leaves an unauthenticated request to the auth guard rather than passing it as verified', async () => {
-    // No user id on the request: this guard is not the authentication check,
-    // and JwtGuard has already rejected it. What matters is that it does not
-    // throw a *verification* error that would mask a 401 as a 403.
+  it('fails closed (401) for a request it cannot identify, rather than passing it as verified', async () => {
+    // This guard is an APP_GUARD and runs BEFORE JwtGuard, so "no user on the
+    // request" means nobody has been identified yet, not that JwtGuard already
+    // refused it. Allowing it made @VerifiedOnly inert on HTTP.
     asUser(null);
-    await expect(guard.canActivate(context({ type: 'http' }))).resolves.toBe(
-      true,
-    );
+    await expect(
+      guard.canActivate(context({ type: 'http' })),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
   });
 
   it('opens everything when the feature flag is off', async () => {

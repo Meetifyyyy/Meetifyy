@@ -192,6 +192,77 @@ describe('RealtimeGateway — Authentication', () => {
     },
   );
 
+  it.each(['SUSPENDED', 'BANNED'])(
+    'rejects connection when the account is %s despite a valid token',
+    async (accountStatus) => {
+      const client = fakeSocket({
+        data: {},
+        id: 'socket-1000',
+        handshake: {
+          auth: { token: 'valid.signed.jwt' },
+          headers: { cookie: 'mf_sid=sess-1' },
+        },
+        disconnect: jest.fn(),
+        join: jest.fn(),
+        emit: jest.fn(),
+      });
+
+      sessionOwner = 'moderated-user';
+      jwtGuard.validateToken.mockResolvedValue({
+        id: 'moderated-user',
+        email: 'm@meetifyy.com',
+        user_metadata: { username: 'm' },
+      });
+      prisma.user.findUnique.mockResolvedValue({ accountStatus });
+
+      await gateway.handleConnection(client);
+
+      expect(client.disconnect).toHaveBeenCalled();
+      expect(client.join).not.toHaveBeenCalled();
+      expect(presenceService.setOnline).not.toHaveBeenCalled();
+      expect(client.emit).toHaveBeenCalledWith('account:unavailable', {
+        code: 'ACCOUNT_SUSPENDED',
+      });
+    },
+  );
+
+  it('the periodic sweep disconnects already-open sockets of a suspended account', async () => {
+    const suspendedSocket = fakeSocket({
+      data: { userId: 'u-suspended' },
+      emit: jest.fn(),
+      disconnect: jest.fn(),
+    });
+    const okSocket = fakeSocket({
+      data: { userId: 'u-ok' },
+      emit: jest.fn(),
+      disconnect: jest.fn(),
+    });
+    const findMany = jest.fn().mockResolvedValue([{ id: 'u-suspended' }]);
+    (prisma as unknown as { user: { findMany: jest.Mock } }).user.findMany =
+      findMany;
+    (gateway as unknown as { server: unknown }).server = {
+      sockets: {
+        sockets: new Map([
+          ['a', suspendedSocket],
+          ['b', okSocket],
+        ]),
+      },
+    };
+
+    await gateway['disconnectRevokedSessions']();
+
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          id: { in: ['u-suspended', 'u-ok'] },
+          accountStatus: { in: ['SUSPENDED', 'BANNED'] },
+        },
+      }),
+    );
+    expect(suspendedSocket.disconnect).toHaveBeenCalled();
+    expect(okSocket.disconnect).not.toHaveBeenCalled();
+  });
+
   it('accepts connection if token verification succeeds with valid signature', async () => {
     const client = fakeSocket({
       data: {},

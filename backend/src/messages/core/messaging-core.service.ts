@@ -22,7 +22,10 @@ import { SendMessageDto } from './dto/send-message.dto';
 import { MessageResponseDto } from './dto/message-response.dto';
 import { MentionsService } from '../../mentions/mentions.service';
 import { buildReplyToSnapshot, REPLY_TO_SELECT } from '../reply-preview.util';
-import { VerificationAccessService } from '../../common/verification/verification-access.service';
+import {
+  VerificationAccessService,
+  verificationRequiredException,
+} from '../../common/verification/verification-access.service';
 import { RateLimitService } from '../../common/rate-limit/rate-limit.service';
 import {
   isUnavailableUser,
@@ -123,9 +126,7 @@ export class MessagingCoreService {
   protected async assertMayJoinGroup(userId: string): Promise<void> {
     if (!this.verificationAccess.isEnforcementEnabled()) return;
     if (await this.verificationAccess.isUserEligible(userId)) return;
-    throw new ForbiddenException(
-      'Account verification is required to perform this action.',
-    );
+    throw verificationRequiredException();
   }
 
   /**
@@ -329,17 +330,6 @@ export class MessagingCoreService {
       );
     }
 
-    // Verification gate, on the same participant set we just loaded. A DM
-    // needs both people eligible; a group needs the sender. This sits below
-    // every transport — REST, socket, offline replay — so a client holding
-    // stale "you may type here" state is refused at the insert, not trusted.
-    await this.verificationAccess.assertCanMessageInConversation(
-      conv.id,
-      senderId,
-      conv.participants.map((p) => p.userId),
-      conv.type === 'GROUP',
-    );
-
     const otherParticipants = conv.participants.filter(
       (p) => p.userId !== senderId,
     );
@@ -366,6 +356,17 @@ export class MessagingCoreService {
         message: 'This user is no longer available.',
       });
     }
+
+    // Verification gate, on the same participant set we just loaded. A DM
+    // needs both people eligible; a group needs the sender. This sits below
+    // every transport — REST, socket, offline replay — so a client holding
+    // stale "you may type here" state is refused at the insert, not trusted.
+    await this.verificationAccess.assertCanMessageInConversation(
+      conv.id,
+      senderId,
+      conv.participants.map((p) => p.userId),
+      conv.type === 'GROUP',
+    );
 
     // In a group the conversation stays open — the other members are still
     // there — but a deleted member is dropped from the recipient set so no
@@ -642,30 +643,61 @@ export class MessagingCoreService {
     // clearing the chat, and the page cursor), merged into one filter.
     const createdAtFilter: Prisma.DateTimeFilter<'Message'> = {};
 
-    const [deletedForUser, participant, participants] = await Promise.all([
-      currentUserId
-        ? this.prisma.deletedMessage.findMany({
-            where: {
-              userId: currentUserId,
-              message: { conversationId: realConvId },
-            },
-            select: { messageId: true },
-          })
-        : Promise.resolve([]),
-      currentUserId
-        ? this.prisma.conversationParticipant.findFirst({
-            where: { userId: currentUserId, conversationId: realConvId },
-          })
-        : Promise.resolve(null),
-      this.prisma.conversationParticipant.findMany({
-        where: { conversationId: realConvId, deletedAt: null },
-        select: {
-          userId: true,
-          lastReadAt: true,
-          user: { select: { settings: { select: { readReceipts: true } } } },
-        },
-      }),
-    ]);
+    const [deletedForUser, participant, participants, historyConv] =
+      await Promise.all([
+        currentUserId
+          ? this.prisma.deletedMessage.findMany({
+              where: {
+                userId: currentUserId,
+                message: { conversationId: realConvId },
+              },
+              select: { messageId: true },
+            })
+          : Promise.resolve([]),
+        currentUserId
+          ? this.prisma.conversationParticipant.findFirst({
+              where: {
+                userId: currentUserId,
+                conversationId: realConvId,
+                deletedAt: null,
+              },
+            })
+          : Promise.resolve(null),
+        this.prisma.conversationParticipant.findMany({
+          where: { conversationId: realConvId, deletedAt: null },
+          select: {
+            userId: true,
+            lastReadAt: true,
+            user: { select: { settings: { select: { readReceipts: true } } } },
+          },
+        }),
+        this.prisma.conversation.findUnique({
+          where: { id: realConvId },
+          select: { type: true, isInstantMatch: true },
+        }),
+      ]);
+
+    // Membership gate. A caller holding a conversation id or publicId is not
+    // thereby allowed to read it: they must be a current participant. A former
+    // member (leftAt set, row not deleted) still passes — they keep the history
+    // up to the moment they left, bounded by leftAt below.
+    if (!currentUserId || !participant) {
+      throw new ForbiddenException('Not a member of this conversation');
+    }
+
+    // Instant Match history is authorised by the live match session, which only
+    // MessagesService can ask. DM and group endpoints never serve it.
+    if (
+      historyConv &&
+      (historyConv.type === 'INSTANT_MATCH' || historyConv.isInstantMatch)
+    ) {
+      return {
+        messages: [],
+        canSendMessages: false,
+        participants: [],
+        nextCursor: null,
+      };
+    }
 
     if (deletedForUser && deletedForUser.length > 0) {
       whereCondition.id = { notIn: deletedForUser.map((d) => d.messageId) };
@@ -893,20 +925,20 @@ export class MessagingCoreService {
       if (!conv) return;
 
       const now = new Date();
-      await this.prisma.conversationParticipant
-        .upsert({
-          where: {
-            userId_conversationId: { userId, conversationId: realConvId },
-          },
-          update: { lastReadAt: now, unreadCount: 0 },
-          create: {
-            userId,
-            conversationId: realConvId,
-            lastReadAt: now,
-            unreadCount: 0,
-          },
-        })
-        .catch(() => {});
+      // Update only an existing, active participant. An upsert here used to
+      // create the row, so POST /:id/read made any caller a member of any
+      // conversation they could name. A non-participant matches nothing and
+      // the whole receipt (including the fan-out below) is dropped.
+      const updated = await this.prisma.conversationParticipant.updateMany({
+        where: {
+          userId,
+          conversationId: realConvId,
+          deletedAt: null,
+          leftAt: null,
+        },
+        data: { lastReadAt: now, unreadCount: 0 },
+      });
+      if (updated.count === 0) return;
 
       const participants = await this.prisma.conversationParticipant.findMany({
         where: { conversationId: realConvId, deletedAt: null },
@@ -958,16 +990,61 @@ export class MessagingCoreService {
     }
   }
 
+  /**
+   * The caller must be an ACTIVE participant (not left, not removed) of the
+   * conversation. Every refusal is the same 403 so a stranger cannot use the
+   * response to learn whether a message id exists.
+   */
+  protected async assertActiveParticipant(
+    conversationId: string,
+    userId: string,
+    options: { allowLeft?: boolean } = {},
+  ): Promise<void> {
+    const row = await this.prisma.conversationParticipant.findFirst({
+      where: {
+        conversationId,
+        userId,
+        deletedAt: null,
+        ...(options.allowLeft ? {} : { leftAt: null }),
+      },
+      select: { userId: true },
+    });
+    if (!row) {
+      throw new ForbiddenException('Not a member of this conversation');
+    }
+  }
+
   async reactToMessage(messageId: string, userId: string, reaction: string) {
     // A reaction is a message-composer action too, so it obeys the same rule
     // as sending: emoji on a thread you are not allowed to write in would be
     // a trivial way to keep talking to someone you cannot message.
     const target = await this.prisma.message.findUnique({
       where: { id: messageId },
-      select: { conversationId: true },
+      select: {
+        conversationId: true,
+        conversation: { select: { type: true } },
+      },
     });
     if (!target) {
       throw new NotFoundException('Message not found');
+    }
+    await this.assertActiveParticipant(target.conversationId, userId);
+    if (target.conversation?.type === 'DM') {
+      const others = await this.prisma.conversationParticipant.findMany({
+        where: {
+          conversationId: target.conversationId,
+          userId: { not: userId },
+          deletedAt: null,
+        },
+        select: { userId: true },
+      });
+      for (const other of others) {
+        if (await this.blocksService.isBlocked(userId, other.userId)) {
+          throw new ForbiddenException(
+            'You can no longer react to messages from this user.',
+          );
+        }
+      }
     }
     await this.assertVerifiedForConversation(target.conversationId, userId);
 
@@ -1076,6 +1153,8 @@ export class MessagingCoreService {
     if (!message) {
       throw new NotFoundException('Message not found');
     }
+
+    await this.assertActiveParticipant(message.conversationId, userId);
 
     await this.prisma.deletedMessage.upsert({
       where: { userId_messageId: { userId, messageId } },
@@ -1476,6 +1555,11 @@ export class MessagingCoreService {
     text: string,
   ) {
     const realConvId = await this.resolveConversationId(conversationId);
+    // The actor must belong to the conversation. A just-departed member is
+    // allowed because "<handle> left the group" is posted after leftAt is set.
+    await this.assertActiveParticipant(realConvId, senderId, {
+      allowLeft: true,
+    });
     const message = await this.prisma.message.create({
       data: {
         conversationId: realConvId,

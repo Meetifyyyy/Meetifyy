@@ -3,6 +3,7 @@ import { AdminUsersService } from './admin-users.service';
 import { stub } from '../../common/testing/stub';
 import type { PrismaService } from '../../prisma/prisma.service';
 import type { SupabaseService } from '../../supabase/supabase.service';
+import type { UserSessionService } from '../../auth/session/user-session.service';
 import type { CampusAffiliationService } from '../../campus-affiliation/campus-affiliation.service';
 import type { AffiliationGateRow } from '../../common/campus/campus-access.service';
 import { affiliatedWith } from '../../common/campus/testing/affiliation.fixture';
@@ -39,6 +40,7 @@ describe('AdminUsersService.setCampusRep — campus from the affiliation', () =>
       }),
       stub<SupabaseService>(),
       stub<CampusAffiliationService>(),
+      stub<UserSessionService>(),
     );
     return { service, findFirst, update };
   };

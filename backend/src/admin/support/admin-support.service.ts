@@ -13,6 +13,8 @@ import {
 
 import { PrismaService } from '../../prisma/prisma.service';
 import { EmailService } from '../../email/email.service';
+import { StorageService } from '../../uploads/uploads.service';
+import { errorMessage } from '../../common/utils/error.util';
 import {
   htmlToPlainText,
   sanitizeReplyHtml,
@@ -36,6 +38,24 @@ const USER_SELECT = {
   avatar: true,
   email: true,
 } as const;
+
+/** How long an admin's link to a support attachment stays valid. */
+const ATTACHMENT_URL_TTL_SECONDS = 900;
+
+/** A stored attachment reference: the storage key plus whatever metadata came with it. */
+type StoredAttachment = { key: string; [field: string]: Prisma.JsonValue };
+
+/** An attachment as returned to the admin UI, with a short-lived signed link. */
+export type AdminAttachment = StoredAttachment & { url: string | null };
+
+function isStoredAttachment(value: unknown): value is StoredAttachment {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    !Array.isArray(value) &&
+    typeof (value as { key?: unknown }).key === 'string'
+  );
+}
 
 /**
  * Timestamps that must move with a status change.
@@ -73,7 +93,39 @@ export class AdminSupportService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly email: EmailService,
+    private readonly storage: StorageService,
   ) {}
+
+  /**
+   * Adds a signed, expiring `url` to each stored attachment.
+   *
+   * Support attachments live in a private bucket, so the key alone is not a
+   * link. Signing happens here, behind the admin guard, never at upload time.
+   * A key that cannot be signed yields `url: null` rather than failing the
+   * whole ticket.
+   */
+  private async signAttachments(
+    attachments: Prisma.JsonValue | null,
+  ): Promise<AdminAttachment[] | null> {
+    if (!Array.isArray(attachments)) return null;
+    const signed = await Promise.all(
+      attachments.filter(isStoredAttachment).map(async (file) => {
+        let url: string | null = null;
+        try {
+          url = await this.storage.getReviewerSignedUrl(
+            file.key,
+            ATTACHMENT_URL_TTL_SECONDS,
+          );
+        } catch (error) {
+          this.logger.warn(
+            `Could not sign a support attachment: ${errorMessage(error)}`,
+          );
+        }
+        return { ...file, url };
+      }),
+    );
+    return signed;
+  }
 
   // ── Queue ────────────────────────────────────────────────────────────────
 
@@ -232,14 +284,20 @@ export class AdminSupportService {
       : [];
     const adminsById = new Map(admins.map((admin) => [admin.id, admin]));
 
-    return {
-      ...ticket,
-      messages: ticket.messages.map((message) => ({
+    const messages = await Promise.all(
+      ticket.messages.map(async (message) => ({
         ...message,
+        attachments: await this.signAttachments(message.attachments),
         author: message.authorAdminId
           ? (adminsById.get(message.authorAdminId) ?? null)
           : null,
       })),
+    );
+
+    return {
+      ...ticket,
+      attachments: await this.signAttachments(ticket.attachments),
+      messages,
     };
   }
 

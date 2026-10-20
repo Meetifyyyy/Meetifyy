@@ -77,20 +77,26 @@ const VERIFIED_SIGNUP = {
 
 describe('AuthService.syncProfile — a new account', () => {
   let queryRaw: jest.Mock;
-  let upsert: jest.Mock;
+  type UserWriteArgs = {
+    create?: { username: string };
+    data?: Record<string, unknown>;
+  };
+  let upsert: jest.Mock<Promise<unknown>, [UserWriteArgs]>;
+  let update: jest.Mock<Promise<unknown>, [UserWriteArgs]>;
 
-  const build = () => {
+  const build = (client: object = {}) => {
+    update = jest.fn<Promise<unknown>, [UserWriteArgs]>().mockResolvedValue({});
     const prisma = {
       $queryRaw: queryRaw,
       user: {
         findUnique: jest.fn().mockResolvedValue(null),
         upsert,
-        update: jest.fn().mockResolvedValue({}),
+        update,
       },
     };
     return new AuthService(
       stub<PrismaService>(prisma),
-      stub<SupabaseService>({ isConfigured: true, client: {} }),
+      stub<SupabaseService>({ isConfigured: true, client }),
       stub<DomainValidatorService>({
         validateDomain: jest.fn().mockResolvedValue({
           isValid: true,
@@ -104,7 +110,9 @@ describe('AuthService.syncProfile — a new account', () => {
 
   beforeEach(() => {
     clearAuthSyncCacheLocal();
-    upsert = jest.fn().mockResolvedValue({ id: USER_ID, username: 'ravi' });
+    upsert = jest
+      .fn<Promise<unknown>, [UserWriteArgs]>()
+      .mockResolvedValue({ id: USER_ID, username: 'ravi' });
     queryRaw = jest
       .fn()
       .mockResolvedValueOnce([]) // no row yet: this is a new account
@@ -118,6 +126,78 @@ describe('AuthService.syncProfile — a new account', () => {
 
     expect(upsert).toHaveBeenCalledTimes(1);
     expect(queryRaw).toHaveBeenCalledTimes(2);
+  });
+
+  it('gives a reserved handle the neutral fallback instead of refusing the account', async () => {
+    // The email is already confirmed: rejecting would strand a real account
+    // with no profile row. The reserved name must simply never be assigned.
+    await build().syncProfile({
+      ...VERIFIED_SIGNUP,
+      user_metadata: { ...VERIFIED_SIGNUP.user_metadata, username: 'admin' },
+    });
+
+    expect(upsert).toHaveBeenCalledTimes(1);
+    const args = upsert.mock.calls[0][0];
+    expect(args.create?.username).toBe(`user_${USER_ID.slice(0, 8)}`);
+  });
+
+  it('treats a reserved prefix the same way', async () => {
+    await build().syncProfile({
+      ...VERIFIED_SIGNUP,
+      user_metadata: {
+        ...VERIFIED_SIGNUP.user_metadata,
+        username: 'deleted_abc123',
+      },
+    });
+    const args = upsert.mock.calls[0][0];
+    expect(args.create?.username).toBe(`user_${USER_ID.slice(0, 8)}`);
+  });
+
+  describe('auto-healing a fallback handle', () => {
+    const adminClient = (metaUsername?: string) => ({
+      auth: {
+        admin: {
+          getUserById: jest.fn().mockResolvedValue({
+            data: {
+              user: metaUsername
+                ? { user_metadata: { username: metaUsername } }
+                : null,
+            },
+          }),
+        },
+      },
+    });
+    const existing = (username: string) => {
+      queryRaw = jest
+        .fn()
+        .mockResolvedValue([{ ...CREATED_ROW, username, displayName: 'Ravi' }]);
+    };
+    const usernameWrites = () =>
+      update.mock.calls.filter(([arg]) =>
+        Boolean(arg.data && 'username' in arg.data),
+      );
+
+    it('upgrades the exact fallback shape (user_ + 8 hex)', async () => {
+      existing('user_0a1b2c3d');
+      await build(adminClient('ravi')).syncProfile(VERIFIED_SIGNUP);
+      expect(usernameWrites()).toHaveLength(1);
+      expect(usernameWrites()[0][0].data?.username).toBe('ravi');
+    });
+
+    it('leaves a chosen handle that merely starts with user_ alone', async () => {
+      existing('user_manager');
+      await build(adminClient('ravi')).syncProfile(VERIFIED_SIGNUP);
+      expect(usernameWrites()).toHaveLength(0);
+    });
+
+    it('will not heal a fallback into a reserved handle', async () => {
+      existing('user_0a1b2c3d');
+      await build(adminClient()).syncProfile({
+        ...VERIFIED_SIGNUP,
+        user_metadata: { ...VERIFIED_SIGNUP.user_metadata, username: 'admin' },
+      });
+      expect(usernameWrites()).toHaveLength(0);
+    });
   });
 
   it('answers with the curated profile, not the database row', async () => {

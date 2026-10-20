@@ -13,11 +13,14 @@ import { NotificationFactory } from '../notifications/notification.factory';
 import { DomainEventService } from '../events/domain-event.service';
 import { RedisService } from '../redis/redis.service';
 import { BlocksService } from './blocks.service';
+import { assertMediaRefsOwnedBy } from '../uploads/media-ownership.util';
 import { VerificationAccessService } from '../common/verification/verification-access.service';
 import { PresenceService } from '../presence/presence.service';
 import {
   checkPresenceVisibility,
+  maskPresenceForViewer,
   resolvePresenceVisibilityForViewer,
+  type MaskedPresence,
 } from './privacy.helper';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
@@ -449,7 +452,12 @@ export class UsersService {
     };
 
     const users = await this.prisma.user.findMany({
-      where,
+      // People the viewer is blocked with (either direction) are not listed.
+      where: await this.blocksService.injectBlockFilter(
+        excludeUserId,
+        where,
+        'id',
+      ),
       take: limit,
       skip: offset,
       select: {
@@ -791,14 +799,15 @@ export class UsersService {
       ? await this.blocksService.getExcludedUserIds(currentUserId)
       : [];
 
-    // 1. Find user by exact username (case-insensitive), or ID, or email prefix, or handle prefix, or displayName
+    // 1. Find user by exact username (case-insensitive) or ID.
     const targetUser = await this.prisma.user.findFirst({
       where: {
         OR: [
           { username: { equals: cleanUsername, mode: 'insensitive' } },
+          // By username or id only. Matching `email` / `collegeEmail` here let
+          // GET /api/users/<address> confirm whose address it was and return
+          // the profile behind it.
           { id: cleanUsername },
-          { email: { equals: cleanUsername, mode: 'insensitive' } },
-          { collegeEmail: { equals: cleanUsername, mode: 'insensitive' } },
         ],
       },
       include: {
@@ -982,7 +991,7 @@ export class UsersService {
       isPrivate: targetUser.settings?.privateProfile || false,
       isOnline,
       online: isOnline,
-      lastActive: presence?.lastSeen || null,
+      lastActive: canSeeOnline ? presence?.lastSeen || null : null,
       stats: {
         followers: targetUser._count.followers,
         following: targetUser._count.following,
@@ -1025,6 +1034,8 @@ export class UsersService {
           -- 404 everywhere else — and the follow row would then have to be
           -- cleaned up again at purge time.
           AND "deletedAt" IS NULL
+          -- Same for a suspended or banned account.
+          AND "accountStatus"::text = 'ACTIVE'
         LIMIT 1
       ),
       follower_user AS (
@@ -1311,12 +1322,16 @@ export class UsersService {
       LIMIT ${limit} OFFSET ${offset};
     `;
 
-    const userIds = rows.map((r) => r.id);
-    const presenceMap = await this.presenceService.getPresenceMany(userIds);
+    const presenceMap = await this.maskedPresenceFor(
+      currentUserId,
+      rows.map((r) => r.id),
+    );
 
     return rows.map((r) => {
-      const pres = presenceMap.get(r.id);
-      const isOnline = pres?.status === 'online';
+      const { isOnline, lastActive } = presenceMap.get(r.id) ?? {
+        isOnline: false,
+        lastActive: null,
+      };
       return {
         id: r.id,
         username: r.username,
@@ -1327,7 +1342,7 @@ export class UsersService {
         isFollowing: !!r.isFollowing,
         isOnline,
         online: isOnline,
-        lastActive: pres?.lastSeen || null,
+        lastActive,
       };
     });
   }
@@ -1403,12 +1418,16 @@ export class UsersService {
       LIMIT ${limit} OFFSET ${offset};
     `;
 
-    const userIds = rows.map((r) => r.id);
-    const presenceMap = await this.presenceService.getPresenceMany(userIds);
+    const presenceMap = await this.maskedPresenceFor(
+      currentUserId,
+      rows.map((r) => r.id),
+    );
 
     return rows.map((r) => {
-      const pres = presenceMap.get(r.id);
-      const isOnline = pres?.status === 'online';
+      const { isOnline, lastActive } = presenceMap.get(r.id) ?? {
+        isOnline: false,
+        lastActive: null,
+      };
       return {
         id: r.id,
         username: r.username,
@@ -1419,9 +1438,44 @@ export class UsersService {
         isFollowing: !!r.isFollowing,
         isOnline,
         online: isOnline,
-        lastActive: pres?.lastSeen || null,
+        lastActive,
       };
     });
+  }
+
+  /**
+   * Presence for a list of users, as `viewerId` may see it: each target's own
+   * visibility settings, blocks and the viewer's own status all apply, and
+   * `isOnline` / `lastActive` are masked together (see `maskPresenceForViewer`).
+   */
+  private async maskedPresenceFor(
+    viewerId: string | undefined | null,
+    userIds: string[],
+  ): Promise<Map<string, MaskedPresence>> {
+    if (userIds.length === 0) return new Map();
+    const [presence, settings] = await Promise.all([
+      this.presenceService.getPresenceMany(userIds),
+      this.prisma.userSettings.findMany({
+        where: { userId: { in: userIds } },
+        select: {
+          userId: true,
+          showOnlineStatus: true,
+          whoCanSeeOnline: true,
+        },
+      }),
+    ]);
+    const settingsById = new Map(settings.map((st) => [st.userId, st]));
+    return maskPresenceForViewer(
+      viewerId,
+      userIds.map((userId) => ({
+        userId,
+        rule: settingsById.get(userId)?.whoCanSeeOnline || 'everyone',
+        isEnabled: settingsById.get(userId)?.showOnlineStatus !== false,
+      })),
+      presence,
+      this.prisma,
+      this.blocksService,
+    );
   }
 
   async updateProfile(
@@ -1622,6 +1676,15 @@ export class UsersService {
             select: { avatar: true, cover: true },
           })
         : null;
+
+    // Only images this user uploaded may be attached (re-saving the current
+    // avatar/cover is always fine).
+    await assertMediaRefsOwnedBy(
+      this.prisma,
+      userId,
+      [avatarRef, coverRef],
+      [userBefore?.avatar, userBefore?.cover],
+    );
 
     let updated: Prisma.UserGetPayload<{
       select: typeof PROFILE_UPDATE_SELECT;

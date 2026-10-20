@@ -10,6 +10,7 @@ import sharp from 'sharp';
 import { PrismaService } from '../prisma/prisma.service';
 import { ConfigService } from '@nestjs/config';
 import { config } from '../config';
+import { extensionForMime } from './mime-extension';
 import { SUPPORT_ATTACHMENT_LIMITS } from '../support/support.constants';
 import { sanitizeFilename, sniffMimeType } from './attachment-inspection.util';
 import {
@@ -365,7 +366,13 @@ export class StorageService {
    * sensitive to protect only by a column, so the folder itself is a hard
    * floor: no `verification/` key resolves publicly, row or no row.
    */
-  private static readonly PRIVATE_FOLDERS = new Set(['verification']);
+  private static readonly PRIVATE_FOLDERS = new Set([
+    'verification',
+    // Support attachments come from anonymous submitters and are reviewed only
+    // by admins (signed URL). Without this the local-disk /api/media route
+    // served them unauthenticated.
+    'support',
+  ]);
 
   /**
    * Folders whose contents belong to a conversation rather than to the public.
@@ -448,6 +455,9 @@ export class StorageService {
     const participating = await this.prisma.message.findFirst({
       where: {
         payload: { path: ['mediaUrl'], string_contains: baseKey },
+        // A deleted or unsent message no longer grants access to its media.
+        deletedAt: null,
+        state: { not: 'UNSENT' },
         conversation: {
           participants: {
             some: { userId: viewerId, deletedAt: null, leftAt: null },
@@ -773,11 +783,9 @@ export class StorageService {
       'general',
       'events',
       'activities',
-      'defaults',
-      // Support-request attachments. Owner-less (the submitter is usually not
-      // logged in) and never listed publicly — reachable only through the
-      // admin ticket view, which resolves the key itself.
-      'support',
+      // 'defaults' (platform assets) and 'support' (anonymous support
+      // attachments, stored by uploadSupportAttachment) are written only by
+      // server code, never through the user-writable upload routes.
       'verification',
     ];
     if (!allowedFolders.includes(folder)) {
@@ -952,22 +960,7 @@ export class StorageService {
   }
 
   private extensionForMime(contentType: string): string {
-    const extensions: Record<string, string> = {
-      'image/jpeg': 'jpg',
-      'image/png': 'png',
-      'image/webp': 'webp',
-      'image/gif': 'gif',
-      'video/mp4': 'mp4',
-      'video/webm': 'webm',
-      'video/ogg': 'ogv',
-      'audio/mpeg': 'mp3',
-      'audio/wav': 'wav',
-      'audio/webm': 'webm',
-      'audio/ogg': 'oga',
-      'application/pdf': 'pdf',
-      'text/plain': 'txt',
-    };
-    return extensions[contentType.toLowerCase()] || 'bin';
+    return extensionForMime(contentType);
   }
 
   async delete(key: string): Promise<boolean> {

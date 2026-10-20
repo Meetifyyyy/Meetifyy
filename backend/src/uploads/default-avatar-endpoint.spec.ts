@@ -1,3 +1,4 @@
+import { allowAllRateLimitProvider } from '../common/rate-limit/testing/rate-limit.mock';
 import type { Server } from 'http';
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
@@ -47,6 +48,7 @@ describe('GET /api/media — default profile avatar', () => {
     const moduleRef = await Test.createTestingModule({
       controllers: [UploadsController],
       providers: [
+        allowAllRateLimitProvider(),
         { provide: StorageService, useValue: storage },
         { provide: SupabaseService, useValue: { isConfigured: false } },
         {

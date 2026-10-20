@@ -36,7 +36,6 @@ describe('upload folder allowlist', () => {
       'posts',
       'chat',
       'voice',
-      'defaults', // platform default assets
     ];
 
     it.each(inUse)('accepts %s', (folder) => {
@@ -52,6 +51,16 @@ describe('upload folder allowlist', () => {
       normalize('community-covers'),
     );
   });
+
+  // Server-only folders: written by server code, never by the user-facing
+  // upload routes. 'support' held anonymous attachments; 'defaults' is the
+  // platform's own artwork, which a user must not be able to overwrite.
+  it.each(['defaults', 'support'])(
+    'rejects server-only folder %s',
+    (folder) => {
+      expect(() => normalize(folder)).toThrow(BadRequestException);
+    },
+  );
 
   it('still rejects a folder nothing sends', () => {
     expect(() => normalize('arbitrary')).toThrow(BadRequestException);

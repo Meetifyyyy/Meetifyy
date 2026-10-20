@@ -1,4 +1,4 @@
-import { ForbiddenException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { CommunitiesService } from './communities.service';
 import { stub } from '../common/testing/stub';
 import type { PrismaService } from '../prisma/prisma.service';
@@ -49,18 +49,54 @@ describe('CommunitiesService — joining', () => {
   const build = (
     comm: CommunityRow,
     activeCollegeId: string | null,
-    opts: { requesterRole?: string | null } = {},
+    opts: {
+      requesterRole?: string | null;
+      requestStatus?: string;
+      /** The requester already has a member row (joined another way). */
+      alreadyMember?: boolean;
+    } = {},
   ) => {
+    // The request and member row are state, so a second call sees what the
+    // first one wrote — which is what the double-call cases are about.
+    const state = {
+      requestStatus: opts.requestStatus ?? 'PENDING',
+      isMember: opts.alreadyMember ?? false,
+      memberCount: 3,
+    };
     const tx = {
       communityMember: {
         findUnique: jest.fn(() => Promise.resolve(null)),
         create: jest.fn(() => Promise.resolve({})),
         upsert: jest.fn(() => Promise.resolve({})),
+        createMany: jest.fn(() => {
+          const count = state.isMember ? 0 : 1;
+          state.isMember = true;
+          return Promise.resolve({ count });
+        }),
       },
       community: {
-        update: jest.fn(() => Promise.resolve({ memberCount: 4 })),
+        update: jest.fn(
+          (args: { data: { memberCount: { increment: number } } }) => {
+            state.memberCount += args.data.memberCount.increment;
+            return Promise.resolve({ memberCount: state.memberCount });
+          },
+        ),
+        findUnique: jest.fn(() =>
+          Promise.resolve({ memberCount: state.memberCount }),
+        ),
       },
-      communityJoinRequest: { update: jest.fn(() => Promise.resolve({})) },
+      communityJoinRequest: {
+        update: jest.fn(() => Promise.resolve({})),
+        updateMany: jest.fn(
+          (args: { where: { status: string }; data: { status: string } }) => {
+            if (state.requestStatus !== args.where.status) {
+              return Promise.resolve({ count: 0 });
+            }
+            state.requestStatus = args.data.status;
+            return Promise.resolve({ count: 1 });
+          },
+        ),
+      },
     };
     const prisma = {
       // Unverified selfie AND a matching mirror: neither may decide anything.
@@ -85,17 +121,26 @@ describe('CommunitiesService — joining', () => {
       communityJoinRequest: {
         upsert: jest.fn(() => Promise.resolve({})),
         findUnique: jest.fn(() =>
-          Promise.resolve({ id: 'r1', communityId: COMMUNITY, userId: USER }),
+          Promise.resolve({
+            id: 'r1',
+            communityId: COMMUNITY,
+            userId: USER,
+            status: state.requestStatus,
+          }),
         ),
+        updateMany: tx.communityJoinRequest.updateMany,
       },
       $transaction: jest.fn((fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
     };
     const getActiveCollegeId = jest.fn<Promise<string | null>, [string]>(() =>
       Promise.resolve(activeCollegeId),
     );
+    const domainEmit = jest.fn((_type: string, _payload?: unknown) =>
+      Promise.resolve(),
+    );
     const service = new CommunitiesService(
       stub<PrismaService>(prisma),
-      stub<DomainEventService>({ emit: jest.fn(() => Promise.resolve()) }),
+      stub<DomainEventService>({ emit: domainEmit }),
       stub<RedisService>({
         getClient: () => null,
         withLock: <T>(_k: string, _t: number, fn: () => Promise<T>) => fn(),
@@ -110,7 +155,7 @@ describe('CommunitiesService — joining', () => {
     Object.assign(service, {
       invalidateCommunityCache: jest.fn(() => Promise.resolve()),
     });
-    return { service, prisma, tx, getActiveCollegeId };
+    return { service, prisma, tx, getActiveCollegeId, state, domainEmit };
   };
 
   describe('joinCommunity', () => {
@@ -168,9 +213,105 @@ describe('CommunitiesService — joining', () => {
         requesterRole: 'OWNER',
       });
       await service.acceptJoinRequest(COMMUNITY, 'r1', 'owner');
-      expect(tx.communityMember.upsert).toHaveBeenCalled();
+      expect(tx.communityMember.createMany).toHaveBeenCalled();
     });
 
+    const privateOwned = () =>
+      build(community({ isPrivate: true }), null, { requesterRole: 'OWNER' });
+
+    it('counts the new member once, however many times it is called', async () => {
+      const { service, state, domainEmit } = privateOwned();
+
+      await service.acceptJoinRequest(COMMUNITY, 'r1', 'owner');
+      await service.acceptJoinRequest(COMMUNITY, 'r1', 'owner');
+      await service.acceptJoinRequest(COMMUNITY, 'r1', 'owner');
+
+      // Used to be 3 -> 6: every repeat incremented the counter again.
+      expect(state.memberCount).toBe(4);
+      expect(state.requestStatus).toBe('ACCEPTED');
+      const accepted = domainEmit.mock.calls.filter(
+        ([type]) => type === 'community.requestAccepted',
+      );
+      expect(accepted).toHaveLength(1);
+    });
+
+    it('does not count a member who already joined another way', async () => {
+      const { service, state } = build(community({ isPrivate: true }), null, {
+        requesterRole: 'OWNER',
+        alreadyMember: true,
+      });
+
+      await service.acceptJoinRequest(COMMUNITY, 'r1', 'owner');
+
+      expect(state.memberCount).toBe(3);
+      expect(state.requestStatus).toBe('ACCEPTED');
+    });
+
+    it('does not let a declined request be accepted afterwards', async () => {
+      const { service, state, tx } = build(
+        community({ isPrivate: true }),
+        null,
+        {
+          requesterRole: 'OWNER',
+          requestStatus: 'DECLINED',
+        },
+      );
+
+      await expect(
+        service.acceptJoinRequest(COMMUNITY, 'r1', 'owner'),
+      ).rejects.toThrow(BadRequestException);
+      expect(tx.communityMember.createMany).not.toHaveBeenCalled();
+      expect(state.memberCount).toBe(3);
+    });
+
+    it('loses a race cleanly: the request moved off PENDING after it was read', async () => {
+      const { service, state, tx } = privateOwned();
+      // Read as PENDING, but another moderator wins the conditional write.
+      tx.communityJoinRequest.updateMany.mockImplementationOnce(() => {
+        state.requestStatus = 'ACCEPTED';
+        return Promise.resolve({ count: 0 });
+      });
+
+      await expect(
+        service.acceptJoinRequest(COMMUNITY, 'r1', 'owner'),
+      ).resolves.toEqual({ success: true });
+      expect(tx.communityMember.createMany).not.toHaveBeenCalled();
+      expect(state.memberCount).toBe(3);
+    });
+  });
+
+  describe('declineJoinRequest', () => {
+    it('declines once and is quiet on repeat', async () => {
+      const { service, state, domainEmit } = build(
+        community({ isPrivate: true }),
+        null,
+        { requesterRole: 'OWNER' },
+      );
+
+      await service.declineJoinRequest(COMMUNITY, 'r1', 'owner');
+      await service.declineJoinRequest(COMMUNITY, 'r1', 'owner');
+
+      expect(state.requestStatus).toBe('DECLINED');
+      const declined = domainEmit.mock.calls.filter(
+        ([type]) => type === 'community.requestDeclined',
+      );
+      expect(declined).toHaveLength(1);
+    });
+
+    it('cannot flip an accepted request to declined', async () => {
+      const { service, state } = build(community({ isPrivate: true }), null, {
+        requesterRole: 'OWNER',
+        requestStatus: 'ACCEPTED',
+      });
+
+      await expect(
+        service.declineJoinRequest(COMMUNITY, 'r1', 'owner'),
+      ).rejects.toThrow(BadRequestException);
+      expect(state.requestStatus).toBe('ACCEPTED');
+    });
+  });
+
+  describe('acceptJoinRequest (campus)', () => {
     it('refuses a campus requester whose affiliation is gone', async () => {
       const { service, tx } = build(
         community({
@@ -183,7 +324,7 @@ describe('CommunitiesService — joining', () => {
       await expect(
         service.acceptJoinRequest(COMMUNITY, 'r1', 'owner'),
       ).rejects.toThrow(ForbiddenException);
-      expect(tx.communityMember.upsert).not.toHaveBeenCalled();
+      expect(tx.communityMember.createMany).not.toHaveBeenCalled();
     });
   });
 

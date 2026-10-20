@@ -47,6 +47,11 @@ describe('verification bucket routing', () => {
     },
   );
 
+  it('sends support attachments to the private bucket', () => {
+    const p = build('meetifyy-verification');
+    expect(bucketFor(p, 'support/abc.png')).toBe('meetifyy-verification');
+  });
+
   it('leaves genuinely public media on the main bucket', () => {
     const p = build('meetifyy-verification');
     expect(bucketFor(p, 'posts/abc.webp')).toBe('meetifyy-media');

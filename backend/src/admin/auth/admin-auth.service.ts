@@ -528,8 +528,12 @@ export class AdminAuthService implements OnModuleInit {
         admin.email,
         admin.name,
         deviceName,
-        ip,
+        // No geo-lookup here; the template shows the IP when it has one.
+        'Unknown Location',
         formatEmailTime(new Date()),
+        browser,
+        os,
+        ip,
       )
       .catch((err) => {
         this.logger.warn('Failed to send login alert email', err);

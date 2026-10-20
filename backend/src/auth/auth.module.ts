@@ -4,10 +4,18 @@ import { AuthController } from './auth.controller';
 import { EmailModule } from '../email/email.module';
 import { UserSessionService } from './session/user-session.service';
 import { UserSessionRetentionService } from './session/user-session-retention.service';
+import { JwtGuard } from '../common/guards/jwt.guard';
 
 @Module({
   imports: [EmailModule],
-  providers: [AuthService, UserSessionService, UserSessionRetentionService],
+  providers: [
+    AuthService,
+    UserSessionService,
+    UserSessionRetentionService,
+    // RecoveryTokenGuard (password-reset/finalize) verifies the recovery token
+    // through it.
+    JwtGuard,
+  ],
   controllers: [AuthController],
   // The guard resolves session state, and the account-deletion and
   // password-change paths revoke sessions, so the service leaves this module.

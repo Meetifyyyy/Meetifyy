@@ -22,6 +22,7 @@ import {
   StoredObject,
 } from './storage-provider.interface';
 import { config } from '../../config';
+import { extensionForMime } from '../mime-extension';
 import { errorMessage } from '../../common/utils/error.util';
 
 @Injectable()
@@ -111,13 +112,11 @@ export class CloudflareR2Provider implements StorageProvider {
     key: string;
     headers?: Record<string, string>;
   }> {
-    const ext =
-      filename
-        .split('.')
-        .pop()
-        ?.toLowerCase()
-        .replace(/[^a-z0-9]/g, '')
-        .slice(0, 10) || 'bin';
+    // The extension comes from the validated content type, never from the
+    // client's filename: `x.html` must not become an `.html` object that a
+    // browser would render as a page from our storage host.
+    void filename;
+    const ext = extensionForMime(contentType);
     // An explicit key (validated by the caller) lets a client upload a derived
     // variant — e.g. a `<uuid>_thumb.webp` thumbnail sharing the original's key.
     const key = explicitKey || `${folder}/${randomUUID()}.${ext}`;
@@ -137,8 +136,20 @@ export class CloudflareR2Provider implements StorageProvider {
       Bucket: this.bucketFor(key),
       Key: key,
       CacheControl: cacheControl,
+      // Signed (see signableHeaders below), so storage refuses a PUT whose
+      // Content-Type differs from the validated one. Not added to the returned headers map: every client
+      // already sends exactly the contentType it declared, and replaying it
+      // would make XHR.setRequestHeader combine it into "type, type".
+      ContentType: contentType,
     });
-    const uploadUrl = await getSignedUrl(this.s3, command, { expiresIn });
+    const uploadUrl = await getSignedUrl(this.s3, command, {
+      expiresIn,
+      // The presigner leaves content-type OUT of the signature by default, so
+      // without this the ContentType above is decoration and a client could
+      // still store `text/html` on an image key. Listing it makes storage
+      // reject any PUT that does not carry exactly this value.
+      signableHeaders: new Set(['content-type']),
+    });
     const filePublicUrl = this.getPublicUrl(key);
 
     // Cache-Control is part of the signature, so the client has to send this
@@ -171,6 +182,11 @@ export class CloudflareR2Provider implements StorageProvider {
     'chat/',
     'messages/',
     'voice/',
+    // Support-request attachments. The submitter is usually anonymous and the
+    // files are user-supplied (screenshots, PDFs), so they must not be
+    // readable through the main bucket's unauthenticated public host. Admins
+    // reach them only through a short-lived signed URL.
+    'support/',
   ];
 
   /**

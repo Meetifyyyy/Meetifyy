@@ -7,6 +7,7 @@ import type { JwtGuard } from './jwt.guard';
 import { stub } from '../testing/stub';
 import * as jwt from 'jsonwebtoken';
 import { config } from '../../config';
+import { USER_ACCESS_COOKIE } from '../../auth/session/user-session-cookies';
 
 function makeService(): RateLimitService {
   return new RateLimitService(stub<RedisService>({ getClient: () => null }));
@@ -95,6 +96,46 @@ describe('RateLimitGuard', () => {
 
       const d = await svc.consume('global.user', 'user-a');
       expect(d.remaining).toBe(299);
+    });
+
+    it('counts a cookie-authenticated web user per user, not per IP', async () => {
+      const svc = makeService();
+      const guard = new RateLimitGuard(
+        svc,
+        makeJwt({ 'cookie-a': 'user-a', 'cookie-b': 'user-b' }),
+      );
+      const viaCookie = (token: string) => ({
+        ip: '203.0.113.7',
+        path: '/api/posts/feed',
+        headers: {},
+        cookies: { [USER_ACCESS_COOKIE]: token },
+      });
+
+      await guard.canActivate(ctx(viaCookie('cookie-a')));
+      await guard.canActivate(ctx(viaCookie('cookie-b')));
+
+      expect((await svc.consume('global.user', 'user-a')).remaining).toBe(298);
+      expect((await svc.consume('global.user', 'user-b')).remaining).toBe(298);
+    });
+
+    it('prefers the access cookie over an Authorization header, as JwtGuard does', async () => {
+      const svc = makeService();
+      const guard = new RateLimitGuard(
+        svc,
+        makeJwt({ 'cookie-a': 'user-a', 'header-b': 'user-b' }),
+      );
+
+      await guard.canActivate(
+        ctx({
+          ip: '203.0.113.7',
+          path: '/x',
+          headers: { authorization: 'Bearer header-b' },
+          cookies: { [USER_ACCESS_COOKIE]: 'cookie-a' },
+        }),
+      );
+
+      expect((await svc.consume('global.user', 'user-a')).remaining).toBe(298);
+      expect((await svc.consume('global.user', 'user-b')).remaining).toBe(299);
     });
 
     it('honours request.user when something has already authenticated', async () => {

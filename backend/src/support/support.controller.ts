@@ -16,6 +16,8 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { JwtGuard } from '../common/guards/jwt.guard';
 import { OptionalJwtGuard } from '../common/guards/optional-jwt.guard';
 import { SupportRateLimitGuard } from '../common/guards/support-ratelimit.guard';
+import { RateLimit } from '../common/rate-limit/rate-limit.decorator';
+import { RateLimitPolicyGuard } from '../common/rate-limit/rate-limit-policy.guard';
 import { StorageService } from '../uploads/uploads.service';
 import {
   CreateAccountSupportRequestDto,
@@ -99,7 +101,10 @@ export class SupportController {
    * fails validation, and so the file passes content inspection before any
    * ticket exists.
    */
-  @UseGuards(SupportRateLimitGuard)
+  // Its own budget: sharing `support.request.ip` meant uploading five files
+  // used the whole hourly quota and the ticket itself was then refused.
+  @UseGuards(RateLimitPolicyGuard)
+  @RateLimit('support.attachment.ip')
   @Post('attachments')
   @UseInterceptors(
     FileInterceptor('file', {

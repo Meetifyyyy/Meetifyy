@@ -1,3 +1,4 @@
+import { allowAllRateLimitProvider } from '../common/rate-limit/testing/rate-limit.mock';
 import type { Server } from 'http';
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
@@ -38,6 +39,7 @@ describe('GET /api/media — verification documents', () => {
     const moduleRef = await Test.createTestingModule({
       controllers: [UploadsController],
       providers: [
+        allowAllRateLimitProvider(),
         { provide: StorageService, useValue: storage },
         // The GET routes under test carry no JwtGuard; it is only needed so
         // the controller's other (guarded) routes can be instantiated.

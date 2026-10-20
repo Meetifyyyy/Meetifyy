@@ -90,11 +90,37 @@ export class MentionsService {
 
     // One batched existence check for the whole set — never N+1.
     const candidateIds = structurallyValid.map((m) => m.userId);
-    const realUsers = await this.prisma.user.findMany({
-      where: { id: { in: candidateIds }, deletedAt: null },
-      select: { id: true, username: true },
-    });
-    const realUserMap = new Map(realUsers.map((u) => [u.id, u.username]));
+    // Only live accounts, and never one the author is blocked with in either
+    // direction: a mention notifies its target, so it would otherwise let a
+    // blocked user be pinged (and a suspended account be addressed). Both are
+    // resolved in one round trip with the existence check.
+    const [realUsers, blocks] = await Promise.all([
+      this.prisma.user.findMany({
+        where: {
+          id: { in: candidateIds },
+          deletedAt: null,
+          accountStatus: 'ACTIVE',
+        },
+        select: { id: true, username: true },
+      }),
+      this.prisma.block.findMany({
+        where: {
+          OR: [
+            { blockerId: actorId, blockedId: { in: candidateIds } },
+            { blockedId: actorId, blockerId: { in: candidateIds } },
+          ],
+        },
+        select: { blockerId: true, blockedId: true },
+      }),
+    ]);
+    const blockedIds = new Set(
+      blocks.map((b) => (b.blockerId === actorId ? b.blockedId : b.blockerId)),
+    );
+    const realUserMap = new Map(
+      realUsers
+        .filter((u) => !blockedIds.has(u.id))
+        .map((u) => [u.id, u.username]),
+    );
 
     return (
       structurallyValid

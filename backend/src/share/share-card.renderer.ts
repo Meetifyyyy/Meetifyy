@@ -168,6 +168,7 @@ export class ShareCardRenderer {
   async render(
     post: PublicSharePost,
     variant: CardVariant = 'unfurl',
+    degraded = false,
   ): Promise<Buffer> {
     const scale = variant === 'story' ? ShareCardRenderer.SHARE_SCALE : 1;
     // Every download starts together and none of them can block another. They
@@ -175,7 +176,8 @@ export class ShareCardRenderer {
     // connection open for all of it — so a gallery of three costs one round
     // trip's latency, not three.
     const [tiles, avatar] = await Promise.all([
-      this.loadPreviewTiles(post),
+      // A degraded render never goes back to fetch media (see the retry below).
+      degraded ? Promise.resolve<Buffer[]>([]) : this.loadPreviewTiles(post),
       this.loadAvatar(post),
     ]);
 
@@ -208,8 +210,17 @@ export class ShareCardRenderer {
       const panel = await this.renderMediaPanel(tiles, post, layout, scale);
       // Files that decode nowhere are not worth failing the card for: fall
       // back to the layout that needs no picture at all.
+      //
+      // `video` must go too: with a video and no gallery the poster is fetched
+      // as a tile, so keeping it re-fetched the same undecodable poster on the
+      // retry and recursed forever. `degraded` is the belt to that brace — a
+      // card already rendering without media never fetches media again.
       if (!panel) {
-        return this.render({ ...post, image: null, gallery: [] }, variant);
+        return this.render(
+          { ...post, image: null, gallery: [], video: null },
+          variant,
+          true,
+        );
       }
       composites.push(panel);
     }

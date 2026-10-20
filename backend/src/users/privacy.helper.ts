@@ -184,6 +184,53 @@ export async function resolvePresenceVisibilityForViewer(
   return visible;
 }
 
+/** One user's presence as the viewer is allowed to see it. */
+export interface MaskedPresence {
+  isOnline: boolean;
+  lastActive: string | null;
+}
+
+/**
+ * The central "may this viewer see this person's presence" mask.
+ *
+ * `isOnline` and `lastActive` are the same disclosure — an offline user's
+ * last-seen time says as much as a green dot — so they are decided together
+ * and a caller cannot mask one and forget the other. Every target gets an
+ * entry: `{ isOnline: false, lastActive: null }` unless the viewer is allowed
+ * (not blocked, the target shows presence, the target's rule admits the viewer
+ * and the viewer has not hidden their own status). Anonymous viewers see none.
+ */
+export async function maskPresenceForViewer(
+  viewerUserId: string | null | undefined,
+  targets: { userId: string; rule: string; isEnabled: boolean }[],
+  presence: Map<string, { status?: string | null; lastSeen?: string | null }>,
+  prisma: PrismaService,
+  blocksService: BlocksService,
+): Promise<Map<string, MaskedPresence>> {
+  const visible = viewerUserId
+    ? await resolvePresenceVisibilityForViewer(
+        viewerUserId,
+        targets,
+        prisma,
+        blocksService,
+      )
+    : new Set<string>();
+  const out = new Map<string, MaskedPresence>();
+  for (const t of targets) {
+    const pres = presence.get(t.userId);
+    out.set(
+      t.userId,
+      visible.has(t.userId)
+        ? {
+            isOnline: pres?.status === 'online',
+            lastActive: pres?.lastSeen || null,
+          }
+        : { isOnline: false, lastActive: null },
+    );
+  }
+  return out;
+}
+
 export async function checkPresenceVisibilityBatch(
   targetUserId: string,
   viewerUserIds: string[],

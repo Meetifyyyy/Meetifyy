@@ -34,6 +34,8 @@ describe('VerificationAccessService — latency profile', () => {
           return {
             id: where.id,
             verificationStatus: VerificationStatus.VERIFIED,
+            accountStatus: 'ACTIVE',
+            deletedAt: null,
           };
         }),
         findMany: jest.fn(
@@ -43,6 +45,8 @@ describe('VerificationAccessService — latency profile', () => {
             return where.id.in.map((id: string) => ({
               id,
               verificationStatus: VerificationStatus.VERIFIED,
+              accountStatus: 'ACTIVE',
+              deletedAt: null,
             }));
           },
         ),

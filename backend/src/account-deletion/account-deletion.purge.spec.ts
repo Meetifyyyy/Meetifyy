@@ -2,6 +2,7 @@ import { AccountDeletionService } from './account-deletion.service';
 import { AccountDeletionPurgeService } from './account-deletion.purge.service';
 import { PURGE_MAX_ATTEMPTS } from './account-deletion.constants';
 import { JwtGuard } from '../common/guards/jwt.guard';
+import type { UserSessionService } from '../auth/session/user-session.service';
 import { stub } from '../common/testing/stub';
 import type { RedisService } from '../redis/redis.service';
 import type { PresenceService } from '../presence/presence.service';
@@ -80,6 +81,7 @@ describe('AccountDeletionPurgeService — permanent deletion', () => {
     queueMediaDeletion: jest.Mock<Promise<void>, [string[]]>;
   };
   let domainEventService: { emit: jest.Mock };
+  let revokeAllForUser: jest.Mock;
   let row: UserRow;
   let posts: { id: string }[];
   let activities: { id: string; coverImage: string }[];
@@ -292,12 +294,14 @@ describe('AccountDeletionPurgeService — permanent deletion', () => {
       queueMediaDeletion: jest.fn((_keys: string[]) => Promise.resolve()),
     };
     domainEventService = { emit: jest.fn() };
+    revokeAllForUser = jest.fn(() => Promise.resolve(1));
 
     purge = new AccountDeletionPurgeService(
       stub<PrismaService>(prisma),
       stub<RedisService>({ getClient: () => null }),
       stub<PresenceService>({ removePresence: jest.fn(async () => {}) }),
       stub<DomainEventService>(domainEventService),
+      stub<UserSessionService>({ revokeAllForUser }),
       stub<MediaCleanupService>(mediaCleanupService),
     );
     deletion = new AccountDeletionService(
@@ -493,6 +497,10 @@ describe('AccountDeletionPurgeService — permanent deletion', () => {
 
     it('revokes the session — recovery is no longer possible', () => {
       expect(JwtGuard.isUserRevoked(USER_ID)).toBe(true);
+    });
+
+    it('revokes every persisted session row, not just this process memory', () => {
+      expect(revokeAllForUser).toHaveBeenCalledWith(USER_ID, 'ACCOUNT_DELETED');
     });
 
     it('emits user.deleted exactly once', () => {

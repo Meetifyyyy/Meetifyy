@@ -5,10 +5,16 @@ jest.mock('../common/utils/sanitize-html.util', () => ({
   htmlToPlainText: jest.fn((str: string) => str),
 }));
 
-import { ForbiddenException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  ServiceUnavailableException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { AuthController } from './auth.controller';
 import { stub } from '../common/testing/stub';
+import { ProviderRefreshUnavailableError } from './auth.service';
 import type { AuthService } from './auth.service';
 import type { EmailService } from '../email/email.service';
 import type { RateLimitService } from '../common/rate-limit/rate-limit.service';
@@ -102,6 +108,53 @@ describe('AuthController — Security / Email Notification Spoofing Prevention',
       ),
     ).rejects.toThrow(ForbiddenException);
     expect(emailService.sendNewLoginEmail).not.toHaveBeenCalled();
+  });
+
+  it('refuses a caller with no verified address of its own, even when it supplies one', async () => {
+    const req = stub<Request>({ headers: {}, socket: {} });
+    for (const email of ['', 'x@meetifyy.user']) {
+      const user = { id: 'user-1', email };
+      await expect(
+        controller.triggerWelcomeEmail(
+          { email: 'victim@company.com', name: 'V' },
+          user,
+        ),
+      ).rejects.toThrow(ForbiddenException);
+      await expect(
+        controller.triggerLoginEmail(
+          { email: 'victim@company.com', name: 'V' },
+          req,
+          user,
+        ),
+      ).rejects.toThrow(ForbiddenException);
+      await expect(
+        controller.triggerPasswordChangedEmail(
+          { email: 'victim@company.com' },
+          req,
+          user,
+        ),
+      ).rejects.toThrow(ForbiddenException);
+    }
+    expect(emailService.sendWelcomeEmail).not.toHaveBeenCalled();
+    expect(emailService.sendNewLoginEmail).not.toHaveBeenCalled();
+    expect(emailService.sendPasswordChangedEmail).not.toHaveBeenCalled();
+  });
+
+  it('prints the request address in the login email, never one the caller wrote', async () => {
+    const user = { id: 'user-1', email: 'alice@example.com' };
+    const req = stub<Request>({
+      headers: {},
+      ip: '203.0.113.9',
+      socket: { remoteAddress: '203.0.113.9' },
+    });
+    await controller.triggerLoginEmail(
+      { email: 'alice@example.com', name: 'Alice', ip: '6.6.6.6' },
+      req,
+      user,
+    );
+    const args = emailService.sendNewLoginEmail.mock.calls[0] as unknown[];
+    expect(args[args.length - 1]).toBe('203.0.113.9');
+    expect(args).not.toContain('6.6.6.6');
   });
 
   it('rejects triggering password-changed email for another recipient', async () => {
@@ -301,26 +354,33 @@ describe('AuthController — session revocation scope', () => {
       );
     });
 
-    it('ignores an empty or non-string header', async () => {
-      await controller.revokeAllSessions(
-        user,
-        stub<Request>({ cookies: {}, headers: { 'x-session-id': '   ' } }),
-        stub<Response>(res),
-      );
-      expect(sessions.revokeAllForUser).toHaveBeenCalledWith(
-        'u1',
-        expect.anything(),
-        undefined,
-      );
+    it('ignores an empty or non-string header, and so cannot identify the session', async () => {
+      await expect(
+        controller.revokeAllSessions(
+          user,
+          stub<Request>({ cookies: {}, headers: { 'x-session-id': '   ' } }),
+          stub<Response>(res),
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(sessions.revokeAllForUser).not.toHaveBeenCalled();
     });
   });
 
-  it('still works when there is no refresh cookie to identify', async () => {
+  it("refuses scope 'others' (400) when the current session cannot be identified", async () => {
+    // Revoking anyway would silently sign the caller out of the screen in use.
     sessions.sessionIdForRefreshToken.mockResolvedValue(null);
+    await expect(
+      controller.revokeAllSessions(user, req(), stub<Response>(res)),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(sessions.revokeAllForUser).not.toHaveBeenCalled();
+  });
+
+  it("still signs everything out for scope 'all' without an identifiable session", async () => {
     const result = await controller.revokeAllSessions(
       user,
       req(),
       stub<Response>(res),
+      { scope: 'all' },
     );
     expect(sessions.revokeAllForUser).toHaveBeenCalledWith(
       'u1',
@@ -434,6 +494,10 @@ describe('AuthController — refresh can carry the profile', () => {
       ReturnType<UserSessionService['storeProviderRefresh']>,
       Parameters<UserSessionService['storeProviderRefresh']>
     >;
+    undoRotation: jest.Mock<
+      ReturnType<UserSessionService['undoRotation']>,
+      Parameters<UserSessionService['undoRotation']>
+    >;
   };
   let res: { cookie: jest.Mock; clearCookie: jest.Mock };
 
@@ -482,12 +546,17 @@ describe('AuthController — refresh can carry the profile', () => {
             refreshToken: 'our-next',
             expiresAt: new Date(Date.now() + 86_400_000),
             providerRefreshToken: 'provider-refresh',
+            previousSessionId: 's1',
           },
         }),
       storeProviderRefresh: jest.fn<
         ReturnType<UserSessionService['storeProviderRefresh']>,
         Parameters<UserSessionService['storeProviderRefresh']>
       >(() => Promise.resolve()),
+      undoRotation: jest.fn<
+        ReturnType<UserSessionService['undoRotation']>,
+        Parameters<UserSessionService['undoRotation']>
+      >(() => Promise.resolve(true)),
     };
     res = { cookie: jest.fn(), clearCookie: jest.fn() };
     controller = new AuthController(
@@ -537,6 +606,65 @@ describe('AuthController — refresh can carry the profile', () => {
     expect(body).toHaveProperty('sessionId', 's2');
   });
 
+  describe('when the identity provider is unavailable (not a verdict on the token)', () => {
+    beforeEach(() => {
+      authService.refreshProviderSession.mockRejectedValue(
+        new ProviderRefreshUnavailableError(),
+      );
+    });
+
+    it('answers 503, not 401, so the client keeps the session', async () => {
+      await expect(
+        controller.refreshSession(req(), stub<Response>(res)),
+      ).rejects.toBeInstanceOf(ServiceUnavailableException);
+    });
+
+    it('keeps the cookies', async () => {
+      await controller
+        .refreshSession(req(), stub<Response>(res))
+        .catch(() => undefined);
+      expect(res.clearCookie).not.toHaveBeenCalled();
+    });
+
+    it('puts the rotation back so the retry is not judged a replay', async () => {
+      await controller
+        .refreshSession(req(), stub<Response>(res))
+        .catch(() => undefined);
+      expect(sessions.undoRotation).toHaveBeenCalledWith('s1', 's2');
+      expect(sessions.storeProviderRefresh).not.toHaveBeenCalled();
+    });
+
+    it('still answers 503 if the undo itself fails', async () => {
+      sessions.undoRotation.mockRejectedValue(new Error('db down'));
+      await expect(
+        controller.refreshSession(req(), stub<Response>(res)),
+      ).rejects.toBeInstanceOf(ServiceUnavailableException);
+    });
+
+    it('works the same on the native body-refresh path', async () => {
+      const nativeReq = stub<Request>({
+        cookies: {},
+        headers: { origin: 'https://localhost' },
+        socket: {},
+        body: { refreshToken: 'app-refresh' },
+      });
+      await expect(
+        controller.refreshSession(nativeReq, stub<Response>(res)),
+      ).rejects.toBeInstanceOf(ServiceUnavailableException);
+      expect(sessions.undoRotation).toHaveBeenCalledWith('s1', 's2');
+      expect(res.clearCookie).not.toHaveBeenCalled();
+    });
+  });
+
+  it("keeps today's behaviour for a definitive rejection: clear cookies, 401, no undo", async () => {
+    authService.refreshProviderSession.mockResolvedValue(null);
+    await expect(
+      controller.refreshSession(req(), stub<Response>(res)),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+    expect(res.clearCookie).toHaveBeenCalled();
+    expect(sessions.undoRotation).not.toHaveBeenCalled();
+  });
+
   it('never hands out a profile when the provider refuses the renewal', async () => {
     authService.refreshProviderSession.mockResolvedValue(null);
     await expect(
@@ -545,5 +673,166 @@ describe('AuthController — refresh can carry the profile', () => {
         stub<Response>(res),
       ),
     ).rejects.toThrow('Session expired');
+  });
+});
+
+describe('AuthController — per-email budget on campus requests', () => {
+  const dto = {
+    name: 'Ada Lovelace',
+    collegeName: 'Example College',
+    collegeEmail: ' Ada@Example.EDU ',
+    personalEmail: 'ada@gmail.com',
+  };
+
+  const build = (allowed: boolean) => {
+    const consume = jest.fn().mockResolvedValue({
+      allowed,
+      remaining: 0,
+      limit: 3,
+      resetSeconds: 60,
+      policy: 'auth.collegerequest.email',
+    });
+    const createCollegeRequest = jest.fn().mockResolvedValue({ id: 'r1' });
+    const controller = new AuthController(
+      stub<AuthService>({ createCollegeRequest }),
+      stub<EmailService>(),
+      stub<RateLimitService>({ consume, penalize: jest.fn() }),
+      stub<UserSessionService>(),
+    );
+    return { controller, consume, createCollegeRequest };
+  };
+
+  it('charges the budget against the normalised college email', async () => {
+    const { controller, consume } = build(true);
+    await controller.requestCollege(dto, stub<Request>({ headers: {} }));
+    expect(consume).toHaveBeenCalledWith(
+      'auth.collegerequest.email',
+      'ada@example.edu',
+    );
+  });
+
+  it('answers 429 and files nothing once the address is over budget', async () => {
+    const { controller, createCollegeRequest } = build(false);
+    await expect(
+      controller.requestCollege(dto, stub<Request>({ headers: {} })),
+    ).rejects.toMatchObject({ status: 429 });
+    expect(createCollegeRequest).not.toHaveBeenCalled();
+  });
+});
+
+describe('AuthController — failed logins share one budget per account', () => {
+  const build = (canonical: string | null | Error) => {
+    const penalize = jest.fn().mockResolvedValue(undefined);
+    const login = jest.fn().mockRejectedValue(new UnauthorizedException('bad'));
+    const canonicalLoginEmail = jest.fn(() =>
+      canonical instanceof Error
+        ? Promise.reject(canonical)
+        : Promise.resolve(canonical),
+    );
+    const controller = new AuthController(
+      stub<AuthService>({ login, canonicalLoginEmail }),
+      stub<EmailService>(),
+      stub<RateLimitService>({ consume: jest.fn(), penalize }),
+      stub<UserSessionService>(),
+    );
+    return { controller, penalize, login };
+  };
+  const reqFor = (identifier: string) =>
+    stub<Request>({ headers: {}, body: { identifier } });
+
+  it('also charges the email a username resolves to', async () => {
+    const { controller, penalize } = build('ada@example.edu');
+    await expect(
+      controller.login(
+        { identifier: 'ada', password: 'x' },
+        reqFor('ada'),
+        stub<Response>({}),
+      ),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+    expect(penalize).toHaveBeenCalledWith('auth.login.account', 'ada');
+    expect(penalize).toHaveBeenCalledWith(
+      'auth.login.account',
+      'ada@example.edu',
+    );
+  });
+
+  it('does not double-charge when the identifier already is the email', async () => {
+    const { controller, penalize } = build('ada@example.edu');
+    await expect(
+      controller.login(
+        { identifier: 'Ada@Example.edu', password: 'x' },
+        reqFor('Ada@Example.edu'),
+        stub<Response>({}),
+      ),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+    expect(penalize).toHaveBeenCalledTimes(1);
+  });
+
+  it('still reports the original failure when the canonical lookup breaks', async () => {
+    const { controller } = build(new Error('db down'));
+    await expect(
+      controller.login(
+        { identifier: 'ada', password: 'x' },
+        reqFor('ada'),
+        stub<Response>({}),
+      ),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+});
+
+describe('AuthController — finalising a password reset', () => {
+  const user = {
+    id: 'u1',
+    email: 'ada@example.edu',
+    user_metadata: { displayName: 'Ada' },
+    token: 'recovery-token',
+  };
+  const req = stub<Request>({
+    headers: { 'user-agent': 'Mozilla/5.0 (Windows NT 10.0) Chrome/126' },
+    ip: '203.0.113.5',
+    socket: {},
+  });
+
+  const build = (
+    sendPasswordChangedEmail = jest
+      .fn<Promise<void>, [string, string, string, string, string]>()
+      .mockResolvedValue(undefined),
+  ) => {
+    const revokeAllForUser = jest.fn().mockResolvedValue(4);
+    const controller = new AuthController(
+      stub<AuthService>(),
+      stub<EmailService>({ sendPasswordChangedEmail }),
+      stub<RateLimitService>(),
+      stub<UserSessionService>({ revokeAllForUser }),
+    );
+    return { controller, revokeAllForUser, sendPasswordChangedEmail };
+  };
+
+  it('revokes every session, sparing none, with the password-changed reason', async () => {
+    const { controller, revokeAllForUser } = build();
+    const out = await controller.finalizePasswordReset(user, req, {});
+    expect(revokeAllForUser).toHaveBeenCalledTimes(1);
+    expect(revokeAllForUser).toHaveBeenCalledWith('u1', 'PASSWORD_CHANGED');
+    expect(out).toEqual({ success: true, revoked: 4, emailSent: true });
+  });
+
+  it("emails the token's verified address, never one from the request", async () => {
+    const { controller, sendPasswordChangedEmail } = build();
+    // The DTO has no recipient field at all; even a smuggled one is ignored.
+    await controller.finalizePasswordReset(user, req, {
+      email: 'victim@x.com',
+    } as never);
+    expect(sendPasswordChangedEmail.mock.calls[0][0]).toBe('ada@example.edu');
+  });
+
+  it('keeps the revocation when the email cannot be sent', async () => {
+    const { controller, revokeAllForUser } = build(
+      jest
+        .fn<Promise<void>, [string, string, string, string, string]>()
+        .mockRejectedValue(new Error('smtp down')),
+    );
+    const out = await controller.finalizePasswordReset(user, req, {});
+    expect(revokeAllForUser).toHaveBeenCalled();
+    expect(out).toMatchObject({ success: true, emailSent: false });
   });
 });

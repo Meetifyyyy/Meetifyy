@@ -22,12 +22,12 @@ interface NewLoginEmailProps {
 
 export const NewLoginEmail = ({
   name = 'there',
-  device = 'MacBook Pro',
+  device,
   location = 'Unknown Location',
   time = 'Just now',
-  browser = 'Chrome 126',
-  os = 'macOS Sonoma',
-  ip = '192.168.1.1',
+  browser,
+  os,
+  ip,
 }: NewLoginEmailProps) => {
   const supportLink =
     SITE_CONFIG.supportUrl || `${SITE_CONFIG.frontendUrl}/help-and-support`;
@@ -43,8 +43,14 @@ export const NewLoginEmail = ({
         title="Session details"
         rows={[
           { label: 'Time', value: time },
-          { label: 'Device', value: device },
-          { label: 'Browser', value: `${browser} (${os})` },
+          { label: 'Device', value: device || 'Unknown device' },
+          {
+            label: 'Browser',
+            value:
+              [browser, os && browser ? `(${os})` : os]
+                .filter(Boolean)
+                .join(' ') || 'Unknown',
+          },
           { label: 'IP address', value: ip || location },
         ]}
       />

@@ -1,4 +1,6 @@
-import { Injectable, ForbiddenException } from '@nestjs/common';
+import { Injectable, ForbiddenException, Optional } from '@nestjs/common';
+import { RedisService } from '../../redis/redis.service';
+import { withDmCreateLock } from '../core/dm-lock';
 import { MessagingCoreService } from '../core/messaging-core.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { BlocksService } from '../../users/blocks.service';
@@ -44,6 +46,7 @@ export class DmService extends MessagingCoreService {
     blocksService: BlocksService,
     verificationAccess: VerificationAccessService,
     rateLimit: RateLimitService,
+    @Optional() private readonly redisService?: RedisService,
   ) {
     super(
       prisma,
@@ -254,7 +257,8 @@ export class DmService extends MessagingCoreService {
         const presence = batchPresence.get(uId);
         presenceMap.set(uId, {
           isOnline: visibleSet.has(uId) ? presence?.status === 'online' : false,
-          lastActive: presence?.lastSeen || null,
+          // Same gate as the online dot: last-seen is presence too.
+          lastActive: visibleSet.has(uId) ? presence?.lastSeen || null : null,
         });
       });
     }
@@ -490,65 +494,73 @@ export class DmService extends MessagingCoreService {
       );
     }
 
-    return await this.prisma.$transaction(async (tx) => {
-      const existing = await tx.conversation.findFirst({
-        where: {
-          type: 'DM',
-          AND: [
-            { participants: { some: { userId: currentUserId } } },
-            { participants: { some: { userId: targetUserId } } },
-          ],
-        },
-      });
+    // Serialise per user pair: find-then-create under READ COMMITTED would
+    // otherwise let two simultaneous first contacts each create a DM.
+    return withDmCreateLock(
+      this.redisService,
+      currentUserId,
+      targetUserId,
+      () =>
+        this.prisma.$transaction(async (tx) => {
+          const existing = await tx.conversation.findFirst({
+            where: {
+              type: 'DM',
+              AND: [
+                { participants: { some: { userId: currentUserId } } },
+                { participants: { some: { userId: targetUserId } } },
+              ],
+            },
+          });
 
-      if (existing) {
-        await tx.conversationParticipant
-          .updateMany({
-            where: { conversationId: existing.id, userId: currentUserId },
-            data: { deletedAt: null },
-          })
-          .catch(() => {});
+          if (existing) {
+            await tx.conversationParticipant
+              .updateMany({
+                where: { conversationId: existing.id, userId: currentUserId },
+                data: { deletedAt: null },
+              })
+              .catch(() => {});
 
-        const pubId = existing.publicId || existing.id;
-        return { id: pubId, publicId: pubId };
-      }
+            const pubId = existing.publicId || existing.id;
+            return { id: pubId, publicId: pubId };
+          }
 
-      // Both people must currently be eligible before a DM row is created.
-      // Reviving an existing thread above is untouched — history stays
-      // reachable — but a first contact with an ineligible account writes
-      // nothing, so the Message button cannot leave orphan conversations.
-      await this.verificationAccess.assertUsersEligible(
-        [currentUserId, targetUserId],
-        currentUserId,
-      );
+          // Both people must currently be eligible before a DM row is created.
+          // Reviving an existing thread above is untouched — history stays
+          // reachable — but a first contact with an ineligible account writes
+          // nothing, so the Message button cannot leave orphan conversations.
+          await this.verificationAccess.assertUsersEligible(
+            [currentUserId, targetUserId],
+            currentUserId,
+          );
 
-      // Only a genuine first contact is charged. The existing-thread branch
-      // above returns before this, so reopening a conversation you already
-      // have costs nothing — otherwise tapping Message on familiar profiles
-      // would exhaust a 15/hour budget during normal browsing.
-      await assertNewConversationWithinRateLimit(
-        this.rateLimit,
-        currentUserId,
-        false,
-      );
+          // Only a genuine first contact is charged. The existing-thread branch
+          // above returns before this, so reopening a conversation you already
+          // have costs nothing — otherwise tapping Message on familiar profiles
+          // would exhaust a 15/hour budget during normal browsing.
+          await assertNewConversationWithinRateLimit(
+            this.rateLimit,
+            currentUserId,
+            false,
+          );
 
-      const newPubId = generatePublicId();
-      await tx.conversation.create({
-        data: {
-          publicId: newPubId,
-          type: 'DM',
-          ownerId: currentUserId,
-          participants: {
-            create: [
-              { userId: currentUserId, role: 'OWNER' },
-              { userId: targetUserId, role: 'MEMBER' },
-            ],
-          },
-        },
-      });
+          const newPubId = generatePublicId();
+          await tx.conversation.create({
+            data: {
+              publicId: newPubId,
+              type: 'DM',
+              ownerId: currentUserId,
+              participants: {
+                create: [
+                  { userId: currentUserId, role: 'OWNER' },
+                  { userId: targetUserId, role: 'MEMBER' },
+                ],
+              },
+            },
+          });
 
-      return { id: newPubId, publicId: newPubId };
-    });
+          return { id: newPubId, publicId: newPubId };
+        }),
+    );
   }
 
   // `createInstantMatchDM` used to live here: a route-reachable way to mint an

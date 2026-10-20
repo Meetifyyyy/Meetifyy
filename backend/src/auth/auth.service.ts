@@ -33,6 +33,10 @@ import type { AuthenticatedUser } from '../common/types/authenticated-request';
 import { randomInt } from 'crypto';
 import { Gender, NotificationType } from '@prisma/client';
 import {
+  isAuthRetryableFetchError,
+  type SupabaseClient,
+} from '@supabase/supabase-js';
+import {
   presentAffiliation,
   profileCompletion,
   isProfilePromptSnoozed,
@@ -348,6 +352,37 @@ export type SyncIdentity = Pick<AuthenticatedUser, 'id'> &
  */
 function metaString(value: unknown): string | null {
   return typeof value === 'string' && value.trim().length > 0 ? value : null;
+}
+
+/**
+ * The identity provider could not be reached or answered with a server error.
+ * Distinct from a refusal: nothing is known about the token's validity.
+ */
+/** The handle assigned when no usable one exists: `user_` + 8 hex characters. */
+const FALLBACK_HANDLE = /^user_[0-9a-f]{8}$/i;
+
+export class ProviderRefreshUnavailableError extends Error {
+  constructor() {
+    super('The identity provider is temporarily unavailable.');
+    this.name = 'ProviderRefreshUnavailableError';
+  }
+}
+
+/**
+ * Whether a Supabase auth error says "try again" rather than "no".
+ *
+ * Retryable fetch errors, errors carrying no HTTP status at all (the request
+ * never completed), 5xx and 429 are transient. Every other 4xx — a revoked,
+ * reused or malformed refresh token — is a definitive rejection.
+ */
+export function isTransientProviderError(error: unknown): boolean {
+  if (isAuthRetryableFetchError(error)) return true;
+  const status =
+    typeof error === 'object' && error !== null && 'status' in error
+      ? (error as { status?: unknown }).status
+      : undefined;
+  if (typeof status !== 'number' || status === 0) return true;
+  return status >= 500 || status === 429;
 }
 
 @Injectable()
@@ -666,11 +701,14 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     }
 
     // Auto-heal legacy / fallback usernames or displayNames starting with user_
+    // Only the exact fallback shape (`user_` + 8 hex of the id). A chosen
+    // handle that merely starts with `user_` (e.g. `user_manager`) is the
+    // user's own and must not be overwritten.
     const isRandomUsername =
-      typeof row.username === 'string' && row.username.startsWith('user_');
+      typeof row.username === 'string' && FALLBACK_HANDLE.test(row.username);
     const isRandomDisplayName =
       typeof row.displayName === 'string' &&
-      row.displayName.startsWith('user_');
+      FALLBACK_HANDLE.test(row.displayName);
 
     if (isRandomUsername || isRandomDisplayName) {
       try {
@@ -703,7 +741,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
               .trim()
               .toLowerCase()
               .replace(/[^a-z0-9_.]/g, '_');
-            if (clean.length >= 3) {
+            if (clean.length >= 3 && !isReservedUsername(clean)) {
               clean = clean.slice(0, 30);
               const existing = await this.prisma.user.findUnique({
                 where: { username: clean },
@@ -853,6 +891,13 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
       username = `user_${user.id.slice(0, 8)}`;
     }
     username = username.slice(0, 30);
+    // A handle the platform reserves (`admin`, `support`, `deleted_*`…) is not
+    // refused: the email is already confirmed, so rejecting would strand a
+    // real account with no profile row. It gets the neutral fallback instead,
+    // which the healer below will not "upgrade" back to a reserved name.
+    if (isReservedUsername(username)) {
+      username = `user_${user.id.slice(0, 8)}`;
+    }
 
     const metaFirstName = metaString(sbUser.user_metadata?.firstName);
     const displayName =
@@ -1058,6 +1103,26 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
+   * The email address a login identifier stands for, normalised like every
+   * other account-keyed budget, or null when it names no account.
+   *
+   * Used only on the FAILURE path of `login`, so the username and the email it
+   * resolves to can be charged to one rate-limit bucket. Never returned to a
+   * client.
+   */
+  async canonicalLoginEmail(identifier: string): Promise<string | null> {
+    const raw = (identifier || '').trim();
+    if (!raw) return null;
+    if (raw.includes('@')) return normalizeEmail(raw) || null;
+
+    const found = await this.prisma.user.findUnique({
+      where: { username: raw.toLowerCase() },
+      select: { email: true },
+    });
+    return found?.email ? normalizeEmail(found.email) || null : null;
+  }
+
+  /**
    * Exchanges a stored provider refresh token for a fresh access token.
    *
    * This is what makes HttpOnly cookies possible without re-architecting
@@ -1065,10 +1130,12 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
    * in our session row instead of the browser, so the client never holds a
    * credential that can mint access tokens.
    *
-   * Returns null on any failure. The caller's response is the same either way —
-   * clear the cookies and make the user sign in — and distinguishing "revoked
-   * upstream" from "network blip" here would only invite treating one of them
-   * as recoverable when it is not.
+   * Returns null when the provider DEFINITIVELY refuses the token (a 4xx: it
+   * was revoked, reused or expired) — the caller clears the cookies and the
+   * user signs in again. A TRANSIENT failure (a timeout, a network error, a
+   * retryable fetch error, a 5xx or 429) is not a verdict on the token, so it
+   * throws `ProviderRefreshUnavailableError` instead: treating a Supabase blip
+   * as "session expired" logged users out for an outage that was not theirs.
    */
   async refreshProviderSession(providerRefreshToken: string): Promise<{
     access_token: string;
@@ -1077,22 +1144,30 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
   } | null> {
     if (!this.supabaseService.isConfigured) return null;
 
+    let result: Awaited<ReturnType<SupabaseClient['auth']['refreshSession']>>;
     try {
-      const { data, error } =
-        await this.supabaseService.client.auth.refreshSession({
-          refresh_token: providerRefreshToken,
-        });
-
-      if (error || !data?.session?.access_token) return null;
-
-      return {
-        access_token: data.session.access_token,
-        refresh_token: data.session.refresh_token,
-        expires_in: data.session.expires_in,
-      };
+      result = await this.supabaseService.client.auth.refreshSession({
+        refresh_token: providerRefreshToken,
+      });
     } catch {
+      // The client threw rather than returning an error: no response at all.
+      throw new ProviderRefreshUnavailableError();
+    }
+
+    const { data, error } = result;
+    if (error) {
+      if (isTransientProviderError(error)) {
+        throw new ProviderRefreshUnavailableError();
+      }
       return null;
     }
+    if (!data?.session?.access_token) return null;
+
+    return {
+      access_token: data.session.access_token,
+      refresh_token: data.session.refresh_token,
+      expires_in: data.session.expires_in,
+    };
   }
 
   /**
@@ -1288,6 +1363,15 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     const email = normalizeEmail(input.email || '');
     if (!email || !input.password) {
       throw new BadRequestException('Email and password are required.');
+    }
+
+    // Refused up front, while the user is still on the form. Both used to be
+    // accepted by Supabase, mail a code, and only fail at account creation
+    // after the code was confirmed — stranding a verified address with no
+    // profile. The birthday stays optional for older clients that omit it.
+    if (input.birthday) validateBirthday(input.birthday);
+    if (input.username && isReservedUsername(input.username)) {
+      throw new BadRequestException(RESERVED_USERNAME_MESSAGE);
     }
 
     // anonClient, not client. With the service-role key GoTrue treats this as

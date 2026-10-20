@@ -35,6 +35,21 @@ export const SESSION_STATE_CACHE_MS = 30 * 1000;
  */
 export const REFRESH_REUSE_GRACE_MS = 60 * 1000;
 
+/**
+ * Delays between attempts to persist a rotated provider token; one attempt per
+ * entry, the first immediate.
+ */
+const PROVIDER_STORE_BACKOFF_MS = [0, 50, 200];
+
+/** A Prisma / system error code, when the thrown value carries one. */
+function errorCode(err: unknown): string | undefined {
+  if (typeof err === 'object' && err !== null && 'code' in err) {
+    const code = (err as { code?: unknown }).code;
+    return typeof code === 'string' ? code : undefined;
+  }
+  return undefined;
+}
+
 export interface DeviceInfo {
   ip?: string | null;
   userAgent?: string | null;
@@ -53,6 +68,11 @@ export const APP_CLIENT_LABEL = 'Meetifyy app';
 /** What a rotation hands back to the caller, including the provider token. */
 export interface RotatedSession extends IssuedSession {
   providerRefreshToken: string | null;
+  /**
+   * The row this rotation retired, so a caller whose provider refresh fails
+   * transiently can put it back with `undoRotation`.
+   */
+  previousSessionId: string;
 }
 
 export interface IssuedSession {
@@ -251,8 +271,12 @@ export class UserSessionService {
     // both succeed: the read above is not a lock, and without this the second
     // overwrote `replacedById` and left the first holding a successor the
     // family no longer pointed at.
+    //
+    // `revoked: false` too: a session signed out (or family-revoked) between
+    // the read above and this write must not be resurrected into a rotation.
+    // The `count !== 1` branch below already cleans up and answers 'revoked'.
     const claimed = await this.prisma.userSession.updateMany({
-      where: { id: existing.id, replacedById: null },
+      where: { id: existing.id, replacedById: null, revoked: false },
       data: {
         replacedById: next.id,
         revoked: true,
@@ -283,8 +307,57 @@ export class UserSessionService {
         refreshToken: nextToken,
         expiresAt,
         providerRefreshToken: openSecret(existing.providerRefresh),
+        previousSessionId: existing.id,
       },
     };
+  }
+
+  /**
+   * Puts a rotation back, for a refresh whose PROVIDER half failed transiently.
+   *
+   * `rotate` retires the presented token before Supabase is asked for a new
+   * access token. If Supabase then times out or answers 5xx, the client holds a
+   * refresh token the server has already marked replaced, so its retry would be
+   * judged a replay and burn the whole family — a logout caused by nothing the
+   * user did. Undoing the rotation lets the retry present the same token again.
+   *
+   * Every write is conditional, so this can only reverse exactly what this
+   * request did and never resurrect anything someone else ended:
+   *   - the successor must not have been revoked meanwhile (sign-out everywhere
+   *     etc.), otherwise the user's intent wins and nothing is restored;
+   *   - the predecessor is restored only while it still names our successor
+   *     and carries no revocation reason (a family revocation sets one; a
+   *     rotation never does).
+   * The successor row was never handed to anyone, so it is simply deleted.
+   *
+   * Returns whether the rotation was reversed.
+   */
+  async undoRotation(
+    previousSessionId: string,
+    successorId: string,
+  ): Promise<boolean> {
+    const successor = await this.prisma.userSession.findUnique({
+      where: { id: successorId },
+      select: { revoked: true },
+    });
+    if (successor?.revoked) return false;
+
+    const restored = await this.prisma.userSession.updateMany({
+      where: {
+        id: previousSessionId,
+        replacedById: successorId,
+        revokedReason: null,
+      },
+      data: { revoked: false, revokedAt: null, replacedById: null },
+    });
+    if (restored.count !== 1) return false;
+
+    await this.prisma.userSession
+      .deleteMany({ where: { id: successorId, revoked: false } })
+      .catch(() => undefined);
+    JwtGuard.forgetSession(previousSessionId);
+    JwtGuard.forgetSession(successorId);
+    return true;
   }
 
   /**
@@ -431,6 +504,7 @@ export class UserSessionService {
         refreshToken: nextToken,
         expiresAt,
         providerRefreshToken: openSecret(successor.providerRefresh),
+        previousSessionId: existing.id,
       },
     };
   }
@@ -446,12 +520,39 @@ export class UserSessionService {
     sessionId: string,
     providerRefreshToken: string,
   ): Promise<void> {
-    await this.prisma.userSession
-      .update({
-        where: { id: sessionId },
-        data: { providerRefresh: sealSecret(providerRefreshToken) },
-      })
-      .catch(() => undefined);
+    // The provider has ALREADY retired the old token, so this write is the only
+    // copy of the new one. A swallowed failure left the row holding a dead
+    // token and the next refresh signed the user out. Retried a few times with
+    // a short backoff; a persistent failure is logged (id only — never the
+    // token, and never the driver's message, which can echo the arguments) and
+    // the refresh still succeeds, because the caller holds a valid access token.
+    const sealed = sealSecret(providerRefreshToken);
+    let lastError: unknown;
+    for (
+      let attempt = 0;
+      attempt < PROVIDER_STORE_BACKOFF_MS.length;
+      attempt++
+    ) {
+      try {
+        await this.prisma.userSession.update({
+          where: { id: sessionId },
+          data: { providerRefresh: sealed },
+        });
+        return;
+      } catch (err) {
+        lastError = err;
+        // The row is gone (signed out meanwhile): nothing to retry against.
+        if (errorCode(err) === 'P2025') break;
+        const wait = PROVIDER_STORE_BACKOFF_MS[attempt];
+        if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+      }
+    }
+    this.logger.error(
+      `session.provider_refresh_store_failed ${JSON.stringify({
+        sessionId,
+        reason: errorCode(lastError) ?? 'unknown',
+      })}`,
+    );
   }
 
   /** True when this session may still be used. */

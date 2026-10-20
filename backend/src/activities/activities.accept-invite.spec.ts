@@ -122,7 +122,10 @@ describe('acceptInvitation', () => {
         { provide: NotificationFactory, useValue: {} },
         {
           provide: BlocksService,
-          useValue: { getExcludedUserIds: jest.fn(() => Promise.resolve([])) },
+          useValue: {
+            getExcludedUserIds: jest.fn(() => Promise.resolve([])),
+            isBlocked: jest.fn(() => Promise.resolve(false)),
+          },
         },
         { provide: DomainEventService, useValue: { emit: jest.fn() } },
         { provide: RedisService, useValue: { getClient: () => null } },
@@ -383,7 +386,10 @@ describe('inviteFriends — already-accepted invitees', () => {
         { provide: NotificationFactory, useValue: {} },
         {
           provide: BlocksService,
-          useValue: { getExcludedUserIds: jest.fn(() => Promise.resolve([])) },
+          useValue: {
+            getExcludedUserIds: jest.fn(() => Promise.resolve([])),
+            isBlocked: jest.fn(() => Promise.resolve(false)),
+          },
         },
         { provide: DomainEventService, useValue: { emit: jest.fn() } },
         { provide: RedisService, useValue: { getClient: () => null } },

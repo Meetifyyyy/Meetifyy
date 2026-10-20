@@ -299,15 +299,31 @@ export class UserOtpService {
       throw this.otpError(style, 'exhausted');
     }
 
+    // Claim an attempt BEFORE looking at the code, atomically. The in-memory
+    // `record.attempts` check above is only a fast path: with it alone, N
+    // parallel guesses all read the same count, all pass the check, and all
+    // get compared — so the five-attempt ceiling bounded sequential guessing
+    // only. The conditional update below is the real ceiling: the database
+    // increments the counter for at most OTP_MAX_ATTEMPTS requests in total,
+    // however they interleave, and every other one matches no row.
+    const claimed = await this.prisma.userOtp.updateMany({
+      where: {
+        id: record.id,
+        consumedAt: null,
+        expiresAt: { gt: now },
+        attempts: { lt: OTP_MAX_ATTEMPTS },
+      },
+      data: { attempts: { increment: 1 } },
+    });
+    if (claimed.count === 0) {
+      // Lost the race: spent, consumed or expired between the read and here.
+      throw this.otpError(style, 'exhausted');
+    }
+
     if (!this.matches(code, record.codeHash)) {
-      // Counted before the throw so a client that ignores the response still
-      // burns the attempt.
-      const updated = await this.prisma.userOtp.update({
-        where: { id: record.id },
-        data: { attempts: { increment: 1 } },
-        select: { attempts: true },
-      });
-      const remaining = Math.max(0, OTP_MAX_ATTEMPTS - updated.attempts);
+      // The attempt was counted above, so a client that ignores the response
+      // still burns it.
+      const remaining = Math.max(0, OTP_MAX_ATTEMPTS - (record.attempts + 1));
       if (style === 'detailed' && remaining === 0) {
         throw this.otpError(style, 'exhausted');
       }

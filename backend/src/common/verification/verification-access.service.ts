@@ -1,7 +1,20 @@
 import { Injectable, ForbiddenException, Logger } from '@nestjs/common';
-import { VerificationStatus } from '@prisma/client';
+import { AccountStatus, VerificationStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { DomainEventService } from '../../events/domain-event.service';
+
+/** Machine-readable code the client keys its "verify your account" prompt off. */
+export const VERIFICATION_REQUIRED_CODE = 'VERIFICATION_REQUIRED';
+export const VERIFICATION_REQUIRED_MESSAGE =
+  'Account verification is required to perform this action.';
+
+/** The one 403 every "you must be verified" refusal throws, coded for clients. */
+export function verificationRequiredException(): ForbiddenException {
+  return new ForbiddenException({
+    code: VERIFICATION_REQUIRED_CODE,
+    message: VERIFICATION_REQUIRED_MESSAGE,
+  });
+}
 
 /**
  * The single place that answers "is this account allowed to take part in a
@@ -147,6 +160,33 @@ export class VerificationAccessService {
     return `"${alias}"."verificationStatus" = '${VerificationStatus.VERIFIED}'`;
   }
 
+  /**
+   * The status the eligibility rule is applied to. An account that is not
+   * ACTIVE (suspended, banned, pending deletion) or is soft-deleted is never
+   * eligible, whatever its verification status says, so it is cached as `null`.
+   * This is what keeps a suspended account from messaging or queueing for
+   * Instant Match over a socket that was opened before the suspension.
+   */
+  private effectiveStatus(
+    user:
+      | {
+          verificationStatus: VerificationStatus | null;
+          accountStatus: AccountStatus;
+          deletedAt: Date | null;
+        }
+      | null
+      | undefined,
+  ): VerificationStatus | null {
+    if (!user) return null;
+    if (
+      user.accountStatus !== AccountStatus.ACTIVE ||
+      user.deletedAt !== null
+    ) {
+      return null;
+    }
+    return user.verificationStatus ?? null;
+  }
+
   /** Eligibility for one account. */
   async isUserEligible(userId: string): Promise<boolean> {
     if (!this.isEnforcementEnabled()) return true;
@@ -157,9 +197,13 @@ export class VerificationAccessService {
 
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { verificationStatus: true },
+      select: {
+        verificationStatus: true,
+        accountStatus: true,
+        deletedAt: true,
+      },
     });
-    const status = user?.verificationStatus ?? null;
+    const status = this.effectiveStatus(user);
     this.writeCache(userId, status);
     return this.isEligibleStatus(status);
   }
@@ -194,9 +238,14 @@ export class VerificationAccessService {
     if (missing.length > 0) {
       const users = await this.prisma.user.findMany({
         where: { id: { in: missing } },
-        select: { id: true, verificationStatus: true },
+        select: {
+          id: true,
+          verificationStatus: true,
+          accountStatus: true,
+          deletedAt: true,
+        },
       });
-      const byId = new Map(users.map((u) => [u.id, u.verificationStatus]));
+      const byId = new Map(users.map((u) => [u.id, this.effectiveStatus(u)]));
       for (const id of missing) {
         const status = byId.get(id) ?? null;
         this.writeCache(id, status);
@@ -233,9 +282,7 @@ export class VerificationAccessService {
 
     if (actorId && ineligible.includes(actorId)) {
       this.logger.warn(`verification:refused actor=${actorId} reason=self`);
-      throw new ForbiddenException(
-        'Account verification is required to perform this action.',
-      );
+      throw verificationRequiredException();
     }
     this.logger.warn(
       `verification:refused actor=${actorId ?? 'unknown'} reason=counterparty ` +

@@ -4,6 +4,7 @@ import type { StorageProvider } from './providers/storage-provider.interface';
 import { config } from '../config';
 import { detach } from '../common/utils/detach.util';
 import { errorMessage } from '../common/utils/error.util';
+import { isProtectedMediaKey } from './media-ownership.util';
 
 export type ReplaceableEntityType =
   | 'USER_AVATAR'
@@ -158,19 +159,7 @@ export class MediaCleanupService {
    * These assets must NEVER be deleted.
    */
   isProtectedKey(key: string): boolean {
-    if (!key) return true;
-    const lower = key.toLowerCase();
-    return (
-      lower.startsWith('defaults/') ||
-      lower.startsWith('v2-defaults/') ||
-      lower.startsWith('presets/') ||
-      lower.startsWith('system/') ||
-      lower.startsWith('assets/') ||
-      lower.startsWith('mock-') ||
-      lower.startsWith('support/') ||
-      lower.includes('preset-') ||
-      lower.includes('default-')
-    );
+    return isProtectedMediaKey(key);
   }
 
   /**
@@ -427,6 +416,23 @@ export class MediaCleanupService {
         `Skipping deletion of protected key: ${oldKey} (entity: ${entityType}/${entityId})`,
       );
       return result;
+    }
+
+    // A user's own avatar/cover can only ever own files that user uploaded.
+    // If the row says someone else uploaded it (an image attached before
+    // ownership was checked), replacing the reference must not delete it.
+    if (entityType === 'USER_AVATAR' || entityType === 'USER_COVER') {
+      const row = await this.prisma.media.findFirst({
+        where: { objectKey: oldKey },
+        select: { ownerId: true },
+      });
+      if (row?.ownerId && row.ownerId !== entityId) {
+        result.skippedKeys.push({
+          key: oldKey,
+          reason: 'Owned by a different user',
+        });
+        return result;
+      }
     }
 
     // Check if the old key is still referenced elsewhere in the database

@@ -20,19 +20,32 @@ import { allowAllRateLimitProvider } from '../common/rate-limit/testing/rate-lim
  * These tests exercise the real policy service against the shared messaging
  * base class, so they fail if either the rule or the choke point moves.
  */
+/** The lifecycle state a live account carries on a participant row. */
+const LIVE = { accountStatus: 'ACTIVE', deletedAt: null };
+
 /** `user` lookups answering from a map of verification statuses. */
 const usersWith = (statuses: Record<string, VerificationStatus>) => ({
   findMany: jest.fn(({ where }: { where: { id: { in: string[] } } }) =>
     Promise.resolve(
       where.id.in
         .filter((id) => statuses[id])
-        .map((id) => ({ id, verificationStatus: statuses[id] })),
+        .map((id) => ({
+          id,
+          verificationStatus: statuses[id],
+          accountStatus: 'ACTIVE',
+          deletedAt: null,
+        })),
     ),
   ),
   findUnique: jest.fn(({ where }: { where: { id: string } }) =>
     Promise.resolve(
       statuses[where.id]
-        ? { id: where.id, verificationStatus: statuses[where.id] }
+        ? {
+            id: where.id,
+            verificationStatus: statuses[where.id],
+            accountStatus: 'ACTIVE',
+            deletedAt: null,
+          }
         : null,
     ),
   ),
@@ -54,8 +67,8 @@ describe('messaging — both participants must be verified', () => {
           name: null,
           type: 'DM',
           participants: [
-            { userId: ME, isMuted: false },
-            { userId: THEM, isMuted: false },
+            { userId: ME, isMuted: false, user: LIVE },
+            { userId: THEM, isMuted: false, user: LIVE },
           ],
         }),
       ),
@@ -218,12 +231,13 @@ describe('conversation history carries the send verdict', () => {
     expect(history.canSendMessages).toBe(true);
   });
 
-  it('reports false for an anonymous read rather than defaulting to allowed', async () => {
+  it('refuses an anonymous read outright rather than defaulting to allowed', async () => {
     const service = await buildService({
       [ME]: VerificationStatus.VERIFIED,
       [THEM]: VerificationStatus.VERIFIED,
     });
-    const history = await service.getConversationHistory('conv-internal');
-    expect(history.canSendMessages).toBe(false);
+    await expect(
+      service.getConversationHistory('conv-internal'),
+    ).rejects.toThrow(ForbiddenException);
   });
 });

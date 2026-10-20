@@ -24,6 +24,8 @@ describe('conversation media privacy', () => {
     where: {
       payload: { path: string[]; string_contains: string };
       attachmentMediaId?: unknown;
+      deletedAt?: null;
+      state?: { not: string };
       conversation: {
         participants: {
           some: { userId: string; deletedAt: null; leftAt: null };
@@ -151,6 +153,35 @@ describe('conversation media privacy', () => {
     // The message payload references the .mp4; the needle has to match it.
     expect('chat/deadbeefdeadbeefdeadbeefdeadbeef.mp4').toContain(needle);
   });
+
+  it('ignores soft-deleted and unsent messages when granting access', async () => {
+    prisma.media.findUnique.mockResolvedValue({ id: 'm1', ownerId: 'sender' });
+    prisma.message.findFirst.mockResolvedValue(null);
+    await service.canViewConversationMedia(KEY, 'recipient');
+
+    const where = prisma.message.findFirst.mock.calls[0][0].where;
+    expect(where.deletedAt).toBeNull();
+    expect(where.state).toEqual({ not: 'UNSENT' });
+  });
+
+  it.each(['jpg', 'png', 'jpeg', 'webp'])(
+    'resolves a .%s thumbnail against the extensionless stem',
+    async (ext) => {
+      prisma.media.findUnique.mockResolvedValue({
+        id: 'm1',
+        ownerId: 'sender',
+      });
+      prisma.message.findFirst.mockResolvedValue({ id: 'msg1' });
+      await service.canViewConversationMedia(
+        `chat/deadbeefdeadbeefdeadbeefdeadbeef_thumb.${ext}`,
+        'recipient',
+      );
+      const where = prisma.message.findFirst.mock.calls[0][0].where;
+      expect(where.payload.string_contains).toBe(
+        'chat/deadbeefdeadbeefdeadbeefdeadbeef.',
+      );
+    },
+  );
 
   /** The actual vulnerability: a stranger holding the URL. */
   it('refuses someone who is in no conversation it was sent to', async () => {

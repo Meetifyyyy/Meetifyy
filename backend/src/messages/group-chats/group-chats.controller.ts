@@ -784,12 +784,17 @@ export class GroupChatsController {
   ) {
     const userId = req.user?.id;
     const actorHandle = await this.groupChatsService.getUserHandle(userId);
+    // endGroup verifies ownership; announce only after it succeeds.
+    const result = await this.groupChatsService.endGroup(
+      conversationId,
+      userId,
+    );
     await this.broadcastSystemMessage(
       conversationId,
       userId,
       `${actorHandle} closed the group`,
     );
-    return this.groupChatsService.endGroup(conversationId, userId);
+    return result;
   }
 
   @Post(':id/requests/:targetUserId/accept')

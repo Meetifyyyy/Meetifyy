@@ -11,6 +11,7 @@ import {
 } from '../../common/campus/campus-access.service';
 import { DomainEventService } from '../../events/domain-event.service';
 import { ActivityAuthorizationService } from '../activity-authorization.service';
+import { BlocksService } from '../../users/blocks.service';
 import type { UserIdentityLike } from '../../common/users/deleted-user';
 import {
   isUnavailableUser,
@@ -37,6 +38,7 @@ export class ActivityDiscussionService {
     private readonly prisma: PrismaService,
     private readonly domainEventService: DomainEventService,
     private readonly activityAuthorizationService: ActivityAuthorizationService,
+    private readonly blocksService: BlocksService,
   ) {}
 
   private static readonly messageSelect = {
@@ -154,6 +156,14 @@ export class ActivityDiscussionService {
         : null,
       activity,
     );
+    // A block with the host (either direction) closes the discussion to this
+    // user, answered like a missing activity so the block is not disclosed.
+    if (
+      userId &&
+      (await this.blocksService.isBlocked(userId, activity.creatorId))
+    ) {
+      throw new NotFoundException('Activity not found');
+    }
   }
 
   /**
@@ -186,8 +196,16 @@ export class ActivityDiscussionService {
       }
     }
 
+    // Messages from people the viewer is blocked with (either direction) are
+    // left out in the query, so the keyset page size stays honest.
+    const where = await this.blocksService.injectBlockFilter(
+      userId,
+      { activityId, ...cursorFilter },
+      'userId',
+    );
+
     const rows = await this.prisma.activityDiscussionMessage.findMany({
-      where: { activityId, ...cursorFilter },
+      where,
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: take + 1,
       select: ActivityDiscussionService.messageSelect,

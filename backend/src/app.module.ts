@@ -69,7 +69,7 @@ import { LegalConsentModule } from './common/legal/legal-consent.module';
 import { AcademicsModule } from './academics/academics.module';
 import { SupportModule } from './support/support.module';
 import { LegalModule } from './legal/legal.module';
-import { randomUUID } from 'node:crypto';
+import { requestIdFrom } from './common/utils/request-id.util';
 
 @Module({
   imports: [
@@ -92,9 +92,7 @@ import { randomUUID } from 'node:crypto';
     }),
     LoggerModule.forRoot({
       pinoHttp: {
-        genReqId: (req) => {
-          return req.headers['x-request-id'] || randomUUID();
-        },
+        genReqId: (req) => requestIdFrom(req.headers['x-request-id']),
         customSuccessMessage: (req, res, time) => {
           if (time > 1000) {
             req.log.warn(

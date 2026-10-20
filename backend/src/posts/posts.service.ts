@@ -48,6 +48,7 @@ import { randomUUID } from 'crypto';
 import { extractHashtags } from './hashtags.util';
 import type Redis from 'ioredis';
 import { config } from '../config';
+import { VerificationAccessService } from '../common/verification/verification-access.service';
 import {
   arrangeRankedFeed,
   parseRankedCursor,
@@ -64,6 +65,10 @@ import {
  * stores something different from what was validated.
  */
 const POLL_OPTION_MAX_LENGTH = 100;
+
+/** A poll has between 2 and 10 options (the composer enforces the same). */
+const POLL_MIN_OPTIONS = 2;
+const POLL_MAX_OPTIONS = 10;
 
 /**
  * A submitted poll option as text: a string trimmed, a number or boolean
@@ -209,6 +214,10 @@ export class PostsService {
     private readonly storageService: StorageService,
     private readonly contentDeletionAuthorizer: ContentDeletionAuthorizer,
     @Optional() private readonly mediaCleanupService?: MediaCleanupService,
+    // Global module; optional only so specs that build the service by hand
+    // keep working. Backs the service-level eligibility assert in createPost.
+    @Optional()
+    private readonly verificationAccess?: VerificationAccessService,
   ) {}
 
   /**
@@ -225,6 +234,117 @@ export class PostsService {
       select: ACTIVE_AFFILIATION_SELECT,
     });
     return activeAffiliationCollegeId(row);
+  }
+
+  /**
+   * The community fields access decisions need, plus the viewer's own
+   * membership row (at most one) so a single query answers "may they see it".
+   */
+  private static communityAccessSelect(userId: string) {
+    return {
+      id: true,
+      deletedAt: true,
+      isPrivate: true,
+      isCampusCommunity: true,
+      collegeId: true,
+      ownerId: true,
+      members: {
+        where: { userId: userId || '' },
+        select: { userId: true },
+        take: 1,
+      },
+    } satisfies Prisma.CommunitySelect;
+  }
+
+  /**
+   * The one visibility rule for a post that sits in a community. It is the
+   * rule `getChronologicalFeed` and `createPost` already apply:
+   *  - a deleted community is gone;
+   *  - a campus community is limited to its college's verified members;
+   *  - a private community is limited to its owner and members.
+   *
+   * Every single-post route funnels through this (via
+   * `assertCanViewPostCommunity`), so holding a post id is never enough to read
+   * or interact with a post you could not see in the feed.
+   */
+  private async canViewCommunity(
+    userId: string,
+    community: {
+      deletedAt: Date | null;
+      isPrivate: boolean;
+      isCampusCommunity: boolean;
+      collegeId: string | null;
+      ownerId: string | null;
+      members?: Array<{ userId: string }>;
+    },
+  ): Promise<boolean> {
+    if (community.deletedAt) return false;
+    if (community.isCampusCommunity && community.collegeId) {
+      const viewerCollegeId = await this.activeCollegeId(userId);
+      if (viewerCollegeId !== community.collegeId) return false;
+    }
+    if (community.isPrivate) {
+      const isOwner = !!userId && community.ownerId === userId;
+      const isMember = (community.members?.length ?? 0) > 0;
+      if (!isOwner && !isMember) return false;
+    }
+    return true;
+  }
+
+  /**
+   * Throws 404 (not 403: do not confirm the post exists) unless the viewer may
+   * see the community a post belongs to. A post outside any community passes
+   * without a query.
+   */
+  private async assertCanViewPostCommunity(
+    userId: string,
+    communityId: string | null | undefined,
+  ): Promise<void> {
+    if (!communityId) return;
+    const community = await this.prisma.community.findUnique({
+      where: { id: communityId },
+      select: PostsService.communityAccessSelect(userId),
+    });
+    if (!community || !(await this.canViewCommunity(userId, community))) {
+      throw new NotFoundException('Post not found');
+    }
+  }
+
+  /**
+   * The list-query form of the same rule, for reads that cannot check one post
+   * at a time (bookmarks): posts outside any community, or in one the viewer
+   * may see.
+   */
+  private async communityVisibilityWhere(
+    userId: string,
+  ): Promise<Prisma.PostWhereInput> {
+    const viewerCollegeId = await this.activeCollegeId(userId);
+    return {
+      OR: [
+        { communityId: null },
+        {
+          community: {
+            deletedAt: null,
+            AND: [
+              {
+                OR: [
+                  { isCampusCommunity: false },
+                  { collegeId: null },
+                  ...(viewerCollegeId ? [{ collegeId: viewerCollegeId }] : []),
+                ],
+              },
+              {
+                OR: [
+                  { isPrivate: false },
+                  { ownerId: userId },
+                  { members: { some: { userId } } },
+                ],
+              },
+            ],
+          },
+        },
+      ],
+    };
   }
 
   /**
@@ -318,6 +438,10 @@ export class PostsService {
     mentions?: MentionDto[],
     mediaKeys?: string[],
   ) {
+    // Defence in depth behind @VerifiedOnly: any other caller of this method
+    // (and any route-guard ordering mistake) still cannot post unverified.
+    await this.verificationAccess?.assertUsersEligible([authorId], authorId);
+
     if (communityId) {
       await this.assertCanPostInCommunity(authorId, communityId);
     }
@@ -328,6 +452,20 @@ export class PostsService {
         ? (poll.options as unknown[])
         : [];
     if (pollInput.length > 0) {
+      // Bounds on the poll itself: an unbounded array was stored as-is.
+      if (pollInput.length > POLL_MAX_OPTIONS) {
+        throw new BadRequestException(
+          `A poll can have at most ${POLL_MAX_OPTIONS} options`,
+        );
+      }
+      if (
+        pollInput.filter((opt) => pollOptionText(opt) !== '').length <
+        POLL_MIN_OPTIONS
+      ) {
+        throw new BadRequestException(
+          `A poll needs at least ${POLL_MIN_OPTIONS} options`,
+        );
+      }
       for (const opt of pollInput) {
         const str = pollOptionText(opt);
         if (str.length > POLL_OPTION_MAX_LENGTH) {
@@ -1337,9 +1475,13 @@ export class PostsService {
 
     let nextCursor: string | undefined = undefined;
     if (rawPosts.length > limit) {
-      const nextItem = rawPosts.pop();
-      nextCursor = nextItem?.createdAt
-        ? `${new Date(nextItem.createdAt).toISOString()}|${nextItem.id}`
+      // Drop the look-ahead row, then continue from the LAST row returned:
+      // the next page is strictly "after" its cursor, so a cursor taken from
+      // the look-ahead row would skip that row forever.
+      rawPosts.pop();
+      const lastItem = rawPosts[rawPosts.length - 1];
+      nextCursor = lastItem?.createdAt
+        ? `${new Date(lastItem.createdAt).toISOString()}|${lastItem.id}`
         : undefined;
     }
 
@@ -1502,9 +1644,12 @@ export class PostsService {
 
     let nextCursor: string | undefined = undefined;
     if (posts.length > limit) {
-      const nextItem = posts.pop();
-      nextCursor = nextItem
-        ? `${nextItem.createdAt.toISOString()}|${nextItem.id}`
+      // Continue from the last row actually returned, not the popped
+      // look-ahead row (the next page is strictly after the cursor).
+      posts.pop();
+      const lastItem = posts[posts.length - 1];
+      nextCursor = lastItem
+        ? `${lastItem.createdAt.toISOString()}|${lastItem.id}`
         : undefined;
     }
 
@@ -1551,6 +1696,7 @@ export class PostsService {
     ]);
     if (!post || post.deletedAt || excludedUserIds.includes(post.authorId))
       throw new NotFoundException('Post not found');
+    await this.assertCanViewPostCommunity(userId, post.communityId);
 
     const lockKey = `toggle:like:${userId}:${postId}`;
 
@@ -1636,6 +1782,7 @@ export class PostsService {
     const post = await this.prisma.post.findUnique({ where: { id: postId } });
     if (!post || post.deletedAt)
       throw new NotFoundException('Post has been deleted');
+    await this.assertCanViewPostCommunity(userId, post.communityId);
 
     // Share the SAME lock key as likePost so like/unlike for a given user+post
     // can never interleave. The decrement is tied to an atomic DELETE — it only
@@ -1777,11 +1924,21 @@ export class PostsService {
     if (!comment || comment.isDeleted)
       throw new NotFoundException('Comment has been deleted');
 
-    const post = await this.prisma.post.findUnique({
-      where: { id: comment.postId },
-    });
+    const [post, excludedUserIds] = await Promise.all([
+      this.prisma.post.findUnique({ where: { id: comment.postId } }),
+      this.blocksService.getExcludedUserIds(userId),
+    ]);
     if (!post || post.deletedAt)
       throw new NotFoundException('Post has been deleted');
+    // Block in either direction with the comment's author or the post's author:
+    // the comment (or the post under it) is invisible to this viewer.
+    if (
+      excludedUserIds.includes(post.authorId) ||
+      (comment.authorId && excludedUserIds.includes(comment.authorId))
+    ) {
+      throw new NotFoundException('Comment has been deleted');
+    }
+    await this.assertCanViewPostCommunity(userId, post.communityId);
 
     const lockKey = `toggle:commentlike:${userId}:${commentId}`;
 
@@ -1875,9 +2032,14 @@ export class PostsService {
   async unlikeComment(commentId: string, userId: string) {
     const comment = await this.prisma.comment.findUnique({
       where: { id: commentId },
+      include: { post: { select: { communityId: true } } },
     });
     if (!comment || comment.isDeleted)
       throw new NotFoundException('Comment has been deleted');
+    await this.assertCanViewPostCommunity(
+      userId,
+      comment.post?.communityId ?? null,
+    );
 
     // Same lock key as likeComment so like/unlike can't interleave; decrement is
     // tied to an atomic DELETE and floored at 0 (no double-decrement drift).
@@ -1949,6 +2111,7 @@ export class PostsService {
       ]);
     if (!post || post.deletedAt || excludedUserIds.includes(post.authorId))
       throw new NotFoundException('Post not found');
+    await this.assertCanViewPostCommunity(authorId, post.communityId);
 
     if (parentId) {
       // The parent was accepted on trust: an id for a comment on a *different*
@@ -1961,6 +2124,14 @@ export class PostsService {
       }
       if (parentComment.isDeleted) {
         throw new BadRequestException('This comment has been deleted');
+      }
+      // Replying to someone you are blocked with (either direction) would
+      // notify them and thread you under their comment.
+      if (
+        parentComment.authorId &&
+        excludedUserIds.includes(parentComment.authorId)
+      ) {
+        throw new NotFoundException('Comment not found');
       }
     }
 
@@ -2069,11 +2240,27 @@ export class PostsService {
     return comment;
   }
 
-  async getPostMeta(postId: string) {
-    return this.prisma.post.findUnique({
+  /**
+   * The post's `updatedAt`, for the controller's ETag/304 short-circuit.
+   *
+   * The viewer's access is checked here, before any 304 is possible: a
+   * conditional request must not confirm that a post the viewer cannot see
+   * still exists, nor let a cached ETag stand in for authorisation.
+   */
+  async getPostMeta(postId: string, userId: string) {
+    const meta = await this.prisma.post.findUnique({
       where: { id: postId, deletedAt: null },
-      select: { updatedAt: true },
+      select: { updatedAt: true, authorId: true, communityId: true },
     });
+    if (!meta) return null;
+    if (userId) {
+      const excluded = await this.blocksService.getExcludedUserIds(userId);
+      if (excluded.includes(meta.authorId)) {
+        throw new NotFoundException('Post not found');
+      }
+    }
+    await this.assertCanViewPostCommunity(userId, meta.communityId);
+    return { updatedAt: meta.updatedAt };
   }
 
   // Number of ROOT (top-level) comments returned per comment page. Every root is
@@ -2298,9 +2485,11 @@ export class PostsService {
 
     let nextCursor: string | undefined = undefined;
     if (roots.length > limit) {
-      const extra = roots.pop();
-      nextCursor = extra
-        ? `${extra.createdAt.toISOString()}|${extra.id}`
+      // Last root actually returned: the next page is strictly after it.
+      roots.pop();
+      const lastRoot = roots[roots.length - 1];
+      nextCursor = lastRoot
+        ? `${lastRoot.createdAt.toISOString()}|${lastRoot.id}`
         : undefined;
     }
 
@@ -2391,10 +2580,16 @@ export class PostsService {
       select: {
         id: true,
         authorId: true,
-        community: { select: { deletedAt: true } },
+        community: {
+          select: PostsService.communityAccessSelect(userId),
+        },
       },
     });
-    if (!post || (post.community && post.community.deletedAt)) {
+    if (!post) throw new NotFoundException('Post not found');
+    if (
+      post.community &&
+      !(await this.canViewCommunity(userId, post.community))
+    ) {
       throw new NotFoundException('Post not found');
     }
     if (userId) {
@@ -2484,6 +2679,14 @@ export class PostsService {
                 isPrivate: true,
                 isCampusCommunity: true,
                 deletedAt: true,
+                // Access decision inputs; stripped before the response.
+                collegeId: true,
+                ownerId: true,
+                members: {
+                  where: { userId: userId || '' },
+                  select: { userId: true },
+                  take: 1,
+                },
               },
             },
             pollOptions: {
@@ -2518,6 +2721,14 @@ export class PostsService {
       post.deletedAt ||
       (post.community && post.community.deletedAt) ||
       (excludedUserIds.length > 0 && excludedUserIds.includes(post.authorId))
+    ) {
+      throw new NotFoundException('Post not found');
+    }
+    // Private / foreign-campus communities: a post id alone is not access.
+    // (The comments and media fetched above are discarded on refusal.)
+    if (
+      post.community &&
+      !(await this.canViewCommunity(userId, post.community))
     ) {
       throw new NotFoundException('Post not found');
     }
@@ -2565,8 +2776,20 @@ export class PostsService {
       // `avatar` mirrors `avatarKey`, exactly as the feed's SQL does it — the
       // column is `avatarKey` and every community consumer on the client reads
       // `.avatar`. Prisma's `select` cannot alias, so it is added here.
+      // Listed field by field: the owner / college / membership columns
+      // selected for the access check above are not response data.
       community: post.community
-        ? { ...post.community, avatar: post.community.avatarKey }
+        ? {
+            id: post.community.id,
+            name: post.community.name,
+            slug: post.community.slug,
+            avatarKey: post.community.avatarKey,
+            color: post.community.color,
+            isPrivate: post.community.isPrivate,
+            isCampusCommunity: post.community.isCampusCommunity,
+            deletedAt: post.community.deletedAt,
+            avatar: post.community.avatarKey,
+          }
         : null,
       canDelete: canDeleteThis,
       media: formattedMedia,
@@ -2587,9 +2810,15 @@ export class PostsService {
   }
 
   async bookmarkPost(postId: string, userId: string) {
-    const post = await this.prisma.post.findUnique({ where: { id: postId } });
+    const [post, excludedUserIds] = await Promise.all([
+      this.prisma.post.findUnique({ where: { id: postId } }),
+      this.blocksService.getExcludedUserIds(userId),
+    ]);
     if (!post || post.deletedAt)
       throw new NotFoundException('Post has been deleted');
+    if (excludedUserIds.includes(post.authorId))
+      throw new NotFoundException('Post not found');
+    await this.assertCanViewPostCommunity(userId, post.communityId);
 
     await this.prisma.postBookmark.upsert({
       where: { userId_postId: { userId, postId } },
@@ -2630,6 +2859,10 @@ export class PostsService {
       { deletedAt: null, ...PostsService.AVAILABLE_AUTHOR },
       'authorId',
     );
+    // Bookmarks of posts in a community the viewer can no longer see (left or
+    // removed from a private one, college changed, community deleted) stop
+    // resolving, exactly as they would in the feed.
+    const visibility = await this.communityVisibilityWhere(userId);
     // Compound keyset cursor "<iso>__<postId>" — postId is unique within a
     // user's bookmarks, so it's a stable tiebreaker for equal createdAt.
     let cursorDate: Date | undefined = undefined;
@@ -2656,7 +2889,7 @@ export class PostsService {
     const bookmarks = await this.prisma.postBookmark.findMany({
       where: {
         userId,
-        post: postFilter,
+        post: { AND: [postFilter, visibility] },
         ...(cursorDate
           ? cursorPostId
             ? {
@@ -2699,9 +2932,12 @@ export class PostsService {
 
     let nextCursor: string | undefined = undefined;
     if (bookmarks.length > limit) {
-      const nextItem = bookmarks.pop();
-      nextCursor = nextItem
-        ? `${nextItem.createdAt.toISOString()}|${nextItem.postId}`
+      // Continue from the last bookmark actually returned, not the popped
+      // look-ahead row (the next page is strictly after the cursor).
+      bookmarks.pop();
+      const lastItem = bookmarks[bookmarks.length - 1];
+      nextCursor = lastItem
+        ? `${lastItem.createdAt.toISOString()}|${lastItem.postId}`
         : undefined;
     }
 
@@ -2753,6 +2989,7 @@ export class PostsService {
     if (!post || post.deletedAt || excludedUserIds.includes(post.authorId)) {
       throw new NotFoundException('Post not found');
     }
+    await this.assertCanViewPostCommunity(userId, post.communityId);
 
     const pollOptions = post.pollOptions || [];
     if (pollOptions.length === 0) {

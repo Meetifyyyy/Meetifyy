@@ -44,7 +44,21 @@ describe('CommunitiesService — community detail', () => {
     communityMember: { findUnique: jest.Mock; findMany: jest.Mock };
     communityJoinRequest: { findUnique: jest.Mock };
     user: { findUnique: jest.Mock };
+    userSettings: { findMany: jest.Mock; findUnique: jest.Mock };
+    follow: { findMany: jest.Mock };
   };
+
+  /** `UserSettings` rows returned for the listed members. */
+  let memberSettings: Array<{
+    userId: string;
+    showOnlineStatus: boolean;
+    whoCanSeeOnline: string;
+  }> = [];
+  /** Presence the fake PresenceService reports for every user. */
+  let presence = new Map<
+    string,
+    { status: 'online'; lastSeen: string; socketIds: string[] }
+  >();
 
   /** The viewer's ACTIVE affiliation college (CampusAccessService). */
   let getActiveCollegeId: jest.Mock<Promise<string | null>, [string]>;
@@ -71,6 +85,8 @@ describe('CommunitiesService — community detail', () => {
     joinRequest?: { status: string } | null;
     viewerCollegeId?: string | null;
   } = {}) => {
+    memberSettings = [];
+    presence = new Map();
     let strip: StripRow[] = [...members];
     if (viewerMembership && !viewerOutsideStrip) {
       strip = [
@@ -120,6 +136,12 @@ describe('CommunitiesService — community detail', () => {
       user: {
         findUnique: jest.fn(() => Promise.resolve({ collegeId: 'college-a' })),
       },
+      // Presence rules: each listed member's own settings, and the viewer's.
+      userSettings: {
+        findMany: jest.fn(() => Promise.resolve(memberSettings)),
+        findUnique: jest.fn(() => Promise.resolve(null)),
+      },
+      follow: { findMany: jest.fn(() => Promise.resolve([])) },
     };
     getActiveCollegeId = jest.fn<Promise<string | null>, [string]>(() =>
       Promise.resolve(viewerCollegeId),
@@ -130,7 +152,7 @@ describe('CommunitiesService — community detail', () => {
       stub<DomainEventService>({ emit: jest.fn() }),
       stub<RedisService>({ getClient: () => null }),
       stub<PresenceService>({
-        getPresenceMany: () => Promise.resolve(new Map()),
+        getPresenceMany: () => Promise.resolve(presence),
       }),
       stub<DefaultAssetsService>({ refFor: () => null }),
       stub<BlocksService>({
@@ -409,5 +431,153 @@ describe('CommunitiesService — community detail', () => {
     await expect(service.getCommunityById(ID, VIEWER)).rejects.toThrow(
       NotFoundException,
     );
+  });
+
+  describe('what an outsider is shown', () => {
+    const online = (ids: string[]) =>
+      new Map(
+        ids.map((id) => [
+          id,
+          {
+            status: 'online' as const,
+            lastSeen: '2026-10-01T10:00:00.000Z',
+            socketIds: ['s'],
+          },
+        ]),
+      );
+
+    it('returns no member list and no online count for a private community the viewer has not joined', async () => {
+      build({
+        community: { isPrivate: true },
+        members: [member('a'), member('b')],
+      });
+      presence = online(['a', 'b']);
+      service['countOnlineMembers'] = () => Promise.resolve(2);
+
+      const result = await service.getCommunityById(ID, VIEWER);
+
+      expect(result.canViewPosts).toBe(false);
+      expect(result.members).toEqual([]);
+      expect(result.onlineCount).toBe(0);
+      expect(result.online).toBe(0);
+      // The member COUNT stays: it is what the join page advertises.
+      expect(result._count.members).toBe(2);
+      // The owner is still named (it is public identity), without presence.
+      expect(result.owner).toMatchObject({ id: 'owner' });
+      expect(result.owner).not.toHaveProperty('lastActive');
+    });
+
+    it('returns no member list for a campus community the viewer is not eligible for', async () => {
+      build({
+        community: { isCampusCommunity: true, collegeId: 'college-a' },
+        members: [member('a')],
+        viewerCollegeId: 'college-b',
+      });
+      service['countOnlineMembers'] = () => Promise.resolve(1);
+
+      const result = await service.getCommunityById(ID, VIEWER);
+
+      expect(result.canViewPosts).toBe(false);
+      expect(result.members).toEqual([]);
+      expect(result.onlineCount).toBe(0);
+    });
+
+    it('still lists members for someone who belongs to the private community', async () => {
+      build({
+        community: { isPrivate: true },
+        members: [member('a')],
+        viewerMembership: { role: 'MEMBER' },
+      });
+      service['countOnlineMembers'] = () => Promise.resolve(1);
+
+      const result = await service.getCommunityById(ID, VIEWER);
+
+      expect(result.canViewPosts).toBe(true);
+      expect(result.members.map((m) => m.userId)).toEqual([
+        'owner',
+        'a',
+        VIEWER,
+      ]);
+      expect(result.onlineCount).toBe(1);
+    });
+
+    it('asks only for live, active accounts when loading the member strip', async () => {
+      build();
+      await service.getCommunityById(ID, VIEWER);
+      const [args] = prisma.community.findUnique.mock.calls[0] as [
+        { include: { members: { where: unknown } } },
+      ];
+      expect(args.include.members.where).toEqual({
+        user: { deletedAt: null, accountStatus: 'ACTIVE' },
+      });
+    });
+  });
+
+  describe('presence in the member list', () => {
+    it('masks isOnline AND lastActive together for a member who hides presence', async () => {
+      build({ members: [member('shy'), member('open')] });
+      presence = new Map([
+        [
+          'shy',
+          {
+            status: 'online',
+            lastSeen: '2026-10-01T10:00:00.000Z',
+            socketIds: [],
+          },
+        ],
+        [
+          'open',
+          {
+            status: 'online',
+            lastSeen: '2026-10-01T10:05:00.000Z',
+            socketIds: [],
+          },
+        ],
+      ]);
+      memberSettings = [
+        { userId: 'shy', showOnlineStatus: true, whoCanSeeOnline: 'nobody' },
+        { userId: 'open', showOnlineStatus: true, whoCanSeeOnline: 'everyone' },
+      ];
+
+      const result = await service.getCommunityById(ID, VIEWER);
+      const byId = new Map(result.members.map((m) => [m.userId, m.user]));
+
+      expect(byId.get('shy')).toMatchObject({
+        isOnline: false,
+        lastActive: null,
+      });
+      expect(byId.get('open')).toMatchObject({
+        isOnline: true,
+        lastActive: '2026-10-01T10:05:00.000Z',
+      });
+    });
+
+    it('masks lastActive for a member whose showOnlineStatus is off', async () => {
+      build({ members: [member('hidden')] });
+      presence = new Map([
+        [
+          'hidden',
+          {
+            status: 'online',
+            lastSeen: '2026-10-01T10:00:00.000Z',
+            socketIds: [],
+          },
+        ],
+      ]);
+      memberSettings = [
+        {
+          userId: 'hidden',
+          showOnlineStatus: false,
+          whoCanSeeOnline: 'everyone',
+        },
+      ];
+
+      const result = await service.getCommunityById(ID, VIEWER);
+
+      expect(result.members[0].user).toMatchObject({
+        isOnline: false,
+        lastActive: null,
+      });
+    });
   });
 });

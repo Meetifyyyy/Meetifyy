@@ -48,9 +48,9 @@ describe('PostsService.createPost poll option text', () => {
 
   it('drops an object or array option instead of storing "[object Object]"', async () => {
     await service().createPost('u1', 'Which?', undefined, undefined, {
-      options: ['Tea', { text: 'Coffee' }, ['x']],
+      options: ['Tea', 'Milk', { text: 'Coffee' }, ['x']],
     });
-    expect(storedTexts()).toEqual(['Tea']);
+    expect(storedTexts()).toEqual(['Tea', 'Milk']);
   });
 
   it('still refuses an over-long option', async () => {

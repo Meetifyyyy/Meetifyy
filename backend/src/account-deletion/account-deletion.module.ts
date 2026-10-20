@@ -17,6 +17,7 @@ import { PresenceModule } from '../presence/presence.module';
 import { UploadsModule } from '../uploads/uploads.module';
 import { UserOtpModule } from '../otp/user-otp.module';
 import { EmailModule } from '../email/email.module';
+import { AuthModule } from '../auth/auth.module';
 
 @Module({
   imports: [
@@ -27,6 +28,8 @@ import { EmailModule } from '../email/email.module';
     // Deletion and recovery are both gated on an emailed one-time code.
     UserOtpModule,
     EmailModule,
+    // UserSessionService, to sign the account out of every device on purge.
+    AuthModule,
     BullModule.registerQueue({ name: ACCOUNT_DELETION_QUEUE }),
   ],
   controllers: [AccountDeletionController],

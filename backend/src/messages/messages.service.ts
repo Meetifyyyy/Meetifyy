@@ -42,6 +42,7 @@ import {
   assertForwardWithinRateLimit,
   assertNewConversationWithinRateLimit,
 } from './core/message-limits';
+import { withDmCreateLock } from './core/dm-lock';
 import { RedisService } from '../redis/redis.service';
 import { BlocksService } from '../users/blocks.service';
 import { resolvePresenceVisibilityForViewer } from '../users/privacy.helper';
@@ -335,7 +336,9 @@ export class MessagesService
     }
   }
 
-  private resolveCache = new Map<string, { id: string; timestamp: number }>();
+  // Bounded LRU (5 min TTL, see H-4 below); a Map here grew with every
+  // distinct identifier:viewer pair and never evicted.
+  private resolveCache = new LruCache<string, string>(5000, 5 * 60 * 1000);
 
   async resolveConversationId(
     identifier: string,
@@ -349,8 +352,8 @@ export class MessagesService
     // H-4 fix: TTL reduced from 24 hours → 5 minutes.
     // A 24h window meant stale mappings persisted for deleted/merged conversations,
     // causing ForbiddenException errors for up to a full day after a conversation changed.
-    if (cached && Date.now() - cached.timestamp < 5 * 60 * 1000) {
-      return cached.id;
+    if (cached) {
+      return cached;
     }
 
     try {
@@ -364,10 +367,7 @@ export class MessagesService
           select: { id: true },
         });
         if (directConv?.id) {
-          this.resolveCache.set(cacheKey, {
-            id: directConv.id,
-            timestamp: Date.now(),
-          });
+          this.resolveCache.set(cacheKey, directConv.id);
           return directConv.id;
         }
       }
@@ -378,10 +378,7 @@ export class MessagesService
         select: { id: true },
       });
       if (pubConv?.id) {
-        this.resolveCache.set(cacheKey, {
-          id: pubConv.id,
-          timestamp: Date.now(),
-        });
+        this.resolveCache.set(cacheKey, pubConv.id);
         return pubConv.id;
       }
 
@@ -397,7 +394,7 @@ export class MessagesService
           select: { id: true },
         });
         if (dm?.id) {
-          this.resolveCache.set(cacheKey, { id: dm.id, timestamp: Date.now() });
+          this.resolveCache.set(cacheKey, dm.id);
           return dm.id;
         }
       }
@@ -430,7 +427,13 @@ export class MessagesService
         isInstantMatch: true,
         participants: {
           where: { deletedAt: null, leftAt: null },
-          select: { userId: true, isMuted: true },
+          select: {
+            userId: true,
+            isMuted: true,
+            // Lifecycle state of each member, for the unavailable-recipient
+            // gate below (same rule as MessagingCoreService.sendMessage).
+            user: { select: { accountStatus: true, deletedAt: true } },
+          },
         },
       },
     });
@@ -494,6 +497,23 @@ export class MessagesService
       );
     }
 
+    // Unavailable-recipient gate. This override does not call
+    // super.sendMessage, and it is the path the socket and REST both reach, so
+    // it needs its own copy: a 1:1 thread whose only other member is deleted
+    // or pending deletion is closed for writes. In a group the thread stays
+    // open but an unavailable member is dropped from the recipient set.
+    const otherParticipants = conv.participants.filter(
+      (p) => p.userId !== senderId,
+    );
+    const unavailableOthers = otherParticipants.filter((p) =>
+      isUnavailableUser(p.user),
+    );
+    if (otherParticipants.length === 1 && unavailableOthers.length === 1) {
+      throw new ForbiddenException({
+        code: 'RECIPIENT_UNAVAILABLE',
+        message: 'This user is no longer available.',
+      });
+    }
     // Verification gate. This override does not call super.sendMessage, so it
     // needs its own copy of the check the core service performs — and it is
     // the one the Socket.IO `message:send` handler reaches, which carries no
@@ -505,9 +525,10 @@ export class MessagesService
       conv.type === 'GROUP',
     );
 
-    const otherUserIds = conv.participants
-      .filter((p) => p.userId !== senderId)
-      .map((p) => p.userId);
+    const unavailableIds = new Set(unavailableOthers.map((p) => p.userId));
+    const otherUserIds = otherParticipants
+      .map((p) => p.userId)
+      .filter((id) => !unavailableIds.has(id));
     let recipientIds: string[] = [];
     let unmutedRecipientIds: string[] = [];
 
@@ -1239,13 +1260,11 @@ export class MessagesService
     };
   }
 
-  private presenceCache = new Map<
+  // Bounded: one entry per partner user id, 5s TTL, LRU-evicted at 5000.
+  private presenceCache = new LruCache<
     string,
-    {
-      data: { isOnline: boolean; lastActive: string | null };
-      expiresAt: number;
-    }
-  >();
+    { isOnline: boolean; lastActive: string | null }
+  >(5000, 5000);
   /**
    * One page of a conversation's shared photos and videos, newest first.
    *
@@ -1635,12 +1654,11 @@ export class MessagesService
       { isOnline: boolean; lastActive: string | null }
     >();
     if (targetUserIds.length > 0) {
-      const now = Date.now();
       const uncachedIds: string[] = [];
       for (const uId of targetUserIds) {
         const cached = this.presenceCache.get(uId);
-        if (cached && cached.expiresAt > now) {
-          presenceMap.set(uId, cached.data);
+        if (cached) {
+          presenceMap.set(uId, cached);
         } else {
           uncachedIds.push(uId);
         }
@@ -1655,10 +1673,7 @@ export class MessagesService
             lastActive: presence?.lastSeen || null,
           };
           presenceMap.set(uId, presData);
-          this.presenceCache.set(uId, {
-            data: presData,
-            expiresAt: now + 5000,
-          });
+          this.presenceCache.set(uId, presData);
         });
       }
     }
@@ -1671,7 +1686,8 @@ export class MessagesService
     for (const p of participants) {
       const ou = targetUserByConvId.get(p.conversation.id);
       if (!ou || blockedSet.has(ou.id)) continue;
-      if (!presenceMap.get(ou.id)?.isOnline) continue;
+      // Not only online partners: `lastActive` is presence too, and an offline
+      // partner's last-seen time is just as private as their online dot.
       visTargets.push({
         userId: ou.id,
         rule: ou.settings?.whoCanSeeOnline || 'everyone',
@@ -1840,9 +1856,10 @@ export class MessagesService
                 : canSeeOnline
                   ? userPresence?.isOnline || false
                   : false,
-              lastActive: targetUnavailable
-                ? null
-                : userPresence?.lastActive || null,
+              lastActive:
+                targetUnavailable || !presenceVisibleSet.has(otherUser.id)
+                  ? null
+                  : userPresence?.lastActive || null,
             }
           : null,
       };
@@ -1856,6 +1873,25 @@ export class MessagesService
   }
 
   async startConversation(
+    userIds: string[],
+    currentUserId: string,
+    groupName?: string,
+  ) {
+    // A 1:1 start is find-then-create under READ COMMITTED, so two
+    // simultaneous first contacts could each create a DM. Serialise per user
+    // pair (sorted, so A->B and B->A share one lock).
+    const others = [
+      ...new Set((userIds || []).filter((id) => id && id !== currentUserId)),
+    ];
+    if (others.length === 1 && !groupName) {
+      return withDmCreateLock(this.redisService, currentUserId, others[0], () =>
+        this.startConversationUnlocked(userIds, currentUserId, groupName),
+      );
+    }
+    return this.startConversationUnlocked(userIds, currentUserId, groupName);
+  }
+
+  private async startConversationUnlocked(
     userIds: string[],
     currentUserId: string,
     groupName?: string,
@@ -1943,33 +1979,8 @@ export class MessagesService
   }
 
   async reactToMessage(messageId: string, userId: string, reaction: string) {
-    // Mirrors the core service: a reaction is a composer action and obeys the
-    // same both-sides-verified rule as sending.
-    const target = await this.prisma.message.findUnique({
-      where: { id: messageId },
-      select: { conversationId: true },
-    });
-    if (!target) {
-      throw new NotFoundException('Message not found');
-    }
-    await this.assertVerifiedForConversation(target.conversationId, userId);
-
-    await this.prisma.messageReaction.upsert({
-      where: {
-        messageId_userId_emoji: {
-          messageId,
-          userId,
-          emoji: reaction,
-        },
-      },
-      update: {},
-      create: {
-        messageId,
-        userId,
-        emoji: reaction,
-      },
-    });
-    return { success: true };
+    // Participant, block and verification rules live in the core service.
+    return super.reactToMessage(messageId, userId, reaction);
   }
 
   // markAsRead / _persistMarkAsRead are inherited from MessagingCoreService
@@ -1992,26 +2003,8 @@ export class MessagesService
   }
 
   async deleteMessageForMe(messageId: string, userId: string) {
-    const message = await this.prisma.message.findUnique({
-      where: { id: messageId },
-      select: { id: true, conversationId: true },
-    });
-
-    if (!message) {
-      throw new NotFoundException('Message not found');
-    }
-
-    await this.prisma.deletedMessage.upsert({
-      where: { userId_messageId: { userId, messageId } },
-      create: { userId, messageId },
-      update: {},
-    });
-
-    return {
-      success: true,
-      messageId: message.id,
-      conversationId: message.conversationId,
-    };
+    // The active-participant check lives in the core service.
+    return super.deleteMessageForMe(messageId, userId);
   }
 
   async forwardMessage(
@@ -2665,6 +2658,11 @@ export class MessagesService
     text: string,
   ) {
     const realConvId = await this.resolveConversationId(conversationId);
+    // The actor must belong to the conversation. A just-departed member is
+    // allowed because "<handle> left the group" is posted after leftAt is set.
+    await this.assertActiveParticipant(realConvId, senderId, {
+      allowLeft: true,
+    });
     const message = await this.prisma.message.create({
       data: {
         conversationId: realConvId,

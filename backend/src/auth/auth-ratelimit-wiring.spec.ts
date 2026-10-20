@@ -13,8 +13,11 @@ import { AuthController } from './auth.controller';
 import { JwtGuard } from '../common/guards/jwt.guard';
 import { RateLimitPolicyGuard } from '../common/rate-limit/rate-limit-policy.guard';
 import { AuthRateLimitGuard } from '../common/guards/auth-ratelimit.guard';
+import { RecoveryTokenGuard } from '../common/guards/recovery-token.guard';
 import { RATE_LIMIT_POLICIES_KEY } from '../common/rate-limit/rate-limit.decorator';
 import { RATE_LIMIT_POLICIES } from '../config/rate-limit.config';
+import { ALLOW_PENDING_LEGAL_ACK_KEY } from '../common/decorators/allow-pending-legal-ack.decorator';
+import { ALLOW_BEARER_TOKEN_KEY } from '../common/decorators/allow-bearer-token.decorator';
 
 /**
  * The budgets on the routes that were moved here from the browser.
@@ -128,6 +131,109 @@ describe('AuthController — rate-limit wiring on the proxied auth routes', () =
       'auth.verifypassword.user',
     ] as const) {
       expect(RATE_LIMIT_POLICIES[policy].onRedisFailure).toBe('closed');
+    }
+  });
+
+  describe('the per-email campus-request budget', () => {
+    it('is keyed on an account dimension the controller feeds explicitly', () => {
+      // The shared policy guard reads `body.email ?? body.identifier`, which
+      // CreateCollegeRequestDto does not have, so this policy cannot be applied
+      // by the guard. `requestCollege` consumes it itself on `collegeEmail`
+      // (asserted in auth.controller.spec.ts); this pins that it still exists.
+      expect(RATE_LIMIT_POLICIES['auth.collegerequest.email'].dimension).toBe(
+        'account',
+      );
+      expect(policiesOn('requestCollege')).toContain(
+        'auth.collegerequest.email',
+      );
+    });
+  });
+});
+
+/**
+ * A brand-new account has no `User` row until `sync` creates it, and consent is
+ * recorded against that row. If an ack-required legal version is live and these
+ * routes were refused with the legal-acknowledgement error, a new account could
+ * never get its row and the consent call would then fail on a foreign key.
+ */
+describe('AuthController — routes a not-yet-consented account must reach', () => {
+  const handler = (method: string) =>
+    Reflect.get(AuthController.prototype, method) as (
+      ...args: never[]
+    ) => unknown;
+  const allowsLegalPending = (method: string) =>
+    Reflect.getMetadata(ALLOW_PENDING_LEGAL_ACK_KEY, handler(method)) === true;
+
+  it.each([
+    'syncProfile',
+    'currentSession',
+    'adoptSession',
+    'revokeAllSessions',
+  ])('%s carries @AllowPendingLegalAck', (method) => {
+    expect(allowsLegalPending(method)).toBe(true);
+  });
+
+  it('does not open anything else', () => {
+    for (const method of [
+      'listSessions',
+      'revokeSession',
+      'verifyPassword',
+      'changePassword',
+      'triggerWelcomeEmail',
+    ]) {
+      expect(allowsLegalPending(method)).toBe(false);
+    }
+  });
+
+  it('leaves @AllowBearerToken exactly where it was (adopt only)', () => {
+    const bearerRoutes = Object.getOwnPropertyNames(AuthController.prototype)
+      .filter(
+        (m) =>
+          m !== 'constructor' &&
+          Reflect.getMetadata(ALLOW_BEARER_TOKEN_KEY, handler(m)) === true,
+      )
+      .sort();
+    expect(bearerRoutes).toEqual(['adoptSession']);
+  });
+});
+
+describe('AuthController — password-reset/finalize wiring', () => {
+  const handler = Reflect.get(
+    AuthController.prototype,
+    'finalizePasswordReset',
+  ) as (...args: never[]) => unknown;
+  const guards =
+    (Reflect.getMetadata('__guards__', handler) as unknown[]) ?? [];
+
+  it('is the only route behind RecoveryTokenGuard, and never behind JwtGuard', () => {
+    expect(guards).toContain(RecoveryTokenGuard);
+    expect(guards).not.toContain(JwtGuard);
+    const others = Object.getOwnPropertyNames(AuthController.prototype).filter(
+      (m) =>
+        m !== 'finalizePasswordReset' &&
+        m !== 'constructor' &&
+        (
+          (Reflect.getMetadata(
+            '__guards__',
+            Reflect.get(AuthController.prototype, m) as object,
+          ) as unknown[] | undefined) ?? []
+        ).includes(RecoveryTokenGuard),
+    );
+    expect(others).toEqual([]);
+  });
+
+  it('authenticates before it meters, and meters per user and per IP', () => {
+    expect(guards.indexOf(RecoveryTokenGuard)).toBeLessThan(
+      guards.indexOf(RateLimitPolicyGuard),
+    );
+    const policies: string[] =
+      new Reflector().get(RATE_LIMIT_POLICIES_KEY, handler) ?? [];
+    expect(policies).toEqual([
+      'auth.emailtrigger.user',
+      'auth.passwordreset.finalize.ip',
+    ]);
+    for (const p of policies) {
+      expect(Object.keys(RATE_LIMIT_POLICIES)).toContain(p);
     }
   });
 });

@@ -16,7 +16,7 @@ import {
   USER_SESSION_ID_COOKIE,
   USER_SESSION_ID_HEADER,
 } from '../../auth/session/user-session-cookies';
-import { timingSafeEqual } from 'crypto';
+import { constantTimeEquals } from '../utils/constant-time.util';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ALLOW_SUSPENDED_KEY } from '../decorators/allow-suspended.decorator';
 import { ALLOW_PENDING_DELETION_KEY } from '../decorators/allow-pending-deletion.decorator';
@@ -48,6 +48,8 @@ export const SUSPENDED_ERROR_CODE = 'ACCOUNT_SUSPENDED';
 
 /** Shape the client keys its full-screen deletion/recovery gate off. */
 export const PENDING_DELETION_ERROR_CODE = 'ACCOUNT_PENDING_DELETION';
+export const BANNED_ERROR_CODE = 'ACCOUNT_BANNED';
+export const DELETED_ERROR_CODE = 'ACCOUNT_DELETED';
 
 /** Shape the client keys its mandatory legal-acknowledgement flow off. */
 export const LEGAL_ACK_ERROR_CODE = LEGAL_ACKNOWLEDGEMENT_REQUIRED_CODE;
@@ -637,8 +639,8 @@ export class JwtGuard implements CanActivate {
    *
    * The thrown error carries a machine-readable `code` so the client can show
    * the suspension screen instead of a generic error toast. BANNED and DELETED
-   * are handled earlier at sign-in and stay fully blocked — a ban is not
-   * appealable through this route.
+   * are refused at sign-in and here too (an old token outlives the ban), apart
+   * from the profile-sync routes — a ban is not appealable through this route.
    */
   private async enforceAccountStatus(
     context: ExecutionContext,
@@ -658,6 +660,29 @@ export class JwtGuard implements CanActivate {
     );
 
     const status = await (prefetched ?? this.resolveAccountStatus(userId));
+
+    // BANNED and DELETED are terminal and refused at sign-in, but a session or
+    // access token minted BEFORE the ban / purge stays cryptographically valid,
+    // so the guard has to refuse them too. The one exception is the
+    // profile-sync family (`sync`, `session`, `revoke-all`), which is the only
+    // route set marked both @AllowSuspended() and @AllowPendingDeletion(): the
+    // client learns the account state from it and can sign itself out.
+    if (status === 'BANNED' || status === 'DELETED') {
+      const deletionAllowed = this.reflector.getAllAndOverride<boolean>(
+        ALLOW_PENDING_DELETION_KEY,
+        [context.getHandler(), context.getClass()],
+      );
+      if (!(suspensionAllowed && deletionAllowed)) {
+        throw new ForbiddenException({
+          code: status === 'BANNED' ? BANNED_ERROR_CODE : DELETED_ERROR_CODE,
+          message:
+            status === 'BANNED'
+              ? 'This account has been banned.'
+              : 'This account no longer exists.',
+        });
+      }
+    }
+
     if (status === 'SUSPENDED' && !suspensionAllowed) {
       throw new ForbiddenException({
         code: SUSPENDED_ERROR_CODE,
@@ -947,6 +972,52 @@ export class JwtGuard implements CanActivate {
     return null;
   }
 
+  /**
+   * The verified claims of a Supabase access token, or null.
+   *
+   * Signature, expiry and issuer are checked exactly as `peekUserId` does, but
+   * the whole payload is returned and the token cache is NOT consulted, because
+   * the caller needs claims the cache does not keep (`amr`, `email`). Local
+   * verification only — no network call, no session or account lookup — so it
+   * proves who signed the token and nothing about whether the session behind it
+   * is still live. Only for the one route that deliberately accepts a bare
+   * recovery token (`RecoveryTokenGuard`).
+   */
+  public async peekClaims(
+    token: string,
+  ): Promise<Record<string, unknown> | null> {
+    if (!token) return null;
+    const header = this.parseHeader(token);
+    const alg = header?.alg;
+
+    try {
+      if (
+        header?.kid &&
+        alg &&
+        JwtGuard.ASYMMETRIC_ALGS.includes(alg as jwt.Algorithm)
+      ) {
+        const key = await JwtGuard.getSigningKey(header.kid);
+        if (key) {
+          const issuer = JwtGuard.expectedIssuer();
+          const payload = jwt.verify(token, key, {
+            algorithms: JwtGuard.ASYMMETRIC_ALGS,
+            ...(issuer ? { issuer } : {}),
+          });
+          return isRecord(payload) ? payload : null;
+        }
+      }
+
+      const secret = config.auth.supabase.jwtSecret;
+      if (secret && alg === 'HS256') {
+        const payload = jwt.verify(token, secret, { algorithms: ['HS256'] });
+        return isRecord(payload) ? payload : null;
+      }
+    } catch {
+      return null;
+    }
+    return null;
+  }
+
   /** Reads the JOSE header ({alg, kid}) to route verification. Not trusted for auth. */
   private parseHeader(token: string): { alg?: string; kid?: string } | null {
     try {
@@ -1006,16 +1077,4 @@ function timestampClaim(
   const value: unknown = payload[key];
   if (value === null) return null;
   return typeof value === 'string' ? value : undefined;
-}
-
-/**
- * Compares two CSRF tokens without leaking their contents through timing.
- * The length check sits outside the timing-safe path because `timingSafeEqual`
- * throws on a length mismatch and a token's length is not the secret.
- */
-function constantTimeEquals(a: string, b: string): boolean {
-  const left = Buffer.from(a);
-  const right = Buffer.from(b);
-  if (left.length !== right.length) return false;
-  return timingSafeEqual(left, right);
 }

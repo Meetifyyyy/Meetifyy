@@ -1,4 +1,6 @@
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
+import * as http from 'http';
+import type { AddressInfo } from 'net';
 import { LinkPreviewService } from './link-preview.service';
 
 describe('LinkPreviewService', () => {
@@ -125,5 +127,83 @@ describe('LinkPreviewService — IPv6 literals in the URL', () => {
     'http://[fe80::1]/',
   ])('refuses %s before connecting', async (url) => {
     await expect(service.getPreview(url)).rejects.toThrow(ForbiddenException);
+  });
+
+  /**
+   * Real sockets, no mocked http: Node 20+ calls `lookup` with `{ all: true }`
+   * and wants an array back. A bare-string answer fails the request with
+   * ERR_INVALID_IP_ADDRESS, which silently broke every hostname URL.
+   */
+  describe('safe lookup with a real http.request', () => {
+    const fetchVia = (service: LinkPreviewService, port: number) =>
+      new Promise<string>((resolve, reject) => {
+        const req = http.request(
+          {
+            host: 'localhost',
+            port,
+            // A fresh socket per request: a kept-alive one would skip lookup.
+            agent: false,
+            lookup: service['createSafeLookup'](),
+          },
+          (res) => {
+            let body = '';
+            res.on('data', (c: Buffer) => (body += c.toString()));
+            res.on('end', () => resolve(body));
+          },
+        );
+        req.on('error', reject);
+        req.end();
+      });
+
+    let server: http.Server;
+    let port: number;
+
+    beforeAll(async () => {
+      server = http.createServer((_req, res) => res.end('pong'));
+      await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+      port = (server.address() as AddressInfo).port;
+    });
+    afterAll(() => new Promise<void>((r) => server.close(() => r())));
+    let addressPolicy: jest.SpyInstance | undefined;
+    // Only the address policy is faked, so the loopback server is reachable;
+    // DNS resolution and the lookup callback shape stay real.
+    const allowAllAddresses = () => {
+      addressPolicy = jest
+        .spyOn(
+          LinkPreviewService.prototype as unknown as {
+            isPrivateAddress: (a: string) => boolean;
+          },
+          'isPrivateAddress',
+        )
+        .mockReturnValue(false);
+    };
+    afterEach(() => addressPolicy?.mockRestore());
+
+    it('connects when the resolved address is allowed (options.all honoured)', async () => {
+      const svc = new LinkPreviewService();
+      // Only the address policy is faked, so the loopback server is reachable;
+      // DNS resolution and the lookup callback shape are the real thing.
+      allowAllAddresses();
+      await expect(fetchVia(svc, port)).resolves.toBe('pong');
+    });
+
+    it('still refuses a private address, as a Forbidden error', async () => {
+      const svc = new LinkPreviewService();
+      await expect(fetchVia(svc, port)).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
+    });
+
+    it('answers the legacy single-address form too', async () => {
+      const svc = new LinkPreviewService();
+      allowAllAddresses();
+      const result = await new Promise<unknown>((resolve) => {
+        svc['createSafeLookup']()('localhost', {}, (err, address, family) =>
+          resolve({ err, address, family }),
+        );
+      });
+      expect(result).toMatchObject({ err: null });
+      expect(typeof (result as { address: unknown }).address).toBe('string');
+    });
   });
 });

@@ -3,6 +3,7 @@ import {
   Injectable,
   NotFoundException,
   ForbiddenException,
+  BadRequestException,
   Logger,
   OnModuleInit,
   Optional,
@@ -16,6 +17,7 @@ import { RedisService } from '../redis/redis.service';
 import { PresenceService } from '../presence/presence.service';
 import type { UserPresence } from '../presence/presence.service';
 import { BlocksService } from '../users/blocks.service';
+import { maskPresenceForViewer } from '../users/privacy.helper';
 import { DefaultAssetsService } from '../uploads/default-assets.service';
 import { weightedSample } from '../common/utils/weighted-sample.util';
 import { pickCommunityReason } from './community-recommendation.scoring';
@@ -30,6 +32,7 @@ import { roleCan, moderatorPermissions } from './moderator-permissions';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationFactory } from '../notifications/notification.factory';
 import { MediaCleanupService } from '../uploads/media-cleanup.service';
+import { assertMediaRefsOwnedBy } from '../uploads/media-ownership.util';
 
 /**
  * How many members the community detail loads for the member strip.
@@ -97,6 +100,8 @@ const COMMUNITY_DETAIL_INCLUDE = {
     select: { id: true, name: true, shortName: true },
   },
   members: {
+    // Deleted and suspended accounts are not shown as members.
+    where: { user: { deletedAt: null, accountStatus: 'ACTIVE' } },
     take: MEMBER_STRIP_LIMIT,
     orderBy: [{ role: 'asc' }, { joinedAt: 'asc' }],
     include: {
@@ -1017,27 +1022,6 @@ export class CommunitiesService implements OnModuleInit {
       members = members.filter((m) => visibleIds.has(m.userId));
     }
 
-    // Built as new objects: the rows may be the ones just written to the
-    // viewer-independent cache, and presence is per request.
-    const presentedMembers = members.map((m) => {
-      const pres = presenceMap.get(m.userId);
-      const isOnline = pres?.status === 'online';
-      return {
-        ...m,
-        role: ownerId && m.userId === ownerId ? ('OWNER' as const) : m.role,
-        isOnline,
-        online: isOnline,
-        user: m.user
-          ? {
-              ...m.user,
-              isOnline,
-              online: isOnline,
-              lastActive: pres?.lastSeen || null,
-            }
-          : m.user,
-      };
-    });
-
     const isOwner = Boolean(
       userId && community.ownerId && community.ownerId === userId,
     );
@@ -1089,11 +1073,69 @@ export class CommunitiesService implements OnModuleInit {
 
     const canViewPosts = isJoined || (!community.isPrivate && isEligibleToJoin);
 
+    // What the viewer may see of the roster. A community the viewer cannot read
+    // (private and not joined, or a campus they are not eligible for) shows
+    // no member list and no online count at all: the strip carried usernames,
+    // avatars, roles and live presence, which is exactly what a join-request
+    // landing page does not need and an outsider must not get.
+    const memberIdsShown = canViewPosts ? members.map((m) => m.userId) : [];
+    const memberSettings = memberIdsShown.length
+      ? await this.prisma.userSettings.findMany({
+          where: { userId: { in: memberIdsShown } },
+          select: {
+            userId: true,
+            showOnlineStatus: true,
+            whoCanSeeOnline: true,
+          },
+        })
+      : [];
+    const settingsById = new Map(memberSettings.map((st) => [st.userId, st]));
+    // Each member's own presence rules, blocks and the viewer's own status
+    // apply; `isOnline` and `lastActive` are masked together.
+    const maskedPresence = await maskPresenceForViewer(
+      userId,
+      memberIdsShown.map((memberId) => ({
+        userId: memberId,
+        rule: settingsById.get(memberId)?.whoCanSeeOnline || 'everyone',
+        isEnabled: settingsById.get(memberId)?.showOnlineStatus !== false,
+      })),
+      presenceMap,
+      this.prisma,
+      this.blocksService,
+    );
+
+    // Built as new objects: the rows may be the ones just written to the
+    // viewer-independent cache, and presence is per request.
+    const presentedMembers = canViewPosts
+      ? members.map((m) => {
+          const { isOnline, lastActive } = maskedPresence.get(m.userId) ?? {
+            isOnline: false,
+            lastActive: null,
+          };
+          return {
+            ...m,
+            role: ownerId && m.userId === ownerId ? ('OWNER' as const) : m.role,
+            isOnline,
+            online: isOnline,
+            user: m.user
+              ? {
+                  ...m.user,
+                  isOnline,
+                  online: isOnline,
+                  lastActive,
+                }
+              : m.user,
+          };
+        })
+      : [];
+    const shownOnlineCount = canViewPosts ? onlineCount : 0;
+
     // The synthesised owner row used to share its `user` object with
     // `community.owner`, and the presence fields were written onto it in place,
     // so the response's `owner` carried them too whenever that row was shown.
     // Kept as it was.
-    const ownerIndex = ownerRow ? members.indexOf(ownerRow) : -1;
+    const ownerIndex =
+      ownerRow && canViewPosts ? members.indexOf(ownerRow) : -1;
 
     return {
       ...community,
@@ -1101,8 +1143,8 @@ export class CommunitiesService implements OnModuleInit {
         ownerIndex >= 0 ? presentedMembers[ownerIndex].user : community.owner,
       members: presentedMembers,
       isJoined,
-      online: onlineCount,
-      onlineCount,
+      online: shownOnlineCount,
+      onlineCount: shownOnlineCount,
       userRole,
       isEligibleToJoin,
       eligibilityMessage,
@@ -1393,7 +1435,12 @@ export class CommunitiesService implements OnModuleInit {
     }
 
     return this.prisma.communityJoinRequest.findMany({
-      where: { communityId, status: 'PENDING' },
+      where: {
+        communityId,
+        status: 'PENDING',
+        // Deleted / suspended accounts are not people a moderator can admit.
+        user: { deletedAt: null, accountStatus: 'ACTIVE' },
+      },
       orderBy: { createdAt: 'desc' },
       include: {
         user: {
@@ -1457,24 +1504,44 @@ export class CommunitiesService implements OnModuleInit {
       }
     }
 
+    // Already answered: a repeat accept is a harmless no-op, but an accept of
+    // a request that was declined must not quietly admit the user.
+    if (joinReq.status !== 'PENDING') {
+      if (joinReq.status === 'ACCEPTED') return { success: true };
+      throw new BadRequestException('This request has already been handled');
+    }
+
     let newMemberCount = 0;
+    let claimed = false;
     await this.prisma.$transaction(async (tx) => {
-      await tx.communityJoinRequest.update({
-        where: { id: requestId },
+      // Only one caller can move the request off PENDING; a concurrent or
+      // repeated accept sees count 0 and changes nothing.
+      const moved = await tx.communityJoinRequest.updateMany({
+        where: { id: requestId, status: 'PENDING' },
         data: { status: 'ACCEPTED' },
       });
-      await tx.communityMember.upsert({
-        where: { userId_communityId: { userId: joinReq.userId, communityId } },
-        create: { userId: joinReq.userId, communityId, role: 'MEMBER' },
-        update: {},
+      if (moved.count === 0) return;
+      claimed = true;
+      // The counter moves only when this call actually created the member row
+      // (the user may already be a member by another route).
+      const added = await tx.communityMember.createMany({
+        data: [{ userId: joinReq.userId, communityId, role: 'MEMBER' }],
+        skipDuplicates: true,
       });
-      const updated = await tx.community.update({
-        where: { id: communityId },
-        data: { memberCount: { increment: 1 } },
-        select: { memberCount: true },
-      });
-      newMemberCount = updated.memberCount;
+      const updated =
+        added.count > 0
+          ? await tx.community.update({
+              where: { id: communityId },
+              data: { memberCount: { increment: added.count } },
+              select: { memberCount: true },
+            })
+          : await tx.community.findUnique({
+              where: { id: communityId },
+              select: { memberCount: true },
+            });
+      newMemberCount = updated?.memberCount ?? 0;
     });
+    if (!claimed) return { success: true };
 
     await this.invalidateCommunityCache(
       communityId,
@@ -1524,10 +1591,18 @@ export class CommunitiesService implements OnModuleInit {
       throw new NotFoundException('Join request not found');
     }
 
-    await this.prisma.communityJoinRequest.update({
-      where: { id: requestId },
+    if (joinReq.status !== 'PENDING') {
+      if (joinReq.status === 'DECLINED') return { success: true };
+      throw new BadRequestException('This request has already been handled');
+    }
+
+    // Conditional on PENDING so a request accepted a moment ago (by another
+    // moderator) is not flipped to DECLINED while its member row stays.
+    const moved = await this.prisma.communityJoinRequest.updateMany({
+      where: { id: requestId, status: 'PENDING' },
       data: { status: 'DECLINED' },
     });
+    if (moved.count === 0) return { success: true };
 
     void this.domainEventService.emit('community.requestDeclined', {
       communityId,
@@ -1667,6 +1742,10 @@ export class CommunitiesService implements OnModuleInit {
     // on CreateCommunityDto, and the global ValidationPipe refuses unlisted
     // fields, so they could never arrive.
     const descVal = data.description || undefined;
+
+    // Only images the creator uploaded (or shared platform defaults) may be
+    // attached; another user's media key is refused.
+    await assertMediaRefsOwnedBy(this.prisma, creatorId, [avatarVal, coverVal]);
 
     const createData: Prisma.CommunityCreateInput = {
       name: data.name,
@@ -1828,6 +1907,18 @@ export class CommunitiesService implements OnModuleInit {
     if (data.isPrivate !== undefined) {
       updateData.isPrivate = Boolean(data.isPrivate);
     }
+
+    // Attaching another user's uploaded image is refused; re-saving the image
+    // the community already has is always fine.
+    await assertMediaRefsOwnedBy(
+      this.prisma,
+      requestingUserId,
+      [
+        this.sanitizeMediaRef(data.avatarKey),
+        typeof data.coverKey === 'string' ? data.coverKey : null,
+      ],
+      [community.avatarKey, community.coverKey],
+    );
 
     const rawAvatarInput = data.avatarKey;
     // Clearing the avatar is an explicit action (sending null or empty string);
@@ -2027,23 +2118,32 @@ export class CommunitiesService implements OnModuleInit {
     if (!targetMember)
       throw new NotFoundException('Member not found in community');
 
-    // A promotion is only a promotion if the role actually changes. Re-issuing
-    // MODERATOR on someone who already holds it must not re-arm the welcome
-    // modal or fire a second notification — an owner tapping twice, or a
-    // retried request, would otherwise pester them for nothing.
-    const isPromotion =
-      newRole === 'MODERATOR' && targetMember.role !== 'MODERATOR';
-
-    const updated = await this.prisma.communityMember.update({
-      where: { userId_communityId: { userId: memberId, communityId } },
+    // A promotion is only a promotion if the role actually changes, and that
+    // has to be decided by the WRITE, not by the read above: two requests that
+    // both read MEMBER would otherwise both promote, stamp the timestamp twice
+    // and notify twice. The update only matches a row whose role differs, so
+    // exactly one caller changes it (count 1); a repeat or retry changes
+    // nothing (count 0) and so neither re-arms the welcome modal nor notifies.
+    const changed = await this.prisma.communityMember.updateMany({
+      where: {
+        userId: memberId,
+        communityId,
+        role: { not: newRole },
+      },
       data: {
         role: newRole,
         // Stamped at the moment of promotion. The welcome modal is pending
         // while this is newer than the acknowledgement, so a later demote +
         // re-promote correctly shows it again.
-        ...(isPromotion ? { moderatorPromotedAt: new Date() } : {}),
+        ...(newRole === 'MODERATOR' ? { moderatorPromotedAt: new Date() } : {}),
       },
     });
+    const isPromotion = newRole === 'MODERATOR' && changed.count > 0;
+
+    const updated = await this.prisma.communityMember.findUnique({
+      where: { userId_communityId: { userId: memberId, communityId } },
+    });
+    if (changed.count === 0) return updated;
 
     void this.domainEventService.emit('community.roleUpdated', {
       communityId,

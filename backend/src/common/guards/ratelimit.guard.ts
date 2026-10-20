@@ -17,6 +17,7 @@ import { JwtGuard } from './jwt.guard';
 import * as jwt from 'jsonwebtoken';
 import { ADMIN_TOKEN_ALGORITHM } from '../../admin/auth/admin-token.constants';
 import { config } from '../../config';
+import { USER_ACCESS_COOKIE } from '../../auth/session/user-session-cookies';
 
 /**
  * The global tier, applied to every route.
@@ -108,9 +109,21 @@ export class RateLimitGuard implements CanActivate {
         ? header.slice(7).trim()
         : null;
 
-    if (bearer && this.jwtGuard) {
+    // Cookie first, then the Authorization header: the same precedence as
+    // JwtGuard. A browser session authenticates by the HttpOnly access cookie
+    // and sends no Authorization header at all, so reading only the header put
+    // every cookie-authenticated web user into the per-IP bucket — a whole
+    // campus behind one NAT shared a single budget.
+    const rawCookie = request?.cookies?.[USER_ACCESS_COOKIE];
+    const cookieToken =
+      typeof rawCookie === 'string' && rawCookie.trim()
+        ? rawCookie.trim()
+        : null;
+    const userToken = cookieToken || bearer;
+
+    if (userToken && this.jwtGuard) {
       try {
-        const userId = await this.jwtGuard.peekUserId(bearer);
+        const userId = await this.jwtGuard.peekUserId(userToken);
         if (userId) return userId;
       } catch {
         // Fall through — an unreadable token is treated as anonymous here, and

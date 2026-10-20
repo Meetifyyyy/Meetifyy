@@ -985,6 +985,33 @@ describe('InstantMatchService', () => {
       expect(people.map((p) => p.user.id)).toEqual(['bob']);
     });
 
+    it('leaves out suspended, banned and soft-deleted accounts', async () => {
+      prisma.seedUser('sus', { accountStatus: 'SUSPENDED' });
+      prisma.seedUser('ban', { accountStatus: 'BANNED' });
+      prisma.seedUser('gone', { deletedAt: new Date() });
+      prisma.seedQueueEntry('sus');
+      prisma.seedQueueEntry('ban');
+      prisma.seedQueueEntry('gone');
+      prisma.seedQueueEntry('bob');
+      const people = await service.getSearchingNow('alice');
+      expect(people.map((p) => p.user.id)).toEqual(['bob']);
+    });
+
+    it('refuses the roster to a viewer who is not eligible', async () => {
+      verificationAccess.isUserEligible.mockResolvedValueOnce(false);
+      prisma.seedQueueEntry('bob');
+      await expect(service.getSearchingNow('alice')).rejects.toThrow(
+        ForbiddenException,
+      );
+    });
+
+    it('does not pair a user with a suspended account in tryMatch', async () => {
+      prisma.seedUser('sus', { accountStatus: 'SUSPENDED' });
+      prisma.seedQueueEntry('sus');
+      await service.joinQueue(joinDto('alice'));
+      expect(prisma.sessions).toHaveLength(0);
+    });
+
     it('stops listing someone the moment they cancel', async () => {
       await service.joinQueue(joinDto('bob'));
       expect(await service.getSearchingNow('alice')).toHaveLength(1);

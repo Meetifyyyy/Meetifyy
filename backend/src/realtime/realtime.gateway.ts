@@ -674,6 +674,40 @@ export class RealtimeGateway
    * Reads the ids off the live sockets and asks in one query which of them are
    * dead, rather than one query per socket — a busy instance holds thousands.
    */
+  /**
+   * Closes sockets whose account was suspended or banned after they connected.
+   * The connect-time check only covers new handshakes; this makes a moderation
+   * action take effect on sockets that are already open. One query for the
+   * distinct user ids of every open socket.
+   */
+  private async disconnectInactiveAccounts(
+    sockets: AppSocket[],
+  ): Promise<void> {
+    const byUser = new Map<string, AppSocket[]>();
+    for (const socket of sockets) {
+      const id = socket.data.userId;
+      if (typeof id !== 'string' || !id) continue;
+      const list = byUser.get(id) || [];
+      list.push(socket);
+      byUser.set(id, list);
+    }
+    if (byUser.size === 0) return;
+
+    const inactive = await this.prisma.user.findMany({
+      where: {
+        id: { in: Array.from(byUser.keys()) },
+        accountStatus: { in: ['SUSPENDED', 'BANNED'] },
+      },
+      select: { id: true },
+    });
+    for (const { id } of inactive) {
+      for (const socket of byUser.get(id) ?? []) {
+        socket.emit('account:unavailable', { code: 'ACCOUNT_SUSPENDED' });
+        socket.disconnect(true);
+      }
+    }
+  }
+
   private async disconnectRevokedSessions(): Promise<void> {
     try {
       const sockets = this.server?.sockets?.sockets;
@@ -687,6 +721,7 @@ export class RealtimeGateway
         list.push(socket);
         bySession.set(id, list);
       }
+      await this.disconnectInactiveAccounts(Array.from(sockets.values()));
       if (bySession.size === 0) return;
 
       const ids = Array.from(bySession.keys());
@@ -918,6 +953,22 @@ export class RealtimeGateway
         select: { accountStatus: true },
       })
       .catch(() => null);
+
+    if (
+      lifecycle?.accountStatus === 'SUSPENDED' ||
+      lifecycle?.accountStatus === 'BANNED'
+    ) {
+      // A suspended or banned account holds no socket. The server closes it
+      // (reason "io server disconnect"), and socket.io clients do not
+      // auto-reconnect after a server-initiated disconnect, so this cannot
+      // start a reconnect loop.
+      this.logger.warn(
+        `Client connection rejected: account ${user.id} is ${lifecycle.accountStatus}`,
+      );
+      client.emit('account:unavailable', { code: 'ACCOUNT_SUSPENDED' });
+      client.disconnect();
+      return;
+    }
 
     if (
       lifecycle?.accountStatus === 'PENDING_DELETION' ||

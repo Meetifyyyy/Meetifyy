@@ -157,7 +157,9 @@ export class AccountDeletionService {
       userId,
       UserOtpPurpose.ACCOUNT_DELETION,
     );
-    if (live) return this.resumeChallenge(user.email, live);
+    if (live && this.canResume(live)) {
+      return this.resumeChallenge(user.email, live);
+    }
 
     const { code, expiresAt } = await this.otpService.issue(
       userId,
@@ -167,11 +169,18 @@ export class AccountDeletionService {
 
     // Awaited: if the mail cannot even be queued, the client must be told now
     // rather than being sent to an OTP screen for a code that will never come.
-    await this.emailService.sendAccountDeletionOtpEmail(
-      user.email,
-      user.displayName,
-      code,
-    );
+    // And the row is dropped when it cannot: a code nobody received would
+    // otherwise sit live, resumable, and burn the resend cooldown.
+    try {
+      await this.emailService.sendAccountDeletionOtpEmail(
+        user.email,
+        user.displayName,
+        code,
+      );
+    } catch (err) {
+      await this.discardUnsentCode(userId, UserOtpPurpose.ACCOUNT_DELETION);
+      throw err;
+    }
 
     return this.challengeResponse(user.email, expiresAt);
   }
@@ -230,7 +239,9 @@ export class AccountDeletionService {
       userId,
       UserOtpPurpose.ACCOUNT_RECOVERY,
     );
-    if (live) return this.resumeChallenge(user.email, live);
+    if (live && this.canResume(live)) {
+      return this.resumeChallenge(user.email, live);
+    }
 
     const { code, expiresAt } = await this.otpService.issue(
       userId,
@@ -238,18 +249,51 @@ export class AccountDeletionService {
       context,
     );
 
-    await this.emailService.sendAccountRecoveryOtpEmail(
-      user.email,
-      user.displayName,
-      code,
-      user.scheduledPurgeAt.toLocaleDateString('en-GB', {
-        day: 'numeric',
-        month: 'long',
-        year: 'numeric',
-      }),
-    );
+    try {
+      await this.emailService.sendAccountRecoveryOtpEmail(
+        user.email,
+        user.displayName,
+        code,
+        user.scheduledPurgeAt.toLocaleDateString('en-GB', {
+          day: 'numeric',
+          month: 'long',
+          year: 'numeric',
+        }),
+      );
+    } catch (err) {
+      await this.discardUnsentCode(userId, UserOtpPurpose.ACCOUNT_RECOVERY);
+      throw err;
+    }
 
     return this.challengeResponse(user.email, expiresAt);
+  }
+
+  /**
+   * Whether a live challenge may be resumed instead of replaced.
+   *
+   * Only while the resend cooldown is still running AND attempts remain. Past
+   * the cooldown the user is entitled to a fresh code, and resuming kept
+   * handing back the old one (and its countdown) for the whole ten minutes; a
+   * challenge whose attempts are spent can never succeed, so resuming it
+   * strands the user on a screen with no way forward.
+   */
+  private canResume(live: OtpChallengeState): boolean {
+    return (
+      live.attemptsRemaining > 0 &&
+      new Date(live.resendAvailableAt).getTime() > Date.now()
+    );
+  }
+
+  /** Drops a code whose email could not be sent; never masks the send error. */
+  private async discardUnsentCode(
+    userId: string,
+    purpose: UserOtpPurpose,
+  ): Promise<void> {
+    try {
+      await this.otpService.invalidate(userId, purpose);
+    } catch {
+      // The send failure is the error the caller needs to see.
+    }
   }
 
   /**

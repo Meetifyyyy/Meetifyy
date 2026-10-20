@@ -6,12 +6,14 @@ import {
   IsOptional,
   Length,
   MaxLength,
+  IsIn,
 } from 'class-validator';
 import { Gender } from '@prisma/client';
 
 export class CheckUsernameDto {
   @IsString()
   @IsNotEmpty()
+  @MaxLength(30)
   username!: string;
 }
 
@@ -37,6 +39,7 @@ export class CheckEmailDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(64)
   collegeId?: string;
 }
 
@@ -141,10 +144,12 @@ export class LoginDto {
   // Username or email — resolved to an email server-side, never echoed back.
   @IsString()
   @IsNotEmpty()
+  @MaxLength(254)
   identifier!: string;
 
   @IsString()
   @IsNotEmpty()
+  @MaxLength(200)
   password!: string;
 
   /** IANA zone of the device, so the sign-in email shows the user's own time. */
@@ -157,52 +162,69 @@ export class LoginDto {
 export class TriggerWelcomeEmailDto {
   @IsEmail()
   @IsNotEmpty()
+  @MaxLength(254)
   email!: string;
 
   @IsString()
   @IsNotEmpty()
+  @MaxLength(100)
   name!: string;
 }
 
 export class TriggerLoginEmailDto {
   @IsEmail()
   @IsNotEmpty()
+  @MaxLength(254)
   email!: string;
 
   @IsString()
   @IsNotEmpty()
+  @MaxLength(100)
   name!: string;
 
   @IsOptional()
   @IsString()
+  @MaxLength(200)
   device?: string;
 
   @IsOptional()
   @IsString()
+  @MaxLength(200)
   location?: string;
 
   @IsOptional()
   @IsString()
+  @MaxLength(100)
   time?: string;
 
   @IsOptional()
   @IsString()
+  @MaxLength(64)
   timezone?: string;
 
   @IsOptional()
   @IsString()
+  @MaxLength(512)
   userAgent?: string;
 
   @IsOptional()
   @IsString()
+  @MaxLength(200)
   browser?: string;
 
   @IsOptional()
   @IsString()
+  @MaxLength(200)
   os?: string;
 
+  /**
+   * Accepted so an older client that still sends it is not refused by the
+   * whitelist pipe, and IGNORED: the address shown in the email is the
+   * request's own, never one the caller wrote.
+   */
   @IsOptional()
   @IsString()
+  @MaxLength(100)
   ip?: string;
 }
 
@@ -220,22 +242,28 @@ export class TriggerPasswordChangedEmailDto {
    */
   @IsOptional()
   @IsEmail()
+  @MaxLength(254)
   email?: string;
 
   @IsOptional()
   @IsString()
+  @MaxLength(100)
   name?: string;
 
   @IsOptional()
   @IsString()
+  @MaxLength(100)
   time?: string;
 
+  /** The browser sends its full user-agent string here. */
   @IsOptional()
   @IsString()
+  @MaxLength(512)
   device?: string;
 
   @IsOptional()
   @IsString()
+  @MaxLength(100)
   ip?: string;
 
   @IsOptional()
@@ -309,4 +337,29 @@ export class AdoptSessionDto {
   @IsNotEmpty()
   @MaxLength(4096)
   refreshToken!: string;
+}
+
+/**
+ * Which sessions "sign out everywhere" should end.
+ *
+ * Optional, and an absent value means 'others' (never the caller's own
+ * session). Anything outside the two literals is refused by the pipe rather
+ * than quietly treated as one of them.
+ */
+export class RevokeAllSessionsDto {
+  @IsOptional()
+  @IsIn(['all', 'others'])
+  scope?: 'all' | 'others';
+}
+
+/**
+ * Completing a password reset. Nothing here chooses WHO is signed out or
+ * emailed — that comes from the verified recovery token alone. The zone only
+ * lets the email show the person's own local time.
+ */
+export class FinalizePasswordResetDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  timezone?: string;
 }

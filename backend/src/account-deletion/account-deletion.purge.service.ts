@@ -6,6 +6,7 @@ import { PresenceService } from '../presence/presence.service';
 import { DomainEventService } from '../events/domain-event.service';
 import { MediaCleanupService } from '../uploads/media-cleanup.service';
 import { JwtGuard } from '../common/guards/jwt.guard';
+import { UserSessionService } from '../auth/session/user-session.service';
 import { clearAuthSyncCache } from '../auth/auth.service';
 import { DELETED_USER_DISPLAY_NAME } from '../common/users/deleted-user';
 import {
@@ -52,6 +53,7 @@ export class AccountDeletionPurgeService {
     private readonly redisService: RedisService,
     private readonly presenceService: PresenceService,
     private readonly domainEventService: DomainEventService,
+    private readonly sessions: UserSessionService,
     @Optional() private readonly mediaCleanupService?: MediaCleanupService,
   ) {}
 
@@ -204,6 +206,9 @@ export class AccountDeletionPurgeService {
 
     // From here the account can no longer be recovered, so the session goes.
     JwtGuard.revokeUser(userId);
+    // JwtGuard.revokeUser only knows this process's memory: another replica,
+    // or a restart, forgot it. The session rows are the durable record.
+    await this.sessions.revokeAllForUser(userId, 'ACCOUNT_DELETED');
     clearAuthSyncCache(userId);
 
     const mediaKeys: string[] = [];

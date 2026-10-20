@@ -193,16 +193,31 @@ export class SearchService {
     const postFetchLimit = (isDiscovery ? 6 : limit) + 1;
     const activityFetchLimit = (isDiscovery ? 6 : limit) + 1;
 
+    // A community post is searchable only when its community is live and, if it
+    // is a campus community, belongs to the viewer's own college (the same rule
+    // the feed applies). Without this a foreign campus's public posts, and
+    // posts from deleted communities, were returned to anyone.
+    const campusScope: Prisma.CommunityWhereInput = {
+      deletedAt: null,
+      OR: [
+        { isCampusCommunity: false },
+        { collegeId: null },
+        ...(viewer?.collegeId ? [{ collegeId: viewer.collegeId }] : []),
+      ],
+    };
     const postAndConditions: Prisma.PostWhereInput[] = [
       {
         OR: [
           { communityId: null },
-          { community: { is: { isPrivate: false } } },
+          { community: { is: { ...campusScope, isPrivate: false } } },
           ...(currentUserId
             ? [
                 {
                   community: {
-                    is: { members: { some: { userId: currentUserId } } },
+                    is: {
+                      ...campusScope,
+                      members: { some: { userId: currentUserId } },
+                    },
                   },
                 },
               ]
@@ -304,7 +319,7 @@ export class SearchService {
                 // already filtered this way everywhere in this service; posts
                 // were not, so a search could surface content from an account
                 // whose profile the same search refused to show.
-                author: { deletedAt: null },
+                author: { deletedAt: null, accountStatus: 'ACTIVE' },
                 ...(isDiscovery
                   ? {}
                   : tag
@@ -422,17 +437,21 @@ export class SearchService {
     let nextPostCursor: string | undefined;
     const rawPosts = [...rawPostsPage];
     if (rawPosts.length > postFetchLimit - 1) {
-      const extra = rawPosts.pop();
-      if (extra)
-        nextPostCursor = `${new Date(extra.createdAt).toISOString()}__${extra.id}`;
+      // Continue from the last post actually returned: the next page is
+      // strictly after the cursor, so the popped look-ahead row would be lost.
+      rawPosts.pop();
+      const last = rawPosts[rawPosts.length - 1];
+      if (last)
+        nextPostCursor = `${new Date(last.createdAt).toISOString()}__${last.id}`;
     }
 
     let nextActivityCursor: string | undefined;
     const activities = [...activitiesPage];
     if (activities.length > activityFetchLimit - 1) {
-      const extra = activities.pop();
-      if (extra?.startDate)
-        nextActivityCursor = `${new Date(extra.startDate).toISOString()}__${extra.id}`;
+      activities.pop();
+      const last = activities[activities.length - 1];
+      if (last?.startDate)
+        nextActivityCursor = `${new Date(last.startDate).toISOString()}__${last.id}`;
     }
 
     // Already ranked by the query (see search-ranking.ts): match quality

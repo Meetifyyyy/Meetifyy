@@ -8,6 +8,7 @@ import {
 import type { Response } from 'express';
 import { requestBody, type GuardRequest } from '../types/authenticated-request';
 import { clientIp } from '../rate-limit/client-ip.util';
+import { normalizeEmail } from '../validation/email-format.util';
 
 /**
  * Abuse control for the unauthenticated support endpoints.
@@ -39,8 +40,10 @@ export class SupportRateLimitGuard implements CanActivate {
     const request = http.getRequest<GuardRequest>();
 
     const { email: rawEmail } = requestBody(request);
+    // The same normalisation the service resolves the address with, so
+    // fullwidth / zero-width variants of one address share one budget.
     const email =
-      typeof rawEmail === 'string' ? rawEmail.trim().toLowerCase() : null;
+      typeof rawEmail === 'string' ? normalizeEmail(rawEmail) || null : null;
 
     const decision = await this.rateLimit.consumeAll([
       { policy: 'support.request.ip', identifier: clientIp(request) },

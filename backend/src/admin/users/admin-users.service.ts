@@ -9,6 +9,8 @@ import { parseEnumFilter } from '../../common/utils/enum-filter.util';
 import { PrismaService } from '../../prisma/prisma.service';
 import { JwtGuard } from '../../common/guards/jwt.guard';
 import { SupabaseService } from '../../supabase/supabase.service';
+import { UserSessionService } from '../../auth/session/user-session.service';
+import { clearAuthSyncCache } from '../../auth/auth.service';
 import { CampusAffiliationService } from '../../campus-affiliation/campus-affiliation.service';
 import {
   ACTIVE_AFFILIATION_SELECT,
@@ -21,6 +23,7 @@ export class AdminUsersService {
     private readonly prisma: PrismaService,
     private readonly supabaseService: SupabaseService,
     private readonly affiliations: CampusAffiliationService,
+    private readonly sessions: UserSessionService,
   ) {}
 
   async listUsers(query: {
@@ -164,6 +167,19 @@ export class AdminUsersService {
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) throw new NotFoundException('User not found');
 
+    // Suspending must not overwrite a lifecycle state it does not own: doing so
+    // on a PENDING_DELETION account silently cancelled the user's deletion, and
+    // on BANNED it downgraded a terminal state.
+    if (
+      user.accountStatus === 'PENDING_DELETION' ||
+      user.accountStatus === 'DELETED' ||
+      user.accountStatus === 'BANNED'
+    ) {
+      throw new ConflictException(
+        `Cannot suspend an account that is ${user.accountStatus}`,
+      );
+    }
+
     const updated = await this.prisma.user.update({
       where: { id },
       data: { accountStatus: 'SUSPENDED' },
@@ -180,6 +196,19 @@ export class AdminUsersService {
   async unsuspendUser(id: string) {
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) throw new NotFoundException('User not found');
+
+    // Only a suspension can be lifted here. Setting ACTIVE on a deleted,
+    // purged or banned account would resurrect it.
+    if (user.purgeCompletedAt) {
+      throw new ConflictException(
+        'This account has been permanently deleted and cannot be restored',
+      );
+    }
+    if (user.accountStatus !== 'SUSPENDED') {
+      throw new ConflictException(
+        'Only a suspended account can be unsuspended',
+      );
+    }
 
     const updated = await this.prisma.user.update({
       where: { id },
@@ -202,7 +231,11 @@ export class AdminUsersService {
       data: { deletedAt: new Date(), accountStatus: 'DELETED' },
     });
 
+    // The account is gone as far as the user can tell, so every device is
+    // signed out; a cached status alone left refresh tokens usable.
+    await this.sessions.revokeAllForUser(id, 'ACCOUNT_DELETED');
     JwtGuard.clearAccountStatus(id);
+    clearAuthSyncCache(id);
 
     return { success: true };
   }
@@ -211,9 +244,32 @@ export class AdminUsersService {
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) throw new NotFoundException('User not found');
 
+    // A purged account was anonymized and its data removed: flipping the
+    // status back would produce an empty shell that looks alive.
+    if (user.purgeCompletedAt) {
+      throw new ConflictException(
+        'This account has been permanently deleted and cannot be restored',
+      );
+    }
+    if (
+      user.accountStatus !== 'DELETED' &&
+      user.accountStatus !== 'PENDING_DELETION'
+    ) {
+      throw new ConflictException('Only a deleted account can be restored');
+    }
+
     await this.prisma.user.update({
       where: { id },
-      data: { deletedAt: null, accountStatus: 'ACTIVE' },
+      data: {
+        deletedAt: null,
+        accountStatus: 'ACTIVE',
+        // A restore from the self-deletion window must also cancel the
+        // scheduled purge, or the sweep would still anonymize an active user.
+        deletionRequestedAt: null,
+        scheduledPurgeAt: null,
+        purgeAttempts: 0,
+        purgeLastError: null,
+      },
     });
 
     JwtGuard.clearAccountStatus(id);
@@ -369,14 +425,16 @@ export class AdminUsersService {
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) throw new NotFoundException('User not found');
 
-    if (this.supabaseService.isConfigured) {
-      try {
-        await this.supabaseService.client.auth.admin.signOut(id);
-      } catch {
-        // Our own session rows are already revoked; failing to also revoke the provider side must not fail the request.
-      }
-    }
+    // Our own session table is what the API trusts, so revoking its rows is
+    // what actually signs the user out. The Supabase call that used to be here
+    // (`auth.admin.signOut(userId)`) expects the user's JWT, not an id, so it
+    // never revoked anything.
+    const revoked = await this.sessions.revokeAllForUser(id, 'ADMIN_REVOKED');
+    // Not `JwtGuard.revokeUser`: that bans the id outright until restart, and a
+    // forced logout leaves the account free to sign in again.
+    JwtGuard.clearAccountStatus(id);
+    clearAuthSyncCache(id);
 
-    return { success: true, message: 'User forced logout' };
+    return { success: true, message: 'User forced logout', revoked };
   }
 }

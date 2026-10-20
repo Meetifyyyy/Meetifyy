@@ -4,6 +4,10 @@ import Redis from 'ioredis';
 import { config } from '../config';
 import { randomBytes } from 'crypto';
 
+/** Deletes the lock only if it still holds the caller's value. */
+const RELEASE_LOCK_SCRIPT =
+  "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end";
+
 @Injectable()
 export class RedisService implements OnModuleDestroy {
   private readonly logger = new Logger(RedisService.name);
@@ -132,11 +136,12 @@ export class RedisService implements OnModuleDestroy {
     const slot = new Promise<void>((resolve) => {
       release = resolve;
     });
-    // Chain this request behind the current tail
-    this.inProcessLocks.set(
-      key,
-      tail.then(() => slot),
-    );
+    // Chain this request behind the current tail. The promise is kept in a
+    // variable because the prune below compares against it by identity — a
+    // fresh `tail.then(...)` is a different object every time, so the entry
+    // was never recognised as its own and every key leaked.
+    const nextTail = tail.then(() => slot);
+    this.inProcessLocks.set(key, nextTail);
 
     return tail.then(async () => {
       try {
@@ -144,7 +149,7 @@ export class RedisService implements OnModuleDestroy {
       } finally {
         release();
         // Prune stale map entry when no waiters remain
-        if (this.inProcessLocks.get(key) === tail.then(() => slot)) {
+        if (this.inProcessLocks.get(key) === nextTail) {
           this.inProcessLocks.delete(key);
         }
       }
@@ -195,8 +200,10 @@ export class RedisService implements OnModuleDestroy {
       return await fn();
     } finally {
       try {
-        const currentVal = await this.client.get(lockKey);
-        if (currentVal === lockVal) await this.client.del(lockKey);
+        // Compare-and-delete in one atomic step. GET-then-DEL left a window in
+        // which the lock could expire and be taken by another holder between
+        // the two calls, and this would then delete THEIR lock.
+        await this.client.eval(RELEASE_LOCK_SCRIPT, 1, lockKey, lockVal);
       } catch {
         // Ignore release errors
       }

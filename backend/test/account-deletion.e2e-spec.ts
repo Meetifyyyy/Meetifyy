@@ -12,6 +12,7 @@ import type { PrismaService } from '../src/prisma/prisma.service';
 import type { RedisService } from '../src/redis/redis.service';
 import type { PresenceService } from '../src/presence/presence.service';
 import type { DomainEventService } from '../src/events/domain-event.service';
+import { UserSessionService } from '../src/auth/session/user-session.service';
 import type { MediaCleanupService } from '../src/uploads/media-cleanup.service';
 
 /**
@@ -163,6 +164,7 @@ describeIfEnabled(
         stubs.redis,
         stubs.presence,
         stubs.events,
+        new UserSessionService(prismaService),
         stubs.mediaCleanup,
       );
 

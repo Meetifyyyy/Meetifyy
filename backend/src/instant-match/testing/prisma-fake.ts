@@ -138,6 +138,8 @@ export type FakeUser = {
   interests: string[];
   bio: string | null;
   verificationStatus?: string;
+  accountStatus?: string;
+  deletedAt?: Date | null;
 };
 
 export class PrismaFake {
@@ -181,6 +183,8 @@ export class PrismaFake {
       interests: [],
       bio: null,
       verificationStatus: 'VERIFIED',
+      accountStatus: 'ACTIVE',
+      deletedAt: null,
       ...overrides,
     };
     this.users.set(id, user);

@@ -60,8 +60,15 @@ export function createUserOtpStore() {
     ),
     updateMany: jest.fn(
       (args: {
-        where: { id: string; consumedAt?: null };
-        data: Partial<FakeOtpRow>;
+        where: {
+          id: string;
+          consumedAt?: null;
+          expiresAt?: { gt: Date };
+          attempts?: { lt: number };
+        };
+        data: Partial<Omit<FakeOtpRow, 'attempts'>> & {
+          attempts?: { increment: number };
+        };
       }) => {
         let count = 0;
         for (const row of rows.values()) {
@@ -69,7 +76,18 @@ export function createUserOtpStore() {
           if (args.where.consumedAt === null && row.consumedAt !== null) {
             continue;
           }
-          Object.assign(row, args.data);
+          // The conditions the attempt claim relies on, as the database
+          // evaluates them.
+          if (
+            args.where.expiresAt &&
+            !(row.expiresAt > args.where.expiresAt.gt)
+          )
+            continue;
+          if (args.where.attempts && !(row.attempts < args.where.attempts.lt))
+            continue;
+          const { attempts, ...rest } = args.data;
+          Object.assign(row, rest);
+          if (attempts) row.attempts += attempts.increment;
           count += 1;
         }
         return Promise.resolve({ count });

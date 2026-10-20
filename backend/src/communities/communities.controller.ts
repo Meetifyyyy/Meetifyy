@@ -13,6 +13,8 @@ import {
 } from '@nestjs/common';
 import { CommunitiesService } from './communities.service';
 import { JwtGuard } from '../common/guards/jwt.guard';
+import { RateLimit } from '../common/rate-limit/rate-limit.decorator';
+import { RateLimitPolicyGuard } from '../common/rate-limit/rate-limit-policy.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { VerifiedOnly } from '../common/decorators/verified-only.decorator';
 import {
@@ -184,6 +186,8 @@ export class CommunitiesController {
 
   @Post()
   @VerifiedOnly()
+  @UseGuards(RateLimitPolicyGuard)
+  @RateLimit('community.create')
   async createCommunity(
     @Body() data: CreateCommunityDto,
     @CurrentUser() user: AuthenticatedUser,

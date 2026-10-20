@@ -32,8 +32,11 @@ import { IS_PRODUCTION, APP_ENV, int, oneOf, str } from './env';
  *     so an address varying by invisible characters or Unicode width keyed a
  *     fresh bucket while still delivering to the same real inbox — an escape
  *     hatch from every per-account budget. Buckets re-key once on deploy.
+ * v10: route-level budgets for creating posts, comments and communities and
+ *     for requesting media presigned URLs; support attachment uploads moved off
+ *     the 5/hour support-request budget onto their own.
  */
-export const POLICY_VERSION = 9;
+export const POLICY_VERSION = 10;
 
 export type RateLimitAlgorithm = 'fixed-window' | 'token-bucket';
 
@@ -380,6 +383,21 @@ export const RATE_LIMIT_POLICIES = {
     dimension: 'user',
     onRedisFailure: 'closed',
     message: 'Too many requests. Please try again shortly.',
+  },
+
+  /**
+   * Completing a password reset (`POST /api/auth/password-reset/finalize`):
+   * signs the account out everywhere and sends a security email. The per-user
+   * `auth.emailtrigger.user` budget bounds one account; this bounds one host
+   * presenting many recovery tokens.
+   */
+  'auth.passwordreset.finalize.ip': {
+    points: 20,
+    duration: 3600,
+    dimension: 'ip',
+    onRedisFailure: 'closed',
+    sensitive: true,
+    message: 'Too many attempts. Please try again later.',
   },
 
   /**
@@ -764,6 +782,60 @@ export const RATE_LIMIT_POLICIES = {
     message:
       "You've sent several support requests recently. Please wait a little while before sending another.",
   },
+
+  /**
+   * Content creation, per user. Each route had no budget of its own, so a
+   * single verified account could create content at line speed. The numbers
+   * are well above anything a person does by hand.
+   */
+  'content.post.create': {
+    points: 15,
+    duration: 600,
+    dimension: 'user',
+    onRedisFailure: 'open',
+    message: "You're posting too quickly. Please wait a few minutes.",
+  },
+  'content.comment.create': {
+    points: 60,
+    duration: 600,
+    dimension: 'user',
+    onRedisFailure: 'open',
+    message: "You're commenting too quickly. Please wait a few minutes.",
+  },
+  'community.create': {
+    points: 5,
+    duration: 3600,
+    dimension: 'user',
+    onRedisFailure: 'closed',
+    message: "You've created several communities recently. Try again later.",
+  },
+
+  /**
+   * Presigned upload URLs. Generous: a post can carry many images, each with
+   * thumbnails and variants, and every one asks for its own URL. This bounds
+   * runaway use of storage without getting in the way of a real upload.
+   */
+  'media.presigned': {
+    points: 120,
+    duration: 300,
+    dimension: 'user',
+    onRedisFailure: 'open',
+    message: 'Too many uploads at once. Please wait a moment.',
+  },
+
+  /**
+   * Support attachment uploads, per IP. Its own budget: they used to share
+   * `support.request.ip` (5/hour), so uploading the five allowed files used up
+   * the quota and the ticket itself was then refused.
+   */
+  'support.attachment.ip': {
+    points: 30,
+    duration: 3600,
+    dimension: 'ip',
+    onRedisFailure: 'closed',
+    message:
+      "You've uploaded several files recently. Please wait a little while before adding more.",
+  },
 } as const satisfies Record<string, RateLimitPolicy>;
 
 export type RateLimitPolicyName = keyof typeof RATE_LIMIT_POLICIES;
@@ -845,13 +917,16 @@ export const rateLimitConfigValues = {
   /**
    * Secret for hashing personal identifiers (IP addresses, email addresses)
    * before they become Redis keys or log fields. Falls back to the Supabase JWT
-   * secret so an unconfigured environment still hashes rather than storing
-   * addresses in the clear.
+   * secret, then the service-role key (required in every deployed environment),
+   * so an unconfigured environment still hashes with a private key. It must
+   * never end in a literal committed to the repository: anyone could then
+   * precompute the hash of a known address. Only a bare local run with none of
+   * these set ends up with an empty key.
    */
   hashSecret:
     str('RATE_LIMIT_HASH_SECRET') ||
     str('SUPABASE_JWT_SECRET') ||
-    'meetifyy-rl',
+    str('SUPABASE_SERVICE_ROLE_KEY'),
 };
 
 export type RateLimitConfig = typeof rateLimitConfigValues;

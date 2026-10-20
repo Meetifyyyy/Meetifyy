@@ -122,7 +122,10 @@ describe('Activity join → host notification', () => {
         { provide: NotificationsService, useValue: notifications },
         {
           provide: BlocksService,
-          useValue: { getExcludedUserIds: jest.fn(() => Promise.resolve([])) },
+          useValue: {
+            getExcludedUserIds: jest.fn(() => Promise.resolve([])),
+            isBlocked: jest.fn(() => Promise.resolve(false)),
+          },
         },
         { provide: DomainEventService, useValue: { emit: jest.fn() } },
         { provide: RedisService, useValue: { getClient: () => null } },

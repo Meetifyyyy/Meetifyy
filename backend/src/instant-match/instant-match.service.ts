@@ -1,5 +1,6 @@
 import {
   Injectable,
+  Optional,
   Logger,
   OnModuleInit,
   NotFoundException,
@@ -8,6 +9,7 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { RedisService } from '../redis/redis.service';
 import { BlocksService } from '../users/blocks.service';
 import { VerificationAccessService } from '../common/verification/verification-access.service';
 import { MessagesService } from '../messages/messages.service';
@@ -280,7 +282,21 @@ export class InstantMatchService implements OnModuleInit {
     private readonly messagesService: MessagesService,
     private readonly blocksService: BlocksService,
     private readonly verificationAccess: VerificationAccessService,
+    // Optional: serialises per-user queue changes. Without it (tests, a dev
+    // box with no Redis service wired) the changes run unserialised, as before.
+    @Optional() private readonly redisService?: RedisService,
   ) {}
+
+  /**
+   * Runs a change to one user's queue state under a per-user lock, so a
+   * requeue, a join and a cancel for the same person cannot interleave.
+   * RedisService.withLock also serialises in-process and falls through to
+   * plain execution when Redis is not connected.
+   */
+  private withUserLock<T>(userId: string, fn: () => Promise<T>): Promise<T> {
+    if (!this.redisService) return fn();
+    return this.redisService.withLock(`instant-match:user:${userId}`, 5000, fn);
+  }
 
   onModuleInit() {
     // Close the loop the other way: MessagesService owns the single send path
@@ -306,42 +322,44 @@ export class InstantMatchService implements OnModuleInit {
       );
     }
 
-    // A user holding a live match must resolve it before re-queueing,
-    // otherwise accepting the old match and searching again race each other.
-    const pending = await this.findPendingSessionFor(dto.userId);
-    if (pending) {
-      throw new BadRequestException('Respond to your current match first');
-    }
+    await this.withUserLock(dto.userId, async () => {
+      // A user holding a live match must resolve it before re-queueing,
+      // otherwise accepting the old match and searching again race each other.
+      const pending = await this.findPendingSessionFor(dto.userId);
+      if (pending) {
+        throw new BadRequestException('Respond to your current match first');
+      }
 
-    // One active Instant Match per user. Without this a user holding a live
-    // 24h chat could queue again and be paired a second time, leaving two
-    // conversations both claiming to be "your Instant Match" — and no way for
-    // the UI, which models exactly one, to represent the second. Leaving the
-    // current match is the deliberate way out, and it goes through the
-    // confirmation that says so.
-    const liveChat = await this.getActiveChatSession(dto.userId);
-    if (liveChat) {
-      throw new BadRequestException(
-        'You already have an Instant Match — leave it before finding someone new',
-      );
-    }
+      // One active Instant Match per user. Without this a user holding a live
+      // 24h chat could queue again and be paired a second time, leaving two
+      // conversations both claiming to be "your Instant Match" — and no way for
+      // the UI, which models exactly one, to represent the second. Leaving the
+      // current match is the deliberate way out, and it goes through the
+      // confirmation that says so.
+      const liveChat = await this.getActiveChatSession(dto.userId);
+      if (liveChat) {
+        throw new BadRequestException(
+          'You already have an Instant Match — leave it before finding someone new',
+        );
+      }
 
-    const expiresAt = new Date(Date.now() + QUEUE_TTL_MS);
-    const shared = {
-      campus: dto.campus,
-      activity: dto.activity,
-      timePreference: dto.timePreference,
-      optionalDetail: dto.optionalDetail,
-      area: dto.area,
-      latitude: dto.gps?.latitude ?? null,
-      longitude: dto.gps?.longitude ?? null,
-      expiresAt,
-    };
+      const expiresAt = new Date(Date.now() + QUEUE_TTL_MS);
+      const shared = {
+        campus: dto.campus,
+        activity: dto.activity,
+        timePreference: dto.timePreference,
+        optionalDetail: dto.optionalDetail,
+        area: dto.area,
+        latitude: dto.gps?.latitude ?? null,
+        longitude: dto.gps?.longitude ?? null,
+        expiresAt,
+      };
 
-    await this.prisma.matchQueueEntry.upsert({
-      where: { userId: dto.userId },
-      create: { userId: dto.userId, joinedAt: new Date(), ...shared },
-      update: { joinedAt: new Date(), ...shared },
+      await this.prisma.matchQueueEntry.upsert({
+        where: { userId: dto.userId },
+        create: { userId: dto.userId, joinedAt: new Date(), ...shared },
+        update: { joinedAt: new Date(), ...shared },
+      });
     });
 
     this.logger.log(
@@ -366,12 +384,15 @@ export class InstantMatchService implements OnModuleInit {
   }
 
   async cancelQueue(userId: string): Promise<void> {
-    const entry = await this.prisma.matchQueueEntry.findUnique({
-      where: { userId },
+    const removed = await this.withUserLock(userId, async () => {
+      const entry = await this.prisma.matchQueueEntry.findUnique({
+        where: { userId },
+      });
+      if (!entry) return false;
+      await this.prisma.matchQueueEntry.deleteMany({ where: { userId } });
+      return true;
     });
-    if (!entry) return;
-
-    await this.prisma.matchQueueEntry.deleteMany({ where: { userId } });
+    if (!removed) return;
     this.logger.log(`queue:cancel user=${userId}`);
     await this.broadcastQueueStats();
   }
@@ -405,6 +426,8 @@ export class InstantMatchService implements OnModuleInit {
         activity: myEntry.activity,
         user: {
           verificationStatus: 'VERIFIED',
+          accountStatus: 'ACTIVE',
+          deletedAt: null,
         },
         userId: {
           not: userId,
@@ -558,6 +581,8 @@ export class InstantMatchService implements OnModuleInit {
         activity: myEntry.activity,
         user: {
           verificationStatus: 'VERIFIED',
+          accountStatus: 'ACTIVE',
+          deletedAt: null,
         },
         userId: {
           not: userId,
@@ -1227,22 +1252,38 @@ export class InstantMatchService implements OnModuleInit {
     if (!snapshot) return false;
 
     try {
-      const expiresAt = new Date(Date.now() + QUEUE_TTL_MS);
-      const shared = {
-        campus: snapshot.campus,
-        activity: snapshot.activity,
-        timePreference: snapshot.timePreference,
-        optionalDetail: snapshot.optionalDetail,
-        area: snapshot.area,
-        latitude: snapshot.gps?.latitude ?? null,
-        longitude: snapshot.gps?.longitude ?? null,
-        expiresAt,
-      };
-      await this.prisma.matchQueueEntry.upsert({
-        where: { userId },
-        create: { userId, joinedAt: new Date(), ...shared },
-        update: { joinedAt: new Date(), ...shared },
+      const resumed = await this.withUserLock(userId, async () => {
+        // Re-checked inside the lock: the user may have been matched again or
+        // become ineligible while this requeue waited, and putting them back
+        // in the queue then would resurrect them against that.
+        if (!(await this.verificationAccess.isUserEligible(userId))) {
+          return false;
+        }
+        if (
+          (await this.findPendingSessionFor(userId)) ||
+          (await this.getActiveChatSession(userId))
+        ) {
+          return false;
+        }
+        const expiresAt = new Date(Date.now() + QUEUE_TTL_MS);
+        const shared = {
+          campus: snapshot.campus,
+          activity: snapshot.activity,
+          timePreference: snapshot.timePreference,
+          optionalDetail: snapshot.optionalDetail,
+          area: snapshot.area,
+          latitude: snapshot.gps?.latitude ?? null,
+          longitude: snapshot.gps?.longitude ?? null,
+          expiresAt,
+        };
+        await this.prisma.matchQueueEntry.upsert({
+          where: { userId },
+          create: { userId, joinedAt: new Date(), ...shared },
+          update: { joinedAt: new Date(), ...shared },
+        });
+        return true;
       });
+      if (!resumed) return false;
       realtimeGatewayRef?.emitSearchResumed(userId);
       await this.broadcastQueueStats();
       return true;
@@ -1291,6 +1332,15 @@ export class InstantMatchService implements OnModuleInit {
    * list nobody can scroll to the end of is not worth the query.
    */
   async getSearchingNow(userId: string): Promise<SearchingNowEntry[]> {
+    // The roster is for eligible members only. The `queue:list` socket event
+    // reaches here without the HTTP guards (they do not run on a WebSocket),
+    // so the viewer is checked here, in the service every path shares.
+    if (!(await this.verificationAccess.isUserEligible(userId))) {
+      throw new ForbiddenException(
+        'Account verification is required for Instant Match',
+      );
+    }
+
     const excludedIds = await this.getExcludedUserIds(userId);
 
     const entries = await this.prisma.matchQueueEntry.findMany({
@@ -1298,6 +1348,8 @@ export class InstantMatchService implements OnModuleInit {
         expiresAt: { gt: new Date() },
         user: {
           verificationStatus: 'VERIFIED',
+          accountStatus: 'ACTIVE',
+          deletedAt: null,
         },
         userId: {
           not: userId,
@@ -1396,6 +1448,17 @@ export class InstantMatchService implements OnModuleInit {
    * UI, and a pending match would be invisible until it timed out.
    */
   async getStateFor(userId: string): Promise<MatchStateSnapshot> {
+    // An ineligible account (unverified, suspended, deleted) is shown the same
+    // idle state as someone with nothing going on, rather than an error:
+    // queue:sync runs for everyone on connect.
+    if (!(await this.verificationAccess.isUserEligible(userId))) {
+      return {
+        queued: null,
+        pendingMatch: null,
+        recentMatch: null,
+        stats: null,
+      };
+    }
     const [entry, session, recentMatch] = await Promise.all([
       this.prisma.matchQueueEntry.findUnique({ where: { userId } }),
       this.findPendingSessionFor(userId),
@@ -1558,6 +1621,10 @@ export class InstantMatchService implements OnModuleInit {
    * apparent bug. Reconciles expiry the same way as above.
    */
   async getChatStateFor(userId: string): Promise<InstantMatchChatState | null> {
+    // Same rule as getStateFor: an ineligible caller gets "no chat", not an
+    // error. The lookup below is keyed on the caller's own id (they must be
+    // userA or userB of the session), so no other user's chat is reachable.
+    if (!(await this.verificationAccess.isUserEligible(userId))) return null;
     const session = await this.prisma.matchSession.findFirst({
       where: {
         status: 'ACCEPTED',

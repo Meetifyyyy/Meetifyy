@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { AcademicsService } from '../academics/academics.service';
 
@@ -22,7 +22,7 @@ jest.mock('../auth/auth.service', () => ({ clearAuthSyncCache: jest.fn() }));
 describe('UsersService.updateProfile', () => {
   const USER = 'user-1';
 
-  const build = () => {
+  const build = (mediaOwner: string | null = USER) => {
     const upsert = jest.fn(
       (args: {
         update: Record<string, unknown>;
@@ -35,6 +35,15 @@ describe('UsersService.updateProfile', () => {
           avatar: (args.update.avatar as string | null | undefined) ?? null,
           cover: (args.update.cover as string | null | undefined) ?? null,
         }),
+    );
+    const mediaFindMany = jest.fn(
+      (args: { where: { objectKey: { in: string[] } } }) =>
+        Promise.resolve(
+          args.where.objectKey.in.map((objectKey) => ({
+            objectKey,
+            ownerId: mediaOwner,
+          })),
+        ),
     );
     const service = Object.create(UsersService.prototype) as UsersService;
     Object.assign(service, {
@@ -51,12 +60,16 @@ describe('UsersService.updateProfile', () => {
           ),
           upsert,
         },
+        // Who uploaded each requested key (ownership of attached images).
+        media: {
+          findMany: mediaFindMany,
+        },
       },
       academicsService: new AcademicsService(),
       domainEventService: { emit: jest.fn(() => Promise.resolve()) },
       logger: { warn: jest.fn(), debug: jest.fn() },
     });
-    return { service, upsert };
+    return { service, upsert, mediaFindMany };
   };
 
   const update = (upsert: ReturnType<typeof build>['upsert']) =>
@@ -90,6 +103,56 @@ describe('UsersService.updateProfile', () => {
       expect(create(upsert)).not.toHaveProperty('coverMedia');
       expect(create(upsert)).not.toHaveProperty('avatarMediaId');
       expect(create(upsert)).toMatchObject({ avatar: null, cover: null });
+    });
+  });
+
+  describe('attaching images', () => {
+    it('refuses an image another user uploaded, and writes nothing', async () => {
+      const { service, upsert } = build('someone-else');
+      await expect(
+        service.updateProfile(USER, {
+          avatar: '/api/media/avatars/victims-photo.webp',
+        }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(upsert).not.toHaveBeenCalled();
+    });
+
+    it('refuses a foreign cover the same way', async () => {
+      const { service, upsert } = build('someone-else');
+      await expect(
+        service.updateProfile(USER, {
+          cover: '/api/media/profile-covers/victims-cover.webp',
+        }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(upsert).not.toHaveBeenCalled();
+    });
+
+    it('accepts an image the user uploaded', async () => {
+      const { service, upsert } = build(USER);
+      await service.updateProfile(USER, {
+        avatar: '/api/media/avatars/mine.webp',
+      });
+      expect(update(upsert)).toMatchObject({
+        avatarMedia: { connect: { objectKey: 'avatars/mine.webp' } },
+      });
+    });
+
+    it('does not ask about a shared default or preset', async () => {
+      const { service, upsert, mediaFindMany } = build('someone-else');
+      await service.updateProfile(USER, {
+        avatar: '/api/media/defaults/avatar-v2.webp',
+      });
+      expect(mediaFindMany).not.toHaveBeenCalled();
+      expect(upsert).toHaveBeenCalled();
+    });
+
+    it('re-saving the avatar the user already has is always fine', async () => {
+      const { service, upsert, mediaFindMany } = build('legacy-owner');
+      await service.updateProfile(USER, {
+        avatar: '/api/media/avatars/old.webp',
+      });
+      expect(mediaFindMany).not.toHaveBeenCalled();
+      expect(upsert).toHaveBeenCalled();
     });
   });
 

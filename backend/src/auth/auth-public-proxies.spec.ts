@@ -3,7 +3,7 @@ import {
   ConflictException,
   UnauthorizedException,
 } from '@nestjs/common';
-import { AuthService } from './auth.service';
+import { AuthService, ProviderRefreshUnavailableError } from './auth.service';
 import { stub } from '../common/testing/stub';
 import type { AuthenticatedUser } from '../common/types/authenticated-request';
 import type { PrismaService } from '../prisma/prisma.service';
@@ -195,6 +195,62 @@ describe('the public auth proxies', () => {
       ).rejects.toThrow('Password should be at least 6 characters');
     });
 
+    describe('early validation (before anything is sent to Supabase)', () => {
+      it('refuses a reserved username with a 400', async () => {
+        for (const username of ['admin', 'Support', 'deleted_x1']) {
+          await expect(
+            service.signUpWithEmail({
+              email: 'a@b.edu',
+              password: 'a-good-password',
+              username,
+            }),
+          ).rejects.toBeInstanceOf(BadRequestException);
+        }
+        expect(anonAuth.signUp).not.toHaveBeenCalled();
+      });
+
+      it('refuses an invalid birthday with a 400', async () => {
+        for (const birthday of ['2999-01-01', '2002-02-31', 'not-a-date']) {
+          await expect(
+            service.signUpWithEmail({
+              email: 'a@b.edu',
+              password: 'a-good-password',
+              birthday,
+            }),
+          ).rejects.toBeInstanceOf(BadRequestException);
+        }
+        expect(anonAuth.signUp).not.toHaveBeenCalled();
+      });
+
+      it('still accepts a signup that omits the birthday (older clients)', async () => {
+        anonAuth.signUp.mockResolvedValue({
+          data: { user: { identities: [{ id: 'i1' }] } },
+          error: null,
+        });
+        await expect(
+          service.signUpWithEmail({
+            email: 'a@b.edu',
+            password: 'a-good-password',
+          }),
+        ).resolves.toEqual({ pending: true });
+      });
+
+      it('accepts a valid birthday and an ordinary username', async () => {
+        anonAuth.signUp.mockResolvedValue({
+          data: { user: { identities: [{ id: 'i1' }] } },
+          error: null,
+        });
+        await expect(
+          service.signUpWithEmail({
+            email: 'a@b.edu',
+            password: 'a-good-password',
+            username: 'ravi',
+            birthday: '2000-05-17',
+          }),
+        ).resolves.toEqual({ pending: true });
+      });
+    });
+
     it('requires both an address and a password', async () => {
       await expect(
         service.signUpWithEmail({ email: '', password: 'a-good-password' }),
@@ -328,6 +384,105 @@ describe('the public auth proxies', () => {
         valid: false,
       });
       expect(adminAuth.signInWithPassword).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('canonicalLoginEmail', () => {
+    it('normalises an email identifier without touching the database', async () => {
+      await expect(
+        service.canonicalLoginEmail('  Ada@Example.EDU '),
+      ).resolves.toBe('ada@example.edu');
+      expect(prisma.user.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('resolves a username to its normalised email', async () => {
+      prisma.user.findUnique.mockResolvedValue({ email: 'Ada@Example.edu' });
+      await expect(service.canonicalLoginEmail('Ada')).resolves.toBe(
+        'ada@example.edu',
+      );
+    });
+
+    it('returns null for an unknown username', async () => {
+      await expect(service.canonicalLoginEmail('nobody')).resolves.toBeNull();
+    });
+  });
+
+  describe('refreshProviderSession — transient vs definitive failures', () => {
+    const refreshWith = (result: unknown) => {
+      const refreshSession = jest.fn(() =>
+        result instanceof Error
+          ? Promise.reject(result)
+          : Promise.resolve(result),
+      );
+      (adminAuth as unknown as { refreshSession: unknown }).refreshSession =
+        refreshSession;
+      return refreshSession;
+    };
+
+    it.each([
+      ['a thrown network error', new Error('fetch failed')],
+      [
+        'a retryable fetch error',
+        {
+          data: {},
+          error: Object.assign(new Error('x'), {
+            status: 0,
+            name: 'AuthRetryableFetchError',
+          }),
+        },
+      ],
+      [
+        'an error with no status',
+        { data: {}, error: new Error('socket hang up') },
+      ],
+      [
+        'a 502',
+        {
+          data: {},
+          error: Object.assign(new Error('bad gateway'), { status: 502 }),
+        },
+      ],
+      [
+        'a 429',
+        {
+          data: {},
+          error: Object.assign(new Error('slow down'), { status: 429 }),
+        },
+      ],
+    ])('throws ProviderRefreshUnavailableError for %s', async (_n, result) => {
+      refreshWith(result);
+      await expect(
+        service.refreshProviderSession('tok'),
+      ).rejects.toBeInstanceOf(ProviderRefreshUnavailableError);
+    });
+
+    it.each([400, 401, 403])(
+      'returns null (a definitive rejection) for a %i',
+      async (status) => {
+        refreshWith({
+          data: {},
+          error: Object.assign(new Error('Invalid Refresh Token'), { status }),
+        });
+        await expect(service.refreshProviderSession('tok')).resolves.toBeNull();
+      },
+    );
+
+    it('returns the new tokens on success', async () => {
+      refreshWith({
+        data: {
+          session: {
+            access_token: 'a',
+            refresh_token: 'r',
+            expires_in: 3600,
+          },
+        },
+        error: null,
+      });
+      await expect(service.refreshProviderSession('tok')).resolves.toEqual({
+        access_token: 'a',
+        refresh_token: 'r',
+        expires_in: 3600,
+      });
     });
   });
 });

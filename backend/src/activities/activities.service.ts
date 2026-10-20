@@ -63,6 +63,10 @@ import { NOTIFICATIONS_QUEUE } from '../notifications/notifications.processor';
 import { RedisService } from '../redis/redis.service';
 import { MediaCleanupService } from '../uploads/media-cleanup.service';
 import {
+  assertMediaIdOwnedBy,
+  assertMediaRefsOwnedBy,
+} from '../uploads/media-ownership.util';
+import {
   ActivityVisibility,
   CrewActivityMember,
   NotificationType,
@@ -70,6 +74,7 @@ import {
 } from '@prisma/client';
 import { detach } from '../common/utils/detach.util';
 import { errorMessage } from '../common/utils/error.util';
+import { VerificationAccessService } from '../common/verification/verification-access.service';
 import type { CreateActivityDto } from './dto/activity.dto';
 
 /**
@@ -165,6 +170,11 @@ export class ActivitiesService implements OnModuleInit {
     @InjectQueue(NOTIFICATIONS_QUEUE)
     private readonly notifQueue?: Queue,
     @Optional() private readonly mediaCleanupService?: MediaCleanupService,
+    // Global module; optional only so specs that build the service by hand
+    // keep working. Backs the service-level eligibility assert in
+    // createActivity.
+    @Optional()
+    private readonly verificationAccess?: VerificationAccessService,
   ) {
     this.redis = this.redisService?.getClient() ?? null;
   }
@@ -619,8 +629,14 @@ export class ActivitiesService implements OnModuleInit {
       });
 
       if (fetchedActivities.length > limit) {
-        const next = fetchedActivities.pop()!;
-        nextCursor = `${next.createdAt.toISOString()}|${next.id}`;
+        // Drop the look-ahead row and continue from the LAST row returned: the
+        // next page is strictly "older than" its cursor, so a cursor taken
+        // from the look-ahead row would skip that row forever.
+        fetchedActivities.pop();
+        const last = fetchedActivities[fetchedActivities.length - 1];
+        nextCursor = last
+          ? `${last.createdAt.toISOString()}|${last.id}`
+          : undefined;
       }
       activities = fetchedActivities;
 
@@ -1676,6 +1692,9 @@ export class ActivitiesService implements OnModuleInit {
 
     if (!activity || activity.deletedAt)
       throw new NotFoundException('Activity not found');
+    if (await this.blocksService.isBlocked(userId, activity.creatorId)) {
+      throw new NotFoundException('Activity not found');
+    }
     this.activityAuthorizationService.assertCanView(user, {
       ...activity,
       members: myMembership ? [myMembership] : [],
@@ -1760,6 +1779,9 @@ export class ActivitiesService implements OnModuleInit {
   }
 
   async createActivity(data: CreateActivityDto, creatorId: string) {
+    // Defence in depth behind @VerifiedOnly on the route.
+    await this.verificationAccess?.assertUsersEligible([creatorId], creatorId);
+
     if (
       !data.title ||
       typeof data.title !== 'string' ||
@@ -1833,6 +1855,15 @@ export class ActivitiesService implements OnModuleInit {
       throw new BadRequestException(
         'Verify your college email on the Campus page before creating a college-only activity',
       );
+    }
+
+    // A cover image must be one the host uploaded: the id / key come from the
+    // client, and neither used to be checked against the Media row's owner.
+    if (!data.coverColor) {
+      await Promise.all([
+        assertMediaIdOwnedBy(this.prisma, creatorId, data.coverMediaId),
+        assertMediaRefsOwnedBy(this.prisma, creatorId, [data.coverImage]),
+      ]);
     }
 
     const createData: Prisma.CrewActivityUncheckedCreateInput = {
@@ -2070,6 +2101,11 @@ export class ActivitiesService implements OnModuleInit {
     }
     if (!user) {
       throw new NotFoundException('User not found');
+    }
+    // A block with the host, in either direction, makes the activity invisible
+    // to this user — answered exactly like a missing one.
+    if (await this.blocksService.isBlocked(userId, activityRow.creatorId)) {
+      throw new NotFoundException('Activity not found');
     }
 
     // Idempotent: already a member → return success silently (no error)
@@ -2390,6 +2426,9 @@ export class ActivitiesService implements OnModuleInit {
       this.getViewer(userId),
     ]);
     if (!activity) throw new NotFoundException('Activity not found');
+    if (await this.blocksService.isBlocked(userId, activity.creatorId)) {
+      throw new NotFoundException('Activity not found');
+    }
     // Saving is a read-granting action: bookmarks are re-served later by
     // getSavedActivities, so it must not become a back door.
     this.activityAuthorizationService.assertCanView(user, activity);
@@ -2482,7 +2521,9 @@ export class ActivitiesService implements OnModuleInit {
     });
 
     return activities.map((a) => ({
-      ...a,
+      // A deleted member's real name and photograph must not reach the card's
+      // avatar stack; every other card path goes through this presenter.
+      ...ActivitiesService.presentCardRow(a),
       isJoined: true,
       myStatus: 'MEMBER',
     }));
@@ -2526,6 +2567,8 @@ export class ActivitiesService implements OnModuleInit {
           include: {
             _count: { select: { members: true } },
             members: {
+              // Only people actually in; a legacy PENDING row is not a member.
+              where: { status: 'MEMBER' },
               take: 5,
               include: {
                 user: {
@@ -2547,8 +2590,10 @@ export class ActivitiesService implements OnModuleInit {
 
     let nextCursor: string | null = null;
     if (bookmarks.length > limit) {
-      const nextItem = bookmarks.pop();
-      nextCursor = nextItem?.activityId || null;
+      // Continue from the last bookmark actually returned, not the popped
+      // look-ahead row (the next page is strictly older than its cursor).
+      bookmarks.pop();
+      nextCursor = bookmarks[bookmarks.length - 1]?.activityId || null;
     }
 
     const rawActs = bookmarks.map((b) => b.activity).filter(Boolean);
@@ -2958,6 +3003,18 @@ export class ActivitiesService implements OnModuleInit {
       !invitation ||
       invitation.inviteeId !== userId ||
       !this.activityAuthorizationService.isValidInvitation(invitation, userId)
+    ) {
+      throw new NotFoundException('Invitation not found or no longer pending');
+    }
+
+    // An invitation from (or to an activity hosted by) someone the invitee is
+    // blocked with can no longer be accepted, whichever side placed the block.
+    if (
+      invitation.activity &&
+      (await this.blocksService.isBlocked(
+        userId,
+        invitation.activity.creatorId,
+      ))
     ) {
       throw new NotFoundException('Invitation not found or no longer pending');
     }

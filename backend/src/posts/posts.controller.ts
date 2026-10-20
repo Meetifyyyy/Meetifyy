@@ -13,6 +13,8 @@ import {
 import { Request, Response } from 'express';
 import { PostsService } from './posts.service';
 import { JwtGuard } from '../common/guards/jwt.guard';
+import { RateLimit } from '../common/rate-limit/rate-limit.decorator';
+import { RateLimitPolicyGuard } from '../common/rate-limit/rate-limit-policy.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { VerifiedOnly } from '../common/decorators/verified-only.decorator';
 import {
@@ -26,6 +28,7 @@ import {
 } from 'class-validator';
 import type { AuthenticatedRequest } from '../common/types/authenticated-request';
 import { Type } from 'class-transformer';
+import { clampPageParam } from '../common/pagination.util';
 import { MentionDto } from '../common/dto/mention.dto';
 import { MaxChars } from '../common/validation/max-chars.validator';
 import {
@@ -117,6 +120,8 @@ export class PostsController {
 
   @Post()
   @VerifiedOnly()
+  @UseGuards(RateLimitPolicyGuard)
+  @RateLimit('content.post.create')
   async createPost(
     @CurrentUser() user: { id: string },
     @Body() dto: CreatePostDto,
@@ -146,7 +151,7 @@ export class PostsController {
     @Query('limit') limit?: string,
     @Query('cursor') cursor?: string,
   ) {
-    const parsedLimit = limit ? parseInt(limit, 10) : 10;
+    const parsedLimit = clampPageParam(limit, { def: 10, min: 1, max: 50 });
     return this.postsService.getBookmarks(user.id, parsedLimit, cursor);
   }
 
@@ -157,7 +162,7 @@ export class PostsController {
     @Query('cursor') cursor?: string,
     @Query('communityId') communityId?: string,
   ) {
-    const parsedLimit = limit ? parseInt(limit, 10) : 10;
+    const parsedLimit = clampPageParam(limit, { def: 10, min: 1, max: 50 });
     return this.postsService.getFeed(user.id, parsedLimit, cursor, communityId);
   }
 
@@ -168,7 +173,7 @@ export class PostsController {
     @Query('limit') limit?: string,
     @Query('cursor') cursor?: string,
   ) {
-    const parsedLimit = limit ? parseInt(limit, 10) : 10;
+    const parsedLimit = clampPageParam(limit, { def: 10, min: 1, max: 50 });
     return this.postsService.getUserPosts(
       user.id,
       username,
@@ -185,7 +190,8 @@ export class PostsController {
     @Param('id') id: string,
   ) {
     const ifNoneMatch = req.headers['if-none-match'];
-    const meta = await this.postsService.getPostMeta(id);
+    // Access is enforced inside getPostMeta, BEFORE any 304 can be returned.
+    const meta = await this.postsService.getPostMeta(id, user.id);
 
     if (meta) {
       const etag = `W/"${meta.updatedAt.getTime()}"`;
@@ -216,11 +222,13 @@ export class PostsController {
     @Query('limit') limit?: string,
     @Query('cursor') cursor?: string,
   ) {
-    const parsedLimit = limit ? parseInt(limit, 10) : 20;
+    const parsedLimit = clampPageParam(limit, { def: 20, min: 1, max: 50 });
     return this.postsService.getComments(id, user.id, parsedLimit, cursor);
   }
 
   @Post(':id/comments')
+  @UseGuards(RateLimitPolicyGuard)
+  @RateLimit('content.comment.create')
   async addComment(
     @CurrentUser() user: { id: string },
     @Param('id') id: string,

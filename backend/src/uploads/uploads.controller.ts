@@ -16,6 +16,8 @@ import {
 } from '@nestjs/common';
 import { StorageService } from './uploads.service';
 import { JwtGuard } from '../common/guards/jwt.guard';
+import { RateLimit } from '../common/rate-limit/rate-limit.decorator';
+import { RateLimitPolicyGuard } from '../common/rate-limit/rate-limit-policy.guard';
 import { OptionalJwtGuard } from '../common/guards/optional-jwt.guard';
 import { FileInterceptor } from '@nestjs/platform-express';
 import type { Response, Request } from 'express';
@@ -197,7 +199,8 @@ export class UploadsController {
    * POST /api/media/presigned-url
    * Generate a presigned URL for direct client upload.
    */
-  @UseGuards(JwtGuard)
+  @UseGuards(JwtGuard, RateLimitPolicyGuard)
+  @RateLimit('media.presigned')
   @Post('presigned-url')
   async getPresignedUrl(
     @Body('filename') filename: string,
@@ -445,6 +448,10 @@ export class UploadsController {
     res: Response,
     viewerId?: string | null,
   ) {
+    // Whatever happens next, never let a browser second-guess the type of an
+    // uploaded object and render it as something executable.
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+
     if (!this.storageService.isSafeStorageKey(key)) {
       return this.sendMediaMiss(res, 400);
     }

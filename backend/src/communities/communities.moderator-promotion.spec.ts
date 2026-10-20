@@ -121,6 +121,25 @@ describe('CommunitiesService — moderator promotion notice', () => {
           updates.push(data);
           return Promise.resolve({ ...member, ...data });
         }),
+        // updateMemberRole writes with a role-differs condition; it matches
+        // the row only when its role is not already the requested one.
+        updateMany: jest.fn(
+          ({
+            data,
+            where,
+          }: {
+            data: MemberUpdate;
+            where: { role: { not: string } };
+          }) => {
+            if (!member || member.role === where.role.not) {
+              return Promise.resolve({ count: 0 });
+            }
+            updates.push(data);
+            // The write is real state: the next call sees the new role.
+            if (data.role) member.role = data.role;
+            return Promise.resolve({ count: 1 });
+          },
+        ),
       },
       user: {
         findUnique: jest.fn(() =>
@@ -217,8 +236,26 @@ describe('CommunitiesService — moderator promotion notice', () => {
       await service.updateMemberRole(COMMUNITY, MEMBER, 'MODERATOR', OWNER);
       await settle();
 
-      expect(updates[0].moderatorPromotedAt).toBeUndefined();
+      // The conditional write matched nothing: no second stamp, no second ping.
+      expect(updates).toHaveLength(0);
       expect(created).toHaveLength(0);
+    });
+
+    it('promotes, stamps and notifies exactly once when asked twice in a row', async () => {
+      // Both requests may have read MEMBER; only the conditional write decides
+      // which one is the promotion.
+      setup({ role: 'MEMBER', userId: MEMBER });
+      await service.updateMemberRole(COMMUNITY, MEMBER, 'MODERATOR', OWNER);
+      await service.updateMemberRole(COMMUNITY, MEMBER, 'MODERATOR', OWNER);
+      await settle();
+
+      expect(updates).toHaveLength(1);
+      expect(created).toHaveLength(1);
+      expect(
+        domainEvents.emit.mock.calls.filter(
+          ([type]) => type === 'community:moderator_promoted',
+        ),
+      ).toHaveLength(1);
     });
 
     it('does not notify on demotion', async () => {

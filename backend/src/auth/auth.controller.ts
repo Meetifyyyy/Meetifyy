@@ -13,11 +13,13 @@ import {
   ForbiddenException,
   UnauthorizedException,
   NotFoundException,
+  BadRequestException,
+  ServiceUnavailableException,
+  Logger,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
-import { timingSafeEqual } from 'crypto';
 import { UAParser } from 'ua-parser-js';
-import { AuthService } from './auth.service';
+import { AuthService, ProviderRefreshUnavailableError } from './auth.service';
 import { EmailService } from '../email/email.service';
 import { JwtGuard } from '../common/guards/jwt.guard';
 import { AllowSuspended } from '../common/decorators/allow-suspended.decorator';
@@ -25,6 +27,7 @@ import { AllowPendingDeletion } from '../common/decorators/allow-pending-deletio
 import { AllowPendingLegalAck } from '../common/decorators/allow-pending-legal-ack.decorator';
 import { AllowBearerToken } from '../common/decorators/allow-bearer-token.decorator';
 import { AuthRateLimitGuard } from '../common/guards/auth-ratelimit.guard';
+import { RecoveryTokenGuard } from '../common/guards/recovery-token.guard';
 import {
   LoginRateLimitGuard,
   loginAccountKey,
@@ -62,11 +65,21 @@ import {
   ResendSignupOtpDto,
   ChangePasswordDto,
   AdoptSessionDto,
+  RevokeAllSessionsDto,
+  FinalizePasswordResetDto,
 } from './dto/auth.dto';
 import { formatEmailTime } from '../common/utils/email-time.util';
+import { constantTimeEquals } from '../common/utils/constant-time.util';
+import { normalizeEmail } from '../common/validation/email-format.util';
+import {
+  rateLimitException,
+  requestIdOf,
+} from '../common/rate-limit/rate-limit.response';
 
 @Controller('api/auth')
 export class AuthController {
+  private readonly logger = new Logger(AuthController.name);
+
   constructor(
     private readonly authService: AuthService,
     private readonly emailService: EmailService,
@@ -362,6 +375,20 @@ export class AuthController {
       if (account) {
         await this.rateLimit.penalize('auth.login.account', account);
       }
+      // The username and the email it resolves to are one account, so they
+      // must share one budget: otherwise a guesser alternates between the two
+      // spellings and gets a full allowance on each. The canonical address is
+      // charged as well (failures only, as above).
+      try {
+        const canonical = await this.authService.canonicalLoginEmail(
+          body.identifier,
+        );
+        if (canonical && canonical !== account) {
+          await this.rateLimit.penalize('auth.login.account', canonical);
+        }
+      } catch {
+        // Never changes the error the caller sees.
+      }
       throw error;
     }
 
@@ -542,8 +569,31 @@ export class AuthController {
           .catch(() => null)
       : Promise.resolve(null);
 
-    const refreshed =
-      await this.authService.refreshProviderSession(providerToken);
+    let refreshed: Awaited<ReturnType<AuthService['refreshProviderSession']>>;
+    try {
+      refreshed = await this.authService.refreshProviderSession(providerToken);
+    } catch (err) {
+      if (!(err instanceof ProviderRefreshUnavailableError)) throw err;
+      // The provider is down or timed out; it said nothing about the token.
+      // `rotate` has already retired the one the client presented, so put it
+      // back — otherwise the client's retry is judged a replay and the whole
+      // family is revoked. The cookies stay: the session is intact, and the
+      // client treats any status but 401 as "unavailable, try again".
+      const undone = await this.sessions
+        .undoRotation(
+          rotated.session.previousSessionId,
+          rotated.session.sessionId,
+        )
+        .catch(() => false);
+      if (!undone) {
+        this.logger.warn(
+          `session.rotation_undo_failed ${JSON.stringify({ userId: rotated.userId })}`,
+        );
+      }
+      throw new ServiceUnavailableException(
+        'Sign-in is temporarily unavailable. Please try again.',
+      );
+    }
     if (!refreshed) {
       clearUserSessionCookies(res);
       throw new UnauthorizedException('Session expired');
@@ -610,10 +660,12 @@ export class AuthController {
     const csrfCookie = readCookie(req, USER_CSRF_COOKIE);
     if (typeof csrfCookie === 'string' && csrfCookie) {
       const header = req.headers['x-csrf-token'];
+      // Byte-length-safe: comparing `.length` and then handing Buffers of
+      // different byte lengths to `timingSafeEqual` threw a RangeError (a 500)
+      // for a multibyte header of the same character count.
       if (
         typeof header !== 'string' ||
-        header.length !== csrfCookie.length ||
-        !timingSafeEqual(Buffer.from(header), Buffer.from(csrfCookie))
+        !constantTimeEquals(header, csrfCookie)
       ) {
         throw new ForbiddenException('CSRF validation failed');
       }
@@ -700,15 +752,25 @@ export class AuthController {
   @UseGuards(JwtGuard)
   @AllowSuspended()
   @AllowPendingDeletion()
+  @AllowPendingLegalAck()
   async revokeAllSessions(
     @CurrentUser() user: AuthenticatedUser,
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
-    @Body() body?: { scope?: 'others' | 'all' },
+    @Body() body?: RevokeAllSessionsDto,
   ) {
     const scope = body?.scope === 'all' ? 'all' : 'others';
 
     const currentId = scope === 'others' ? this.currentSessionId(req) : null;
+
+    // 'others' means "everything except this device". If this device's session
+    // cannot be identified there is nothing to spare, and revoking anyway
+    // would silently sign the caller out of the screen they are using.
+    if (scope === 'others' && !currentId) {
+      throw new BadRequestException(
+        'Could not identify the current session. Sign in again and retry.',
+      );
+    }
 
     const count = await this.sessions.revokeAllForUser(
       user.id,
@@ -957,8 +1019,9 @@ export class AuthController {
 
     // Resolved from req.ip (see trust proxy in main.ts), not from the raw
     // header, whose leftmost entry is supplied by the caller.
-    const ip =
-      body.ip || clientIp(req) || req.socket?.remoteAddress || 'Unknown';
+    // Never `body.ip`: this address is printed in a security email, and the
+    // caller must not be able to make it say anything.
+    const ip = clientIp(req) || req.socket?.remoteAddress || 'Unknown';
 
     // Login time in the user's local timezone, as sent from the browser.
     const loginTime = body.time || formatEmailTime(new Date(), body.timezone);
@@ -1035,6 +1098,66 @@ export class AuthController {
   }
 
   /**
+   * Completes a password reset: ends EVERY session of the account, then emails
+   * the owner.
+   *
+   * The reset page has only the recovery token — a fresh browser with no cookie
+   * and no `x-session-id` — so `JwtGuard` (rightly) refuses it, and the two
+   * calls the page used to make here (`events/password-changed` and
+   * `sessions/revoke-all`) failed silently: no session was revoked and no email
+   * was sent. `RecoveryTokenGuard` admits this one route to a fresh recovery
+   * token, verified locally. Nothing else accepts a bare bearer.
+   *
+   * No session is spared: a reset is what someone does when they fear the
+   * account is compromised, and the device finishing it may be the culprit.
+   * The recipient is the verified token's own address — never the request's —
+   * and a failed email never undoes the revocation.
+   */
+  @Post('password-reset/finalize')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(RecoveryTokenGuard, RateLimitPolicyGuard)
+  @RateLimit('auth.emailtrigger.user', 'auth.passwordreset.finalize.ip')
+  async finalizePasswordReset(
+    @CurrentUser() user: AuthenticatedUser,
+    @Req() req: Request,
+    @Body() body: FinalizePasswordResetDto,
+  ) {
+    const revoked = await this.sessions.revokeAllForUser(
+      user.id,
+      UserSessionRevokedReason.PASSWORD_CHANGED,
+    );
+
+    let emailSent = true;
+    try {
+      const name =
+        typeof user.user_metadata.displayName === 'string' &&
+        user.user_metadata.displayName
+          ? user.user_metadata.displayName
+          : 'User';
+      const parsed = new UAParser(req.headers['user-agent'] || '').getResult();
+      const browser = parsed.browser?.name || 'Unknown Browser';
+      const os = parsed.os?.name || 'Unknown OS';
+      const time = body.timezone
+        ? formatEmailTime(new Date(), body.timezone)
+        : formatEmailTime(new Date());
+      await this.emailService.sendPasswordChangedEmail(
+        user.email,
+        name,
+        time,
+        `${browser} on ${os}`,
+        clientIp(req) || 'Unknown',
+      );
+    } catch (err) {
+      emailSent = false;
+      this.logger.warn(
+        `password_reset.email_failed ${JSON.stringify({ userId: user.id, reason: err instanceof Error ? err.name : 'unknown' })}`,
+      );
+    }
+
+    return { success: true, revoked, emailSent };
+  }
+
+  /**
    * Resolves and verifies that transactional emails are strictly dispatched
    * to the authenticated caller's verified address, preventing arbitrary email spoofing.
    */
@@ -1045,18 +1168,22 @@ export class AuthController {
     const userEmail = user?.email?.toLowerCase()?.trim();
     const isFallback = !userEmail || userEmail.endsWith('@meetifyy.user');
 
+    // A caller with no verified address of its own (a placeholder
+    // `@meetifyy.user` or none at all) has nothing to compare a supplied
+    // address against, and trusting the supplied one made this a way to mail
+    // an arbitrary recipient. Always refused, supplied address or not.
+    if (isFallback) {
+      throw new ForbiddenException('No verified recipient email address found');
+    }
+
     if (suppliedEmail) {
       const cleanSupplied = suppliedEmail.toLowerCase().trim();
-      if (!isFallback && cleanSupplied !== userEmail) {
+      if (cleanSupplied !== userEmail) {
         throw new ForbiddenException(
           'Cannot trigger email notification for an arbitrary recipient',
         );
       }
       return cleanSupplied;
-    }
-
-    if (isFallback) {
-      throw new ForbiddenException('No verified recipient email address found');
     }
 
     return userEmail;
@@ -1065,7 +1192,21 @@ export class AuthController {
   @Post('request-college')
   @UseGuards(RateLimitPolicyGuard)
   @RateLimit('auth.collegerequest.ip', 'auth.collegerequest.email')
-  async requestCollege(@Body() body: CreateCollegeRequestDto) {
+  async requestCollege(
+    @Body() body: CreateCollegeRequestDto,
+    @Req() req: Request,
+  ) {
+    // `auth.collegerequest.email` is declared above but the policy guard reads
+    // `body.email ?? body.identifier`, neither of which this DTO has, so it
+    // never applied. Charged here against the address the form actually names.
+    const emailBudget = await this.rateLimit.consume(
+      'auth.collegerequest.email',
+      normalizeEmail(body.collegeEmail),
+    );
+    if (!emailBudget.allowed) {
+      throw rateLimitException(emailBudget, requestIdOf(req));
+    }
+
     const request = await this.authService.createCollegeRequest(body);
     return {
       success: true,

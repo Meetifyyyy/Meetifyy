@@ -117,8 +117,15 @@ describe('UserOtpService', () => {
             where,
             data,
           }: {
-            where: { id: string; consumedAt?: null };
-            data: Partial<OtpRow>;
+            where: {
+              id: string;
+              consumedAt?: null;
+              expiresAt?: { gt: Date };
+              attempts?: { lt: number };
+            };
+            data: Partial<Omit<OtpRow, 'attempts'>> & {
+              attempts?: { increment: number };
+            };
           }) => {
             let count = 0;
             for (const row of rows.values()) {
@@ -126,7 +133,15 @@ describe('UserOtpService', () => {
               // Honours `consumedAt: null` — this is the single-use guarantee.
               if (where.consumedAt === null && row.consumedAt !== null)
                 continue;
-              Object.assign(row, data);
+              // And the same conditions the real WHERE clause carries, because
+              // the attempt ceiling is enforced by them, not in process.
+              if (where.expiresAt && !(row.expiresAt > where.expiresAt.gt))
+                continue;
+              if (where.attempts && !(row.attempts < where.attempts.lt))
+                continue;
+              const { attempts, ...rest } = data;
+              Object.assign(row, rest);
+              if (attempts) row.attempts += attempts.increment;
               count += 1;
             }
             return Promise.resolve({ count });
@@ -473,6 +488,43 @@ describe('UserOtpService', () => {
         .verifyBound(USER, COLLEGE, code)
         .catch((e: HttpException) => e);
       expect(errorCode(after as HttpException)).toBe('too_many_attempts');
+    });
+
+    it('bounds PARALLEL guesses to the attempt ceiling, not just sequential ones', async () => {
+      const { code } = await service.issue(USER, DELETION);
+      const wrong = code === '000000' ? '111111' : '000000';
+
+      // The fake resolves synchronously per call, so interleave the awaits the
+      // way concurrent requests would: every request reads the row first.
+      const settled = await Promise.allSettled(
+        Array.from({ length: 20 }, () => service.verify(USER, DELETION, wrong)),
+      );
+
+      expect(settled.every((r) => r.status === 'rejected')).toBe(true);
+      // The counter never goes past the ceiling, however many requests raced.
+      expect(issued().attempts).toBeLessThanOrEqual(OTP_MAX_ATTEMPTS);
+      // The claim is made by a conditional update, which is what makes it atomic.
+      expect(prisma.userOtp.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            attempts: { lt: OTP_MAX_ATTEMPTS },
+          }) as unknown,
+        }),
+      );
+    });
+
+    it('does not compare the hash once the budget is spent by a concurrent request', async () => {
+      const { code } = await service.issue(USER, DELETION);
+      // Another request spent the last attempt between our read and our claim.
+      prisma.userOtp.findUnique.mockImplementationOnce(() => {
+        const snapshot = { ...issued() };
+        issued().attempts = OTP_MAX_ATTEMPTS;
+        return Promise.resolve(snapshot);
+      });
+      await expect(service.verify(USER, DELETION, code)).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(issued().consumedAt).toBeNull();
     });
 
     it('keeps the deletion flow uniform: no binding, OTP_INVALID only', async () => {

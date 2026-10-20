@@ -30,7 +30,8 @@ type SessionWhere = {
   familyId?: string;
   refreshHash?: string;
   revoked?: boolean;
-  replacedById?: null;
+  replacedById?: string | null;
+  revokedReason?: null;
   lastActiveAt?: Date;
 };
 
@@ -130,6 +131,12 @@ describe('UserSessionService', () => {
               if (where.revoked === false && row.revoked) continue;
               if (where.replacedById === null && row.replacedById) continue;
               if (
+                typeof where.replacedById === 'string' &&
+                row.replacedById !== where.replacedById
+              )
+                continue;
+              if (where.revokedReason === null && row.revokedReason) continue;
+              if (
                 where.lastActiveAt &&
                 row.lastActiveAt?.getTime() !== where.lastActiveAt.getTime()
               )
@@ -140,7 +147,18 @@ describe('UserSessionService', () => {
             return Promise.resolve({ count });
           },
         ),
-        deleteMany: jest.fn(() => Promise.resolve({ count: 0 })),
+        deleteMany: jest.fn(
+          ({ where }: { where: { id?: string; revoked?: boolean } }) => {
+            let count = 0;
+            for (const row of [...rows.values()]) {
+              if (where.id && row.id !== where.id) continue;
+              if (where.revoked === false && row.revoked) continue;
+              rows.delete(row.id);
+              count++;
+            }
+            return Promise.resolve({ count });
+          },
+        ),
       },
     });
     service = new UserSessionService(prisma);
@@ -347,6 +365,171 @@ describe('UserSessionService', () => {
       // `first` is two generations back: its successor was rotated already.
       const replay = await service.rotate(first.refreshToken, device);
       expect(replay).toEqual({ ok: false, reason: 'replayed' });
+    });
+  });
+
+  describe('rotation claim', () => {
+    it('only claims a predecessor that is still un-revoked', async () => {
+      const issued = await service.issue('u1', device);
+      const updateMany = jest.spyOn(
+        service['prisma'].userSession,
+        'updateMany',
+      );
+
+      await service.rotate(issued.refreshToken, device);
+
+      expect(updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            replacedById: null,
+            revoked: false,
+          }) as unknown,
+        }),
+      );
+    });
+
+    it('does not resurrect a session revoked between the read and the claim', async () => {
+      const issued = await service.issue('u1', device);
+      const predecessor = [...rows.values()][0];
+      // The read sees a live row; by the time the claim runs it was revoked.
+      const realFind = service['prisma'].userSession.findUnique.bind(
+        service['prisma'].userSession,
+      );
+      jest
+        .spyOn(service['prisma'].userSession, 'findUnique')
+        .mockImplementationOnce(((args: never) => {
+          const snapshot = realFind(args);
+          predecessor.revoked = true;
+          return snapshot;
+        }) as never);
+
+      const result = await service.rotate(issued.refreshToken, device);
+
+      expect(result).toEqual({ ok: false, reason: 'revoked' });
+      expect(predecessor.replacedById).toBeNull();
+      // The successor that was provisionally created is cleaned up.
+      expect([...rows.values()].filter((r) => !r.revoked)).toHaveLength(0);
+    });
+  });
+
+  describe('undoRotation', () => {
+    it('restores the predecessor and drops the unused successor', async () => {
+      const issued = await service.issue('u1', device);
+      const rotated = await service.rotate(issued.refreshToken, device);
+      if (!rotated.ok) throw new Error('rotation should succeed');
+
+      const undone = await service.undoRotation(
+        rotated.session.previousSessionId,
+        rotated.session.sessionId,
+      );
+
+      expect(undone).toBe(true);
+      const pred = rows.get(rotated.session.previousSessionId)!;
+      expect(pred.revoked).toBe(false);
+      expect(pred.replacedById).toBeNull();
+      expect(rows.has(rotated.session.sessionId)).toBe(false);
+      // The client's retry with the same token now rotates normally.
+      const retry = await service.rotate(issued.refreshToken, device);
+      expect(retry.ok).toBe(true);
+    });
+
+    it('does nothing when the successor was revoked meanwhile (user signed out)', async () => {
+      const issued = await service.issue('u1', device);
+      const rotated = await service.rotate(issued.refreshToken, device);
+      if (!rotated.ok) throw new Error('rotation should succeed');
+      rows.get(rotated.session.sessionId)!.revoked = true;
+
+      const undone = await service.undoRotation(
+        rotated.session.previousSessionId,
+        rotated.session.sessionId,
+      );
+
+      expect(undone).toBe(false);
+      expect(rows.get(rotated.session.previousSessionId)!.revoked).toBe(true);
+    });
+
+    it('does nothing when the family was revoked (the predecessor carries a reason)', async () => {
+      const issued = await service.issue('u1', device);
+      const rotated = await service.rotate(issued.refreshToken, device);
+      if (!rotated.ok) throw new Error('rotation should succeed');
+      rows.get(rotated.session.previousSessionId)!.revokedReason =
+        UserSessionRevokedReason.REFRESH_REPLAY;
+
+      const undone = await service.undoRotation(
+        rotated.session.previousSessionId,
+        rotated.session.sessionId,
+      );
+
+      expect(undone).toBe(false);
+      expect(rows.get(rotated.session.previousSessionId)!.revoked).toBe(true);
+    });
+
+    it('does nothing when the predecessor no longer names this successor', async () => {
+      const issued = await service.issue('u1', device);
+      const rotated = await service.rotate(issued.refreshToken, device);
+      if (!rotated.ok) throw new Error('rotation should succeed');
+
+      const undone = await service.undoRotation(
+        rotated.session.previousSessionId,
+        'some-other-successor',
+      );
+
+      expect(undone).toBe(false);
+      expect(rows.has(rotated.session.sessionId)).toBe(true);
+    });
+  });
+
+  describe('storeProviderRefresh', () => {
+    it('retries a transient write failure and then succeeds', async () => {
+      const issued = await service.issue('u1', device);
+      const id = [...rows.values()][0].id;
+      const update = jest.spyOn(service['prisma'].userSession, 'update');
+      const realImpl = update.getMockImplementation();
+      update
+        .mockRejectedValueOnce(new Error('connection reset'))
+        .mockRejectedValueOnce(new Error('connection reset'))
+        .mockImplementation(realImpl);
+
+      await service.storeProviderRefresh(id, 'provider-token');
+
+      expect(update).toHaveBeenCalledTimes(3);
+      expect(rows.get(id)!.providerRefresh).toBeTruthy();
+      expect(issued.sessionId).toBe(id);
+    });
+
+    it('logs the session id, never the token, after the retries are spent, and still resolves', async () => {
+      await service.issue('u1', device);
+      const id = [...rows.values()][0].id;
+      const update = jest
+        .spyOn(service['prisma'].userSession, 'update')
+        .mockRejectedValue(new Error('db down'));
+      const error = jest
+        .spyOn(service['logger'], 'error')
+        .mockImplementation(() => undefined);
+
+      await expect(
+        service.storeProviderRefresh(id, 'super-secret-provider-token'),
+      ).resolves.toBeUndefined();
+
+      expect(update).toHaveBeenCalledTimes(3);
+      expect(error).toHaveBeenCalledTimes(1);
+      const logged = String(error.mock.calls[0][0]);
+      expect(logged).toContain(id);
+      expect(logged).not.toContain('super-secret-provider-token');
+    });
+
+    it('does not retry when the session row no longer exists', async () => {
+      await service.issue('u1', device);
+      const update = jest
+        .spyOn(service['prisma'].userSession, 'update')
+        .mockRejectedValue(Object.assign(new Error('gone'), { code: 'P2025' }));
+      jest
+        .spyOn(service['logger'], 'error')
+        .mockImplementation(() => undefined);
+
+      await service.storeProviderRefresh('missing', 'tok');
+
+      expect(update).toHaveBeenCalledTimes(1);
     });
   });
 

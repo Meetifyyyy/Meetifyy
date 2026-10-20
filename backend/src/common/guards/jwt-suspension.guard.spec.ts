@@ -3,8 +3,14 @@ import { ForbiddenException } from '@nestjs/common';
 import type { ExecutionContext } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 
-import { JwtGuard, SUSPENDED_ERROR_CODE } from './jwt.guard';
+import {
+  JwtGuard,
+  SUSPENDED_ERROR_CODE,
+  BANNED_ERROR_CODE,
+  DELETED_ERROR_CODE,
+} from './jwt.guard';
 import { ALLOW_SUSPENDED_KEY } from '../decorators/allow-suspended.decorator';
+import { ALLOW_PENDING_DELETION_KEY } from '../decorators/allow-pending-deletion.decorator';
 import { stub } from '../testing/stub';
 import { routeContext } from './testing/jwt-guard.fixture';
 import type { AuthenticatedUser } from '../types/authenticated-request';
@@ -113,5 +119,58 @@ describe('JwtGuard — suspension enforcement', () => {
     prisma.user.findUnique.mockRejectedValue(new Error('connection lost'));
 
     await expect(enforce(contextFor(false))).resolves.toBeUndefined();
+  });
+
+  describe('terminal states (BANNED / DELETED)', () => {
+    const profileSyncContext = () => {
+      jest
+        .spyOn(reflector, 'getAllAndOverride')
+        .mockImplementation((key: unknown) =>
+          key === ALLOW_SUSPENDED_KEY || key === ALLOW_PENDING_DELETION_KEY
+            ? true
+            : undefined,
+        );
+      return routeContext({ headers: {} });
+    };
+
+    it('refuses a banned account on an ordinary route', async () => {
+      prisma.user.findUnique.mockResolvedValue({ accountStatus: 'BANNED' });
+      await expect(enforce(contextFor(false))).rejects.toMatchObject({
+        response: { code: BANNED_ERROR_CODE },
+      });
+    });
+
+    it('refuses a deleted account on an ordinary route', async () => {
+      prisma.user.findUnique.mockResolvedValue({ accountStatus: 'DELETED' });
+      await expect(enforce(contextFor(false))).rejects.toMatchObject({
+        response: { code: DELETED_ERROR_CODE },
+      });
+    });
+
+    it('does not let @AllowSuspended alone open a banned account (appeal routes)', async () => {
+      prisma.user.findUnique.mockResolvedValue({ accountStatus: 'BANNED' });
+      await expect(enforce(contextFor(true))).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
+    });
+
+    it('leaves the profile-sync routes reachable so the client learns the state', async () => {
+      prisma.user.findUnique.mockResolvedValue({ accountStatus: 'BANNED' });
+      await expect(enforce(profileSyncContext())).resolves.toBeUndefined();
+    });
+
+    it('still lets a pending-deletion account reach @AllowPendingDeletion routes', async () => {
+      prisma.user.findUnique.mockResolvedValue({
+        accountStatus: 'PENDING_DELETION',
+      });
+      jest
+        .spyOn(reflector, 'getAllAndOverride')
+        .mockImplementation((key: unknown) =>
+          key === ALLOW_PENDING_DELETION_KEY ? true : undefined,
+        );
+      await expect(
+        enforce(routeContext({ headers: {} })),
+      ).resolves.toBeUndefined();
+    });
   });
 });

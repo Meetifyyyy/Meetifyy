@@ -1,5 +1,6 @@
 import { Transform, Type } from 'class-transformer';
 import {
+  IsArray,
   IsEmail,
   IsEnum,
   IsIn,
@@ -96,6 +97,7 @@ export class SupportRequestFieldsDto {
   description!: string;
 
   @IsOptional()
+  @IsArray()
   @ValidateNested({ each: true })
   @Type(() => SupportAttachmentRefDto)
   attachments?: SupportAttachmentRefDto[];
