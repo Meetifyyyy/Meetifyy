@@ -14,10 +14,9 @@
  * button is useless: it re-requests the same missing URL, forever. The only
  * thing that can fix it is fetching a fresh index.html, which means a reload.
  *
- * The service-worker update path in main.jsx does not cover this. It promotes a
- * waiting worker while the tab is hidden — but the dev deployment registers no
- * worker at all, and in production a tab open at the moment of a deploy is
- * broken before any of that machinery runs.
+ * The launch-time version gate does not cover a chunk that fails later in an
+ * active session. Development also registers no service worker to retain the
+ * previous build's chunks.
  *
  * Safety comes from the one-shot guard: a reload is attempted at most once per
  * tab per window of time. If the route still fails afterwards, the cause was
@@ -63,7 +62,7 @@ export function isStaleChunkError(error) {
 export function recoverFromStaleChunk(
   error,
   {
-    storage = globalThis.sessionStorage,
+    storage,
     reload = () => globalThis.location?.reload(),
     now = () => Date.now(),
   } = {}
@@ -72,6 +71,8 @@ export function recoverFromStaleChunk(
 
   let last = 0;
   try {
+    // Accessing the browser's storage getter can itself throw SecurityError.
+    if (storage === undefined) storage = globalThis.sessionStorage;
     last = Number(storage?.getItem(RELOAD_MARKER)) || 0;
   } catch {
     // Private mode. Without a marker there is no way to guarantee one-shot, so
@@ -103,10 +104,11 @@ export function recoverFromStaleChunk(
  * when a cached or blocked route chunk keeps failing after recovery.
  */
 export function clearExpiredStaleChunkMarker(
-  storage = globalThis.sessionStorage,
+  storage,
   now = () => Date.now(),
 ) {
   try {
+    if (storage === undefined) storage = globalThis.sessionStorage;
     const last = Number(storage?.getItem(RELOAD_MARKER)) || 0;
     if (last && now() - last >= RELOAD_COOLDOWN_MS) {
       storage.removeItem(RELOAD_MARKER);

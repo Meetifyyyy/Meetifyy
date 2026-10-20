@@ -117,6 +117,31 @@ describe('recoverFromStaleChunk', () => {
     expect(reload).not.toHaveBeenCalled();
   });
 
+  it('does not throw or reload when the browser blocks access to sessionStorage itself', () => {
+    const original = Object.getOwnPropertyDescriptor(globalThis, 'sessionStorage');
+    const reload = vi.fn();
+    Object.defineProperty(globalThis, 'sessionStorage', {
+      configurable: true,
+      get() { throw new Error('SecurityError'); },
+    });
+    try {
+      expect(() => clearExpiredStaleChunkMarker()).not.toThrow();
+      expect(recoverFromStaleChunk(staleError, { reload })).toBe(false);
+      expect(reload).not.toHaveBeenCalled();
+    } finally {
+      if (original) Object.defineProperty(globalThis, 'sessionStorage', original);
+      else delete globalThis.sessionStorage;
+    }
+  });
+
+  it('does not reload if the cooldown marker cannot be persisted', () => {
+    const storage = makeStorage();
+    storage.setItem = () => { throw new Error('QuotaExceededError'); };
+    const reload = vi.fn();
+    expect(recoverFromStaleChunk(staleError, { storage, reload })).toBe(false);
+    expect(reload).not.toHaveBeenCalled();
+  });
+
   it('preserves the cooldown across repeated document startups and lazy-route failures', () => {
     const storage = makeStorage();
     const reload = vi.fn();
