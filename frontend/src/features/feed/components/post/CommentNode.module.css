@@ -124,7 +124,10 @@
   flex: 1;
   min-width: 0;
   display: flex;
-  align-items: center;
+  /* Baseline, not centre: the name is set in the display face and the handle
+     and time in the sans, so centring their boxes left the smaller text
+     sitting a hair off the name's baseline. */
+  align-items: baseline;
   gap: 5px;
   line-height: 1.25;
 }
@@ -164,7 +167,8 @@
   font-weight: 400;
   flex: 0 100 auto;
   min-width: 0;
-  font-size: 0.72rem;
+  /* Same size as the name beside it. */
+  font-size: 0.88rem;
   line-height: 1.25;
   color: var(--color-text-muted);
   white-space: nowrap;
@@ -186,7 +190,8 @@
   flex-shrink: 0;
   color: var(--color-text-muted);
   opacity: 0.6;
-  font-size: 0.72rem;
+  /* Same size as the name beside it. */
+  font-size: 0.88rem;
   line-height: 1.25;
 }
 
@@ -194,7 +199,8 @@
   font-family: var(--font-family-sans);
   font-weight: 400;
   flex-shrink: 0;
-  font-size: 0.72rem;
+  /* Same size as the name beside it. */
+  font-size: 0.88rem;
   font-variant-numeric: tabular-nums;
   line-height: 1.25;
   color: var(--color-text-muted);
