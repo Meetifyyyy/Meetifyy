@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   isStaleChunkError,
   recoverFromStaleChunk,
-  clearStaleChunkMarker,
+  clearExpiredStaleChunkMarker,
 } from '../staleChunkRecovery';
 
 const makeStorage = (initial = {}) => {
@@ -117,11 +117,25 @@ describe('recoverFromStaleChunk', () => {
     expect(reload).not.toHaveBeenCalled();
   });
 
-  it('clears its marker so a later deploy can recover cleanly', () => {
+  it('preserves the cooldown across repeated document startups and lazy-route failures', () => {
     const storage = makeStorage();
-    recoverFromStaleChunk(staleError, { storage, reload: () => {} });
-    expect(storage._size()).toBe(1);
-    clearStaleChunkMarker(storage);
+    const reload = vi.fn();
+    let clock = 1_000_000;
+    const now = () => clock;
+
+    expect(recoverFromStaleChunk(staleError, { storage, reload, now })).toBe(true);
+    for (let boot = 0; boot < 3; boot += 1) {
+      clock += 5_000;
+      // main.jsx runs this before the lazy route has finished loading.
+      clearExpiredStaleChunkMarker(storage, now);
+      expect(recoverFromStaleChunk(staleError, { storage, reload, now })).toBe(false);
+    }
+    expect(reload).toHaveBeenCalledTimes(1);
+
+    clock += 60_000;
+    clearExpiredStaleChunkMarker(storage, now);
     expect(storage._size()).toBe(0);
+    expect(recoverFromStaleChunk(staleError, { storage, reload, now })).toBe(true);
+    expect(reload).toHaveBeenCalledTimes(2);
   });
 });
