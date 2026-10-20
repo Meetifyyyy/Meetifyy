@@ -1,7 +1,8 @@
-import { memo, useCallback } from 'react';
+import { memo, useCallback, useEffect, useState } from 'react';
 import { useWindowVirtualizer, observeWindowRect } from '@tanstack/react-virtual';
 import { IS_MOBILE_BUILD } from '@config';
 import Post from './post/Post';
+import { readSavedFeedScroll, recallRowSizes, rememberRowSizes } from '../utils/feedScrollMemory';
 
 /**
  * The window height the virtualizer measures, kept steady while a keyboard is up.
@@ -48,8 +49,15 @@ function VirtualFeedList({ posts, onPostClick, onCommentClick }) {
     return posts[index]?.id ?? index;
   }, [posts]);
 
+  // Row heights from the last time this list was on screen (see
+  // feedScrollMemory). Read once per mount: it only seeds the first layout.
+  const [seededSizes] = useState(() =>
+    recallRowSizes(typeof window !== 'undefined' ? window.innerWidth : 0),
+  );
+
   const virtualizer = useWindowVirtualizer({
     count: posts.length,
+    initialMeasurementsCache: seededSizes,
     estimateSize: (index) => {
       const p = posts[index];
       if (!p) return 254;
@@ -77,7 +85,13 @@ function VirtualFeedList({ posts, onPostClick, onCommentClick }) {
     // (back from a scrolled Profile) had no rows in view: for ~4 frames the
     // feed was a blank white band under the header, then the rounded post
     // cards popped in once the virtualizer had measured.
-    initialOffset: () => (typeof window !== 'undefined' ? window.scrollY : 0),
+    //
+    // Back from a post, the page has not been scrolled back yet when this first
+    // renders (Feed restores it right after), so window.scrollY is still 0 and
+    // the first frame laid out the top of the feed before jumping. The position
+    // Feed saved is the one it is about to restore, so start from it.
+    initialOffset: () =>
+      (typeof window !== 'undefined' ? window.scrollY || readSavedFeedScroll() : 0),
     initialRect: typeof window !== 'undefined'
       ? { width: window.innerWidth, height: window.innerHeight }
       : undefined,
@@ -128,6 +142,15 @@ function VirtualFeedList({ posts, onPostClick, onCommentClick }) {
     }
     return false;
   };
+
+  // Remember what was measured when leaving, so coming back starts from the
+  // same layout instead of the estimates.
+  useEffect(() => {
+    const sizes = virtualizer.itemSizeCache;
+    return () => {
+      rememberRowSizes(sizes, typeof window !== 'undefined' ? window.innerWidth : 0);
+    };
+  }, [virtualizer]);
 
   return (
     <div

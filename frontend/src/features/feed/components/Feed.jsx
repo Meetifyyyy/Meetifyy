@@ -1,4 +1,4 @@
-import { useCallback, memo, useEffect, useRef, useMemo } from 'react';
+import { useCallback, memo, useEffect, useLayoutEffect, useRef, useMemo } from 'react';
 import useUIStore from '@stores/uiStore';
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { postsApi } from '@shared/api/apiClient';
@@ -11,6 +11,7 @@ import styles from './Feed.module.css';
 import { useAuth } from '@shared/context/AuthContext';
 import { addCreatedPostToCaches } from '../utils/postCache';
 import { feedQueryOptions } from '../utils/feedQuery';
+import { readSavedFeedScroll, saveFeedScroll } from '../utils/feedScrollMemory';
 import VerificationGate from '@shared/components/VerificationGate/VerificationGate';
 import HeaderScrollEdge from '@shared/components/ui/HeaderScrollEdge';
 import HomeCommunities from '@features/communities/components/home/HomeCommunities';
@@ -65,27 +66,48 @@ function Feed({ onPostClick, onCommentClick }) {
     return () => observer.disconnect();
   }, [hasNextPage, isLoading, isFetchingNextPage, fetchNextPage]);
 
-  // Restore scroll position when navigating back to feed
+  // Restore the scroll position when arriving back on Home.
+  //
+  // Once per visit, and before paint. It used to run in a passive effect keyed
+  // on `[isLoading, hasPosts]`, which has two faults: it painted a frame at the
+  // wrong position first (the snap on going back), and it re-ran every time
+  // loading flipped. A pull-to-refresh resets the query, the skeletons show,
+  // and any scrolling done meanwhile was saved; when the posts arrived this
+  // effect fired again and threw the page to that stale position (the snap
+  // after a refresh).
   const hasPosts = allPosts.length > 0;
-  useEffect(() => {
-    const savedY = sessionStorage.getItem('meetifyy_feed_scrollY');
-    if (savedY && !isLoading && hasPosts) {
-      window.scrollTo(0, parseInt(savedY, 10));
+  const restoredRef = useRef(false);
+  useLayoutEffect(() => {
+    if (restoredRef.current || isLoading || !hasPosts) return;
+    restoredRef.current = true;
+    const savedY = readSavedFeedScroll();
+    if (savedY > 0 && Math.abs(window.scrollY - savedY) > 1) {
+      window.scrollTo(0, savedY);
     }
   }, [isLoading, hasPosts]);
 
-  // Save scroll position on scroll
+  // Save scroll position on scroll.
+  //
+  // The write is debounced, so a tap on a post within 100ms of the last scroll
+  // used to lose it: the pending write was cancelled on unmount and the page
+  // came back slightly short. The pending position is flushed instead. It is
+  // taken from the last scroll event rather than window.scrollY at unmount,
+  // which the route change may already have reset.
   useEffect(() => {
     let timer;
+    let lastY = null;
     const handleScroll = () => {
+      lastY = window.scrollY;
       clearTimeout(timer);
       timer = setTimeout(() => {
-        sessionStorage.setItem('meetifyy_feed_scrollY', String(window.scrollY));
+        saveFeedScroll(lastY);
+        lastY = null;
       }, 100);
     };
     window.addEventListener('scroll', handleScroll, { passive: true });
     return () => {
       clearTimeout(timer);
+      if (lastY !== null) saveFeedScroll(lastY);
       window.removeEventListener('scroll', handleScroll);
     };
   }, []);
