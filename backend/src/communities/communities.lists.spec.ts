@@ -47,8 +47,8 @@ describe('CommunitiesService — community lists', () => {
     Promise<{ communityId: string }[]>,
     [RequestFindManyArgs]
   >;
-  let postGroupBy: jest.Mock<
-    Promise<{ communityId: string; _max: { createdAt: Date } }[]>,
+  let postQueryRaw: jest.Mock<
+    Promise<{ communityId: string; lastPostAt: Date | null }[]>,
     []
   >;
 
@@ -56,7 +56,7 @@ describe('CommunitiesService — community lists', () => {
     communities = [] as CommunityRow[],
     memberships = [] as MembershipRow[],
     requests = [] as { communityId: string }[],
-    lastPosts = [] as { communityId: string; _max: { createdAt: Date } }[],
+    lastPosts = [] as { communityId: string; lastPostAt: Date | null }[],
   } = {}) => {
     communityFindMany = jest.fn((_args: FindManyArgs) =>
       Promise.resolve(communities),
@@ -67,13 +67,13 @@ describe('CommunitiesService — community lists', () => {
     requestFindMany = jest.fn((_args: RequestFindManyArgs) =>
       Promise.resolve(requests),
     );
-    postGroupBy = jest.fn(() => Promise.resolve(lastPosts));
+    postQueryRaw = jest.fn(() => Promise.resolve(lastPosts));
     service = new CommunitiesService(
       stub<PrismaService>({
         community: { findMany: communityFindMany },
         communityMember: { findMany: memberFindMany },
         communityJoinRequest: { findMany: requestFindMany },
-        post: { groupBy: postGroupBy },
+        $queryRaw: postQueryRaw,
       }),
       stub<DomainEventService>(),
       stub<RedisService>({ getClient: () => null }),
@@ -102,7 +102,10 @@ describe('CommunitiesService — community lists', () => {
             community: { id: 'b', ownerId: 'me', isPrivate: false },
           },
         ],
-        lastPosts: [{ communityId: 'a', _max: { createdAt: t } }],
+        lastPosts: [
+          { communityId: 'a', lastPostAt: t },
+          { communityId: 'b', lastPostAt: null },
+        ],
       });
 
       const rows = await service.getMyCommunities('me');
@@ -121,7 +124,7 @@ describe('CommunitiesService — community lists', () => {
     it('makes no post query for an account with no memberships', async () => {
       setup();
       expect(await service.getMyCommunities('me')).toEqual([]);
-      expect(postGroupBy).not.toHaveBeenCalled();
+      expect(postQueryRaw).not.toHaveBeenCalled();
     });
   });
 

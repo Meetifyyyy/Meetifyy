@@ -555,16 +555,26 @@ export class CommunitiesService implements OnModuleInit {
     });
     if (memberships.length === 0) return [];
 
-    const lastPosts = await this.prisma.post.groupBy({
-      by: ['communityId'],
-      where: {
-        communityId: { in: memberships.map((m) => m.community.id) },
-        deletedAt: null,
-      },
-      _max: { createdAt: true },
-    });
+    // Newest live post per community. One index probe per community
+    // (Post_communityId_deletedAt_createdAt_idx, newest first) rather than the
+    // GROUP BY ... MAX this replaces, which read every post of every community
+    // the viewer is in on each Home load and each sidebar open: cost grew with
+    // the posts in the viewer's communities, not with how many they joined.
+    const communityIds = memberships.map((m) => m.community.id);
+    const lastPosts = await this.prisma.$queryRaw<
+      { communityId: string; lastPostAt: Date | null }[]
+    >`
+      SELECT c."id" AS "communityId",
+        (
+          SELECT p."createdAt" FROM "Post" p
+          WHERE p."communityId" = c."id" AND p."deletedAt" IS NULL
+          ORDER BY p."createdAt" DESC
+          LIMIT 1
+        ) AS "lastPostAt"
+      FROM unnest(${communityIds}::text[]) AS c("id")
+    `;
     const lastPostAt = new Map(
-      lastPosts.map((p) => [p.communityId, p._max.createdAt]),
+      lastPosts.map((p) => [p.communityId, p.lastPostAt]),
     );
 
     return memberships.map((m) => {
