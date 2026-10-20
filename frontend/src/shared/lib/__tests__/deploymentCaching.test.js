@@ -34,15 +34,26 @@ describe('deployment cache headers', () => {
     }
   });
 
-  it.each(vercelConfigs)('serves the worker uncached and hashed assets as immutable', (config) => {
+  it.each(vercelConfigs)('serves the worker uncached', (config) => {
     const workerHeaders = headersFor(config, '/sw.js');
     expect(workerHeaders['Cache-Control']).toContain('no-store');
     expect(workerHeaders['CDN-Cache-Control']).toBe('no-store');
     expect(workerHeaders['Vercel-CDN-Cache-Control']).toBe('no-store');
+  });
 
-    expect(headersFor(config, '/assets/(.*)')['Cache-Control']).toBe(
-      'public, max-age=31536000, immutable',
-    );
+  it.each(vercelConfigs)('does not force immutable caching on every asset response', (config) => {
+    // A path-wide override also applies to missing chunks and fallback/error
+    // responses. Keep those out of a year-long browser cache; successful
+    // fingerprinted files can use the hosting platform's asset defaults.
+    const assetHeaders = config.headers
+      .filter(({ source }) => source === '/assets/(.*)')
+      .flatMap(({ headers }) => headers)
+      .filter(({ key }) => /^(?:CDN-|Vercel-CDN-)?Cache-Control$/i.test(key));
+
+    for (const { value } of assetHeaders) {
+      expect(value).not.toMatch(/\bimmutable\b/i);
+      expect(value).not.toMatch(/\b(?:s-maxage|max-age)\s*=\s*31536000\b/i);
+    }
   });
 });
 
