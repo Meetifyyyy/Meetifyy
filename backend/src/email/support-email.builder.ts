@@ -81,12 +81,7 @@ export class SupportEmailBuilder {
       return null;
     }
 
-    const mediaBaseUrl =
-      config.app.apiBaseUrl || config.app.backendUrl || config.app.frontendUrl;
-    const attachments = resolveAttachmentItems(
-      ticket.attachments,
-      mediaBaseUrl,
-    );
+    const attachments = resolveAttachmentItems(ticket.attachments);
 
     const element = createElement(SupportRequestReceivedEmail, {
       name: ticket.name,
@@ -157,10 +152,16 @@ export class SupportEmailBuilder {
   }
 }
 
-/** Resolves structured attachment metadata into clean names and accessible media links. */
-function resolveAttachmentItems(
+/**
+ * Resolves structured attachment metadata into clean names and sizes, with no
+ * links. Support attachments are private: /api/media/support/* is refused for
+ * everyone (admins open them through signed URLs on the ticket page), so a link
+ * here would only 404, and a signed URL would let anyone the email is forwarded
+ * to read the file for as long as it lasts. The recipient is the person who
+ * uploaded them, so the email just lists what was received.
+ */
+export function resolveAttachmentItems(
   attachments: unknown,
-  baseUrl: string,
 ): SupportAttachmentItem[] {
   if (!Array.isArray(attachments)) return [];
   const items: SupportAttachmentItem[] = [];
@@ -171,20 +172,13 @@ function resolveAttachmentItems(
       typeof f.filename === 'string' && f.filename.length > 0
         ? f.filename
         : 'attachment';
-    const key =
-      typeof f.key === 'string'
-        ? f.key
-        : typeof f.storageKey === 'string'
-          ? f.storageKey
-          : undefined;
-    const url = key ? `${baseUrl}/api/media/${key}` : undefined;
     const size =
       typeof f.size === 'number'
         ? f.size
         : typeof f.fileSize === 'number'
           ? f.fileSize
           : undefined;
-    items.push({ filename, url, size });
+    items.push({ filename, size });
   }
   return items;
 }
