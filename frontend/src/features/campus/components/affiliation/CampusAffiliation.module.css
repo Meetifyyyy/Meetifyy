@@ -106,23 +106,17 @@
     padding: 1.5rem 1.75rem 2.5rem;
   }
 
-  /* Every step is one readable column centred in the wide container, rather
-     than hugging its left edge with empty space to the right. */
+  /* The college-email step is a short form: one readable column centred in the
+     box, both ways. The picker is the screen's own child (no screenBody) and
+     keeps the full width, left-aligned, because it is a list. */
   .screenBody {
     align-items: center;
+    justify-content: center;
   }
 
   .screenBody > :first-child {
     width: 100%;
     max-width: 600px;
-  }
-
-  /* The picker is the screen's own child (no screenBody), so it is centred
-     the same way here. */
-  .screen > .picker {
-    width: 100%;
-    max-width: 600px;
-    align-self: center;
   }
 }
 
