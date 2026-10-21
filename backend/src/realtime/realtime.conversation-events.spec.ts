@@ -14,7 +14,6 @@ import type { InstantMatchRateLimiter } from '../instant-match/instant-match.rat
 import type { PrismaService } from '../prisma/prisma.service';
 import type { RedisService } from '../redis/redis.service';
 import type { ActivityAuthorizationService } from '../activities/activity-authorization.service';
-import type { CommunitiesService } from '../communities/communities.service';
 import type { BlocksService } from '../users/blocks.service';
 
 /**
@@ -71,7 +70,6 @@ function build() {
     }),
     stub<RedisService>({ getClient: jest.fn() }),
     stub<ActivityAuthorizationService>(),
-    stub<CommunitiesService>(),
     stub<BlocksService>({
       getExcludedUserIds: jest.fn().mockResolvedValue([]),
     }),

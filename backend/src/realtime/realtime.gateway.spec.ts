@@ -6,7 +6,6 @@ import type { MessagesService } from '../messages/messages.service';
 import type { InstantMatchService } from '../instant-match/instant-match.service';
 import type { InstantMatchRateLimiter } from '../instant-match/instant-match.rate-limiter';
 import type { ActivityAuthorizationService } from '../activities/activity-authorization.service';
-import type { CommunitiesService } from '../communities/communities.service';
 import type { BlocksService } from '../users/blocks.service';
 import { buildGateway, fakeSocket } from './testing/gateway.fixture';
 import { ActivityAuthorizationService as ActivityPolicy } from '../activities/activity-authorization.service';
@@ -37,7 +36,6 @@ describe('RealtimeGateway — Authentication', () => {
   };
   let redisService: { getClient: jest.Mock };
   let activityPolicy: Stub<ActivityAuthorizationService>;
-  let communitiesService: Stub<CommunitiesService>;
   let blocksService: Stub<BlocksService>;
   let verificationAccess: ReturnType<typeof createVerificationAccessMock>;
   let jwtGuard: { validateToken: jest.Mock };
@@ -95,7 +93,6 @@ describe('RealtimeGateway — Authentication', () => {
       getClient: jest.fn(),
     };
     activityPolicy = {};
-    communitiesService = {};
     blocksService = {};
     verificationAccess = createVerificationAccessMock();
     jwtGuard = {
@@ -111,7 +108,6 @@ describe('RealtimeGateway — Authentication', () => {
       prisma,
       redis: redisService,
       activityPolicy,
-      communities: communitiesService,
       blocks: blocksService,
       verificationAccess,
       // The socket applies the same mandatory-acknowledgement gate the REST
@@ -322,7 +318,6 @@ describe('RealtimeGateway — Authentication', () => {
       prisma,
       redis: redisService,
       activityPolicy,
-      communities: communitiesService,
       blocks: blocksService,
       verificationAccess,
       legalConsent: createLegalConsentMock({ satisfied: false }),
@@ -408,7 +403,6 @@ describe('RealtimeGateway — room join authorization', () => {
       },
       prisma,
       redis: { getClient: jest.fn() },
-      communities: { countOnlineMembers: jest.fn().mockResolvedValue(0) },
       blocks: blocksService,
       verificationAccess: createVerificationAccessMock(),
       legalConsent: createLegalConsentMock(),

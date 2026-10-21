@@ -1217,31 +1217,6 @@ export class CommunitiesService implements OnModuleInit {
     }
   }
 
-  /** Every community a user belongs to (or owns). Used to fan a presence
-   *  change out to exactly the rooms whose count just moved. */
-  async getCommunityIdsForUser(userId: string): Promise<string[]> {
-    try {
-      const [memberships, owned] = await Promise.all([
-        this.prisma.communityMember.findMany({
-          where: { userId },
-          select: { communityId: true },
-        }),
-        this.prisma.community.findMany({
-          where: { ownerId: userId, deletedAt: null },
-          select: { id: true },
-        }),
-      ]);
-      return [
-        ...new Set([
-          ...memberships.map((m) => m.communityId),
-          ...owned.map((c) => c.id),
-        ]),
-      ];
-    } catch {
-      return [];
-    }
-  }
-
   async joinCommunity(communityId: string, userId: string) {
     // Joining is NOT selfie-gated (docs/college-affiliation.md: only creating
     // a community is). A campus community still requires the active

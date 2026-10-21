@@ -8,7 +8,6 @@ import type { InstantMatchRateLimiter } from '../../instant-match/instant-match.
 import type { PrismaService } from '../../prisma/prisma.service';
 import type { RedisService } from '../../redis/redis.service';
 import type { ActivityAuthorizationService } from '../../activities/activity-authorization.service';
-import type { CommunitiesService } from '../../communities/communities.service';
 import type { BlocksService } from '../../users/blocks.service';
 import type { VerificationAccessService } from '../../common/verification/verification-access.service';
 import type { RateLimitService } from '../../common/rate-limit/rate-limit.service';
@@ -33,7 +32,6 @@ export interface GatewayDependencies {
   prisma?: Stub<PrismaService>;
   redis?: Stub<RedisService>;
   activityPolicy?: Stub<ActivityAuthorizationService>;
-  communities?: Stub<CommunitiesService>;
   blocks?: Stub<BlocksService>;
   verificationAccess?: VerificationAccessService;
   rateLimit?: RateLimitService;
@@ -51,7 +49,6 @@ export function buildGateway(deps: GatewayDependencies = {}): RealtimeGateway {
     stub<PrismaService>(deps.prisma),
     stub<RedisService>(deps.redis),
     stub<ActivityAuthorizationService>(deps.activityPolicy),
-    stub<CommunitiesService>(deps.communities),
     stub<BlocksService>(deps.blocks),
     deps.verificationAccess ?? createVerificationAccessMock(),
     deps.rateLimit ?? allowAllRateLimit(),

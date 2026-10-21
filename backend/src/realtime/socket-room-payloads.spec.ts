@@ -4,7 +4,6 @@ import type { Stub } from '../common/testing/stub';
 import type { PrismaService } from '../prisma/prisma.service';
 import type { MessagesService } from '../messages/messages.service';
 import type { ActivityAuthorizationService } from '../activities/activity-authorization.service';
-import type { CommunitiesService } from '../communities/communities.service';
 import type { BlocksService } from '../users/blocks.service';
 
 /**
@@ -41,7 +40,6 @@ const build = () => {
       'activityPolicy',
       touched,
     ),
-    communities: recorder<Stub<CommunitiesService>>('communities', touched),
     blocks: recorder<Stub<BlocksService>>('blocks', touched),
   });
   const socket = fakeSocket({

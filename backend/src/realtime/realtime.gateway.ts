@@ -36,7 +36,6 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { checkPresenceVisibilityBatch } from '../users/privacy.helper';
 import { RedisService } from '../redis/redis.service';
-import { CommunitiesService } from '../communities/communities.service';
 import {
   ACTIVE_AFFILIATION_SELECT,
   activeAffiliationCollegeId,
@@ -185,7 +184,6 @@ export class RealtimeGateway
     private readonly prisma: PrismaService,
     private readonly redisService: RedisService,
     private readonly activityPolicy: ActivityAuthorizationService,
-    private readonly communitiesService: CommunitiesService,
     // Presence fan-out runs through this gateway, so it needs the block list to
     // avoid pushing a status change across a block.
     private readonly blocksService: BlocksService,
@@ -265,7 +263,6 @@ export class RealtimeGateway
     this.presenceService.onStatusChange((userId, status, lastSeen) =>
       detach('presence status broadcast', async () => {
         await this.broadcastPresenceUpdate(userId, status, lastSeen);
-        void this.broadcastCommunityPresence(userId);
       }),
     );
 
@@ -303,41 +300,6 @@ export class RealtimeGateway
       },
       10 * 60 * 1000,
     );
-  }
-
-  /**
-   * Refreshes the "active now" figure for every community this user belongs
-   * to, whenever they come online or go offline.
-   *
-   * `onStatusChange` fires only on an actual transition — not on every 25s
-   * heartbeat — so this costs one membership lookup per genuine connect or
-   * disconnect, not per tick. The count itself is deliberately recomputed
-   * server-side rather than incremented on the client: a client that
-   * incremented locally would drift out of step after any missed event, a
-   * reconnect, or a second tab.
-   *
-   * Emitted to `community_<id>`, so only people actually looking at that
-   * community pay for the update.
-   */
-  private async broadcastCommunityPresence(userId: string) {
-    try {
-      const communityIds =
-        await this.communitiesService.getCommunityIdsForUser(userId);
-      if (communityIds.length === 0) return;
-
-      for (const communityId of communityIds) {
-        const room = `community_${communityId}`;
-        // Nobody is watching this community — recomputing would be wasted work.
-        if (!this.server?.sockets.adapter.rooms.get(room)) continue;
-        const online =
-          await this.communitiesService.countOnlineMembers(communityId);
-        this.server
-          .to(room)
-          .emit('community:presence', { communityId, online });
-      }
-    } catch {
-      this.logger.warn(`Failed to broadcast community presence for ${userId}`);
-    }
   }
 
   private async broadcastPresenceUpdate(
@@ -1773,21 +1735,6 @@ export class RealtimeGateway
     }
 
     void client.join(`community_${communityId}`);
-
-    // Answer with the count as it stands right now. The community payload the
-    // page rendered from can be up to 60s stale (it is Redis-cached), and
-    // presence moves far faster than that — so without this the viewer sits
-    // on an old number until somebody happens to connect or disconnect.
-    try {
-      const online =
-        await this.communitiesService.countOnlineMembers(communityId);
-      client.emit('community:presence', {
-        communityId: communityId,
-        online,
-      });
-    } catch {
-      // Non-fatal: the room join itself succeeded.
-    }
   }
 
   /**
