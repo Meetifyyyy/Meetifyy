@@ -488,10 +488,6 @@
   color: var(--color-danger);
 }
 
-.heroJoinBtn svg {
-  stroke: currentColor;
-}
-
 .notificationBtn {
   display: flex;
   align-items: center;

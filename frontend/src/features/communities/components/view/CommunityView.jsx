@@ -375,12 +375,7 @@ function HeroSection({ coverRef, comm, joined, joining, onToggleJoin, onCreatePo
                      first, and the server refuses the request either way. */
                   'Owner'
                 ) : joined ? (
-                  <>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                      <polyline points="20 6 9 17 4 12" />
-                    </svg>
-                    Joined
-                  </>
+                  'Joined'
                 ) : comm.isEligibleToJoin === false ? (
                   'Ineligible'
                 ) : comm.hasPendingRequest ? (
@@ -500,12 +495,7 @@ function HeroSection({ coverRef, comm, joined, joining, onToggleJoin, onCreatePo
               {isAdmin ? (
                 'Owner'
               ) : joined ? (
-                <>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <polyline points="20 6 9 17 4 12" />
-                  </svg>
-                  Joined
-                </>
+                'Joined'
               ) : (
                 'Join'
               )}
