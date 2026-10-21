@@ -16,27 +16,35 @@ const touchScreen = () =>
   }));
 
 describe('EventDateTimeFields', () => {
-  it('uses the platform pickers on a touch screen, with the same value shapes', () => {
+  it('shows the same calendar and slot list on a touch screen, without raising the keyboard', () => {
     touchScreen();
     const onDate = vi.fn();
     const onTime = vi.fn();
     render(
       <>
-        <EventDateField id="d" value="2026-10-23" min="2026-10-22" onChange={onDate} />
-        <EventTimeField id="t" value="09:30" onChange={onTime} />
+        <EventDateField id="d" value="" onChange={onDate} />
+        <EventTimeField id="t" value="" onChange={onTime} />
       </>,
     );
 
-    const date = document.getElementById('d');
-    const time = document.getElementById('t');
-    expect(date.type).toBe('date');
-    expect(date.min).toBe('2026-10-22');
-    expect(time.type).toBe('time');
+    // No native date/time inputs: the form looks the same as on desktop.
+    expect(document.querySelector('input[type="date"], input[type="time"]')).toBeNull();
 
-    fireEvent.change(date, { target: { value: '2026-10-25' } });
-    fireEvent.change(time, { target: { value: '18:15' } });
-    expect(onDate).toHaveBeenCalledWith('2026-10-25');
+    // The time box only opens the list: read-only, so no soft keyboard.
+    const time = document.getElementById('t');
+    expect(time.readOnly).toBe(true);
+    expect(time.getAttribute('inputmode')).toBe('none');
+    fireEvent.click(time);
+    fireEvent.click(screen.getByRole('option', { name: /6:15\s?PM/i }));
     expect(onTime).toHaveBeenCalledWith('18:15');
+
+    fireEvent.click(document.getElementById('d'));
+    expect(screen.getByRole('dialog', { name: 'Choose a date' })).toBeTruthy();
+  });
+
+  it('lets a mouse type a time', () => {
+    render(<EventTimeField id="t" value="" onChange={vi.fn()} />);
+    expect(document.getElementById('t').readOnly).toBe(false);
   });
 
   it('with a mouse, a typed time is committed on blur and junk is dropped', () => {

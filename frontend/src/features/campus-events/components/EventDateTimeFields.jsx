@@ -16,23 +16,16 @@ import {
 import styles from './EventDateTimeFields.module.css';
 
 /**
- * Date and time entry for the event form.
+ * Date and time entry for the event form: one UI on every device, so the form
+ * looks the same on the website and in the installed app.
  *
- * Two behaviours, chosen by the input device, because the two ends of the range
- * are served best by different controls:
+ * The date is a calendar popover. The time box takes typed text ("9", "9:30pm",
+ * "2130" all work) with a list of 15-minute slots as the shortcut, and an end
+ * time shows how long the event would last. On a touch screen the time box does
+ * not take typing (it is read-only), so tapping it opens the list without
+ * raising the keyboard over it.
  *
- *  - A mouse or trackpad (`pointer: fine`) gets the calendar-and-slots pattern
- *    that Google Calendar and Outlook settled on. The time box is typed first
- *    ("9", "9:30pm", "2130" all work) with a list of 15-minute slots as the
- *    shortcut, and an end time shows how long the event would last. The old
- *    picker only offered :00/:15/:30/:45 and could not take a typed time at all.
- *  - A touch screen (`pointer: coarse`) gets the platform's own pickers - the
- *    Material calendar and clock dialogs on Android, the wheels on iOS. They are
- *    what people already know on that device, take an exact minute, and cost
- *    nothing to maintain; a hand-built popover under a thumb and a keyboard is
- *    the worse option there.
- *
- * Values in and out are 'YYYY-MM-DD' and 'HH:MM', the same on both paths.
+ * Values in and out are 'YYYY-MM-DD' and 'HH:MM'.
  */
 
 const COARSE_QUERY = '(pointer: coarse)';
@@ -212,25 +205,11 @@ function CalendarPanel({ value, min, onPick, placement }) {
 }
 
 export function EventDateField({ id, value, onChange, min = '', placeholder = 'Select date' }) {
-  const coarse = useCoarsePointer();
   const [open, setOpen] = useState(false);
   const wrapRef = useRef(null);
   const close = useCallback(() => setOpen(false), []);
   useDismiss(wrapRef, open, close);
   const placement = usePopoverPlacement(open, wrapRef, CALENDAR_HEIGHT);
-
-  if (coarse) {
-    return (
-      <input
-        id={id}
-        type="date"
-        className={styles.native}
-        value={value}
-        min={min || undefined}
-        onChange={(e) => onChange(e.target.value)}
-      />
-    );
-  }
 
   const pick = (iso) => {
     onChange(iso);
@@ -335,19 +314,6 @@ export function EventTimeField({ id, value, onChange, after = '', placeholder = 
     }
   }, [open, active]);
 
-  if (coarse) {
-    return (
-      <input
-        id={id}
-        type="time"
-        step="60"
-        className={styles.native}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-      />
-    );
-  }
-
   const pick = (slot) => {
     onChange(slot);
     setText(null);
@@ -399,6 +365,9 @@ export function EventTimeField({ id, value, onChange, after = '', placeholder = 
         className={`${styles.trigger} ${styles.timeInput} ${open ? styles.triggerOpen : ''}`}
         placeholder={placeholder}
         value={shown}
+        // A touch screen picks from the list; the keyboard would only cover it.
+        readOnly={coarse}
+        inputMode={coarse ? 'none' : undefined}
         onFocus={(e) => {
           setOpen(true);
           e.target.select();
