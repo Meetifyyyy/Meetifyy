@@ -84,4 +84,14 @@ describe('useKeyboardRoom', () => {
     expect(el.scrollTo).toHaveBeenCalledWith({ top: 0, behavior: 'instant' });
     expect(room()).toBe('0px');
   });
+
+  it('gives room at once to a scroller that mounts while the keyboard is already up', () => {
+    // A form that moves on to its next step keeps the keyboard; no new keyboard
+    // event comes to say how much of the new scroller it covers.
+    cleanup();
+    document.documentElement.style.setProperty('--kb-inset', '300px');
+    const { getByTestId } = render(<Scroller />);
+    expect(getByTestId('scroller').style.getPropertyValue('--kb-room')).toBe('300px');
+    document.documentElement.style.removeProperty('--kb-inset');
+  });
 });

@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { IS_MOBILE_BUILD } from '@config';
 import { ensureFocusedVisible } from '@shared/utils/keyboardFocus';
 import { KEYBOARD_OVERLAYS_PAGE } from '@shared/utils/keyboardOverlay';
+import { findKeyboardSheet, sheetEdges, sheetTravel, riseSheet } from '@shared/utils/keyboardSheetRise';
 
 /**
  * Tracks the on-screen keyboard and publishes it to CSS on <html>:
@@ -65,6 +66,13 @@ import { KEYBOARD_OVERLAYS_PAGE } from '@shared/utils/keyboardOverlay';
  * another listener must not read --kb-inset in the same task: read
  * `event.detail`, or wait a frame. The focused field is checked a frame
  * later still (ensureFocusedVisible), once layout has the new room.
+ *
+ * A dialog or sheet that makes room by LAYOUT (padding on its overlay, a smaller
+ * max-height, both reading --kb-inset) would land in its final place in that
+ * same frame, ahead of the keyboard. The hook therefore measures the overlay's
+ * sheet around the write and slides it from where it was
+ * (utils/keyboardSheetRise): every such modal slides with the keyboard without
+ * any rule of its own.
  *
  * Consumers lift with a compositor-only transform on that duration and curve:
  *   transform: translate3d(0, calc(-1 * var(--kb-inset, 0px)), 0);
@@ -371,7 +379,15 @@ function installOverlay(root) {
     }, 800);
   };
   const onFocusIn = () => {
-    if (coarse && isTextFieldFocused()) beginTextEntry();
+    if (!isTextFieldFocused()) return;
+    if (coarse) beginTextEntry();
+    if (keyboardSeen && lastInset > 0) {
+      cancelAnimationFrame(focusFrame);
+      focusFrame = requestAnimationFrame(() => {
+        focusFrame = 0;
+        ensureFocusedVisible({ inset: lastInset, duration: lastDuration });
+      });
+    }
   };
   const onTouchStart = (e) => {
     if (!coarse || keyboardSeen) return;
@@ -398,6 +414,12 @@ function installOverlay(root) {
       focusFrame = 0;
     }
 
+    // A dialog or sheet that makes room for the keyboard by layout would jump
+    // to its final place in the frame the inset is written. Measured here, before
+    // that write, and slid from where it was afterwards (keyboardSheetRise).
+    const sheet = visible && inset !== lastInset ? findKeyboardSheet() : null;
+    const sheetBefore = sheet ? sheetEdges(sheet) : null;
+
     // The one write per transition. The duration first, in the same style
     // pass as the inset, so the transition that the inset starts uses it.
     if (duration !== lastDuration) {
@@ -415,6 +437,9 @@ function installOverlay(root) {
     if (visible !== root.hasAttribute('data-keyboard-open')) {
       if (visible) root.setAttribute('data-keyboard-open', '');
       else root.removeAttribute('data-keyboard-open');
+    }
+    if (sheet && sheetBefore) {
+      riseSheet(sheet, sheetTravel(sheetBefore, sheetEdges(sheet)), { duration, delay });
     }
 
     if (visible) {

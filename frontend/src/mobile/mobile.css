@@ -306,3 +306,11 @@ body {
   height: calc(100 * var(--app-vh, 1vh));
   min-height: calc(100 * var(--app-vh, 1vh));
 }
+
+/* Links and images are not draggable in the app. Holding a link otherwise lifts
+   a box showing its text and address (the WebView's link drag); see
+   installLinkPressGuard.js, which cancels the same drag in script. */
+a,
+img {
+  -webkit-user-drag: none;
+}

@@ -144,6 +144,31 @@ describe('useKeyboardInset — Android overlay', () => {
     expect(root.hasAttribute('data-text-entry')).toBe(false);
   });
 
+  it('slides a sheet that layout moved for the keyboard, from where it was', () => {
+    // A bottom sheet whose overlay pads by --kb-inset: standing on the bottom
+    // of the screen before the write, 280px higher after it.
+    const sheet = document.createElement('div');
+    sheet.style.position = 'fixed';
+    const field = document.createElement('input');
+    sheet.appendChild(field);
+    document.body.appendChild(sheet);
+    sheet.animate = vi.fn(() => ({}));
+    const edges = vi.spyOn(sheet, 'getBoundingClientRect');
+    const before = { top: 500, bottom: window.innerHeight, width: 300, height: 300 };
+    // Once to decide it is not a full-screen scrim, once to measure it.
+    edges.mockReturnValueOnce(before).mockReturnValueOnce(before);
+    edges.mockReturnValue({ top: 220, bottom: window.innerHeight - 280, width: 300, height: 300 });
+
+    render(<Probe />);
+    field.focus();
+    ime({ visible: true, height: 280, duration: 250 });
+
+    const [frames, options] = sheet.animate.mock.calls[0];
+    expect(frames.translate).toEqual(['0 280px', '0 0']);
+    expect(options.duration).toBe(250);
+    sheet.remove();
+  });
+
   it('ignores resize events for the keyboard (there are none to measure)', () => {
     render(<Probe />);
     window.dispatchEvent(new Event('resize'));

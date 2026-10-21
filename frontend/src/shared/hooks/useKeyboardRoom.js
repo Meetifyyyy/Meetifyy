@@ -91,6 +91,8 @@ export function useKeyboardRoom(ref) {
       el.scrollTo({ top: resting, behavior: 'smooth' });
     };
 
+    const initialInset = parseFloat(document.documentElement.style.getPropertyValue('--kb-inset')) || 0;
+    if (initialInset > 0) onIme({ detail: { visible: true, height: initialInset } });
     window.addEventListener('meetifyy:ime', onIme);
     return () => {
       window.removeEventListener('meetifyy:ime', onIme);

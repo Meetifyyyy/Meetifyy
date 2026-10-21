@@ -60,6 +60,7 @@ import { createCapacitorPush } from '../platform/capacitor/push';
 import { setPushService } from '../shared/push/pushPlatform';
 import DeepLinkNavigator from './navigation/DeepLinkNavigator';
 import { installBackgroundSocket } from './backgroundSocket';
+import { installLinkPressGuard } from './installLinkPressGuard';
 import { config } from '../config';
 import { installCapacitorSentry } from '../platform/capacitor/sentry';
 
@@ -201,6 +202,9 @@ warmSignedInLanding(queryClient);
 
 // Release the realtime socket while the app sits in the background; see the module.
 installBackgroundSocket();
+
+// Holding a link lifts a draggable preview box in the WebView; the app has none.
+installLinkPressGuard();
 
 /**
  * Load Changa once the first screen is up. Only Profile uses it (the name and
