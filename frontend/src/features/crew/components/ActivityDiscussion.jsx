@@ -13,6 +13,42 @@ import styles from './ActivityDiscussion.module.css';
 const DISCUSSION_MAX_LENGTH = 200;
 
 /**
+ * One message. Memoised on purpose: the composer's draft lives in the parent,
+ * so without this every keystroke re-rendered (and re-ran `timeAgo` and Avatar
+ * for) the whole loaded history. Props are a message object, whose identity
+ * only changes when that message does, and a boolean.
+ */
+const MessageRow = memo(function MessageRow({ message: m, isMe }) {
+  return (
+    <div className={`${styles.msgRow} ${isMe ? styles.msgRowMe : ''}`}>
+      {!isMe && (
+        <Avatar
+          src={m.user?.avatar}
+          name={m.user?.displayName || m.user?.username}
+          size="28px"
+        />
+      )}
+      <div className={styles.msgBody}>
+        <div className={styles.msgMeta}>
+          <span className={styles.msgName}>
+            {isMe ? 'You' : m.user?.displayName || m.user?.username || 'Member'}
+          </span>
+          <CollegeRepresentativeBadge isCampusRep={m.user?.isCampusRep} user={m.user} size="sm" />
+          <span className={styles.msgTime}>{timeAgo(m.createdAt)}</span>
+        </div>
+        <div
+          className={`${styles.bubble} ${isMe ? styles.bubbleMe : ''} ${
+            m.pending ? styles.bubblePending : ''
+          }`}
+        >
+          {m.text}
+        </div>
+      </div>
+    </div>
+  );
+});
+
+/**
  * Core discussion panel — a scrollable message area plus an input.
  *
  * Scroll contract:
@@ -30,6 +66,7 @@ export const ActivityDiscussion = memo(function ActivityDiscussion({
   enabled = true,
 }) {
   const { currentUser } = useAuth();
+  const myId = String(currentUser?.id);
   const {
     messages,
     isLoading,
@@ -173,8 +210,11 @@ export const ActivityDiscussion = memo(function ActivityDiscussion({
           </button>
         )}
 
-        {/* While the history loads the area stays empty: no placeholder rows. */}
-        {isLoading ? null : isError ? (
+        {isLoading ? (
+          <div className={styles.loadingState}>
+            <span className="spinner" role="status" aria-label="Loading discussion" />
+          </div>
+        ) : isError ? (
           <div className={styles.stateMsg}>Couldn't load the discussion.</div>
         ) : messages.length === 0 ? (
           <div className={styles.emptyState}>
@@ -185,45 +225,13 @@ export const ActivityDiscussion = memo(function ActivityDiscussion({
             </p>
           </div>
         ) : (
-          messages.map((m) => {
-            const isMe = String(m.userId) === String(currentUser?.id);
-            return (
-              <div
-                key={m.id}
-                className={`${styles.msgRow} ${isMe ? styles.msgRowMe : ''}`}
-              >
-                {!isMe && (
-                  <Avatar
-                    src={m.user?.avatar}
-                    name={m.user?.displayName || m.user?.username}
-                    size="28px"
-                  />
-                )}
-                <div className={styles.msgBody}>
-                  <div className={styles.msgMeta}>
-                    <span className={styles.msgName}>
-                      {isMe
-                        ? 'You'
-                        : m.user?.displayName ||
-                          m.user?.username ||
-                          'Member'}
-                    </span>
-                    <CollegeRepresentativeBadge isCampusRep={m.user?.isCampusRep} user={m.user} size="sm" />
-                    <span className={styles.msgTime}>
-                      {timeAgo(m.createdAt)}
-                    </span>
-                  </div>
-                  <div
-                    className={`${styles.bubble} ${
-                      isMe ? styles.bubbleMe : ''
-                    } ${m.pending ? styles.bubblePending : ''}`}
-                  >
-                    {m.text}
-                  </div>
-                </div>
-              </div>
-            );
-          })
+          messages.map((m) => (
+            <MessageRow
+              key={m.id}
+              message={m}
+              isMe={String(m.userId) === myId}
+            />
+          ))
         )}
 
         {/* Zero-height bottom sentinel — only for measuring, never scrolled-to */}

@@ -26,10 +26,16 @@ export class ActivityDiscussionController {
   ) {
     const parsed = parseInt(limit || '', 10);
     const limitNum = !isNaN(parsed) && parsed > 0 ? parsed : 20;
+    // A cursor is a message id. Anything longer than an id is not one, and
+    // would only reach the database as a lookup that cannot match.
+    const cursor =
+      typeof before === 'string' && before.length > 0 && before.length <= 64
+        ? before
+        : undefined;
     return this.discussionService.getMessages(
       activityId,
       user?.id,
-      before,
+      cursor,
       limitNum,
     );
   }

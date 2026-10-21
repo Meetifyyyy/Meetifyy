@@ -30,13 +30,18 @@ afterEach(cleanup);
 
 const composer = () => screen.getByPlaceholderText('Write a message…');
 
-it('shows nothing in the message area while the history loads', () => {
+it('shows a spinner, not placeholder rows, while the history loads', () => {
   mocks.discussion.mockReturnValue({ ...mocks.discussion(), isLoading: true });
-  const { container } = render(<ActivityDiscussion activityId="a" />);
-  // No placeholder rows, no loading text, and not the empty state either.
-  expect(container.querySelector('[aria-label="Loading discussion"]')).toBeNull();
+  render(<ActivityDiscussion activityId="a" />);
+  expect(screen.getByRole('status', { name: 'Loading discussion' })).toBeTruthy();
+  // Neither the empty state nor an error while it is still loading.
   expect(screen.queryByText('No messages yet')).toBeNull();
-  expect(screen.queryByText(/Loading/)).toBeNull();
+  expect(screen.queryByText(/Couldn't load/)).toBeNull();
+});
+
+it('drops the spinner once the history has loaded', () => {
+  render(<ActivityDiscussion activityId="a" />);
+  expect(screen.queryByRole('status', { name: 'Loading discussion' })).toBeNull();
 });
 
 it('caps the composer at 200 characters and says so only at the limit', () => {

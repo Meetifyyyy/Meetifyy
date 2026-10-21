@@ -42,6 +42,7 @@ export function useActivityDiscussion(activityId, { enabled = true } = {}) {
     getNextPageParam: (lastPage) => (lastPage?.hasMore ? lastPage.nextCursor : undefined),
     enabled: Boolean(activityId) && enabled,
     staleTime: 15_000,
+    refetchOnMount: 'always',
     refetchOnWindowFocus: false,
   });
 
@@ -52,20 +53,46 @@ export function useActivityDiscussion(activityId, { enabled = true } = {}) {
     return [...pages].reverse().flatMap((p) => p?.messages || []);
   }, [data]);
 
-  // Merge history + live, de-dupe by id (server id wins over optimistic tempId),
-  // and keep chronological order.
+  // Merge history + live and de-dupe by id. History arrives already ordered, so
+  // the common case (live messages are newer) is a plain concatenation; the sort
+  // only runs if something is out of order, e.g. a client clock behind the
+  // server's. Timestamps are parsed once, not on every comparison.
   const messages = useMemo(() => {
-    const byId = new Map();
-    for (const m of historyMessages) byId.set(m.id, m);
+    const merged = historyMessages.slice();
+    const seen = new Set(merged.map((m) => m.id));
     for (const m of liveMessages) {
-      // Drop an optimistic entry once its real (server) counterpart exists.
-      if (m.tempId && byId.has(m.id)) continue;
-      byId.set(m.id, m);
+      // A live entry whose real id is already in history is the same message.
+      if (seen.has(m.id)) continue;
+      seen.add(m.id);
+      merged.push(m);
     }
-    return Array.from(byId.values()).sort(
-      (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-    );
+    const times = new Map(merged.map((m) => [m, Date.parse(m.createdAt)]));
+    let ordered = true;
+    for (let i = 1; i < merged.length; i += 1) {
+      if (times.get(merged[i]) < times.get(merged[i - 1])) {
+        ordered = false;
+        break;
+      }
+    }
+    return ordered ? merged : merged.sort((a, b) => times.get(a) - times.get(b));
   }, [historyMessages, liveMessages]);
+
+  // Leaving keeps only the newest page in the cache. React Query refetches
+  // EVERY loaded page of an infinite query, so a thread scrolled back through
+  // five pages would cost five requests the next time it is opened or
+  // invalidated. The live buffer is local state and is gone after unmount, so
+  // the newest page is also refetched on mount (below) to pick up what arrived
+  // while the panel was closed.
+  useEffect(
+    () => () => {
+      queryClient.setQueryData(['activity-discussion', activityId], (cached) =>
+        cached && cached.pages.length > 1
+          ? { pages: cached.pages.slice(0, 1), pageParams: cached.pageParams.slice(0, 1) }
+          : cached,
+      );
+    },
+    [activityId, queryClient],
+  );
 
   // ─── Realtime: join room + listen for new messages ──────────────────────────
   useEffect(() => {

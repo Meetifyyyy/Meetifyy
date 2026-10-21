@@ -177,32 +177,40 @@ export class ActivityDiscussionService {
     before?: string,
     limit: number = DEFAULT_PAGE_SIZE,
   ) {
-    await this.assertCanAccessDiscussion(activityId, userId);
     const take = Math.min(Math.max(limit, 1), MAX_PAGE_SIZE);
 
-    let cursorFilter: Prisma.ActivityDiscussionMessageWhereInput = {};
-    if (before) {
-      const cursorMsg = await this.prisma.activityDiscussionMessage.findUnique({
-        where: { id: before },
-        select: { createdAt: true, id: true },
-      });
-      if (cursorMsg) {
-        cursorFilter = {
-          OR: [
-            { createdAt: { lt: cursorMsg.createdAt } },
-            { createdAt: cursorMsg.createdAt, id: { lt: cursorMsg.id } },
-          ],
-        };
-      }
-    }
+    // The access check, the cursor row and the viewer's block list are
+    // independent, so they run together rather than one after another: this is
+    // called for every page of a thread. Nothing from the last two is returned
+    // unless the first succeeds.
+    const [, cursorMsg, blockedWhere] = await Promise.all([
+      this.assertCanAccessDiscussion(activityId, userId),
+      before
+        ? // Scoped to this activity: an id from another thread is not a cursor
+          // into this one, and must not be able to probe other threads' timing.
+          this.prisma.activityDiscussionMessage.findFirst({
+            where: { id: before, activityId },
+            select: { createdAt: true, id: true },
+          })
+        : Promise.resolve(null),
+      // Messages from people the viewer is blocked with (either direction) are
+      // left out in the query, so the keyset page size stays honest.
+      this.blocksService.injectBlockFilter(userId, { activityId }, 'userId'),
+    ]);
 
-    // Messages from people the viewer is blocked with (either direction) are
-    // left out in the query, so the keyset page size stays honest.
-    const where = await this.blocksService.injectBlockFilter(
-      userId,
-      { activityId, ...cursorFilter },
-      'userId',
-    );
+    const where: Prisma.ActivityDiscussionMessageWhereInput = cursorMsg
+      ? {
+          AND: [
+            blockedWhere,
+            {
+              OR: [
+                { createdAt: { lt: cursorMsg.createdAt } },
+                { createdAt: cursorMsg.createdAt, id: { lt: cursorMsg.id } },
+              ],
+            },
+          ],
+        }
+      : blockedWhere;
 
     const rows = await this.prisma.activityDiscussionMessage.findMany({
       where,

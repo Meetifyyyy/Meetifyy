@@ -180,6 +180,20 @@
 .bubblePending { opacity: 0.6; }
 
 /* ── States ────────────────────────────────────────────────────── */
+.loadingState {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 96px;
+}
+
+.loadingState :global(.spinner) {
+  --spinner-size: 24px;
+  --spinner-track-color: rgba(255, 255, 255, 0.2);
+  --spinner-color: rgba(255, 255, 255, 0.85);
+}
+
 .stateMsg {
   flex: 1;
   display: flex;
