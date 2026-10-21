@@ -113,14 +113,6 @@ export default function ActivityDetailSkeleton() {
                   </div>
                 ))}
               </div>
-
-              {/* Discussion: the same 220px the page reserves for it while
-                  its code loads, so the hand-over does not move anything. */}
-              <Skeleton
-                type="rect"
-                height="220px"
-                style={{ borderRadius: 18, display: 'block', marginTop: '1rem' }}
-              />
             </div>
           </div>
         </div>

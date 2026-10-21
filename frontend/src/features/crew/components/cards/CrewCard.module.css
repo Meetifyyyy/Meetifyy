@@ -29,13 +29,13 @@
 }
 
 @media (max-width: 768px) {
-  .card:active {
+  .card:active:not(:has(button:active)) {
     transform: scale(0.98) !important;
   }
 }
 
 @media (max-width: 768px) and (prefers-reduced-motion: reduce) {
-  .card:active {
+  .card:active:not(:has(button:active)) {
     transform: none !important;
   }
 }
@@ -582,23 +582,3 @@
   }
 }
 
-/* College tag — marks a card as belonging to one college's audience. Shown on
-   the College section and the Campus page, where "which college is this?" is
-   the question the surface exists to answer. */
-.collegeTag {
-  display: inline-block;
-  margin-left: 0.45rem;
-  padding: 0.1rem 0.45rem;
-  border-radius: var(--radius-full);
-  background: rgba(99, 102, 241, 0.12);
-  border: 1px solid rgba(99, 102, 241, 0.28);
-  color: var(--color-primary, #4f46e5);
-  font-size: 0.68rem;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-  vertical-align: middle;
-  max-width: 12rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}

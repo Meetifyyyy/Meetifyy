@@ -490,7 +490,11 @@
   justify-content: center;
   gap: 12px;
   pointer-events: none;
-  z-index: 99999;
+  /* Portalled to <body>, so it competes with the whole page: above the phone
+     layout's fixed page root (9999), but below every dialog on top of it. The
+     share sheet is 20000 and ConfirmModal 1000000, so those cover this bar
+     instead of the other way round. */
+  z-index: 10000;
   background: transparent;
   padding: 1.5rem 1.5rem 0;
   width: auto;

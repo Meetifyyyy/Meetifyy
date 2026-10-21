@@ -1,233 +1,217 @@
-import { useState, useEffect } from 'react';
-import { selectableUsers } from '@shared/lib/conversationTargets';
+/**
+ * The invite picker for an activity, used both on the activity page and right
+ * after one is created.
+ *
+ * It is the share sheet's frame (bottom sheet on phones, centred dialog on
+ * desktop; the same handle, header, search and avatar grid, styled by
+ * ShareSheet.module.css) with a different job: pick people, then one Invite
+ * button. There is no app row and no copy-link, since an invite goes to a
+ * person, not out of the app.
+ *
+ * Who can be picked is the viewer's following list plus their one-to-one chats
+ * (see useInvitablePeople). When `activityId` is given, people already in the
+ * activity, already invited, or in the decline cool-down are shown but cannot
+ * be selected; that status is host-only information, so the picker waits for
+ * it rather than let someone be picked on a guess.
+ */
+import { useCallback, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useQuery, keepPreviousData } from '@tanstack/react-query';
-import { usersApi, activitiesApi } from '@shared/api/apiClient';
-import { useAuth } from '@shared/context/AuthContext';
+import { useQuery } from '@tanstack/react-query';
+import { activitiesApi } from '@shared/api/apiClient';
+import ShareModalAvatar from '@shared/components/avatar/ShareModalAvatar';
+import { Check } from '@shared/components/icons';
+import { useInvitablePeople } from '@shared/hooks/useInvitablePeople';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 import { useScrollLock } from '@shared/hooks/useScrollLock';
-import ShareModalAvatar from '../avatar/ShareModalAvatar';
-import styles from './InviteFriendsModal.module.css';
-import { Search, X, Check } from '@shared/components/icons';
-import { useDebounce } from '@shared/hooks/useDebounce';
-import RowSkeleton from '../skeletons/RowSkeleton';
+import { useSheetDrag } from '@shared/hooks/useSheetDrag';
+import styles from '../share/ShareSheet.module.css';
 
-export default function InviteFriendsModal({
-  activityId,
-  initialSelectedIds = [],
-  onSelectUsers,
-  onSendInvites,
-  onClose,
-}) {
-  const { currentUser } = useAuth();
-  const [searchQuery, setSearchQuery] = useState('');
-  // One request per pause in typing rather than one per keystroke. The match
-  // itself happens in the database (`/api/users/connections?q=`), across every
-  // eligible account and before the limit, so a friend outside the first page
-  // is still findable by name or handle.
-  const debouncedSearchQuery = useDebounce(searchQuery.trim(), 250);
-  const [selectedIds, setSelectedIds] = useState(initialSelectedIds);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+/** What to show under a person who cannot be picked, by invitation status. */
+const UNAVAILABLE_LABEL = {
+  MEMBER: 'Joined',
+  PENDING: 'Invited',
+  COOLDOWN: 'Declined',
+};
 
-  // Back dismisses this dialog rather than navigating the page behind it.
-  useOverlayBack(true, onClose);
-  // Background stays put while this dialog is open. Counted, so a
-  // dialog opened on top of another cannot unlock the page when it closes.
-  useScrollLock(true);
+/**
+ * @param {string} [props.activityId] Omit for an activity that is still being
+ *   created: nobody is in it yet but the host.
+ * @param {(userIds: string[]) => Promise<unknown>} props.onSendInvites Rejects
+ *   when the invitations could not be sent; the sheet then stays open with the
+ *   selection intact.
+ * @param {() => void} props.onClose
+ */
+export default function InviteFriendsModal({ activityId, onSendInvites, onClose }) {
+  const [search, setSearch] = useState('');
+  const [selected, setSelected] = useState([]);
+  const [sending, setSending] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const inFlight = useRef(false);
 
-  useEffect(() => {
-    const handleKeyDown = (e) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onClose]);
-
-  // Fetch candidate connections to invite using fast single endpoint
-  const { data: friendsList = [], isLoading: isLoadingFriends } = useQuery({
-    queryKey: ['user-connections-candidate', debouncedSearchQuery],
-    queryFn: async () => {
-      const users = selectableUsers(
-        await usersApi.getConnections(debouncedSearchQuery, 50).catch(() => [])
-      );
-      return (users || []).filter(
-        (u) => u && u.id && String(u.id) !== String(currentUser?.id)
-      );
-    },
-    staleTime: 30_000,
-    // Keeps the previous term's rows on screen while the next request is in
-    // flight, so the list does not blink empty between keystrokes.
-    placeholderData: keepPreviousData,
-  });
-
-  // Fetch invitation statuses for existing activity if activityId is provided
-  const { data: invStatuses = {} } = useQuery({
+  const people = useInvitablePeople(search);
+  const statuses = useQuery({
     queryKey: ['activity-invitation-statuses', activityId],
     queryFn: () => activitiesApi.getInvitationStatuses(activityId),
-    enabled: !!activityId,
-    staleTime: 10_000,
+    enabled: Boolean(activityId),
+    // Re-read on every opening: someone may have joined since the last one.
+    staleTime: 0,
   });
 
-  const filteredFriends = friendsList;
+  // Closing while the invitations are going out would drop the result.
+  const close = useCallback(() => {
+    if (!inFlight.current) onClose();
+  }, [onClose]);
+  useOverlayBack(true, close);
+  useScrollLock(true);
+  const sheetRef = useSheetDrag(close);
 
-  const toggleSelect = (userId, disabled) => {
-    if (disabled) return;
-    setSelectedIds((prev) =>
-      prev.includes(userId)
-        ? prev.filter((id) => id !== userId)
-        : [...prev, userId]
-    );
+  const statusOf = (id) => {
+    const entry = statuses.data?.[id];
+    return typeof entry === 'string' ? entry : entry?.status;
+  };
+  const isUnavailable = (id) => Boolean(UNAVAILABLE_LABEL[statusOf(id)]);
+  const statusUnknown = Boolean(activityId) && (statuses.isPending || statuses.isError);
+
+  // A status can arrive after someone was picked; they drop out of the pick.
+  const picked = selected.filter((id) => !isUnavailable(id));
+
+  const toggle = (id) => {
+    setFailed(false);
+    setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   };
 
-  const handleDone = async () => {
-    if (selectedIds.length === 0) return;
-    setIsSubmitting(true);
+  const send = async () => {
+    if (inFlight.current || picked.length === 0) return;
+    inFlight.current = true;
+    setSending(true);
+    setFailed(false);
     try {
-      if (activityId && onSendInvites) {
-        await onSendInvites(selectedIds);
-      } else if (onSelectUsers) {
-        onSelectUsers(selectedIds, filteredFriends.filter(f => selectedIds.includes(f.id)));
-      }
+      await onSendInvites(picked);
+      inFlight.current = false;
       onClose();
-    } catch (err) {
-      console.error('Failed to invite friends', err);
-    } finally {
-      setIsSubmitting(false);
+    } catch {
+      inFlight.current = false;
+      setSending(false);
+      setFailed(true);
+      if (activityId) statuses.refetch();
     }
   };
 
-  const content = (
+  const term = search.trim();
+
+  return createPortal(
     <div
-      className={styles.overlay}
+      className={styles.backdrop}
       onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
+        e.stopPropagation();
+        close();
       }}
     >
-      <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
-        <div className={styles.notch} />
+      <div
+        ref={sheetRef}
+        className={styles.sheet}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="invite-sheet-title"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className={styles.header}>
-          <div className={styles.titleGroup}>
-            <h3 className={styles.title}>Invite Friends</h3>
-            <span className={styles.subtitle}>Select friends to invite to this activity</span>
-          </div>
-          <button onClick={onClose} className={styles.closeBtn} aria-label="Close modal">
-            <X size={18} />
-          </button>
-        </div>
-
-        <div className={styles.searchWrap}>
-          <div className={styles.searchBox}>
-            <Search size={16} className={styles.searchIcon} />
-            <input
-              type="text"
-              className={styles.searchInput}
-              placeholder="Search friends..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
-            {searchQuery && (
-              <button
-                onClick={() => setSearchQuery('')}
-                style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.4)', cursor: 'pointer' }}
-              >
-                <X size={14} />
-              </button>
-            )}
+          <div className="sheet-handle" data-sheet-handle aria-hidden="true" />
+          <div className={styles.headerRow}>
+            <h2 id="invite-sheet-title" className={styles.title}>Invite friends</h2>
+            <button type="button" className={styles.closeBtn} onClick={close} aria-label="Close">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
           </div>
         </div>
 
         <div className={styles.body}>
-          {isLoadingFriends ? (
-            // This sheet is always dark, whatever the app theme, so the
-            // skeleton is pinned to its dark palette.
-            <div data-theme="dark">
-              <RowSkeleton
-                count={5}
-                avatarSize="48px"
-                rowStyle={{
-                  gap: '0.85rem',
-                  padding: '0.75rem',
-                  borderRadius: '12px',
-                  background: 'rgba(255, 255, 255, 0.03)',
-                  border: '1px solid rgba(255, 255, 255, 0.05)',
-                  marginBottom: '0.5rem',
-                }}
-                label="Loading friends"
-              />
-            </div>
-          ) : filteredFriends.length === 0 ? (
-            <div className={styles.emptyState}>
-              {searchQuery ? 'No friends match your search.' : 'You are not following any friends yet.'}
-            </div>
-          ) : (
-            filteredFriends.map((friend) => {
-              const userId = friend.id;
-              const userStatusInfo = invStatuses[userId] || (typeof invStatuses[userId] === 'string' ? { status: invStatuses[userId] } : null);
-              const status = userStatusInfo?.status;
+          <label className={styles.search}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+              <circle cx="11" cy="11" r="7" />
+              <line x1="20" y1="20" x2="16.5" y2="16.5" />
+            </svg>
+            <input
+              type="text"
+              placeholder="Search"
+              aria-label="Search people"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </label>
 
-              let isMember = status === 'MEMBER';
-              let isPending = status === 'PENDING';
-              let isCooldown = status === 'COOLDOWN';
-              let cooldownMins = userStatusInfo?.remainingMins;
-
-              const isDisabled = isMember || isPending || isCooldown;
-              const isSelected = selectedIds.includes(userId);
-
+          <div className={styles.grid} role="listbox" aria-multiselectable="true" aria-label="Invite">
+            {people.people.map((user) => {
+              const isPicked = picked.includes(user.id);
+              const blocked = isUnavailable(user.id);
               return (
-                <div
-                  key={userId}
-                  className={`${styles.userRow} ${isDisabled ? styles.disabled : ''} ${
-                    isSelected ? styles.selected : ''
-                  }`}
-                  onClick={() => toggleSelect(userId, isDisabled)}
+                <button
+                  key={user.id}
+                  type="button"
+                  role="option"
+                  aria-selected={isPicked}
+                  className={`${styles.person} ${isPicked ? styles.picked : ''} ${blocked ? styles.personDisabled : ''}`}
+                  disabled={blocked || statusUnknown || sending}
+                  onClick={() => toggle(user.id)}
                 >
-                  <div className={styles.userInfo}>
-                    <div className={styles.userAvatar}>
-                      <ShareModalAvatar
-                        conv={friend}
-                        size="48px"
-                      />
-                    </div>
-                    <div className={styles.userDetails}>
-                      <span className={styles.userName}>{friend.displayName || friend.username}</span>
-                      <span className={styles.userUsername}>@{friend.username}</span>
-                    </div>
-                  </div>
-
-                  {isMember ? (
-                    <span className={`${styles.statusBadge} ${styles.badgeMember}`}>Joined</span>
-                  ) : isPending ? (
-                    <span className={`${styles.statusBadge} ${styles.badgePending}`}>Invited</span>
-                  ) : isCooldown ? (
-                    <span className={`${styles.statusBadge} ${styles.badgeCooldown}`}>
-                      Declined ({cooldownMins || 240}m)
-                    </span>
-                  ) : (
-                    <div className={`${styles.checkbox} ${isSelected ? styles.checked : ''}`}>
-                      {isSelected && <Check size={14} />}
-                    </div>
-                  )}
-                </div>
+                  <span className={styles.avatarWrap}>
+                    <ShareModalAvatar conv={user} size="60px" />
+                    {isPicked && (
+                      <span className={styles.check} aria-hidden="true">
+                        <Check size={13} strokeWidth={3} />
+                      </span>
+                    )}
+                  </span>
+                  <span className={styles.personName}>{user.displayName || user.username}</span>
+                  {blocked && <span className={styles.personState}>{UNAVAILABLE_LABEL[statusOf(user.id)]}</span>}
+                </button>
               );
-            })
+            })}
+
+            {people.isLoading && <p className={styles.empty} role="status">Loading…</p>}
+            {people.isError && (
+              <p className={styles.empty} role="alert">
+                Couldn’t load people.{' '}
+                <button type="button" className={styles.linkBtn} onClick={() => people.refetch()}>Retry</button>
+              </p>
+            )}
+            {!people.isLoading && !people.isError && people.people.length === 0 && (
+              <p className={styles.empty}>{term ? 'No matching people.' : 'People you follow or chat with appear here.'}</p>
+            )}
+            {people.hasMore && (
+              <button
+                type="button"
+                className={`${styles.linkBtn} ${styles.more}`}
+                disabled={people.isLoadingMore}
+                onClick={() => people.loadMore()}
+              >
+                {people.isLoadingMore ? 'Loading…' : 'Show more'}
+              </button>
+            )}
+          </div>
+
+          {(picked.length > 0 || failed || (activityId && statuses.isError)) && (
+            <div className={styles.footer}>
+              {activityId && statuses.isError && (
+                <p className={styles.notice} role="alert">
+                  Couldn’t check who is already in.{' '}
+                  <button type="button" className={styles.linkBtn} onClick={() => statuses.refetch()}>Retry</button>
+                </p>
+              )}
+              {failed && <p className={styles.notice} role="alert">Couldn’t send the invitations. Try again.</p>}
+              {picked.length > 0 && (
+                <button type="button" className={styles.sendBtn} onClick={send} disabled={sending}>
+                  {sending ? 'Inviting…' : picked.length === 1 ? 'Invite' : `Invite ${picked.length}`}
+                </button>
+              )}
+            </div>
           )}
         </div>
-
-        <div className={styles.footer}>
-          <span className={styles.selectedCount}>
-            {selectedIds.length} {selectedIds.length === 1 ? 'friend' : 'friends'} selected
-          </span>
-          <button
-            className={styles.sendBtn}
-            onClick={handleDone}
-            disabled={selectedIds.length === 0 || isSubmitting}
-          >
-            {isSubmitting ? 'Sending...' : 'Send Invitations'}
-          </button>
-        </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
-
-  return typeof document !== 'undefined' ? createPortal(content, document.body) : content;
 }

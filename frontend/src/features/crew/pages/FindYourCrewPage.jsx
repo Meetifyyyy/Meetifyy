@@ -1,9 +1,10 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
+import PullToRefresh from '@shared/components/PullToRefresh';
 import { ChevronLeft, ChevronRight } from '@shared/components/icons';
 import { useAuth } from '@shared/context/AuthContext';
-import { useActivities, useCrewDiscover, useSavedActivitiesQuery, useMyActivitiesQuery } from '@shared/hooks/useCrew';
+import { CREW_KEYS, useActivities, useCrewDiscover, useSavedActivitiesQuery, useMyActivitiesQuery } from '@shared/hooks/useCrew';
 import { useDebounce } from '@shared/hooks/useDebounce';
 import { useUrlState } from '@shared/hooks/useUrlState';
 import { prefetchActivity } from '@shared/hooks/prefetch';
@@ -325,6 +326,15 @@ export default function FindYourCrewPage() {
     prefetchActivity(queryClient, activityId);
   }, [queryClient]);
 
+  // Every Crew list shares the ['activities'] prefix (discover, the per-scope
+  // feeds, saved, mine). Invalidate, not reset: reset drops the cached lists,
+  // the page falls back to its skeleton and the pulled content is replaced
+  // mid-gesture, which reads as a snap.
+  const handleRefresh = useCallback(
+    () => queryClient.invalidateQueries({ queryKey: CREW_KEYS.all }),
+    [queryClient],
+  );
+
   const renderCards = (list) => list.map(a => (
     <CrewCard
       key={a.id}
@@ -337,7 +347,7 @@ export default function FindYourCrewPage() {
   const tabs = [TAB_ALL, ...(collegeTab ? [collegeTab] : []), TAB_ONE_ON_ONE, TAB_MINE, TAB_SAVED];
 
   return (
-    <>
+    <PullToRefresh onRefresh={handleRefresh}>
       <PageLayout>
         <div className={styles.page}>
           <PageHeader
@@ -559,7 +569,7 @@ export default function FindYourCrewPage() {
           </div>
         </div>
       </PageLayout>
-    </>
+    </PullToRefresh>
   );
 }
 

@@ -2,18 +2,22 @@ import { useEffect, useLayoutEffect, useRef, useState, useCallback, memo } from 
 import { createPortal } from 'react-dom';
 import { MessageCircle, X, Send, ChevronUp } from '@shared/components/icons';
 import Avatar from '@shared/components/avatar/Avatar';
-import Skeleton from '@shared/components/skeletons/Skeleton';
 import { CollegeRepresentativeBadge } from '@shared/components/badges/CollegeRepresentativeBadge';
 import { useAuth } from '@shared/context/AuthContext';
 import { timeAgo } from '@shared/utils/time';
 import { useActivityDiscussion } from '../hooks/useActivityDiscussion';
 import styles from './ActivityDiscussion.module.css';
 
+// Product limit for a discussion message. The server accepts up to 2000, so
+// this is enforced at the composer only; typing stops at the limit.
+const DISCUSSION_MAX_LENGTH = 200;
+
 /**
  * Core discussion panel — a scrollable message area plus an input.
  *
  * Scroll contract:
- *  - The ONLY scroller is `.messages` (scrollRef).
+ *  - The ONLY scroller inside the panel is `.messages` (scrollRef). It does
+ *    not trap scroll: at its top or bottom the gesture chains to the page.
  *  - We NEVER call element.scrollIntoView() because it propagates up every
  *    ancestor scroll container and moves the parent Activity Detail page.
  *  - Instead we directly mutate scrollRef.current.scrollTop, which is
@@ -169,22 +173,8 @@ export const ActivityDiscussion = memo(function ActivityDiscussion({
           </button>
         )}
 
-        {isLoading ? (
-          // Message rows (avatar + name + text) until the history arrives.
-          // Scoped dark: this panel is always drawn on dark glass, including
-          // the floating variant that is portalled outside the dark page.
-          <div className={styles.skeletonRows} data-theme="dark" role="status" aria-label="Loading discussion">
-            {['62%', '45%', '70%'].map((width) => (
-              <div key={width} className={styles.msgRow} aria-hidden="true">
-                <Skeleton type="circle" width="28px" height="28px" />
-                <div className={styles.skeletonBody}>
-                  <Skeleton type="text" width="30%" height="0.7rem" style={{ margin: 0 }} />
-                  <Skeleton type="rect" width={width} height="2rem" style={{ borderRadius: 12 }} />
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : isError ? (
+        {/* While the history loads the area stays empty: no placeholder rows. */}
+        {isLoading ? null : isError ? (
           <div className={styles.stateMsg}>Couldn't load the discussion.</div>
         ) : messages.length === 0 ? (
           <div className={styles.emptyState}>
@@ -243,6 +233,10 @@ export const ActivityDiscussion = memo(function ActivityDiscussion({
       {/* ── Send error ─────────────────────────────────────────── */}
       {sendError && <div className={styles.sendError}>{sendError}</div>}
 
+      {draft.length >= DISCUSSION_MAX_LENGTH && (
+        <div className={styles.limitNote} role="status">Text limit reached</div>
+      )}
+
       {/* ── Input ──────────────────────────────────────────────── */}
       <form className={styles.inputRow} onSubmit={handleSubmit}>
         <textarea
@@ -252,7 +246,7 @@ export const ActivityDiscussion = memo(function ActivityDiscussion({
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={handleKeyDown}
           rows={1}
-          maxLength={2000}
+          maxLength={DISCUSSION_MAX_LENGTH}
         />
         <button
           type="submit"

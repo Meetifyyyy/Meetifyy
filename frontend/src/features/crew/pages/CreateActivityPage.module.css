@@ -1667,65 +1667,6 @@ input:checked+.slider:before {
   }
 }
 
-/* ══════════════════════════════
-   Post-publish invite sheet
-══════════════════════════════ */
-
-/* Centred dialog on large screens; a 75vh bottom sheet on mobile. This lived in
-   inline styles before, which can't express a media query — so it was anchored
-   to flex-end with top-only rounding on every viewport. */
-.inviteOverlay {
-  position: fixed;
-  inset: 0;
-  z-index: 9999;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 1rem;
-  animation: fadeIn 0.2s ease;
-}
-
-.inviteSheet {
-  background: var(--color-bg-white);
-  color: var(--color-text-main);
-  border: 1px solid var(--color-border-light);
-  border-radius: 20px;
-  width: 100%;
-  max-width: 500px;
-  height: 500px;
-  max-height: 85vh;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  box-shadow: 0 -8px 40px rgba(0, 0, 0, 0.15);
-  animation: modalIn 0.24s cubic-bezier(0.34, 1.4, 0.64, 1) both;
-}
-
-/* Mobile: bottom sheet covering 75% of the viewport.
-   The keyboard overlays the page in the app (--kb-inset, useKeyboardInset)
-   instead of shrinking it: while the friend search is typed into, the sheet
-   stands on the keyboard's top edge, capped to the space above it, so the
-   results stay reachable. One layout change per keyboard transition; the
-   home-indicator padding gives way to the keyboard, which covers that area. */
-@media (max-width: 720px) {
-  .inviteOverlay {
-    align-items: flex-end;
-    padding: 0;
-    padding-bottom: var(--kb-inset, 0px);
-  }
-
-  .inviteSheet {
-    max-width: 100%;
-    height: min(75dvh, calc(100dvh - var(--kb-inset, 0px) - var(--status-bar-inset, 0px) - 1rem));
-    max-height: min(75dvh, calc(100dvh - var(--kb-inset, 0px) - var(--status-bar-inset, 0px) - 1rem));
-    border-radius: 20px 20px 0 0;
-    border-bottom: none;
-    padding-bottom: max(0px, calc(env(safe-area-inset-bottom, 0px) - var(--kb-inset, 0px)));
-    animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
-  }
-}
-
 @keyframes fadeIn {
   from { opacity: 0; }
   to { opacity: 1; }
@@ -1735,7 +1676,6 @@ input:checked+.slider:before {
   from { opacity: 0; transform: translateY(100%); }
   to { opacity: 1; transform: translateY(0); }
 }
-
 
 /* ── Visibility selector ──────────────────────────────────────────────────
  * Same popover language as the reminder dropdown, widened so each mode can

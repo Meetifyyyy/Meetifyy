@@ -235,6 +235,53 @@
   color: var(--color-danger, #dc2626);
 }
 
+/* Someone who cannot be picked (invite sheet): shown, dimmed, not tappable. */
+.personDisabled {
+  cursor: default;
+}
+
+.personDisabled .avatarWrap {
+  opacity: 0.45;
+}
+
+.personDisabled .personName {
+  color: var(--color-text-muted);
+}
+
+.person:disabled:active .avatarWrap {
+  transform: none;
+}
+
+/* Inline text button (Retry, Show more). */
+.linkBtn {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--color-primary);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.linkBtn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.more {
+  grid-column: 1 / -1;
+  justify-self: center;
+  padding: 6px 12px;
+}
+
+/* A line above the footer's button: a failure the person can act on. */
+.notice {
+  margin: 0 0 8px;
+  text-align: center;
+  font-size: 0.85rem;
+  color: var(--color-danger, #dc2626);
+}
+
 .empty {
   grid-column: 1 / -1;
   margin: 24px 0;

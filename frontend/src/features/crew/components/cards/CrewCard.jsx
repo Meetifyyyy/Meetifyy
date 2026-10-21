@@ -186,6 +186,7 @@ function CrewCard({ activity, onClick, onMouseEnter }) {
   const coverImgUrl = activity.coverImage ? getMediaUrl(activity.coverImage) : getDefaultCover(title || activity.id);
 
   return (
+    <>
     <div 
       className={styles.card} 
       onClick={handleCardClick}
@@ -226,14 +227,6 @@ function CrewCard({ activity, onClick, onMouseEnter }) {
         <div className={styles.topRow}>
           <div className={styles.timeLabel}>
             {formatDateTime(activity)}
-            {/* College tag. Rendered only for college-scoped activities, which
-                is what the Campus and College surfaces show — an "Anyone"
-                activity has no single college it belongs to. */}
-            {activity.visibility === 'COLLEGE_ONLY' && activity.collegeName && (
-              <span className={styles.collegeTag} title={activity.collegeName}>
-                {activity.collegeName}
-              </span>
-            )}
           </div>
           <div className={styles.menuContainer}>
             <button {...menu.triggerProps} className={styles.moreBtn} aria-label="More options">
@@ -299,30 +292,35 @@ function CrewCard({ activity, onClick, onMouseEnter }) {
           </div>
         </div>
       </div>
-      {showShareModal && (
-        <Suspense fallback={null}>
-          <ShareActivityModal
-            isOpen={showShareModal}
-            onClose={() => setShowShareModal(false)}
-            activity={activity}
-          />
-        </Suspense>
-      )}
-      {showReportModal && (
-        <Suspense fallback={null}>
-          <ReportModal
-            isOpen={showReportModal}
-            onClose={() => setShowReportModal(false)}
-            targetType="ACTIVITY"
-            targetId={activity.id}
-            targetName={title}
-            targetPreview={`${activity.hostName || ''} · ${activity.locationName || activity.location || ''}`}
-            reportedFrom="crew"
-            onSubmitted={() => setHasReported(true)}
-          />
-        </Suspense>
-      )}
     </div>
+
+    {/* Siblings of the card, not children: React bubbles events from a
+        portalled modal to its React parent, so a press inside one would
+        otherwise count as a press on the card and open the activity. */}
+    {showShareModal && (
+      <Suspense fallback={null}>
+        <ShareActivityModal
+          isOpen={showShareModal}
+          onClose={() => setShowShareModal(false)}
+          activity={activity}
+        />
+      </Suspense>
+    )}
+    {showReportModal && (
+      <Suspense fallback={null}>
+        <ReportModal
+          isOpen={showReportModal}
+          onClose={() => setShowReportModal(false)}
+          targetType="ACTIVITY"
+          targetId={activity.id}
+          targetName={title}
+          targetPreview={`${activity.hostName || ''} · ${activity.locationName || activity.location || ''}`}
+          reportedFrom="crew"
+          onSubmitted={() => setHasReported(true)}
+        />
+      </Suspense>
+    )}
+    </>
   );
 }
 

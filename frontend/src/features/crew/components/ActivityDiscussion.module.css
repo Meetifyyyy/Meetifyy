@@ -25,9 +25,6 @@
   width: 100%;
   height: 380px;
   margin-top: 1rem;
-  /* Block scroll chaining: the messages scroller must never bubble
-     its scroll events up to the parent Activity Detail scroll area. */
-  overscroll-behavior: contain;
 }
 
 /* ── Desktop floating window ───────────────────────────────────── */
@@ -39,7 +36,8 @@
   max-width: calc(100vw - 32px);
   height: 520px;
   max-height: calc(100dvh - 135px);
-  z-index: 99999;
+  /* Above the page, below dialogs (share sheet 20000) opened over it. */
+  z-index: 10000;
   box-shadow: 0 24px 60px -12px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(255, 255, 255, 0.15);
   animation: discPopIn 0.18s cubic-bezier(0.16, 1, 0.3, 1);
 }
@@ -95,7 +93,9 @@
   display: flex;
   flex-direction: column;
   gap: 0.7rem;
-  overscroll-behavior: contain;
+  /* Default chaining on purpose: once the list is at its top or bottom the
+     gesture continues into the page behind, rather than dead-ending here. */
+  overscroll-behavior-y: auto;
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
@@ -211,6 +211,14 @@
   flex-shrink: 0;
 }
 
+/* Shown while the draft is at its character limit. */
+.limitNote {
+  padding: 0.3rem 0.9rem 0;
+  font-size: 0.74rem;
+  color: #fcd34d;
+  flex-shrink: 0;
+}
+
 /* ── Input ─────────────────────────────────────────────────────── */
 .inputRow {
   display: flex;
@@ -298,23 +306,7 @@
   }
 }
 
-/* ── Loading ───────────────────────────────────────────────────── */
-.skeletonRows {
-  display: flex;
-  flex-direction: column;
-  gap: 0.7rem;
-  /* No surface of its own: only the skeleton blocks draw. */
-  background: none;
-}
-
-.skeletonBody {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-}
-
+/* ── Earlier-messages button while loading ─────────────────────── */
 .busy {
   position: relative;
 }

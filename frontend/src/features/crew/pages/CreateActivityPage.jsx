@@ -1,15 +1,13 @@
 import { useState, useEffect, useLayoutEffect, useRef, useMemo } from 'react';
-import { copyToClipboard } from '@shared/lib/share/shareTargets';
-import { activityShareUrl } from '@shared/lib/share/sharePayload';
 import { createPortal } from 'react-dom';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useSmartBack } from '@shared/hooks/useSmartBack';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 import { useScrollLock } from '@shared/hooks/useScrollLock';
-import { selectableUsers } from '@shared/lib/conversationTargets';
 import styles from './CreateActivityPage.module.css';
 
 import ImageSearchModal from '@shared/components/modals/ImageSearchModal';
+import InviteFriendsModal from '@shared/components/modals/InviteFriendsModal';
 import { openVerificationModal } from '@shared/stores/verificationModalStore';
 import { commitDraftImage, removeDraftImage } from '@shared/utils/draftImageCache';
 import { useAmbientTint } from '@shared/hooks/useAmbientTint';
@@ -24,15 +22,12 @@ import {
   ChevronLeft,
   ChevronRight,
   X,
-  Search,
   ChevronsUpDown,
   Eye,
-  Link,
-  Check,
   Loader2,
 } from '@shared/components/icons';
-import { useQueryClient, useQuery } from '@tanstack/react-query';
-import { activitiesApi, usersApi, getMediaUrl } from '@shared/api/apiClient';
+import { useQueryClient } from '@tanstack/react-query';
+import { activitiesApi } from '@shared/api/apiClient';
 import { useAuth } from '@shared/context/AuthContext';
 import { showToast } from '@shared/utils/toast';
 import { insertActivityIntoCache, replaceActivityInCache } from '@shared/utils/mapActivity';
@@ -463,8 +458,6 @@ const EMPTY_DATE_TIME = {
   endTimeHour: '', endTimeMinute: '', endTimeAmPm: '',
 };
 import { DEFAULT_ACTIVITY_COVERS as RANDOM_COVERS } from '@shared/constants/activityCovers';
-import { getProcessedAvatarUrl } from '@shared/components/avatar/Avatar';
-import RowSkeleton from '@shared/components/skeletons/RowSkeleton';
 
 /**
  * Solid-colour covers used when the user explicitly removes the cover image.
@@ -502,359 +495,52 @@ const getRandomCover = () => {
 
 const getRandomCoverColor = (previous) => pickRandom(COVER_COLORS, previous);
 
-/* ─── Post-publish Invite Modal ─── */
-function ActivityCreatedModal({ activityTitle, coverImage, activityDate, creationPromise, onDone }) {
-  const { currentUser } = useAuth();
-  const [selectedIds, setSelectedIds] = useState([]);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [isSending, setIsSending] = useState(false);
-  const [copied, setCopied] = useState(false);
+/**
+ * Shown the moment Publish is pressed, while the activity is still being
+ * created in the background. The same picker as the activity page; sending
+ * waits for the creation to land, so nobody is invited to an activity that
+ * then fails to exist.
+ */
+function ActivityCreatedModal({ creationPromise, onDone, onFailed }) {
+  const invited = useRef(false);
 
-  useScrollLock(true);
+  // The failure toast and the cache rollback already happened where the
+  // promise was created; all that is left is to put the form back.
+  useEffect(() => {
+    let alive = true;
+    creationPromise.catch(() => {
+      if (alive) onFailed();
+    });
+    return () => { alive = false; };
+  }, [creationPromise, onFailed]);
 
-  // This is the Activity Invite recipient picker, so it asks the server for the
-  // eligible subset (`eligibleOnly`) rather than the raw following list. The
-  // profile's own following viewer deliberately does not pass that flag: hiding
-  // accounts there would misreport who the user actually follows.
-  //
-  // The key carries the flag too, so this list can never be served from, or
-  // written into, the cache entry belonging to the unfiltered viewer.
-  const { data: friendsList = [], isLoading, isError, refetch, isFetching } = useQuery({
-    queryKey: ['user-following-friends', currentUser?.username, 'eligible'],
-    queryFn: () => usersApi.getFollowing(currentUser?.username, 100, 0, true),
-    enabled: !!currentUser?.username,
-    staleTime: 30_000,
-  });
-
-  // Without an explicit username the query never runs, so it would otherwise sit
-  // on the empty state forever with no explanation.
-  const cannotLoadFriends = !currentUser?.username;
-
-  const filtered = useMemo(() => {
-    if (!Array.isArray(friendsList)) return [];
-    // Second line only: the server already excluded ineligible accounts from
-    // this response. This covers the window where a cached list (30s here)
-    // outlives a change in the other person's status.
-    const eligible = selectableUsers(friendsList);
-    const q = searchQuery.trim().toLowerCase();
-    if (!q) return eligible;
-    return eligible.filter(u =>
-      (u.displayName || '').toLowerCase().includes(q) ||
-      (u.username || '').toLowerCase().includes(q)
+  const sendInvites = async (userIds) => {
+    const activity = await creationPromise;
+    const { results = [] } = (await activitiesApi.inviteFriends(activity.id, userIds)) || {};
+    const sent = results.filter((r) => r.status === 'INVITED').length;
+    const skipped = results.length - sent;
+    invited.current = true;
+    showToast(
+      skipped > 0
+        ? `Activity published · ${sent} invite${sent === 1 ? '' : 's'} sent, ${skipped} skipped`
+        : 'Activity published · invites sent',
+      'success',
     );
-  }, [friendsList, searchQuery]);
-
-  const toggle = (id) => setSelectedIds(prev =>
-    prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
-  );
-
-  // Awaits the in-flight creation promise, then sends invites
-  // Creation failure and invite failure are different outcomes and must not both
-  // report success. The previous version toasted "Activity published" from every
-  // branch — including the catch — so a rolled-back creation still told the user
-  // it worked, and invite errors were swallowed by a bare `.catch(() => {})`.
-  const handleSend = async () => {
-    if (isSending) return; // guard against double-submit
-    setIsSending(true);
-
-    let activity;
-    try {
-      activity = await creationPromise;
-    } catch {
-      setIsSending(false);
-      showToast('Could not publish the activity. Please try again.', 'error');
-      return; // stay open so the user keeps their selection
-    }
-
-    if (selectedIds.length > 0 && activity?.id) {
-      try {
-        const res = await activitiesApi.inviteFriends(activity.id, selectedIds);
-        const results = res?.results ?? [];
-        const sent = results.filter((r) => r.status === 'INVITED').length;
-        const skipped = results.length - sent;
-        showToast(
-          skipped > 0
-            ? `Activity published · ${sent} invite${sent === 1 ? '' : 's'} sent, ${skipped} skipped`
-            : 'Activity published · invites sent',
-          'success',
-        );
-      } catch {
-        // The activity exists — only the invites failed. Say so accurately.
-        showToast('Activity published, but invites could not be sent.', 'error');
-      }
-    } else {
-      showToast('Activity published', 'success');
-    }
-
-    onDone();
   };
 
-  const handleSkip = async () => {
-    // still await so the cache is populated before we navigate
+  // Leaving without inviting still waits for the creation, so the new activity
+  // is in the cache before the list behind this is shown.
+  const close = async () => {
     try {
       await creationPromise;
-      showToast('Activity published', 'success');
     } catch {
-      showToast('Could not publish the activity. Please try again.', 'error');
+      return; // onFailed is already putting the form back
     }
+    if (!invited.current) showToast('Activity published', 'success');
     onDone();
   };
 
-  const handleCopy = async () => {
-    try {
-      const activity = await creationPromise;
-      // The same builder the share dialog uses, so a link copied here and a
-      // link copied there are the same link. Hand-built copies are how the
-      // share dialog ended up pointing at `/activity/:id`, a route that does
-      // not exist.
-      if (!(await copyToClipboard(activityShareUrl(activity?.id)))) return;
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {}
-  };
-
-  return createPortal(
-    <div className={styles.inviteOverlay} onClick={handleSkip}>
-      <div
-        className={styles.inviteSheet}
-        role="dialog"
-        aria-modal="true"
-        aria-label="Invite friends"
-        onClick={e => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div style={{ padding: '1.25rem 1.5rem 1rem', borderBottom: '1px solid var(--color-border-light)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem', marginBottom: '0.75rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', minWidth: 0, flex: 1 }}>
-              {coverImage ? (
-                <img
-                  src={getMediaUrl(coverImage) || coverImage}
-                  alt=""
-                  style={{
-                    width: 44, height: 44, borderRadius: '10px',
-                    objectFit: 'cover', flexShrink: 0,
-                    background: 'var(--color-bg-soft)',
-                    border: '1px solid var(--color-border-light)',
-                  }}
-                  onError={(e) => { e.target.style.display = 'none'; }}
-                />
-              ) : (
-                <div style={{
-                  width: 44, height: 44, borderRadius: '10px',
-                  background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-                }}>
-                  <Check size={22} color="#ffffff" strokeWidth={2.5} />
-                </div>
-              )}
-              <div style={{ minWidth: 0, flex: 1 }}>
-                <p style={{
-                  margin: 0, fontWeight: 700, fontSize: '1rem',
-                  color: 'var(--color-text-main)',
-                  whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                }}>
-                  {activityTitle || 'Untitled Activity'}
-                </p>
-                {activityDate && (
-                  <p style={{
-                    margin: '2px 0 0', fontSize: '0.78rem',
-                    color: 'var(--color-text-muted)',
-                    whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                  }}>
-                    {activityDate}
-                  </p>
-                )}
-              </div>
-            </div>
-            <button
-              onClick={handleSkip}
-              style={{
-                background: 'none', border: 'none', cursor: 'pointer',
-                color: 'var(--color-text-muted)', padding: '4px', borderRadius: '50%',
-                flexShrink: 0,
-              }}
-              aria-label="Close"
-            >
-              <X size={20} />
-            </button>
-          </div>
-        </div>
-
-        {/* Friends list header + Copy link button */}
-        <div style={{ padding: '1rem 1.5rem 0.5rem', flexShrink: 0 }}>
-          <p style={{ margin: '0 0 0.6rem', fontWeight: 600, fontSize: '0.88rem', color: 'var(--color-text-main)' }}>
-            Invite friends
-          </p>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-            <div style={{
-              flex: 1,
-              display: 'flex', alignItems: 'center', gap: '0.6rem',
-              background: 'var(--color-bg-soft)',
-              borderRadius: '12px', padding: '0.55rem 0.85rem',
-              border: '1px solid var(--color-border)',
-            }}>
-              <Search size={16} color="var(--color-text-light)" />
-              <input
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                placeholder="Search friends…"
-                style={{
-                  flex: 1, background: 'none', border: 'none', outline: 'none',
-                  color: 'var(--color-text-main)', fontSize: '0.88rem',
-                }}
-              />
-            </div>
-            <button
-              type="button"
-              onClick={handleCopy}
-              title={copied ? 'Link copied!' : 'Copy activity link'}
-              style={{
-                width: 38, height: 38, borderRadius: '12px',
-                border: '1px solid var(--color-border)',
-                background: copied ? 'rgba(16, 185, 129, 0.15)' : 'var(--color-bg-soft)',
-                color: copied ? '#10b981' : 'var(--color-text-main)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                cursor: 'pointer', flexShrink: 0,
-                transition: 'all 0.2s ease',
-              }}
-              aria-label="Copy activity link"
-            >
-              {copied ? <Check size={18} /> : <Link size={18} />}
-            </button>
-          </div>
-        </div>
-
-        <div style={{ flex: 1, overflowY: 'auto', padding: '0.5rem 1.5rem', display: 'flex', flexDirection: 'column' }}>
-          {isLoading ? (
-            <RowSkeleton
-              count={5}
-              avatarSize="38px"
-              rowStyle={{
-                gap: '0.75rem',
-                padding: '0.65rem 0',
-                borderBottom: '1px solid var(--color-border-light)',
-              }}
-              label="Loading friends"
-            />
-          ) : (isError || cannotLoadFriends) ? (
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.6rem', alignItems: 'center', justifyContent: 'center', minHeight: '120px' }}>
-              <p style={{ textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '0.85rem', margin: 0 }}>
-                Couldn't load your friends
-              </p>
-              {!cannotLoadFriends && (
-                <button
-                  type="button"
-                  onClick={() => refetch()}
-                  disabled={isFetching}
-                  style={{
-                    background: 'var(--color-bg-soft)', color: 'var(--color-text-main)',
-                    border: '1px solid var(--color-border)', borderRadius: '999px',
-                    padding: '0.35rem 0.9rem', fontSize: '0.8rem', fontWeight: 600,
-                    cursor: isFetching ? 'default' : 'pointer', opacity: isFetching ? 0.6 : 1,
-                  }}
-                >
-                  {isFetching ? 'Retrying…' : 'Retry'}
-                </button>
-              )}
-              <p style={{ textAlign: 'center', color: 'var(--color-text-light)', fontSize: '0.75rem', margin: 0 }}>
-                You can still publish and share the link.
-              </p>
-            </div>
-          ) : filtered.length === 0 ? (
-            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '120px' }}>
-              <p style={{ textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '0.85rem', margin: 0 }}>No friends found</p>
-            </div>
-          ) : filtered.map(u => {
-            const sel = selectedIds.includes(u.id);
-            return (
-              <button
-                key={u.id}
-                onClick={() => toggle(u.id)}
-                style={{
-                  width: '100%', display: 'flex', alignItems: 'center', gap: '0.75rem',
-                  padding: '0.65rem 0', background: 'none', border: 'none', cursor: 'pointer',
-                  borderBottom: '1px solid var(--color-border-light)',
-                  transform: 'none',
-                  transition: 'none',
-                }}
-              >
-                <div style={{ position: 'relative', flexShrink: 0 }}>
-                  <img
-                    src={getProcessedAvatarUrl(u.avatar) || '/default_avatar.svg'}
-                    alt=""
-                    style={{ width: 38, height: 38, borderRadius: '50%', objectFit: 'cover', background: 'var(--color-bg-soft)' }}
-                    onError={(e) => { e.target.onerror = null; e.target.src = '/default_avatar.svg'; }}
-                  />
-                  {sel && (
-                    <span style={{
-                      position: 'absolute', bottom: -2, right: -2,
-                      width: 16, height: 16, borderRadius: '50%',
-                      background: 'var(--color-primary, #2563eb)', border: '2px solid var(--color-bg-white)',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    }}>
-                      <Check size={9} color="#fff" strokeWidth={3} />
-                    </span>
-                  )}
-                </div>
-                <div style={{ flex: 1, textAlign: 'left' }}>
-                  <p style={{ margin: 0, fontWeight: 600, fontSize: '0.88rem', color: 'var(--color-text-main)' }}>{u.displayName || u.username}</p>
-                  <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>@{u.username}</p>
-                </div>
-                <div style={{
-                  width: 22, height: 22, borderRadius: '6px', flexShrink: 0,
-                  border: sel ? 'none' : '1.5px solid var(--color-border)',
-                  background: sel ? 'var(--color-primary, #2563eb)' : 'transparent',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  transform: 'none',
-                  transition: 'none',
-                }}>
-                  {sel && <Check size={12} color="#fff" strokeWidth={2.5} />}
-                </div>
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Footer */}
-        <div style={{
-          padding: '1rem 1.5rem 1.5rem',
-          borderTop: '1px solid var(--color-border-light)',
-          display: 'flex', gap: '0.75rem',
-        }}>
-          <button
-            onClick={handleSkip}
-            style={{
-              flex: 1, height: '42px', borderRadius: '9999px',
-              border: '1px solid var(--color-border)',
-              background: 'var(--color-bg-soft)', color: 'var(--color-text-main)',
-              fontSize: '0.88rem', fontWeight: 600, cursor: 'pointer',
-              transition: 'all 0.2s ease',
-            }}
-          >
-            Skip
-          </button>
-          <button
-            onClick={handleSend}
-            disabled={isSending}
-            style={{
-              flex: 2, height: '42px', borderRadius: '9999px',
-              border: 'none',
-              background: selectedIds.length > 0
-                ? 'var(--color-primary, #2563eb)'
-                : 'rgba(37, 99, 235, 0.25)',
-              color: selectedIds.length > 0 ? '#ffffff' : 'var(--color-text-muted)',
-              fontSize: '0.88rem', fontWeight: 700, cursor: isSending ? 'not-allowed' : 'pointer',
-              transition: 'all 0.2s ease',
-            }}
-          >
-            {isSending ? 'Sending…' : selectedIds.length > 0 ? `Invite ${selectedIds.length} friend${selectedIds.length > 1 ? 's' : ''}` : 'Invite friends'}
-          </button>
-        </div>
-
-      </div>
-    </div>,
-    document.body
-  );
+  return <InviteFriendsModal onSendInvites={sendInvites} onClose={close} />;
 }
 
 export default function CreateActivityPage() {
@@ -1259,10 +945,8 @@ export default function CreateActivityPage() {
   if (showInviteModal) {
     return (
       <ActivityCreatedModal
-        activityTitle={formData.title}
-        coverImage={formData.coverImage}
-        activityDate={`${MONTHS[(formData.startDateMonth || 1) - 1] || ''} ${formData.startDateDay || ''}, ${formData.startTimeHour}:${formData.startTimeMinute} ${formData.startTimeAmPm}`}
         creationPromise={creationPromiseRef.current}
+        onFailed={() => setShowInviteModal(false)}
         onDone={() => navigate(returnTo, { replace: true })}
       />
     );
