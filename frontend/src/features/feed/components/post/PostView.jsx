@@ -117,15 +117,33 @@ function PostContentSkeleton() {
   );
 }
 
+/**
+ * Placeholder for the comment list: the shape of a real comment row (the same
+ * 40px avatar and 8px gap, a name · handle · time line, then the text), three
+ * of them, and nothing else. Line widths differ so it reads as comments rather
+ * than a pattern. Sizes mirror `.treeRoot` in CommentNode.module.css.
+ */
+const COMMENT_SKELETON_ROWS = [
+  { name: '84px', handle: '64px', lines: ['92%', '58%'] },
+  { name: '104px', handle: '72px', lines: ['74%'] },
+  { name: '68px', handle: '56px', lines: ['96%', '81%'] },
+];
+
 function CommentsSkeleton() {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', padding: '0.5rem 0' }}>
-      {Array.from({ length: 3 }).map((_, i) => (
-        <div key={i} style={{ display: 'flex', gap: '0.75rem' }}>
-          <Skeleton type="circle" width="32px" height="32px" style={{ flexShrink: 0 }} />
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', flex: 1 }}>
-            <Skeleton type="text" width="100px" height="12px" style={{ margin: 0 }} />
-            <Skeleton type="text" width="85%" height="10px" style={{ margin: 0 }} />
+    <div className={styles.commentsSkeleton} aria-hidden="true">
+      {COMMENT_SKELETON_ROWS.map((row, i) => (
+        <div key={i} className={styles.commentSkeletonRow}>
+          <Skeleton type="circle" width="40px" height="40px" />
+          <div className={styles.commentSkeletonBody}>
+            <div className={styles.commentSkeletonHead}>
+              <Skeleton type="rect" width={row.name} height="12px" style={{ borderRadius: '4px' }} />
+              <Skeleton type="rect" width={row.handle} height="10px" style={{ borderRadius: '4px' }} />
+              <Skeleton type="rect" width="22px" height="10px" style={{ borderRadius: '4px' }} />
+            </div>
+            {row.lines.map((w, j) => (
+              <Skeleton key={j} type="rect" width={w} height="12px" style={{ borderRadius: '4px' }} />
+            ))}
           </div>
         </div>
       ))}

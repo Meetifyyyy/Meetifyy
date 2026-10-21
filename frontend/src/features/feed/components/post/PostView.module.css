@@ -66,6 +66,40 @@
   border-bottom: 1px solid var(--color-border-light);
 }
 
+/* Comment-list placeholder: spacing follows CommentNode's own (40px avatar,
+   8px gap, 18px between threads on phones, 20px above that). */
+.commentsSkeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 16px 0 8px;
+}
+
+.commentSkeletonRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.commentSkeletonBody {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.commentSkeletonHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 20px;
+}
+
+@media (max-width: 768px) {
+  .commentsSkeleton { gap: 18px; }
+}
+
 .postSkeleton {
   width: 100%;
 }
