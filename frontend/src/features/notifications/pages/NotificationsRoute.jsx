@@ -49,6 +49,7 @@ export default function NotificationsRoute() {
   useSystemBars({ navigation: 'transparent' });
   const {
     notifications,
+    unreadCount,
     markAsRead,
     markAllRead,
     fetchNextPage,
@@ -63,23 +64,24 @@ export default function NotificationsRoute() {
   const getUserById = (id) => usersMap[id] || null;
   const navigate = useNavigate();
   const loadMoreRef = useRef(null);
-  const hasMarkedReadRef = useRef(false);
+  const lastReadBatch = useRef('');
   // State, not a ref: the list's virtualizer needs this element, and a ref is
   // attached AFTER the list's own layout effects have run (children commit
   // first). With cached data nothing re-rendered the list afterwards, so it
   // kept no scroll element and rendered zero rows: the empty screen.
   const [pageEl, setPageEl] = useState(null);
 
-  // Automatically mark all notifications as read once when opening notifications page
+  // Read this visit immediately, including newly delivered rows while it stays open.
+  // A batch key prevents a failed request from creating an automatic retry loop.
   useEffect(() => {
-    if (!hasMarkedReadRef.current && notifications && notifications.length > 0) {
-      const hasUnread = notifications.some(n => !n.read && !n.readAt);
-      if (hasUnread) {
-        hasMarkedReadRef.current = true;
-        markAllRead();
-      }
+    if (isLoading) return;
+    const unreadIds = notifications.filter(n => !n.read && !n.readAt).map(n => n.id).join(',');
+    const batch = `${unreadCount}:${unreadIds}`;
+    if ((unreadCount > 0 || unreadIds) && batch !== lastReadBatch.current) {
+      lastReadBatch.current = batch;
+      markAllRead();
     }
-  }, [notifications, markAllRead]);
+  }, [notifications, unreadCount, isLoading, markAllRead]);
 
   // Infinite scroll trigger for loading chunks
   useEffect(() => {
@@ -491,9 +493,7 @@ export default function NotificationsRoute() {
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
           Invitations
           {unreadInvCount > 0 && (
-            <span className={styles.tabBadge}>
-              {unreadInvCount}
-            </span>
+            <span className={styles.tabBadge} aria-label="Unread invitations" />
           )}
         </span>
       )

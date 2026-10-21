@@ -71,15 +71,12 @@
   top: -4px;
   right: -5px;
   background-color: #ef4444; /* red */
-  color: white;
-  font-size: 0.65rem;
-  font-weight: 700;
-  padding: 2px 5px;
-  border-radius: 10px;
+  padding: 0;
+  border-radius: 50%;
   border: 2px solid var(--color-bg-white);
-  line-height: 1;
-  min-width: 18px;
-  text-align: center;
+  width: 12px;
+  height: 12px;
+  box-sizing: border-box;
   z-index: 2;
 }
 

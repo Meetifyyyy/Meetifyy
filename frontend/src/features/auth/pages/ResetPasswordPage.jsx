@@ -2,7 +2,6 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { supabase } from '@shared/context/AuthContext';
 import { isRecoveryTab, clearRecoveryTab } from '@shared/lib/supabase';
-import Toast from '@shared/components/ui/Toast';
 import { CheckCircle2, XCircle } from '@shared/components/icons';
 import { getBackendUrl } from '@shared/api/apiClient';
 import { validatePassword } from '../shared/passwordRules';
@@ -11,6 +10,7 @@ import {
   AuthHeading,
   PasswordField,
   AuthButton,
+  AuthAlert,
   AuthStatus,
   styles as s,
 } from '../shared/ui';
@@ -40,6 +40,10 @@ const readRecoveryErrorFlag = () => {
 const consumeRecoveryErrorFlag = () => {
   try { sessionStorage.removeItem(RECOVERY_ERROR_FLAG); } catch {}
 };
+
+/** Supabase refuses a reset to the password the account already has. */
+const isSamePasswordError = (err) =>
+  err?.code === 'same_password' || /different from the old password/i.test(err?.message || '');
 
 /**
  * Asks the server to sign the account out everywhere and send the
@@ -82,8 +86,14 @@ export default function ResetPasswordPage() {
   const [uiState, setUiState] = useState('loading');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [toastMsg, setToastMsg] = useState('');
-  const [toastVisible, setToastVisible] = useState(false);
+  // Where a rejected submit is reported: a message under the field it is about
+  // (`passwordError`, `confirmError`), or the shared auth alert for anything
+  // that is not about one field (`formError`). `alertNonce` re-raises the
+  // alert when the same failure repeats.
+  const [passwordError, setPasswordError] = useState(null);
+  const [confirmError, setConfirmError] = useState(null);
+  const [formError, setFormError] = useState(null);
+  const [alertNonce, setAlertNonce] = useState(0);
   // True when the password changed but the server could not end the account's
   // other sessions. Shown on the success screen, which then stays put.
   const [finalizeFailed, setFinalizeFailed] = useState(false);
@@ -105,9 +115,10 @@ export default function ResetPasswordPage() {
   // Leaving abandons the recovery session through the unmount effect below.
   const handleBack = useCallback(() => navigate('/login', { replace: true }), [navigate]);
 
-  const showToast = (msg) => {
-    setToastMsg(msg);
-    setToastVisible(true);
+  const clearErrors = () => {
+    setPasswordError(null);
+    setConfirmError(null);
+    setFormError(null);
   };
 
   // ─── Token Validation ────────────────────────────────────────────────────────
@@ -312,13 +323,14 @@ export default function ResetPasswordPage() {
     // Same rules, same wording as signup - see passwordRules.
     const problem = validatePassword(password);
     if (problem) {
-      showToast(problem);
+      setPasswordError(problem);
       return;
     }
     if (password !== confirmPassword) {
-      showToast("Passwords don't match");
+      setConfirmError("Passwords don't match");
       return;
     }
+    clearErrors();
 
     isSubmittingRef.current = true;
     setUiState('updating');
@@ -357,8 +369,8 @@ export default function ResetPasswordPage() {
         : false;
       if (!finalized) {
         console.error('Password reset: could not sign out the other sessions');
+        // The success screen explains this; no second message is needed.
         setFinalizeFailed(true);
-        showToast("Password updated, but we couldn't sign you out of your other devices.");
       }
 
       // ── Destroy the recovery session ──────────────────────────────────
@@ -378,7 +390,13 @@ export default function ResetPasswordPage() {
       // JWT expired before submission, network failure).
       setUiState('valid');
       isSubmittingRef.current = false;
-      showToast(err?.message || "Couldn't update password");
+      if (isSamePasswordError(err)) {
+        // About the New Password field, so it is said there, and briefly.
+        setPasswordError('Choose a different password than your old one.');
+      } else {
+        setFormError(err?.message || "Couldn't update password");
+        setAlertNonce((n) => n + 1);
+      }
     }
     // isSubmittingRef is intentionally NOT reset on success — there should be
     // no way to re-submit after a password has been changed.
@@ -387,86 +405,89 @@ export default function ResetPasswordPage() {
   const isUpdating = uiState === 'updating';
 
   return (
-    <>
-      <AuthShell
-        headline={AUTH_STORIES['/reset-password'].headline}
-        subtext={AUTH_STORIES['/reset-password'].subtext}
-        onBack={handleBack}
-      >
-        <div className={s.content}>
-          {uiState === 'loading' && (
-            <AuthStatus tone="loading" title="Verifying reset link…" description="This only takes a second." />
-          )}
+    <AuthShell
+      headline={AUTH_STORIES['/reset-password'].headline}
+      subtext={AUTH_STORIES['/reset-password'].subtext}
+      onBack={handleBack}
+    >
+      <div className={s.content}>
+        {uiState === 'loading' && (
+          <AuthStatus tone="loading" title="Verifying reset link…" description="This only takes a second." />
+        )}
 
-          {uiState === 'expired' && (
-            <AuthStatus
-              icon={XCircle}
-              tone="error"
-              title="Reset link expired"
-              description="This password reset link is invalid or has expired. Please request a new one."
-            >
-              <Link to="/forgot-password" className={s.button}>
-                Request new link
-              </Link>
-              <Link to="/login" className={`${s.button} ${s.buttonGhost}`}>
-                Back to login
-              </Link>
-            </AuthStatus>
-          )}
+        {uiState === 'expired' && (
+          <AuthStatus
+            icon={XCircle}
+            tone="error"
+            title="Reset link expired"
+            description="This password reset link is invalid or has expired. Please request a new one."
+          >
+            <Link to="/forgot-password" className={s.button}>
+              Request new link
+            </Link>
+            <Link to="/login" className={`${s.button} ${s.buttonGhost}`}>
+              Back to login
+            </Link>
+          </AuthStatus>
+        )}
 
-          {uiState === 'success' && (
-            <AuthStatus
-              icon={CheckCircle2}
-              tone="success"
-              title="Password updated"
-              description={finalizeFailed
-                ? "Your password has been reset, but we couldn't sign you out of your other devices. Log in and use Settings to sign out of other devices."
-                : 'Your password has been reset successfully. Redirecting to login in a moment…'}
-            >
-              <Link to="/login" replace className={`${s.button} ${s.buttonGhost}`}>
-                Log in now
-              </Link>
-            </AuthStatus>
-          )}
+        {uiState === 'success' && (
+          <AuthStatus
+            icon={CheckCircle2}
+            tone="success"
+            title="Password updated"
+            description={finalizeFailed
+              ? "Your password has been reset, but we couldn't sign you out of your other devices. Log in and use Settings to sign out of other devices."
+              : 'Your password has been reset successfully. Redirecting to login in a moment…'}
+          >
+            <Link to="/login" replace className={`${s.button} ${s.buttonGhost}`}>
+              Log in now
+            </Link>
+          </AuthStatus>
+        )}
 
-          {(uiState === 'valid' || uiState === 'updating') && (
-            <>
-              <AuthHeading title="Set new password" subtitle="Choose a strong, secure password." />
+        {(uiState === 'valid' || uiState === 'updating') && (
+          <>
+            <AuthHeading title="Set new password" subtitle="Choose a strong, secure password." />
 
-              <form onSubmit={handleSubmit} className={s.form} noValidate>
-                <PasswordField
-                  id="reset-new-password"
-                  label="New Password"
-                  autoComplete="new-password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  disabled={isUpdating}
-                />
+            <form onSubmit={handleSubmit} className={s.form} noValidate>
+              <PasswordField
+                id="reset-new-password"
+                label="New Password"
+                autoComplete="new-password"
+                value={password}
+                error={passwordError}
+                onChange={(e) => { setPassword(e.target.value); if (passwordError || formError) { setPasswordError(null); setFormError(null); } }}
+                disabled={isUpdating}
+              />
 
-                <PasswordField
-                  id="reset-confirm-password"
-                  label="Confirm New Password"
-                  autoComplete="new-password"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  disabled={isUpdating}
-                />
+              <PasswordField
+                id="reset-confirm-password"
+                label="Confirm New Password"
+                autoComplete="new-password"
+                value={confirmPassword}
+                error={confirmError}
+                onChange={(e) => { setConfirmPassword(e.target.value); if (confirmError || formError) { setConfirmError(null); setFormError(null); } }}
+                disabled={isUpdating}
+              />
 
-                <AuthButton
-                  type="submit"
-                  loading={isUpdating}
-                  loadingText="Updating..."
-                  disabled={!password || !confirmPassword}
-                  className={s.primaryAction}
-                >
-                  Update Password
-                </AuthButton>
-              </form>
-            </>
-          )}
-        </div>
-      </AuthShell>
-      <Toast message={toastMsg} visible={toastVisible} onHide={() => setToastVisible(false)} />
-    </>
+              <AuthAlert tone="error" title="Couldn't update password" autoHideMs={5000} nonce={alertNonce}>
+                {formError}
+              </AuthAlert>
+
+              <AuthButton
+                type="submit"
+                loading={isUpdating}
+                loadingText="Updating..."
+                disabled={!password || !confirmPassword}
+                className={s.primaryAction}
+              >
+                Update Password
+              </AuthButton>
+            </form>
+          </>
+        )}
+      </div>
+    </AuthShell>
   );
 }

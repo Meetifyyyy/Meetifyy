@@ -124,6 +124,25 @@ describe('notification cache updates', () => {
     expect(api.getAll).not.toHaveBeenCalled();
   });
 
+  it('does not let a count fetch that was already in flight bring the badge back', async () => {
+    // A socket event can start a count refetch just before the page marks
+    // everything read. Its answer was computed before the write, so landing
+    // afterwards it would put the dot back on a screen the user is looking at.
+    let release;
+    api.getUnreadCount.mockImplementationOnce(
+      () => new Promise((resolve) => { release = () => resolve({ count: 2 }); }),
+    );
+    const { result } = renderHook(() => useNotifications(), { wrapper });
+    const inFlight = queryClient.fetchQuery({ queryKey: COUNT_KEY, queryFn: () => api.getUnreadCount(), staleTime: 0 });
+    inFlight.catch(() => {});
+
+    await act(async () => { result.current.markAllRead(); });
+    await waitFor(() => expect(api.markAllAsRead).toHaveBeenCalled());
+    await act(async () => { release?.(); });
+
+    expect(count()).toBe(0);
+  });
+
   it('removes a dismissed notification and adjusts the count', async () => {
     const { result } = renderHook(() => useNotifications(), { wrapper });
     await act(async () => { result.current.dismissNotification('n1'); });

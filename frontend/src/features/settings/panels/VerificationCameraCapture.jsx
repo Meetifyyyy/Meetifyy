@@ -20,8 +20,7 @@ import {
 /**
  * What each capture mode shows and how it starts. A selfie opens the front
  * camera and is mirrored like a mirror; an ID photo opens the rear camera, is
- * never mirrored (mirrored text is unreadable), asks for a higher resolution
- * and draws a card-shaped guide to line the ID up in.
+ * never mirrored (mirrored text is unreadable) and asks for a higher resolution.
  */
 const MODES = {
   selfie: {
@@ -406,11 +405,6 @@ export default function VerificationCameraCapture({
             }`}
             style={{ display: isLive ? 'block' : 'none' }}
           />
-
-          {/* Where to line the ID up. Purely a guide; the whole frame is kept. */}
-          {mode === 'id' && cameraState === 'active' && (
-            <div className={styles.idGuide} aria-hidden="true" />
-          )}
 
           {/* Captured Image Review */}
           {isCaptured && capturedImage?.previewUrl && (

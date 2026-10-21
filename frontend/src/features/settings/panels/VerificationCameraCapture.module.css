@@ -434,20 +434,3 @@
   font-weight: 500;
   color: rgba(255, 255, 255, 0.85);
 }
-
-/* ── ID guide: an ID-card-shaped frame (85.6 x 54 mm, ISO/IEC 7810 ID-1) ── */
-.idGuide {
-  position: absolute;
-  z-index: 1;
-  top: 50%;
-  left: 50%;
-  width: 78%;
-  aspect-ratio: 85.6 / 54;
-  max-height: 78%;
-  transform: translate(-50%, -50%);
-  border: 2px solid rgba(255, 255, 255, 0.9);
-  border-radius: 12px;
-  /* Dims everything outside the card so the eye goes to the frame. */
-  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.35);
-  pointer-events: none;
-}

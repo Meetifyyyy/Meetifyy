@@ -135,7 +135,10 @@ export function useNotifications({ type } = {}) {
   const markAsReadMutation = useMutation({
     mutationFn: (id) => notificationsApi.markAsRead(id),
     onMutate: async (id) => {
-      await queryClient.cancelQueries({ predicate: isNotificationListQuery });
+      // The whole prefix, the unread count included: a count fetch already in
+      // flight answers with a number from before this write, and landing later
+      // it would bring a cleared badge back.
+      await queryClient.cancelQueries({ queryKey: ['notifications'] });
       const snapshot = queryClient.getQueriesData({ predicate: isNotificationListQuery });
       const previousCount = queryClient.getQueryData(UNREAD_COUNT_KEY);
 
@@ -164,7 +167,7 @@ export function useNotifications({ type } = {}) {
   const markAllReadMutation = useMutation({
     mutationFn: () => notificationsApi.markAllAsRead(),
     onMutate: async () => {
-      await queryClient.cancelQueries({ predicate: isNotificationListQuery });
+      await queryClient.cancelQueries({ queryKey: ['notifications'] });
       const snapshot = queryClient.getQueriesData({ predicate: isNotificationListQuery });
       const previousCount = queryClient.getQueryData(UNREAD_COUNT_KEY);
 
@@ -188,7 +191,7 @@ export function useNotifications({ type } = {}) {
   const deleteMutation = useMutation({
     mutationFn: (id) => notificationsApi.delete(id),
     onMutate: async (id) => {
-      await queryClient.cancelQueries({ predicate: isNotificationListQuery });
+      await queryClient.cancelQueries({ queryKey: ['notifications'] });
       const snapshot = queryClient.getQueriesData({ predicate: isNotificationListQuery });
       const previousCount = queryClient.getQueryData(UNREAD_COUNT_KEY);
 

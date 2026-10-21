@@ -15,7 +15,11 @@ export default function NotificationBell() {
   const isActive = location.pathname.startsWith('/notifications');
 
   return (
-    <Link to="/notifications" className={`${styles.bellWrapper} ${isActive ? styles.active : ''}`}>
+    <Link
+      to="/notifications"
+      className={`${styles.bellWrapper} ${isActive ? styles.active : ''}`}
+      aria-label={unreadCount > 0 ? 'Notifications, new' : 'Notifications'}
+    >
       <div className={styles.iconContainer}>
         {/* The same bell, and the same active treatment, as the left sidebar's
             Notifications link: Heroicons outline/solid through <NavIcon>, which
@@ -27,14 +31,14 @@ export default function NotificationBell() {
           outline={<BellOutline strokeWidth={1.75} />}
           solid={<BellSolid />}
         />
-        
-        {/* A CSS pop-in, not framer-motion. This bell is in the header of
-            every signed-in screen, so it was the one import that put the
-            whole animation engine into the startup bundle. */}
+
+        {/* A dot, not a count: it says something is new and goes away once the
+            Notifications screen has been seen. A CSS pop-in, not framer-motion:
+            this bell is in the header of every signed-in screen, so it was the
+            one import that put the whole animation engine into the startup
+            bundle. */}
         {unreadCount > 0 && (
-          <div className={styles.badge}>
-            {unreadCount > 99 ? '99+' : unreadCount}
-          </div>
+          <span className={styles.badge} aria-hidden="true" />
         )}
       </div>
     </Link>

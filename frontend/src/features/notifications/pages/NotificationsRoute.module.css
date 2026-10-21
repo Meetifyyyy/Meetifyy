@@ -222,10 +222,8 @@
 
 .tabBadge {
   background: var(--color-primary);
-  color: #FFFFFF;
-  font-size: 0.7rem;
-  font-weight: 700;
-  padding: 0.1rem 0.4rem;
+  width: 8px;
+  height: 8px;
   border-radius: var(--radius-full);
 }
 
