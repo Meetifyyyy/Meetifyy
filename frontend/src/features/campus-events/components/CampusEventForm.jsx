@@ -81,7 +81,8 @@ export default function CampusEventForm({ event = null, onClose, onSaved }) {
   useOverlayBack(true, close);
 
   const bodyRef = useRef(null);
-  const keyboardProps = useKeyboardOverlayForm({ bodyRef });
+  const footerRef = useRef(null);
+  const keyboardProps = useKeyboardOverlayForm({ bodyRef, footerRef });
   useScrollLock(true);
   // Single day: one date, a start and an end time. Multi-day: each end has its
   // own date. The payload is the same either way (startTime / endTime).
@@ -648,7 +649,7 @@ export default function CampusEventForm({ event = null, onClose, onSaved }) {
 
         </div>
 
-        <div className={styles.footer}>
+        <div className={styles.footer} ref={footerRef}>
           {/* Here, not at the end of the scrolling body: a refusal has to be
               seen where the button is, however far down the form is. */}
           {error && <p className={styles.error} role="alert">{error}</p>}

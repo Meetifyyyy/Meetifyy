@@ -13,9 +13,11 @@ import { scrollableAncestor } from '@shared/utils/keyboardFocus';
  * the frame the keyboard starts, and the app-wide slide for sheets
  * (keyboardSheetRise) then replays a second movement on top of it.
  *
- * The scroll area gets the keyboard's height as bottom room (the stylesheet,
- * transitioned on the keyboard's own duration and curve, so the content settles
- * down with the keyboard when it closes instead of snapping). What is left for
+ * The scroll area gets bottom room for the part of the keyboard that reaches
+ * into it - the keyboard's height minus the action bar it already covers - so
+ * the last field can end just above the keyboard and there is no empty space
+ * beyond it (the stylesheet; transitioned on the keyboard's own duration and
+ * curve, so the content settles down with it when it closes). What is left for
  * this hook is scrolling the focused field clear of the keyboard, once per
  * keyboard show and once per focus change while it is up. The app-wide helper
  * (ensureFocusedVisible) is switched off for this surface with
@@ -38,10 +40,26 @@ export function revealOverlap({ fieldRect, bodyTop, viewportHeight, inset, margi
 }
 
 /**
- * @param {{ bodyRef }} refs  the form's scroll area
+ * @param {{ bodyRef, footerRef }} refs  the form's scroll area and its action bar
  * @returns attributes for the overlay element
  */
-export function useKeyboardOverlayForm({ bodyRef }) {
+export function useKeyboardOverlayForm({ bodyRef, footerRef }) {
+  // The action bar's height, published to the stylesheet as `--footer-h` on the
+  // scroll area: the keyboard covers the bar first, so only what exceeds it
+  // needs room in the scroll area.
+  useEffect(() => {
+    if (!KEYBOARD_OVERLAYS_PAGE) return undefined;
+    const body = bodyRef.current;
+    const footer = footerRef.current;
+    if (!body || !footer) return undefined;
+    const publish = () => body.style.setProperty('--footer-h', `${footer.offsetHeight}px`);
+    publish();
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    const observer = new ResizeObserver(publish);
+    observer.observe(footer);
+    return () => observer.disconnect();
+  }, [bodyRef, footerRef]);
+
   useEffect(() => {
     if (!KEYBOARD_OVERLAYS_PAGE) return undefined;
     let frame = 0;

@@ -402,13 +402,14 @@
 
 /* The installed Android app (`data-keyboard-overlay`, useKeyboardOverlayForm):
    the keyboard overlays a page that keeps its full height, so it covers the
-   Publish button instead of carrying it along. The form scroll area gains the
-   keyboard's height as room under its last field, on the keyboard's own
-   duration, curve and head start: opening, the room grows with the keyboard;
-   closing, it shrinks with it and the content settles down in step instead of
-   snapping. Nothing is resized, so the page moves once, with the keyboard. */
+   Publish button instead of carrying it along. The keyboard covers the action
+   bar first, so the form scroll area only needs room for what reaches past it
+   (keyboard height minus the bar's, `--footer-h`): scrolled to the end, the
+   last field sits just above the keyboard with no empty space beyond it. The
+   room follows the keyboard's own duration, curve and head start, so opening
+   and closing it move the content in step instead of snapping. */
 .overlay[data-keyboard-overlay] .body {
-  padding-bottom: calc(1.1rem + var(--kb-inset, 0px));
+  padding-bottom: calc(1.1rem + max(0px, var(--kb-inset, 0px) - var(--footer-h, 0px)));
   transition: padding-bottom var(--kb-duration, 0ms) var(--kb-easing, ease-out) var(--kb-delay, 0ms);
 }
 
