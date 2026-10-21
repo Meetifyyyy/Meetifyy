@@ -22,6 +22,7 @@ import {
   toISODate,
 } from '../utils/eventDateTime';
 import { EventDateField, EventTimeField } from './EventDateTimeFields';
+import { useLiftedActionBar } from './useLiftedActionBar';
 import styles from './CampusEventForm.module.css';
 
 /** Length of the leave animation (`.leaving` in the stylesheet) in ms. */
@@ -78,6 +79,11 @@ export default function CampusEventForm({ event = null, onClose, onSaved }) {
   useEffect(() => () => window.clearTimeout(closeTimerRef.current), []);
 
   useOverlayBack(true, close);
+
+  const bodyRef = useRef(null);
+  const footerRef = useRef(null);
+  const safeRef = useRef(null);
+  const keyboardProps = useLiftedActionBar({ bodyRef, barRef: footerRef, safeRef });
   useScrollLock(true);
   // Single day: one date, a start and an end time. Multi-day: each end has its
   // own date. The payload is the same either way (startTime / endTime).
@@ -429,15 +435,18 @@ export default function CampusEventForm({ event = null, onClose, onSaved }) {
 
   const busy = uploading || createMut.isPending || updateMut.isPending || publishMut.isPending;
 
+  // `data-bars-ignore`: in the installed app the status and navigation bars keep
+  // following the page underneath while this is open. Sampled through the form
+  // they took its colour at once, while the sheet was still sliding up.
   return createPortal(
-    <div className={`${styles.overlay} ${closing ? styles.leaving : ''}`} onClick={close}>
+    <div className={`${styles.overlay} ${closing ? styles.leaving : ''}`} data-bars-ignore {...keyboardProps} onClick={close}>
       <div className={styles.modal} role="dialog" aria-modal="true" aria-label={isEdit ? "Edit event" : "Create campus event"} onClick={(e) => e.stopPropagation()}>
         <div className={styles.header}>
           <h2 className={styles.title}>{isEdit ? 'Edit event' : 'Create campus event'}</h2>
           <button className={styles.closeBtn} onClick={close} aria-label="Close"><X size={20} /></button>
         </div>
 
-        <div className={styles.body}>
+        <div className={styles.body} ref={bodyRef}>
 
           {/* ── Poster upload ───────────────────────────────────────────── */}
           <div className={styles.field}>
@@ -618,13 +627,12 @@ export default function CampusEventForm({ event = null, onClose, onSaved }) {
               </>
             )}
 
-            <p className={`${styles.whenSummary} ${whenSummary?.warn ? styles.whenWarn : ''}`} aria-live="polite">
-              {whenSummary && (
-                <>
-                  <CalendarRange size={14} aria-hidden="true" />
-                  <span>{whenSummary.text}</span>
-                </>
-              )}
+            <p
+              className={`${styles.whenSummary} ${whenSummary?.warn ? styles.whenWarn : ''} ${whenSummary ? '' : styles.whenHint}`}
+              aria-live="polite"
+            >
+              <CalendarRange size={14} aria-hidden="true" />
+              <span>{whenSummary ? whenSummary.text : multiDay ? 'Choose when it starts and ends.' : 'Choose a date, then a start and end time.'}</span>
             </p>
           </div>
 
@@ -642,7 +650,8 @@ export default function CampusEventForm({ event = null, onClose, onSaved }) {
 
         </div>
 
-        <div className={styles.footer}>
+        <div className={styles.footer} ref={footerRef}>
+          <span className={styles.safeProbe} ref={safeRef} aria-hidden="true" />
           {/* Here, not at the end of the scrolling body: a refusal has to be
               seen where the button is, however far down the form is. */}
           {error && <p className={styles.error} role="alert">{error}</p>}

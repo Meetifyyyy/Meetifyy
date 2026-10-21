@@ -104,9 +104,10 @@
 
 .field { display: flex; flex-direction: column; gap: 0.35rem; }
 
+/* Every label above a box is sentence case, medium weight. */
 .label {
-  font-size: 0.8rem;
-  font-weight: 700;
+  font-size: 0.85rem;
+  font-weight: 500;
   color: var(--color-text-muted, #555);
 }
 
@@ -163,7 +164,7 @@
   color: var(--color-text-muted, #555);
   font: inherit;
   font-size: 0.9rem;
-  font-weight: 700;
+  font-weight: 600;
   cursor: pointer;
   transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
 }
@@ -185,16 +186,15 @@
 .dateTimeRow > .field { min-width: 0; }
 
 .subLabel {
-  font-size: 0.72rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  font-size: 0.85rem;
+  font-weight: 500;
   color: var(--color-text-muted, #666);
 }
 
 .whenSummary {
-  /* Two lines are always reserved, so a summary (or the warning) appearing as
-     times are chosen does not push the fields below it. */
+  /* Room for the longest message is always reserved (two lines on a phone), so
+     a summary or the warning appearing as times are chosen does not push the
+     fields below it. */
   min-height: calc(2 * 1.4 * 0.82rem);
   display: flex;
   align-items: flex-start;
@@ -208,6 +208,11 @@
 
 .whenSummary svg { flex-shrink: 0; margin-top: 0.15rem; }
 .whenWarn { color: #dc2626; }
+.whenHint { color: var(--color-text-light, #6b7280); font-weight: 500; }
+
+@media (min-width: 481px) {
+  .whenSummary { min-height: calc(1.4 * 0.82rem); }
+}
 
 /* Poster upload — 2.5:2 (4:5) portrait, same ratio as the event card grid */
 .posterUpload {
@@ -357,7 +362,8 @@
   flex-direction: column;
   align-items: center;
   gap: 0.35rem;
-  font-size: 0.82rem;
+  font-size: 0.85rem;
+  font-weight: 500;
 }
 
 .hiddenFile { display: none; }
@@ -369,6 +375,7 @@
 }
 
 .footer {
+  position: relative;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
@@ -393,6 +400,46 @@
 
 .btnPrimary:disabled { opacity: 0.55; cursor: not-allowed; }
 
+/* The installed Android app (`data-keyboard-overlay`, useLiftedActionBar): the
+   keyboard overlays a page that keeps its full height. The action bar rides up
+   on a compositor transform over the keyboard's own duration, curve and head
+   start, and the form gains the room the bar and keyboard cover. Nothing is
+   resized, so the page moves once, with the keyboard.
+   The bar rises by the keyboard minus the navigation bar's share, which its own
+   bottom padding already clears. The room is dropped only after the keyboard has
+   left (a delayed, zero-length transition), so a form scrolled to its end does
+   not jump while the keyboard is still sliding away. */
+.overlay[data-keyboard-overlay] {
+  --kb-lift: max(0px, calc(var(--kb-inset, 0px) - env(safe-area-inset-bottom, 0px)));
+}
+
+.overlay[data-keyboard-overlay] .body {
+  transition: padding-bottom 0s linear var(--kb-duration, 0ms);
+}
+
+.overlay[data-keyboard-overlay] .footer {
+  transition: transform var(--kb-duration, 0ms) var(--kb-easing, ease-out) var(--kb-delay, 0ms);
+}
+
+:global(html[data-keyboard-open]) .overlay[data-keyboard-overlay] .body {
+  padding-bottom: calc(1.1rem + var(--kb-lift));
+  transition-delay: 0s;
+}
+
+:global(html[data-keyboard-open]) .overlay[data-keyboard-overlay] .footer {
+  transform: translate3d(0, calc(-1 * var(--kb-lift)), 0);
+}
+
+/* Measured by useLiftedActionBar: how much of the keyboard's height the bar's
+   own padding already covers. */
+.safeProbe {
+  position: absolute;
+  width: 0;
+  height: env(safe-area-inset-bottom, 0px);
+  visibility: hidden;
+  pointer-events: none;
+}
+
 /* Phones and small tablets: not a card over the page but a page of its own.
    The header and the action stay put and only the form between them scrolls.
    The overlay covers the system bars, so the page pads for them itself:
@@ -403,17 +450,27 @@
 @media (max-width: 768px) {
   /* iOS and the website: the keyboard shrinks the visual viewport, not the
      layout, so the page lifts by `--kb-inset` and stays above it. */
-  .overlay {
+  .overlay:not([data-keyboard-overlay]) {
     padding: 0 0 var(--kb-inset, 0px);
-    align-items: stretch;
   }
+
+  .overlay {
+    align-items: stretch;
+    /* A page sliding over a page has no scrim: a fade would darken the status
+       bar's area at once, ahead of the sheet reaching it. The sheet's own edge
+       is what crosses the bar. */
+    background: transparent;
+    animation: none;
+  }
+
+  .leaving { animation: none; }
 
   .modal {
     max-width: none;
     height: 100%;
     max-height: none;
     border-radius: 0;
-    box-shadow: none;
+    box-shadow: 0 -6px 24px rgba(0, 0, 0, 0.22);
     animation: sheetIn 0.34s cubic-bezier(0.16, 1, 0.3, 1) both;
   }
 

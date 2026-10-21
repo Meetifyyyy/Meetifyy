@@ -159,3 +159,13 @@ describe('CampusEventForm - leaving', () => {
     }
   });
 });
+
+describe('CampusEventForm - system bars', () => {
+  it('keeps the app\'s status bar following the page underneath while open', () => {
+    // Sampled through the form, the status bar took the form's colour the
+    // moment it mounted, ahead of the sheet reaching the top of the screen.
+    render(<CampusEventForm onClose={vi.fn()} />);
+    const overlay = screen.getByRole('dialog').parentElement;
+    expect(overlay.hasAttribute('data-bars-ignore')).toBe(true);
+  });
+});
