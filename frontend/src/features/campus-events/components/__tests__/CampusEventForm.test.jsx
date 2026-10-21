@@ -1,4 +1,6 @@
 /** @vitest-environment jsdom */
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { toISODate, addDaysISO } from '../../utils/eventDateTime';
@@ -167,5 +169,18 @@ describe('CampusEventForm - system bars', () => {
     render(<CampusEventForm onClose={vi.fn()} />);
     const overlay = screen.getByRole('dialog').parentElement;
     expect(overlay.hasAttribute('data-bars-ignore')).toBe(true);
+  });
+});
+
+describe('CampusEventForm - phone layout', () => {
+  it('fills the screen whether or not the app marks the overlay for the keyboard', () => {
+    // CSS modules are not applied in jsdom, so read the source. The overlay is
+    // marked `data-keyboard-overlay` in the installed app; its padding must be
+    // cleared by a rule that does not depend on that marker.
+    const css = readFileSync(resolve(import.meta.dirname, '../CampusEventForm.module.css'), 'utf8');
+    const phone = css.slice(css.indexOf('@media (max-width: 768px)'));
+    const plainOverlay = phone.match(/(?:^|\n) {2}\.overlay \{([^}]*)\}/)?.[1] ?? '';
+    expect(plainOverlay).toMatch(/padding:\s*0\s*;/);
+    expect(plainOverlay).toMatch(/align-items:\s*stretch/);
   });
 });

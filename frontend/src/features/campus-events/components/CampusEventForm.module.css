@@ -400,44 +400,16 @@
 
 .btnPrimary:disabled { opacity: 0.55; cursor: not-allowed; }
 
-/* The installed Android app (`data-keyboard-overlay`, useLiftedActionBar): the
-   keyboard overlays a page that keeps its full height. The action bar rides up
-   on a compositor transform over the keyboard's own duration, curve and head
-   start, and the form gains the room the bar and keyboard cover. Nothing is
-   resized, so the page moves once, with the keyboard.
-   The bar rises by the keyboard minus the navigation bar's share, which its own
-   bottom padding already clears. The room is dropped only after the keyboard has
-   left (a delayed, zero-length transition), so a form scrolled to its end does
-   not jump while the keyboard is still sliding away. */
-.overlay[data-keyboard-overlay] {
-  --kb-lift: max(0px, calc(var(--kb-inset, 0px) - env(safe-area-inset-bottom, 0px)));
-}
-
+/* The installed Android app (`data-keyboard-overlay`, useKeyboardOverlayForm):
+   the keyboard overlays a page that keeps its full height, so it covers the
+   Publish button instead of carrying it along. The form scroll area gains the
+   keyboard's height as room under its last field, on the keyboard's own
+   duration, curve and head start: opening, the room grows with the keyboard;
+   closing, it shrinks with it and the content settles down in step instead of
+   snapping. Nothing is resized, so the page moves once, with the keyboard. */
 .overlay[data-keyboard-overlay] .body {
-  transition: padding-bottom 0s linear var(--kb-duration, 0ms);
-}
-
-.overlay[data-keyboard-overlay] .footer {
-  transition: transform var(--kb-duration, 0ms) var(--kb-easing, ease-out) var(--kb-delay, 0ms);
-}
-
-:global(html[data-keyboard-open]) .overlay[data-keyboard-overlay] .body {
-  padding-bottom: calc(1.1rem + var(--kb-lift));
-  transition-delay: 0s;
-}
-
-:global(html[data-keyboard-open]) .overlay[data-keyboard-overlay] .footer {
-  transform: translate3d(0, calc(-1 * var(--kb-lift)), 0);
-}
-
-/* Measured by useLiftedActionBar: how much of the keyboard's height the bar's
-   own padding already covers. */
-.safeProbe {
-  position: absolute;
-  width: 0;
-  height: env(safe-area-inset-bottom, 0px);
-  visibility: hidden;
-  pointer-events: none;
+  padding-bottom: calc(1.1rem + var(--kb-inset, 0px));
+  transition: padding-bottom var(--kb-duration, 0ms) var(--kb-easing, ease-out) var(--kb-delay, 0ms);
 }
 
 /* Phones and small tablets: not a card over the page but a page of its own.
@@ -448,19 +420,25 @@
    bottom, which the mobile build widens to include the navigation bar
    (safeAreaPostcss.js). */
 @media (max-width: 768px) {
-  /* iOS and the website: the keyboard shrinks the visual viewport, not the
-     layout, so the page lifts by `--kb-inset` and stays above it. */
-  .overlay:not([data-keyboard-overlay]) {
-    padding: 0 0 var(--kb-inset, 0px);
-  }
-
+  /* The page fills the screen edge to edge, always. The installed app marks
+     the overlay `data-keyboard-overlay`, and a rule that only cleared the
+     padding when that marker was absent left the card's 1rem inset on the
+     phone. */
   .overlay {
+    padding: 0;
     align-items: stretch;
     /* A page sliding over a page has no scrim: a fade would darken the status
        bar's area at once, ahead of the sheet reaching it. The sheet's own edge
        is what crosses the bar. */
     background: transparent;
     animation: none;
+  }
+
+  /* iOS and the website: the keyboard shrinks the visual viewport, not the
+     layout, so the page lifts by `--kb-inset` and stays above it. The app
+     keeps the page full height and lifts only the action bar instead. */
+  .overlay:not([data-keyboard-overlay]) {
+    padding-bottom: var(--kb-inset, 0px);
   }
 
   .leaving { animation: none; }

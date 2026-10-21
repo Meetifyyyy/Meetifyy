@@ -22,7 +22,7 @@ import {
   toISODate,
 } from '../utils/eventDateTime';
 import { EventDateField, EventTimeField } from './EventDateTimeFields';
-import { useLiftedActionBar } from './useLiftedActionBar';
+import { useKeyboardOverlayForm } from './useKeyboardOverlayForm';
 import styles from './CampusEventForm.module.css';
 
 /** Length of the leave animation (`.leaving` in the stylesheet) in ms. */
@@ -81,9 +81,7 @@ export default function CampusEventForm({ event = null, onClose, onSaved }) {
   useOverlayBack(true, close);
 
   const bodyRef = useRef(null);
-  const footerRef = useRef(null);
-  const safeRef = useRef(null);
-  const keyboardProps = useLiftedActionBar({ bodyRef, barRef: footerRef, safeRef });
+  const keyboardProps = useKeyboardOverlayForm({ bodyRef });
   useScrollLock(true);
   // Single day: one date, a start and an end time. Multi-day: each end has its
   // own date. The payload is the same either way (startTime / endTime).
@@ -650,8 +648,7 @@ export default function CampusEventForm({ event = null, onClose, onSaved }) {
 
         </div>
 
-        <div className={styles.footer} ref={footerRef}>
-          <span className={styles.safeProbe} ref={safeRef} aria-hidden="true" />
+        <div className={styles.footer}>
           {/* Here, not at the end of the scrolling body: a refusal has to be
               seen where the button is, however far down the form is. */}
           {error && <p className={styles.error} role="alert">{error}</p>}
