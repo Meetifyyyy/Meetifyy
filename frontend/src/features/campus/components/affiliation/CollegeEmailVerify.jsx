@@ -58,7 +58,7 @@ export default function CollegeEmailVerify({ college, initialChallenge = null, o
       setError(null);
       try {
         const affiliation = await verifyCode(value);
-        showToast('College email verified. Welcome to Campus!', 'success');
+        showToast('Welcome to campus!', 'success');
         onVerified?.(affiliation);
       } catch (err) {
         setError(describeCampusOtpError(err));

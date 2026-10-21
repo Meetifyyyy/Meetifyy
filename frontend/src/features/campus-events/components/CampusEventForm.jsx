@@ -1,5 +1,8 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { X, ImagePlus, CalendarRange } from '@shared/components/icons';
+import { useOverlayBack } from '@shared/hooks/useOverlayBack';
+import { useScrollLock } from '@shared/hooks/useScrollLock';
 import { getMediaUrl } from '@shared/api/apiClient';
 import { processAndUploadImage } from '@shared/utils/mediaPipeline';
 import {
@@ -9,10 +12,20 @@ import {
 } from '@shared/constants/mediaLimits';
 import { showToast } from '@shared/utils/toast';
 import { useCreateCampusEvent, useUpdateCampusEvent, usePublishCampusEvent } from '@shared/hooks/useCampusEvents';
-import { toLocalDate, toLocalTime, combineDateTime, isSafeRegistrationUrl, formatCardDate } from '../utils/formatEvent';
-import CustomDatePicker from '@shared/components/ui/CustomDatePicker';
-import CustomTimePicker from '@shared/components/ui/CustomTimePicker';
+import { toLocalDate, toLocalTime, combineDateTime, isSafeRegistrationUrl } from '../utils/formatEvent';
+import {
+  formatDateLabel,
+  formatDuration,
+  formatTime12,
+  minutesToTime,
+  timeToMinutes,
+  toISODate,
+} from '../utils/eventDateTime';
+import { EventDateField, EventTimeField } from './EventDateTimeFields';
 import styles from './CampusEventForm.module.css';
+
+/** Length of the leave animation (`.leaving` in the stylesheet) in ms. */
+const EXIT_MS = 220;
 
 // Human-readable label per upload phase reported by the media pipeline.
 const PHASE_LABELS = {
@@ -40,6 +53,37 @@ const logUploadStage = (stage, detail = {}) => {
  */
 export default function CampusEventForm({ event = null, onClose, onSaved }) {
   const isEdit = Boolean(event?.id);
+
+  // Leaving plays the entrance backwards: the page slides down first and is
+  // only then removed. Every way out (X, backdrop, Back, Escape, a save) goes
+  // through `close`, so none of them cuts the animation short.
+  const [closing, setClosing] = useState(false);
+  const closingRef = useRef(false);
+  const closeTimerRef = useRef(0);
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+  const leave = useCallback((afterLeave) => {
+    if (closingRef.current) return;
+    closingRef.current = true;
+    setClosing(true);
+    const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    closeTimerRef.current = window.setTimeout(() => {
+      afterLeave?.();
+      onCloseRef.current?.();
+    }, reduced ? 0 : EXIT_MS);
+  }, []);
+  const close = useCallback(() => leave(), [leave]);
+  useEffect(() => () => window.clearTimeout(closeTimerRef.current), []);
+
+  useOverlayBack(true, close);
+  useScrollLock(true);
+  // Single day: one date, a start and an end time. Multi-day: each end has its
+  // own date. The payload is the same either way (startTime / endTime).
+  const [multiDay, setMultiDay] = useState(
+    Boolean(event?.endTime && toLocalDate(event.startTime) !== toLocalDate(event.endTime)),
+  );
   const createMut = useCreateCampusEvent();
   const updateMut = useUpdateCampusEvent();
   const publishMut = usePublishCampusEvent();
@@ -68,7 +112,6 @@ export default function CampusEventForm({ event = null, onClose, onSaved }) {
 
   // Refs for tracking active object URL, upload controller, selected raw file, and confirmed key
   const abortRef = useRef(null);
-  const bodyRef = useRef(null);
   const activeBlobUrlRef = useRef(null);
   const selectedFileRef = useRef(null);
   const posterKeyRef = useRef(event?.posterUrl || '');
@@ -97,16 +140,12 @@ export default function CampusEventForm({ event = null, onClose, onSaved }) {
 
   // Clean up object URLs and abort in-flight uploads on unmount
   useEffect(() => {
-    const originalOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-
     return () => {
       abortRef.current?.abort();
       if (activeBlobUrlRef.current) {
         try { URL.revokeObjectURL(activeBlobUrlRef.current); } catch (_) {}
         activeBlobUrlRef.current = null;
       }
-      document.body.style.overflow = originalOverflow;
     };
   }, []);
 
@@ -157,7 +196,6 @@ export default function CampusEventForm({ event = null, onClose, onSaved }) {
         logUploadStage('UPLOAD_FAILED', { message: errMsg });
         setError(errMsg);
         showToast(errMsg, 'error');
-        setTimeout(() => bodyRef.current?.scrollTo({ top: bodyRef.current.scrollHeight, behavior: 'smooth' }), 50);
         throw err;
       } finally {
         setUploading(false);
@@ -185,14 +223,12 @@ export default function CampusEventForm({ event = null, onClose, onSaved }) {
       const errMsg = 'Invalid image format';
       setError(errMsg);
       showToast(errMsg, 'error');
-      setTimeout(() => bodyRef.current?.scrollTo({ top: bodyRef.current.scrollHeight, behavior: 'smooth' }), 50);
       return;
     }
     if (file.size > MAX_COVERED_IMAGE_SIZE_BYTES) {
       const errMsg = COVERED_IMAGE_SIZE_ERROR_MESSAGE;
       setError(errMsg);
       showToast(errMsg, 'error');
-      setTimeout(() => bodyRef.current?.scrollTo({ top: bodyRef.current.scrollHeight, behavior: 'smooth' }), 50);
       return;
     }
 
@@ -228,12 +264,63 @@ export default function CampusEventForm({ event = null, onClose, onSaved }) {
   const handleStartDateChange = (val) => {
     setForm((prev) => {
       const next = { ...prev, startDate: val };
-      if (!prev.endDate || prev.endDate < val) {
-        next.endDate = val;
-      }
+      // Single day has no end date of its own; multi-day never ends before it starts.
+      if (!multiDay || !prev.endDate || prev.endDate < val) next.endDate = val;
       return next;
     });
   };
+
+  // Moving the start moves the end with it, keeping the event's length (an hour
+  // when no end was set yet) - the way calendars do it, so a start that is
+  // changed after the end was chosen cannot silently end up before it. Only
+  // when both fall on one day and the result stays inside it.
+  const handleStartTimeChange = (val) => {
+    setForm((prev) => {
+      const next = { ...prev, startTimeOnly: val };
+      const oneDay = !multiDay || prev.endDate === prev.startDate;
+      const start = timeToMinutes(val);
+      if (!oneDay || start === null) return next;
+      const prevStart = timeToMinutes(prev.startTimeOnly);
+      const prevEnd = timeToMinutes(prev.endTimeOnly);
+      let length = null;
+      if (prevEnd === null) length = 60;
+      else if (prevStart !== null && prevEnd > prevStart) length = prevEnd - prevStart;
+      const end = length === null ? '' : minutesToTime(start + length);
+      if (end) next.endTimeOnly = end;
+      return next;
+    });
+  };
+
+  const changeMultiDay = (value) => {
+    if (value === multiDay) return;
+    setMultiDay(value);
+    // Back to one day: the end date follows the start again.
+    if (!value) set({ endDate: form.startDate });
+  };
+
+  const today = toISODate(new Date());
+  const startMinutes = timeToMinutes(form.startTimeOnly);
+  const endMinutes = timeToMinutes(form.endTimeOnly);
+  const effectiveEndDate = multiDay ? form.endDate : form.startDate;
+  const endsSameDay = Boolean(form.startDate) && effectiveEndDate === form.startDate;
+  const whenSummary = (() => {
+    if (!form.startDate || startMinutes === null || endMinutes === null || !effectiveEndDate) return null;
+    const start = new Date(combineDateTime(form.startDate, form.startTimeOnly));
+    const end = new Date(combineDateTime(effectiveEndDate, form.endTimeOnly));
+    if (!(end > start)) {
+      return {
+        warn: true,
+        text: multiDay
+          ? 'The end is not after the start.'
+          : 'The end is not after the start. Ends after midnight? Choose Multi-day.',
+      };
+    }
+    const length = formatDuration(Math.round((end - start) / 60000));
+    const text = endsSameDay
+      ? `${formatDateLabel(form.startDate)} · ${formatTime12(form.startTimeOnly)} to ${formatTime12(form.endTimeOnly)}`
+      : `${formatDateLabel(form.startDate)}, ${formatTime12(form.startTimeOnly)} to ${formatDateLabel(effectiveEndDate)}, ${formatTime12(form.endTimeOnly)}`;
+    return { warn: false, text: `${text} · ${length}` };
+  })();
 
   // ── Validation ─────────────────────────────────────────────────────────────
   const validate = () => {
@@ -242,10 +329,10 @@ export default function CampusEventForm({ event = null, onClose, onSaved }) {
     if (!form.venue.trim()) return 'Venue is required.';
     if (!form.startDate) return 'Start date is required.';
     if (!form.startTimeOnly) return 'Start time is required.';
-    if (!form.endDate) return 'End date is required.';
+    if (multiDay && !form.endDate) return 'End date is required.';
     if (!form.endTimeOnly) return 'End time is required.';
     const start = combineDateTime(form.startDate, form.startTimeOnly);
-    const end   = combineDateTime(form.endDate, form.endTimeOnly);
+    const end   = combineDateTime(multiDay ? form.endDate : form.startDate, form.endTimeOnly);
     if (!start) return 'Start date or time is invalid.';
     if (!end)   return 'End date or time is invalid.';
 
@@ -263,7 +350,7 @@ export default function CampusEventForm({ event = null, onClose, onSaved }) {
 
   const buildPayload = () => {
     const startISO = new Date(combineDateTime(form.startDate, form.startTimeOnly)).toISOString();
-    const endISO   = new Date(combineDateTime(form.endDate,   form.endTimeOnly)).toISOString();
+    const endISO   = new Date(combineDateTime(multiDay ? form.endDate : form.startDate,   form.endTimeOnly)).toISOString();
     return {
       title: form.title.trim(),
       description: form.description.trim() || undefined,
@@ -283,7 +370,6 @@ export default function CampusEventForm({ event = null, onClose, onSaved }) {
     if (v) {
       setError(v);
       showToast(v, 'error');
-      setTimeout(() => bodyRef.current?.scrollTo({ top: bodyRef.current.scrollHeight, behavior: 'smooth' }), 50);
       return;
     }
 
@@ -296,7 +382,6 @@ export default function CampusEventForm({ event = null, onClose, onSaved }) {
           const errMsg = 'Poster upload failed';
           setError(errMsg);
           showToast(errMsg, 'error');
-          setTimeout(() => bodyRef.current?.scrollTo({ top: bodyRef.current.scrollHeight, behavior: 'smooth' }), 50);
           return;
         }
       }
@@ -334,27 +419,25 @@ export default function CampusEventForm({ event = null, onClose, onSaved }) {
       }
       logUploadStage('DB_SAVED', { eventId: saved?.id, posterUrl: saved?.posterUrl || payload.posterUrl || null });
       showToast(isEdit ? 'Event updated' : 'Event published', 'success');
-      onSaved?.(saved);
-      onClose?.();
+      leave(() => onSaved?.(saved));
     } catch (err) {
       const errMsg = err?.message || "Couldn't save event";
       setError(errMsg);
       showToast(errMsg, 'error');
-      setTimeout(() => bodyRef.current?.scrollTo({ top: bodyRef.current.scrollHeight, behavior: 'smooth' }), 50);
     }
   };
 
   const busy = uploading || createMut.isPending || updateMut.isPending || publishMut.isPending;
 
-  return (
-    <div className={styles.overlay} onClick={onClose}>
-      <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
+  return createPortal(
+    <div className={`${styles.overlay} ${closing ? styles.leaving : ''}`} onClick={close}>
+      <div className={styles.modal} role="dialog" aria-modal="true" aria-label={isEdit ? "Edit event" : "Create campus event"} onClick={(e) => e.stopPropagation()}>
         <div className={styles.header}>
           <h2 className={styles.title}>{isEdit ? 'Edit event' : 'Create campus event'}</h2>
-          <button className={styles.closeBtn} onClick={onClose} aria-label="Close"><X size={20} /></button>
+          <button className={styles.closeBtn} onClick={close} aria-label="Close"><X size={20} /></button>
         </div>
 
-        <div className={styles.body} ref={bodyRef}>
+        <div className={styles.body}>
 
           {/* ── Poster upload ───────────────────────────────────────────── */}
           <div className={styles.field}>
@@ -442,99 +525,132 @@ export default function CampusEventForm({ event = null, onClose, onSaved }) {
 
           {/* ── Text fields ─────────────────────────────────────────────── */}
           <div className={styles.field}>
-            <span className={styles.label}>Event title *</span>
-            <input className={styles.input} value={form.title} maxLength={50}
+            <label className={styles.label} htmlFor="event-title">Event title *</label>
+            <input id="event-title" className={styles.input} value={form.title} maxLength={50}
               onChange={(e) => set({ title: e.target.value })} placeholder="e.g. Hackathon 2026" />
           </div>
 
           <div className={styles.field}>
-            <span className={styles.label}>Hosted by (organizer) *</span>
-            <input className={styles.input} value={form.hostedBy} maxLength={50}
+            <label className={styles.label} htmlFor="event-hostedBy">Hosted by (organizer) *</label>
+            <input id="event-hostedBy" className={styles.input} value={form.hostedBy} maxLength={50}
               onChange={(e) => set({ hostedBy: e.target.value })} placeholder="e.g. GLA Coding Club" />
           </div>
 
           <div className={styles.field}>
-            <span className={styles.label}>Description</span>
-            <textarea className={styles.textarea} value={form.description} maxLength={500}
+            <label className={styles.label} htmlFor="event-description">Description</label>
+            <textarea id="event-description" className={styles.textarea} value={form.description} maxLength={500}
               onChange={(e) => set({ description: e.target.value })} placeholder="What's this event about?" />
           </div>
 
-          {/* ── Date & time ─────────────────────────────────────────────── */}
-          {/* Starts row */}
-          <div className={styles.dateTimeGroup}>
-            <span className={styles.dateTimeGroupLabel}>Starts *</span>
-            <div className={styles.dateTimeRow}>
-              <div className={styles.dateBox}>
-                <CustomDatePicker
-                  value={form.startDate}
-                  min={new Date().toISOString().split('T')[0]}
-                  onChange={(val) => handleStartDateChange(val)}
-                />
-              </div>
-              <div className={styles.timeBox}>
-                <CustomTimePicker
-                  value={form.startTimeOnly}
-                  onChange={(val) => set({ startTimeOnly: val })}
-                />
-              </div>
-            </div>
-          </div>
+          {/* ── When ────────────────────────────────────────────────────── */}
+          <div className={styles.when} role="group" aria-labelledby="event-when-label">
+            <span id="event-when-label" className={styles.label}>When *</span>
 
-          {/* Ends row */}
-          <div className={styles.dateTimeGroup}>
-            <span className={styles.dateTimeGroupLabel}>Ends *</span>
-            <div className={styles.dateTimeRow}>
-              <div className={styles.dateBox}>
-                <CustomDatePicker
-                  value={form.endDate}
-                  min={form.startDate || new Date().toISOString().split('T')[0]}
-                  onChange={(val) => set({ endDate: val })}
-                />
-              </div>
-              <div className={styles.timeBox}>
-                <CustomTimePicker
-                  value={form.endTimeOnly}
-                  onChange={(val) => set({ endTimeOnly: val })}
-                />
-              </div>
+            <div className={styles.segment} role="radiogroup" aria-label="Event length">
+              <button
+                type="button"
+                role="radio"
+                aria-checked={!multiDay}
+                className={`${styles.segmentBtn} ${!multiDay ? styles.segmentOn : ''}`}
+                onClick={() => changeMultiDay(false)}
+              >
+                Single day
+              </button>
+              <button
+                type="button"
+                role="radio"
+                aria-checked={multiDay}
+                className={`${styles.segmentBtn} ${multiDay ? styles.segmentOn : ''}`}
+                onClick={() => changeMultiDay(true)}
+              >
+                Multi-day
+              </button>
             </div>
-          </div>
 
-          {/* Multi-day badge — visible when start and end are on different dates */}
-          {form.startDate && form.endDate && form.startDate !== form.endDate && (
-            <div className={styles.multiDayBadge}>
-              <CalendarRange size={14} />
-              <span>
-                Multi-day · 
-                {formatCardDate(
-                  combineDateTime(form.startDate, form.startTimeOnly || '00:00'),
-                  combineDateTime(form.endDate,   form.endTimeOnly   || '23:59'),
-                )}
-              </span>
-            </div>
-          )}
+            {multiDay ? (
+              <>
+                <div className={styles.dateTimeRow}>
+                  <div className={`${styles.field} ${styles.dateCol}`}>
+                    <label className={styles.subLabel} htmlFor="event-start-date">Start date</label>
+                    <EventDateField id="event-start-date" value={form.startDate} min={today}
+                      onChange={handleStartDateChange} />
+                  </div>
+                  <div className={styles.field}>
+                    <label className={styles.subLabel} htmlFor="event-start-time">Start time</label>
+                    <EventTimeField id="event-start-time" value={form.startTimeOnly}
+                      onChange={handleStartTimeChange} placeholder="Start" />
+                  </div>
+                </div>
+                <div className={styles.dateTimeRow}>
+                  <div className={`${styles.field} ${styles.dateCol}`}>
+                    <label className={styles.subLabel} htmlFor="event-end-date">End date</label>
+                    <EventDateField id="event-end-date" value={form.endDate}
+                      min={form.startDate || today} onChange={(val) => set({ endDate: val })} />
+                  </div>
+                  <div className={styles.field}>
+                    <label className={styles.subLabel} htmlFor="event-end-time">End time</label>
+                    <EventTimeField id="event-end-time" value={form.endTimeOnly}
+                      after={endsSameDay ? form.startTimeOnly : ''}
+                      onChange={(val) => set({ endTimeOnly: val })} placeholder="End" />
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className={styles.field}>
+                  <label className={styles.subLabel} htmlFor="event-date">Date</label>
+                  <EventDateField id="event-date" value={form.startDate} min={today}
+                    onChange={handleStartDateChange} />
+                </div>
+                <div className={styles.dateTimeRow}>
+                  <div className={styles.field}>
+                    <label className={styles.subLabel} htmlFor="event-start-time">Starts</label>
+                    <EventTimeField id="event-start-time" value={form.startTimeOnly}
+                      onChange={handleStartTimeChange} placeholder="Start" />
+                  </div>
+                  <div className={styles.field}>
+                    <label className={styles.subLabel} htmlFor="event-end-time">Ends</label>
+                    <EventTimeField id="event-end-time" value={form.endTimeOnly}
+                      after={form.startTimeOnly}
+                      onChange={(val) => set({ endTimeOnly: val })} placeholder="End" />
+                  </div>
+                </div>
+              </>
+            )}
+
+            <p className={`${styles.whenSummary} ${whenSummary?.warn ? styles.whenWarn : ''}`} aria-live="polite">
+              {whenSummary && (
+                <>
+                  <CalendarRange size={14} aria-hidden="true" />
+                  <span>{whenSummary.text}</span>
+                </>
+              )}
+            </p>
+          </div>
 
           <div className={styles.field}>
-            <span className={styles.label}>Venue *</span>
-            <input className={styles.input} value={form.venue} maxLength={100}
+            <label className={styles.label} htmlFor="event-venue">Venue *</label>
+            <input id="event-venue" className={styles.input} value={form.venue} maxLength={100}
               onChange={(e) => set({ venue: e.target.value })} placeholder="e.g. Main Auditorium" />
           </div>
 
           <div className={styles.field}>
-            <span className={styles.label}>Registration link</span>
-            <input className={styles.input} value={form.registrationUrl} type="url" maxLength={2048}
+            <label className={styles.label} htmlFor="event-registrationUrl">Registration link</label>
+            <input id="event-registrationUrl" className={styles.input} value={form.registrationUrl} type="url" maxLength={2048}
               onChange={(e) => set({ registrationUrl: e.target.value })} placeholder="https://forms.gle/…" />
           </div>
 
-          {error && <p className={styles.error}>{error}</p>}
         </div>
 
         <div className={styles.footer}>
-          <button className={styles.btnPrimary} onClick={submit} disabled={busy}>
+          {/* Here, not at the end of the scrolling body: a refusal has to be
+              seen where the button is, however far down the form is. */}
+          {error && <p className={styles.error} role="alert">{error}</p>}
+          <button className={styles.btnPrimary} onClick={submit} disabled={busy || closing}>
             {isEdit ? 'Save changes' : 'Publish event'}
           </button>
         </div>
       </div>
-    </div>
+    </div>, document.body
   );
 }

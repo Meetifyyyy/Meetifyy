@@ -4,7 +4,9 @@
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-  padding: 0rem 0 !important;
+  /* The window scrolls and `.centre` has no bottom padding on a large screen,
+     so without this the last section sits flush against the window edge. */
+  padding: 0 0 3rem !important;
   color: var(--color-text-main);
   max-width: 1200px;
   width: 100%;
@@ -22,9 +24,12 @@
 /* Someone without a verified college email: the pick-a-college flow fills the
    content area itself (CampusAffiliation.module.css, .screen), including the
    room above the bottom navigation, so the hub adds none of its own. */
+.hubContainer.hubJoin {
+  padding-bottom: 0 !important;
+}
+
 @media (max-width: 768px) {
   .hubContainer.hubJoin {
-    padding-bottom: 0 !important;
     gap: 0;
   }
 }

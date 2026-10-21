@@ -633,16 +633,6 @@
   }
 }
 
-.onlineDot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--color-success);
-  display: inline-block;
-  animation: pulse 2s ease-in-out infinite;
-  box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.2);
-}
-
 @keyframes pulse {
 
   0%,

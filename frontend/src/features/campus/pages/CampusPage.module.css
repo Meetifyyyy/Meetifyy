@@ -358,3 +358,28 @@
     background: var(--color-bg-white, #ffffff) !important;
   }
 }
+
+/* Campus activities. The columns follow the section's own width (a container
+   query, not the window's: the sidebar takes a different share of it at every
+   breakpoint), so a card never stretches across the whole content area just
+   because there are few of them. Narrow: one card per row. From 44rem: two,
+   so the four-card preview is a full 2x2 and a single card holds one column
+   rather than the whole row. */
+.activityGridWrap {
+  container-type: inline-size;
+  width: 100%;
+  min-width: 0;
+}
+
+.activityGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.75rem;
+}
+
+@container (min-width: 44rem) {
+  .activityGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1rem;
+  }
+}

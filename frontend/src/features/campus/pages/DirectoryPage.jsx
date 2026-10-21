@@ -15,34 +15,66 @@ import { useDirectory } from '@shared/hooks/useProfile';
 import { useDebounce } from '@shared/hooks/useDebounce';
 import CampusAffiliationGate from '../components/affiliation/CampusAffiliationGate';
 
-const SearchableMajorSelect = ({ value, onChange, courses }) => {
+/**
+ * Open/close state for a filter menu, plus which value to list first.
+ *
+ * Picking an option closes the menu, and that pick is what changes `value`. The
+ * list must not jump while that is happening, so the value to pin is captured
+ * when the menu OPENS, not read live: whatever was selected at that moment is
+ * listed first, and choosing something else leaves the order alone until the
+ * next open.
+ */
+function useFilterMenu(value) {
   const [isOpen, setIsOpen] = useState(false);
-  const dropdownRef = useRef(null);
+  const [pinned, setPinned] = useState(value);
+  const ref = useRef(null);
 
   useEffect(() => {
     if (!isOpen) return undefined;
     const handleClickOutside = (event) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
-        setIsOpen(false);
-      }
+      if (ref.current && !ref.current.contains(event.target)) setIsOpen(false);
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isOpen]);
 
+  const toggle = useCallback(() => {
+    if (!isOpen) setPinned(value);
+    setIsOpen(!isOpen);
+  }, [isOpen, value]);
+
+  const close = useCallback(() => setIsOpen(false), []);
+
+  return { ref, isOpen, toggle, close, pinned };
+}
+
+/** `items` with the pinned one first and the rest in their original order. */
+function pinFirst(items, valueOf, pinned) {
+  const at = items.findIndex((item) => valueOf(item) === pinned);
+  if (at <= 0) return items;
+  return [items[at], ...items.slice(0, at), ...items.slice(at + 1)];
+}
+
+const SearchableMajorSelect = ({ value, onChange, courses }) => {
+  const { ref, isOpen, toggle, close, pinned } = useFilterMenu(value);
+
   const courseOptions = useMemo(
     () => courses.map((c) => ({ value: c.id, label: c.name })),
     [courses],
+  );
+  const listed = useMemo(
+    () => pinFirst(courseOptions, (m) => m.value, pinned),
+    [courseOptions, pinned],
   );
 
   const selectedLabel = value === 'All' ? 'Course' : courseOptions.find(m => m.value === value)?.label || 'Course';
 
   return (
-    <div ref={dropdownRef} className={styles.dropdownWrap}>
+    <div ref={ref} className={styles.dropdownWrap}>
       <button
         type="button"
         className={styles.filterDropdown}
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={toggle}
         style={{ textAlign: 'left', paddingRight: '2.5rem' }}
       >
         <span className={styles.filterDropdownLabel}>
@@ -53,13 +85,14 @@ const SearchableMajorSelect = ({ value, onChange, courses }) => {
       {isOpen && (
         <div className={styles.customDropdownMenu}>
           <div className={styles.customDropdownList}>
-            {courseOptions.map(m => (
+            {listed.map(m => (
               <div
                 key={m.value}
                 className={`${styles.customDropdownOption} ${value === m.value ? styles.selected : ''}`}
                 onClick={() => {
+                  // Choosing the selected option again clears the filter.
                   onChange(value === m.value ? 'All' : m.value);
-                  setIsOpen(false);
+                  close();
                 }}
               >
                 {m.label}
@@ -79,28 +112,22 @@ const SearchableMajorSelect = ({ value, onChange, courses }) => {
 };
 
 const CustomClassYearSelect = ({ value, onChange, years }) => {
-  const [isOpen, setIsOpen] = useState(false);
-  const dropdownRef = useRef(null);
+  const { ref, isOpen, toggle, close, pinned } = useFilterMenu(value);
 
-  useEffect(() => {
-    if (!isOpen) return undefined;
-    const handleClickOutside = (event) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
-        setIsOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [isOpen]);
+  // Option values are strings ('2027'), as the filter state holds them.
+  const listed = useMemo(
+    () => pinFirst(years, (y) => y.toString(), pinned),
+    [years, pinned],
+  );
 
   const selectedLabel = value === 'All' ? 'Passing Year' : yearLabel(Number(value));
 
   return (
-    <div ref={dropdownRef} className={styles.dropdownWrap}>
+    <div ref={ref} className={styles.dropdownWrap}>
       <button
         type="button"
         className={styles.filterDropdown}
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={toggle}
         style={{ textAlign: 'left', paddingRight: '2.5rem' }}
       >
         <span className={styles.filterDropdownLabel}>
@@ -111,13 +138,13 @@ const CustomClassYearSelect = ({ value, onChange, years }) => {
       {isOpen && (
         <div className={styles.customDropdownMenu}>
           <div className={styles.customDropdownList}>
-            {years.map(y => (
+            {listed.map(y => (
               <div
                 key={y}
                 className={`${styles.customDropdownOption} ${value === y.toString() ? styles.selected : ''}`}
                 onClick={() => {
                   onChange(value === y.toString() ? 'All' : y.toString());
-                  setIsOpen(false);
+                  close();
                 }}
               >
                 {yearLabel(y)}

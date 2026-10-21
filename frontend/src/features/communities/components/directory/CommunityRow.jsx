@@ -19,8 +19,11 @@ const ROLE_LABEL = { OWNER: 'Owner', MODERATOR: 'Moderator' };
  * Shows the join control. `showMembership={false}` (the Communities and Campus
  * Communities pages) drops what only restates membership - the role line and
  * the settled "Owner" / "Joined" chip - so a joined community shows no action.
+ *
+ * `highlightOnHover` is for the Campus surfaces: on a mouse the card lifts and
+ * takes the primary border, as an activity card does.
  */
-function CommunityRow({ community, from, showMembership = true }) {
+function CommunityRow({ community, from, showMembership = true, highlightOnHover = false }) {
   const { currentUser } = useAuth();
   const role = showMembership ? ROLE_LABEL[community.userRole] : null;
   const joined = isCommunityOwner(community, currentUser) || isCommunityMember(community, currentUser);
@@ -30,7 +33,7 @@ function CommunityRow({ community, from, showMembership = true }) {
     : null;
 
   return (
-    <article className={styles.row}>
+    <article className={highlightOnHover ? `${styles.row} ${styles.highlight}` : styles.row}>
       <CommunityAvatar community={community} size={64} />
 
       <div className={styles.body}>

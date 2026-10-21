@@ -70,7 +70,7 @@ function formatCount(n) {
   return n.toLocaleString();
 }
 
-function HeroSection({ coverRef, comm, onlineNow, joined, joining, onToggleJoin, onCreatePost, userCommunities, onViewMembers, isAdmin, onOpenAdmin, onUpdateCommunity, isMuted, onMuteClick, onTitleClick, onShare }) {
+function HeroSection({ coverRef, comm, joined, joining, onToggleJoin, onCreatePost, userCommunities, onViewMembers, isAdmin, onOpenAdmin, onUpdateCommunity, isMuted, onMuteClick, onTitleClick, onShare }) {
   const users = useUsersMap();
   const { currentUser } = useAuth();
   const coverInputRef = useRef(null);
@@ -340,10 +340,6 @@ function HeroSection({ coverRef, comm, onlineNow, joined, joining, onToggleJoin,
                       <span className={styles.heroCount}>
                         <strong>{formatCount(totalMembers)}</strong> members
                       </span>
-                      <span className={styles.heroCount}>
-                        <span className={styles.onlineDot} />
-                        <strong>{formatCount(onlineNow)}</strong> active now
-                      </span>
                     </div>
                   </div>
                 );
@@ -465,7 +461,7 @@ function HeroSection({ coverRef, comm, onlineNow, joined, joining, onToggleJoin,
                     : (typeof comm.members === 'number'
                       ? comm.members
                       : (Array.isArray(comm.members) ? comm.members.length : (comm.memberList?.length || 0)));
-                  return `${formatCount(totalMembers)} members \u00a0 ${formatCount(onlineNow)} active`;
+                  return `${formatCount(totalMembers)} members`;
                 })()}
               </div>
             </div>
@@ -813,44 +809,11 @@ export default function CommunityView({ communityId, onBack, onPostClick, onComm
   }, [showMobileAbout, isMobileAboutClosing]);
 
 
-  /**
-   * Live "active now" count.
-   *
-   * Held in local state rather than read off `comm`, because the community
-   * payload is Redis-cached for a minute on the server and presence moves
-   * much faster than that. The server answers the room join with the current
-   * figure and pushes a new one on every member's connect or disconnect, so
-   * this stays right through reconnects and multiple tabs without the client
-   * ever having to guess at a delta.
-   *
-   * `null` means "not heard from the server yet" — distinct from a real zero,
-   * so the UI can fall back to whatever the payload carried instead of
-   * flashing 0 on mount.
-   */
-  const [liveOnline, setLiveOnline] = useState(null);
-
-  useEffect(() => {
-    // A different community: drop the previous one's count rather than
-    // showing it under the new name until the first event lands.
-    setLiveOnline(null);
-  }, [communityId]);
-
-
+  // Keep room membership for moderation events; presence is no longer displayed.
   useEffect(() => {
     if (!socket || !isConnected || !communityId) return undefined;
     socket.emit('community:join_room', { communityId });
-
-    const handlePresence = (payload) => {
-      if (!payload || payload.communityId !== communityId) return;
-      if (typeof payload.online !== 'number') return;
-      setLiveOnline(payload.online);
-    };
-    socket.on('community:presence', handlePresence);
-
-    return () => {
-      socket.off('community:presence', handlePresence);
-      socket.emit('community:leave_room', { communityId });
-    };
+    return () => socket.emit('community:leave_room', { communityId });
   }, [socket, isConnected, communityId]);
 
   const [isMuted, setIsMuted] = useState(() => {
@@ -901,10 +864,6 @@ export default function CommunityView({ communityId, onBack, onPostClick, onComm
   // The pending "you're now a moderator" notice, carried on the community.
   const moderatorNotice = comm?.moderatorNotice ?? null;
 
-  // Prefer the live figure; fall back to whatever the (possibly cached)
-  // payload carried until the first socket update arrives. Declared after
-  // `apiComm` — reading it above its own declaration would throw.
-  const onlineNow = liveOnline ?? comm?.online ?? comm?.onlineCount ?? 0;
   const isLoading = isApiLoading || (!comm && !isDeletedError && !isApiError);
 
   const [joining] = useState(false);
@@ -1251,7 +1210,6 @@ export default function CommunityView({ communityId, onBack, onPostClick, onComm
       <HeroSection
         coverRef={heroCoverRef}
         comm={comm}
-        onlineNow={onlineNow}
         joined={joined}
         joining={joining}
         onToggleJoin={handleToggleJoin}

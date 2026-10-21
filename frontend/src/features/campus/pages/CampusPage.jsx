@@ -513,7 +513,7 @@ export default function CampusPage() {
                 {/* The same card as the Communities page. */}
                 <div className={listStyles.list} ref={communityListRef}>
                   {visibleCommunities.map(comm => (
-                    <CommunityRow key={comm.id} community={comm} from="/campus" showMembership={false} />
+                    <CommunityRow key={comm.id} community={comm} from="/campus" showMembership={false} highlightOnHover />
                   ))}
                 </div>
               </div>
@@ -585,10 +585,13 @@ export default function CampusPage() {
           </div>
 
           {campusActivities.isLoading && campusActivityItems.length === 0 ? (
-            <>
-              <CrewCardSkeleton />
-              <CrewCardSkeleton />
-            </>
+            // Same grid as the cards, so they replace the skeletons in place.
+            <div className={styles.activityGridWrap}>
+              <div className={styles.activityGrid}>
+                <CrewCardSkeleton />
+                <CrewCardSkeleton />
+              </div>
+            </div>
           ) : campusActivityItems.length === 0 ? (
             <div className={eventStyles.emptyState}>
               <p className={eventStyles.emptyText}>
@@ -596,13 +599,17 @@ export default function CampusPage() {
               </p>
             </div>
           ) : (
-            campusActivityItems.map(activity => (
-              <CrewCard
-                key={activity.id}
-                activity={activity}
-                onClick={openActivity}
-              />
-            ))
+            <div className={styles.activityGridWrap}>
+              <div className={styles.activityGrid}>
+                {campusActivityItems.map(activity => (
+                  <CrewCard
+                    key={activity.id}
+                    activity={activity}
+                    onClick={openActivity}
+                  />
+                ))}
+              </div>
+            </div>
           )}
         </section>
 

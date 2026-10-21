@@ -137,6 +137,7 @@ export default function CampusCommunitiesPage() {
                     community={community}
                     from={location.pathname}
                     showMembership={false}
+                    highlightOnHover
                   />
                 ))}
               </div>
