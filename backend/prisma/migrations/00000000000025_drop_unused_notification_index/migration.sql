@@ -1,0 +1,11 @@
+-- Drops a Notification index production never used.
+--
+-- (recipientId, type, deletedAt, createdAt DESC) had 0 scans between the
+-- statistics reset on 2026-08-25 and 2026-10-22, while its twin with the same
+-- columns ordered (recipientId, deletedAt, type, createdAt DESC) served every
+-- such query (790 scans). It only added work to each notification insert.
+-- Read from pg_stat_user_indexes on production (statistics only, read-only).
+--
+-- Backward-compatible: no query of the previous release used it. Not
+-- CONCURRENTLY (Prisma runs migrations in a transaction).
+DROP INDEX IF EXISTS "Notification_recipientId_type_deletedAt_createdAt_idx";

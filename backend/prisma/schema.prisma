@@ -740,7 +740,6 @@ model Notification {
   @@index([recipientId, readAt])
   @@index([recipientId, deletedAt, readAt])
   @@index([recipientId, deletedAt, createdAt(sort: Desc)])
-  @@index([recipientId, type, deletedAt, createdAt(sort: Desc)])
   @@index([recipientId, deletedAt, type, createdAt(sort: Desc)])
   @@index([createdAt])
   @@index([type])
