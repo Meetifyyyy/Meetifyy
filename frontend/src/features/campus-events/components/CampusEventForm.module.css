@@ -406,11 +406,21 @@
    bar first, so the form scroll area only needs room for what reaches past it
    (keyboard height minus the bar's, `--footer-h`): scrolled to the end, the
    last field sits just above the keyboard with no empty space beyond it. The
-   room follows the keyboard's own duration, curve and head start, so opening
-   and closing it move the content in step instead of snapping. */
+   room follows the keyboard's own duration, curve and head start when it
+   closes, so the content settles down in step instead of snapping. */
 .overlay[data-keyboard-overlay] .body {
   padding-bottom: calc(1.1rem + max(0px, var(--kb-inset, 0px) - var(--footer-h, 0px)));
   transition: padding-bottom var(--kb-duration, 0ms) var(--kb-easing, ease-out) var(--kb-delay, 0ms);
+}
+
+/* Opening is NOT eased: the room must be there in the frame the keyboard starts
+   so the tapped field can be scrolled above it at once (a room that is still
+   growing leaves nothing to scroll into, and the field stays under the
+   keyboard). The transition is taken from the style AFTER the change, so with
+   the keyboard open this rule switches it off, and closing, which removes the
+   attribute in the same pass, uses the eased one above. */
+:global(html[data-keyboard-open]) .overlay[data-keyboard-overlay] .body {
+  transition: none;
 }
 
 /* Phones and small tablets: not a card over the page but a page of its own.
