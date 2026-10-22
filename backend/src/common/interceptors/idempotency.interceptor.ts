@@ -31,7 +31,10 @@ const KEY_PATTERN = /^[A-Za-z0-9_-]{8,128}$/;
 /** What is stored under a key. */
 type Entry =
   | { state: 'pending'; fingerprint: string; token?: string }
-  | { state: 'done'; fingerprint: string; body: unknown };
+  | { state: 'done'; fingerprint: string; body: unknown }
+  // The write committed but its result was too large to keep. Holds only the
+  // id (when the body had one), so a repeat can say what was created.
+  | { state: 'done-unreplayable'; fingerprint: string; resourceId?: string };
 
 /*
  * Each claim carries a random token in its pending entry, and the exact entry
@@ -71,6 +74,9 @@ export const REFRESH_SCRIPT =
  * - A repeat that arrives while the first is still running waits for it, then
  *   replays; past `WAIT_MS` it is refused (409) rather than run twice.
  * - A write that FAILS releases its key, so a retry runs for real.
+ * - A write that SUCCEEDS but returns more than MAX_BODY_BYTES keeps a small
+ *   marker, and a repeat is answered 409 IDEMPOTENCY_ALREADY_PROCESSED. Freeing
+ *   the key there let the retry run the committed write a second time.
  * - A claim is refreshed while its handler runs, so a slow write keeps it; a
  *   crashed process stops refreshing and its claim expires within a minute.
  * - Without the header, or without Redis, a request runs exactly as before.
@@ -96,10 +102,12 @@ export class IdempotencyInterceptor implements NestInterceptor {
   static readonly WAIT_MS = 10_000;
   static readonly POLL_MS = 200;
   /**
-   * Results larger than this are not kept (the key is freed, so a repeat runs
-   * again). A created post or comment is a few kilobytes; this bounds memory.
+   * Results larger than this are not kept whole. A created post or comment is
+   * a few kilobytes (a post with six images and a poll is well under this);
+   * this bounds Redis memory. A bigger result leaves a small "already
+   * processed" marker instead, never a freed key: see `complete`.
    */
-  static readonly MAX_BODY_BYTES = 32 * 1024;
+  static readonly MAX_BODY_BYTES = 64 * 1024;
 
   constructor(
     private readonly redis: RedisService,
@@ -262,6 +270,16 @@ export class IdempotencyInterceptor implements NestInterceptor {
           if (entry.state === 'done') {
             return { kind: 'replay', body: entry.body };
           }
+          if (entry.state === 'done-unreplayable') {
+            // Terminal: the first request committed, so a repeat must not
+            // run again. Waiting would only end in IN_PROGRESS.
+            throw new ConflictException({
+              code: 'IDEMPOTENCY_ALREADY_PROCESSED',
+              message:
+                'A request with this Idempotency-Key was already processed',
+              ...(entry.resourceId ? { id: entry.resourceId } : {}),
+            });
+          }
         }
         if (Date.now() >= deadline) {
           throw new ConflictException({
@@ -298,11 +316,18 @@ export class IdempotencyInterceptor implements NestInterceptor {
     if (!client) return body;
     try {
       const done: Entry = { state: 'done', fingerprint, body: body ?? null };
-      const serialized = JSON.stringify(done);
+      let serialized = JSON.stringify(done);
       if (serialized.length > IdempotencyInterceptor.MAX_BODY_BYTES) {
-        // Too large to keep: free the key rather than leave it pending.
-        await client.eval(RELEASE_SCRIPT, 1, redisKey, claimValue);
-        return body;
+        // Too large to replay, but the write HAS committed. Releasing the key
+        // (as this used to) let a retry run it again: a duplicate. Keep a
+        // small marker instead; a repeat gets 409 ALREADY_PROCESSED, with the
+        // id when the result had one, rather than a second write.
+        const marker: Entry = {
+          state: 'done-unreplayable',
+          fingerprint,
+          resourceId: resourceIdOf(body),
+        };
+        serialized = JSON.stringify(marker);
       }
       await client.eval(
         COMPLETE_SCRIPT,
@@ -361,7 +386,9 @@ function parseEntry(raw: string | null): Entry | null {
       'state' in value &&
       'fingerprint' in value &&
       typeof value.fingerprint === 'string' &&
-      (value.state === 'pending' || value.state === 'done')
+      (value.state === 'pending' ||
+        value.state === 'done' ||
+        value.state === 'done-unreplayable')
     ) {
       return value as Entry;
     }
@@ -369,6 +396,15 @@ function parseEntry(raw: string | null): Entry | null {
     // Unreadable entry: treated as absent.
   }
   return null;
+}
+
+/** The `id` of a result, when it has a plain string one. */
+function resourceIdOf(body: unknown): string | undefined {
+  if (typeof body !== 'object' || body === null || !('id' in body)) {
+    return undefined;
+  }
+  const id = body.id;
+  return typeof id === 'string' && id.length <= 128 ? id : undefined;
 }
 
 function sleep(ms: number): Promise<void> {

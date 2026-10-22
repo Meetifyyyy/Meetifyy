@@ -22,6 +22,12 @@ import type { ContentDeletionAuthorizer } from './content-deletion.authorizer';
  * about the community at all. All of them now go through one rule:
  * canViewCommunity — the rule the feed and createPost already apply.
  */
+/** Runs an interactive `$transaction` callback against the same fake client. */
+const withTx = <P extends object>(p: P) =>
+  Object.assign(p, {
+    $transaction: jest.fn(<T>(fn: (tx: P) => Promise<T>): Promise<T> => fn(p)),
+  });
+
 describe('PostsService — single-post access', () => {
   const POST = 'post-1';
   const COMMENT = 'comment-1';
@@ -616,7 +622,7 @@ describe('PostsService — poll bounds (M-13)', () => {
       },
     };
     const service = new PostsService(
-      stub<PrismaService>(prisma),
+      stub<PrismaService>(withTx(prisma)),
       stub<NotificationsService>(),
       stub<NotificationFactory>(),
       stub<BlocksService>(),

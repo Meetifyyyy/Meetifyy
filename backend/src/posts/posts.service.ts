@@ -17,6 +17,7 @@ import {
   NotificationEntityType,
   PollOption,
   Comment,
+  Media,
 } from '@prisma/client';
 import { isRecord } from '../common/utils/type-guards.util';
 import { errorMessage } from '../common/utils/error.util';
@@ -42,6 +43,7 @@ import { RedisService } from '../redis/redis.service';
 import { MentionsService } from '../mentions/mentions.service';
 import { StorageService } from '../uploads/uploads.service';
 import { MediaCleanupService } from '../uploads/media-cleanup.service';
+import { isProtectedMediaKey } from '../uploads/media-ownership.util';
 import { MentionDto } from '../common/dto/mention.dto';
 import { ContentDeletionAuthorizer } from './content-deletion.authorizer';
 import { randomUUID } from 'crypto';
@@ -69,6 +71,17 @@ const POLL_OPTION_MAX_LENGTH = 100;
 /** A poll has between 2 and 10 options (the composer enforces the same). */
 const POLL_MIN_OPTIONS = 2;
 const POLL_MAX_OPTIONS = 10;
+
+/** The folder the post composer uploads post media to. */
+const POST_MEDIA_KEY_PREFIX = 'posts/';
+
+/**
+ * The create-post transaction is a handful of sequential round trips. The
+ * default 5s timeout is too tight over a high-latency link to the database
+ * (P2028 fails a post that was about to succeed), so it is widened, as the
+ * account purge does.
+ */
+const CREATE_POST_TX_OPTIONS = { timeout: 15_000, maxWait: 5_000 } as const;
 
 /**
  * A submitted poll option as text: a string trimmed, a number or boolean
@@ -503,6 +516,17 @@ export class PostsService {
       }
 
       const objectKeys = allMediaKeys.map((k) => k.replace('/api/media/', ''));
+      // Only what the post composer produces (it uploads to `posts/`). A key
+      // the caller owns in another folder (verification documents, chat
+      // media, avatars) must not be attachable: it would then be deleted
+      // with the post, and a verification document is not a post image.
+      if (
+        objectKeys.some(
+          (k) => !k.startsWith(POST_MEDIA_KEY_PREFIX) || isProtectedMediaKey(k),
+        )
+      ) {
+        throw new BadRequestException('One or more media items are not valid');
+      }
       const mediaList = await this.prisma.media.findMany({
         where: { objectKey: { in: objectKeys } },
         select: { id: true, ownerId: true, postId: true, objectKey: true },
@@ -550,78 +574,110 @@ export class PostsService {
       );
     }
 
-    const post = await this.prisma.post.create({
-      data: {
-        authorId,
-        text,
-        communityId,
-        mentions: sanitizedMentions.length > 0 ? sanitizedMentions : undefined,
-        media:
-          mediaIdsToConnect.length > 0
-            ? {
-                connect: mediaIdsToConnect.map((id) => ({ id })),
-              }
-            : undefined,
-      },
-      include: {
-        author: {
-          select: {
-            id: true,
-            username: true,
-            displayName: true,
-            isCampusRep: true,
-            avatar: true,
-            collegeId: true,
-            college: { select: { id: true, name: true } },
-            // Required by `presentAuthor`. A select that omits these renders a
-            // deleted author's real name and photo.
-            accountStatus: true,
-            deletedAt: true,
-          },
-        },
-        media: true,
-        community: {
-          select: {
-            id: true,
-            name: true,
-            deletedAt: true,
-          },
-        },
-      },
-    });
+    const sanitizedPollOptions = pollInput
+      .map((opt) => pollOptionText(opt).slice(0, POLL_OPTION_MAX_LENGTH))
+      .filter(Boolean);
 
-    await this.saveHashtags(post.id, text);
+    // The post, its media order and its poll options commit together. They
+    // used to be separate awaits after the insert, so a failure in one of them
+    // threw from a request whose post already existed; the idempotency
+    // interceptor then released the key and the client's retry created a
+    // second post.
+    const { post, createdPollOptions } = await this.prisma.$transaction(
+      async (tx) => {
+        const created = await tx.post.create({
+          data: {
+            authorId,
+            text,
+            communityId,
+            mentions:
+              sanitizedMentions.length > 0 ? sanitizedMentions : undefined,
+          },
+          include: {
+            author: {
+              select: {
+                id: true,
+                username: true,
+                displayName: true,
+                isCampusRep: true,
+                avatar: true,
+                collegeId: true,
+                college: { select: { id: true, name: true } },
+                // Required by `presentAuthor`. A select that omits these renders a
+                // deleted author's real name and photo.
+                accountStatus: true,
+                deletedAt: true,
+              },
+            },
+            community: {
+              select: {
+                id: true,
+                name: true,
+                deletedAt: true,
+              },
+            },
+          },
+        });
 
-    if (allMediaKeys.length > 0) {
-      await Promise.all(
-        allMediaKeys.map(async (key, index) => {
-          const mediaId = mediaIdsToConnect[index];
-          await this.prisma.media.update({
-            where: { id: mediaId },
-            data: { order: index },
+        // Attach the media and set its order in ONE statement, and only rows
+        // that are still the author's and still unattached. The earlier
+        // ownership check ran outside this transaction, so two concurrent
+        // posts could both pass it and both claim the same image. A row that
+        // lost that race (or was attached meanwhile) makes the count come up
+        // short, and the throw rolls the post back with it.
+        let media: Media[] = [];
+        if (mediaIdsToConnect.length > 0) {
+          const attached = await tx.$executeRaw(Prisma.sql`
+            UPDATE "Media" AS m
+            SET "postId" = ${created.id},
+                "order" = v.o,
+                "updatedAt" = now()
+            FROM (VALUES ${Prisma.join(
+              mediaIdsToConnect.map(
+                (id, index) => Prisma.sql`(${id}::text, ${index}::int)`,
+              ),
+            )}) AS v(id, o)
+            WHERE m."id" = v.id
+              AND m."ownerId" = ${authorId}
+              AND m."postId" IS NULL
+          `);
+          if (attached !== mediaIdsToConnect.length) {
+            throw new BadRequestException(
+              'One or more media items are already attached to a post',
+            );
+          }
+          // Read after the update so the response carries the stored `order`,
+          // in the order the client sent.
+          media = await tx.media.findMany({
+            where: { postId: created.id },
+            orderBy: { order: 'asc' },
           });
-        }),
-      );
-    }
+        }
 
-    let createdPollOptions: PollOption[] = [];
-    if (pollInput.length > 0) {
-      const sanitizedOptions = pollInput
-        .map((opt) => pollOptionText(opt).slice(0, POLL_OPTION_MAX_LENGTH))
-        .filter(Boolean);
+        let pollOptions: PollOption[] = [];
+        if (sanitizedPollOptions.length > 0) {
+          await tx.pollOption.createMany({
+            data: sanitizedPollOptions.map((optText: string) => ({
+              postId: created.id,
+              text: optText,
+            })),
+          });
+          pollOptions = await tx.pollOption.findMany({
+            where: { postId: created.id },
+          });
+        }
+        return { post: { ...created, media }, createdPollOptions: pollOptions };
+      },
+      CREATE_POST_TX_OPTIONS,
+    );
 
-      if (sanitizedOptions.length > 0) {
-        await this.prisma.pollOption.createMany({
-          data: sanitizedOptions.map((optText: string) => ({
-            postId: post.id,
-            text: optText,
-          })),
-        });
-        createdPollOptions = await this.prisma.pollOption.findMany({
-          where: { postId: post.id },
-        });
-      }
-    }
+    // The post is committed: hashtag indexing is best effort and must never
+    // fail the request (see the transaction comment above for why).
+    await this.saveHashtags(post.id, text).catch((err: unknown) =>
+      this.logger.warn(
+        `createPost: hashtag indexing failed for ${post.id}: ${errorMessage(err)}`,
+      ),
+    );
 
     const formattedMedia = (post.media || []).map(withMediaUrl);
 
@@ -2161,84 +2217,113 @@ export class PostsService {
       }),
     ]);
 
-    // The created row already carries the author, so reuse it for notifications
-    // (one fewer query) and for the realtime payload below.
+    // The comment is committed from here on. Everything below is a side
+    // effect: a throw (e.g. from the notification factory) must not turn into
+    // a failed request, or the idempotency interceptor releases the key and
+    // the client's retry inserts a second comment. Each effect is isolated so
+    // one failing does not skip the others.
+    const attempt = (label: string, effect: () => void): void => {
+      try {
+        effect();
+      } catch (err: unknown) {
+        this.logger.warn(
+          `addComment: ${label} failed for comment ${comment.id}: ${errorMessage(err)}`,
+        );
+      }
+    };
+
+    // The created row already carries the author, so reuse it for
+    // notifications (one fewer query) and for the realtime payload below.
     const actor = comment.author;
     if (actor) {
       // 1. Notify parent comment author if replying to another comment
-      if (
-        parentComment &&
-        parentComment.authorId &&
-        parentComment.authorId !== authorId
-      ) {
-        const replyDto = this.notificationFactory.createCommentReply(
-          actor,
-          comment,
-          post,
-          parentComment.authorId,
-        );
-        this.notificationsService.createNotification(replyDto).catch((err) => {
-          this.logger.warn('Failed to send comment reply notification', err);
-        });
-      }
+      attempt('reply notification', () => {
+        if (
+          parentComment &&
+          parentComment.authorId &&
+          parentComment.authorId !== authorId
+        ) {
+          const replyDto = this.notificationFactory.createCommentReply(
+            actor,
+            comment,
+            post,
+            parentComment.authorId,
+          );
+          this.notificationsService
+            .createNotification(replyDto)
+            .catch((err) => {
+              this.logger.warn(
+                'Failed to send comment reply notification',
+                err,
+              );
+            });
+        }
+      });
 
       // 2. Notify post author (if distinct from commenter and parent comment author)
-      if (
-        post.authorId !== authorId &&
-        (!parentComment || post.authorId !== parentComment.authorId)
-      ) {
-        const postDto = this.notificationFactory.createComment(
-          actor,
-          comment,
-          post,
-          post.authorId,
-        );
-        this.notificationsService.createNotification(postDto).catch((err) => {
-          this.logger.warn('Failed to send comment notification', err);
-        });
-      }
+      attempt('post author notification', () => {
+        if (
+          post.authorId !== authorId &&
+          (!parentComment || post.authorId !== parentComment.authorId)
+        ) {
+          const postDto = this.notificationFactory.createComment(
+            actor,
+            comment,
+            post,
+            post.authorId,
+          );
+          this.notificationsService.createNotification(postDto).catch((err) => {
+            this.logger.warn('Failed to send comment notification', err);
+          });
+        }
+      });
 
       // 3. Notify every uniquely @mentioned user (excludes anyone already
       // covered by the reply/post-author notifications above by design —
       // createNotification's own recipientId===actorId guard prevents
       // self-notifies, and a user can still legitimately get both a
       // "commented on your post" AND a "mentioned you" notification).
-      if (sanitizedMentions.length > 0) {
-        this.mentionsService
-          .persistAndNotify({
-            mentions: sanitizedMentions,
-            sourceType: MentionSource.COMMENT,
-            sourceId: comment.id,
-            actor,
-            entityType: NotificationEntityType.COMMENT,
-            entityId: comment.id,
-            contextText: text,
-            extraMetadata: { postId },
-          })
-          .catch((err) =>
-            this.logger.warn('Failed to process comment mentions', err),
-          );
-      }
+      attempt('mention notifications', () => {
+        if (sanitizedMentions.length > 0) {
+          this.mentionsService
+            .persistAndNotify({
+              mentions: sanitizedMentions,
+              sourceType: MentionSource.COMMENT,
+              sourceId: comment.id,
+              actor,
+              entityType: NotificationEntityType.COMMENT,
+              entityId: comment.id,
+              contextText: text,
+              extraMetadata: { postId },
+            })
+            .catch((err) =>
+              this.logger.warn('Failed to process comment mentions', err),
+            );
+        }
+      });
     }
 
     // Emit the fully-shaped comment so anyone viewing the post can insert it
     // live (deduped by id on the client). Same shape as a live comment from
     // getPostById so the client tree-builder handles it uniformly.
-    const eventComment = {
-      ...comment,
-      isDeleted: false,
-      likeCount: comment.likeCount ?? 0,
-      likesCount: comment.likeCount ?? 0,
-      hasLiked: false,
-      isLiked: false,
-      isLikedByMe: false,
-    };
-    void this.domainEventService.emit('comment.created', {
-      commentId: comment.id,
-      postId,
-      authorId,
-      parentId,
-      comment: eventComment,
+    attempt('realtime emit', () => {
+      const eventComment = {
+        ...comment,
+        isDeleted: false,
+        likeCount: comment.likeCount ?? 0,
+        likesCount: comment.likeCount ?? 0,
+        hasLiked: false,
+        isLiked: false,
+        isLikedByMe: false,
+      };
+      // Fire-and-forget: the emit is best effort once the row is committed.
+      void this.domainEventService.emit('comment.created', {
+        commentId: comment.id,
+        postId,
+        authorId,
+        parentId,
+        comment: eventComment,
+      });
     });
 
     return comment;

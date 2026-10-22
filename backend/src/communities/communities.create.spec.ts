@@ -114,6 +114,20 @@ describe('CommunitiesService.createCommunity', () => {
     );
   });
 
+  // A throw after the insert would make the idempotency interceptor release
+  // the key, and the client's retry would create a second community.
+  it('resolves with the created community when post-commit side effects fail', async () => {
+    const h = build();
+    h.service['invalidateCommunityCache'] = jest.fn(
+      (_communityId?: string, _collegeId?: string): Promise<void> =>
+        Promise.reject(new Error('redis down')),
+    );
+    await expect(
+      h.service.createCommunity(dto(), 'creator'),
+    ).resolves.toMatchObject({ id: 'new', slug: 'chess-club' });
+    expect(h.communityCreate).toHaveBeenCalledTimes(1);
+  });
+
   it('refuses an unverified creator and writes nothing', async () => {
     const h = build({ verified: false });
     await expect(h.service.createCommunity(dto(), 'creator')).rejects.toThrow(

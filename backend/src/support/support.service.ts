@@ -18,6 +18,7 @@ import { createHash } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
 import { config } from '../config';
+import { errorMessage } from '../common/utils/error.util';
 import {
   CreateAccountSupportRequestDto,
   CreateSupportRequestDto,
@@ -411,7 +412,7 @@ export class SupportService {
       this.logger.error(
         `support.confirmation_enqueue_failed ${JSON.stringify({
           ticketNumber: ticket.ticketNumber,
-          error: (error as Error).message,
+          error: errorMessage(error),
         })}`,
       );
       await this.prisma.supportTicket

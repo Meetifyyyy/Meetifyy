@@ -1875,7 +1875,16 @@ export class CommunitiesService implements OnModuleInit {
       creatorId,
       community: created,
     });
-    await this.invalidateCommunityCache(created.id);
+    // The community is committed: a cache failure must not fail the request,
+    // or the idempotency interceptor releases the key and a retry creates a
+    // second community.
+    try {
+      await this.invalidateCommunityCache(created.id);
+    } catch (err: unknown) {
+      this.logger.warn(
+        `createCommunity: cache invalidation failed for ${created.id}: ${errorMessage(err)}`,
+      );
+    }
     return created;
   }
 

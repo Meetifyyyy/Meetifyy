@@ -9,6 +9,12 @@ import { PostsService } from './posts.service';
  * What createPost stores as poll options. The DTO only checks that `poll` is
  * an object, so `options` arrives as untrusted JSON.
  */
+/** Runs an interactive `$transaction` callback against the same fake client. */
+const withTx = <P extends object>(p: P) =>
+  Object.assign(p, {
+    $transaction: jest.fn(<T>(fn: (tx: P) => Promise<T>): Promise<T> => fn(p)),
+  });
+
 describe('PostsService.createPost poll option text', () => {
   const createMany = jest.fn((_args: { data: Array<{ text: string }> }) =>
     Promise.resolve({ count: 0 }),
@@ -20,7 +26,7 @@ describe('PostsService.createPost poll option text', () => {
       logger: { log: jest.fn(), warn: jest.fn(), error: jest.fn() },
       mentionsService: { sanitize: jest.fn().mockResolvedValue([]) },
       domainEventService: { emit: jest.fn() },
-      prisma: {
+      prisma: withTx({
         post: {
           create: jest.fn().mockResolvedValue({
             id: 'p1',
@@ -31,7 +37,7 @@ describe('PostsService.createPost poll option text', () => {
           }),
         },
         pollOption: { createMany, findMany: jest.fn().mockResolvedValue([]) },
-      },
+      }),
     });
     return svc;
   };

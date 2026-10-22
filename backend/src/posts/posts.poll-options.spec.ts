@@ -11,28 +11,35 @@ import type { MentionsService } from '../mentions/mentions.service';
 import type { StorageService } from '../uploads/uploads.service';
 import type { ContentDeletionAuthorizer } from './content-deletion.authorizer';
 
-const makePrisma = () => ({
-  user: { findUnique: jest.fn(() => Promise.resolve({ id: 'u1' })) },
-  post: {
-    create: jest.fn((args: { data: { text: string; authorId: string } }) =>
-      Promise.resolve({
-        id: 'p1',
-        text: args.data.text,
-        authorId: args.data.authorId,
-        media: [],
-      }),
-    ),
-  },
-  pollOption: {
-    createMany: jest.fn(() => Promise.resolve({ count: 2 })),
-    findMany: jest.fn(() =>
-      Promise.resolve([
-        { id: 'opt1', text: 'Option 1' },
-        { id: 'opt2', text: 'Option 2' },
-      ]),
-    ),
-  },
-});
+/** Runs an interactive `$transaction` callback against the same fake client. */
+const withTx = <P extends object>(p: P) =>
+  Object.assign(p, {
+    $transaction: jest.fn(<T>(fn: (tx: P) => Promise<T>): Promise<T> => fn(p)),
+  });
+
+const makePrisma = () =>
+  withTx({
+    user: { findUnique: jest.fn(() => Promise.resolve({ id: 'u1' })) },
+    post: {
+      create: jest.fn((args: { data: { text: string; authorId: string } }) =>
+        Promise.resolve({
+          id: 'p1',
+          text: args.data.text,
+          authorId: args.data.authorId,
+          media: [],
+        }),
+      ),
+    },
+    pollOption: {
+      createMany: jest.fn(() => Promise.resolve({ count: 2 })),
+      findMany: jest.fn(() =>
+        Promise.resolve([
+          { id: 'opt1', text: 'Option 1' },
+          { id: 'opt2', text: 'Option 2' },
+        ]),
+      ),
+    },
+  });
 
 describe('PostsService — poll options validation', () => {
   let service: PostsService;

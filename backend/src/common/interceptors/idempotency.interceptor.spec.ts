@@ -405,13 +405,30 @@ describe('IdempotencyInterceptor — what it must never store or block', () => {
     expect(run).toHaveBeenCalledTimes(1);
   });
 
-  it('frees the key when the result is too large to keep', async () => {
+  it('keeps a marker, not the body, when the result is too large to replay', async () => {
     const { redis, data } = fakeRedis();
     const interceptor = new IdempotencyInterceptor(redis, optedIn);
-    const big = { blob: 'x'.repeat(IdempotencyInterceptor.MAX_BODY_BYTES + 1) };
-    const { next } = handler(big);
-    await call(interceptor, post(), next).result;
-    expect(data.size).toBe(0);
+    const big = {
+      id: 'post-big',
+      blob: 'x'.repeat(IdempotencyInterceptor.MAX_BODY_BYTES + 1),
+    };
+    const { next, run } = handler(big);
+    await expect(call(interceptor, post(), next).result).resolves.toEqual(big);
+    // The key stays taken, holding only a small marker.
+    expect(data.size).toBe(1);
+    const stored = [...data.values()][0];
+    expect(stored.length).toBeLessThan(500);
+    expect(stored).not.toContain('xxxx');
+
+    // A retry with the same key must not run the committed write again.
+    const { next: next2, run: run2 } = handler(big);
+    const retry = call(interceptor, post(), next2).result;
+    await expect(retry).rejects.toBeInstanceOf(ConflictException);
+    await expect(retry).rejects.toMatchObject({
+      response: { code: 'IDEMPOTENCY_ALREADY_PROCESSED', id: 'post-big' },
+    });
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(run2).not.toHaveBeenCalled();
   });
 });
 
