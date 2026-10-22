@@ -7,7 +7,7 @@
 import { useQuery, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { usersApi } from '@shared/api/apiClient';
-import { idbGet, idbSet } from '@shared/lib/idb';
+import { idbGet, idbSet, idbEpoch } from '@shared/lib/idb';
 import { useAuth } from '@shared/context/AuthContext';
 import { useHasCampusAccess, useCampusDeniedHandler } from './useCampusAffiliation';
 import { warmCover } from '@shared/components/ui/CoverImage';
@@ -32,8 +32,9 @@ export function useProfile(username, { enabled = true } = {}) {
   const query = useQuery({
     queryKey: qk,
     queryFn: async () => {
+      const epoch = idbEpoch();
       const data = await usersApi.getByUsername(username);
-      idbSet('profiles', username?.toLowerCase(), data);
+      idbSet('profiles', username?.toLowerCase(), data, epoch);
       // The cover is fetched and decoded as soon as the profile is known, not
       // when the screen mounts: it is the slowest thing on the page.
       warmCover(data?.cover);
@@ -136,8 +137,9 @@ export function useCampusUsers(limit = 50, { enabled = true } = {}) {
     queryKey: [...PROFILE_KEYS.campusUsers, limit],
     queryFn: async () => {
       try {
+        const epoch = idbEpoch();
         const data = await usersApi.getCampusUsers(limit, 0);
-        idbSet('profiles', 'campus_users', data);
+        idbSet('profiles', 'campus_users', data, epoch);
         return data;
       } catch (err) {
         onDenied(err);

@@ -32,6 +32,7 @@ import { useAuth } from '@shared/context/AuthContext';
 import { showToast } from '@shared/utils/toast';
 import { insertActivityIntoCache, replaceActivityInCache } from '@shared/utils/mapActivity';
 import { idbDelete } from '@shared/lib/idb';
+import { createSubmissionKey } from '@shared/lib/idempotencyKey';
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 const DAYS_OF_WEEK = ['S','M','T','W','T','F','S'];
 
@@ -568,6 +569,9 @@ export default function CreateActivityPage() {
   const [nowTs, setNowTs] = useState(() => Date.now());
   const [publishHint, setPublishHint] = useState('');
   const creationPromiseRef = useRef(null); // holds the in-flight create promise
+  // One idempotency key per activity, kept across "Publish" retries after an
+  // error, so a retry whose first response was lost cannot create it twice.
+  const [createKey] = useState(createSubmissionKey);
   const whoCanJoinRef = useRef(null);
   // The College mode restricts an activity to the host's own college, so it is
   // only offered to users who actually have one — otherwise the activity would
@@ -860,7 +864,7 @@ export default function CreateActivityPage() {
         coverPayload = {};
       }
 
-      return await activitiesApi.create({
+      const body = {
         title: formData.title,
         description: formData.description,
         location: fd.location,
@@ -870,7 +874,10 @@ export default function CreateActivityPage() {
         shareToCampus: fd.whoCanJoin === 'College',
         startDate: finalStart.toISOString(),
         endDate: finalEnd.toISOString(),
-      });
+      };
+      const created = await activitiesApi.create(body, { idempotencyKey: createKey.keyFor(body) });
+      createKey.done();
+      return created;
     })().then((realActivity) => {
       // Swap the optimistic entry for the real one everywhere it was inserted.
       queryClient.setQueriesData({ queryKey: ['activities'] }, (old) =>

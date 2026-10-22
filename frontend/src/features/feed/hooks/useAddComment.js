@@ -1,7 +1,9 @@
+import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { showToast } from '@shared/utils/toast';
 import { postsApi } from '@shared/api/apiClient';
 import { isPostListQuery } from '../utils/postCache';
+import { createSubmissionKey } from '@shared/lib/idempotencyKey';
 
 // Monotonic, so two comments posted inside the same millisecond cannot collide
 // on `temp_<Date.now()>` and have one silently overwrite the other.
@@ -44,10 +46,17 @@ function validationMessage(err) {
 
 export function useAddComment() {
   const queryClient = useQueryClient();
+  // One idempotency key per comment, kept while the user resends the same
+  // comment after an error, so a resend whose first response was lost cannot
+  // post it twice. The post id is part of what identifies the submission: the
+  // same text under another post is a different comment.
+  const [submissionKey] = useState(createSubmissionKey);
 
   return useMutation({
-    mutationFn: ({ postId, text, parentId, mentions }) =>
-      postsApi.addComment(postId, { text, parentId, mentions }),
+    mutationFn: ({ postId, text, parentId, mentions }) => {
+      const body = { text, parentId, mentions };
+      return postsApi.addComment(postId, body, { idempotencyKey: submissionKey.keyFor({ postId, ...body }) });
+    },
 
     onMutate: async ({ postId, text, parentId, currentUser }) => {
       const queryKey = ['post', postId];
@@ -110,6 +119,7 @@ export function useAddComment() {
     },
 
     onSuccess: (created, _variables, context) => {
+      submissionKey.done();
       // Swap the placeholder for the server's row in place, rather than relying
       // on the invalidation below to do it. An invalidation-triggered refetch can
       // be cancelled by the next add or delete (both call `cancelQueries`), and

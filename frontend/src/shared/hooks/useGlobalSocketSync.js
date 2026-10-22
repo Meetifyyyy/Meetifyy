@@ -21,6 +21,27 @@ import {
 import { flushPendingQueue } from '../../features/messages/shared/utils/offlineSync';
 import { updateMessageInCache } from '../../features/messages/shared/utils/cacheUtils';
 
+/** Where the last completed catch-up's server time is kept. Session-scoped. */
+export const LAST_SYNC_KEY = 'meetifyy_last_socket_sync';
+
+/**
+ * Pages of missed messages fetched one by one before falling back to a full
+ * refetch. The server sends 200 a page and allows 10 catch-up calls a minute,
+ * shared with joining rooms, so five keeps a reconnect well inside that.
+ */
+const CATCHUP_MAX_PAGES = 5;
+
+/** An unanswered catch-up is a failure, not a wait that never ends. */
+const CATCHUP_ACK_TIMEOUT_MS = 15_000;
+
+function emitCatchup(socket, payload) {
+  return new Promise((resolve) => {
+    socket.timeout(CATCHUP_ACK_TIMEOUT_MS).emit('message:catchup', payload, (err, res) => {
+      resolve(err ? null : res);
+    });
+  });
+}
+
 export function useGlobalSocketSync() {
   const queryClient = useQueryClient();
   const socket = useGlobalSocketStore((s) => s.socket);
@@ -28,6 +49,10 @@ export function useGlobalSocketSync() {
   const { currentUser } = useAuth();
   const { conversations } = useConversations();
   const conversationsRef = useRef(conversations);
+  // Whether this mount has been connected before, so a reconnect can refresh
+  // what only arrives as a push; and a guard against two catch-ups at once.
+  const connectedBeforeRef = useRef(false);
+  const catchupRunningRef = useRef(false);
 
   // Keep ref in sync so the reconnect handler always sees the latest conversations
   useEffect(() => {
@@ -56,26 +81,6 @@ export function useGlobalSocketSync() {
         }
       }
 
-      // Helper to cleanly unshift new messages into the cache without wiping older pages
-      const unshiftMessageToCache = (convId, serverMsg) => {
-        if (!convId || !serverMsg) return;
-        queryClient.setQueryData(['messages', convId], (oldData) => {
-          if (!oldData || !oldData.pages || oldData.pages.length === 0) return oldData;
-          const newPages = [...oldData.pages];
-          const firstPage = { ...newPages[0] };
-          const msgs = firstPage.messages || [];
-          
-          // Only unshift if it doesn't already exist in the page
-          const exists = msgs.some(m => String(m.id) === String(serverMsg.id) || (m.clientId && String(m.clientId) === String(serverMsg.clientId)));
-          if (!exists) {
-            firstPage.messages = [serverMsg, ...msgs];
-            newPages[0] = firstPage;
-            return { ...oldData, pages: newPages };
-          }
-          return oldData;
-        });
-      };
-
       // Flush queued offline messages automatically on reconnect.
       flushPendingQueue(socket, (key, serverMsg, status) => {
         if (status === 'ok' && serverMsg?.conversationId) {
@@ -84,28 +89,97 @@ export function useGlobalSocketSync() {
         }
       });
 
-      // Request missed messages catchup using last active timestamp
-      const lastActiveTime = localStorage.getItem('meetifyy_last_socket_sync') || new Date(Date.now() - 5 * 60 * 1000).toISOString();
-      socket.emit('message:catchup', { since: lastActiveTime }, (res) => {
-        if (res?.status === 'ok' && Array.isArray(res.messages) && res.messages.length > 0) {
-          res.messages.forEach(msg => {
-            const convId = msg.conversationId || msg.publicId || msg.internalId;
-            if (convId) {
-              // Try patching first
-              let updated = false;
-              updateMessageInCache(queryClient, convId, msg.id, (existing) => {
-                updated = true;
-                return msg;
-              });
-              // If not found in cache, unshift to top of page 0
-              if (!updated) {
-                unshiftMessageToCache(convId, msg);
-              }
-            }
-          });
-          queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      void runCatchup();
+
+      // Everything below arrives only as a push, so an event sent while this
+      // socket was down is simply gone. The first connect of this mount has
+      // nothing to recover; every later one refreshes what may have changed:
+      // notifications and the unread badge, group membership, and the chat on
+      // screen (edits, deletes and reactions are not part of catch-up).
+      if (connectedBeforeRef.current) {
+        queryClient.invalidateQueries({ queryKey: ['notifications'] });
+        queryClient.invalidateQueries({ queryKey: ['groupDetails'] });
+        queryClient.invalidateQueries({ queryKey: ['messages'], refetchType: 'active' });
+      }
+      connectedBeforeRef.current = true;
+    };
+
+    /**
+     * Fetches the messages missed while disconnected, all of them.
+     *
+     * Previously one request returned at most 100 and the sync point was then
+     * moved to this device's clock, whatever the answer, so a long absence
+     * lost everything past the first 100, a failed or rate-limited request
+     * lost the whole window, and a message committed a moment after the query
+     * was skipped. Now it pages until the server says it is done, stores the
+     * SERVER's `syncedAt`, and leaves the sync point alone when anything fails
+     * (the next connect retries the same window). Past `CATCHUP_MAX_PAGES` the
+     * gap is too large to replay message by message, so the chats are
+     * refetched from history instead.
+     */
+    const runCatchup = async () => {
+      if (catchupRunningRef.current) return;
+      catchupRunningRef.current = true;
+      try {
+        const since = localStorage.getItem(LAST_SYNC_KEY)
+          || new Date(Date.now() - 5 * 60 * 1000).toISOString();
+        let after;
+        let syncedAt = null;
+        let complete = false;
+        for (let page = 0; page < CATCHUP_MAX_PAGES; page += 1) {
+          const res = await emitCatchup(socket, after ? { since, after } : { since });
+          if (res?.status !== 'ok' || !Array.isArray(res.messages)) return;
+          applyCatchupMessages(res.messages);
+          // The first page's server time: the overlap the server re-reads
+          // covers anything committed while the later pages were fetched.
+          if (syncedAt === null) syncedAt = typeof res.syncedAt === 'string' ? res.syncedAt : '';
+          if (!res.hasMore || !res.cursor) {
+            complete = true;
+            break;
+          }
+          after = res.cursor;
         }
-        localStorage.setItem('meetifyy_last_socket_sync', new Date().toISOString());
+        if (!complete) queryClient.invalidateQueries({ queryKey: ['messages'] });
+        // Unconditionally: a read, a clear or a leave elsewhere changes the
+        // list without any new message to carry it.
+        queryClient.invalidateQueries({ queryKey: ['conversations'] });
+        // A server that predates paging sends no `syncedAt`; its single page
+        // is all it can give, so this device's clock is the best there is.
+        localStorage.setItem(LAST_SYNC_KEY, syncedAt || new Date().toISOString());
+      } catch {
+        // Storage or socket failure: keep the old sync point and retry later.
+      } finally {
+        catchupRunningRef.current = false;
+      }
+    };
+
+    const applyCatchupMessages = (messages) => {
+      messages.forEach((msg) => {
+        const convId = msg.conversationId || msg.publicId || msg.internalId;
+        if (!convId) return;
+        // Patch an existing copy (a resend of one this device already holds),
+        // otherwise add it at the top of the newest page.
+        let updated = false;
+        updateMessageInCache(queryClient, convId, msg.id, () => {
+          updated = true;
+          return msg;
+        });
+        if (!updated) unshiftMessageToCache(convId, msg);
+      });
+    };
+
+    const unshiftMessageToCache = (convId, serverMsg) => {
+      if (!convId || !serverMsg) return;
+      queryClient.setQueryData(['messages', convId], (oldData) => {
+        if (!oldData || !oldData.pages || oldData.pages.length === 0) return oldData;
+        const newPages = [...oldData.pages];
+        const firstPage = { ...newPages[0] };
+        const msgs = firstPage.messages || [];
+        const exists = msgs.some(m => String(m.id) === String(serverMsg.id) || (m.clientId && String(m.clientId) === String(serverMsg.clientId)));
+        if (exists) return oldData;
+        firstPage.messages = [serverMsg, ...msgs];
+        newPages[0] = firstPage;
+        return { ...oldData, pages: newPages };
       });
     };
 

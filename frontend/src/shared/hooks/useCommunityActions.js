@@ -1,9 +1,11 @@
+import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { communitiesApi, postsApi } from '../api/apiClient';
 import { showToast } from '../utils/toast';
 import { addCreatedPostToCaches } from '../../features/feed/utils/postCache';
 import { patchCommunityMemberRole } from '../utils/communityCache';
 import { openVerificationModal } from '../stores/verificationModalStore';
+import { createSubmissionKey } from '../lib/idempotencyKey';
 
 /**
  * The community / post write actions `useData` used to define inline.
@@ -14,10 +16,18 @@ import { openVerificationModal } from '../stores/verificationModalStore';
  */
 export function useCommunityActions() {
   const queryClient = useQueryClient();
+  // One idempotency key per submission, kept while the user retries the same
+  // community / post after an error, so a retry whose first response was lost
+  // replays it instead of creating a duplicate.
+  const [communityKey] = useState(createSubmissionKey);
+  const [postKey] = useState(createSubmissionKey);
 
   const createCommMutation = useMutation({
-    mutationFn: (data) => communitiesApi.create(data),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['communities'] }),
+    mutationFn: (data) => communitiesApi.create(data, { idempotencyKey: communityKey.keyFor(data) }),
+    onSuccess: () => {
+      communityKey.done();
+      return queryClient.invalidateQueries({ queryKey: ['communities'] });
+    },
   });
 
   const checkVerification = () => {
@@ -64,13 +74,15 @@ export function useCommunityActions() {
         ? media.map(m => m.mediaKey || m.url || (typeof m === 'string' ? m : undefined)).filter(Boolean)
         : [];
       
-      const newPost = await postsApi.createPost({
+      const body = {
         text,
         communityId,
         mediaKeys: mediaKeys.length > 0 ? mediaKeys : undefined,
         mentions,
         poll: poll || undefined,
-      });
+      };
+      const newPost = await postsApi.createPost(body, { idempotencyKey: postKey.keyFor(body) });
+      postKey.done();
       // Same shared writer the home composer uses, so a community post shows up
       // in the community view, the author's profile and the home feed together.
       addCreatedPostToCaches(queryClient, newPost);

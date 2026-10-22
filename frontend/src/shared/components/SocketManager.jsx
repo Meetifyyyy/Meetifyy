@@ -17,6 +17,7 @@ import { VERIFICATION_GATED_QUERY_KEYS } from '../utils/messagingEligibility';
 import { idbDelete } from '../lib/idb';
 import { applyAffiliationToUser, hasAffiliationField } from '../lib/campusAccess';
 import { dropCampusCaches } from '../lib/campusCache';
+import { PROFILE_KEYS } from '../hooks/useProfile';
 
 export default function SocketManager() {
   const { session, isLoggedIn, currentUser, updateCurrentUser, refreshCurrentUser } = useAuth();
@@ -100,16 +101,18 @@ export default function SocketManager() {
             : {}),
         }));
       });
-      ['users', 'campusUsers'].forEach((key) => {
-        queryClient.setQueryData([key], (old) =>
-          Array.isArray(old) ? old.map(scrubOffline) : old
-        );
-      });
+      queryClient.setQueryData(['users'], (old) =>
+        Array.isArray(old) ? old.map(scrubOffline) : old
+      );
+      // The campus directory is keyed by page size, so match it by prefix.
+      queryClient.setQueriesData({ queryKey: PROFILE_KEYS.campusUsers }, (old) =>
+        Array.isArray(old) ? old.map(scrubOffline) : old
+      );
     } else {
       // Re-permitted: pull authoritative presence back from the server.
       queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      // Also covers the campus directory, ['users', 'campus', limit].
       queryClient.invalidateQueries({ queryKey: ['users'] });
-      queryClient.invalidateQueries({ queryKey: ['campusUsers'] });
     }
   }, [selfShowOnline, queryClient]);
 
@@ -412,7 +415,7 @@ export default function SocketManager() {
         });
       });
 
-      queryClient.setQueryData(['campusUsers'], (old) => {
+      queryClient.setQueriesData({ queryKey: PROFILE_KEYS.campusUsers }, (old) => {
         if (!Array.isArray(old)) return old;
         return old.map((u) => {
           if (matchesUser(u)) {

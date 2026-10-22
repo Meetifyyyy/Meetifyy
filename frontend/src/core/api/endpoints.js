@@ -110,8 +110,10 @@ export function createEndpoints({
     /**
      * Create a new post.
      * @param {{ text: string, mediaKey?: string, communityId?: string }} data
+     * @param {{ idempotencyKey?: string }} [options]  one key per submission, so a
+     *   retry after a lost response replays the first post instead of making a second
      */
-    createPost: (data) => apiClient.post('/api/posts', data),
+    createPost: (data, { idempotencyKey } = {}) => apiClient.post('/api/posts', data, { idempotencyKey }),
 
     /** Like a post by ID */
     likePost: (postId, { signal } = {}) => apiClient.post(`/api/posts/${postId}/like`, undefined, { signal }),
@@ -123,8 +125,10 @@ export function createEndpoints({
      * Add a comment to a post.
      * @param {string} postId
      * @param {{ text: string, parentId?: string }} data
+     * @param {{ idempotencyKey?: string }} [options]  one key per submission (see createPost)
      */
-    addComment: (postId, data) => apiClient.post(`/api/posts/${postId}/comments`, data),
+    addComment: (postId, data, { idempotencyKey } = {}) =>
+      apiClient.post(`/api/posts/${postId}/comments`, data, { idempotencyKey }),
     /**
      * Load a page of a post's comments (roots + their reply subtrees) beyond the
      * first page embedded in getPostById. Cursor is the previous page's nextCursor.
@@ -233,7 +237,8 @@ export function createEndpoints({
       return apiClient.get(`/api/communities/campus${qs}`).then((list) => (Array.isArray(list) ? list.map(normalizeCommunity) : list));
     },
     getById: (id) => apiClient.get(`/api/communities/${id}`).then(normalizeCommunity),
-    create: (data) => apiClient.post('/api/communities', data).then(normalizeCommunity),
+    create: (data, { idempotencyKey } = {}) =>
+      apiClient.post('/api/communities', data, { idempotencyKey }).then(normalizeCommunity),
     join: (id, { signal } = {}) => apiClient.post(`/api/communities/${id}/join`, undefined, { signal }),
     leave: (id, { signal } = {}) => apiClient.post(`/api/communities/${id}/leave`, undefined, { signal }),
     delete: (id) => apiClient.delete(`/api/communities/${id}`),
@@ -267,7 +272,7 @@ export function createEndpoints({
     getDiscover: () => apiClient.get('/api/activities/discover'),
     getMyActivities: () => apiClient.get('/api/activities/me'),
     getById: (id) => apiClient.get(`/api/activities/${id}`),
-    create: (data) => apiClient.post('/api/activities', data),
+    create: (data, { idempotencyKey } = {}) => apiClient.post('/api/activities', data, { idempotencyKey }),
     join: (id, { signal } = {}) => apiClient.post(`/api/activities/${id}/join`, undefined, { signal }),
     leave: (id, { signal } = {}) => apiClient.post(`/api/activities/${id}/leave`, undefined, { signal }),
     getDiscussion: (id, { before, limit = 20 } = {}) => {
@@ -277,7 +282,8 @@ export function createEndpoints({
       const qs = params.toString();
       return apiClient.get(`/api/activities/${id}/discussion${qs ? `?${qs}` : ''}`);
     },
-    sendDiscussionMessage: (id, text) => apiClient.post(`/api/activities/${id}/discussion`, { text }),
+    sendDiscussionMessage: (id, text, { idempotencyKey } = {}) =>
+      apiClient.post(`/api/activities/${id}/discussion`, { text }, { idempotencyKey }),
     cancelCrewActivity: (id) => apiClient.post(`/api/activities/${id}/cancel`),
     endCrewActivity: (id) => apiClient.post(`/api/activities/${id}/cancel`),
     inviteFriends: (id, userIds) => apiClient.post(`/api/activities/${id}/invite`, { userIds }),
@@ -424,7 +430,8 @@ export function createEndpoints({
   const groupApi = {
     getConversations: (limit, offset) => apiClient.get(`/api/group-chats?limit=${limit || 20}&offset=${offset || 0}`),
     getDetails: (conversationId) => apiClient.get(`/api/group-chats/${conversationId}/details`),
-    createGroup: (name, userIds) => apiClient.post('/api/group-chats', { name, userIds }),
+    createGroup: (name, userIds, { idempotencyKey } = {}) =>
+      apiClient.post('/api/group-chats', { name, userIds }, { idempotencyKey }),
     getHistory: (conversationId, deviceId, beforeCursor, limit) => {
       const params = new URLSearchParams();
       if (deviceId) params.set('deviceId', deviceId);
@@ -533,7 +540,8 @@ export function createEndpoints({
     // `catch`, and left the message stuck as a failed optimistic bubble that
     // never became a real message.
     sendMessage: (conversationId, payload) => apiClient.post(`/api/messages/${conversationId}/messages`, payload),
-    startConversation: (userIds, name) => apiClient.post('/api/messages', { userIds, name }),
+    startConversation: (userIds, name, { idempotencyKey } = {}) =>
+      apiClient.post('/api/messages', { userIds, name }, { idempotencyKey }),
     reactToMessage: (messageId, reaction) => apiClient.post(`/api/messages/${messageId}/react`, { reaction }),
     markAsRead: (conversationId) => apiClient.post(`/api/messages/${conversationId}/read`),
     muteConversation: (conversationId, muted) => apiClient.patch(`/api/messages/${conversationId}/mute`, { muted }),
@@ -769,10 +777,11 @@ export function createEndpoints({
      * Files a problem or idea as the signed-in user: name and reply address
      * come from the account, and the ticket is always linked to it.
      */
-    submitMyRequest: (payload, { signal } = {}) =>
-      apiClient.post('/api/support/requests/mine', payload, { signal }),
+    submitMyRequest: (payload, { signal, idempotencyKey } = {}) =>
+      apiClient.post('/api/support/requests/mine', payload, { signal, idempotencyKey }),
 
-    submitRequest: (payload, { signal } = {}) => apiClient.post('/api/support/requests', payload, { signal }),
+    submitRequest: (payload, { signal, idempotencyKey } = {}) =>
+      apiClient.post('/api/support/requests', payload, { signal, idempotencyKey }),
     submitSupportRequest: (payload, options) => supportApi.submitRequest(payload, options),
 
     /**

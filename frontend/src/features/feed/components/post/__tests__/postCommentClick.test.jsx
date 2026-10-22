@@ -43,7 +43,7 @@ vi.mock('@shared/api/apiClient', () => ({
   communitiesApi: { getAll: async () => [], getCampusCommunities: async () => [] },
 }));
 vi.mock('@shared/context/AuthContext', () => ({ useAuth: () => ({ currentUser: { id: 'me', displayName: 'Me', username: 'me' }, isLoggedIn: true, loading: false }) }));
-vi.mock('@shared/lib/idb', () => ({ idbGet: async () => null, idbSet: async () => {}, idbDelete: async () => {} }));
+vi.mock('@shared/lib/idb', () => ({ idbEpoch: () => 0, idbGet: async () => null, idbSet: async () => {}, idbDelete: async () => {} }));
 vi.mock('@stores/useGlobalSocketStore', () => ({ useGlobalSocketStore: (sel) => { const st = { socket: null, isConnected: false }; return sel ? sel(st) : st; } }));
 
 const { default: Post } = await import('@features/feed/components/post/Post');

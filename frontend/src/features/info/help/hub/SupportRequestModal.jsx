@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supportApi } from '@shared/api/apiClient';
+import { createSubmissionKey } from '@shared/lib/idempotencyKey';
 import { useAuth } from '@shared/context/AuthContext';
 import { useOverlayBack } from '@shared/hooks/useOverlayBack';
 import { useSheetDrag } from '@shared/hooks/useSheetDrag';
@@ -141,6 +142,9 @@ function ModalBody({ kind, onClose, onViewRequests }) {
 
   // A second tap can land before React re-renders the disabled button.
   const inFlight = useRef(false);
+  // One idempotency key per request, kept while "Send" is retried after an
+  // error, so a retry whose first response was lost cannot file a second ticket.
+  const [submissionKey] = useState(createSubmissionKey);
   const honeypot = useRef(null);
   const formRef = useRef(null);
   const doneRef = useRef(null);
@@ -204,14 +208,19 @@ function ModalBody({ kind, onClose, onViewRequests }) {
     setSubmitting(true);
     setSubmitError(null);
     try {
-      const response = guest
-        ? await supportApi.submitRequest({
+      const body = guest
+        ? {
             ...payload,
             name: form.name.trim(),
             email: form.email.trim(),
             website: honeypot.current?.value || undefined,
-          })
-        : await supportApi.submitMyRequest(payload);
+          }
+        : payload;
+      const options = { idempotencyKey: submissionKey.keyFor(body) };
+      const response = guest
+        ? await supportApi.submitRequest(body, options)
+        : await supportApi.submitMyRequest(body, options);
+      submissionKey.done();
       setResult(response);
       attachments.reset();
       // The new request belongs at the top of Your requests the next time it shows.

@@ -149,6 +149,9 @@ const SESSION_SCOPED_KEYS = [
   // The installed app's last Home feed page, shown at launch (see
   // mobile/feedSnapshot.js).
   'meetifyy_feed_snapshot_v1',
+  // Where message catch-up resumes from. Another account must start from its
+  // own window, not from the point the previous one had reached.
+  'meetifyy_last_socket_sync',
 ];
 
 /**
@@ -576,6 +579,25 @@ export function AuthProvider({ children }) {
       setCurrentUser(null);
       setAuthStatus(AUTH_STATUS.UNAUTHENTICATED);
       setProfileFromCache(false);
+      /**
+       * A session that ended while the app was closed (expired, or revoked from
+       * another device) never ran `clearLocalSession`, so the last account's
+       * IndexedDB mirrors, cached conversations and session-scoped keys are all
+       * still on disk. The next sign-in starts with `currentUserIdRef` null, so
+       * `adoptUser` sees no previous account to reset for, and a different
+       * person signing in on this device would be seeded from them. Purged
+       * here, and only when a previous account is actually recorded: a
+       * first-time visitor has nothing to clear.
+       */
+      let heldAccount = false;
+      try {
+        heldAccount = localStorage.getItem('currentUser') !== null
+          || localStorage.getItem('loggedIn') !== null;
+      } catch (_) {}
+      if (heldAccount) {
+        clearSessionScopedStorage();
+        resetClientStateForNewUser(queryClientRef.current);
+      }
       try { localStorage.removeItem('currentUser'); } catch (_) {}
       try { localStorage.removeItem('loggedIn'); } catch (_) {}
     };

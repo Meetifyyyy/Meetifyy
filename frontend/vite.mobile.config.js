@@ -94,7 +94,7 @@ function dropWebOnlyPublicAssets() {
   // launcher icon comes from the native resources. `logo-192.png` stays — the
   // instant-match notification uses it.
   const ICONS = ['favicon.ico', 'favicon.png', 'logo.png', 'logo-512.png', 'logo-512-maskable.png', 'logo-192-maskable.png'];
-  const WEB_ONLY = [/^splash\//, /^robots\.txt$/, /^version\.json$/, /^og\//, ...ICONS.map((f) => new RegExp(`^${f.replace(/\./g, '\\.')}$`))];
+  const WEB_ONLY = [/^splash\//, /^robots\.txt$/, /^sitemap\.xml$/, /^version\.json$/, /^og\//, ...ICONS.map((f) => new RegExp(`^${f.replace(/\./g, '\\.')}$`))];
   return {
     name: 'meetifyy-mobile-drop-web-assets',
     apply: 'build',
@@ -102,12 +102,25 @@ function dropWebOnlyPublicAssets() {
       for (const fileName of Object.keys(bundle)) {
         if (WEB_ONLY.some((re) => re.test(fileName))) delete bundle[fileName];
       }
+      // The website's landing photos (~770 KB). They are imported by
+      // EditorialLanding, which the app never renders, but Vite emits an
+      // imported asset even when the module importing it is dropped. Removed
+      // only while nothing that ships still names them, so a landing image the
+      // app does start to use is kept.
+      const shipped = Object.values(bundle)
+        .map((o) => (o.type === 'chunk' ? o.code : typeof o.source === 'string' ? o.source : ''))
+        .join('\n');
+      for (const [fileName, out] of Object.entries(bundle)) {
+        const fromLanding = out.type === 'asset'
+          && (out.originalFileNames ?? []).some((f) => f.includes('features/auth/landing/assets/'));
+        if (fromLanding && !shipped.includes(path.basename(fileName))) delete bundle[fileName];
+      }
     },
     closeBundle() {
       // publicDir files are copied outside the bundle graph, so they have to be
       // removed from disk rather than from `bundle`.
       const out = path.resolve(__dirname, 'dist-mobile');
-      for (const rel of ['splash', 'robots.txt', 'version.json', 'og', ...ICONS]) {
+      for (const rel of ['splash', 'robots.txt', 'sitemap.xml', 'version.json', 'og', ...ICONS]) {
         fs.rmSync(path.join(out, rel), { recursive: true, force: true });
       }
     },

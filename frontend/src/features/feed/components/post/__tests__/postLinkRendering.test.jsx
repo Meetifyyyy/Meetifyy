@@ -23,7 +23,7 @@ vi.mock('@shared/api/apiClient', () => ({
     logoutSession: async () => ({}),
   }, getMediaUrl: (u) => u, postsApi: {}, communitiesApi: { getAll: async () => [], getCampusCommunities: async () => [] } }));
 vi.mock('@shared/context/AuthContext', () => ({ useAuth: () => ({ currentUser: { id: 'me' }, isLoggedIn: true, loading: false }) }));
-vi.mock('@shared/lib/idb', () => ({ idbGet: async () => null, idbSet: async () => {}, idbDelete: async () => {} }));
+vi.mock('@shared/lib/idb', () => ({ idbEpoch: () => 0, idbGet: async () => null, idbSet: async () => {}, idbDelete: async () => {} }));
 
 const { default: Post } = await import('@features/feed/components/post/Post');
 const { MediaViewerProvider } = await import('@shared/context/MediaViewerContext');

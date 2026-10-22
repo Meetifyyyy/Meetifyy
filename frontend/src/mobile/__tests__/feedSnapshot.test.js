@@ -54,3 +54,35 @@ describe('feed snapshot', () => {
     expect(localStorage.getItem(FEED_SNAPSHOT_KEY)).toBe(saved);
   });
 });
+
+describe('feed snapshot after a sign-in in the same launch', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    delete window.requestIdleCallback;
+  });
+
+  it('saves for the account in the feed key when started without one', async () => {
+    const qc = new QueryClient();
+    persistFeedSnapshot(qc); // launch began signed out
+    await qc.fetchInfiniteQuery({ ...feedQueryOptions('', 'u9'), queryFn: async () => page(4) });
+    await flushIdle();
+    expect(JSON.parse(localStorage.getItem(FEED_SNAPSHOT_KEY)).userId).toBe('u9');
+  });
+
+  it('ignores a searched feed, which is not the Home first page', async () => {
+    const qc = new QueryClient();
+    persistFeedSnapshot(qc);
+    await qc.fetchInfiniteQuery({ ...feedQueryOptions('cats', 'u9'), queryFn: async () => page(4) });
+    await flushIdle();
+    expect(localStorage.getItem(FEED_SNAPSHOT_KEY)).toBeNull();
+  });
+
+  it('saves nothing when the cache was cleared before the idle write', async () => {
+    const qc = new QueryClient();
+    persistFeedSnapshot(qc);
+    await qc.fetchInfiniteQuery({ ...feedQueryOptions('', 'u9'), queryFn: async () => page(4) });
+    qc.clear(); // signed out before idle time
+    await flushIdle();
+    expect(localStorage.getItem(FEED_SNAPSHOT_KEY)).toBeNull();
+  });
+});

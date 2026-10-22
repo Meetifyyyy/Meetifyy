@@ -7,9 +7,10 @@
  * on next visit before the network response arrives.
  */
 import { useQuery, useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { communitiesApi } from '@shared/api/apiClient';
-import { idbGet, idbSet, idbDelete } from '@shared/lib/idb';
+import { createSubmissionKey } from '@shared/lib/idempotencyKey';
+import { idbGet, idbSet, idbDelete, idbEpoch } from '@shared/lib/idb';
 import { useHasCampusAccess, useCampusDeniedHandler } from './useCampusAffiliation';
 import { useAuth } from '@shared/context/AuthContext';
 import { toggleRegistry } from '@shared/utils/mutationRegistry';
@@ -126,9 +127,10 @@ export function useCommunities() {
   const query = useQuery({
     queryKey: qk,
     queryFn: async () => {
+      const epoch = idbEpoch();
       const data = await communitiesApi.getAll();
       // Persist to IndexedDB for next-session instant load
-      idbSet('communities', 'all', data);
+      idbSet('communities', 'all', data, epoch);
       return data;
     },
     enabled: isLoggedIn,
@@ -215,8 +217,9 @@ export function useCampusCommunities(search = '', { enabled = true } = {}) {
     queryKey: qk,
     queryFn: async () => {
       try {
+        const epoch = idbEpoch();
         const data = await communitiesApi.getCampusCommunities(normSearch || undefined);
-        if (!normSearch) idbSet('communities', 'campus', data);
+        if (!normSearch) idbSet('communities', 'campus', data, epoch);
         return data;
       } catch (err) {
         onDenied(err);
@@ -404,9 +407,15 @@ export function useLeaveCommunity() {
 
 export function useCreateCommunity() {
   const queryClient = useQueryClient();
+  // Same key across retries of one submission: a retry after a lost response
+  // replays the first create instead of making a second community.
+  const [submissionKey] = useState(createSubmissionKey);
   return useMutation({
-    mutationFn: (data) => communitiesApi.create(data),
-    onSuccess: (created) => invalidateCommunity(queryClient, created?.id),
+    mutationFn: (data) => communitiesApi.create(data, { idempotencyKey: submissionKey.keyFor(data) }),
+    onSuccess: (created) => {
+      submissionKey.done();
+      return invalidateCommunity(queryClient, created?.id);
+    },
   });
 }
 

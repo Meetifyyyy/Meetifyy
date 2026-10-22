@@ -51,24 +51,41 @@ export function restoreFeedSnapshot(queryClient, userId, { storage = window.loca
 }
 
 /**
- * Saves the feed's first page whenever it is freshly fetched for `userId`.
+ * Saves the Home feed's first page whenever it is freshly fetched.
+ *
+ * The account comes from the feed's own query key (`['feed', '', userId]`), so
+ * this can be started at every launch, signed in or not. It used to take the
+ * id of the account cached at boot, which meant a launch that began signed out
+ * saved nothing after the sign-in that followed: the snapshot was first written
+ * on the NEXT launch, and only painted on the one after that. Passing `userId`
+ * still limits it to that account.
+ *
  * Writes off the critical path (idle time), and only on a real fetch result —
  * never on the restore above. Returns an unsubscribe function.
  */
-export function persistFeedSnapshot(queryClient, userId, { storage = window.localStorage } = {}) {
-  if (!userId) return () => {};
-  const { queryKey } = feedQueryOptions('', userId);
-  const hash = JSON.stringify(queryKey);
-  let pending = false;
+export function persistFeedSnapshot(queryClient, userId = null, { storage = window.localStorage } = {}) {
+  /** The account a Home feed key belongs to, or null for any other query. */
+  const ownerOf = (queryKey) => {
+    if (!Array.isArray(queryKey) || queryKey.length !== 3) return null;
+    const [root, search, owner] = queryKey;
+    if (root !== 'feed' || search !== '' || !owner) return null;
+    return userId && owner !== userId ? null : owner;
+  };
+  let pending = null;
 
   const save = () => {
-    pending = false;
+    const owner = pending;
+    pending = null;
+    if (!owner) return;
+    // Looked up again at idle time: a sign-out in between has cleared the
+    // cache, and then there is nothing to save.
+    const { queryKey } = feedQueryOptions('', owner);
     const query = queryClient.getQueryCache().find({ queryKey, exact: true });
     const first = query?.state?.data?.pages?.[0];
     if (!first || !Array.isArray(first.posts)) return;
     try {
       storage.setItem(FEED_SNAPSHOT_KEY, JSON.stringify({
-        userId,
+        userId: owner,
         savedAt: query.state.dataUpdatedAt || Date.now(),
         // No cursor: a restored page must not pretend to know where page two
         // starts — the refetch that follows a launch supplies the real one.
@@ -82,8 +99,11 @@ export function persistFeedSnapshot(queryClient, userId, { storage = window.loca
   return queryClient.getQueryCache().subscribe((event) => {
     if (event?.type !== 'updated' || event.action?.type !== 'success') return;
     if (event.action.manual) return; // setQueryData, e.g. the restore above
-    if (event.query?.queryHash !== hash || pending) return;
-    pending = true;
+    const owner = ownerOf(event.query?.queryKey);
+    if (!owner) return;
+    const scheduled = pending !== null;
+    pending = owner;
+    if (scheduled) return;
     if (typeof window.requestIdleCallback === 'function') {
       window.requestIdleCallback(save, { timeout: 3000 });
     } else {

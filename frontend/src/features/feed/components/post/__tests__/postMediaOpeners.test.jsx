@@ -60,7 +60,7 @@ vi.mock('@shared/api/apiClient', () => ({
 vi.mock('@shared/context/AuthContext', () => ({
   useAuth: () => ({ currentUser: CURRENT_USER, isLoggedIn: true, loading: false }),
 }));
-vi.mock('@shared/lib/idb', () => ({ idbGet: async () => null, idbSet: async () => {}, idbDelete: async () => {} }));
+vi.mock('@shared/lib/idb', () => ({ idbEpoch: () => 0, idbGet: async () => null, idbSet: async () => {}, idbDelete: async () => {} }));
 
 const { default: Post } = await import('@features/feed/components/post/Post');
 

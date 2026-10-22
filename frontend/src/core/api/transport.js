@@ -30,6 +30,7 @@ import { resolveForbiddenCode } from './verificationRequired';
  * @param {object} deps.sessionStore  SyncKeyValueStore, per-session
  * @param {object} deps.etags         from core/api/etagCache
  * @param {object} deps.hooks         TransportHooks: onApiErrorCode, onUnauthorized, onOriginChanged, onApiFailure
+ * @param {object} [deps.idempotency] { enabled: boolean, newKey: () => string }
  */
 export function createTransport({
   apiOrigin,
@@ -39,6 +40,7 @@ export function createTransport({
   sessionStore,
   etags,
   hooks,
+  idempotency = { enabled: false, newKey: () => '' },
 }) {
   /**
    * The CSRF token the server set alongside the session cookies.
@@ -445,7 +447,7 @@ export function createTransport({
    *   request is about that credential, not the ambient session, so it neither
    *   triggers a refresh nor tears the ambient session down.
    */
-  async function request(method, path, body, signal, timeoutMs, bearer) {
+  async function request(method, path, body, signal, timeoutMs, bearer, idempotencyKey) {
     // Session seeding used to be awaited here, because the credential lived in
     // the provider client and a request issued before it had loaded would have
     // gone out unauthenticated. The credential is a cookie now: the browser
@@ -597,6 +599,25 @@ export function createTransport({
     if (!SAFE_METHODS.has(method)) {
       const csrf = csrfHeaderValue();
       if (csrf) headers['x-csrf-token'] = csrf;
+    }
+
+    /**
+     * Makes a write safe to send twice.
+     *
+     * A write whose response is lost (a connection reset after the server
+     * committed it, a timeout) is otherwise impossible to retry safely: the
+     * failover below re-sends this exact request, and a user who sees an error
+     * submits again. The server records the key and answers a repeat with the
+     * first result instead of creating a second post, comment, group or ticket.
+     *
+     * One key per call, set before `send`, so the failover retry reuses it. A
+     * caller retrying the same submission passes its own key to cover the
+     * user's retry too. Behind a flag because the API's CORS preflight must
+     * allow the header before any client sends it; see config.api.
+     */
+    if (!SAFE_METHODS.has(method) && idempotency.enabled) {
+      const key = idempotencyKey || idempotency.newKey();
+      if (key) headers['Idempotency-Key'] = key;
     }
     /**
      * Whether a 401 from this path means anything about the session.
@@ -963,12 +984,18 @@ export function createTransport({
 
   const apiClient = {
     get: (path, { signal, timeoutMs } = {}) => request('GET', path, undefined, signal, timeoutMs),
-    post: (path, body, { signal, timeoutMs, bearer } = {}) => request('POST', path, body, signal, timeoutMs, bearer),
-    patch: (path, body, { signal, timeoutMs, bearer } = {}) => request('PATCH', path, body, signal, timeoutMs, bearer),
-    put: (path, body, { signal, timeoutMs } = {}) => request('PUT', path, body, signal, timeoutMs),
+    // `idempotencyKey`: one key for every attempt at the same submission, so a
+    // retry after a lost response returns the first result (see `request`).
+    post: (path, body, { signal, timeoutMs, bearer, idempotencyKey } = {}) =>
+      request('POST', path, body, signal, timeoutMs, bearer, idempotencyKey),
+    patch: (path, body, { signal, timeoutMs, bearer, idempotencyKey } = {}) =>
+      request('PATCH', path, body, signal, timeoutMs, bearer, idempotencyKey),
+    put: (path, body, { signal, timeoutMs, idempotencyKey } = {}) =>
+      request('PUT', path, body, signal, timeoutMs, undefined, idempotencyKey),
     // `body` is optional and rare: removing a college email re-confirms the
     // account password, which is sent in the body rather than the URL.
-    delete: (path, { signal, timeoutMs, body } = {}) => request('DELETE', path, body, signal, timeoutMs),
+    delete: (path, { signal, timeoutMs, body, idempotencyKey } = {}) =>
+      request('DELETE', path, body, signal, timeoutMs, undefined, idempotencyKey),
   };
   return {
     apiClient,

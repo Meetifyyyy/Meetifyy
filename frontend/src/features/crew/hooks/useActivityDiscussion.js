@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { activitiesApi } from '@shared/api/apiClient';
 import { useAuth } from '@shared/context/AuthContext';
 import { useGlobalSocketStore } from '@shared/stores/useGlobalSocketStore';
+import { createSubmissionKey } from '@shared/lib/idempotencyKey';
 
 const PAGE_SIZE = 20;
 
@@ -13,13 +14,22 @@ const PAGE_SIZE = 20;
  * - New messages (both realtime arrivals from the `activity_<id>` socket room
  *   and the current user's own optimistic sends) live in a small `liveMessages`
  *   buffer, then merged + de-duped by id with the paginated history.
- * - Joins the socket room on mount and leaves on unmount (rooms also auto-clean
- *   server-side on disconnect, so a dropped 'activity:leave' can't leak).
+ * - Joins the socket room on every (re)connect and leaves on unmount. Rooms are
+ *   cleaned server-side on disconnect, so a dropped 'activity:leave' can't leak
+ *   — and, equally, a reconnect starts outside the room until it joins again.
  */
 export function useActivityDiscussion(activityId, { enabled = true } = {}) {
   const { currentUser } = useAuth();
   const socket = useGlobalSocketStore((s) => s.socket);
+  const isConnected = useGlobalSocketStore((s) => s.isConnected);
   const queryClient = useQueryClient();
+  // One idempotency key per message, kept while the same text is resent after
+  // an error, so a resend whose first response was lost cannot post it twice.
+  const [sendKey] = useState(createSubmissionKey);
+  // The activity whose room this mount has already been in. Joining it again is
+  // a rejoin after a disconnect, and whatever was posted in between was missed;
+  // a different activity is a fresh thread, not a rejoin.
+  const joinedActivityRef = useRef(null);
 
   const [liveMessages, setLiveMessages] = useState([]);
   const [sendError, setSendError] = useState(null);
@@ -94,11 +104,33 @@ export function useActivityDiscussion(activityId, { enabled = true } = {}) {
     [activityId, queryClient],
   );
 
-  // ─── Realtime: join room + listen for new messages ──────────────────────────
+  // ─── Realtime: join the room on every (re)connect ───────────────────────────
+  // Keyed on `isConnected`, not just the socket: the server drops room
+  // membership on disconnect, and socket.io's own reconnect keeps the same
+  // socket object, so an effect keyed on the socket alone joined once and then
+  // silently stopped receiving `activity_discussion:new` after the first drop.
+  // A rejoin also refetches the history, because messages posted while the
+  // socket was down never reached the live buffer; the merge above de-dupes
+  // them by id against anything that did.
   useEffect(() => {
-    if (!socket || !activityId || !enabled) return;
+    if (!socket || !isConnected || !activityId || !enabled) return;
 
     socket.emit('activity:join', { activityId });
+    if (joinedActivityRef.current === activityId) {
+      queryClient.invalidateQueries({ queryKey: ['activity-discussion', activityId] });
+    }
+    joinedActivityRef.current = activityId;
+
+    return () => {
+      // A disconnected socket buffers emits and would replay this leave on
+      // reconnect; the server has already dropped the membership anyway.
+      if (socket.connected) socket.emit('activity:leave', { activityId });
+    };
+  }, [socket, isConnected, activityId, enabled, queryClient]);
+
+  // ─── Realtime: listen for new messages ──────────────────────────────────────
+  useEffect(() => {
+    if (!socket || !activityId || !enabled) return;
 
     const handleNew = (msg) => {
       if (!msg || String(msg.activityId) !== String(activityId)) return;
@@ -126,7 +158,6 @@ export function useActivityDiscussion(activityId, { enabled = true } = {}) {
       socket.off('activity_discussion:new', handleNew);
       socket.off('activity:access_denied', handleAccessLost);
       socket.off('activity:access_revoked', handleAccessLost);
-      socket.emit('activity:leave', { activityId });
     };
   }, [socket, activityId, enabled, currentUser?.id, queryClient]);
 
@@ -157,7 +188,10 @@ export function useActivityDiscussion(activityId, { enabled = true } = {}) {
       setLiveMessages((prev) => [...prev, optimistic]);
 
       try {
-        const real = await activitiesApi.sendDiscussionMessage(activityId, trimmed);
+        const real = await activitiesApi.sendDiscussionMessage(activityId, trimmed, {
+          idempotencyKey: sendKey.keyFor({ activityId, text: trimmed }),
+        });
+        sendKey.done();
         // Replace the optimistic entry with the server message.
         setLiveMessages((prev) => prev.map((m) => (m.tempId === tempId ? { ...real } : m)));
       } catch (err) {
@@ -169,7 +203,7 @@ export function useActivityDiscussion(activityId, { enabled = true } = {}) {
         setIsSending(false);
       }
     },
-    [activityId, currentUser]
+    [activityId, currentUser, sendKey]
   );
 
   return {

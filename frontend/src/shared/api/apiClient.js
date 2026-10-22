@@ -21,6 +21,7 @@ import {
   LEGAL_ACK_REQUIRED_CODE,
 } from '@shared/lib/legalConsent';
 import { handleVerificationRequired } from '@shared/lib/verificationRequired';
+import { newIdempotencyKey } from '@shared/lib/idempotencyKey';
 import { config, IS_MOBILE_BUILD } from '@config';
 import { createTransport } from '@core/api/transport';
 import { createEndpoints } from '@core/api/endpoints';
@@ -122,6 +123,10 @@ const transport = createTransport({
   sessionStore,
   etags,
   hooks,
+  idempotency: {
+    enabled: config.api.idempotencyKeys,
+    newKey: () => newIdempotencyKey(),
+  },
 });
 
 export const apiClient = transport.apiClient;

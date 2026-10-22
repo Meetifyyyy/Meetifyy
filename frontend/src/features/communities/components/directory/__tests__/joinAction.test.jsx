@@ -22,7 +22,7 @@ vi.mock('@shared/api/apiClient', () => ({
   },
   getMediaUrl: (v) => v,
 }));
-vi.mock('@shared/lib/idb', () => ({
+vi.mock('@shared/lib/idb', () => ({ idbEpoch: () => 0,
   idbGet: async () => null,
   idbSet: async () => undefined,
   idbDelete: async () => undefined,

@@ -21,6 +21,11 @@ import { restoreFeedSnapshot, persistFeedSnapshot } from './feedSnapshot';
  * signs out exactly as it would have.
  */
 export function warmSignedInLanding(queryClient, { storage = window.localStorage } = {}) {
+  // Keep the snapshot current for whichever account fetches the feed, started
+  // before the checks below so a launch that begins signed out still saves one
+  // after the sign-in that follows.
+  persistFeedSnapshot(queryClient, null, { storage });
+
   let cachedUserId = null;
   try {
     if (storage.getItem('loggedIn') !== 'true') return;
@@ -32,9 +37,8 @@ export function warmSignedInLanding(queryClient, { storage = window.localStorage
 
   // The last feed page from this device, so the first frame shows real posts
   // rather than a skeleton waiting on the network; the prefetch below
-  // refreshes it. And keep it current for the next launch.
+  // refreshes it.
   restoreFeedSnapshot(queryClient, cachedUserId, { storage });
-  persistFeedSnapshot(queryClient, cachedUserId, { storage });
 
   // Same specifier as the route's `lazyRoute`, so it is the same chunk.
   void import('../features/feed/pages/FeedRoute').catch(() => {});

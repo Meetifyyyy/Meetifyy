@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { messagesApi, dmApi, groupApi, usersApi } from '../api/apiClient';
 import { useAuth } from '../context/AuthContext';
@@ -8,6 +9,7 @@ import { purgeConversationFromCaches, matchesConversationId, getConversationAlia
 import { invalidateConversationMedia } from '../../features/messages/shared/utils/conversationMediaCache';
 import { idbDeleteConversationMessages } from '../../features/messages/shared/utils/idbMessages';
 import { scheduleConversationWrite } from '../utils/conversationWriteQueue';
+import { createSubmissionKey } from '../lib/idempotencyKey';
 
 /**
  * Cache key holding "have I blocked this person?" for a draft DM.
@@ -26,6 +28,9 @@ export function useMessageActions() {
   const queryClient = useQueryClient();
   const { currentUser } = useAuth();
   const { conversations } = useConversations();
+  // One idempotency key per group, kept while the user retries the same create
+  // after an error, so a retry whose first response was lost cannot make two.
+  const [groupKey] = useState(createSubmissionKey);
 
   /**
    * Every cache key this conversation answers to.
@@ -216,7 +221,10 @@ export function useMessageActions() {
     const cleanIds = normalizeUserIds(userIds);
 
     try {
-      const res = await groupApi.createGroup(groupName, cleanIds);
+      const res = await groupApi.createGroup(groupName, cleanIds, {
+        idempotencyKey: groupKey.keyFor({ name: groupName, userIds: cleanIds }),
+      });
+      groupKey.done();
       const realId = res?.publicId || res?.id;
       if (!realId) throw new Error('No conversation ID returned');
 

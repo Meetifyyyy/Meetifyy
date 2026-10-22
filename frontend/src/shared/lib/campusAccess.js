@@ -20,7 +20,11 @@
 
 /** Query keys of every cache that holds campus-only content. */
 export const CAMPUS_GATED_QUERY_KEYS = [
-  ['campusUsers'],
+  // The campus directory, `PROFILE_KEYS.campusUsers` plus a page size. Written
+  // out rather than imported: this module sits below the hooks. It was
+  // `['campusUsers']`, a key no query uses, so losing campus access never
+  // evicted the previous college's directory.
+  ['users', 'campus'],
   ['directory'],
   ['campus-events'],
   ['communities', 'campus'],

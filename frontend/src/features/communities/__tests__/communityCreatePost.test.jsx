@@ -59,7 +59,7 @@ vi.mock('@shared/context/AuthContext', () => ({
     loading: false,
   }),
 }));
-vi.mock('@shared/lib/idb', () => ({ idbGet: async () => null, idbSet: async () => {}, idbDelete: async () => {} }));
+vi.mock('@shared/lib/idb', () => ({ idbEpoch: () => 0, idbGet: async () => null, idbSet: async () => {}, idbDelete: async () => {} }));
 vi.mock('@stores/useGlobalSocketStore', () => ({ useGlobalSocketStore: (sel) => { const st = { socket: null, isConnected: false }; return sel ? sel(st) : st; } }));
 vi.mock('@shared/hooks/useUsersMap', () => ({ useUsersMap: () => ({}) }));
 vi.mock('@shared/hooks/useCommunities', () => ({

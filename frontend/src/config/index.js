@@ -114,6 +114,13 @@ export const config = {
      * rather than to VITE_API_URL. On by default for dev builds only.
      */
     preferLocalBackend: bool('VITE_API_PREFER_LOCAL', { fallback: IS_DEV_BUILD }),
+    /**
+     * Send an `Idempotency-Key` with every write, so a retry after a lost
+     * response returns the first result instead of a duplicate. Off by default:
+     * the API must already allow the header (main.ts CORS allowedHeaders)
+     * wherever this build talks to, or every write fails its preflight.
+     */
+    idempotencyKeys: bool('VITE_IDEMPOTENCY_KEYS', { fallback: false }),
   },
 
   auth: {

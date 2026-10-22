@@ -25,10 +25,34 @@ const STORES = {
 };
 
 let _db = null;
+let _opening = null;
+
+/**
+ * Bumped whenever the whole cache is emptied (logout, account switch).
+ *
+ * The queryFns that mirror a response into IndexedDB write AFTER their network
+ * await, and `queryClient.clear()` does not abort a fetch that is already in
+ * flight. Without this, account A's response landing a moment after A's logout
+ * cleared the store wrote A's data straight back, and account B's next mount
+ * seeded it (a profile's `isFollowing`, a community's `isJoined`).
+ *
+ * A caller captures `idbEpoch()` BEFORE it starts the request and hands it to
+ * `idbSet`, which drops the write if a clear happened in between. Reads do the
+ * same check on their own, so a hydration that resolves after a clear seeds
+ * nothing.
+ */
+let _epoch = 0;
+
+/** The current clear generation. Capture it before the work whose result you will write. */
+export function idbEpoch() {
+  return _epoch;
+}
 
 function openDB() {
   if (_db) return Promise.resolve(_db);
-  return new Promise((resolve, reject) => {
+  // One connection however many callers arrive before the first one resolves.
+  if (_opening) return _opening;
+  _opening = new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
     request.onupgradeneeded = (e) => {
       const db = e.target.result;
@@ -43,6 +67,18 @@ function openDB() {
       resolve(_db);
     };
     request.onerror = () => reject(request.error);
+  }).finally(() => {
+    _opening = null;
+  });
+  return _opening;
+}
+
+/** Resolves when the transaction has committed, rejects if it failed or aborted. */
+function committed(tx) {
+  return new Promise((res, rej) => {
+    tx.oncomplete = res;
+    tx.onerror = () => rej(tx.error);
+    tx.onabort = () => rej(tx.error);
   });
 }
 
@@ -51,11 +87,16 @@ function openDB() {
  * @param {string} store - One of the STORES keys.
  * @param {string} key - Cache key.
  * @param {*} value - Serializable value.
+ * @param {number} [epoch] - `idbEpoch()` captured before the request this value
+ *   came from. The write is dropped if the cache was cleared since.
  */
-export async function idbSet(store, key, value) {
+export async function idbSet(store, key, value, epoch) {
   if (!STORES[store]) return;
+  if (epoch !== undefined && epoch !== _epoch) return;
   try {
     const db = await openDB();
+    // Re-checked after the open: it is the only await before the write.
+    if (epoch !== undefined && epoch !== _epoch) return;
     const config = STORES[store];
     const tx = db.transaction(config.name, 'readwrite');
     tx.objectStore(config.name).put({
@@ -91,6 +132,7 @@ export async function idbSet(store, key, value) {
  */
 export async function idbGet(store, key) {
   if (!STORES[store]) return null;
+  const epoch = _epoch;
   try {
     const db = await openDB();
     const config = STORES[store];
@@ -100,7 +142,9 @@ export async function idbGet(store, key) {
       request.onsuccess = () => res(request.result);
       request.onerror = () => rej(request.error);
     });
-    if (!entry) return null;
+    // Cleared while the read was in flight: whatever came back belongs to the
+    // account that just signed out.
+    if (!entry || epoch !== _epoch) return null;
     const age = Date.now() - entry.storedAt;
     return {
       value: entry.value,
@@ -122,6 +166,7 @@ export async function idbDelete(store, key) {
     const config = STORES[store];
     const tx = db.transaction(config.name, 'readwrite');
     tx.objectStore(config.name).delete(key);
+    await committed(tx);
   } catch {
     // silent
   }
@@ -137,6 +182,7 @@ export async function idbClearStore(store) {
     const config = STORES[store];
     const tx = db.transaction(config.name, 'readwrite');
     tx.objectStore(config.name).clear();
+    await committed(tx);
   } catch {
     // silent
   }
@@ -146,5 +192,7 @@ export async function idbClearStore(store) {
  * Clear all stores — called on logout.
  */
 export async function idbClearAll() {
+  // First, so a write or read already in flight is refused before the clear lands.
+  _epoch += 1;
   await Promise.allSettled(Object.keys(STORES).map(idbClearStore));
 }

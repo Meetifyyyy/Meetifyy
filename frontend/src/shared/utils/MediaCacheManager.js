@@ -20,6 +20,10 @@ class MediaCacheManager {
     // it cannot write the previous account's URLs back in.
     this.generation = 0;
     this.STABLE_TTL = 7 * 24 * 60 * 60 * 1000; // 7d — safe for immutable public assets
+    // Upper bound on persisted stable URLs: a few screens of feed, profiles and
+    // avatars. Anything older is simply resolved again when it is next seen.
+    this.MAX_PERSISTED = 500;
+    this._persistScheduled = false;
     this._hydrateFromStorage();
   }
 
@@ -67,14 +71,44 @@ class MediaCacheManager {
     } catch (_) { /* ignore corrupt cache */ }
   }
 
+  /**
+   * Schedules a write of the stable URLs, coalesced into one idle-time write.
+   *
+   * The blob is parsed synchronously at startup and was rewritten whole, on the
+   * main thread, after every signing batch, with no limit on how large it grew.
+   * Scrolling a feed resolves a batch every few posts, so the write landed in
+   * the middle of the scroll, and every launch parsed a blob of every image the
+   * device had ever seen. Now it is written at most once per idle period and
+   * holds only the most recently resolved entries.
+   */
   _persistStable() {
+    if (this._persistScheduled) return;
+    this._persistScheduled = true;
+    const run = () => {
+      this._persistScheduled = false;
+      this._writeStable();
+    };
+    if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
+      window.requestIdleCallback(run, { timeout: 2000 });
+    } else {
+      setTimeout(run, 500);
+    }
+  }
+
+  _writeStable() {
     try {
       if (typeof localStorage === 'undefined') return;
-      const out = {};
+      const now = Date.now();
+      // `expiresAt` is resolve time + STABLE_TTL, so the largest are the newest.
+      const entries = [];
       for (const [key, entry] of this.cache.entries()) {
-        if (entry?.stable) out[key] = entry;
+        if (entry?.stable && entry.expiresAt > now) entries.push([key, entry]);
       }
-      localStorage.setItem(this.PERSIST_KEY, JSON.stringify(out));
+      entries.sort((a, b) => b[1].expiresAt - a[1].expiresAt);
+      localStorage.setItem(
+        this.PERSIST_KEY,
+        JSON.stringify(Object.fromEntries(entries.slice(0, this.MAX_PERSISTED))),
+      );
     } catch (_) { /* quota / disabled — non-fatal */ }
   }
 

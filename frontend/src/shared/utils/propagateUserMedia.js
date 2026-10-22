@@ -1,4 +1,4 @@
-import { idbGet, idbSet } from '@shared/lib/idb';
+import { idbGet, idbSet, idbEpoch } from '@shared/lib/idb';
 
 /**
  * Pushes a user's changed avatar, cover or display name into every cached React
@@ -37,10 +37,11 @@ import { idbGet, idbSet } from '@shared/lib/idb';
 function patchStoredProfile(username, patch) {
   if (!username) return;
   const key = String(username).toLowerCase();
+  const epoch = idbEpoch();
   idbGet('profiles', key)
     .then((cached) => {
       if (!cached?.value || typeof cached.value !== 'object') return;
-      idbSet('profiles', key, { ...cached.value, ...patch });
+      idbSet('profiles', key, { ...cached.value, ...patch }, epoch);
     })
     .catch(() => {});
 }

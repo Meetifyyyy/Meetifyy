@@ -6,9 +6,10 @@
  * Cross-session IndexedDB persistence for instant first render.
  */
 import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { activitiesApi } from '@shared/api/apiClient';
-import { idbGet, idbSet, idbDelete } from '@shared/lib/idb';
+import { createSubmissionKey } from '@shared/lib/idempotencyKey';
+import { idbGet, idbSet, idbDelete, idbEpoch } from '@shared/lib/idb';
 import { useAuth } from '@shared/context/AuthContext';
 import { mapActivity } from '@shared/utils/mapActivity';
 
@@ -84,12 +85,13 @@ export function useActivities(scope = 'public', { enabled = true, limit = DEFAUL
   const query = useInfiniteQuery({
     queryKey,
     queryFn: async ({ pageParam }) => {
+      const epoch = idbEpoch();
       const data = await activitiesApi.getAll(limit, pageParam, scope);
       // Persist first page of the public feed for next-session instant load.
       // Only the canonical page size is mirrored — a short preview page would
       // otherwise be restored as though it were the whole first page.
       if (!pageParam && isPublic && limit === DEFAULT_ACTIVITY_PAGE_SIZE) {
-        idbSet('activities', 'all_page1', data);
+        idbSet('activities', 'all_page1', data, epoch);
       }
       return data;
     },
@@ -388,9 +390,13 @@ export function useLeaveActivity() {
 
 export function useCreateActivity() {
   const queryClient = useQueryClient();
+  // Same key across retries of one submission, so a retry after a lost
+  // response replays the first create instead of making a second activity.
+  const [submissionKey] = useState(createSubmissionKey);
   return useMutation({
-    mutationFn: (data) => activitiesApi.create(data),
+    mutationFn: (data) => activitiesApi.create(data, { idempotencyKey: submissionKey.keyFor(data) }),
     onSuccess: () => {
+      submissionKey.done();
       queryClient.invalidateQueries({ queryKey: ['activities'] });
       queryClient.invalidateQueries({ queryKey: ['activity'] });
     },
@@ -435,13 +441,15 @@ export function useCrewActivities() {
 export function useCrewActions() {
   const queryClient = useQueryClient();
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['activities'] });
+  const [createKey] = useState(createSubmissionKey);
 
   const joinCrewActivity = (id) => activitiesApi.join(id).then(invalidate);
   const leaveCrewActivity = (id) => activitiesApi.leave(id).then(invalidate);
   const cancelCrewActivity = (id) => activitiesApi.cancelCrewActivity(id).then(invalidate);
   const endCrewActivity = cancelCrewActivity;
   const declineCrewInvitation = (id) => activitiesApi.declineCrewInvitation(id).then(invalidate);
-  const addCrewActivity = (data) => activitiesApi.create(data).then((res) => { invalidate(); return res; });
+  const addCrewActivity = (data) => activitiesApi.create(data, { idempotencyKey: createKey.keyFor(data) })
+    .then((res) => { createKey.done(); invalidate(); return res; });
 
   return {
     joinCrewActivity,

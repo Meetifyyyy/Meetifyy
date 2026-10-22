@@ -1,7 +1,8 @@
-import { useCallback, memo, useEffect, useLayoutEffect, useRef, useMemo } from 'react';
+import { useCallback, memo, useEffect, useLayoutEffect, useRef, useMemo, useState } from 'react';
 import useUIStore from '@stores/uiStore';
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { postsApi } from '@shared/api/apiClient';
+import { createSubmissionKey } from '@shared/lib/idempotencyKey';
 import { EmptyState, ErrorState } from '@shared/components/ui/StateViews';
 import VirtualFeedList from './VirtualFeedList';
 import PostComposer from './composer/PostComposer';
@@ -20,6 +21,9 @@ function Feed({ onPostClick, onCommentClick }) {
   const { currentUser } = useAuth();
   const searchQuery = useUIStore(state => state.searchQuery);
   const queryClient = useQueryClient();
+  // One idempotency key per post, kept across "tap Post again" after an error,
+  // so a retry of a post whose response was lost cannot publish it twice.
+  const [postKey] = useState(createSubmissionKey);
 
   const {
     data,
@@ -116,17 +120,19 @@ function Feed({ onPostClick, onCommentClick }) {
     if (!(pollData || text || (mediaDataList && mediaDataList.length > 0))) return;
 
     // Pass the VERIFIED storage keys to the backend.
-    const created = await postsApi.createPost({
+    const body = {
       text,
       mediaKeys: mediaDataList?.map(m => m.mediaKey).filter(Boolean),
       mentions,
       poll: pollData || undefined,
-    });
+    };
+    const created = await postsApi.createPost(body, { idempotencyKey: postKey.keyFor(body) });
+    postKey.done();
 
     // Into every cached post list at once — the home feed, the author's own
     // profile, bookmarks, the community view — rather than just ['feed'].
     addCreatedPostToCaches(queryClient, created);
-  }, [queryClient]);
+  }, [queryClient, postKey]);
 
   const handlePullToRefresh = useCallback(() => {
     return queryClient.resetQueries({ queryKey: ['feed', searchQuery, currentUser?.id] });
