@@ -10,7 +10,9 @@ import { uploadsApi } from '@shared/api/apiClient';
 import { showToast } from '@shared/utils/toast';
 import { useSmoothHeight } from '@shared/hooks/useSmoothHeight';
 import { normalizeBodyText } from '@shared/utils/bodyText';
-import { getPostLimitState, POST_WARN_AT_CHARS } from '@shared/utils/textLimit';
+import { getPostLimitState, POST_WARN_AT_CHARS, POST_MAX_CHARS } from '@shared/utils/textLimit';
+import { useComposerDraft } from '@shared/hooks/useComposerDraft';
+import { clearDraft } from '@shared/lib/drafts';
 import { ALLOWED_IMAGE_ACCEPT } from '@shared/constants/mediaLimits';
 import { useExpandFlip } from './useExpandFlip';
 
@@ -59,9 +61,16 @@ const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
 const POLL_OPTION_COUNT_VISIBLE_AT = 30;
 const POLL_OPTION_COUNT_WARNING_AT = 10;
 
-const PostComposer = forwardRef(function PostComposer({ onSubmit }, ref) {
+/**
+ * `draftScope` names where this composer's text is kept between visits: the
+ * home feed's is `post:home`, a community's is `post:community:<id>` (passed by
+ * CommunityView), so a half-written community post never turns up on the home
+ * feed. Only the text and mentions are kept; attached media and the poll are
+ * not (object URLs and in-progress uploads do not survive a restart).
+ */
+const PostComposer = forwardRef(function PostComposer({ onSubmit, draftScope = 'post:home' }, ref) {
   const { loading, currentUser } = useAuth();
-  const [value, setValue] = useState({ text: '', mentions: [] });
+  const [value, setValue] = useComposerDraft(draftScope, { maxLength: POST_MAX_CHARS });
   const [media, setMedia] = useState([]);
   const [isPosting, setIsPosting] = useState(false);
   const [showEmoji, setShowEmoji] = useState(false);
@@ -202,6 +211,10 @@ const PostComposer = forwardRef(function PostComposer({ onSubmit }, ref) {
     const rawText = typeof value === 'string' ? value : (value?.text || '');
     const text = normalizeBodyText(rawText);
     const mentions = value?.mentions || [];
+    // Taken now: if the composer is gone by the time the post lands (the user
+    // went back mid-upload), clearing the box below does nothing, and the
+    // already-saved draft would offer a published post again next visit.
+    const scopeAtSubmit = draftScope;
     // Post is disabled past the limit; this covers the other ways in (Enter).
     if (getPostLimitState(text).isOver) return;
 
@@ -257,6 +270,7 @@ const PostComposer = forwardRef(function PostComposer({ onSubmit }, ref) {
           try { URL.revokeObjectURL(m.previewUrl); } catch (_) {}
         }
       });
+      clearDraft(scopeAtSubmit);
       setValue({ text: '', mentions: [] });
       setMedia([]);
       uploadPromiseRefs.current.clear();

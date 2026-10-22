@@ -14,7 +14,9 @@ import { useAuth } from '@shared/context/AuthContext';
 import { useGlobalSocketStore } from '@stores/useGlobalSocketStore';
 import { useAddComment } from '../../hooks/useAddComment';
 import { useMediaQuery } from '@shared/hooks/useMediaQuery';
-import { getCommentLimitState } from '@shared/utils/textLimit';
+import { getCommentLimitState, COMMENT_MAX_CHARS } from '@shared/utils/textLimit';
+import { useComposerDraft } from '@shared/hooks/useComposerDraft';
+import { draftOwner, saveDraft } from '@shared/lib/drafts';
 
 /**
  * Flat comment list -> nested tree, reusing every node object that did not
@@ -164,7 +166,22 @@ export default function PostView({ post, onBack, autoFocusComment = false }) {
   // Wide screens get a composer under the post; phones keep the docked bar.
   // Same boundary as the stylesheet's 768px breakpoint.
   const isWide = useMediaQuery('(min-width: 769px)') === true;
-  const [replyContent, setReplyContent] = useState({ text: '', mentions: [] });
+  // One persistent draft per post, whoever it is addressed to. The reply
+  // target is deliberately not part of the key: it is a tag on this page's
+  // single composer (and the comment it names may not even be loaded after a
+  // restart), so a per-parent key would only scatter one half-written thought
+  // across several slots the person has to remember. The text comes back; they
+  // pick the target again if they still want one.
+  // Whether this view is still on screen, for work that finishes after it.
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
+  const [replyContent, setReplyContent] = useComposerDraft(
+    post?.id ? `comment:${post.id}` : null,
+    { maxLength: COMMENT_MAX_CHARS },
+  );
   // The comment being answered, if any: { id, username }. Replies are written
   // in this page's one composer, which shows the target as a tag.
   const [replyTarget, setReplyTarget] = useState(null);
@@ -318,6 +335,8 @@ export default function PostView({ post, onBack, autoFocusComment = false }) {
     if (getCommentLimitState(replyContent.text).isOver) return;
     const draft = replyContent;
     const target = replyTarget;
+    const draftScopeAtSubmit = `comment:${livePost.id}`;
+    const typedBy = draftOwner();
     setIsPostingComment(true);
     setReplyContent({ text: '', mentions: [] });
     setReplyTarget(null);
@@ -329,6 +348,16 @@ export default function PostView({ post, onBack, autoFocusComment = false }) {
       // useAddComment surfaces its own toast; the draft comes back to retry.
       setReplyContent((cur) => (cur.text.trim() ? cur : draft));
       setReplyTarget((cur) => cur ?? target);
+      // Left the post while it was sending: the state above goes nowhere, and
+      // the box was cleared (deleting the stored draft) the moment it was sent,
+      // so keep the text as this post's draft for the next visit.
+      if (!mountedRef.current) {
+        saveDraft(draftScopeAtSubmit, draft.text, {
+          mentions: draft.mentions,
+          maxLength: COMMENT_MAX_CHARS,
+          owner: typedBy,
+        });
+      }
     } finally {
       setIsPostingComment(false);
     }

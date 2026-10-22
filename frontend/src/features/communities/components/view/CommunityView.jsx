@@ -1271,6 +1271,7 @@ export default function CommunityView({ communityId, onBack, onPostClick, onComm
                   <VerificationGate message="Verify your account to post in communities.">
                     <PostComposer
                       ref={composerRef}
+                      draftScope={`post:community:${communityId}`}
                       onSubmit={(text, poll, media, mentions) => addPost(text, poll, communityId, media, mentions)}
                     />
                   </VerificationGate>

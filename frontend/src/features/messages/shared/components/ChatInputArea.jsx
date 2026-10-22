@@ -8,9 +8,29 @@ import { ALLOWED_MEDIA_ACCEPT } from '@shared/constants/mediaLimits';
 import ReplyPreviewContent from './ReplyPreviewContent';
 import LiveWaveform from './LiveWaveform';
 import { MAX_MESSAGE_TEXT_LENGTH, MESSAGE_LENGTH_WARN_AT } from '@shared/constants/messageLimits';
+import { useComposerDraft } from '@shared/hooks/useComposerDraft';
+
+/**
+ * The persistent-draft scope for a chat: one draft per conversation. A thread
+ * that does not exist yet is `draft_<userId>` (see draftConversation.js), which
+ * already names the recipient, so it is stable across a reload; with no id at
+ * all (`new`, the unresolved placeholder) there is nothing to key on, and the
+ * composer simply does not persist.
+ */
+function chatDraftScope(conversation, persistDraft) {
+  if (!persistDraft) return null;
+  // Instant Match chats end with their session; a draft would outlive them.
+  if (conversation?.isInstantMatch || conversation?.type === 'INSTANT_MATCH') return null;
+  // The internal id first: a group reached from a link carries its public id
+  // in `id`, from the list its internal one, and one thread must be one slot.
+  const id = conversation?.internalId || conversation?.id;
+  return id && id !== 'new' ? `chat:${id}` : null;
+}
 
 export default function ChatInputArea({
   conversation,
+  // False keeps nothing typed here on the device (Instant Match passes it).
+  persistDraft = true,
   onSendMessage: propOnSendMessage,
   onSend,
   replyingTo,
@@ -24,7 +44,20 @@ export default function ChatInputArea({
   disabledReason,
 }) {
   const sendMessageFn = propOnSendMessage || onSend;
-  const [inputValue, setInputValue] = useState({ text: '', mentions: [] });
+  // Survives leaving the chat, switching chats and the app being killed.
+  // Emptying it after a send (below) is what deletes the saved draft.
+  const draftScope = chatDraftScope(conversation, persistDraft);
+
+  // The editor is remounted per thread so one chat's text is never left in
+  // another's field, EXCEPT when a new conversation gets its real id on the
+  // first send: that is the same thread, and remounting there dropped focus
+  // and closed the keyboard right after the first message.
+  const [editor, setEditor] = useState({ scope: draftScope, key: draftScope ?? 'no-draft' });
+  if (editor.scope !== draftScope) {
+    const sameThread = typeof editor.scope === 'string' && editor.scope.startsWith('chat:draft_');
+    setEditor({ scope: draftScope, key: sameThread ? editor.key : (draftScope ?? 'no-draft') });
+  }
+  const [inputValue, setInputValue] = useComposerDraft(draftScope, { maxLength: MAX_MESSAGE_TEXT_LENGTH });
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const fileInputRef = useRef(null);
   const inputRef = useRef(null);
@@ -415,6 +448,11 @@ export default function ChatInputArea({
             <div className={styles.inputBar}>
               <div className={styles.inputWrapper}>
                 <MentionInput
+                  /* Keyed by conversation so switching chats rebuilds the
+                     editor: it deliberately leaves a focused field's DOM
+                     alone, which would keep the last chat's text on screen
+                     over the new chat's draft. */
+                  key={editor.key}
                   inputRef={inputRef}
                   className={styles.msgInput}
                   placeholder="Type a message..."

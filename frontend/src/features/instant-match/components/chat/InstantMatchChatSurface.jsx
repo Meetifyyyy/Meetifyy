@@ -335,6 +335,7 @@ export default function InstantMatchChatSurface({
         <div className="im-chat-foot">
           <ChatInputArea
             conversation={conversation}
+            persistDraft={false}
             onSendMessage={handleSend}
             replyingTo={replyingTo}
             onCancelReply={() => setReplyingTo(null)}
