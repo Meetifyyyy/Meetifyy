@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import type { RedisService } from '../../redis/redis.service';
 
 /**
@@ -49,6 +50,35 @@ async function runLocked<T>(
     // The lock failed before the send ran (Redis dropped mid-acquire): send
     // anyway. An error from the send itself is the caller's, unchanged.
     if (!ran) return fn();
+    throw err;
+  }
+}
+
+/**
+ * True when an insert lost the race for a client message id to another copy
+ * of the same send: the unique (senderId, clientMessageId) index refused it.
+ * The caller then sends again, which finds the winning row and returns it as
+ * a duplicate, rather than failing a message that was in fact delivered.
+ */
+export function isClientMessageIdConflict(err: unknown): boolean {
+  if (!(err instanceof Prisma.PrismaClientKnownRequestError)) return false;
+  if (err.code !== 'P2002') return false;
+  const target: unknown = err.meta?.target;
+  const fields = Array.isArray(target) ? target.map(String) : [String(target)];
+  return fields.some((f) => f.includes('clientMessageId'));
+}
+
+/**
+ * Runs `send`, and once more if it lost the client-id race: the second run
+ * finds the row that won and returns it as a duplicate (no fan-out).
+ */
+export async function retryOnClientIdConflict<T>(
+  send: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await send();
+  } catch (err: unknown) {
+    if (isClientMessageIdConflict(err)) return send();
     throw err;
   }
 }

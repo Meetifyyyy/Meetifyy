@@ -43,7 +43,7 @@ import {
   assertNewConversationWithinRateLimit,
 } from './core/message-limits';
 import { withDmCreateLock } from './core/dm-lock';
-import { withClientSendLock } from './core/send-lock';
+import { retryOnClientIdConflict, withClientSendLock } from './core/send-lock';
 import { RedisService } from '../redis/redis.service';
 import { BlocksService } from '../users/blocks.service';
 import { resolvePresenceVisibilityForViewer } from '../users/privacy.helper';
@@ -419,7 +419,10 @@ export class MessagesService
       this.redisService,
       senderId,
       payload.clientId || payload.tempId,
-      () => this.sendViaSocketPath(senderId, conversationId, payload),
+      () =>
+        retryOnClientIdConflict(() =>
+          this.sendViaSocketPath(senderId, conversationId, payload),
+        ),
     );
   }
 

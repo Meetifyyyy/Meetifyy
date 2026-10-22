@@ -1,4 +1,4 @@
-import { withClientSendLock } from './send-lock';
+import { retryOnClientIdConflict, withClientSendLock } from './send-lock';
 import type { RedisService } from '../../redis/redis.service';
 import {
   Injectable,
@@ -301,7 +301,10 @@ export class MessagingCoreService {
       this.sendLockService(),
       senderId,
       clientMessageIdOf(payload),
-      () => this.sendMessageOnce(senderId, conversationId, payload),
+      () =>
+        retryOnClientIdConflict(() =>
+          this.sendMessageOnce(senderId, conversationId, payload),
+        ),
     );
   }
 
