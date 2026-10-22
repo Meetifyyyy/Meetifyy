@@ -1,3 +1,5 @@
+import { withClientSendLock } from './send-lock';
+import type { RedisService } from '../../redis/redis.service';
 import {
   Injectable,
   NotFoundException,
@@ -268,7 +270,42 @@ export class MessagingCoreService {
     return identifier;
   }
 
+  /**
+   * The Redis service subclasses lock sends with. This class is not given one
+   * itself; each service that inherits `sendMessage` returns its own.
+   */
+  protected sendLockService(): RedisService | undefined {
+    return undefined;
+  }
+
+  /**
+   * Sends a message, once per client message id.
+   *
+   * The DM and group-chat REST routes land here, and a retried send used to
+   * insert a second copy every time: this path neither looked for nor stored
+   * `clientMessageId`, unlike the socket path in MessagesService. Both now do,
+   * under a per-id lock so two copies arriving together cannot both insert.
+   */
   async sendMessage(
+    senderId: string,
+    conversationId: string,
+    payload: SendMessageDto,
+  ): Promise<
+    MessageResponseDto & {
+      recipientIds: string[];
+      unmutedRecipientIds: string[];
+      conversationName: string;
+    }
+  > {
+    return withClientSendLock(
+      this.sendLockService(),
+      senderId,
+      clientMessageIdOf(payload),
+      () => this.sendMessageOnce(senderId, conversationId, payload),
+    );
+  }
+
+  private async sendMessageOnce(
     senderId: string,
     conversationId: string,
     payload: SendMessageDto,
@@ -468,91 +505,120 @@ export class MessagingCoreService {
             : 'Audio'
         : 'Message');
 
-    // 2. Atomic $transaction for message creation and conversation metadata updates
-    const [message] = await this.prisma.$transaction([
-      this.prisma.message.create({
-        data: {
-          conversationId: realConvId,
-          senderId,
-          type,
-          replyToId: validatedReplyToId,
-          payload: {
-            // Coerced, not `|| ''`: `payload` is unvalidated client JSON, so a
-            // non-string here would be written straight into the Json column
-            // and later break every consumer that assumes a string.
-            text: asString(payload.text),
-            mediaUrl: asStringOrNull(payload.mediaUrl),
-            mediaType: asStringOrNull(payload.mediaType),
-            // Lightweight media metadata for instant, layout-stable rendering on
-            // the recipient side (thumbnail/poster + intrinsic dimensions/duration).
-            thumbnailUrl: asStringOrNull(payload.thumbnailUrl),
-            width: asNumberOrNull(payload.width),
-            height: asNumberOrNull(payload.height),
-            duration: asNumberOrNull(payload.duration),
-            mentions: sanitizedMentions,
-            // Client JSON (the DTO checks only that it is an object); proven
-            // to be JSON before it is written, rather than asserted.
-            inviteData: isJsonValue(initialInviteData)
-              ? initialInviteData
-              : null,
-            isForwarded: asBoolean(payload.isForwarded),
-            forwardedFromMessageId: asStringOrNull(
-              payload.forwardedFromMessageId,
-            ),
+    // A retry of a send that already landed returns the original, and does
+    // none of the side effects below a second time.
+    const clientMsgId = clientMessageIdOf(payload);
+    const existing = clientMsgId
+      ? await this.prisma.message.findFirst({
+          where: {
+            senderId,
+            conversationId: realConvId,
+            clientMessageId: clientMsgId,
           },
-        },
-        include: {
-          sender: {
-            select: {
-              id: true,
-              username: true,
-              displayName: true,
-              avatar: true,
-              // Required by `presentUserName`/`presentUserAvatar` below. A
-              // select that omits these silently renders the real identity of
-              // a deleted sender, which is the exact leak this is here to stop.
-              accountStatus: true,
-              deletedAt: true,
-            },
-          },
-          replyTo: { select: REPLY_TO_SELECT },
-        },
-      }),
-      this.prisma.conversation.update({
-        where: { id: realConvId },
-        data: {
-          updatedAt: now,
-          lastMessageText: lastMsgText,
-          lastMessageType: type,
-          lastMessageAt: now,
-          lastMessageSenderId: senderId,
-        },
-      }),
-      ...(otherUserIds.length > 0
-        ? [
-            this.prisma.conversationParticipant.updateMany({
-              where: {
-                conversationId: realConvId,
-                userId: { not: senderId },
-                leftAt: null,
+          include: {
+            sender: {
+              select: {
+                id: true,
+                username: true,
+                displayName: true,
+                avatar: true,
+                accountStatus: true,
+                deletedAt: true,
               },
-              data: { unreadCount: { increment: 1 } },
-            }),
-          ]
-        : []),
-      // New activity revives the conversation for anyone who had deleted it —
-      // sender included, since sending into a thread you deleted is an
-      // unambiguous request to have it back. `clearedAt` is deliberately left
-      // alone: the thread returns, its old messages do not.
-      this.prisma.conversationParticipant.updateMany({
-        where: {
-          conversationId: realConvId,
-          leftAt: null,
-          deletedAt: { not: null },
-        },
-        data: { deletedAt: null },
-      }),
-    ]);
+            },
+            replyTo: { select: REPLY_TO_SELECT },
+          },
+        })
+      : null;
+
+    // 2. Atomic $transaction for message creation and conversation metadata updates
+    const [message] = existing
+      ? [existing]
+      : await this.prisma.$transaction([
+          this.prisma.message.create({
+            data: {
+              clientMessageId: clientMsgId,
+              conversationId: realConvId,
+              senderId,
+              type,
+              replyToId: validatedReplyToId,
+              payload: {
+                // Coerced, not `|| ''`: `payload` is unvalidated client JSON, so a
+                // non-string here would be written straight into the Json column
+                // and later break every consumer that assumes a string.
+                text: asString(payload.text),
+                mediaUrl: asStringOrNull(payload.mediaUrl),
+                mediaType: asStringOrNull(payload.mediaType),
+                // Lightweight media metadata for instant, layout-stable rendering on
+                // the recipient side (thumbnail/poster + intrinsic dimensions/duration).
+                thumbnailUrl: asStringOrNull(payload.thumbnailUrl),
+                width: asNumberOrNull(payload.width),
+                height: asNumberOrNull(payload.height),
+                duration: asNumberOrNull(payload.duration),
+                mentions: sanitizedMentions,
+                // Client JSON (the DTO checks only that it is an object); proven
+                // to be JSON before it is written, rather than asserted.
+                inviteData: isJsonValue(initialInviteData)
+                  ? initialInviteData
+                  : null,
+                isForwarded: asBoolean(payload.isForwarded),
+                forwardedFromMessageId: asStringOrNull(
+                  payload.forwardedFromMessageId,
+                ),
+              },
+            },
+            include: {
+              sender: {
+                select: {
+                  id: true,
+                  username: true,
+                  displayName: true,
+                  avatar: true,
+                  // Required by `presentUserName`/`presentUserAvatar` below. A
+                  // select that omits these silently renders the real identity of
+                  // a deleted sender, which is the exact leak this is here to stop.
+                  accountStatus: true,
+                  deletedAt: true,
+                },
+              },
+              replyTo: { select: REPLY_TO_SELECT },
+            },
+          }),
+          this.prisma.conversation.update({
+            where: { id: realConvId },
+            data: {
+              updatedAt: now,
+              lastMessageText: lastMsgText,
+              lastMessageType: type,
+              lastMessageAt: now,
+              lastMessageSenderId: senderId,
+            },
+          }),
+          ...(otherUserIds.length > 0
+            ? [
+                this.prisma.conversationParticipant.updateMany({
+                  where: {
+                    conversationId: realConvId,
+                    userId: { not: senderId },
+                    leftAt: null,
+                  },
+                  data: { unreadCount: { increment: 1 } },
+                }),
+              ]
+            : []),
+          // New activity revives the conversation for anyone who had deleted it —
+          // sender included, since sending into a thread you deleted is an
+          // unambiguous request to have it back. `clearedAt` is deliberately left
+          // alone: the thread returns, its old messages do not.
+          this.prisma.conversationParticipant.updateMany({
+            where: {
+              conversationId: realConvId,
+              leftAt: null,
+              deletedAt: { not: null },
+            },
+            data: { deletedAt: null },
+          }),
+        ]);
 
     const isUnsent = message.state === 'UNSENT';
     const msgPayload = payloadFields(message.payload);
@@ -569,7 +635,12 @@ export class MessagingCoreService {
 
     // Fire-and-forget: must never add latency to message delivery, and a
     // notification failure must never roll back the already-committed message.
-    if (sanitizedMentions.length > 0 && message.sender && !isUnsent) {
+    if (
+      !existing &&
+      sanitizedMentions.length > 0 &&
+      message.sender &&
+      !isUnsent
+    ) {
       this.mentionsService
         .persistAndNotify({
           mentions: sanitizedMentions,
@@ -1973,4 +2044,10 @@ export class MessagingCoreService {
   async requestGroupJoin(conversationId: string, userId: string) {
     return this.joinGroupByInvite(conversationId, userId);
   }
+}
+
+/** The client's id for a send, under either name the clients have used. */
+function clientMessageIdOf(payload: SendMessageDto): string | null {
+  const id = payload?.clientId || payload?.tempId;
+  return typeof id === 'string' && id ? id : null;
 }

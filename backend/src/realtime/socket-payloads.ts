@@ -53,12 +53,21 @@ export class SeenPayload extends ConversationRefPayload {
  */
 export class SocketSendMessagePayload extends SendMessageDto {}
 
-/** `message:catchup`: the client's last sync time, an ISO timestamp. */
+/**
+ * `message:catchup`: the client's last sync time, an ISO timestamp, and the
+ * `cursor` the previous page returned when it is asking for the next one.
+ * Builds that predate paging send `since` alone and get the first page.
+ */
 export class CatchupPayload {
   @IsString()
   @IsNotEmpty()
   @MaxLength(64)
   since!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(128)
+  after?: string;
 }
 
 /** `post:join` / `post:leave`. */

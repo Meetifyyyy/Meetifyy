@@ -1,0 +1,280 @@
+import {
+  CallHandler,
+  ConflictException,
+  ExecutionContext,
+  UnprocessableEntityException,
+} from '@nestjs/common';
+import { createHash } from 'crypto';
+import type { Redis } from 'ioredis';
+import { lastValueFrom, Observable, of, throwError } from 'rxjs';
+import { RedisService } from '../../redis/redis.service';
+import { stub } from '../testing/stub';
+import { IdempotencyInterceptor } from './idempotency.interceptor';
+
+/**
+ * A write carrying an Idempotency-Key happens once.
+ *
+ * Reported shape of the bug: a post (or comment, group chat, activity, support
+ * ticket) whose response was lost was created again when it was retried — by
+ * the client's failover, which re-sends the same POST, or by a user tapping
+ * again after a timeout. The fake below implements just the Redis commands the
+ * interceptor uses, with their real NX semantics, so these tests run the
+ * interceptor's own claim/replay/release logic.
+ */
+function fakeRedis() {
+  const data = new Map<string, string>();
+  const client = {
+    set: jest.fn((key: string, value: string, ...args: unknown[]) => {
+      if (args.includes('NX') && data.has(key)) return Promise.resolve(null);
+      data.set(key, value);
+      return Promise.resolve('OK');
+    }),
+    get: jest.fn((key: string) => Promise.resolve(data.get(key) ?? null)),
+    del: jest.fn((key: string) => Promise.resolve(data.delete(key) ? 1 : 0)),
+  };
+  const redis = stub<RedisService>({
+    getClient: () => client as unknown as Redis,
+  });
+  return { redis, data };
+}
+
+type FakeRequest = {
+  method: string;
+  headers: Record<string, string>;
+  body: unknown;
+  user?: { id: string };
+  baseUrl: string;
+  path: string;
+  ip: string;
+};
+
+class FakeController {
+  create(): void {}
+}
+
+function contextFor(req: FakeRequest) {
+  const headers: Record<string, string> = {};
+  const res = {
+    setHeader: (k: string, v: string) => {
+      headers[k] = v;
+    },
+  };
+  const ctx = stub<ExecutionContext>({
+    getType: () => 'http',
+    getClass: () => FakeController,
+    getHandler: () => FakeController.prototype.create,
+    switchToHttp: () => ({
+      getRequest: () => req,
+      getResponse: () => res,
+    }),
+  });
+  return { ctx, headers };
+}
+
+const post = (overrides: Partial<FakeRequest> = {}): FakeRequest => ({
+  method: 'POST',
+  headers: { 'idempotency-key': 'key-0000000001' },
+  body: { text: 'hello' },
+  user: { id: 'user-1' },
+  baseUrl: '',
+  path: '/api/posts',
+  ip: '10.0.0.1',
+  ...overrides,
+});
+
+/** A handler that counts how many times the write actually ran. */
+function handler(result: unknown = { id: 'post-1' }) {
+  const run = jest.fn(() => of(result));
+  const next: CallHandler<unknown> = { handle: run };
+  return { next, run };
+}
+
+const call = (
+  interceptor: IdempotencyInterceptor,
+  req: FakeRequest,
+  next: CallHandler<unknown>,
+) => {
+  const { ctx, headers } = contextFor(req);
+  const out: Observable<unknown> = interceptor.intercept(ctx, next);
+  return { result: lastValueFrom(out), headers };
+};
+
+describe('IdempotencyInterceptor', () => {
+  it('runs the write once and replays its result for a repeat', async () => {
+    const { redis } = fakeRedis();
+    const interceptor = new IdempotencyInterceptor(redis);
+    const { next, run } = handler();
+
+    const first = call(interceptor, post(), next);
+    await expect(first.result).resolves.toEqual({ id: 'post-1' });
+    const second = call(interceptor, post(), next);
+    await expect(second.result).resolves.toEqual({ id: 'post-1' });
+
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(second.headers['Idempotent-Replayed']).toBe('true');
+  });
+
+  it('waits for a repeat that arrives while the first is still running', async () => {
+    const { redis } = fakeRedis();
+    const interceptor = new IdempotencyInterceptor(redis);
+    let finish: (v: unknown) => void = () => {};
+    const slow: CallHandler<unknown> = {
+      handle: jest.fn(
+        () =>
+          new Observable<unknown>((sub) => {
+            finish = (v) => {
+              sub.next(v);
+              sub.complete();
+            };
+          }),
+      ),
+    };
+
+    const first = call(interceptor, post(), slow);
+    // Let the first request take the key before the repeat arrives.
+    await new Promise((r) => setTimeout(r, 0));
+    const second = call(interceptor, post(), slow);
+    finish({ id: 'post-1' });
+
+    await expect(first.result).resolves.toEqual({ id: 'post-1' });
+    await expect(second.result).resolves.toEqual({ id: 'post-1' });
+    expect(slow.handle).toHaveBeenCalledTimes(1);
+  });
+
+  it('lets a retry run for real after the first attempt failed', async () => {
+    const { redis } = fakeRedis();
+    const interceptor = new IdempotencyInterceptor(redis);
+    const failing: CallHandler<unknown> = {
+      handle: () => throwError(() => new Error('db down')),
+    };
+    await expect(call(interceptor, post(), failing).result).rejects.toThrow(
+      'db down',
+    );
+
+    const { next, run } = handler();
+    await expect(call(interceptor, post(), next).result).resolves.toEqual({
+      id: 'post-1',
+    });
+    expect(run).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses the same key with a different body', async () => {
+    const { redis } = fakeRedis();
+    const interceptor = new IdempotencyInterceptor(redis);
+    const { next } = handler();
+    await call(interceptor, post(), next).result;
+
+    await expect(
+      call(interceptor, post({ body: { text: 'other' } }), next).result,
+    ).rejects.toBeInstanceOf(UnprocessableEntityException);
+  });
+
+  it('never returns one user’s result to another user', async () => {
+    const { redis } = fakeRedis();
+    const interceptor = new IdempotencyInterceptor(redis);
+    const a = handler({ id: 'post-a' });
+    const b = handler({ id: 'post-b' });
+    await call(interceptor, post(), a.next).result;
+
+    await expect(
+      call(interceptor, post({ user: { id: 'user-2' } }), b.next).result,
+    ).resolves.toEqual({ id: 'post-b' });
+    expect(b.run).toHaveBeenCalledTimes(1);
+  });
+
+  it('scopes a key to its route', async () => {
+    const { redis } = fakeRedis();
+    const interceptor = new IdempotencyInterceptor(redis);
+    const a = handler({ id: 'post-1' });
+    const b = handler({ id: 'comment-1' });
+    await call(interceptor, post(), a.next).result;
+    await expect(
+      call(interceptor, post({ path: '/api/posts/p1/comments' }), b.next)
+        .result,
+    ).resolves.toEqual({ id: 'comment-1' });
+  });
+
+  it('leaves requests without a key, reads, and a missing Redis alone', async () => {
+    const { redis, data } = fakeRedis();
+    const interceptor = new IdempotencyInterceptor(redis);
+    const { next, run } = handler();
+
+    await call(interceptor, post({ headers: {} }), next).result;
+    await call(interceptor, post({ headers: {} }), next).result;
+    await call(interceptor, post({ method: 'GET' }), next).result;
+    expect(run).toHaveBeenCalledTimes(3);
+    expect(data.size).toBe(0);
+
+    const noRedis = new IdempotencyInterceptor(
+      stub<RedisService>({ getClient: () => null }),
+    );
+    await call(noRedis, post(), next).result;
+    await call(noRedis, post(), next).result;
+    expect(run).toHaveBeenCalledTimes(5);
+  });
+
+  it('rejects a malformed key instead of trusting it', () => {
+    const { redis } = fakeRedis();
+    const interceptor = new IdempotencyInterceptor(redis);
+    const { next } = handler();
+    expect(() =>
+      call(
+        interceptor,
+        post({ headers: { 'idempotency-key': 'bad key!' } }),
+        next,
+      ),
+    ).toThrow(UnprocessableEntityException);
+  });
+
+  it('refuses a repeat that waited past the limit rather than running twice', async () => {
+    const { redis, data } = fakeRedis();
+    const interceptor = new IdempotencyInterceptor(redis);
+    // A first attempt that never finishes, as far as this repeat can tell,
+    // for the same body (so the repeat waits rather than being a mismatch).
+    data.set(
+      'idem:v1:u:user-1:POST:/api/posts:key-0000000001',
+      JSON.stringify({
+        state: 'pending',
+        fingerprint: createHash('sha256')
+          .update(JSON.stringify({ text: 'hello' }))
+          .digest('hex'),
+      }),
+    );
+    jest.useFakeTimers();
+    const { next, run } = handler();
+    const pending = call(interceptor, post(), next).result;
+    const settled = expect(pending).rejects.toBeInstanceOf(ConflictException);
+    await jest.advanceTimersByTimeAsync(IdempotencyInterceptor.WAIT_MS + 500);
+    await settled;
+    jest.useRealTimers();
+    expect(run).not.toHaveBeenCalled();
+  });
+});
+
+describe('IdempotencyInterceptor — handlers that write their own response', () => {
+  it('leaves an @Res() handler alone, since a replay could never reach the client', async () => {
+    const { Controller, Put, Res } = await import('@nestjs/common');
+    @Controller('uploads')
+    class Uploads {
+      @Put('direct-upload')
+      upload(@Res() _res: unknown): void {}
+    }
+    const { redis, data } = fakeRedis();
+    const interceptor = new IdempotencyInterceptor(redis);
+    const { next, run } = handler();
+    const ctx = stub<ExecutionContext>({
+      getType: () => 'http',
+      getClass: () => Uploads,
+      getHandler: () => Uploads.prototype.upload,
+      switchToHttp: () => ({
+        getRequest: () =>
+          post({ method: 'PUT', path: '/api/uploads/direct-upload' }),
+        getResponse: () => ({ setHeader: () => {} }),
+      }),
+    });
+    await lastValueFrom(interceptor.intercept(ctx, next));
+    await lastValueFrom(interceptor.intercept(ctx, next));
+    expect(run).toHaveBeenCalledTimes(2);
+    expect(data.size).toBe(0);
+  });
+});

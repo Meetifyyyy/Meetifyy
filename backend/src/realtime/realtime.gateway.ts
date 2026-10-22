@@ -1179,7 +1179,7 @@ export class RealtimeGateway
     const parsed = parseSocketPayload(CatchupPayload, data);
     if (!userId || !parsed.ok)
       return { status: 'error', error: 'Invalid parameters' };
-    const { since } = parsed.value;
+    const { since, after } = parsed.value;
 
     // The other reconnect-time query. Capped so a mass disconnect cannot turn
     // into a thundering herd against Postgres.
@@ -1189,11 +1189,14 @@ export class RealtimeGateway
     if (limited) return limited;
 
     try {
-      const messages = await this.messagesService.getCatchupMessages(
+      // `messages` keeps its name and shape for builds that predate paging;
+      // they ignore the rest and behave exactly as before.
+      const page = await this.messagesService.getCatchupMessages(
         userId,
         since,
+        after,
       );
-      return { status: 'ok', messages };
+      return { status: 'ok', ...page };
     } catch (err) {
       return {
         status: 'error',

@@ -68,6 +68,11 @@ export class GroupChatsService extends MessagingCoreService {
     this.redis = this.redisService?.getClient() ?? null;
   }
 
+  /** Sends through this service are locked per client message id. */
+  protected override sendLockService(): RedisService | undefined {
+    return this.redisService;
+  }
+
   async invalidateUserConversationsCache(userIds?: string[]) {
     const redis = this.redis;
     if (!redis) return;

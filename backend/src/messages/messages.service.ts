@@ -43,6 +43,7 @@ import {
   assertNewConversationWithinRateLimit,
 } from './core/message-limits';
 import { withDmCreateLock } from './core/dm-lock';
+import { withClientSendLock } from './core/send-lock';
 import { RedisService } from '../redis/redis.service';
 import { BlocksService } from '../users/blocks.service';
 import { resolvePresenceVisibilityForViewer } from '../users/privacy.helper';
@@ -404,7 +405,25 @@ export class MessagesService
     return identifier;
   }
 
+  /**
+   * The socket path's send. Same contract as the inherited one: one message
+   * per client message id, under a per-id lock so two copies arriving at once
+   * (the socket send and its REST fallback) cannot both insert.
+   */
   async sendMessage(
+    senderId: string,
+    conversationId: string,
+    payload: SendMessageDto,
+  ) {
+    return withClientSendLock(
+      this.redisService,
+      senderId,
+      payload.clientId || payload.tempId,
+      () => this.sendViaSocketPath(senderId, conversationId, payload),
+    );
+  }
+
+  private async sendViaSocketPath(
     senderId: string,
     conversationId: string,
     payload: SendMessageDto,
@@ -877,22 +896,126 @@ export class MessagesService
     return msgRes;
   }
 
-  async getCatchupMessages(userId: string, sinceTimestamp: string) {
-    if (!userId || !sinceTimestamp) return [];
+  /** Messages per catch-up page. The client pages until `hasMore` is false. */
+  static readonly CATCHUP_PAGE_SIZE = 200;
+
+  /**
+   * How far before `since` the first page re-reads.
+   *
+   * `createdAt` is stamped when a row is inserted, not when it commits, so a
+   * message stamped just before a catch-up query can commit just after it and
+   * fall behind a sync point that has already moved past it. Re-reading a
+   * short window catches it; the client already drops ids it holds.
+   */
+  static readonly CATCHUP_OVERLAP_MS = 10_000;
+
+  /**
+   * Messages the user missed while disconnected, oldest first, one page at a
+   * time.
+   *
+   * This used to return the first 100 after `since` with no way to ask for
+   * more, and the client then moved its sync point to its own clock, so a long
+   * absence silently lost everything past the first 100. Now:
+   *
+   * - pages are keyset on (createdAt, id) and say whether more remain;
+   * - `syncedAt` is the SERVER's clock at the start of the query, the only
+   *   value a client may store as its next `since`;
+   * - a conversation the user cleared is honoured, as history does.
+   *
+   * `after` is the `cursor` from the previous page. Malformed input yields an
+   * empty, final page rather than an error, as it always has.
+   */
+  async getCatchupMessages(
+    userId: string,
+    sinceTimestamp: string,
+    after?: string,
+  ): Promise<{
+    messages: ReturnType<MessagesService['formatMessageResponse']>[];
+    hasMore: boolean;
+    cursor: string | null;
+    syncedAt: string;
+  }> {
+    const syncedAt = new Date().toISOString();
+    const empty = { messages: [], hasMore: false, cursor: null, syncedAt };
+    if (!userId || !sinceTimestamp) return empty;
     const sinceDate = new Date(sinceTimestamp);
-    if (isNaN(sinceDate.getTime())) return [];
+    if (isNaN(sinceDate.getTime())) return empty;
 
-    const activeConvs = await this.prisma.conversationParticipant.findMany({
-      where: { userId, deletedAt: null, leftAt: null },
-      select: { conversationId: true },
+    // The resume point: the previous page's last row, or the overlap-adjusted
+    // `since` on the first page.
+    let fromDate = new Date(
+      sinceDate.getTime() - MessagesService.CATCHUP_OVERLAP_MS,
+    );
+    let fromId: string | null = null;
+    if (after) {
+      const [dateStr, id] = after.split('|');
+      const parsed = new Date(dateStr);
+      if (isNaN(parsed.getTime()) || !id) return empty;
+      fromDate = parsed;
+      fromId = id;
+    }
+
+    // Conversations the user is in, plus ones they left during the gap: what
+    // was said before they left is still theirs to see, as history shows it.
+    const memberships = await this.prisma.conversationParticipant.findMany({
+      where: {
+        userId,
+        deletedAt: null,
+        OR: [{ leftAt: null }, { leftAt: { gt: fromDate } }],
+      },
+      select: {
+        conversationId: true,
+        clearedAt: true,
+        leftAt: true,
+        conversation: { select: { type: true, isInstantMatch: true } },
+      },
     });
-    if (activeConvs.length === 0) return [];
 
-    const convIds = activeConvs.map((c) => c.conversationId);
+    // An instant-match chat is readable only while its session allows it,
+    // the same gate history applies.
+    const readable = (
+      await Promise.all(
+        memberships.map(async (m) => {
+          const instant =
+            m.conversation.type === 'INSTANT_MATCH' ||
+            m.conversation.isInstantMatch;
+          if (!instant) return m;
+          const allowed = await this.instantMatchGuard?.canReadChat(
+            userId,
+            m.conversationId,
+          );
+          return allowed ? m : null;
+        }),
+      )
+    ).filter((m): m is (typeof memberships)[number] => m !== null);
+    if (readable.length === 0) return empty;
+
+    const take = MessagesService.CATCHUP_PAGE_SIZE;
     const messages = await this.prisma.message.findMany({
       where: {
-        conversationId: { in: convIds },
-        createdAt: { gt: sinceDate },
+        // Per conversation: a chat the user cleared stays cleared, and one
+        // they left stops where they left it.
+        OR: readable.map((m) => ({
+          conversationId: m.conversationId,
+          ...(m.clearedAt || m.leftAt
+            ? {
+                createdAt: {
+                  ...(m.clearedAt ? { gt: m.clearedAt } : {}),
+                  ...(m.leftAt ? { lte: m.leftAt } : {}),
+                },
+              }
+            : {}),
+        })),
+        AND: [
+          fromId
+            ? {
+                OR: [
+                  { createdAt: { gt: fromDate } },
+                  { createdAt: fromDate, id: { gt: fromId } },
+                ],
+              }
+            : { createdAt: { gt: fromDate } },
+        ],
         deletedAt: null,
         deletedByUsers: { none: { userId } },
       },
@@ -911,15 +1034,28 @@ export class MessagesService
         },
         replyTo: { select: REPLY_TO_SELECT },
       },
-      orderBy: { createdAt: 'asc' },
-      take: 100,
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      take: take + 1,
     });
 
-    const formatted = messages.map((m) =>
-      this.formatMessageResponse(m, m.conversationId, m.conversationId, userId),
-    );
+    const hasMore = messages.length > take;
+    const page = hasMore ? messages.slice(0, take) : messages;
+    const last = page[page.length - 1];
 
-    return formatted;
+    return {
+      messages: page.map((m) =>
+        this.formatMessageResponse(
+          m,
+          m.conversationId,
+          m.conversationId,
+          userId,
+        ),
+      ),
+      hasMore,
+      cursor:
+        hasMore && last ? `${last.createdAt.toISOString()}|${last.id}` : null,
+      syncedAt,
+    };
   }
 
   async getConversationHistory(

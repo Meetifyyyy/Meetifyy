@@ -59,6 +59,11 @@ export class DmService extends MessagingCoreService {
     );
   }
 
+  /** Sends through this service are locked per client message id. */
+  protected override sendLockService(): RedisService | undefined {
+    return this.redisService;
+  }
+
   async getUserDMConversations(
     userId: string,
     limit: number = 20,

@@ -140,6 +140,11 @@ async function bootstrap() {
       'Authorization',
       'x-csrf-token',
       'x-session-id',
+      // Makes a retried write return the first result instead of running
+      // again (IdempotencyInterceptor). Accepted ahead of the clients sending
+      // it: they only do once VITE_IDEMPOTENCY_KEYS is on, because a header
+      // this list rejects fails the whole request at preflight.
+      'Idempotency-Key',
       // Sentry distributed tracing. Accepted ahead of the clients sending them:
       // the web/app only propagate trace headers once this is deployed
       // everywhere (VITE_SENTRY_PROPAGATE_TRACES), since a preflight that

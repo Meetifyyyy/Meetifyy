@@ -14,6 +14,7 @@ import { RateLimitGuard } from './common/guards/ratelimit.guard';
 import { JwtGuard } from './common/guards/jwt.guard';
 import { VerificationGuard } from './common/guards/verification.guard';
 import { NoCacheInterceptor } from './common/interceptors/no-cache.interceptor';
+import { IdempotencyInterceptor } from './common/interceptors/idempotency.interceptor';
 import { config, configNamespaces } from './config';
 import { SupabaseModule } from './supabase/supabase.module';
 import { PrismaModule } from './prisma/prisma.module';
@@ -311,6 +312,12 @@ import { requestIdFrom } from './common/utils/request-id.util';
     {
       provide: APP_INTERCEPTOR,
       useClass: NoCacheInterceptor,
+    },
+    {
+      // Writes carrying an Idempotency-Key run once; a repeat gets the first
+      // result. See the interceptor for why and for what it leaves alone.
+      provide: APP_INTERCEPTOR,
+      useClass: IdempotencyInterceptor,
     },
   ],
 })

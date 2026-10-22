@@ -133,17 +133,47 @@ describe('valid payloads still reach the handler', () => {
   });
 
   it('asks for catch-up since the timestamp it was given', async () => {
-    const getCatchupMessages = jest.fn(() => Promise.resolve([]));
+    const page = {
+      messages: [],
+      hasMore: false,
+      cursor: null,
+      syncedAt: '2026-09-28T10:05:00.000Z',
+    };
+    const getCatchupMessages = jest.fn(() => Promise.resolve(page));
     const gateway = buildGateway({ messages: { getCatchupMessages } });
     const socket = fakeSocket({ data: { userId: 'user-1' } });
+    // `messages` keeps its shape for builds that predate paging.
     await expect(
       gateway.handleMessageCatchup(socket, {
         since: '2026-09-28T10:00:00.000Z',
       }),
-    ).resolves.toEqual({ status: 'ok', messages: [] });
+    ).resolves.toEqual({ status: 'ok', ...page });
     expect(getCatchupMessages).toHaveBeenCalledWith(
       'user-1',
       '2026-09-28T10:00:00.000Z',
+      undefined,
+    );
+  });
+
+  it('passes the continuation cursor through for the next page', async () => {
+    const getCatchupMessages = jest.fn(() =>
+      Promise.resolve({
+        messages: [],
+        hasMore: false,
+        cursor: null,
+        syncedAt: '',
+      }),
+    );
+    const gateway = buildGateway({ messages: { getCatchupMessages } });
+    const socket = fakeSocket({ data: { userId: 'user-1' } });
+    await gateway.handleMessageCatchup(socket, {
+      since: '2026-09-28T10:00:00.000Z',
+      after: '2026-09-28T10:01:00.000Z|m200',
+    });
+    expect(getCatchupMessages).toHaveBeenCalledWith(
+      'user-1',
+      '2026-09-28T10:00:00.000Z',
+      '2026-09-28T10:01:00.000Z|m200',
     );
   });
 
