@@ -32,6 +32,7 @@ import {
 } from './support.constants';
 import type { AuthenticatedRequest } from '../common/types/authenticated-request';
 import { clientIp } from '../common/rate-limit/client-ip.util';
+import { Idempotent } from '../common/decorators/idempotent.decorator';
 
 /**
  * The public help centre and support-request API.
@@ -156,6 +157,7 @@ export class SupportController {
    */
   @UseGuards(SupportRateLimitGuard, JwtGuard)
   @Post('requests/mine')
+  @Idempotent()
   createMyRequest(
     @Body() dto: CreateAccountSupportRequestDto,
     @Req() req: AuthenticatedRequest,
@@ -169,6 +171,7 @@ export class SupportController {
 
   @UseGuards(SupportRateLimitGuard, OptionalJwtGuard)
   @Post('requests')
+  @Idempotent()
   async createRequest(
     @Body() dto: CreateSupportRequestDto,
     @Req() req: AuthenticatedRequest,

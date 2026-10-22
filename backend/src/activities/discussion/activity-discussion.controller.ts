@@ -11,6 +11,7 @@ import { ActivityDiscussionService } from './activity-discussion.service';
 import { JwtGuard } from '../../common/guards/jwt.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../../common/types/authenticated-request';
+import { Idempotent } from '../../common/decorators/idempotent.decorator';
 
 @Controller('api/activities/:activityId/discussion')
 @UseGuards(JwtGuard)
@@ -47,6 +48,7 @@ export class ActivityDiscussionController {
    * Instant Match (docs/college-affiliation.md → Selfie gate).
    */
   @Post()
+  @Idempotent()
   async sendMessage(
     @Param('activityId') activityId: string,
     @Body('text') text: string,

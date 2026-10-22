@@ -7,6 +7,7 @@ import {
 import { createHash } from 'crypto';
 import type { Redis } from 'ioredis';
 import { lastValueFrom, Observable, of, throwError } from 'rxjs';
+import { Reflector } from '@nestjs/core';
 import { RedisService } from '../../redis/redis.service';
 import { stub } from '../testing/stub';
 import {
@@ -148,10 +149,16 @@ const call = (
   return { result: lastValueFrom(out), headers };
 };
 
+/** Every route under test has opted in with @Idempotent(), unless a test says otherwise. */
+const optedIn = stub<Reflector>({ getAllAndOverride: () => true as never });
+const notOptedIn = stub<Reflector>({
+  getAllAndOverride: () => undefined as never,
+});
+
 describe('IdempotencyInterceptor', () => {
   it('runs the write once and replays its result for a repeat', async () => {
     const { redis } = fakeRedis();
-    const interceptor = new IdempotencyInterceptor(redis);
+    const interceptor = new IdempotencyInterceptor(redis, optedIn);
     const { next, run } = handler();
 
     const first = call(interceptor, post(), next);
@@ -165,7 +172,7 @@ describe('IdempotencyInterceptor', () => {
 
   it('waits for a repeat that arrives while the first is still running', async () => {
     const { redis } = fakeRedis();
-    const interceptor = new IdempotencyInterceptor(redis);
+    const interceptor = new IdempotencyInterceptor(redis, optedIn);
     let finish: (v: unknown) => void = () => {};
     const slow: CallHandler<unknown> = {
       handle: jest.fn(
@@ -192,7 +199,7 @@ describe('IdempotencyInterceptor', () => {
 
   it('lets a retry run for real after the first attempt failed', async () => {
     const { redis } = fakeRedis();
-    const interceptor = new IdempotencyInterceptor(redis);
+    const interceptor = new IdempotencyInterceptor(redis, optedIn);
     const failing: CallHandler<unknown> = {
       handle: () => throwError(() => new Error('db down')),
     };
@@ -209,7 +216,7 @@ describe('IdempotencyInterceptor', () => {
 
   it('refuses the same key with a different body', async () => {
     const { redis } = fakeRedis();
-    const interceptor = new IdempotencyInterceptor(redis);
+    const interceptor = new IdempotencyInterceptor(redis, optedIn);
     const { next } = handler();
     await call(interceptor, post(), next).result;
 
@@ -220,7 +227,7 @@ describe('IdempotencyInterceptor', () => {
 
   it('never returns one user’s result to another user', async () => {
     const { redis } = fakeRedis();
-    const interceptor = new IdempotencyInterceptor(redis);
+    const interceptor = new IdempotencyInterceptor(redis, optedIn);
     const a = handler({ id: 'post-a' });
     const b = handler({ id: 'post-b' });
     await call(interceptor, post(), a.next).result;
@@ -233,7 +240,7 @@ describe('IdempotencyInterceptor', () => {
 
   it('scopes a key to its route', async () => {
     const { redis } = fakeRedis();
-    const interceptor = new IdempotencyInterceptor(redis);
+    const interceptor = new IdempotencyInterceptor(redis, optedIn);
     const a = handler({ id: 'post-1' });
     const b = handler({ id: 'comment-1' });
     await call(interceptor, post(), a.next).result;
@@ -245,7 +252,7 @@ describe('IdempotencyInterceptor', () => {
 
   it('leaves requests without a key, reads, and a missing Redis alone', async () => {
     const { redis, data } = fakeRedis();
-    const interceptor = new IdempotencyInterceptor(redis);
+    const interceptor = new IdempotencyInterceptor(redis, optedIn);
     const { next, run } = handler();
 
     await call(interceptor, post({ headers: {} }), next).result;
@@ -256,6 +263,7 @@ describe('IdempotencyInterceptor', () => {
 
     const noRedis = new IdempotencyInterceptor(
       stub<RedisService>({ getClient: () => null }),
+      optedIn,
     );
     await call(noRedis, post(), next).result;
     await call(noRedis, post(), next).result;
@@ -264,7 +272,7 @@ describe('IdempotencyInterceptor', () => {
 
   it('rejects a malformed key instead of trusting it', () => {
     const { redis } = fakeRedis();
-    const interceptor = new IdempotencyInterceptor(redis);
+    const interceptor = new IdempotencyInterceptor(redis, optedIn);
     const { next } = handler();
     expect(() =>
       call(
@@ -277,7 +285,7 @@ describe('IdempotencyInterceptor', () => {
 
   it('refuses a repeat that waited past the limit rather than running twice', async () => {
     const { redis, data } = fakeRedis();
-    const interceptor = new IdempotencyInterceptor(redis);
+    const interceptor = new IdempotencyInterceptor(redis, optedIn);
     // A first attempt that never finishes, as far as this repeat can tell,
     // for the same body (so the repeat waits rather than being a mismatch).
     data.set(
@@ -313,7 +321,7 @@ describe('IdempotencyInterceptor — handlers that write their own response', ()
       upload(@Res() _res: unknown): void {}
     }
     const { redis, data } = fakeRedis();
-    const interceptor = new IdempotencyInterceptor(redis);
+    const interceptor = new IdempotencyInterceptor(redis, optedIn);
     const { next, run } = handler();
     const ctx = stub<ExecutionContext>({
       getType: () => 'http',
@@ -341,7 +349,7 @@ describe('IdempotencyInterceptor — what it must never store or block', () => {
       adopt(@Res({ passthrough: true }) _res: unknown): void {}
     }
     const { redis, data } = fakeRedis();
-    const interceptor = new IdempotencyInterceptor(redis);
+    const interceptor = new IdempotencyInterceptor(redis, optedIn);
     const { next, run } = handler({ accessToken: 'secret' });
     const ctx = stub<ExecutionContext>({
       getType: () => 'http',
@@ -360,7 +368,7 @@ describe('IdempotencyInterceptor — what it must never store or block', () => {
 
   it('skips auth paths by name too', async () => {
     const { redis, data } = fakeRedis();
-    const interceptor = new IdempotencyInterceptor(redis);
+    const interceptor = new IdempotencyInterceptor(redis, optedIn);
     const { next, run } = handler({ csrfToken: 't' });
     await call(interceptor, post({ path: '/api/admin/auth/verify-otp' }), next)
       .result;
@@ -376,7 +384,7 @@ describe('IdempotencyInterceptor — what it must never store or block', () => {
       set: jest.Mock;
       eval: jest.Mock;
     };
-    const interceptor = new IdempotencyInterceptor(redis);
+    const interceptor = new IdempotencyInterceptor(redis, optedIn);
     const { next } = handler();
     await call(interceptor, post(), next).result;
     const [claim] = client.set.mock.calls as unknown[][];
@@ -389,7 +397,7 @@ describe('IdempotencyInterceptor — what it must never store or block', () => {
   it('drops an unreadable entry and runs, instead of spinning on it', async () => {
     const { redis, data } = fakeRedis();
     data.set('idem:v1:u:user-1:POST:/api/posts:key-0000000001', 'not json');
-    const interceptor = new IdempotencyInterceptor(redis);
+    const interceptor = new IdempotencyInterceptor(redis, optedIn);
     const { next, run } = handler();
     await expect(call(interceptor, post(), next).result).resolves.toEqual({
       id: 'post-1',
@@ -399,7 +407,7 @@ describe('IdempotencyInterceptor — what it must never store or block', () => {
 
   it('frees the key when the result is too large to keep', async () => {
     const { redis, data } = fakeRedis();
-    const interceptor = new IdempotencyInterceptor(redis);
+    const interceptor = new IdempotencyInterceptor(redis, optedIn);
     const big = { blob: 'x'.repeat(IdempotencyInterceptor.MAX_BODY_BYTES + 1) };
     const { next } = handler(big);
     await call(interceptor, post(), next).result;
@@ -433,7 +441,7 @@ describe('IdempotencyInterceptor — a claim belongs to the request that took it
 
   it('a failing first request does not delete a second claimant’s key', async () => {
     const { redis, data } = fakeRedis();
-    const interceptor = new IdempotencyInterceptor(redis);
+    const interceptor = new IdempotencyInterceptor(redis, optedIn);
     const first = controllable();
     const firstResult = call(interceptor, post(), first.next).result;
     await new Promise((r) => setTimeout(r, 0));
@@ -455,7 +463,7 @@ describe('IdempotencyInterceptor — a claim belongs to the request that took it
 
   it('a late first request does not overwrite another claim with its result', async () => {
     const { redis, data } = fakeRedis();
-    const interceptor = new IdempotencyInterceptor(redis);
+    const interceptor = new IdempotencyInterceptor(redis, optedIn);
     const first = controllable();
     const firstResult = call(interceptor, post(), first.next).result;
     await new Promise((r) => setTimeout(r, 0));
@@ -479,7 +487,7 @@ describe('IdempotencyInterceptor — a claim belongs to the request that took it
 
   it('gives each claim its own random token', async () => {
     const { redis, data } = fakeRedis();
-    const interceptor = new IdempotencyInterceptor(redis);
+    const interceptor = new IdempotencyInterceptor(redis, optedIn);
     const a = controllable();
     void call(interceptor, post(), a.next).result.catch(() => {});
     await new Promise((r) => setTimeout(r, 0));
@@ -499,7 +507,7 @@ describe('IdempotencyInterceptor — a claim belongs to the request that took it
   it('keeps refreshing a long request’s claim, so a retry waits instead of running twice', async () => {
     jest.useFakeTimers();
     const { redis, data } = fakeRedis();
-    const interceptor = new IdempotencyInterceptor(redis);
+    const interceptor = new IdempotencyInterceptor(redis, optedIn);
     const first = controllable();
     const firstResult = call(interceptor, post(), first.next).result;
     await jest.advanceTimersByTimeAsync(0);
@@ -522,7 +530,7 @@ describe('IdempotencyInterceptor — a claim belongs to the request that took it
   it('stops refreshing once the request ends, and a dead claim still expires', async () => {
     jest.useFakeTimers();
     const { redis, data } = fakeRedis();
-    const interceptor = new IdempotencyInterceptor(redis);
+    const interceptor = new IdempotencyInterceptor(redis, optedIn);
     const client = redis.getClient() as unknown as Redis & { eval: jest.Mock };
     const { next } = handler();
     await call(interceptor, post(), next).result;
@@ -545,5 +553,17 @@ describe('IdempotencyInterceptor — a claim belongs to the request that took it
       IdempotencyInterceptor.PENDING_TTL_SECONDS * 1000 + 1,
     );
     await expect(client.set(KEY, 'y', 'NX')).resolves.toBe('OK');
+  });
+});
+
+describe('IdempotencyInterceptor — opt-in only', () => {
+  it('stores and replays nothing for a route without @Idempotent()', async () => {
+    const { redis, data } = fakeRedis();
+    const interceptor = new IdempotencyInterceptor(redis, notOptedIn);
+    const { next, run } = handler();
+    await call(interceptor, post(), next).result;
+    await call(interceptor, post(), next).result;
+    expect(run).toHaveBeenCalledTimes(2);
+    expect(data.size).toBe(0);
   });
 });

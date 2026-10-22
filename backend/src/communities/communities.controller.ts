@@ -26,6 +26,7 @@ import { moderatorPermissions } from './moderator-permissions';
 import { clampPageParam } from '../common/pagination.util';
 import { CampusAccessService } from '../common/campus/campus-access.service';
 import type { AuthenticatedUser } from '../common/types/authenticated-request';
+import { Idempotent } from '../common/decorators/idempotent.decorator';
 
 @Controller('api/communities')
 @UseGuards(JwtGuard)
@@ -185,6 +186,7 @@ export class CommunitiesController {
   }
 
   @Post()
+  @Idempotent()
   @VerifiedOnly()
   @UseGuards(RateLimitPolicyGuard)
   @RateLimit('community.create')

@@ -371,11 +371,10 @@ export class MessagingCoreService {
     const clientMsgId = clientMessageIdOf(payload);
     const existing = clientMsgId
       ? await this.prisma.message.findFirst({
-          where: {
-            senderId,
-            conversationId: realConvId,
-            clientMessageId: clientMsgId,
-          },
+          // The same scope as the unique index, (senderId, clientMessageId):
+          // matching on the conversation too missed a reused id in another
+          // chat, whose insert then failed on the index every time.
+          where: { senderId, clientMessageId: clientMsgId },
           include: {
             sender: {
               select: {
@@ -391,6 +390,11 @@ export class MessagingCoreService {
           },
         })
       : null;
+    // A client id already used for a message in ANOTHER conversation is a
+    // client bug, not a retry: refuse it (REJECTED, so it is not retried).
+    if (existing && existing.conversationId !== realConvId) {
+      throw new BadRequestException('Message id already used');
+    }
 
     const myParticipant = conv.participants.find((p) => p.userId === senderId);
     if (!existing && !myParticipant) {

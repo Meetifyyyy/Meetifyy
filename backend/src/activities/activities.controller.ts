@@ -16,6 +16,7 @@ import { VerifiedOnly } from '../common/decorators/verified-only.decorator';
 import { CreateActivityDto } from './dto/activity.dto';
 import { CacheControl } from '../common/decorators/cache-control.decorator';
 import type { AuthenticatedUser } from '../common/types/authenticated-request';
+import { Idempotent } from '../common/decorators/idempotent.decorator';
 
 @Controller('api/activities')
 @UseGuards(JwtGuard)
@@ -158,6 +159,7 @@ export class ActivitiesController {
   }
 
   @Post()
+  @Idempotent()
   @VerifiedOnly()
   async createActivity(
     @Body() data: CreateActivityDto,

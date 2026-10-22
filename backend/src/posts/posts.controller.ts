@@ -35,6 +35,7 @@ import {
   COMMENT_MAX_CHARS,
   POST_MAX_CHARS,
 } from '../common/validation/text-length.util';
+import { Idempotent } from '../common/decorators/idempotent.decorator';
 
 export class CreatePostDto {
   /**
@@ -119,6 +120,7 @@ export class PostsController {
   constructor(private readonly postsService: PostsService) {}
 
   @Post()
+  @Idempotent()
   @VerifiedOnly()
   @UseGuards(RateLimitPolicyGuard)
   @RateLimit('content.post.create')
@@ -227,6 +229,7 @@ export class PostsController {
   }
 
   @Post(':id/comments')
+  @Idempotent()
   @UseGuards(RateLimitPolicyGuard)
   @RateLimit('content.comment.create')
   async addComment(

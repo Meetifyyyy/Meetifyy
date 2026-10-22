@@ -13,7 +13,9 @@ import { createHash, randomBytes } from 'crypto';
 import type { Request, Response } from 'express';
 import { from, Observable, of } from 'rxjs';
 import { catchError, finalize, mergeMap } from 'rxjs/operators';
+import { Reflector } from '@nestjs/core';
 import { RedisService } from '../../redis/redis.service';
+import { IDEMPOTENT_KEY } from '../decorators/idempotent.decorator';
 import { errorMessage } from '../utils/error.util';
 
 /** The header a client sends to make a write safe to repeat. */
@@ -77,8 +79,12 @@ export const REFRESH_SCRIPT =
 export class IdempotencyInterceptor implements NestInterceptor {
   private readonly logger = new Logger(IdempotencyInterceptor.name);
 
-  /** How long a completed result can be replayed. */
-  static readonly TTL_SECONDS = 24 * 60 * 60;
+  /**
+   * How long a completed result can be replayed. An hour covers every retry a
+   * client makes (failover, timeout, the user tapping again); a day only kept
+   * more in a Redis that never evicts.
+   */
+  static readonly TTL_SECONDS = 60 * 60;
   /**
    * How long a claim lives before its request finishes. Short, so a process
    * that dies mid-request (a deploy, an OOM) frees the key within a minute
@@ -88,10 +94,16 @@ export class IdempotencyInterceptor implements NestInterceptor {
   /** How long a repeat waits for the first request to finish. */
   static readonly WAIT_MS = 10_000;
   static readonly POLL_MS = 200;
-  /** Results larger than this are not kept; a repeat then gets a 409. */
-  static readonly MAX_BODY_BYTES = 256 * 1024;
+  /**
+   * Results larger than this are not kept (the key is freed, so a repeat runs
+   * again). A created post or comment is a few kilobytes; this bounds memory.
+   */
+  static readonly MAX_BODY_BYTES = 32 * 1024;
 
-  constructor(private readonly redis: RedisService) {}
+  constructor(
+    private readonly redis: RedisService,
+    private readonly reflector: Reflector,
+  ) {}
 
   intercept(
     context: ExecutionContext,
@@ -103,6 +115,12 @@ export class IdempotencyInterceptor implements NestInterceptor {
     const response = http.getResponse<Response>();
 
     if (!WRITE_METHODS.has(request.method)) return next.handle();
+    // Opt-in per route (@Idempotent()): see the decorator for why not global.
+    const optedIn = this.reflector.getAllAndOverride<boolean>(IDEMPOTENT_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    if (!optedIn) return next.handle();
     // A handler that touches the response cannot be replayed from a stored
     // body. Without passthrough it ignores what an interceptor returns, so the
     // repeat would hang (the direct media upload). With passthrough it sets

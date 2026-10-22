@@ -23,6 +23,7 @@ import { NotificationFactory } from '../notifications/notification.factory';
 import { SendMessageDto } from './core/dto/send-message.dto';
 import { emitMessageNew } from './message-alert.util';
 import { UpdateGroupSettingsDto } from './dto/update-group-settings.dto';
+import { Idempotent } from '../common/decorators/idempotent.decorator';
 
 @Controller('api/messages')
 export class MessagesController {
@@ -342,6 +343,7 @@ export class MessagesController {
   }
 
   @Post()
+  @Idempotent()
   @UseGuards(JwtGuard)
   async startConversation(
     @Req() req: AuthenticatedRequest,

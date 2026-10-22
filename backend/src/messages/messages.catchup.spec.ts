@@ -239,4 +239,15 @@ describe('MessagesService — reconnect catch-up', () => {
     );
     expect(badCursor.messages).toEqual([]);
   });
+
+  it('refuses a cursor that points before the window it continues', async () => {
+    table.push(row('old', 'c1', 5), row('new', 'c1', 40));
+    const page = await service.getCatchupMessages(
+      'alice',
+      at(30).toISOString(),
+      `${at(0).toISOString()}|zzz`,
+    );
+    expect(page.messages).toEqual([]);
+    expect(page.hasMore).toBe(false);
+  });
 });

@@ -173,4 +173,14 @@ describe('MessagingCoreService — one message per client id', () => {
       service.sendMessage(ME, CONV, { text: 'hi', clientId: 'c-4' }),
     ).rejects.toThrow();
   });
+
+  it('refuses a client id already used in another conversation, instead of looping', async () => {
+    findFirst.mockImplementation(() =>
+      Promise.resolve({ ...row('elsewhere'), conversationId: 'other-conv' }),
+    );
+    await expect(
+      service.sendMessage(ME, CONV, { text: 'hi', clientId: 'c-5' }),
+    ).rejects.toThrow('Message id already used');
+    expect(transaction).not.toHaveBeenCalled();
+  });
 });

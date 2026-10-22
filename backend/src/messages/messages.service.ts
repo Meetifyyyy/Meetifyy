@@ -477,11 +477,8 @@ export class MessagesService
       // not use any index and forced a filtered scan of the sender's messages
       // on every send. The column is written below (`clientMessageId: clientMsgId`).
       const existing = await this.prisma.message.findFirst({
-        where: {
-          senderId,
-          conversationId: realConvId,
-          clientMessageId: clientMsgId,
-        },
+        // The unique index's own scope; see MessagingCoreService.
+        where: { senderId, clientMessageId: clientMsgId },
         include: {
           sender: {
             select: {
@@ -497,6 +494,9 @@ export class MessagesService
           replyTo: { select: REPLY_TO_SELECT },
         },
       });
+      if (existing && existing.conversationId !== realConvId) {
+        throw new BadRequestException('Message id already used');
+      }
       if (existing) {
         // No recipients: the gateway fans a send out to these (events and
         // push), and the original send already reached them.
@@ -965,6 +965,10 @@ export class MessagesService
       const [dateStr, id] = after.split('|');
       const parsed = new Date(dateStr);
       if (isNaN(parsed.getTime()) || !id) return empty;
+      // A cursor only ever moves forward from the first page's start. One
+      // that points earlier is not a continuation, and would turn catch-up
+      // into a way to page through a user's whole history at reconnect cost.
+      if (parsed < fromDate) return empty;
       fromDate = parsed;
       fromId = id;
     }
@@ -1005,31 +1009,42 @@ export class MessagesService
     if (readable.length === 0) return empty;
 
     const take = MessagesService.CATCHUP_PAGE_SIZE;
+    // One range per conversation, each carrying its OWN lower bound. With the
+    // resume point as a separate AND outside these branches, Postgres could
+    // only use `conversationId` from the (conversationId, createdAt) index and
+    // filtered `createdAt` afterwards, reading every conversation's whole
+    // history on each reconnect. Here every branch is a tight index range.
+    const ranges: Prisma.MessageWhereInput[] = [];
+    for (const m of readable) {
+      const upper = m.leftAt ? { lte: m.leftAt } : {};
+      // A chat cleared after the resume point starts at the clear; the
+      // keyset tie-break cannot apply to it.
+      if (m.clearedAt && m.clearedAt >= fromDate) {
+        ranges.push({
+          conversationId: m.conversationId,
+          createdAt: { gt: m.clearedAt, ...upper },
+        });
+        continue;
+      }
+      ranges.push({
+        conversationId: m.conversationId,
+        createdAt: { gt: fromDate, ...upper },
+      });
+      // Rows in the resume point's own millisecond that sort after the last
+      // one the previous page returned.
+      if (fromId && (!m.leftAt || fromDate <= m.leftAt)) {
+        ranges.push({
+          conversationId: m.conversationId,
+          createdAt: fromDate,
+          id: { gt: fromId },
+        });
+      }
+    }
     const messages = await this.prisma.message.findMany({
       where: {
         // Per conversation: a chat the user cleared stays cleared, and one
         // they left stops where they left it.
-        OR: readable.map((m) => ({
-          conversationId: m.conversationId,
-          ...(m.clearedAt || m.leftAt
-            ? {
-                createdAt: {
-                  ...(m.clearedAt ? { gt: m.clearedAt } : {}),
-                  ...(m.leftAt ? { lte: m.leftAt } : {}),
-                },
-              }
-            : {}),
-        })),
-        AND: [
-          fromId
-            ? {
-                OR: [
-                  { createdAt: { gt: fromDate } },
-                  { createdAt: fromDate, id: { gt: fromId } },
-                ],
-              }
-            : { createdAt: { gt: fromDate } },
-        ],
+        OR: ranges,
         deletedAt: null,
         deletedByUsers: { none: { userId } },
       },

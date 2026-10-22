@@ -22,6 +22,7 @@ import { NotificationFactory } from '../../notifications/notification.factory';
 import { SendMessageDto } from '../core/dto/send-message.dto';
 import { detach } from '../../common/utils/detach.util';
 import { UpdateGroupSettingsDto } from '../dto/update-group-settings.dto';
+import { Idempotent } from '../../common/decorators/idempotent.decorator';
 
 @Controller('api/group-chats')
 export class GroupChatsController {
@@ -50,6 +51,7 @@ export class GroupChatsController {
   }
 
   @Post()
+  @Idempotent()
   @UseGuards(JwtGuard)
   @VerifiedOnly()
   async createGroup(
