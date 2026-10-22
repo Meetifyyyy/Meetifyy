@@ -692,12 +692,39 @@ export function createTransport({
           return await send();
         } catch (err) {
           if (err?.code !== 'IDEMPOTENCY_IN_PROGRESS' || attempt >= KEYED_CONFLICT_RETRIES) throw err;
-          await new Promise((resolve) => setTimeout(resolve, KEYED_CONFLICT_DELAY_MS));
+          // Stops at once if the caller gave up (the screen was left, the
+          // request aborted): a submit nobody is waiting for must not keep
+          // re-sending in the background.
+          await waitUnlessAborted(KEYED_CONFLICT_DELAY_MS, signal);
         }
       }
     }
 
     return send();
+  }
+
+  /** Resolves after `ms`, or rejects as soon as `signal` aborts. */
+  function waitUnlessAborted(ms, signal) {
+    return new Promise((resolve, reject) => {
+      const aborted = () => {
+        const err = new Error('Request aborted');
+        err.name = 'AbortError';
+        return err;
+      };
+      if (signal?.aborted) {
+        reject(aborted());
+        return;
+      }
+      const timer = setTimeout(() => {
+        signal?.removeEventListener?.('abort', onAbort);
+        resolve();
+      }, ms);
+      function onAbort() {
+        clearTimeout(timer);
+        reject(aborted());
+      }
+      signal?.addEventListener?.('abort', onAbort, { once: true });
+    });
   }
 
   /** How often, and how far apart, a keyed write still in progress is asked again. */

@@ -681,8 +681,12 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
     // Recorded before it goes out, so a send cut off by a dropped connection
     // or a killed app is retried rather than lost (see utils/outbox.js).
     // `let`: cleared below if the outbox could not record it.
+    // Ordered per CANONICAL chat: a group addressed by its public id in one
+    // send and its internal id in the next must still keep its order.
+    const knownConv = conversations.find((c) => matchesConversationId(c, targetConvId));
+    const orderKey = knownConv?.internalId || knownConv?.id || targetConvId;
     let outboxEntry = currentUser?.id
-      ? { clientId, userId: currentUser.id, conversationId: targetConvId, payload, createdAt: Date.now() }
+      ? { clientId, userId: currentUser.id, conversationId: targetConvId, orderKey, payload, createdAt: Date.now() }
       : null;
 
     const handleSuccess = (serverMsg) => {
@@ -742,6 +746,13 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
 
     if (outboxEntry) {
       const { sendNow, persisted } = await outbox.enqueue(outboxEntry, idbEpochAtSend);
+      if (!persisted && !sendNow) {
+        // Could not be stored, and an older message in this chat is still on
+        // its way: sending it now would overtake that one. Not delivered, with
+        // tap-to-retry, rather than out of order.
+        updateMessageInCache(queryClient, targetConvId, clientId, { status: 'failed', queued: false });
+        return;
+      }
       if (!persisted) {
         // Storage full or blocked: nothing can retry it, so it must not show
         // "Sending…" forever. It is sent once and a failure shows as one.
@@ -793,7 +804,7 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
         handleFailure(err);
       }
     }
-  }, [activeChatId, currentUser, queryClient, socket, getApi, releaseLocalPreview]);
+  }, [activeChatId, currentUser, queryClient, socket, getApi, releaseLocalPreview, conversations]);
 
   /**
    * Tap-to-retry for a message that was not delivered. Sends the exact
@@ -805,6 +816,9 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
   const retryFailedMessage = useCallback(async (clientId, conversationId = activeChatId) => {
     if (!clientId || !conversationId) return false;
     updateMessageInCache(queryClient, conversationId, clientId, { status: 'sending', queued: true });
+    // On disk too: killed before delivery, the chat would otherwise reopen on
+    // the stored "failed" copy while the outbox is still retrying it.
+    idbPatchMessage(conversationId, clientId, { status: 'sending', queued: true }, idbMessagesEpoch()).catch(() => {});
     let revived = await outbox.retry(clientId);
     // Not in the outbox (it failed before the outbox existed, was purged after
     // a week, or could not be stored): rebuild the send from the message on
@@ -822,6 +836,7 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
     }
     if (!revived) {
       updateMessageInCache(queryClient, conversationId, clientId, { status: 'failed', queued: false });
+      idbPatchMessage(conversationId, clientId, { status: 'failed', queued: false }, idbMessagesEpoch()).catch(() => {});
     }
     return revived;
   }, [queryClient, activeChatId, currentUser]);

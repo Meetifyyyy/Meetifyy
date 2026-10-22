@@ -4,7 +4,14 @@
  */
 import { useGlobalSocketStore } from '@stores/useGlobalSocketStore';
 import { createOutbox } from './outbox';
-import { idbOutboxAll, idbOutboxDelete, idbOutboxPut, idbPatchMessage } from './idbMessages';
+import {
+  idbDeleteMessage,
+  idbOutboxAll,
+  idbOutboxDelete,
+  idbOutboxPut,
+  idbPatchMessage,
+  idbSaveMessages,
+} from './idbMessages';
 import { idbEpoch } from '@shared/lib/idb';
 import { appendMessageToCache, updateMessageInCache } from './cacheUtils';
 
@@ -91,11 +98,26 @@ function markSent(entry, serverMsg) {
     qc.invalidateQueries({ queryKey: ['conversations'] });
   }
   if (!patched) {
-    // With the server's id, so the stored row is re-keyed rather than left
-    // under the temporary one beside the copy history will store next.
-    const patch = { clientId: entry.clientId, status: 'sent', queued: false, isOptimistic: false };
-    if (serverMsg?.id) patch.id = serverMsg.id;
-    idbPatchMessage(entry.conversationId, entry.clientId, patch).catch(() => {});
+    if (serverMsg?.id) {
+      // Replace the optimistic copy with the server's message. Re-keying the
+      // optimistic row onto the server id instead overwrote a server copy that
+      // history had already stored with the stale optimistic fields.
+      const confirmed = {
+        ...serverMsg,
+        clientId: entry.clientId,
+        tempId: entry.clientId,
+        status: 'sent',
+        queued: false,
+        isOptimistic: false,
+      };
+      idbDeleteMessage(entry.clientId)
+        .then(() => idbSaveMessages(entry.conversationId, [confirmed]))
+        .catch(() => {});
+    } else {
+      idbPatchMessage(entry.conversationId, entry.clientId, {
+        clientId: entry.clientId, status: 'sent', queued: false, isOptimistic: false,
+      }).catch(() => {});
+    }
   }
 }
 

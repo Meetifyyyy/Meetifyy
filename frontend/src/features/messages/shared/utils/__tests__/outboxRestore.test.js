@@ -10,6 +10,8 @@ vi.mock('../idbMessages', () => ({
   idbOutboxDelete: vi.fn(async () => {}),
   idbOutboxPut: vi.fn(async () => {}),
   idbPatchMessage: vi.fn(async () => {}),
+  idbDeleteMessage: vi.fn(async () => {}),
+  idbSaveMessages: vi.fn(async () => {}),
 }));
 vi.mock('@stores/useGlobalSocketStore', () => ({ useGlobalSocketStore: { getState: () => ({ socket: null }) } }));
 

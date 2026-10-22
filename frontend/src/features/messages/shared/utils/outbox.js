@@ -120,19 +120,29 @@ export function createOutbox({
   async function loadPending(userId) {
     if (!userId || loadedFor === userId) return;
     const entries = await store.all(userId);
+    // Unreadable: try again next time rather than trust an empty state.
+    if (!Array.isArray(entries)) return;
     for (const e of entries) if (!e.failed) track(e);
     loadedFor = userId;
   }
 
+  /**
+   * What ordering is kept per: one chat can be addressed by its public or its
+   * internal id, so a caller that knows the canonical one passes `orderKey`;
+   * otherwise the conversation id it sent to.
+   */
+  const orderKeyOf = (entry) => entry.orderKey ?? entry.conversationId;
   const track = (entry) => {
-    const list = pendingByConv.get(entry.conversationId) ?? [];
+    const key = orderKeyOf(entry);
+    const list = pendingByConv.get(key) ?? [];
     if (!list.includes(entry.clientId)) list.push(entry.clientId);
-    pendingByConv.set(entry.conversationId, list);
+    pendingByConv.set(key, list);
   };
   const untrack = (entry) => {
-    const list = (pendingByConv.get(entry.conversationId) ?? []).filter((id) => id !== entry.clientId);
-    if (list.length) pendingByConv.set(entry.conversationId, list);
-    else pendingByConv.delete(entry.conversationId);
+    const key = orderKeyOf(entry);
+    const list = (pendingByConv.get(key) ?? []).filter((id) => id !== entry.clientId);
+    if (list.length) pendingByConv.set(key, list);
+    else pendingByConv.delete(key);
   };
 
   /** Keeps the EARLIEST pending deadline: a long backoff in one chat must not push back a short one in another. */
@@ -183,6 +193,9 @@ export function createOutbox({
     if (!userId) return;
     const generation = getGeneration();
     const entries = await store.all(userId);
+    // Could not read the store: an error, so the flush retries later instead
+    // of concluding there is nothing to send.
+    if (!Array.isArray(entries)) throw new Error('outbox unreadable');
     const byConv = new Map();
     for (const entry of entries) {
       if (entry.failed) {
@@ -191,9 +204,9 @@ export function createOutbox({
         continue;
       }
       track(entry);
-      const list = byConv.get(entry.conversationId) ?? [];
+      const list = byConv.get(orderKeyOf(entry)) ?? [];
       list.push(entry);
-      byConv.set(entry.conversationId, list);
+      byConv.set(orderKeyOf(entry), list);
     }
     let earliestWait = Infinity;
     for (const list of byConv.values()) {
@@ -272,11 +285,13 @@ export function createOutbox({
       } catch {
         // Unreadable storage: order is then best-effort, the send still goes.
       }
+      const older = (pendingByConv.get(orderKeyOf(entry)) ?? []).filter((id) => id !== entry.clientId);
       const persisted = (await store.put({ attempts: 0, nextAttemptAt: 0, ...entry }, epoch)) !== false;
       // Not recorded (storage full or blocked): the outbox cannot retry it, so
-      // the caller sends it the old way and shows a failure as a failure.
-      if (!persisted) return { sendNow: true, persisted: false };
-      const older = (pendingByConv.get(entry.conversationId) ?? []).filter((id) => id !== entry.clientId);
+      // the caller sends it the old way and shows a failure as a failure —
+      // unless an older message in this chat is still pending, which it must
+      // not overtake (`sendNow` false: the caller fails it instead).
+      if (!persisted) return { sendNow: older.length === 0, persisted: false };
       track(entry);
       // `viaFlush`: the caller does not send it itself (tap-to-retry of a
       // message the outbox never had), so the flush takes it, in order.
@@ -302,7 +317,7 @@ export function createOutbox({
     async retry(clientId) {
       const userId = getUserId();
       if (!userId) return false;
-      const entry = (await store.all(userId)).find((e) => e.clientId === clientId);
+      const entry = ((await store.all(userId)) ?? []).find((e) => e.clientId === clientId);
       if (!entry) return false;
       await store.put({ ...entry, failed: false, failedAt: undefined, attempts: 0, nextAttemptAt: 0 });
       await flush();
@@ -312,7 +327,7 @@ export function createOutbox({
     async has(clientId) {
       const userId = getUserId();
       if (!userId) return false;
-      return (await store.all(userId)).some((e) => e.clientId === clientId);
+      return ((await store.all(userId)) ?? []).some((e) => e.clientId === clientId);
     },
     flush,
     /** True while a message in `conversationId` is still waiting to be confirmed. */

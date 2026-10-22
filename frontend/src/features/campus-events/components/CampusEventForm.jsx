@@ -11,6 +11,7 @@ import {
   ALLOWED_IMAGE_ACCEPT,
 } from '@shared/constants/mediaLimits';
 import { showToast } from '@shared/utils/toast';
+import { createSubmissionKey } from '@shared/lib/idempotencyKey';
 import { blockIfOffline, offlineMessage, submitErrorMessage } from '@shared/lib/offlineGuard';
 import { useCreateCampusEvent, useUpdateCampusEvent, usePublishCampusEvent } from '@shared/hooks/useCampusEvents';
 import { toLocalDate, toLocalTime, combineDateTime, isSafeRegistrationUrl } from '../utils/formatEvent';
@@ -123,14 +124,14 @@ export default function CampusEventForm({ event = null, onClose, onSaved }) {
   const posterKeyRef = useRef(event?.posterUrl || '');
   const posterUploadRef = useRef(null);
   /**
-   * One key for the lifetime of this dialog, resent on every submit attempt.
-   * The server keys creation on it, so a double-click or a retry after a
+   * The server keys creation on this, so a double-click or a retry after a
    * timeout resolves to the event the first attempt already created instead of
-   * a second one. Regenerated only when the dialog is reopened.
+   * a second one. One key per submission CONTENT (shared/lib/idempotencyKey):
+   * a key held for the whole dialog made an edit-then-retry come back as the
+   * first, unedited event under "Event published". From the CSPRNG; with none,
+   * no key is sent rather than a guessable one (CLAUDE.md §8).
    */
-  const idempotencyKeyRef = useRef(
-    globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-  );
+  const [submissionKey] = useState(createSubmissionKey);
 
   const set = (patch) => setForm((prev) => ({ ...prev, ...patch }));
 
@@ -421,11 +422,13 @@ export default function CampusEventForm({ event = null, onClose, onSaved }) {
         // One call, not create-then-publish. The old pair was not atomic: if
         // the publish failed the rep saw an error while the draft it had just
         // created stayed behind, invisible in every discovery scope.
+        const key = submissionKey.keyFor(payload);
         saved = await createMut.mutateAsync({
           ...payload,
-          idempotencyKey: idempotencyKeyRef.current,
+          ...(key ? { idempotencyKey: key } : {}),
           publish: true,
         });
+        submissionKey.done();
         if (saved?.status === 'DRAFT') {
           saved = await publishMut.mutateAsync(saved.id);
         }

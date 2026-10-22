@@ -470,6 +470,7 @@ export function AuthProvider({ children }) {
     }
     clearSessionScopedStorage();
     resetClientStateForNewUser(queryClientRef.current);
+    try { localStorage.removeItem(PREVIOUS_ACCOUNT_KEY); } catch (_) {}
     /*
      * Stop this browser/phone receiving the account's pushes: drop the local
      * subscription or FCM token. The server deletes the device row itself
@@ -635,6 +636,8 @@ export function AuthProvider({ children }) {
       if (purge && heldAccount) {
         clearSessionScopedStorage();
         resetClientStateForNewUser(queryClientRef.current);
+        // Everything it guarded is gone now.
+        try { localStorage.removeItem(PREVIOUS_ACCOUNT_KEY); } catch (_) {}
       } else if (heldAccount) {
         // Kept, because this launch could not tell whether the session is
         // still good. But `currentUser` is about to go, and with it the only

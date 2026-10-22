@@ -33,7 +33,12 @@ export function useGuardedMutation(mutation, kind = 'action') {
   const guardedMutateAsync = useCallback((variables, options) => {
     if (isOnline()) return mutateAsync(variables, options);
     blockIfOffline(kind);
-    return Promise.reject(new OfflineError(kind));
+    const error = new OfflineError(kind);
+    // Per-call callbacks run as they would for any failure, so a caller that
+    // resets a spinner or closes a sheet in onSettled is not left hanging.
+    options?.onError?.(error, variables, undefined);
+    options?.onSettled?.(undefined, error, variables, undefined);
+    return Promise.reject(error);
   }, [mutateAsync, kind]);
 
   return { ...mutation, mutate: guardedMutate, mutateAsync: guardedMutateAsync };

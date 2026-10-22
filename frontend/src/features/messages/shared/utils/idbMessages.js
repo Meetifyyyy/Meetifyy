@@ -102,7 +102,13 @@ function openMessagesDB() {
   return _opening;
 }
 
+let historicalMigrationDone = false;
+
 export async function migrateHistoricalFailedMessages() {
+  // Once per page load: it reads every stored message, and used to do so on
+  // every chat opened.
+  if (historicalMigrationDone) return;
+  historicalMigrationDone = true;
   try {
     const db = await openMessagesDB();
     const tx = db.transaction([STORES.MESSAGES], 'readwrite');
@@ -495,7 +501,7 @@ export async function idbOutboxDelete(clientId) {
   }
 }
 
-/** Every outbox entry belonging to `userId`, oldest first. */
+/** Every outbox entry belonging to `userId`, oldest first; null if the store could not be read. */
 export async function idbOutboxAll(userId) {
   if (!userId) return [];
   const epoch = idbEpoch();
@@ -512,7 +518,9 @@ export async function idbOutboxAll(userId) {
       .filter((e) => e && e.userId === userId)
       .sort((a, b) => (a.createdAt ?? 0) - (b.createdAt ?? 0));
   } catch {
-    return [];
+    // null, not []: "could not read" must not look like "nothing pending",
+    // or ordering and the outbox's retry silently stop for the session.
+    return null;
   }
 }
 

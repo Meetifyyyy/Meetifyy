@@ -1,3 +1,4 @@
+import { onlineManager } from '@tanstack/react-query';
 import { postsApi } from '@shared/api/apiClient';
 
 /**
@@ -65,15 +66,28 @@ export function refreshStaleFeedHead(queryClient, queryKey, { scrollY = 0 } = {}
   // explicit invalidation, and this also runs before Home's observer exists.
   if (!query.isStaleByTime(FEED_STALE_MS)) return null;
   if (scrollY > FEED_HEAD_REFRESH_MAX_Y) return null;
+  // Offline it could only fail, and the trim below would have thrown away the
+  // pages the user can still read.
+  if (!onlineManager.isOnline()) return null;
 
-  const { pages = [], pageParams = [] } = query.state.data;
-  if (pages.length > 1) {
+  const previous = query.state.data;
+  const previousUpdatedAt = query.state.dataUpdatedAt;
+  const { pages = [], pageParams = [] } = previous;
+  const trimmed = pages.length > 1;
+  if (trimmed) {
     queryClient.setQueryData(
       queryKey,
       { pages: pages.slice(0, 1), pageParams: pageParams.slice(0, 1) },
       // Kept stale: this trims what is cached, it is not a fetch.
-      { updatedAt: query.state.dataUpdatedAt },
+      { updatedAt: previousUpdatedAt },
     );
   }
-  return queryClient.refetchQueries({ queryKey, exact: true }, { throwOnError: false });
+  return queryClient.refetchQueries({ queryKey, exact: true }, { throwOnError: false }).then(() => {
+    // The refresh failed (nothing newer landed): put back the pages it
+    // trimmed, rather than leave a one-page feed behind a failed request.
+    const after = queryClient.getQueryState(queryKey);
+    if (trimmed && after && after.dataUpdatedAt === previousUpdatedAt) {
+      queryClient.setQueryData(queryKey, previous, { updatedAt: previousUpdatedAt });
+    }
+  });
 }

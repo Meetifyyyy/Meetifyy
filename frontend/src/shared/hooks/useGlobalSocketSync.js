@@ -64,6 +64,14 @@ export function useGlobalSocketSync() {
   const catchupRetryRef = useRef(undefined);
   const catchupAttemptRef = useRef(0);
   const runCatchupRef = useRef(null);
+  const unmountedRef = useRef(false);
+  useEffect(() => {
+    unmountedRef.current = false;
+    return () => {
+      unmountedRef.current = true;
+      clearTimeout(catchupRetryRef.current);
+    };
+  }, []);
 
   // Keep ref in sync so the reconnect handler always sees the latest conversations
   useEffect(() => {
@@ -178,8 +186,13 @@ export function useGlobalSocketSync() {
         // Storage or socket failure: keep the old sync point and retry below.
       } finally {
         catchupRunningRef.current = false;
+        // Gone (signed out, unmounted) while the ack was outstanding: no
+        // rerun and no retry timer outliving it.
+        const gone = unmountedRef.current;
         // Through the ref: by now a reconnect may have replaced this closure.
-        if (catchupRerunRef.current) {
+        if (gone) {
+          catchupRerunRef.current = false;
+        } else if (catchupRerunRef.current) {
           catchupRerunRef.current = false;
           void runCatchupRef.current?.();
         } else if (!succeeded) {

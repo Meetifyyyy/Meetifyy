@@ -278,3 +278,34 @@ describe('outbox safety under sign-out and storage trouble', () => {
     expect(h.sent).toEqual(['m1']);
   });
 });
+
+describe('outbox under storage trouble and chat aliases', () => {
+  it('treats an unreadable store as an error to retry, not as nothing to send', async () => {
+    const h = harness();
+    await h.store.put(h.entry('m1'));
+    h.store.all.mockResolvedValueOnce(null); // read failed once
+    await h.outbox.flush();
+    expect(h.send).not.toHaveBeenCalled();
+    await h.advance(31_000); // the error retry
+    expect(h.sent).toEqual(['m1']);
+  });
+
+  it('does not let an unsaved message overtake an older pending one in its chat', async () => {
+    const h = harness();
+    const older = h.entry('m1');
+    await h.outbox.enqueue(older);
+    await h.outbox.complete(older, 'transient', null);
+    h.state.storageFull = true;
+    const res = await h.outbox.enqueue(h.entry('m2'));
+    expect(res).toEqual({ sendNow: false, persisted: false });
+  });
+
+  it('keeps one order for a chat addressed by two ids', async () => {
+    const h = harness();
+    const viaPublic = h.entry('m1', 'pub-1', { orderKey: 'int-1' });
+    await h.outbox.enqueue(viaPublic);
+    await h.outbox.complete(viaPublic, 'transient', null);
+    const viaInternal = h.entry('m2', 'int-1', { orderKey: 'int-1' });
+    expect((await h.outbox.enqueue(viaInternal)).sendNow).toBe(false);
+  });
+});
