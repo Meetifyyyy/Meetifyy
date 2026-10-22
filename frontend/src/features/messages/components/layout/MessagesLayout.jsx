@@ -187,6 +187,7 @@ export default function MessagesLayout() {
     onLoadMore: fetchNextPage,
     sendMessageOptimistically,
     retryUpload,
+    retryFailedMessage,
     cancelUpload,
     markSeenIfEligible
   } = useChatManager(activeChatId, 'messages', currentUser);
@@ -480,6 +481,7 @@ export default function MessagesLayout() {
             },
             onMarkSeen: markSeenIfEligible,
             onRetryUpload: retryUpload,
+            onRetrySend: retryFailedMessage,
             onCancelUpload: cancelUpload,
           };
 

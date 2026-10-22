@@ -27,6 +27,7 @@ export default function ChatAreaLayout({
   onLoadMore,
   onMarkSeen,
   onRetryUpload,
+  onRetrySend,
   onCancelUpload,
   onSendMessage,
   onBack,
@@ -225,6 +226,7 @@ export default function ChatAreaLayout({
           onOpenMediaModal={(url, type, extra) => openViewer([chatMediaItem(url, type, extra)], 0)}
           onMarkSeen={onMarkSeen}
           onRetryUpload={onRetryUpload}
+          onRetrySend={onRetrySend}
           onCancelUpload={onCancelUpload}
         />
       </div>

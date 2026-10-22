@@ -20,6 +20,7 @@ export default function DMChatArea({
   onLoadMore,
   onMarkSeen,
   onRetryUpload,
+  onRetrySend,
   onCancelUpload,
 }) {
   const state = useChatAreaState(conversation);
@@ -66,6 +67,7 @@ export default function DMChatArea({
       onLoadMore={onLoadMore}
       onMarkSeen={onMarkSeen}
       onRetryUpload={onRetryUpload}
+      onRetrySend={onRetrySend}
       onCancelUpload={onCancelUpload}
       onSendMessage={onSendMessage}
       onBack={onBack}

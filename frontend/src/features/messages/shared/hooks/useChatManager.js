@@ -8,6 +8,9 @@ import { useConversations } from '@shared/hooks/useMessages';
 import { appendMessageToCache, updateMessageInCache, updateConversationPreview, matchesConversationId, getConversationAliases, compareMessages, checkIsMe, withConversationUnreadCleared } from '../utils/cacheUtils';
 
 import { idbGetMessages, idbSaveMessages, idbPatchMessage, idbDeleteMessage, idbMessagesEpoch, migrateHistoricalFailedMessages, trimMessageCache } from '../utils/idbMessages';
+import { outbox } from '../utils/outboxClient';
+import { classifySendFailure } from '../utils/outbox';
+import { newIdempotencyKey } from '@shared/lib/idempotencyKey';
 
 
 // Throttles upload-progress writes so a fast XHR can't flood React state.
@@ -472,7 +475,8 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
       payloadText = text.text || '';
     }
 
-    const clientId = options?.clientId || options?.tempId || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `temp_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`);
+    // The CSPRNG, never Math.random: this id is the server's idempotency key.
+    const clientId = options?.clientId || options?.tempId || newIdempotencyKey() || `temp_${Date.now()}`;
     const tempId = clientId;
 
     // The caller (ChatInputArea) passes an object-URL preview as mediaUrl alongside
@@ -640,10 +644,16 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
     };
 
     let sendHandled = false;
+    // Recorded before it goes out, so a send cut off by a dropped connection
+    // or a killed app is retried rather than lost (see utils/outbox.js).
+    const outboxEntry = currentUser?.id
+      ? { clientId, userId: currentUser.id, conversationId: targetConvId, payload, createdAt: Date.now() }
+      : null;
 
     const handleSuccess = (serverMsg) => {
       if (sendHandled) return;
       sendHandled = true;
+      if (outboxEntry) void outbox.complete(outboxEntry, 'ok', serverMsg);
       updateMessageInCache(queryClient, targetConvId, clientId, (existing) => {
         const finalStatus = (existing?.status === 'read' || existing?.status === 'seen') ? existing.status : 'sent';
         // Merge payloads so locally-derived media metadata (thumbnailUrl, width,
@@ -666,6 +676,7 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
           clientId,
           tempId: clientId,
           status: finalStatus,
+          queued: false,
           uploadStatus: fileObj ? 'done' : existing?.uploadStatus,
           mediaUrl: serverMsg?.mediaUrl || finalMediaUrl || existing?.mediaUrl,
           payload: mergedPayload,
@@ -678,15 +689,29 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
       }
     };
 
-    const handleFailure = () => {
+    const handleFailure = (failure) => {
       if (sendHandled) return;
       sendHandled = true;
-      updateMessageInCache(queryClient, targetConvId, clientId, { status: 'failed' });
+      const outcome = outboxEntry ? classifySendFailure(failure) : 'rejected';
+      if (outboxEntry) void outbox.complete(outboxEntry, outcome, failure);
+      // A dropped connection, a timeout or a server error: the outbox sends it
+      // again, so it stays "Sending…". Only a refusal is "Not delivered".
+      if (outcome === 'transient') return;
+      updateMessageInCache(queryClient, targetConvId, clientId, { status: 'failed', queued: false });
       if (activeChatId && activeChatId !== targetConvId) {
-        updateMessageInCache(queryClient, activeChatId, clientId, { status: 'failed' });
+        updateMessageInCache(queryClient, activeChatId, clientId, { status: 'failed', queued: false });
       }
-      idbPatchMessage(targetConvId, clientId, { status: 'failed' }, idbEpochAtSend).catch(console.warn);
+      idbPatchMessage(targetConvId, clientId, { status: 'failed', queued: false }, idbEpochAtSend).catch(console.warn);
     };
+
+    if (outboxEntry) {
+      const sendNow = await outbox.enqueue(outboxEntry, idbEpochAtSend);
+      updateMessageInCache(queryClient, targetConvId, clientId, { queued: true });
+      idbPatchMessage(targetConvId, clientId, { queued: true }, idbEpochAtSend).catch(() => {});
+      // An earlier message in this chat is still on its way; this one goes
+      // out after it, from the outbox, so the order is kept.
+      if (!sendNow) return;
+    }
 
     if (socket?.connected) {
       let ackReceived = false;
@@ -697,10 +722,10 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
             if (res) {
               handleSuccess(res);
             } else {
-              handleFailure();
+              handleFailure(null);
             }
           } catch (e) {
-            handleFailure();
+            handleFailure(e);
           }
         }
       }, 5000);
@@ -711,7 +736,7 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
         if (response?.status === 'ok') {
           handleSuccess(response.message);
         } else {
-          handleFailure();
+          handleFailure(response);
         }
       });
     } else {
@@ -720,13 +745,30 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
         if (res) {
           handleSuccess(res);
         } else {
-          handleFailure();
+          handleFailure(null);
         }
       } catch (err) {
-        handleFailure();
+        handleFailure(err);
       }
     }
   }, [activeChatId, currentUser, queryClient, socket, getApi, releaseLocalPreview]);
+
+  /**
+   * Tap-to-retry for a message that was not delivered. Sends the exact
+   * payload the outbox kept, under the same clientId, so a send that did land
+   * after all is matched by the server instead of duplicated. False when the
+   * message is not in the outbox (one that failed before it existed, or an
+   * upload that never finished: those use `retryUpload`).
+   */
+  const retryFailedMessage = useCallback(async (clientId, conversationId = activeChatId) => {
+    if (!clientId) return false;
+    updateMessageInCache(queryClient, conversationId, clientId, { status: 'sending', queued: true });
+    const revived = await outbox.retry(clientId);
+    if (!revived) {
+      updateMessageInCache(queryClient, conversationId, clientId, { status: 'failed', queued: false });
+    }
+    return revived;
+  }, [queryClient, activeChatId]);
 
   // Retry a failed media upload with the SAME clientId — appendMessageToCache
   // matches by clientId and updates in place, so no duplicate message/record.
@@ -981,6 +1023,7 @@ export function useChatManager(activeChatId, type = 'messages', currentUserParam
     onLoadMore: fetchNextPage,
     sendMessageOptimistically,
     retryUpload,
+    retryFailedMessage,
     cancelUpload,
     markSeenIfEligible,
   };

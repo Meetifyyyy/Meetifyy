@@ -24,6 +24,7 @@ export default function GroupChatArea({
   onLoadMore,
   onMarkSeen,
   onRetryUpload,
+  onRetrySend,
   onCancelUpload,
 }) {
   const convId = conversation?.id || conversation?.publicId || conversation?.internalId;
@@ -99,6 +100,7 @@ export default function GroupChatArea({
       onLoadMore={onLoadMore}
       onMarkSeen={onMarkSeen}
       onRetryUpload={onRetryUpload}
+      onRetrySend={onRetrySend}
       onCancelUpload={onCancelUpload}
       onSendMessage={onSendMessage}
       onBack={onBack}

@@ -6,11 +6,14 @@ import { idbEpoch, bumpIdbEpoch } from '@shared/lib/idb';
  */
 
 const DB_NAME = 'meetifyy_messages';
-const DB_VERSION = 1;
+// 2 added `outbox`. An upgrade only creates missing stores.
+const DB_VERSION = 2;
 
 const STORES = {
   MESSAGES: 'messages',
   SYNC_META: 'sync_metadata',
+  // Sends not yet confirmed by the server, keyed by clientId (see outbox.js).
+  OUTBOX: 'outbox',
 };
 
 let _db = null;
@@ -61,6 +64,9 @@ function openMessagesDB() {
       if (!db.objectStoreNames.contains(STORES.SYNC_META)) {
         db.createObjectStore(STORES.SYNC_META, { keyPath: 'conversationId' });
       }
+      if (!db.objectStoreNames.contains(STORES.OUTBOX)) {
+        db.createObjectStore(STORES.OUTBOX, { keyPath: 'clientId' });
+      }
     };
     request.onsuccess = (e) => {
       _db = e.target.result;
@@ -83,7 +89,8 @@ export async function migrateHistoricalFailedMessages() {
         if (!item) continue;
         const isFailed = item.status === 'failed' || item.status === 'FAILED' || item.isFailed || item.deliveryStatus === 'failed';
         const sendTime = new Date(item.createdAt || item.storedAt || item.sendingAt || now).getTime();
-        const isStaleSending = item.status === 'sending' && !isNaN(sendTime) && (now - sendTime > 5000);
+        // A queued send (in the outbox) is still being delivered, not stale.
+        const isStaleSending = item.status === 'sending' && !item.queued && !isNaN(sendTime) && (now - sendTime > 5000);
         const hasBlobUrl = (typeof item.mediaUrl === 'string' && item.mediaUrl.startsWith('blob:')) ||
           (item.payload && typeof item.payload.mediaUrl === 'string' && item.payload.mediaUrl.startsWith('blob:'));
 
@@ -310,7 +317,8 @@ export async function idbGetMessages(conversationId) {
       const isTempMsg = !cleanMsg.id || String(cleanMsg.id).startsWith('temp_') || String(cleanMsg.id).startsWith('c_temp_');
       const isFailedState = cleanMsg.status === 'failed' || cleanMsg.status === 'FAILED' || cleanMsg.isFailed || cleanMsg.deliveryStatus === 'failed';
       const sendTime = new Date(cleanMsg.createdAt || cleanMsg.storedAt || cleanMsg.sendingAt || Date.now()).getTime();
-      const isStaleSending = isTempMsg && cleanMsg.status === 'sending' && !isNaN(sendTime) && (Date.now() - sendTime > 5000);
+      // A queued send (in the outbox) is still being delivered, not stale.
+      const isStaleSending = isTempMsg && cleanMsg.status === 'sending' && !cleanMsg.queued && !isNaN(sendTime) && (Date.now() - sendTime > 5000);
 
       if (isFailedState || isStaleSending) {
         cleanMsg = {
@@ -415,12 +423,68 @@ export async function idbClearMessages() {
   bumpIdbEpoch();
   try {
     const db = await openMessagesDB();
-    const tx = db.transaction([STORES.MESSAGES, STORES.SYNC_META], 'readwrite');
+    const tx = db.transaction([STORES.MESSAGES, STORES.SYNC_META, STORES.OUTBOX], 'readwrite');
     tx.objectStore(STORES.MESSAGES).clear();
     tx.objectStore(STORES.SYNC_META).clear();
+    // Unsent messages too: they would otherwise be sent later as whoever
+    // signs in next, which is exactly what the old localStorage queue did.
+    tx.objectStore(STORES.OUTBOX).clear();
     await committed(tx);
   } catch {
     // silent
+  }
+}
+
+// ── Outbox ───────────────────────────────────────────────────────────────────
+
+/**
+ * Stores or replaces an outbox entry. Dropped if the cache was cleared since
+ * `epoch` was captured, so a send that started as the previous account is
+ * never queued under the next one.
+ */
+export async function idbOutboxPut(entry, epoch) {
+  if (isStale(epoch)) return;
+  try {
+    const db = await openMessagesDB();
+    if (isStale(epoch)) return;
+    const tx = db.transaction(STORES.OUTBOX, 'readwrite');
+    tx.objectStore(STORES.OUTBOX).put(entry);
+    await committed(tx);
+  } catch {
+    // Unavailable storage: the send still happens, it just cannot survive a restart.
+  }
+}
+
+export async function idbOutboxDelete(clientId) {
+  if (!clientId) return;
+  try {
+    const db = await openMessagesDB();
+    const tx = db.transaction(STORES.OUTBOX, 'readwrite');
+    tx.objectStore(STORES.OUTBOX).delete(clientId);
+    await committed(tx);
+  } catch {
+    // silent
+  }
+}
+
+/** Every outbox entry belonging to `userId`, oldest first. */
+export async function idbOutboxAll(userId) {
+  if (!userId) return [];
+  const epoch = idbEpoch();
+  try {
+    const db = await openMessagesDB();
+    const tx = db.transaction(STORES.OUTBOX, 'readonly');
+    const request = tx.objectStore(STORES.OUTBOX).getAll();
+    const all = await new Promise((res, rej) => {
+      request.onsuccess = () => res(request.result || []);
+      request.onerror = () => rej(request.error);
+    });
+    if (epoch !== idbEpoch()) return [];
+    return all
+      .filter((e) => e && e.userId === userId)
+      .sort((a, b) => (a.createdAt ?? 0) - (b.createdAt ?? 0));
+  } catch {
+    return [];
   }
 }
 

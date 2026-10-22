@@ -350,6 +350,7 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  font: inherit;
   background: transparent;
   border: none;
   color: #ef4444;

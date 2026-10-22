@@ -195,6 +195,11 @@ function resetClientStateForNewUser(queryClient) {
   import('../../features/messages/shared/utils/idbMessages')
     .then(({ idbClearMessages }) => idbClearMessages())
     .catch(() => {});
+  // And the outbox's in-memory state: which chats have a send pending. Its
+  // stored entries went with the message cache above.
+  import('../../features/messages/shared/utils/outboxClient')
+    .then(({ outbox }) => outbox.reset())
+    .catch(() => {});
 
   /**
    * Private media.

@@ -36,7 +36,7 @@ export default function InstantMatchChatSurface({
 
   const {
     messages, isLoading, isError, hasMore, isLoadingMore, onLoadMore,
-    sendMessageOptimistically, retryUpload, cancelUpload, markSeenIfEligible,
+    sendMessageOptimistically, retryUpload, retryFailedMessage, cancelUpload, markSeenIfEligible,
   } = useChatManager(conversationId, 'messages', currentUser);
 
   const { label: timeLabel } = useCountdown(chat.expiresAt, chat.onCountdownElapsed);
@@ -301,6 +301,7 @@ export default function InstantMatchChatSurface({
           isTyping={chat.isActive && isTyping}
           typingUsers={chat.isActive ? typingUsers : new Map()}
           onRetryUpload={retryUpload}
+          onRetrySend={retryFailedMessage}
           onCancelUpload={cancelUpload}
           onOpenMediaModal={handleOpenMedia}
         />

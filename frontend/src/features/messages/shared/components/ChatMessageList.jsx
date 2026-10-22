@@ -126,6 +126,7 @@ const MessageRow = memo(function MessageRow({
   onOpenContextMenu,
   onOpenMediaModal,
   onRetryUpload,
+  onRetrySend,
   onCancelUpload,
   onJumpToMessage,
 }) {
@@ -146,6 +147,7 @@ const MessageRow = memo(function MessageRow({
       onOpenContextMenu={onOpenContextMenu}
       onOpenMediaModal={onOpenMediaModal}
       onRetryUpload={onRetryUpload}
+      onRetrySend={onRetrySend}
       onCancelUpload={onCancelUpload}
     />
   );
@@ -185,6 +187,7 @@ export default function ChatMessageList({
   typingUsers,
   onMarkSeen,
   onRetryUpload,
+  onRetrySend,
   onCancelUpload,
   onOpenEmojiPicker,
 }) {
@@ -740,6 +743,7 @@ export default function ChatMessageList({
               onOpenContextMenu={onOpenContextMenu}
               onOpenMediaModal={onOpenMediaModal}
               onRetryUpload={onRetryUpload}
+              onRetrySend={onRetrySend}
               onCancelUpload={onCancelUpload}
               onJumpToMessage={jumpToMessage}
             />

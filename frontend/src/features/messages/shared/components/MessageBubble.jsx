@@ -668,6 +668,7 @@ const MessageBubble = memo(function MessageBubble({
   onReplyTo,
   onReply,
   onRetryUpload,
+  onRetrySend,
   onCancelUpload,
   // Find-in-chat term. ChatMessageList has always passed this down; the prop
   // simply was never declared here, so the value arrived and was discarded.
@@ -834,7 +835,8 @@ const MessageBubble = memo(function MessageBubble({
 
   const sendTimeMs = getMsgTimestamp(msg);
   const msgAge = sendTimeMs > 0 ? (Date.now() - sendTimeMs) : Infinity;
-  const isStaleSending = !isRealServerMsg && !isConfirmedSent && msg?.status === 'sending' && (isNaN(msgAge) || msgAge > 5000 || msgAge < 0);
+  // `queued`: in the outbox, which keeps retrying it, so "Sending…" not failed.
+  const isStaleSending = !isRealServerMsg && !isConfirmedSent && msg?.status === 'sending' && !msg?.queued && (isNaN(msgAge) || msgAge > 5000 || msgAge < 0);
 
   const isFailedMsg = isMe && !isRealServerMsg && !isConfirmedSent && (
     msg.status === 'failed' || 
@@ -1269,15 +1271,30 @@ const MessageBubble = memo(function MessageBubble({
             longer reserved on the rest, and both sides now use the same single
             gap.
           */}
-          {isMe && (isFailedMsg || isLatestMessage) && (
+          {isMe && (isFailedMsg || isLatestMessage || msg.queued) && (
             <div className={`${styles.msgStatusLabel} ${isFailedMsg ? styles.msgStatusLabelFailed : ''}`}>
               {/* Failed status is always shown — never hidden even if not the latest message */}
-              {isFailedMsg && (
+              {isFailedMsg && (onRetrySend && !isUploadFailed ? (
+                // Re-sends the exact message the outbox kept, under the same
+                // clientId, so one that landed after all is not duplicated.
+                // A failed upload has its own retry on the media overlay.
+                <button
+                  type="button"
+                  className={styles.msgRetryButton}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void onRetrySend(msg.clientId || msg.tempId);
+                  }}
+                >
+                  <AlertCircle size={13} style={{ color: '#ef4444' }} />
+                  <span>Not delivered · Tap to retry</span>
+                </button>
+              ) : (
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
                   <AlertCircle size={13} style={{ color: '#ef4444' }} />
                   <span>Not delivered</span>
                 </span>
-              )}
+              ))}
               {/* Normal delivery status: only shown on the latest message */}
               {!isFailedMsg && (() => {
                 const s = msg.status;

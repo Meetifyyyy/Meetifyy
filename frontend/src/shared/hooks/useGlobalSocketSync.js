@@ -18,7 +18,7 @@ import {
   bumpCommunityPostCount,
 } from '@shared/utils/communityCache';
 
-import { flushPendingQueue } from '../../features/messages/shared/utils/offlineSync';
+import { bindOutbox, outbox } from '../../features/messages/shared/utils/outboxClient';
 import { updateMessageInCache } from '../../features/messages/shared/utils/cacheUtils';
 
 /** Where the last completed catch-up's server time is kept. Session-scoped. */
@@ -93,13 +93,10 @@ export function useGlobalSocketSync() {
         }
       }
 
-      // Flush queued offline messages automatically on reconnect.
-      flushPendingQueue(socket, (key, serverMsg, status) => {
-        if (status === 'ok' && serverMsg?.conversationId) {
-          updateMessageInCache(queryClient, serverMsg.conversationId, serverMsg.id || serverMsg.clientId, serverMsg);
-          queryClient.invalidateQueries({ queryKey: ['conversations'] });
-        }
-      });
+      // Messages sent while the connection was down, or cut off by it, go out
+      // now, in order (see features/messages/shared/utils/outbox.js).
+      bindOutbox(queryClient);
+      void outbox.flush();
 
       void runCatchup();
 
