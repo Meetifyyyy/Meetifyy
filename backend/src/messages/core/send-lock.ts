@@ -63,9 +63,18 @@ async function runLocked<T>(
 export function isClientMessageIdConflict(err: unknown): boolean {
   if (!(err instanceof Prisma.PrismaClientKnownRequestError)) return false;
   if (err.code !== 'P2002') return false;
-  const target: unknown = err.meta?.target;
-  const fields = Array.isArray(target) ? target.map(String) : [String(target)];
-  return fields.some((f) => f.includes('clientMessageId'));
+  // Anywhere in the details, not only `meta.target`: with a driver adapter
+  // (PrismaPg) the constraint can arrive under other keys, or by index name.
+  let details = '';
+  try {
+    details = JSON.stringify(err.meta ?? {});
+  } catch {
+    return false;
+  }
+  return (
+    details.includes('clientMessageId') ||
+    details.includes('Message_senderId_clientMessageId_key')
+  );
 }
 
 /**

@@ -923,6 +923,9 @@ export class MessagesService
    */
   static readonly CATCHUP_OVERLAP_MS = 10_000;
 
+  /** Instant-match read checks run at most this many at once per catch-up. */
+  static readonly CATCHUP_GUARD_BATCH = 10;
+
   /**
    * Messages the user missed while disconnected, oldest first, one page at a
    * time.
@@ -990,22 +993,40 @@ export class MessagesService
     });
 
     // An instant-match chat is readable only while its session allows it,
-    // the same gate history applies.
-    const readable = (
-      await Promise.all(
-        memberships.map(async (m) => {
-          const instant =
-            m.conversation.type === 'INSTANT_MATCH' ||
-            m.conversation.isInstantMatch;
-          if (!instant) return m;
-          const allowed = await this.instantMatchGuard?.canReadChat(
-            userId,
-            m.conversationId,
-          );
-          return allowed ? m : null;
-        }),
-      )
-    ).filter((m): m is (typeof memberships)[number] => m !== null);
+    // the same gate history applies. Checked a few at a time: one lookup per
+    // instant-match membership, all at once, let a user with many past
+    // matches fan a single reconnect out across the connection pool.
+    type Membership = (typeof memberships)[number];
+    const readable: Membership[] = [];
+    const instant: Membership[] = [];
+    for (const m of memberships) {
+      if (
+        m.conversation.type === 'INSTANT_MATCH' ||
+        m.conversation.isInstantMatch
+      ) {
+        instant.push(m);
+      } else {
+        readable.push(m);
+      }
+    }
+    for (
+      let i = 0;
+      i < instant.length;
+      i += MessagesService.CATCHUP_GUARD_BATCH
+    ) {
+      const batch = instant.slice(i, i + MessagesService.CATCHUP_GUARD_BATCH);
+      const allowed = await Promise.all(
+        // No guard wired: not readable, the same as before.
+        batch.map(async (m) =>
+          this.instantMatchGuard
+            ? this.instantMatchGuard.canReadChat(userId, m.conversationId)
+            : false,
+        ),
+      );
+      batch.forEach((m, idx) => {
+        if (allowed[idx]) readable.push(m);
+      });
+    }
     if (readable.length === 0) return empty;
 
     const take = MessagesService.CATCHUP_PAGE_SIZE;

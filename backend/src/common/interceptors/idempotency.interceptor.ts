@@ -16,6 +16,7 @@ import { catchError, finalize, mergeMap } from 'rxjs/operators';
 import { Reflector } from '@nestjs/core';
 import { RedisService } from '../../redis/redis.service';
 import { IDEMPOTENT_KEY } from '../decorators/idempotent.decorator';
+import { clientIp } from '../rate-limit/client-ip.util';
 import { errorMessage } from '../utils/error.util';
 
 /** The header a client sends to make a write safe to repeat. */
@@ -143,10 +144,15 @@ export class IdempotencyInterceptor implements NestInterceptor {
 
     const scope = request.user?.id
       ? `u:${request.user.id}`
-      : `ip:${request.ip ?? 'unknown'}`;
+      : `ip:${clientIp(request) || 'unknown'}`;
     const redisKey = `idem:v1:${scope}:${request.method}:${routePath}:${key}`;
+    // Body AND query: a route that takes its input from the query string
+    // (starting a conversation reads `?userIds=`) must not replay one
+    // request's result for a different one under a reused key.
+    const body: unknown = request.body ?? null;
+    const query: unknown = request.query ?? {};
     const fingerprint = createHash('sha256')
-      .update(JSON.stringify(request.body ?? null))
+      .update(JSON.stringify({ body, query }))
       .digest('hex');
 
     const pending: Entry = {

@@ -293,7 +293,7 @@ describe('IdempotencyInterceptor', () => {
       JSON.stringify({
         state: 'pending',
         fingerprint: createHash('sha256')
-          .update(JSON.stringify({ text: 'hello' }))
+          .update(JSON.stringify({ body: { text: 'hello' }, query: {} }))
           .digest('hex'),
       }),
     );
@@ -565,5 +565,25 @@ describe('IdempotencyInterceptor — opt-in only', () => {
     await call(interceptor, post(), next).result;
     expect(run).toHaveBeenCalledTimes(2);
     expect(data.size).toBe(0);
+  });
+});
+
+describe('IdempotencyInterceptor — the query string is part of the request', () => {
+  it('refuses a reused key whose request differs only in its query', async () => {
+    const { redis } = fakeRedis();
+    const interceptor = new IdempotencyInterceptor(redis, optedIn);
+    const { next } = handler({ id: 'conversation-with-a' });
+    const toA = {
+      ...post({ body: {} }),
+      query: { userIds: 'a' },
+    } as FakeRequest;
+    const toB = {
+      ...post({ body: {} }),
+      query: { userIds: 'b' },
+    } as FakeRequest;
+    await call(interceptor, toA, next).result;
+    await expect(call(interceptor, toB, next).result).rejects.toBeInstanceOf(
+      UnprocessableEntityException,
+    );
   });
 });
