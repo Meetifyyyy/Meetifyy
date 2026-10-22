@@ -1,15 +1,38 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
     Backup and device-transfer rules for Android 12+ (android:dataExtractionRules).
-    Mirrors backup_rules.xml, which older versions read: the session credential
-    file is never copied off the device, to the cloud or to a new phone. See
-    that file for why.
+
+    Nothing is copied off the device, to the cloud or to a new phone. Every
+    account's data lives on the server and is fetched again after sign-in, so
+    a backup would add nothing a user needs. What it would carry is private:
+    cached message bodies, the profile and feed in the WebView's storage, and
+    the session credential.
+
+    android:allowBackup="false" in the manifest stops cloud backup, but on
+    Android 12+ it does NOT stop device-to-device transfer. These rules are
+    what stop that, so every domain is excluded in both sections.
 -->
 <data-extraction-rules>
     <cloud-backup>
-        <exclude domain="sharedpref" path="WSSecureStorageSharedPreferences.xml" />
+        <exclude domain="root" path="." />
+        <exclude domain="file" path="." />
+        <exclude domain="database" path="." />
+        <exclude domain="sharedpref" path="." />
+        <exclude domain="external" path="." />
+        <exclude domain="device_root" path="." />
+        <exclude domain="device_file" path="." />
+        <exclude domain="device_database" path="." />
+        <exclude domain="device_sharedpref" path="." />
     </cloud-backup>
     <device-transfer>
-        <exclude domain="sharedpref" path="WSSecureStorageSharedPreferences.xml" />
+        <exclude domain="root" path="." />
+        <exclude domain="file" path="." />
+        <exclude domain="database" path="." />
+        <exclude domain="sharedpref" path="." />
+        <exclude domain="external" path="." />
+        <exclude domain="device_root" path="." />
+        <exclude domain="device_file" path="." />
+        <exclude domain="device_database" path="." />
+        <exclude domain="device_sharedpref" path="." />
     </device-transfer>
 </data-extraction-rules>

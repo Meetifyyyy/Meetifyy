@@ -1,16 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
     Auto Backup rules for Android 11 and below (android:fullBackupContent).
-    Android 12+ reads data_extraction_rules.xml instead; both must exclude the
-    same file, or half the install base keeps backing it up.
 
-    WSSecureStorageSharedPreferences.xml holds the session credential (refresh
-    token, session id, access token), AES-GCM encrypted under an Android
-    Keystore key. The key never leaves the device, so a backup of the file is
-    ciphertext nothing can read after a restore: it carries credentials off the
-    device for no benefit. Android's own guidance is to exclude such files.
-    Everything else (theme preferences, WebView data) still backs up.
+    Backup is off (android:allowBackup="false"), and on these versions that
+    alone stops both cloud backup and device transfer. Everything is excluded
+    here as well, so the rules stay correct if the flag is ever turned back on.
+    Every account's data lives on the server; see data_extraction_rules.xml.
 -->
 <full-backup-content>
-    <exclude domain="sharedpref" path="WSSecureStorageSharedPreferences.xml" />
+    <exclude domain="root" path="." />
+    <exclude domain="file" path="." />
+    <exclude domain="database" path="." />
+    <exclude domain="sharedpref" path="." />
+    <exclude domain="external" path="." />
 </full-backup-content>
