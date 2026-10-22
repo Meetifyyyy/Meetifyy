@@ -11,8 +11,9 @@ import { QueryClient, QueryObserver } from '@tanstack/react-query';
  * network answer, and it is always revalidated.
  */
 const disk = vi.hoisted(() => new Map());
+const epoch = vi.hoisted(() => ({ value: 0 }));
 vi.mock('@shared/lib/idb', () => ({
-  idbEpoch: () => 0,
+  idbEpoch: () => epoch.value,
   idbGet: async (store, key) => (disk.has(`${store}/${key}`) ? { value: disk.get(`${store}/${key}`) } : null),
   idbSet: async (store, key, value) => {
     disk.set(`${store}/${key}`, value);
@@ -34,6 +35,7 @@ let qc;
 beforeEach(() => {
   vi.useFakeTimers();
   disk.clear();
+  epoch.value = 0;
   localStorage.clear();
   delete window.requestIdleCallback; // jsdom: the timeout path
   qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -162,5 +164,48 @@ describe('main-tab snapshots', () => {
     await qc.fetchQuery({ queryKey: ['search', 'cats'], queryFn: async () => [1] });
     await flush();
     expect(disk.size).toBe(0);
+  });
+
+  it('restores synchronously from the read-ahead, with no empty frame', async () => {
+    signIn('u1');
+    disk.set('queries/u1:["conversations"]', { v: 1, userId: 'u1', savedAt: Date.now() - 1000, data: conversations(3) });
+    installQuerySnapshots(qc);
+    await vi.advanceTimersByTimeAsync(0); // the read-ahead lands
+    const observer = new QueryObserver(qc, { queryKey: ['conversations'], queryFn: () => new Promise(() => {}) });
+    const unsubscribe = observer.subscribe(() => {});
+    // No await: already there for the first render.
+    expect(qc.getQueryData(['conversations'])).toHaveLength(3);
+    expect(qc.getQueryState(['conversations']).isInvalidated).toBe(true);
+    unsubscribe();
+  });
+
+  it('drops the read-ahead after a sign-out', async () => {
+    signIn('u1');
+    disk.set('queries/u1:["conversations"]', { v: 1, userId: 'u1', savedAt: Date.now(), data: conversations(3) });
+    installQuerySnapshots(qc);
+    await vi.advanceTimersByTimeAsync(0);
+    epoch.value += 1;
+    disk.clear(); // idbClearAll
+    signIn('u2');
+    const observer = new QueryObserver(qc, { queryKey: ['conversations'], queryFn: () => new Promise(() => {}) });
+    const unsubscribe = observer.subscribe(() => {});
+    await vi.advanceTimersByTimeAsync(0);
+    expect(qc.getQueryData(['conversations'])).toBeUndefined();
+    unsubscribe();
+  });
+
+  it('does not let the previous account’s write window hold back the next account', async () => {
+    signIn('u1');
+    installQuerySnapshots(qc);
+    await qc.fetchQuery({ queryKey: ['conversations'], queryFn: async () => conversations(1) });
+    await flush();
+    expect(disk.has('queries/u1:["conversations"]')).toBe(true);
+    // Sign-out and a new account inside the 15s window.
+    epoch.value += 1;
+    qc.clear();
+    signIn('u2');
+    await qc.fetchQuery({ queryKey: ['conversations'], queryFn: async () => conversations(2) });
+    await vi.advanceTimersByTimeAsync(1_000); // well inside A's window
+    expect(disk.get('queries/u2:["conversations"]').data).toHaveLength(2);
   });
 });

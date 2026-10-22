@@ -55,7 +55,8 @@ export default function NotificationsRoute() {
     fetchNextPage,
     hasNextPage,
     isFetchingNextPage,
-    isLoading
+    isLoading,
+    isFresh
   } = useNotifications();
   // Separate server-filtered feed backing the Invitations tab.
   const inviteFeed = useNotifications({ type: 'ACTIVITY_INVITE' });
@@ -73,15 +74,18 @@ export default function NotificationsRoute() {
 
   // Read this visit immediately, including newly delivered rows while it stays open.
   // A batch key prevents a failed request from creating an automatic retry loop.
+  // Only on a list this visit fetched: the installed app paints a restored
+  // snapshot (possibly days old) first, and marking from it would mark newer,
+  // unseen notifications read on the server.
   useEffect(() => {
-    if (isLoading) return;
+    if (isLoading || !isFresh) return;
     const unreadIds = notifications.filter(n => !n.read && !n.readAt).map(n => n.id).join(',');
     const batch = `${unreadCount}:${unreadIds}`;
     if ((unreadCount > 0 || unreadIds) && batch !== lastReadBatch.current) {
       lastReadBatch.current = batch;
       markAllRead();
     }
-  }, [notifications, unreadCount, isLoading, markAllRead]);
+  }, [notifications, unreadCount, isLoading, isFresh, markAllRead]);
 
   // Infinite scroll trigger for loading chunks
   useEffect(() => {

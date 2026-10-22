@@ -178,6 +178,45 @@ describe('boot: signed-out purge', () => {
     expect(localStorage.getItem('loggedIn')).toBeNull();
   });
 
+  describe('after a launch that could not verify the session', () => {
+    const unverifiedLaunch = async () => {
+      holdAccount();
+      whenSessionReady.mockRejectedValue(new Error('keystore unavailable'));
+      mayHaveCookieSession.mockReturnValue(false);
+      await boot();
+      cleanup();
+      vi.clearAllMocks();
+      idbClearAll.mockResolvedValue(undefined);
+      idbClearMessages.mockResolvedValue(undefined);
+      whenSessionReady.mockReturnValue(null);
+    };
+    const signedInLaunch = async (user) => {
+      mayHaveCookieSession.mockReturnValue(true);
+      currentSession.mockResolvedValue({ user, meta: {} });
+      render(<AuthProvider><Probe /></AuthProvider>);
+      await waitFor(() => expect(auth.authStatus).toBe(AUTH_STATUS.AUTHENTICATED));
+      await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+    };
+
+    it('purges everything the previous account left when someone else signs in', async () => {
+      await unverifiedLaunch();
+      await signedInLaunch({ id: 'u2', username: 'bob', displayName: 'Bob' });
+      expect(clearSpy).toHaveBeenCalled();
+      expect(idbClearAll).toHaveBeenCalled();
+      for (const key of ['meetifyy_recent_searches', 'meetify_following_list', 'meetifyy_last_socket_sync']) {
+        expect(localStorage.getItem(key), key).toBeNull();
+      }
+    });
+
+    it('keeps it all when the same person signs back in', async () => {
+      await unverifiedLaunch();
+      await signedInLaunch(HELD);
+      expect(idbClearAll).not.toHaveBeenCalled();
+      expect(localStorage.getItem('meetifyy_recent_searches')).toBe('["alice search"]');
+      expect(localStorage.getItem('meetifyy_previous_account')).toBeNull();
+    });
+  });
+
   it('does not purge on a password-recovery tab', async () => {
     holdAccount();
     sessionStorage.setItem('sb-pwreset-pending', '1');

@@ -48,9 +48,14 @@ function committed(tx) {
   });
 }
 
+/** How long a blocked upgrade is waited for before the open gives up. */
+const OPEN_BLOCKED_TIMEOUT_MS = 3000;
+let _opening = null;
+
 function openMessagesDB() {
   if (_db) return Promise.resolve(_db);
-  return new Promise((resolve, reject) => {
+  if (_opening) return _opening;
+  _opening = new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
     request.onupgradeneeded = (e) => {
       const db = e.target.result;
@@ -68,12 +73,33 @@ function openMessagesDB() {
         db.createObjectStore(STORES.OUTBOX, { keyPath: 'clientId' });
       }
     };
-    request.onsuccess = (e) => {
-      _db = e.target.result;
-      resolve(_db);
+    // An older tab holding the previous version blocks the upgrade: give up
+    // after a while so callers see a cache miss rather than hang; the next
+    // call retries.
+    let blockedTimer = null;
+    request.onblocked = () => {
+      if (blockedTimer) return;
+      blockedTimer = setTimeout(() => reject(new Error('IndexedDB open blocked')), OPEN_BLOCKED_TIMEOUT_MS);
     };
-    request.onerror = () => reject(request.error);
+    request.onsuccess = (e) => {
+      if (blockedTimer) clearTimeout(blockedTimer);
+      const db = e.target.result;
+      // A newer tab wants to upgrade: release it and reopen on next use.
+      db.onversionchange = () => {
+        db.close();
+        if (_db === db) _db = null;
+      };
+      _db = db;
+      resolve(db);
+    };
+    request.onerror = () => {
+      if (blockedTimer) clearTimeout(blockedTimer);
+      reject(request.error);
+    };
+  }).finally(() => {
+    _opening = null;
   });
+  return _opening;
 }
 
 export async function migrateHistoricalFailedMessages() {
@@ -443,15 +469,17 @@ export async function idbClearMessages() {
  * never queued under the next one.
  */
 export async function idbOutboxPut(entry, epoch) {
-  if (isStale(epoch)) return;
+  if (isStale(epoch)) return false;
   try {
     const db = await openMessagesDB();
-    if (isStale(epoch)) return;
+    if (isStale(epoch)) return false;
     const tx = db.transaction(STORES.OUTBOX, 'readwrite');
     tx.objectStore(STORES.OUTBOX).put(entry);
     await committed(tx);
+    return true;
   } catch {
-    // Unavailable storage: the send still happens, it just cannot survive a restart.
+    // Full or unavailable storage: the caller must not count on a retry.
+    return false;
   }
 }
 

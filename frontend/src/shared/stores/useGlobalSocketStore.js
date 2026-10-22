@@ -26,6 +26,9 @@ export const useGlobalSocketStore = create((set, get) => ({
   socket: null,
   isConnected: false,
   reconnectCount: 0,
+  // When the socket last dropped, recorded in the handler itself so a paused
+  // WebView cannot delay it the way a React effect cleanup can.
+  lastDisconnectAt: 0,
   _lastToken: null,
   _lastOrigin: null,
   _lastDeviceId: null,
@@ -118,7 +121,7 @@ export const useGlobalSocketStore = create((set, get) => ({
       newSocket.io.on('reconnect_failed', () => set({ _gaveUp: true }));
 
       newSocket.on('disconnect', () => {
-        set({ isConnected: false });
+        set({ isConnected: false, lastDisconnectAt: Date.now() });
       });
 
       set({ socket: newSocket, _lastToken: token, _lastOrigin: socketUrl, _lastDeviceId: deviceId });

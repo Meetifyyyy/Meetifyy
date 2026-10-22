@@ -838,7 +838,10 @@ const MessageBubble = memo(function MessageBubble({
   // `queued`: in the outbox, which keeps retrying it, so "Sending…" not failed.
   const isStaleSending = !isRealServerMsg && !isConfirmedSent && msg?.status === 'sending' && !msg?.queued && (isNaN(msgAge) || msgAge > 5000 || msgAge < 0);
 
-  const isFailedMsg = isMe && !isRealServerMsg && !isConfirmedSent && (
+  // Not gated on the id: a message whose status says it failed was never
+  // confirmed, whatever its id looks like (client ids are UUIDs, so a failed
+  // send used to read as a server message and show "Sent").
+  const isFailedMsg = isMe && !isConfirmedSent && (
     msg.status === 'failed' || 
     msg.status === 'FAILED' || 
     msg.isFailed || 

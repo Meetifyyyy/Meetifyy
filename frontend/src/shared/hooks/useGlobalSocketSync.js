@@ -64,7 +64,6 @@ export function useGlobalSocketSync() {
   const catchupRetryRef = useRef(undefined);
   const catchupAttemptRef = useRef(0);
   const runCatchupRef = useRef(null);
-  const disconnectedAtRef = useRef(0);
 
   // Keep ref in sync so the reconnect handler always sees the latest conversations
   useEffect(() => {
@@ -112,7 +111,7 @@ export function useGlobalSocketSync() {
         // real gap. The app drops its socket 30s into the background and
         // reconnects on every return; a quick return has missed nothing that
         // catch-up does not already bring.
-        const away = Date.now() - (disconnectedAtRef.current || Date.now());
+        const away = Date.now() - (useGlobalSocketStore.getState().lastDisconnectAt || Date.now());
         if (away > CHAT_REFRESH_AFTER_MS) {
           queryClient.invalidateQueries({ queryKey: ['messages'], refetchType: 'active' });
         }
@@ -242,9 +241,6 @@ export function useGlobalSocketSync() {
       socket.off('connect', syncOnConnect);
       clearInterval(heartbeatInterval);
       clearTimeout(catchupRetryRef.current);
-      // Runs when the socket drops (isConnected turns false), so the next
-      // connect knows how long it was away.
-      disconnectedAtRef.current = Date.now();
     };
   }, [socket, isConnected, queryClient]);
 

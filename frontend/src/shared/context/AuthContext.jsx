@@ -137,6 +137,13 @@ function isRecoveryPending() {
  * person's name, saved posts or follow list for the first second after they
  * sign in.
  */
+/**
+ * Whose data is on this device, kept when a launch signs out without knowing
+ * whether the session ended (see the boot `signedOut`). Not session-scoped
+ * itself: it must outlive the purge it guards.
+ */
+const PREVIOUS_ACCOUNT_KEY = 'meetifyy_previous_account';
+
 const SESSION_SCOPED_KEYS = [
   'currentUser',
   'loggedIn',
@@ -371,8 +378,18 @@ export function AuthProvider({ children }) {
     // Done here and not inside the state updater below: an updater must be pure
     // (React may run it twice, and during render), and clearing the query cache
     // notifies every mounted query, which is a state update in other components.
-    const previousId = currentUserIdRef.current;
+    // The account this device last held: in memory during a session, or the
+    // marker a launch that could not verify the session left behind.
+    let previousId = currentUserIdRef.current;
+    if (!previousId) {
+      try { previousId = localStorage.getItem(PREVIOUS_ACCOUNT_KEY); } catch (_) {}
+    }
+    try { localStorage.removeItem(PREVIOUS_ACCOUNT_KEY); } catch (_) {}
     if (previousId && previousId !== user.id) {
+      // Everything of theirs, persisted keys included (recent searches,
+      // follow lists, the catch-up point): before this, only memory and
+      // IndexedDB were reset on a switch.
+      clearSessionScopedStorage();
       resetClientStateForNewUser(queryClientRef.current);
     }
     currentUserIdRef.current = user.id;
@@ -609,6 +626,15 @@ export function AuthProvider({ children }) {
       if (purge && heldAccount) {
         clearSessionScopedStorage();
         resetClientStateForNewUser(queryClientRef.current);
+      } else if (heldAccount) {
+        // Kept, because this launch could not tell whether the session is
+        // still good. But `currentUser` is about to go, and with it the only
+        // record of whose data this is: remember the id, so a DIFFERENT
+        // person signing in next is not handed it (adoptUser).
+        try {
+          const heldId = JSON.parse(localStorage.getItem('currentUser') || 'null')?.id;
+          if (heldId) localStorage.setItem(PREVIOUS_ACCOUNT_KEY, String(heldId));
+        } catch (_) {}
       }
       try { localStorage.removeItem('currentUser'); } catch (_) {}
       try { localStorage.removeItem('loggedIn'); } catch (_) {}

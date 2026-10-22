@@ -735,7 +735,9 @@ export default function CreateActivityPage() {
       if (duration < 60 * 60000) duration = 60 * 60000;
 
       const remainder = 5 - (now.getMinutes() % 5);
-      currentStart = new Date(now.getTime() + (remainder === 5 ? 0 : remainder) * 60000);
+      // Always the NEXT 5-minute slot: on an exact multiple the current minute
+      // with seconds zeroed below is already in the past.
+      currentStart = new Date(now.getTime() + remainder * 60000);
       // The form stores only hour and minute, so drop seconds and milliseconds
       // here too: the startDate sent now must equal the one a retry parses back
       // out of the form, or the retry's body (and idempotency key) differs.

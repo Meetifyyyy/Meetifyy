@@ -55,11 +55,11 @@ export default function UpdateGate({ children }) {
       ]);
 
       // Nothing to compare against. Not an error — see fail-open above.
-      if (!current || (platform !== 'android' && platform !== 'ios')) return;
+      if (!current || (platform !== 'android' && platform !== 'ios')) return true;
 
       const body = await apiClient.get('/api/app/version');
       const rules = body?.[platform];
-      if (!rules) return;
+      if (!rules) return true;
 
       const verdict = evaluateVersion({
         current,
@@ -69,9 +69,11 @@ export default function UpdateGate({ children }) {
 
       setUpdateUrl(typeof rules.updateUrl === 'string' ? rules.updateUrl : null);
       setStatus(verdict);
+      return true;
     } catch {
       // Offline, rate-limited, mid-deploy, malformed. Says nothing about the
       // build, so it must not gate it.
+      return false;
     }
   }, []);
 
@@ -86,8 +88,13 @@ export default function UpdateGate({ children }) {
    * a handful of times a year.
    */
   useEffect(() => {
-    let lastCheck = Date.now();
-    check();
+    // Set only once a check has actually answered: an offline cold start must
+    // not suppress the next return's re-check for the whole window.
+    let lastCheck = 0;
+    const run = async () => {
+      if (await check()) lastCheck = Date.now();
+    };
+    void run(); // fire-and-forget: the gate only reacts to the state it sets
 
     // Not on every return, though: switching to another app and back for a
     // few seconds cannot have missed a release, and it used to cost one
@@ -96,8 +103,7 @@ export default function UpdateGate({ children }) {
     const onVisible = () => {
       if (document.visibilityState !== 'visible') return;
       if (Date.now() - lastCheck < FOREGROUND_RECHECK_MS) return;
-      lastCheck = Date.now();
-      check();
+      void run();
     };
     document.addEventListener('visibilitychange', onVisible);
     return () => document.removeEventListener('visibilitychange', onVisible);

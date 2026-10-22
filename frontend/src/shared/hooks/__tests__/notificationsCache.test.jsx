@@ -136,11 +136,54 @@ describe('notification cache updates', () => {
     const inFlight = queryClient.fetchQuery({ queryKey: COUNT_KEY, queryFn: () => api.getUnreadCount(), staleTime: 0 });
     inFlight.catch(() => {});
 
+    // The interrupted fetch is redone once the write settles; the server now
+    // answers with the written state.
+    api.getUnreadCount.mockResolvedValue({ count: 0 });
     await act(async () => { result.current.markAllRead(); });
     await waitFor(() => expect(api.markAllAsRead).toHaveBeenCalled());
     await act(async () => { release?.(); });
 
     expect(count()).toBe(0);
+  });
+
+  it('refetches a list fetch that marking all read cancelled', async () => {
+    // On the installed app that fetch is the revalidation of a restored
+    // snapshot: cancelled and never redone, the snapshot stayed on screen.
+    let release;
+    api.getAll.mockImplementationOnce(
+      () => new Promise((resolve) => { release = () => resolve({ data: [row('n9')], nextCursor: null }); }),
+    );
+    api.getAll.mockResolvedValue({ data: [row('n9', true)], nextCursor: null });
+    queryClient.invalidateQueries({ queryKey: LIST_KEY, exact: true, refetchType: 'none' });
+    const { result } = renderHook(() => useNotifications(), { wrapper });
+    await waitFor(() => expect(api.getAll).toHaveBeenCalledTimes(1));
+
+    await act(async () => { result.current.markAllRead(); });
+    await waitFor(() => expect(api.markAllAsRead).toHaveBeenCalled());
+    await waitFor(() => expect(api.getAll).toHaveBeenCalledTimes(2));
+    release?.();
+    await waitFor(() => expect(rows().map((n) => n.id)).toEqual(['n9']));
+  });
+
+  it('reports a restored snapshot as not fresh until the network answers', async () => {
+    let release;
+    api.getAll.mockImplementationOnce(
+      () => new Promise((resolve) => { release = () => resolve({ data: [row('n1')], nextCursor: null }); }),
+    );
+    // What querySnapshots does: an old updatedAt, and invalidated.
+    queryClient.setQueryData(LIST_KEY, queryClient.getQueryData(LIST_KEY), { updatedAt: Date.now() - 86_400_000 });
+    queryClient.invalidateQueries({ queryKey: LIST_KEY, exact: true, refetchType: 'none' });
+    const { result } = renderHook(() => useNotifications(), { wrapper });
+
+    expect(result.current.notifications).toHaveLength(3);
+    expect(result.current.isFresh).toBe(false);
+    await act(async () => { release(); });
+    await waitFor(() => expect(result.current.isFresh).toBe(true));
+  });
+
+  it('treats a warm, recently fetched list as fresh', () => {
+    const { result } = renderHook(() => useNotifications(), { wrapper });
+    expect(result.current.isFresh).toBe(true);
   });
 
   it('removes a dismissed notification and adjusts the count', async () => {

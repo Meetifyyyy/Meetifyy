@@ -805,3 +805,46 @@ describe('createTransport — idempotency keys', () => {
     expect(calls[0].init.headers['Idempotency-Key']).toBeUndefined();
   });
 });
+
+describe('createTransport — a keyed write still being processed', () => {
+  const reply = (status, body) => ({
+    ok: status < 400,
+    status,
+    headers: { get: () => null },
+    json: async () => body,
+    text: async () => JSON.stringify(body),
+  });
+
+  it('asks again with the same key instead of failing, and returns the first result', async () => {
+    vi.useFakeTimers();
+    try {
+      const keys = [];
+      const answers = [
+        reply(409, { code: 'IDEMPOTENCY_IN_PROGRESS', message: 'still processing' }),
+        reply(201, { id: 'post-1' }),
+      ];
+      globalThis.fetch = vi.fn(async (url, init) => {
+        keys.push(init.headers['Idempotency-Key']);
+        return answers.shift();
+      });
+      const { deps } = build();
+      const t = createTransport({ ...deps, idempotency: { enabled: true } });
+      const result = t.apiClient.post('/api/posts', { text: 'hi' }, { idempotencyKey: 'key-0000000009' });
+      await vi.advanceTimersByTimeAsync(3_100);
+      await expect(result).resolves.toEqual({ id: 'post-1' });
+      expect(keys).toEqual(['key-0000000009', 'key-0000000009']);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('still fails on any other conflict', async () => {
+    globalThis.fetch = vi.fn(async () => reply(409, { code: 'ALREADY_EXISTS', message: 'taken' }));
+    const { deps } = build();
+    const t = createTransport({ ...deps, idempotency: { enabled: true } });
+    await expect(
+      t.apiClient.post('/api/communities', {}, { idempotencyKey: 'key-0000000010' }),
+    ).rejects.toMatchObject({ status: 409, code: 'ALREADY_EXISTS' });
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+});

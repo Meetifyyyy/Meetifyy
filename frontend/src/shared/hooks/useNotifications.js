@@ -84,7 +84,10 @@ export function useNotifications({ type } = {}) {
   // list. Both are server-backed, so neither can drift from the database.
   const options = useMemo(() => notificationsQueryOptions(type), [type]);
 
-  const { data, isLoading, error, fetchNextPage, hasNextPage, isFetchingNextPage } = useInfiniteQuery({
+  const {
+    data, isLoading, isFetching, isFetchedAfterMount, isStale, isError, error,
+    fetchNextPage, hasNextPage, isFetchingNextPage,
+  } = useInfiniteQuery({
     ...options,
     enabled: Boolean(currentUser?.id),
   });
@@ -123,6 +126,25 @@ export function useNotifications({ type } = {}) {
     queryClient.invalidateQueries({ queryKey: UNREAD_COUNT_KEY });
   }, [queryClient]);
 
+  /**
+   * Whether any notifications query (a list or the count) is mid-fetch.
+   *
+   * The mutations below cancel those fetches so a stale answer cannot overwrite
+   * the optimistic write. A cancelled fetch is not retried by itself, and on the
+   * installed app it may have been the revalidation of a restored snapshot, so
+   * whatever was interrupted is fetched again once the mutation settles.
+   */
+  const isFetchingAny = useCallback(
+    () => queryClient.isFetching({ queryKey: ['notifications'] }) > 0,
+    [queryClient],
+  );
+  const redoInterrupted = useCallback(
+    (_data, _err, _vars, ctx) => {
+      if (ctx?.interrupted) resync();
+    },
+    [resync],
+  );
+
   /*
    * These used to invalidate `['notifications']` on success, which refetched
    * every loaded page of every feed AND the unread count. Opening this page
@@ -138,6 +160,7 @@ export function useNotifications({ type } = {}) {
       // The whole prefix, the unread count included: a count fetch already in
       // flight answers with a number from before this write, and landing later
       // it would bring a cleared badge back.
+      const interrupted = isFetchingAny();
       await queryClient.cancelQueries({ queryKey: ['notifications'] });
       const snapshot = queryClient.getQueriesData({ predicate: isNotificationListQuery });
       const previousCount = queryClient.getQueryData(UNREAD_COUNT_KEY);
@@ -151,7 +174,7 @@ export function useNotifications({ type } = {}) {
         }),
       );
       if (wasUnread) bumpUnread(-1);
-      return { snapshot, previousCount };
+      return { snapshot, previousCount, interrupted };
     },
     onError: (_err, _id, ctx) => {
       ctx?.snapshot?.forEach(([key, value]) => {
@@ -162,11 +185,13 @@ export function useNotifications({ type } = {}) {
       }
       resync();
     },
+    onSettled: redoInterrupted,
   });
 
   const markAllReadMutation = useMutation({
     mutationFn: () => notificationsApi.markAllAsRead(),
     onMutate: async () => {
+      const interrupted = isFetchingAny();
       await queryClient.cancelQueries({ queryKey: ['notifications'] });
       const snapshot = queryClient.getQueriesData({ predicate: isNotificationListQuery });
       const previousCount = queryClient.getQueryData(UNREAD_COUNT_KEY);
@@ -175,7 +200,7 @@ export function useNotifications({ type } = {}) {
         mapRows(old, markRead),
       );
       queryClient.setQueryData(UNREAD_COUNT_KEY, (old) => ({ ...(old || {}), count: 0 }));
-      return { snapshot, previousCount };
+      return { snapshot, previousCount, interrupted };
     },
     onError: (_err, _vars, ctx) => {
       ctx?.snapshot?.forEach(([key, value]) => {
@@ -186,11 +211,13 @@ export function useNotifications({ type } = {}) {
       }
       resync();
     },
+    onSettled: redoInterrupted,
   });
 
   const deleteMutation = useMutation({
     mutationFn: (id) => notificationsApi.delete(id),
     onMutate: async (id) => {
+      const interrupted = isFetchingAny();
       await queryClient.cancelQueries({ queryKey: ['notifications'] });
       const snapshot = queryClient.getQueriesData({ predicate: isNotificationListQuery });
       const previousCount = queryClient.getQueryData(UNREAD_COUNT_KEY);
@@ -205,7 +232,7 @@ export function useNotifications({ type } = {}) {
         }),
       );
       if (removedUnread) bumpUnread(-1);
-      return { snapshot, previousCount };
+      return { snapshot, previousCount, interrupted };
     },
     onError: (_err, _id, ctx) => {
       ctx?.snapshot?.forEach(([key, value]) => {
@@ -216,6 +243,7 @@ export function useNotifications({ type } = {}) {
       }
       resync();
     },
+    onSettled: redoInterrupted,
   });
 
   /**
@@ -253,6 +281,11 @@ export function useNotifications({ type } = {}) {
       notifications,
       unreadCount: unreadCountData?.count || 0,
       isLoading,
+      // True when the list is a real network answer that is current: fetched
+      // by this mount, or fetched recently enough to still be fresh, and no
+      // refetch in flight. A restored snapshot (installed app) is always stale
+      // and invalidated, so it never counts until the network replaces it.
+      isFresh: (isFetchedAfterMount || !isStale) && !isFetching && !isError,
       error,
       fetchNextPage,
       hasNextPage,
@@ -262,7 +295,7 @@ export function useNotifications({ type } = {}) {
       dismissNotification,
     }),
     [
-      notifications, unreadCountData?.count, isLoading, error,
+      notifications, unreadCountData?.count, isLoading, isFetchedAfterMount, isStale, isFetching, isError, error,
       fetchNextPage, hasNextPage, isFetchingNextPage,
       markAsRead, markAllRead, dismissNotification,
     ],

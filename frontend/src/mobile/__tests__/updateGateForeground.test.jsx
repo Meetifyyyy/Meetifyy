@@ -51,4 +51,14 @@ describe('UpdateGate on return to the foreground', () => {
     await goTo('visible');
     expect(get).toHaveBeenCalledTimes(2);
   });
+
+  it('re-checks on the next return when the cold-start check failed', async () => {
+    get.mockRejectedValueOnce(new Error('offline'));
+    await act(async () => { render(<UpdateGate><p>app</p></UpdateGate>); });
+    expect(get).toHaveBeenCalledTimes(1);
+    await goTo('hidden');
+    vi.advanceTimersByTime(10_000);
+    await goTo('visible');
+    expect(get).toHaveBeenCalledTimes(2);
+  });
 });

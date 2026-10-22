@@ -32,6 +32,9 @@ const STORES = {
 let _db = null;
 let _opening = null;
 
+/** How long a blocked upgrade is waited for before the open gives up. */
+const OPEN_BLOCKED_TIMEOUT_MS = 3000;
+
 /**
  * Bumped whenever the whole cache is emptied (logout, account switch).
  *
@@ -75,11 +78,30 @@ function openDB() {
         }
       });
     };
-    request.onsuccess = (e) => {
-      _db = e.target.result;
-      resolve(_db);
+    // A tab still running an older bundle holds the previous version open and
+    // blocks this upgrade. Give up after a while, so callers fall back to a
+    // cache miss instead of hanging (sign-out's clear included); the next call
+    // tries again.
+    let blockedTimer = null;
+    request.onblocked = () => {
+      if (blockedTimer) return;
+      blockedTimer = setTimeout(() => reject(new Error('IndexedDB open blocked')), OPEN_BLOCKED_TIMEOUT_MS);
     };
-    request.onerror = () => reject(request.error);
+    request.onsuccess = (e) => {
+      if (blockedTimer) clearTimeout(blockedTimer);
+      const db = e.target.result;
+      // Another tab wants a newer version: let it, and reopen on next use.
+      db.onversionchange = () => {
+        db.close();
+        if (_db === db) _db = null;
+      };
+      _db = db;
+      resolve(db);
+    };
+    request.onerror = () => {
+      if (blockedTimer) clearTimeout(blockedTimer);
+      reject(request.error);
+    };
   }).finally(() => {
     _opening = null;
   });

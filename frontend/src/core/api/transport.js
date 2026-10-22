@@ -682,8 +682,27 @@ export function createTransport({
       return promise;
     }
 
+    // A retry of a submission whose first copy the server is still processing
+    // is answered 409 IDEMPOTENCY_IN_PROGRESS. That is not a failure: the
+    // first copy is about to land, and asking again with the same key returns
+    // its result. Showing "Couldn't create" there made users create it again.
+    if (headers['Idempotency-Key']) {
+      for (let attempt = 0; ; attempt += 1) {
+        try {
+          return await send();
+        } catch (err) {
+          if (err?.code !== 'IDEMPOTENCY_IN_PROGRESS' || attempt >= KEYED_CONFLICT_RETRIES) throw err;
+          await new Promise((resolve) => setTimeout(resolve, KEYED_CONFLICT_DELAY_MS));
+        }
+      }
+    }
+
     return send();
   }
+
+  /** How often, and how far apart, a keyed write still in progress is asked again. */
+  const KEYED_CONFLICT_RETRIES = 4;
+  const KEYED_CONFLICT_DELAY_MS = 3_000;
 
   // Requests had no timeout at all: if the API stalled (server down, mid-restart,
   // dead connection) the promise never settled, so every screen sat on its loading

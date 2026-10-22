@@ -30,6 +30,10 @@ export const OUTBOX_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 /** Failed entries are kept for tap-to-retry, but not forever. */
 export const OUTBOX_FAILED_KEEP_MS = 7 * 24 * 60 * 60 * 1000;
 const RETRY_BASE_MS = 2_000;
+/** A send that has not reported back in this long is treated as abandoned. */
+const IN_FLIGHT_EXPIRY_MS = 60_000;
+/** After a storage failure during a flush. */
+const FLUSH_ERROR_RETRY_MS = 30_000;
 const RETRY_MAX_MS = 5 * 60_000;
 
 /** Wait before attempt number `attempts + 1`. */
@@ -66,6 +70,8 @@ export function classifySendFailure(failure) {
  * @param {(entry, serverMsg) => void} deps.onSent        the server confirmed it
  * @param {(entry) => void} deps.onFailed                  given up, or refused
  * @param {() => string | null} deps.getUserId
+ * @param {() => number} [deps.getGeneration] changes when the local caches are
+ *   cleared (sign-out); work started under an older one writes and sends nothing
  * @param {() => number} [deps.now]
  * @param {(fn, ms) => unknown} [deps.setTimer]
  * @param {(handle) => void} [deps.clearTimer]
@@ -76,17 +82,47 @@ export function createOutbox({
   onSent,
   onFailed,
   getUserId,
+  getGeneration = () => 0,
   now = () => Date.now(),
   setTimer = (fn, ms) => setTimeout(fn, ms),
   clearTimer = (handle) => clearTimeout(handle),
 }) {
-  /** clientIds currently being sent by someone, so nothing sends one twice. */
-  const inFlight = new Set();
+  /**
+   * clientIds being sent right now, with when the send started, so nothing
+   * sends one twice. A mark older than IN_FLIGHT_EXPIRY_MS is treated as
+   * abandoned (a send that threw before reporting back), so it cannot block
+   * its conversation until the app restarts.
+   */
+  const inFlight = new Map();
+  const isInFlight = (clientId) => {
+    const since = inFlight.get(clientId);
+    if (since === undefined) return false;
+    if (now() - since > IN_FLIGHT_EXPIRY_MS) {
+      inFlight.delete(clientId);
+      return false;
+    }
+    return true;
+  };
   /** conversationId -> clientIds still pending, oldest first (ordering). */
   const pendingByConv = new Map();
   let flushing = null;
   let flushAgain = false;
   let timer = null;
+  let timerAt = Infinity;
+  /** The account whose stored entries `pendingByConv` already reflects. */
+  let loadedFor = null;
+
+  /**
+   * Fills the ordering state from storage once per account. After a restart
+   * it is empty until something reads the store, and a new message checked
+   * against it would overtake an older one still waiting on disk.
+   */
+  async function loadPending(userId) {
+    if (!userId || loadedFor === userId) return;
+    const entries = await store.all(userId);
+    for (const e of entries) if (!e.failed) track(e);
+    loadedFor = userId;
+  }
 
   const track = (entry) => {
     const list = pendingByConv.get(entry.conversationId) ?? [];
@@ -99,10 +135,15 @@ export function createOutbox({
     else pendingByConv.delete(entry.conversationId);
   };
 
+  /** Keeps the EARLIEST pending deadline: a long backoff in one chat must not push back a short one in another. */
   const scheduleFlush = (delayMs) => {
+    const at = now() + Math.max(0, delayMs);
+    if (timer !== null && timerAt <= at) return;
     if (timer !== null) clearTimer(timer);
+    timerAt = at;
     timer = setTimer(() => {
       timer = null;
+      timerAt = Infinity;
       void flush();
     }, Math.max(0, delayMs));
   };
@@ -111,7 +152,11 @@ export function createOutbox({
    * Applies the outcome of one attempt to `entry`. `notify` is off for the
    * chat screen's own direct send, which updates the bubble itself.
    */
-  async function settle(entry, outcome, detail, { notify = true } = {}) {
+  async function settle(entry, outcome, detail, { notify = true, generation } = {}) {
+    // Signed out (or switched account) since this attempt began: the store was
+    // emptied, and writing this entry back would keep the previous account's
+    // message on the device. Nothing is written, nobody is notified.
+    if (generation !== undefined && generation !== getGeneration()) return;
     if (outcome === 'ok') {
       untrack(entry);
       await store.delete(entry.clientId);
@@ -123,12 +168,12 @@ export function createOutbox({
     if (outcome === 'rejected' || attempts >= OUTBOX_MAX_ATTEMPTS || tooOld) {
       // Kept, marked failed, so tap-to-retry can send exactly this again.
       untrack(entry);
-      await store.put({ ...entry, attempts, failed: true, failedAt: now() });
+      await store.put({ ...entry, attempts, failed: true, failedAt: now() }, generation);
       if (notify) onFailed(entry);
       return;
     }
     const delay = retryDelay(attempts);
-    await store.put({ ...entry, attempts, nextAttemptAt: now() + delay });
+    await store.put({ ...entry, attempts, nextAttemptAt: now() + delay }, generation);
     scheduleFlush(delay);
   }
 
@@ -136,6 +181,7 @@ export function createOutbox({
   async function runFlush() {
     const userId = getUserId();
     if (!userId) return;
+    const generation = getGeneration();
     const entries = await store.all(userId);
     const byConv = new Map();
     for (const entry of entries) {
@@ -152,14 +198,17 @@ export function createOutbox({
     let earliestWait = Infinity;
     for (const list of byConv.values()) {
       for (const entry of list) {
+        // Signed out, or someone else signed in, while this run was sending:
+        // stop, so no message goes out under the next account's session.
+        if (getUserId() !== entry.userId || getGeneration() !== generation) return;
         // Another path is sending it right now; what follows must wait for it.
-        if (inFlight.has(entry.clientId)) break;
+        if (isInFlight(entry.clientId)) break;
         const wait = (entry.nextAttemptAt ?? 0) - now();
         if (wait > 0) {
           earliestWait = Math.min(earliestWait, wait);
           break;
         }
-        inFlight.add(entry.clientId);
+        inFlight.set(entry.clientId, now());
         let result;
         try {
           result = await send(entry);
@@ -169,14 +218,14 @@ export function createOutbox({
           inFlight.delete(entry.clientId);
         }
         if (result?.ok) {
-          await settle(entry, 'ok', result.message);
+          await settle(entry, 'ok', result.message, { generation });
           continue;
         }
         // Not connected: nothing was attempted, so nothing is counted. The
         // next connect flushes again; offline for a day loses no attempts.
         if (result?.offline) return;
         const outcome = classifySendFailure(result?.failure);
-        await settle(entry, outcome, result?.failure);
+        await settle(entry, outcome, result?.failure, { generation });
         // A transient failure keeps the rest of this conversation in order
         // behind it; a refusal does not hold up the messages after it.
         if (outcome === 'transient') break;
@@ -201,7 +250,9 @@ export function createOutbox({
           await runFlush();
         } while (flushAgain);
       } catch {
-        // Storage failure: entries stay where they are for the next trigger.
+        // Storage failure: entries stay where they are. Try again later
+        // rather than only on the next connect.
+        scheduleFlush(FLUSH_ERROR_RETRY_MS);
       } finally {
         flushing = null;
       }
@@ -215,25 +266,35 @@ export function createOutbox({
      * false when an older message in the same conversation is still pending
      * and this one has to wait its turn (the flush will send it).
      */
-    async enqueue(entry, epoch) {
+    async enqueue(entry, epoch, { viaFlush = false } = {}) {
+      try {
+        await loadPending(entry.userId);
+      } catch {
+        // Unreadable storage: order is then best-effort, the send still goes.
+      }
+      const persisted = (await store.put({ attempts: 0, nextAttemptAt: 0, ...entry }, epoch)) !== false;
+      // Not recorded (storage full or blocked): the outbox cannot retry it, so
+      // the caller sends it the old way and shows a failure as a failure.
+      if (!persisted) return { sendNow: true, persisted: false };
       const older = (pendingByConv.get(entry.conversationId) ?? []).filter((id) => id !== entry.clientId);
       track(entry);
-      await store.put({ attempts: 0, nextAttemptAt: 0, ...entry }, epoch);
-      if (older.length > 0) {
+      // `viaFlush`: the caller does not send it itself (tap-to-retry of a
+      // message the outbox never had), so the flush takes it, in order.
+      if (older.length > 0 || viaFlush) {
         void flush();
-        return false;
+        return { sendNow: false, persisted: true };
       }
-      inFlight.add(entry.clientId);
-      return true;
+      inFlight.set(entry.clientId, now());
+      return { sendNow: true, persisted: true };
     },
     /**
      * The chat screen's direct send of an enqueued entry finished. The screen
      * shows the outcome itself; a transient failure is left queued and the
      * flush takes it from there.
      */
-    async complete(entry, outcome, detail) {
+    async complete(entry, outcome, detail, generation) {
       inFlight.delete(entry.clientId);
-      await settle(entry, outcome, detail, { notify: false });
+      await settle(entry, outcome, detail, { notify: false, generation });
       // Anything queued behind it in the conversation can go now.
       if (outcome !== 'transient') void flush();
     },
@@ -247,6 +308,12 @@ export function createOutbox({
       await flush();
       return true;
     },
+    /** True when an entry for `clientId` exists, failed or not. */
+    async has(clientId) {
+      const userId = getUserId();
+      if (!userId) return false;
+      return (await store.all(userId)).some((e) => e.clientId === clientId);
+    },
     flush,
     /** True while a message in `conversationId` is still waiting to be confirmed. */
     hasPending(conversationId) {
@@ -256,8 +323,10 @@ export function createOutbox({
     reset() {
       inFlight.clear();
       pendingByConv.clear();
+      loadedFor = null;
       if (timer !== null) clearTimer(timer);
       timer = null;
+      timerAt = Infinity;
     },
   };
 }

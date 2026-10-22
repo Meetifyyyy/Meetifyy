@@ -16,9 +16,14 @@ import {
  * rules that make it safe to bring back.
  */
 function harness({ user = 'u1', replies = [] } = {}) {
+  const state = { user, generation: 0, storageFull: false };
   const rows = new Map();
   const store = {
-    put: vi.fn(async (entry) => { rows.set(entry.clientId, { ...entry }); }),
+    put: vi.fn(async (entry) => {
+      if (state.storageFull) return false;
+      rows.set(entry.clientId, { ...entry });
+      return true;
+    }),
     delete: vi.fn(async (id) => { rows.delete(id); }),
     all: vi.fn(async (userId) =>
       [...rows.values()].filter((e) => e.userId === userId).sort((a, b) => a.createdAt - b.createdAt)),
@@ -33,13 +38,13 @@ function harness({ user = 'u1', replies = [] } = {}) {
   });
   const onSent = vi.fn();
   const onFailed = vi.fn();
-  const state = { user };
   const outbox = createOutbox({
     store,
     send,
     onSent,
     onFailed,
     getUserId: () => state.user,
+    getGeneration: () => state.generation,
     now: () => clock,
     setTimer: (fn, ms) => { timer = { fn, at: clock + ms }; return timer; },
     clearTimer: () => { timer = null; },
@@ -85,7 +90,7 @@ describe('outbox', () => {
 
   it('lets the first send go out directly and forgets it once confirmed', async () => {
     const e = h.entry('m1');
-    expect(await h.outbox.enqueue(e)).toBe(true);
+    expect((await h.outbox.enqueue(e)).sendNow).toBe(true);
     expect(h.rows.has('m1')).toBe(true); // recorded before it goes out
     await h.outbox.complete(e, 'ok', { id: 'srv-m1' });
     expect(h.rows.has('m1')).toBe(false);
@@ -144,7 +149,7 @@ describe('outbox', () => {
     await h.outbox.enqueue(older);
     await h.outbox.complete(older, 'transient', null);
     const newer = h.entry('m2');
-    expect(await h.outbox.enqueue(newer)).toBe(false); // must not overtake
+    expect((await h.outbox.enqueue(newer)).sendNow).toBe(false); // must not overtake
     await h.advance(3_000);
     expect(h.sent).toEqual(['m1', 'm2']);
   });
@@ -196,5 +201,80 @@ describe('outbox', () => {
     await h.outbox.flush();
     expect(h.rows.has('m1')).toBe(false);
     expect(h.send).not.toHaveBeenCalled();
+  });
+});
+
+describe('outbox after a restart', () => {
+  it('does not let a new message overtake an older one still stored from before', async () => {
+    const h = harness();
+    // Left on disk by the previous run of the app; nothing in memory knows it.
+    await h.store.put({ ...h.entry('old'), attempts: 1, nextAttemptAt: 0 });
+    const fresh = h.entry('new');
+    expect((await h.outbox.enqueue(fresh)).sendNow).toBe(false);
+    await h.outbox.flush();
+    expect(h.sent).toEqual(['old', 'new']);
+  });
+});
+
+describe('outbox safety under sign-out and storage trouble', () => {
+  it('writes nothing back when the account signed out while a send was in flight', async () => {
+    const h = harness();
+    const e = h.entry('m1');
+    await h.outbox.enqueue(e);
+    h.rows.clear(); // sign-out emptied the store...
+    h.state.generation += 1; // ...and bumped the generation
+    await h.outbox.complete(e, 'transient', null, 0);
+    expect(h.rows.size).toBe(0);
+  });
+
+  it('stops a flush mid-run when the account changes, so nothing goes out as the next one', async () => {
+    let releaseFirst;
+    const h = harness();
+    h.send.mockImplementationOnce((entry) => new Promise((r) => {
+      h.sent.push(entry.clientId);
+      releaseFirst = () => r({ ok: true, message: { id: `srv-${entry.clientId}` } });
+    }));
+    await h.store.put(h.entry('a1', 'c1'));
+    await h.store.put(h.entry('a2', 'c2'));
+    const run = h.outbox.flush();
+    while (!releaseFirst) await new Promise((r) => setTimeout(r, 0));
+    h.state.user = 'u2'; // B signed in while a1 was waiting on its ack
+    h.state.generation += 1;
+    releaseFirst();
+    await run;
+    expect(h.sent).toEqual(['a1']); // a2 never sent under B
+    expect(h.onSent).not.toHaveBeenCalled();
+  });
+
+  it('reports a send it could not record, so the screen does not show Sending forever', async () => {
+    const h = harness();
+    h.state.storageFull = true;
+    const res = await h.outbox.enqueue(h.entry('m1'));
+    expect(res).toEqual({ sendNow: true, persisted: false });
+  });
+
+  it('keeps the earliest retry: a long backoff elsewhere does not delay a short one', async () => {
+    const h = harness({ replies: [{ ok: false, failure: null }, { ok: false, failure: null }] });
+    await h.store.put(h.entry('a', 'c1'));
+    await h.store.put({ ...h.entry('b', 'c2'), attempts: 5 });
+    await h.outbox.flush(); // a: retry in 2s, b: retry in 64s
+    await h.advance(2_500);
+    expect(h.sent).toEqual(['a', 'b', 'a']);
+  });
+
+  it('lets the flush send a retried message the outbox never had', async () => {
+    const h = harness();
+    const res = await h.outbox.enqueue(h.entry('rebuilt'), undefined, { viaFlush: true });
+    expect(res.sendNow).toBe(false);
+    await h.outbox.flush();
+    expect(h.sent).toEqual(['rebuilt']);
+  });
+
+  it('frees a conversation whose direct send never reported back', async () => {
+    const h = harness();
+    const stuck = h.entry('m1');
+    await h.outbox.enqueue(stuck); // direct send that threw before complete()
+    await h.advance(61_000);
+    expect(h.sent).toEqual(['m1']);
   });
 });

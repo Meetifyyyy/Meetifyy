@@ -84,6 +84,23 @@ export function installQuerySnapshots(
 ) {
   const lastWrite = new Map();
   const pendingWrites = new Set();
+  /** Snapshots read ahead at install, by query hash, for a restore without a skeleton frame. */
+  const preloaded = new Map();
+  /**
+   * The clear generation the state above belongs to. A sign-out or account
+   * switch bumps it, and then none of it applies: a save scheduled for the
+   * previous account must not hold back the next account's first save, and a
+   * preloaded snapshot belongs to whoever was signed in at install.
+   */
+  let stateEpoch = idbEpoch();
+  const syncEpoch = () => {
+    const current = idbEpoch();
+    if (current === stateEpoch) return;
+    stateEpoch = current;
+    lastWrite.clear();
+    pendingWrites.clear();
+    preloaded.clear();
+  };
 
   const idle = (fn) => {
     if (typeof window.requestIdleCallback === 'function') {
@@ -93,17 +110,19 @@ export function installQuerySnapshots(
     }
   };
 
-  const restore = async (query, spec) => {
-    const userId = currentUserId(storage);
-    if (!userId) return;
-    const entry = await idbGet('queries', entryKey(userId, query.queryHash));
-    const value = entry?.value;
-    if (!value || value.v !== SNAPSHOT_VERSION || value.userId !== userId) return;
-    if (typeof value.savedAt !== 'number' || now() - value.savedAt > MAX_AGE_MS) return;
+  /** The stored value if it may be painted for `userId`, else null. */
+  const usable = (value, userId) => {
+    if (!value || value.v !== SNAPSHOT_VERSION || value.userId !== userId) return null;
+    if (typeof value.savedAt !== 'number' || now() - value.savedAt > MAX_AGE_MS) return null;
+    return value;
+  };
+
+  const apply = (spec, value, userId) => {
     // Only into an empty slot: a network answer that landed during the read
     // is newer, and an account change meanwhile has emptied the cache.
     if (queryClient.getQueryData(spec.queryKey) !== undefined) return;
     if (currentUserId(storage) !== userId) return;
+    if (!usable(value, userId)) return;
     // `updatedAt` is when it was really fetched, so it counts as stale.
     queryClient.setQueryData(spec.queryKey, value.data, { updatedAt: value.savedAt });
     // And invalidated, for queries whose staleTime would otherwise keep a
@@ -111,7 +130,47 @@ export function installQuerySnapshots(
     queryClient.invalidateQueries({ queryKey: spec.queryKey, exact: true, refetchType: 'none' });
   };
 
+  const restore = async (query, spec) => {
+    const userId = currentUserId(storage);
+    if (!userId) return;
+    // idbGet itself returns null across a clear.
+    const entry = await idbGet('queries', entryKey(userId, query.queryHash));
+    apply(spec, entry?.value, userId);
+  };
+
+  /** Synchronous restore from the read-ahead. False when there was nothing usable. */
+  const restoreNow = (query, spec) => {
+    syncEpoch();
+    const value = preloaded.get(query.queryHash);
+    if (!value) return false;
+    preloaded.delete(query.queryHash);
+    const userId = currentUserId(storage);
+    if (!userId || !usable(value, userId)) return false;
+    apply(spec, value, userId);
+    return true;
+  };
+
+  // Read ahead for whoever is signed in now, so a tab opened right after
+  // launch paints its list in the first frame instead of a skeleton.
+  const preloadUser = currentUserId(storage);
+  if (preloadUser) {
+    const epoch = idbEpoch();
+    for (const spec of SNAPSHOTS) {
+      const hash = hashKey(spec.queryKey);
+      void idbGet('queries', entryKey(preloadUser, hash))
+        .then((entry) => {
+          const value = usable(entry?.value, preloadUser);
+          if (!value || epoch !== idbEpoch()) return;
+          syncEpoch();
+          preloaded.set(hash, value);
+        })
+        .catch(() => {}); // a failed read-ahead just means the async path
+    }
+  }
+
   const save = (hash, epoch) => {
+    // Scheduled before a sign-out: the state it would touch is the next account's.
+    if (epoch !== idbEpoch()) return;
     pendingWrites.delete(hash);
     const spec = byHash.get(hash);
     // Looked up again at idle time: a sign-out in between has removed it.
@@ -135,13 +194,14 @@ export function installQuerySnapshots(
     if (!spec) return;
 
     if (event.type === 'observerAdded') {
-      if (query.state.data === undefined) void restore(query, spec);
+      if (query.state.data === undefined && !restoreNow(query, spec)) void restore(query, spec);
       return;
     }
 
     if (event.type !== 'updated' || event.action?.type !== 'success') return;
     if (event.action.manual) return; // setQueryData, the restore above included
     const hash = query.queryHash;
+    syncEpoch();
     if (pendingWrites.has(hash)) return;
     pendingWrites.add(hash);
     const epoch = idbEpoch();
